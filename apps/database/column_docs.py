@@ -51,6 +51,7 @@ from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOC
 from apps.database.column_docs_pair_transitions import PAIR_TRANSITION_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
 from apps.database.column_docs_playlist_rollback import PLAYLIST_ROLLBACK_COLUMN_DOCS
+from apps.database.column_docs_set_target import SET_TARGET_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
 from apps.database.column_docs_sync_gate import SYNC_GATE_COLUMN_DOCS
 from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
@@ -693,4 +694,6 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **GENRE_COLUMN_DOCS,
     # Migration v21 sync_write_tokens (issue #4396).
     **SYNC_GATE_COLUMN_DOCS,
+    # Set target and skip flags (LIBUX-8679).
+    **SET_TARGET_COLUMN_DOCS,
 }

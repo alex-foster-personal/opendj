@@ -21,6 +21,16 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const INERT_TITLE = 'not implemented - see PARITY-TODO';
+const PARITY_TODO_FLEX = 'PARITY-TODO'.replace('-', '[- ]?');
+const PARITY_TODO_FLEX_RE = new RegExp(PARITY_TODO_FLEX, 'i');
+
+function parityTodoConstRe() {
+	return new RegExp(
+		String.raw`\bconst\s+\w+\s*=\s*(['"])([^'"\n]*` + PARITY_TODO_FLEX + String.raw`[^'"\n]*)\1`,
+		'gi',
+	);
+}
+
 /** Elements where `disabled` is a real, enforced HTML attribute. */
 const DISABLEABLE = new Set(['button', 'input', 'select', 'textarea', 'fieldset', 'optgroup', 'option']);
 
@@ -106,6 +116,27 @@ test('inert-title detection sees a constant-referenced control, and flags one mi
 	assert.equal(/\bdisabled\b/.test(button.attrs), false, 'fixture must be the offending shape');
 });
 
+test('PARITY-TODO flex regex matches hyphen, space, glued, and case variants', () => {
+	const hyphen = 'PARITY-TODO';
+	const space = hyphen.replace('-', ' ');
+	const glued = hyphen.replace('-', '');
+	assert.equal(PARITY_TODO_FLEX_RE.test(hyphen), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(space), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(glued), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(hyphen.toLowerCase()), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test('unrelated title'), false);
+
+	const source = [
+		`const A = '${hyphen}';`,
+		`const B = '${space}';`,
+		`const C = '${glued}';`,
+		`const D = '${hyphen.toLowerCase()}';`,
+		`const E = 'unrelated';`,
+	].join('\n');
+	const values = [...source.matchAll(parityTodoConstRe())].map((m) => m[2]);
+	assert.deepEqual(values, [hyphen, space, glued, hyphen.toLowerCase()]);
+});
+
 test('every inert form control carries BOTH disabled and the exact PARITY-TODO title', () => {
 	const offenders = [];
 	let checked = 0;
@@ -139,7 +170,7 @@ test('an inert control never gets a reworded PARITY-TODO title of its own', () =
 		const source = readFileSync(file, 'utf8');
 		for (const tag of openTags(source)) {
 			if (!DISABLEABLE.has(tag.name)) continue;
-			if (!/PARITY[- ]?TODO/i.test(tag.attrs)) continue;
+			if (!PARITY_TODO_FLEX_RE.test(tag.attrs)) continue;
 			if (tag.attrs.includes(INERT_TITLE)) continue;
 			// A constant reference such as title={INERT} resolves elsewhere; the
 			// declaration check below pins those.
@@ -153,7 +184,7 @@ test('every module-level PARITY-TODO constant holds the identical string', () =>
 	const declarations = [];
 	for (const file of svelteFiles(SRC)) {
 		const source = readFileSync(file, 'utf8');
-		for (const match of source.matchAll(/\bconst\s+\w+\s*=\s*(['"])([^'"\n]*PARITY[- ]?TODO[^'"\n]*)\1/gi)) {
+		for (const match of source.matchAll(parityTodoConstRe())) {
 			declarations.push({ file: file.slice(SRC.length + 1), value: match[2] });
 		}
 	}

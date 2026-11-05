@@ -163,7 +163,10 @@ export async function listPlaylistRoutes(
 			api.GET('/api/v1/playlists/{playlist_id}/routes', {
 				params: {
 					path: { playlist_id: playlistId },
-					query: { ...(limit === undefined ? {} : { limit }), ...(offset === undefined ? {} : { offset }) }
+					query: {
+						...(limit === undefined ? {} : { limit }),
+						...(offset === undefined ? {} : { offset })
+					}
 				}
 			})
 		)) as PlaylistRouteList;
@@ -171,4 +174,3 @@ export async function listPlaylistRoutes(
 		_throwPlaylistSetError(error);
 	}
 }
-

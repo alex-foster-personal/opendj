@@ -24,11 +24,11 @@
  * Decoded PCM held by ONE stems-ready deck, in MiB.
  *
  * A 4-minute track at 44.1 kHz stereo Float32 is
- * 240 s x 44100 x 2 ch x 4 B = ~81 MiB of mix PCM. A stems-ready deck retains
- * the mix plus its 4 stem buffers, so 5x that: ~404 MiB. The engine tops out
- * at 4 decks, i.e. ~1616 MiB of decoded PCM at its designed ceiling.
+ * 240 s x 44100 x 2 ch x 4 B = ~81 MiB of mix PCM. A hold-neutral stemmed deck
+ * retains mix JS, the mix worklet copy, and 4 stem parts, so 6x that: ~485 MiB.
+ * The engine tops out at 4 decks, i.e. ~1940 MiB of decoded PCM at its designed ceiling.
  */
-export const PCM_MB_PER_STEMMED_DECK = 404;
+export const PCM_MB_PER_STEMMED_DECK = 485;
 
 /** Heap + PCM pair, unchanged - calibrated on Chromium where both are real. */
 export const HEAP_PLUS_PCM_WARN_MB = 512;
@@ -38,15 +38,15 @@ export const HEAP_PLUS_PCM_CRIT_MB = 1024;
  * PCM-only pair, re-derived from the 4-stemmed-deck arithmetic above rather
  * than inherited from the heap + PCM pair.
  *
- * warn > 800 MiB: just under two of four decks stemmed (2 x 404 = 808). One
+ * warn > 960 MiB: just under two of four decks stemmed (2 x 485 = 970). One
  * stemmed deck is an ordinary working state and must not warn; two is the
  * point where the remaining headroom is worth flagging.
- * crit > 1600 MiB: just under all four stemmed (4 x 404 = 1616), i.e. the
+ * crit > 1920 MiB: just under all four stemmed (4 x 485 = 1940), i.e. the
  * engine's designed ceiling. Anything past it is retention nothing accounts
  * for, which is exactly the GC-pressure state that causes audible skips.
  */
-export const PCM_ONLY_WARN_MB = 800;
-export const PCM_ONLY_CRIT_MB = 1600;
+export const PCM_ONLY_WARN_MB = 960;
+export const PCM_ONLY_CRIT_MB = 1920;
 
 // ----------------------------------------------------------------- model
 
@@ -184,7 +184,7 @@ export function memoryReadout(sample: MemorySample): MemoryReadout {
 	const pageLines =
 		`${heapLine}\n` +
 		`• ANLZ cache: ~${sample.anlzMB} MB (${sample.anlzCount}/${anlzCap} tracks, ${tierLabel}, in heap${outsideTotal})\n` +
-		`• Deck PCM (+ 4 stems when ready): ${sample.pcmMB} MB\n` +
+		`• Deck PCM (mix JS + worklet copy; + 4 stems when ready or pending): ${sample.pcmMB} MB\n` +
 		`• Audio prefetch: ${sample.prefetchMB} MB (${sample.prefetchCount} tracks, in heap${outsideTotal})\n`;
 
 	// Said whether or not any process was reported: with no live walk the

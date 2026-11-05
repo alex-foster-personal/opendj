@@ -1,4 +1,5 @@
 """Folder import persists browser metadata for tracks without rekordbox."""
+
 from __future__ import annotations
 
 import json
@@ -34,9 +35,7 @@ def test_folder_import_writes_genre_and_comment_file_tags(
     monkeypatch.setattr(
         audio_files,
         "read_metadata",
-        lambda _path: audio_files.AudioMetadata(
-            title="Local", genre="House", comment="Imported from tags"
-        ),
+        lambda _path: audio_files.AudioMetadata(title="Local", genre="House", comment="Imported from tags"),
     )
     writer = StateWriter(state_conn, bus=FakeEventBus(), actor="folder-test")
     try:
@@ -44,9 +43,7 @@ def test_folder_import_writes_genre_and_comment_file_tags(
     finally:
         writer.close()
 
-    rows = state_conn.execute(
-        "SELECT field_name, value_json, source FROM track_fields ORDER BY field_name"
-    ).fetchall()
+    rows = state_conn.execute("SELECT field_name, value_json, source FROM track_fields ORDER BY field_name").fetchall()
     assert [(row[0], json.loads(row[1]), row[2]) for row in rows] == [
         ("comments", "Imported from tags", "inferred"),
         ("genre", "House", "inferred"),

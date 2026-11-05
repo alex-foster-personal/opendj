@@ -2,6 +2,7 @@
 
 [if] SetGoal serializes pin fields [then] JSON round-trips them and path-shaped pins raise, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

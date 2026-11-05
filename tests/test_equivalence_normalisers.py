@@ -75,12 +75,8 @@ def test_relative_major_of_8a_is_8b():
 
 
 def test_mixed_column_accepts_both_notations_and_agrees():
-    assert normalise_key("4A", "mixed_camelot_musical") == normalise_key(
-        "Fm", "mixed_camelot_musical"
-    )
-    assert normalise_key("Fmaj", "mixed_camelot_musical") == normalise_key(
-        "7B", "mixed_camelot_musical"
-    )
+    assert normalise_key("4A", "mixed_camelot_musical") == normalise_key("Fm", "mixed_camelot_musical")
+    assert normalise_key("Fmaj", "mixed_camelot_musical") == normalise_key("7B", "mixed_camelot_musical")
 
 
 def test_measured_sentinels_are_missing_not_keys():
@@ -146,9 +142,7 @@ def test_documented_zero_sentinels_are_missing():
 
 def test_seconds_and_milliseconds_meet_in_the_middle():
     assert normalise_numeric(387, "duration", "seconds") == pytest.approx(387_000.0)
-    assert normalise_numeric(387_000, "duration", "milliseconds") == pytest.approx(
-        387_000.0
-    )
+    assert normalise_numeric(387_000, "duration", "milliseconds") == pytest.approx(387_000.0)
 
 
 def test_beat_indexed_time_needs_a_bpm():

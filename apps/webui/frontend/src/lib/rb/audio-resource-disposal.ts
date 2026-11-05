@@ -64,7 +64,8 @@ export async function disposeAudioResources(
 		}
 	}
 	if (failures.length === 1) throw failures[0];
-	if (failures.length > 1) throw new AggregateError(failures, 'multiple audio teardown operations failed');
+	if (failures.length > 1)
+		throw new AggregateError(failures, 'multiple audio teardown operations failed');
 }
 
 /** Detaches an owner's worklet/processor node for disposal without leaving it

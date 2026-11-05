@@ -5,7 +5,12 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import TrackPlaylistsPopoverView from './TrackPlaylistsPopoverView.svelte';
 
-	let { stableId, x, y, onclose }: {
+	let {
+		stableId,
+		x,
+		y,
+		onclose
+	}: {
 		stableId: string;
 		x: number;
 		y: number;

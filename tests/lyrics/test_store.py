@@ -12,6 +12,7 @@
 - if the dataclass and the DDL column order drift then a positional read maps
   values into the wrong fields -- broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -49,9 +50,7 @@ def _upsert(conn: sqlite3.Connection, stable_id: str, **overrides) -> None:
 
 def test_columns_match_the_ddl_in_order(conn: sqlite3.Connection) -> None:
     """Explicit column lists are only safe while they mirror the table."""
-    actual = tuple(
-        row[1] for row in conn.execute("PRAGMA table_info(lyric_verdict)")
-    )
+    actual = tuple(row[1] for row in conn.execute("PRAGMA table_info(lyric_verdict)"))
     assert actual == store.COLUMNS
 
 
@@ -66,8 +65,7 @@ def test_a_write_is_stamped_and_logged(conn: sqlite3.Connection) -> None:
         "computed_at is the pipeline's judgement time, not the sync stamp"
     )
     logged = conn.execute(
-        "SELECT row_pk, updated_at, origin_device_id FROM local_changelog "
-        "WHERE table_name = 'lyric_verdict'"
+        "SELECT row_pk, updated_at, origin_device_id FROM local_changelog WHERE table_name = 'lyric_verdict'"
     ).fetchall()
     assert len(logged) == 1
     assert logged[0][0] == sync_stamp.encode_row_pk(("sid-1",))
@@ -81,9 +79,7 @@ def test_every_write_owns_its_transaction(conn: sqlite3.Connection) -> None:
     _upsert(conn, "sid-1")
     assert not conn.in_transaction
     rows = conn.execute("SELECT COUNT(*) FROM lyric_verdict").fetchone()[0]
-    logged = conn.execute(
-        "SELECT COUNT(*) FROM local_changelog WHERE table_name='lyric_verdict'"
-    ).fetchone()[0]
+    logged = conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name='lyric_verdict'").fetchone()[0]
     assert (rows, logged) == (1, 1)
 
 
@@ -151,15 +147,12 @@ def test_readers_filter_the_parent_track_tombstone(conn: sqlite3.Connection) -> 
     seed_track(conn, "sid-gone")
     _upsert(conn, "sid-live")
     _upsert(conn, "sid-gone")
-    conn.execute(
-        "UPDATE tracks SET deleted_at = '2026-09-09T00:00:00.000000+00:00' "
-        "WHERE stable_id = 'sid-gone'"
-    )
+    conn.execute("UPDATE tracks SET deleted_at = '2026-09-09T00:00:00.000000+00:00' WHERE stable_id = 'sid-gone'")
     assert store.get_verdict(conn, "sid-gone") is None
     assert set(store.bulk_verdicts(conn, ["sid-live", "sid-gone"])) == {"sid-live"}
-    assert [v.stable_id for v in store.list_verdicts(
-        conn, limit=10, offset=0, verdict=None, order="suspect"
-    )] == ["sid-live"]
+    assert [v.stable_id for v in store.list_verdicts(conn, limit=10, offset=0, verdict=None, order="suspect")] == [
+        "sid-live"
+    ]
     assert store.count_verdicts(conn) == {"vocal": 1}
     assert [v.stable_id for v in store.verdicts_by_source(conn, "lrclib")] == ["sid-live"]
 
@@ -184,24 +177,21 @@ def test_bulk_verdicts_short_circuits_on_an_empty_list(
 def test_list_orders_and_filters_on_the_effective_verdict(
     conn: sqlite3.Connection,
 ) -> None:
-    for index, (stable_id, red) in enumerate(
-        [("sid-a", 0.9), ("sid-b", 0.1), ("sid-c", None)]
-    ):
+    for index, (stable_id, red) in enumerate([("sid-a", 0.9), ("sid-b", 0.1), ("sid-c", None)]):
         seed_track(conn, stable_id)
         _upsert(
-            conn, stable_id, pct_witness_red=red, coverage_pct=float(index),
+            conn,
+            stable_id,
+            pct_witness_red=red,
+            coverage_pct=float(index),
             computed_at=f"2026-09-0{index + 1}T00:00:00.000000+00:00",
         )
-    suspect = store.list_verdicts(
-        conn, limit=10, offset=0, verdict=None, order="suspect"
-    )
+    suspect = store.list_verdicts(conn, limit=10, offset=0, verdict=None, order="suspect")
     assert [v.stable_id for v in suspect] == ["sid-a", "sid-b", "sid-c"]
     recent = store.list_verdicts(conn, limit=10, offset=0, verdict=None, order="recent")
     assert [v.stable_id for v in recent] == ["sid-c", "sid-b", "sid-a"]
     store.set_override(conn, stable_id="sid-b", override="no-lyrics", note=None)
-    filtered = store.list_verdicts(
-        conn, limit=10, offset=0, verdict="no-lyrics", order="suspect"
-    )
+    filtered = store.list_verdicts(conn, limit=10, offset=0, verdict="no-lyrics", order="suspect")
     assert [v.stable_id for v in filtered] == ["sid-b"]
     assert store.count_verdicts(conn) == {"vocal": 2, "no-lyrics": 1}
 
@@ -216,11 +206,11 @@ def test_list_refuses_an_unknown_order_or_verdict(conn: sqlite3.Connection) -> N
 def test_store_never_hardcodes_a_database_path() -> None:
     """The router must hand in the cloudsync-style write connection."""
     source = Path(store.__file__).read_text(encoding="utf-8")
-    assert "data/state/state.db" in source, "the docstring must name the trap"
+    assert "(private path)" in source, "the docstring must name the trap"
     assert "open_rw(" not in source, "store.py opens no connection of its own"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # upsert_stem_coverage_verdict: the stem-coverage backfill's dedicated,
 # atomically-guarded writer (LYR-06, PR #2611 P1 BLOCKING fix,
 # CLAUDE-review round 7, store.py:336)
@@ -229,7 +219,7 @@ def test_store_never_hardcodes_a_database_path() -> None:
 #   proof a row is coverage-only, then an ASR/karaoke no-lyrics verdict, a
 #   line-synced fetch with no word alignment, or a legacy-migrated row all
 #   get silently clobbered by a coverage-only recompute -- broken
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _stem_coverage_upsert(conn: sqlite3.Connection, stable_id: str, **overrides) -> bool:
     fields: dict[str, object] = {
         "verdict": "no-lyrics",

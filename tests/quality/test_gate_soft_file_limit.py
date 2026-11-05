@@ -36,9 +36,7 @@ def test_soft_metric_reports_without_failing(tmp_path: Path) -> None:
         _write_lines(tmp_path, "eight_hundred.py", 800),
     ]
     frontend_files = [_write_lines(tmp_path, "tiny.ts", 10)]
-    metrics = qg._file_size_metrics(
-        python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX
-    )
+    metrics = qg._file_size_metrics(python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX)
     soft = _metric(metrics, "file_size.soft_over_python")
     assert soft.value == 1, f"if one python file is past 1000 lines then soft_over is 1, but it was {soft.value:g}"
     assert "twelve_hundred.py" in soft.detail, (
@@ -73,9 +71,7 @@ def test_strict_limit_still_fails_past_slack(tmp_path: Path) -> None:
         _write_lines(tmp_path, "past_limit.py", 1501),
     ]
     frontend_files = [_write_lines(tmp_path, "tiny.ts", 10)]
-    metrics = qg._file_size_metrics(
-        python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX
-    )
+    metrics = qg._file_size_metrics(python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX)
     over = _metric(metrics, "file_size.over_limit_python")
     assert over.value == 1, (
         "if one file is 1501 lines and one is 1500 then over_limit_python "
@@ -105,9 +101,7 @@ def test_twelve_hundred_lines_counts_as_soft_only(tmp_path: Path) -> None:
     """If a file is 1200 lines then only the soft count includes it."""
     python_files = [_write_lines(tmp_path, "twelve_hundred.py", 1200)]
     frontend_files = [_write_lines(tmp_path, "tiny.ts", 10)]
-    metrics = qg._file_size_metrics(
-        python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX
-    )
+    metrics = qg._file_size_metrics(python_files, frontend_files, repo=tmp_path, list_max=_LIST_MAX)
     over = _metric(metrics, "file_size.over_limit_python")
     soft = _metric(metrics, "file_size.soft_over_python")
     assert over.value == 0, f"if a file is 1200 lines then over_limit_python skips it, but the count was {over.value:g}"

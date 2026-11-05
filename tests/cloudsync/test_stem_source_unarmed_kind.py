@@ -2,6 +2,7 @@
 
 [if] a stem hydration unarmed error is structural or transient [then] classify it for re-arm policy, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

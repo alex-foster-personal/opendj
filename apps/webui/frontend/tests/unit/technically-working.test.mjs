@@ -64,7 +64,11 @@ test('entering overlay mode hides every region until its edge is hovered', () =>
 test('hovering an edge with no loaded deck does not reveal it (left/right are deck-gated)', () => {
 	mod.setTechModeActive(true);
 	mod.setEdgeHovered('left', true);
-	assert.equal(mod.isEdgeVisible('left', NONE_LOADED), false, 'no deck loaded - hover must not reveal');
+	assert.equal(
+		mod.isEdgeVisible('left', NONE_LOADED),
+		false,
+		'no deck loaded - hover must not reveal'
+	);
 	assert.equal(
 		mod.isEdgeVisible('left', loadedPredicate([1])),
 		true,
@@ -78,7 +82,11 @@ test('top and bottom edges are not deck-gated (waveforms/library always answer a
 	mod.setEdgeHovered('bottom', true);
 	assert.equal(mod.isEdgeVisible('top', NONE_LOADED), true);
 	assert.equal(mod.isEdgeVisible('bottom', NONE_LOADED), true);
-	assert.equal(mod.isEdgeVisible('left', NONE_LOADED), false, 'unhovered/ungated edges stay hidden');
+	assert.equal(
+		mod.isEdgeVisible('left', NONE_LOADED),
+		false,
+		'unhovered/ungated edges stay hidden'
+	);
 });
 
 test('unhovering an edge hides it again', () => {
@@ -94,7 +102,11 @@ test('peeking reveals every edge and the homeless group regardless of hover/opt'
 	mod.setTechModeActive(true);
 	mod.setPeeking(true);
 	for (const edge of ['top', 'left', 'right', 'bottom']) {
-		assert.equal(mod.isEdgeVisible(edge, NONE_LOADED), true, `${edge} must be visible while peeking`);
+		assert.equal(
+			mod.isEdgeVisible(edge, NONE_LOADED),
+			true,
+			`${edge} must be visible while peeking`
+		);
 	}
 	assert.equal(mod.isHomelessVisible(), true);
 	mod.setPeeking(false);
@@ -138,7 +150,11 @@ test('isDeckSlotVisible resolves per-deck, not per-edge: a loaded column-mate do
 	mod.setTechModeActive(true);
 	mod.setEdgeHovered('left', true);
 	const loaded = loadedPredicate([1]);
-	assert.equal(mod.isDeckSlotVisible(1, 'left', loaded), true, 'deck 1 is loaded - its panel shows');
+	assert.equal(
+		mod.isDeckSlotVisible(1, 'left', loaded),
+		true,
+		'deck 1 is loaded - its panel shows'
+	);
 	assert.equal(
 		mod.isDeckSlotVisible(3, 'left', loaded),
 		false,
@@ -150,7 +166,11 @@ test('isDeckSlotVisible gates the top edge per waveform row even though isEdgeVi
 	mod.setTechModeActive(true);
 	mod.setEdgeHovered('top', true);
 	const loaded = loadedPredicate([2]);
-	assert.equal(mod.isDeckSlotVisible(2, 'top', loaded), true, 'deck 2 is loaded - its waveform row shows');
+	assert.equal(
+		mod.isDeckSlotVisible(2, 'top', loaded),
+		true,
+		'deck 2 is loaded - its waveform row shows'
+	);
 	for (const deck of [1, 3, 4]) {
 		assert.equal(
 			mod.isDeckSlotVisible(deck, 'top', loaded),
@@ -162,10 +182,18 @@ test('isDeckSlotVisible gates the top edge per waveform row even though isEdgeVi
 
 test('isDeckSlotVisible ignores loaded state outside overlay mode and while peeking', () => {
 	const noneLoaded = NONE_LOADED;
-	assert.equal(mod.isDeckSlotVisible(1, 'left', noneLoaded), true, 'tech mode off - normal layout, no gating');
+	assert.equal(
+		mod.isDeckSlotVisible(1, 'left', noneLoaded),
+		true,
+		'tech mode off - normal layout, no gating'
+	);
 	mod.setTechModeActive(true);
 	mod.setPeeking(true);
-	assert.equal(mod.isDeckSlotVisible(1, 'left', noneLoaded), true, 'peeking forces every deck back regardless of loaded state');
+	assert.equal(
+		mod.isDeckSlotVisible(1, 'left', noneLoaded),
+		true,
+		'peeking forces every deck back regardless of loaded state'
+	);
 });
 
 test('eq raise only takes effect while overlay mode is active, and toggles', () => {
@@ -181,7 +209,13 @@ test('eq raise only takes effect while overlay mode is active, and toggles', () 
 test('edge hover uses the typed performance dispatcher instead of bypassing its lifecycle lock', async () => {
 	const hotkeys = await readFile('src/lib/rb/technically-working-hotkeys.ts', 'utf8');
 	const dispatcher = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
-	assert.match(hotkeys, /runPerformanceCommandFromUi\(\{ type: 'tech_mode_edge_hover', edge, hovered:/);
-	assert.match(dispatcher, /\| \{ type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean \}/);
+	assert.match(
+		hotkeys,
+		/runPerformanceCommandFromUi\(\{ type: 'tech_mode_edge_hover', edge, hovered:/
+	);
+	assert.match(
+		dispatcher,
+		/\| \{ type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean \}/
+	);
 	assert.match(dispatcher, /setEdgeHovered\(command\.edge, command\.hovered\)/);
 });

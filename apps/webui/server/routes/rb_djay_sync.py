@@ -3,6 +3,7 @@
 Mounted at ``/api/v1/rb-djay-sync``. Distinct from CloudSync hub routes
 under ``/api/v1/sync/*`` and from smartlist one-way writeback.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

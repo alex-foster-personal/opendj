@@ -52,12 +52,7 @@ test('constructor lists with counts and an empty result settles loading', async 
 	);
 	await flush();
 	assert.deepEqual(calls, [{ includeCounts: true }]);
-	assert.deepEqual(subscriptions.subscribedKinds(), [
-		'tracks',
-		'smartlists',
-		'mytags',
-		'pairings'
-	]);
+	assert.deepEqual(subscriptions.subscribedKinds(), ['tracks', 'smartlists', 'mytags', 'pairings']);
 	assert.deepEqual(store.rows, []);
 	assert.equal(store.error, null);
 	store.destroy();

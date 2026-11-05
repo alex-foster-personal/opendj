@@ -34,7 +34,9 @@ type Story = StoryObj<typeof meta>;
 export const Ready: Story = {};
 
 /** A question typed: Send is enabled. */
-export const Drafting: Story = { args: { draft: 'How many tracks have no key yet?', canSend: true } };
+export const Drafting: Story = {
+	args: { draft: 'How many tracks have no key yet?', canSend: true }
+};
 
 /** One turn answered and a reply streaming in, with its character count. */
 export const Streaming: Story = {

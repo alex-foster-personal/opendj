@@ -267,7 +267,9 @@ def test_ffmpeg_linux_line_links_libm_and_names_no_macos_flag() -> None:
     args = build_ffmpeg_lgpl.configure_args(Path("/p"), "linux")
     assert "--extra-libs=-lm" in args and "--cc=cc" in args
     assert not any("macosx" in arg or arg == "--arch=arm64" for arg in args)
-    assert "--disable-network" in args and not any("gpl" in arg and "enable" in arg and "lgpl" not in arg for arg in args)
+    assert "--disable-network" in args and not any(
+        "gpl" in arg and "enable" in arg and "lgpl" not in arg for arg in args
+    )
 
 
 @pytest.mark.parametrize(
@@ -333,7 +335,9 @@ def test_engine_launcher_states_local_unless_the_caller_chose(tmp_path: Path, gi
     env = {"PATH": "/usr/bin:/bin"}
     if given is not None:
         env["MDT_LIBRARY_MODE"] = given
-    out = subprocess.run(["/bin/sh", str(_launcher_with_echo_runtime(tmp_path))], env=env, capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        ["/bin/sh", str(_launcher_with_echo_runtime(tmp_path))], env=env, capture_output=True, text=True, check=True
+    )
     assert out.stdout == expected
 
 
@@ -353,5 +357,7 @@ def test_payload_verify_env_matches_the_launcher_default(tmp_path: Path) -> None
         (None, "2.14.0", False),
     ],
 )
-def test_runner_pin_accepts_a_local_label_only_on_the_same_public_version(installed: str | None, pinned: str, ok: bool) -> None:
+def test_runner_pin_accepts_a_local_label_only_on_the_same_public_version(
+    installed: str | None, pinned: str, ok: bool
+) -> None:
     assert payload_beatgrid.pin_satisfied(installed, pinned) is ok

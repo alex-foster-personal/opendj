@@ -39,11 +39,31 @@ beforeEach(() => {
 });
 
 const CODED = [
-	['TRACK_NOT_FOUND', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track is no longer in the library.'],
-	['AUDIO_FILE_MISSING', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio file is missing on this machine.'],
-	['CLOUD_ASSET_UNAVAILABLE', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio is not on this machine and could not be fetched.'],
-	['CLOUD_POLICY_UNCONFIGURED', 503, 'Deck 3: couldn\'t load "Placeholder Title". Cloud audio is not set up on this machine, so this track cannot be fetched.'],
-	['AUDIO_ACCESS_BLOCKED', 503, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s file did not open in time - its drive or folder is not answering.']
+	[
+		'TRACK_NOT_FOUND',
+		404,
+		'Deck 3: couldn\'t load "Placeholder Title". This track is no longer in the library.'
+	],
+	[
+		'AUDIO_FILE_MISSING',
+		404,
+		'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio file is missing on this machine.'
+	],
+	[
+		'CLOUD_ASSET_UNAVAILABLE',
+		404,
+		'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio is not on this machine and could not be fetched.'
+	],
+	[
+		'CLOUD_POLICY_UNCONFIGURED',
+		503,
+		'Deck 3: couldn\'t load "Placeholder Title". Cloud audio is not set up on this machine, so this track cannot be fetched.'
+	],
+	[
+		'AUDIO_ACCESS_BLOCKED',
+		503,
+		'Deck 3: couldn\'t load "Placeholder Title". This track\'s file did not open in time - its drive or folder is not answering.'
+	]
 ];
 
 test('a known load failure code names the reason in the headline', () => {
@@ -68,7 +88,11 @@ test('an undecodable file and an unreachable engine are named in plain words', (
 		harness.deckLoadFailureHeadline(1, decode),
 		"Deck 1: this track's audio file could not be decoded"
 	);
-	for (const text of ['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.']) {
+	for (const text of [
+		'Failed to fetch',
+		'Load failed',
+		'NetworkError when attempting to fetch resource.'
+	]) {
 		assert.equal(
 			harness.deckLoadFailureHeadline(1, new TypeError(text)),
 			'Deck 1: the engine did not answer while loading this track'
@@ -78,16 +102,31 @@ test('an undecodable file and an unreachable engine are named in plain words', (
 
 test('an unrecognized failure still puts its own reason in the headline', () => {
 	assert.equal(
-		harness.deckLoadFailureHeadline(2, new Error('deck 2 must be fully stopped before replacement')),
+		harness.deckLoadFailureHeadline(
+			2,
+			new Error('deck 2 must be fully stopped before replacement')
+		),
 		'Deck 2 could not load the track: deck 2 must be fully stopped before replacement'
 	);
 	assert.equal(
-		harness.deckLoadFailureHeadline(2, new harness.RbApiError(500, 'SOMETHING_NEW', 'engine said no')),
+		harness.deckLoadFailureHeadline(
+			2,
+			new harness.RbApiError(500, 'SOMETHING_NEW', 'engine said no')
+		),
 		'Deck 2 could not load the track: SOMETHING_NEW: engine said no'
 	);
-	assert.equal(harness.deckLoadFailureHeadline(2, 'plain string'), 'Deck 2 could not load the track: plain string');
-	const long = harness.deckLoadFailureHeadline(2, new Error(`first line ${'x'.repeat(300)}\nsecond line`));
-	assert.ok(long.length <= 'Deck 2 could not load the track: '.length + 120, 'a long reason is cut');
+	assert.equal(
+		harness.deckLoadFailureHeadline(2, 'plain string'),
+		'Deck 2 could not load the track: plain string'
+	);
+	const long = harness.deckLoadFailureHeadline(
+		2,
+		new Error(`first line ${'x'.repeat(300)}\nsecond line`)
+	);
+	assert.ok(
+		long.length <= 'Deck 2 could not load the track: '.length + 120,
+		'a long reason is cut'
+	);
 	assert.ok(long.endsWith('...'));
 	assert.ok(!long.includes('second line'), 'only the first line of a reason belongs in a headline');
 });
@@ -124,7 +163,11 @@ test('a load whose own toast was suppressed is still reported by the dispatcher'
 	harness.reportDeckLoadFailure(2, cause.message, cause, {}, { suppressFailureToast: true });
 	assert.equal(harness.toasts.length, 0, 'control: suppression really suppresses the engine toast');
 	harness.reportDeckLoadCommandFailure(2, cause.message, cause);
-	assert.equal(harness.toasts.length, 1, 'an untoasted failure must not be mistaken for a toasted one');
+	assert.equal(
+		harness.toasts.length,
+		1,
+		'an untoasted failure must not be mistaken for a toasted one'
+	);
 });
 
 test('the command dispatcher routes a failed load through the deck-load reporter', () => {
@@ -146,7 +189,10 @@ test('the command dispatcher routes a failed load through the deck-load reporter
 
 test("the track lookup's bare 404 reads as TRACK_NOT_FOUND, and nothing else is rewritten", () => {
 	const rawText = '{"detail":{"code":"HTTP_404","message":"Not Found"}}';
-	const response = new Response(rawText, { status: 404, headers: { 'content-type': 'application/json' } });
+	const response = new Response(rawText, {
+		status: 404,
+		headers: { 'content-type': 'application/json' }
+	});
 	const parsedBody = JSON.parse(rawText);
 	const lookup = harness.libraryTrackLookupError(
 		new harness.ApiError(404, 'HTTP_404', 'Not Found', response, parsedBody, rawText)
@@ -155,7 +201,10 @@ test("the track lookup's bare 404 reads as TRACK_NOT_FOUND, and nothing else is 
 	assert.equal(lookup.bodyText, rawText);
 	assert.deepEqual(lookup.body, parsedBody);
 	assert.equal(lookup.response, response);
-	assert.equal(harness.deckLoadFailureHeadline(1, lookup), 'Deck 1: This track is no longer in the library.');
+	assert.equal(
+		harness.deckLoadFailureHeadline(1, lookup),
+		'Deck 1: This track is no longer in the library.'
+	);
 	// Controls: a coded 404 (a stick), another status, and a non-ApiError pass through as the same object.
 	const stick = new harness.ApiError(404, 'USB_TRACK_NOT_FOUND', 'gone', response);
 	assert.equal(harness.libraryTrackLookupError(stick), stick);

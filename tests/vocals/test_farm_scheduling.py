@@ -15,6 +15,7 @@ Single-line intent, in the repo's regression style:
   - if clock skew is clamped away then a skewed split reads as a real measurement
   - if the farm's prefetch constants drift from the module then flags lie about defaults
 """
+
 from __future__ import annotations
 
 import pytest
@@ -51,7 +52,9 @@ def test_longest_track_goes_first() -> None:
         _track("medium", duration_ms=600_000),
     ]
     assert [t.stable_id for t in sort_longest_first(batch)] == [
-        "themix", "medium", "short",
+        "themix",
+        "medium",
+        "short",
     ]
 
 
@@ -87,9 +90,7 @@ def test_round_trip_decomposes_exactly() -> None:
     assert timings["return_s"] == pytest.approx(2.25)
     assert timings["round_trip_s"] == pytest.approx(11.75)
     container_s = 1008.0 - 1000.0
-    assert timings["dispatch_s"] + container_s + timings["return_s"] == pytest.approx(
-        timings["round_trip_s"]
-    )
+    assert timings["dispatch_s"] + container_s + timings["return_s"] == pytest.approx(timings["round_trip_s"])
     assert tally.clock_skew_calls == 0
 
 
@@ -139,7 +140,7 @@ def test_serial_control_arm_is_reachable() -> None:
     stream.close()
 
 
-#----- input-pipeline benchmark projection ------------------------------------
+# ----- input-pipeline benchmark projection ------------------------------------
 # The arm rates in that benchmark are a 100%-evicted worst case. These pin the
 # projection onto the REAL gap, which is what corrected the headline claim from
 # "the feeder rate is binding" to "the feeder freezes the whole pipeline".
@@ -151,8 +152,11 @@ def test_serial_feeder_already_clears_the_cap_on_the_real_mix() -> None:
 
     # Measured: ~2.2s per cold evicted file, ~0.005s per resident file.
     out = project_gap_impact(
-        cold_item_s=2.24, warm_item_s=0.0046,
-        evicted=174, resident=815, gap_bytes=9_160_000_000,
+        cold_item_s=2.24,
+        warm_item_s=0.0046,
+        evicted=174,
+        resident=815,
+        gap_bytes=9_160_000_000,
     )
     assert out["evicted_pct"] == pytest.approx(17.6, abs=0.1)
     # The point of the whole projection: rate was never the constraint here.
@@ -164,13 +168,9 @@ def test_freeze_scales_with_evicted_count_not_batch_size() -> None:
     from scripts.bench.input_pipeline_bench import project_gap_impact
 
     few = project_gap_impact(2.0, 0.005, evicted=10, resident=100, gap_bytes=1)
-    many_resident = project_gap_impact(
-        2.0, 0.005, evicted=10, resident=10_000, gap_bytes=1
-    )
+    many_resident = project_gap_impact(2.0, 0.005, evicted=10, resident=10_000, gap_bytes=1)
     assert few["pipeline_freeze_s"] == many_resident["pipeline_freeze_s"] == 20.0
-    more_evicted = project_gap_impact(
-        2.0, 0.005, evicted=100, resident=100, gap_bytes=1
-    )
+    more_evicted = project_gap_impact(2.0, 0.005, evicted=100, resident=100, gap_bytes=1)
     assert more_evicted["pipeline_freeze_s"] == 200.0
 
 
@@ -182,7 +182,7 @@ def test_empty_gap_is_refused_not_divided_by_zero() -> None:
         project_gap_impact(2.0, 0.005, evicted=0, resident=0, gap_bytes=0)
 
 
-#----- production preset -------------------------------------------------------
+# ----- production preset -------------------------------------------------------
 # Switching the default model is cheap to get wrong in two specific ways: the
 # weights silently not being in the image (a per-container download), and the
 # cache stamp naming a model that did not run.
@@ -208,9 +208,7 @@ def test_unbaked_model_is_refused_without_the_flag(
     # noticed because the module needs `modal` and CI never collected the file.
     tag = "htdemucs_ft-ov0.25"
     model = farm.PRESETS[tag].model
-    monkeypatch.setattr(
-        farm, "BAKED_MODELS", tuple(m for m in farm.BAKED_MODELS if m != model)
-    )
+    monkeypatch.setattr(farm, "BAKED_MODELS", tuple(m for m in farm.BAKED_MODELS if m != model))
 
     with pytest.raises(SystemExit, match="not baked into the image"):
         farm._resolve_preset(tag, allow_unbaked=False)
@@ -287,11 +285,19 @@ def test_gpu_floor_uses_audio_minutes_when_available() -> None:
 
     # The real gap: 989 tracks, 4753.7 audio-min, verified against state.db.
     by_audio = project_gap_impact(
-        2.24, 0.0046, evicted=174, resident=815, gap_bytes=9_160_000_000,
+        2.24,
+        0.0046,
+        evicted=174,
+        resident=815,
+        gap_bytes=9_160_000_000,
         gap_audio_s=4753.7 * 60,
     )
     by_tracks = project_gap_impact(
-        2.24, 0.0046, evicted=174, resident=815, gap_bytes=9_160_000_000,
+        2.24,
+        0.0046,
+        evicted=174,
+        resident=815,
+        gap_bytes=9_160_000_000,
     )
     assert by_audio["gpu_floor_basis"] == "audio-seconds"
     assert by_audio["gpu_floor_min"] == pytest.approx(11.7, abs=0.2)

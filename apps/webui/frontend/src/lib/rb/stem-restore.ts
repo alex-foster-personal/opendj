@@ -38,7 +38,10 @@ export async function restoreStemControls(
 	const deadline = clock.now() + STEM_RESTORE_MAX_WAIT_MS;
 	const current = () => {
 		const state = query().decks[deck];
-		if (state.load_generation !== initial.load_generation || state.stable_id !== initial.stable_id) {
+		if (
+			state.load_generation !== initial.load_generation ||
+			state.stable_id !== initial.stable_id
+		) {
 			throw new Error(`deck ${deck} changed during stem restore`);
 		}
 		return state.stems;
@@ -64,7 +67,8 @@ export async function restoreStemControls(
 			{ type: 'stem_mute', deck, stem, muted: control.muted },
 			{ type: 'stem_solo', deck, stem, solo: control.solo }
 		];
-		if (control.gain !== undefined) commands.push({ type: 'stem_gain', deck, stem, value: control.gain });
+		if (control.gain !== undefined)
+			commands.push({ type: 'stem_gain', deck, stem, value: control.gain });
 		for (const command of commands) {
 			current();
 			await dispatch(command);

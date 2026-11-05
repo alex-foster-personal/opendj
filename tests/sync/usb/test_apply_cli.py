@@ -1,4 +1,5 @@
 """Integration tests for apps.sync.usb.apply (CLI entrypoint + flow)."""
+
 from __future__ import annotations
 
 import json
@@ -74,16 +75,12 @@ def isolated_reversal_dir(monkeypatch, tmp_path) -> Path:
 
 @pytest.mark.requirement("CAT-02")
 def test_plan_cli_exit_0(profile_file, drive_root, patched_state, capsys) -> None:
-    rc = plan_mod.main(
-        ["--profile", str(profile_file), "--drive-root", str(drive_root)]
-    )
+    rc = plan_mod.main(["--profile", str(profile_file), "--drive-root", str(drive_root)])
     assert rc == 0
 
 
 @pytest.mark.requirement("CAT-02")
-def test_plan_cli_json_output(
-    profile_file, drive_root, patched_state, tmp_path
-) -> None:
+def test_plan_cli_json_output(profile_file, drive_root, patched_state, tmp_path) -> None:
     out = tmp_path / "plan.json"
     rc = plan_mod.main(
         [
@@ -102,19 +99,13 @@ def test_plan_cli_json_output(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_apply_refuses_without_mode(
-    profile_file, drive_root, patched_state, isolated_reversal_dir
-) -> None:
-    rc = apply_mod.main(
-        ["--profile", str(profile_file), "--drive-root", str(drive_root)]
-    )
+def test_apply_refuses_without_mode(profile_file, drive_root, patched_state, isolated_reversal_dir) -> None:
+    rc = apply_mod.main(["--profile", str(profile_file), "--drive-root", str(drive_root)])
     assert rc == 3
 
 
 @pytest.mark.requirement("CAT-02")
-def test_apply_cautious_filters_playlists(
-    profile_file, drive_root, patched_state, isolated_reversal_dir
-) -> None:
+def test_apply_cautious_filters_playlists(profile_file, drive_root, patched_state, isolated_reversal_dir) -> None:
     rc = apply_mod.main(
         [
             "--profile",
@@ -135,9 +126,7 @@ def test_apply_cautious_filters_playlists(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_apply_bulk_idempotent(
-    profile_file, drive_root, patched_state, isolated_reversal_dir
-) -> None:
+def test_apply_bulk_idempotent(profile_file, drive_root, patched_state, isolated_reversal_dir) -> None:
     rc = apply_mod.main(
         [
             "--profile",
@@ -169,9 +158,7 @@ def test_apply_bulk_idempotent(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_apply_reversal_script_is_valid_bash(
-    profile_file, drive_root, patched_state, isolated_reversal_dir
-) -> None:
+def test_apply_reversal_script_is_valid_bash(profile_file, drive_root, patched_state, isolated_reversal_dir) -> None:
     rc = apply_mod.main(
         [
             "--profile",
@@ -187,6 +174,7 @@ def test_apply_reversal_script_is_valid_bash(
     scripts = list(isolated_reversal_dir.glob("reversal-*.sh"))
     assert scripts, f"no reversal script written in {isolated_reversal_dir}"
     from apps.sync.usb.reversal import verify_syntax
+
     ok, err = verify_syntax(scripts[0])
     assert ok, f"bash -n failed: {err}"
     # Header includes profile + mode + reason.

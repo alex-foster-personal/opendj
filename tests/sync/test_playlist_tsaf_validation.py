@@ -1,6 +1,6 @@
 """Tests for TSAF PLAYLIST_TYPE_LEAF startup validation (F3-3, SYNC-02).
 
-See `.planning/DIAGNOSE-v1-2026-04-17.md` finding F3-3: the
+See `(private path)` finding F3-3: the
 ``PLAYLIST_TYPE_LEAF = 0x01`` byte in :mod:`apps.sync.playlist_tsaf` is a
 best-guess that must be validated against a live djay/Rekordbox DB before
 any live apply. These tests cover the four paths of
@@ -11,6 +11,7 @@ any live apply. These tests cover the four paths of
 * matching observed byte (return the byte)
 * mismatching observed byte (raise :class:`TSAFLeafTypeMismatch`)
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -28,15 +29,16 @@ def _write_fixture_db(path: Path, type_byte: int) -> None:
     pattern that :func:`_discover_leaf_type_from_db` scans for.
     """
     blob = (
-        b"TSAF\x03\x03\x01\x00" + b"\x00" * 8 +
-        b"\x2b\x08ADCMediaItemPlaylist\x00" +
-        b"\x2d" + bytes([type_byte & 0xFF]) + b"\x08type\x00"
+        b"TSAF\x03\x03\x01\x00"
+        + b"\x00" * 8
+        + b"\x2b\x08ADCMediaItemPlaylist\x00"
+        + b"\x2d"
+        + bytes([type_byte & 0xFF])
+        + b"\x08type\x00"
     )
     with sqlite3.connect(path) as conn:
         conn.execute("CREATE TABLE djayMediaLibrary_playlist (data BLOB)")
-        conn.execute(
-            "INSERT INTO djayMediaLibrary_playlist (data) VALUES (?)", (blob,)
-        )
+        conn.execute("INSERT INTO djayMediaLibrary_playlist (data) VALUES (?)", (blob,))
         conn.commit()
 
 
@@ -56,9 +58,7 @@ def test_validate_skip_flag_bypasses_scan(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("SYNC-02")
-def test_validate_skip_env_var_bypasses_scan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_validate_skip_env_var_bypasses_scan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     db = tmp_path / "master.db"
     _write_fixture_db(db, type_byte=(ptsaf.PLAYLIST_TYPE_LEAF ^ 0xFF) & 0xFF)
     monkeypatch.setenv("MDJ_SKIP_TSAF_VALIDATION", "1")

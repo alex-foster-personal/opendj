@@ -48,8 +48,7 @@ export function parseKeyframesFromStyle(styleText) {
  */
 export function parseKeyframeSteps(body) {
 	const steps = [];
-	const stepRe =
-		/((?:[0-9.]+%|\bfrom\b|\bto\b)(?:\s*,\s*(?:[0-9.]+%|\bfrom\b|\bto\b))*)\s*\{/gi;
+	const stepRe = /((?:[0-9.]+%|\bfrom\b|\bto\b)(?:\s*,\s*(?:[0-9.]+%|\bfrom\b|\bto\b))*)\s*\{/gi;
 	let stepMatch;
 	while ((stepMatch = stepRe.exec(body)) !== null) {
 		const selector = stepMatch[1].toLowerCase();
@@ -69,7 +68,9 @@ export function parseKeyframeSteps(body) {
 			steps.push({ offset, properties: [...properties].sort() });
 		}
 	}
-	steps.sort((a, b) => a.offset - b.offset || a.properties.join(',').localeCompare(b.properties.join(',')));
+	steps.sort(
+		(a, b) => a.offset - b.offset || a.properties.join(',').localeCompare(b.properties.join(','))
+	);
 	return dedupeSteps(steps);
 }
 
@@ -133,7 +134,9 @@ export function assertKeyframesSync(declared, parsed) {
 
 	for (const name of declaredNames) {
 		if (!parsedNames.has(name)) {
-			throw new Error(`EXPLAINER_DEMO_ANIMATIONS declares @keyframes ${name} but ControlExplainer.svelte has no matching block`);
+			throw new Error(
+				`EXPLAINER_DEMO_ANIMATIONS declares @keyframes ${name} but ControlExplainer.svelte has no matching block`
+			);
 		}
 	}
 
@@ -176,12 +179,16 @@ function assertStepsEqual(name, expectedSteps, actualSteps) {
 		const exp = expectedSteps[i];
 		const act = actualSteps[i];
 		if (Math.abs(exp.offset - act.offset) > 0.0001) {
-			throw new Error(`@keyframes ${name} step ${i}: offset ${act.offset} !== declared ${exp.offset}`);
+			throw new Error(
+				`@keyframes ${name} step ${i}: offset ${act.offset} !== declared ${exp.offset}`
+			);
 		}
 		const expProps = [...exp.properties].sort().join(',');
 		const actProps = [...act.properties].sort().join(',');
 		if (expProps !== actProps) {
-			throw new Error(`@keyframes ${name} at offset ${act.offset}: properties [${actProps}] !== declared [${expProps}]`);
+			throw new Error(
+				`@keyframes ${name} at offset ${act.offset}: properties [${actProps}] !== declared [${expProps}]`
+			);
 		}
 	}
 }

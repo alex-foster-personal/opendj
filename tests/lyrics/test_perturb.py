@@ -20,14 +20,14 @@ from apps.lyrics.perturb import (
 
 # 8-line synthetic song: chorus = lines 2-3 ("fire fly", "burn high"), repeated at 6-7.
 _LINES = [
-    ["intro", "one"],          # 0
+    ["intro", "one"],  # 0
     ["verse", "line", "two"],  # 1
-    ["fire", "fly"],           # 2  chorus
-    ["burn", "high"],          # 3  chorus
-    ["verse", "three"],        # 4
-    ["verse", "four"],         # 5
-    ["fire", "fly"],           # 6  chorus repeat
-    ["burn", "high"],          # 7  chorus repeat
+    ["fire", "fly"],  # 2  chorus
+    ["burn", "high"],  # 3  chorus
+    ["verse", "three"],  # 4
+    ["verse", "four"],  # 5
+    ["fire", "fly"],  # 6  chorus repeat
+    ["burn", "high"],  # 7  chorus repeat
 ]
 WORDS = [w for line in _LINES for w in line]
 FINAL = [i == len(line) - 1 for line in _LINES for i in range(len(line))]

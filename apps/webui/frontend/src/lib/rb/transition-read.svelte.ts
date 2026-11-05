@@ -57,8 +57,14 @@ function _deckInput(id: TransitionDeckInput['id']): TransitionDeckInput {
 // time was a top main-thread cost with two decks playing. Analysis arrays
 // are replaced, never edited in place, so identity plus length keys the copy.
 const _EMPTY: readonly never[] = [];
-const _phraseMemo = new WeakMap<object, { length: number; mapped: { start_ms: number; end_ms: number }[] }>();
-const _beatMemo = new WeakMap<object, { length: number; mapped: { n: number; time_ms: number }[] }>();
+const _phraseMemo = new WeakMap<
+	object,
+	{ length: number; mapped: { start_ms: number; end_ms: number }[] }
+>();
+const _beatMemo = new WeakMap<
+	object,
+	{ length: number; mapped: { n: number; time_ms: number }[] }
+>();
 
 function _mappedOnce<S, T>(
 	memo: WeakMap<object, { length: number; mapped: T[] }>,

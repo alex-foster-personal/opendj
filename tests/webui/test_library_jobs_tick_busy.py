@@ -2,6 +2,7 @@
 
 [if] the writer lock is busy at a tick [then] a WARNING and a retry, no ERROR, [else stop].
 """
+
 from __future__ import annotations
 
 import functools
@@ -37,9 +38,7 @@ def test_a_busy_tick_warns_without_a_traceback_and_the_next_tick_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """[if] a writer holds the lock past busy_timeout [then] WARN with a count, retry, [else stop]."""
-    monkeypatch.setattr(
-        state_db, "open_rw", functools.partial(state_db.open_rw, busy_timeout_s=0.2)
-    )
+    monkeypatch.setattr(state_db, "open_rw", functools.partial(state_db.open_rw, busy_timeout_s=0.2))
     watcher = _watcher(tmp_path)
     caplog.set_level(logging.WARNING, logger=library_jobs_autostart.__name__)
     watcher.run_tick()

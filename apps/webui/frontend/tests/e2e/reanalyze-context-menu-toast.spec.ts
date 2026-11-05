@@ -102,25 +102,25 @@ test('Re-analyze shows running status in collapsed toast headline', async ({ pag
 		progressCalls += 1;
 		const state = progressCalls < 3 ? 'running' : 'done';
 		const counts =
-			state === 'running' ?
-				{
-					pending: 0,
-					running: 1,
-					done: 1,
-					skipped: 0,
-					failed: 0,
-					refused: 0,
-					cancelled: 0
-				}
-			:	{
-					pending: 0,
-					running: 0,
-					done: 2,
-					skipped: 0,
-					failed: 0,
-					refused: 0,
-					cancelled: 0
-				};
+			state === 'running'
+				? {
+						pending: 0,
+						running: 1,
+						done: 1,
+						skipped: 0,
+						failed: 0,
+						refused: 0,
+						cancelled: 0
+					}
+				: {
+						pending: 0,
+						running: 0,
+						done: 2,
+						skipped: 0,
+						failed: 0,
+						refused: 0,
+						cancelled: 0
+					};
 		await route.fulfill({
 			json: {
 				batch_id: 'qb_e2e_running',

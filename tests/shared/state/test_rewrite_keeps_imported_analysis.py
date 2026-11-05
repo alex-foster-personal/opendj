@@ -38,9 +38,7 @@ def _write_wav_sample(path: Path, sample: int) -> None:
         handle.writeframes(struct.pack("<h", sample))
 
 
-def _record(
-    stable_id: str, backend: str, version: str, lane: str, reason: str
-) -> AnalysisRecord:
+def _record(stable_id: str, backend: str, version: str, lane: str, reason: str) -> AnalysisRecord:
     return AnalysisRecord(
         stable_id=stable_id,
         backend=backend,
@@ -67,9 +65,7 @@ def _analysed_file(state_conn, state_db_path: Path, root: Path) -> tuple[StateWr
     _write_wav_sample(root / "a.wav", 0)
     writer = StateWriter(state_conn, bus=FakeEventBus(), actor="rewrite-keeps-test")
     first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
-    stable_id = state_conn.execute(
-        "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
-    ).fetchone()[0]
+    stable_id = state_conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL").fetchone()[0]
     drain = _record(stable_id, DRAIN_BACKEND, "1.6.0", "beatgrid", "no_trackable_pulse")
     imported = _record(stable_id, IMPORTED_BACKEND, IMPORTED_VERSION, "key", "no_tonal_center")
     upsert_record(drain, db_path=state_db_path)
@@ -111,9 +107,7 @@ def test_a_rewrite_drops_drain_analysis_and_keeps_imported_analysis_stale(
     ]
 
 
-def test_an_unchanged_file_keeps_both_records_fresh(
-    state_conn, state_db_path: Path, tmp_path: Path
-) -> None:
+def test_an_unchanged_file_keeps_both_records_fresh(state_conn, state_db_path: Path, tmp_path: Path) -> None:
     """[if] a rescan walks unchanged bytes [then] both rows stay and none is stale, [else stop]."""
     root = tmp_path / "music"
     writer, stable_id, _signature = _analysed_file(state_conn, state_db_path, root)

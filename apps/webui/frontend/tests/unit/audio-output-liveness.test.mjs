@@ -92,11 +92,23 @@ describe('installOutputLiveness', () => {
 		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
 		assert.equal(live.verdict(), 'dead');
-		assert.deepEqual(h.calls, ['perf:audio-output-dead:error', 'toast:error:NO AUDIO OUTPUT: the'],
-			'if a dead output is not an error state then silence stays silent - broken');
-		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-output-liveness.ts', import.meta.url)), 'utf8');
-		const deadBranch = src.slice(src.indexOf("verdict = 'dead';"), src.indexOf("} else if (deadPolls === LIVENESS_ESCALATE_POLLS)"));
-		assert.ok(deadBranch.includes('noteOutputStall(0)'), 'if the dead verdict does not request a re-bind then nothing tries to recover - broken');
+		assert.deepEqual(
+			h.calls,
+			['perf:audio-output-dead:error', 'toast:error:NO AUDIO OUTPUT: the'],
+			'if a dead output is not an error state then silence stays silent - broken'
+		);
+		const src = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/audio-output-liveness.ts', import.meta.url)),
+			'utf8'
+		);
+		const deadBranch = src.slice(
+			src.indexOf("verdict = 'dead';"),
+			src.indexOf('} else if (deadPolls === LIVENESS_ESCALATE_POLLS)')
+		);
+		assert.ok(
+			deadBranch.includes('noteOutputStall(0)'),
+			'if the dead verdict does not request a re-bind then nothing tries to recover - broken'
+		);
 	});
 
 	it('four zero polls = sticky reload escalation, once', () => {
@@ -107,8 +119,15 @@ describe('installOutputLiveness', () => {
 			h.poll();
 		}
 		assert.equal(live.verdict(), 'dead-escalated');
-		assert.equal(h.calls.filter((c) => c.startsWith('perf:audio-output-dead-persistent')).length, 1);
-		assert.equal(h.calls.filter((c) => c.startsWith('toast:error')).length, 2, 'exactly one alarm and one escalation, not a toast per poll');
+		assert.equal(
+			h.calls.filter((c) => c.startsWith('perf:audio-output-dead-persistent')).length,
+			1
+		);
+		assert.equal(
+			h.calls.filter((c) => c.startsWith('toast:error')).length,
+			2,
+			'exactly one alarm and one escalation, not a toast per poll'
+		);
 	});
 
 	it('latency returning flips to ok with one restored toast', () => {
@@ -167,7 +186,11 @@ describe('installOutputLiveness', () => {
 		assert.equal(h.calls.filter((c) => c === 'recover').length, 1);
 		h.advance(100);
 		h.poll();
-		assert.equal(h.calls.filter((c) => c === 'recover').length, 1, 'still stalled must not re-recover');
+		assert.equal(
+			h.calls.filter((c) => c === 'recover').length,
+			1,
+			'still stalled must not re-recover'
+		);
 	});
 
 	// REQ: AUDIOLIVE-15
@@ -182,8 +205,11 @@ describe('installOutputLiveness', () => {
 			renderTime += 60;
 			h.poll();
 		}
-		assert.equal(h.calls.filter((c) => c === 'recover').length, 0,
-			'if a throttled hidden tab with a running render clock recovers then a healthy set is torn down - broken');
+		assert.equal(
+			h.calls.filter((c) => c === 'recover').length,
+			0,
+			'if a throttled hidden tab with a running render clock recovers then a healthy set is torn down - broken'
+		);
 		assert.notEqual(live.verdict(), 'stalled');
 	});
 
@@ -196,7 +222,11 @@ describe('installOutputLiveness', () => {
 		h.poll();
 		h.advance(60_000);
 		h.poll();
-		assert.equal(live.verdict(), 'stalled', 'if a hidden tab can never stall then a real dead graph stays silent - broken');
+		assert.equal(
+			live.verdict(),
+			'stalled',
+			'if a hidden tab can never stall then a real dead graph stays silent - broken'
+		);
 		assert.equal(h.calls.filter((c) => c === 'recover').length, 1);
 	});
 
@@ -230,7 +260,14 @@ describe('installOutputLiveness', () => {
 		h.advance(100);
 		h.poll();
 		const s = live.snapshot();
-		assert.deepEqual(Object.keys(s).sort(), ['base_latency_ms', 'output_context_time_s', 'output_latency_ms', 'sink_id', 'state', 'verdict']);
+		assert.deepEqual(Object.keys(s).sort(), [
+			'base_latency_ms',
+			'output_context_time_s',
+			'output_latency_ms',
+			'sink_id',
+			'state',
+			'verdict'
+		]);
 		assert.equal(s.output_latency_ms, 192);
 	});
 });
@@ -250,8 +287,15 @@ describe('onSnapshot (pin 93c82bb36eb7: the output-health bar)', () => {
 		h.poll();
 		h.advance(100);
 		h.poll();
-		assert.equal(h.snapshots.length, 3, 'a poll that produces no toast still owes the bar a reading');
-		assert.deepEqual(h.snapshots.map((s) => s.verdict), ['ok', 'ok', 'ok']);
+		assert.equal(
+			h.snapshots.length,
+			3,
+			'a poll that produces no toast still owes the bar a reading'
+		);
+		assert.deepEqual(
+			h.snapshots.map((s) => s.verdict),
+			['ok', 'ok', 'ok']
+		);
 	});
 
 	it('fires "idle" when nothing is playing, so the bar can go dark rather than stay stuck on a stale reading', () => {
@@ -287,18 +331,34 @@ describe('onSnapshot (pin 93c82bb36eb7: the output-health bar)', () => {
 
 describe('wiring (source guard)', () => {
 	it('armAudioContextWatchdog installs the liveness poll and exposes __mdtAudioOutput', () => {
-		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
-		assert.ok(src.includes('installOutputLiveness('), 'if the liveness poll is not installed at graph build then the detector is code nobody runs - broken');
-		assert.ok(src.includes('__mdtAudioOutput'), 'if the snapshot is not exposed then an agent cannot read output health - broken');
-		assert.ok(src.includes('isHidden: () =>'), 'if the master liveness is not told the page is hidden then a throttled tab false-recovers (bug #58) - broken');
+		const src = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)),
+			'utf8'
+		);
+		assert.ok(
+			src.includes('installOutputLiveness('),
+			'if the liveness poll is not installed at graph build then the detector is code nobody runs - broken'
+		);
+		assert.ok(
+			src.includes('__mdtAudioOutput'),
+			'if the snapshot is not exposed then an agent cannot read output health - broken'
+		);
+		assert.ok(
+			src.includes('isHidden: () =>'),
+			'if the master liveness is not told the page is hidden then a throttled tab false-recovers (bug #58) - broken'
+		);
 	});
 
 	it('disarmContextInstrumentation uninstalls the liveness poll', () => {
-		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+		const src = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)),
+			'utf8'
+		);
 		const disarmStart = src.indexOf('export function disarmContextInstrumentation(');
 		assert.ok(disarmStart !== -1, 'disarmContextInstrumentation not found in source');
 		const braceOpen = src.indexOf('{', disarmStart);
-		let depth = 0, i = braceOpen;
+		let depth = 0,
+			i = braceOpen;
 		for (; i < src.length; i++) {
 			if (src[i] === '{') depth++;
 			else if (src[i] === '}' && --depth === 0) break;
@@ -315,7 +375,10 @@ describe('wiring (source guard)', () => {
 	});
 
 	it('armAudioContextWatchdog wires liveness snapshots into the merged output-health store (pin 93c82bb36eb7)', () => {
-		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+		const src = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)),
+			'utf8'
+		);
 		// Loaded lazily to keep it out of the first-paint chunk; that it really
 		// installs is proven behaviorally in device-output-probe-arm.test.mjs.
 		assert.ok(

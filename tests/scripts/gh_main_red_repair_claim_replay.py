@@ -151,9 +151,7 @@ def install_main_red_repair_gh_replay(
     )
     posix_launcher = bin_dir / "gh"
     posix_launcher.write_text(launcher_text, encoding="utf-8")
-    posix_launcher.chmod(
-        posix_launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-    )
+    posix_launcher.chmod(posix_launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     win_launcher = bin_dir / "gh.cmd"
     win_launcher.write_text(
         f'@"{sys.executable}" "{module_path}" %*\r\n',
@@ -166,8 +164,7 @@ def install_main_red_repair_gh_replay(
     resolved = shutil.which("gh")
     if resolved != str(expected_launcher):
         raise AssertionError(
-            f"PATH resolves gh to {resolved!r}, not replay at {expected_launcher!r}; "
-            "refusing to reach live GitHub"
+            f"PATH resolves gh to {resolved!r}, not replay at {expected_launcher!r}; refusing to reach live GitHub"
         )
     return MainRedRepairGhReplay(log_path, state_path)
 

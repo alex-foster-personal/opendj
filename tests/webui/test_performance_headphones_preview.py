@@ -33,9 +33,7 @@ from tests.webui.test_performance_headphones import _app, _open_page
         ),
     ],
 )
-def test_preview_bodies_are_rejected_without_submitting(
-    body: dict[str, Any], detail: str
-) -> None:
+def test_preview_bodies_are_rejected_without_submitting(body: dict[str, Any], detail: str) -> None:
     """CUEOUT-15: a malformed preview never reaches the page.
 
     The point is the "without submitting" half: an order that the page would
@@ -44,13 +42,9 @@ def test_preview_bodies_are_rejected_without_submitting(
     """
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
             await _open_page(client)
-            response = await client.post(
-                "/api/v1/performance/headphones/preview", json=body
-            )
+            response = await client.post("/api/v1/performance/headphones/preview", json=body)
             assert response.status_code == 400
             assert detail in response.json()["detail"]
             nxt = await client.get("/api/v1/commands/next")
@@ -69,9 +63,7 @@ def test_preview_refused_by_the_page_is_a_400_carrying_the_reason() -> None:
     refusal = "preview: the cue path is silent - raise MIX (turn it toward CUE) or GAIN"
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
             await _open_page(client)
 
             async def claim_and_refuse() -> None:
@@ -112,9 +104,7 @@ def test_preview_bpm_reaches_the_page_for_the_tempo_match() -> None:
     """
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
             await _open_page(client)
             task = asyncio.create_task(
                 client.post(
@@ -127,8 +117,7 @@ def test_preview_bpm_reaches_the_page_for_the_tempo_match() -> None:
             command = nxt.json()
             assert command is not None
             assert command["payload"]["bpm"] == 128.5, (
-                "if the route drops bpm then no preview started by an agent can "
-                "ever tempo-match - broken"
+                "if the route drops bpm then no preview started by an agent can ever tempo-match - broken"
             )
             task.cancel()
 

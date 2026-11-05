@@ -44,10 +44,23 @@ import {
 	cueLatencyCaptureMs,
 	cueLatencySweep
 } from '$lib/player/cue-latency';
-import { CueAlignMeasurementUnstable, clippedFraction, type MeasuredRun } from '$lib/player/cue-align-unstable';
-import { CUE_ALIGN_MAX_LAG_MS, CUE_ALIGN_RUNS, deriveAlignment, intendedResidualMs } from '$lib/player/cue-align-policy';
+import {
+	CueAlignMeasurementUnstable,
+	clippedFraction,
+	type MeasuredRun
+} from '$lib/player/cue-align-unstable';
+import {
+	CUE_ALIGN_MAX_LAG_MS,
+	CUE_ALIGN_RUNS,
+	deriveAlignment,
+	intendedResidualMs
+} from '$lib/player/cue-align-policy';
 import type { CueCalibrationRecord } from '$lib/player/mixer-config';
-import type { CueAlignStep, CueCalibrationFailure, HeadphoneCalibrationState } from '$lib/rb/mixer-types';
+import type {
+	CueAlignStep,
+	CueCalibrationFailure,
+	HeadphoneCalibrationState
+} from '$lib/rb/mixer-types';
 
 /** Max-minus-min across the three runs of ONE bus, above which nothing is applied. */
 export const CUE_ALIGN_MAX_SPREAD_MS = 10;
@@ -81,11 +94,14 @@ export interface LevelAttempt {
  * not monotonic in practice: a bus can score worse at full level than at half,
  * when the extra drive buys distortion rather than signal.
  */
-export function chooseLevelRung(attempts: readonly LevelAttempt[]): { gain: number; lagMs: number } | null {
+export function chooseLevelRung(
+	attempts: readonly LevelAttempt[]
+): { gain: number; lagMs: number } | null {
 	const clearing = attempts.filter((attempt) => attempt.peak >= CUE_LATENCY_PEAK_MIN);
 	if (clearing.length === 0) return null;
 	const comfortable = clearing.find((attempt) => attempt.peak >= CUE_LATENCY_PEAK_TARGET);
-	const chosen = comfortable ?? clearing.reduce((best, next) => (next.peak > best.peak ? next : best));
+	const chosen =
+		comfortable ?? clearing.reduce((best, next) => (next.peak > best.peak ? next : best));
 	return { gain: chosen.gain, lagMs: chosen.lagMs };
 }
 
@@ -121,7 +137,12 @@ export interface CueAlignEffects {
 		purpose?: CueAlignChirpPurpose
 	): Promise<void>;
 	/** Open the capture and resolve only once it is really running. */
-	openCapture(mic: MicHandle, durationMs: number, sampleRate: number, signal: AbortSignal): Promise<OpenCapture>;
+	openCapture(
+		mic: MicHandle,
+		durationMs: number,
+		sampleRate: number,
+		signal: AbortSignal
+	): Promise<OpenCapture>;
 	/** The shared clock the capture and the chirp are both measured against. */
 	contextTimeSec(): number;
 	sleep(ms: number): Promise<void>;
@@ -274,7 +295,12 @@ export function createCueAlignController(
 			throw new RangeError(`calibration sampleRate must be positive, got ${sampleRate}`);
 		}
 		const reference = cueLatencySweep({ sampleRate });
-		const capture = await effects.openCapture(mic, cueLatencyCaptureMs(CUE_ALIGN_MAX_LAG_MS), sampleRate, signal);
+		const capture = await effects.openCapture(
+			mic,
+			cueLatencyCaptureMs(CUE_ALIGN_MAX_LAG_MS),
+			sampleRate,
+			signal
+		);
 		// An abort rejects the capture while the chirp is still awaited; the
 		// rejection is observed at `await capture.samples` below, never dangling.
 		capture.samples.catch(() => undefined);
@@ -302,11 +328,21 @@ export function createCueAlignController(
 	 * back the rung that worked plus the lag that rung measured, so the level
 	 * find is also run one rather than a throwaway.
 	 */
-	async function _findLevel(bus: CueAlignBus, mic: MicHandle): Promise<{ gain: number; lagMs: number }> {
+	async function _findLevel(
+		bus: CueAlignBus,
+		mic: MicHandle
+	): Promise<{ gain: number; lagMs: number }> {
 		const attempts: LevelAttempt[] = [];
 		let best = 0;
 		for (const gain of CUE_LATENCY_GAIN_STEPS) {
-			effects.onProbe?.({ bus, gain, peak: null, lagMs: null, best, threshold: CUE_LATENCY_PEAK_MIN });
+			effects.onProbe?.({
+				bus,
+				gain,
+				peak: null,
+				lagMs: null,
+				best,
+				threshold: CUE_LATENCY_PEAK_MIN
+			});
 			const { lagMs, peak } = await _probe(bus, mic, gain);
 			if (peak > best) best = peak;
 			attempts.push({ gain, peak, lagMs });
@@ -326,12 +362,30 @@ export function createCueAlignController(
 	 * the next rung: on the real modal the speakers read 0.52 in the ramp and
 	 * 0.34 one rung louder moments later.
 	 */
-	async function _measure(bus: CueAlignBus, mic: MicHandle, gain: number): Promise<{ run: MeasuredRun; gain: number }> {
+	async function _measure(
+		bus: CueAlignBus,
+		mic: MicHandle,
+		gain: number
+	): Promise<{ run: MeasuredRun; gain: number }> {
 		const first = await _probe(bus, mic, gain);
-		effects.onProbe?.({ bus, gain, peak: first.peak, lagMs: first.lagMs, best: first.peak, threshold: CUE_LATENCY_PEAK_MIN });
+		effects.onProbe?.({
+			bus,
+			gain,
+			peak: first.peak,
+			lagMs: first.lagMs,
+			best: first.peak,
+			threshold: CUE_LATENCY_PEAK_MIN
+		});
 		if (first.peak >= CUE_LATENCY_PEAK_MIN) return { run: first, gain };
 		const louder = CUE_LATENCY_GAIN_STEPS[CUE_LATENCY_GAIN_STEPS.length - 1];
-		effects.onProbe?.({ bus, gain: louder, peak: null, lagMs: null, best: first.peak, threshold: CUE_LATENCY_PEAK_MIN });
+		effects.onProbe?.({
+			bus,
+			gain: louder,
+			peak: null,
+			lagMs: null,
+			best: first.peak,
+			threshold: CUE_LATENCY_PEAK_MIN
+		});
 		const retry = await _probe(bus, mic, louder);
 		effects.onProbe?.({
 			bus,
@@ -356,7 +410,11 @@ export function createCueAlignController(
 	}
 
 	/** One back-to-back master/cue pair through the verify injection points. Expected residual 0 ms. */
-	async function _verifyResidual(mic: MicHandle, masterGain: number, cueGain: number): Promise<number> {
+	async function _verifyResidual(
+		mic: MicHandle,
+		masterGain: number,
+		cueGain: number
+	): Promise<number> {
 		const master = await _probe('master', mic, masterGain, 'verify');
 		effects.onProbe?.({
 			bus: 'master',
@@ -377,7 +435,10 @@ export function createCueAlignController(
 		});
 		// A lag read off a chirp the mic could not hear is noise, and scoring it
 		// could pass a wrong plan or steer the retry by a random amount.
-		for (const [bus, result] of [['speakers', master], ['headphones', cue]] as const) {
+		for (const [bus, result] of [
+			['speakers', master],
+			['headphones', cue]
+		] as const) {
 			if (result.peak < CUE_LATENCY_PEAK_MIN) {
 				throw new Error(
 					`verification could not hear the ${bus} (peak ${result.peak.toFixed(2)}, ` +
@@ -497,7 +558,8 @@ export function createCueAlignController(
 	}
 
 	async function run(opts: { interactive: boolean }): Promise<void> {
-		if (typeof opts.interactive !== 'boolean') throw new TypeError('run({ interactive }) must be boolean');
+		if (typeof opts.interactive !== 'boolean')
+			throw new TypeError('run({ interactive }) must be boolean');
 		if (running) throw new Error('cue alignment calibration is already running');
 		running = true;
 		abortController = new AbortController();
@@ -516,7 +578,9 @@ export function createCueAlignController(
 			try {
 				mic = await effects.getUserMedia();
 			} catch (error) {
-				throw new Error(`Microphone access failed: ${error instanceof Error ? error.message : String(error)}`);
+				throw new Error(
+					`Microphone access failed: ${error instanceof Error ? error.message : String(error)}`
+				);
 			}
 			_throwIfAborted();
 			paused = await effects.pauseDecks();
@@ -533,7 +597,9 @@ export function createCueAlignController(
 			} else {
 				calibration.error = error instanceof Error ? error.message : String(error);
 				if (calibration.diagnostics.failure === null) {
-					_recordFailure(calibration.step === 'mic_access' ? 'microphone_access' : 'route_or_operation');
+					_recordFailure(
+						calibration.step === 'mic_access' ? 'microphone_access' : 'route_or_operation'
+					);
 				}
 				_setStep('failed');
 			}

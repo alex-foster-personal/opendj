@@ -17,7 +17,6 @@ import logging
 import queue
 import threading
 from collections.abc import Callable, Sequence
-from typing import Any
 
 from .types import Event
 
@@ -104,30 +103,6 @@ class FakeEventBus:
 
     def subscribe(self, kind: str, callback: Callback) -> None:
         self._subs.setdefault(kind, []).append(callback)
-
-    def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
-        return None
-
-
-class _DryRunSilentBus:
-    """Drop-in replacement for :class:`EventBus` that discards publishes.
-
-    Used by ingest adapters during ``dry_run=True`` so that the outer
-    SAVEPOINT's ROLLBACK does not leave subscribers with phantom events
-    for SQL mutations that were never committed. It records the number of
-    events it swallowed for diagnostics/tests but never invokes any
-    subscriber (addresses Codex P05-F02 / INFRA-03).
-    """
-
-    def __init__(self) -> None:
-        self.suppressed: int = 0
-
-    def publish(self, _event: Any) -> None:
-        self.suppressed += 1
-
-    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
-        # Dry-run lifetime is a single call; no-op is safe.
-        return None
 
     def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
         return None

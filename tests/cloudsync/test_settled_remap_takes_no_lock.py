@@ -2,6 +2,7 @@
 
 [if] every loser's children already moved [then] prepare_spoke_identity writes nothing, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -30,16 +31,30 @@ _WRITES = ("BEGIN", "INSERT", "UPDATE", "DELETE", "REPLACE", "SAVEPOINT")
 
 def _seed_duplicate_pair(conn: sqlite3.Connection) -> None:
     _insert_identified_track(
-        conn, _LOSER, title="older copy", content_hash=_HASH_A,
-        updated_at=_T0, origin=_DEV_A, file_path="/Silver/a.mp3",
+        conn,
+        _LOSER,
+        title="older copy",
+        content_hash=_HASH_A,
+        updated_at=_T0,
+        origin=_DEV_A,
+        file_path="/Silver/a.mp3",
     )
     _insert_identified_track(
-        conn, _SURVIVOR, title="newer copy", content_hash=_HASH_A,
-        updated_at=_T1, origin=_DEV_A, file_path="/Silver/b.mp3",
+        conn,
+        _SURVIVOR,
+        title="newer copy",
+        content_hash=_HASH_A,
+        updated_at=_T1,
+        origin=_DEV_A,
+        file_path="/Silver/b.mp3",
     )
     _insert_location(
-        conn, location_id="loc-loser", stable_id=_LOSER,
-        file_path="/Silver/a.mp3", updated_at=_T0, origin=_DEV_A,
+        conn,
+        location_id="loc-loser",
+        stable_id=_LOSER,
+        file_path="/Silver/a.mp3",
+        updated_at=_T0,
+        origin=_DEV_A,
     )
     conn.commit()
 
@@ -62,9 +77,7 @@ def _writes_issued(conn: sqlite3.Connection) -> Iterator[list[str]]:
 
 def _location_owner(conn: sqlite3.Connection, location_id: str) -> str:
     return str(
-        conn.execute(
-            "SELECT stable_id FROM track_locations WHERE location_id = ?", (location_id,)
-        ).fetchone()[0]
+        conn.execute("SELECT stable_id FROM track_locations WHERE location_id = ?", (location_id,)).fetchone()[0]
     )
 
 
@@ -101,8 +114,12 @@ def test_a_child_added_to_a_settled_loser_is_still_moved(tmp_path: Path) -> None
         _seed_duplicate_pair(conn)
         assert prepare_spoke_identity(conn) == 1
         _insert_location(
-            conn, location_id="loc-late", stable_id=_LOSER,
-            file_path="/Silver/late.mp3", updated_at=_T1, origin=_DEV_A,
+            conn,
+            location_id="loc-late",
+            stable_id=_LOSER,
+            file_path="/Silver/late.mp3",
+            updated_at=_T1,
+            origin=_DEV_A,
         )
         conn.commit()
 

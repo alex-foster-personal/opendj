@@ -14,6 +14,7 @@ Acceptances:
 * if the Modal farm's in-container layout constant differs from the app
   layer's, the farm writes a third layout the rails cannot read -- broken.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,9 +38,7 @@ def test_r2_stems_constant_matches_the_app_layer_template():
 
 def test_stem_rail_key_derivation_matches_the_asset_tier():
     digest = _sha(b"the same rendered bytes")
-    assert r2_stems.content_addressed_key(digest) == r2_keys.asset_object_key(
-        digest
-    )
+    assert r2_stems.content_addressed_key(digest) == r2_keys.asset_object_key(digest)
 
 
 def test_the_farm_container_mirrors_the_same_layout():

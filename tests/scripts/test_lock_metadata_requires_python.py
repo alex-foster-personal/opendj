@@ -85,9 +85,7 @@ def _pair(tmp_path: Path, spelled: str, recorded: str) -> tuple[int, str]:
         "two-trailing-zeros-on-hole",
     ],
 )
-def test_the_same_bounding_range_keeps_the_lock(
-    tmp_path: Path, spelled: str, recorded: str
-) -> None:
+def test_the_same_bounding_range_keeps_the_lock(tmp_path: Path, spelled: str, recorded: str) -> None:
     """if the spelled requires-python admits the same lowest and highest bound as the
     lock's then 0, whatever `!=` holes, pre-release tags or spellings differ (uv 0.8.17
     exit 0 on each row, measured round 54)"""
@@ -132,9 +130,7 @@ def test_the_same_bounding_range_keeps_the_lock(
         "three-wide-star-hole-moves-lower",
     ],
 )
-def test_a_hole_or_bound_that_moves_the_range_is_stale(
-    tmp_path: Path, spelled: str, recorded: str
-) -> None:
+def test_a_hole_or_bound_that_moves_the_range_is_stale(tmp_path: Path, spelled: str, recorded: str) -> None:
     """CONTROLS: a `!=` at either edge moves a bound, and a moved bound is a change (uv
     0.8.17 exit 1 on each row, measured round 54)"""
     code, message = _pair(tmp_path, spelled, recorded)

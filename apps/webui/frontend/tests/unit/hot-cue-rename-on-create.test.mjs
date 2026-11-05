@@ -46,7 +46,7 @@ test('an empty-slot click enters focused rename mode before persistence begins',
 
 	assert.match(
 		saveFlow,
-		/await beginRename\(entry\.slot, deck\.position_ms, deck\.stable_id\);/,
+		/await beginRename\(entry\.slot, loop\?\.in_ms \?\? deck\.position_ms, deck\.stable_id\);/,
 		'an empty slot must focus its editor before a persistence round trip can absorb keystrokes'
 	);
 	assert.match(text, /import\s*\{\s*tick\s*\}\s*from\s*['"]svelte['"]/);
@@ -73,12 +73,12 @@ test('a new cue saves the entered name against its click-time position', () => {
 
 	assert.match(
 		commitFlow,
-		/await onSave\(entry\.slot, comment, newCueAtMs, true, stableId\)/,
+		/await onSave\(entry\.slot, comment, newCueAtMs, loopOutMs === null, stableId, loopOutMs\)/,
 		'a new cue must persist the complete draft at the position captured when its pad was clicked'
 	);
 	assert.match(
 		source('lib/rb/deck-hot-cue-actions.ts'),
-		/async function saveHotCueAt\(\s*slot: HotCueSlot,\s*comment\?: string,\s*fixedPositionMs\?: number,\s*quantizeFixedPosition = false,\s*expectedStableId\?: string\s*\): Promise<HotCueMutation>/,
+		/async function saveHotCueAt\(\s*slot: HotCueSlot,\s*comment\?: string,\s*fixedPositionMs\?: number,\s*quantizeFixedPosition = false,\s*expectedStableId\?: string,\s*outMs\?: number \| null\s*\): Promise<HotCueMutation>/,
 		'the deck hot-cue action adapter must accept a typed name and captured position'
 	);
 });
@@ -92,7 +92,7 @@ test('a named new cue refreshes Undo with its server reversal token', () => {
 
 	assert.match(
 		commitFlow,
-		/setUndo\(entry\.slot, await onSave\(entry\.slot, comment, newCueAtMs, true, stableId\)\);/,
+		/setUndo\(entry\.slot, await onSave\(entry\.slot, comment, newCueAtMs, loopOutMs === null, stableId, loopOutMs\)\);/,
 		'the visible Undo action must receive the reversal token from the named create'
 	);
 });
@@ -139,7 +139,7 @@ test('a failed rename preserves its open editor and draft for retry', () => {
 	const commitFlow = text.slice(commitStart, commitEnd);
 	assert.match(
 		commitFlow,
-		/setUndo\(entry\.slot, await onSave\(entry\.slot, comment, newCueAtMs, true, stableId\)\);\s*}\s*else if \(entry\.cue !== null\)[\s\S]*if \(renameSlot === entry\.slot\) \{\s*renameSlot = null;/,
+		/setUndo\(entry\.slot, await onSave\(entry\.slot, comment, newCueAtMs, loopOutMs === null, stableId, loopOutMs\)\);\s*}\s*else if \(entry\.cue !== null\)[\s\S]*if \(renameSlot === entry\.slot\) \{\s*renameSlot = null;/,
 		'the editor may close only after its persistence call succeeded'
 	);
 	assert.match(commitFlow, /const comment = renameDraft\.trim\(\) === '' \? undefined : renameDraft;/);
@@ -150,13 +150,13 @@ test('hot_cue_save carries an optional string comment through strict browser IPC
 	const ipc = source('lib/rb/performance-ipc.svelte.ts');
 	assert.match(
 		ipc,
-		/\{ type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment\?: string \| null \}/,
+		/\{ type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment\?: string \| null; out_ms\?: number \| null \}/,
 		'hot_cue_save must expose the optional comment to agent-native callers'
 	);
 	assert.match(ipc, /_optionalStringOrNull\('comment', record\.comment\)/);
 	assert.match(
 		ipc,
-		/saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment\s*\)/
+		/saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment, command\.out_ms \?\? null\s*\)/
 	);
 });
 

@@ -4,6 +4,7 @@
 - [if] a copy has zero or several source lines or rows [then] it is unmatched with a reason and counted, [else stop].
 - [if] a store song's path is not under the batch folder [then] it is ignored and counted, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -142,9 +143,7 @@ def test_source_equal_to_the_stored_path_resolves_without_the_root(
     assert result.report.matches[1].stable_id == "a" * 40
 
 
-def test_nfc_normalizes_both_sides(
-    tmp_path: Path, state_conn: sqlite3.Connection, add_track, make_mik_store
-) -> None:
+def test_nfc_normalizes_both_sides(tmp_path: Path, state_conn: sqlite3.Connection, add_track, make_mik_store) -> None:
     composed = unicodedata.normalize("NFC", "Zölbrin.mp3")
     decomposed = unicodedata.normalize("NFD", "Zölbrin.mp3")
     assert composed != decomposed
@@ -190,9 +189,7 @@ def test_a_deleted_row_is_not_a_candidate(
     assert result.by_detail() == {"no_library_row": 1}
 
 
-def test_a_missing_sources_file_is_an_explicit_error(
-    tmp_path: Path, state_conn: sqlite3.Connection
-) -> None:
+def test_a_missing_sources_file_is_an_explicit_error(tmp_path: Path, state_conn: sqlite3.Connection) -> None:
     folder = tmp_path / "empty-batch"
     folder.mkdir()
     with pytest.raises(loader.LoadError, match=r"\.sources\.txt"):
@@ -214,9 +211,7 @@ def test_load_cli_writes_a_fresh_batch_through_the_sources_map(
     state_conn.commit()
     write_verdicts({field: "passed" for field in loader.GATED_FIELDS})
     folder = _batch(tmp_path, [f"{ROOT}/Music/House/x.mp3"])
-    store, _songs_read = _songs(
-        make_mik_store, folder, ["x.mp3"], extra=[{"path": "/Users/old/tones/sine.wav"}]
-    )
+    store, _songs_read = _songs(make_mik_store, folder, ["x.mp3"], extra=[{"path": "/Users/old/tones/sine.wav"}])
     base = ["load", "--json", "--fields", "energy,energy_segments", "--data-dir", str(data_dir)]
     base += ["--store", str(store)]
     assert cli.main(base) == 0
@@ -249,6 +244,10 @@ def test_load_cli_needs_both_sources_flags(data_dir: Path, make_mik_store) -> No
 
 def test_source_lines_keep_spaces_that_are_part_of_a_file_name(tmp_path: Path) -> None:
     """if a source path whose name starts or ends with a space is trimmed (then it can never bind) then broken."""
-    lines = ["/Users/old/Music/ends-in-a-space.mp3 ", "/Users/old/Music/ends-in-a-tab.mp3\t", "/Users/old/Music/plain.mp3"]
+    lines = [
+        "/Users/old/Music/ends-in-a-space.mp3 ",
+        "/Users/old/Music/ends-in-a-tab.mp3\t",
+        "/Users/old/Music/plain.mp3",
+    ]
     (tmp_path / sources.SOURCES_FILE).write_text("\n".join(lines) + "\n\n   \n", encoding="utf-8")
     assert sources.read_source_lines(tmp_path) == lines  # blank and all-space lines are skipped

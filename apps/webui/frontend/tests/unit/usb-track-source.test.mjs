@@ -5,7 +5,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
- * Play from USB, lane D (specs/usb-play-from-stick.md 4b "Routing" and
+ * Play from USB, lane D ((private path) 4b "Routing" and
  * "Frontend guards"): one helper swaps a stick id onto /api/v1/usb/tracks,
  * and every write for a stick id is refused before any request.
  *
@@ -52,7 +52,11 @@ function stickAnlz(stable_id) {
 	return {
 		stable_id,
 		points: 1200,
-		waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: 0, low: [], mid: [], high: [] } },
+		waveform: {
+			kind: 'mono',
+			preview: { length: 0, low: [], mid: [], high: [] },
+			detail: { length: 0, low: [], mid: [], high: [] }
+		},
 		beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] },
 		beatgrid_source: 'rekordbox',
 		cues: [],
@@ -84,17 +88,29 @@ after(() => {
 
 test('[if] an id is a stick id [then] isUsbTrackId says so [else stick loads hit the library routes]', () => {
 	assert.equal(source.isUsbTrackId(STICK_ID), true);
-	assert.equal(source.isUsbTrackId('usb-anything'), true, 'the prefix is the discriminator; the backend validates the rest');
+	assert.equal(
+		source.isUsbTrackId('usb-anything'),
+		true,
+		'the prefix is the discriminator; the backend validates the rest'
+	);
 });
 
 test('[if] an id is a library sha1 id [then] isUsbTrackId rejects it [else library decks route to the stick]', () => {
 	for (const material of ['GBUM71029604', 'fp|240000|9400112', '/Users/dev/Music/a.mp3|1.5', '']) {
 		const id = libraryId(material);
-		assert.match(id, /^[0-9a-f]{40}$/, 'control: the library construction is 40 lowercase hex chars');
+		assert.match(
+			id,
+			/^[0-9a-f]{40}$/,
+			'control: the library construction is 40 lowercase hex chars'
+		);
 		assert.equal(source.isUsbTrackId(id), false, `library id ${id} read as a stick id`);
 	}
 	for (const notStick of ['', 'usb', 'USB-C745', 'xusb-1', ' usb-1', 'vol:C745']) {
-		assert.equal(source.isUsbTrackId(notStick), false, `${JSON.stringify(notStick)} read as a stick id`);
+		assert.equal(
+			source.isUsbTrackId(notStick),
+			false,
+			`${JSON.stringify(notStick)} read as a stick id`
+		);
 	}
 });
 
@@ -102,7 +118,11 @@ test('[if] trackApiPath builds a path [then] stick ids get the usb prefix and li
 	const lib = libraryId('GBUM71029604');
 	assert.equal(source.trackApiPath(STICK_ID, '/audio'), `/api/v1/usb/tracks/${STICK_ID}/audio`);
 	assert.equal(source.trackApiPath(lib, '/audio'), `/api/v1/tracks/${lib}/audio`);
-	assert.equal(source.trackApiPath(STICK_ID), `/api/v1/usb/tracks/${STICK_ID}`, 'suffix defaults to empty');
+	assert.equal(
+		source.trackApiPath(STICK_ID),
+		`/api/v1/usb/tracks/${STICK_ID}`,
+		'suffix defaults to empty'
+	);
 	assert.equal(
 		source.trackApiPath(STICK_ID, '/anlz?points=1200&gen=3'),
 		`/api/v1/usb/tracks/${STICK_ID}/anlz?points=1200&gen=3`,
@@ -111,7 +131,10 @@ test('[if] trackApiPath builds a path [then] stick ids get the usb prefix and li
 });
 
 test('[if] an id carries URL syntax [then] trackApiPath encodes it [else it addresses another route]', () => {
-	assert.equal(source.trackApiPath('usb-a/../b?x', '/audio'), '/api/v1/usb/tracks/usb-a%2F..%2Fb%3Fx/audio');
+	assert.equal(
+		source.trackApiPath('usb-a/../b?x', '/audio'),
+		'/api/v1/usb/tracks/usb-a%2F..%2Fb%3Fx/audio'
+	);
 	assert.equal(source.trackApiPath('track / one'), '/api/v1/tracks/track%20%2F%20one');
 });
 
@@ -131,8 +154,14 @@ test('UsbTrackRefusal is a typed RbApiError with no HTTP status', () => {
 });
 
 test('[if] refuseStickWrite / refuseStickRead see a stick id [then] they throw their code, and a library id passes through', () => {
-	assert.throws(() => source.refuseStickWrite(STICK_ID, 'track edit'), (error) => error.code === 'USB_READ_ONLY');
-	assert.throws(() => source.refuseStickRead(STICK_ID, 'reveal'), (error) => error.code === 'USB_NOT_SUPPORTED');
+	assert.throws(
+		() => source.refuseStickWrite(STICK_ID, 'track edit'),
+		(error) => error.code === 'USB_READ_ONLY'
+	);
+	assert.throws(
+		() => source.refuseStickRead(STICK_ID, 'reveal'),
+		(error) => error.code === 'USB_NOT_SUPPORTED'
+	);
 	assert.equal(source.refuseStickWrite(libraryId('w'), 'track edit'), undefined);
 	assert.equal(source.refuseStickRead(libraryId('r'), 'reveal'), undefined);
 });
@@ -143,9 +172,16 @@ test('[if] refuseStickWrite / refuseStickRead see a stick id [then] they throw t
 
 test('[if] a stick id is loaded [then] audio and artwork URLs use the usb routes', () => {
 	assert.equal(rb.audioUrl(STICK_ID), `${API_BASE}/api/v1/usb/tracks/${STICK_ID}/audio`);
-	assert.equal(rb.artworkUrl(STICK_ID, 'm'), `${API_BASE}/api/v1/usb/tracks/${STICK_ID}/artwork?size=m`);
+	assert.equal(
+		rb.artworkUrl(STICK_ID, 'm'),
+		`${API_BASE}/api/v1/usb/tracks/${STICK_ID}/artwork?size=m`
+	);
 	const lib = libraryId('x');
-	assert.equal(rb.audioUrl(lib), `${API_BASE}/api/v1/tracks/${lib}/audio`, 'control: library ids unchanged');
+	assert.equal(
+		rb.audioUrl(lib),
+		`${API_BASE}/api/v1/tracks/${lib}/audio`,
+		'control: library ids unchanged'
+	);
 	assert.equal(rb.artworkUrl(lib), `${API_BASE}/api/v1/tracks/${lib}/artwork?size=s`);
 });
 
@@ -190,9 +226,13 @@ test('[if] a stick deck edits a hot cue before its slots were read [then] it fai
 
 test('[if] a library deck edits a hot cue [then] the write still reaches the library route (control)', async () => {
 	const lib = libraryId('z');
-	globalThis.fetch = recordingFetch(() => json({ cue: null, revision: 'r2', reversal: { reversal_id: 't' } }));
+	globalThis.fetch = recordingFetch(() =>
+		json({ cue: null, revision: 'r2', reversal: { reversal_id: 't' } })
+	);
 	await rb.clearHotCue(lib, 'B', 'rev');
-	assert.deepEqual(requests, [{ url: `${API_BASE}/api/v1/tracks/${lib}/hot-cues/B`, method: 'DELETE' }]);
+	assert.deepEqual(requests, [
+		{ url: `${API_BASE}/api/v1/tracks/${lib}/hot-cues/B`, method: 'DELETE' }
+	]);
 });
 
 test('[if] a stick id asks for library-only reads [then] they settle without a request', async () => {
@@ -202,7 +242,10 @@ test('[if] a stick id asks for library-only reads [then] they settle without a r
 		error: 'stick tracks have no stem bundle'
 	});
 	await assert.rejects(rb.fetchRbMeta(STICK_ID), (error) => error.code === 'USB_NOT_SUPPORTED');
-	assert.throws(() => rb.stemAudioUrl(STICK_ID, 'vocals'), (error) => error.code === 'USB_NOT_SUPPORTED');
+	assert.throws(
+		() => rb.stemAudioUrl(STICK_ID, 'vocals'),
+		(error) => error.code === 'USB_NOT_SUPPORTED'
+	);
 	assert.equal(requests.length, 0);
 });
 
@@ -245,7 +288,12 @@ test('[if] a stick deck loads [then] getTrack reads the usb TrackOut and remembe
 
 test('[if] the stick is unplugged [then] getTrack throws ApiError carrying USB_STICK_NOT_MOUNTED', async () => {
 	globalThis.fetch = recordingFetch(() =>
-		json({ detail: { code: 'USB_STICK_NOT_MOUNTED', message: 'stick not mounted', volume_uuid: 'C745' } }, 404)
+		json(
+			{
+				detail: { code: 'USB_STICK_NOT_MOUNTED', message: 'stick not mounted', volume_uuid: 'C745' }
+			},
+			404
+		)
 	);
 	await assert.rejects(api.getTrack(STICK_ID), (error) => {
 		assert.equal(error.name, 'ApiError');
@@ -265,8 +313,14 @@ test('[if] a library id is read [then] getTrack keeps the typed library route (c
 });
 
 test('[if] a stick track is edited [then] patchTrack and the lyric override refuse USB_READ_ONLY with no request', async () => {
-	await assert.rejects(api.patchTrack(STICK_ID, 'etag', { rating: 5 }), (error) => error.code === 'USB_READ_ONLY');
-	await assert.rejects(api.putLyricOverride(STICK_ID, 'vocal'), (error) => error.code === 'USB_READ_ONLY');
+	await assert.rejects(
+		api.patchTrack(STICK_ID, 'etag', { rating: 5 }),
+		(error) => error.code === 'USB_READ_ONLY'
+	);
+	await assert.rejects(
+		api.putLyricOverride(STICK_ID, 'vocal'),
+		(error) => error.code === 'USB_READ_ONLY'
+	);
 	assert.equal(await api.getTrackLyricsWords(STICK_ID), null);
 	assert.equal(requests.length, 0);
 });

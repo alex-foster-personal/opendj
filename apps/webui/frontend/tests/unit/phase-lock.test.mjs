@@ -130,8 +130,14 @@ test('a trim never goes below the 0.01 floor, even with a pitch range of 100% or
 });
 
 test('the feed-forward base ignores a non-finite or non-positive ask and keeps the base', () => {
-	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Infinity })), BASE);
-	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Number.NaN })), BASE);
+	assert.equal(
+		pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Infinity })),
+		BASE
+	);
+	assert.equal(
+		pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Number.NaN })),
+		BASE
+	);
 	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: 0 })), BASE);
 	// Control: a real ask past the hysteresis does move it.
 	assert.notEqual(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: 1.02 })), BASE);
@@ -144,11 +150,20 @@ test('a lost lock asks for a re-seek, and the base meanwhile', () => {
 	assert.equal(d.action, 'reseek');
 	assert.equal(d.tempo, BASE);
 	// The ms line: 16 ms re-joins, 14 ms is still trimmed (both directions).
-	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) - 0.016 * BASE, confirming)).action, 'reseek');
-	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) + 0.014 * BASE, confirming)).action, 'trim');
+	assert.equal(
+		pl.phaseLockDecision(input(60, inPhase(60) - 0.016 * BASE, confirming)).action,
+		'reseek'
+	);
+	assert.equal(
+		pl.phaseLockDecision(input(60, inPhase(60) + 0.014 * BASE, confirming)).action,
+		'trim'
+	);
 	// Wrapped to the NEAREST master beat, never most of a beat of error.
-	const wrap = pl.phaseErrorMs(input(60, inPhase(60) + 0.9 * MASTER_BEAT_MS * BASE / 1000));
-	assert.ok(Math.abs(wrap + 0.1 * MASTER_BEAT_MS) < 0.01, `0.9 beat ahead is 0.1 behind, got ${wrap}`);
+	const wrap = pl.phaseErrorMs(input(60, inPhase(60) + (0.9 * MASTER_BEAT_MS * BASE) / 1000));
+	assert.ok(
+		Math.abs(wrap + 0.1 * MASTER_BEAT_MS) < 0.01,
+		`0.9 beat ahead is 0.1 behind, got ${wrap}`
+	);
 });
 
 test('off the grid there is nothing to measure, and the base plays', () => {
@@ -156,8 +171,14 @@ test('off the grid there is nothing to measure, and the base plays', () => {
 	assert.equal(d.action, 'unmeasured');
 	assert.equal(d.tempo, BASE);
 	assert.throws(() => pl.phaseLockDecision(input(60, 30, { followerBaseTempo: 0 })), /base tempo/);
-	assert.throws(() => pl.phaseLockDecision(input(60, 30, { sinceJoinSec: undefined })), /since the join/);
-	assert.throws(() => pl.phaseLockDecision(input(60, 30, { overLineTicks: 1.5 })), /over-line ticks/);
+	assert.throws(
+		() => pl.phaseLockDecision(input(60, 30, { sinceJoinSec: undefined })),
+		/since the join/
+	);
+	assert.throws(
+		() => pl.phaseLockDecision(input(60, 30, { overLineTicks: 1.5 })),
+		/over-line ticks/
+	);
 });
 
 test('phase is read through each deck own grid, so a variable grid measures true', () => {
@@ -183,7 +204,9 @@ test('phase is read through each deck own grid, so a variable grid measures true
 		const fSec = variable[i].t + (m - i) * (variable[i + 1].t - variable[i].t);
 		const err = pl.phaseErrorMs(input(mSec, fSec, { followerBeats: variable }));
 		const curveMs = 12 * 0.5 * Math.pow(PER_BEAT, i % 50) * (1 - PER_BEAT) * 1000;
-		console.log(`# variable grid at beat ${i}: reads ${err.toFixed(3)} ms, straight-line bound ${curveMs.toFixed(3)} ms`);
+		console.log(
+			`# variable grid at beat ${i}: reads ${err.toFixed(3)} ms, straight-line bound ${curveMs.toFixed(3)} ms`
+		);
 		assert.ok(Math.abs(err) < curveMs * 1.2 + 0.05, `variable grid error at ${mSec}: ${err}`);
 		// Control: half a beat off on the same grid is seen as half a beat.
 		const half = variable[i].t + (m - i + 0.5) * (variable[i + 1].t - variable[i].t);
@@ -240,7 +263,10 @@ function simulate({ loop, rateError = 0.0005, seconds = 300 }) {
 		finalErr = trueErr;
 		if (!loop) continue;
 		const d = pl.phaseLockDecision(
-			input(mSec, fSec + (jitterMs() / 1000) * BASE, { trimming: commanded !== BASE, overLineTicks })
+			input(mSec, fSec + (jitterMs() / 1000) * BASE, {
+				trimming: commanded !== BASE,
+				overLineTicks
+			})
 		);
 		overLineTicks = d.overLineTicks;
 		if (d.action === 'reseek') reseeks += 1;

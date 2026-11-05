@@ -13,7 +13,10 @@
 	// layout (raiseSetupOnFirstRun), and a second copy would be a second
 	// decision about the same thing.
 	import { onMount, type Component } from 'svelte';
-	import { enterLibraryWorkspace, leaveLibraryWorkspace } from '$lib/library/library-workspace.svelte';
+	import {
+		enterLibraryWorkspace,
+		leaveLibraryWorkspace
+	} from '$lib/library/library-workspace.svelte';
 
 	// Set before the browser's first render so its deck guards hold from the
 	// first frame, not from after mount.
@@ -62,7 +65,9 @@
 		margin: 0;
 		background: #0a0c0f;
 		color: #8a94a3;
-		font: 12px system-ui, sans-serif;
+		font:
+			12px system-ui,
+			sans-serif;
 	}
 	.desk-error {
 		color: #ff6b6b;

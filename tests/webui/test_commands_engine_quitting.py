@@ -15,6 +15,7 @@ Regression lines:
   - if an open broker stops handing out orders then AGENT-19 is gone (the
     control) -> broken
 """
+
 from __future__ import annotations
 
 import asyncio

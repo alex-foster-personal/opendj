@@ -126,9 +126,9 @@ def test_corrupt_pco2_keeps_the_grid_falls_back_to_pcob_and_is_recorded(tmp_path
     assert len(unreadable) == 1 and unreadable[0].startswith("ANLZ0000.EXT:PCO2: ValueError"), (
         f"if the PCO2 failure is not recorded as file:fourcc: error then it is silent: {unreadable}"
     )
-    assert [(c["slot"], c["position_ms"], c["color"]) for c in result.hot_cues] == [
-        (0, 1500, None)
-    ], "if the hot list does not fall back to .DAT PCOB when PCO2 is unreadable then cues are lost"
+    assert [(c["slot"], c["position_ms"], c["color"]) for c in result.hot_cues] == [(0, 1500, None)], (
+        "if the hot list does not fall back to .DAT PCOB when PCO2 is unreadable then cues are lost"
+    )
 
 
 def test_pco2_is_preferred_over_pcob(tmp_path: Path) -> None:
@@ -196,9 +196,7 @@ def test_mono_detail_prefers_pwv5_and_an_unreadable_pwv5_falls_to_pwv3(tmp_path:
         "if the mono detail is not the PWV5 height lane then the fallback order is broken"
     )
     fell_back = _read(tmp_path, fallback, points=1000).payload
-    assert fell_back["waveform"]["detail"]["length"] == 300, (
-        "PWV3 serves the detail when PWV5 fails"
-    )
+    assert fell_back["waveform"]["detail"]["length"] == 300, "PWV3 serves the detail when PWV5 fails"
     assert fell_back["unreadable_anlz"][0].startswith("ANLZ0000.EXT:PWV5: ValueError")
 
 
@@ -214,8 +212,7 @@ def test_a_pvdi_tag_is_listed_not_silently_reported_as_no_analysis(tmp_path: Pat
 
     assert payload["vocals"] == {"status": "not_analyzed"}
     assert payload["unreadable_anlz"] == [
-        "ANLZ0000.2EX:PVDI: vocal regions are not decoded for stick tracks; "
-        "vocals report not_analyzed"
+        "ANLZ0000.2EX:PVDI: vocal regions are not decoded for stick tracks; vocals report not_analyzed"
     ], "if an undecoded PVDI is not listed then not_analyzed hides real vocal data"
 
 
@@ -231,9 +228,7 @@ def test_a_track_with_no_readable_tag_raises_analysis_not_found(tmp_path: Path) 
 
 def test_paths_escaping_usbanlz_are_refused(tmp_path: Path) -> None:
     volume = tmp_path / "STICK"
-    outside = write_track(
-        volume, "PIONEER/Elsewhere/ANLZ0000.DAT", dat=pmai(pqtz(grid(0, 120.0, 4)))
-    )
+    outside = write_track(volume, "PIONEER/Elsewhere/ANLZ0000.DAT", dat=pmai(pqtz(grid(0, 120.0, 4))))
     for analyze_path in (
         outside,
         "/PIONEER/USBANLZ/../Elsewhere/ANLZ0000.DAT",
@@ -244,9 +239,7 @@ def test_paths_escaping_usbanlz_are_refused(tmp_path: Path) -> None:
             _read(volume, analyze_path)
         assert excinfo.value.code == "USB_PATH_OUTSIDE_VOLUME", analyze_path
 
-    linked = write_track(
-        volume, "PIONEER/USBANLZ/P001/00000012/ANLZ0000.DAT", dat=pmai(pqtz(grid(0, 120.0, 4)))
-    )
+    linked = write_track(volume, "PIONEER/USBANLZ/P001/00000012/ANLZ0000.DAT", dat=pmai(pqtz(grid(0, 120.0, 4))))
     (volume / linked.lstrip("/")).with_suffix(".EXT").symlink_to(volume / outside.lstrip("/"))
     with pytest.raises(StickAnlzPathRefused):
         _read(volume, linked)

@@ -159,7 +159,10 @@ function requireProductionBuild(): void {
 // ----- the fixture -----------------------------------------------------------
 
 /** Boot a brand-new user's engine. Throws, with the engine log, if it cannot. */
-export async function startOnboardingEngine(name: string): Promise<OnboardingEngine> {
+export async function startOnboardingEngine(
+	name: string,
+	options?: { env?: Record<string, string> },
+): Promise<OnboardingEngine> {
 	requireProductionBuild();
 	const root = mkdtempSync(join(tmpdir(), `odj-onboarding-${name}-`));
 	const dataDir = join(root, 'data');
@@ -189,6 +192,7 @@ export async function startOnboardingEngine(name: string): Promise<OnboardingEng
 			detached: true,
 			env: {
 				...process.env,
+				...(options?.env ?? {}),
 				HOME: home,
 				MDT_DATA_DIR: dataDir,
 				MDT_LIBRARY_MODE: 'local',

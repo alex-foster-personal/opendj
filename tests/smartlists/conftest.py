@@ -2,6 +2,7 @@
 
 Self-contained Phase 5 DDL copy so tests don't depend on Phase 5 conftest.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,8 +69,7 @@ def state_conn(tmp_path: Path):
 def _insert_track(conn, stable_id, *, title="untitled", created_at=None):
     ts = created_at or _now_iso()
     conn.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, "
-        "updated_at) VALUES (?, 'isrc', ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, 'isrc', ?, ?, ?)",
         (stable_id, title, ts, ts),
     )
 
@@ -89,8 +89,7 @@ def fixture_library(state_conn):
             self.conn = conn
 
         def add_track(self, stable_id, *, title="t", created_at=None):
-            _insert_track(self.conn, stable_id, title=title,
-                          created_at=created_at)
+            _insert_track(self.conn, stable_id, title=title, created_at=created_at)
 
         def add_field(self, stable_id, field, value, *, source="rekordbox"):
             _insert_field(self.conn, stable_id, field, value, source=source)

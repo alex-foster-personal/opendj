@@ -176,6 +176,8 @@ export async function patchTrack(
 		tags_add?: string[];
 		tags_remove?: string[];
 		notes?: string;
+		/** LIBUX-56: the user's comment; an empty string clears what the library shows. */
+		comments?: string;
 		tempo_pref?: TempoPrefPatch | null;
 	}
 ): Promise<{ track: Track; etag: string }> {

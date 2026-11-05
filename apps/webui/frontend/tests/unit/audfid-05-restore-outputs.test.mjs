@@ -3,6 +3,8 @@
 // [if] one saved device is missing [then] the app starts in practice mode with a message naming it ⛔️
 // [if] the device list is withheld [then] nothing is restored and no input is opened to read it ⛔️
 // [if] the restore runs [then] it opens no input, and it runs once per session ⛔️
+// requirement: AUDIO-DEVICE-07
+// [if] the Mac app launches with a saved MAIN and CUE [then] the plan never moves MAIN (moveMain false), only the CUE is restored ⛔️
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
@@ -21,26 +23,25 @@ const CUE = { id: 'native:sony', label: 'af-sony-fun' };
 const OUTPUTS = [MAIN, CUE, { id: 'native:spk', label: 'MacBook Pro Speakers' }];
 
 test('if both saved devices are listed and the plan is not restore then a restart drops the cue to practice', () => {
-	assert.deepEqual(hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: OUTPUTS, listed: true }), {
-		kind: 'restore',
-		master: MAIN,
-		cue: CUE
-	});
+	assert.deepEqual(
+		hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: OUTPUTS, listed: true, mainIsSystemOutput: false }),
+		{ kind: 'restore', master: MAIN, cue: CUE, moveMain: true }
+	);
 	assert.equal(hp.launchRestoredText('HYPERBOOM', 'af-sony-fun'), 'Restored: MAIN HYPERBOOM, CUE af-sony-fun');
 });
 
 test('if a missing saved device is not named then the operator cannot tell why the cue is off', () => {
-	const plan = hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: [MAIN], listed: true });
+	const plan = hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: [MAIN], listed: true, mainIsSystemOutput: false });
 	assert.deepEqual(plan, { kind: 'practice', missing: [CUE] });
 	assert.equal(hp.launchMissingText(plan.missing), 'Started in practice mode: saved device af-sony-fun is not connected.');
-	const both = hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: [], listed: true });
+	const both = hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: [], listed: true, mainIsSystemOutput: false });
 	assert.match(hp.launchMissingText(both.missing), /devices HYPERBOOM and af-sony-fun are not connected/);
 });
 
 test('if a withheld listing or a half-saved pair restores anything then launch guesses routes', () => {
-	assert.equal(hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: OUTPUTS, listed: false }).kind, 'skip');
-	assert.equal(hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: null }, outputs: OUTPUTS, listed: true }).kind, 'skip');
-	assert.equal(hp.launchOutputRestorePlan({ saved: { master: null, cue: null }, outputs: OUTPUTS, listed: true }).kind, 'skip');
+	assert.equal(hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: OUTPUTS, listed: false, mainIsSystemOutput: false }).kind, 'skip');
+	assert.equal(hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: null }, outputs: OUTPUTS, listed: true, mainIsSystemOutput: false }).kind, 'skip');
+	assert.equal(hp.launchOutputRestorePlan({ saved: { master: null, cue: null }, outputs: OUTPUTS, listed: true, mainIsSystemOutput: false }).kind, 'skip');
 });
 
 test('if the launch restore opens an input or runs twice then IOPIN-14 is broken or a remount re-routes the set', () => {
@@ -80,4 +81,12 @@ test('if agents cannot read the launch restore then the pill has no agent parity
 	assert.match(server, /launch_restore: dict\[str, Any\] \| None = None/);
 	const types = readFileSync(new URL('../../src/lib/rb/mixer-types.ts', import.meta.url), 'utf8');
 	assert.match(types, /status: 'restored' \| 'practice' \| 'skipped' \| 'failed' \| 'undone';/);
+});
+
+test('AUDIO-DEVICE-07: if the Mac app launch restore moves MAIN then the macOS output leaves the operator', () => {
+	const plan = hp.launchOutputRestorePlan({ saved: { master: MAIN, cue: CUE }, outputs: OUTPUTS, listed: true, mainIsSystemOutput: true });
+	assert.deepEqual(plan, { kind: 'restore', master: MAIN, cue: CUE, moveMain: false });
+	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
+	assert.match(source, /if \(plan\.moveMain\) await selectMasterOutput\(plan\.master\.id, monitorSource\)/);
+	assert.match(source, /mainIsSystemOutput: mainFollowsSystemOutput\(\)/);
 });

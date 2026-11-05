@@ -34,6 +34,11 @@ def deck_value(key: str, raw: str) -> int:
     return parsed
 
 
+def deck_or_master_value(key: str, raw: str) -> int | str:
+    """KEYSYNC-01: a deck number 1..4, or ``master``."""
+    return "master" if raw == "master" else deck_value(key, raw)
+
+
 def int_value(key: str, raw: str) -> int:
     try:
         return int(raw)
@@ -282,6 +287,22 @@ def rescue_decks_value(key: str, raw: str) -> list[dict[str, Any]]:
     if not pairs:
         raise ValueError(f"{key} needs at least one deck:position_ms pair")
     return pairs
+
+
+RESET_PART_VALUES: tuple[str, ...] = ("level", "stems", "eq", "trim", "filter")
+
+
+def reset_parts_value(key: str, raw: str) -> list[str]:
+    """``<part>[,<part>...]`` for reset_deck_now (DECKGAP-7691h): distinct reset items."""
+    parts = [chunk.strip() for chunk in raw.split(",") if chunk.strip() != ""]
+    if not parts:
+        raise ValueError(f"{key} needs at least one of {'|'.join(RESET_PART_VALUES)}")
+    for part in parts:
+        if part not in RESET_PART_VALUES:
+            raise ValueError(f"{key} item must be one of {'|'.join(RESET_PART_VALUES)}, got {part!r}")
+    if len(set(parts)) != len(parts):
+        raise ValueError(f"{key} names an item twice: {raw!r}")
+    return parts
 
 
 @dataclass(frozen=True)

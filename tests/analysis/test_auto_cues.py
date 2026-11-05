@@ -1,4 +1,5 @@
 """Auto-cue proposer tests (META-04)."""
+
 from __future__ import annotations
 
 import json
@@ -27,8 +28,11 @@ def _rec_for_cues(
         analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=duration_s,
         sample_rate=44100,
-        bpm=120.0, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="1m", key_confidence=0.9,
+        bpm=120.0,
+        bpm_confidence=0.9,
+        key_camelot="8A",
+        key_openkey="1m",
+        key_confidence=0.9,
         energy=6,
         onsets_s=onsets_s or [],
         downbeats_s=downbeats_s or [],
@@ -43,7 +47,8 @@ def test_max_cues_cap_respected() -> None:
     onsets = [i * 15.0 for i in range(16)]
     rms = [0.5] * 200
     rec = _rec_for_cues(
-        onsets_s=onsets, rms=rms,
+        onsets_s=onsets,
+        rms=rms,
     )
     tp = ac.propose_cues(rec)
     assert len(tp.cues) <= 8
@@ -127,9 +132,7 @@ def test_run_writes_json_and_events(tmp_path: Path) -> None:
     assert {d["stable_id"] for d in doc} == {"t1", "t2"}
 
     with sqlite3.connect(str(db)) as conn:
-        rows = conn.execute(
-            "SELECT event_type, stable_id FROM analysis_events"
-        ).fetchall()
+        rows = conn.execute("SELECT event_type, stable_id FROM analysis_events").fetchall()
     sids = {sid for et, sid in rows if et == "cue.proposal"}
     assert sids == {"t1", "t2"}
 

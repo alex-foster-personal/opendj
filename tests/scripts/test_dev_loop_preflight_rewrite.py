@@ -23,9 +23,7 @@ from scripts import dev_loop_preflight
 def _git(cwd: Path, *args: str) -> str:
     stamp = "2026-09-03T10:00:00Z"
     env = {**os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
-    run = subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env
-    )
+    run = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env)
     return run.stdout.strip()
 
 
@@ -47,7 +45,7 @@ def rewritten_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _git(repo, "config", "user.name", "t")
     old_base = _commit(repo, "apps/a.py", "base")
     _git(repo, "checkout", "-q", "-b", "ship-lane")
-    ship_tooling = _commit(repo, ".agents/skills/ship-dmg/x.md", "ship tooling")
+    ship_tooling = _commit(repo, "(private path)", "ship tooling")
     _git(repo, "checkout", "-q", "main")
     ship_runtime = _commit(repo, "apps/hotfix.py", "ship runtime")  # a second 'shipped' candidate
     _git(repo, "checkout", "-q", "--orphan", "rewritten")
@@ -89,8 +87,7 @@ def test_runtime_tail_is_refused(rewritten_repo, capsys):
     stamp(ship_runtime)
     argv = ["--app", str(app), "--no-fetch", "--commit-map", str(cmap)]
     assert dev_loop_preflight.main(argv) == 2, (
-        "if the shipped app carries apps/** the loop lacks and the preflight passes "
-        "then Chrome is behind - broken"
+        "if the shipped app carries apps/** the loop lacks and the preflight passes then Chrome is behind - broken"
     )
     assert "apps/hotfix.py" in capsys.readouterr().out
 
@@ -108,7 +105,7 @@ def shared_root_rewrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _commit(repo, "apps/root.py", "root")
     _git(repo, "checkout", "-q", "-b", "stale-pre-rewrite")
     old_base = _commit(repo, "apps/a.py", "base")
-    ship_tooling = _commit(repo, ".agents/skills/ship-dmg/x.md", "ship tooling")
+    ship_tooling = _commit(repo, "(private path)", "ship tooling")
     _git(repo, "checkout", "-q", "main")
     new_base = _commit(repo, "apps/a.py", "base rewritten")
     _commit(repo, "apps/fix.py", "fix on new main")

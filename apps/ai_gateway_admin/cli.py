@@ -81,7 +81,8 @@ def _parser() -> argparse.ArgumentParser:
     mint = sub.add_parser("mint", help="mint an install token (printed once)")
     mint.add_argument("--plan", help="plan name from the Worker's PLANS (Worker default: free)")
     mint.add_argument("--label", help="free-text note stored with the install")
-    sub.add_parser("revoke", help="revoke an install's token").add_argument("install_id")
+    revoke = sub.add_parser("revoke", help="revoke an install's token")
+    revoke.add_argument("install_id")
     set_plan = sub.add_parser("set-plan", help="move an install to another plan")
     set_plan.add_argument("install_id")
     set_plan.add_argument("plan")
@@ -91,6 +92,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_command(client: AdminClient, args: argparse.Namespace) -> dict[str, Any]:
+    match args.command:
+        case "mint":
+            return client.mint(args.plan, args.label)
+        case "revoke":
+            return client.revoke(args.install_id)
+        case "set-plan":
+            return client.set_plan(args.install_id, args.plan)
+        case "usage":
+            return client.usage(args.install_id, args.days)
+        case _:
+            raise AssertionError(f"unknown command {args.command!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -98,14 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     except AdminUnconfigured as exc:
         print(exc, file=sys.stderr)
         return EXIT_UNCONFIGURED
-    actions = {
-        "mint": lambda: client.mint(args.plan, args.label),
-        "revoke": lambda: client.revoke(args.install_id),
-        "set-plan": lambda: client.set_plan(args.install_id, args.plan),
-        "usage": lambda: client.usage(args.install_id, args.days),
-    }
     try:
-        result = actions[args.command]()
+        result = _run_command(client, args)
     except GatewayRefused as exc:
         print(json.dumps({"status": exc.status, "detail": exc.detail}), file=sys.stderr)
         return EXIT_REFUSED

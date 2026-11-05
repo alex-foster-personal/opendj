@@ -17,7 +17,9 @@ const FIXTURE_STABLE_ID = HAS_MANIFEST ? primaryFixtureStableId(MANIFEST_PATH) :
 async function _selectLibraryMode(page: import('@playwright/test').Page): Promise<void> {
 	const picker = page.locator('details.mode-picker');
 	await picker.locator('summary[aria-label="Choose app mode"]').click();
-	const libraryCard = picker.locator('a.mode-card[data-testid="mode-card"]').filter({ hasText: 'Library' });
+	const libraryCard = picker
+		.locator('a.mode-card[data-testid="mode-card"]')
+		.filter({ hasText: 'Library' });
 	await libraryCard.click();
 	await page.waitForURL((url) => url.pathname === '/');
 }
@@ -34,7 +36,7 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	// raw command line, and nothing in apps/stems currently stamps stem
 	// workers with an opendj-* identity (set_process_identity), so every stem
 	// worker's `name` reads 'unnamed' -- a marker-string search can never
-	// match anything the endpoint actually sends (.planning/debt/3679.md,
+	// match anything the endpoint actually sends ((private path),
 	// "Stem-worker markers do not match any field the telemetry endpoint
 	// exposes"). A live leaked worker is still a live process-family member
 	// though, so comparing the LIVE member COUNT before deck loads to the count
@@ -121,10 +123,7 @@ async function _pollTelemetryUntilMemberCount(
 		const response = await request.get(`${apiBase}/api/v1/performance/telemetry/processes`);
 		expect(response.ok()).toBeTruthy();
 		lastBody = (await response.json()) as Record<string, unknown>;
-		if (
-			lastBody.available === true &&
-			countLiveFamilyMembers(lastBody) <= maximumMembers
-		) {
+		if (lastBody.available === true && countLiveFamilyMembers(lastBody) <= maximumMembers) {
 			return lastBody;
 		}
 		await new Promise((resolve) => setTimeout(resolve, _TELEMETRY_POLL_INTERVAL_MS));

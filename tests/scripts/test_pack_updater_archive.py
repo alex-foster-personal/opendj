@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.platform_capabilities import posix_bash_or_skip
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "pack_updater_archive.sh"
 
@@ -25,7 +27,10 @@ def test_archive_is_gzip_with_the_app_at_the_top_level(tmp_path: Path) -> None:
     app = _fake_app(tmp_path)
     out = tmp_path / "Open DJ.app.tar.gz"
     result = subprocess.run(
-        ["bash", str(SCRIPT), str(app), str(out)], capture_output=True, text=True, check=False
+        [posix_bash_or_skip(), str(SCRIPT), str(app), str(out)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert out.read_bytes()[:2] == b"\x1f\x8b"
@@ -40,14 +45,19 @@ def test_packer_refuses_a_missing_app_or_a_wrong_name(tmp_path: Path) -> None:
     """if the input is not an app bundle, or the name is not .app.tar.gz, then exit nonzero."""
     app = _fake_app(tmp_path)
     missing = subprocess.run(
-        ["bash", str(SCRIPT), str(tmp_path / "nope.app"), str(tmp_path / "x.app.tar.gz")],
+        [
+            posix_bash_or_skip(),
+            str(SCRIPT),
+            str(tmp_path / "nope.app"),
+            str(tmp_path / "x.app.tar.gz"),
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
     assert missing.returncode == 2
     wrong = subprocess.run(
-        ["bash", str(SCRIPT), str(app), str(tmp_path / "x.zip")],
+        [posix_bash_or_skip(), str(SCRIPT), str(app), str(tmp_path / "x.zip")],
         capture_output=True,
         text=True,
         check=False,

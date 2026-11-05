@@ -153,8 +153,7 @@ def _require_gh_ready() -> None:
     proc = subprocess.run([gh, "--version"], capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise GithubCoordinationError(
-            f"`gh --version` failed ({proc.returncode}): "
-            f"{proc.stderr.strip() or proc.stdout.strip() or '<no output>'}"
+            f"`gh --version` failed ({proc.returncode}): {proc.stderr.strip() or proc.stdout.strip() or '<no output>'}"
         )
     check_min_version(parse_gh_version(proc.stdout))
 
@@ -203,8 +202,7 @@ def _coord_mode() -> str:
             return "both"
         return "file"
     raise UnsupportedCoordModeError(
-        f"unsupported OPENDJ_MAIN_RED_REPAIR_COORD={raw!r} "
-        "(expected auto, file, github, or both)"
+        f"unsupported OPENDJ_MAIN_RED_REPAIR_COORD={raw!r} (expected auto, file, github, or both)"
     )
 
 
@@ -250,9 +248,7 @@ def _resolve_github_issue_number() -> int | None:
 def _require_github_issue() -> int:
     issue = _resolve_github_issue_number()
     if issue is None:
-        raise GithubCoordinationError(
-            "GitHub coordination required but no ci:trunk-red issue is available"
-        )
+        raise GithubCoordinationError("GitHub coordination required but no ci:trunk-red issue is available")
     return issue
 
 
@@ -336,9 +332,7 @@ def parse_github_claim_thread(comments: list[dict[str, object]]) -> ClaimRecord 
 def _load_github_comments(issue: int) -> list[dict[str, object]]:
     owner, repo = _github_repo().split("/", 1)
     try:
-        raw = _gh_json(
-            ["api", f"repos/{owner}/{repo}/issues/{issue}/comments", "--paginate", "--slurp"]
-        )
+        raw = _gh_json(["api", f"repos/{owner}/{repo}/issues/{issue}/comments", "--paginate", "--slurp"])
         pages = json.loads(raw)
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
         raise GithubCoordinationError(f"failed to load issue #{issue} comments: {exc}") from exc
@@ -459,9 +453,7 @@ def _clear_file(claim_dir: Path | None = None) -> None:
     claim_file.unlink(missing_ok=True)
 
 
-def _primary_file_claim(
-    claims: list[ClaimRecord], baseline: MainRed, ts: float
-) -> ClaimRecord | None:
+def _primary_file_claim(claims: list[ClaimRecord], baseline: MainRed, ts: float) -> ClaimRecord | None:
     if not claims:
         return None
     key = claim_key(baseline)
@@ -490,9 +482,7 @@ def _lease_expired(record: ClaimRecord, now: float) -> bool:
 
 def _matches_current(record: ClaimRecord, red: MainRed, now: float) -> bool:
     key = claim_key(red)
-    return record.main_sha == red.main_sha and record.identities_key == key and not _lease_expired(
-        record, now
-    )
+    return record.main_sha == red.main_sha and record.identities_key == key and not _lease_expired(record, now)
 
 
 def _sync_github_claim(record: ClaimRecord) -> None:
@@ -617,10 +607,7 @@ def try_claim(
                 )
                 _upsert_file_claim(record, claim_dir)
                 github_sync = record
-                msg = (
-                    f"{LINE_PREFIX} already held by {owner} at main {baseline.main_sha[:8]} "
-                    f"(refreshed baseline)"
-                )
+                msg = f"{LINE_PREFIX} already held by {owner} at main {baseline.main_sha[:8]} (refreshed baseline)"
             elif _matches_current(existing, baseline, ts):
                 if existing.owner == owner:
                     return True, f"{LINE_PREFIX} already held by {owner} at main {baseline.main_sha[:8]}"
@@ -662,8 +649,7 @@ def try_claim(
             if not takeover_note.strip():
                 return (
                     False,
-                    f"{LINE_PREFIX} lease expired but --takeover-note is required to take over "
-                    f"from {existing.owner}",
+                    f"{LINE_PREFIX} lease expired but --takeover-note is required to take over from {existing.owner}",
                 )
             record = ClaimRecord(
                 main_sha=baseline.main_sha,
@@ -688,23 +674,16 @@ def try_claim(
             msg = _format_claimed_message(owner, baseline, key, takeover_note)
     if github_sync is not None:
         _sync_github_claim(github_sync)
-        ok_after, after_msg = _reconcile_github_claim_after_sync(
-            owner, baseline, claim_dir=claim_dir, ts=ts
-        )
+        ok_after, after_msg = _reconcile_github_claim_after_sync(owner, baseline, claim_dir=claim_dir, ts=ts)
         if not ok_after:
             return False, after_msg
     return True, msg
 
 
-def _format_claimed_message(
-    owner: str, baseline: MainRed, key: str, takeover_note: str
-) -> str:
+def _format_claimed_message(owner: str, baseline: MainRed, key: str, takeover_note: str) -> str:
     note = f" takeover={takeover_note!r}" if takeover_note.strip() else ""
     n = len(baseline.identities) or len(baseline.failed_job_names | baseline.unreadable_job_names)
-    return (
-        f"{LINE_PREFIX} claimed by {owner} at main {baseline.main_sha[:8]} "
-        f"identities_key={key} n={n}{note}"
-    )
+    return f"{LINE_PREFIX} claimed by {owner} at main {baseline.main_sha[:8]} identities_key={key} n={n}{note}"
 
 
 def release(owner: str, *, claim_dir: Path | None = None) -> tuple[bool, str]:
@@ -731,8 +710,7 @@ def release(owner: str, *, claim_dir: Path | None = None) -> tuple[bool, str]:
                 others = ", ".join(sorted(set(local_other_owners)))
                 return (
                     True,
-                    f"{LINE_PREFIX} released remote claim for {owner}; "
-                    f"local file held by {others} (unchanged)",
+                    f"{LINE_PREFIX} released remote claim for {owner}; local file held by {others} (unchanged)",
                 )
             return True, f"{LINE_PREFIX} released by {owner}"
 

@@ -19,16 +19,20 @@
 // `initialization_script` is the only hook with that guarantee.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod cue_sink;
 mod engine;
 mod engine_log;
 mod http_paths;
 mod launch;
+mod local_update;
 mod midi;
-mod output_health;
 mod shell_health;
 mod supervisor;
 mod window;
+mod window_state;
+
+// The CoreAudio half lives in apps/desktop/native/odj-output-probe so the
+// Electron shell's payload helper does not depend on this crate.
+use odj_output_probe::{cue_sink, output_health, speaker_link};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -44,6 +48,7 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, Wind
 const ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN";
 
 use crate::window::MAIN_WINDOW_LABEL;
+use crate::window_state::WindowStateStore;
 
 /// The size the window opens at, in LOGICAL POINTS -- not pixels. On a 2x
 /// Retina display these are half the physical pixel count, which is the unit
@@ -265,6 +270,38 @@ fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
     }
 }
 
+/// WINSTATE-01: load the saved per-monitor geometry and decide where the
+/// main window opens. Any failure is logged by name and the window opens at
+/// the default size; a window-geometry preference never stops the app opening.
+fn open_window_state(app: &AppHandle, data_dir: &Path) -> (WindowStateStore, Option<window_state::Placement>) {
+    let path = window_state::window_state_path(data_dir);
+    let saved = match window_state::load_window_state(&path) {
+        Ok(found) => found.unwrap_or_default(),
+        Err(failure) => {
+            engine::append_shell_log("WARN", &format!("window state unreadable, opening at default size: {failure}"));
+            window_state::WindowStateFile::default()
+        }
+    };
+    let placement = match window_state::connected_monitors(app) {
+        Ok(monitors) => window_state::placement_for_launch(
+            &saved,
+            &monitors,
+            (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT),
+        ),
+        Err(failure) => {
+            engine::append_shell_log("WARN", &format!("monitors unreadable, opening at default size: {failure}"));
+            None
+        }
+    };
+    if let Some(found) = &placement {
+        engine::append_shell_log(
+            "window",
+            &format!("opening on {} from {:?} geometry: {:?}", found.monitor_key, found.source, found.rect),
+        );
+    }
+    (WindowStateStore::start(path, saved, engine::append_shell_log), placement)
+}
+
 use supervisor::{
     release_parent_watch_ownership, start_runtime_supervisor, write_parent_file as record_parent_file,
     BootSupervisedGuard, Supervised, SupervisorPaths, RuntimeSupervisorState,
@@ -304,6 +341,22 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
         std::env::var_os("HOME").as_deref().map(Path::new),
     )?;
     Ok(data_dir)
+}
+
+/// Stable WKWebsiteDataStore id derived from the per-run data dir.
+///
+/// SHA-256 of `opendj-webkit-data-store-v1\0` plus the path's OS bytes,
+/// truncated to 16. Must match `scripts/app_acceptance.py`
+/// `webkit_data_store_identifier`. DefaultHasher is forbidden: it is not
+/// stable across Rust releases and would silently orphan stores.
+fn webkit_data_store_identifier(data_dir: &Path) -> [u8; 16] {
+    use sha2::{Digest, Sha256};
+    const DOMAIN: &[u8] = b"opendj-webkit-data-store-v1\0";
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
+    hasher.update(data_dir.as_os_str().as_encoded_bytes());
+    let digest = hasher.finalize();
+    digest[..16].try_into().expect("SHA-256 is 32 bytes")
 }
 
 /// Refuse a data dir outside the launch `HOME` before shell logging or the store.
@@ -452,7 +505,23 @@ fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
                     ),
                 ));
             }
-            Ok(Supervised::Adopted { pid, host, port })
+            match launch::judge_adoption(
+                engine::engine_build_sha(port).as_deref(),
+                launch::payload_git_sha(&payload).as_deref(),
+            ) {
+                launch::AdoptVerdict::Adopt => Ok(Supervised::Adopted { pid, host, port }),
+                launch::AdoptVerdict::Replace { engine_sha, payload_sha } => {
+                    engine::append_shell_log(
+                        "INFO",
+                        &format!(
+                            "not adopting engine pid {pid}: it runs {engine_sha}, this bundle \
+                             is {payload_sha}; restarting it on this build"
+                        ),
+                    );
+                    launch::stop_holder_pid(pid);
+                    spawn_fresh_engine(&payload, &data_dir, &log_path)
+                }
+            }
         }
         LaunchPlan::StopOrQuit { pid, detail } => {
             if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
@@ -625,7 +694,10 @@ fn main() {
         .manage(midi::NativeMidiBridge::default())
         .invoke_handler(tauri::generate_handler![
             midi::platform::native_midi_snapshot,
-            midi::platform::native_midi_send
+            midi::platform::native_midi_send,
+            // INSTALL-40: restart to update from a local build the engine
+            // offers on loopback; the updater plugin verifies and installs.
+            local_update::install_local_update
         ])
         .plugin(tauri_plugin_single_instance::init(focus_existing_window))
         // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
@@ -654,13 +726,26 @@ fn main() {
             if window.label() != MAIN_WINDOW_LABEL {
                 return;
             }
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                engine::append_shell_log(
-                    "shutdown",
-                    "window-close requested; delegating to webview quit gate",
-                );
-                request_quit_from_webview(window.app_handle());
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    engine::append_shell_log(
+                        "shutdown",
+                        "window-close requested; delegating to webview quit gate",
+                    );
+                    request_quit_from_webview(window.app_handle());
+                }
+                // WINSTATE-01: every move/resize is recorded; the store
+                // debounces the write, so an update's quit-and-swap or a crash
+                // cannot lose the last geometry.
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                    if let Some(store) = window.app_handle().try_state::<WindowStateStore>() {
+                        if let Err(failure) = window_state::record_window(window, &store) {
+                            engine::append_shell_log("WARN", &format!("window state not recorded: {failure}"));
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .setup(move |app| {
@@ -721,16 +806,26 @@ fn main() {
             // The window title IS productName, so the per-lane `--config`
             // overlay labels the window without a second place to edit.
             let title = package.name.clone();
-            let (width, height) = starting_window_size(usable_area_pt(&handle));
-            WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-                .title(title)
-                .inner_size(width, height)
+            let (store, placement) = open_window_state(&handle, &data_dir);
+            let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+                .title(title);
+            let builder = match &placement {
+                Some(found) => builder
+                    .inner_size(found.rect.w, found.rect.h)
+                    .position(found.rect.x, found.rect.y),
+                None => {
+                    let (width, height) = starting_window_size(usable_area_pt(&handle));
+                    builder.inner_size(width, height)
+                }
+            };
+            let main_window = builder
                 // AGENT-19: this webview IS the audio engine and the agent-order
                 // executor, so it must keep running minimized or occluded.
                 // WKWebView's default inactive policy suspends a hidden view's
                 // tasks (macOS 14+, our floor), which would stall agent orders
                 // and the UI mirror exactly like a hidden Chrome tab did.
                 .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+                .data_store_identifier(webkit_data_store_identifier(&data_dir))
                 // DECKUX-8350: every drop target in the UI is an HTML5 `ondrop`
                 // (deck load, playlists, tabs, and the ingest modal reading
                 // Finder files from `dataTransfer.files`). Tauri's native
@@ -751,6 +846,13 @@ fn main() {
                     }
                 })
                 .build()?;
+            if placement.as_ref().is_some_and(|found| found.maximized) {
+                main_window.maximize()?;
+            }
+            // Managed only after the window exists, so the Moved/Resized
+            // events the build itself fires do not overwrite the saved state
+            // with the pre-restore geometry.
+            app.manage(store);
 
             if let Some(started) = boot_engine.take() {
                 let payload = payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
@@ -802,6 +904,11 @@ fn main() {
                 }
             }
             RunEvent::Exit => {
+                if let Some(store) = handle.try_state::<WindowStateStore>() {
+                    if let Err(failure) = store.flush() {
+                        engine::append_shell_log("WARN", &format!("window state not saved at exit: {failure}"));
+                    }
+                }
                 if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
                     engine::append_shell_log("shutdown", "shell exit: stopping runtime supervisor");
                     state.supervisor.shutdown();
@@ -883,6 +990,45 @@ mod tests {
         );
         assert!(
             validate_data_dir_contained_in_home(&nested, Some(Path::new("relative-home"))).is_err()
+        );
+    }
+
+    #[test]
+    fn webkit_data_store_identifier_is_stable_for_one_path() {
+        let data = Path::new("/tmp/opendj-webkit-id-test/data");
+        let first = webkit_data_store_identifier(data);
+        let second = webkit_data_store_identifier(data);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn webkit_data_store_identifier_differs_for_different_data_dirs() {
+        let plain = Path::new("/tmp/opendj-webkit-plain");
+        let lane = Path::new("/tmp/opendj-webkit-plain.lane-preview");
+        assert_ne!(
+            webkit_data_store_identifier(plain),
+            webkit_data_store_identifier(lane)
+        );
+    }
+
+    #[test]
+    fn webkit_data_store_identifier_matches_the_known_vector() {
+        let data = Path::new("/Users/USER/Library/Application Support/com.opendj.desktop");
+        let id = webkit_data_store_identifier(data);
+        let expected: [u8; 16] = [
+            0x40, 0xad, 0x07, 0xd8, 0xcf, 0x03, 0x6a, 0x90, 0x53, 0xb0, 0x23, 0x81, 0x7c, 0x43,
+            0x7e, 0x74,
+        ];
+        assert_eq!(id, expected);
+    }
+
+    #[test]
+    fn webkit_data_store_identifier_differs_when_only_the_identifier_segment_changes() {
+        let base = Path::new("/Users/USER/Library/Application Support/com.opendj.desktop");
+        let lane = Path::new("/Users/USER/Library/Application Support/com.opendj.desktop.lane-preview");
+        assert_ne!(
+            webkit_data_store_identifier(base),
+            webkit_data_store_identifier(lane)
         );
     }
 

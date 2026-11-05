@@ -34,7 +34,8 @@ beforeEach(() => {
 	putReplies = [];
 	globalThis.fetch = async (url, init = {}) => {
 		if (url === LEASE_PATH) return json(200, { held: false, holder: null });
-		if (url === MIRROR_PATH && init.method === 'PUT') return putReplies.shift() ?? json(202, { accepted: true });
+		if (url === MIRROR_PATH && init.method === 'PUT')
+			return putReplies.shift() ?? json(202, { accepted: true });
 		throw new Error(`unexpected request ${init.method ?? 'GET'} ${url}`);
 	};
 });
@@ -87,7 +88,9 @@ test('a stale_snapshot 409 leaves a registered page registered', async () => {
 test('mutation control: a lease_held 409 does unregister the page', async () => {
 	const mirror = publisher();
 	await register(mirror);
-	putReplies.push(json(409, { accepted: false, reason: 'lease_held', held: true, holder: 'tab-b' }));
+	putReplies.push(
+		json(409, { accepted: false, reason: 'lease_held', held: true, holder: 'tab-b' })
+	);
 	mirror.publish();
 	await flush();
 	assert.equal(mirror.isRegistered(), false, 'a demoted tab must stop claiming orders');

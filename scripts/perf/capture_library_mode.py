@@ -46,8 +46,7 @@ def _require_reference_mac(dry_run: bool) -> None:
         return
     if platform.system() != "Darwin":
         print(
-            "library mode KPI capture requires the reference Mac (Darwin); "
-            "Linux CI proves schema only",
+            "library mode KPI capture requires the reference Mac (Darwin); Linux CI proves schema only",
             file=sys.stderr,
         )
         raise SystemExit(_EXIT_UNAVAILABLE)
@@ -162,17 +161,14 @@ def _run_playwright_capture(
     except (OSError, json.JSONDecodeError):
         result = {
             "ok": False,
-            "reason": (
-                f"playwright capture did not write KPI_CAPTURE_RESULT (exit {proc.returncode})"
-            ),
+            "reason": (f"playwright capture did not write KPI_CAPTURE_RESULT (exit {proc.returncode})"),
         }
     finally:
         Path(result_path).unlink(missing_ok=True)
     if proc.returncode != 0:
         result["ok"] = False
         result["reason"] = (
-            result.get("reason")
-            or f"playwright exited {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
+            result.get("reason") or f"playwright exited {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
         )
     return result
 
@@ -272,9 +268,7 @@ def _rows_from_capture_result(
 def _rss_ratio_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
     """The same pids' RSS ratio, for continuity with rows captured before phys_footprint."""
     if "median_rss_mb" not in gig or "median_rss_mb" not in library:
-        raise ValueError(
-            "capture result has no median_rss_mb; the sampler predates pid-tree attribution"
-        )
+        raise ValueError("capture result has no median_rss_mb; the sampler predates pid-tree attribution")
     gig_rss = float(gig["median_rss_mb"])
     library_rss = float(library["median_rss_mb"])
     if gig_rss <= 0:
@@ -355,9 +349,7 @@ def _sample_field_counts(gig: dict[str, Any], library: dict[str, Any]) -> dict[s
         for field in _SAMPLE_FIELDS:
             samples = capture.get(field)
             if not isinstance(samples, list) or len(samples) == 0:
-                raise ValueError(
-                    f"{mode} {field} holds no samples; a median over none is not a capture"
-                )
+                raise ValueError(f"{mode} {field} holds no samples; a median over none is not a capture")
             counts[mode][field] = len(samples)
     return counts
 
@@ -388,20 +380,14 @@ def _min_samples_met(gig: dict[str, Any], library: dict[str, Any]) -> bool:
     be non-empty, and not merely the footprint field (see
     `_sample_field_counts`)."""
     counts = _sample_field_counts(gig, library)
-    return all(
-        counts[mode][field] >= _MIN_SCORED_SAMPLES
-        for mode in ("gig", "library")
-        for field in _SAMPLE_FIELDS
-    )
+    return all(counts[mode][field] >= _MIN_SCORED_SAMPLES for mode in ("gig", "library") for field in _SAMPLE_FIELDS)
 
 
 def _min_sample_counts_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
     """The exact counts behind an `insufficient samples` UNMEASURED reason."""
     counts = _sample_field_counts(gig, library)
     parts = ", ".join(
-        f"{mode}.{field}={counts[mode][field]}"
-        for mode in ("gig", "library")
-        for field in _SAMPLE_FIELDS
+        f"{mode}.{field}={counts[mode][field]}" for mode in ("gig", "library") for field in _SAMPLE_FIELDS
     )
     return f"{parts} (need >={_MIN_SCORED_SAMPLES} each)"
 
@@ -494,9 +480,7 @@ def main(argv: list[str] | None = None) -> int:
             print(format_appended(row))
         return 0
 
-    targets_reason, frontend_mode, engine_pid = _verify_capture_targets(
-        engine, frontend, app_build_sha
-    )
+    targets_reason, frontend_mode, engine_pid = _verify_capture_targets(engine, frontend, app_build_sha)
     if targets_reason is not None:
         print(targets_reason, file=sys.stderr)
         return 1
@@ -527,8 +511,8 @@ def main(argv: list[str] | None = None) -> int:
     # process lifetimes. Re-run every one of those gates -- including the
     # engine's own pid, pinned from the pre-capture call above -- right after
     # Playwright finishes, before any row is built or appended.
-    post_capture_reason, _post_capture_frontend_mode, _post_capture_engine_pid = (
-        _verify_capture_targets(engine, frontend, app_build_sha, expected_engine_pid=engine_pid)
+    post_capture_reason, _post_capture_frontend_mode, _post_capture_engine_pid = _verify_capture_targets(
+        engine, frontend, app_build_sha, expected_engine_pid=engine_pid
     )
     if post_capture_reason is not None:
         print(

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build devices/ddj-flx6/midi.json + layout.json from PDF text + plate positions."""
+
 from __future__ import annotations
 
 import json
@@ -170,9 +171,30 @@ def _parse_pdf_rows(text: str) -> dict[str, dict[str, dict]]:
             block += "\n" + lines[j]
             j += 1
         # UI label heuristics from block
-        for token in ("PLAY/PAUSE", "CUE", "SHIFT", "JOG", "DECK", "MERGE FX", "BEAT SYNC", "MASTER", "TEMPO",
-                      "BFX", "TRIM", "FILTER", "BROWSE", "BACK", "VIEW", "LOAD", "HOT CUE", "PAD FX",
-                      "CROSSFADER", "HEADPHONE", "MIC LEVEL", "PERFORMANCE PAD"):
+        for token in (
+            "PLAY/PAUSE",
+            "CUE",
+            "SHIFT",
+            "JOG",
+            "DECK",
+            "MERGE FX",
+            "BEAT SYNC",
+            "MASTER",
+            "TEMPO",
+            "BFX",
+            "TRIM",
+            "FILTER",
+            "BROWSE",
+            "BACK",
+            "VIEW",
+            "LOAD",
+            "HOT CUE",
+            "PAD FX",
+            "CROSSFADER",
+            "HEADPHONE",
+            "MIC LEVEL",
+            "PERFORMANCE PAD",
+        ):
             if token in block:
                 out[fig]["labels"].add(token)
         for row_m in _MIDI_ROW.finditer(block):
@@ -201,14 +223,41 @@ def _manual_overrides() -> dict[str, dict]:
     """Curated primary/shift pairs where pdftotext column smash loses codes."""
     # deck 1 / ch1 representative unless global (ch7) or effect (ch5)
     M = [
-        ("1-1", "play_pause", "note", 1, 11, "play_pause_shift", 1, 71,
-         "per-deck channels 1-4; LED out same code [1-1]"),
+        (
+            "1-1",
+            "play_pause",
+            "note",
+            1,
+            11,
+            "play_pause_shift",
+            1,
+            71,
+            "per-deck channels 1-4; LED out same code [1-1]",
+        ),
         ("1-2", "cue", "note", 1, 12, "cue_shift", 1, 72, "per-deck channels 1-4 [1-2]"),
         ("1-3", "shift_button", "note", 1, 63, None, None, None, "hardware SHIFT; per-deck ch 1-4 [1-3]"),
-        ("1-4", "jog_platter_turn", "cc", 1, 34, "jog_platter_turn_shift", 1, 41,
-         "Vinyl On CC34/35; shift CC41; touch note 54/103 [1-4]"),
-        ("1-5", "deck_select", "note", 1, 60, "deck_select_shift", 7, 124,
-         "Deck1/3 toggle ch1/3; shift ch7 note 124 [1-5]"),
+        (
+            "1-4",
+            "jog_platter_turn",
+            "cc",
+            1,
+            34,
+            "jog_platter_turn_shift",
+            1,
+            41,
+            "Vinyl On CC34/35; shift CC41; touch note 54/103 [1-4]",
+        ),
+        (
+            "1-5",
+            "deck_select",
+            "note",
+            1,
+            60,
+            "deck_select_shift",
+            7,
+            124,
+            "Deck1/3 toggle ch1/3; shift ch7 note 124 [1-5]",
+        ),
         ("1-6", "jog_cutter", "note", 1, 28, "jog_cutter_shift", 1, 23, "per-deck ch 1-4 [1-6]"),
         ("1-7", "loop_in", "note", 1, 16, "loop_in_shift", 1, 76, "long-press note 20; per-deck [1-7]"),
         ("1-8", "loop_out", "note", 1, 17, "loop_out_shift", 1, 119, "per-deck ch 1-4 [1-8]"),
@@ -217,20 +266,65 @@ def _manual_overrides() -> dict[str, dict]:
         ("1-11", "cue_loop_call_next", "note", 1, 83, "cue_loop_call_next_shift", 1, 98, "per-deck [1-11]"),
         ("1-12", "cue_loop_memory", "note", 1, 61, "cue_loop_memory_shift", 1, 62, "per-deck [1-12]"),
         ("1-13", "merge_fx_preset", "note", 5, 47, "merge_fx_preset_shift", 5, 48, "ch5 L / ch6 R [1-13]"),
-        ("1-14", "merge_fx_param", "cc", 5, 8, "merge_fx_param_shift", 5, 40,
-         "turn CC8/28 ch5/6; press note 46/49 [1-14]"),
+        (
+            "1-14",
+            "merge_fx_param",
+            "cc",
+            5,
+            8,
+            "merge_fx_param_shift",
+            5,
+            40,
+            "turn CC8/28 ch5/6; press note 46/49 [1-14]",
+        ),
         ("1-15", "beat_sync", "note", 1, 88, "beat_sync_shift", 1, 93, "per-deck ch 1-4 [1-15]"),
         ("1-16", "master_tempo", "note", 1, 92, "master_tempo_shift", 1, 96, "per-deck ch 1-4 [1-16]"),
-        ("1-17", "tempo_slider", "cc", 1, 0, "tempo_slider_shift", 1, 5,
-         "14-bit MSB0/LSB32; shift MSB5/LSB37 per-deck [1-17]"),
-        ("2-1", "bfx_select", "note", 5, 112, "bfx_select_shift", 5, 112,
-         "cycles FX1-1..FX2-3; shift reverses cycle [2-1]"),
-        ("2-2", "bfx_ch_select", "note", 5, 28, "bfx_ch_select_shift", 5, 28,
-         "CH1-4 + master select notes ch5/6 [2-2]"),
+        (
+            "1-17",
+            "tempo_slider",
+            "cc",
+            1,
+            0,
+            "tempo_slider_shift",
+            1,
+            5,
+            "14-bit MSB0/LSB32; shift MSB5/LSB37 per-deck [1-17]",
+        ),
+        (
+            "2-1",
+            "bfx_select",
+            "note",
+            5,
+            112,
+            "bfx_select_shift",
+            5,
+            112,
+            "cycles FX1-1..FX2-3; shift reverses cycle [2-1]",
+        ),
+        (
+            "2-2",
+            "bfx_ch_select",
+            "note",
+            5,
+            28,
+            "bfx_ch_select_shift",
+            5,
+            28,
+            "CH1-4 + master select notes ch5/6 [2-2]",
+        ),
         ("2-3", "beat_fx_prev", "note", 5, 6, "beat_fx_prev_shift", 5, 102, "FX1 ch5 / FX2 ch6 [2-3]"),
         ("2-4", "beat_fx_next", "note", 5, 7, "beat_fx_next_shift", 5, 107, "FX1 ch5 / FX2 ch6 [2-4]"),
-        ("2-5", "bfx_level_depth", "cc", 5, 2, "bfx_level_depth_shift", 5, 34,
-         "14-bit CC per FX slot; MSB2/4/6 ch5/6 [2-5]"),
+        (
+            "2-5",
+            "bfx_level_depth",
+            "cc",
+            5,
+            2,
+            "bfx_level_depth_shift",
+            5,
+            34,
+            "14-bit CC per FX slot; MSB2/4/6 ch5/6 [2-5]",
+        ),
         ("2-6", "bfx_on_off", "note", 5, 71, "bfx_on_off_shift", 5, 67, "FX1-3 slots; shift all-FX note [2-6]"),
         ("3-1", "input_select", "note", 4, 13, None, None, None, "CH4 deck/sampler ch4 note 13 [3-1]"),
         ("3-2", "master_level", "cc", 7, 8, "master_level_shift", 7, 40, "14-bit MSB8 LSB40 ch7 [3-2]"),
@@ -241,14 +335,22 @@ def _manual_overrides() -> dict[str, dict]:
         ("3-7", "filter", "cc", 7, 23, "filter_shift", 7, 55, "FILTER ch1-4 via ch7 MSB23-26 [3-7]"),
         ("3-8", "ch_cue", "note", 1, 84, "ch_cue_shift", 1, 104, "per-deck ch 1-4 [3-8]"),
         ("3-9", "ch_fader", "cc", 1, 19, "ch_fader_shift", 1, 82, "14-bit MSB19; shift cue-start note [3-9]"),
-        ("3-10", "crossfader", "cc", 7, 31, "crossfader_shift", 7, 80,
-         "14-bit MSB31; shift xfader-start notes [3-10]"),
+        ("3-10", "crossfader", "cc", 7, 31, "crossfader_shift", 7, 80, "14-bit MSB31; shift xfader-start notes [3-10]"),
         ("3-11", "ch_level_meter", "cc", 1, 2, None, None, None, "MIDI OUT only ch1-4 CC2 [3-11]"),
         ("3-12", "headphone_level", "cc", 7, 13, "headphone_level_shift", 7, 45, "MSB13 LSB45 ch7 [3-12]"),
         ("3-13", "headphone_mix", "cc", 7, 12, "headphone_mix_shift", 7, 44, "MSB12 LSB44 ch7 [3-13]"),
         ("3-14", "mic_level", "cc", 7, 5, "mic_level_shift", 7, 37, "MSB5 LSB37 ch7 [3-14]"),
-        ("4-1", "browse_rotate", "cc", 7, 64, "browse_rotate_shift", 7, 100,
-         "relative encoder; press load note 65/66 [4-1]"),
+        (
+            "4-1",
+            "browse_rotate",
+            "cc",
+            7,
+            64,
+            "browse_rotate_shift",
+            7,
+            100,
+            "relative encoder; press load note 65/66 [4-1]",
+        ),
         ("4-2", "back", "note", 7, 101, "back_shift", 7, 102, "ch7 [4-2]"),
         ("4-3", "view", "note", 7, 122, "view_shift", 7, 104, "long-press note 103 [4-3]"),
         ("4-4", "load_deck1", "note", 7, 70, "load_deck1_shift", 7, 88, "ch7 [4-4]"),
@@ -259,8 +361,17 @@ def _manual_overrides() -> dict[str, dict]:
         ("5-2", "pad_fx_mode", "note", 1, 30, "pad_fx_mode_shift", 1, 111, "per-deck ch 1-4 [5-2]"),
         ("5-3", "beat_jump_mode", "note", 1, 32, "beat_jump_mode_shift", 1, 109, "per-deck [5-3]"),
         ("5-4", "sampler_mode", "note", 1, 34, "sampler_mode_shift", 1, 107, "per-deck [5-4]"),
-        ("5-5", "performance_pad1", "note", 8, 0, "performance_pad1_shift", 9, 0,
-         "pad grid ch8/10/12/14 unshifted; odd ch shifted; modes in midi rows [5-5]"),
+        (
+            "5-5",
+            "performance_pad1",
+            "note",
+            8,
+            0,
+            "performance_pad1_shift",
+            9,
+            0,
+            "pad grid ch8/10/12/14 unshifted; odd ch shifted; modes in midi rows [5-5]",
+        ),
     ]
     d: dict[str, dict] = {}
     for row in M:
@@ -286,9 +397,7 @@ def _build_midi() -> dict:
     controls: list[dict] = []
 
     def add(name: str, section: str, typ: str, ch: int, code: int, notes: str) -> None:
-        controls.append(
-            {"name": name, "section": section, "type": typ, "ch": ch, "code": code, "notes": notes}
-        )
+        controls.append({"name": name, "section": section, "type": typ, "ch": ch, "code": code, "notes": notes})
 
     for fig in sorted(POS, key=lambda x: (int(x.split("-")[0]), int(x.split("-")[1]))):
         sec = SECTION[fig]
@@ -326,9 +435,7 @@ def _build_midi() -> dict:
 
     return {
         "source": "docs/controller/reference/DDJ-FLX6_MIDI_Message_List_E1.pdf",
-        "archived": (DEV / "source" / "DDJ-FLX6_MIDI_Message_List_E1.pdf")
-        .relative_to(REPO_ROOT)
-        .as_posix(),
+        "archived": (DEV / "source" / "DDJ-FLX6_MIDI_Message_List_E1.pdf").relative_to(REPO_ROOT).as_posix(),
         "device": "DDJ-FLX6",
         "vendor": "AlphaTheta / Pioneer DJ",
         "channel_conventions": {

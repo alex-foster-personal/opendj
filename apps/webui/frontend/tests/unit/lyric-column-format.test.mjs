@@ -41,7 +41,11 @@ test('verdict marks: all 4 verdicts map to distinct compact marks', () => {
 		assert.equal(typeof value, 'string');
 		assert.ok(value.length >= 1, 'mark must be non-empty');
 	}
-	assert.equal(new Set(marks.map((m) => `${m.kind}:${m.kind === 'icon' ? m.path : m.text}`)).size, 4, 'marks must be distinct');
+	assert.equal(
+		new Set(marks.map((m) => `${m.kind}:${m.kind === 'icon' ? m.path : m.text}`)).size,
+		4,
+		'marks must be distinct'
+	);
 });
 
 test('verdict mark: the vocal verdict is an SVG icon path, not a note character (CHROME-01)', () => {
@@ -79,12 +83,8 @@ test('sync quality pct throws on out-of-band wire values', () => {
 test('lyricsSortValue: verdict-major (vocal > sparse > unknown > no-lyrics)', () => {
 	const vocal = mod.lyricsSortValue(_summary({ effective: 'vocal', pct_witness_red: 1 }));
 	const sparse = mod.lyricsSortValue(_summary({ effective: 'sparse', pct_witness_red: 0 }));
-	const unknown = mod.lyricsSortValue(
-		_summary({ effective: 'unknown', pct_witness_red: 0 })
-	);
-	const none = mod.lyricsSortValue(
-		_summary({ effective: 'no-lyrics', pct_witness_red: 0 })
-	);
+	const unknown = mod.lyricsSortValue(_summary({ effective: 'unknown', pct_witness_red: 0 }));
+	const none = mod.lyricsSortValue(_summary({ effective: 'no-lyrics', pct_witness_red: 0 }));
 	// A 0%-sync vocal still ranks above a 100%-sync sparse: verdict is major.
 	assert.ok(vocal > sparse, 'vocal must outrank sparse');
 	assert.ok(sparse > unknown, 'sparse must outrank unknown');
@@ -115,7 +115,10 @@ test('groupLinesIntoParagraphs splits on para_final and keeps the trailing group
 	assert.equal(paras.length, 2);
 	assert.deepEqual(
 		paras.map((p) => p.map((l) => l.text)),
-		[['a', 'b'], ['c', 'd']]
+		[
+			['a', 'b'],
+			['c', 'd']
+		]
 	);
 });
 

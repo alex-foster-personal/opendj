@@ -16,7 +16,9 @@ let applyDeckTrackDrop;
 let draggedDeckRows;
 
 before(async () => {
-	({ applyDeckTrackDrop, draggedDeckRows } = await loadTypeScriptModule('src/lib/rb/deck-track-drop.ts'));
+	({ applyDeckTrackDrop, draggedDeckRows } = await loadTypeScriptModule(
+		'src/lib/rb/deck-track-drop.ts'
+	));
 });
 
 function runDrop({ row, occupied = false, dispatchImpl, stableId = 'SID-1' }) {
@@ -44,10 +46,7 @@ describe('applyDeckTrackDrop', () => {
 		});
 		assert.equal(toasts.length, 1);
 		assert.equal(toasts[0].kind, 'error');
-		assert.equal(
-			toasts[0].message,
-			'cannot load: audio file missing on disk (broken link)'
-		);
+		assert.equal(toasts[0].message, 'cannot load: audio file missing on disk (broken link)');
 		assert.equal(dispatches.length, 0);
 	});
 
@@ -56,10 +55,7 @@ describe('applyDeckTrackDrop', () => {
 			row: { file_exists: true, is_streaming: true }
 		});
 		assert.equal(toasts.length, 1);
-		assert.equal(
-			toasts[0].message,
-			"Streaming track: Open DJ can't play streaming services"
-		);
+		assert.equal(toasts[0].message, "Streaming track: Open DJ can't play streaming services");
 		assert.equal(dispatches.length, 0);
 	});
 
@@ -162,12 +158,16 @@ describe('DECKUX-21 drop sets the Space target deck', () => {
 
 	// [if] a row shown shifted is dropped on a deck [then] it loads unshifted, [else stop]
 	it('a dropped row carries its displayed key shift into the load command', async () => {
-		const { dispatches } = await runDrop({ row: { file_exists: true, is_streaming: false, key_shift: -1 } });
+		const { dispatches } = await runDrop({
+			row: { file_exists: true, is_streaming: false, key_shift: -1 }
+		});
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'SID-1', key_shift: -1 }]);
 	});
 
 	it('an unshifted row loads with no key_shift field', async () => {
-		const { dispatches } = await runDrop({ row: { file_exists: true, is_streaming: false, key_shift: 0 } });
+		const { dispatches } = await runDrop({
+			row: { file_exists: true, is_streaming: false, key_shift: 0 }
+		});
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'SID-1' }]);
 	});
 });
@@ -177,22 +177,36 @@ describe('draggedDeckRows', () => {
 	it('gives every dragged id its own flags and displayed shift', () => {
 		const rows = [
 			{ stable_id: 'A', file_exists: true, is_streaming: false, key: '3A' },
-			{ stable_id: 'B', file_exists: true, is_streaming: null, rb_meta: { is_streaming: false }, key: '8A' },
+			{
+				stable_id: 'B',
+				file_exists: true,
+				is_streaming: null,
+				rb_meta: { is_streaming: false },
+				key: '8A'
+			},
 			{ stable_id: 'C', file_exists: true, is_streaming: false, key: '9A' }
 		];
 		const shifts = { '3A': -1, '8A': 0, '9A': 2 };
 		const meta = draggedDeckRows(['A', 'B', 'Z'], rows, (r) => shifts[r.key]);
-		assert.deepEqual(Object.keys(meta).sort(), ['A', 'B'], 'an id not loaded in the table gets no entry');
+		assert.deepEqual(
+			Object.keys(meta).sort(),
+			['A', 'B'],
+			'an id not loaded in the table gets no entry'
+		);
 		assert.equal(meta.A.key_shift, -1, 'the first selected id keeps its shift');
 		assert.equal(meta.B.key_shift, 0);
 		assert.equal(meta.B.is_streaming, false);
 	});
 
 	it('the first selected id of a multi-row drop loads shifted', async () => {
-		const meta = draggedDeckRows(['A', 'B'], [
-			{ stable_id: 'A', file_exists: true, is_streaming: false },
-			{ stable_id: 'B', file_exists: true, is_streaming: false }
-		], (r) => (r.stable_id === 'A' ? 2 : 0));
+		const meta = draggedDeckRows(
+			['A', 'B'],
+			[
+				{ stable_id: 'A', file_exists: true, is_streaming: false },
+				{ stable_id: 'B', file_exists: true, is_streaming: false }
+			],
+			(r) => (r.stable_id === 'A' ? 2 : 0)
+		);
 		const { dispatches } = await runDrop({ row: meta.A, stableId: 'A' });
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'A', key_shift: 2 }]);
 	});

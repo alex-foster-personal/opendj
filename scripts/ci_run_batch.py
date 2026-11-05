@@ -105,9 +105,7 @@ def fetch_attempt(
     """One attempt of a run: a listing shows only the latest, so an earlier attempt's
     conclusion is read here."""
     fetch = get_json or (lambda url: _get_json(url, token, agent))
-    return fetch(
-        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}"
-    )
+    return fetch(f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}")
 
 
 def fetch_run_jobs(
@@ -156,17 +154,13 @@ def fetch_completed_runs(
     base = f"https://api.github.com/repos/{repository}/actions/workflows"
     seen: dict[str, dict[str, Any]] = {}
     for name, workflow_id in sorted(_workflow_ids(base, set(workflow_names), fetch).items()):
-        pending = list(
-            reversed(created_slices(created_since, now or datetime.now(UTC), slice_width))
-        )
+        pending = list(reversed(created_slices(created_since, now or datetime.now(UTC), slice_width)))
         while pending:
             start, stop = pending.pop()
             page = fetch(f"{base}/{workflow_id}/runs?per_page={PAGE_SIZE}&created={start}..{stop}")
             batch = page.get("workflow_runs") or []
             if len(batch) < PAGE_SIZE:
-                require_served_total(
-                    len(batch), int(page["total_count"]), f"{name} {start}..{stop}"
-                )
+                require_served_total(len(batch), int(page["total_count"]), f"{name} {start}..{stop}")
                 seen.update((str(run["id"]), run) for run in batch if run["status"] == "completed")
                 continue
             pending.extend(halves(name, start, stop))
@@ -278,10 +272,7 @@ def require_closed_window(created_before: str, now: datetime) -> None:
 def require_served_total(served: int, total: int, what: str) -> None:
     """A listing serves exactly its total_count, or it changed while read."""
     if served != total:
-        raise RuntimeError(
-            f"{what} reports {total} runs but served {served}; the listing changed while "
-            "it was read"
-        )
+        raise RuntimeError(f"{what} reports {total} runs but served {served}; the listing changed while it was read")
 
 
 def require_under_one_page(count: int, what: str) -> None:
@@ -295,16 +286,13 @@ def halves(name: str, start: str, stop: str) -> list[tuple[str, str]]:
     width = parse_time(stop) - parse_time(start)
     if width <= timedelta(seconds=1):
         raise RuntimeError(
-            f"{name}: creation window {start}..{stop} holds too many runs and cannot be "
-            "narrowed below one second"
+            f"{name}: creation window {start}..{stop} holds too many runs and cannot be narrowed below one second"
         )
     middle = iso(parse_time(start) + timedelta(seconds=width.total_seconds() // 2))
     return [(middle, stop), (start, middle)]
 
 
-def _workflow_ids(
-    base: str, names: set[str], fetch: Callable[[str], dict[str, Any]]
-) -> dict[str, int]:
+def _workflow_ids(base: str, names: set[str], fetch: Callable[[str], dict[str, Any]]) -> dict[str, int]:
     """Each watched name's workflow id. A name with no workflow, or with two, fails the
     pass: an unmatched name would read nothing and look clean."""
     found: dict[str, list[int]] = {}
@@ -390,10 +378,7 @@ def fetch_inflight_runs(
     seen: dict[str, dict[str, Any]] = {}
     for name, workflow_id in sorted(_workflow_ids(base, set(workflow_names), fetch).items()):
         for status in INFLIGHT_STATUSES:
-            page = fetch(
-                f"{base}/{workflow_id}/runs"
-                f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
-            )
+            page = fetch(f"{base}/{workflow_id}/runs?status={status}&per_page={PAGE_SIZE}&created=<{created_before}")
             batch = page.get("workflow_runs") or []
             what = f"{status} runs of {name!r} created before {created_before}"
             require_under_one_page(len(batch), what)
@@ -462,20 +447,14 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("--repository", required=True)
     mark.add_argument("--workflow-file", required=True)
     mark.add_argument("--this-run", type=int, required=True)
-    census = commands.add_parser(
-        "census", help="count watched runs in flight since before the lookback (held=N)"
-    )
+    census = commands.add_parser("census", help="count watched runs in flight since before the lookback (held=N)")
     census.add_argument("--repository", required=True)
     census.add_argument("--watched", required=True, help="comma-separated workflow names")
     census.add_argument("--lookback-hours", type=int, required=True)
     args = parser.parse_args(argv)
     token = os.environ["GITHUB_TOKEN"]
     if args.command == "mark":
-        print(
-            last_successful_pass_start(
-                args.repository, args.workflow_file, args.this_run, token=token
-            )
-        )
+        print(last_successful_pass_start(args.repository, args.workflow_file, args.this_run, token=token))
         return 0
     if args.command == "census":
         watched = {name.strip() for name in args.watched.split(",") if name.strip()}

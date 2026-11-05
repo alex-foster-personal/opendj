@@ -10,6 +10,7 @@ and one real stems directory. Disk is injected by monkeypatching
 * [if] a bundle is loaded on a deck in THIS engine [then] neither the route
   nor the timer evicts it.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -126,9 +127,7 @@ def test_status_route_reports_low_disk_and_the_local_only_bundle(
 
 
 @pytest.mark.requirement("STEM-43")
-def test_status_route_is_healthy_on_a_roomy_disk(
-    tmp_path: Path, two_bundles, monkeypatch: pytest.MonkeyPatch
-):
+def test_status_route_is_healthy_on_a_roomy_disk(tmp_path: Path, two_bundles, monkeypatch: pytest.MonkeyPatch):
     """[if] the volume is roomy [then] the status route reads healthy, [else stop].
 
     The opposite-direction control: the same app on a roomy volume must
@@ -191,11 +190,7 @@ def test_enforce_route_evicts_nothing_when_hydration_is_not_armed(
 ):
     """[if] hydration is not armed [then] the enforce route removes nothing, [else stop]."""
     _set_disk(monkeypatch, free=0)
-    body = (
-        TestClient(_app(tmp_path, armed=False))
-        .post("/api/v1/stems/cache/enforce", json={})
-        .json()
-    )
+    body = TestClient(_app(tmp_path, armed=False)).post("/api/v1/stems/cache/enforce", json={}).json()
     assert body["evicted_stable_ids"] == []
     assert body["blocked_reason"] == stem_cache_budget.BLOCKED_HYDRATION_NOT_ARMED
     assert (tmp_path / "stems" / "indexed").exists()
@@ -213,11 +208,7 @@ def test_enforce_route_never_evicts_a_bundle_loaded_on_a_deck(
     _set_disk(monkeypatch, free=0)
     OPEN_DECKS.mark_open("indexed")
     try:
-        body = (
-            TestClient(_app(tmp_path, armed=True))
-            .post("/api/v1/stems/cache/enforce", json={})
-            .json()
-        )
+        body = TestClient(_app(tmp_path, armed=True)).post("/api/v1/stems/cache/enforce", json={}).json()
     finally:
         OPEN_DECKS.mark_closed("indexed")
     assert body["evicted_stable_ids"] == []
@@ -240,17 +231,13 @@ def test_settings_route_round_trips_a_partial_override(tmp_path: Path):
         "auto_evict": True,
     }
 
-    updated = client.put(
-        "/api/v1/stems/cache/settings", json={"floor_gib": 60, "max_cache_gib": 20}
-    )
+    updated = client.put("/api/v1/stems/cache/settings", json={"floor_gib": 60, "max_cache_gib": 20})
     assert updated.status_code == 200
     assert updated.json()["floor_gib"] == 60.0
     assert updated.json()["max_cache_gib"] == 20.0
     # Untouched fields keep their value, and the change is on disk.
     assert updated.json()["floor_fraction"] == 0.05
-    assert stem_cache_budget.load_settings(tmp_path / "data") == StemCacheSettings(
-        floor_gib=60.0, max_cache_gib=20.0
-    )
+    assert stem_cache_budget.load_settings(tmp_path / "data") == StemCacheSettings(floor_gib=60.0, max_cache_gib=20.0)
 
     cleared = client.put("/api/v1/stems/cache/settings", json={"clear_max_cache_gib": True})
     assert cleared.json()["max_cache_gib"] is None
@@ -258,12 +245,8 @@ def test_settings_route_round_trips_a_partial_override(tmp_path: Path):
 
 
 @pytest.mark.requirement("STEM-43")
-@pytest.mark.parametrize(
-    "payload", [{"floor_fraction": 1.5}, {"floor_gib": -1}, {"enforce_interval_s": 0}]
-)
-def test_settings_route_rejects_a_bad_value_and_saves_nothing(
-    tmp_path: Path, payload: dict[str, float]
-):
+@pytest.mark.parametrize("payload", [{"floor_fraction": 1.5}, {"floor_gib": -1}, {"enforce_interval_s": 0}])
+def test_settings_route_rejects_a_bad_value_and_saves_nothing(tmp_path: Path, payload: dict[str, float]):
     """[if] a settings value is invalid [then] the route answers 422 and stores nothing, [else stop]."""
     client = TestClient(_app(tmp_path, armed=True))
     response = client.put("/api/v1/stems/cache/settings", json=payload)
@@ -275,9 +258,7 @@ def test_settings_route_rejects_a_bad_value_and_saves_nothing(
 @pytest.mark.requirement("STEM-43")
 def test_settings_route_rejects_an_unknown_key(tmp_path: Path):
     """[if] a settings update names an unknown key [then] the route rejects it, [else stop]."""
-    response = TestClient(_app(tmp_path, armed=True)).put(
-        "/api/v1/stems/cache/settings", json={"floor_gb": 30}
-    )
+    response = TestClient(_app(tmp_path, armed=True)).put("/api/v1/stems/cache/settings", json={"floor_gb": 30})
     assert response.status_code == 422
 
 
@@ -306,9 +287,7 @@ def test_enforcer_tick_evicts_on_low_disk_and_status_shows_the_last_run(
 
 
 @pytest.mark.requirement("STEM-41")
-def test_enforcer_tick_leaves_a_healthy_disk_alone(
-    tmp_path: Path, two_bundles, monkeypatch: pytest.MonkeyPatch
-):
+def test_enforcer_tick_leaves_a_healthy_disk_alone(tmp_path: Path, two_bundles, monkeypatch: pytest.MonkeyPatch):
     """[if] a tick runs on a healthy disk [then] nothing is removed, [else stop]."""
     _set_disk(monkeypatch, free=300 * GIB)
     report = StemCacheEnforcer(_app(tmp_path, armed=True)).tick()
@@ -337,9 +316,7 @@ def test_enforcer_thread_ticks_on_its_own_and_stops_cleanly(
 ):
     """[if] the loop is started [then] it enforces without being asked, and ``stop`` ends the thread, [else stop]."""
     _set_disk(monkeypatch, free=0)
-    stem_cache_budget.save_settings(
-        tmp_path / "data", StemCacheSettings(enforce_interval_s=0.05)
-    )
+    stem_cache_budget.save_settings(tmp_path / "data", StemCacheSettings(enforce_interval_s=0.05))
     enforcer = StemCacheEnforcer(_app(tmp_path, armed=True), first_tick_delay_s=0.0)
     enforcer.start()
     try:

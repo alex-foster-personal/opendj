@@ -2,6 +2,7 @@
 
 [if] writer lock is held [then] GET playlist still 200 with disk truth, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -68,8 +69,7 @@ def _seed_one_track(state_db_path: Path) -> str:
             ("pl-busy", "Busy Set", "rekordbox", "RB-BUSY", ISO, ISO),
         )
         conn.execute(
-            "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO playlist_memberships(playlist_id, stable_id, position) VALUES (?, ?, ?)",
             ("pl-busy", "sid-0000", 0),
         )
         conn.commit()
@@ -79,9 +79,7 @@ def _seed_one_track(state_db_path: Path) -> str:
 
 
 @pytest.fixture
-def hydrate_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[tuple[TestClient, Path, Path]]:
+def hydrate_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, Path, Path]]:
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     _stub_rb_vendor(monkeypatch)
@@ -101,9 +99,7 @@ def hydrate_client(
         yield client, data_dir, state_db_path
 
 
-def test_bulk_probe_keeps_l1_when_path_index_writer_is_busy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bulk_probe_keeps_l1_when_path_index_writer_is_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] hydrate persist is locked [then] the stat still answers L1, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
@@ -129,17 +125,13 @@ def test_bulk_probe_keeps_l1_when_path_index_writer_is_busy(
     assert cached[1] == probed[path].materialised_size
     conn = state_db.open_ro(state_db_path)
     try:
-        index = path_index.bulk_lookup(
-            conn, path_index.resolver_namespace(data_dir), [path]
-        )
+        index = path_index.bulk_lookup(conn, path_index.resolver_namespace(data_dir), [path])
     finally:
         conn.close()
     assert index[path] is None
 
 
-def test_bulk_probe_persists_path_index_when_writer_is_free(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bulk_probe_persists_path_index_when_writer_is_free(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] writer lock is free [then] hydrate persist writes the index, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
@@ -151,9 +143,7 @@ def test_bulk_probe_persists_path_index_when_writer_is_free(
     assert probed[path].status == "present"
     conn = state_db.open_ro(state_db_path)
     try:
-        index = path_index.bulk_lookup(
-            conn, path_index.resolver_namespace(data_dir), [path]
-        )
+        index = path_index.bulk_lookup(conn, path_index.resolver_namespace(data_dir), [path])
     finally:
         conn.close()
     assert index[path] is not None

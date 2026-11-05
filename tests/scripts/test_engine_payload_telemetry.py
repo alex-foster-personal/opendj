@@ -14,6 +14,7 @@ Regression lines:
   - if the launcher does not export OPENDJ_BUNDLED_TELEMETRY, a payload that
     staged the file still boots with no bundle
 """
+
 from __future__ import annotations
 
 import json
@@ -61,9 +62,7 @@ def test_bake_fails_naming_the_frontend_variable_when_only_the_engine_dsn_is_set
     assert not (tmp_path / "payload" / BUNDLED_RELATIVE).exists()
 
 
-def test_bake_never_falls_back_to_the_preview_sentry_dsn(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bake_never_falls_back_to_the_preview_sentry_dsn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The build host's SENTRY_DSN is the preview-dev key. A dmg reporting
     under it would file every tester as a preview host; refuse instead."""
     monkeypatch.setenv("PATH", "")  # no doppler either
@@ -86,9 +85,7 @@ def test_bake_fails_naming_the_variable_when_env_and_doppler_are_absent(
 
 def test_bake_refuses_a_value_that_is_not_dsn_shaped(tmp_path: Path) -> None:
     with pytest.raises(PayloadTelemetryError) as excinfo:
-        bake_telemetry(
-            tmp_path / "payload", env={**BOTH, SHIP_DSN_ENV: "not-a-dsn"}
-        )
+        bake_telemetry(tmp_path / "payload", env={**BOTH, SHIP_DSN_ENV: "not-a-dsn"})
     assert SHIP_DSN_ENV in str(excinfo.value)
     assert "not-a-dsn" not in str(excinfo.value)
 
@@ -101,7 +98,7 @@ def test_verify_fails_loud_when_the_bundled_file_is_missing(tmp_path: Path) -> N
 
 @pytest.mark.parametrize(
     "body",
-    ["{}", "{\"dsn\": \"  \"}", "[]", "not json", f'{{"dsn": "{FAKE_DSN}"}}'],
+    ["{}", '{"dsn": "  "}', "[]", "not json", f'{{"dsn": "{FAKE_DSN}"}}'],
 )
 def test_verify_fails_loud_on_a_malformed_bundle(tmp_path: Path, body: str) -> None:
     path = tmp_path / "payload" / BUNDLED_RELATIVE

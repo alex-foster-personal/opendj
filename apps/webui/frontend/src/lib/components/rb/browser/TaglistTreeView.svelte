@@ -3,16 +3,20 @@
 	// and keeps it live; this draws it (null catalog = still loading).
 	import type { MyTagCatalog } from '$lib/rb/api-edit-suite';
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import type { groupTagsByType } from '$lib/rb/tag-display';
 	import { taglistNode, taglistPaneId } from './taglist-nav';
 
 	let {
 		catalog,
 		error,
+		groups = [],
 		selectedId,
 		onselect
 	}: {
 		catalog: MyTagCatalog | null;
 		error: string | null;
+		/** Tags under their tag-type headers; empty draws the plain catalog list. */
+		groups?: ReturnType<typeof groupTagsByType>;
 		selectedId: string | null;
 		onselect: (node: PlaylistNode) => void;
 	} = $props();
@@ -36,7 +40,7 @@
 			<span class="name dim">No tags yet</span>
 		</div>
 	{:else}
-		{#each catalog.tags as tag (tag.name)}
+		{#snippet tagRow(tag: { name: string; track_count: number })}
 			<div
 				class="row"
 				class:selected={selectedId === taglistPaneId(tag.name)}
@@ -52,7 +56,19 @@
 				<span class="name" title={tag.name}>{tag.name}</span>
 				<span class="count" title="{tag.track_count} tracks">{tag.track_count}</span>
 			</div>
-		{/each}
+		{/snippet}
+		{#if groups.length > 0}
+			{#each groups as group (group.type.id)}
+				<div class="type-head" data-testid="taglist-type">{group.type.label}</div>
+				{#each group.tags as tag (tag.name_norm)}
+					{@render tagRow(tag)}
+				{/each}
+			{/each}
+		{:else}
+			{#each catalog.tags as tag (tag.name)}
+				{@render tagRow(tag)}
+			{/each}
+		{/if}
 	{/if}
 </div>
 
@@ -62,6 +78,13 @@
 		min-height: 0;
 		overflow-y: auto;
 		padding: 2px 0;
+	}
+	.type-head {
+		padding: 6px 6px 2px;
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--rb-text-dim);
 	}
 	.row {
 		display: flex;

@@ -88,7 +88,10 @@ test('dismissed-empty library-attached row renders a clickable, enabled Run setu
 		navigate: () => {}
 	});
 
-	assert.ok(html.includes(RUN_SETUP_TESTID), 'expected a preflight-run-setup control in the markup');
+	assert.ok(
+		html.includes(RUN_SETUP_TESTID),
+		'expected a preflight-run-setup control in the markup'
+	);
 	const buttonMatch = html.match(/<button[^>]*data-testid="preflight-run-setup"[^>]*>/);
 	assert.ok(buttonMatch, 'expected a <button> element carrying the testid');
 	// A real, live control: not disabled, and not the app's own "dead
@@ -105,7 +108,10 @@ test('the true fresh-install fail row renders a clickable Run setup control (iss
 		navigate: () => {}
 	});
 
-	assert.ok(html.includes(RUN_SETUP_TESTID), 'expected a preflight-run-setup control in the markup');
+	assert.ok(
+		html.includes(RUN_SETUP_TESTID),
+		'expected a preflight-run-setup control in the markup'
+	);
 	const buttonMatch = html.match(/<button[^>]*data-testid="preflight-run-setup"[^>]*>/);
 	assert.ok(buttonMatch, 'expected a <button> element carrying the testid');
 	assert.doesNotMatch(buttonMatch[0], /disabled/);

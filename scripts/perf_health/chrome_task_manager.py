@@ -3,6 +3,7 @@
 Stdlib-only, 3.9-compatible. Run as:
     python3 scripts/perf_health/chrome_task_manager.py capture.json
 """
+
 from __future__ import annotations
 
 import json
@@ -65,9 +66,7 @@ def validate_capture(data: dict) -> list[str]:
         for field in ("cpu_percent", "memory_mb"):
             value = proc.get(field)
             if not _is_finite_number(value):
-                errors.append(
-                    f"processes.{key}.{field} must be a finite number, got {value!r}"
-                )
+                errors.append(f"processes.{key}.{field} must be a finite number, got {value!r}")
 
     return errors
 

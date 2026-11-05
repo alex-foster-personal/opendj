@@ -67,7 +67,6 @@ def test_a_non_boolean_by_user_is_a_422() -> None:
     assert "by_user must be boolean" in body["detail"]
 
 
-
 @pytest.mark.requirement("PLAY-18")
 @pytest.mark.parametrize(
     "order",

@@ -68,5 +68,8 @@ test('a mirror the engine calls stale no longer reads as a playing deck', () => 
 	assert.equal(view.anyDeckPlaying({ decks, mirror_stale: false }), true);
 	assert.equal(view.anyDeckPlaying({ decks, mirror_stale: true }), false);
 	assert.equal(view.syncRuntimeGateReason('prep', { decks, mirror_stale: true }), null);
-	assert.equal(view.syncRuntimeGateReason('gig', { decks, mirror_stale: true }), view.SYNC_DEFER_GIG);
+	assert.equal(
+		view.syncRuntimeGateReason('gig', { decks, mirror_stale: true }),
+		view.SYNC_DEFER_GIG
+	);
 });

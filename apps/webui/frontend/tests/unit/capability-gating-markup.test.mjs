@@ -55,7 +55,10 @@ test('the layout probes once at mount and nobody else polls for the flavor', () 
 });
 
 test('the events bus connects only when the daemon offers it', () => {
-	assert.match(layout, /if \(!capabilities\.events\) return;\s*\n[\s\S]{0,200}?connectEventsBus\(\)/);
+	assert.match(
+		layout,
+		/if \(!capabilities\.events\) return;\s*\n[\s\S]{0,200}?connectEventsBus\(\)/
+	);
 	assert.equal(
 		layout.match(/connectEventsBus\(\)/g)?.length,
 		1,
@@ -73,11 +76,7 @@ test('the progress route loads nothing and schedules nothing while inert', () =>
 		progressPage,
 		/\$effect\(\(\) => \{\s*\n\s*if \(ledgerRefusal !== null\) return;\s*\n\s*void load\(\);\s*\n\s*const intervalId = setInterval\(/
 	);
-	assert.equal(
-		progressPage.match(/setInterval\(/g)?.length,
-		1,
-		'one timer, inside the gate'
-	);
+	assert.equal(progressPage.match(/setInterval\(/g)?.length, 1, 'one timer, inside the gate');
 	assert.equal(
 		progressPage.match(/addEventListener\('visibilitychange'/g)?.length,
 		1,
@@ -114,7 +113,10 @@ test('the inert drawer disables refresh, states the reason, and lists nothing', 
 	assert.match(drawer, /class="jobs-inert" title=\{refusal\}/);
 	// "no jobs yet" is a claim about what the daemon said. A daemon with no
 	// jobs API never said it, so the empty state must sit behind the gate.
-	assert.match(drawer, /\{#if refusal !== null\}[\s\S]{0,400}?\{:else if jobsStore\.jobs\.length === 0\}/);
+	assert.match(
+		drawer,
+		/\{#if refusal !== null\}[\s\S]{0,400}?\{:else if jobsStore\.jobs\.length === 0\}/
+	);
 });
 
 test('the TopBar toggle goes inert with the reason in its title', () => {

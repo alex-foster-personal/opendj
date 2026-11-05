@@ -40,6 +40,7 @@ from pathlib import Path, PureWindowsPath
 
 from apps.engine_core.build_info import REQUIRED_IDENTITY_KEYS
 from scripts import payload_launchers_win
+from scripts.app_identity import read_app_identity
 from scripts.build_engine_payload import (
     AUDIO_ENGINE_CRATE,
     PayloadBuildError,
@@ -221,7 +222,7 @@ def _lock_holder_pid(data_dir: Path) -> int:
 def build_windows_payload(*, repo_root: Path, output_dir: Path, runtime_source: Path) -> dict[str, object]:
     if sys.platform != "win32":
         raise PayloadBuildError("the Windows payload is staged on a Windows host: the dependency wheels are chosen for the host")
-    conf = json.loads((repo_root / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+    app = read_app_identity(repo_root)
     build_dir = assert_spa_is_fresh(repo_root / "apps/webui/frontend")
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -241,9 +242,9 @@ def build_windows_payload(*, repo_root: Path, output_dir: Path, runtime_source: 
 
     manifest = windows_manifest(
         identity={
-            "product_name": conf["productName"],
-            "bundle_identifier": conf["identifier"],
-            "app_version": conf["version"],
+            "product_name": app.product_name,
+            "bundle_identifier": app.identifier,
+            "app_version": app.version,
         },
         python_version=python_version,
         audio_engine_hello=hello,

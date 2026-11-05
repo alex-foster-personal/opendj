@@ -7,11 +7,13 @@ test('LRU drops oldest ready entry when over cap', async () => {
 	const { evictAnlzLru } = await loadTypeScriptModule(
 		'src/lib/components/rb/wave/anlz-cache-caps.ts'
 	);
-	const cache = new Map(Object.entries({
-		a: { status: 'ready', touched: 1 },
-		b: { status: 'ready', touched: 2 },
-		c: { status: 'loading' }
-	}));
+	const cache = new Map(
+		Object.entries({
+			a: { status: 'ready', touched: 1 },
+			b: { status: 'ready', touched: 2 },
+			c: { status: 'loading' }
+		})
+	);
 	evictAnlzLru(cache, {
 		entryCap: 1,
 		byteCap: 10 * 1024 * 1024,
@@ -57,7 +59,8 @@ test('PERFMODE-15: releasing the hold restores the tier cap for later inserts', 
 	mod.bindAnlzCapCache(cache);
 	const tierCap = mod.effectiveAnlzEntryCap();
 	mod.holdAnlzEntryCap(1)();
-	for (const id of ['b', 'c', 'd']) cache.set(id, { status: 'ready', touched: mod.nextAnlzTouch() });
+	for (const id of ['b', 'c', 'd'])
+		cache.set(id, { status: 'ready', touched: mod.nextAnlzTouch() });
 	mod.applyAnlzCaps();
 	// Overshoot control: a hold that outlived its release would leave one entry.
 	assert.deepEqual([...cache.keys()].sort(), ['a', 'b', 'c', 'd']);

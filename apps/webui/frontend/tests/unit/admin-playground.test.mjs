@@ -91,8 +91,8 @@ test('parsePlaygroundPath rejects unsafe paths without calling fetch', async () 
 
 // REQ: ADMIN-02
 test('GET sends no body even when bodyText is non-empty', async () => {
-	stubFetch(async () =>
-		new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } })
+	stubFetch(
+		async () => new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } })
 	);
 	await playgroundApi.sendPlaygroundRequest({
 		method: 'GET',
@@ -120,8 +120,8 @@ test('POST with invalid JSON throws before fetch', async () => {
 });
 
 test('HTTP 404 is returned as a result object', async () => {
-	stubFetch(async () =>
-		new Response('missing', { status: 404, headers: { 'content-type': 'text/plain' } })
+	stubFetch(
+		async () => new Response('missing', { status: 404, headers: { 'content-type': 'text/plain' } })
 	);
 	const result = await playgroundApi.sendPlaygroundRequest({
 		method: 'GET',
@@ -145,7 +145,13 @@ test('parseSqlQueryResult accepts a well-formed body', () => {
 
 test('parseSqlQueryResult rejects string columns', () => {
 	assert.throws(
-		() => playgroundApi.parseSqlQueryResult({ columns: 'id', rows: [], truncated: false, row_count: 0 }),
+		() =>
+			playgroundApi.parseSqlQueryResult({
+				columns: 'id',
+				rows: [],
+				truncated: false,
+				row_count: 0
+			}),
 		/not a string array/
 	);
 });
@@ -155,11 +161,12 @@ test('formatSqlCell renders null literally', () => {
 });
 
 test('fetchSqlQuery surfaces HTTP 503 with body text', async () => {
-	stubFetch(async () =>
-		new Response(
-			JSON.stringify({ detail: { code: 'sql_db_unavailable', message: 'missing db' } }),
-			{ status: 503, headers: { 'content-type': 'application/json' } }
-		)
+	stubFetch(
+		async () =>
+			new Response(
+				JSON.stringify({ detail: { code: 'sql_db_unavailable', message: 'missing db' } }),
+				{ status: 503, headers: { 'content-type': 'application/json' } }
+			)
 	);
 	await assert.rejects(
 		() => playgroundApi.fetchSqlQuery('SELECT 1', 200),

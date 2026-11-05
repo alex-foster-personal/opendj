@@ -153,9 +153,7 @@ function _unwrapExpression(node) {
 
 function _stringLiteral(node) {
 	const expr = _unwrapExpression(node);
-	return ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)
-		? expr.text
-		: null;
+	return ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr) ? expr.text : null;
 }
 
 function _isLoadTypeScriptModuleCall(expr) {
@@ -268,7 +266,8 @@ function _productionModuleExports(path, name) {
 	if (PRODUCTION_EXPORTS.has(key)) return PRODUCTION_EXPORTS.get(key);
 	PRODUCTION_EXPORTS.set(key, null); // a star cycle reads as unknown, never as absent
 	const abs = join(FRONTEND_ROOT, path);
-	if (!PRODUCTION_RESOLVERS.has(abs)) PRODUCTION_RESOLVERS.set(abs, new SeamResolver(abs, readFileSync(abs, 'utf8')));
+	if (!PRODUCTION_RESOLVERS.has(abs))
+		PRODUCTION_RESOLVERS.set(abs, new SeamResolver(abs, readFileSync(abs, 'utf8')));
 	const exported = PRODUCTION_RESOLVERS.get(abs)._exportOutcomes(name) !== null;
 	PRODUCTION_EXPORTS.set(key, exported);
 	return exported;
@@ -314,9 +313,13 @@ class SeamResolver {
 	 * as the member of `source` its key path names. `keys` is null once the
 	 * path stops being followable (array positions, rest, computed keys). */
 	_recordPatternTargets(node, source, keys, why) {
-		const target = (k) => (keys == null ? { unfollowable: why } : { destructure: source, keys: [...keys, k] });
+		const target = (k) =>
+			keys == null ? { unfollowable: why } : { destructure: source, keys: [...keys, k] };
 		if (ts.isIdentifier(node)) {
-			this._recordAssignment(node, keys == null ? { unfollowable: why } : { destructure: source, keys });
+			this._recordAssignment(
+				node,
+				keys == null ? { unfollowable: why } : { destructure: source, keys }
+			);
 			return;
 		}
 		if (ts.isShorthandPropertyAssignment(node)) {
@@ -341,7 +344,12 @@ class SeamResolver {
 			return;
 		}
 		if (ts.isSpreadElement(node) || ts.isSpreadAssignment(node)) {
-			this._recordPatternTargets(node.expression, source, null, 'rest element of a destructuring assignment');
+			this._recordPatternTargets(
+				node.expression,
+				source,
+				null,
+				'rest element of a destructuring assignment'
+			);
 			return;
 		}
 		if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
@@ -396,7 +404,8 @@ class SeamResolver {
 				];
 			}
 			const rel = _specifierToFrontendPath(reexport.spec, FRONTEND_ROOT);
-			if (!rel) return [UNRESOLVED(`bundle entry re-exports \`${name}\` from package ${reexport.spec}`)];
+			if (!rel)
+				return [UNRESOLVED(`bundle entry re-exports \`${name}\` from package ${reexport.spec}`)];
 			return [_moduleOutcome(rel, [reexport.exportName], `bundle re-export \`${name}\``)];
 		}
 		if (outcome.kind === 'object') return outcome.resolver._objectMember(outcome.node, name);
@@ -422,21 +431,27 @@ class SeamResolver {
 			}
 			const propName = prop.name;
 			const key =
-				propName && (ts.isIdentifier(propName) || ts.isStringLiteral(propName) || ts.isNumericLiteral(propName))
+				propName &&
+				(ts.isIdentifier(propName) || ts.isStringLiteral(propName) || ts.isNumericLiteral(propName))
 					? propName.text
 					: null;
 			if (key !== name) continue;
 			if (ts.isPropertyAssignment(prop)) out.push(...this.resolveValue(prop.initializer));
 			else if (ts.isShorthandPropertyAssignment(prop)) {
 				const sym = this.checker.getShorthandAssignmentValueSymbol(prop);
-				out.push(...(sym ? this._resolveSymbol(sym) : [UNRESOLVED(`\`${name}\` has no declaration in this file`)]));
+				out.push(
+					...(sym
+						? this._resolveSymbol(sym)
+						: [UNRESOLVED(`\`${name}\` has no declaration in this file`)])
+				);
 			} else out.push(LOCAL('method built in the test file'));
 		}
 		if (out.length > 0) return out;
 		if (spread) {
 			for (const prop of node.properties) {
 				if (!ts.isSpreadAssignment(prop)) continue;
-				for (const base of this.resolveValue(prop.expression)) out.push(...this._member(base, name));
+				for (const base of this.resolveValue(prop.expression))
+					out.push(...this._member(base, name));
 			}
 			return out;
 		}
@@ -485,7 +500,8 @@ class SeamResolver {
 			expr.expression.name.text === 'join' &&
 			ts.isArrayLiteralExpression(_unwrapExpression(expr.expression.expression))
 		) {
-			const sep = expr.arguments.length === 0 ? ',' : this._constString(expr.arguments[0], depth + 1);
+			const sep =
+				expr.arguments.length === 0 ? ',' : this._constString(expr.arguments[0], depth + 1);
 			if (sep == null) return null;
 			const parts = [];
 			for (const el of _unwrapExpression(expr.expression.expression).elements) {
@@ -520,8 +536,13 @@ class SeamResolver {
 		if (!rel) return LOCAL(`imported from package ${spec}`);
 		if (rel.startsWith('src/')) return _moduleOutcome(rel, [], why);
 		const helper = this._helperResolver(spec);
-		if (!helper) return UNRESOLVED(`${why}: test-side module ${spec} is not a script the guard can follow`);
-		return { kind: 'helper', resolver: helper, why: `${why}: a test-side module namespace, not a callable` };
+		if (!helper)
+			return UNRESOLVED(`${why}: test-side module ${spec} is not a script the guard can follow`);
+		return {
+			kind: 'helper',
+			resolver: helper,
+			why: `${why}: a test-side module namespace, not a callable`
+		};
 	}
 
 	_importOutcome(importDecl, chain) {
@@ -600,7 +621,9 @@ class SeamResolver {
 					const hit = this._bindingNamed(decl.name, name);
 					if (hit) {
 						const sym = this._symbolOf(hit);
-						return sym ? this._resolveSymbol(sym) : [UNRESOLVED(`exported \`${name}\` has no symbol`)];
+						return sym
+							? this._resolveSymbol(sym)
+							: [UNRESOLVED(`exported \`${name}\` has no symbol`)];
 					}
 				}
 			}
@@ -629,7 +652,9 @@ class SeamResolver {
 		if (candidates.length > 1) {
 			return [
 				{
-					...UNRESOLVED(`\`${name}\` may come from ${candidates.length} export * sources; the guard cannot tell which`),
+					...UNRESOLVED(
+						`\`${name}\` may come from ${candidates.length} export * sources; the guard cannot tell which`
+					),
 					lastKey: name
 				}
 			];
@@ -684,7 +709,8 @@ class SeamResolver {
 			if (CALLS_IN_FLIGHT.has(fn)) continue;
 			CALLS_IN_FLIGHT.add(fn);
 			try {
-				for (const expr of resolver._returnExpressions(fn)) out.push(...resolver.resolveValue(expr));
+				for (const expr of resolver._returnExpressions(fn))
+					out.push(...resolver.resolveValue(expr));
 			} finally {
 				CALLS_IN_FLIGHT.delete(fn);
 			}

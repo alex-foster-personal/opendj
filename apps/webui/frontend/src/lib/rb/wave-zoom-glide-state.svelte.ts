@@ -17,7 +17,9 @@ export function setWaveZoomGlideRunning(deckId: DeckId, on: boolean): void {
  * the reference's bars from the same analysis the reference row draws. Reactive
  * and replaced whole on each write, so a follower's view re-derives when the
  * reference's analysis changes (WAVEZOOM-6802). */
-let rowBeats = $state.raw<Partial<Record<DeckId, readonly { t: number; bpm: number }[] | null>>>({});
+let rowBeats = $state.raw<Partial<Record<DeckId, readonly { t: number; bpm: number }[] | null>>>(
+	{}
+);
 
 export function waveZoomRowBeats(deckId: DeckId): readonly { t: number; bpm: number }[] | null {
 	return rowBeats[deckId] ?? null;
@@ -52,6 +54,9 @@ export function setWaveZoomScrubPreviewMs(deckId: DeckId, ms: number | null): vo
 /** Called from each row's publisher effect, so the previous record is read
  * untracked: otherwise the effect would subscribe to the registry it writes and
  * every publish would re-run every publisher. */
-export function setWaveZoomRowBeats(deckId: DeckId, beats: readonly { t: number; bpm: number }[] | null): void {
+export function setWaveZoomRowBeats(
+	deckId: DeckId,
+	beats: readonly { t: number; bpm: number }[] | null
+): void {
 	rowBeats = { ...untrack(() => rowBeats), [deckId]: beats };
 }

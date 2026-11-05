@@ -70,7 +70,9 @@
 			role="menuitem"
 			data-testid="set-notes-link-suggestion"
 			disabled={!canLink}
-			title={canLink ? `Link the selected text to ${hitLabel(hit)}` : 'Select some text to link first'}
+			title={canLink
+				? `Link the selected text to ${hitLabel(hit)}`
+				: 'Select some text to link first'}
 			onclick={() => onLink(hit)}>Link to: {hitLabel(hit)}</button
 		>
 	{:else}
@@ -93,11 +95,17 @@
 	<hr />
 	<button type="button" role="menuitem" onclick={onBold}>Bold</button>
 	{#if linkActions}
-		<button type="button" role="menuitem" data-testid="set-notes-link-open" onclick={linkActions.open}
-			>Open / load link</button
+		<button
+			type="button"
+			role="menuitem"
+			data-testid="set-notes-link-open"
+			onclick={linkActions.open}>Open / load link</button
 		>
-		<button type="button" role="menuitem" data-testid="set-notes-link-remove" onclick={linkActions.remove}
-			>Remove link</button
+		<button
+			type="button"
+			role="menuitem"
+			data-testid="set-notes-link-remove"
+			onclick={linkActions.remove}>Remove link</button
 		>
 	{/if}
 </div>

@@ -11,6 +11,7 @@ Live-write paths are never exercised here; we exercise only:
 * invalid input (bad JSON, schema errors)
 * unknown adapter
 """
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,6 @@ def _write_minimal(tmp_path: Path) -> Path:
 
 @pytest.mark.requirement("OPEN-01")
 class TestImportDryRun:
-
     def test_dry_run_default_exits_0(self, tmp_path: Path) -> None:
         src = _write_minimal(tmp_path)
         target = tmp_path / "target.nml"
@@ -81,7 +81,6 @@ class TestImportDryRun:
 
 @pytest.mark.requirement("OPEN-01")
 class TestImportSafetyRefusal:
-
     def test_live_without_typed_confirm_refused(self, tmp_path: Path) -> None:
         src = _write_minimal(tmp_path)
         target = tmp_path / "target.nml"
@@ -100,9 +99,7 @@ class TestImportSafetyRefusal:
         assert rc == 3
         assert not target.exists()
 
-    def test_rekordbox_live_import_refused_with_hint(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_rekordbox_live_import_refused_with_hint(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         src = _write_minimal(tmp_path)
         target = tmp_path / "master.db"
         target.write_bytes(b"existing db bytes")
@@ -132,7 +129,6 @@ class TestImportSafetyRefusal:
 
 @pytest.mark.requirement("OPEN-01")
 class TestImportInputValidation:
-
     def test_bad_json_exits_1(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.json"
         bad.write_text("{not json")
@@ -398,4 +394,3 @@ def test_dict_to_library_rejects_out_of_range_legacy_color_rgb() -> None:
     )
     with pytest.raises(ValueError, match=r"6-digit hex RGB|0\.\.0xffffff"):
         _dict_to_library(doc)
-

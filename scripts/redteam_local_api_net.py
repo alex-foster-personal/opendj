@@ -60,21 +60,15 @@ def origin_allowed(origin: str, acao: str | None) -> bool:
     return acao == origin
 
 
-def acao(
-    host: str, port: int, path: str, origin: str
-) -> tuple[str | None, int | None, str | None]:
+def acao(host: str, port: int, path: str, origin: str) -> tuple[str | None, int | None, str | None]:
     """GET path with Origin and return (ACAO header, status, error)."""
-    headers, status, err = http_headers(
-        host, port, "GET", path, {"Origin": origin, "Accept": "application/json"}
-    )
+    headers, status, err = http_headers(host, port, "GET", path, {"Origin": origin, "Accept": "application/json"})
     if headers is None:
         return None, status, err
     return headers.get("access-control-allow-origin"), status, err
 
 
-def http_status(
-    host: str, port: int, method: str, path: str, timeout: float = 4.0
-) -> tuple[int | None, str | None]:
+def http_status(host: str, port: int, method: str, path: str, timeout: float = 4.0) -> tuple[int | None, str | None]:
     """HTTP status or (None, error) when the socket cannot be used."""
     headers, status, err = http_headers(host, port, method, path, timeout=timeout)
     if headers is None:
@@ -82,9 +76,7 @@ def http_status(
     return status, err
 
 
-def http_body(
-    host: str, port: int, method: str, path: str, body: str | None
-) -> tuple[int | None, str | None, str]:
+def http_body(host: str, port: int, method: str, path: str, body: str | None) -> tuple[int | None, str | None, str]:
     """Status, error, and a short body preview. Path is sent un-normalized."""
     try:
         conn = HTTPConnection(host, port, timeout=4.0)
@@ -208,9 +200,7 @@ def _outbound_ipv4() -> list[str]:
 
 def _run_capture(argv: Sequence[str]) -> str | None:
     try:
-        completed = subprocess.run(
-            list(argv), check=False, capture_output=True, text=True, timeout=5
-        )
+        completed = subprocess.run(list(argv), check=False, capture_output=True, text=True, timeout=5)
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return None
     if completed.returncode != 0:

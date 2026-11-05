@@ -64,6 +64,9 @@ const meta = {
 		summary: null,
 		single: row(),
 		keyShown: '8A \u2022 Am',
+		artworkSrc: null,
+		onArtworkLoad: fn(),
+		onArtworkError: fn(),
 		track,
 		loadError: null,
 		saveError: null,
@@ -72,11 +75,9 @@ const meta = {
 			{ playlist_id: 'pl-2', name: 'Deep Cuts', vendor: 'rekordbox', positions: [17, 42] }
 		],
 		playlistsError: null,
-		artFailed: false,
 		newTag: '',
 		applyPatch: fn(async () => {}),
 		addTag: fn(),
-		onArtError: fn(),
 		onTempoPref: fn()
 	}
 } satisfies Meta<typeof TrackInspectorView>;

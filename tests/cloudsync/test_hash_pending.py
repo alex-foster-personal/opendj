@@ -10,12 +10,13 @@ Acceptance, one test each (fixtures use 100/80 rows in CI; REQUIREMENTS.md cites
 - row with content_hash is never hash_pending
 - hash_pending parent takes its children into the offer
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -47,9 +48,7 @@ def _hub_transport(hub_dir: Path) -> TestClientTransport:
     return TestClientTransport(TestClient(_hub_app(hub_dir)))
 
 
-def _seed_pending_tracks(
-    conn: sqlite3.Connection, count: int, *, origin: str = _DEV_A
-) -> None:
+def _seed_pending_tracks(conn: sqlite3.Connection, count: int, *, origin: str = _DEV_A) -> None:
     rows = [
         (
             f"trk-pending-{index:05d}",
@@ -93,13 +92,9 @@ class _OldHashPendingHubTransport:
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         body = dict(payload)
         if path.endswith("/push"):
-            pending = sum(
-                1 for row in body.get("rows", []) if row.get("hash_pending")
-            )
+            pending = sum(1 for row in body.get("rows", []) if row.get("hash_pending"))
             if pending:
-                message = capabilities.hash_pending_refusal(
-                    "push", pending, body.get("capabilities")
-                )
+                message = capabilities.hash_pending_refusal("push", pending, body.get("capabilities"))
                 raise refused(
                     f"POST {path}",
                     422,
@@ -109,13 +104,11 @@ class _OldHashPendingHubTransport:
         decoded = self._decoded(response, f"POST {path}")
         if path.endswith("/hello") and "capabilities" in decoded:
             decoded["capabilities"] = [
-                token
-                for token in decoded["capabilities"]
-                if token != capabilities.HASH_PENDING_V1
+                token for token in decoded["capabilities"] if token != capabilities.HASH_PENDING_V1
             ]
         return decoded
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         response = self._http.get(path, params=dict(params))
         return self._decoded(response, f"GET {path}")
 
@@ -133,9 +126,7 @@ def test_spoke_offers_hash_pending_inferred_without_audio(tmp_path: Path) -> Non
     state_db.open_rw(client.state_db_path(hub_dir)).close()
 
     transport = _hub_transport(hub_dir)
-    result = client.run_sync(
-        spoke, "http://hub.invalid", transport=transport, name="spoke"
-    )
+    result = client.run_sync(spoke, "http://hub.invalid", transport=transport, name="spoke")
 
     assert result.digest_inconclusive is False
     assert result.hash_pending == _PENDING_COUNT
@@ -152,9 +143,7 @@ def test_hash_pending_track_and_children_in_offer(tmp_path: Path) -> None:
     """Children of a hash_pending parent travel in the offer."""
     conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
     try:
-        _insert_identified_track(
-            conn, "trk-parent", title="pending", updated_at=_T0, origin=_DEV_A
-        )
+        _insert_identified_track(conn, "trk-parent", title="pending", updated_at=_T0, origin=_DEV_A)
         conn.execute(
             "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id, "
             "updated_at, origin_device_id) "
@@ -200,9 +189,7 @@ def test_for_hub_backfill_resolves_hub_pending(tmp_path: Path, good_wav: Path) -
     finally:
         conn.close()
 
-    report = run_for_hub_backfill(
-        spoke, live=True, transport=transport, hub_endpoint="http://hub.invalid"
-    )
+    report = run_for_hub_backfill(spoke, live=True, transport=transport, hub_endpoint="http://hub.invalid")
     assert report.total == _PENDING_COUNT
     assert report.hashed == resolvable
 
@@ -231,9 +218,7 @@ def good_wav(tmp_path: Path) -> Path:
     return wav_path
 
 
-def test_hub_hash_conflict_last_writer_wins(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_hub_hash_conflict_last_writer_wins(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Two hashes for one row: later stamp wins, both values logged, one row."""
     hub_dir = tmp_path / "hub"
     hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
@@ -250,13 +235,9 @@ def test_hub_hash_conflict_last_writer_wins(
         hub_conn.close()
 
     transport = _hub_transport(hub_dir)
-    machine_a = sync_stamp.local_machine_id(
-        state_db.open_rw(client.state_db_path(tmp_path / "a"))
-    )
+    machine_a = sync_stamp.local_machine_id(state_db.open_rw(client.state_db_path(tmp_path / "a")))
     state_db.open_rw(client.state_db_path(tmp_path / "a")).close()
-    machine_b = sync_stamp.local_machine_id(
-        state_db.open_rw(client.state_db_path(tmp_path / "b"))
-    )
+    machine_b = sync_stamp.local_machine_id(state_db.open_rw(client.state_db_path(tmp_path / "b")))
     state_db.open_rw(client.state_db_path(tmp_path / "b")).close()
 
     def _push_hash(machine_id: str, digest: str, updated_at: str) -> None:
@@ -295,12 +276,8 @@ def test_hub_hash_conflict_last_writer_wins(
 
     hub_after = state_db.open_rw(client.state_db_path(hub_dir))
     try:
-        row = hub_after.execute(
-            "SELECT content_hash FROM tracks WHERE stable_id = 'trk-conflict'"
-        ).fetchone()
-        count = hub_after.execute(
-            "SELECT COUNT(*) FROM tracks WHERE stable_id = 'trk-conflict'"
-        ).fetchone()[0]
+        row = hub_after.execute("SELECT content_hash FROM tracks WHERE stable_id = 'trk-conflict'").fetchone()
+        count = hub_after.execute("SELECT COUNT(*) FROM tracks WHERE stable_id = 'trk-conflict'").fetchone()[0]
     finally:
         hub_after.close()
     assert count == 1
@@ -316,9 +293,7 @@ def test_old_hub_refuses_hash_pending_with_422(tmp_path: Path) -> None:
     hub_dir = tmp_path / "hub"
     conn = state_db.open_rw(client.state_db_path(spoke))
     try:
-        _insert_identified_track(
-            conn, "trk-pending", title="no identity", updated_at=_T0, origin=_DEV_A
-        )
+        _insert_identified_track(conn, "trk-pending", title="no identity", updated_at=_T0, origin=_DEV_A)
         conn.commit()
     finally:
         conn.close()
@@ -327,9 +302,7 @@ def test_old_hub_refuses_hash_pending_with_422(tmp_path: Path) -> None:
     with TestClient(_hub_app(hub_dir)) as http:
         transport = _OldHashPendingHubTransport(http)
         with pytest.raises(client.SyncTransportError):
-            maintenance.sync(
-                spoke, "http://hub.invalid", transport=transport, name="spoke"
-            )
+            maintenance.sync(spoke, "http://hub.invalid", transport=transport, name="spoke")
 
     from apps.sync_hub import status as sync_status
 
@@ -353,15 +326,18 @@ def test_content_hash_row_never_hash_pending(tmp_path: Path) -> None:
             origin=_DEV_A,
         )
         conn.commit()
-        assert sync_set.is_hash_pending_track(
-            {
-                "stable_id": "trk-hashed",
-                "stable_id_tier": "inferred",
-                "content_hash": _HASH_A,
-                "isrc": None,
-            },
-            sync_set.HeldKeys(conn),
-        ) is False
+        assert (
+            sync_set.is_hash_pending_track(
+                {
+                    "stable_id": "trk-hashed",
+                    "stable_id_tier": "inferred",
+                    "content_hash": _HASH_A,
+                    "isrc": None,
+                },
+                sync_set.HeldKeys(conn),
+            )
+            is False
+        )
         with pytest.raises(protocol.SyncProtocolError):
             protocol.validate_hash_pending_row(
                 "tracks",

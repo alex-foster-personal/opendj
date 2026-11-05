@@ -93,9 +93,7 @@ def test_cap_plus_one_is_refused_and_leaves_no_row() -> None:
     conn.commit()
     assert (raised.value.used, raised.value.cap, raised.value.month) == (5, 5, "2026-10")
     assert stem_meter.used(conn, owner_sub=OWNER, month="2026-10") == 5
-    rows = conn.execute(
-        f"SELECT COUNT(*) FROM {stem_meter.USAGE_TABLE} WHERE stable_id = 'track-0005'"
-    ).fetchone()[0]
+    rows = conn.execute(f"SELECT COUNT(*) FROM {stem_meter.USAGE_TABLE} WHERE stable_id = 'track-0005'").fetchone()[0]
     assert rows == 0
 
 
@@ -333,8 +331,7 @@ def test_two_connections_cannot_leave_a_served_track_uncounted(
         final = _file_conn(path)
         assert stem_meter.used(final, owner_sub=OWNER, month="2026-10") == 1
         rows = final.execute(
-            f"SELECT stable_id FROM {stem_meter.USAGE_TABLE} "
-            "WHERE owner_sub = ? AND month = ?",
+            f"SELECT stable_id FROM {stem_meter.USAGE_TABLE} WHERE owner_sub = ? AND month = ?",
             (OWNER, "2026-10"),
         ).fetchall()
         assert [row[0] for row in rows] == counted, f"round {round_index}: {rows}"
@@ -367,9 +364,7 @@ def test_charge_begins_immediate_before_inserting_and_counts_inside_it(
     assert begin < insert < count < commit, statements
 
 
-def test_the_charge_derives_its_month_from_the_charge_instant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_charge_derives_its_month_from_the_charge_instant(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a presign crossing midnight charges the wrong month [then] broken.
 
     Codex round 6 (non-blocking): the pre-check captured the month before the
@@ -396,9 +391,7 @@ def test_the_charge_derives_its_month_from_the_charge_instant(
     monkeypatch.setattr(service_stem_assets, "datetime", _FixedDatetime)
     monkeypatch.setattr(service_stem_assets, "_hub_conn", lambda _request: _Ctx())
     # _hub_conn is patched above, so the request is never read.
-    service_stem_assets._charge_bundle(
-        cast(Request, None), owner_sub=OWNER, cap=5, stable_id="track-0000"
-    )
+    service_stem_assets._charge_bundle(cast(Request, None), owner_sub=OWNER, cap=5, stable_id="track-0000")
     row = conn.execute(
         f"SELECT month, counted_at FROM {stem_meter.USAGE_TABLE} WHERE stable_id = ?",
         ("track-0000",),

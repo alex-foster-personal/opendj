@@ -3,6 +3,7 @@
 [if] a set is performed or practiced [then] play_count and runs update correctly, [else stop].
 [if] playlist_sets store semantics drift from SET-05 [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -42,8 +43,7 @@ def test_performance_increments_without_mutating_membership(
         [("pl1", "t-a", 0), ("pl1", "t-b", 1)],
     )
     before = conn.execute(
-        "SELECT playlist_id, stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id=? ORDER BY position",
+        "SELECT playlist_id, stable_id, position FROM playlist_memberships WHERE playlist_id=? ORDER BY position",
         ("pl1",),
     ).fetchall()
     po_count_before = conn.execute("SELECT COUNT(*) FROM play_orders").fetchone()[0]
@@ -51,8 +51,7 @@ def test_performance_increments_without_mutating_membership(
     record_run(conn, set_id, "performance")
     ps = load_playlist_set(conn, set_id)
     after = conn.execute(
-        "SELECT playlist_id, stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id=? ORDER BY position",
+        "SELECT playlist_id, stable_id, position FROM playlist_memberships WHERE playlist_id=? ORDER BY position",
         ("pl1",),
     ).fetchall()
     po_count_after = conn.execute("SELECT COUNT(*) FROM play_orders").fetchone()[0]
@@ -100,9 +99,6 @@ def test_create_from_play_order_snapshot_is_independent(
 def test_migrations_idempotent(ps_conn: sqlite3.Connection) -> None:
     assert apply_playlist_set_migrations(ps_conn) == SCHEMA_VERSION
     assert apply_playlist_set_migrations(ps_conn) == SCHEMA_VERSION
-    tables = {
-        r[0]
-        for r in ps_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-    }
+    tables = {r[0] for r in ps_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "playlist_sets" in tables
     assert "play_orders" in tables

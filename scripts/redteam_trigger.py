@@ -91,9 +91,7 @@ def _changed_paths(repo_path: Path, previous_sha: str | None, current_sha: str) 
         output = _run_git(repo_path, "diff", "--name-only", f"{previous_sha}..{current_sha}")
         return [path for path in output.splitlines() if path]
     root_sha = _run_git(repo_path, "rev-list", "--max-parents=0", current_sha)
-    root_paths = _run_git(
-        repo_path, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", root_sha
-    )
+    root_paths = _run_git(repo_path, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", root_sha)
     later_paths = _run_git(repo_path, "diff", "--name-only", f"{root_sha}..{current_sha}")
     return sorted({*root_paths.splitlines(), *later_paths.splitlines()} - {""})
 
@@ -114,9 +112,7 @@ def _completed_ci_runs_for_sha(sha: str) -> list[health_core.Run]:
     return health_core._parse_completed_runs(payload)
 
 
-def newest_trunk_verified_sha(
-    candidates: Sequence[str], branch: str = DEFAULT_BRANCH
-) -> str | None:
+def newest_trunk_verified_sha(candidates: Sequence[str], branch: str = DEFAULT_BRANCH) -> str | None:
     """Return the newest candidate whose completed trunk CI jobs all ran cleanly."""
     for candidate in candidates:
         runs = [

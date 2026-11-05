@@ -16,6 +16,7 @@ Regression one-liners:
   - if decision writers on separate processes can overlap then broken
   - if OpenAPI omits the stable cluster key or If-Match contract then broken
 """
+
 from __future__ import annotations
 
 import multiprocessing
@@ -45,9 +46,7 @@ LOCK_TEST_JOIN_DEADLINE_S = 60.0
 def _wait_for_start_or_raise(start: Any) -> None:
     """Fail loudly if the parent never fires the start event; no silent skew."""
     if not start.wait(timeout=LOCK_TEST_READY_DEADLINE_S):
-        raise TimeoutError(
-            f"start event not set within {LOCK_TEST_READY_DEADLINE_S}s"
-        )
+        raise TimeoutError(f"start event not set within {LOCK_TEST_READY_DEADLINE_S}s")
 
 
 def _hold_decision_lock(
@@ -88,11 +87,7 @@ def _await_children_ready(ready: Any, processes: list[Any]) -> None:
             continue
         except queue.Empty:
             pass
-        crashed = [
-            (process.pid, process.exitcode)
-            for process in processes
-            if process.exitcode not in (None, 0)
-        ]
+        crashed = [(process.pid, process.exitcode) for process in processes if process.exitcode not in (None, 0)]
         if crashed:
             raise AssertionError(
                 f"lock-test child crashed before signaling ready, "
@@ -108,8 +103,14 @@ def _await_children_ready(ready: Any, processes: list[Any]) -> None:
 
 
 def _seed_cluster_db(
-    db_path: Path, *, cluster_id: int, canonical_sid: str, canonical_path: str,
-    alias_sid: str, alias_path: str, similarity: float = 0.97,
+    db_path: Path,
+    *,
+    cluster_id: int,
+    canonical_sid: str,
+    canonical_path: str,
+    alias_sid: str,
+    alias_path: str,
+    similarity: float = 0.97,
     rationale: str = "bitrate=320",
 ) -> None:
     conn = dedup_schema.ensure_schema(db_path)
@@ -134,14 +135,28 @@ def _seed_cluster_db(
 @pytest.fixture
 def seeded_backend() -> InMemoryBackend:
     backend = InMemoryBackend()
-    backend.seed_track(Track(
-        stable_id="track-canon", title="Midnight Drive", artist="Tamsin Quell",
-        bpm=124.0, key="8A", duration_ms=210_000, rating=4,
-    ))
-    backend.seed_track(Track(
-        stable_id="track-alias", title="Midnight Drive (128k)", artist="Tamsin Quell",
-        bpm=124.0, key="8A", duration_ms=210_000, rating=None,
-    ))
+    backend.seed_track(
+        Track(
+            stable_id="track-canon",
+            title="Midnight Drive",
+            artist="Tamsin Quell",
+            bpm=124.0,
+            key="8A",
+            duration_ms=210_000,
+            rating=4,
+        )
+    )
+    backend.seed_track(
+        Track(
+            stable_id="track-alias",
+            title="Midnight Drive (128k)",
+            artist="Tamsin Quell",
+            bpm=124.0,
+            key="8A",
+            duration_ms=210_000,
+            rating=None,
+        )
+    )
     return backend
 
 
@@ -162,7 +177,9 @@ def app_client(seeded_backend: InMemoryBackend, dedup_db: Path):
     from apps.webui.server.app import create_app
 
     app = create_app(
-        backend=seeded_backend, bind_host="127.0.0.1", hostname="test-host",
+        backend=seeded_backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
         lock_status_fn=lambda: None,
     )
     with TestClient(app) as c:
@@ -187,7 +204,8 @@ def test_clusters_empty_db_is_200(app_client, dedup_db: Path) -> None:
 
 
 def test_clusters_fingerprint_only_db_is_empty_review_state(
-    app_client, dedup_db: Path,
+    app_client,
+    dedup_db: Path,
 ) -> None:
     conn = sqlite3.connect(dedup_db)
     try:
@@ -209,9 +227,12 @@ def test_clusters_fingerprint_only_db_is_empty_review_state(
 
 def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     r = app_client.get("/api/v1/dedup/clusters")
     assert r.status_code == 200
@@ -239,17 +260,19 @@ def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
 
 
 def test_clusters_surface_persisted_manual_review_warning(
-    app_client, dedup_db: Path,
+    app_client,
+    dedup_db: Path,
 ) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     with sqlite3.connect(dedup_db) as connection:
-        connection.execute(
-            "UPDATE duplicate_clusters SET flagged_manual_review = 1"
-        )
+        connection.execute("UPDATE duplicate_clusters SET flagged_manual_review = 1")
 
     response = app_client.get("/api/v1/dedup/clusters")
 
@@ -259,9 +282,12 @@ def test_clusters_surface_persisted_manual_review_warning(
 
 def test_decision_round_trip(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=7,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=7,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     cluster_response = app_client.get("/api/v1/dedup/clusters")
     cluster = cluster_response.json()["clusters"][0]
@@ -294,9 +320,12 @@ def test_decision_round_trip(app_client, dedup_db: Path) -> None:
 
 def test_decision_rejects_non_member_survivor(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     current = app_client.get("/api/v1/dedup/clusters")
     r = app_client.post(
@@ -341,9 +370,12 @@ def test_decision_no_db_404(app_client) -> None:
 
 def test_decision_rejects_bad_action(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     current = app_client.get("/api/v1/dedup/clusters")
     r = app_client.post(
@@ -360,9 +392,12 @@ def test_decision_rejects_bad_action(app_client, dedup_db: Path) -> None:
 
 def test_decision_requires_if_match(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     current = app_client.get("/api/v1/dedup/clusters").json()
 
@@ -380,9 +415,12 @@ def test_decision_requires_if_match(app_client, dedup_db: Path) -> None:
 
 def test_stale_revision_cannot_overwrite_decision(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     current = app_client.get("/api/v1/dedup/clusters")
     cluster_key = current.json()["clusters"][0]["cluster_key"]
@@ -416,12 +454,16 @@ def test_stale_revision_cannot_overwrite_decision(app_client, dedup_db: Path) ->
 
 
 def test_rebuilt_cluster_id_does_not_inherit_stale_decision(
-    app_client, dedup_db: Path,
+    app_client,
+    dedup_db: Path,
 ) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=4,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=4,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     original = app_client.get("/api/v1/dedup/clusters")
     original_cluster = original.json()["clusters"][0]
@@ -480,12 +522,17 @@ def test_rebuilt_cluster_id_does_not_inherit_stale_decision(
     ids=["truncated-json", "missing-schema-version"],
 )
 def test_corrupt_decision_store_fails_without_overwrite(
-    app_client, dedup_db: Path, corrupt: bytes,
+    app_client,
+    dedup_db: Path,
+    corrupt: bytes,
 ) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     dedup_review.DECISIONS_FILE.write_bytes(corrupt)
 
@@ -523,8 +570,7 @@ def test_decision_file_lock_serializes_processes(tmp_path: Path) -> None:
                     f"{LOCK_TEST_JOIN_DEADLINE_S}s after start; hang, not load"
                 )
             assert process.exitcode == 0, (
-                f"lock-test child pid {process.pid} exited "
-                f"{process.exitcode}; traceback is in captured stderr"
+                f"lock-test child pid {process.pid} exited {process.exitcode}; traceback is in captured stderr"
             )
     finally:
         for process in processes:
@@ -539,9 +585,7 @@ def test_decision_file_lock_serializes_processes(tmp_path: Path) -> None:
 
 
 def test_openapi_documents_dedup_cas_contract(app_client) -> None:
-    operation = app_client.app.openapi()["paths"][
-        "/api/v1/dedup/clusters/{cluster_id}/decision"
-    ]["post"]
+    operation = app_client.app.openapi()["paths"]["/api/v1/dedup/clusters/{cluster_id}/decision"]["post"]
     if_match = next(
         parameter
         for parameter in operation["parameters"]
@@ -553,14 +597,20 @@ def test_openapi_documents_dedup_cas_contract(app_client) -> None:
 
 def test_duplicate_cluster_rows_fail_get(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid="track-canon", canonical_path="/music/canon.flac",
-        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
     )
     _seed_cluster_db(
-        dedup_db, cluster_id=2,
-        canonical_sid="track-canon", canonical_path="/music/canon-copy.flac",
-        alias_sid="track-alias", alias_path="/music/alias-copy.mp3",
+        dedup_db,
+        cluster_id=2,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon-copy.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-copy.mp3",
     )
     response = app_client.get("/api/v1/dedup/clusters")
     assert response.status_code == 500

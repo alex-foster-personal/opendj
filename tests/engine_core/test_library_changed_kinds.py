@@ -12,6 +12,7 @@ published with no entry there, so every play logged
 
 -Claude
 """
+
 from __future__ import annotations
 
 import ast

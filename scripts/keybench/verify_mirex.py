@@ -21,7 +21,7 @@ metric can ever return is covered.
 
 THE ONE DOCUMENTED, EXPECTED DIVERGENCE. `key_lane.py`'s module docstring
 records that this scorer deliberately credits BOTH directions of the fifth
-(issue #1584 and specs/native-analysis-v1-lanes/nav1-key-r0.md both ask for
+(issue #1584 and (private path) both ask for
 "MIREX weighted, descending fifths allowed"), while the real, installed
 mir_eval 0.8.2 credits the ascending fifth only. This script asserts that
 divergence is the ONLY one: every other one of the 576 pairs must agree with
@@ -75,10 +75,12 @@ def main() -> int:
                     delta = (est_pc - ref_pc) % 12
                     is_descending_fifth = est_minor == ref_minor and delta == 5
                     if is_descending_fifth and ours == 0.5 and theirs == 0.0:
-                        descending_fifths.append((
-                            _mir_eval_string(ref_pc, ref_minor),
-                            _mir_eval_string(est_pc, est_minor),
-                        ))
+                        descending_fifths.append(
+                            (
+                                _mir_eval_string(ref_pc, ref_minor),
+                                _mir_eval_string(est_pc, est_minor),
+                            )
+                        )
                         continue
                     unexpected.append(
                         f"{_mir_eval_string(ref_pc, ref_minor)} -> "
@@ -90,8 +92,7 @@ def main() -> int:
     print(f"[verify-mirex] compared {total} of {total} (reference, estimated) key pairs")
     print(f"[verify-mirex] exact agreement: {agreements}")
     print(
-        f"[verify-mirex] documented divergence (descending fifths, ours 0.5 vs "
-        f"mir_eval 0.0): {len(descending_fifths)}"
+        f"[verify-mirex] documented divergence (descending fifths, ours 0.5 vs mir_eval 0.0): {len(descending_fifths)}"
     )
 
     if unexpected:
@@ -102,13 +103,9 @@ def main() -> int:
     if len(descending_fifths) != 24:
         # Same mode, delta == 5, both pitch classes free: exactly 12 pcs x 2
         # modes = 24 such pairs exist in the 576-pair grid.
-        print(
-            f"[verify-mirex] FAILED: expected exactly 24 descending-fifth pairs, "
-            f"found {len(descending_fifths)}"
-        )
+        print(f"[verify-mirex] FAILED: expected exactly 24 descending-fifth pairs, found {len(descending_fifths)}")
         return 1
-    print(f"[verify-mirex] OK: {agreements} exact agreements, "
-          f"24 documented descending-fifth divergences, 0 unexpected")
+    print(f"[verify-mirex] OK: {agreements} exact agreements, 24 documented descending-fifth divergences, 0 unexpected")
     return 0
 
 

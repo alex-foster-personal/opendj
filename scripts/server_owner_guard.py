@@ -253,9 +253,7 @@ def _kill_group_leftovers(reason: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument(
-        "--owner-pid", type=int, required=True, help="the test runner that owns this server"
-    )
+    parser.add_argument("--owner-pid", type=int, required=True, help="the test runner that owns this server")
     parser.add_argument("--name", required=True, help="short server name, e.g. engine or vite")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="-- argv to run")
     args = parser.parse_args(argv)
@@ -272,10 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     owner_seen_alive_at = time.monotonic()
     ownership = _ownership_watch(args.owner_pid, os.getpid())
     if args.owner_pid not in ownership:
-        raise SystemExit(
-            f"[ERROR] owner pid {args.owner_pid} is not running: "
-            "refusing to start an unowned server"
-        )
+        raise SystemExit(f"[ERROR] owner pid {args.owner_pid} is not running: refusing to start an unowned server")
     env = {
         **os.environ,
         "AF_SERVICE_ID": testing_service_id(args.name),
@@ -298,11 +293,7 @@ def main(argv: list[str] | None = None) -> int:
             _kill_group_leftovers(f"{args.name}: child exited with status {status}")
             return status
         probe_started_at = time.monotonic()
-        gone = [
-            pid
-            for pid, identity in ownership.items()
-            if process_start_time(pid) != identity
-        ]
+        gone = [pid for pid, identity in ownership.items() if process_start_time(pid) != identity]
         if gone:
             # A watched pid died after the last probe that saw it alive STARTED,
             # so this deadline falls inside the bound measured from its real

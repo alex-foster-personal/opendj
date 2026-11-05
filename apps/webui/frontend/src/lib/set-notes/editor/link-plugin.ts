@@ -17,7 +17,12 @@ export type LinkPluginHandlers = {
 };
 
 /** What a click follows: nothing without Cmd/Ctrl, else the clicked chip or the text link at `pos`. */
-export function clickTarget(state: Pick<EditorState, 'doc'>, pos: number, chip: PMNode | null, mod: boolean): NoteTarget | null {
+export function clickTarget(
+	state: Pick<EditorState, 'doc'>,
+	pos: number,
+	chip: PMNode | null,
+	mod: boolean
+): NoteTarget | null {
 	if (!mod) return null;
 	if (chip) return chip.type === noteSchema.nodes.track_ref ? refTarget(chip) : null;
 	return parseHref(linkAt(state, pos)?.href ?? '');

@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import resource
 import sys
 import time
 from pathlib import Path
@@ -39,6 +38,11 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
+
+try:
+    import resource
+except ImportError:  # POSIX-only; Windows has no resource module
+    resource = None
 
 MODEL_NAME = "htdemucs"
 STEM_PARTS: tuple[str, ...] = ("drums", "bass", "other", "vocals")  # demucs' own order
@@ -50,10 +54,14 @@ def _pick_device() -> str:
     return "cpu"
 
 
-def _peak_rss_mb() -> float:
+def _peak_rss_mb() -> float | None:
     # ru_maxrss is KB on Linux, bytes on macOS -- normalise both to MB.
+    # None means UNAVAILABLE (no resource module, Windows), never 0.
+    if resource is None:
+        return None
     raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return raw / 1024 / 1024 if sys.platform == "darwin" else raw / 1024
+    normalized_mb = raw / 1024 / 1024 if sys.platform == "darwin" else raw / 1024
+    return round(normalized_mb, 1)
 
 
 def _sync_device(device: str) -> None:
@@ -118,7 +126,7 @@ def main() -> None:
         "load_s": round(load_s, 3),
         "separate_s": round(separate_s, 3),
         "wall_s": round(load_s + separate_s, 3),
-        "peak_rss_mb": round(_peak_rss_mb(), 1),
+        "peak_rss_mb": _peak_rss_mb(),
         "disk_bytes_4_stems": disk_bytes,
         "mixture": str(args.mixture),
         "out_dir": str(args.out),

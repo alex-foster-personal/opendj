@@ -35,10 +35,7 @@ def test_merge_report_rows_pulls_cached_rows_outside_the_listing(monkeypatch):
     from scripts import ci_cost_ledger
 
     cache = {index: _sep_row(index) for index in range(1, 401)}
-    listing = [
-        _run(index, "CI", "main", "success", "2026-09-11T00:00:00Z")
-        for index in range(401, 501)
-    ]
+    listing = [_run(index, "CI", "main", "success", "2026-09-11T00:00:00Z") for index in range(401, 501)]
     monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: (listing, 27409))
     monkeypatch.setattr(
         ci_cost_ledger,
@@ -46,9 +43,7 @@ def test_merge_report_rows_pulls_cached_rows_outside_the_listing(monkeypatch):
         lambda *a, **k: [_job(["ubuntu-latest"], "2026-09-11T00:00:00Z", "2026-09-11T00:01:00Z")],
     )
 
-    walked, cov = ci_cost_ledger.build_ledger(
-        "o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=400
-    )
+    walked, cov = ci_cost_ledger.build_ledger("o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=400)
     merged = ci_cost_ledger.merge_report_rows(walked, cache, "2026-09")
 
     assert cov.priced - cov.api_calls == 0, "walk alone sees no overlap"
@@ -60,19 +55,13 @@ def test_two_run_month_to_date_used_minutes_is_monotonic(tmp_path, monkeypatch):
     from scripts import ci_cost_ledger
 
     path = tmp_path / "cache.json"
-    runs_first = [
-        _run(index, "CI", "main", "success", f"2026-09-{10 + index}T00:00:00Z")
-        for index in range(1, 4)
-    ]
+    runs_first = [_run(index, "CI", "main", "success", f"2026-09-{10 + index}T00:00:00Z") for index in range(1, 4)]
     responses_first = [{"total_count": 3, "workflow_runs": runs_first}]
     responses_first += [
-        {"jobs": [_job(["ubuntu-latest"], "2026-09-11T00:00:00Z", "2026-09-11T00:10:00Z")]}
-        for _ in range(3)
+        {"jobs": [_job(["ubuntu-latest"], "2026-09-11T00:00:00Z", "2026-09-11T00:10:00Z")]} for _ in range(3)
     ]
     monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: responses_first.pop(0))
-    walked_first, _ = ci_cost_ledger.build_ledger(
-        "o/r", "2026-09-01", "token", 20, cache={}, max_api_calls=400
-    )
+    walked_first, _ = ci_cost_ledger.build_ledger("o/r", "2026-09-01", "token", 20, cache={}, max_api_calls=400)
     merged_first = ci_cost_ledger.merge_report_rows(walked_first, {}, "2026-09")
     ci_cost_ledger.save_cache(path, walked_first, {"2026-09"}, prior={})
     used_first = sum(row.allowance_minutes for row in merged_first)
@@ -80,9 +69,7 @@ def test_two_run_month_to_date_used_minutes_is_monotonic(tmp_path, monkeypatch):
     cache = ci_cost_ledger.load_cache(path)
     runs_second = [_run(4, "CI", "main", "success", "2026-09-14T00:00:00Z"), *runs_first]
     responses_second = [{"total_count": 4, "workflow_runs": runs_second}]
-    responses_second.append(
-        {"jobs": [_job(["ubuntu-latest"], "2026-09-14T00:00:00Z", "2026-09-14T00:02:00Z")]}
-    )
+    responses_second.append({"jobs": [_job(["ubuntu-latest"], "2026-09-14T00:00:00Z", "2026-09-14T00:02:00Z")]})
     monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: responses_second.pop(0))
     walked_second, cov_second = ci_cost_ledger.build_ledger(
         "o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=400
@@ -95,9 +82,7 @@ def test_two_run_month_to_date_used_minutes_is_monotonic(tmp_path, monkeypatch):
 
 
 def test_cache_gap_makes_coverage_incomplete_even_when_fully_priced():
-    cov = Coverage(
-        priced=100, listed=100, server_total=100, api_calls=0, api_budget_hit=False, cache_gap="missing"
-    )
+    cov = Coverage(priced=100, listed=100, server_total=100, api_calls=0, api_budget_hit=False, cache_gap="missing")
     assert cov.is_complete is False
 
 
@@ -137,11 +122,7 @@ def test_runs_json_past_month_without_rows_refuses_loudly(tmp_path, monkeypatch)
 
 def test_budget_watch_uses_billing_usage_not_per_run_cache():
     workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci-budget-watch.yml").read_text())
-    steps = [
-        step
-        for job in workflow.get("jobs", {}).values()
-        for step in job.get("steps", [])
-    ]
+    steps = [step for job in workflow.get("jobs", {}).values() for step in job.get("steps", [])]
     cache_steps = [step for step in steps if step.get("with", {}).get("path") == "ci-cost-cache.json"]
     assert not cache_steps, "per-run priced-run cache was removed for billing usage API"
     ledger_step = next(step for step in steps if step.get("name") == "Build the spend ledger")

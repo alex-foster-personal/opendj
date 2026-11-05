@@ -12,6 +12,7 @@ and return ``None`` when a DB is unavailable or the track is not
 indexed. Callers can still inject their own callables for tests or when
 they already hold a reader open.
 """
+
 from __future__ import annotations
 
 import logging

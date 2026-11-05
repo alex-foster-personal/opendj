@@ -64,6 +64,8 @@ const deckWith = (stems: StemDeckState): DeckState =>
 		quantize_grid_beats: 1,
 		beat_sync_enabled: false,
 		key_sync_enabled: false,
+		key_sync_mode: 'exact',
+		key_sync_target: null,
 		master_tempo_enabled: true,
 		slip_enabled: false,
 		slip_active: false,

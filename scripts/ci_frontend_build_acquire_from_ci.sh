@@ -39,32 +39,32 @@ LOCAL_BUILD_SCRIPT="${MDT_CI_FRONTEND_BUILD_LOCAL_SCRIPT:-${ROOT}/scripts/ci_fro
 read -r -a R2_ARTIFACT <<<"${MDT_CI_R2_ARTIFACT_CMD:-python3 ${ROOT}/scripts/r2_artifact.py}"
 
 if [ -z "${GH_TOKEN:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-  export GH_TOKEN="$GITHUB_TOKEN"
+    export GH_TOKEN="$GITHUB_TOKEN"
 fi
 
 if [ -f "${DEST}/.ci-production-frontend-sha" ]; then
-  "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
-  exit 0
+    "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
+    exit 0
 fi
 
 # Sets ARTIFACT_STATE to published, absent or unreadable. Unreadable (bad or missing
 # R2 credentials, network) is a hard stop in the caller, never read as absent.
 ARTIFACT_STATE=""
 _probe_artifact() {
-  local rc=0
-  "${R2_ARTIFACT[@]}" exists --shared --name "$ARTIFACT_NAME" --repo "$REPO" || rc=$?
-  case "$rc" in
-    0) ARTIFACT_STATE="published" ;;
-    3) ARTIFACT_STATE="absent" ;;
-    *) ARTIFACT_STATE="unreadable" ;;
-  esac
+    local rc=0
+    "${R2_ARTIFACT[@]}" exists --shared --name "$ARTIFACT_NAME" --repo "$REPO" || rc=$?
+    case "$rc" in
+        0) ARTIFACT_STATE="published" ;;
+        3) ARTIFACT_STATE="absent" ;;
+        *) ARTIFACT_STATE="unreadable" ;;
+    esac
 }
 
 _download_and_assert() {
-  mkdir -p "$DEST"
-  find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-  "${R2_ARTIFACT[@]}" download --shared --name "$ARTIFACT_NAME" --repo "$REPO" --dest "$DEST"
-  "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
+    mkdir -p "$DEST"
+    find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    "${R2_ARTIFACT[@]}" download --shared --name "$ARTIFACT_NAME" --repo "$REPO" --dest "$DEST"
+    "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
 }
 
 # Sets CI_JOB_STATE to one of:
@@ -78,110 +78,110 @@ _download_and_assert() {
 CI_JOB_STATE=""
 CI_JOB_CONCLUSION=""
 _probe_ci_job_state() {
-  local run_id job_line status conclusion
-  if ! run_id="$(gh api -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=20" \
-      --jq ".workflow_runs[] | select(.name==\"${CI_WORKFLOW_NAME}\") | .id" \
-      2>/dev/null | awk 'NF { print; exit }')"; then
-    CI_JOB_STATE="unreadable"
-    return
-  fi
-  if [ -z "$run_id" ]; then
-    CI_JOB_STATE="waiting"
-    return
-  fi
-  if ! job_line="$(gh api -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/runs/${run_id}/jobs" \
-      --jq ".jobs[] | select(.name==\"${CI_JOB_NAME}\") | [.status, .conclusion] | @tsv" \
-      2>/dev/null)"; then
-    CI_JOB_STATE="unreadable"
-    return
-  fi
-  if [ -z "$job_line" ]; then
-    CI_JOB_STATE="waiting"
-    return
-  fi
-  IFS=$'\t' read -r status conclusion <<<"$job_line"
-  case "$status" in
-    queued)
-      CI_JOB_STATE="waiting"
-      ;;
-    in_progress)
-      CI_JOB_STATE="running"
-      ;;
-    completed)
-      if [ "$conclusion" = "success" ]; then
-        CI_JOB_STATE="success"
-      else
-        CI_JOB_STATE="failed"
-        CI_JOB_CONCLUSION="$conclusion"
-      fi
-      ;;
-    *)
-      CI_JOB_STATE="unreadable"
-      ;;
-  esac
+    local run_id job_line status conclusion
+    if ! run_id="$(gh api -H "Accept: application/vnd.github+json" \
+        "repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=20" \
+        --jq ".workflow_runs[] | select(.name==\"${CI_WORKFLOW_NAME}\") | .id" \
+        2>/dev/null | awk 'NF { print; exit }')"; then
+        CI_JOB_STATE="unreadable"
+        return
+    fi
+    if [ -z "$run_id" ]; then
+        CI_JOB_STATE="waiting"
+        return
+    fi
+    if ! job_line="$(gh api -H "Accept: application/vnd.github+json" \
+        "repos/${REPO}/actions/runs/${run_id}/jobs" \
+        --jq ".jobs[] | select(.name==\"${CI_JOB_NAME}\") | [.status, .conclusion] | @tsv" \
+        2>/dev/null)"; then
+        CI_JOB_STATE="unreadable"
+        return
+    fi
+    if [ -z "$job_line" ]; then
+        CI_JOB_STATE="waiting"
+        return
+    fi
+    IFS=$'\t' read -r status conclusion <<<"$job_line"
+    case "$status" in
+        queued)
+            CI_JOB_STATE="waiting"
+            ;;
+        in_progress)
+            CI_JOB_STATE="running"
+            ;;
+        completed)
+            if [ "$conclusion" = "success" ]; then
+                CI_JOB_STATE="success"
+            else
+                CI_JOB_STATE="failed"
+                CI_JOB_CONCLUSION="$conclusion"
+            fi
+            ;;
+        *)
+            CI_JOB_STATE="unreadable"
+            ;;
+    esac
 }
 
 _build_locally() {
-  local reason="$1"
-  echo "::warning::${reason}; building the production frontend locally instead of waiting on CI"
-  "$LOCAL_BUILD_SCRIPT" "$SHA" "$DEST"
-  "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
+    local reason="$1"
+    echo "::warning::${reason}; building the production frontend locally instead of waiting on CI"
+    "$LOCAL_BUILD_SCRIPT" "$SHA" "$DEST"
+    "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
 }
 
-deadline=$(( $(date +%s) + MAX_WAIT_S ))
+deadline=$(($(date +%s) + MAX_WAIT_S))
 success_deadline=""
 while true; do
-  _probe_artifact
-  if [ "$ARTIFACT_STATE" = "published" ]; then
-    _download_and_assert
-    exit 0
-  elif [ "$ARTIFACT_STATE" = "unreadable" ]; then
-    echo "::error::R2 artifact ${ARTIFACT_NAME} is unreadable (see the r2-artifact error above); refusing to guess"
-    exit 1
-  fi
-
-  _probe_ci_job_state
-
-  case "$CI_JOB_STATE" in
-    waiting)
-      _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} is queued or has not started"
-      exit 0
-      ;;
-    failed)
-      echo "::error::CI's '${CI_JOB_NAME}' job for ${SHA} completed with conclusion '${CI_JOB_CONCLUSION}'; refusing to rebuild over a real CI failure"
-      exit 1
-      ;;
-    unreadable)
-      echo "::error::CI state for ${SHA} is unreadable (a gh api query failed); refusing to build locally"
-      exit 1
-      ;;
-    running)
-      success_deadline=""
-      # The job is on track; keep polling for the shared artifact below.
-      ;;
-    success)
-      # A completed producer has no further work that can publish this
-      # artifact. Give GitHub's artifact service a short, bounded grace period
-      # before using the verified local-build path instead of the 900s budget.
-      if [ -z "$success_deadline" ]; then
-        success_deadline=$(( $(date +%s) + SUCCESS_GRACE_S ))
-      fi
-      if [ "$(date +%s)" -ge "$success_deadline" ]; then
-        _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} succeeded but its artifact was not published after ${SUCCESS_GRACE_S}s"
+    _probe_artifact
+    if [ "$ARTIFACT_STATE" = "published" ]; then
+        _download_and_assert
         exit 0
-      fi
-      ;;
-    *)
-      echo "::error::unexpected CI job state '${CI_JOB_STATE}' for ${SHA}"
-      exit 1
-      ;;
-  esac
+    elif [ "$ARTIFACT_STATE" = "unreadable" ]; then
+        echo "::error::R2 artifact ${ARTIFACT_NAME} is unreadable (see the r2-artifact error above); refusing to guess"
+        exit 1
+    fi
 
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    _build_locally "${MAX_WAIT_S}s budget expired waiting on CI's '${CI_JOB_NAME}' job for ${SHA} (last observed state: ${CI_JOB_STATE})"
-    exit 0
-  fi
-  sleep "$POLL_S"
+    _probe_ci_job_state
+
+    case "$CI_JOB_STATE" in
+        waiting)
+            _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} is queued or has not started"
+            exit 0
+            ;;
+        failed)
+            echo "::error::CI's '${CI_JOB_NAME}' job for ${SHA} completed with conclusion '${CI_JOB_CONCLUSION}'; refusing to rebuild over a real CI failure"
+            exit 1
+            ;;
+        unreadable)
+            echo "::error::CI state for ${SHA} is unreadable (a gh api query failed); refusing to build locally"
+            exit 1
+            ;;
+        running)
+            success_deadline=""
+            # The job is on track; keep polling for the shared artifact below.
+            ;;
+        success)
+            # A completed producer has no further work that can publish this
+            # artifact. Give GitHub's artifact service a short, bounded grace period
+            # before using the verified local-build path instead of the 900s budget.
+            if [ -z "$success_deadline" ]; then
+                success_deadline=$(($(date +%s) + SUCCESS_GRACE_S))
+            fi
+            if [ "$(date +%s)" -ge "$success_deadline" ]; then
+                _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} succeeded but its artifact was not published after ${SUCCESS_GRACE_S}s"
+                exit 0
+            fi
+            ;;
+        *)
+            echo "::error::unexpected CI job state '${CI_JOB_STATE}' for ${SHA}"
+            exit 1
+            ;;
+    esac
+
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+        _build_locally "${MAX_WAIT_S}s budget expired waiting on CI's '${CI_JOB_NAME}' job for ${SHA} (last observed state: ${CI_JOB_STATE})"
+        exit 0
+    fi
+    sleep "$POLL_S"
 done

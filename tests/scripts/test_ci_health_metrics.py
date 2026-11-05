@@ -54,9 +54,7 @@ def _run(
 
 
 def _metric(step: str, seconds: float, *, job_id: int | None = None) -> mod.Metric:
-    return mod.Metric(
-        ts="2026-08-20T00:00:00Z", step=step, seconds=seconds, source="ci", job_id=job_id
-    )
+    return mod.Metric(ts="2026-08-20T00:00:00Z", step=step, seconds=seconds, source="ci", job_id=job_id)
 
 
 def _history(step: str, seconds: float, count: int) -> list[mod.Metric]:
@@ -331,9 +329,7 @@ def _jobs_payload(monkeypatch, items):
     returned here is the one _fetch_jobs works from and no runs listing is requested.
     """
     run = _run(age_minutes=1, duration_seconds=100, conclusion="success")
-    monkeypatch.setattr(
-        mod, "_gh_api_json", lambda path: {"total_count": len(items), "jobs": items}
-    )
+    monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"total_count": len(items), "jobs": items})
     return [run]
 
 
@@ -423,9 +419,7 @@ def test_negative_duration_on_an_executed_job_fails_loudly(monkeypatch):
 
 def test_incomplete_jobs_are_skipped(monkeypatch):
     """If an in-progress job were timed then a half-finished run would set the median."""
-    item = _job_item(
-        1, conclusion="success", started="2026-08-20T18:00:00Z", completed="2026-08-20T18:00:30Z"
-    )
+    item = _job_item(1, conclusion="success", started="2026-08-20T18:00:00Z", completed="2026-08-20T18:00:30Z")
     item["status"] = "in_progress"
     item["completed_at"] = None
     assert mod._fetch_jobs(_jobs_payload(monkeypatch, [item]), []).jobs == []

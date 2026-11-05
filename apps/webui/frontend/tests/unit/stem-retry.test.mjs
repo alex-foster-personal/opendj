@@ -51,7 +51,10 @@ const loading = (phase) => graph.loadingStemDeckState({ phase, progress: null, r
 
 test('ready stems are left alone', async () => {
 	const { port: p, log } = port();
-	const ready = graph.readyStemDeckState({ source: 'demucs', model: 'm', layout: 'demucs4' }, ALIGNMENT);
+	const ready = graph.readyStemDeckState(
+		{ source: 'demucs', model: 'm', layout: 'demucs4' },
+		ALIGNMENT
+	);
 	await mod.retryDeckStems(2, 'sid', ready, p);
 	assert.deepEqual(log, []);
 });
@@ -89,7 +92,7 @@ test('a failed load clears the recorded fetch failure before loading again', asy
 	assert.deepEqual(log, ['hydrate:sid', 'reload']);
 });
 
-test('a track loaded while the hydrate request is out never gets the old track\'s stems', async () => {
+test("a track loaded while the hydrate request is out never gets the old track's stems", async () => {
 	let loadedSince = false;
 	const { port: p, log } = port({
 		requestHydration: async (stableId) => {
@@ -100,7 +103,11 @@ test('a track loaded while the hydrate request is out never gets the old track\'
 	});
 	const failed = { ...graph.unavailableStemDeckState('hub answered HTTP 503'), status: 'error' };
 	await mod.retryDeckStems(2, 'track-a', failed, p);
-	assert.deepEqual(log, ['hydrate:track-a'], 'track A was reloaded onto the deck now holding track B');
+	assert.deepEqual(
+		log,
+		['hydrate:track-a'],
+		'track A was reloaded onto the deck now holding track B'
+	);
 });
 
 test('a failed hydrate request is reported, and no reload hides it', async () => {
@@ -152,11 +159,16 @@ test('a second retry on the same deck joins the running one: one hydrate, one re
 	// A track loaded since is its own retry, never the old track's.
 	let releaseA;
 	const gateA = new Promise((resolve) => (releaseA = resolve));
-	const a = port({ requestHydration: async (sid) => { a.log.push(`hydrate:${sid}`); await gateA; } });
+	const a = port({
+		requestHydration: async (sid) => {
+			a.log.push(`hydrate:${sid}`);
+			await gateA;
+		}
+	});
 	const b = port();
 	const forA = mod.retryDeckStems(4, 'track-a', failed, a.port);
 	const forB = mod.retryDeckStems(4, 'track-b', failed, b.port);
-	assert.notEqual(forB, forA, 'a retry for a newly loaded track joined the old track\'s retry');
+	assert.notEqual(forB, forA, "a retry for a newly loaded track joined the old track's retry");
 	await forB;
 	assert.deepEqual(b.log, ['hydrate:track-b', 'reload']);
 	releaseA();

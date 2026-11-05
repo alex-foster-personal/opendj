@@ -24,6 +24,7 @@ Regression lines:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -70,10 +71,21 @@ def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg not installed")
     d = tmp_path_factory.mktemp("qlt")
-    f = {name: d / name for name in (
-        "clean.flac", "dark.flac", "fake128.flac", "brick16k.flac", "clipped.flac",
-        "truncated.flac", "fake24.flac", "upsampled96.flac", "mono.flac", "lead.flac",
-    )}
+    f = {
+        name: d / name
+        for name in (
+            "clean.flac",
+            "dark.flac",
+            "fake128.flac",
+            "brick16k.flac",
+            "clipped.flac",
+            "truncated.flac",
+            "fake24.flac",
+            "upsampled96.flac",
+            "mono.flac",
+            "lead.flac",
+        )
+    }
     stereo = ["-f", "lavfi", "-i", NOISE, "-f", "lavfi", "-i", NOISE_R]
     _ffmpeg(*stereo, "-filter_complex", "[0][1]amerge=inputs=2", "-sample_fmt", "s16", str(f["clean.flac"]))
     _ffmpeg(*stereo, "-filter_complex", "[0][1]amerge=inputs=2,lowpass=f=2500:poles=1", str(f["dark.flac"]))
@@ -83,17 +95,41 @@ def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     m16 = d / "16k.mp3"
     _ffmpeg("-i", str(f["clean.flac"]), "-c:a", "libmp3lame", "-b:a", "128k", "-cutoff", "16000", str(m16))
     _ffmpeg("-i", str(m16), "-sample_fmt", "s16", str(f["brick16k.flac"]))
-    _ffmpeg("-i", str(f["clean.flac"]), "-af",
-            "volume=18dB,alimiter=limit=1:level=false:attack=0.1:release=1,volume=6dB",
-            "-sample_fmt", "s16", str(f["clipped.flac"]))
+    _ffmpeg(
+        "-i",
+        str(f["clean.flac"]),
+        "-af",
+        "volume=18dB,alimiter=limit=1:level=false:attack=0.1:release=1,volume=6dB",
+        "-sample_fmt",
+        "s16",
+        str(f["clipped.flac"]),
+    )
     whole = f["clean.flac"].read_bytes()
     f["truncated.flac"].write_bytes(whole[: len(whole) // 2])
     _ffmpeg("-i", str(f["clean.flac"]), "-sample_fmt", "s32", str(f["fake24.flac"]))
-    _ffmpeg("-i", str(f["clean.flac"]), "-af", "aresample=96000:resampler=soxr:precision=28",
-            "-sample_fmt", "s32", str(f["upsampled96.flac"]))
+    _ffmpeg(
+        "-i",
+        str(f["clean.flac"]),
+        "-af",
+        "aresample=96000:resampler=soxr:precision=28",
+        "-sample_fmt",
+        "s32",
+        str(f["upsampled96.flac"]),
+    )
     _ffmpeg("-f", "lavfi", "-i", NOISE, "-ac", "2", "-sample_fmt", "s16", str(f["mono.flac"]))
-    _ffmpeg("-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo:d=4", "-i", str(f["clean.flac"]),
-            "-filter_complex", "[0][1]concat=n=2:v=0:a=1", "-sample_fmt", "s16", str(f["lead.flac"]))
+    _ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=44100:cl=stereo:d=4",
+        "-i",
+        str(f["clean.flac"]),
+        "-filter_complex",
+        "[0][1]concat=n=2:v=0:a=1",
+        "-sample_fmt",
+        "s16",
+        str(f["lead.flac"]),
+    )
     return f
 
 
@@ -318,13 +354,28 @@ def test_every_threshold_moves_the_rule_version() -> None:
 
 def _quality(venue: str, container: str = ".flac", kbps: int = 900) -> dict:
     lossless = container == ".flac"
-    return {"venue": venue, "label": venue, "rank": 5, "of": 6, "blurb": "", "kbps": kbps,
-            "container": container, "lossless": lossless}
+    return {
+        "venue": venue,
+        "label": venue,
+        "rank": 5,
+        "of": 6,
+        "blurb": "",
+        "kbps": kbps,
+        "container": container,
+        "lossless": lossless,
+    }
 
 
 def _facts(**over: object) -> dict:
-    base = {"cutoff_hz": 21900, "brick_wall": False, "issues": [], "channels": 2,
-            "sample_rate": 44100, "bit_depth": 16, "claimed_kbps": None}
+    base = {
+        "cutoff_hz": 21900,
+        "brick_wall": False,
+        "issues": [],
+        "channels": 2,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "claimed_kbps": None,
+    }
     return {**base, **over}
 
 
@@ -343,7 +394,10 @@ def test_spectrum_only_lowers_and_needs_a_brick_wall() -> None:
 
 
 def test_corruption_forces_d_and_other_issues_do_not_move_the_letter() -> None:
-    assert audio_grade.grade(_quality("warehouse", ".mp3", 320), _facts(issues=["decode_errors"], decode_errors=3)).letter == "D"
+    assert (
+        audio_grade.grade(_quality("warehouse", ".mp3", 320), _facts(issues=["decode_errors"], decode_errors=3)).letter
+        == "D"
+    )
     clipped = audio_grade.grade(_quality("stadium"), _facts(issues=["clipping"], clip_runs=40, clip_longest_ms=0.4))
     assert clipped.letter == "A" and clipped.issues == ("clipping",)
 

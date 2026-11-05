@@ -21,6 +21,7 @@ from apps.shared.harmonic import (
 )
 
 from .energy_curve import target_energy_at
+from .pinning import _best_start_occurrence
 from .set_goal import SetGoal
 
 PinRole = Literal["opener", "peak", "closer"] | None
@@ -329,21 +330,6 @@ def _result(order: list[str], best: _BeamState, t0: float) -> SolveResult:
         constraints_unmet=list(best.unmet),
         solve_ms=solve_ms,
     )
-
-
-def _best_start_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
-    from .pinning import _opener_occurrence_rank_key
-
-    def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
-        position, track = occurrence
-        return _opener_occurrence_rank_key(
-            position,
-            track,
-            floor_energy=goal.floor_energy,
-            open_on_key=goal.open_on_key,
-        )
-
-    return min(enumerate(tracks), key=key)[0]
 
 
 def suggest_order(

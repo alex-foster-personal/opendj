@@ -26,7 +26,10 @@ export interface StreamingRowFacts {
 	is_streaming?: boolean | null | undefined;
 	file_path?: string | null | undefined;
 	streaming_provider?: string | null | undefined;
-	rb_meta?: { is_streaming?: boolean | null | undefined; folder_path?: string | null | undefined } | null | undefined;
+	rb_meta?:
+		| { is_streaming?: boolean | null | undefined; folder_path?: string | null | undefined }
+		| null
+		| undefined;
 }
 
 /** Scheme of a streaming URI. A drive letter and `file:` are not schemes. */
@@ -51,12 +54,7 @@ function schemeOf(row: StreamingRowFacts): string | null {
 		row.streaming_provider && row.streaming_provider !== 'unknown'
 			? row.streaming_provider.toLowerCase()
 			: null;
-	return (
-		uriScheme(row.file_path) ??
-		uriScheme(row.rb_meta?.folder_path) ??
-		provider ??
-		fromStatus
-	);
+	return uriScheme(row.file_path) ?? uriScheme(row.rb_meta?.folder_path) ?? provider ?? fromStatus;
 }
 
 /** Wire `streaming` (or a missed service URI) becomes `{scheme}-streaming`. */

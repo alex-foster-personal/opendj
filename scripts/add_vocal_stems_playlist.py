@@ -15,6 +15,7 @@ directory (#910: no personal path is hardcoded in tracked code). Required,
 and the directory must exist -- an unset or missing value fails fast rather
 than globbing zero files and silently doing nothing.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -74,9 +75,14 @@ def parse(fp: Path) -> dict:
     except (TinyTagException, OSError) as e:
         print(f"  warn: no duration for {fp.name}: {e}", file=sys.stderr)
     sid = hashlib.sha1(str(fp).encode("utf-8")).hexdigest()
-    return dict(pos=pos, stable_id=sid, title=title.strip(),
-                artists_json=json.dumps(artists, ensure_ascii=False),
-                file_path=str(fp), duration_ms=dur_ms)
+    return dict(
+        pos=pos,
+        stable_id=sid,
+        title=title.strip(),
+        artists_json=json.dumps(artists, ensure_ascii=False),
+        file_path=str(fp),
+        duration_ms=dur_ms,
+    )
 
 
 def main() -> None:
@@ -99,12 +105,10 @@ def main() -> None:
                     isrc, duration_ms, file_path, content_hash,
                     created_at, updated_at)
                    VALUES (?, 'inferred', ?, ?, NULL, NULL, ?, ?, NULL, ?, ?)""",
-                (r["stable_id"], r["title"], r["artists_json"],
-                 r["duration_ms"], r["file_path"], now, now),
+                (r["stable_id"], r["title"], r["artists_json"], r["duration_ms"], r["file_path"], now, now),
             )
     present = con.execute(
-        "SELECT COUNT(*) FROM tracks WHERE stable_id IN (%s)"
-        % ",".join("?" * len(rows)),
+        "SELECT COUNT(*) FROM tracks WHERE stable_id IN (%s)" % ",".join("?" * len(rows)),
         [r["stable_id"] for r in rows],
     ).fetchone()[0]
     con.close()
@@ -115,9 +119,16 @@ def main() -> None:
     # --- 2. create (or find) playlist ---
     with httpx.Client(base_url=API, timeout=20) as c:
         existing = c.get("/playlists").raise_for_status().json()
-        found = next((p for p in (existing if isinstance(existing, list)
-                                  else existing.get("items", existing.get("playlists", [])))
-                      if p.get("name") == PLAYLIST_NAME), None)
+        found = next(
+            (
+                p
+                for p in (
+                    existing if isinstance(existing, list) else existing.get("items", existing.get("playlists", []))
+                )
+                if p.get("name") == PLAYLIST_NAME
+            ),
+            None,
+        )
         if found:
             pid = found["playlist_id"]
             etag = found.get("updated_at") or found.get("etag")
@@ -132,14 +143,13 @@ def main() -> None:
             print(f"created playlist {pid} (etag {etag})")
 
         # --- 3. set membership in order ---
-        r = c.put(f"/playlists/{pid}/tracks",
-                  headers={"If-Match": etag},
-                  json={"stable_ids": [r["stable_id"] for r in rows]})
+        r = c.put(
+            f"/playlists/{pid}/tracks", headers={"If-Match": etag}, json={"stable_ids": [r["stable_id"] for r in rows]}
+        )
         if r.status_code >= 300:
             raise SystemExit(f"PUT tracks failed {r.status_code}: {r.text}")
         out = r.json()
-        print(f"OK playlist '{out['name']}' id={out['playlist_id']} "
-              f"track_count={out['track_count']}")
+        print(f"OK playlist '{out['name']}' id={out['playlist_id']} track_count={out['track_count']}")
 
 
 if __name__ == "__main__":

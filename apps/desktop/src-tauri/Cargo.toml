@@ -22,6 +22,9 @@ url = "2"
 # The engine is spawned into its own process group so app exit can kill the
 # whole group; killpg is the syscall that does it. Also already in the tree.
 libc = "0.2"
+# Stable 16-byte WKWebsiteDataStore identifier (issue #6077). Already in
+# Cargo.lock as a transitive dep; DefaultHasher is not stable across rustc.
+sha2 = "0.10"
 # Native modal for the one failure this shell cannot recover from: the engine
 # did not come up. Without it that failure is a blank window, which is the
 # exact outcome the bundled-engine work exists to remove. The GTK backend
@@ -43,11 +46,10 @@ tauri-plugin-process = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
-# CUEOUT-22: the loopback socket the page relays headphone cue PCM over to
-# the native CoreAudio output (src/cue_sink.rs). Blocking std I/O on its own
-# threads, the same feature set the odj-audio engine already uses, so no async
-# runtime and no TLS enter the shell.
-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+# The CoreAudio output-health probe and the headphone cue sink. Its own crate
+# so the Electron shell's payload helper (bin odj-output-probe) builds without
+# this one (ELECTRON-6272).
+odj-output-probe = { path = "../native/odj-output-probe" }
 
 # WKWebView deliberately has no Web MIDI API. On macOS the shell bridges the
 # same class-compliant three-byte messages through CoreMIDI so the installed
@@ -80,14 +82,11 @@ tauri-plugin-wdio-webdriver = "1"
 name = "opendj-desktop"
 path = "src/main.rs"
 
-# Electron does not link CoreAudio. This binary is what
-# payload/bin/odj-output-probe runs; it calls output_health.rs in place.
-[[bin]]
-name = "odj-output-probe"
-path = "src/bin/odj-output-probe.rs"
-
 [dev-dependencies]
 tempfile = "3"
+# INSTALL-40: the local-update tests drive the real updater plugin on a mock
+# app (tauri::test). Dev-only: resolver 2 keeps this feature out of release.
+tauri = { version = "2", features = ["test"] }
 
 [profile.dev]
 opt-level = 0

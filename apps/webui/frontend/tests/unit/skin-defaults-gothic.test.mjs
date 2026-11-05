@@ -61,7 +61,11 @@ test("CHROME-15 if Auto does not resolve to each skin's declared look then switc
 		default: { design: 'tri-band', palette: 'rekordbox' },
 		'mono-dev': { design: 'blocks', palette: 'mono' },
 		// CHROME-21: Light is Gothic flipped, so it shares Gothic's mono blocks.
-		light: { design: 'blocks', palette: 'mono' }
+		light: { design: 'blocks', palette: 'mono' },
+		// CHROME-8729: Green Room bends only the chrome; waveforms keep tri-band color.
+		'green-room': { design: 'tri-band', palette: 'rekordbox' },
+		// The practice skin is about the controls; waveforms keep the standard tri-band read.
+		'practice-ddj-flx4': { design: 'tri-band', palette: 'rekordbox' }
 	});
 	for (const s of skin.UI_SKIN_CHOICES) {
 		assert.equal(skin.effectiveWaveformDesign('auto', s), skin.SKIN_WAVE_LOOK[s].design, s);

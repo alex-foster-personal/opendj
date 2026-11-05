@@ -198,6 +198,68 @@ test('marked deck artwork img 404 does not POST resource-error (issue #5612)', a
 	);
 });
 
+const ISSUE_5613_ARTWORK_URLS = [
+	'http://127.0.0.1:5273/api/v1/tracks/1bff50d66244e81df4c11ba81e375cec3d394e8d/artwork?size=s&online=true',
+	'http://127.0.0.1:5273/api/v1/tracks/0000000000000000000000000000000000005613a/artwork?size=m',
+	'http://127.0.0.1:5273/api/v1/tracks/0000000000000000000000000000000000005613b/artwork?size=s'
+];
+
+test(
+	'marked Mixer, TrackifyPlayer, and TrackTable artwork 404s do not POST resource-error (issue #5613)',
+	async () => {
+		// Markup pins live in artwork-cover.test.mjs (LIBM-185 site list); here we
+		// only prove capture-phase reporting skips marked artwork imgs.
+
+		const posted = [];
+		globalThis.fetch = async (input) => {
+			posted.push(await input.clone().json());
+			return new Response(JSON.stringify({ event_id: 'e5613', stored: true }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			});
+		};
+		reporting.installClientErrorReporting();
+
+		for (const url of ISSUE_5613_ARTWORK_URLS) {
+			const markedTarget = {
+				tagName: 'IMG',
+				src: url,
+				hasAttribute: (name) => name === 'data-expected-resource-error'
+			};
+			fire('error', { target: markedTarget, message: 'Failed to load resource' }, true);
+		}
+
+		const nonArtworkUrl = 'https://app.example.test/skin/missing-icon.png';
+		const unmarkedTarget = {
+			tagName: 'IMG',
+			src: nonArtworkUrl
+		};
+		fire('error', { target: unmarkedTarget, message: 'Failed to load resource' }, true);
+
+		await waitFor(
+			() => posted.some((row) => row.context?.resource === nonArtworkUrl),
+			'unmarked non-artwork img resource-error POST'
+		);
+
+		for (const url of ISSUE_5613_ARTWORK_URLS) {
+			assert.equal(
+				posted.some((row) => row.context?.resource === url),
+				false,
+				`marked artwork must not POST: ${url}`
+			);
+		}
+
+		const [row] = posted.filter((r) => r.context?.resource === nonArtworkUrl);
+		assert.equal(row.kind, 'resource-error');
+		assert.equal(row.message, `Failed to load img: ${nonArtworkUrl}`);
+		assert.deepEqual(
+			posted.map((r) => r.context?.resource),
+			[nonArtworkUrl],
+			'only the unmarked non-artwork control may POST'
+		);
+	}
+);
+
 test('a CSP violation is reported as csp-violation', async () => {
 	const posted = [];
 	globalThis.fetch = async (input) => {

@@ -22,6 +22,7 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
 audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
   opendj audio_switch_output --confirm
+  opendj audio_reconnect_speaker --confirm
 
 ingest enrichment (ENRICH-09):
   opendj enrichment status [--batch B]
@@ -31,6 +32,15 @@ store cover suggestions (LIBM-189; accept only covers for tracks you own and bou
   opendj artwork list
   opendj artwork accept --stable-id S ... | --all
   opendj artwork skip --stable-id S ... | --all
+
+session played set (SESSION-PLAYED-01; the green library rows, kept across crashes and relaunches):
+  opendj session played | resume | new
+
+desktop window geometry (WINSTATE-01; per monitor, survives updates):
+  opendj window state | reset
+
+playlist art thumbnail (ARTTHUMB-8728b, the sidebar and card-grid image):
+  opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]
 
 cloud offload (OFFLOAD: free disk, keep the row, get it back any time):
   opendj offload tracks <stable_id>... [--wait] | playlist <playlist_id> [--wait]
@@ -60,6 +70,8 @@ installed app MCP (AGENT-11, issue #2753):
   MCP tools: status, app_state, command, library, ui_url (browser only),
   open_route (shell), update_check (read-only), update_apply (destructive),
   client_errors (read-only, AGENT-8304)
+  app_update_ready, app_update_status (read-only), app_update_install (destructive),
+  app_update_cancel
   AutoDJ MCP tools (AGENT-29): get_mix_state, get_track_profile, get_mix_windows,
   score_pair, suggest_next, list_verbs, list_transition_styles,
   propose_transition, validate_plan, show_plan, schedule_plan, amend_plan,
@@ -82,7 +94,13 @@ AutoDJ (AGENT-29, JSON out; plans continue a playing set, never start one):
 installed app UPDATE (AGENT-13, issue #2942; exits 0 only for current or
 update-available, and for an apply that relaunched into the announced build):
   opendj update check                                   # channel status + versions
-  opendj update apply [--timeout-s SECONDS]             # install and relaunch"""
+  opendj update apply [--timeout-s SECONDS]             # install and relaunch
+
+restart to update a LOCAL build (INSTALL-39; the tray shows "Restart to update"):
+  opendj update ready <App.app.tar.gz> [--notes TEXT]   # flag a signed build as pending
+  opendj update status                                  # what is pending, and is it running
+  opendj update install [--timeout-s SECONDS]           # 10 s countdown, then shell verifies, installs, relaunches
+  opendj update cancel                                  # withdraw it during the countdown (or Esc Space x4 in the app)"""
 
 LIBRARY_EPILOG = _LIBRARY_LINES
 

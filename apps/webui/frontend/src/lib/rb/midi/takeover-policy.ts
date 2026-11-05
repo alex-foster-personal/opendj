@@ -186,7 +186,8 @@ export class AbsoluteTakeoverPolicy {
 	noteSoftwareValue(functionId: string, value: number): void {
 		assertUnitInterval('softwareValue', value);
 		for (const state of this.#states.values()) {
-			if (state.functionId !== functionId || Math.abs(state.target - value) <= VALUE_EPSILON) continue;
+			if (state.functionId !== functionId || Math.abs(state.target - value) <= VALUE_EPSILON)
+				continue;
 			state.target = value;
 			state.armed = true;
 		}

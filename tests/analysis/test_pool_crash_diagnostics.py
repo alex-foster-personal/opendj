@@ -10,6 +10,7 @@ imports that class's module when it unpickles the work item. Keeping them in
 their own module is what lets the probe record what the worker interpreter
 looked like at exactly that moment.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,7 @@ _ALL_SIGNALS_NAMED = "this platform names every signal number 1-127"
 #: fork, and the probe's ``import_pid`` would betray it. This is what makes the
 #: spawn assertion bite on macOS too, where the platform default is already
 #: spawn and dropping ``mp_context`` would otherwise change nothing.
-FORK_DEFAULT_DRIVER = '''\
+FORK_DEFAULT_DRIVER = """\
 import multiprocessing
 import os
 import sys
@@ -70,10 +71,10 @@ if __name__ == "__main__":
     )
     assert summary.failed == 0, summary.errors
     print("driver-pid", os.getpid(), "analysed", summary.analysed)
-'''
+"""
 
 #: Registers the crashing backend, then hands straight over to the real CLI.
-CRASH_CLI_DRIVER = '''\
+CRASH_CLI_DRIVER = """\
 import sys
 
 from apps.analysis.backends import register
@@ -86,7 +87,7 @@ if __name__ == "__main__":
 
     register("selfkill", SelfKillingBackend)
     sys.exit(main())
-'''
+"""
 
 
 @pytest.fixture()
@@ -123,7 +124,12 @@ def test_pool_workers_are_spawned_and_thread_pinned(tmp_path: Path) -> None:
     env = {**os.environ, "MDT_PROBE_DIR": str(probe_dir), "PYTHONPATH": str(REPO_ROOT)}
     proc = subprocess.run(
         [sys.executable, str(driver), *[str(p) for p in files]],
-        capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=300, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+        timeout=300,
+        check=False,
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -154,7 +160,11 @@ def test_the_probe_reports_no_pins_when_no_initializer_ran() -> None:
     )
     proc = subprocess.run(
         [sys.executable, "-c", probe],
-        capture_output=True, text=True, cwd=REPO_ROOT, timeout=120, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+        check=False,
         env={k: v for k, v in os.environ.items() if k not in THREAD_PIN_VARS},
     )
 
@@ -182,7 +192,11 @@ def test_the_worker_initializer_is_importable_without_numpy() -> None:
     )
     proc = subprocess.run(
         [sys.executable, "-c", probe],
-        capture_output=True, text=True, cwd=REPO_ROOT, timeout=120, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+        check=False,
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -200,12 +214,22 @@ def _run_cli(files: list[Path], env: dict[str, str]) -> subprocess.CompletedProc
     driver.write_text(CRASH_CLI_DRIVER)
     return subprocess.run(
         [
-            sys.executable, str(driver),
-            "--backend", "selfkill", "--workers", "2", "--dry-run",
-            "--files", *[str(p) for p in files],
+            sys.executable,
+            str(driver),
+            "--backend",
+            "selfkill",
+            "--workers",
+            "2",
+            "--dry-run",
+            "--files",
+            *[str(p) for p in files],
         ],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-        env={**env, "PYTHONPATH": str(REPO_ROOT)}, timeout=300, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env={**env, "PYTHONPATH": str(REPO_ROOT)},
+        timeout=300,
+        check=False,
     )
 
 
@@ -257,9 +281,7 @@ def test_executor_cleanup_sigterms_are_labelled_not_reported_as_causes(
 
     assert proc.returncode == run_mod.EXIT_INTERNAL_ERROR, proc.stderr
     assert "analysis worker died from SIGSEGV (signal 11)" in proc.stderr, proc.stderr
-    assert "terminated by SIGTERM (signal 15) during executor cleanup" in proc.stderr, (
-        proc.stderr
-    )
+    assert "terminated by SIGTERM (signal 15) during executor cleanup" in proc.stderr, proc.stderr
     # The control: SIGTERM must not be presented as a second cause.
     assert "died from SIGSEGV (signal 11), SIGTERM" not in proc.stderr
 
@@ -339,9 +361,7 @@ def test_unreaped_workers_report_that_the_signal_was_unreadable() -> None:
         exitcode = 0
 
     assert worker_exit_signals([_Unreaped(), _Clean()]) == []
-    assert pool_death_message([]) == (
-        "analysis worker died before its exit signal could be read"
-    )
+    assert pool_death_message([]) == ("analysis worker died before its exit signal could be read")
 
 
 @pytest.mark.requirement("META-08")

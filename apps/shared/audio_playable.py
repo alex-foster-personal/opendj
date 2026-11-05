@@ -13,6 +13,18 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
     [if] a zero-byte allowlisted file is imported [then ⛔️] reject before row
          insert with reason ``empty file``
     [if] a wav has no PCM frames or truncates on read [then ⛔️] reject
+    [if] a WAVEFORMATEXTENSIBLE wav GUID is PCM or IEEE-float [then] it
+         imports, [else stop].
+    [if] that GUID is any other 16 bytes [then] probe rejects, [else stop].
+    [if] wav tag is not 1, 3, or 0xFFFE resolving to those [then] reject
+         naming the tag, [else stop].
+    [if] AIFC COMM FourCC is outside the accepted set [then] reject naming
+         it, [else stop].
+    [if] COMM Pascal name overruns the chunk [then] reject, [else stop].
+    [if] a `fact` payload is present and shorter than 4 bytes or zero
+         [then] reject, [else stop].
+    [if] a chunk header or payload crosses EOF or the container end
+         [then] reject, [else stop].
     [if] container magic does not match the extension [then ⛔️] reject
     [if] the tag reader (tinytag) claims absurd duration or bitrate [then ⛔️]
          reject
@@ -35,11 +47,13 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
 
 from __future__ import annotations
 
-import wave
 from pathlib import Path
 
 from apps.shared import _tagreader, paths
 from apps.shared._tagreader import HAS_TAG_READER
+from apps.shared.audio_aiff_probe import probe_aiff
+from apps.shared.audio_chunk_io import UnplayableAudioError
+from apps.shared.audio_wav_probe import probe_wav
 
 __all__ = ["MIN_DECODED_FRACTION", "UnplayableAudioError", "check_decoded_duration", "probe_playable_audio"]
 
@@ -52,14 +66,6 @@ _MIN_BYTES_PER_SECOND = 1000  # 8 kbps floor
 #: tinytag ESTIMATES from its first 30 s, so a strict ratio would fail good
 #: files. The acceptance probe's 4096-byte cut of a 2.04 s mp3 decodes 0.26 s.
 MIN_DECODED_FRACTION = 0.5
-
-
-class UnplayableAudioError(Exception):
-    """Raised when a path is not playable audio for library ingest."""
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(reason)
 
 
 def probe_playable_audio(path: Path) -> None:
@@ -81,8 +87,10 @@ def probe_playable_audio(path: Path) -> None:
 
     if ext in {".wav", ".wave"}:
         _probe_wav(path, size_bytes)
-    elif ext in {".aiff", ".aif"}:
-        _probe_aiff_header(header, size_bytes)
+        return
+    if ext in {".aiff", ".aif"}:
+        _probe_aiff(path, size_bytes)
+        return
 
     # The tag reader cross-checks duration only for formats it can parse.
     # tinytag has no raw ADTS reader, so a raw .aac gets the stdlib frame walk
@@ -117,8 +125,7 @@ def check_decoded_duration(path: Path, decoded_s: float) -> None:
         return
     if decoded_s < float(claimed) * MIN_DECODED_FRACTION:
         raise UnplayableAudioError(
-            f"truncated or corrupt audio: decoded {decoded_s:.2f} s of the "
-            f"{float(claimed):.2f} s the file claims"
+            f"truncated or corrupt audio: decoded {decoded_s:.2f} s of the {float(claimed):.2f} s the file claims"
         )
 
 
@@ -202,46 +209,17 @@ def _adts_sync_ok(header: bytes) -> bool:
 
 # ----- wav / aiff -----------------------------------------------------------
 def _probe_wav(path: Path, size_bytes: int) -> None:
-    try:
-        with wave.open(str(path), "rb") as handle:
-            frames = handle.getnframes()
-            if frames <= 0:
-                raise UnplayableAudioError("no pcm frames")
-            rate = handle.getframerate()
-            channels = handle.getnchannels()
-            width = handle.getsampwidth()
-            _check_pcm_params(rate, channels, width)
-            min_bytes = frames * channels * width + 44
-            if size_bytes < min_bytes:
-                raise UnplayableAudioError("truncated wav")
-            handle.readframes(1)
-            duration_s = frames / rate if rate else 0.0
-            _check_duration_size(duration_s, size_bytes)
-    except UnplayableAudioError:
-        raise
-    except wave.Error as exc:
-        raise UnplayableAudioError(f"invalid wav: {exc}") from exc
-    except EOFError as exc:
-        raise UnplayableAudioError("truncated wav") from exc
+    rate, _channels, frames = probe_wav(path)
+    if _is_streamed_wav(path):
+        return
+    duration_s = frames / rate if rate else 0.0
+    _check_duration_size(duration_s, size_bytes)
 
 
-def _probe_aiff_header(header: bytes, size_bytes: int) -> None:
-    if len(header) < 12:
-        raise UnplayableAudioError("truncated aiff header")
-    form_type = header[8:12]
-    if form_type not in {b"AIFF", b"AIFC"}:
-        raise UnplayableAudioError("missing aiff form type")
-    if size_bytes < 128:
-        raise UnplayableAudioError("aiff file too small")
-
-
-def _check_pcm_params(rate: int, channels: int, width: int) -> None:
-    if rate < 8000 or rate > 192_000:
-        raise UnplayableAudioError("implausible sample rate")
-    if channels < 1 or channels > 8:
-        raise UnplayableAudioError("implausible channel count")
-    if width not in {1, 2, 3, 4}:
-        raise UnplayableAudioError("implausible sample width")
+def _probe_aiff(path: Path, size_bytes: int) -> None:
+    rate, _channels, frames = probe_aiff(path)
+    duration_s = frames / rate if rate else 0.0
+    _check_duration_size(duration_s, size_bytes)
 
 
 def _check_duration_size(duration_s: float, size_bytes: int) -> None:
@@ -252,9 +230,7 @@ def _check_duration_size(duration_s: float, size_bytes: int) -> None:
     if duration_s >= 0.05:
         effective_kbps = (size_bytes * 8) / duration_s / 1000
         if effective_kbps > _MAX_EFFECTIVE_KBPS:
-            raise UnplayableAudioError(
-                f"absurd effective bitrate {effective_kbps:.0f} kbps"
-            )
+            raise UnplayableAudioError(f"absurd effective bitrate {effective_kbps:.0f} kbps")
 
 
 # ----- tag-reader cross-check -----------------------------------------------

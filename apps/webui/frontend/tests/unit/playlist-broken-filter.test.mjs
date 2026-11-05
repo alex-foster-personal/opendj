@@ -48,12 +48,14 @@ test('hidden count matches playlists below the min when Broken filter is on', ()
 
 test('create-grace keeps a zero-playable playlist visible while Broken filter is on', () => {
 	const empty = fixturePlaylist(0);
+	assert.equal(isPlaylistVisibleWithBrokenFilter(empty, true, MIN_TRACKS, true), true);
 	assert.equal(
-		isPlaylistVisibleWithBrokenFilter(empty, true, MIN_TRACKS, true),
-		true
-	);
-	assert.equal(
-		countHiddenBrokenPlaylists(FIXTURE_PLAYLISTS, true, MIN_TRACKS, (id) => id === empty.playlist_id),
+		countHiddenBrokenPlaylists(
+			FIXTURE_PLAYLISTS,
+			true,
+			MIN_TRACKS,
+			(id) => id === empty.playlist_id
+		),
 		1
 	);
 });
@@ -61,10 +63,7 @@ test('create-grace keeps a zero-playable playlist visible while Broken filter is
 test('unique library-wide total is not the sum of overlapping playlist playable counts', () => {
 	// Two playlists share one track: summing row counts double-counts; the All
 	// Tracks header uses reconcile-summary unique non-broken totals instead.
-	const playlists = [
-		{ available_count: 10 },
-		{ available_count: 10 }
-	];
+	const playlists = [{ available_count: 10 }, { available_count: 10 }];
 	const sumOfPlaylistRows = playlists.reduce((n, p) => n + p.available_count, 0);
 	const uniqueTracksInLibrary = 10;
 	assert.equal(sumOfPlaylistRows, 20);

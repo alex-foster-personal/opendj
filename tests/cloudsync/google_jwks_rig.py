@@ -40,9 +40,7 @@ class SigningKey:
     private_key: rsa.RSAPrivateKey
 
     def public_jwk(self) -> dict[str, Any]:
-        jwk: dict[str, Any] = json.loads(
-            jwt.algorithms.RSAAlgorithm.to_jwk(self.private_key.public_key())
-        )
+        jwk: dict[str, Any] = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(self.private_key.public_key()))
         return {**jwk, "kid": self.kid, "alg": "RS256", "use": "sig"}
 
 

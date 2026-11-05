@@ -31,6 +31,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.platform_capabilities import posix_bash_or_skip
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 LANE_STEP_NAME = "Derive the worktree-port lane from the runner identity"
@@ -57,9 +59,7 @@ def _ci_job_steps(job_name: str) -> list[dict]:
 def test_every_ci_pytest_job_derives_and_asserts_the_lane_before_pytest_runs() -> None:
     """if a pytest shard job loses the lane step, or runs it after pytest, then every shard
     on one host claims from slot 0 of the same pool window again"""
-    e2e_script = next(
-        step["run"] for step in _e2e_job_steps("gate") if step.get("name") == LANE_STEP_NAME
-    )
+    e2e_script = next(step["run"] for step in _e2e_job_steps("gate") if step.get("name") == LANE_STEP_NAME)
     for job_name in CI_PYTEST_JOBS:
         steps = _ci_job_steps(job_name)
         names = [step.get("name") for step in steps]
@@ -68,9 +68,7 @@ def test_every_ci_pytest_job_derives_and_asserts_the_lane_before_pytest_runs() -
         assert LANE_ASSERTION_STEP_NAME in names, f"ci.yml {job_name} is missing lane assertion"
         lane_index = names.index(LANE_STEP_NAME)
         assert lane_index < names.index(LANE_ASSERTION_STEP_NAME), job_name
-        pytest_indices = [
-            i for i, run in enumerate(runs) if "pytest" in run and i != lane_index
-        ]
+        pytest_indices = [i for i, run in enumerate(runs) if "pytest" in run and i != lane_index]
         assert pytest_indices, f"ci.yml {job_name} no longer runs pytest; update this test"
         assert lane_index < min(pytest_indices), (
             f"ci.yml {job_name}: lane step at {lane_index}, first pytest step at {min(pytest_indices)}"
@@ -109,7 +107,7 @@ def _run_lane_script(runner_name: str | None) -> subprocess.CompletedProcess[str
         env["GITHUB_ENV"] = github_env_file.name
     try:
         result = subprocess.run(
-            ["bash", "-c", script],
+            [posix_bash_or_skip(), "-c", script],
             env=env,
             capture_output=True,
             text=True,
@@ -161,9 +159,7 @@ def test_every_e2e_job_fails_loudly_if_github_env_did_not_set_the_lane() -> None
         assert LANE_STEP_NAME in names, f"{job_name} is missing lane derivation"
         assert LANE_ASSERTION_STEP_NAME in names, f"{job_name} is missing lane assertion"
         assert names.index(LANE_STEP_NAME) < names.index(LANE_ASSERTION_STEP_NAME), job_name
-        assertion = next(
-            step["run"] for step in steps if step.get("name") == LANE_ASSERTION_STEP_NAME
-        )
+        assertion = next(step["run"] for step in steps if step.get("name") == LANE_ASSERTION_STEP_NAME)
         assert "MUSIC_DJ_PORT_LANE" in assertion
         assert "error" in assertion.lower()
 
@@ -175,9 +171,7 @@ def test_every_e2e_job_reclaims_stale_servers_after_lane_derivation() -> None:
         names = [step.get("name") for step in steps]
         assert STALE_SERVER_HYGIENE_STEP_NAME in names, f"{job_name} lacks stale-server hygiene"
         assert names.index(LANE_ASSERTION_STEP_NAME) < names.index(STALE_SERVER_HYGIENE_STEP_NAME)
-        script = next(
-            step["run"] for step in steps if step.get("name") == STALE_SERVER_HYGIENE_STEP_NAME
-        )
+        script = next(step["run"] for step in steps if step.get("name") == STALE_SERVER_HYGIENE_STEP_NAME)
         assert script == "bash scripts/ci_e2e_port_hygiene.sh"
         helper = (REPO_ROOT / script.removeprefix("bash ")).read_text(encoding="utf-8")
         assert "apps.webui.server" in helper

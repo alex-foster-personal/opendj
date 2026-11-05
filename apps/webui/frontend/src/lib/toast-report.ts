@@ -56,8 +56,11 @@ export const UNKNOWN = 'unknown';
  * far past the collision risk that matters for one DJ's log directory.
  */
 export function newToastSessionToken(
-	randomSource: { getRandomValues?: (array: Uint32Array) => Uint32Array } | undefined =
-		typeof crypto === 'undefined' ? undefined : crypto
+	randomSource:
+		{ getRandomValues?: (array: Uint32Array) => Uint32Array } | undefined = typeof crypto ===
+	'undefined'
+		? undefined
+		: crypto
 ): string {
 	if (randomSource?.getRandomValues !== undefined) {
 		const buffer = randomSource.getRandomValues(new Uint32Array(1));
@@ -277,7 +280,7 @@ export async function writeToastReport(
 			isSecureContext
 				? 'this browser exposes no navigator.clipboard.writeText'
 				: 'this page is not a secure context, so the clipboard API is not available. ' +
-					'Reach the app on localhost or 127.0.0.1 rather than a bare IP over http'
+						'Reach the app on localhost or 127.0.0.1 rather than a bare IP over http'
 		);
 	}
 	try {

@@ -420,7 +420,11 @@ test('a re-armed recovery that works leaves the context running', async () => {
 	ctx.state = 'interrupted';
 	for (const handler of listeners) handler();
 	await settle();
-	assert.equal(ctx.state, 'interrupted', 'the first arming must fail, or there is nothing to re-arm');
+	assert.equal(
+		ctx.state,
+		'interrupted',
+		'the first arming must fail, or there is nothing to re-arm'
+	);
 
 	deviceIsBack = true;
 	mod.noteRecoveryOpportunity('the window became visible');
@@ -813,13 +817,10 @@ test('a hanging resume through resumeAudioContextOrReportDead records dead, toas
 	resumeHarness.resetPerfEventLog();
 	const toastBefore = resumeHarness.toasts.length;
 	const ctx = { resume: () => new Promise(() => {}) };
-	await assert.rejects(
-		resumeHarness.resumeAudioContextOrReportDead(ctx),
-		(err) => {
-			assert.equal(err?.name, 'AudioContextIoTimeoutError');
-			return true;
-		}
-	);
+	await assert.rejects(resumeHarness.resumeAudioContextOrReportDead(ctx), (err) => {
+		assert.equal(err?.name, 'AudioContextIoTimeoutError');
+		return true;
+	});
 	const dead = resumeHarness.readPerfEvents().find((row) => row.kind === 'audio-output-dead');
 	assert.ok(dead, 'if resume times out then audio-output-dead must be recorded - broken');
 	assert.equal(dead.severity, 'error');
@@ -999,11 +1000,19 @@ test('an intentional suspend (the IOPIN-18 output reopen) raises no alarm, and o
 	await settle();
 	assert.equal(harness.toasts.length, 0, 'a reopen suspend must not toast "Audio stopped"');
 	assert.equal(harness.perf.filter((row) => row.kind === 'audio-unexpected-pause').length, 0);
-	assert.equal(ctx.resumeAtMs.length, 0, 'the watchdog must not race the reopen with its own resume');
+	assert.equal(
+		ctx.resumeAtMs.length,
+		0,
+		'the watchdog must not race the reopen with its own resume'
+	);
 	// A recovery edge (window visible, device list changed) mid-reopen is excused too.
 	mod.noteRecoveryOpportunity('the window became visible');
 	await settle();
-	assert.equal(ctx.resumeAtMs.length, 0, 'a recovery edge must not resume a context the reopen holds suspended');
+	assert.equal(
+		ctx.resumeAtMs.length,
+		0,
+		'a recovery edge must not resume a context the reopen holds suspended'
+	);
 	// interrupted is never excused, even mid-reopen.
 	ctx.__enter('interrupted');
 	await settle();
@@ -1014,7 +1023,9 @@ test('an intentional suspend (the IOPIN-18 output reopen) raises no alarm, and o
 	ctx.__enter('running');
 	ctx.__enter('suspended');
 	await settle();
-	assert.ok(harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]')));
+	assert.ok(
+		harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]'))
+	);
 	if (typeof detach === 'function') detach();
 });
 
@@ -1031,12 +1042,18 @@ test('overlapping intentional suspends stay excused until the last one ends', as
 	ctx.__enter('suspended');
 	await settle();
 	assert.equal(harness.toasts.length, 0, 'a suspend still held by the other reopen must not toast');
-	assert.equal(ctx.resumeAtMs.length, 0, 'the watchdog must not resume a room the other reopen holds');
+	assert.equal(
+		ctx.resumeAtMs.length,
+		0,
+		'the watchdog must not resume a room the other reopen holds'
+	);
 	// Control: once the last reopen ends, a suspend is an incident again.
 	mod.endIntentionalSuspend(ctx);
 	ctx.__enter('running');
 	ctx.__enter('suspended');
 	await settle();
-	assert.ok(harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]')));
+	assert.ok(
+		harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]'))
+	);
 	if (typeof detach === 'function') detach();
 });

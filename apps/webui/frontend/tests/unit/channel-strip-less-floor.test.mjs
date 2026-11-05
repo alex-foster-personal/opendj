@@ -178,9 +178,16 @@ function readSharedStripNumbers() {
 	const knobSrc = readFileSync(KNOB_PATH, 'utf8');
 
 	// Knob's own caption formula (shared by every dial size): dial diameter
-	// (the `size` prop) + a 1px caption gap + 8px caption text.
+	// (the `size` prop) + a 1px caption gap + 8px caption text. COLORFX-10:
+	// the caption is 8px (FULL_FONT_PX) or smaller when it would overflow its
+	// column, so the full size is the floor's upper bound.
 	const gapMatch = firstMatch(knobSrc, /--knob-caption-gap: (\d+)px/, "Knob's caption gap");
-	const captionMatch = firstMatch(knobSrc, /--knob-caption-size: (\d+)px/, "Knob's caption size");
+	firstMatch(knobSrc, /--knob-caption-size: \$\{caption\.fontPx\}px/, "Knob's fitted caption size");
+	const captionMatch = firstMatch(
+		readFileSync(KNOB_PATH.replace(/components\/rb\/mixer\/Knob\.svelte$/, 'rb/knob-caption-fit.ts'), 'utf8'),
+		/FULL_FONT_PX: (\d+),/,
+		"Knob's full caption size"
+	);
 	const captionExtraPx = Number(gapMatch[1]) + Number(captionMatch[1]);
 	const knobBoxPx = (size) => size + captionExtraPx;
 
@@ -430,7 +437,8 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 
 test('the MORE/LESS toggle is compact (pin 246b0f5: "toggle is too big ... pushing EQs down")', () => {
 	const src = readFileSync(MIXER_PATH, 'utf8');
-	const toggleRule = firstMatch(src, /\.deck-layout-toggle\s*\{([^}]*)\}/, 'a .deck-layout-toggle rule');
+	// The S button joined MORE/LESS on one row (Mon 2 Nov 2026); that row carries the padding.
+	const toggleRule = firstMatch(src, /\.mixer-view-row\s*\{([^}]*)\}/, 'a .mixer-view-row rule');
 	const paddingMatch = firstMatch(toggleRule[1], /padding-bottom:\s*(\d+)px/, 'toggle padding-bottom');
 	assert.ok(Number(paddingMatch[1]) <= 2, 'toggle padding-bottom must be shrunk to <= 2px');
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Observed container concurrency, reconstructed from per-call wall spans.
 
-THE BUG THIS EXISTS TO KILL: ``scripts/bench/kpi_ledger.json`` recorded
+THE BUG THIS EXISTS TO KILL: ``(private path)`` recorded
 ``max_parallel_gpus: 10`` for every Modal snapshot, under a KPI defined as
 "Most GPUs the farm ran concurrently during the run". Nothing measured it. The
 value was ``DEFAULT_MAX_CONTAINERS``, the CONFIGURED cap, copied into a
@@ -30,6 +30,7 @@ dependency.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -64,9 +65,7 @@ def concurrency_profile(spans: Sequence[tuple[float, float]]) -> dict[str, float
     for start, end in spans:
         if end < start:
             raise ValueError(f"span ends before it starts: [{start}, {end}]")
-    events = sorted(
-        [(start, 1) for start, _ in spans] + [(end, -1) for _, end in spans]
-    )
+    events = sorted([(start, 1) for start, _ in spans] + [(end, -1) for _, end in spans])
     running = 0
     peak = 0
     for _, delta in events:
@@ -110,9 +109,7 @@ def implied_max_containers(items_per_s: float, container_s: float) -> float:
     no more than the product can ever be in flight, whatever the cap is set to.
     """
     if items_per_s < 0 or container_s < 0:
-        raise ValueError(
-            f"negative rate or duration: {items_per_s=}, {container_s=}"
-        )
+        raise ValueError(f"negative rate or duration: {items_per_s=}, {container_s=}")
     return round(items_per_s * container_s, 2)
 
 

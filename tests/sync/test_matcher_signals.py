@@ -1,4 +1,5 @@
 """Unit tests for the six-signal scorer (SYNC-02)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -138,9 +139,7 @@ class TestDurationSignal:
 
 
 class TestFingerprintLazy:
-    def test_not_invoked_when_three_cheap_signals_fire(
-        self, tmp_path: Path
-    ) -> None:
+    def test_not_invoked_when_three_cheap_signals_fire(self, tmp_path: Path) -> None:
         """Fingerprint callback should be skipped when cheap >=3 already."""
         path = tmp_path / "Song.mp3"
         path.touch()
@@ -171,9 +170,7 @@ class TestFingerprintLazy:
 
         def fp(rb_, dj_) -> Signal:
             called.append(True)
-            return Signal(
-                name="chromaprint", weight=WEIGHTS["chromaprint"], fired=True
-            )
+            return Signal(name="chromaprint", weight=WEIGHTS["chromaprint"], fired=True)
 
         _, signals = score_pair(rb, dj, fingerprint_fn=fp)
         assert called == [True]

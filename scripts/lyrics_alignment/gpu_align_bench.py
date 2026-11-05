@@ -20,7 +20,7 @@
 """Word-aligner bake-off on a local CUDA GPU: same songs, same stems, same scorer, many models.
 
 The lyric word aligner today is MMS-300M, whose weights are CC-BY-NC 4.0 and so
-outside the shipping standard (specs/native-analysis-v1.md, NATIVE-08). This runs
+outside the shipping standard ((private path), NATIVE-08). This runs
 the permissive candidates the licence survey shortlisted against MMS on the SAME
 vocal stems, so the choice of replacement rests on one measurement rather than a
 CPU full-mix hint. Scoring is the repo's own: `python -m apps.lyrics score` and
@@ -46,8 +46,8 @@ Requirements
 
 Usage (repo root; stems from gpu_separate_vocals.py):
   uv run --script scripts/lyrics_alignment/gpu_align_bench.py --candidate mms \\
-      --audio-dir data/datasets/jamendolyrics-vocals-local --pred-dir data/state/lyrics-eval/gpu-mms
-  uv run --no-sync python -m apps.lyrics score --pred data/state/lyrics-eval/gpu-mms
+      --audio-dir (private path) --pred-dir (private path)
+  uv run --no-sync python -m apps.lyrics score --pred (private path)
 
 -Claude
 """
@@ -213,9 +213,7 @@ def _ctc_aligner(model_id: str) -> Aligner:
         stamps = postprocess_results(text, get_spans(tokens, segments, blank), stride, scores)
         stamps = [s for s in stamps if s["text"] != STAR_TOKEN]
         if len(stamps) != len(words):
-            raise RuntimeError(
-                f"aligner returned {len(stamps)} words for {len(words)} reference words"
-            )
+            raise RuntimeError(f"aligner returned {len(stamps)} words for {len(words)} reference words")
         return [
             {"word": w, "start_s": s["start"], "end_s": s["end"], "score": s["score"]}
             for w, s in zip(words, stamps, strict=True)
@@ -233,14 +231,10 @@ def _whisper_aligner(model_id: str) -> Aligner:
         # suppress_silence off: on a vocal stem the instrumental gaps read as silence and
         # stable-ts packs early words into them (one stem measured 67 s median error with it
         # on, word onsets within MMS's with it off).
-        result = model.align(
-            audio, " ".join(words), language=LANG_TO_ISO639_1[language], suppress_silence=False
-        )
+        result = model.align(audio, " ".join(words), language=LANG_TO_ISO639_1[language], suppress_silence=False)
         got = [w for seg in result.segments for w in seg.words]
         if len(got) != len(words):
-            raise RuntimeError(
-                f"stable-ts returned {len(got)} words for {len(words)} reference words"
-            )
+            raise RuntimeError(f"stable-ts returned {len(got)} words for {len(words)} reference words")
         return [
             {"word": w, "start_s": g.start, "end_s": g.end, "score": g.probability}
             for w, g in zip(words, got, strict=True)
@@ -254,9 +248,7 @@ BACKENDS: dict[str, Callable[[str], Aligner]] = {"ctc": _ctc_aligner, "whisper":
 # -----------------------------------------------------------------------------
 
 
-def run(
-    candidate_name: str, audio_dir: Path, audio_template: str, pred_dir: Path, limit: int
-) -> Manifest:
+def run(candidate_name: str, audio_dir: Path, audio_template: str, pred_dir: Path, limit: int) -> Manifest:
     candidate = CANDIDATES[candidate_name]
     manifest = Manifest(
         candidate_name,
@@ -281,18 +273,14 @@ def run(
         audio_path = audio_dir / audio_template.format(name=name)
         t0 = time.perf_counter()
         try:
-            words = aligners[model_id](
-                _decode_16k_mono(audio_path), _reference_words(name), language
-            )
+            words = aligners[model_id](_decode_16k_mono(audio_path), _reference_words(name), language)
         except Exception as exc:  # per-song isolation; every error is listed and fails the run
             manifest.errors[name] = f"{type(exc).__name__}: {exc}"
             print(f"[ERR] {name} {manifest.errors[name]}", flush=True)
             continue
         torch.cuda.synchronize()
         manifest.gpu_s[name] = round(time.perf_counter() - t0, 3)
-        (pred_dir / f"{name}.json").write_text(
-            json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8"
-        )
+        (pred_dir / f"{name}.json").write_text(json.dumps({"words": words}, ensure_ascii=False), encoding="utf-8")
         print(f"[ok] {name} {len(words)}w {manifest.gpu_s[name]}s", flush=True)
     return manifest
 
@@ -310,9 +298,7 @@ def main() -> int:
 
     t_run = time.perf_counter()
     manifest = run(args.candidate, args.audio_dir, args.audio_template, args.pred_dir, args.limit)
-    Path(f"{args.pred_dir}.run.json").write_text(
-        json.dumps(asdict(manifest), indent=2), encoding="utf-8"
-    )
+    Path(f"{args.pred_dir}.run.json").write_text(json.dumps(asdict(manifest), indent=2), encoding="utf-8")
     print(
         f"[total] {len(manifest.gpu_s)} aligned, {len(manifest.errors)} errors, "
         f"{len(manifest.skipped_no_model)} skipped (no model), "

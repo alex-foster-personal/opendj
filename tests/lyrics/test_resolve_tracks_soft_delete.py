@@ -6,6 +6,7 @@ silently skipped [else broken].
 [if] a live stable_id alongside a soft-deleted one is requested [then] only
 the soft-deleted one is named in the refusal [else broken].
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,14 +23,14 @@ def _seed_track(conn, stable_id: str, *, deleted: bool) -> None:
         "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path, "
         "created_at, updated_at, deleted_at) VALUES (?, 'inferred', ?, ?, "
         "?, ?, ?)",
-        (stable_id, stable_id, f"/music/{stable_id}.flac", NOW, NOW,
-         NOW if deleted else None),
+        (stable_id, stable_id, f"/music/{stable_id}.flac", NOW, NOW, NOW if deleted else None),
     )
     conn.commit()
 
 
 def test_a_soft_deleted_track_is_reported_missing_not_resolved(
-    data_dir: Path, conn,
+    data_dir: Path,
+    conn,
 ) -> None:
     _seed_track(conn, "trk-live", deleted=False)
     _seed_track(conn, "trk-gone", deleted=True)

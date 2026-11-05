@@ -144,6 +144,7 @@ def test_collect_matches_unique_pr_branches_when_monitored_runs_complete(tmp_pat
                 "event": "push",
             }
         )
+
     class FakeRunner:
         def run(self, args, *, cwd=None, check=True):
             if args[:3] == ["gh", "run", "list"]:
@@ -361,9 +362,7 @@ def test_prepare_records_campaign_window_before_baseline_push(tmp_path):
 
     assert runner.push_argv is not None
     assert f"HEAD:refs/heads/{prepared['base_branch']}" in runner.push_argv
-    assert runner.prepared_at_when_pushing, (
-        "prepared_at must already be persisted when the baseline push runs"
-    )
+    assert runner.prepared_at_when_pushing, "prepared_at must already be persisted when the baseline push runs"
     assert prepared["state"] == "prepared"
     assert prepared["prepared_at"] == runner.prepared_at_when_pushing
     # The window opens a bounded skew margin early, never arbitrarily early:
@@ -537,9 +536,7 @@ def _prepared_campaign_with_runs(tmp_path: Path, *, github_clock_behind_s: int =
 
 
 @pytest.mark.parametrize("github_clock_behind_s", [0, 5])
-def test_prepared_window_includes_baseline_runs_created_in_the_push_second(
-    tmp_path, github_clock_behind_s
-):
+def test_prepared_window_includes_baseline_runs_created_in_the_push_second(tmp_path, github_clock_behind_s):
     # GitHub's createdAt is whole seconds on GitHub's clock. The second BEFORE
     # prepare starts is the earliest stamp the baseline push's own runs can
     # carry with synchronized clocks, and a few seconds earlier still when
@@ -550,9 +547,7 @@ def test_prepared_window_includes_baseline_runs_created_in_the_push_second(
 
     result = collect_campaign(campaign, _CollectListRunner(runs))
 
-    baseline_ids = {
-        row["databaseId"] for row in result["campaign_runs"] if row.get("event") == "push"
-    }
+    baseline_ids = {row["databaseId"] for row in result["campaign_runs"] if row.get("event") == "push"}
     assert baseline_ids == {1, 2}, "the baseline push's own CI / docs runs fell outside the window"
     assert result["monitored_runs_completed"] == 2 + 2 * CASE_COUNT
     # Control: admitting the baseline must not make coverage impossible. With
@@ -574,9 +569,9 @@ def test_unfinished_baseline_run_keeps_coverage_incomplete(tmp_path, baseline_st
 
     result = collect_campaign(campaign, _CollectListRunner(runs))
 
-    assert all(
-        workflow["status"] == "completed" for case in result["cases"] for workflow in case["workflows"]
-    ), "fixture must have every PR workflow finished, or this test proves nothing"
+    assert all(workflow["status"] == "completed" for case in result["cases"] for workflow in case["workflows"]), (
+        "fixture must have every PR workflow finished, or this test proves nothing"
+    )
     assert result["complete"] is False
     incomplete = [item for item in result["anomalies"] if item.startswith("Coverage incomplete")]
     assert len(incomplete) == 1
@@ -613,21 +608,17 @@ def test_missing_baseline_run_keeps_coverage_incomplete(tmp_path, missing_workfl
     # no row to report as unfinished, the snapshot must still refuse to claim
     # complete coverage, because that run's cost is absent (Codex P2 on PR #3943).
     campaign, runs, _baseline_created = _prepared_campaign_with_runs(tmp_path)
-    runs = [
-        row for row in runs
-        if not (row.get("event") == "push" and row["workflowName"] == missing_workflow)
-    ]
+    runs = [row for row in runs if not (row.get("event") == "push" and row["workflowName"] == missing_workflow)]
 
     result = collect_campaign(campaign, _CollectListRunner(runs))
 
-    assert all(
-        workflow["status"] == "completed" for case in result["cases"] for workflow in case["workflows"]
-    ), "fixture must have every PR workflow finished, or this test proves nothing"
+    assert all(workflow["status"] == "completed" for case in result["cases"] for workflow in case["workflows"]), (
+        "fixture must have every PR workflow finished, or this test proves nothing"
+    )
     assert result["complete"] is False
     missing = [item for item in result["anomalies"] if "baseline push" in item]
     assert missing == [
-        f"Coverage incomplete: baseline push on {campaign['base_branch']} has no run for: "
-        f"{missing_workflow}"
+        f"Coverage incomplete: baseline push on {campaign['base_branch']} has no run for: {missing_workflow}"
     ]
 
 

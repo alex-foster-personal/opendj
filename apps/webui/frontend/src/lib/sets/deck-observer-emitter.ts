@@ -16,7 +16,7 @@
  * every second it already reported banked in sqlite. This module therefore
  * samples on a timer and never tries to detect "a track started"; deciding
  * what was played is the server's job, and filtering what counts as played
- * is a read-time question (docs/product/set-dwell-threshold-analysis.md).
+ * is a read-time question ((private path)).
  *
  * WHY IT ONLY READS performance-ipc
  * `queryPerformanceState()` is the one existing source of truth for deck
@@ -82,7 +82,6 @@ export const RECORDER_POLL_MS = 5000;
  *  real bound is PROGRESS - a pass that removes nothing ends it - and this
  *  only backstops a buffer being refilled from elsewhere while draining. */
 export const MAX_DRAIN_PASSES = 4;
-
 
 /** One deck's state on the wire. Field-for-field what
  *  `opendj_wire._parse_deck` accepts. */
@@ -171,7 +170,6 @@ interface BufferedSnapshot {
 	 *  number that outlives the session it belonged to. */
 	atMs: number;
 }
-
 
 // ----------------------------------------------------------------- emitter ---
 
@@ -474,8 +472,7 @@ export function createDeckObserverEmitter(
 			// because an NTP correction landed between two recordings. Found
 			// while testing the same defect one layer down, in the observation
 			// clock floor.
-			const elapsed =
-				lastRecorderPollMs === null ? Infinity : now().getTime() - lastRecorderPollMs;
+			const elapsed = lastRecorderPollMs === null ? Infinity : now().getTime() - lastRecorderPollMs;
 			const sinceLastPoll = elapsed < 0 ? Infinity : elapsed;
 			// Read the phase back off refreshRecorder rather than the closed-over
 			// variable: TypeScript narrowed it to 'idle' at the branch above and

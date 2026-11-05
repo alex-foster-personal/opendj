@@ -21,7 +21,11 @@ import type { BackgroundDemandShed } from '$lib/rb/playing-gate';
 /** How a held decode came to start: the shed released it, or the DJ did. */
 type _ReleaseCause = 'released' | 'forced';
 type _Release = (cause: _ReleaseCause) => void;
-let _pendingReleases: Array<{ deck: number | undefined; stale: (() => boolean) | undefined; release: _Release }> = [];
+let _pendingReleases: Array<{
+	deck: number | undefined;
+	stale: (() => boolean) | undefined;
+	release: _Release;
+}> = [];
 
 /** Release the held decodes of one deck, or every deck when `deck` is undefined.
  * A deck's release skips holds whose load is stale (the deck has loaded another
@@ -159,6 +163,7 @@ export async function awaitEagerStemDecodeSlot(
 	clearTimer(handle);
 	// A timed-out decode is already running: it is no longer held, so a later
 	// release must neither count it nor call it.
-	if (start === 'timed_out') _pendingReleases = _pendingReleases.filter((held) => held.release !== release);
+	if (start === 'timed_out')
+		_pendingReleases = _pendingReleases.filter((held) => held.release !== release);
 	return start;
 }

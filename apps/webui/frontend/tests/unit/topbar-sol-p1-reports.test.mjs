@@ -36,7 +36,10 @@ async function captureErrors(fn) {
 }
 
 function response(status, body) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 // Since main's PR #7483 the hydrator has no blanket catch: a refused or
@@ -45,15 +48,24 @@ function response(status, body) {
 test('a 422 on GET /ui-prefs rejects and the local top-bar view is kept', async () => {
 	prefs.uiPrefs.perf_view = 'list';
 	globalThis.fetch = async () =>
-		response(422, { detail: { code: 'VALIDATION', message: 'perf_view must be one of the views' } });
-	await assert.rejects(() => prefs.hydrateConfirmPrefsFromDisk(), /perf_view must be one of the views/);
+		response(422, {
+			detail: { code: 'VALIDATION', message: 'perf_view must be one of the views' }
+		});
+	await assert.rejects(
+		() => prefs.hydrateConfirmPrefsFromDisk(),
+		/perf_view must be one of the views/
+	);
 	assert.equal(prefs.uiPrefs.perf_view, 'list');
 });
 
 test('a malformed top-bar view in a served prefs file fails hydration and keeps the local view', async () => {
 	prefs.uiPrefs.perf_view = 'list';
-	globalThis.fetch = async () => response(200, { perf_view: 'grid', key_notation: 'camelot_musical' });
-	await assert.rejects(() => prefs.hydrateConfirmPrefsFromDisk(), /Top-bar view prefs on disk were refused/);
+	globalThis.fetch = async () =>
+		response(200, { perf_view: 'grid', key_notation: 'camelot_musical' });
+	await assert.rejects(
+		() => prefs.hydrateConfirmPrefsFromDisk(),
+		/Top-bar view prefs on disk were refused/
+	);
 	assert.equal(prefs.uiPrefs.perf_view, 'list');
 });
 
@@ -79,7 +91,10 @@ test('feature-icon click mode reports storage that throws on read and on write',
 		const writeLogged = await captureErrors(() => cluster.setFeatureIconSingleClick(true));
 		assert.equal(cluster.featureIconSingleClick(), true, 'the choice still applies for this page');
 		assert.equal(writeLogged.length, 1);
-		assert.match(writeLogged[0], /could not be saved in this browser's storage; it applies until you reload/);
+		assert.match(
+			writeLogged[0],
+			/could not be saved in this browser's storage; it applies until you reload/
+		);
 	} finally {
 		if (originalStorage === undefined) delete globalThis.localStorage;
 		else globalThis.localStorage = originalStorage;
@@ -127,7 +142,11 @@ test('feature-icon click mode reports a browser with no storage, and is silent w
 		else delete globalThis.window;
 	};
 	try {
-		Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true, writable: true });
+		Object.defineProperty(globalThis, 'localStorage', {
+			value: undefined,
+			configurable: true,
+			writable: true
+		});
 
 		delete globalThis.window;
 		let cluster;

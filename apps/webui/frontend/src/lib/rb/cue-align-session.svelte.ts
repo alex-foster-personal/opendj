@@ -19,7 +19,11 @@ import { DECK_IDS, type DeckId } from '$lib/player/constants';
 // Types only: the controller itself is imported on demand in startCueAlignment,
 // so the calibration state machine and its chirp maths stay out of the initial
 // load of "/" (the library bundle budget). Nothing calibrates before a click.
-import type { CueAlignController, CueAlignEffects, CueAlignProbe } from '$lib/player/cue-align.svelte';
+import type {
+	CueAlignController,
+	CueAlignEffects,
+	CueAlignProbe
+} from '$lib/player/cue-align.svelte';
 import type { HeadphoneCalibrationProbe } from '$lib/rb/mixer-types';
 import { recordHeadphoneFailureDiagnostic } from '$lib/player/headphones';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
@@ -128,7 +132,10 @@ export async function startCueAlignment(opts: { interactive: boolean }): Promise
 	let effects: CueAlignEffects;
 	let createCueAlignController: typeof import('$lib/player/cue-align.svelte').createCueAlignController;
 	try {
-		[effects, { createCueAlignController }] = await Promise.all([_effects(), import('$lib/player/cue-align.svelte')]);
+		[effects, { createCueAlignController }] = await Promise.all([
+			_effects(),
+			import('$lib/player/cue-align.svelte')
+		]);
 	} catch (error) {
 		// `_effects()` can refuse before the controller gets to reset its run
 		// evidence. Publish a fresh precondition diagnosis, never measurements

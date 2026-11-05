@@ -63,7 +63,9 @@ async function addHost(page: Page, title: string, rowTitle?: string): Promise<vo
 
 const tip = (page: Page) => page.locator('#single-hover-tip');
 
-test('a title rewritten while hovered is shown on the open tip and restored on leave', async ({ page }) => {
+test('a title rewritten while hovered is shown on the open tip and restored on leave', async ({
+	page
+}) => {
 	await addHost(page, 'Skin: Gothic. Click for Light');
 	const host = page.locator(`#${HOST_ID}`);
 	await host.hover();
@@ -72,7 +74,10 @@ test('a title rewritten while hovered is shown on the open tip and restored on l
 
 	await host.evaluate((el) => el.setAttribute('title', 'Skin: Light. Click for Default'));
 	await expect(host).toHaveAttribute('data-tip', 'Skin: Light. Click for Default');
-	await expect(host, 'the new title is parked too, so no native tooltip').not.toHaveAttribute('title', /.*/);
+	await expect(host, 'the new title is parked too, so no native tooltip').not.toHaveAttribute(
+		'title',
+		/.*/
+	);
 	await expect(tip(page)).toHaveText('Skin: Light. Click for Default');
 
 	await page.mouse.move(AWAY.x, AWAY.y);
@@ -80,10 +85,14 @@ test('a title rewritten while hovered is shown on the open tip and restored on l
 	await expect(host).not.toHaveAttribute('data-tip-parked', /.*/);
 
 	await host.hover();
-	await expect(tip(page), 're-hover reads the new text').toHaveText('Skin: Light. Click for Default');
+	await expect(tip(page), 're-hover reads the new text').toHaveText(
+		'Skin: Light. Click for Default'
+	);
 });
 
-test('a title rewritten just before leave, before the observer flushes, is kept', async ({ page }) => {
+test('a title rewritten just before leave, before the observer flushes, is kept', async ({
+	page
+}) => {
 	await addHost(page, 'Undo: add 1 track');
 	const host = page.locator(`#${HOST_ID}`);
 	await host.hover();
@@ -109,7 +118,10 @@ test('a parked ancestor whose title is rewritten restores the new text', async (
 	const row = page.locator(`#${ROW_ID}`);
 	await page.locator(`#${CHIP_ID}`).hover();
 	await expect(tip(page)).toHaveText('Vocals chip');
-	await expect(row, 'the ancestor is parked while the chip tip shows').not.toHaveAttribute('title', /.*/);
+	await expect(row, 'the ancestor is parked while the chip tip shows').not.toHaveAttribute(
+		'title',
+		/.*/
+	);
 
 	await row.evaluate((el) => el.setAttribute('title', 'Stems: 4 on this machine'));
 	await expect(row).toHaveAttribute('data-tip', 'Stems: 4 on this machine');

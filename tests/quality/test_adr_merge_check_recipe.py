@@ -15,11 +15,7 @@ RECIPE_NAME = "adr-merge-check"
 def _recipe_body(name: str) -> str:
     text = JUSTFILE.read_text(encoding="utf-8")
     lines = text.splitlines()
-    starts = [
-        i
-        for i, line in enumerate(lines)
-        if re.match(rf"^{re.escape(name)}(\s+[^:]*)?:", line)
-    ]
+    starts = [i for i, line in enumerate(lines) if re.match(rf"^{re.escape(name)}(\s+[^:]*)?:", line)]
     if not starts:
         pytest.fail(f"justfile has no `{name}` recipe")
     body: list[str] = []

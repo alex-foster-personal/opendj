@@ -2,6 +2,7 @@
 
 [if] the shared default threadpool is saturated [then] /health still answers, [else stop].
 """
+
 from __future__ import annotations
 
 import threading
@@ -25,7 +26,7 @@ def _build_app(backend: InMemoryBackend, release: threading.Event) -> FastAPI:
     app.state.bind_host = "127.0.0.1"
     app.state.version = "test"
     app.state.hostname = "test-host"
-    app.state.state_db_path = "data/state/state.db"
+    app.state.state_db_path = "(private path)"
     app.state.lock_status_fn = lambda: None
     app.state.syncthing_status_fn = lambda: None
     app.include_router(health_routes.router, prefix="/api/v1")
@@ -52,6 +53,7 @@ async def test_health_responds_while_default_threadpool_is_saturated() -> None:
     try:
         async with AsyncClient(transport=transport, base_url="http://test-host") as client:
             async with anyio.create_task_group() as tg:
+
                 async def _occupy_one_token() -> None:
                     r = await client.get("/__test_block")
                     assert r.status_code == 200
@@ -86,13 +88,20 @@ async def test_health_still_reports_real_stats_under_saturation() -> None:
 
     from apps.webui.server.backend import Track
 
-    backend.seed_track(Track(
-        stable_id="t-1", title="Probe Track", artist="Nobody",
-        bpm=120.0, key="1A", rating=3, tags=[],
-        created_at=datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
-        updated_at=datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
-        provenance={},
-    ))
+    backend.seed_track(
+        Track(
+            stable_id="t-1",
+            title="Probe Track",
+            artist="Nobody",
+            bpm=120.0,
+            key="1A",
+            rating=3,
+            tags=[],
+            created_at=datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+            provenance={},
+        )
+    )
     release = threading.Event()
     release.set()  # nothing to saturate with here; just a direct sanity check
     app = _build_app(backend, release)

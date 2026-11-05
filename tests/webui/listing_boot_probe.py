@@ -30,6 +30,7 @@ change the filesystem between two requests and see what the next one says:
 
     python -m tests.webui.listing_boot_probe <spec.json>
 """
+
 from __future__ import annotations
 
 import json
@@ -58,7 +59,7 @@ REFRESH_THREAD = "path-availability-refresh"
 REQUEST_THREAD_PREFIX = "AnyIO worker thread"
 
 
-#-----
+# -----
 # Parent side.
 
 
@@ -110,14 +111,12 @@ def run_boot_probe(data_dir: Path, home: Path, steps: list[dict[str, Any]], scra
         check=False,
     )
     if proc.returncode != 0:
-        raise AssertionError(
-            f"listing boot probe exited {proc.returncode}; its stderr tail:\n{proc.stderr[-4000:]}"
-        )
+        raise AssertionError(f"listing boot probe exited {proc.returncode}; its stderr tail:\n{proc.stderr[-4000:]}")
     result: dict[str, Any] = json.loads(out_path.read_text(encoding="utf-8"))
     return result
 
 
-#-----
+# -----
 # Child side.
 
 _OPENS: Counter[str] = Counter()
@@ -156,9 +155,7 @@ def _get(client: TestClient, trace: SqlTrace, url: str) -> dict[str, Any]:
         "bytes": len(response.content),
         "wall_ms": wall_ms,
         "content_type": response.headers["content-type"],
-        "request_opens": sum(
-            count for name, count in _OPENS.items() if name.startswith(REQUEST_THREAD_PREFIX)
-        ),
+        "request_opens": sum(count for name, count in _OPENS.items() if name.startswith(REQUEST_THREAD_PREFIX)),
         "opens_by_thread": dict(_OPENS),
         "connections": trace.connections_outside(REFRESH_THREAD),
         "statements": len(statements),

@@ -28,7 +28,10 @@ test('the Free badge is hidden', () => {
 });
 
 test('Gothic: the jog carries the light wheel plate and a thick white trail', () => {
-	assert.match(rule(theme, "html[data-skin='mono-dev'] .perf-root .dial-wrap"), /background: #efe9dd;/);
+	assert.match(
+		rule(theme, "html[data-skin='mono-dev'] .perf-root .dial-wrap"),
+		/background: #efe9dd;/
+	);
 	assert.match(
 		rule(theme, "html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing .progress-trail"),
 		/stroke: #fff;/
@@ -36,5 +39,8 @@ test('Gothic: the jog carries the light wheel plate and a thick white trail', ()
 });
 
 test('Gothic: loaded-track titles stay green', () => {
-	assert.match(rule(theme, "html[data-skin='mono-dev'] .perf-root .rb-row-loaded"), /color: #35c04f;/);
+	assert.match(
+		rule(theme, "html[data-skin='mono-dev'] .perf-root .rb-row-loaded"),
+		/color: #35c04f;/
+	);
 });

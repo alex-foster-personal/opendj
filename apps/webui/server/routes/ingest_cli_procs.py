@@ -37,6 +37,13 @@ signalled. On Linux a group whose leader is already gone is signalled only
 while the pidfd captured with that leader is still open. The fd pins the pid,
 so the numeric id cannot have been taken by another session. Without the fd,
 member create_time is not proof and the group is refused.
+
+Each close and each reopen starts a new :func:`epoch`. A thread that waits
+before it launches its CLI (a Re-analyze drain queued on the runner gate)
+captures the epoch when it starts and passes it to :func:`register`, which
+refuses a CLI from an earlier epoch even after a reopen: a drain the old
+lifespan's shutdown could not stop, because it had no child yet, must not
+launch into the next one (PR #5054 review round 7).
 """
 from __future__ import annotations
 
@@ -78,13 +85,27 @@ _procs: set[subprocess.Popen[str]] = set()
 _closed = threading.Event()
 
 
+class _Epoch:
+    """The open/close generation; ``value`` is bumped under ``_lock`` by every
+    :func:`stop_all` and every :func:`reopen`."""
+
+    value: int = 0
+
+
+def epoch() -> int:
+    """The registry's current open/close generation, see the module docstring."""
+    with _lock:
+        return _Epoch.value
+
+
 def reopen() -> None:
     """Accept CLIs again; the lifespan calls this on startup."""
     with _lock:
         _closed.clear()
+        _Epoch.value += 1
 
 
-def register(proc: subprocess.Popen[str]) -> bool:
+def register(proc: subprocess.Popen[str], *, started_in: int | None = None) -> bool:
     """Track a running CLI until :func:`unregister` or :func:`stop_all`.
 
     After :func:`stop_all` the CLI is killed at once instead, with its
@@ -92,9 +113,12 @@ def register(proc: subprocess.Popen[str]) -> bool:
     in the job's own thread after :func:`stop_all` has returned, so nothing
     in the shutdown waits on it, and the interpreter can exit mid-grace
     before the SIGKILL rung, leaving a CLI that ignores SIGTERM behind.
+
+    ``started_in`` is the :func:`epoch` its caller captured when it began; a
+    CLI from an earlier epoch is killed the same way, even once reopened.
     """
     with _lock:
-        if not _closed.is_set():
+        if not _closed.is_set() and started_in in (None, _Epoch.value):
             _procs.add(proc)
             return True
     log.warning("pipeline CLI pid %d started after shutdown began; killing it", proc.pid)
@@ -121,6 +145,7 @@ def stop_all() -> int:
     """
     with _lock:
         _closed.set()
+        _Epoch.value += 1
         running = list(_procs)
         _procs.clear()
     if not running:

@@ -72,20 +72,46 @@ before(async () => {
 });
 
 const PALETTE = {
-	bg: '#101010', low: '#e8a13a', mid: '#4f8fff', high: '#f0f0f0', tick: '#ccc',
-	cueHotCue: '#35c04f', cueLoop: '#e8a13a', cueMemory: '#ff3b30', cueOutline: '#c8cdd2', phrase: '#888'
+	bg: '#101010',
+	low: '#e8a13a',
+	mid: '#4f8fff',
+	high: '#f0f0f0',
+	tick: '#ccc',
+	cueHotCue: '#35c04f',
+	cueLoop: '#e8a13a',
+	cueMemory: '#ff3b30',
+	cueOutline: '#c8cdd2',
+	phrase: '#888'
 };
 
-const detail = { length: 1200, low: Array(1200).fill(0.5), mid: Array(1200).fill(0.5), high: Array(1200).fill(0.5) };
+const detail = {
+	length: 1200,
+	low: Array(1200).fill(0.5),
+	mid: Array(1200).fill(0.5),
+	high: Array(1200).fill(0.5)
+};
 const anlz = {
-	stable_id: 'a'.repeat(40), points: 1200, waveform: { kind: 'tri', preview: detail, detail },
-	beatgrid: { beat_count: 0, beats: [] }, cues: [], phrases: [], vocals: { status: 'not_analyzed' }
+	stable_id: 'a'.repeat(40),
+	points: 1200,
+	waveform: { kind: 'tri', preview: detail, detail },
+	beatgrid: { beat_count: 0, beats: [] },
+	cues: [],
+	phrases: [],
+	vocals: { status: 'not_analyzed' }
 };
 
 function frame(positionMs, widthCss = 240, pitch = 1) {
 	return {
-		widthCss, heightCss: 60, positionMs, durationMs: 120_000, anlz, palette: PALETTE, pitch, loop: null,
-		windowS: 24, playheadFrac: 0.5
+		widthCss,
+		heightCss: 60,
+		positionMs,
+		durationMs: 120_000,
+		anlz,
+		palette: PALETTE,
+		pitch,
+		loop: null,
+		windowS: 24,
+		playheadFrac: 0.5
 	};
 }
 
@@ -97,7 +123,11 @@ test('sub-pixel advances blit the cached band image without rebuilding its bucke
 	render.drawWaveRow(ctx, frame(30_000));
 	const firstBuilds = createdCanvases;
 	render.drawWaveRow(ctx, frame(30_050)); // 0.5 CSS px at 10px/s
-	assert.equal(createdCanvases, firstBuilds, 'a move below one CSS pixel must not rescan or rebuild bands');
+	assert.equal(
+		createdCanvases,
+		firstBuilds,
+		'a move below one CSS pixel must not rescan or rebuild bands'
+	);
 	assert.equal(calls.length, 2, 'each frame blits the already-built band image');
 });
 
@@ -172,7 +202,11 @@ test('blocks scroll lands on whole pixels and does not filter the bars', () => {
 	const dx = (args) => (args.length === 3 ? args[1] : args[5]);
 	assert.equal(calls.length, 2, 'one tile blit per frame at this width');
 	assert.equal(dx(calls[0]), dx(calls[1]), 'a sub-pixel advance stays on the snapped pixel');
-	assert.equal(Number.isInteger(dx(calls[0])), true, 'the snapped dest x is a whole CSS pixel at dpr 1');
+	assert.equal(
+		Number.isInteger(dx(calls[0])),
+		true,
+		'the snapped dest x is a whole CSS pixel at dpr 1'
+	);
 });
 
 test('the reuse tolerance is PITCH_TOLERANCE on either side', () => {
@@ -190,7 +224,11 @@ test('the reuse tolerance is PITCH_TOLERANCE on either side', () => {
 
 // One grid object for every frame: a new beats array is a grid edit, which
 // rebuilds a snapped row's image (beatsVersion).
-const GRID_BEATS = Array.from({ length: 200 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: 0.513 + i * 0.5 }));
+const GRID_BEATS = Array.from({ length: 200 }, (_, i) => ({
+	n: (i % 4) + 1,
+	bpm: 120,
+	t: 0.513 + i * 0.5
+}));
 const GRID_ANLZ = { ...anlz, beatgrid: { beat_count: GRID_BEATS.length, beats: GRID_BEATS } };
 
 // 20 px per beat, as on a deck: under BEAT_LINE_MIN_GAP_PX the grid thins to
@@ -237,10 +275,13 @@ test('a snapped Gothic row keeps every beat edge on its grid line while scrollin
 		assert.ok(Number.isInteger(dx), `blit offset ${dx} at ${ms} ms is a whole pixel`);
 		const tLeft = ms / 1000 - render.WAVE_WINDOW_S / 2;
 		if (!Number.isInteger(tLeft * pxPerS)) fractionalSeen += 1;
-		const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + render.WAVE_WINDOW_S);
+		const visible = f.anlz.beatgrid.beats.filter(
+			(b) => b.t >= tLeft && b.t <= tLeft + render.WAVE_WINDOW_S
+		);
 		assert.equal(lines.length, visible.length, 'CONTROL: every visible beat paints a line');
 		const edges = paintedEdges();
-		for (const x of lines) assert.ok(edges.has(x - dx), `a painted bar starts on the line at ${x} px, ${ms} ms`);
+		for (const x of lines)
+			assert.ok(edges.has(x - dx), `a painted bar starts on the line at ${x} px, ${ms} ms`);
 	}
 	assert.ok(fractionalSeen > 0, 'CONTROL: the sweep crosses fractional scroll offsets');
 });
@@ -280,7 +321,9 @@ test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px 
 			const builtPxPerS = GRID_W / render.WAVE_WINDOW_S;
 			const trackWindowS = render.WAVE_WINDOW_S * pitch;
 			const tLeft = ms / 1000 - trackWindowS / 2;
-			const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + trackWindowS);
+			const visible = f.anlz.beatgrid.beats.filter(
+				(b) => b.t >= tLeft && b.t <= tLeft + trackWindowS
+			);
 			assert.equal(lines.length, visible.length, 'CONTROL: one line per visible beat');
 			const painted = paintedEdges();
 			for (let i = 0; i < visible.length; i++) {
@@ -308,7 +351,12 @@ test('a pitch nudge that crosses the 10 px thinning threshold rebuilds the band 
 	const afterFirst = createdCanvases;
 	tiles = [];
 	const rec2 = recordingContext();
-	render.drawWaveRow(rec2.ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: pitch201 });
+	render.drawWaveRow(rec2.ctx, {
+		...gridFrame(30_000, 'blocks'),
+		widthCss,
+		windowS,
+		pitch: pitch201
+	});
 	assert.ok(createdCanvases > afterFirst, 'stride change inside PITCH_TOLERANCE must rebuild');
 	const dx = rec2.blits.at(-1)[1];
 	const edges = new Set(tiles[0].rects.map((r) => r.x));
@@ -316,7 +364,17 @@ test('a pitch nudge that crosses the 10 px thinning threshold rebuilds the band 
 	render.resetWaveBandCacheForTest();
 	createdCanvases = 0;
 	tiles = [];
-	render.drawWaveRow(recordingContext().ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: 20 / 19.7 });
-	render.drawWaveRow(recordingContext().ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: 20 / 19.9 });
+	render.drawWaveRow(recordingContext().ctx, {
+		...gridFrame(30_000, 'blocks'),
+		widthCss,
+		windowS,
+		pitch: 20 / 19.7
+	});
+	render.drawWaveRow(recordingContext().ctx, {
+		...gridFrame(30_000, 'blocks'),
+		widthCss,
+		windowS,
+		pitch: 20 / 19.9
+	});
 	assert.equal(createdCanvases, 1, 'two nudges in the same stride band still build once');
 });

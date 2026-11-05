@@ -31,10 +31,10 @@ export function createMasterStereoTap(ctx: BaseAudioContext, bus: AudioNode): Ma
 			right.getFloatTimeDomainData(r);
 			return { left: l.slice(), right: r.slice(), sampleRate: ctx.sampleRate };
 		},
-		disconnect: () => {
-			bus.disconnect(splitter);
-			splitter.disconnect();
-		}
+		// Only the tap's own nodes: the bus belongs to the graph, whose teardown has
+		// already disconnected it (IOPIN-12). Disconnecting that edge again throws
+		// InvalidAccessError and failed every output-stall rebuild.
+		disconnect: () => splitter.disconnect()
 	};
 }
 

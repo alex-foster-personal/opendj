@@ -10,6 +10,7 @@ Regression lines:
   - if a copyleft license is absent from the flag report, it ships unreviewed
   - if a vendored _vendor source ships without its license text in the inventory, the dmg redistributes code unattributed
 """
+
 from __future__ import annotations
 
 import inspect
@@ -24,6 +25,7 @@ from scripts.license_mirrors import PBS_NATIVE_LIBRARIES, REVIEWED_LICENSE_TEXTS
 from scripts.license_verify import ECOSYSTEMS, verify_bundled_licenses
 from scripts.third_party_licenses import (
     PYTHON_SITES_RELATIVE,
+    RUST_CRATES,
     Cat,
     Component,
     LicenseInventoryError,
@@ -67,7 +69,9 @@ def test_classification_matches_the_license_family(expression: str, expected: st
 
 
 def _component(name: str, license_name: str, texts: list[tuple[str, str]] | None = None) -> Component:
-    return Component("python", name, "1.0", license_name, texts=[("LICENSE", f"text of {name}")] if texts is None else texts)
+    return Component(
+        "python", name, "1.0", license_name, texts=[("LICENSE", f"text of {name}")] if texts is None else texts
+    )
 
 
 def test_flag_report_lists_copyleft_and_omits_permissive() -> None:
@@ -122,9 +126,9 @@ def test_unreviewed_textless_excuses_the_wasm_audio_decoders_js_wrappers() -> No
     flac_wrapper = Component("javascript", "@wasm-audio-decoders/flac", "0.2.11", "MIT", texts=[])
     common_wrapper = Component("javascript", "@wasm-audio-decoders/common", "9.0.7", "MIT", texts=[])
     unrelated_textless = Component("javascript", "some-other-npm-thing", "1.0", "MIT", texts=[])
-    assert unreviewed_textless_components(
-        [mpg123_wrapper, flac_wrapper, common_wrapper, unrelated_textless]
-    ) == [unrelated_textless]
+    assert unreviewed_textless_components([mpg123_wrapper, flac_wrapper, common_wrapper, unrelated_textless]) == [
+        unrelated_textless
+    ]
 
 
 def test_unreviewed_textless_rejects_a_notice_in_place_of_a_license_text() -> None:
@@ -196,7 +200,9 @@ def test_supplement_refuses_a_partial_native_library_mirror(tmp_path: Path) -> N
 def test_the_committed_native_mirror_is_complete() -> None:
     """The real docs/legal mirror carries every required library, so the dmg build will not refuse it."""
     mirror = REPO_ROOT / "docs/legal/python-build-standalone"
-    assert sorted(p.name for p in mirror.glob("LICENSE.*.txt")) == sorted(f"LICENSE.{lib}.txt" for lib in PBS_NATIVE_LIBRARIES)
+    assert sorted(p.name for p in mirror.glob("LICENSE.*.txt")) == sorted(
+        f"LICENSE.{lib}.txt" for lib in PBS_NATIVE_LIBRARIES
+    )
 
 
 def _textless(name: str, version: str) -> Component:
@@ -285,7 +291,7 @@ _VENDOR_HEADER = """\
 def test_vendored_source_scan_attaches_epl_text_for_the_committed_pdb_parser() -> None:
     components = vendored_source_components(REPO_ROOT)
     pdb = [c for c in components if "rekordbox_pdb" in c.name]
-    assert len(pdb) == 1, f"expected one rekordbox_pdb component, got { [c.name for c in components] }"
+    assert len(pdb) == 1, f"expected one rekordbox_pdb component, got {[c.name for c in components]}"
     (component,) = pdb
     assert component.license == "EPL-2.0"
     text = "\n".join(body for _, body in component.license_texts)
@@ -395,7 +401,6 @@ def test_python_inventory_reads_the_staged_dist_info(tmp_path: Path) -> None:
     assert components[0].license_texts
 
 
-
 def test_python_inventory_collects_a_vendored_native_license_outside_dist_info(tmp_path: Path) -> None:
     """Codex P1 (PR #4853): soundfile ships libsndfile with its COPYING under _soundfile_data/, not .dist-info."""
     _write_all_python_sites(tmp_path)
@@ -405,13 +410,19 @@ def test_python_inventory_collects_a_vendored_native_license_outside_dist_info(t
     (site / "demo_pkg/_data/COPYING").write_text("VENDORED LGPL TEXT", encoding="utf-8")
     (site / "demo_pkg/license.py").write_text("LICENSE_URL = 'x'", encoding="utf-8")
     record = dist_info / "RECORD"
-    record.write_text(record.read_text(encoding="utf-8") + "demo_pkg/_data/COPYING,,\ndemo_pkg/license.py,,\n", encoding="utf-8")
+    record.write_text(
+        record.read_text(encoding="utf-8") + "demo_pkg/_data/COPYING,,\ndemo_pkg/license.py,,\n", encoding="utf-8"
+    )
     demo = next(c for c in python_components(tmp_path) if c.name == "demo-pkg-0")
     assert ("demo_pkg/_data/COPYING", "VENDORED LGPL TEXT") in demo.license_texts
     assert ("LICENSE", "DEMO LICENSE TEXT 0") in demo.license_texts, "control: the dist-info text is still collected"
-    assert all(not name.endswith(".py") for name, _ in demo.texts), "control: a license-named module is not a license text"
+    assert all(not name.endswith(".py") for name, _ in demo.texts), (
+        "control: a license-named module is not a license text"
+    )
     vendored = next(c for c in python_components(tmp_path) if c.name == "demo-pkg-0 vendored demo_pkg/_data/COPYING")
-    assert vendored.license == "" and vendored.category == Cat.UNKNOWN, "a vendored text is never given the wrapper's license"
+    assert vendored.license == "" and vendored.category == Cat.UNKNOWN, (
+        "a vendored text is never given the wrapper's license"
+    )
     assert "demo-pkg-0 vendored" in flag_report([demo, vendored]).split("## License identified but no license text")[0]
 
 
@@ -421,9 +432,7 @@ def test_python_inventory_refuses_a_payload_with_no_site(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("missing_site", PYTHON_SITES_RELATIVE)
-def test_python_inventory_refuses_one_missing_site_even_with_another_present(
-    tmp_path: Path, missing_site: str
-) -> None:
+def test_python_inventory_refuses_one_missing_site_even_with_another_present(tmp_path: Path, missing_site: str) -> None:
     """Sol P1 (PR #4853): a missing site must not be silently excused by another existing one."""
     _write_all_python_sites(tmp_path, skip=missing_site)
     with pytest.raises(LicenseInventoryError, match=re.escape(missing_site)):
@@ -492,7 +501,9 @@ def test_verify_rejects_a_padded_stub_that_carries_only_the_markers(tmp_path: Pa
 def test_verify_rejects_a_declared_count_that_does_not_match_the_records(tmp_path: Path) -> None:
     _good_payload(tmp_path)
     inventory = tmp_path / "THIRD-PARTY-LICENSES.txt"
-    inventory.write_text(inventory.read_text(encoding="utf-8").replace("Components: 4", "Components: 5"), encoding="utf-8")
+    inventory.write_text(
+        inventory.read_text(encoding="utf-8").replace("Components: 4", "Components: 5"), encoding="utf-8"
+    )
     with pytest.raises(LicenseInventoryError, match="declares 5"):
         verify_bundled_licenses(tmp_path)
 
@@ -500,7 +511,9 @@ def test_verify_rejects_a_declared_count_that_does_not_match_the_records(tmp_pat
 def test_verify_rejects_a_component_whose_license_text_was_not_rendered(tmp_path: Path) -> None:
     _good_payload(tmp_path)
     inventory = tmp_path / "THIRD-PARTY-LICENSES.txt"
-    inventory.write_text(inventory.read_text(encoding="utf-8").replace("Applies to: rust-pkg 1.0", "Applies to: ?"), encoding="utf-8")
+    inventory.write_text(
+        inventory.read_text(encoding="utf-8").replace("Applies to: rust-pkg 1.0", "Applies to: ?"), encoding="utf-8"
+    )
     with pytest.raises(LicenseInventoryError, match="rust-pkg"):
         verify_bundled_licenses(tmp_path)
 
@@ -678,3 +691,15 @@ def test_pyproject_license_files_control_without_notice() -> None:
     files = re.findall(r'"([^"]+)"', 'license-files = ["LICENSE"]')
     assert "LICENSE" in files
     assert "NOTICE" not in files
+
+
+def test_rust_inventory_scans_the_output_probe_crate_on_its_own_lockfile() -> None:
+    """[if] the output-probe crate is scanned only through the Tauri crate [then] fail, [else stop].
+
+    Deleting apps/desktop/src-tauri would otherwise drop its dependencies from THIRD-PARTY-LICENSES.txt.
+    """
+    crates = {crate for crate, _ in RUST_CRATES}
+    assert "apps/desktop/native/odj-output-probe" in crates
+    for crate in crates:
+        assert (REPO_ROOT / crate / "Cargo.toml").is_file(), f"{crate} has no Cargo.toml"
+        assert (REPO_ROOT / crate / "Cargo.lock").is_file(), f"{crate} has no Cargo.lock; cargo metadata --locked fails"

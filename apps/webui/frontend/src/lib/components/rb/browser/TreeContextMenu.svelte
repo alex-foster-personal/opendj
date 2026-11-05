@@ -6,6 +6,7 @@
 	import { reportMenuLoadFailure } from './track-context-menu';
 	import { openUsbExportForPlaylist } from '$lib/rb/usb-export.svelte';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
+	import { isInboxPlaylistId } from './inbox-id';
 
 	let {
 		oncreate,
@@ -74,6 +75,11 @@
 		};
 		if (node.kind === 'folder') {
 			return bindMenuItems(menuFor({ kind: 'playlist-folder' }, {}), nodeRunners);
+		}
+		if (isInboxPlaylistId(node.playlist_id)) {
+			return bindMenuItems(menuFor({ kind: 'playlist' }, { forbidDuplicates: false }), {
+				reveal: () => onselect(node)
+			});
 		}
 		return bindMenuItems(menuFor({ kind: 'playlist' }, { forbidDuplicates: node.forbid_duplicates === true }), {
 			...nodeRunners,

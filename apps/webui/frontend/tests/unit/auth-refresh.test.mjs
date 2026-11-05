@@ -55,11 +55,12 @@ test('HTTP 200 signed-out clears user without error', async () => {
 });
 
 test('HTTP 200 signed-in populates user without error', async () => {
-	mockFetch(async () =>
-		new Response(JSON.stringify({ signed_in: true, user: SIGNED_IN_USER }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		})
+	mockFetch(
+		async () =>
+			new Response(JSON.stringify({ signed_in: true, user: SIGNED_IN_USER }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
 	);
 	const mod = await loadTypeScriptModule('src/lib/auth.svelte.ts');
 	await mod.refreshUser();
@@ -69,11 +70,12 @@ test('HTTP 200 signed-in populates user without error', async () => {
 });
 
 test('HTTP 401 is still signed-out without error (compat)', async () => {
-	mockFetch(async () =>
-		new Response(JSON.stringify({}), {
-			status: 401,
-			headers: { 'content-type': 'application/json' }
-		})
+	mockFetch(
+		async () =>
+			new Response(JSON.stringify({}), {
+				status: 401,
+				headers: { 'content-type': 'application/json' }
+			})
 	);
 	const mod = await loadTypeScriptModule('src/lib/auth.svelte.ts');
 	await mod.refreshUser();
@@ -83,16 +85,17 @@ test('HTTP 401 is still signed-out without error (compat)', async () => {
 });
 
 test('HTTP 503 surfaces the daemon error message', async () => {
-	mockFetch(async () =>
-		new Response(
-			JSON.stringify({
-				detail: { code: 'AUTH_NOT_CONFIGURED', message: 'OAuth not configured' }
-			}),
-			{
-				status: 503,
-				headers: { 'content-type': 'application/json' }
-			}
-		)
+	mockFetch(
+		async () =>
+			new Response(
+				JSON.stringify({
+					detail: { code: 'AUTH_NOT_CONFIGURED', message: 'OAuth not configured' }
+				}),
+				{
+					status: 503,
+					headers: { 'content-type': 'application/json' }
+				}
+			)
 	);
 	const mod = await loadTypeScriptModule('src/lib/auth.svelte.ts');
 	await mod.refreshUser();

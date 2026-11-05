@@ -125,9 +125,7 @@ def _iter_tracks(base: str, available: str) -> Iterator[dict[str, Any]]:
     """
     cursor: str | None = None
     while True:
-        qs = urllib.parse.urlencode(
-            {"limit": 1000, "available": available, **({"cursor": cursor} if cursor else {})}
-        )
+        qs = urllib.parse.urlencode({"limit": 1000, "available": available, **({"cursor": cursor} if cursor else {})})
         page = _get_json(base, f"/api/v1/tracks?{qs}")
         yield from page.get("items", [])
         cursor = page.get("next_cursor")
@@ -162,9 +160,7 @@ def summarise_grid(track: dict[str, Any], anlz: dict[str, Any]) -> GridSummary:
         if not any(abs(bpm - s) < BPM_QUANTUM for s in seen):
             seen.append(bpm)
         if prev is not None and abs(bpm - prev) >= BPM_QUANTUM:
-            summary.tempo_changes.append(
-                TempoChange(at_s=float(beat["t"]), from_bpm=prev, to_bpm=bpm)
-            )
+            summary.tempo_changes.append(TempoChange(at_s=float(beat["t"]), from_bpm=prev, to_bpm=bpm))
         prev = bpm
     summary.distinct_bpms = sorted(seen)
     return summary
@@ -173,9 +169,7 @@ def summarise_grid(track: dict[str, Any], anlz: dict[str, Any]) -> GridSummary:
 def _fetch_one(base: str, track: dict[str, Any]) -> GridSummary:
     """Fetch and summarise one track, converting any failure into a bucket."""
     try:
-        anlz = _get_json(
-            base, f"/api/v1/tracks/{track['stable_id']}/anlz?points={ANLZ_POINTS}"
-        )
+        anlz = _get_json(base, f"/api/v1/tracks/{track['stable_id']}/anlz?points={ANLZ_POINTS}")
     except Exception as exc:
         return GridSummary(
             stable_id=track["stable_id"],

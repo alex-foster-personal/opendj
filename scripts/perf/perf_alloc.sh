@@ -123,7 +123,10 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
-        *) POSITIONAL+=("$1"); shift ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
     esac
 done
 
@@ -200,7 +203,7 @@ triage_one() {
     # Accumulated rather than fatal: the remaining roles are still worth
     # triaging, and vmmap and footprint DID measure this one. The count is
     # what the exit code is built from below.
-    report_leaks "$pid" "${OUT_DIR}/${role}-${pid}.leaks.txt" || \
+    report_leaks "$pid" "${OUT_DIR}/${role}-${pid}.leaks.txt" ||
         LEAKS_UNAVAILABLE=$((LEAKS_UNAVAILABLE + 1))
 }
 
@@ -213,7 +216,7 @@ done <<<"$TARGETS"
 echo
 if [[ "$LEAKS_UNAVAILABLE" -gt 0 ]]; then
     echo "[WARN] UNAVAILABLE: ${LEAKS_UNAVAILABLE} role(s) produced no leaks" \
-         "summary, so their leak count is unmeasured, not zero." >&2
+        "summary, so their leak count is unmeasured, not zero." >&2
     echo "[WARN] partial. Full reports: ${OUT_DIR}" >&2
     exit 5
 fi

@@ -118,8 +118,8 @@ def test_expected_stops_are_info_and_unexplained_ones_warn(
 def test_the_server_vocabulary_matches_the_pages() -> None:
     """[if] deck-stop-log.ts and state.py list different causes [then] fail, [else stop]."""
 
-    source = (
-        Path(__file__).resolve().parents[2] / "apps/webui/frontend/src/lib/rb/deck-stop-log.ts"
-    ).read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "apps/webui/frontend/src/lib/rb/deck-stop-log.ts").read_text(
+        encoding="utf-8"
+    )
     block = source.split("export const DECK_STOP_CAUSES = [", 1)[1].split("]", 1)[0]
     assert tuple(re.findall(r"'([a-z-]+)'", block)) == state_routes.DECK_STOP_CAUSES

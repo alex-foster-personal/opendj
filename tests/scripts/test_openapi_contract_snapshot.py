@@ -31,9 +31,7 @@ def test_the_committed_contract_is_the_dump_recipe_s_canonical_form() -> None:
     text = OPENAPI.read_text(encoding="utf-8")
     canonical = json.dumps(json.loads(text), indent=2, sort_keys=True) + "\n"
     if text != canonical:
-        for number, (have, want) in enumerate(
-            zip(text.splitlines(), canonical.splitlines(), strict=False), start=1
-        ):
+        for number, (have, want) in enumerate(zip(text.splitlines(), canonical.splitlines(), strict=False), start=1):
             if have != want:
                 raise AssertionError(
                     f"apps/webui/openapi.json is not the sorted, 2-space dump the justfile "

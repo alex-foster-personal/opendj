@@ -17,6 +17,7 @@ PEAK chunk, which reads as nondeterminism when it is just a clock).
 Run:
   uv run r1g_gpu_determinism.py --mix mix.wav --truth truth.wav --runs 3
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,8 +57,9 @@ def worker(mix_path: Path, out_path: Path, device: str) -> None:
     tensor = torch.from_numpy(mix.T).unsqueeze(0)
     started = time.perf_counter()
     with torch.no_grad():
-        out = apply_model(model, tensor, overlap=OVERLAP, shifts=0, split=True,
-                          progress=False, device=device, num_workers=0)[0]
+        out = apply_model(
+            model, tensor, overlap=OVERLAP, shifts=0, split=True, progress=False, device=device, num_workers=0
+        )[0]
     elapsed = time.perf_counter() - started
     vocals = out[model.sources.index("vocals")].cpu().numpy().T
     sf.write(str(out_path), vocals, sr, subtype="FLOAT")
@@ -79,9 +81,16 @@ def main() -> None:
         return
 
     import torch
-    print(json.dumps({"cuda_available": torch.cuda.is_available(),
-                      "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-                      "torch": torch.__version__}))
+
+    print(
+        json.dumps(
+            {
+                "cuda_available": torch.cuda.is_available(),
+                "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "torch": torch.__version__,
+            }
+        )
+    )
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA not available; refusing to report a GPU result from the CPU path")
 
@@ -91,27 +100,46 @@ def main() -> None:
     for i in range(a.runs):
         out_path = Path(f"r1g_run{i}.wav")
         proc = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), "--worker", "--mix", str(a.mix),
-             "--out", str(out_path), "--device", a.device],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--worker",
+                "--mix",
+                str(a.mix),
+                "--out",
+                str(out_path),
+                "--device",
+                a.device,
+            ],
+            capture_output=True,
+            text=True,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"run {i} failed:\n{proc.stdout}\n{proc.stderr}")
         meta = json.loads(proc.stdout.strip().splitlines()[-1])
         est, _ = sf.read(str(out_path), dtype="float32", always_2d=True)
-        runs.append({"run": i, "si_sdr": round(si_sdr_db(truth_mono, est.mean(axis=1)), 6),
-                     "sample_sha256": hashlib.sha256(est.tobytes()).hexdigest()[:16],
-                     "separate_s": meta["separate_s"]})
+        runs.append(
+            {
+                "run": i,
+                "si_sdr": round(si_sdr_db(truth_mono, est.mean(axis=1)), 6),
+                "sample_sha256": hashlib.sha256(est.tobytes()).hexdigest()[:16],
+                "separate_s": meta["separate_s"],
+            }
+        )
         print(json.dumps(runs[-1]))
 
     scores = [r["si_sdr"] for r in runs]
-    print(json.dumps({
-        "n_runs": len(runs),
-        "bit_identical": len({r["sample_sha256"] for r in runs}) == 1,
-        "si_sdr_mean": round(statistics.mean(scores), 6),
-        "si_sdr_stdev": round(statistics.stdev(scores), 6),
-        "si_sdr_spread": round(max(scores) - min(scores), 6),
-    }))
+    print(
+        json.dumps(
+            {
+                "n_runs": len(runs),
+                "bit_identical": len({r["sample_sha256"] for r in runs}) == 1,
+                "si_sdr_mean": round(statistics.mean(scores), 6),
+                "si_sdr_stdev": round(statistics.stdev(scores), 6),
+                "si_sdr_spread": round(max(scores) - min(scores), 6),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

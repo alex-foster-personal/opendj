@@ -53,9 +53,7 @@
 			.catch((error: unknown) => {
 				if (probe.signal.aborted) return;
 				statusError =
-					error instanceof AssistantError || error instanceof Error
-						? error.message
-						: String(error);
+					error instanceof AssistantError || error instanceof Error ? error.message : String(error);
 			});
 		return () => probe.abort();
 	});

@@ -38,6 +38,8 @@ def test_empty_regular_file_is_materialised(tmp_path: Path) -> None:
     assert materialised_size(empty) == 0
 
 
+@pytest.mark.darwin
+@pytest.mark.skipif(sys.platform != "darwin", reason="dataless stubs are Darwin-scoped")
 def test_sparse_nonzero_zero_blocks_is_dataless_on_darwin(tmp_path: Path) -> None:
     sparse = tmp_path / "sparse.mp3"
     with open(sparse, "wb") as handle:
@@ -45,16 +47,24 @@ def test_sparse_nonzero_zero_blocks_is_dataless_on_darwin(tmp_path: Path) -> Non
     st = os.stat(sparse)
     if st.st_blocks != 0:
         pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
-    if sys.platform == "darwin":
-        assert is_dataless_stub(st) is True
-        assert is_materialised(sparse) is False
-        assert materialised_size(sparse) is None
-        assert materialised_stat(sparse) is None
-    else:
-        assert is_dataless_stub(st) is False
-        assert is_materialised(sparse) is True
-        assert materialised_size(sparse) == 8_240_691
-        assert materialised_stat(sparse) == (8_240_691, sparse.stat().st_mtime_ns)
+    assert is_dataless_stub(st) is True
+    assert is_materialised(sparse) is False
+    assert materialised_size(sparse) is None
+    assert materialised_stat(sparse) is None
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="control covers the non-Darwin implementation")
+def test_sparse_nonzero_zero_blocks_is_materialised_off_darwin(tmp_path: Path) -> None:
+    sparse = tmp_path / "sparse.mp3"
+    with open(sparse, "wb") as handle:
+        handle.truncate(8_240_691)
+    st = os.stat(sparse)
+    if st.st_blocks != 0:
+        pytest.skip("filesystem does not support sparse files; cannot build the zero-block case")
+    assert is_dataless_stub(st) is False
+    assert is_materialised(sparse) is True
+    assert materialised_size(sparse) == 8_240_691
+    assert materialised_stat(sparse) == (8_240_691, sparse.stat().st_mtime_ns)
 
 
 def test_directory_is_not_materialised(tmp_path: Path) -> None:

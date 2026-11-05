@@ -9,6 +9,7 @@ that had never run the analysis pipeline. These tests pin the repair in both
 directions: the value is served under the implicit default, and an own record,
 an explicit own toggle, or a promoted lane still win exactly as before.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -42,10 +43,7 @@ FINGERPRINT = "sha256:" + "cd" * 32
 
 
 def _own_beatgrid_record(stable_id: str) -> AnalysisRecord:
-    beats = [
-        {"t": round(index * 60.0 / OWN_BPM, 5), "n": (index % 4) + 1, "bpm": OWN_BPM}
-        for index in range(16)
-    ]
+    beats = [{"t": round(index * 60.0 / OWN_BPM, 5), "n": (index % 4) + 1, "bpm": OWN_BPM} for index in range(16)]
     payload = {
         "beats": beats,
         "bpm": OWN_BPM,
@@ -136,9 +134,7 @@ def _served_bpm(path: Path) -> tuple[object, str]:
 def _table_present(path: Path, name: str) -> bool:
     raw = sqlite3.connect(path)
     try:
-        return raw.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-        ).fetchone() is not None
+        return raw.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
     finally:
         raw.close()
 

@@ -139,7 +139,7 @@ class DirectR2Source:
     def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
         return stem_index.refresh_local_cache_throttled(
             data_dir,
-            lambda: stem_index.refresh_local_cache_from_r2(self.cfg, self.s3, data_dir),
+            lambda: stem_index.fetch_index(self.cfg, self.s3),
             force=force,
         )
 

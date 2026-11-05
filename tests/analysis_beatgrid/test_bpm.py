@@ -224,9 +224,7 @@ def test_scattered_beats_lose_confidence_even_at_the_right_tempo():
     """A grid whose beats do not lie on a line is not a confident grid."""
     tight = estimate_bpm(_beats(128.0, 60))
     period = 60.0 / 128.0
-    scattered = estimate_bpm(
-        [t + (0.2 * period if i % 2 else -0.2 * period) for i, t in enumerate(_beats(128.0, 60))]
-    )
+    scattered = estimate_bpm([t + (0.2 * period if i % 2 else -0.2 * period) for i, t in enumerate(_beats(128.0, 60))])
     assert tight is not None and scattered is not None
     assert scattered.bpm == pytest.approx(tight.bpm, abs=0.1)
     assert scattered.confidence < tight.confidence

@@ -1,4 +1,4 @@
-"""CloudSync config router tests (LANE config-ui, specs/cloudsync-spec.md D5).
+"""CloudSync config router tests (LANE config-ui, (private path) D5).
 
 Self-contained: every test builds its OWN tmp state.db (real v6 migrations)
 so nothing here touches the repo's live state.db or another lane's fixtures.
@@ -19,6 +19,7 @@ Regression one-liners:
   - if a UI policy edit does not reach the hub, or the sync after it raises
     SyncDigestMismatch, then broken (round 2 finding N1a)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -54,37 +55,39 @@ def _insert_track(conn: sqlite3.Connection, stable_id: str, title: str) -> None:
         "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
         "album, isrc, duration_ms, file_path, content_hash, created_at, "
         "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (stable_id, "inferred", title, json.dumps(["Test Artist"]), None,
-         None, 300000, None, content_hash, now, now),
+        (stable_id, "inferred", title, json.dumps(["Test Artist"]), None, None, 300000, None, content_hash, now, now),
     )
 
 
 def _insert_playlist(
-    conn: sqlite3.Connection, playlist_id: str, name: str, stable_ids: list[str],
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    name: str,
+    stable_ids: list[str],
 ) -> None:
     now = _iso(_BASE)
     conn.execute(
-        "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, "
-        "created_at, updated_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES (?,?,?,?,?,?)",
         (playlist_id, name, "rekordbox", playlist_id, now, now),
     )
     for i, sid in enumerate(stable_ids):
         conn.execute(
-            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
-            "VALUES (?,?,?)",
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES (?,?,?)",
             (playlist_id, sid, i),
         )
 
 
 def _insert_track_location(
-    conn: sqlite3.Connection, stable_id: str, *, available: bool,
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    available: bool,
 ) -> None:
     now = _iso(_BASE)
     conn.execute(
         "INSERT INTO track_locations (stable_id, kind, file_path, available, "
         "created_at, updated_at) VALUES (?,?,?,?,?,?)",
-        (stable_id, "local", f"/tmp/{stable_id}.flac", 1 if available else 0,
-         now, now),
+        (stable_id, "local", f"/tmp/{stable_id}.flac", 1 if available else 0, now, now),
     )
 
 
@@ -96,7 +99,9 @@ def _seed_state_db(path: Path) -> None:
         _insert_track(conn, "cs-track-002", "Oxide")
         _insert_track(conn, "cs-track-003", "Gulf")
         _insert_playlist(
-            conn, "cs-pl-001", "Gig Crate",
+            conn,
+            "cs-pl-001",
+            "Gig Crate",
             ["cs-track-001", "cs-track-002", "cs-track-003"],
         )
         # track-001: hydrated local copy. track-002: local row but NOT
@@ -142,6 +147,7 @@ def client(state_db_path: Path) -> Iterator[TestClient]:
 
 # ----------------------------------------------------------- machines
 
+
 def test_list_machines_self_registers(client: TestClient):
     r = client.get("/api/v1/cloudsync/machines")
     assert r.status_code == 200
@@ -164,16 +170,22 @@ def test_list_machines_is_idempotent(client: TestClient):
 
 # ----------------------------------------------------------- policies
 
+
 def _registered_machine_id(client: TestClient) -> str:
     return client.get("/api/v1/cloudsync/machines").json()[0]["machine_id"]
 
 
 def test_put_policy_round_trips_via_get(client: TestClient):
     machine_id = _registered_machine_id(client)
-    put = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": "stem_bundle",
-        "mode": "cached", "cache_budget_mb": 2048,
-    })
+    put = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": "stem_bundle",
+            "mode": "cached",
+            "cache_budget_mb": 2048,
+        },
+    )
     assert put.status_code == 200
     body = put.json()
     assert body["mode"] == "cached"
@@ -181,9 +193,7 @@ def test_put_policy_round_trips_via_get(client: TestClient):
     assert body["origin_device_id"] == machine_id
     assert body["updated_at"]
 
-    listed = client.get(
-        "/api/v1/cloudsync/policies", params={"machine_id": machine_id}
-    ).json()
+    listed = client.get("/api/v1/cloudsync/policies", params={"machine_id": machine_id}).json()
     assert len(listed) == 1
     assert listed[0]["asset_kind"] == "stem_bundle"
     assert listed[0]["mode"] == "cached"
@@ -192,38 +202,56 @@ def test_put_policy_round_trips_via_get(client: TestClient):
 def test_put_policy_upsert_overwrites_mode(client: TestClient):
     machine_id = _registered_machine_id(client)
     for mode in ("stream", "pinned"):
-        client.put("/api/v1/cloudsync/policies", json={
-            "machine_id": machine_id, "asset_kind": "anlz_cache", "mode": mode,
-        })
-    listed = client.get(
-        "/api/v1/cloudsync/policies", params={"machine_id": machine_id}
-    ).json()
+        client.put(
+            "/api/v1/cloudsync/policies",
+            json={
+                "machine_id": machine_id,
+                "asset_kind": "anlz_cache",
+                "mode": mode,
+            },
+        )
+    listed = client.get("/api/v1/cloudsync/policies", params={"machine_id": machine_id}).json()
     assert len(listed) == 1
     assert listed[0]["mode"] == "pinned"
 
 
 def test_put_policy_unknown_machine_404s(client: TestClient):
-    r = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": "does-not-exist", "asset_kind": "audio", "mode": "pinned",
-    })
+    r = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": "does-not-exist",
+            "asset_kind": "audio",
+            "mode": "pinned",
+        },
+    )
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "MACHINE_NOT_FOUND"
 
 
 def test_put_policy_invalid_mode_422s(client: TestClient):
     machine_id = _registered_machine_id(client)
-    r = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": "audio", "mode": "not-a-mode",
-    })
+    r = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": "audio",
+            "mode": "not-a-mode",
+        },
+    )
     assert r.status_code == 422
 
 
 def test_put_policy_invalid_asset_kind_422s(client: TestClient):
     """The AssetKind Literal is the HTTP-level vocabulary gate, before SQLite's CHECK."""
     machine_id = _registered_machine_id(client)
-    r = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": "waveform_png", "mode": "pinned",
-    })
+    r = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": "waveform_png",
+            "mode": "pinned",
+        },
+    )
     assert r.status_code == 422
 
 
@@ -231,54 +259,72 @@ def test_put_policy_invalid_asset_kind_422s(client: TestClient):
 def test_put_policy_accepts_the_v9_asset_kinds(client: TestClient, asset_kind: str):
     """Schema _V10 widened the sync_policies CHECK; the route must accept both new kinds."""
     machine_id = _registered_machine_id(client)
-    put = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": asset_kind, "mode": "pinned",
-    })
+    put = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": asset_kind,
+            "mode": "pinned",
+        },
+    )
     assert put.status_code == 200, put.text
     assert put.json()["asset_kind"] == asset_kind
-    listed = client.get(
-        "/api/v1/cloudsync/policies", params={"machine_id": machine_id}
-    ).json()
+    listed = client.get("/api/v1/cloudsync/policies", params={"machine_id": machine_id}).json()
     assert [row["asset_kind"] for row in listed] == [asset_kind]
 
 
 # ----------------------------------------------------------- playlist pins
 
+
 def test_put_playlist_pin_round_trips_with_name(client: TestClient):
     machine_id = _registered_machine_id(client)
-    put = client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
-    })
+    put = client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": machine_id,
+            "playlist_id": "cs-pl-001",
+            "mode": "pinned",
+        },
+    )
     assert put.status_code == 200
     body = put.json()
     assert body["playlist_name"] == "Gig Crate"
     assert body["mode"] == "pinned"
 
-    listed = client.get(
-        "/api/v1/cloudsync/playlist-pins", params={"machine_id": machine_id}
-    ).json()
+    listed = client.get("/api/v1/cloudsync/playlist-pins", params={"machine_id": machine_id}).json()
     assert len(listed) == 1
     assert listed[0]["playlist_name"] == "Gig Crate"
 
 
 def test_put_playlist_pin_unknown_playlist_404s(client: TestClient):
     machine_id = _registered_machine_id(client)
-    r = client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": machine_id, "playlist_id": "no-such-playlist", "mode": "pinned",
-    })
+    r = client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": machine_id,
+            "playlist_id": "no-such-playlist",
+            "mode": "pinned",
+        },
+    )
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "PLAYLIST_NOT_FOUND"
 
 
 def test_put_playlist_pin_unknown_machine_404s(client: TestClient):
-    r = client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": "does-not-exist", "playlist_id": "cs-pl-001", "mode": "pinned",
-    })
+    r = client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": "does-not-exist",
+            "playlist_id": "cs-pl-001",
+            "mode": "pinned",
+        },
+    )
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "MACHINE_NOT_FOUND"
 
 
 # ----------------------------------------------------------- overview
+
 
 def test_overview_counts_pinned_and_unhydrated(client: TestClient, state_db_path: Path):
     machine_id = _registered_machine_id(client)
@@ -287,15 +333,20 @@ def test_overview_counts_pinned_and_unhydrated(client: TestClient, state_db_path
     # so they count as THIS machine's copies.
     claim = state_db.open_rw(state_db_path)
     try:
-        claimed = claim.execute(
-            "SELECT COUNT(*) FROM track_locations WHERE machine_id = ?", (machine_id,)
-        ).fetchone()[0]
+        claimed = claim.execute("SELECT COUNT(*) FROM track_locations WHERE machine_id = ?", (machine_id,)).fetchone()[
+            0
+        ]
     finally:
         claim.close()
     assert claimed == 2
-    client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
-    })
+    client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": machine_id,
+            "playlist_id": "cs-pl-001",
+            "mode": "pinned",
+        },
+    )
 
     r = client.get("/api/v1/cloudsync/overview")
     assert r.status_code == 200
@@ -324,6 +375,7 @@ def test_overview_zero_machines_when_none_registered(state_db_path: Path):
 
 
 # ----------------------------------------------------------- unavailable db
+
 
 def test_missing_db_503s(tmp_path: Path):
     missing = tmp_path / "nope" / "state.db"
@@ -361,9 +413,7 @@ class _HubTransport:
 
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:
-            raise sync_client.SyncTransportError(
-                f"{label} -> HTTP {response.status_code}: {response.text}"
-            )
+            raise sync_client.SyncTransportError(f"{label} -> HTTP {response.status_code}: {response.text}")
         return dict(response.json())
 
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -403,8 +453,7 @@ def _changelog_entries(db_path: Path, table: str) -> list[tuple[Any, ...]]:
     conn = sqlite3.connect(str(db_path))
     try:
         return conn.execute(
-            "SELECT row_pk, updated_at, origin_device_id FROM local_changelog "
-            "WHERE table_name = ? ORDER BY seq",
+            "SELECT row_pk, updated_at, origin_device_id FROM local_changelog WHERE table_name = ? ORDER BY seq",
             (table,),
         ).fetchall()
     finally:
@@ -412,15 +461,21 @@ def _changelog_entries(db_path: Path, table: str) -> list[tuple[Any, ...]]:
 
 
 def test_put_policy_appends_to_the_local_changelog(
-    client: TestClient, state_db_path: Path,
+    client: TestClient,
+    state_db_path: Path,
 ):
     """The direct N1a assertion, with no hub involved."""
     machine_id = _registered_machine_id(client)
     assert _changelog_entries(state_db_path, "sync_policies") == []
 
-    client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": "audio", "mode": "pinned",
-    })
+    client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": "audio",
+            "mode": "pinned",
+        },
+    )
 
     entries = _changelog_entries(state_db_path, "sync_policies")
     assert len(entries) == 1, (
@@ -432,28 +487,35 @@ def test_put_policy_appends_to_the_local_changelog(
     assert sync_stamp.to_canonical(updated_at) == updated_at
     assert origin == machine_id
 
-    stored = sqlite3.connect(str(state_db_path)).execute(
-        "SELECT updated_at, origin_device_id FROM sync_policies"
-    ).fetchone()
-    assert stored == (updated_at, origin), (
-        "the changelog must name the stamp the row actually carries"
+    stored = (
+        sqlite3.connect(str(state_db_path)).execute("SELECT updated_at, origin_device_id FROM sync_policies").fetchone()
     )
+    assert stored == (updated_at, origin), "the changelog must name the stamp the row actually carries"
 
 
 def test_put_playlist_pin_appends_to_the_local_changelog(
-    client: TestClient, state_db_path: Path,
+    client: TestClient,
+    state_db_path: Path,
 ):
     machine_id = _registered_machine_id(client)
-    client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
-    })
+    client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": machine_id,
+            "playlist_id": "cs-pl-001",
+            "mode": "pinned",
+        },
+    )
     entries = _changelog_entries(state_db_path, "playlist_pins")
     assert len(entries) == 1
     assert json.loads(entries[0][0]) == [machine_id, "cs-pl-001"]
 
 
 def test_a_ui_policy_edit_reaches_the_hub_and_the_digest_converges(
-    client: TestClient, state_db_path: Path, hub: _HubTransport, tmp_path: Path,
+    client: TestClient,
+    state_db_path: Path,
+    hub: _HubTransport,
+    tmp_path: Path,
 ):
     """The b1 probe end to end: UI write, sync, converge.
 
@@ -468,10 +530,15 @@ def test_a_ui_policy_edit_reaches_the_hub_and_the_digest_converges(
 
     sync_client.run_sync(data_dir, "http://hub.invalid", transport=hub)
 
-    put = client.put("/api/v1/cloudsync/policies", json={
-        "machine_id": machine_id, "asset_kind": "stem_bundle",
-        "mode": "cached", "cache_budget_mb": 4096,
-    })
+    put = client.put(
+        "/api/v1/cloudsync/policies",
+        json={
+            "machine_id": machine_id,
+            "asset_kind": "stem_bundle",
+            "mode": "cached",
+            "cache_budget_mb": 4096,
+        },
+    )
     assert put.status_code == 200
 
     # Raises SyncDigestMismatch if the two sides still disagree afterwards.
@@ -480,8 +547,7 @@ def test_a_ui_policy_edit_reaches_the_hub_and_the_digest_converges(
 
     assert _hub_rows(
         tmp_path,
-        "SELECT machine_id, asset_kind, mode, cache_budget_mb "
-        "FROM sync_policies",
+        "SELECT machine_id, asset_kind, mode, cache_budget_mb FROM sync_policies",
     ) == [(machine_id, "stem_bundle", "cached", 4096)]
 
     # And a third sync is a clean no-op, not a permanent re-offer.
@@ -490,27 +556,37 @@ def test_a_ui_policy_edit_reaches_the_hub_and_the_digest_converges(
 
 
 def test_a_ui_playlist_pin_reaches_the_hub_and_the_digest_converges(
-    client: TestClient, state_db_path: Path, hub: _HubTransport, tmp_path: Path,
+    client: TestClient,
+    state_db_path: Path,
+    hub: _HubTransport,
+    tmp_path: Path,
 ):
     machine_id = _registered_machine_id(client)
     data_dir = _spoke_data_dir(state_db_path)
 
     sync_client.run_sync(data_dir, "http://hub.invalid", transport=hub)
 
-    put = client.put("/api/v1/cloudsync/playlist-pins", json={
-        "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
-    })
+    put = client.put(
+        "/api/v1/cloudsync/playlist-pins",
+        json={
+            "machine_id": machine_id,
+            "playlist_id": "cs-pl-001",
+            "mode": "pinned",
+        },
+    )
     assert put.status_code == 200
 
     sync_client.run_sync(data_dir, "http://hub.invalid", transport=hub)
 
     assert _hub_rows(
-        tmp_path, "SELECT machine_id, playlist_id, mode FROM playlist_pins",
+        tmp_path,
+        "SELECT machine_id, playlist_id, mode FROM playlist_pins",
     ) == [(machine_id, "cs-pl-001", "pinned")]
 
 
 def test_the_router_and_the_sync_client_agree_on_this_machine(
-    client: TestClient, state_db_path: Path,
+    client: TestClient,
+    state_db_path: Path,
 ):
     """One host, one identity.
 
@@ -525,5 +601,6 @@ def test_the_router_and_the_sync_client_agree_on_this_machine(
         assert conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0] == 1
     finally:
         conn.close()
+
 
 pytestmark = pytest.mark.rb_parity

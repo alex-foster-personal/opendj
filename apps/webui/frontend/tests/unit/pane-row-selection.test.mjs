@@ -12,12 +12,8 @@ let selection;
 let contract;
 
 before(async () => {
-	selection = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/pane-row-selection.ts'
-	);
-	contract = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/pane-contract.svelte.ts'
-	);
+	selection = await loadTypeScriptModule('src/lib/components/rb/browser/pane-row-selection.ts');
+	contract = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 });
 
 function makePane(rows = []) {
@@ -150,7 +146,10 @@ test('pruneSelection drops a deleted slot and keeps the other copy', () => {
 	const pane = makePane(dupRows);
 	selection.applySelect(pane, 'dup', true, false, [], 1);
 	selection.applySelect(pane, 'dup', true, false, [], 3);
-	const remaining = [{ stable_id: 'other', order: 2 }, { stable_id: 'dup', order: 3 }];
+	const remaining = [
+		{ stable_id: 'other', order: 2 },
+		{ stable_id: 'dup', order: 3 }
+	];
 	pane.rows = remaining;
 	selection.pruneSelection(pane, remaining);
 	assert.deepEqual(pane.selected_orders, [3]);
@@ -163,7 +162,9 @@ test('TrackTable binds row chrome to selectedOrderSet and masterOrder', () => {
 	assert.equal(table.includes('class:rb-row-selected={selectedIdSet.has(row.stable_id)}'), false);
 	assert.match(table, /class:rb-row-master=\{masterOrder !== null && row\.order === masterOrder\}/);
 	assert.equal(
-		table.includes('class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}'),
+		table.includes(
+			'class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}'
+		),
 		false
 	);
 });

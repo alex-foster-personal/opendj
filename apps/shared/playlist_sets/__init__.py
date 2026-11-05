@@ -3,6 +3,7 @@
 SET-05 performance objects use their own ``playlist_sets`` tables, not
 PLAY-01 ``play_orders`` and not SET-01 recorded ``sets``.
 """
+
 from __future__ import annotations
 
 from .components import (

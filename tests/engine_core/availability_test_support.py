@@ -2,6 +2,7 @@
 
 Supersedes: helper and data-directory fixture definitions in test_library_availability.py.
 """
+
 from __future__ import annotations
 
 import sqlite3

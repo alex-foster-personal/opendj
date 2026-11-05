@@ -72,13 +72,9 @@ def test_a_tool_sharing_the_hidden_tools_directory_still_resolves(tmp_path: Path
 
     assert shutil.which("widget", path=result) is None, result
     resolved_bash = shutil.which("bash", path=result)
-    assert resolved_bash is not None, (
-        "bash must still resolve after hiding a neighbor in the same directory: "
-        f"{result}"
-    )
+    assert resolved_bash is not None, f"bash must still resolve after hiding a neighbor in the same directory: {result}"
     assert str(shared) not in result.split(os.pathsep), (
-        "the shared directory itself should have been replaced by a shadow "
-        f"copy, not passed through verbatim: {result}"
+        f"the shared directory itself should have been replaced by a shadow copy, not passed through verbatim: {result}"
     )
 
 

@@ -63,9 +63,7 @@ def _snapshot(*checks: dict) -> dict[str, dict]:
 def test_a_genuine_failure_stops_on_the_snapshot_it_appears_in():
     lines: list[str] = []
     watch = _watch({7: frozenset({NEW_FAIL})}, lines)
-    outcome = watch.inspect(
-        _snapshot(_check(7, "pytest shard 1"), _check(8, "e2e", "in_progress", None))
-    )
+    outcome = watch.inspect(_snapshot(_check(7, "pytest shard 1"), _check(8, "e2e", "in_progress", None)))
     assert outcome is not None and outcome.status is WaitStatus.GENUINE_FAILURE
     assert any(NEW_FAIL in line for line in lines)
 
@@ -103,9 +101,7 @@ def test_a_clean_finish_is_green_only_with_a_baseline():
     assert exit_for(WaitStatus.SUCCESS, watch, has_baseline=False)[0] is Exit.UNKNOWN
 
 
-@pytest.mark.parametrize(
-    "status", [WaitStatus.TIMEOUT, WaitStatus.NO_BASELINE, WaitStatus.HEAD_MOVED]
-)
+@pytest.mark.parametrize("status", [WaitStatus.TIMEOUT, WaitStatus.NO_BASELINE, WaitStatus.HEAD_MOVED])
 def test_unmeasured_ends_are_unknown(status):
     assert exit_for(status, _watch({}, []), has_baseline=True)[0] is Exit.UNKNOWN
 
@@ -200,9 +196,7 @@ def test_an_unmeasured_baseline_job_ends_unknown_not_mergeable():
     lines: list[str] = []
     watch = FailureWatch(
         log_of=lambda job_id: "",
-        main_red=lambda: MainRed(
-            frozenset({MAIN_FAIL}), frozenset(), "m" * 40, frozenset({name})
-        ),
+        main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40, frozenset({name})),
         emit=lines.append,
         clock=lambda: 0.0,
     )
@@ -218,10 +212,7 @@ def test_a_known_red_job_that_was_also_killed_is_unmeasured_not_known_red():
     known-red debt and the agent merges on the strength of tests that were red anyway;
     the mutation that always passes False left every other test in this module green."""
     lines: list[str] = []
-    log = (
-        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
-        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 137.\n"
-    )
+    log = f"2026-09-16T09:44:38Z {MAIN_FAIL}\n2026-09-16T09:44:38Z ##[error]Process completed with exit code 137.\n"
     watch = FailureWatch(
         log_of=lambda _job: log,
         main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),
@@ -270,9 +261,7 @@ def test_a_timed_out_job_is_unmeasured_even_when_its_log_reads_known_red():
         emit=lines.append,
         clock=lambda: 0.0,
     )
-    watch.inspect(
-        _snapshot(_check(7, "pytest fast lane (shard 1 of 5)", conclusion="timed_out"))
-    )
+    watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)", conclusion="timed_out")))
     assert watch.verdicts[7].verdict is JobVerdict.UNEXPLAINED
     assert "timed_out" in "\n".join(lines)
 
@@ -314,10 +303,7 @@ def test_an_exit_the_log_cannot_attribute_is_unmeasured_not_known_red():
     identities and an exit 1 with no step echoes cannot say the tests spent that exit, and
     reading the unknown as "they did" merged a job on a measurement nobody made."""
     lines: list[str] = []
-    log = (
-        f"2026-09-16T09:44:38Z {MAIN_FAIL}\n"
-        "2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
-    )
+    log = f"2026-09-16T09:44:38Z {MAIN_FAIL}\n2026-09-16T09:44:38Z ##[error]Process completed with exit code 1.\n"
     watch = FailureWatch(
         log_of=lambda _job: log,
         main_red=lambda: MainRed(frozenset({MAIN_FAIL}), frozenset(), "m" * 40),

@@ -6,10 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type {
-	PerformanceCommand,
-	PerformanceState
-} from '../../src/lib/rb/performance-ipc.svelte';
+import type { PerformanceCommand, PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
 
 declare global {
 	interface Window {
@@ -88,7 +85,9 @@ async function _fetchPlayableTrack(request: APIRequestContext): Promise<TrackWir
 }
 
 function _transportStopOrPause(command: PerformanceCommand): boolean {
-	return (command.type === 'play' && command.playing === false) || command.type === 'rescue_stop_all';
+	return (
+		(command.type === 'play' && command.playing === false) || command.type === 'rescue_stop_all'
+	);
 }
 
 async function _installCommandSpy(page: Page): Promise<void> {

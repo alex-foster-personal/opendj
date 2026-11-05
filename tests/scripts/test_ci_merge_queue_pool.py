@@ -133,6 +133,34 @@ def test_partial_listing_is_unknown() -> None:
     assert [r["name"] for r in items_from_pages(two_pages, "runners", "p")] == ["a", "b"]
 
 
+def test_another_reserve_variable_is_named_in_every_verdict() -> None:
+    """if --variable CI_RUNS_ON_E2E_TRUNK (#5831) reports as the merge-queue pool then the
+    operator preflights the wrong reserve"""
+    e2e_trunk = '["self-hosted","linux","e2e-trunk"]'
+    reserve = [_runner("agbox3-2", "agbox3", "e2e-trunk")]
+    assert (
+        pool_verdict(e2e_trunk, reserve, OTHER_POOLS, "CI_RUNS_ON_E2E_TRUNK")
+        .lines[0]
+        .startswith(f"[OK] CI_RUNS_ON_E2E_TRUNK={e2e_trunk}: 1 online runner(s)")
+    )
+    stranded = pool_verdict(e2e_trunk, GENERAL, OTHER_POOLS, "CI_RUNS_ON_E2E_TRUNK")
+    assert stranded.status == "STRANDED"
+    assert "gh variable delete CI_RUNS_ON_E2E_TRUNK" in "\n".join(stranded.lines)
+    off = pool_verdict(None, reserve, OTHER_POOLS, "CI_RUNS_ON_E2E_TRUNK")
+    assert off.status == "OFF" and "CI_RUNS_ON_E2E_TRUNK is unset" in off.lines[0]
+    with pytest.raises(MeasurementError, match="CI_RUNS_ON_E2E_TRUNK is not JSON"):
+        parse_labels("e2e-trunk", "CI_RUNS_ON_E2E_TRUNK")
+
+
+def test_a_reserve_that_still_carries_e2e_warns() -> None:
+    """if an `e2e-trunk` runner that kept `e2e` is not flagged then PR jobs can take the seat"""
+    shared = [_runner("agbox3-2", "agbox3", "e2e", "e2e-trunk")]
+    lines = pool_verdict(
+        '["self-hosted","linux","e2e-trunk"]', shared, OTHER_POOLS, "CI_RUNS_ON_E2E_TRUNK"
+    ).lines
+    assert "[WARN] reserve not exclusive: agbox3-2 also serves CI_RUNS_ON_E2E" in lines
+
+
 def _listed_runner(name: str, *labels: str) -> dict:
     return {
         "name": name,

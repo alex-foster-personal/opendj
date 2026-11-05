@@ -1,0 +1,13 @@
+{
+  "note": "three-panel library layout extras (Now Playing panel, Playing on strip), lazy when a skin selects the preset",
+  "order": 61,
+  "attribution": {
+    "markers": [
+      "three-panel library layout"
+    ]
+  },
+  "limit": 17408,
+  "measured": 15762,
+  "measured_on": "Thu 5 Nov 2026",
+  "baseline_sha": "5865cedc6a"
+}

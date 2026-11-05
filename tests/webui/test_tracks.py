@@ -77,9 +77,7 @@ def test_list_tracks_exposes_only_readable_mik_energy_with_provenance(client, se
     assert rows["energy-inferred"]["energy_source"] is None
     assert rows["energy-inferred"]["energy_reason"] == "source is inferred, not Mixed In Key"
     assert rows["energy-ten"]["energy"] is None
-    assert rows["energy-ten"]["energy_reason"] == (
-        "Mixed In Key value 10 is outside the 1-9 display scale"
-    )
+    assert rows["energy-ten"]["energy_reason"] == ("Mixed In Key value 10 is outside the 1-9 display scale")
 
 
 @pytest.mark.requirement("CAT-05")
@@ -269,7 +267,8 @@ def test_patch_track_tempo_pref_clear_to_null(client, seed_backend):
     )
     assert set_r.json()["tempo_pref"] == {"regular": 95.0, "min": None, "max": None}
     clear_r = client.patch(
-        "/api/v1/tracks/track-005", json={"tempo_pref": None},
+        "/api/v1/tracks/track-005",
+        json={"tempo_pref": None},
         headers={"If-Match": set_r.headers["ETag"]},
     )
     assert clear_r.status_code == 200

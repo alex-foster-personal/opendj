@@ -43,12 +43,8 @@ def environments_delta(uv_tool: dict | None, lock: dict) -> list[str]:
         )
         recorded = _markers(lock.get(recorded_key), f"uv.lock {recorded_key}")
         same = len(spelled) == len(recorded) and all(
-            markers_equivalent(norm_marker(a), norm_marker(b))
-            for a, b in zip(spelled, recorded, strict=True)
+            markers_equivalent(norm_marker(a), norm_marker(b)) for a, b in zip(spelled, recorded, strict=True)
         )
         if not same:
-            lines.append(
-                f"  [tool.uv] {spelled_key}: pyproject.toml {spelled!r}, "
-                f"uv.lock {recorded_key} {recorded!r}"
-            )
+            lines.append(f"  [tool.uv] {spelled_key}: pyproject.toml {spelled!r}, uv.lock {recorded_key} {recorded!r}")
     return lines

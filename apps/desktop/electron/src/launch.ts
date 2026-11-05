@@ -183,10 +183,14 @@ const FLOCK_PROBE = [
 
 /** Probe the flock with `python` (the payload interpreter). Null if it cannot run. */
 export function flockProbe(python: string, lock: string): { held: boolean; contents: string } | null {
+	const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? '' };
+	// Windows Python cannot initialize without SYSTEMROOT.
+	if (process.platform === 'win32') env.SYSTEMROOT = process.env.SYSTEMROOT ?? process.env.SystemRoot ?? '';
 	const result = spawnSync(python, ['-I', '-c', FLOCK_PROBE, lock], {
 		encoding: 'utf8',
 		timeout: 5_000,
-		env: { PATH: process.env.PATH ?? '' }
+		env,
+		windowsHide: true
 	});
 	if (result.status !== 0 || typeof result.stdout !== 'string') return null;
 	try {

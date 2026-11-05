@@ -24,7 +24,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://hidden-tab-deck-state.example.test';
 const SID = 'e'.repeat(40);
-const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
+const STRETCH_STUB = fileURLToPath(
+	new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url)
+);
 /** How far the output lags the render clock. Wide on purpose: it is the window
  * in which a stop is scheduled but not yet heard, which the early-clear control
  * needs to be able to observe. */
@@ -52,10 +54,17 @@ const realFetch = globalThis.fetch;
 
 class LiveClockAudioContext extends FakeAudioContext {
 	#startedAtMs = performance.now();
-	get currentTime() { return (performance.now() - this.#startedAtMs) / 1000; }
-	set currentTime(_value) { /* the base constructor assigns 0; the clock is derived */ }
+	get currentTime() {
+		return (performance.now() - this.#startedAtMs) / 1000;
+	}
+	set currentTime(_value) {
+		/* the base constructor assigns 0; the clock is derived */
+	}
 	getOutputTimestamp() {
-		return { contextTime: Math.max(0, this.currentTime - OUTPUT_LAG_SEC), performanceTime: performance.now() };
+		return {
+			contextTime: Math.max(0, this.currentTime - OUTPUT_LAG_SEC),
+			performanceTime: performance.now()
+		};
 	}
 	/** `ended` is an audio-thread event: it fires at the stop time whatever the
 	 * animation clock is doing. */
@@ -107,7 +116,12 @@ function hideTab() {
  */
 function hideTabAndThrottleTimers() {
 	hideTab();
-	globalThis.document = { hidden: true, visibilityState: 'hidden', addEventListener() {}, removeEventListener() {} };
+	globalThis.document = {
+		hidden: true,
+		visibilityState: 'hidden',
+		addEventListener() {},
+		removeEventListener() {}
+	};
 	globalThis.setTimeout = () => 0;
 }
 
@@ -145,13 +159,19 @@ const UNLOAD_MS = 1500;
 function bounded(promise, what, timeoutMs = UNLOAD_MS) {
 	let timer;
 	const timeout = new Promise((_, reject) => {
-		timer = realSetTimeout(() => reject(new Error(`${what} did not settle within ${timeoutMs} ms`)), timeoutMs);
+		timer = realSetTimeout(
+			() => reject(new Error(`${what} did not settle within ${timeoutMs} ms`)),
+			timeoutMs
+		);
 	});
 	return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 function installDaemon() {
@@ -172,13 +192,21 @@ function installDaemon() {
 			});
 		}
 		if (url.endsWith('/hot-cues')) {
-			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
+			return json(
+				['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))
+			);
 		}
 		// 60 s of audio at 48 kHz, so no case runs into the natural end.
 		if (url.endsWith('/audio')) return new Response(new Uint8Array(4 * 48_000 * 60));
 		const track = url.match(/\/tracks\/([0-9a-f]{40})(\/stems)?$/);
-		if (track?.[2] !== undefined) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
-		if (track !== null) return json({ stable_id: track[1], title: 'Hidden Tab', artist: 'Fixture', bpm: null });
+		if (track?.[2] !== undefined)
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (track !== null)
+			return json({ stable_id: track[1], title: 'Hidden Tab', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
 }
@@ -187,10 +215,13 @@ before(async () => {
 	installWindow('');
 	globalThis.AudioContext = LiveClockAudioContext;
 	installAnimationClock();
-	({ audio, gate, stores, registry, perf, health } = await loadTypeScriptModule('tests/unit/fixtures/hidden-tab-entry.ts', {
-		viteApiBase: API_BASE,
-		alias: { '$lib/rb/stretch-adapter': STRETCH_STUB }
-	}));
+	({ audio, gate, stores, registry, perf, health } = await loadTypeScriptModule(
+		'tests/unit/fixtures/hidden-tab-entry.ts',
+		{
+			viteApiBase: API_BASE,
+			alias: { '$lib/rb/stretch-adapter': STRETCH_STUB }
+		}
+	));
 });
 
 beforeEach(async () => {
@@ -224,7 +255,10 @@ async function playUntilAudible() {
 	await audio.engine.load(1, SID);
 	await audio.engine.play(1);
 	assert.equal(deck().playing, true, 'precondition: play was scheduled');
-	await until(() => deck().audible, 'if a playing deck never becomes audible then broken - the presented state did not advance');
+	await until(
+		() => deck().audible,
+		'if a playing deck never becomes audible then broken - the presented state did not advance'
+	);
 	assert.equal(gate.anyDeckPlaying(), true, 'precondition: the playing gate sees the live deck');
 }
 
@@ -305,7 +339,11 @@ test('AUDIOLIVE-11: hidden throughout - play becomes audible, stays audible, the
 	hideTab();
 	await playUntilAudible();
 	await sleep(600);
-	assert.equal(deck().audible, true, 'if a deck that is still playing reads inaudible then broken - the fix overshot');
+	assert.equal(
+		deck().audible,
+		true,
+		'if a deck that is still playing reads inaudible then broken - the fix overshot'
+	);
 	assert.equal(gate.anyDeckPlaying(), true);
 	assert.notEqual(
 		health.audioHealthLevel(),
@@ -318,7 +356,11 @@ test('AUDIOLIVE-11: hidden throughout - play becomes audible, stays audible, the
 		'if the published position never advances while hidden then broken - readers of the mirror stall'
 	);
 	await audio.engine.pause(1);
-	assert.equal(deck().audible, true, 'if audible is cleared before the stop is presented then broken');
+	assert.equal(
+		deck().audible,
+		true,
+		'if audible is cleared before the stop is presented then broken'
+	);
 	await until(() => !deck().audible, 'if audible stays true after a hidden pause then broken');
 	assert.equal(gate.anyDeckPlaying(), false);
 });
@@ -354,18 +396,40 @@ test('AUDIOLIVE-11: a stop the output never presents ends unload() at its deadli
 	await playUntilAudible();
 	// The output device stops reporting a position at all: no presented time and
 	// no readable clock to time a stall against, so nothing can present the stop.
-	FakeAudioContext.instances.at(-1).getOutputTimestamp = () => ({ contextTime: 0, performanceTime: Number.NaN });
-	const timeouts = () => perf.readPerfEvents().filter((event) => event.kind === 'deck-unload-stop-timeout');
+	FakeAudioContext.instances.at(-1).getOutputTimestamp = () => ({
+		contextTime: 0,
+		performanceTime: Number.NaN
+	});
+	const timeouts = () =>
+		perf.readPerfEvents().filter((event) => event.kind === 'deck-unload-stop-timeout');
 	assert.equal(timeouts().length, 0, 'control: no timeout has been recorded before the unload');
 	const startedAt = performance.now();
-	await bounded(audio.engine.unload(1), 'if unload() outlives its own deadline then broken - unload', 4000);
+	await bounded(
+		audio.engine.unload(1),
+		'if unload() outlives its own deadline then broken - unload',
+		4000
+	);
 	const tookMs = performance.now() - startedAt;
-	assert.ok(tookMs >= 1900, `if unload() gave up after ${Math.round(tookMs)} ms then broken - it force-unloaded a deck that was still being heard before the 2000 ms deadline`);
-	assert.equal(deck().stable_id, null, 'if the deck is still loaded after the deadline then broken - a deck that cannot be ejected');
+	assert.ok(
+		tookMs >= 1900,
+		`if unload() gave up after ${Math.round(tookMs)} ms then broken - it force-unloaded a deck that was still being heard before the 2000 ms deadline`
+	);
+	assert.equal(
+		deck().stable_id,
+		null,
+		'if the deck is still loaded after the deadline then broken - a deck that cannot be ejected'
+	);
 	assert.equal(gate.anyDeckPlaying(), false);
 	const [event] = timeouts();
-	assert.ok(event !== undefined, 'if the deadline passes without a recorded event then broken - a silent forced unload');
-	assert.equal(event.severity, 'error', 'if it is recorded below error severity then broken - it never leaves the browser');
+	assert.ok(
+		event !== undefined,
+		'if the deadline passes without a recorded event then broken - a silent forced unload'
+	);
+	assert.equal(
+		event.severity,
+		'error',
+		'if it is recorded below error severity then broken - it never leaves the browser'
+	);
 	assert.match(event.message, /did not reach a presented stop within 2000 ms/);
 });
 

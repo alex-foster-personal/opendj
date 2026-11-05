@@ -34,10 +34,7 @@ function _updatedAtKey(value: string | null | undefined): string | null {
 	return typeof value === 'string' && value !== '' ? value : null;
 }
 
-function _compareUpdatedAt(
-	a: string | null | undefined,
-	b: string | null | undefined
-): number {
+function _compareUpdatedAt(a: string | null | undefined, b: string | null | undefined): number {
 	const ka = _updatedAtKey(a);
 	const kb = _updatedAtKey(b);
 	if (ka === null && kb === null) return 0;

@@ -112,8 +112,7 @@ def test_backslashes_are_still_eaten_by_the_remote_shell(reachable: None) -> Non
 def test_absent_path_reports_the_sentinel_in_band(reachable: None) -> None:
     """NEGATIVE CONTROL: a known-absent path must report absent, loudly and on
     exit 0, rather than returning empty for an unknown reason."""
-    command = find_command(f"{SCRATCH_ROOT}-definitely-not-there",
-                           "-type f -printf '%s %P\\n'")
+    command = find_command(f"{SCRATCH_ROOT}-definitely-not-there", "-type f -printf '%s %P\\n'")
     out = ssh(HOST, SSH_OPTS, command, timeout=60)
     assert out.strip() == ABSENT_SENTINEL, out
     assert listing_or_absent(out) is None
@@ -123,7 +122,8 @@ def test_guard_does_not_create_the_path_it_tests(scratch: str) -> None:
     """R5: --dry-run reads the remote and must not mutate it."""
     ssh(HOST, SSH_OPTS, find_command(scratch, "-type f -printf '%s %P\\n'"), timeout=60)
     still_absent = ssh(
-        HOST, SSH_OPTS,
+        HOST,
+        SSH_OPTS,
         f"if [ -d '{scratch}' ]; then echo CREATED; else echo STILL_ABSENT; fi",
         timeout=30,
     ).strip()
@@ -133,14 +133,16 @@ def test_guard_does_not_create_the_path_it_tests(scratch: str) -> None:
 def test_mkdir_then_find_round_trips_through_the_real_host(scratch: str) -> None:
     """mkdir -p, then PROVE it by re-listing, then parse the real output."""
     shards = ["00", "ab", "ff"]
-    ssh(HOST, SSH_OPTS, mkdir_command([scratch, *(f"{scratch}/{s}" for s in shards)]),
-        timeout=60)
+    ssh(HOST, SSH_OPTS, mkdir_command([scratch, *(f"{scratch}/{s}" for s in shards)]), timeout=60)
 
-    listing = listing_or_absent(ssh(
-        HOST, SSH_OPTS,
-        find_command(scratch, "-maxdepth 1 -mindepth 1 -type d -printf '%P\\n'"),
-        timeout=60,
-    ))
+    listing = listing_or_absent(
+        ssh(
+            HOST,
+            SSH_OPTS,
+            find_command(scratch, "-maxdepth 1 -mindepth 1 -type d -printf '%P\\n'"),
+            timeout=60,
+        )
+    )
     assert listing is not None, "freshly created root still reported absent"
     assert parse_names(listing) == set(shards)
 
@@ -154,9 +156,14 @@ def test_find_printf_sizes_parse_against_a_real_remote_file(scratch: str) -> Non
     ssh(HOST, SSH_OPTS, mkdir_command([f"{scratch}/ab"]), timeout=60)
     ssh(HOST, SSH_OPTS, f"printf '0123456789' > '{scratch}/ab/probe.bin'", timeout=60)
 
-    listing = listing_or_absent(ssh(
-        HOST, SSH_OPTS, find_command(scratch, "-type f -printf '%s %P\\n'"), timeout=60,
-    ))
+    listing = listing_or_absent(
+        ssh(
+            HOST,
+            SSH_OPTS,
+            find_command(scratch, "-type f -printf '%s %P\\n'"),
+            timeout=60,
+        )
+    )
     assert listing is not None
     assert parse_sizes(listing, source=HOST) == {"ab/probe.bin": 10}
 

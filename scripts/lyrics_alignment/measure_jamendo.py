@@ -12,7 +12,7 @@ the alignment spike spec forbids committing lyrics, and track ids are opaque
 digests of the song name so the fixture cannot be read back into a corpus.
 
     python -m scripts.lyrics_alignment.measure_jamendo \\
-        --pred data/state/lyrics-eval/round3a-best-of \\
+        --pred (private path) \\
         [--dataset-dir DIR] [--write-fixture PATH] [--sample 10]
 """
 
@@ -42,7 +42,7 @@ FIXTURE_SET = "lyrics-alignment-jamendo-round3a-measured-v1"
 DEFAULT_SAMPLE = 10
 ONSET_DECIMALS = 4
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -76,10 +76,7 @@ def _predicted_onsets(pred_path: Path, n_reference_words: int) -> list[float | N
     """
     words = json.loads(pred_path.read_text(encoding="utf-8"))["words"]
     if len(words) != n_reference_words:
-        raise ValueError(
-            f"{pred_path.name}: {len(words)} predicted words vs "
-            f"{n_reference_words} reference words"
-        )
+        raise ValueError(f"{pred_path.name}: {len(words)} predicted words vs {n_reference_words} reference words")
     return [w.get("start_s") for w in words]
 
 
@@ -103,9 +100,7 @@ def score_predictions(
         predicted = _predicted_onsets(pred_path, len(reference))
         pooled_reference.extend(reference)
         pooled_predicted.extend(predicted)
-        scored.append(
-            ScoredSong(song, pred_path, lyric_align_score(reference, predicted))
-        )
+        scored.append(ScoredSong(song, pred_path, lyric_align_score(reference, predicted)))
     return scored, lyric_align_score(pooled_reference, pooled_predicted), missing
 
 
@@ -127,7 +122,7 @@ def stratified_sample(scored: Sequence[ScoredSong], size: int) -> list[ScoredSon
     return [ordered[round(i * stride)] for i in range(size)]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _print_report(
@@ -203,19 +198,14 @@ def _fixture_payload(
                 "even strides across the medae-sorted corpus, so the sample "
                 "spans the real distribution rather than the passing songs"
             ),
-            "note": (
-                "Timings only. No lyric text and no song titles: track_id is an "
-                "opaque digest of the song name."
-            ),
+            "note": ("Timings only. No lyric text and no song titles: track_id is an opaque digest of the song name."),
         },
         "corpus_measured": {
             "denominator": f"{n_scored}/{n_songs} songs, {pooled.words_reference} words",
             **_measured(pooled),
         },
         "sample_pooled": {
-            "denominator": (
-                f"{len(sample)} sampled songs, {sample_pooled.words_reference} words"
-            ),
+            "denominator": (f"{len(sample)} sampled songs, {sample_pooled.words_reference} words"),
             "warning": (
                 "A regression pin, NOT an estimate of the corpus. Ten songs "
                 "cannot reproduce a word-weighted 79-song pooling, and this "
@@ -240,12 +230,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.lyrics_alignment.measure_jamendo")
     parser.add_argument("--pred", type=Path, required=True, help="aligner prediction dir")
     parser.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET_DIR)
-    parser.add_argument(
-        "--write-fixture", type=Path, default=None, help="emit the timing-only fixture here"
-    )
-    parser.add_argument(
-        "--sample", type=int, default=DEFAULT_SAMPLE, help="songs in the written fixture"
-    )
+    parser.add_argument("--write-fixture", type=Path, default=None, help="emit the timing-only fixture here")
+    parser.add_argument("--sample", type=int, default=DEFAULT_SAMPLE, help="songs in the written fixture")
     args = parser.parse_args(argv)
 
     songs = load_songs(args.dataset_dir)
@@ -255,9 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.write_fixture is not None:
         sample = stratified_sample(scored, args.sample)
         payload = _fixture_payload(sample, pooled, args.pred, len(songs), len(scored))
-        args.write_fixture.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-        )
+        args.write_fixture.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"[OK] wrote {len(sample)} timing-only tracks to {args.write_fixture}")
     return 0
 

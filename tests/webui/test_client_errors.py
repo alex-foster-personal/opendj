@@ -1,4 +1,5 @@
 """Real HTTP and filesystem coverage for browser error capture."""
+
 from __future__ import annotations
 
 import json
@@ -152,6 +153,7 @@ def test_client_error_triage_hides_decided_event_without_rewriting_daily_log(
         "ref": "known browser limitation",
     }
 
+
 pytestmark = pytest.mark.rb_parity
 
 
@@ -177,9 +179,7 @@ def test_client_error_log_line_is_warning_not_a_second_sentry_error(
     assert [r.levelname for r in lines] == ["WARNING"]
 
 
-def test_any_deck_live_is_accepted_stored_and_forwarded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_any_deck_live_is_accepted_stored_and_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """if the page says a deck was live then the flag reaches the daily log AND
     the Sentry forward's context, which is where the live-set gate reads it.
 
@@ -194,9 +194,7 @@ def test_any_deck_live_is_accepted_stored_and_forwarded(
         assert isinstance(context, dict)
         forwarded.append(dict(context))
 
-    monkeypatch.setattr(
-        "apps.webui.server.routes.client_errors.capture_browser_error", record_forward
-    )
+    monkeypatch.setattr("apps.webui.server.routes.client_errors.capture_browser_error", record_forward)
     app = create_app(
         backend=InMemoryBackend(),
         mount_frontend=False,
@@ -214,9 +212,7 @@ def test_any_deck_live_is_accepted_stored_and_forwarded(
     assert [row["any_deck_live"] for row in rows] == [True, None]
 
 
-def test_free_form_context_cannot_override_the_typed_live_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_free_form_context_cannot_override_the_typed_live_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the page's free-form context carries any_deck_live [then] the typed
     top-level flag is what reaches the forward, [else stop].
 
@@ -232,9 +228,7 @@ def test_free_form_context_cannot_override_the_typed_live_flag(
         assert isinstance(context, dict)
         forwarded.append(dict(context))
 
-    monkeypatch.setattr(
-        "apps.webui.server.routes.client_errors.capture_browser_error", record_forward
-    )
+    monkeypatch.setattr("apps.webui.server.routes.client_errors.capture_browser_error", record_forward)
     app = create_app(
         backend=InMemoryBackend(),
         mount_frontend=False,

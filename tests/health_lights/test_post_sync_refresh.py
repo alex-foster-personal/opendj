@@ -6,6 +6,7 @@ Regression lines:
 
 [if] a sync that pulled rows publishes no library.changed [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -46,9 +47,7 @@ def hub() -> Iterator[Hub]:
 
 
 def _result(pulled: int) -> FeedbackSyncOut:
-    return FeedbackSyncOut(
-        status="ok", exported=0, imported=0, pushed=0, pulled=pulled, message="done"
-    )
+    return FeedbackSyncOut(status="ok", exported=0, imported=0, pushed=0, pulled=pulled, message="done")
 
 
 def test_a_pull_with_rows_announces_a_library_change_and_wakes_the_drain(hub: Hub) -> None:

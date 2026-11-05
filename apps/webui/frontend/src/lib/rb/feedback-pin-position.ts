@@ -165,12 +165,23 @@ export function resolvePinPosition(
 	for (const near of pin.nearby_anchors ?? []) {
 		const box = measure(near.selector);
 		if (_isMeasurable(box)) {
-			return _resolved('anchor', pin, near.selector, box.left + near.dx_px, box.top + near.dy_px, viewport);
+			return _resolved(
+				'anchor',
+				pin,
+				near.selector,
+				box.left + near.dx_px,
+				box.top + near.dy_px,
+				viewport
+			);
 		}
 	}
 	const x = (pin.x_pct / 100) * viewport.w;
 	const y = (pin.y_pct / 100) * viewport.h;
-	return { ..._resolved('viewport', pin, null, x, y, viewport), x_pct: pin.x_pct, y_pct: pin.y_pct };
+	return {
+		..._resolved('viewport', pin, null, x, y, viewport),
+		x_pct: pin.x_pct,
+		y_pct: pin.y_pct
+	};
 }
 
 /** CSS for a resolved marker. The viewport tier keeps the percent form pins
@@ -203,7 +214,10 @@ export function buildPinPlacement(
 	if (primary !== null && _isMeasurable(primary.rect)) {
 		const r = primary.rect;
 		const inside =
-			point.x >= r.left && point.x <= r.left + r.width && point.y >= r.top && point.y <= r.top + r.height;
+			point.x >= r.left &&
+			point.x <= r.left + r.width &&
+			point.y >= r.top &&
+			point.y <= r.top + r.height;
 		if (inside) {
 			element_offset = {
 				dx_pct: round2(((point.x - r.left) / r.width) * 100),
@@ -287,7 +301,8 @@ export function measureSelector(selector: string): PinRect | null {
 
 function _candidate(el: Element, selector: string | null): AnchorCandidate | null {
 	if (selector === null || isPinSystemElement(el)) return null;
-	if (typeof document === 'undefined' || findUniqueBySelector(selector, document) !== el) return null;
+	if (typeof document === 'undefined' || findUniqueBySelector(selector, document) !== el)
+		return null;
 	const r = el.getBoundingClientRect();
 	return { selector, rect: { left: r.left, top: r.top, width: r.width, height: r.height } };
 }
@@ -302,7 +317,8 @@ export function capturePinPlacement(
 	hit: Element | null,
 	anchor: string | null
 ): PinPlacement {
-	if (hit === null || typeof document === 'undefined') return { element_offset: null, nearby_anchors: [] };
+	if (hit === null || typeof document === 'undefined')
+		return { element_offset: null, nearby_anchors: [] };
 	let primary: AnchorCandidate | null = null;
 	if (anchor !== null) {
 		const el = findUniqueBySelector(anchor, document);

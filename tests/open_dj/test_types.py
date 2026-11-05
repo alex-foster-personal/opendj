@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,7 @@ def _sample_track() -> Track:
         ),
         isrc="USABC1234567",
         extensions={"x_demo": 1},
+        source_modified_at=datetime(2024, 3, 1, 8, 0, 0, tzinfo=UTC),
     )
 
 
@@ -72,9 +74,7 @@ def _sample_library() -> OpenDjLibrary:
     return OpenDjLibrary(
         version="0.2",
         tracks=(t,),
-        playlists=(
-            Playlist(name="Warmup", track_ids=(t.track_id,)),
-        ),
+        playlists=(Playlist(name="Warmup", track_ids=(t.track_id,)),),
     )
 
 
@@ -84,6 +84,7 @@ def _sample_library() -> OpenDjLibrary:
 @pytest.mark.requirement("OPEN-01")
 class TestDataclasses:
     """[if] Open DJ data classes are constructed [then] their contract is preserved, [else stop]."""
+
     def test_track_defaults(self) -> None:
         t = Track(track_id="x", file_path="/x.mp3")
         assert t.title == ""
@@ -119,6 +120,7 @@ class TestDataclasses:
         assert d["version"] == "0.2"
         assert d["tracks"][0]["title"] == "Demo"
         assert d["playlists"][0]["name"] == "Warmup"
+        assert "source_modified_at" not in d["tracks"][0]
 
     def test_capabilities_to_dict_shape(self) -> None:
         caps = Capabilities(
@@ -126,9 +128,7 @@ class TestDataclasses:
             version="0.1.0",
             fields=(
                 CapabilityField(field="bpm", supports="lossless"),
-                CapabilityField(
-                    field="rating", supports="lossy", rationale="no native"
-                ),
+                CapabilityField(field="rating", supports="lossy", rationale="no native"),
             ),
         )
         d = caps.to_dict()
@@ -166,6 +166,7 @@ class _MissingName:
 @pytest.mark.requirement("OPEN-01")
 class TestAdapterProtocol:
     """[if] an adapter implements the protocol [then] its contract is preserved, [else stop]."""
+
     def test_structural_match(self) -> None:
         assert isinstance(_GoodAdapter(), Adapter)
 
@@ -173,6 +174,7 @@ class TestAdapterProtocol:
 @pytest.mark.requirement("OPEN-01")
 class TestAdapterReport:
     """[if] an adapter report is created [then] its contract is preserved, [else stop]."""
+
     def test_bump_increments(self) -> None:
         r = AdapterReport()
         r.bump("tracks", 2)
@@ -200,6 +202,7 @@ class TestAdapterReport:
 @pytest.mark.requirement("OPEN-01")
 class TestSerializeJcs:
     """[if] data is serialized as JCS [then] the canonical encoding is preserved, [else stop]."""
+
     def test_dataclass_to_canonical_bytes(self) -> None:
         lib = _sample_library()
         b = serialize_jcs(lib)

@@ -27,7 +27,7 @@ Progress always re-arms the loop; standing still never does.
 
 ``MUSIC_DJ_AUTO_ANALYZE`` is a fail-fast enum, ``on`` or ``off``, defaulting
 to ``on``. Anything else raises rather than being coerced to a guess. Only
-the real daemon reads it (``app.py:_build_default_app``); ``create_app`` takes
+the real daemon reads it (``app_boot.py:_build_default_app``); ``create_app`` takes
 ``auto_analyze=False`` so no test builds a thread that shells out.
 
 Requirements (mini-PRD):

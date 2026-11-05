@@ -60,7 +60,11 @@ test('re-registering a name replaces it, and a stale handle cannot remove the ne
 	off();
 	calls.length = 0;
 	mod.applyAllCaps();
-	assert.deepEqual(calls, [], 'if the live handle cannot unregister then a disposed cache is still evicted - broken');
+	assert.deepEqual(
+		calls,
+		[],
+		'if the live handle cannot unregister then a disposed cache is still evicted - broken'
+	);
 });
 
 test('one throwing consumer does not stop the others, and the failure still surfaces by name', () => {
@@ -104,7 +108,11 @@ test('every capped cache registers, and every cap-change site calls applyAllCaps
 	}
 	for (const file of CAP_CHANGE_SITES) {
 		const source = read(file);
-		assert.match(source, /applyAllCaps/, `if ${file} does not call applyAllCaps then a cap change skips every cache - broken`);
+		assert.match(
+			source,
+			/applyAllCaps/,
+			`if ${file} does not call applyAllCaps then a cap change skips every cache - broken`
+		);
 		assert.doesNotMatch(
 			source,
 			/apply(Prefetch|Preview|Anlz)Caps\(/,

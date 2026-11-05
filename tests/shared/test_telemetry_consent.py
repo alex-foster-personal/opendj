@@ -54,9 +54,7 @@ def _capturing_transport(captured: list[dict]):  # type: ignore[no-untyped-def]
 
     class CapturingTransport(Transport):
         def capture_envelope(self, envelope) -> None:  # type: ignore[no-untyped-def]
-            captured.extend(
-                item.payload.json for item in envelope.items if item.payload.json is not None
-            )
+            captured.extend(item.payload.json for item in envelope.items if item.payload.json is not None)
 
     return CapturingTransport()
 
@@ -125,9 +123,7 @@ def test_unreadable_file_asks_again(tmp_path: Path, body: str) -> None:
         ("http://public@o0.ingest.de.sentry.io/2", None),
     ],
 )
-def test_replay_loader_url_follows_the_ingest_region(
-    dsn: str | None, expected: str | None
-) -> None:
+def test_replay_loader_url_follows_the_ingest_region(dsn: str | None, expected: str | None) -> None:
     assert replay_loader_url(dsn) == expected
 
 
@@ -150,9 +146,7 @@ def test_default_on_build_holds_every_send_until_accepted(consent_reset: None) -
     decision = decide_telemetry({}, build_source="payload", release=SHA, bundled_dsn=DSN)
     assert decision.enabled is True and decision.explicit is False
     try:
-        assert init_telemetry(
-            decision, transport=_capturing_transport(captured), consent_granted=False
-        )
+        assert init_telemetry(decision, transport=_capturing_transport(captured), consent_granted=False)
         assert held_for_consent() is True
         try:
             _raise()
@@ -160,8 +154,12 @@ def test_default_on_build_holds_every_send_until_accepted(consent_reset: None) -
             sentry_sdk.capture_exception(exc)
         assert (
             capture_browser_error(
-                message="boom", name="Error", stack=None, url="http://x/performance",
-                user_agent="ua", context={"kind": "ui-error", "any_deck_live": False},
+                message="boom",
+                name="Error",
+                stack=None,
+                url="http://x/performance",
+                user_agent="ua",
+                context={"kind": "ui-error", "any_deck_live": False},
             )
             is None
         )
@@ -186,9 +184,7 @@ def test_consent_granted_at_boot_sends_from_the_first_event(consent_reset: None)
     captured: list[dict] = []
     decision = decide_telemetry({}, build_source="payload", release=SHA, bundled_dsn=DSN)
     try:
-        assert init_telemetry(
-            decision, transport=_capturing_transport(captured), consent_granted=True
-        )
+        assert init_telemetry(decision, transport=_capturing_transport(captured), consent_granted=True)
         try:
             _raise()
         except ValueError as exc:
@@ -204,13 +200,9 @@ def test_explicit_enable_is_not_held_for_consent(consent_reset: None) -> None:
     sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
 
     captured: list[dict] = []
-    decision = decide_telemetry(
-        {TELEMETRY_ENV: "1", DSN_ENV: DSN}, build_source="repo", release=SHA
-    )
+    decision = decide_telemetry({TELEMETRY_ENV: "1", DSN_ENV: DSN}, build_source="repo", release=SHA)
     try:
-        assert init_telemetry(
-            decision, transport=_capturing_transport(captured), consent_granted=False
-        )
+        assert init_telemetry(decision, transport=_capturing_transport(captured), consent_granted=False)
         assert held_for_consent() is False
         try:
             _raise()

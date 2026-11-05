@@ -46,15 +46,11 @@ from scripts.worker_worktree_guard import Scope, ScopeError, assert_scope
 FLEET_REVIEW_MAX_COMMITS: int = 40
 FLEET_REVIEW_MAX_FILES: int = 80
 
-_LIMIT_RE = re.compile(
-    r"(?im)^\s*scope[ -]limits?\s*:\s*commits\s*=\s*(\d+)\s*[,;]?\s*files\s*=\s*(\d+)"
-)
+_LIMIT_RE = re.compile(r"(?im)^\s*scope[ -]limits?\s*:\s*commits\s*=\s*(\d+)\s*[,;]?\s*files\s*=\s*(\d+)")
 # A keyword then a LIST of issues: "Refs #1, #2, and #3" links all three, whatever mix of
 # whitespace, commas, "&", "/" and "and" separates them. Reading only the
 # first would turn a limit declared on #2 into UNDECLARED, a partial read as no verdict.
-_REFS_RE = re.compile(
-    r"(?i)\b(?:refs?|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(#\d+(?:(?:[\s,&/]|\band\b)+#\d+)*)"
-)
+_REFS_RE = re.compile(r"(?i)\b(?:refs?|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(#\d+(?:(?:[\s,&/]|\band\b)+#\d+)*)")
 _ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
 # Any line that starts like a declaration. One that _LIMIT_RE cannot parse is an error,
 # because reading it as no declaration would print UNDECLARED for a PR that declared one.
@@ -109,25 +105,15 @@ def declared_limit(issue_bodies: dict[int, str]) -> Limit | None:
 
 def referenced_issues(body: str) -> set[int]:
     """Every issue number named by a Refs/Fixes/Closes/Resolves clause, lists included."""
-    return {
-        int(number)
-        for clause in _REFS_RE.findall(body)
-        for number in _ISSUE_NUMBER_RE.findall(clause)
-    }
+    return {int(number) for clause in _REFS_RE.findall(body) for number in _ISSUE_NUMBER_RE.findall(clause)}
 
 
 def verdict(scope: Scope, limit: Limit | None) -> tuple[int, str]:
-    measured = (
-        f"commits={scope.commits}, files={scope.files}, "
-        f"additions={scope.additions}, deletions={scope.deletions}"
-    )
+    measured = f"commits={scope.commits}, files={scope.files}, additions={scope.additions}, deletions={scope.deletions}"
     if limit is None:
         oversized = scope.commits > FLEET_REVIEW_MAX_COMMITS or scope.files > FLEET_REVIEW_MAX_FILES
         tag = (
-            (
-                f" OVERSIZED (fleet review bound commits={FLEET_REVIEW_MAX_COMMITS}, "
-                f"files={FLEET_REVIEW_MAX_FILES})"
-            )
+            (f" OVERSIZED (fleet review bound commits={FLEET_REVIEW_MAX_COMMITS}, files={FLEET_REVIEW_MAX_FILES})")
             if oversized
             else ""
         )
@@ -162,10 +148,7 @@ def fetch(
     closing = pr["closingIssuesReferences"]
     if closing["totalCount"] > len(closing["nodes"]):
         # A limit on an unread issue would read as UNDECLARED, so a partial read is no verdict.
-        raise MeasureError(
-            f"PR #{number} links {closing['totalCount']} closing issues, "
-            f"read {len(closing['nodes'])}"
-        )
+        raise MeasureError(f"PR #{number} links {closing['totalCount']} closing issues, read {len(closing['nodes'])}")
     bodies = {i["number"]: i["body"] for i in closing["nodes"]}
     for ref in sorted(referenced_issues(pr["body"] or "") - set(bodies)):
         node = graphql(_REF_QUERY, o=owner, r=repo, n=ref)["issueOrPullRequest"]

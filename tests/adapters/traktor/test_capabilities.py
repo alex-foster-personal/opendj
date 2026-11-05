@@ -10,22 +10,14 @@ import pytest
 from apps.adapters.traktor import capabilities
 from apps.open_dj import serialize_jcs
 
-SNAPSHOT_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "traktor_capabilities.snapshot.json"
-)
+SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / "data" / "traktor_capabilities.snapshot.json"
 
 pytestmark = pytest.mark.requirement("OPEN-02")
 
 
 @pytest.mark.requirement("OPEN-02d")
 def test_traktor_capabilities_snapshot_matches() -> None:
-    assert SNAPSHOT_PATH.exists(), (
-        f"missing snapshot at {SNAPSHOT_PATH}. Regenerate and commit."
-    )
+    assert SNAPSHOT_PATH.exists(), f"missing snapshot at {SNAPSHOT_PATH}. Regenerate and commit."
     actual = serialize_jcs(capabilities().to_dict())
     expected = SNAPSHOT_PATH.read_bytes()
-    assert json.loads(actual) == json.loads(expected), (
-        "Traktor capabilities descriptor drifted from snapshot."
-    )
+    assert json.loads(actual) == json.loads(expected), "Traktor capabilities descriptor drifted from snapshot."

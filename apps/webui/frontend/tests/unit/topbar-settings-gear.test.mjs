@@ -25,6 +25,9 @@ test('the sun-like square-tooth glyph is gone', () => {
 });
 
 test('the gear snippet is attributed in NOTICE', () => {
-	const notice = readFileSync(fileURLToPath(new URL('../../../../../NOTICE', import.meta.url)), 'utf8');
+	const notice = readFileSync(
+		fileURLToPath(new URL('../../../../../NOTICE', import.meta.url)),
+		'utf8'
+	);
 	assert.match(notice, /Lucide icons[\s\S]{0,200}TopBar\.svelte[\s\S]{0,200}ISC/);
 });

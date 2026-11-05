@@ -4,6 +4,7 @@
 	 * Real control: 0 = full A (left bus), 1 = full B (right bus).
 	 * Wheel up moves toward B.
 	 */
+	import AnimRunningDot from './AnimRunningDot.svelte';
 	import {
 		CROSSFADER_THUMB_HIT_W,
 		CROSSFADER_THUMB_VIS_H,
@@ -42,6 +43,9 @@
 	}
 
 	function handlePointerDown(e: PointerEvent): void {
+		// Primary button only, like the knob and fader: a right-press opens the
+		// menu (ANIM-01) and must not jump the crossfader or take over its animation.
+		if (e.button !== 0) return;
 		dragging = true;
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		onchange(_valueFromEvent(e));
@@ -73,6 +77,7 @@
 	class="xfader"
 	role="slider"
 	aria-label="crossfader"
+	data-animate-control="crossfader"
 	title="Crossfader - blend channels assigned to A (left) and B (right). Center is equal mix of both buses."
 	aria-orientation="horizontal"
 	aria-valuemin={0}
@@ -88,6 +93,7 @@
 	onkeydown={handleKeyDown}
 >
 	<div class="track"></div>
+	<AnimRunningDot animKey="crossfader" />
 	{#if takeoverGhost !== null}
 		<div class="ghost-thumb" style={`left: ${ghostLeftPx}px;`}></div>
 	{/if}

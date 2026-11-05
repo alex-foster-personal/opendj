@@ -17,9 +17,7 @@ from scripts.perf.capture_library_mode import (
 )
 
 
-def _mode(
-    footprint_mb: float, cpu_percent: float, *, ticks: int, rss_mb: float | None = None
-) -> dict[str, object]:
+def _mode(footprint_mb: float, cpu_percent: float, *, ticks: int, rss_mb: float | None = None) -> dict[str, object]:
     rss = footprint_mb if rss_mb is None else rss_mb
     return {
         "footprint_samples_mb": [footprint_mb] * ticks,
@@ -46,9 +44,7 @@ def test_capture_library_mode_refuses_measured_below_the_absolute_sample_floor()
                 "ok": True,
                 "gig": _mode(1000.0, 10.0, ticks=ticks),
                 "library": _mode(500.0, 3.0, ticks=ticks),
-                "sampling_method": (
-                    "CDP renderer+gpu ps rss/cpu plus engine family rss_mb, every 5s"
-                ),
+                "sampling_method": ("CDP renderer+gpu ps rss/cpu plus engine family rss_mb, every 5s"),
                 "stable_ids": ["a" * 40, "b" * 40, "c" * 40, "d" * 40],
             },
             capture_id="issue-2700-library-mode-test",
@@ -98,9 +94,7 @@ def test_capture_library_mode_refuses_measured_when_only_cpu_samples_are_sparse(
     flakier `ps %cpu` read) must still refuse to score, even though its
     footprint sample count alone clears the floor."""
     sparse_cpu_mode = _mode(1000.0, 10.0, ticks=_MIN_SCORED_SAMPLES)
-    sparse_cpu_mode["cpu_samples_percent"] = cast(
-        "list[float]", sparse_cpu_mode["cpu_samples_percent"]
-    )[:2]
+    sparse_cpu_mode["cpu_samples_percent"] = cast("list[float]", sparse_cpu_mode["cpu_samples_percent"])[:2]
     rows = _rows_from_capture_result(
         {
             "ok": True,

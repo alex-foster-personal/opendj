@@ -92,6 +92,7 @@ def test_invalid_worktree_backend_port_fails_before_server_start(
     value: str,
 ) -> None:
     """If the worktree port is invalid then startup is broken and must fail fast."""
+
     def _raise_invalid_config() -> WebuiPorts:
         raise PortConfigError(f"MUSIC_DJ_BACKEND_PORT is invalid: {value!r}")
 

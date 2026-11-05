@@ -83,6 +83,18 @@ function splitDeckLoadMessage(message: string): ToastPresentation | null {
 	};
 }
 
+/** DECKUX-LABEL-02: a stem control pressed before the stems finished loading. */
+function stemsLoadingPresentation(message: string): ToastPresentation | null {
+	const match = /^(?:Error: )?deck ([1-4]) stems are loading: /i.exec(message);
+	if (match === null) return null;
+	return {
+		headline: `Deck ${match[1]} stems are still loading`,
+		detail: message,
+		rawMessage: message,
+		feature: 'Stems'
+	};
+}
+
 /**
  * A library load failure whose text still carries `title: CODE: detail`.
  * The headline is the plain sentence. The raw text stays in `detail` for
@@ -167,6 +179,11 @@ export function formatToastPresentation(input: {
 	const coded = codedLibraryLoadPresentation(rawMessage);
 	if (coded !== null) {
 		return applyDiagnostic(withSolutionHint(input.kind, coded), input.diagnostic);
+	}
+
+	const stemsLoading = stemsLoadingPresentation(rawMessage);
+	if (stemsLoading !== null) {
+		return applyDiagnostic(stemsLoading, input.diagnostic);
 	}
 
 	const deckLoad = splitDeckLoadMessage(rawMessage);

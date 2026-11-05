@@ -1,9 +1,28 @@
+<script module lang="ts">
+	// TrackTable reaches the tag surface here: it sits at the fan-out ceiling, and
+	// this menu already hosts the tag editor and its confirm.
+	import {
+		tagTypeChooserEntries,
+		tagTypeColumns,
+		toggleTagTypeColumn,
+		toggleTagTypeInTags
+	} from '$lib/rb/library-tags.svelte';
+	import TagCell from './TagCell.svelte';
+
+	export { TagCell, tagTypeChooserEntries, tagTypeColumns, toggleTagTypeColumn, toggleTagTypeInTags };
+</script>
+
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { setTargetState } from '$lib/rb/set-target-state.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColumnChooserMenu, { type ColumnChooserPrefs } from './ColumnChooserMenu.svelte';
 	import { bindMenuItems, type BoundMenuItem, type MenuRunners } from '$lib/context-menu/bind';
 	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
+	import { ensureTagsLoaded, openTagEditor, tagState } from '$lib/rb/library-tags.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
+	import TagEditorPopover from './TagEditorPopover.svelte';
+	import TagRemoveConfirm from './TagRemoveConfirm.svelte';
 	import type { BrowserRow } from './pane-contract.svelte';
 	import {
 		menuItemsForTrack,
@@ -17,6 +36,7 @@
 	} from './track-context-menu';
 	import type { TrackEditModalKind } from './track-edit-menu';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
+	import { linkVersionsFromMenu, openWorkEditor } from '$lib/rb/works-menu';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
 
 	type DeckId = 1 | 2 | 3 | 4;
@@ -33,10 +53,12 @@
 		onopeneditmodal,
 		onremovefromlibrary,
 		onremoverow,
+		oninsertsection,
 		removable = false,
 		readOnly = false,
 		onshowinplaylists,
-		onrelocate
+		onrelocate,
+		oneditcomment = undefined
 	}: {
 		selectedIds: string[];
 		selectedOrders: number[];
@@ -48,12 +70,17 @@
 		onopeneditmodal?: ((kind: TrackEditModalKind) => void) | undefined;
 		onremovefromlibrary?: ((stableIds: string[]) => void) | undefined;
 		onremoverow?: ((row: BrowserRow) => void) | undefined;
+		oninsertsection?: ((row: BrowserRow) => void) | undefined;
 		removable?: boolean;
 		/** Read-only pane: its rows are not writable, so pairing is hidden (PAIR-10). */
 		readOnly?: boolean;
 		onshowinplaylists: (row: BrowserRow, x: number, y: number) => void;
 		onrelocate: (row: BrowserRow, x: number, y: number) => void;
+		/** LIBUX-56: open the row's Comment cell editor. */
+		oneditcomment?: ((row: BrowserRow) => void) | undefined;
 	} = $props();
+
+	onMount(ensureTagsLoaded);
 
 	let menu = $state<{
 		x: number;
@@ -61,13 +88,16 @@
 		row: BrowserRow;
 		targetIds: string[];
 		rowCount: number;
+		/** Items shown above the row's own menu (a tempo or key cell puts its Edit here). */
+		lead: BoundMenuItem[];
 	} | null>(null);
 
 	function openMenu(
 		x: number,
 		y: number,
 		row: BrowserRow,
-		selectedOrderSet: Set<number>
+		selectedOrderSet: Set<number>,
+		lead: BoundMenuItem[] = []
 	): void {
 		if (!selectedOrderSet.has(row.order)) onselectrow(row);
 		// One right-click menu at a time: a track menu closes the header's chooser.
@@ -77,7 +107,8 @@
 			y,
 			row,
 			targetIds: menuTargetIds(row, selectedOrders, selectedIds),
-			rowCount: menuTargetRowCount(row, selectedOrders)
+			rowCount: menuTargetRowCount(row, selectedOrders),
+			lead
 		};
 	}
 
@@ -92,11 +123,13 @@
 		chooserAt = { x: event.clientX, y: event.clientY, prefs };
 	}
 
-	export function open(event: MouseEvent, row: BrowserRow): void {
+	/** `lead` items sit above the row's menu: a tempo or key cell adds its Edit there, so a
+	 * right-click on that cell still offers every row action (add to playlist, remove...). */
+	export function open(event: MouseEvent, row: BrowserRow, lead: BoundMenuItem[] = []): void {
 		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		event.stopPropagation();
-		openMenu(event.clientX, event.clientY, row, new Set(selectedOrders));
+		openMenu(event.clientX, event.clientY, row, new Set(selectedOrders), lead);
 	}
 
 	export function openFromKeyboard(event: KeyboardEvent, row: BrowserRow): void {
@@ -147,16 +180,22 @@
 			'add-playlist': onaddtoplaylist ? () => onaddtoplaylist(targetIds) : undefined,
 			'bulk-edit': editModal('bulk-edit'),
 			'find-replace': editModal('find-replace'),
+			'add-tag': () => openTagEditor({ stableIds: targetIds, typeId: null, x: menuX, y: menuY }),
 			mytag: editModal('mytag'),
+			'edit-comment': oneditcomment ? () => oneditcomment(row) : undefined,
 			relocate: () => onrelocate(row, menuX, menuY),
 			finder: () => runRevealTracks(targetIds),
 			'show-in-playlists': () => onshowinplaylists(row, menuX, menuY),
 			'copy-path': () => runCopyPaths(targetIds),
+			'work-edit': () => openWorkEditor(targetIds, row.title ?? ''),
+			'link-version': () => linkVersionsFromMenu(targetIds, row.title ?? ''),
 			analyze: () => runReanalyze(targetIds),
 			pair: () => runPairTracks(targetIds),
 			'stems-generate': onstemsdonext ? () => onstemsdonext(targetIds) : undefined,
 			lyrics: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined,
+			'set-skip': () => void setTargetState.toggleSkip(targetIds),
 			'remove-playlist': onremoverow ? () => onremoverow(row) : undefined,
+			'insert-section': oninsertsection ? () => oninsertsection(row) : undefined,
 			'remove-library': onremovefromlibrary ? () => onremovefromlibrary(targetIds) : undefined,
 			offload: () => void offloadOps.offloadTracks(targetIds),
 			'offload-restore-24h': () => void offloadOps.restoreTracks(targetIds, 'temporary'),
@@ -167,12 +206,20 @@
 	}
 </script>
 
+{#if tagState.editor !== null}
+	{#key tagState.editor}
+		<TagEditorPopover {...tagState.editor} />
+	{/key}
+{/if}
+{#if tagState.removal !== null}
+	<TagRemoveConfirm request={tagState.removal} />
+{/if}
 {#if chooserAt !== null}
 	<ColumnChooserMenu x={chooserAt.x} y={chooserAt.y} prefs={chooserAt.prefs} onclose={() => (chooserAt = null)} />
 {/if}
 {#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
-		items={trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.rowCount, menu.x, menu.y)}
+		items={[...menu.lead, ...trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.rowCount, menu.x, menu.y)]}
 		x={menu.x}
 		y={menu.y}
 		onclose={() => (menu = null)}

@@ -10,6 +10,7 @@
 import { deckStates, mixerState } from '$lib/rb/audio-engine.svelte';
 import type { DeckId } from '$lib/rb/deck-id';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { engagedLoopForHotCue } from '$lib/rb/hot-cue-loop';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
@@ -283,6 +284,8 @@ export function runControllerPad(
 			notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
 			return;
 		}
+		// HOTCUE-LOOP-01: a pad pressed during an engaged loop saves that loop.
+		const loop = engagedLoopForHotCue(deckStates[deck]);
 		void dispatchPerformanceCommand({
 			type: 'hot_cue_save',
 			deck,
@@ -290,8 +293,9 @@ export function runControllerPad(
 			// Presented transport is sub-millisecond; the persistent Rekordbox
 			// cue contract is integer milliseconds. Round at this boundary so a
 			// physical pad can save the position the engine actually publishes.
-			in_ms: persistentCuePositionMs(deckStates[deck].position_ms),
-			revision: deckStates[deck].hot_cue_revisions[slot]
+			in_ms: loop?.in_ms ?? persistentCuePositionMs(deckStates[deck].position_ms),
+			revision: deckStates[deck].hot_cue_revisions[slot],
+			...(loop === null ? {} : { out_ms: loop.out_ms })
 		});
 		return;
 	}

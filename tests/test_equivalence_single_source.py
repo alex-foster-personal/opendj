@@ -32,12 +32,8 @@ from apps.equivalence.single_source import (
 )
 from apps.equivalence.sources import MikEnergySegment, MikRow, read_mik_energy_segments
 
-SEGMENTS_SPEC = next(
-    s for s in SINGLE_SOURCE_FIELDS if s.field_name == "energy_segments"
-)
-CLIPPING_SPEC = next(
-    s for s in SINGLE_SOURCE_FIELDS if s.field_name == "clipped_peak_count"
-)
+SEGMENTS_SPEC = next(s for s in SINGLE_SOURCE_FIELDS if s.field_name == "energy_segments")
+CLIPPING_SPEC = next(s for s in SINGLE_SOURCE_FIELDS if s.field_name == "clipped_peak_count")
 
 
 def _seg(pk: int, start: float, length: float, energy: float = 5.0):
@@ -73,9 +69,7 @@ def _mik_rows(count: int, value_fn) -> list[MikRow]:
 
 def test_single_source_verdict_declares_a_weaker_basis_and_no_rate():
     rows = _mik_rows(CFG.min_comparable + 50, lambda i: i % 900)
-    verdict = decide_single_source(
-        CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC)
-    )
+    verdict = decide_single_source(CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC))
     entry = verdict.entry("2026-07-28T00:00:00+00:00")
 
     assert verdict.status == "passed"
@@ -92,9 +86,7 @@ def test_single_source_verdict_is_readable_by_the_real_gate(tmp_path: Path):
     from apps.shared.equivalence import EquivalenceGate, verdict_path
 
     rows = _mik_rows(CFG.min_comparable + 50, lambda i: i % 900)
-    verdict = decide_single_source(
-        CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC)
-    )
+    verdict = decide_single_source(CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC))
     document = build_document(
         [],
         match_report={
@@ -118,17 +110,13 @@ def test_single_source_verdict_is_readable_by_the_real_gate(tmp_path: Path):
 
 def test_too_few_values_is_untested():
     rows = _mik_rows(CFG.min_comparable - 1, lambda i: i % 900)
-    verdict = decide_single_source(
-        CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC)
-    )
+    verdict = decide_single_source(CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC))
     assert verdict.status == "untested"
 
 
 def test_a_constant_count_column_is_untested():
     rows = _mik_rows(CFG.min_comparable + 50, lambda i: 0)
-    verdict = decide_single_source(
-        CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC)
-    )
+    verdict = decide_single_source(CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC))
     assert verdict.status == "untested"
     assert any("ZERO VARIANCE" in r for r in verdict.reasons), verdict.reasons
 
@@ -226,13 +214,8 @@ def _make_mik_segment_db(tmp_path: Path, rows: list[tuple]) -> Path:
 
     db_path = tmp_path / "mik.sqlite"
     conn = sqlite3.connect(db_path)
-    conn.execute(
-        "CREATE TABLE ZENERGYSEGMENT "
-        "(ZSONG INTEGER, ZSTARTTIME REAL, ZLENGTH REAL, ZENERGY REAL)"
-    )
-    conn.executemany(
-        "INSERT INTO ZENERGYSEGMENT VALUES (?, ?, ?, ?)", rows
-    )
+    conn.execute("CREATE TABLE ZENERGYSEGMENT (ZSONG INTEGER, ZSTARTTIME REAL, ZLENGTH REAL, ZENERGY REAL)")
+    conn.executemany("INSERT INTO ZENERGYSEGMENT VALUES (?, ?, ?, ?)", rows)
     conn.commit()
     conn.close()
     return db_path
@@ -252,9 +235,7 @@ def test_a_clean_segment_row_reads_normally(tmp_path: Path):
         pytest.param((1, 0.0, 30.0, None), id="null_energy"),
     ],
 )
-def test_a_null_column_raises_instead_of_being_silently_dropped(
-    tmp_path: Path, row: tuple
-):
+def test_a_null_column_raises_instead_of_being_silently_dropped(tmp_path: Path, row: tuple):
     """P1 regression (PR #383 review, apps/equivalence/sources.py:233): the
     production MIK reader (apps.mik.mikdb) rejects a ZENERGYSEGMENT row with
     a NULL start, length, or energy. Silently excluding the same row here
@@ -271,9 +252,7 @@ def test_a_null_column_raises_instead_of_being_silently_dropped(
 # ----------------------------------------------- against the real store
 
 
-@pytest.mark.skipif(
-    not CFG.mik_db.exists(), reason="MIK store not present on this machine"
-)
+@pytest.mark.skipif(not CFG.mik_db.exists(), reason="MIK store not present on this machine")
 def test_the_real_mik_series_is_structurally_sound():
     segments = read_mik_energy_segments(CFG.mik_db)
     structure = audit_series(segments, value_range=(1.0, 10.0))
@@ -286,16 +265,12 @@ def test_the_real_mik_series_is_structurally_sound():
     assert structure.overlapping_tracks_naive_ms > 1_000
 
 
-@pytest.mark.skipif(
-    not CFG.mik_db.exists(), reason="MIK store not present on this machine"
-)
+@pytest.mark.skipif(not CFG.mik_db.exists(), reason="MIK store not present on this machine")
 def test_the_real_clipping_column_passes_single_source():
     from apps.equivalence.sources import read_mik
 
     rows = read_mik(CFG.mik_db)
-    verdict = decide_single_source(
-        CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC)
-    )
+    verdict = decide_single_source(CLIPPING_SPEC, probe_single_source(rows, CLIPPING_SPEC))
     assert verdict.status == "passed", verdict.reasons
     assert verdict.suite_status == SUITE_PASSED_SINGLE
 
@@ -375,9 +350,7 @@ def test_scalar_escaping_its_series_range_fails_as_a_mapping_bug():
     assert audit.scalar_above_series_max == 1
 
     rows = _mik_rows(CFG.min_comparable + 10, lambda i: i % 900)
-    verdict = decide_single_source(
-        ENERGY_SPEC, probe_single_source(rows, ENERGY_SPEC), series_consistency=audit
-    )
+    verdict = decide_single_source(ENERGY_SPEC, probe_single_source(rows, ENERGY_SPEC), series_consistency=audit)
     assert verdict.status == "failed"
     assert verdict.suite_status == "failed_mapping_bug"
 
@@ -420,20 +393,14 @@ def test_a_check_that_never_ran_is_not_a_pass():
     assert report.ok is False
 
 
-@pytest.mark.skipif(
-    not CFG.mik_db.exists(), reason="MIK store not present on this machine"
-)
+@pytest.mark.skipif(not CFG.mik_db.exists(), reason="MIK store not present on this machine")
 def test_the_real_energy_scalar_passes_single_source_and_is_not_derivable():
     from apps.equivalence.single_source import audit_scalar_against_series
     from apps.equivalence.sources import read_mik
 
     rows = read_mik(CFG.mik_db)
-    audit = audit_scalar_against_series(
-        {r.pk: r.energy for r in rows}, read_mik_energy_segments(CFG.mik_db)
-    )
-    verdict = decide_single_source(
-        ENERGY_SPEC, probe_single_source(rows, ENERGY_SPEC), series_consistency=audit
-    )
+    audit = audit_scalar_against_series({r.pk: r.energy for r in rows}, read_mik_energy_segments(CFG.mik_db))
+    verdict = decide_single_source(ENERGY_SPEC, probe_single_source(rows, ENERGY_SPEC), series_consistency=audit)
     assert verdict.status == "passed", verdict.reasons
     assert verdict.suite_status == SUITE_PASSED_SINGLE
     assert verdict.basis == BASIS_SINGLE

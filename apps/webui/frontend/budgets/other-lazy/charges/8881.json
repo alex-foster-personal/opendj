@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 473334,
+  "measured_with_pr": 473564,
+  "sha": "c4ff68f398",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #8881's AutoPlay Why this track readout and the typed autoplay_verdict command; after main was merged in, CI's bundle-budget step measured other-lazy 473334 -> 473564, +230 B gzip, above the 128 B PR-delta noise floor (the readout's shared API-client path and the dispatcher entry land in lazy chunks as well as on /performance). Ceiled to KiB",
+  "payback": "none planned; a dedicated lazy surface for the readout if it grows"
+}

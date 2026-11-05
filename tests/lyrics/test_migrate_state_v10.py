@@ -2,6 +2,7 @@
 
 [if] the v10 lyrics migration runs [then] dry-run writes nothing, live runs once, [else stop].
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,15 +44,12 @@ def _utc_backup_name() -> str:
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
-    return {
-        str(row[0])
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # AC 1: dry-run changes no byte
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_dry_run_prints_plan_and_counts_without_writing(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -70,9 +68,9 @@ def test_dry_run_prints_plan_and_counts_without_writing(
     assert "3/3 legacy verdicts" in captured or "3 legacy verdicts" in captured
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # AC 2: live on fixture
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_live_migrates_fixture_and_second_run_is_no_op(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -85,9 +83,7 @@ def test_live_migrates_fixture_and_second_run_is_no_op(
     assert backup.is_file()
     conn = sqlite3.connect(db_path)
     try:
-        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == (
-            KARAOKE_TARGET_VERSION
-        )
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == (KARAOKE_TARGET_VERSION)
         assert conn.execute("SELECT COUNT(*) FROM lyric_verdict").fetchone()[0] == 3
         tables = _tables(conn)
         assert "lyric_verdict_legacy" in tables
@@ -108,9 +104,9 @@ def test_live_migrates_fixture_and_second_run_is_no_op(
     assert _sha256(db_path) == after_first
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # AC 3: stale index aborts before ladder
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_stale_index_aborts_before_ladder(tmp_path: Path) -> None:
     db_path = tmp_path / "stale" / "state" / "state.db"
     db_path.parent.mkdir(parents=True)
@@ -118,23 +114,14 @@ def test_stale_index_aborts_before_ladder(tmp_path: Path) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         _apply_ladder_to_v8(conn)
-        conn.execute(
-            "CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, "
-            "pct_witness_red REAL)"
-        )
-        conn.execute(
-            "CREATE INDEX idx_lyric_verdict_red ON lyric_verdict(pct_witness_red DESC)"
-        )
+        conn.execute("CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, pct_witness_red REAL)")
+        conn.execute("CREATE INDEX idx_lyric_verdict_red ON lyric_verdict(pct_witness_red DESC)")
         conn.execute("ALTER TABLE lyric_verdict RENAME TO lyric_verdict_legacy")
         conn.commit()
-        version_before = conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0]
+        version_before = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
         with pytest.raises(RuntimeError, match="idx_lyric_verdict_red"):
             assert_stale_index_gone(conn)
-        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == (
-            version_before
-        )
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == (version_before)
     finally:
         conn.close()
 
@@ -146,31 +133,23 @@ def test_dropping_stale_index_lets_ladder_succeed(tmp_path: Path) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         _apply_ladder_to_v8(conn)
-        conn.execute(
-            "CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, "
-            "pct_witness_red REAL)"
-        )
-        conn.execute(
-            "CREATE INDEX idx_lyric_verdict_red ON lyric_verdict(pct_witness_red DESC)"
-        )
+        conn.execute("CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, pct_witness_red REAL)")
+        conn.execute("CREATE INDEX idx_lyric_verdict_red ON lyric_verdict(pct_witness_red DESC)")
         conn.execute("ALTER TABLE lyric_verdict RENAME TO lyric_verdict_legacy")
         drop_stale_indexes(conn)
         assert_stale_index_gone(conn)
         apply_ladder_to_v10(conn)
         rows = conn.execute(
-            "SELECT name, tbl_name FROM sqlite_master WHERE type='index' AND "
-            "name = 'idx_lyric_verdict_red'"
+            "SELECT name, tbl_name FROM sqlite_master WHERE type='index' AND name = 'idx_lyric_verdict_red'"
         ).fetchall()
-        assert [(str(name), str(table)) for name, table in rows] == [
-            ("idx_lyric_verdict_red", "lyric_verdict")
-        ]
+        assert [(str(name), str(table)) for name, table in rows] == [("idx_lyric_verdict_red", "lyric_verdict")]
     finally:
         conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # AC 4: CLI --help and doc commands
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_runbook_help_exits_zero() -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.lyrics_migrate_state_v10", "--help"],

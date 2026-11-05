@@ -81,7 +81,10 @@ test('every .svelte import extraction is syntactically valid JavaScript', async 
 	const files = globSync('src/**/*.svelte', {
 		cwd: fileURLToPath(new URL('../../', import.meta.url))
 	});
-	assert.ok(files.length > 100, 'if the glob finds almost no components then this test measures nothing');
+	assert.ok(
+		files.length > 100,
+		'if the glob finds almost no components then this test measures nothing'
+	);
 	const broken = [];
 	for (const relative of files) {
 		const compiled = svelteImports(read(relative));
@@ -104,7 +107,7 @@ test('every .svelte import extraction is syntactically valid JavaScript', async 
 
 test('a template-only dynamic import is still seen', () => {
 	const compiled = svelteImports(
-		'<script>const a = 1;</script>\n{#await import(\'dep-lazy\') then m}{m.x}{/await}'
+		"<script>const a = 1;</script>\n{#await import('dep-lazy') then m}{m.x}{/await}"
 	);
 	assert.ok(
 		compiled.includes("import('dep-lazy')"),

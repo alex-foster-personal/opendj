@@ -22,7 +22,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://deck-stop-log.example.test';
 const SID = 'd'.repeat(40);
-const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
+const STRETCH_STUB = fileURLToPath(
+	new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url)
+);
 /** One minute of audio by default; the end-of-track test swaps in one second. */
 const MINUTE_BYTES = 4 * 48_000 * 60;
 const SECOND_BYTES = 4 * 48_000;
@@ -39,9 +41,15 @@ let nextFrame = 0;
 
 class LiveClockAudioContext extends FakeAudioContext {
 	#startedAtMs = performance.now();
-	get currentTime() { return (performance.now() - this.#startedAtMs) / 1000; }
-	set currentTime(_value) { /* derived from the wall clock */ }
-	getOutputTimestamp() { return { contextTime: this.currentTime, performanceTime: performance.now() }; }
+	get currentTime() {
+		return (performance.now() - this.#startedAtMs) / 1000;
+	}
+	set currentTime(_value) {
+		/* derived from the wall clock */
+	}
+	getOutputTimestamp() {
+		return { contextTime: this.currentTime, performanceTime: performance.now() };
+	}
 	createConstantSource() {
 		const node = super.createConstantSource();
 		node.stop = (when = 0) => {
@@ -52,7 +60,10 @@ class LiveClockAudioContext extends FakeAudioContext {
 }
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 function installDaemon() {
@@ -61,19 +72,33 @@ function installDaemon() {
 		const url = input instanceof Request ? input.url : String(input);
 		if (url.includes('/anlz?')) {
 			return json({
-				stable_id: SID, points: 38_400,
+				stable_id: SID,
+				points: 38_400,
 				waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
-				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }, beatgrid_source: 'rekordbox',
-				cues: [], phrases: [], vocals: { status: 'not_analyzed' }, local_waveform: { status: 'decoded' }
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] },
+				beatgrid_source: 'rekordbox',
+				cues: [],
+				phrases: [],
+				vocals: { status: 'not_analyzed' },
+				local_waveform: { status: 'decoded' }
 			});
 		}
 		if (url.endsWith('/hot-cues')) {
-			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
+			return json(
+				['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))
+			);
 		}
 		if (url.endsWith('/audio')) return new Response(new Uint8Array(trackBytes));
-		if (url.endsWith('/stems')) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
-		if (url.endsWith('/rb-meta')) return json({ detail: { code: 'RB_META_NOT_FOUND', message: 'no rekordbox row' } }, 404);
-		if (url.endsWith(`/tracks/${SID}`)) return json({ stable_id: SID, title: 'Stop', artist: 'Fixture', bpm: null });
+		if (url.endsWith('/stems'))
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (url.endsWith('/rb-meta'))
+			return json({ detail: { code: 'RB_META_NOT_FOUND', message: 'no rekordbox row' } }, 404);
+		if (url.endsWith(`/tracks/${SID}`))
+			return json({ stable_id: SID, title: 'Stop', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
 }
@@ -147,11 +172,19 @@ after(async () => {
 
 test('deckStopCause: engine origins win over a running command, the command source next, else unattributed', async () => {
 	const { deckStopCause, withDeckCommandSource } = m.stopLog;
-	assert.equal(deckStopCause(1, 'other'), 'unattributed', 'a stop with no known cause is said, never guessed');
+	assert.equal(
+		deckStopCause(1, 'other'),
+		'unattributed',
+		'a stop with no known cause is said, never guessed'
+	);
 	await withDeckCommandSource([1], 'agent-command', async () => {
 		assert.equal(deckStopCause(1, 'command'), 'agent-command');
 		assert.equal(deckStopCause(2, 'command'), 'unattributed', 'the register is per deck');
-		assert.equal(deckStopCause(1, 'natural-end'), 'end-of-track', 'a track ending mid-command is still the track ending');
+		assert.equal(
+			deckStopCause(1, 'natural-end'),
+			'end-of-track',
+			'a track ending mid-command is still the track ending'
+		);
 		assert.equal(deckStopCause(1, 'worklet'), 'engine');
 		assert.equal(deckStopCause(1, 'dropout'), 'engine');
 		await withDeckCommandSource([1], 'autoplay-handoff', async () => {
@@ -180,7 +213,10 @@ test('a UI pause logs one line with cause user-ui and last_stop.user_pause true'
 
 test('an agent order pause logs cause agent-command and is not a user pause', async () => {
 	await loadAndPlay();
-	const order = await m.executeAgentOrder({ kind: 'single', payload: { type: 'play', deck: 1, playing: false } });
+	const order = await m.executeAgentOrder({
+		kind: 'single',
+		payload: { type: 'play', deck: 1, playing: false }
+	});
 	assert.deepEqual(order.steps, [{ status: 'succeeded' }]);
 	const stop = m.stopLog.readLastDeckStop(1);
 	assert.equal(stop.cause, 'agent-command');
@@ -189,26 +225,38 @@ test('an agent order pause logs cause agent-command and is not a user pause', as
 
 test('the IPC bridge is an agent command too', async () => {
 	await loadAndPlay();
-	await globalThis.window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: false });
+	await globalThis.window.musicDjToolsPerformance.dispatch({
+		type: 'play',
+		deck: 1,
+		playing: false
+	});
 	assert.equal(m.stopLog.readLastDeckStop(1).cause, 'agent-command');
 });
 
 test('a stop AutoPlay dispatches logs cause autoplay-handoff', async () => {
 	await loadAndPlay();
-	await m.ipc.dispatchPerformanceCommand({ type: 'unload', deck: 1 }, undefined, 'autoplay-handoff');
+	await m.ipc.dispatchPerformanceCommand(
+		{ type: 'unload', deck: 1 },
+		undefined,
+		'autoplay-handoff'
+	);
 	assert.equal(m.stopLog.readLastDeckStop(1).cause, 'autoplay-handoff');
 });
 
 test('the silence-dropout act logs cause engine; any other in-app dispatch logs app-command', async () => {
 	await loadAndPlay();
-	await m.ipc.dispatchPerformanceCommand({ type: 'play', deck: 1, playing: false }, undefined, 'engine');
+	await m.ipc.dispatchPerformanceCommand(
+		{ type: 'play', deck: 1, playing: false },
+		undefined,
+		'engine'
+	);
 	assert.equal(m.stopLog.readLastDeckStop(1).cause, 'engine');
 	await m.ipc.dispatchPerformanceCommand({ type: 'play', deck: 1, playing: true });
 	await until(() => deck().playing, 'the deck plays again');
 	await m.ipc.dispatchPerformanceCommand({ type: 'play', deck: 1, playing: false });
 	const stop = m.stopLog.readLastDeckStop(1);
 	assert.equal(stop.cause, 'app-command');
-	assert.equal(stop.seq, 2, 'seq counts this deck\'s stops');
+	assert.equal(stop.seq, 2, "seq counts this deck's stops");
 });
 
 test('a track playing out logs cause end-of-track', async () => {
@@ -216,7 +264,11 @@ test('a track playing out logs cause end-of-track', async () => {
 	await loadAndPlay();
 	await until(() => !deck().playing, 'the one-second track plays out', 6000);
 	const stop = m.stopLog.readLastDeckStop(1);
-	assert.equal(stop?.cause, 'end-of-track', 'if a played-out track is not attributed to its end then broken');
+	assert.equal(
+		stop?.cause,
+		'end-of-track',
+		'if a played-out track is not attributed to its end then broken'
+	);
 	assert.equal(stopLines().length, 1);
 });
 
@@ -228,9 +280,21 @@ test('tearing the engine down mid-play logs cause reload', async () => {
 });
 
 test('the cause vocabulary is stable: exported list, and only unattributed/engine/reload warn', () => {
-	assert.deepEqual([...m.stopLog.DECK_STOP_CAUSES], [
-		'user-ui', 'agent-command', 'autoplay-handoff', 'app-command', 'end-of-track', 'engine', 'reload', 'unattributed'
-	]);
-	const warns = m.stopLog.DECK_STOP_CAUSES.filter((cause) => m.stopLog.deckStopSeverity(cause) === 'warn');
+	assert.deepEqual(
+		[...m.stopLog.DECK_STOP_CAUSES],
+		[
+			'user-ui',
+			'agent-command',
+			'autoplay-handoff',
+			'app-command',
+			'end-of-track',
+			'engine',
+			'reload',
+			'unattributed'
+		]
+	);
+	const warns = m.stopLog.DECK_STOP_CAUSES.filter(
+		(cause) => m.stopLog.deckStopSeverity(cause) === 'warn'
+	);
 	assert.deepEqual(warns, ['engine', 'reload', 'unattributed']);
 });

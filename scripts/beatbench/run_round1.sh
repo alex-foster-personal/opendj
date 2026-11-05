@@ -6,7 +6,7 @@
 # wrong one:
 #
 #   scripts/beatbench/run_round1.sh reproduce      [BASE_URL]
-#       Reproduces exactly what is committed under ops/beatbench/round-1: the
+#       Reproduces exactly what is committed under (private path): the
 #       MODEL arm over the 90-fixture subset named in fixtures-subset90.json,
 #       and the librosa and constant-128 arms over all 337. Roughly 25 minutes
 #       of model time on an unloaded host.
@@ -15,7 +15,7 @@
 #       The arm round 1 could not afford: the model over all 337 fixtures,
 #       about 11 hours serial. Writes to its OWN -full337 filenames so it can
 #       never overwrite the committed 90-track arm, and produces a separate
-#       report. Nothing under ops/beatbench/round-1 that is committed today
+#       report. Nothing under (private path) that is committed today
 #       came from this command.
 #
 # WHY THE MODEL ARM IS A SUBSET AT ALL. The host carried a load average of 554
@@ -42,10 +42,10 @@
 # reproduction would generate a candidate the committed report does not contain
 # and change the table. Run it deliberately when round 2 asks the question:
 #   uv run --no-sync python -m scripts.beatbench.run_beatgrid_lane \
-#       --fixtures ops/beatbench/round-1/fixtures-subset90.json \
+#       --fixtures (private path) \
 #       --label beatgrid_lane_t035 --threshold 0.35 --device cpu \
-#       --out ops/beatbench/round-2/candidate-beatgrid_lane_t035.json \
-#       --raw-out ops/beatbench/round-2/raw-beatgrid_lane_t035.json
+#       --out (private path) \
+#       --raw-out (private path)
 #
 # TIMING IS MEASURED SERIALLY, ONE CANDIDATE AT A TIME. Round 0 recorded an 86x
 # distortion on librosa from running candidates concurrently. Do not "speed this
@@ -54,7 +54,7 @@ set -euo pipefail
 
 MODE="${1:-}"
 case "$MODE" in
-    reproduce|full-model-arm) shift ;;
+    reproduce | full-model-arm) shift ;;
     *)
         echo "usage: $0 {reproduce|full-model-arm} [BASE_URL]" >&2
         exit 2
@@ -62,9 +62,9 @@ case "$MODE" in
 esac
 
 BASE="${1:-http://127.0.0.1:8681}"
-OUT="ops/beatbench/round-1"
+OUT="(private path)"
 SCRATCH=".tmp/beatbench-r1"
-R0="ops/beatbench/round-0"
+R0="(private path)"
 
 if [ "$MODE" = "reproduce" ]; then
     MODEL_FIXTURES="$OUT/fixtures-subset90.json"
@@ -182,7 +182,7 @@ echo "[round1] 5/6 score with the versioned scorer"
 # 554 (Codex P1 BLOCKING on PR #1514). A parallel full pass is not a serial
 # calibration and must never be presented as one. To publish runtime, run the
 # candidates one at a time on a QUIET host, confirm and record the load average
-# in the round entry in specs/beat-mapping-bench.md, and pass those artifacts
+# in the round entry in (private path), and pass those artifacts
 # to --serial explicitly. Absent that, the report prints n/a, which is what
 # "not measured" should look like.
 # --fixtures is always the FULL manifest: the scorer divides each candidate by
@@ -192,7 +192,7 @@ echo "[round1] 5/6 score with the versioned scorer"
 uv run --no-sync python -m scripts.beatbench.report \
     --round 1 --fixtures "$OUT/fixtures.json" \
     --full "$OUT/candidate-beatgrid_lane_t050${MODEL_SUFFIX}.json" \
-        "$OUT/candidate-constant_128.json" "$OUT/candidate-librosa.json" \
+    "$OUT/candidate-constant_128.json" "$OUT/candidate-librosa.json" \
     --out-md "$OUT/report${MODEL_SUFFIX}.md" --out-json "$OUT/results${MODEL_SUFFIX}.json"
 
 echo "[round1] 6/6 control: cross-check CMLt/AMLt against mir_eval on real beat times"
@@ -202,7 +202,7 @@ echo "[round1] 6/6 control: cross-check CMLt/AMLt against mir_eval on real beat 
 # the model arm 2 of 85, worst CMLt difference 1.37e-02, always one correct beat
 # short of mir_eval. That is a live defect in this repo's continuity code, or in
 # how the two implementations break a tie, and it is NOT yet diagnosed
-# (.planning/debt/1514.md).
+# ((private path)).
 #
 # The round-1 PR body quoted "all 337 tracks agree" for this control. That run
 # was the constant-128 arm alone, which is a rigid grid at one tempo from t=0:

@@ -28,16 +28,17 @@ before(async () => {
 		await loadTypeScriptModule('src/lib/components/rb/wave/wave-scrub.ts'));
 });
 
-// --------------------------------------------------------- snap-to-downbeat
+// ------------------------------------------------------------------ snap modes
 
-test('waveSnapModeFromModifiers: no modifier is downbeat, shift alone is exact, cmd+shift is beat', () => {
-	assert.equal(waveSnapModeFromModifiers({ shiftKey: false, metaKey: false }), 'downbeat');
-	assert.equal(waveSnapModeFromModifiers({ shiftKey: false, metaKey: true }), 'downbeat');
-	assert.equal(waveSnapModeFromModifiers({ shiftKey: true, metaKey: false }), 'exact');
-	assert.equal(waveSnapModeFromModifiers({ shiftKey: true, metaKey: true }), 'beat');
+test('waveSnapModeFromModifiers (WAVE-SEEK-01): no modifier follows quantize, shift alone is exact, cmd+shift is beat', () => {
+	assert.equal(waveSnapModeFromModifiers({ shiftKey: false, metaKey: false }, true), 'beat');
+	assert.equal(waveSnapModeFromModifiers({ shiftKey: false, metaKey: false }, false), 'exact');
+	assert.equal(waveSnapModeFromModifiers({ shiftKey: false, metaKey: true }, true), 'beat');
+	assert.equal(waveSnapModeFromModifiers({ shiftKey: true, metaKey: false }, true), 'exact');
+	assert.equal(waveSnapModeFromModifiers({ shiftKey: true, metaKey: true }, false), 'beat');
 });
 
-test('snapWaveTargetMs default (downbeat) snaps a scrub target to the nearest bar downbeat', () => {
+test('snapWaveTargetMs "downbeat" snaps a scrub target to the nearest bar downbeat', () => {
 	// 1.0s is nearer downbeat 1.875 than 0.0? distance 1.0 vs 0.875 -> nearest is 1.875.
 	assert.equal(snapWaveTargetMs(1000, SNAP_GRID, 'downbeat'), 1875);
 	// 0.3s is nearer downbeat 0.0 than 1.875.

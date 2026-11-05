@@ -3,7 +3,12 @@
  */
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 import { createAutoPlayFeedSnapshot } from '$lib/rb/autoplay-feed';
-import { listPlaylistTracksPage, listTracksHydrated, type PlaylistTrackRowWire, type TrackListItemWire } from '$lib/rb/api-rb';
+import {
+	listPlaylistTracksPage,
+	listTracksHydrated,
+	type PlaylistTrackRowWire,
+	type TrackListItemWire
+} from '$lib/rb/api-rb';
 import type { LastPlaylistPref } from '$lib/rb/prefs-types';
 
 const PAGE_SIZE = 500;
@@ -61,7 +66,9 @@ async function _fetchPlaylistRows(playlistId: string): Promise<AutoPlayTrackRow[
 	);
 }
 
-export async function fetchTrackifyViewRows(lastPlaylist: LastPlaylistPref | null): Promise<AutoPlayTrackRow[]> {
+export async function fetchTrackifyViewRows(
+	lastPlaylist: LastPlaylistPref | null
+): Promise<AutoPlayTrackRow[]> {
 	if (lastPlaylist === null || lastPlaylist.kind === 'all_tracks') return _fetchAllTracksRows();
 	return _fetchPlaylistRows(lastPlaylist.playlist_id);
 }
@@ -74,7 +81,11 @@ export interface TrackifyFeedSnapshot {
 }
 
 export function createTrackifyFeedController(): {
-	step(enabled: boolean, lastPlaylist: LastPlaylistPref | null, viewRows: readonly AutoPlayTrackRow[]): TrackifyFeedSnapshot;
+	step(
+		enabled: boolean,
+		lastPlaylist: LastPlaylistPref | null,
+		viewRows: readonly AutoPlayTrackRow[]
+	): TrackifyFeedSnapshot;
 	readonly epoch: number;
 	readonly rows: readonly AutoPlayTrackRow[];
 } {

@@ -98,9 +98,7 @@ def test_win_invalid_parameter_reports_dead(monkeypatch: pytest.MonkeyPatch) -> 
 
     kernel32 = _patch_win_kernel32(monkeypatch)
     kernel32.OpenProcess.return_value = 0
-    monkeypatch.setattr(
-        ctypes, "get_last_error", lambda: pl._ERROR_INVALID_PARAMETER, raising=False
-    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: pl._ERROR_INVALID_PARAMETER, raising=False)
 
     assert pl._win_pid_is_alive(42) is False
     _assert_win32_signatures(kernel32)

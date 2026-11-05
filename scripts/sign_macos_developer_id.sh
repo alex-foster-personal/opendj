@@ -58,7 +58,7 @@
 #   [if] `notarize` leaves the dmg unstapled [then] a tester offline at first
 #        launch is refused by Gatekeeper -> broken
 #   [if] `payload` signs the interpreter without
-#        apps/desktop/src-tauri/Entitlements.engine.plist [then] every numba
+#        apps/desktop/shared/Entitlements.engine.plist [then] every numba
 #        JIT, so all of Open DJ's own analysis, is SIGKILLed -> broken
 #   [if] `payload` reports success while a numba JIT under the SIGNED
 #        interpreter does not run [then] broken
@@ -70,7 +70,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
+ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/shared/Entitlements.engine.plist"
 ENGINE_JIT_ENTITLEMENT="com.apple.security.cs.allow-unsigned-executable-memory"
 # odj-audio records the REC input itself (SET-11); without this key the
 # hardened runtime hands it silence.

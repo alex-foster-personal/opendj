@@ -28,11 +28,7 @@ def test_access_log_mutes_sustained_flood_and_warns_once(
         for _ in range(threshold):
             assert gate.allow(now=30.0)
         assert not gate.allow(now=30.0)
-    warnings = [
-        rec.message
-        for rec in caplog.records
-        if rec.levelname == "WARNING" and "muted" in rec.message
-    ]
+    warnings = [rec.message for rec in caplog.records if rec.levelname == "WARNING" and "muted" in rec.message]
     assert len(warnings) == 1
     assert "lines/s" in warnings[0]
 
@@ -55,11 +51,7 @@ def test_configure_access_log_sampling_attaches_to_uvicorn_access(
         configure_access_log_sampling()
         assert any(isinstance(f, AccessLogRateFilter) for f in access_logger.filters)
     finally:
-        access_logger.filters = [
-            filt
-            for filt in access_logger.filters
-            if not isinstance(filt, AccessLogRateFilter)
-        ]
+        access_logger.filters = [filt for filt in access_logger.filters if not isinstance(filt, AccessLogRateFilter)]
         logging.getLogger().removeHandler(handler)
         uvicorn_error.removeHandler(handler)
         uvicorn_error.propagate = uvicorn_error_propagate

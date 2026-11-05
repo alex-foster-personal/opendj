@@ -72,9 +72,7 @@ def _fingerprint(path: Path) -> tuple[str, int]:
     return hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns
 
 
-def test_a_snapshot_carries_rows_that_are_still_only_in_the_wal(
-    wal_source: Path, tmp_path: Path
-) -> None:
+def test_a_snapshot_carries_rows_that_are_still_only_in_the_wal(wal_source: Path, tmp_path: Path) -> None:
     """if the snapshot drops rows still in the WAL then broken"""
     byte_copy = tmp_path / "byte-copy.db"
     shutil.copyfile(wal_source, byte_copy)
@@ -111,12 +109,8 @@ def test_the_default_candidate_is_this_machines_packaged_library() -> None:
     """if the tier's default points outside this machine's home then broken"""
     assert PACKAGED_LIBRARY_STATE_DB in real_library.REAL_LIBRARY_CANDIDATES
     home = Path.home()
-    outside = [
-        path for path in real_library.REAL_LIBRARY_CANDIDATES if not path.is_relative_to(home)
-    ]
-    assert outside == [], (
-        f"candidates outside {home} name another user's disk and skip everywhere else: {outside}"
-    )
+    outside = [path for path in real_library.REAL_LIBRARY_CANDIDATES if not path.is_relative_to(home)]
+    assert outside == [], f"candidates outside {home} name another user's disk and skip everywhere else: {outside}"
 
 
 def test_the_migrated_copy_is_taken_through_the_read_only_snapshot(
@@ -169,9 +163,7 @@ def test_an_overridden_library_without_legacy_stamps_fails_loud(
     source = _library_without_legacy_stamps(tmp_path)
     monkeypatch.setenv(real_library.REAL_LIBRARY_ENV_VAR, str(source))
 
-    with pytest.raises(
-        real_library_premise.LibraryPremiseMissing, match="no unorderable stored stamp"
-    ):
+    with pytest.raises(real_library_premise.LibraryPremiseMissing, match="no unorderable stored stamp"):
         try:
             real_library_premise.prepared_or_skip(source, tmp_path / "copy", repaired=False)
         except pytest.skip.Exception as skipped:

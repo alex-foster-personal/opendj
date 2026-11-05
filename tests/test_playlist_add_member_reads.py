@@ -152,7 +152,8 @@ CASES = {
 
 @pytest.mark.parametrize("case", list(CASES))
 def test_add_executes_the_same_sqlite_work_at_4000_members_as_at_40(
-    store: PlaylistStore, case: str,
+    store: PlaylistStore,
+    case: str,
 ) -> None:
     """[if] one add at 4,000 members [then] sqlite does the work it does at 40, [else stop]."""
     spec = CASES[case]
@@ -180,17 +181,20 @@ def test_add_executes_the_same_sqlite_work_at_4000_members_as_at_40(
 
 @pytest.mark.parametrize("case", list(CASES))
 def test_add_materializes_the_same_rows_at_4000_members_as_at_40(
-    store: PlaylistStore, case: str,
+    store: PlaylistStore,
+    case: str,
 ) -> None:
     """[if] one add at 4,000 members [then] Python sees as many rows as at 40, [else stop]."""
     spec = CASES[case]
     small = _playlist(store, SMALL, forbid_duplicates=spec.forbid_duplicates)
     large = _playlist(store, LARGE, forbid_duplicates=spec.forbid_duplicates)
     small_rows = _rows_materialized(
-        store, lambda: store.add_memberships(small, [_sid(LARGE + 2)], position=spec.position),
+        store,
+        lambda: store.add_memberships(small, [_sid(LARGE + 2)], position=spec.position),
     )
     large_rows = _rows_materialized(
-        store, lambda: store.add_memberships(large, [_sid(LARGE + 2)], position=spec.position),
+        store,
+        lambda: store.add_memberships(large, [_sid(LARGE + 2)], position=spec.position),
     )
     assert small_rows > 0, "counter saw no rows: the instrument is not attached"
     assert large_rows == small_rows, (small_rows, large_rows)
@@ -200,10 +204,12 @@ def test_positioned_add_materializes_at_most_the_two_neighbors(store: PlaylistSt
     """[if] a position is given [then] only the neighbors' order_keys are read, [else stop]."""
     large = _playlist(store, LARGE)
     head_rows = _rows_materialized(
-        store, lambda: store.add_memberships(large, [_sid(LARGE + 3)], position=0),
+        store,
+        lambda: store.add_memberships(large, [_sid(LARGE + 3)], position=0),
     )
     middle_rows = _rows_materialized(
-        store, lambda: store.add_memberships(large, [_sid(LARGE + 3)], position=LARGE // 2),
+        store,
+        lambda: store.add_memberships(large, [_sid(LARGE + 3)], position=LARGE // 2),
     )
     # head reads one neighbor, middle reads two.
     assert middle_rows == head_rows + 1, (head_rows, middle_rows)
@@ -234,19 +240,14 @@ def test_every_membership_read_of_an_add_seeks_an_index(store: PlaylistStore) ->
             store.add_memberships(playlist_id, [_sid(LARGE + 5 + offset)], position=position)
         finally:
             store._conn.set_trace_callback(None)
-    reads = [
-        s for s in statements
-        if s.lstrip().upper().startswith("SELECT") and "FROM playlist_memberships" in s
-    ]
+    reads = [s for s in statements if s.lstrip().upper().startswith("SELECT") and "FROM playlist_memberships" in s]
     # Positive control: the duplicate check, the append read, the head read
     # and the positioned read all ran.
     assert any("stable_id IN" in s for s in reads), reads
     assert any(" DESC " in s for s in reads), reads
     assert any(" OFFSET " in s for s in reads), reads
     for sql in reads:
-        plan = " | ".join(
-            row[3] for row in store._conn.execute(f"EXPLAIN QUERY PLAN {sql}")
-        )
+        plan = " | ".join(row[3] for row in store._conn.execute(f"EXPLAIN QUERY PLAN {sql}"))
         assert plan.startswith("SEARCH playlist_memberships"), (sql, plan)
         if "ORDER BY" in sql or "stable_id IN" in sql:
             assert "idx_playlist_memberships_live_" in plan, (sql, plan)
@@ -310,7 +311,9 @@ def test_undo_survives_an_unrecorded_write_to_other_members(store: PlaylistStore
     result = store.add_memberships(playlist_id, [_sid(LARGE + 1)])
     # remove_memberships(record_edit=False) is how sync and transfer write.
     store.remove_memberships(
-        playlist_id, [_load_live_members(store._conn, playlist_id)[0].item_id], record_edit=False,
+        playlist_id,
+        [_load_live_members(store._conn, playlist_id)[0].item_id],
+        record_edit=False,
     )
     store.undo()
     live = _load_live_members(store._conn, playlist_id)
@@ -351,7 +354,7 @@ def test_add_items_command_survives_a_store_restart(store: PlaylistStore, tmp_pa
     try:
         entry = reopened.history()["entries"][-1]
         assert entry["op"] == "add_items"
-        assert entry["label"] == "Add 1 track(s) to '5 members'"
+        assert entry["label"] == "Add 1 track to '5 members'"
         reopened.undo()
         live = {m.item_id for m in _load_live_members(reopened._conn, playlist_id)}
         assert result.added[0].item_id not in live
@@ -464,7 +467,8 @@ def legacy_store(tmp_path: Path) -> Iterator[PlaylistStore]:
 
 def _legacy_playlist(store: PlaylistStore, name: str) -> str:
     return store._conn.execute(
-        "SELECT playlist_id FROM playlists WHERE vendor = 'webui' AND name = ?", (name,),
+        "SELECT playlist_id FROM playlists WHERE vendor = 'webui' AND name = ?",
+        (name,),
     ).fetchone()[0]
 
 
@@ -504,7 +508,9 @@ def test_positioned_add_lands_at_every_index_of_a_legacy_null_key_playlist(
         before = _live_stable_ids(legacy_store, playlist_id)
         result = legacy_store.add_memberships(playlist_id, [new_sid], position=index)
         assert _live_stable_ids(legacy_store, playlist_id) == [
-            *before[:index], new_sid, *before[index:],
+            *before[:index],
+            new_sid,
+            *before[index:],
         ], index
         legacy_store.remove_memberships(playlist_id, [result.added[0].item_id])
     _assert_renumbered(legacy_store, playlist_id)
@@ -516,7 +522,9 @@ def test_positioned_add_lands_at_every_index_of_a_legacy_null_key_playlist(
     ids=["before-the-empty-key", "between-two-shared-keys", "after-the-overlong-key"],
 )
 def test_an_add_next_to_a_legacy_key_renumbers_and_lands_in_place(
-    legacy_store: PlaylistStore, playlist: str, position: int | None,
+    legacy_store: PlaylistStore,
+    playlist: str,
+    position: int | None,
 ) -> None:
     """[if] no key fits beside a legacy key [then] the add renumbers and lands, [else stop]."""
     playlist_id = _legacy_playlist(legacy_store, playlist)

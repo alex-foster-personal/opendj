@@ -17,7 +17,7 @@ import { PNG } from 'pngjs';
  */
 
 export interface ContrastFinding {
-	/** `<parent's first class> > tag.own.classes`, stable across renders. */
+	/** CSS-ish path from the nearest stable identity ancestor through intervening classed ancestors to the leaf `tag.own.classes`. */
 	el: string;
 	text: string;
 	fg: string;
@@ -105,16 +105,33 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 		'#' + c.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 	const classes = (el: Element): string[] =>
 		[...el.classList].filter((c) => !/^(s|svelte)-[\w-]{6,}$/.test(c));
+	const generatedId = (id: string): boolean => /^(s-|svelte-)/.test(id);
+	const ident = (el: Element): string | null => {
+		const dc = el.getAttribute('data-component');
+		if (dc) return `[data-component="${CSS.escape(dc)}"]`;
+		const tid = el.getAttribute('data-testid');
+		if (tid) return `[data-testid="${CSS.escape(tid)}"]`;
+		const id = el.getAttribute('id');
+		if (id && !generatedId(id)) return `#${CSS.escape(id)}`;
+		return null;
+	};
+	const part = (el: Element): string =>
+		el.tagName.toLowerCase() + (ident(el) ?? '') + classes(el).map((c) => '.' + c).join('');
 	const label = (el: Element): string => {
 		const own = el.tagName.toLowerCase() + classes(el).map((c) => '.' + c).join('');
+		const chain: Element[] = [];
 		for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
-			// A table row carries only state classes (loaded, paired, first,
-			// selected...), so its first class changes with library state and
-			// would make the same cell a new label on every run. Name it `tr`.
 			if (e.tagName === 'TR') return `tr > ${own}`;
-			const first = classes(e)[0];
-			if (first) return `${first} > ${own}`;
+			const id = ident(e);
+			const cls = classes(e);
+			if (!id && cls.length === 0) continue;
+			chain.push(e);
+			if (id) {
+				const parts = chain.map((a) => part(a));
+				return parts.join(' > ') + ` > ${own}`;
+			}
 		}
+		if (chain.length > 0) return `${part(chain[0])} > ${own}`;
 		return own;
 	};
 	/**

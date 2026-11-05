@@ -2,7 +2,10 @@
  * PERFMODE-14: tear down Gig runtime when entering Library mode.
  */
 
-import { anlzCacheEntryCount, invalidateAllAnlzCacheEntries } from '$lib/components/rb/wave/anlz-cache.svelte';
+import {
+	anlzCacheEntryCount,
+	invalidateAllAnlzCacheEntries
+} from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	activeStemWorkerCount,
 	disposeStemDecoderPools,
@@ -15,7 +18,10 @@ import {
 	engine,
 	gigDeckGraphIsPresent
 } from '$lib/rb/audio-engine.svelte';
-import { audioPrefetchReadyCount, clearAudioPrefetchCache } from '$lib/rb/audio-prefetch-cache.svelte';
+import {
+	audioPrefetchReadyCount,
+	clearAudioPrefetchCache
+} from '$lib/rb/audio-prefetch-cache.svelte';
 import { PERFORMANCE_SESSION_STORAGE_KEY } from '$lib/rb/performance-session-snapshot';
 import { parseLv2Ids } from '$lib/rb/performance-deeplink';
 
@@ -417,8 +423,12 @@ export function createGigTeardownActions(deps: {
 					// acting here would just be overwritten by that instance's
 					// disposeEngine() resetting the master to its bare default
 					// right afterward.
-					if (_pendingMasterBeforeMute === null || _pendingMuteGeneration !== myMuteGeneration) return;
-					if (_pendingMuteWriteRevision === deps.readMasterWriteRevision() && deps.readMaster() === 0) {
+					if (_pendingMasterBeforeMute === null || _pendingMuteGeneration !== myMuteGeneration)
+						return;
+					if (
+						_pendingMuteWriteRevision === deps.readMasterWriteRevision() &&
+						deps.readMaster() === 0
+					) {
 						_restore();
 					} else {
 						// The generation matches (this IS still the pending mute's
@@ -444,7 +454,8 @@ export function createGigTeardownActions(deps: {
 					// teardown's mute, and the pre-mute value is safe to restore.
 					// Same newer-owner guard as onDisposeSkipped: a newer
 					// instance's own disposal will restore for real.
-					if (_pendingMasterBeforeMute === null || _pendingMuteGeneration !== myMuteGeneration) return;
+					if (_pendingMasterBeforeMute === null || _pendingMuteGeneration !== myMuteGeneration)
+						return;
 					if (_pendingMuteWriteRevision === deps.readMasterWriteRevision()) {
 						_restore();
 					} else {

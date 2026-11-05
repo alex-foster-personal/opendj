@@ -1,4 +1,5 @@
 """Tests for apps.spotify.state_writer."""
+
 from __future__ import annotations
 
 import json
@@ -49,16 +50,25 @@ def state_conn(tmp_path: Path) -> sqlite3.Connection:
 
 def _mk_playlist(*, pid="pl123", snapshot="snap-1", tracks=()) -> SpotifyPlaylist:
     return SpotifyPlaylist(
-        id=pid, name="Test Playlist", snapshot_id=snapshot,
-        owner="dev3", description="", tracks=tracks,
+        id=pid,
+        name="Test Playlist",
+        snapshot_id=snapshot,
+        owner="dev3",
+        description="",
+        tracks=tracks,
     )
 
 
 def _mk_src(sid="t1", isrc=None, title="T", **kw) -> SpotifyTrack:
     defaults = dict(
-        spotify_id=sid, spotify_uri=f"spotify:track:{sid}",
-        isrc=isrc, title=title, artists=("Who",),
-        album="Alb", duration_ms=100000, is_local=False,
+        spotify_id=sid,
+        spotify_uri=f"spotify:track:{sid}",
+        isrc=isrc,
+        title=title,
+        artists=("Who",),
+        album="Alb",
+        duration_ms=100000,
+        is_local=False,
     )
     defaults.update(kw)
     return SpotifyTrack(**defaults)  # type: ignore[arg-type]
@@ -91,9 +101,7 @@ def _write(state_conn, playlist, result, *, force: bool = False):
 def test_ensure_aux_tables_idempotent(state_conn: sqlite3.Connection) -> None:
     ensure_aux_tables(state_conn)
     ensure_aux_tables(state_conn)
-    names = {r[0] for r in state_conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    )}
+    names = {r[0] for r in state_conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "pending_tracks" in names
     assert "spotify_playlist_meta" in names
     assert "spotify_playlist_links" in names
@@ -103,9 +111,11 @@ def test_ensure_aux_tables_idempotent(state_conn: sqlite3.Connection) -> None:
 def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
     src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
     tgt = _mk_local("s1", "USABC2500001")
-    result = MatchResult(pairs=[
-        MatchedPair(src, tgt, 0.35, ("isrc",), "matched"),
-    ])
+    result = MatchResult(
+        pairs=[
+            MatchedPair(src, tgt, 0.35, ("isrc",), "matched"),
+        ]
+    )
     playlist = _mk_playlist(pid="pl123", tracks=(src,))
 
     summary = _write(state_conn, playlist, result)
@@ -119,8 +129,7 @@ def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
     assert row == ("Test Playlist", "spotify", "pl123")
 
     rows = state_conn.execute(
-        "SELECT stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id = ? ORDER BY position",
+        "SELECT stable_id, position FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
         (_state_playlist_id("pl123"),),
     ).fetchall()
     assert rows == [("s1", 0)]
@@ -132,8 +141,7 @@ def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
     assert link is not None
     assert link.odj_playlist_id == summary.odj_playlist_id
     odj_rows = state_conn.execute(
-        "SELECT stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id = ? ORDER BY position",
+        "SELECT stable_id, position FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
         (summary.odj_playlist_id,),
     ).fetchall()
     assert odj_rows == [("s1", 0)]
@@ -150,10 +158,12 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
     src_unmatched = _mk_src(sid="t2", isrc="ZZZZZ", title="Mystery")
     tgt = _mk_local("s1", "USABC2500001")
 
-    result = MatchResult(pairs=[
-        MatchedPair(src_matched, tgt, 0.35, ("isrc",), "matched"),
-        MatchedPair(src_unmatched, None, 0.0, (), "unmatched"),
-    ])
+    result = MatchResult(
+        pairs=[
+            MatchedPair(src_matched, tgt, 0.35, ("isrc",), "matched"),
+            MatchedPair(src_unmatched, None, 0.0, (), "unmatched"),
+        ]
+    )
     playlist = _mk_playlist(pid="pl123", tracks=(src_matched, src_unmatched))
 
     summary = _write(state_conn, playlist, result)
@@ -165,15 +175,18 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
     assert pendings[0].title == "Mystery"
     suggested = json.loads(pendings[0].suggested_sources_json)
     assert set(suggested.keys()) == {
-        "beatport", "bandcamp", "qobuz", "apple_music", "discogs",
+        "beatport",
+        "bandcamp",
+        "qobuz",
+        "apple_music",
+        "discogs",
     }
     assert tuple(suggested) == SOURCE_KEYS
 
     synth = synthetic_stable_id("spotify:track:t2")
     assert summary.synthetic_tracks_written == 1
     members = state_conn.execute(
-        "SELECT stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id = ? ORDER BY position",
+        "SELECT stable_id, position FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
         (_state_playlist_id("pl123"),),
     ).fetchall()
     assert members == [("s1", 0), (synth, 1)]
@@ -184,8 +197,7 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
     assert track_row == ("spotify:track:t2", "Mystery")
     assert summary.odj_playlist_id is not None
     odj_members = state_conn.execute(
-        "SELECT stable_id, position FROM playlist_memberships "
-        "WHERE playlist_id = ? ORDER BY position",
+        "SELECT stable_id, position FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
         (summary.odj_playlist_id,),
     ).fetchall()
     assert odj_members == members
@@ -257,9 +269,7 @@ def test_concurrent_same_snapshot_has_one_writer_and_one_short_circuit(
     first.start()
     assert first_preflight.wait(timeout=5), "first import did not preflight"
     second.start()
-    assert not second_preflight.wait(timeout=0.5), (
-        "second import bypassed the SQLite writer lock"
-    )
+    assert not second_preflight.wait(timeout=0.5), "second import bypassed the SQLite writer lock"
     release_first.set()
     first.join(timeout=5)
     second.join(timeout=5)
@@ -323,12 +333,8 @@ def test_mark_pending_abandoned(state_conn: sqlite3.Connection) -> None:
     ids = [p.pending_id for p in pendings]
     rows = mark_pending_abandoned(state_conn, ids)
     assert rows == 1
-    assert fetch_pending_tracks(
-        state_conn, _state_playlist_id("pl123"), status="pending"
-    ) == []
-    abandoned = fetch_pending_tracks(
-        state_conn, _state_playlist_id("pl123"), status="abandoned"
-    )
+    assert fetch_pending_tracks(state_conn, _state_playlist_id("pl123"), status="pending") == []
+    abandoned = fetch_pending_tracks(state_conn, _state_playlist_id("pl123"), status="abandoned")
     assert len(abandoned) == 1
 
 
@@ -336,11 +342,7 @@ def test_mark_pending_abandoned(state_conn: sqlite3.Connection) -> None:
 
 
 def _changelog(conn: sqlite3.Connection) -> dict[str, int]:
-    return dict(
-        conn.execute(
-            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
-        ).fetchall()
-    )
+    return dict(conn.execute("SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name").fetchall())
 
 
 def test_an_imported_playlist_is_stamped_and_logged(state_conn: sqlite3.Connection):
@@ -356,31 +358,29 @@ def test_an_imported_playlist_is_stamped_and_logged(state_conn: sqlite3.Connecti
     the empty tiebreak component is round 1 finding 2's second half still
     live on this path.
     """
-    result = MatchResult(pairs=[
-        MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
-        MatchedPair(_mk_src("t2"), None, 0.0, (), "unmatched"),
-    ])
+    result = MatchResult(
+        pairs=[
+            MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
+            MatchedPair(_mk_src("t2"), None, 0.0, (), "unmatched"),
+        ]
+    )
     write_playlist_and_pending(
-        state_conn, _mk_playlist(tracks=()), result,
-        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+        state_conn,
+        _mk_playlist(tracks=()),
+        result,
+        backup_path=_TEST_BACKUP,
+        reversal_script_path=_TEST_REVERSAL,
     )
 
-    playlist = state_conn.execute(
-        "SELECT updated_at, origin_device_id FROM playlists"
-    ).fetchone()
+    playlist = state_conn.execute("SELECT updated_at, origin_device_id FROM playlists").fetchone()
     assert playlist[0] and playlist[1], (
-        "an unstamped playlist row presents an empty LWW tiebreak and loses "
-        "every conflict"
+        "an unstamped playlist row presents an empty LWW tiebreak and loses every conflict"
     )
     assert sync_stamp.to_canonical(playlist[0]) == playlist[0]
 
-    members = state_conn.execute(
-        "SELECT updated_at, origin_device_id FROM playlist_memberships"
-    ).fetchall()
+    members = state_conn.execute("SELECT updated_at, origin_device_id FROM playlist_memberships").fetchall()
     assert members and all(u and o for u, o in members)
-    assert {o for _u, o in members} == {playlist[1]}, (
-        "every row this importer writes carries THIS machine's origin"
-    )
+    assert {o for _u, o in members} == {playlist[1]}, "every row this importer writes carries THIS machine's origin"
 
     counts = _changelog(state_conn)
     # Two playlists: the Spotify vendor playlist AND its linked ODJ twin (the
@@ -392,24 +392,28 @@ def test_an_imported_playlist_is_stamped_and_logged(state_conn: sqlite3.Connecti
 def test_a_reimport_outranks_the_previous_import(state_conn: sqlite3.Connection):
     """The hub's test is ``incoming <= stored -> reject``, so a re-import
     that presents an equal key is a change that never propagates."""
-    result = MatchResult(pairs=[
-        MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
-    ])
-    write_playlist_and_pending(
-        state_conn, _mk_playlist(snapshot="snap-1", tracks=()), result,
-        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+    result = MatchResult(
+        pairs=[
+            MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
+        ]
     )
-    first = state_conn.execute(
-        "SELECT updated_at, origin_device_id FROM playlists"
-    ).fetchone()
+    write_playlist_and_pending(
+        state_conn,
+        _mk_playlist(snapshot="snap-1", tracks=()),
+        result,
+        backup_path=_TEST_BACKUP,
+        reversal_script_path=_TEST_REVERSAL,
+    )
+    first = state_conn.execute("SELECT updated_at, origin_device_id FROM playlists").fetchone()
 
     write_playlist_and_pending(
-        state_conn, _mk_playlist(snapshot="snap-2", tracks=()), result,
-        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+        state_conn,
+        _mk_playlist(snapshot="snap-2", tracks=()),
+        result,
+        backup_path=_TEST_BACKUP,
+        reversal_script_path=_TEST_REVERSAL,
     )
-    second = state_conn.execute(
-        "SELECT updated_at, origin_device_id FROM playlists"
-    ).fetchone()
+    second = state_conn.execute("SELECT updated_at, origin_device_id FROM playlists").fetchone()
 
     assert (second[0], second[1]) > (first[0], first[0])
     # Two imports x two playlists (Spotify + linked ODJ twin) = four rows.
@@ -423,10 +427,12 @@ def test_a_reimport_leaves_a_removed_placeholder_removed(state_conn: sqlite3.Con
     placeholder beside it (the control) is written as before."""
     removed_src = _mk_src(sid="t-removed", title="Removed")
     kept_src = _mk_src(sid="t-kept", title="Kept")
-    result = MatchResult(pairs=[
-        MatchedPair(removed_src, None, 0.0, (), "unmatched"),
-        MatchedPair(kept_src, None, 0.0, (), "unmatched"),
-    ])
+    result = MatchResult(
+        pairs=[
+            MatchedPair(removed_src, None, 0.0, (), "unmatched"),
+            MatchedPair(kept_src, None, 0.0, (), "unmatched"),
+        ]
+    )
     first = _write(state_conn, _mk_playlist(snapshot="snap-1", tracks=(removed_src, kept_src)), result)
     assert first.tracks_skipped_deleted == 0
     removed_sid = synthetic_stable_id(removed_src.spotify_uri)
@@ -439,14 +445,12 @@ def test_a_reimport_leaves_a_removed_placeholder_removed(state_conn: sqlite3.Con
     second = _write(state_conn, _mk_playlist(snapshot="snap-2", tracks=(removed_src, kept_src)), result)
 
     assert second.tracks_skipped_deleted == 1
-    assert state_conn.execute(
-        "SELECT deleted_at, updated_at FROM tracks WHERE stable_id = ?", (removed_sid,)
-    ).fetchone() == tombstone, "a playlist re-import rewrote a removed track"
+    assert (
+        state_conn.execute("SELECT deleted_at, updated_at FROM tracks WHERE stable_id = ?", (removed_sid,)).fetchone()
+        == tombstone
+    ), "a playlist re-import rewrote a removed track"
     live_members = {
-        row[0]
-        for row in state_conn.execute(
-            "SELECT stable_id FROM playlist_memberships WHERE deleted_at IS NULL"
-        )
+        row[0] for row in state_conn.execute("SELECT stable_id FROM playlist_memberships WHERE deleted_at IS NULL")
     }
     assert removed_sid not in live_members
     assert synthetic_stable_id(kept_src.spotify_uri) in live_members

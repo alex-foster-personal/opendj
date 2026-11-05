@@ -43,6 +43,7 @@ from apps.opendj_cli import (
     EXIT_UNCONFIRMED,
     status_cli,
 )
+from apps.opendj_cli.animate import ANIMATE_COMMAND, parse_animate_tokens
 from apps.opendj_cli.blocked import blocked_line, blocked_steps, replaced_line, replaced_tracks
 from apps.opendj_cli.catalog import DECK_VALUES
 from apps.opendj_cli.client import (
@@ -98,16 +99,23 @@ _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
+_AUDIO_RECONNECT_SPEAKER_COMMAND = "audio_reconnect_speaker"
 _FEEDBACK_COMMAND = "feedback"
 _CLIENT_ERRORS_COMMAND = "client_errors"
 _ENRICHMENT_COMMAND = "enrichment"
 _ARTWORK_COMMAND = "artwork"
+_SESSION_COMMAND = "session"
+_WINDOW_COMMAND = "window"
+_PRACTICE_COMMAND = "practice"
+_PLAYLIST_COMMAND = "playlist"
 _OFFLOAD_COMMAND = "offload"
+_SET_COMMAND = "set"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
 _DJ_COMMAND = "dj"
+_WORK_COMMAND = "work"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -302,6 +310,14 @@ def _plan(
     if head == _SCRIPT_COMMAND:
         groups = parse_script(rest)
         return [(group, group.order()) for group in groups], None
+    if head == ANIMATE_COMMAND:
+        if args.over is not None or args.anchor is not None or args.clock is not None:
+            raise InvocationError(
+                'animate takes its expression as ONE quoted argument: '
+                'opendj animate 1 eq_low "0 --over 8bars"'
+            )
+        invocation, order, over = parse_animate_tokens(list(rest))
+        return [(Group(kind=SINGLE, invocations=(invocation,)), order)], over
     invocation = parse_invocation(args.invocation)
     if args.over is None and (args.anchor is not None or args.clock is not None):
         raise InvocationError("--anchor and --clock only mean something with --over")
@@ -712,12 +728,18 @@ def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list
 _STANDALONE_COMMANDS = frozenset(
     {
         _TRACK_COMMAND,
+        _WORK_COMMAND,
         _FEEDBACK_COMMAND,
         _ENRICHMENT_COMMAND,
         _ARTWORK_COMMAND,
+        _SESSION_COMMAND,
+        _WINDOW_COMMAND,
+        _PLAYLIST_COMMAND,
         _OFFLOAD_COMMAND,
+        _SET_COMMAND,
         _AUDIO_OUTPUT_HEALTH_COMMAND,
         _AUDIO_SWITCH_OUTPUT_COMMAND,
+        _AUDIO_RECONNECT_SPEAKER_COMMAND,
     }
 )
 
@@ -728,6 +750,10 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import track_cli
 
         return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+    if head == _WORK_COMMAND:
+        from apps.opendj_cli import work_cli
+
+        return work_cli.run(rest, as_json=args.json, lock=args.lock)
     if head == _FEEDBACK_COMMAND:
         from apps.opendj_cli import feedback_cli
 
@@ -744,11 +770,68 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import artwork_cli
 
         return artwork_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _SESSION_COMMAND:
+        from apps.opendj_cli import session_cli
+
+        return session_cli.run(rest, as_json=args.json, lock=args.lock)
+
+    if head == _WINDOW_COMMAND:
+        from apps.opendj_cli import window_cli
+
+        return window_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _SET_COMMAND:
+        from apps.opendj_cli import set_cli
+
+        return set_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _PLAYLIST_COMMAND:
+        from apps.opendj_cli import playlist_cli
+
+        return playlist_cli.run(rest, as_json=args.json, lock=args.lock)
     from apps.opendj_cli import audio_output_health_cli
 
     if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
         return audio_output_health_cli.run_health(rest, as_json=args.json, lock=args.lock)
+    if head == _AUDIO_RECONNECT_SPEAKER_COMMAND:
+        return audio_output_health_cli.run_reconnect_speaker(rest, as_json=args.json, lock=args.lock)
     return audio_output_health_cli.run_switch_output(rest, as_json=args.json, lock=args.lock)
+
+
+def _command_position(tokens: Sequence[str]) -> int | None:
+    """Index of the verb: the first token that is neither a global flag nor a flag's value."""
+    takes_value = {
+        option for action in _parser(as_json=False)._actions if action.nargs != 0 for option in action.option_strings
+    }
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in takes_value:
+            index += 2
+        elif token.startswith("-"):
+            index += 1
+        else:
+            return index
+    return None
+
+
+def _run_practice(tokens: Sequence[str]) -> int | None:
+    """``practice <device>`` opens practice mode (ADR-0137); split off like ``client_errors``."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _PRACTICE_COMMAND:
+        return None
+    global_tokens, rest = list(tokens[:position]), list(tokens[position + 1 :])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _PRACTICE_COMMAND])
+    from apps.opendj_cli import practice_cli
+
+    return practice_cli.run(rest, as_json=args.json, lock=args.lock)
+
+
+def _run_early(tokens: Sequence[str]) -> int | None:
+    """Subcommands that parse their own flags, tried before the global parser; None = not one of them."""
+    for runner in (_run_client_errors, _run_practice):
+        code = runner(tokens)
+        if code is not None:
+            return code
+    return None
 
 
 def _run_client_errors(tokens: Sequence[str]) -> int | None:
@@ -765,9 +848,9 @@ def _run_client_errors(tokens: Sequence[str]) -> int | None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
-    client_errors_code = _run_client_errors(tokens)
-    if client_errors_code is not None:
-        return client_errors_code
+    early_code = _run_early(tokens)
+    if early_code is not None:
+        return early_code
     mcp_split = _split_subcommand(tokens, _MCP_COMMAND)
     if mcp_split is not None:
         global_tokens, mcp_tokens = mcp_split

@@ -65,9 +65,7 @@ def _spawn_orphan() -> subprocess.Popen[bytes]:
     )
 
 
-def test_one_exploding_reap_does_not_strand_the_rows_behind_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_one_exploding_reap_does_not_strand_the_rows_behind_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The first row raises; the second must still be reaped and recorded.
 
     Before the per-row isolation, the exception escaped the recovery loop.
@@ -112,9 +110,7 @@ def test_one_exploding_reap_does_not_strand_the_rows_behind_it(
     boot_b.close()
 
 
-def test_an_unverified_reap_is_retried_on_the_next_boot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_unverified_reap_is_retried_on_the_next_boot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Recovery is re-enterable: the row stays owed until a reap verifies it."""
     db_path = tmp_path / "jobs.db"
     boot_a = _store(db_path, "boot-a")
@@ -174,9 +170,7 @@ def test_a_verified_reap_stops_being_retried(tmp_path: Path) -> None:
     try:
         job = boot_a.enqueue("real-orphan", {})
         boot_a.claim_queued()
-        identity = WorkerIdentity.capture(
-            orphan.pid, [sys.executable, "-c", "import time; time.sleep(600)"]
-        )
+        identity = WorkerIdentity.capture(orphan.pid, [sys.executable, "-c", "import time; time.sleep(600)"])
         boot_a.record_worker(job["id"], pid=orphan.pid, identity=identity)
         boot_a.close()
 

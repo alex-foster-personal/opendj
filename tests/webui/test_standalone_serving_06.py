@@ -2,6 +2,7 @@
 
 [if] no rekordbox mapping [then] effective source own for all lanes, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -34,10 +35,7 @@ FINGERPRINT = "sha256:" + "ef" * 32
 
 
 def _beatgrid_record(stable_id: str) -> AnalysisRecord:
-    beats = [
-        {"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": BPM}
-        for index in range(8)
-    ]
+    beats = [{"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": BPM} for index in range(8)]
     payload = {
         "beats": beats,
         "bpm": BPM,
@@ -83,10 +81,7 @@ def test_unmapped_track_defaults_every_lane_to_own(tmp_path: Path) -> None:
     conn = open_conn(state_path)
     try:
         for lane in LANES:
-            assert (
-                selection.effective_source_for_track(conn, lane, has_rb_mapping=False)
-                == "own"
-            )
+            assert selection.effective_source_for_track(conn, lane, has_rb_mapping=False) == "own"
     finally:
         conn.close()
 
@@ -103,9 +98,7 @@ def test_mapped_track_keeps_rekordbox_beatgrid_when_default_rbx(tmp_path: Path) 
             "beats": [{"n": 1, "bpm": 100.0, "t": 0.0}],
         }
     }
-    served = own_beatgrid_overlay.apply_own_beatgrid(
-        payload, STABLE_ID, state_path, has_rb_mapping=True
-    )
+    served = own_beatgrid_overlay.apply_own_beatgrid(payload, STABLE_ID, state_path, has_rb_mapping=True)
     assert served["beatgrid"]["source"] == own_beatgrid_overlay.SOURCE_REKORDBOX
 
 
@@ -188,9 +181,7 @@ def test_unmapped_anlz_under_an_explicit_rbx_toggle_follows_the_selection(
 @pytest.mark.parametrize("toggle", ["unset", "own", "rbx"])
 @pytest.mark.parametrize("default", ["rbx", "own"])
 @pytest.mark.parametrize("has_rb_mapping", [True, False])
-def test_single_read_pair_agrees_with_the_two_separate_reads(
-    toggle: str, default: str, has_rb_mapping: bool
-) -> None:
+def test_single_read_pair_agrees_with_the_two_separate_reads(toggle: str, default: str, has_rb_mapping: bool) -> None:
     """[if] any toggle x default x mapping state [then] one-read pair equals the two reads.
 
     The one-read form must be the same rule as effective_source_for_track plus
@@ -200,9 +191,7 @@ def test_single_read_pair_agrees_with_the_two_separate_reads(
     selection.set_default(conn, "beatgrid", default)
     if toggle != "unset":
         selection.set_toggle("beatgrid", toggle)
-    pair = selection.effective_source_and_implicit_own_for_track(
-        conn, "beatgrid", has_rb_mapping=has_rb_mapping
-    )
+    pair = selection.effective_source_and_implicit_own_for_track(conn, "beatgrid", has_rb_mapping=has_rb_mapping)
     assert pair == (
         selection.effective_source_for_track(conn, "beatgrid", has_rb_mapping=has_rb_mapping),
         selection.implicit_own_default(conn, "beatgrid", has_rb_mapping=has_rb_mapping),
@@ -220,7 +209,5 @@ def test_single_read_pair_cannot_straddle_a_toggle_write(
     conn = sqlite3.connect(":memory:")
     reads = iter(["unset", "own"])
     monkeypatch.setattr(selection, "get_toggle", lambda _lane: next(reads))
-    pair = selection.effective_source_and_implicit_own_for_track(
-        conn, "beatgrid", has_rb_mapping=False
-    )
+    pair = selection.effective_source_and_implicit_own_for_track(conn, "beatgrid", has_rb_mapping=False)
     assert pair == ("own", True)

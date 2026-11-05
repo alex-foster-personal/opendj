@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.diff."""
+
 from __future__ import annotations
 
 import shutil
@@ -28,9 +29,7 @@ def test_first_run_all_copies(fixture_profile, fixture_canonical, drive_root) ->
 
 
 @pytest.mark.requirement("CAT-02")
-def test_idempotent_second_run(
-    fixture_profile, fixture_canonical, drive_root
-) -> None:
+def test_idempotent_second_run(fixture_profile, fixture_canonical, drive_root) -> None:
     # Copy each source to its expected destination (simulate a prior apply).
     plan = compute_plan(
         profile=fixture_profile,
@@ -73,9 +72,7 @@ def test_orphan_delete(fixture_profile, fixture_canonical, drive_root) -> None:
 
 
 @pytest.mark.requirement("CAT-02")
-def test_drift_emits_overwrite(
-    fixture_profile, fixture_canonical, drive_root
-) -> None:
+def test_drift_emits_overwrite(fixture_profile, fixture_canonical, drive_root) -> None:
     # Place a differently-sized file at one expected destination.
     plan0 = compute_plan(
         profile=fixture_profile,
@@ -95,9 +92,7 @@ def test_drift_emits_overwrite(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_skip_policy_emits_skip(
-    fixture_canonical, drive_root
-) -> None:
+def test_skip_policy_emits_skip(fixture_canonical, drive_root) -> None:
     from apps.sync.usb.profile import load_from_string
 
     profile = load_from_string(
@@ -132,9 +127,7 @@ conflict_policy: skip
 
 
 @pytest.mark.requirement("CAT-02")
-def test_filter_by_playlists(
-    fixture_profile, fixture_canonical, drive_root
-) -> None:
+def test_filter_by_playlists(fixture_profile, fixture_canonical, drive_root) -> None:
     plan = compute_plan(
         profile=fixture_profile,
         canonical=fixture_canonical,
@@ -147,9 +140,7 @@ def test_filter_by_playlists(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_filter_by_files(
-    fixture_profile, fixture_canonical, drive_root
-) -> None:
+def test_filter_by_files(fixture_profile, fixture_canonical, drive_root) -> None:
     plan = compute_plan(
         profile=fixture_profile,
         canonical=fixture_canonical,
@@ -162,9 +153,7 @@ def test_filter_by_files(
 
 
 @pytest.mark.requirement("CAT-02")
-def test_exclusions_preserve_drive_files(
-    fixture_canonical, drive_root
-) -> None:
+def test_exclusions_preserve_drive_files(fixture_canonical, drive_root) -> None:
     from apps.sync.usb.profile import load_from_string
 
     prof = load_from_string(
@@ -193,9 +182,7 @@ exclusions:
 
 
 @pytest.mark.requirement("CAT-02")
-def test_skip_patterns_not_deleted(
-    fixture_profile, fixture_canonical, drive_root
-) -> None:
+def test_skip_patterns_not_deleted(fixture_profile, fixture_canonical, drive_root) -> None:
     # Drop a marker + Playlists file which should never be candidates.
     (drive_root / ".mdj-marker.json").write_text("{}")
     (drive_root / "Playlists").mkdir()

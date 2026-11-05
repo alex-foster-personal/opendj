@@ -81,7 +81,11 @@ test('an already-claimed boot pane must never be retried', async () => {
 		spotify_selected_id: null
 	});
 
-	assert.equal(retry, false, 'a pane a user or a deep link already claimed must not be re-restored');
+	assert.equal(
+		retry,
+		false,
+		'a pane a user or a deep link already claimed must not be re-restored'
+	);
 });
 
 test('a pending Spotify deep link must never be overridden by the retry', async () => {

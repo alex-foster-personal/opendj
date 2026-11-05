@@ -16,6 +16,7 @@ Regression lines:
   - if apply_bundled_oauth skips blank keys, boot never publishes the
     baked client to os.environ for other readers
 """
+
 from __future__ import annotations
 
 import json
@@ -104,9 +105,7 @@ def test_manifest_relative_config_is_read(tmp_path: Path) -> None:
         client_id="manifest-id",
         client_secret="manifest-secret",
     )
-    config = GoogleOAuthConfig.from_env(
-        {"OPENDJ_PAYLOAD_MANIFEST": str(payload / "manifest.json")}
-    )
+    config = GoogleOAuthConfig.from_env({"OPENDJ_PAYLOAD_MANIFEST": str(payload / "manifest.json")})
     assert config.client_id == "manifest-id"
     assert config.client_secret == "manifest-secret"
 

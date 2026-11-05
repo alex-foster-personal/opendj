@@ -27,7 +27,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ValidationError
 
-from apps.shared.engine_app_state import data_dir_from_engine_request
+from apps.shared.engine_app_state import (
+    data_dir_from_engine_request,
+    jobs_store_from_engine_request,
+    require_app_state,
+)
 from apps.engine_core.build_info import (
     BUILD_IDENTITY_STATE_ATTR,
     CODE_BUILD_IDENTITY_UNAVAILABLE,
@@ -96,25 +100,17 @@ def _data_dir(request: Request) -> Path:
     return data_dir_from_engine_request(request)
 
 
-def _store(request: Request) -> JobStore:
-    store = getattr(request.app.state, "jobs_store", None)
-    if store is None:
-        raise RuntimeError(
-            "engine jobs store is not mounted on app.state.jobs_store"
-        )
-    return store
-
-
 def _build_identity(request: Request) -> BuildIdentity:
-    identity = getattr(request.app.state, BUILD_IDENTITY_STATE_ATTR, None)
-    if identity is None:
-        raise RuntimeError(
+    return require_app_state(
+        request,
+        BUILD_IDENTITY_STATE_ATTR,
+        missing=(
             f"build identity is not mounted on app.state."
             f"{BUILD_IDENTITY_STATE_ATTR}; setup cannot tell a developer "
             "checkout from an installed build, and it will not guess. "
             "add_build_info_route mounts it."
-        )
-    return identity
+        ),
+    )
 
 
 def _refuse(code: str, message: str, http_status: int) -> HTTPException:
@@ -305,7 +301,7 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
     refusal into a failed row somebody has to go and read.
     """
     data_dir = _data_dir(request)
-    store = _store(request)
+    store = jobs_store_from_engine_request(request)
 
     running = _live_import(store)
     if running is not None:
@@ -434,7 +430,7 @@ def start_folder_import(request: Request, body: FolderImportIn) -> dict[str, Any
     from apps.shared import fs_access
 
     data_dir = _data_dir(request)
-    store = _store(request)
+    store = jobs_store_from_engine_request(request)
 
     running = _live_import(store)
     if running is not None:

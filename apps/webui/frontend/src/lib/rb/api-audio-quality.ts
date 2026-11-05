@@ -34,15 +34,24 @@ export function ensureAudioQualityScan(): Promise<void> {
 		})
 			.then(() => fetch(`${API_BASE}/api/v1/audio-quality/scan`, { method: 'POST' }))
 			.then(async (response) => {
-				if (!response.ok) throw new Error(`audio-quality scan request failed: HTTP ${response.status} ${await response.text()}`);
+				if (!response.ok)
+					throw new Error(
+						`audio-quality scan request failed: HTTP ${response.status} ${await response.text()}`
+					);
 				_scanAttempts = 0;
 			})
 			.catch((error: unknown) => {
 				_scanAttempts += 1;
-				console.error(`[audio-quality] scan request failed (attempt ${_scanAttempts} of ${SCAN_RETRY_LIMIT})`, error);
+				console.error(
+					`[audio-quality] scan request failed (attempt ${_scanAttempts} of ${SCAN_RETRY_LIMIT})`,
+					error
+				);
 				if (_scanAttempts < SCAN_RETRY_LIMIT) {
 					_scanRequested = null;
-					setTimeout(() => void ensureAudioQualityScan().catch(() => undefined), SCAN_RETRY_DELAY_MS);
+					setTimeout(
+						() => void ensureAudioQualityScan().catch(() => undefined),
+						SCAN_RETRY_DELAY_MS
+					);
 				}
 				throw error;
 			});
@@ -63,11 +72,13 @@ export function audioQualityHover(
 	const key = `${stableId}|${gradeKey}`;
 	return coalescer
 		.share(key, HOVER_TTL_MS, () =>
-			fetch(`${API_BASE}/api/v1/audio-quality/${encodeURIComponent(stableId)}`).then(async (response) => {
-				if (!response.ok) throw new Error(`HTTP ${response.status} ${await response.text()}`);
-				const body = (await response.json()) as { quality: { grade: { hover: string } } };
-				return body.quality.grade.hover;
-			})
+			fetch(`${API_BASE}/api/v1/audio-quality/${encodeURIComponent(stableId)}`).then(
+				async (response) => {
+					if (!response.ok) throw new Error(`HTTP ${response.status} ${await response.text()}`);
+					const body = (await response.json()) as { quality: { grade: { hover: string } } };
+					return body.quality.grade.hover;
+				}
+			)
 		)
 		.catch((error: unknown) => {
 			return `Audio quality details could not be loaded: ${error instanceof Error ? error.message : String(error)}`;

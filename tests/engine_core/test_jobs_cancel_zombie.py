@@ -45,6 +45,11 @@ from apps.engine_core.jobs.reap import (
 from apps.engine_core.jobs.runner import JobRunner, _Worker
 from apps.engine_core.jobs.store import JobStore
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-specific: zombies and all-zombie process groups do not exist on Windows",
+)
+
 
 @pytest.fixture
 def zombie_pgid() -> Iterator[int]:

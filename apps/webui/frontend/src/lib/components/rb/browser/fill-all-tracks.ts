@@ -45,9 +45,7 @@ export async function fillAllTracksPane<T, Row>(opts: {
 					pane.updateLoadProgress(seq, info.loaded, progressTotal);
 					opts.onFirstPaint?.();
 				} else {
-					const extra = info.items.map((item, i) =>
-						mapRow(item, pane.rows.length + i + 1)
-					);
+					const extra = info.items.map((item, i) => mapRow(item, pane.rows.length + i + 1));
 					appendRows(pane, seq, extra);
 					pane.updateLoadProgress(seq, info.loaded, progressTotal);
 				}
@@ -133,7 +131,8 @@ export async function fillAllTracksFromIndex<T, Row>(opts: {
 				index.then(() => null),
 				opts.firstPage().catch(() => null)
 			]);
-			if (first !== null && !painted && !paint(first.items.map((item, i) => mapRow(item, i + 1)))) return;
+			if (first !== null && !painted && !paint(first.items.map((item, i) => mapRow(item, i + 1))))
+				return;
 		}
 		const items = await index;
 		if (!pane.isCurrentLoad(seq)) return;

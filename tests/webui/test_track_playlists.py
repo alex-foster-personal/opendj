@@ -114,8 +114,7 @@ def test_track_in_two_live_playlists_plus_tombstoned_membership(
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute(
-            "UPDATE playlist_memberships SET deleted_at = ? "
-            "WHERE playlist_id = ? AND stable_id = ?",
+            "UPDATE playlist_memberships SET deleted_at = ? WHERE playlist_id = ? AND stable_id = ?",
             ("2026-09-12T00:00:00Z", playlist_dead["playlist_id"], TRACK_T),
         )
         conn.commit()

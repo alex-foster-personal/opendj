@@ -8,6 +8,7 @@ ffmpeg-backed tests are marked ``requires_ffmpeg``.
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import math
@@ -43,9 +44,10 @@ IN_BAND_MIN = 0.3
 OUT_OF_BAND_MAX = 0.10
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # helpers
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def _write_sine_wav(path: Path, *, seconds: float, hz: float = TONE_HZ) -> None:
     frames = bytearray()
@@ -83,9 +85,10 @@ def _seed_library(db: Path, stable_id: str, minutes: float) -> None:
     conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # registration and naming
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_the_registry_key_the_class_name_and_the_record_backend_are_one_string() -> None:
     assert OWN_WAVEFORM_BACKEND == "own_waveform.backfill"
@@ -162,9 +165,10 @@ def test_build_waveform_payload_never_duplicates_one_band_across_three() -> None
     assert max(high) <= OUT_OF_BAND_MAX
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # real audio, real decode, real store
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.requires_ffmpeg
 @pytest.mark.requires_canonical_decode

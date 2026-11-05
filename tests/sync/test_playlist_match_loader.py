@@ -1,4 +1,5 @@
 """SYNC-03: Phase 2 match-set CSV loader tests."""
+
 from __future__ import annotations
 
 import hashlib
@@ -15,10 +16,7 @@ from apps.sync.playlist_plan import (
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     header = "rb_id,djay_uuid,confidence,signals_fired\n"
-    body = "\n".join(
-        f"{r['rb_id']},{r['djay_uuid']},{r['confidence']},{r['signals_fired']}"
-        for r in rows
-    )
+    body = "\n".join(f"{r['rb_id']},{r['djay_uuid']},{r['confidence']},{r['signals_fired']}" for r in rows)
     path.write_text(header + body + "\n", encoding="utf-8")
 
 

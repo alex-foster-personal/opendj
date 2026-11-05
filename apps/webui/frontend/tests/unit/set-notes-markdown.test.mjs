@@ -89,7 +89,14 @@ test('escapes are honoured on parse and written back on serialize', () => {
 });
 
 test('malformed tokens and links stay literal text', () => {
-	for (const text of ['a [[track:x:vocals]] b', '[[stem:y]]', '[[track:]]', '[a](ftp://x)', '[b](track:)', '**open']) {
+	for (const text of [
+		'a [[track:x:vocals]] b',
+		'[[stem:y]]',
+		'[[track:]]',
+		'[a](ftp://x)',
+		'[b](track:)',
+		'**open'
+	]) {
 		const nodes = inline(text);
 		assert.deepEqual(nodes, [{ type: 'text', text }], text);
 		assert.equal(md.serializeNoteMarkdown(md.parseNoteMarkdown(roundTrip(text))), roundTrip(text));

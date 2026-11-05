@@ -58,12 +58,16 @@ import {
 	joinElectronCoreAudioOutputs,
 	listIoDevices,
 	savedIoDeviceNotices,
+	SYSTEM_DEFAULT_OUTPUT_ID,
+	SYSTEM_DEFAULT_OUTPUT_LABEL,
+	EXTERNAL_HEADPHONES_JACK_LABEL,
 	systemDefaultOutputOnly,
 	type SavedIoDevice
 } from '$lib/player/io-device-access';
 import { listCoreAudioOutputs } from '$lib/shell/native-shell';
 import type { NativeCueSinkClient } from '$lib/player/cue-native-sink-client';
 import {
+	mainFollowsSystemOutput,
 	nativeCueSinkConfig,
 	nativeDeviceId,
 	nativeOutputsAsHeadphoneOutputs,
@@ -997,7 +1001,10 @@ export type HeadphoneAcquisitionKind = 'chooser' | 'unlock_and_enumerate' | 'uns
 
 /** Chrome often has setSinkId + enumerateDevices but no selectAudioOutput.
  * In that case I/O unlocks output labels via a short-lived getUserMedia
- * (built-in mic preferred so a Bluetooth headset is not flipped to HFP). */
+ * (built-in mic preferred so a Bluetooth headset is not flipped to HFP).
+ * A present `selectAudioOutput` that then rejects NotSupportedError is
+ * handled at the call site (CUEOUT-4988), not here: this probe only sees
+ * whether the function exists. */
 export function headphoneAcquisitionKind(caps: {
 	enumerateDevices: boolean;
 	setSinkId: boolean;
@@ -1084,9 +1091,54 @@ export function microphoneIsMissing(error: unknown): boolean {
 	return name === 'NotFoundError' || name === 'DevicesNotFoundError';
 }
 
+/** True when `selectAudioOutput` exists as a function but the runtime cannot
+ * actually run the chooser. Chromium has been observed exposing the method and
+ * still rejecting with DOMException `NotSupportedError` / message
+ * `"Not supported"` (Sentry OPEN-DJ-BE-73). That is the same capability as
+ * "no chooser", so I/O must fall through to enumerate-and-unlock instead of
+ * toasting a fault. Operator cancel (`AbortError`) and permission refusal
+ * are not this case. */
+function audioOutputChooserIsUnsupported(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const name = (error as { name?: unknown }).name;
+	if (name === 'NotSupportedError') return true;
+	const message = (error as { message?: unknown }).message;
+	return typeof message === 'string' && /^not supported$/i.test(message.trim());
+}
+
 export function outputLooksLikeHeadphones(label: string): boolean {
 	if (typeof label !== 'string') throw new TypeError('output label must be a string');
 	return /headphone|headset|airpods|bluetooth/i.test(label);
+}
+
+/** After I/O unlock, pick a sole HEADPHONE CUE when nothing is selected yet.
+ * Named tier: Bluetooth-token or headphone-looking labels. Leftover tier: any
+ * other eligible output. A sole Scarlett / interface with no headphone token
+ * is intentionally auto-selected so unlabeled Bluetooth names (WH-1000XM5,
+ * a friend's over-ears) still land on CUE. */
+export function cueOutputAutoSelectCandidate(
+	outputs: readonly HeadphoneOutput[],
+	selectedCueId: string | null
+): string | null {
+	if (selectedCueId !== null || outputs.length === 0) return null;
+	const eligible = outputs.filter((output) => {
+		if (output.id === '') return false;
+		if (output.id === SYSTEM_DEFAULT_OUTPUT_ID) return false;
+		if (output.label === SYSTEM_DEFAULT_OUTPUT_LABEL) return false;
+		if (output.label === EXTERNAL_HEADPHONES_JACK_LABEL) return false;
+		if (outputLooksLikeSpeakers(output.label)) return false;
+		return true;
+	});
+	const named = eligible.filter(
+		(output) => monitorLabelIsBluetooth(output.label) || outputLooksLikeHeadphones(output.label)
+	);
+	if (named.length === 1) return named[0].id;
+	if (named.length > 1) return null;
+	const leftover = eligible.filter(
+		(output) => !monitorLabelIsBluetooth(output.label) && !outputLooksLikeHeadphones(output.label)
+	);
+	if (leftover.length === 1) return leftover[0].id;
+	return null;
 }
 
 export function outputLooksLikeSpeakers(label: string): boolean {
@@ -2720,7 +2772,16 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		_assertCurrentHeadphoneOperation(generation, null);
 		// A newer refresh owns the listing; this one's failure is out of date.
 		if (refresh !== _outputRefreshSerial) return;
-		publishIoDeviceAccessFailure(ioOperationTimedOut(error) ? 'timeout' : 'enumeration_failed', error);
+		if (ioOperationTimedOut(error)) {
+			// IOPIN-5369 / OPEN-DJ-BE-77: a hung list is the named `timeout` panel
+			// state. `_headphoneError` records headphone-diagnostic at `error`,
+			// which always POSTs to Sentry. Leave the sinks that were already
+			// listed (or the system default) and return.
+			publishIoDeviceAccessFailure('timeout', error);
+			mixerState.headphones.error = error instanceof Error ? error.message : String(error);
+			return;
+		}
+		publishIoDeviceAccessFailure('enumeration_failed', error);
 		throw _headphoneError('headphone output enumeration failed', error);
 	}
 	// Device changes start refreshes without awaiting earlier ones, so a slow
@@ -2841,11 +2902,13 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 }
 
 /** Must be called from a visible user gesture. Uses the browser output
- * chooser when `selectAudioOutput` exists; otherwise enumerates sinks so the
- * operator can pick headphones, unlocking the names with a short-lived
- * getUserMedia on the built-in mic (not a Bluetooth headset mic) ONLY when
- * that would actually help -- see `micUnlockDecision`. A declined microphone
- * is a supported state, not a failure. */
+ * chooser when `selectAudioOutput` exists AND the call actually succeeds;
+ * a gated chooser (`NotSupportedError`) is treated as missing and falls
+ * through. Otherwise enumerates sinks so the operator can pick headphones,
+ * unlocking the names with a short-lived getUserMedia on the built-in mic
+ * (not a Bluetooth headset mic) ONLY when that would actually help -- see
+ * `labelUnlockDecision`. A declined microphone is a supported state, not a
+ * failure. */
 export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
@@ -2869,15 +2932,21 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			requireHeadphoneDeviceApi();
 		}
 		if (kind === 'chooser') {
-			const device = await withHeadphoneOperationTimeout(
-				'selectAudioOutput',
-				_requireHeadphoneOutputAcquisitionApi().selectAudioOutput()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-			mixerState.headphones.outputs = mergeHeadphoneOutput(mixerState.headphones.outputs, device);
-			await selectHeadphoneOutput(device.deviceId, monitorSource);
-			_assertCurrentHeadphoneOperation(generation, null);
-			return;
+			try {
+				const device = await withHeadphoneOperationTimeout(
+					'selectAudioOutput',
+					_requireHeadphoneOutputAcquisitionApi().selectAudioOutput()
+				);
+				_assertCurrentHeadphoneOperation(generation, null);
+				mixerState.headphones.outputs = mergeHeadphoneOutput(mixerState.headphones.outputs, device);
+				await selectHeadphoneOutput(device.deviceId, monitorSource);
+				_assertCurrentHeadphoneOperation(generation, null);
+				return;
+			} catch (error) {
+				if (!audioOutputChooserIsUnsupported(error)) throw error;
+				// Function exists, runtime cannot run it. Same capability as
+				// Chrome without selectAudioOutput: enumerate then unlock labels.
+			}
 		}
 		const mediaDevices = requireHeadphoneDeviceApi();
 		// List first: a hung or denied permission prompt must never leave the I/O
@@ -2993,11 +3062,13 @@ async function _unlockWebviewInputs(generation: number): Promise<boolean> {
 }
 
 async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generation: number): Promise<void> {
-	const bluetooth = mixerState.headphones.outputs.filter((output) => monitorLabelIsBluetooth(output.label));
-	if (bluetooth.length === 1 && mixerState.headphones.selected_output_device_id === null) {
-		await selectHeadphoneOutput(bluetooth[0].id, monitorSource);
-		_assertCurrentHeadphoneOperation(generation, null);
-	}
+	const candidate = cueOutputAutoSelectCandidate(
+		mixerState.headphones.outputs,
+		mixerState.headphones.selected_output_device_id
+	);
+	if (candidate === null) return;
+	await selectHeadphoneOutput(candidate, monitorSource);
+	_assertCurrentHeadphoneOperation(generation, null);
 }
 
 /** AUDFID-01: throw the same-output refusal for a CUE pick that would land
@@ -3394,7 +3465,9 @@ export async function selectAudioInput(deviceId: string): Promise<void> {
 
 export type LaunchOutputRestorePlan =
 	| { kind: 'skip'; reason: string }
-	| { kind: 'restore'; master: SavedIoDevice; cue: SavedIoDevice }
+	/** `moveMain` false (AUDIO-DEVICE-07): the Mac app's MAIN is the macOS output,
+	 * so the launch restores only the CUE and MAIN stays where macOS plays. */
+	| { kind: 'restore'; master: SavedIoDevice; cue: SavedIoDevice; moveMain: boolean }
 	| { kind: 'practice'; missing: SavedIoDevice[] };
 
 /** AUDFID-05 (decided by the maintainer, Tue 3 Nov 2026): restore two_outputs on exactly
@@ -3406,6 +3479,8 @@ export function launchOutputRestorePlan(args: {
 	saved: { master: SavedIoDevice | null; cue: SavedIoDevice | null };
 	outputs: readonly HeadphoneOutput[];
 	listed: boolean;
+	/** AUDIO-DEVICE-07: MAIN is the macOS default output (the Mac app). */
+	mainIsSystemOutput: boolean;
 }): LaunchOutputRestorePlan {
 	const { master, cue } = args.saved;
 	if (master === null || cue === null) return { kind: 'skip', reason: 'no saved MAIN and CUE pair' };
@@ -3413,7 +3488,7 @@ export function launchOutputRestorePlan(args: {
 	const present = (device: SavedIoDevice): boolean => args.outputs.some((output) => output.id === device.id);
 	const missing = [master, cue].filter((device) => !present(device));
 	if (missing.length > 0) return { kind: 'practice', missing };
-	return { kind: 'restore', master, cue };
+	return { kind: 'restore', master, cue, moveMain: !args.mainIsSystemOutput };
 }
 
 export function launchRestoredText(mainLabel: string, cueLabel: string): string {
@@ -3442,7 +3517,8 @@ export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource):
 	const plan = launchOutputRestorePlan({
 		saved: _savedOutputs(),
 		outputs: mixerState.headphones.outputs,
-		listed: mixerState.headphones.device_access.status === 'listed'
+		listed: mixerState.headphones.device_access.status === 'listed',
+		mainIsSystemOutput: mainFollowsSystemOutput()
 	});
 	switch (plan.kind) {
 		case 'skip':
@@ -3459,7 +3535,10 @@ export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource):
 		case 'restore': {
 			_roomBeforeLaunchRestore = mixerState.headphones.selected_master_output_device_id ?? _nativeRoomOutputId;
 			try {
-				await selectMasterOutput(plan.master.id, monitorSource);
+				// AUDIO-DEVICE-07: never move the macOS output at launch; the operator's
+				// current macOS pick is MAIN (silver Tue 3 Nov 2026: HYPERBOOM came back
+				// on every relaunch while the maintainer listened on his Sony headphones).
+				if (plan.moveMain) await selectMasterOutput(plan.master.id, monitorSource);
 				await selectHeadphoneOutput(plan.cue.id, monitorSource);
 			} catch (error) {
 				const message = `Could not restore MAIN ${plan.master.label} and CUE ${plan.cue.label}: ${_detail(error)}`;
@@ -3467,8 +3546,9 @@ export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource):
 				pushToast(message, 'error');
 				return;
 			}
-			const message = launchRestoredText(plan.master.label, plan.cue.label);
-			_publishLaunchRestore({ status: 'restored', message, main_label: plan.master.label, cue_label: plan.cue.label, missing: [] });
+			const mainLabel = plan.moveMain ? plan.master.label : 'the macOS output';
+			const message = launchRestoredText(mainLabel, plan.cue.label);
+			_publishLaunchRestore({ status: 'restored', message, main_label: mainLabel, cue_label: plan.cue.label, missing: [] });
 			pushToast(message, 'info', 15_000, undefined, {}, 'launch-output-restore', {
 				label: 'Undo',
 				handler: () => void undoLaunchOutputRestore(monitorSource)

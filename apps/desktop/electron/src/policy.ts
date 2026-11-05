@@ -112,6 +112,21 @@ export function startingWindowSize(usable: { width: number; height: number } | n
  * which ignores `$HOME` (measured Tue 3 Nov 2026), so a HOME-redirected
  * acceptance run would otherwise open the real library.
  */
+/** The product's app name, which Electron also uses for the Chromium userData folder and so the single-instance lock. */
+export const DEFAULT_APP_NAME = 'Open DJ';
+
+/**
+ * The app name from the packed package.json: its productName when it is the
+ * product's or a lane's (`Open DJ (B)`, scripts/desktop_lane_config.py), else
+ * the product's. A lane must not share the product's Chromium profile or
+ * single-instance lock, or launching it beside the product only focuses the
+ * product (parity matrix row 65, ELECTRON-8401).
+ */
+export function appNameFromPackage(pkg: unknown): string {
+	const name = typeof pkg === 'object' && pkg !== null ? (pkg as { productName?: unknown }).productName : undefined;
+	return typeof name === 'string' && /^Open DJ( \([A-Za-z0-9]+\))?$/.test(name) ? name : DEFAULT_APP_NAME;
+}
+
 export function macAppSupportDir(home: string): string {
 	return path.join(home, 'Library', 'Application Support');
 }

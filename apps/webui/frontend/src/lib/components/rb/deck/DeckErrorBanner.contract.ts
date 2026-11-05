@@ -11,7 +11,7 @@ import { expect, fn, userEvent, within } from 'storybook/test';
  * there is no id (a pinned no-op).
  */
 
-type Args = { deckId: number; error: string; errorId: string | null; onDismiss: () => void };
+type Args = { deckId: number; error: string; errorId: string | null; tone: 'fault' | 'expected'; onDismiss: () => void };
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
 const HANDOVER = 'the master handover could not start deck 2';
@@ -25,7 +25,7 @@ const banner = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElemen
 export const contracts = {
 	/** With an id: the headline, the id beside it, the id in the hover title, and a dismiss button. */
 	WithId: {
-		args: { deckId: 2, error: HANDOVER, errorId: 't3kq9-17', onDismiss: fn() } satisfies Args,
+		args: { deckId: 2, error: HANDOVER, errorId: 't3kq9-17', tone: 'fault', onDismiss: fn() } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const canvas = within(canvasElement);
 			const el = canvas.getByRole('alert');
@@ -54,7 +54,7 @@ export const contracts = {
 	},
 	/** Before the id lands: no id element, the title is the bare headline, and clicking copies nothing. */
 	NoIdYet: {
-		args: { deckId: 2, error: HANDOVER, errorId: null, onDismiss: fn() } satisfies Args,
+		args: { deckId: 2, error: HANDOVER, errorId: null, tone: 'fault', onDismiss: fn() } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const el = banner(canvasElement);
 			await expect(el).not.toHaveAttribute('data-performance-error-id');
@@ -67,7 +67,7 @@ export const contracts = {
 	},
 	/** A coded load failure with no deck number of its own: the plain "couldn't load" headline gains Deck 4. */
 	LoadFailure: {
-		args: { deckId: 4, error: LOAD_FAILED, errorId: 't3kq9-18', onDismiss: fn() } satisfies Args,
+		args: { deckId: 4, error: LOAD_FAILED, errorId: 't3kq9-18', tone: 'fault', onDismiss: fn() } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			await expect(canvasElement.querySelector('.deck-error-text')).toHaveTextContent(LOAD_HEADLINE);
 			await expect(banner(canvasElement)).toHaveAttribute(

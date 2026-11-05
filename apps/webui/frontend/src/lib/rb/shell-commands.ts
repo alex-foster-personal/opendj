@@ -3,120 +3,161 @@
  *
  * Only the installed shell (`OPENDJ_ENGINE_ORIGIN`) consumes
  * `GET /api/v1/commands/next?consumer=shell`; browser tabs must not install
- * updates.
+ * updates. Two command types replace the bundle: `apply-update` (the release
+ * channel) and `install-local-update` (a local build an agent flagged ready,
+ * INSTALL-40, carrying the engine's loopback manifest URL).
  */
-import { releaseBody } from '$lib/api/release-body';
-import { API_BASE } from '$lib/api/base';
-import { applyUpdate, type ApplyOutcome } from '$lib/rb/update-channel';
-import { detectSurface } from '$lib/rb/usage-heartbeat';
+import { releaseBody } from "$lib/api/release-body";
+import { API_BASE } from "$lib/api/base";
+import { installLocalUpdate } from "$lib/rb/app-update";
+import { applyUpdate, type ApplyOutcome } from "$lib/rb/update-channel";
+import { detectSurface } from "$lib/rb/usage-heartbeat";
 
-const NEXT_PATH = '/api/v1/commands/next?consumer=shell';
+const NEXT_PATH = "/api/v1/commands/next?consumer=shell";
 const POLL_MS = 1000;
 
 export type ShellCommandDeps = {
-	applyUpdate: (
-		onProgress?: (progress: import('$lib/rb/update-channel').ApplyProgress) => void
-	) => Promise<ApplyOutcome>;
+  applyUpdate: (
+    onProgress?: (
+      progress: import("$lib/rb/update-channel").ApplyProgress,
+    ) => void,
+  ) => Promise<ApplyOutcome>;
+  installLocalUpdate: (manifestUrl: string) => Promise<ApplyOutcome>;
 };
 
-const defaultDeps = (): ShellCommandDeps => ({ applyUpdate });
+const defaultDeps = (): ShellCommandDeps => ({
+  applyUpdate,
+  installLocalUpdate,
+});
 
 type ShellNextBody = {
-	id?: string;
-	kind?: string;
-	command?: { type?: string; available_version?: string };
+  id?: string;
+  kind?: string;
+  command?: {
+    type?: string;
+    available_version?: string;
+    manifest_url?: string;
+  };
 };
 
 function shellResultFromOutcome(outcome: ApplyOutcome): {
-	status: 'succeeded' | 'failed';
-	outcome: ApplyOutcome['kind'];
-	error?: string;
+  status: "succeeded" | "failed";
+  outcome: ApplyOutcome["kind"];
+  error?: string;
 } {
-	if (outcome.kind === 'installed') {
-		return { status: 'succeeded', outcome: 'installed' };
-	}
-	if (outcome.kind === 'no-update') {
-		return {
-			status: 'failed',
-			outcome: 'no-update',
-			error: 'the Tauri updater reported no update after apply was requested'
-		};
-	}
-	return { status: 'failed', outcome: 'refused', error: outcome.reason };
+  if (outcome.kind === "installed") {
+    return { status: "succeeded", outcome: "installed" };
+  }
+  if (outcome.kind === "no-update") {
+    return {
+      status: "failed",
+      outcome: "no-update",
+      error: "the Tauri updater reported no update after apply was requested",
+    };
+  }
+  return { status: "failed", outcome: "refused", error: outcome.reason };
 }
 
 export async function dispatchShellCommand(
-	body: ShellNextBody,
-	deps: ShellCommandDeps = defaultDeps()
-): Promise<{ status: 'succeeded' | 'failed'; outcome: string; error?: string }> {
-	const command = body.command;
-	if (command == null || typeof command.type !== 'string') {
-		return {
-			status: 'failed',
-			outcome: 'refused',
-			error: 'shell command missing type'
-		};
-	}
-	if (command.type === 'apply-update') {
-		return shellResultFromOutcome(await deps.applyUpdate());
-	}
-	return {
-		status: 'failed',
-		outcome: 'refused',
-		error: `unknown shell command type: ${command.type}`
-	};
+  body: ShellNextBody,
+  deps: ShellCommandDeps = defaultDeps(),
+): Promise<{
+  status: "succeeded" | "failed";
+  outcome: string;
+  error?: string;
+}> {
+  const command = body.command;
+  if (command == null || typeof command.type !== "string") {
+    return {
+      status: "failed",
+      outcome: "refused",
+      error: "shell command missing type",
+    };
+  }
+  if (command.type === "apply-update") {
+    return shellResultFromOutcome(await deps.applyUpdate());
+  }
+  if (command.type === "install-local-update") {
+    if (
+      typeof command.manifest_url !== "string" ||
+      command.manifest_url === ""
+    ) {
+      return {
+        status: "failed",
+        outcome: "refused",
+        error: "install-local-update missing manifest_url",
+      };
+    }
+    return shellResultFromOutcome(
+      await deps.installLocalUpdate(command.manifest_url),
+    );
+  }
+  return {
+    status: "failed",
+    outcome: "refused",
+    error: `unknown shell command type: ${command.type}`,
+  };
 }
 
-export function installShellCommandPoll(deps: ShellCommandDeps = defaultDeps()): () => void {
-	if (typeof window === 'undefined') {
-		return () => {};
-	}
-	if (detectSurface(window as Window & { OPENDJ_ENGINE_ORIGIN?: unknown }) !== 'desktop-shell') {
-		return () => {};
-	}
+export function installShellCommandPoll(
+  deps: ShellCommandDeps = defaultDeps(),
+): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+  if (
+    detectSurface(window as Window & { OPENDJ_ENGINE_ORIGIN?: unknown }) !==
+    "desktop-shell"
+  ) {
+    return () => {};
+  }
 
-	let handling = false;
+  let handling = false;
 
-	const tick = async (): Promise<void> => {
-		if (handling) return;
-		handling = true;
-		try {
-			let response: Response;
-			try {
-				response = await fetch(`${API_BASE}${NEXT_PATH}`);
-			} catch {
-				// Engine unreachable: same class as usage-heartbeat, not an
-				// unhandledrejection (Safari `Load failed`).
-				return;
-			}
-			if (!response.ok) {
-				releaseBody(response);
-				return;
-			}
-			const body = (await response.json()) as ShellNextBody | null;
-			if (body == null || typeof body.id !== 'string' || body.kind !== 'shell') {
-				return;
-			}
-			const result = await dispatchShellCommand(body, deps);
-			try {
-				releaseBody(
-					await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: JSON.stringify(result)
-					})
-				);
-			} catch {
-				return;
-			}
-		} finally {
-			handling = false;
-		}
-	};
+  const tick = async (): Promise<void> => {
+    if (handling) return;
+    handling = true;
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE}${NEXT_PATH}`);
+      } catch {
+        // Engine unreachable: same class as usage-heartbeat, not an
+        // unhandledrejection (Safari `Load failed`).
+        return;
+      }
+      if (!response.ok) {
+        releaseBody(response);
+        return;
+      }
+      const body = (await response.json()) as ShellNextBody | null;
+      if (
+        body == null ||
+        typeof body.id !== "string" ||
+        body.kind !== "shell"
+      ) {
+        return;
+      }
+      const result = await dispatchShellCommand(body, deps);
+      try {
+        releaseBody(
+          await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(result),
+          }),
+        );
+      } catch {
+        return;
+      }
+    } finally {
+      handling = false;
+    }
+  };
 
-	const intervalId = setInterval(() => {
-		void tick();
-	}, POLL_MS);
-	void tick();
-	return () => clearInterval(intervalId);
+  const intervalId = setInterval(() => {
+    void tick();
+  }, POLL_MS);
+  void tick();
+  return () => clearInterval(intervalId);
 }

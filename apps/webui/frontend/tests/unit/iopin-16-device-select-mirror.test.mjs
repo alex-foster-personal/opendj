@@ -25,15 +25,32 @@ test('a CUE pick redirected to split L/R stops showing the picked headphones (th
 	const state = { cue: null };
 	const select = { value: 'hp-id' };
 	const picked = [];
-	await mirror.pickThenMirror(select, async (id) => { picked.push(id); state.cue = null; }, () => state.cue);
+	await mirror.pickThenMirror(
+		select,
+		async (id) => {
+			picked.push(id);
+			state.cue = null;
+		},
+		() => state.cue
+	);
 	assert.deepEqual(picked, ['hp-id'], 'the clicked device is what the router was asked for');
-	assert.equal(select.value, '', 'the select shows the held (empty) CUE, not the clicked headphones');
+	assert.equal(
+		select.value,
+		'',
+		'the select shows the held (empty) CUE, not the clicked headphones'
+	);
 });
 
 test('control: a pick the router took keeps showing the picked device', async () => {
 	const state = { cue: null };
 	const select = { value: 'hp-id' };
-	await mirror.pickThenMirror(select, async (id) => { state.cue = id; }, () => state.cue);
+	await mirror.pickThenMirror(
+		select,
+		async (id) => {
+			state.cue = id;
+		},
+		() => state.cue
+	);
 	assert.equal(select.value, 'hp-id');
 });
 
@@ -41,7 +58,13 @@ test('a failed pick rolls the select back to the device still held', async () =>
 	const state = { master: 'spk-id' };
 	const select = { value: 'hp-id' };
 	await assert.rejects(
-		mirror.pickThenMirror(select, async () => { throw new Error('device busy'); }, () => state.master),
+		mirror.pickThenMirror(
+			select,
+			async () => {
+				throw new Error('device busy');
+			},
+			() => state.master
+		),
 		/device busy/
 	);
 	assert.equal(select.value, 'spk-id');
@@ -57,13 +80,22 @@ test('every device select in the I/O panel goes through the mirror', () => {
 		const at = source.indexOf(`aria-label="${label}"`);
 		assert.ok(at > 0, `${label} select is missing`);
 		const tag = source.slice(at, source.indexOf('</select>', at));
-		assert.match(tag, new RegExp(`pickThenMirror\\(event\\.currentTarget, \\w+, \\(\\) => headphoneState\\.${held}\\)`), `${label} must mirror ${held}`);
+		assert.match(
+			tag,
+			new RegExp(
+				`pickThenMirror\\(event\\.currentTarget, \\w+, \\(\\) => headphoneState\\.${held}\\)`
+			),
+			`${label} must mirror ${held}`
+		);
 	}
 });
 
 test('in a same-device split the CUE placeholder says the cue is the right ear of MAIN', () => {
 	const source = readFileSync(CLUSTER, 'utf8');
-	assert.match(source, /split_reason === 'same_device'[^\n]*\n[^\n]*right ear of MAIN \(split L\/R\)/);
+	assert.match(
+		source,
+		/split_reason === 'same_device'[^\n]*\n[^\n]*right ear of MAIN \(split L\/R\)/
+	);
 	assert.match(source, /<option value="" disabled>\{cuePlaceholder\}<\/option>/);
 	assert.doesNotMatch(source, />HP out</);
 });

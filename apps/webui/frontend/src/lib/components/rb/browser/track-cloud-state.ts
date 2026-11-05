@@ -85,7 +85,9 @@ export function unavailableIconTitle(input: {
 	return `${path} (${reason})`;
 }
 
-export function streamingProviderFromPath(folderPath: string | null | undefined): StreamingProvider {
+export function streamingProviderFromPath(
+	folderPath: string | null | undefined
+): StreamingProvider {
 	if (folderPath === null || folderPath === undefined || folderPath === '') return 'unknown';
 	const lower = folderPath.toLowerCase();
 	if (lower.startsWith('spotify:')) return 'spotify';
@@ -96,7 +98,8 @@ export function streamingProviderFromPath(folderPath: string | null | undefined)
 
 function transferView(input: TrackCloudTransferInput | null): TrackCloudTransferView | null {
 	if (input === null) return null;
-	const action = input.direction === 'upload' ? 'Uploading to CloudSync' : 'Downloading from CloudSync';
+	const action =
+		input.direction === 'upload' ? 'Uploading to CloudSync' : 'Downloading from CloudSync';
 	if (input.bytesTotal === null) {
 		return {
 			direction: input.direction,

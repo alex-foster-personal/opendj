@@ -426,3 +426,9 @@ _V8: list[str] = [
     )
     """,
 ]
+
+# Reusable table/index portion for the consolidated schema. _V8 remains the
+# complete legacy migration, including its safe-default availability views.
+_V8_NON_VIEW_DDL: tuple[str, ...] = tuple(
+    statement for statement in _V8 if not statement.lstrip().upper().startswith("CREATE VIEW")
+)

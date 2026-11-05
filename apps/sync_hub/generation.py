@@ -35,6 +35,7 @@ trigger the third case. A prune that DOES delete the newest entry has
 destroyed the hub's ability to answer any spoke's pull, and a full re-offer
 is then the repair, not a false alarm.
 """
+
 from __future__ import annotations
 
 import json
@@ -102,13 +103,11 @@ def _read(path: Path) -> Anchor | None:
     high_water = parsed.get("high_water")
     if not isinstance(generation, str) or len(generation) != 32:
         raise SyncGenerationError(
-            f"{path} does not hold a 32-char generation token (got "
-            f"{generation!r}); refusing to guess."
+            f"{path} does not hold a 32-char generation token (got {generation!r}); refusing to guess."
         )
     if not isinstance(high_water, int) or isinstance(high_water, bool) or high_water < 0:
         raise SyncGenerationError(
-            f"{path} does not hold a non-negative integer high_water (got "
-            f"{high_water!r}); refusing to guess."
+            f"{path} does not hold a non-negative integer high_water (got {high_water!r}); refusing to guess."
         )
     return Anchor(generation=generation, high_water=high_water)
 
@@ -122,9 +121,7 @@ def _write(path: Path, anchor: Anchor) -> None:
             {"generation": anchor.generation, "high_water": anchor.high_water},
         )
     except OSError as exc:
-        raise SyncGenerationError(
-            f"cannot write the hub generation file {path}: {exc}"
-        ) from exc
+        raise SyncGenerationError(f"cannot write the hub generation file {path}: {exc}") from exc
 
 
 def observe(conn: sqlite3.Connection, data_dir: Path) -> str:
@@ -145,9 +142,7 @@ def observe(conn: sqlite3.Connection, data_dir: Path) -> str:
     if anchor is None:
         minted = Anchor(generation=_mint(), high_water=seq)
         _write(path, minted)
-        log.info(
-            "minted hub generation %s at seq %d (%s)", minted.generation, seq, path
-        )
+        log.info("minted hub generation %s at seq %d (%s)", minted.generation, seq, path)
         return minted.generation
     if anchor.high_water > seq:
         rotated = Anchor(generation=_mint(), high_water=seq)

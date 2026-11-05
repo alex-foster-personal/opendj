@@ -48,9 +48,17 @@ def _seed_state_db(path: Path) -> None:
             "artists_json, album, isrc, duration_ms, file_path, "
             "content_hash, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
-                "hard-track-001", "inferred", "Probe", json.dumps(["Tester"]),
-                None, None, 300000, None, None,
-                _BASE.isoformat(), _BASE.isoformat(),
+                "hard-track-001",
+                "inferred",
+                "Probe",
+                json.dumps(["Tester"]),
+                None,
+                None,
+                300000,
+                None,
+                None,
+                _BASE.isoformat(),
+                _BASE.isoformat(),
             ),
         )
     finally:
@@ -62,8 +70,11 @@ def smartlists_client(tmp_path: Path) -> Iterator[TestClient]:
     db_path = tmp_path / "state.db"
     _seed_state_db(db_path)
     app = create_app(
-        backend=SqliteBackend(db_path), bind_host="127.0.0.1", hostname="test-host",
-        state_db_path=str(db_path), mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(db_path),
+        mount_frontend=False,
     )
     app.include_router(smartlists_routes.router, prefix="/api/v1")
     with TestClient(app, base_url=_BASE_URL) as c:
@@ -88,9 +99,7 @@ def test_create_smartlist_rejects_whitespace_only_name(smartlists_client):
         "/api/v1/smartlists",
         json={"name": "   ", "rule": {"field": "rating", "op": ">=", "value": 0}},
     )
-    assert r.status_code == 422, (
-        f"whitespace-only name was accepted (status {r.status_code}): {r.text}"
-    )
+    assert r.status_code == 422, f"whitespace-only name was accepted (status {r.status_code}): {r.text}"
 
 
 def test_duplicate_smartlist_rejects_whitespace_only_name(tmp_path):
@@ -98,22 +107,28 @@ def test_duplicate_smartlist_rejects_whitespace_only_name(tmp_path):
     _seed_state_db(db_path)
     conn = sqlite3.connect(str(db_path))
     try:
-        sid = SmartlistsRepo(conn).create(
-            "Source", {"field": "rating", "op": ">=", "value": 0},
-        ).id
+        sid = (
+            SmartlistsRepo(conn)
+            .create(
+                "Source",
+                {"field": "rating", "op": ">=", "value": 0},
+            )
+            .id
+        )
         conn.commit()
     finally:
         conn.close()
     app = create_app(
-        backend=SqliteBackend(db_path), bind_host="127.0.0.1", hostname="test-host",
-        state_db_path=str(db_path), mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(db_path),
+        mount_frontend=False,
     )
     app.include_router(smartlists_routes.router, prefix="/api/v1")
     with TestClient(app, base_url=_BASE_URL) as c:
         r = c.post(f"/api/v1/smartlists/{sid}/duplicate", json={"name": "  "})
-    assert r.status_code == 422, (
-        f"whitespace-only duplicate name was accepted (status {r.status_code}): {r.text}"
-    )
+    assert r.status_code == 422, f"whitespace-only duplicate name was accepted (status {r.status_code}): {r.text}"
 
 
 # ----- Finding 2: unbounded smartlist rule recursion -> RecursionError -> 500
@@ -148,12 +163,10 @@ def test_create_smartlist_rejects_over_limit_nesting_over_http(smartlists_client
     accepted) from the separate RecursionError-crash bug covered above."""
     over_limit_rule = _nested_not_rule(40)
     r = smartlists_client.post(
-        "/api/v1/smartlists", json={"name": "Deep", "rule": over_limit_rule},
+        "/api/v1/smartlists",
+        json={"name": "Deep", "rule": over_limit_rule},
     )
-    assert r.status_code == 422, (
-        f"a rule nested 40 levels deep was accepted (status {r.status_code}): "
-        f"{r.text[:500]}"
-    )
+    assert r.status_code == 422, f"a rule nested 40 levels deep was accepted (status {r.status_code}): {r.text[:500]}"
     assert r.json().get("detail", {}).get("code") == "SMARTLIST_RULE_INVALID"
 
 
@@ -173,8 +186,7 @@ def test_bulk_edit_rejects_batch_over_find_replace_precedent_cap(client, seed_ba
         json={"stable_ids": stable_ids, "expected_etags": expected_etags, "rating": 3},
     )
     assert r.status_code == 422, (
-        f"500-row bulk-edit batch was not rejected by input validation "
-        f"(status {r.status_code}): {r.text[:500]}"
+        f"500-row bulk-edit batch was not rejected by input validation (status {r.status_code}): {r.text[:500]}"
     )
 
 
@@ -186,6 +198,5 @@ def test_mytag_assign_rejects_batch_over_find_replace_precedent_cap(client, seed
         json={"stable_ids": stable_ids, "expected_etags": expected_etags, "add": ["probe"]},
     )
     assert r.status_code == 422, (
-        f"500-row my-tag batch was not rejected by input validation "
-        f"(status {r.status_code}): {r.text[:500]}"
+        f"500-row my-tag batch was not rejected by input validation (status {r.status_code}): {r.text[:500]}"
     )

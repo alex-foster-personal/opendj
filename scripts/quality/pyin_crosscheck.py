@@ -57,12 +57,8 @@ def compare_one(path: Path, hop_samples: int) -> dict[str, object]:
         "voiced_fraction_pyin": float(np.isfinite(theirs).mean()),
         "octave_disagreements": octave_apart,
         "median_cents_offset": float(np.median(cents[close])) if close.any() else float("nan"),
-        "p95_abs_cents": float(np.percentile(np.abs(cents[close]), 95))
-        if close.any()
-        else float("nan"),
-        "agreement_within_20_cents": float(np.mean(np.abs(cents[close]) < 20.0))
-        if close.any()
-        else 0.0,
+        "p95_abs_cents": float(np.percentile(np.abs(cents[close]), 95)) if close.any() else float("nan"),
+        "agreement_within_20_cents": float(np.mean(np.abs(cents[close]) < 20.0)) if close.any() else 0.0,
     }
 
 

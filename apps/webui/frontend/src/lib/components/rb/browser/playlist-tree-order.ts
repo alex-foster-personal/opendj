@@ -11,6 +11,8 @@
  * Pure: no Svelte, no fetch, so node tests can load it.
  */
 
+import { isInboxPlaylistId } from './inbox-id';
+
 export interface OrderablePlaylist {
 	playlist_id: string;
 	name: string;
@@ -21,6 +23,9 @@ export type DropPlace = 'before' | 'after';
 
 /** The tree's sort rule: seq ascending, then playlists with no seq by name. */
 export function compareTreeOrder(a: OrderablePlaylist, b: OrderablePlaylist): number {
+	if (isInboxPlaylistId(a.playlist_id) !== isInboxPlaylistId(b.playlist_id)) {
+		return isInboxPlaylistId(a.playlist_id) ? -1 : 1;
+	}
 	// `seq` is optional as well as nullable in PlaylistSummary, so an absent
 	// key means the same "no order known" as a null one.
 	const aSeq = a.seq ?? null;
@@ -61,11 +66,15 @@ export function movePlaylistInOrder(
 export function nameSortedIds(playlists: readonly OrderablePlaylist[]): string[] {
 	return playlists
 		.slice()
-		.sort(
-			(a, b) =>
+		.sort((a, b) => {
+			if (isInboxPlaylistId(a.playlist_id) !== isInboxPlaylistId(b.playlist_id)) {
+				return isInboxPlaylistId(a.playlist_id) ? -1 : 1;
+			}
+			return (
 				a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) ||
 				a.playlist_id.localeCompare(b.playlist_id)
-		)
+			);
+		})
 		.map((p) => p.playlist_id);
 }
 

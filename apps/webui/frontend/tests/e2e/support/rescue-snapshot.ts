@@ -88,7 +88,9 @@ export async function appendEmptyRescueSnapshot(request: APIRequestContext): Pro
 		}
 	});
 	if (!response.ok()) {
-		throw new Error(`append empty rescue snapshot failed (${response.status()}): ${await response.text()}`);
+		throw new Error(
+			`append empty rescue snapshot failed (${response.status()}): ${await response.text()}`
+		);
 	}
 	// Read back what the page's auto-restore will read: the newest ring entry
 	// must name no deck, or the next page load restores one into this case.
@@ -101,6 +103,9 @@ export async function appendEmptyRescueSnapshot(request: APIRequestContext): Pro
 	};
 	// Identity, not shape: the newest entry must be THIS snapshot (no decks, no
 	// deck_layout), so a newer one from a writer still running cannot pass.
-	expect(snapshots[0]?.captured_at_ms, 'the newest rescue snapshot is not the one just pinned').toBe(capturedAt);
+	expect(
+		snapshots[0]?.captured_at_ms,
+		'the newest rescue snapshot is not the one just pinned'
+	).toBe(capturedAt);
 	expect(snapshots[0]?.deck_count_loaded, 'the newest rescue snapshot still names a deck').toBe(0);
 }

@@ -9,10 +9,12 @@
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { PENCIL_PATH } from '$lib/ui/icon-glyphs';
+	import { playlistThumbnailUrl, SIDEBAR_TILE_PX } from '$lib/rb/library-sidebar-art-url';
 	import type { PlaylistTint } from './playlist-context';
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID } from './missing-tracks-id';
+	import { isInboxPlaylistId } from './inbox-id';
 	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
 	import { allTracksBadge } from './all-tracks-badge';
@@ -48,6 +50,7 @@
 		renameInputEl = $bindable(null),
 		cancreate,
 		canrename,
+		sidebarart = false,
 		ondeleteplaylist,
 		onselect,
 		onselectmissing,
@@ -111,8 +114,10 @@
 		renameInputEl?: HTMLInputElement | null;
 		cancreate: boolean;
 		canrename: boolean;
+		/** ARTTHUMB-8728c: show a 48 px playlist art tile and a by-line per row. */
+		sidebarart?: boolean;
 		ondeleteplaylist?: ((node: PlaylistNode) => void) | undefined;
-		onselect: (node: PlaylistNode) => void;
+		onselect: (node: PlaylistNode, opts?: { newTab?: boolean }) => void;
 		onselectmissing: () => void;
 		oncreate: () => void;
 		onbeginrename: (node: PlaylistNode) => void;
@@ -191,7 +196,7 @@
 			data-testid="playlist-all-tracks"
 			role="button"
 			tabindex="0"
-			onclick={() => onselect(allNode)}
+			onclick={(e) => onselect(allNode, { newTab: e.metaKey || e.ctrlKey })}
 			onkeydown={(e) => _rowKeydown(e, allNode)}
 		>
 			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -220,6 +225,18 @@
 				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
 			</svg>
 			<span class="name">Playlists</span>
+			{#if sidebarart}
+				<a
+					class="pl-action"
+					data-testid="playlists-grid-link"
+					href="/playlists"
+					title="Show every playlist as a card with its art"
+					aria-label="Show playlists as a grid"
+					onclick={(e) => e.stopPropagation()}
+				>
+					<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 1h6v6H1zM9 1h6v6H9zM1 9h6v6H1zM9 9h6v6H9z" fill="currentColor" /></svg>
+				</a>
+			{/if}
 			{#if cancreate}
 				<button
 					type="button"
@@ -257,13 +274,14 @@
 							class:moving={movingPlaylistId === node.playlist_id}
 							class:tint-deck={tintOf(node) === 'deck'}
 							class:tint-multi={tintOf(node) === 'multi'}
+							class:art={sidebarart}
 							role="button"
 							tabindex="0"
 							draggable="true"
 							use:selectedRowAction={selectedId === node.playlist_id}
 							onpointerenter={() => { if (node.kind === 'playlist') onprefetch(node.playlist_id); }}
 							onpointerdown={() => { if (node.kind === 'playlist') onprefetch(node.playlist_id); }}
-							onclick={() => onselect(node)}
+							onclick={(e) => onselect(node, { newTab: e.metaKey || e.ctrlKey })}
 							onkeydown={(e) => { _rowKeydown(e, node); onmenukey(e, 'playlist', node); }}
 							oncontextmenu={(e) => onmenu(e, 'playlist', node)}
 							ondragstart={(e) => onrowdragstart(e, node)}
@@ -272,9 +290,27 @@
 							ondrop={(e) => onrowdrop(e, node)}
 							ondragend={() => onrowdragend?.()}
 						>
-							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-								<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
-							</svg>
+							{#if sidebarart && node.kind === 'folder'}
+								<span class="art-tile art-glyph" data-testid="playlist-art-folder" title="Folder" aria-hidden="true">
+									<svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="currentColor" /></svg>
+								</span>
+							{:else if sidebarart}
+								<img
+									class="art-tile"
+									data-testid="playlist-art-tile"
+									src={playlistThumbnailUrl(node.playlist_id, 64)}
+									width={SIDEBAR_TILE_PX}
+									height={SIDEBAR_TILE_PX}
+									loading="lazy"
+									decoding="async"
+									alt=""
+									title={`Playlist art for ${node.name}: the first four different covers, one cover, or a note when it has none`}
+								/>
+							{:else}
+								<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+									<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
+								</svg>
+							{/if}
 							{#if editingId === node.playlist_id}
 								<input
 									bind:this={renameInputEl}
@@ -289,9 +325,16 @@
 									onblur={() => onrenamecommit()}
 								/>
 							{:else}
-								<span class="name" title={node.mostly_broken ? mostlyBrokenTitle : node.name}>{node.name}</span>
+								{#if sidebarart}
+									<span class="name-stack">
+										<span class="name" title={node.mostly_broken ? mostlyBrokenTitle : node.name}>{node.name}</span>
+										<small class="byline" title="What this row is and how many tracks it holds">{node.kind === 'folder' ? 'Folder' : `Playlist - ${node.track_count} tracks`}</small>
+									</span>
+								{:else}
+									<span class="name" title={node.mostly_broken ? mostlyBrokenTitle : node.name}>{node.name}</span>
+								{/if}
 							{/if}
-							{#if canrename}
+							{#if canrename && !isInboxPlaylistId(node.playlist_id)}
 								<button
 									type="button"
 									class="pl-action dim"
@@ -307,7 +350,7 @@
 									</svg>
 								</button>
 							{/if}
-							{#if ondeleteplaylist}
+							{#if ondeleteplaylist && !isInboxPlaylistId(node.playlist_id)}
 								<button
 									type="button"
 									class="pl-action dim"
@@ -441,6 +484,39 @@
 	}
 	.row.child {
 		padding-left: 22px;
+	}
+	/* ARTTHUMB-8728c variant A: 48 px tile, 4 px corners, two-line by-line. The
+	 * tile has fixed width and height so a late image never shifts a row. */
+	.row.child.art {
+		height: 56px;
+		padding-left: 8px;
+		gap: 10px;
+	}
+	.art-tile {
+		flex: none;
+		width: 48px;
+		height: 48px;
+		border-radius: 4px;
+		object-fit: cover;
+		background: var(--rb-panel-raised);
+	}
+	.art-glyph {
+		display: grid;
+		place-items: center;
+		color: var(--rb-text-dim);
+	}
+	.name-stack {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		line-height: 1.3;
+	}
+	.byline {
+		color: var(--rb-text-dim);
+		font-size: 0.85em;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.row.hint {
 		color: var(--rb-text-dim);

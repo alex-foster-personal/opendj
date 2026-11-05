@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.confirm (VOICE-01)."""
+
 from __future__ import annotations
 
 import json
@@ -113,9 +114,7 @@ class TestBindConfirm:
 class TestAppendConfirmationLog:
     def test_writes_jsonl_row(self, tmp_path):
         log = tmp_path / "a" / "b" / "log.jsonl"
-        confirm.append_confirmation_log(
-            log, prompt="p", transcript="t", decision=True, meta={"extra": 1}
-        )
+        confirm.append_confirmation_log(log, prompt="p", transcript="t", decision=True, meta={"extra": 1})
         row = json.loads(log.read_text(encoding="utf-8").strip())
         assert row["prompt"] == "p"
         assert row["decision"] is True

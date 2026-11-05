@@ -76,7 +76,10 @@ test('dualSinkAssignment auto-pins master to speakers when cue is headphones and
 	assert.equal(shared.masterId, 'hp');
 	assert.equal(shared.cueId, null);
 	assert.equal(shared.autoPinnedMaster, false);
-	assert.match(shared.cueRefusal, /MAIN and CUE are the same output .*choose Split cue .* yourself/);
+	assert.match(
+		shared.cueRefusal,
+		/MAIN and CUE are the same output .*choose Split cue .* yourself/
+	);
 	assert.equal('splitSameDevice' in shared, false);
 });
 
@@ -121,7 +124,11 @@ test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps 
 	assert.doesNotMatch(source, /title="Split-cable mode requires/);
 	assert.match(source, /resetValue=\{0\}/);
 	assert.match(source, /headphoneMixAccent/);
-	assert.match(source, /Press CALIBRATE afterwards/, 'CUEOUT-14: the cue pick explains the modal, not the removed first-select chirp');
+	assert.match(
+		source,
+		/Press CALIBRATE afterwards/,
+		'CUEOUT-14: the cue pick explains the modal, not the removed first-select chirp'
+	);
 	assert.match(source, /cannot be interrupted/);
 	assert.match(source, /CUEOUT-12/);
 	assert.doesNotMatch(source, />\+ OUT</);
@@ -144,10 +151,7 @@ test('generated headphone POST operations are aliases, not 35-line clones', () =
 		text,
 		/post_headphone_input_select_api_v1_performance_headphones_inputs_select_post: _HeadphoneJsonPost;/
 	);
-	assert.doesNotMatch(
-		text,
-		/post_headphone_mix_api_v1_performance_headphones_mix_post: \{/
-	);
+	assert.doesNotMatch(text, /post_headphone_mix_api_v1_performance_headphones_mix_post: \{/);
 	assert.doesNotMatch(text, /_HeadphoneJsonPost;;/);
 });
 

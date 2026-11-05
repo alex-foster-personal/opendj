@@ -86,7 +86,7 @@ def content_hash_bytes(data: bytes) -> str:
     return HASH_PREFIX + hashlib.sha256(data).hexdigest()
 
 
-def sha256_audio_payload(path: Path | str) -> str:
+def sha256_audio_payload(path: Path | str, *, suffix: str | None = None) -> str:
     """``sha256:<64-hex>`` of the audio payload, excluding container tags.
 
     A repair, relink or re-encode that only rewrites ID3 tags (rekordbox and
@@ -99,11 +99,14 @@ def sha256_audio_payload(path: Path | str) -> str:
     and does not need to look inside to skip. Same ID3-stripping convention as
     ``(private path)``. Handles nested leading
     ID3v2 tags (a second tagger writing after one already did leaves two).
+
+    ``suffix`` names the format when the file's own name does not carry it (a
+    download written to ``audio.part``).
     """
     p = Path(path)
     with p.open("rb") as fh:
         data = fh.read()
-    payload = _audio_payload(data, p.suffix.lower())
+    payload = _audio_payload(data, (suffix or p.suffix).lower())
     if payload is None:
         return sha256_file(p)
     return content_hash_bytes(payload)

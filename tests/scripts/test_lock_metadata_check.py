@@ -102,17 +102,13 @@ def test_a_requirement_added_to_an_extra_without_uv_lock_is_stale(tmp_path: Path
 
 
 def test_a_marker_change_is_stale(tmp_path: Path) -> None:
-    code, message = _run(
-        tmp_path, PYPROJECT.replace("sys_platform != 'win32'", "sys_platform != 'linux'")
-    )
+    code, message = _run(tmp_path, PYPROJECT.replace("sys_platform != 'win32'", "sys_platform != 'linux'"))
     assert code == EXIT_STALE
     assert "python-rtmidi" in message
 
 
 def test_requires_python_drift_is_stale(tmp_path: Path) -> None:
-    code, message = _run(
-        tmp_path, PYPROJECT.replace('requires-python = ">=3.11"', 'requires-python = ">=3.12"')
-    )
+    code, message = _run(tmp_path, PYPROJECT.replace('requires-python = ">=3.11"', 'requires-python = ">=3.12"'))
     assert code == EXIT_STALE
     assert "requires-python" in message
 
@@ -284,11 +280,7 @@ def test_a_dependency_free_project_matches_a_lock_with_no_requires_dist(tmp_path
     bare_lock = LOCK[:start] + LOCK[end + len('provides-extras = ["dev", "all"]\n') :]
     assert "requires-dist" not in bare_lock and "provides-extras" not in bare_lock
     start, end = PYPROJECT.index("dependencies = ["), PYPROJECT.index('all = ["Demo_Project[dev]"]')
-    bare_pyproject = (
-        PYPROJECT[:start]
-        + "dependencies = []\n"
-        + PYPROJECT[end + len('all = ["Demo_Project[dev]"]') :]
-    )
+    bare_pyproject = PYPROJECT[:start] + "dependencies = []\n" + PYPROJECT[end + len('all = ["Demo_Project[dev]"]') :]
     assert "optional-dependencies" not in bare_pyproject
     code, message = _run(tmp_path, bare_pyproject, bare_lock)
     assert code == EXIT_OK, message
@@ -308,9 +300,7 @@ def test_a_requires_python_bound_deeper_than_four_components_is_compared_not_unk
     pyproject = PYPROJECT.replace(
         'requires-python = ">=3.11"', 'requires-python = ">=3.10,>=3.11.15,<3.11.15.0.0.0.0.1"'
     )
-    lock = LOCK.replace(
-        'requires-python = ">=3.11"', 'requires-python = ">=3.11.15, <3.11.15.0.0.0.0.1"'
-    )
+    lock = LOCK.replace('requires-python = ">=3.11"', 'requires-python = ">=3.11.15, <3.11.15.0.0.0.0.1"')
     assert pyproject != PYPROJECT and lock != LOCK
     code, message = _run(tmp_path, pyproject, lock)
     assert code == EXIT_OK, message
@@ -348,9 +338,7 @@ def test_a_variable_to_variable_marker_matches_the_lock_uv_writes_without_it(
     recorded_line = "marker = \"sys_platform == 'darwin'\""
 
     def pair(spelled: str, recorded: str) -> tuple[str, str]:
-        pyproject = PYPROJECT.replace(
-            quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {spelled}")
-        )
+        pyproject = PYPROJECT.replace(quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {spelled}"))
         assert pyproject != PYPROJECT
         return pyproject, LOCK.replace(  # uv writes a dropped marker as no key (round 38)
             ", " + recorded_line, ", marker = " + json.dumps(recorded) if recorded else ""
@@ -378,15 +366,11 @@ def _with_marker(pyproject_marker: str, lock_marker: str) -> tuple[str, str]:
     strings are valid TOML basic strings, so either quote form survives the fixture."""
     quartz = "\"pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'\""
     recorded = "marker = \"sys_platform == 'darwin'\""
-    pyproject = PYPROJECT.replace(
-        quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {pyproject_marker}")
-    )
+    pyproject = PYPROJECT.replace(quartz, json.dumps(f"pyobjc-framework-Quartz>=10.0; {pyproject_marker}"))
     # uv writes a requirement whose marker it dropped WITHOUT the key: `marker = ""`
     # is "Expected marker value", `uv lock --check` exit 2 (round 38).
     assert LOCK.count(", " + recorded) == LOCK.count(recorded)
-    lock = LOCK.replace(
-        ", " + recorded, ", marker = " + json.dumps(lock_marker) if lock_marker else ""
-    )
+    lock = LOCK.replace(", " + recorded, ", marker = " + json.dumps(lock_marker) if lock_marker else "")
     assert pyproject != PYPROJECT
     assert lock != LOCK or lock_marker == "sys_platform == 'darwin'", "no-op lock edit"
     return pyproject, lock
@@ -451,16 +435,12 @@ def test_an_extra_added_or_removed_without_uv_lock_is_stale_even_when_empty(
     rejects the stale lock even though an empty group adds no requires-dist entry) then 1
     naming both lists; the lock uv writes for it reads 0; the group removed again against
     that lock is stale the same way (Codex P2 on #3763, round 16)"""
-    added = PYPROJECT.replace(
-        'all = ["Demo_Project[dev]"]', 'all = ["Demo_Project[dev]"]\nEmpty_Group = []'
-    )
+    added = PYPROJECT.replace('all = ["Demo_Project[dev]"]', 'all = ["Demo_Project[dev]"]\nEmpty_Group = []')
     assert added != PYPROJECT
     code, message = _run(tmp_path, added)
     assert code == EXIT_STALE, message
     assert "provides-extras" in message and "empty-group" in message
-    relocked = LOCK.replace(
-        'provides-extras = ["dev", "all"]', 'provides-extras = ["dev", "all", "empty-group"]'
-    )
+    relocked = LOCK.replace('provides-extras = ["dev", "all"]', 'provides-extras = ["dev", "all", "empty-group"]')
     assert relocked != LOCK
     code, message = _run(tmp_path, added, relocked)
     assert code == EXIT_OK, message
@@ -538,17 +518,13 @@ def test_a_wildcard_uv_cannot_compare_matches_the_lock_uv_writes_without_it(
 
 
 def test_a_lock_without_the_root_package_is_unknown_not_clean(tmp_path: Path) -> None:
-    code, message = _run(
-        tmp_path, lock=LOCK.replace('name = "demo-project"', 'name = "someone-else"')
-    )
+    code, message = _run(tmp_path, lock=LOCK.replace('name = "demo-project"', 'name = "someone-else"'))
     assert code == EXIT_UNKNOWN
     assert "UNKNOWN" in message and "expected the root" in message
 
 
 def test_a_url_requirement_is_unknown_not_clean(tmp_path: Path) -> None:
-    code, message = _run(
-        tmp_path, PYPROJECT.replace('"numpy>=1.26"', '"numpy @ https://example.invalid/numpy.whl"')
-    )
+    code, message = _run(tmp_path, PYPROJECT.replace('"numpy>=1.26"', '"numpy @ https://example.invalid/numpy.whl"'))
     assert code == EXIT_UNKNOWN
     assert "URL requirement" in message
 

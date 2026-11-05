@@ -1,7 +1,7 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
 
 // a3807925 - the webkit-deckload suite's playhead runway.
 //
@@ -39,7 +39,7 @@ import { test } from "node:test";
 // - if the fixture audio is shortened then the runway argument these guards
 //   protect stops holding, and the suite returns to running dry mid-run
 
-const E2E = fileURLToPath(new URL("../e2e", import.meta.url));
+const E2E = fileURLToPath(new URL('../e2e', import.meta.url));
 
 /**
  * Read source with LF endings whatever the checkout used. These guards match
@@ -47,16 +47,16 @@ const E2E = fileURLToPath(new URL("../e2e", import.meta.url));
  * would then fail on line endings rather than on the contract it watches.
  */
 function readE2eSource(relative) {
-  return readFileSync(`${E2E}/${relative}`, "utf8").replaceAll("\r\n", "\n");
+	return readFileSync(`${E2E}/${relative}`, 'utf8').replaceAll('\r\n', '\n');
 }
 
-const SPEC_SRC = readE2eSource("webkit-deckload.spec.ts");
-const FIXTURE_SRC = readE2eSource("support/deckload_fixture.py");
+const SPEC_SRC = readE2eSource('webkit-deckload.spec.ts');
+const FIXTURE_SRC = readE2eSource('support/deckload_fixture.py');
 /** The engine half of the reload contract: unload must not roll the count back. */
 const ENGINE_SRC = readFileSync(
-  fileURLToPath(new URL("../../src/lib/rb/audio-engine.svelte.ts", import.meta.url)),
-  "utf8",
-).replaceAll("\r\n", "\n");
+	fileURLToPath(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url)),
+	'utf8'
+).replaceAll('\r\n', '\n');
 
 /**
  * The body of one top-level function in the spec.
@@ -66,151 +66,136 @@ const ENGINE_SRC = readFileSync(
  * and a real parser here would be more machinery than the contract needs.
  */
 function specFunctionBody(name) {
-  const start = SPEC_SRC.indexOf(`async function ${name}(`);
-  assert.notEqual(
-    start,
-    -1,
-    `webkit-deckload.spec.ts no longer defines ${name}`,
-  );
-  const end = SPEC_SRC.indexOf("\n}", start);
-  assert.notEqual(end, -1, `${name} has no top-level close brace`);
-  return SPEC_SRC.slice(start, end);
+	const start = SPEC_SRC.indexOf(`async function ${name}(`);
+	assert.notEqual(start, -1, `webkit-deckload.spec.ts no longer defines ${name}`);
+	const end = SPEC_SRC.indexOf('\n}', start);
+	assert.notEqual(end, -1, `${name} has no top-level close brace`);
+	return SPEC_SRC.slice(start, end);
 }
 
-test("every test starts deck 1 from a known playhead", () => {
-  const beforeEach = SPEC_SRC.indexOf("test.beforeEach(");
-  assert.notEqual(
-    beforeEach,
-    -1,
-    "the suite has no beforeEach, so nothing returns the playhead between " +
-      "tests and the run is speed-dependent again",
-  );
-  const body = SPEC_SRC.slice(
-    beforeEach,
-    SPEC_SRC.indexOf("\n\t});", beforeEach),
-  );
-  assert.match(
-    body,
-    /_seek\(page,\s*1,\s*0\)/,
-    "the beforeEach no longer rewinds deck 1 to the start of the track",
-  );
-  // The load test is the one that puts a track on the deck, so the rewind has
-  // to tolerate a deck that has none. Without this the suite fails on its very
-  // first test instead of running.
-  assert.match(
-    body,
-    /stable_id === null/,
-    "the beforeEach no longer skips a deck with no track loaded",
-  );
+test('every test starts deck 1 from a known playhead', () => {
+	const beforeEach = SPEC_SRC.indexOf('test.beforeEach(');
+	assert.notEqual(
+		beforeEach,
+		-1,
+		'the suite has no beforeEach, so nothing returns the playhead between ' +
+			'tests and the run is speed-dependent again'
+	);
+	const body = SPEC_SRC.slice(beforeEach, SPEC_SRC.indexOf('\n\t});', beforeEach));
+	assert.match(
+		body,
+		/_seek\(page,\s*1,\s*0\)/,
+		'the beforeEach no longer rewinds deck 1 to the start of the track'
+	);
+	// The load test is the one that puts a track on the deck, so the rewind has
+	// to tolerate a deck that has none. Without this the suite fails on its very
+	// first test instead of running.
+	assert.match(
+		body,
+		/stable_id === null/,
+		'the beforeEach no longer skips a deck with no track loaded'
+	);
 });
 
-test("the transport sample measures its own window", () => {
-  const body = specFunctionBody("_sampleAdvanceMs");
-  assert.match(
-    body,
-    /_measureRate\(/,
-    "_sampleAdvanceMs no longer routes through _measureRate, which is the " +
-      "only helper here that times itself inside the page",
-  );
-  // The original defect precisely: two `_query` round trips straddling a
-  // `waitForTimeout`, with the round-trip cost charged to the audio clock.
-  assert.doesNotMatch(
-    body,
-    /waitForTimeout/,
-    "_sampleAdvanceMs waits in node again, so Playwright round-trip latency " +
-      "is once more counted as playhead travel",
-  );
+test('the transport sample measures its own window', () => {
+	const body = specFunctionBody('_sampleAdvanceMs');
+	assert.match(
+		body,
+		/_measureRate\(/,
+		'_sampleAdvanceMs no longer routes through _measureRate, which is the ' +
+			'only helper here that times itself inside the page'
+	);
+	// The original defect precisely: two `_query` round trips straddling a
+	// `waitForTimeout`, with the round-trip cost charged to the audio clock.
+	assert.doesNotMatch(
+		body,
+		/waitForTimeout/,
+		'_sampleAdvanceMs waits in node again, so Playwright round-trip latency ' +
+			'is once more counted as playhead travel'
+	);
 });
 
-test("the CUE test travels a deliberate distance before stamping", () => {
-  assert.match(
-    SPEC_SRC,
-    /const CUE_RUNWAY_MS = /,
-    "CUE_RUNWAY_MS is gone, so the cue point is back to whatever distance the " +
-      "previous tests happened to leave on the playhead",
-  );
-  assert.match(
-    SPEC_SRC,
-    /_playUntilPast\(page,\s*1,\s*CUE_RUNWAY_MS\)/,
-    "the CUE test no longer plays to CUE_RUNWAY_MS before pausing",
-  );
+test('the CUE test travels a deliberate distance before stamping', () => {
+	assert.match(
+		SPEC_SRC,
+		/const CUE_RUNWAY_MS = /,
+		'CUE_RUNWAY_MS is gone, so the cue point is back to whatever distance the ' +
+			'previous tests happened to leave on the playhead'
+	);
+	assert.match(
+		SPEC_SRC,
+		/_playUntilPast\(page,\s*1,\s*CUE_RUNWAY_MS\)/,
+		'the CUE test no longer plays to CUE_RUNWAY_MS before pausing'
+	);
 });
 
-test("a wait for audible names the playhead it gave up on", () => {
-  const body = specFunctionBody("_waitForAudible");
-  assert.match(
-    body,
-    /catch/,
-    "_waitForAudible raises a bare Playwright timeout again, which is what " +
-      "made a dry deck read as a broken one",
-  );
-  for (const field of ["position", "duration_ms", "transport_pending"]) {
-    assert.ok(
-      body.includes(field),
-      `_waitForAudible no longer reports ${field}, so a dry deck and a dead ` +
-        "deck are indistinguishable from the failure message",
-    );
-  }
+test('a wait for audible names the playhead it gave up on', () => {
+	const body = specFunctionBody('_waitForAudible');
+	assert.match(
+		body,
+		/catch/,
+		'_waitForAudible raises a bare Playwright timeout again, which is what ' +
+			'made a dry deck read as a broken one'
+	);
+	for (const field of ['position', 'duration_ms', 'transport_pending']) {
+		assert.ok(
+			body.includes(field),
+			`_waitForAudible no longer reports ${field}, so a dry deck and a dead ` +
+				'deck are indistinguishable from the failure message'
+		);
+	}
 });
 
-test("a reload wait observes the durable successful-load generation", () => {
-  const body = specFunctionBody("_waitForDeckReloaded");
-  assert.match(
-    body,
-    /load_generation > previousLoadGeneration/,
-    "the reload wait no longer waits for the successful load generation, so a sub-poll empty state can be missed",
-  );
-  assert.doesNotMatch(
-    body,
-    /stable_id === null/,
-    "the reload wait still depends on the transient empty state instead of the durable load generation",
-  );
-  assert.match(
-    SPEC_SRC,
-    /const previousLoadGeneration = \(await _query\(page\)\)\.decks\[1\]\.load_generation;\s+const reload = await _dragRowToDeck\(page, 0, 1, \{ carryPayload: true \}\);[\s\S]{0,400}?await _waitForDeckReloaded\(page, 1, previousLoadGeneration\);/,
-    "the real WebKit reload path no longer captures its generation before " +
-      "dropping row 0 onto CH1, the only gesture that names its target deck",
-  );
-  assert.doesNotMatch(
-    SPEC_SRC,
-    /await _dblClickLoad\(page, 0\);\s+await _waitForDeckReloaded/,
-    "the reload is back on _dblClickLoad, which does not choose its deck: " +
-      "pickDoubleClickDeck excludes the master and prefers empty slots, so " +
-      "with CH1 master and CH3/CH4 empty it loads CH3 and the CH1 wait below " +
-      "burns its whole timeout while nothing is actually wrong",
-  );
+test('a reload wait observes the durable successful-load generation', () => {
+	const body = specFunctionBody('_waitForDeckReloaded');
+	assert.match(
+		body,
+		/load_generation > previousLoadGeneration/,
+		'the reload wait no longer waits for the successful load generation, so a sub-poll empty state can be missed'
+	);
+	assert.doesNotMatch(
+		body,
+		/stable_id === null/,
+		'the reload wait still depends on the transient empty state instead of the durable load generation'
+	);
+	assert.match(
+		SPEC_SRC,
+		/const previousLoadGeneration = \(await _query\(page\)\)\.decks\[1\]\.load_generation;\s+const reload = await _dragRowToDeck\(page, 0, 1, \{ carryPayload: true \}\);[\s\S]{0,400}?await _waitForDeckReloaded\(page, 1, previousLoadGeneration\);/,
+		'the real WebKit reload path no longer captures its generation before ' +
+			'dropping row 0 onto CH1, the only gesture that names its target deck'
+	);
+	assert.doesNotMatch(
+		SPEC_SRC,
+		/await _dblClickLoad\(page, 0\);\s+await _waitForDeckReloaded/,
+		'the reload is back on _dblClickLoad, which does not choose its deck: ' +
+			'pickDoubleClickDeck excludes the master and prefers empty slots, so ' +
+			'with CH1 master and CH3/CH4 empty it loads CH3 and the CH1 wait below ' +
+			'burns its whole timeout while nothing is actually wrong'
+	);
 });
 
-test("an unload carries the load generation forward", () => {
-  // The reload wait above asks "has a NEW load committed since the number I
-  // held?". A destructive replace ejects before it loads, so an unload that
-  // reset the counter took a deck from 1 to 0 to 1 and that question could
-  // never be answered yes. Only a full engine dispose starts the count over.
-  assert.match(
-    ENGINE_SRC,
-    /deckStates\[deck\] = \{ \.\.\._emptyDeckState\(deck\), load_generation: st\.load_generation \};/,
-    "engine.unload resets load_generation again, so the reload wait in " +
-      "webkit-deckload.spec.ts can never see its generation advance across " +
-      "a replace",
-  );
+test('an unload carries the load generation forward', () => {
+	// The reload wait above asks "has a NEW load committed since the number I
+	// held?". A destructive replace ejects before it loads, so an unload that
+	// reset the counter took a deck from 1 to 0 to 1 and that question could
+	// never be answered yes. Only a full engine dispose starts the count over.
+	assert.match(
+		ENGINE_SRC,
+		/deckStates\[deck\] = \{ \.\.\._emptyDeckState\(deck\), load_generation: st\.load_generation \};/,
+		'engine.unload resets load_generation again, so the reload wait in ' +
+			'webkit-deckload.spec.ts can never see its generation advance across ' +
+			'a replace'
+	);
 });
 
-test("the fixture audio is long enough to give every test a runway", () => {
-  const lengths = [...FIXTURE_SRC.matchAll(/seconds=(\d+(?:\.\d+)?)/g)].map(
-    (m) => Number(m[1]),
-  );
-  assert.ok(
-    lengths.length > 0,
-    "deckload_fixture.py declares no track lengths",
-  );
-  // The longest single test in the suite plays for well under 30s now that
-  // each one starts from zero. This floor is the margin that claim rests on:
-  // shorten the fixture past it and the suite can run dry inside ONE test,
-  // which no rewind can fix.
-  for (const seconds of lengths) {
-    assert.ok(
-      seconds >= 30,
-      `a fixture track is ${seconds}s, too short for one test's runway`,
-    );
-  }
+test('the fixture audio is long enough to give every test a runway', () => {
+	const lengths = [...FIXTURE_SRC.matchAll(/seconds=(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+	assert.ok(lengths.length > 0, 'deckload_fixture.py declares no track lengths');
+	// The longest single test in the suite plays for well under 30s now that
+	// each one starts from zero. This floor is the margin that claim rests on:
+	// shorten the fixture past it and the suite can run dry inside ONE test,
+	// which no rewind can fix.
+	for (const seconds of lengths) {
+		assert.ok(seconds >= 30, `a fixture track is ${seconds}s, too short for one test's runway`);
+	}
 });

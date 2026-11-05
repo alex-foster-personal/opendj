@@ -51,7 +51,12 @@ export function derivePlaylistDeckMembership(
 ): Set<string> {
 	const out = new Set<string>();
 	for (const pane of panes) {
-		if (pane.playlist_id === null || pane.playlist_id === 'all' || isMissingTracksId(pane.playlist_id)) continue;
+		if (
+			pane.playlist_id === null ||
+			pane.playlist_id === 'all' ||
+			isMissingTracksId(pane.playlist_id)
+		)
+			continue;
 		if (pane.rows.some((r) => deckLoadedStableIds.has(r.stable_id))) out.add(pane.playlist_id);
 	}
 	return out;
@@ -64,7 +69,12 @@ export function derivePlaylistPaneOpenCounts(
 ): Map<string, number> {
 	const out = new Map<string, number>();
 	for (const pane of panes) {
-		if (pane.playlist_id === null || pane.playlist_id === 'all' || isMissingTracksId(pane.playlist_id)) continue;
+		if (
+			pane.playlist_id === null ||
+			pane.playlist_id === 'all' ||
+			isMissingTracksId(pane.playlist_id)
+		)
+			continue;
 		out.set(pane.playlist_id, (out.get(pane.playlist_id) ?? 0) + 1);
 	}
 	return out;

@@ -21,6 +21,8 @@ from scripts.provenance_sources import _git
 # branch cut before one, which HEAD alone cannot see.
 TRUNK_BRANCH = "main"
 TRUNK_FALLBACK = f"origin/{TRUNK_BRANCH}"
+
+
 def branch_windows(repo: Path) -> list[tuple[str, float, float]]:
     """(branch, first-commit-epoch, last-commit-epoch) for every local branch.
 
@@ -43,6 +45,8 @@ def branch_windows(repo: Path) -> list[tuple[str, float, float]]:
         vals = [float(s) for s in stamps]
         windows.append((br, min(vals), max(vals)))
     return windows
+
+
 class GhUnavailable(RuntimeError):
     """`gh` is not on PATH at all, so no branch can be linked to its PR.
 
@@ -59,14 +63,15 @@ class GhUnavailable(RuntimeError):
 def pr_map(repo: Path) -> dict[str, dict]:
     try:
         p = subprocess.run(
-            ("gh", "pr", "list", "--state", "all", "--limit", "300",
-             "--json", "number,headRefName,state,url,title"),
-            capture_output=True, text=True, cwd=str(repo), check=False,
+            ("gh", "pr", "list", "--state", "all", "--limit", "300", "--json", "number,headRefName,state,url,title"),
+            capture_output=True,
+            text=True,
+            cwd=str(repo),
+            check=False,
         )
     except FileNotFoundError as exc:
         raise GhUnavailable(
-            "`gh` is not on PATH, so no harvested prompt can be linked to the "
-            "PR it belongs to"
+            "`gh` is not on PATH, so no harvested prompt can be linked to the PR it belongs to"
         ) from exc
     if p.returncode != 0:
         return {}
@@ -74,6 +79,8 @@ def pr_map(repo: Path) -> dict[str, dict]:
         return {x["headRefName"]: x for x in json.loads(p.stdout)}
     except json.JSONDecodeError:
         return {}
+
+
 def attach_links(prompts: list[dict], windows, prs: dict[str, dict]) -> None:
     for pr in prompts:
         if not pr.get("at"):
@@ -88,5 +95,4 @@ def attach_links(prompts: list[dict], windows, prs: dict[str, dict]) -> None:
         pr["branches"] = hits[:4]
         linked = [prs[b] for b in hits if b in prs]
         if linked:
-            pr["prs"] = [{"number": x["number"], "state": x["state"], "url": x["url"]}
-                         for x in linked[:4]]
+            pr["prs"] = [{"number": x["number"], "state": x["state"], "url": x["url"]} for x in linked[:4]]

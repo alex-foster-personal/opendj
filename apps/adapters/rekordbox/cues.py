@@ -21,6 +21,7 @@ Wave 4 (S8) moved this module from the interim
 ``apps/webui/server/rb_vendor_pkg/`` staging location to the mapped home. The
 body is unchanged.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -56,10 +57,7 @@ def _rb_timestamp() -> str:
 def _new_cue_id(conn: sqlite3.Connection) -> str:
     for _ in range(50):
         candidate = str(secrets.randbelow(9_000_000_000) + 1_000_000_000)
-        if (
-            conn.execute("SELECT 1 FROM djmdCue WHERE ID = ?", (candidate,)).fetchone()
-            is None
-        ):
+        if conn.execute("SELECT 1 FROM djmdCue WHERE ID = ?", (candidate,)).fetchone() is None:
             return candidate
     raise HTTPException(
         status_code=500,
@@ -104,9 +102,7 @@ def _cue_snapshot_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "out_frame": int(out_frame) if out_frame is not None else None,
         "active_loop": bool(active_loop),
         "beat_loop_size": int(beat_loop_size) if beat_loop_size is not None else None,
-        "color_table_index": int(color_table_index)
-        if color_table_index is not None
-        else None,
+        "color_table_index": int(color_table_index) if color_table_index is not None else None,
         "comment": comment or None,
         "updated_at": str(updated_at) if updated_at is not None else None,
     }
@@ -138,8 +134,7 @@ def _live_slot_snapshot(
     kind: int,
 ) -> dict[str, Any] | None:
     rows = conn.execute(
-        f"SELECT {_CUE_SNAPSHOT_COLUMNS} FROM djmdCue "
-        "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
+        f"SELECT {_CUE_SNAPSHOT_COLUMNS} FROM djmdCue WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
         (vendor_id, kind),
     ).fetchall()
     if len(rows) > 1:
@@ -205,11 +200,7 @@ def _duration_ms(conn: sqlite3.Connection, vendor_id: str) -> int:
             },
         )
     duration_s = row[0]
-    if (
-        isinstance(duration_s, bool)
-        or not isinstance(duration_s, int)
-        or duration_s < 0
-    ):
+    if isinstance(duration_s, bool) or not isinstance(duration_s, int) or duration_s < 0:
         raise HTTPException(
             status_code=422,
             detail={
@@ -220,9 +211,7 @@ def _duration_ms(conn: sqlite3.Connection, vendor_id: str) -> int:
     return duration_s * 1000
 
 
-def _validate_cue_position(
-    conn: sqlite3.Connection, vendor_id: str, in_ms: int
-) -> None:
+def _validate_cue_position(conn: sqlite3.Connection, vendor_id: str, in_ms: int) -> None:
     if isinstance(in_ms, bool) or not isinstance(in_ms, int):
         raise HTTPException(
             status_code=422,

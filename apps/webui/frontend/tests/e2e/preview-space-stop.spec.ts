@@ -69,10 +69,10 @@ test('Space stops a preview without touching the playing deck, then works as nor
 
 	await page.keyboard.press('Space');
 	await expect
-		.poll(
-			async () => (await _query(page)).preview.stable_id,
-			{ message: 'if Space does not stop the preview then the operator has no quick way to silence it - broken' }
-		)
+		.poll(async () => (await _query(page)).preview.stable_id, {
+			message:
+				'if Space does not stop the preview then the operator has no quick way to silence it - broken'
+		})
 		.toBeNull();
 	// Give a leaked toggle time to land before asserting it did not.
 	await page.waitForTimeout(500);
@@ -84,7 +84,8 @@ test('Space stops a preview without touching the playing deck, then works as nor
 	await page.keyboard.press('Space');
 	await expect
 		.poll(async () => (await _query(page)).decks[1].playing, {
-			message: 'if the next Space after that does not reach the deck then transport is dead until reload - broken'
+			message:
+				'if the next Space after that does not reach the deck then transport is dead until reload - broken'
 		})
 		.toBe(false);
 

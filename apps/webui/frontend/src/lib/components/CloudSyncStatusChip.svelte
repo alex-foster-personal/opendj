@@ -114,10 +114,6 @@
 	{togglePopover}
 >
 	{#snippet popover()}
-		<CloudSyncQuickActions
-			getTrigger={() => triggerEl}
-			onclose={closePopover}
-			bind:popoverEl
-		/>
+		<CloudSyncQuickActions getTrigger={() => triggerEl} onclose={closePopover} bind:popoverEl />
 	{/snippet}
 </CloudSyncStatusChipView>

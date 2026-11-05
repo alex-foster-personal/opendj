@@ -167,9 +167,7 @@ class FailureWatch:
                 WaitStatus.GENUINE_FAILURE, f"GENUINE failure in {len(genuine)} check(s): {genuine}"
             )
         if not latest and now - self.started >= NO_RUNS_GRACE_S:
-            return LifecycleOutcome(
-                WaitStatus.TIMEOUT, f"no check runs registered within {NO_RUNS_GRACE_S:.0f}s"
-            )
+            return LifecycleOutcome(WaitStatus.TIMEOUT, f"no check runs registered within {NO_RUNS_GRACE_S:.0f}s")
         if now - self.last_heartbeat >= HEARTBEAT_S:
             self.last_heartbeat = now
             done = sum(run["status"] == "completed" for run in latest.values())
@@ -185,11 +183,7 @@ class FailureWatch:
         if not self.announced_baseline:
             self.announced_baseline = True
             measured = red.measured_sha or red.main_sha
-            at = (
-                f"{red.main_sha[:9]}"
-                if measured == red.main_sha
-                else f"{measured[:9]}, main head {red.main_sha[:9]}"
-            )
+            at = f"{red.main_sha[:9]}" if measured == red.main_sha else f"{measured[:9]}, main head {red.main_sha[:9]}"
             self.emit(f"  main red baseline: {len(red.identities)} identity(ies) at {at}")
         try:
             log = self.log_of(job_id)
@@ -203,16 +197,8 @@ class FailureWatch:
         # identities as KNOWN_RED and exit mergeable despite the timeout.
         beyond = (
             failure_beyond_tests(log)
-            or (
-                ["exit code 1 in a log that could not be partitioned into steps"]
-                if unpartitionable_exit(log)
-                else []
-            )
-            or (
-                [f"the job conclusion is {run['conclusion']}"]
-                if run["conclusion"] != "failure"
-                else []
-            )
+            or (["exit code 1 in a log that could not be partitioned into steps"] if unpartitionable_exit(log) else [])
+            or ([f"the job conclusion is {run['conclusion']}"] if run["conclusion"] != "failure" else [])
         )
         if not identities:
             self.excerpts[run["id"]] = error_excerpt(log)
@@ -387,14 +373,10 @@ def main(argv: list[str] | None = None, watch: Callable[..., Exit] = watch_pr) -
     parser.add_argument("--poll-interval-s", type=float, default=POLL_INTERVAL_S)
     args = parser.parse_args(argv)
     try:
-        return int(
-            watch(args.pr, timeout_s=args.timeout_s, poll_interval_s=args.poll_interval_s)
-        )
+        return int(watch(args.pr, timeout_s=args.timeout_s, poll_interval_s=args.poll_interval_s))
     except Exception:  # an uncaught crash exits 1, which would read as GENUINE
         traceback.print_exc()
-        print(
-            f"[ci-watch {_utc()}] UNKNOWN (exit 3): the watcher could not measure", file=sys.stderr
-        )
+        print(f"[ci-watch {_utc()}] UNKNOWN (exit 3): the watcher could not measure", file=sys.stderr)
         return int(Exit.UNKNOWN)
 
 

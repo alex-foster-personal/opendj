@@ -61,7 +61,8 @@ const BASE = Object.freeze({
 	exclude_ids: new Set(['sid-x']),
 	played_ids: new Set(['sid-p', 'sid-q']),
 	follower_deck: 2,
-	follower_pitch_range: 8
+	follower_pitch_range: 8,
+	key_shift_max: 1
 });
 
 describe('chartedOrderKey', () => {
@@ -91,7 +92,8 @@ describe('chartedOrderKey', () => {
 			exclude_ids: { ...BASE, exclude_ids: new Set(['sid-x', 'sid-y']) },
 			played_ids: { ...BASE, played_ids: new Set(['sid-p']) },
 			follower_deck: { ...BASE, follower_deck: 3 },
-			follower_pitch_range: { ...BASE, follower_pitch_range: 16 }
+			follower_pitch_range: { ...BASE, follower_pitch_range: 16 },
+			key_shift_max: { ...BASE, key_shift_max: 2 }
 		};
 		for (const [name, input] of Object.entries(variants)) {
 			assert.notEqual(mod.chartedOrderKey(input), base, `if ${name} changes and the key does not then the order column goes stale - broken`);

@@ -47,6 +47,7 @@ FIXTURE_ROOT: Path = Path(__file__).parent / "fixtures" / "conformance"
 
 # ---------------------------------------------------------- yaml loader
 
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Minimal YAML subset loader -- enough for our capabilities files.
 
@@ -108,8 +109,7 @@ def _parse_scalar_or_inline_list(value: str) -> Any:
 def _dict_to_library(doc: dict[str, Any]) -> OpenDjLibrary:
     tracks = tuple(_dict_to_track(t) for t in doc.get("tracks", []))
     playlists = tuple(
-        Playlist(name=p["name"], track_ids=tuple(p.get("track_ids", [])))
-        for p in doc.get("playlists", [])
+        Playlist(name=p["name"], track_ids=tuple(p.get("track_ids", []))) for p in doc.get("playlists", [])
     )
     return OpenDjLibrary(
         version=doc.get("version", "0.1"),
@@ -216,20 +216,19 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
     try:
         if name == "serato":
             from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
+
             # Anchor pre-mutation MP3 backups to the tmp-scoped audio_root so
             # Rail 2 artifacts from the conformance harness don't leak into
             # the repo's .planning/ tree.
-            backup_dir = (
-                audio_root.parent / "_serato_backups"
-                if audio_root is not None
-                else None
-            )
+            backup_dir = audio_root.parent / "_serato_backups" if audio_root is not None else None
             opts = SeratoAdapterOptions(
-                audio_root=audio_root, backup_dir=backup_dir,
+                audio_root=audio_root,
+                backup_dir=backup_dir,
             )
             return SeratoAdapter(options=opts)
         if name == "traktor":
             from apps.adapters.traktor import TraktorAdapter
+
             return TraktorAdapter()
         if name == "rekordbox":
             import apps.adapters.rekordbox as rekordbox_pkg
@@ -278,11 +277,7 @@ def _stage_fixture_audio(fixture_root: Path, tmp_path: Path) -> Path | None:
 def _discover_fixtures() -> list[str]:
     if not FIXTURE_ROOT.exists():
         return []
-    return sorted(
-        p.name
-        for p in FIXTURE_ROOT.iterdir()
-        if p.is_dir() and not p.name.startswith("_")
-    )
+    return sorted(p.name for p in FIXTURE_ROOT.iterdir() if p.is_dir() and not p.name.startswith("_"))
 
 
 ALL_FIXTURES = _discover_fixtures()
@@ -319,9 +314,7 @@ def test_round_trip(fixture_id: str, adapter_name: str, tmp_path) -> None:
         # GEOB cue/beatgrid bytes are no longer written (mutagen is GPL).
         # A masked byte compare against fixtures that stored those cues
         # would fail for the removal, not for a crate-DB regression.
-        pytest.skip(
-            "serato GEOB cue/beatgrid round-trip removed with mutagen (GPL)"
-        )
+        pytest.skip("serato GEOB cue/beatgrid round-trip removed with mutagen (GPL)")
 
     expected_doc = json.loads((root / "expected.opendj.json").read_text(encoding="utf-8"))
     caps = _load_yaml(root / "capabilities.yaml")

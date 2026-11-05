@@ -4,6 +4,7 @@ Implements only ``playlist`` + ``playlist_items`` since those are all
 ``apps.spotify.client.SpotifyClient`` calls. Supports multi-page
 pagination and a single-shot 401 injection for retry testing.
 """
+
 from __future__ import annotations
 
 

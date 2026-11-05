@@ -84,8 +84,18 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		{ source: pioneerNote(ch, 7), action: { type: 'deck_manual_loop_cycle', deck } },
 		{ source: pioneerNote(ch, 8), action: { type: 'deck_loop_exit', deck } },
 		{ source: pioneerNote(ch, 81), action: { type: 'browse_load', deck } },
-		{ source: pioneerCc(ch, 34), action: { type: 'deck_jog', deck }, relative: true, relativeCentered: true },
-		{ source: pioneerCc(ch, 33), action: { type: 'deck_jog', deck }, relative: true, relativeCentered: true }
+		{
+			source: pioneerCc(ch, 34),
+			action: { type: 'deck_jog', deck },
+			relative: true,
+			relativeCentered: true
+		},
+		{
+			source: pioneerCc(ch, 33),
+			action: { type: 'deck_jog', deck },
+			relative: true,
+			relativeCentered: true
+		}
 	];
 }
 
@@ -96,12 +106,10 @@ function _mixerBindings(deck: DeckId): MidiBinding[] {
 			source: pioneerCc(MIXER_CH, TRIM_CC[deck]),
 			action: { type: 'mixer_channel', deck, target: 'trim' }
 		},
-		...bands.map(
-			(band): MidiBinding => ({
-				source: pioneerCc(MIXER_CH, EQ_CC[band][deck]),
-				action: { type: 'mixer_channel', deck, target: 'eq', band }
-			})
-		),
+		...bands.map((band): MidiBinding => ({
+			source: pioneerCc(MIXER_CH, EQ_CC[band][deck]),
+			action: { type: 'mixer_channel', deck, target: 'eq', band }
+		})),
 		{
 			source: pioneerCc(MIXER_CH, COLOR_CC[deck]),
 			action: { type: 'mixer_channel', deck, target: 'filter' }

@@ -54,9 +54,7 @@ def test_garbled_section_rescued_with_probs() -> None:
     asr = VERSE_A + CHORUS + garbled + CHORUS
     probs = [0.9] * (len(VERSE_A) + len(CHORUS)) + [0.2] * len(garbled) + [0.9] * len(CHORUS)
     v = classify(SONG, asr, asr_probs=probs)
-    assert v.verdict == "matched", (
-        "if a heard-but-garbled verse still flags a structure mismatch then broken"
-    )
+    assert v.verdict == "matched", "if a heard-but-garbled verse still flags a structure mismatch then broken"
 
 
 def test_moved_block_pairs() -> None:
@@ -68,8 +66,22 @@ def test_moved_block_pairs() -> None:
 
 
 def test_wrong_song_and_unverifiable() -> None:
-    other = ["completely", "different", "words", "about", "boats", "and", "rivers",
-             "flowing", "somewhere", "else", "entirely", "tonight", "again", "forever"]
+    other = [
+        "completely",
+        "different",
+        "words",
+        "about",
+        "boats",
+        "and",
+        "rivers",
+        "flowing",
+        "somewhere",
+        "else",
+        "entirely",
+        "tonight",
+        "again",
+        "forever",
+    ]
     v = classify(SONG, other * 3)
     assert v.verdict == "wrong_song", "if disjoint texts stop reading wrong_song then broken"
     v2 = classify(SONG, ["fire", "night"])

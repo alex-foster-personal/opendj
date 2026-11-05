@@ -3,6 +3,7 @@
 Uses the real :class:`EventBus` (daemon thread) plus a
 ``threading.Event``-gated callback so we can assert delivery happened.
 """
+
 from __future__ import annotations
 
 import threading

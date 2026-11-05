@@ -48,9 +48,9 @@ def _tone(path: Path, seconds: float = SECONDS) -> Path:
         out.setsampwidth(2)
         out.setframerate(RATE)
         frames = int(seconds * RATE)
-        out.writeframes(b"".join(
-            struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / RATE)))
-            for i in range(frames)))
+        out.writeframes(
+            b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / RATE))) for i in range(frames))
+        )
     return path
 
 
@@ -78,9 +78,7 @@ def test_probe_duration_is_none_for_a_file_ffmpeg_cannot_read(tmp_path: Path) ->
 def test_null_duration_track_is_admitted_at_the_measured_length(tmp_path: Path) -> None:
     conn = open_conn(tmp_path / "state.db")
     _track(conn, "sid_null", _tone(tmp_path / "a.wav"), None)
-    (candidate,) = candidates_from_state(
-        conn, ["sid_null"], lane="waveform", backend="own_waveform.backfill"
-    )
+    (candidate,) = candidates_from_state(conn, ["sid_null"], lane="waveform", backend="own_waveform.backfill")
     assert candidate.duration_s == pytest.approx(SECONDS, abs=0.05)
     plan = admission.admit([candidate], model=admission.memory_model_for(candidate.backend))
     assert [item.stable_id for item in plan.admitted] == ["sid_null"]
@@ -92,9 +90,7 @@ def test_a_stored_duration_wins_over_the_probe(tmp_path: Path) -> None:
     # The row says 120 s; the file is 3 s. The library's value is used, so the
     # probe is provably not consulted for a row that already knows its length.
     _track(conn, "sid_known", _tone(tmp_path / "b.wav"), 120_000)
-    (candidate,) = candidates_from_state(
-        conn, ["sid_known"], lane="waveform", backend="own_waveform.backfill"
-    )
+    (candidate,) = candidates_from_state(conn, ["sid_known"], lane="waveform", backend="own_waveform.backfill")
     assert candidate.duration_s == 120.0
     conn.close()
 
@@ -104,32 +100,24 @@ def test_unreadable_file_is_still_refused_duration_unknown(tmp_path: Path) -> No
     junk = tmp_path / "c.mp3"
     junk.write_bytes(b"not audio" * 256)
     _track(conn, "sid_junk", junk, None)
-    (candidate,) = candidates_from_state(
-        conn, ["sid_junk"], lane="waveform", backend="own_waveform.backfill"
-    )
+    (candidate,) = candidates_from_state(conn, ["sid_junk"], lane="waveform", backend="own_waveform.backfill")
     assert candidate.duration_s is None
     plan = admission.admit([candidate], model=admission.memory_model_for(candidate.backend))
     assert [r.reason for r in plan.refused] == [admission.REFUSED_DURATION_UNKNOWN]
     conn.close()
 
 
-def test_no_decoder_refuses_rather_than_guessing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_decoder_refuses_rather_than_guessing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MDT_FFMPEG", str(tmp_path / "no-such-ffmpeg"))
     monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-odj-audio"))
     conn = open_conn(tmp_path / "state.db")
     _track(conn, "sid_noff", _tone(tmp_path / "d.wav"), None)
-    (candidate,) = candidates_from_state(
-        conn, ["sid_noff"], lane="waveform", backend="own_waveform.backfill"
-    )
+    (candidate,) = candidates_from_state(conn, ["sid_noff"], lane="waveform", backend="own_waveform.backfill")
     assert candidate.duration_s is None
     conn.close()
 
 
-def test_the_engine_measures_the_length_with_no_ffmpeg_at_all(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_engine_measures_the_length_with_no_ffmpeg_at_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The installed-app case: ``odj-audio`` is bundled, ffmpeg is not."""
     from apps.shared.engine_decode import EngineDecoderUnavailable, resolve_engine_decoder
 
@@ -141,8 +129,6 @@ def test_the_engine_measures_the_length_with_no_ffmpeg_at_all(
     monkeypatch.setenv("MDT_FFMPEG", str(tmp_path / "no-such-ffmpeg"))
     conn = open_conn(tmp_path / "state.db")
     _track(conn, "sid_engine", _tone(tmp_path / "e.wav"), None)
-    (candidate,) = candidates_from_state(
-        conn, ["sid_engine"], lane="waveform", backend="own_waveform.backfill"
-    )
+    (candidate,) = candidates_from_state(conn, ["sid_engine"], lane="waveform", backend="own_waveform.backfill")
     assert candidate.duration_s == pytest.approx(SECONDS, abs=0.001)
     conn.close()

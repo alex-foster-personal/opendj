@@ -44,10 +44,7 @@ def _fake_tool(bin_dir: Path, name: str, *, stdout: str = "", stderr: str = "", 
     if os.name == "nt":
         stub = bin_dir / f"{name}_stub.py"
         stub.write_text(
-            "import sys\n"
-            f"sys.stdout.write({stdout!r})\n"
-            f"sys.stderr.write({stderr!r})\n"
-            f"raise SystemExit({code})\n",
+            f"import sys\nsys.stdout.write({stdout!r})\nsys.stderr.write({stderr!r})\nraise SystemExit({code})\n",
             encoding="utf-8",
         )
         (bin_dir / f"{name}.cmd").write_text(f'@"{sys.executable}" "{stub}" %*\n', encoding="utf-8")
@@ -63,9 +60,7 @@ def _fake_cargo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stderr: str, co
     monkeypatch.setenv("PATH", str(bin_dir) if os.name == "nt" else f"{bin_dir}:/usr/bin:/bin")
 
 
-def test_no_libclang_is_unavailable_off_the_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_libclang_is_unavailable_off_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_cargo(tmp_path, monkeypatch, LIBCLANG_PANIC, 101)
     monkeypatch.delenv(REQUIRE_ENV, raising=False)
     kind, message = _outcome(tmp_path)
@@ -73,9 +68,7 @@ def test_no_libclang_is_unavailable_off_the_gate(
     assert "UNAVAILABLE: no libclang" in message
 
 
-def test_no_libclang_fails_where_the_build_is_required(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_libclang_fails_where_the_build_is_required(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_cargo(tmp_path, monkeypatch, LIBCLANG_PANIC, 101)
     monkeypatch.setenv(REQUIRE_ENV, "1")
     kind, message = _outcome(tmp_path)
@@ -85,9 +78,7 @@ def test_no_libclang_fails_where_the_build_is_required(
     assert "no libclang" in message and "requires the build" in message
 
 
-def test_any_other_build_failure_fails_even_off_the_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_any_other_build_failure_fails_even_off_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_cargo(tmp_path, monkeypatch, "error[E0308]: mismatched types", 101)
     monkeypatch.delenv(REQUIRE_ENV, raising=False)
     kind, message = _outcome(tmp_path)
@@ -95,9 +86,7 @@ def test_any_other_build_failure_fails_even_off_the_gate(
     assert "E0308" in message
 
 
-def test_a_good_build_returns_the_debug_binary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_good_build_returns_the_debug_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_cargo(tmp_path, monkeypatch, "", 0)
     name = "odj-audio.exe" if sys.platform == "win32" else "odj-audio"
     assert build_audio_engine(tmp_path) == tmp_path / "target" / "debug" / name

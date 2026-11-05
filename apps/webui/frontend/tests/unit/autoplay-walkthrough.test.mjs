@@ -167,7 +167,11 @@ describe('autoplay-walkthrough timelines', () => {
 		assert.equal(midFirst.done, false);
 
 		const onBoundary = frameAt(frames, frames[0].holdMs); // exactly frame 0's end
-		assert.equal(onBoundary.frameIndex, 1, 'a boundary lands on the next frame, not the previous one');
+		assert.equal(
+			onBoundary.frameIndex,
+			1,
+			'a boundary lands on the next frame, not the previous one'
+		);
 
 		const beyondEnd = frameAt(frames, 999_999);
 		assert.equal(beyondEnd.frameIndex, frames.length - 1);

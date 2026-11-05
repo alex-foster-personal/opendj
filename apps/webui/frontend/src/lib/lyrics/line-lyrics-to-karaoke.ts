@@ -11,7 +11,9 @@ export function karaokeTrackFromLineLyrics(lineLyrics: TrackLyrics): KaraokeTrac
 		const start_s = line.start_ms / 1000;
 		const nextStartMs = lineLyrics.lines[i + 1]?.start_ms;
 		const end_s =
-			nextStartMs !== undefined ? nextStartMs / 1000 : start_s + Math.max(0.25, line.text.length * 0.08);
+			nextStartMs !== undefined
+				? nextStartMs / 1000
+				: start_s + Math.max(0.25, line.text.length * 0.08);
 		const idx = i;
 		words.push({
 			idx,

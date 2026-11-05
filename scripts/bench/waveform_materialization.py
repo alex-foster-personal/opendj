@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import resource
 import statistics
 import subprocess
 import sys
@@ -46,6 +45,11 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # POSIX-only; Windows has no resource module
+    resource = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -105,7 +109,10 @@ def _kernels() -> dict[str, Callable[[dict[str, Any], int], dict[str, Any]]]:
     }
 
 
-def _peak_rss() -> int:
+def _peak_rss() -> int | None:
+    # None means UNAVAILABLE (no resource module, Windows), never 0.
+    if resource is None:
+        return None
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
@@ -119,7 +126,7 @@ def _rss_worker(backend: str, anlz_dir: Path, points: int, iterations: int) -> N
     print(json.dumps({"backend": backend, "peak_rss": _peak_rss()}))
 
 
-def _isolated_peak_rss(backend: str, anlz_dir: Path, points: int, iterations: int) -> int:
+def _isolated_peak_rss(backend: str, anlz_dir: Path, points: int, iterations: int) -> int | None:
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -133,7 +140,8 @@ def _isolated_peak_rss(backend: str, anlz_dir: Path, points: int, iterations: in
         backend,
     ]
     completed = subprocess.run(command, check=True, text=True, capture_output=True)
-    return int(json.loads(completed.stdout.strip().splitlines()[-1])["peak_rss"])
+    peak_rss = json.loads(completed.stdout.strip().splitlines()[-1])["peak_rss"]
+    return None if peak_rss is None else int(peak_rss)
 
 
 def _medians(samples: dict[str, list[Sample]], field: str) -> dict[str, float]:
@@ -238,7 +246,8 @@ def main() -> int:
         name: _isolated_peak_rss(name, args.anlz_dir, args.points, args.iterations)
         for name in ("python", "rust")
     }
-    rss_ratio = rss["rust"] / rss["python"]
+    rss_measurable = rss["rust"] is not None and rss["python"] is not None
+    rss_ratio = rss["rust"] / rss["python"] if rss_measurable else None
     report = {
         "fixture": str(args.anlz_dir),
         "band_length": len(next(iter(bands.values()))),
@@ -265,7 +274,8 @@ def main() -> int:
             },
         },
         "targets": {"median_improvement_pct": 30.0, "peak_rss_ratio": 1.10},
-        "pass": improvement >= 30.0 and rss_ratio <= 1.10,
+        # None (UNKNOWN) when peak RSS cannot be measured on this platform; never a pass.
+        "pass": (improvement >= 30.0 and rss_ratio <= 1.10) if rss_measurable else None,
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["pass"] else 1

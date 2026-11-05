@@ -24,8 +24,7 @@ def read_index_meta(index_db: Path) -> dict[str, int] | None:
         conn = sqlite3.connect(f"file:{index_db}?mode=ro", uri=True)
         try:
             row = conn.execute(
-                "SELECT last_pending, docs_indexed, created_ms, last_committed_ms "
-                "FROM lyrics_index_meta WHERE id = 1"
+                "SELECT last_pending, docs_indexed, created_ms, last_committed_ms FROM lyrics_index_meta WHERE id = 1"
             ).fetchone()
         finally:
             conn.close()
@@ -55,9 +54,7 @@ def eta_seconds(
         if elapsed_s <= 0 or meta["docs_indexed"] <= 0:
             return None, f"index last_pending={last_pending}; index rate unmeasured"
         index_s = last_pending / (meta["docs_indexed"] / elapsed_s)
-        index_note = (
-            f"ETA is fetch-remaining + index-remaining; last_pending={last_pending}"
-        )
+        index_note = f"ETA is fetch-remaining + index-remaining; last_pending={last_pending}"
     extra = f"remaining_present_without_lyrics_cache={remaining_n}; {index_note}"
     if remaining_n and (fetch_per_s is None or fetch_per_s <= 0):
         return None, extra + "; fetch rate unmeasured"

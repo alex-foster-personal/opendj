@@ -239,7 +239,7 @@ test('legacy flavor never requests setup status', async () => {
 		if (path === '/api/v1/health') {
 			return jsonResponse({
 				status: 'ok',
-				state_db: { path: 'data/state/state.db', tracks: 0, playlists: 0 },
+				state_db: { path: '(private path)', tracks: 0, playlists: 0 },
 				cloud: { lock_holder: null },
 				syncthing: null,
 				bind_host: '127.0.0.1',
@@ -301,7 +301,10 @@ test('the overlay mounts the assistant sidebar on the agreed contract', () => {
 	// The sidebar's internals belong to another lane; { visible } is the
 	// whole contract and this component must not reach past it.
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /import AssistantSidebar from '\$lib\/components\/assistant\/AssistantSidebar\.svelte'/);
+	assert.match(
+		overlay,
+		/import AssistantSidebar from '\$lib\/components\/assistant\/AssistantSidebar\.svelte'/
+	);
 	assert.match(overlay, /<AssistantSidebar visible=\{true\} \/>/);
 });
 

@@ -1,4 +1,5 @@
 """Tests for ``apps.shared.tag_writer`` (Phase 7 Plan 02)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -50,9 +51,7 @@ def test_unsupported_aiff_raises(tmp_path: Path) -> None:
 @pytest.mark.requirement("META-01")
 @pytest.mark.parametrize("name", ["src-320.mp3", "src.m4a", "src.flac"])
 @pytest.mark.parametrize("dry_run", [True, False])
-def test_write_refuses_and_leaves_bytes_unchanged(
-    tmp_path: Path, name: str, dry_run: bool
-) -> None:
+def test_write_refuses_and_leaves_bytes_unchanged(tmp_path: Path, name: str, dry_run: bool) -> None:
     dst = _copy_fixture(tmp_path, name)
     before = _sha(dst)
     with pytest.raises(TagWriteRemoved):

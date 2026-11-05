@@ -11,7 +11,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // Regression lines:
 // - if a row with no rb_meta produces any issue then a dot lights on nothing
 // - if a null beatgrid_issue produces an issue then "no problem" reads as a problem
-// - if any kind other than beatgrid appears then a detector was invented
+// - if any kind other than beatgrid (or KEY-CELL-01's key / BPM lane status) appears then a detector was invented
 // - if the issue detail loses the disagreement BPM or the timestamp then the
 //   dot is a bare colour the DJ cannot act on
 
@@ -72,7 +72,7 @@ test('every analysis kind without a detector stays off for any row shape', () =>
 	const undetected = jobs.ANALYSIS_DOT_SLOTS.filter(
 		(kind) => kind !== null && !issues.DETECTED_ANALYSIS_KINDS.includes(kind)
 	);
-	assert.equal(undetected.length, 8, `expected 8 detector-less slots, got ${undetected.length}`);
+	assert.equal(undetected.length, 7, `expected 7 detector-less slots, got ${undetected.length}`);
 
 	const rows = [
 		{},
@@ -97,7 +97,7 @@ test('every analysis kind without a detector stays off for any row shape', () =>
 });
 
 test('the detected-kind list is the single place a new detector is declared', () => {
-	assert.deepEqual([...issues.DETECTED_ANALYSIS_KINDS], ['beatgrid']);
+	assert.deepEqual([...issues.DETECTED_ANALYSIS_KINDS], ['beatgrid', 'stems']);
 	for (const kind of issues.DETECTED_ANALYSIS_KINDS) {
 		assert.ok(
 			jobs.ANALYSIS_DOT_SLOTS.includes(kind),
@@ -132,4 +132,19 @@ test('severity is carried through rather than flattened to one colour', () => {
 			`severity ${severity} has no colour to render`
 		);
 	}
+});
+
+// KEY-CELL-01: if a failed or missing key / BPM is not in the Err column (now that the cell shows no word) then broken
+test('analysisIssuesFor: a failed key lights the key slot with its reason; missing BPM is unknown', () => {
+	const got = issues.analysisIssuesFor({
+		grid_quality: null,
+		key_status: 'failed',
+		key_reason: 'no_tonal_center: ambiguous_margin',
+		bpm_status: 'missing',
+		bpm_reason: null
+	});
+	assert.equal(got.key.severity, 'warning');
+	assert.match(got.key.detail, /ambiguous_margin/);
+	assert.equal(got.beatgrid.severity, 'unknown');
+	assert.deepEqual(issues.analysisIssuesFor({ grid_quality: null, key_status: 'ok', bpm_status: 'ok' }), {});
 });

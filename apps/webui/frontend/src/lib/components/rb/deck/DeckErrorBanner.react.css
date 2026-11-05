@@ -74,3 +74,9 @@
 	background: var(--rb-red);
 	color: #fff;
 }
+
+.deck-error.expected {
+	border-color: var(--rb-border);
+	background: rgba(20, 20, 24, 0.94);
+	color: var(--rb-text-dim);
+}

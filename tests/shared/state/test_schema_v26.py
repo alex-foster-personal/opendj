@@ -10,6 +10,7 @@ v26 with pair_transitions created and its library rows, tokens and triggers unto
 [if] a newer-than-code db is opened [then] the ladder writes nothing, [else stop].
 [if] the engine store migrates fresh or adopts a finished v26 db [then] it holds both the v25 and the v26 tables, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -29,8 +30,15 @@ pytestmark = [
 ]
 
 _LIBRARY_TABLES = (
-    "playlist_section", "tag_type", "tag_meta", "tag_synonym", "work",
-    "work_member", "work_dismissal", "work_pref", "undo_journal",
+    "playlist_section",
+    "tag_type",
+    "tag_meta",
+    "tag_synonym",
+    "work",
+    "work_member",
+    "work_dismissal",
+    "work_pref",
+    "undo_journal",
 )
 
 
@@ -68,8 +76,8 @@ def _seed_v25_rows(path: Path) -> None:
 
 
 def test_the_ladder_is_linear_with_library_org_at_26() -> None:
-    assert state_schema.SCHEMA_VERSION == 27, "if the state ladder target is not 27 then broken"
-    assert len(state_schema.MIGRATIONS) == 27, "if the ladder has a gap or a duplicate step then broken"
+    assert state_schema.SCHEMA_VERSION == 28, "if the state ladder target is not 28 then broken"
+    assert len(state_schema.MIGRATIONS) == 28, "if the ladder has a gap or a duplicate step then broken"
     assert state_schema.MIGRATIONS[24] is state_schema._V25, "if v25 is not transition memory then broken"
     assert state_schema.MIGRATIONS[25] is migrations_v26._V26, "if v26 is not library organization then broken"
     assert state_schema.MIGRATIONS[26] is migrations_v27._V27, "if v27 is not path_availability mtime then broken"
@@ -86,14 +94,16 @@ def test_a_v25_db_upgrades_to_v26_and_keeps_its_rows(tmp_path: Path) -> None:
 
     conn = sqlite3.connect(str(path))
     try:
-        assert state_schema.apply_migrations(conn) == 27
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
         assert set(_LIBRARY_TABLES) <= _tables(conn), "if a library table is missing after v26 then broken"
         assert conn.execute("SELECT name, kind, parent_id FROM playlists").fetchall() == [("Warmup", "playlist", None)]
         assert conn.execute("SELECT count(*) FROM pair_transitions").fetchone()[0] == 1, (
             "if v26 loses a saved transition then broken"
         )
         assert [r[0] for r in conn.execute("SELECT id FROM tag_type ORDER BY sort_index")] == [
-            "general", "instrument", "mood",
+            "general",
+            "instrument",
+            "mood",
         ]
         tokens = {str(r[0]) for r in conn.execute("SELECT table_name FROM sync_write_tokens")}
         assert set(migrations_v26.V26_WRITE_TOKEN_TABLES) <= tokens
@@ -119,14 +129,18 @@ def test_a_db_stamped_v25_by_the_reverted_7886_gains_transition_memory(tmp_path:
     tokens_before = conn.execute("SELECT table_name, token FROM sync_write_tokens ORDER BY 1").fetchall()
     assert "pair_transitions" not in _tables(conn)  # negative control: the gap #7961 names
     try:
-        assert state_schema.apply_migrations(conn) == 27, "if a #7886-stamped db cannot reach v26 then broken"
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION, (
+            "if a #7886-stamped db cannot reach v26 then broken"
+        )
         assert "pair_transitions" in _tables(conn), "if v26 does not repair the missing transition memory then broken"
         assert conn.execute("SELECT kind FROM playlists WHERE playlist_id = 'f-1'").fetchone() == ("folder",)
         assert conn.execute("SELECT count(*), max(label = 'Vibes') FROM tag_type").fetchone() == (3, 1), (
             "if v26 re-seeds over an edited tag type then broken"
         )
         assert conn.execute("SELECT table_name, token FROM sync_write_tokens ORDER BY 1").fetchall() == tokens_before
-        stored = {str(r[0]): str(r[1]) for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")}
+        stored = {
+            str(r[0]): str(r[1]) for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
+        }
         assert all(stored.get(name) == sql for name, sql in migrations_v26.EXPECTED_TRIGGERS.items())
     finally:
         conn.close()
@@ -137,7 +151,9 @@ def test_a_fresh_v26_db_stores_the_same_ddl_as_7886_did(tmp_path: Path) -> None:
     _ladder_to(path, 26)
     conn = sqlite3.connect(str(path))
     try:
-        stored = {str(r[0]): str(r[1]) for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")}
+        stored = {
+            str(r[0]): str(r[1]) for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
+        }
         assert all(stored.get(name) == sql for name, sql in migrations_v26.EXPECTED_TRIGGERS.items()), (
             "if the idempotent triggers store text the digest gate does not expect then broken"
         )
@@ -176,7 +192,7 @@ def test_a_db_newer_than_the_code_is_left_alone(tmp_path: Path) -> None:
 
 
 def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> None:
-    assert store_schema.SCHEMA_VERSION == 16
+    assert store_schema.SCHEMA_VERSION == 17
     fresh = sqlite3.connect(":memory:")
     store_schema.apply_migrations(fresh)
     assert {"pair_transitions", *_LIBRARY_TABLES} <= _tables(fresh)

@@ -4,6 +4,8 @@
 	import { listMyTags, type MyTagCatalog } from '$lib/rb/api-edit-suite';
 	import { RbApiError } from '$lib/rb/api-rb-error';
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { tagState } from '$lib/rb/library-tags.svelte';
+	import { groupTagsByType } from '$lib/rb/tag-display';
 	import TaglistTreeView from './TaglistTreeView.svelte';
 
 	let {
@@ -26,6 +28,15 @@
 		}
 	}
 
+	/** Names `listMyTags` reports, under the headers of their tag type. A tag
+	 * the type data has not reached yet sits in the plain list below. */
+	const groups = $derived(
+		groupTagsByType(
+			tagState.catalog.filter((tag) => tag.track_count > 0),
+			tagState.types
+		)
+	);
+
 	onMount(() => {
 		const unkind = subscribeKind('mytags', () => {
 			void refresh();
@@ -41,4 +52,4 @@
 	});
 </script>
 
-<TaglistTreeView {catalog} {error} {selectedId} {onselect} />
+<TaglistTreeView {catalog} {error} {groups} {selectedId} {onselect} />

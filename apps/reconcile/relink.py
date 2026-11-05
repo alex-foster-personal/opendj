@@ -464,8 +464,7 @@ def apply_entries(
     outcomes: list[Outcome] = []
     try:
         with StateWriter(conn, actor=actor) as writer:
-            conn.execute("SAVEPOINT relink_batch")
-            try:
+            with writer.transaction():
                 for entry in entries:
                     src = entry.new_path if reverse else entry.old_path
                     dst = entry.old_path if reverse else entry.new_path
@@ -482,11 +481,6 @@ def apply_entries(
                             "since classification; batch rolled back"
                         )
                     outcomes.append(outcome)
-            except Exception:
-                conn.execute("ROLLBACK TO SAVEPOINT relink_batch")
-                conn.execute("RELEASE SAVEPOINT relink_batch")
-                raise
-            conn.execute("RELEASE SAVEPOINT relink_batch")
     finally:
         conn.close()
     return outcomes

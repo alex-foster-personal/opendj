@@ -121,6 +121,29 @@ def test_a_missing_engine_is_refused(tmp_path: Path, monkeypatch) -> None:
 
 
 @_POSIX_STAND_IN
+@pytest.mark.parametrize(
+    ("content", "damaged"),
+    [(bytes(4096), True), (bytes(4095) + b"\x01", False), (b"", False)],
+    ids=["all-zero", "one-nonzero-byte", "empty"],
+)
+def test_a_zero_filled_file_is_named_damaged_not_merely_undecodable(
+    tmp_path: Path, monkeypatch, content: bytes, damaged: bool
+) -> None:
+    """NAE-28: a file whose bytes are all zero (a sync or disk fault; two such
+    MP3s in the Wed 4 Nov library) says so, so the reason tells the operator
+    to restore the file rather than to debug the decoder."""
+    fake = _fake_engine(tmp_path, "echo 'odj-audio: unrecognized format' >&2; exit 1\n")
+    monkeypatch.setenv(BIN_ENV, str(fake))
+    track = tmp_path / "02 Verdad.mp3"
+    track.write_bytes(content)
+    with pytest.raises(FingerprintUnavailable) as caught:
+        canonical_decode_fingerprint(track)
+    message = str(caught.value)
+    assert "unrecognized format" in message
+    assert ("damaged: all 4096 bytes are zero" in message) is damaged, message
+
+
+@_POSIX_STAND_IN
 def test_an_empty_decode_never_returns_the_digest_of_zero_bytes(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -74,7 +74,11 @@ test('cells rendered by child components are reached by the shared rule', () => 
 	assert.match(SHARED_TD, /:global\(td\)/);
 	for (const { f, src } of CELL_COMPONENTS) {
 		const offenders = rules(src).filter((r) => /overflow\s*:\s*visible/.test(r.body));
-		assert.deepEqual(offenders.map((r) => r.selector), [], `${f} cell stops clipping`);
+		assert.deepEqual(
+			offenders.map((r) => r.selector),
+			[],
+			`${f} cell stops clipping`
+		);
 	}
 });
 

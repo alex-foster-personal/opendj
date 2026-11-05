@@ -36,6 +36,8 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from apps.shared.hashing import sha256_file_hex as sha256_file
+
 BUNDLE_SCHEMA = 2
 
 MANIFEST_NAME = "manifest.json"
@@ -55,14 +57,6 @@ class BundleError(RuntimeError):
 
 
 # ----- Hashing and identity ----------------------------------------------
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def payload_paths(bundle: Path) -> list[str]:

@@ -100,7 +100,10 @@ export function previewCueVerdict(inputs: PreviewCueInputs): PreviewCueVerdict {
 		};
 	}
 	if (gain === 0) {
-		return { audible: false, refusal: `preview: the cue path is silent - raise ${_quietKnob(route)}` };
+		return {
+			audible: false,
+			refusal: `preview: the cue path is silent - raise ${_quietKnob(route)}`
+		};
 	}
 	if (gain < AUDIBLE_FLOOR) {
 		return {

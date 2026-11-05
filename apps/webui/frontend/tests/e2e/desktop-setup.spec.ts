@@ -24,9 +24,7 @@ test.describe('desktop shell setup screen', () => {
 		).toBe(false);
 	});
 
-	test('shows friendly copy by default and agent details only when opened', async ({
-		page
-	}) => {
+	test('shows friendly copy by default and agent details only when opened', async ({ page }) => {
 		await page.goto(SETUP_URL);
 
 		const root = page.locator('#root');
@@ -35,7 +33,9 @@ test.describe('desktop shell setup screen', () => {
 		await expect(page.locator('#checking-view')).toBeHidden();
 		await expect(page.locator('#unreachable-view')).toBeVisible();
 
-		await expect(page.getByRole('heading', { name: 'Open DJ cannot reach its engine' })).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: 'Open DJ cannot reach its engine' })
+		).toBeVisible();
 
 		const visibleBody = await page.locator('#unreachable-view').innerText();
 		expect(visibleBody).not.toMatch(/127\.0\.0\.1/);

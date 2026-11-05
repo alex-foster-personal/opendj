@@ -65,7 +65,7 @@ function wideProportionalMeasure(text, font) {
 
 const NOTATIONS = ['camelot_musical', 'camelot', 'open_key', 'musical'];
 
-const MEASURERS = { default: wideProportionalMeasure, 'mono-dev': monoMeasure, light: monoMeasure };
+const MEASURERS = { default: wideProportionalMeasure, 'mono-dev': monoMeasure, light: monoMeasure, 'green-room': wideProportionalMeasure, 'practice-ddj-flx4': wideProportionalMeasure };
 
 /** theme.css block for a skin: default is :root, others html[data-skin=...] */
 function themeFont(skin) {
@@ -98,11 +98,11 @@ describe('Key and BPM columns fit their text in every skin', () => {
 		assert.deepEqual([...notation.KEY_NOTATIONS], NOTATIONS);
 	});
 
-	for (const skin of ['default', 'mono-dev', 'light']) {
+	for (const skin of ['default', 'mono-dev', 'light', 'green-room', 'practice-ddj-flx4']) {
 		it(`${skin}: theme.css declares its table font`, () => {
 			const declared = themeFont(skin);
 			assert.ok(declared.size > 0 && declared.family.length > 0);
-			if (skin !== 'default') assert.match(declared.family, /^'JetBrains Mono'/, 'the mono measurer no longer matches this skin');
+			if (skin === 'mono-dev' || skin === 'light') assert.match(declared.family, /^'JetBrains Mono'/, 'the mono measurer no longer matches this skin');
 		});
 
 		for (const padX of [6, 8]) {
@@ -203,7 +203,7 @@ describe('Key and BPM columns fit their text in every skin', () => {
 		assert.match(table, /keyHeader: 'Key',\s*bpmHeader: 'BPM',/, 'the fit measures a header the table no longer prints');
 	});
 
-	for (const skin of ['default', 'mono-dev', 'light']) {
+	for (const skin of ['default', 'mono-dev', 'light', 'green-room', 'practice-ddj-flx4']) {
 		for (const padX of [6, 8]) {
 			it(`${skin}, pad ${padX}: "Key" and "BPM" headers fit with the sort arrow, unclipped`, () => {
 				const declared = themeFont(skin);

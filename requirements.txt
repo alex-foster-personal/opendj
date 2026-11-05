@@ -180,6 +180,12 @@ hypothesis>=6.100,<7
 # now (RS256 for Google id_token enrollment, ADR 12), declared in
 # [project].dependencies next to pyjwt[crypto].
 cryptography>=50.0.0,<51
+# B2B invite-code pairing (SPAKE2, apps/b2b_pairing): a core [project] dependency.
+# Missing here, CI's locked venv could not import apps.b2b_pairing.b2b_pairing.
+spake2>=0.9,<1
+# B2BNET-02..04: the internet B2B adapter imports websockets directly (sync
+# client to the relay); mirrors pyproject.toml. BSD-3-Clause.
+websockets>=16,<17
 # The type checker. Exact pin, matching ops/quality/mypy-requirements.txt and
 # the copy in pyproject.toml's `dev` extra, because the quality ratchet records
 # a mypy error count and mypy adds and removes checks between versions exactly

@@ -3,6 +3,7 @@
  * saved booleans; this one makes the stem-row button and the panel redraw.
  */
 
+import type { DeckId } from './deck-state-types';
 import {
 	readTrackLoadReset,
 	subscribeTrackLoadReset,
@@ -18,6 +19,7 @@ subscribeTrackLoadReset(() => {
 let open = $state(false);
 let focusId = $state<TrackLoadResetId>('stems');
 let trigger = $state<HTMLElement | null>(null);
+let deckId = $state<DeckId | null>(null);
 
 export function trackLoadResetEnabled(id: TrackLoadResetId): boolean {
 	revision;
@@ -51,9 +53,20 @@ export function trackLoadResetTrigger(): HTMLElement | null {
 	return trigger;
 }
 
-export function openTrackLoadReset(id: TrackLoadResetId, el: HTMLElement): void {
+/** The deck whose RST chip opened the panel: the one Reset now applies to (DECKGAP-7691h). */
+export function trackLoadResetDeck(): DeckId | null {
+	return deckId;
+}
+
+/** DECKGAP-7691h: the panel's Reset now, as the typed command agents send too. */
+export function resetDeckNowCommand(deck: DeckId): { type: 'reset_deck_now'; deck: DeckId } {
+	return { type: 'reset_deck_now', deck };
+}
+
+export function openTrackLoadReset(id: TrackLoadResetId, el: HTMLElement, deck: DeckId): void {
 	focusId = id;
 	trigger = el;
+	deckId = deck;
 	open = true;
 }
 
@@ -62,10 +75,10 @@ export function closeTrackLoadReset(): void {
 }
 
 /** Second click on the same chip closes the panel. A different chip moves it. */
-export function toggleTrackLoadResetPanel(id: TrackLoadResetId, el: HTMLElement): void {
+export function toggleTrackLoadResetPanel(id: TrackLoadResetId, el: HTMLElement, deck: DeckId): void {
 	if (open && trigger === el) {
 		open = false;
 		return;
 	}
-	openTrackLoadReset(id, el);
+	openTrackLoadReset(id, el, deck);
 }

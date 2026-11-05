@@ -73,22 +73,16 @@ def _warmup_step_index(job: dict) -> int | None:
 
 @pytest.mark.requirement("JIT-05")
 @pytest.mark.parametrize(("workflow", "job_id"), JITS)
-def test_job_warms_the_jit_cache_by_invoking_the_shipped_module(
-    workflow: str, job_id: str
-) -> None:
+def test_job_warms_the_jit_cache_by_invoking_the_shipped_module(workflow: str, job_id: str) -> None:
     """[if] a CI job stops invoking the shipped warm-up module [then] fail, [else stop].
 
     if a job stops invoking apps.analysis.jit_warmup then its warm-up is
     either gone or is CI's own copy, free to drift from the shipped one"""
     job = _job(workflow, job_id)
     index = _warmup_step_index(job)
-    assert index is not None, (
-        f"{workflow}:{job_id} has no step invoking {WARMUP_MODULE} (#1316)"
-    )
+    assert index is not None, f"{workflow}:{job_id} has no step invoking {WARMUP_MODULE} (#1316)"
     run = job["steps"][index]["run"]
-    assert "--backend librosa" in run, (
-        f"{workflow}:{job_id} warms an unnamed backend: {run!r}"
-    )
+    assert "--backend librosa" in run, f"{workflow}:{job_id} warms an unnamed backend: {run!r}"
     assert "--purge-if-stale" in run and " --purge " not in run + " ", (
         f"{workflow}:{job_id} must warm with --purge-if-stale and never a bare --purge: {run!r}"
     )
@@ -96,9 +90,7 @@ def test_job_warms_the_jit_cache_by_invoking_the_shipped_module(
 
 @pytest.mark.requirement("JIT-05")
 @pytest.mark.parametrize(("workflow", "job_id"), JITS)
-def test_the_warmup_runs_before_anything_that_analyzes(
-    workflow: str, job_id: str
-) -> None:
+def test_the_warmup_runs_before_anything_that_analyzes(workflow: str, job_id: str) -> None:
     """[if] a job warms the cache after the thing that analyzes [then] fail, [else stop].
 
     if the warm-up lands after the suite or the e2e run then it warms a
@@ -118,8 +110,7 @@ def test_the_warmup_runs_before_anything_that_analyzes(
         "so an ordering assertion here would pass vacuously"
     )
     assert index < min(consumers), (
-        f"{workflow}:{job_id} warms the JIT cache at step {index}, after the "
-        f"first consumer at step {min(consumers)}"
+        f"{workflow}:{job_id} warms the JIT cache at step {index}, after the first consumer at step {min(consumers)}"
     )
 
 
@@ -173,7 +164,7 @@ def test_some_per_pr_job_runs_the_jit_guards_the_sharded_lane_ignores() -> None:
     The sharded `test` job carries `--ignore=tests/analysis`, which would
     silently take the lock, ordering and fingerprint guards out of every PR and
     leave them only in on-demand Full CI - the same as not gating them. It
-    cannot host the scoped step itself: tests/scripts/test_ci_shard_matrix.py
+    cannot host the scoped step itself: (private path)
     requires that job to hold exactly ONE pytest step so `--splits`, `--group`
     and `.test_durations` stay unambiguous. So the step lives in `contracts`,
     the non-sharded per-PR job.
@@ -208,8 +199,7 @@ def test_some_per_pr_job_runs_the_jit_guards_the_sharded_lane_ignores() -> None:
     )
     for job_id, run in hosting:
         assert "not slow" in run, (
-            f"ci.yml:{job_id} must deselect the cold-compile acceptance tests, "
-            f"which belong in Full CI: {run!r}"
+            f"ci.yml:{job_id} must deselect the cold-compile acceptance tests, which belong in Full CI: {run!r}"
         )
         assert "passed" in run, (
             f"ci.yml:{job_id} trusts pytest's exit code. tests/analysis/"
@@ -220,9 +210,7 @@ def test_some_per_pr_job_runs_the_jit_guards_the_sharded_lane_ignores() -> None:
 
 
 @pytest.mark.parametrize(("workflow", "job_id"), JITS)
-def test_the_cache_persists_per_runner_and_is_declared_before_the_warmup(
-    workflow: str, job_id: str
-) -> None:
+def test_the_cache_persists_per_runner_and_is_declared_before_the_warmup(workflow: str, job_id: str) -> None:
     """[if] the warm-up runs without a per-runner NUMBA_CACHE_DIR and stamp dir [then] fail,
     [else stop].
 

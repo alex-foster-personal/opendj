@@ -80,7 +80,16 @@ test('LYR-13: the captured unchecked row title states the line count and why', (
 
 test('LYR-13: the stem reason follows the row stem status, never guessed', () => {
 	const ready = uncheckedWire();
-	ready.stems = { status: 'ready', model: null, preset: null, overlap: null, shifts: null, format: 'flac', total_bytes: 1, groups: {} };
+	ready.stems = {
+		status: 'ready',
+		model: null,
+		preset: null,
+		overlap: null,
+		shifts: null,
+		format: 'flac',
+		total_bytes: 1,
+		groups: {}
+	};
 	const readyRow = toRow(ready);
 	assert.equal(
 		col.lyricCellTitle(readyRow.lyrics, readyRow.stems),
@@ -99,7 +108,10 @@ test('LYR-13: the stem reason follows the row stem status, never guessed', () =>
 		col.lyricCellTitle(indexRow.lyrics, null),
 		'lyrics found (3 lines), not yet checked: vocal coverage not measured (stem status not loaded for this row); no word alignment'
 	);
-	assert.throws(() => col.lyricCellTitle(indexRow.lyrics, { status: 'weird' }), /unknown stem status/);
+	assert.throws(
+		() => col.lyricCellTitle(indexRow.lyrics, { status: 'weird' }),
+		/unknown stem status/
+	);
 });
 
 test('LYR-13: unknown with no lyric text keeps the bare "?"', () => {
@@ -108,7 +120,10 @@ test('LYR-13: unknown with no lyric text keeps the bare "?"', () => {
 	const row = toRow(w);
 	assert.equal(col.lyricCellState(row.lyrics), 'unknown');
 	assert.deepEqual(col.lyricCellMark(row.lyrics), { kind: 'text', text: '?' });
-	assert.equal(col.lyricCellTitle(row.lyrics, row.stems), 'verdict: unknown - not enough signal to judge');
+	assert.equal(
+		col.lyricCellTitle(row.lyrics, row.stems),
+		'verdict: unknown - not enough signal to judge'
+	);
 });
 
 test('LYR-13: the captured vocal row keeps its verdict mark and title', () => {

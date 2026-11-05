@@ -113,16 +113,9 @@ def norm_spec(spec: str, *, expand_compatible: bool = False, empty_clauses: str 
             continue
         match = SPELLED_CLAUSE_RE.fullmatch(p.strip())
         if match is None:
-            raise Unknown(
-                f"whitespace inside a specifier token, or no operator, in {p.strip()!r};"
-                " uv rejects the file"
-            )
+            raise Unknown(f"whitespace inside a specifier token, or no operator, in {p.strip()!r}; uv rejects the file")
         parts.append(match.group(1) + match.group(2))
-    return ",".join(
-        sorted(
-            clause for p in parts for clause in norm_clause(p, expand_compatible=expand_compatible)
-        )
-    )
+    return ",".join(sorted(clause for p in parts for clause in norm_clause(p, expand_compatible=expand_compatible)))
 
 
 # A release-only bound: (release key with trailing zeros dropped, inclusive), or None for
@@ -217,11 +210,7 @@ def _meet(one: _Interval, other: _Interval) -> _Interval | None:
     highs = [b for b in (one[1], other[1]) if b is not None]
     low = max(lows, key=lambda b: (b[0], not b[1])) if lows else None
     high = min(highs, key=lambda b: (b[0], b[1])) if highs else None
-    if (
-        low is not None
-        and high is not None
-        and (low[0] > high[0] or (low[0] == high[0] and not (low[1] and high[1])))
-    ):
+    if low is not None and high is not None and (low[0] > high[0] or (low[0] == high[0] and not (low[1] and high[1]))):
         return None
     return low, high
 

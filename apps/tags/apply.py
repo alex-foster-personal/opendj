@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import hashlib
 import os
 import shutil
 import sqlite3
@@ -29,6 +28,7 @@ from pathlib import Path
 
 from apps.dedup import contract as dedup_contract
 from apps.shared import paths
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.tag_writer import read_tags, write_tags
 
 from . import collect as tag_collect
@@ -41,14 +41,6 @@ class ApplyResult:
     applied: dict
     backup: Path | None
     error: str | None = None
-
-
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 16), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _icloud_placeholder(path: Path) -> bool:
@@ -83,7 +75,7 @@ def _backup(path: Path, root: Path) -> Path:
     day = _dt.datetime.now().strftime("%Y-%m-%d")
     dst_dir = root / day
     dst_dir.mkdir(parents=True, exist_ok=True)
-    sha = _sha256(path)
+    sha = sha256_file_hex(path)
     dst = dst_dir / f"{sha}{path.suffix}"
     if not dst.exists():
         shutil.copy2(path, dst)

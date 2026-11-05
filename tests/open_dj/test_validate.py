@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.open_dj.validate` -- JSON Schema validation."""
+
 from __future__ import annotations
 
 import pytest
@@ -13,6 +14,7 @@ from apps.open_dj.validate import validate_document
 def test_schema_itself_is_valid_draft_2020_12() -> None:
     """Schema compiles under Draft202012Validator.check_schema."""
     from jsonschema.validators import Draft202012Validator
+
     Draft202012Validator.check_schema(load_schema())
 
 
@@ -85,17 +87,15 @@ class TestProvenanceEnum:
     def test_valid_source_accepted(self, minimal_doc: dict) -> None:
         doc = dict(minimal_doc)
         doc["tracks"] = [dict(minimal_doc["tracks"][0])]
-        doc["tracks"][0]["bpm"] = {
-            "value": 128.0, "source": "open-dj-tool",
-            "modified_at": "2026-04-17T12:00:00Z"
-        }
+        doc["tracks"][0]["bpm"] = {"value": 128.0, "source": "open-dj-tool", "modified_at": "2026-04-17T12:00:00Z"}
         assert validate_document(doc) == []
 
     def test_unknown_source_rejected(self, minimal_doc: dict) -> None:
         doc = dict(minimal_doc)
         doc["tracks"] = [dict(minimal_doc["tracks"][0])]
         doc["tracks"][0]["bpm"] = {
-            "value": 128.0, "source": "some-vendor-not-in-enum",
-            "modified_at": "2026-04-17T12:00:00Z"
+            "value": 128.0,
+            "source": "some-vendor-not-in-enum",
+            "modified_at": "2026-04-17T12:00:00Z",
         }
         assert validate_document(doc)

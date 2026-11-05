@@ -69,6 +69,21 @@ test('the audio routes answer from the output-health callback with the right act
 	}
 });
 
+test('reconnect-speaker answers from an asynchronous callback (AUDIO-DEVICE-05)', async () => {
+	const server = await ShellHealthServer.start(scratchDir('reconnect'), (action) =>
+		action === 'reconnect' ? Promise.resolve(JSON.stringify({ reconnected: true })) : '{}'
+	);
+	try {
+		const answer = await call(server.port, 'POST', '/api/v1/audio/reconnect-speaker');
+		assert.equal(answer.status, 200, 'if POST reconnect-speaker is not routed then the Electron reconnect is broken');
+		assert.deepEqual(answer.body, { reconnected: true });
+		const inputs = await call(server.port, 'GET', '/api/v1/audio/input-devices');
+		assert.deepEqual(inputs.body, {}, 'if GET input-devices is not routed then the acoustic mic guard is broken');
+	} finally {
+		await server.close();
+	}
+});
+
 test('wrong methods and unknown paths are 404, and never trigger a relaunch', async () => {
 	const server = await ShellHealthServer.start(scratchDir('404'), () => '{}');
 	try {

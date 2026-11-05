@@ -13,8 +13,10 @@ export function downbeatsMs(beatgrid: readonly { n: number; time_ms: number }[])
 export function barAt(downbeats: readonly number[], positionMs: number): number {
 	if (downbeats.length < 2) throw new Error('no_grid');
 	const last = downbeats.length - 1;
-	if (positionMs < downbeats[0]) return 1 + (positionMs - downbeats[0]) / (downbeats[1] - downbeats[0]);
-	if (positionMs >= downbeats[last]) return 1 + last + (positionMs - downbeats[last]) / (downbeats[last] - downbeats[last - 1]);
+	if (positionMs < downbeats[0])
+		return 1 + (positionMs - downbeats[0]) / (downbeats[1] - downbeats[0]);
+	if (positionMs >= downbeats[last])
+		return 1 + last + (positionMs - downbeats[last]) / (downbeats[last] - downbeats[last - 1]);
 	let lo = 0;
 	let hi = last;
 	while (hi - lo > 1) {
@@ -31,6 +33,7 @@ export function msAtBar(downbeats: readonly number[], bar: number): number {
 	const last = downbeats.length - 1;
 	const index = Math.floor(bar - 1);
 	if (index < 0) return downbeats[0] + (bar - 1) * (downbeats[1] - downbeats[0]);
-	if (index >= last) return downbeats[last] + (bar - 1 - last) * (downbeats[last] - downbeats[last - 1]);
+	if (index >= last)
+		return downbeats[last] + (bar - 1 - last) * (downbeats[last] - downbeats[last - 1]);
 	return downbeats[index] + (bar - 1 - index) * (downbeats[index + 1] - downbeats[index]);
 }

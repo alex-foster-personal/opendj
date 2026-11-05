@@ -68,8 +68,11 @@ def _call(hooks: _Hooks, method: str, path: str, *, json_body: Any, params: Any)
     if not response.is_success:
         detail = body.get("detail") if isinstance(body, dict) else None
         raise hooks.tool_error(
-            {"error": engine_error_code(detail, response.status_code), "status_code": response.status_code,
-             "detail": detail or body}
+            {
+                "error": engine_error_code(detail, response.status_code),
+                "status_code": response.status_code,
+                "detail": detail or body,
+            }
         )
     return body
 
@@ -89,7 +92,7 @@ def register_offload_tools(
 
     @server.tool(annotations=_FREES_DISK)
     def offload_tracks(stable_ids: list[str]) -> dict[str, Any]:
-        """"Offload to cloud": upload each track's audio and stems to R2, verify, then delete them here.
+        """ "Offload to cloud": upload each track's audio and stems to R2, verify, then delete them here.
 
         Returns an operation; poll ``offload_operation``. A track on a deck or
         during a gig is refused (``TRACK_ON_DECK`` / ``OFFLOAD_DEFERRED``).
@@ -98,7 +101,7 @@ def register_offload_tools(
 
     @server.tool(annotations=_FREES_DISK)
     def offload_playlist(playlist_id: str) -> dict[str, Any]:
-        """"Offload to cloud" for every track in a playlist. Returns an operation."""
+        """ "Offload to cloud" for every track in a playlist. Returns an operation."""
         return call("POST", f"/playlists/{playlist_id}")
 
     @server.tool(annotations=_MUTATING)

@@ -7,12 +7,8 @@ let contract;
 let fill;
 
 before(async () => {
-	contract = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/pane-contract.svelte.ts'
-	);
-	fill = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/fill-playlist-pane.ts'
-	);
+	contract = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
+	fill = await loadTypeScriptModule('src/lib/components/rb/browser/fill-playlist-pane.ts');
 });
 
 function mapRow(item, order) {
@@ -64,7 +60,10 @@ test('first page clears loading before the second page fetch', async () => {
 	releasePage2();
 	await walk;
 
-	assert.deepEqual(p.rows.map((r) => r.stable_id), ['a', 'b', 'c', 'd']);
+	assert.deepEqual(
+		p.rows.map((r) => r.stable_id),
+		['a', 'b', 'c', 'd']
+	);
 	assert.equal(p.load_progress, null);
 });
 

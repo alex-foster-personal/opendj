@@ -20,9 +20,7 @@ def load_measured_fixture(path: Path, expected_sha256: str) -> dict:
     """
     actual = sha256_file(path)
     if actual != expected_sha256:
-        raise ValueError(
-            f"fixture checksum for {path} does not match: expected {expected_sha256}, got {actual}"
-        )
+        raise ValueError(f"fixture checksum for {path} does not match: expected {expected_sha256}, got {actual}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     _validate_measured_payload(payload)
     return payload
@@ -30,9 +28,7 @@ def load_measured_fixture(path: Path, expected_sha256: str) -> dict:
 
 def _validate_measured_payload(payload: dict) -> None:
     if payload.get("fixture_set") != MEASURED_FIXTURE_SET:
-        raise ValueError(
-            f"fixture_set must be {MEASURED_FIXTURE_SET!r}, got {payload.get('fixture_set')!r}"
-        )
+        raise ValueError(f"fixture_set must be {MEASURED_FIXTURE_SET!r}, got {payload.get('fixture_set')!r}")
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         raise ValueError("missing provenance block")
@@ -52,6 +48,4 @@ def _validate_measured_payload(payload: dict) -> None:
             raise ValueError(f"track_id must start with jl-: {track.get('track_id')!r}")
         extra_keys = set(track) - _TRACK_KEYS
         if extra_keys:
-            raise ValueError(
-                f"track {track.get('track_id')!r} carries disallowed keys: {sorted(extra_keys)}"
-            )
+            raise ValueError(f"track {track.get('track_id')!r} carries disallowed keys: {sorted(extra_keys)}")

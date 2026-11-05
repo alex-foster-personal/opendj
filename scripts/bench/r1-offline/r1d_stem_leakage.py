@@ -5,7 +5,7 @@
 """R1d: is leakage AMONG drums/bass/other real, given the shipped deck can solo them?
 
 The claim under test: summing drums+bass+other before writing hides leakage that is
-inaudible in the sum but exposed the moment a user solos one stem. data/state/stems holds
+inaudible in the sum but exposed the moment a user solos one stem. (private path) holds
 the four stems SEPARATELY for 30 of the maintainer's own tracks, so the claim is testable today with
 no reference, no GPU and no spend.
 
@@ -31,6 +31,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,7 @@ STEM_NAMES = ("vocals", "drums", "bass", "other")
 WINDOW_S: float = 60.0
 # Sung fundamentals essentially never sit below this, so vocal energy here is not vocal.
 SUB_HZ: float = 80.0
-# Precedent scale from scripts/bench/q0-offline/leak.json, blessed by the previous team.
+# Precedent scale from (private path), blessed by the previous team.
 Q0_PRECEDENT = (0.045, 0.081)
 
 
@@ -94,11 +95,11 @@ def main() -> None:
         # How the sub-80 Hz energy is divided between the four stems. Bass and kick drum
         # legitimately own it; vocals and other holding a large share is the suspicious case.
         sos = signal.butter(8, SUB_HZ / (sr / 2.0), btype="low", output="sos")
-        low_energy = {n: float(np.dot(signal.sosfiltfilt(sos, stems[n]), signal.sosfiltfilt(sos, stems[n]))) for n in STEM_NAMES}
+        low_energy = {
+            n: float(np.dot(signal.sosfiltfilt(sos, stems[n]), signal.sosfiltfilt(sos, stems[n]))) for n in STEM_NAMES
+        }
         total_low = sum(low_energy.values())
-        low_band_owner.append(
-            {"bundle": bundle.name, **{n: round(low_energy[n] / total_low, 4) for n in STEM_NAMES}}
-        )
+        low_band_owner.append({"bundle": bundle.name, **{n: round(low_energy[n] / total_low, 4) for n in STEM_NAMES}})
 
     def stats(values: list[float]) -> dict:
         arr = np.asarray(values)
@@ -114,9 +115,7 @@ def main() -> None:
         "q0_precedent_band": Q0_PRECEDENT,
         "pairwise_abs_correlation": {k: stats(v) for k, v in corr_rows.items()},
         "sub80hz_share_of_own_energy": {k: stats(v) for k, v in sub_rows.items()},
-        "sub80hz_band_ownership": {
-            n: stats([r[n] for r in low_band_owner]) for n in STEM_NAMES
-        },
+        "sub80hz_band_ownership": {n: stats([r[n] for r in low_band_owner]) for n in STEM_NAMES},
         "per_bundle_sub80_ownership": low_band_owner,
     }
 

@@ -117,9 +117,7 @@ def test_the_same_track_passes_at_0_35_and_fails_at_0_5() -> None:
 
     assert at_default["status"] == "failed"
     assert at_default["reason"] == "activation_below_threshold"
-    assert at_lower_arm["status"] == "ok", (
-        "a track the producer's picker accepted at 0.35 was rejected downstream"
-    )
+    assert at_lower_arm["status"] == "ok", "a track the producer's picker accepted at 0.35 was rejected downstream"
     assert at_lower_arm["beat_numbers"]
 
 

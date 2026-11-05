@@ -17,12 +17,14 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .writer import StateWriter
+from .writer_common import next_playlist_revision
 
 ErrorCode = Literal["NOT_FOUND", "CONFLICT", "INVARIANT", "VALIDATION"]
 
 #: Primary key columns of every table this module writes.
 PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "playlists": ("playlist_id",),
+    "playlist_memberships": ("playlist_id", "position"),
     "playlist_section": ("id",),
     "tag_type": ("id",),
     "tag_meta": ("name_norm",),
@@ -31,7 +33,18 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "work_member": ("work_id", "member_kind", "member_id"),
     "work_dismissal": ("a_member", "b_member"),
     "work_pref": ("work_id",),
+    "track_fields": ("stable_id", "field_name"),
 }
+
+#: Table of a journaled tag write. Tag values are ``track_fields`` rows under
+#: ``TAGS_FIELD`` and go through ``set_field``, never ``_store``; other
+#: ``track_fields`` rows (works) are journaled as plain rows.
+TRACK_FIELDS: str = "track_fields"
+TAGS_FIELD: str = "tags"
+GENERAL_TYPE: str = "general"
+
+#: ``track_fields`` predates ``created_at``; its own clock is ``modified_at``.
+_NO_CREATED_AT: frozenset[str] = frozenset({"track_fields"})
 
 #: Newest entries kept per session. R-UNDO-1 needs at least 50.
 UNDO_DEPTH: int = 200
@@ -41,10 +54,13 @@ DEFAULT_SECTION_TITLE: str = "New section"
 class OrgError(Exception):
     """A refused write, typed as R-API-2 asks."""
 
-    def __init__(self, code: ErrorCode, message: str) -> None:
+    def __init__(
+        self, code: ErrorCode, message: str, details: Mapping[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = dict(details or {})
 
 
 @dataclass
@@ -78,6 +94,25 @@ class _Unit:
         self._store(table, key, {"deleted_at": self.now}, current)
         self._record(table, key, current)
 
+    def bump_playlist(self, playlist_id: str) -> None:
+        """Rotate the playlist's ETag, so a stale If-Match cannot pass after this."""
+        key = {"playlist_id": playlist_id}
+        conn = self.writer._conn
+        current = _read(conn, "playlists", key)
+        revision = next_playlist_revision(conn, playlist_id, self.now)
+        _store(self.writer, "playlists", key, {}, current, revision)
+        self._record("playlists", key, current)
+
+    def set_tags(self, stable_id: str, tags: list[str]) -> None:
+        """Replace one track's tag list. An identical list writes nothing."""
+        key = {"stable_id": stable_id, "field_name": TAGS_FIELD}
+        current = _read_journaled(self.writer._conn, TRACK_FIELDS, key)
+        if (current or {"value": []})["value"] == tags:
+            return
+        _write_tags(self.writer, stable_id, tags, self.now)
+        self.before.append({"table": TRACK_FIELDS, "key": key, "row": current})
+        self.after.append({"table": TRACK_FIELDS, "key": key, "row": {"value": tags}})
+
     def _store(
         self,
         table: str,
@@ -107,6 +142,35 @@ def _read(
     return None if row is None else dict(zip(names, tuple(row), strict=True))
 
 
+def _read_journaled(
+    conn: sqlite3.Connection, table: str, key: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """The snapshot undo compares: a row, or a track's tag list as ``{"value": [...]}``."""
+    if not _is_tag_change(table, key):
+        return _read(conn, table, key)
+    row = conn.execute(
+        "SELECT value_json FROM track_fields WHERE stable_id = ? AND field_name = ?",
+        (key["stable_id"], key["field_name"]),
+    ).fetchone()
+    return None if row is None else {"value": _tag_list(row[0])}
+
+
+def _is_tag_change(table: str, key: Mapping[str, Any]) -> bool:
+    """A journaled tag write. Other ``track_fields`` rows (the works layout field)
+    are journaled as whole rows through ``_store`` like any other table."""
+    return table == TRACK_FIELDS and key.get("field_name") == TAGS_FIELD
+
+
+def _tag_list(value_json: str) -> list[str]:
+    """The stored tags, read the way the track projection reads them."""
+    value = json.loads(value_json)
+    return [str(tag) for tag in value] if isinstance(value, list) else []
+
+
+def _write_tags(writer: StateWriter, stable_id: str, tags: list[str], now: str) -> None:
+    writer.set_field(stable_id, TAGS_FIELD, tags, source="webui", modified_at=now, confidence=1.0)
+
+
 def _store(
     writer: StateWriter,
     table: str,
@@ -122,7 +186,9 @@ def _store(
         "origin_device_id": stamp.origin_device_id,
     }
     if current is None:
-        values = {**key, **stamped, "created_at": now}
+        values = {**key, **stamped}
+        if table not in _NO_CREATED_AT:
+            values["created_at"] = now
         columns = ", ".join(values)
         marks = ", ".join("?" for _ in values)
         writer._conn.execute(
@@ -331,6 +397,19 @@ def update_tag_type(
     )
 
 
+def delete_tag_type(writer: StateWriter, session_id: str, type_id: str) -> str | None:
+    """Delete a type. Its tags become general, never deleted (R-TT-1, E6)."""
+    if type_id == GENERAL_TYPE:
+        raise OrgError("INVARIANT", "the general tag type cannot be deleted")
+    with _operation(writer, session_id, "tag_type.delete") as unit:
+        conn = writer._conn
+        _live(conn, "tag_type", {"id": type_id})
+        for meta in list_rows(conn, "tag_meta", {"type": type_id}):
+            unit.put("tag_meta", {"name_norm": meta["name_norm"]}, {"type": GENERAL_TYPE})
+        unit.tombstone("tag_type", {"id": type_id})
+    return unit.undo_id
+
+
 def put_tag_meta(
     writer: StateWriter,
     session_id: str,
@@ -380,9 +459,32 @@ def _checked_aliases(fields: Mapping[str, Any]) -> dict[str, Any]:
     return checked
 
 
+def _work_identity(title: str | None, composer: str | None) -> tuple[str, str]:
+    """What makes two works the same one: normalized title and composer (E25)."""
+    return (
+        unicodedata.normalize("NFKC", title or "").casefold().strip(),
+        unicodedata.normalize("NFKC", composer or "").casefold().strip(),
+    )
+
+
+def _refuse_duplicate_work(
+    conn: sqlite3.Connection, work_id: str | None, title: str, composer: str | None
+) -> None:
+    """Refuse a title + composer another live work has, naming it so a caller can merge."""
+    identity = _work_identity(title, composer)
+    for other in list_rows(conn, "work"):
+        if other["id"] != work_id and _work_identity(other["title"], other["composer"]) == identity:
+            raise OrgError(
+                "CONFLICT",
+                f"a work called {other['title']!r} already exists; merge into it instead",
+                {"existing_work_id": other["id"]},
+            )
+
+
 def create_work(writer: StateWriter, session_id: str, fields: Mapping[str, Any]) -> WriteResult:
-    """Create a work."""
+    """Create a work. A second work with the same title and composer is refused."""
     with _operation(writer, session_id, "work.create") as unit:
+        _refuse_duplicate_work(writer._conn, None, fields["title"], fields.get("composer"))
         try:
             row = unit.put("work", {"id": uuid.uuid4().hex}, _checked_aliases(fields))
         except sqlite3.IntegrityError as exc:
@@ -393,7 +495,11 @@ def create_work(writer: StateWriter, session_id: str, fields: Mapping[str, Any])
 def update_work(
     writer: StateWriter, session_id: str, work_id: str, changes: Mapping[str, Any]
 ) -> WriteResult:
-    """Edit a work."""
+    """Edit a work. Renaming onto another work is refused with its id, so it can merge."""
+    current = _live(writer._conn, "work", {"id": work_id})
+    if "title" in changes or "composer" in changes:
+        merged = {**current, **changes}
+        _refuse_duplicate_work(writer._conn, work_id, merged["title"], merged["composer"])
     return _update(
         writer, session_id, "work.update", "work", {"id": work_id}, _checked_aliases(changes),
         {"kind", "title", "composer", "catalogue", "movement", "aliases",
@@ -426,6 +532,7 @@ def link_member(
     with _operation(writer, session_id, "work.link") as unit:
         conn = writer._conn
         _live(conn, "work", {"id": work_id})
+        _check_member_exists(conn, member_kind, member_id)
         if is_primary:
             for other in list_rows(
                 conn, "work_member",
@@ -446,6 +553,12 @@ def link_member(
         except sqlite3.IntegrityError as exc:
             raise OrgError("VALIDATION", str(exc)) from exc
     return WriteResult(row, unit.undo_id)
+
+
+def _check_member_exists(conn: sqlite3.Connection, member_kind: str, member_id: str) -> None:
+    """A track member must be a live track. Virtual edits have no table yet."""
+    if member_kind == "track":
+        _live(conn, "tracks", {"stable_id": member_id})
 
 
 def unlink_member(
@@ -546,15 +659,20 @@ def undo_last(writer: StateWriter, session_id: str) -> UndoResult:
         undo_id, op, before_json, after_json = tuple(entry)
         before, after = json.loads(before_json), json.loads(after_json)
         for change in after:
-            if _content(_read(conn, change["table"], change["key"])) != _content(change["row"]):
+            current = _read_journaled(conn, change["table"], change["key"])
+            if _content(current) != _content(change["row"]):
                 raise OrgError(
                     "CONFLICT",
                     f"cannot undo {op}: {change['table']} changed since, on this "
                     "machine or through sync",
                 )
         for change in reversed(before):
-            current = _read(conn, change["table"], change["key"])
             prior = change["row"]
+            if _is_tag_change(change["table"], change["key"]):
+                restored = [] if prior is None else prior["value"]
+                _write_tags(writer, change["key"]["stable_id"], restored, now)
+                continue
+            current = _read(conn, change["table"], change["key"])
             fields = (
                 {"deleted_at": now}
                 if prior is None
@@ -562,7 +680,7 @@ def undo_last(writer: StateWriter, session_id: str) -> UndoResult:
                     name: value
                     for name, value in prior.items()
                     if name not in change["key"]
-                    and name not in ("created_at", "updated_at", "origin_device_id")
+                    and name not in ("updated_at", "origin_device_id")
                 }
             )
             _store(writer, change["table"], change["key"], fields, current, now)

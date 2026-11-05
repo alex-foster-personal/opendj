@@ -43,11 +43,14 @@ test('defaults reset stems only', () => {
 		trim: false,
 		filter: false
 	});
-	assert.equal(mod.channelResetActions(mod.TRACK_LOAD_RESET_DEFAULTS, {
-		...flat,
-		fader: 0.2,
-		eqHigh: 0.9
-	}).length, 0);
+	assert.equal(
+		mod.channelResetActions(mod.TRACK_LOAD_RESET_DEFAULTS, {
+			...flat,
+			fader: 0.2,
+			eqHigh: 0.9
+		}).length,
+		0
+	);
 });
 
 test('parse keeps known booleans and drops the rest', () => {
@@ -81,8 +84,14 @@ test('level, trim, EQ, and filter write only the values that moved', () => {
 
 test('stem carry is a clone when reset is off, and absent when it is on', () => {
 	const current = stems();
-	assert.equal(mod.stemCarryControls({ ...mod.TRACK_LOAD_RESET_DEFAULTS, stems: true }, current), null);
-	const carried = mod.stemCarryControls({ ...mod.TRACK_LOAD_RESET_DEFAULTS, stems: false }, current);
+	assert.equal(
+		mod.stemCarryControls({ ...mod.TRACK_LOAD_RESET_DEFAULTS, stems: true }, current),
+		null
+	);
+	const carried = mod.stemCarryControls(
+		{ ...mod.TRACK_LOAD_RESET_DEFAULTS, stems: false },
+		current
+	);
 	assert.deepEqual(carried, current);
 	assert.notEqual(carried, current);
 	assert.notEqual(carried.vocal, current.vocal);
@@ -113,12 +122,21 @@ test('the engine seam writes only the enabled, non-neutral values through its ow
 		}
 	);
 	// Control: trim and filter are off, high and low EQ are already flat.
-	assert.deepEqual(calls, [['fader', 1], ['eq', 'mid', 0.5]]);
+	assert.deepEqual(calls, [
+		['fader', 1],
+		['eq', 'mid', 0.5]
+	]);
 });
 
 test('a carried stem mix reaches both the published state and the processor, and nothing else does', () => {
 	const unity = { gain: 1, muted: false, solo: false };
-	const mix = { vocal: { ...unity, muted: true }, instrumental: unity, drums: unity, bass: unity, other: unity };
+	const mix = {
+		vocal: { ...unity, muted: true },
+		instrumental: unity,
+		drums: unity,
+		bass: unity,
+		other: unity
+	};
 	mod.writeTrackLoadReset({ level: false, stems: false, eq: false, trim: false, filter: false });
 	mod.captureStemCarry(3, 41, mix);
 	const state = { controls: null };
@@ -135,7 +153,13 @@ test('a carried stem mix reaches both the published state and the processor, and
 
 test('a carried stem mix is spent once: a graph rebuild on the same load keeps the live mix', () => {
 	const unity = { gain: 1, muted: false, solo: false };
-	const mix = { vocal: { ...unity, muted: true }, instrumental: unity, drums: unity, bass: unity, other: unity };
+	const mix = {
+		vocal: { ...unity, muted: true },
+		instrumental: unity,
+		drums: unity,
+		bass: unity,
+		other: unity
+	};
 	mod.writeTrackLoadReset({ level: false, stems: false, eq: false, trim: false, filter: false });
 	mod.captureStemCarry(2, 7, mix);
 	const first = { controls: null };

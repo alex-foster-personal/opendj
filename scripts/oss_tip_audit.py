@@ -161,18 +161,10 @@ NO_KNOWN_LOGINS = KnownLogins()
 # scripts/license_mirrors.py REVIEWED_LICENSE_TEXTS for these paths.
 UPSTREAM_LICENSE_MAILBOX_BLOBS: Mapping[str, str] = MappingProxyType(
     {
-        "docs/legal/lukeed-MIT.txt": (
-            "ba573393f24555ac0528612ad39665fab5bdcc80330a61096024bbf5f736526d"
-        ),
-        "docs/legal/objc2-licenses.txt": (
-            "2001f1ac74823ea95c52652785873026e36246088d72908175eeb4a3075e015e"
-        ),
-        "docs/legal/realfft-3.5.0-LICENSE.txt": (
-            "8eb17835ae38101a31dca0aa580fefded3fa604c9b6a3f761faa8b84fb63b061"
-        ),
-        "docs/legal/rollup-LICENSE.md": (
-            "fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8"
-        ),
+        "docs/legal/lukeed-MIT.txt": ("ba573393f24555ac0528612ad39665fab5bdcc80330a61096024bbf5f736526d"),
+        "docs/legal/objc2-licenses.txt": ("2001f1ac74823ea95c52652785873026e36246088d72908175eeb4a3075e015e"),
+        "docs/legal/realfft-3.5.0-LICENSE.txt": ("8eb17835ae38101a31dca0aa580fefded3fa604c9b6a3f761faa8b84fb63b061"),
+        "docs/legal/rollup-LICENSE.md": ("fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8"),
     }
 )
 
@@ -200,9 +192,7 @@ def is_exempt(finding: Finding, blob_sha256: str = "") -> bool:
     return expected is not None and blob_sha256 == expected
 
 
-def findings_in_text(
-    path: str, text: str, known: KnownLogins = NO_KNOWN_LOGINS
-) -> Iterator[Finding]:
+def findings_in_text(path: str, text: str, known: KnownLogins = NO_KNOWN_LOGINS) -> Iterator[Finding]:
     """One pass per rule over the WHOLE text, with line numbers derived from the
     match offset.
 
@@ -219,11 +209,7 @@ def findings_in_text(
     for match in bare_login_matches(text, lowered, known.pattern, known.logins):
         line_starts = line_starts or _line_starts(text)
         yield Finding(path, bisect_right(line_starts, match.start()), KNOWN_LOGIN_RULE, match.group(0))
-    live = [
-        (rule, pattern)
-        for rule, pattern in PATTERNS
-        if any(token in lowered for token in RULE_PREFILTERS[rule])
-    ]
+    live = [(rule, pattern) for rule, pattern in PATTERNS if any(token in lowered for token in RULE_PREFILTERS[rule])]
     if not live:
         return
     line_starts = line_starts or _line_starts(text)
@@ -531,9 +517,7 @@ def audit_paths(root: Path, paths: Iterable[Path], *, include_records: bool = Fa
     exempt: list[Finding] = []
     scanned = skipped_binary = records = 0
     paths = list(paths)
-    known = _known_logins(
-        (path.relative_to(root).as_posix(), _filesystem_bytes(path)) for path in paths
-    )
+    known = _known_logins((path.relative_to(root).as_posix(), _filesystem_bytes(path)) for path in paths)
     for path in paths:
         rel = path.relative_to(root).as_posix()
         if not _is_content_scanned(rel, include_records=include_records):

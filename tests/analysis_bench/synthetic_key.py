@@ -46,9 +46,7 @@ def build(staged: Path) -> list[dict]:
         stable_id: {"rekordbox": rekordbox, "mik_camelot": mik_camelot}
         for stable_id, (rekordbox, mik_camelot) in ROWS.items()
     }
-    (staged / "key-truth.json").write_text(
-        json.dumps({"schema": 1, "keys": keys}, indent=1), encoding="utf-8"
-    )
+    (staged / "key-truth.json").write_text(json.dumps({"schema": 1, "keys": keys}, indent=1), encoding="utf-8")
     return [{"stable_id": stable_id} for stable_id in ROWS]
 
 

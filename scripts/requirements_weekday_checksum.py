@@ -110,10 +110,7 @@ def validate_allowlist(
 
 def format_mismatch(m: DateMismatch) -> str:
     who = m.req_id or m.line_fingerprint
-    return (
-        f"line {m.line_no}: {who} wrote {m.written!r} "
-        f"but that day is a {m.expected_weekday}"
-    )
+    return f"line {m.line_no}: {who} wrote {m.written!r} but that day is a {m.expected_weekday}"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -146,8 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             print("[ERROR] mismatches remain but allowlist is empty")
             return 1
         print(
-            f"[OK] {len(mismatches)} mismatch(es) covered by allowlist "
-            f"({len(KNOWN_WEEKDAY_MISMATCHES)} entries)"
+            f"[OK] {len(mismatches)} mismatch(es) covered by allowlist ({len(KNOWN_WEEKDAY_MISMATCHES)} entries)"
             if mismatches
             else "[OK] REQUIREMENTS.md weekday checksums are clean"
         )

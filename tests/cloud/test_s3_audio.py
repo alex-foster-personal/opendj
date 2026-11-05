@@ -1,4 +1,5 @@
 """Tests for apps.cloud.s3_audio (CAT-04b opt-in helpers)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -83,9 +84,7 @@ def test_fake_s3_put_if_match_wildcard_existing_object():
     assert etag is None
 
     # Create the object.
-    created, created_etag = s3.put_object_if_none_match(
-        "bucket", "existing", b"v1"
-    )
+    created, created_etag = s3.put_object_if_none_match("bucket", "existing", b"v1")
     assert created is True
     assert created_etag is not None
 
@@ -106,9 +105,7 @@ def test_fake_s3_put_if_match_strict_etag_still_works():
     """Strict etag CAS must still mismatch when the stored etag differs."""
     s3 = FakeS3Client()
     s3.put_object_if_none_match("bucket", "k", b"v1")
-    ok, _ = s3.put_object_if_match(
-        "bucket", "k", b"v2", etag='"deadbeef"'
-    )
+    ok, _ = s3.put_object_if_match("bucket", "k", b"v2", etag='"deadbeef"')
     assert ok is False
 
 

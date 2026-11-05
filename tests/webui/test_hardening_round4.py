@@ -3,14 +3,14 @@
 Every prior round in this workstream exercised sequential requests. Real
 usage is not sequential: two browser tabs, or a webui client racing a CLI
 edit, can genuinely overlap. Per the workstream's verification discipline
-(see .claude/rules/verification.md), this round writes a POSITIVE control
+(see (private path)), this round writes a POSITIVE control
 proving the existing protections (the DB UNIQUE(name) constraint, the
 revision-CAS in ``SmartlistsRepo.update_rule``) actually hold under REAL
 thread-level concurrency against the same sqlite file -- not just
 sequential simulation, which cannot catch a race the code has no way to
 introduce a artificial gap for.
 
-See specs/library-hardening-adversarial-testing.md for the round log.
+See (private path) for the round log.
 
 Regression one-liners:
   - if two concurrent creates with the same name both succeed then broken
@@ -51,9 +51,17 @@ def _seed_state_db(path: Path) -> None:
             "artists_json, album, isrc, duration_ms, file_path, "
             "content_hash, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
-                "hard4-track-001", "inferred", "Probe", json.dumps(["Tester"]),
-                None, None, 300000, None, None,
-                _BASE.isoformat(), _BASE.isoformat(),
+                "hard4-track-001",
+                "inferred",
+                "Probe",
+                json.dumps(["Tester"]),
+                None,
+                None,
+                300000,
+                None,
+                None,
+                _BASE.isoformat(),
+                _BASE.isoformat(),
             ),
         )
     finally:
@@ -70,8 +78,11 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), bind_host="127.0.0.1", hostname="test-host",
-        state_db_path=str(db_path), mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(db_path),
+        mount_frontend=False,
     )
     app.include_router(smartlists_routes.router, prefix="/api/v1")
     with TestClient(app, base_url=_BASE_URL) as c:
@@ -112,9 +123,7 @@ def test_concurrent_create_same_name_exactly_one_wins(client, db_path):
 
     conn = sqlite3.connect(str(db_path))
     try:
-        rows = conn.execute(
-            "SELECT COUNT(*) FROM smartlists WHERE name = 'Race'"
-        ).fetchone()
+        rows = conn.execute("SELECT COUNT(*) FROM smartlists WHERE name = 'Race'").fetchone()
     finally:
         conn.close()
     assert rows[0] == 1, "the race must leave exactly one row behind, not zero or two"
@@ -123,9 +132,14 @@ def test_concurrent_create_same_name_exactly_one_wins(client, db_path):
 def test_concurrent_cas_update_same_starting_revision_exactly_one_wins(client, db_path):
     conn = sqlite3.connect(str(db_path))
     try:
-        sid = SmartlistsRepo(conn).create(
-            "Editable", {"field": "rating", "op": ">=", "value": 0},
-        ).id
+        sid = (
+            SmartlistsRepo(conn)
+            .create(
+                "Editable",
+                {"field": "rating", "op": ">=", "value": 0},
+            )
+            .id
+        )
         conn.commit()
     finally:
         conn.close()

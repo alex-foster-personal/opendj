@@ -21,6 +21,7 @@ const UNLABELLED = [
 const LABELLED = [
 	{ kind: 'audiooutput', deviceId: 'speakers', label: 'MacBook Pro Speakers' },
 	{ kind: 'audiooutput', deviceId: 'over-ears', label: "a friend's over-ears" },
+	{ kind: 'audiooutput', deviceId: 'iface', label: 'Scarlett 2i2' },
 	{ kind: 'audioinput', deviceId: 'builtin-mic', label: 'MacBook Pro Microphone' }
 ];
 
@@ -94,7 +95,7 @@ test('if the label unlock succeeds then the I/O menu lists the labelled devices'
 	assert.deepEqual(
 		hp.outputs.map((output) => output.label),
 		// IOPIN-14: the system default is always listed, first, when the browser names none.
-		['System default output', 'MacBook Pro Speakers', "a friend's over-ears"]
+		['System default output', 'MacBook Pro Speakers', "a friend's over-ears", 'Scarlett 2i2']
 	);
 	assert.equal(hp.error, null);
 });

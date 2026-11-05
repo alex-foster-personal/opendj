@@ -16,7 +16,7 @@ The three facts, in the order the deck learns them:
   3. ``GET /beatgrid-fallback`` answers 200 with a real, ANLZ-shaped grid the
      deck's own validator accepts, or 404 when apps/analysis has not run.
 
-Cloud-buildable: synthetic state.db in tmp_path, no data/master.plain.db and
+Cloud-buildable: synthetic state.db in tmp_path, no (private path) and
 no real library. Both routers are mounted on one app because the point is the
 CHAIN, not any single endpoint.
 
@@ -30,6 +30,7 @@ Regression one-liners:
   - if an unmapped track with no analysis row gets an invented grid instead of a 404 then broken
   - if a decodable unmapped track's /anlz stops decoding real waveform peaks then broken
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -60,8 +61,8 @@ from apps.webui.server.sqlite_backend import make_backend
 
 pytestmark = pytest.mark.requirement("PARITY-10")
 
-ANALYZED_SID = "a" * 40      # unmapped, WITH an apps.analysis row
-UNANALYZED_SID = "b" * 40    # unmapped, no analysis row at all
+ANALYZED_SID = "a" * 40  # unmapped, WITH an apps.analysis row
+UNANALYZED_SID = "b" * 40  # unmapped, no analysis row at all
 DURATION_S = 60.0
 BPM = 120.0
 BAR_S = 240.0 / BPM
@@ -82,9 +83,14 @@ def _insert_local_track(path: Path, stable_id: str, file_path: str) -> None:
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=stable_id, stable_id_tier="inferred",
-            title=None, artists=[], album=None, isrc=None,
-            duration_ms=DURATION_MS, file_path=file_path,
+            stable_id=stable_id,
+            stable_id_tier="inferred",
+            title=None,
+            artists=[],
+            album=None,
+            isrc=None,
+            duration_ms=DURATION_MS,
+            file_path=file_path,
         )
     finally:
         writer.close()
@@ -100,8 +106,11 @@ def _analysis_record(stable_id: str) -> AnalysisRecord:
         analyzed_at=datetime(2026, 8, 31, tzinfo=UTC),
         duration_s=DURATION_S,
         sample_rate=44100,
-        bpm=BPM, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="8m", key_confidence=0.9,
+        bpm=BPM,
+        bpm_confidence=0.9,
+        key_camelot="8A",
+        key_openkey="8m",
+        key_confidence=0.9,
         energy=6,
         onsets_s=[round(0.25 + i * 1.9, 3) for i in range(30)],
         downbeats_s=downbeats,
@@ -145,9 +154,7 @@ def audio_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def client(
-    tmp_path: Path, audio_file: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
+def client(tmp_path: Path, audio_file: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     state_path = tmp_path / "state.db"
     _insert_local_track(state_path, ANALYZED_SID, str(audio_file))
     _insert_local_track(state_path, UNANALYZED_SID, str(audio_file))
@@ -171,6 +178,7 @@ def client(
 
 
 # ----- fact 1: /anlz is a 200 with an empty grid, not a 404 -------------------
+
 
 def test_anlz_serves_an_empty_grid_rather_than_analysis_not_found(
     client: TestClient,
@@ -226,6 +234,7 @@ def test_anlz_decodes_real_peaks_for_an_unmapped_track(client: TestClient) -> No
 
 # ----- fact 2: /rb-meta names the missing vendor mapping ----------------------
 
+
 def test_rb_meta_declares_vendor_local_for_an_unmapped_track(
     client: TestClient,
 ) -> None:
@@ -246,6 +255,7 @@ def test_vendor_is_a_declared_field_of_the_response_model(
 
 
 # ----- fact 3: /beatgrid-fallback serves a grid the deck can actually use -----
+
 
 def test_fallback_serves_an_anlz_shaped_grid_for_the_analyzed_track(
     client: TestClient,
@@ -269,9 +279,7 @@ def test_fallback_grid_passes_the_decks_own_beatgrid_rules(
     the merged payload runs before quantize or Beat Sync will engage. A grid
     that fails these is served but inert, which looks like the bug this
     requirement closed."""
-    beats = client.get(
-        f"/api/v1/tracks/{ANALYZED_SID}/beatgrid-fallback"
-    ).json()["beatgrid"]["beats"]
+    beats = client.get(f"/api/v1/tracks/{ANALYZED_SID}/beatgrid-fallback").json()["beatgrid"]["beats"]
     assert len(beats) >= 2, "under 2 beats reads as gridless to the deck"
     previous = -1.0
     for index, beat in enumerate(beats):
@@ -337,8 +345,7 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
 
     if os.environ.get(FIXTURE_REWRITE_ENV) == "1":
         provenance = (
-            captured["_provenance"]
-            + " Re-captured Sat 12 Sep 2026 (issue #2246, after PR #2237 / #1777); "
+            captured["_provenance"] + " Re-captured Sat 12 Sep 2026 (issue #2246, after PR #2237 / #1777); "
             "each fallback beat now carries required `extrapolated` (false through "
             "last detected downbeat t=58.0, true for the three tail beats past it)."
         )
@@ -369,9 +376,7 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
                 }
             },
         }
-        _FRONTEND_FIXTURE_MANIFEST.write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-        )
+        _FRONTEND_FIXTURE_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         pytest.fail(
             f"re-captured {_FRONTEND_FIXTURE} and {_FRONTEND_FIXTURE_MANIFEST} "
             f"because {FIXTURE_REWRITE_ENV}=1 was set. This always fails: read the "

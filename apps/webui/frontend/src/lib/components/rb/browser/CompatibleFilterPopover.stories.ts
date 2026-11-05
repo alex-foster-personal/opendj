@@ -4,7 +4,8 @@ import { createRawSnippet } from 'svelte';
 import CompatibleFilterPopover from './CompatibleFilterPopover.svelte';
 
 const trigger = createRawSnippet(() => ({
-	render: () => `<button type="button" title="Hover or focus to open the compatible-filter ranges">Compatible</button>`
+	render: () =>
+		`<button type="button" title="Hover or focus to open the compatible-filter ranges">Compatible</button>`
 }));
 
 /**

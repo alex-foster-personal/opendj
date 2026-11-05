@@ -18,15 +18,25 @@ Requirements (statuses per the house docstring convention):
   its app data dir (library, state.db, engine logs) is a fresh empty dir; the
   run refuses silver outright, refuses when another instance of the same
   bundle identifier is running (the single-instance plugin would hand our
-  launch to it), proves the engine's own reported data_dir is the isolated
-  one BEFORE writing anything, and proves afterwards that the real data dir's
-  state.db and its WAL sidecars hold the same bytes as before.
+  launch to it),   resolves the shell's app-data path from the launch env
+  before ``open`` and refuses (exit 2) when that path is outside the run home
+  or at/inside the real app data dir, proves the engine's own reported
+  data_dir is the isolated one BEFORE writing anything, and proves afterwards
+  that the real data dir's state.db and its WAL sidecars hold the same bytes
+  as before. The Tauri shell derives a WKWebsiteDataStore id from the per-run
+  data dir; the harness snapshots ``WebsiteData/Default`` and
+  ``WebsiteData/<uuid-of-real-data-dir>`` under the account home and those
+  two must be unchanged.
+  - [if] the resolved app-data path is outside the run home or at the real store
+    [then ⛔️] exit 2 before launching anything
   - [if] the host is silver [then ⛔️] exit 2 before launching anything
   - [if] /setup/status reports a data_dir outside the run root [then ⛔️]
     `isolation` FAILs, the app is quit and the run stops before any import
   - [if] the content digest (sha256) of the real state.db or of a WAL sidecar
     differs after the run, or either read fails [then ⛔️]
     `real_store_untouched` FAILs. Identical bytes under a new mtime pass.
+  - [if] the real WebKit Default store or the real data-dir UUID store changes during the run
+    [then ⛔️] `real_store_untouched` FAILs
 - ✔︎ ✅ OPS-55 checks, each PASS/FAIL/UNKNOWN with numbers. Check ids the
   result can carry: `isolation`, `manifest_sha`, `first_run_import`,
   `deck_load`, `audio_plays`, `memory`, `stems_lyrics`, `analysis`,
@@ -78,8 +88,8 @@ Requirements (statuses per the house docstring convention):
   - [if] an Electron bundle (app.asar plus payload manifest) is detected as
     TauriShell [then ⛔️] its renderers are looked for under WebKit and the
     run cannot measure memory or a clean quit
-  - [if] the Electron launch omits CFFIXED_USER_HOME [then ⛔️] appData stays
-    the real ~/Library/Application Support and `isolation` FAILs
+  - [if] the Electron launch omits CFFIXED_USER_HOME [then ⛔️] the resolved
+    app-data path is the real store and the run REFUSES before launch (exit 2)
   - [if] a bundle has neither app.asar nor a payload manifest [then ⛔️] exit 2
 - ✔︎ ✅ OPS-60 analysis: after the folder import, with no rekordbox master.db
   under the run HOME and the import job in folder mode, the check drives the
@@ -113,6 +123,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -380,6 +391,37 @@ def _short_command(command: str) -> str:
     return " ".join(Path(t).name if "/" in t else t for t in command.split()[:4])
 
 
+def _account_home() -> Path:
+    """The logged-in account's home from the user database: what a shell falls back to."""
+    if os.name == "nt":
+        return Path.home()
+    import pwd
+
+    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def refuse_unisolated_launch(shell: Shell, home: Path, env: dict[str, str], account_home: Path) -> Path:
+    """Refuse unless the data dir this launch would use is inside the run home and is not the real one.
+
+    Every path is resolved when this is called, so a symlink is followed as
+    it is on disk at that moment. Before the run home exists there is
+    nothing to follow, which is why the caller runs this twice: before the
+    run home is created, and again immediately before the launch. A sibling
+    that only shares the run home's name as a prefix is outside. The real
+    data dir is resolved too, so a real dir that is itself a symlink to
+    another library is refused by where it points.
+    """
+    resolved, run_home = shell.launch_data_dir(env, account_home).resolve(), home.resolve()
+    real = shell.data_dir(account_home).resolve()
+    if resolved.is_relative_to(real):
+        raise Refused(f"app data dir {resolved} is at or inside the real app data dir {real}: "
+                      "this launch would open a real library, so nothing was launched")
+    if not resolved.is_relative_to(run_home):
+        raise Refused(f"app data dir {resolved} is outside the run home {run_home}: "
+                      "this launch would open a real library, so nothing was launched")
+    return resolved
+
+
 # ----- shell adapter ------------------------------------------------------------
 class Shell:
     """Everything that depends on the desktop shell (Tauri or Electron).
@@ -393,6 +435,8 @@ class Shell:
     Renderer RSS differs: WKWebView processes live in WebKit.framework,
     Electron's renderers are Chromium helpers inside the bundle.
     """
+
+    HOME_VARIABLE: str
 
     def __init__(self, app: Path) -> None:
         self.app = app
@@ -450,16 +494,23 @@ class Shell:
         """Variables the launched app itself receives through LaunchServices."""
         raise NotImplementedError
 
-    def launch(self, home: Path) -> None:
-        # Scrubbed environment, same shape as ship_dmg's OPS-32 relaunch; the
-        # isolation variables reach the app itself through `open --env`.
-        app_env = self.launch_env(home)
-        env = {"HOME": str(home), "USER": os.environ.get("USER", ""),
-               "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", **app_env}
-        argv = ["/usr/bin/open", "-n", "-g"]
-        for key, value in app_env.items():
-            argv += ["--env", f"{key}={value}"]
-        subprocess.run([*argv, str(self.app)], env=env, check=True)
+    def launch_data_dir(self, env: dict[str, str], account_home: Path) -> Path:
+        """Where the app would put its data when launched with ``env``.
+
+        An unset or empty home variable falls back to the account home.
+        """
+        override = env.get(self.HOME_VARIABLE)
+        return self.data_dir(Path(override) if override else account_home)
+
+    def launch_argv(self, env: dict[str, str]) -> list[str]:
+        """The launcher command. Every variable in ``env`` reaches the app through LaunchServices."""
+        handed = [word for key, value in env.items() for word in ("--env", f"{key}={value}")]
+        return ["/usr/bin/open", "-n", "-g", *handed, str(self.app)]
+
+    def launch(self, env: dict[str, str]) -> None:
+        """Launch the app with exactly ``env``: the dict the isolation check was given."""
+        scrubbed = {**env, "USER": os.environ.get("USER", ""), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+        subprocess.run(self.launch_argv(env), env=scrubbed, check=True)
 
     def _engine_lock_field(self, home: Path, key: str) -> int | None:
         lock = self.data_dir(home) / ".engine.lock"
@@ -495,6 +546,8 @@ class Shell:
 
 
 class TauriShell(Shell):
+    HOME_VARIABLE = "HOME"
+
     def launch_env(self, home: Path) -> dict[str, str]:
         # Tauri resolves app_data_dir from $HOME (measured, ADR option 3).
         return {"HOME": str(home), "AF_SERVICE_ID": ACCEPTANCE_SERVICE_ID}
@@ -515,9 +568,12 @@ class ElectronShell(Shell):
     Foundation, Tue 3 Nov 2026). Both are set: HOME for the engine and every
     child that reads it, CFFIXED_USER_HOME so the shell's own appData, and with
     it the engine --data-dir and Chromium's profile and single-instance lock,
-    land in the run root. The isolation check still proves the engine's own
+    land in the run root. A pre-launch guard refuses before Foundation resolves
+    appData; the post-launch isolation check still proves the engine's own
     reported data_dir before anything is written.
     """
+
+    HOME_VARIABLE = "CFFIXED_USER_HOME"
 
     def launch_env(self, home: Path) -> dict[str, str]:
         return {"HOME": str(home), "CFFIXED_USER_HOME": str(home), "AF_SERVICE_ID": ACCEPTANCE_SERVICE_ID}
@@ -663,6 +719,8 @@ class Run:
     shell: Shell
     fixture: Fixture
     home: Path
+    env: dict[str, str]
+    account_home: Path
     expect_sha: str
     stems_timeout_s: float
     lyrics_timeout_s: float
@@ -781,9 +839,58 @@ def real_store_digest(state_dir: Path) -> dict[str, str | None]:
     return digests
 
 
+WEBKIT_DATA_STORE_DOMAIN = b"opendj-webkit-data-store-v1\0"
+
+
+def webkit_data_store_identifier(data_dir: Path) -> bytes:
+    """16 bytes; must match apps/desktop/src-tauri/src/main.rs."""
+    digest = hashlib.sha256(WEBKIT_DATA_STORE_DOMAIN)
+    digest.update(os.fsencode(os.fspath(data_dir)))
+    return digest.digest()[:16]
+
+
+def webkit_data_store_uuid(data_dir: Path) -> str:
+    """NSUUID.uuidString form (uppercase 8-4-4-4-12)."""
+    return str(uuid.UUID(bytes=webkit_data_store_identifier(data_dir))).upper()
+
+
+def _webkit_subdirectory_digest(store_root: Path, subdir: str) -> str | None:
+    """Content hash of one WebsiteData subdirectory, or None when absent."""
+    path = store_root / subdir
+    if not path.exists():
+        return None
+    if not path.is_dir():
+        raise StoreUnreadable(path, OSError(f"not a directory: {path}"))
+    digest = hashlib.sha256()
+    for file_path in sorted(
+        (item for item in path.rglob("*") if item.is_file() and not item.is_symlink()),
+        key=lambda item: item.relative_to(path).as_posix(),
+    ):
+        rel = file_path.relative_to(path).as_posix()
+        record = _store_file_record(file_path)
+        if record is None:
+            continue
+        digest.update(rel.encode())
+        digest.update(b"\0")
+        digest.update(record[0].encode())
+    return digest.hexdigest()
+
+
+def real_webkit_store_digest(home: Path, identifier: str, real_data_dir: Path) -> dict[str, str | None]:
+    """SHA-256 digests of Default and the real data-dir UUID store under WebsiteData."""
+    root = home / "Library" / "WebKit" / identifier / "WebsiteData"
+    real_uuid = webkit_data_store_uuid(real_data_dir)
+    return {
+        "webkit.Default": _webkit_subdirectory_digest(root, "Default"),
+        f"webkit.{real_uuid}": _webkit_subdirectory_digest(root, real_uuid),
+    }
+
+
 def _real_store_stat(shell: Shell) -> dict[str, str | None]:
-    """Content digest of the real state.db and its WAL sidecars."""
-    return real_store_digest(shell.data_dir(Path.home()) / "state")
+    """Content digest of the real state.db, WAL sidecars, and guarded WebKit stores."""
+    digests = real_store_digest(shell.data_dir(Path.home()) / "state")
+    digests.update(real_webkit_store_digest(Path.home(), shell.identifier, shell.data_dir(Path.home())))
+    return digests
 
 
 def memory_sample(shell: Shell, procs: list[Proc], *, shell_pid: int | None, engine_pid: int | None,
@@ -2330,9 +2437,10 @@ def _capture_fixture_record(root: Path) -> FixtureRecord:
 # ----- orchestration ----------------------------------------------------------------
 def _boot(run: Run) -> str | None:
     """Launch and wait for a healthy engine in the isolated data dir. None = ok."""
+    refuse_unisolated_launch(run.shell, run.home, run.env, run.account_home)
     run.pids_before_launch = {p.pid for p in _ps()}
     run.launched_at = time.monotonic()
-    run.shell.launch(run.home)
+    run.shell.launch(run.env)
     port = _poll(lambda: run.shell.engine_port(run.home), BOOT_TIMEOUT_S)
     if port is None:
         return f"no .engine.lock in {run.shell.data_dir(run.home)} within {BOOT_TIMEOUT_S}s"
@@ -2379,7 +2487,28 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     captured = fixture.record()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     root = Path(args.run_root).resolve() if args.run_root else ACCEPTANCE_ROOT / stamp
-    home = _fresh_home(root / "home", captured)
+    home = root / "home"
+    if not (app / "Contents" / "Info.plist").is_file():
+        raise Refused(f"{app} is not an app bundle", captured)
+    try:
+        shell = Shell.detect(app)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
+    env = shell.launch_env(home)
+    account_home = _account_home()
+    refuse_unisolated_launch(shell, home, env, account_home)
+    try:
+        running = _running_same_identifier(shell)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
+    if running:
+        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
+                      "the single-instance plugin would swallow the launch. Quit it first.", captured)
+    try:
+        real_before = _real_store_stat(shell)
+    except StoreUnreadable as exc:
+        raise Refused(f"real store could not be read before launch: {exc}", captured) from exc
+    home = _fresh_home(home, captured)
     staged = home / "fixture-library"
     try:
         _stage_fixture_library(fixture.root / "library", staged)
@@ -2392,25 +2521,8 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     except Refused as exc:
         record = exc.fixture_record if exc.fixture_record is not None else captured
         raise Refused(str(exc), record) from exc
-    if not (app / "Contents" / "Info.plist").is_file():
-        raise Refused(f"{app} is not an app bundle", captured)
-    try:
-        shell = Shell.detect(app)
-    except Refused as exc:
-        raise Refused(str(exc), captured) from exc
-    try:
-        running = _running_same_identifier(shell)
-    except Refused as exc:
-        raise Refused(str(exc), captured) from exc
-    if running:
-        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
-                      "the single-instance plugin would swallow the launch. Quit it first.", captured)
-    run = Run(shell=shell, fixture=fixture, home=home, expect_sha=args.expect_sha,
-              stems_timeout_s=args.stems_timeout, lyrics_timeout_s=args.lyrics_timeout)
-    try:
-        real_before = _real_store_stat(shell)
-    except StoreUnreadable as exc:
-        raise Refused(f"real store could not be read before launch: {exc}", captured) from exc
+    run = Run(shell=shell, fixture=fixture, home=home, env=env, account_home=account_home,
+              expect_sha=args.expect_sha, stems_timeout_s=args.stems_timeout, lyrics_timeout_s=args.lyrics_timeout)
     try:
         identity = shell.manifest_identity()
     except Refused as exc:
@@ -2422,6 +2534,8 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     try:
         finished, code = _launch_and_check(run, result, checks, real_before)
     except Exception as exc:  # the app must never outlive the harness
+        if isinstance(exc, Refused) and not run.launched_at:
+            raise  # launch-time isolation refused: nothing launched, nothing to clean up
         checks.append(Check("harness").set(UNKNOWN, f"harness error {type(exc).__name__}: {exc}"))
         finished, code = _finish(result, checks, run, real_before)
     return finished, code, captured
@@ -2442,6 +2556,12 @@ def _launch_and_check(run: Run, result: dict[str, Any], checks: list[Check],
     reported = Path(status.get("data_dir", ""))
     isolation.numbers = {"reported_data_dir": str(reported), "expected_data_dir": str(shell.data_dir(home)),
                          "boot_seconds": round(time.monotonic() - run.launched_at, 1)}
+    run_data_dir = shell.data_dir(home)
+    run_uuid = webkit_data_store_uuid(run_data_dir)
+    webkit_store_dir = Path.home() / "Library" / "WebKit" / shell.identifier / "WebsiteData" / run_uuid
+    isolation.numbers["webkit_data_store_uuid"] = run_uuid
+    isolation.numbers["webkit_store_dir"] = str(webkit_store_dir)
+    isolation.numbers["webkit_store_created"] = webkit_store_dir.is_dir()
     if reported != shell.data_dir(home):
         isolation.set(FAIL, f"engine data_dir {reported} is NOT the isolated {shell.data_dir(home)}: stopping before any write")
         _quit_quietly(run)
@@ -2528,11 +2648,18 @@ def judge_real_store(
     if before is None or after is None:
         return guard.set(FAIL, "real store could not be read: digest missing")
     if before == after:
-        summary = (
-            "real state.db and its WAL sidecars unchanged"
-            if before.get("state.db")
-            else "no real state.db on this host before or after"
-        )
+        webkit_keys = sorted(name for name in before if name.startswith("webkit."))
+        if before.get("state.db"):
+            if webkit_keys:
+                summary = (
+                    "real state.db, WAL sidecars, and WebKit Default plus real-store UUID unchanged"
+                )
+            else:
+                summary = "real state.db and its WAL sidecars unchanged"
+        elif webkit_keys:
+            summary = "WebKit Default plus real-store UUID unchanged"
+        else:
+            summary = "no real state.db on this host before or after"
         return guard.set(PASS, summary)
     changed = [name for name in after if before.get(name) != after[name]]
     return guard.set(FAIL, f"the real app data dir CHANGED during the run: {changed}")

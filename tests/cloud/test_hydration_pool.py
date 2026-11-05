@@ -2,6 +2,7 @@
 
 [if] memory pressure is elevated [then] the pool admits only 1 concurrent download, [else stop].
 """
+
 from __future__ import annotations
 
 import threading
@@ -75,9 +76,7 @@ def test_fourth_enqueue_blocks_until_slot_frees(monkeypatch: pytest.MonkeyPatch)
         time.sleep(0.01)
     assert entered.is_set()
 
-    fourth = threading.Thread(
-        target=lambda: (run_download(slow_work), fourth_entered.set())
-    )
+    fourth = threading.Thread(target=lambda: (run_download(slow_work), fourth_entered.set()))
     fourth.start()
     time.sleep(0.1)
     assert not fourth_entered.is_set()
@@ -112,12 +111,8 @@ def test_elevated_pressure_limits_to_one(monkeypatch: pytest.MonkeyPatch) -> Non
         release.wait(timeout=5.0)
         return 1
 
-    first = threading.Thread(
-        target=lambda: run_download(slow_work, pressure_payload=pressure)
-    )
-    second = threading.Thread(
-        target=lambda: run_download(slow_work, pressure_payload=pressure)
-    )
+    first = threading.Thread(target=lambda: run_download(slow_work, pressure_payload=pressure))
+    second = threading.Thread(target=lambda: run_download(slow_work, pressure_payload=pressure))
     first.start()
     for _ in range(50):
         if entered.is_set():
@@ -137,6 +132,7 @@ def test_elevated_pressure_limits_to_one(monkeypatch: pytest.MonkeyPatch) -> Non
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_failure_propagates_and_releases_slot() -> None:
     """[if] the callable raises [then] run_download re-raises and frees the slot, [else stop]."""
+
     def failing() -> None:
         raise RuntimeError("fetch failed")
 
@@ -165,9 +161,7 @@ def test_pressure_clear_restores_higher_cap(monkeypatch: pytest.MonkeyPatch) -> 
         release_first.wait(timeout=5.0)
         return 1
 
-    first = threading.Thread(
-        target=lambda: run_download(slow_work, pressure_payload=pressure_state)
-    )
+    first = threading.Thread(target=lambda: run_download(slow_work, pressure_payload=pressure_state))
     first.start()
     for _ in range(50):
         if in_flight() == 1:

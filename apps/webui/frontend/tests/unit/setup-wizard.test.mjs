@@ -1115,6 +1115,64 @@ test('a discarded answer leaves an error from something else on screen', async (
 	assert.equal(wizard.error, otherError);
 });
 
+// REQ: SETUP-8760
+test('row B fails while row A is scanning; A then succeeds; B error remains', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A', '/Users/dj/B']);
+	wizard.folderRows = [folderRow('', null, 'row-1'), folderRow('', null, 'row-2')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	wizard.chooseFolderForRow('row-2', '/Users/dj/B');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	gates['/Users/dj/B'].release(jsonResponse({ detail: 'folder B scan refused' }, 500));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	const bError = wizard.error;
+	assert.notEqual(bError, null);
+
+	gates['/Users/dj/A'].release(jsonResponse(folderScan({ path: '/Users/dj/A' })));
+	await settleFolderChecks();
+
+	assert.equal(wizard.error, bError);
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/A');
+	assert.equal(wizard.folderRows[1].scan, null);
+});
+
+// REQ: SETUP-8760
+test('both rows fail; B rechecked successfully; A error remains', async () => {
+	routeFetch({
+		'/api/v1/setup/detect/folder': (_request, url) => {
+			const path = url.searchParams.get('path');
+			const detail =
+				path === '/Users/dj/A' ? 'folder A scan refused' : 'folder B scan refused';
+			return jsonResponse({ detail }, 500);
+		}
+	});
+	wizard.folderRows = [
+		folderRow('/Users/dj/A', null, 'row-1'),
+		folderRow('/Users/dj/B', null, 'row-2')
+	];
+
+	await wizard.checkFolderRow('row-1');
+	await wizard.checkFolderRow('row-2');
+	const aError = wizard.error;
+	assert.notEqual(aError, null);
+
+	routeFetch({
+		'/api/v1/setup/detect/folder': (_request, url) => {
+			const path = url.searchParams.get('path');
+			if (path === '/Users/dj/B') {
+				return jsonResponse(folderScan({ path: '/Users/dj/B' }));
+			}
+			return jsonResponse({ detail: 'folder A scan refused' }, 500);
+		}
+	});
+	await wizard.checkFolderRow('row-2');
+
+	assert.equal(wizard.error, aError);
+	assert.equal(wizard.folderRows[1].scan.path, '/Users/dj/B');
+	assert.equal(wizard.folderRows[0].scan, null);
+});
+
 test('beginFolderImport refuses before requesting when nothing was scanned', async () => {
 	routeFetch({});
 	await wizard.beginFolderImport();

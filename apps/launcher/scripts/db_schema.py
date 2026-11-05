@@ -9,6 +9,7 @@ see one schema.
 ``tracks`` column (reserved for Phase 6 tag unification), so callers
 populate it explicitly via ``BACKFILL_TRACKS_FTS_SQL``.
 """
+
 from __future__ import annotations
 
 FTS5_COLUMN_LIST = "title, artist, album, genre, key, tags"
@@ -115,8 +116,4 @@ CREATE TABLE tracks_frecency (
 
 def bench_fixture_executescript() -> str:
     """Non-idempotent schema for ephemeral latency-check fixtures."""
-    return (
-        BENCH_TRACKS_TABLE_DDL
-        + tracks_fts_virtual_ddl(if_not_exists=False)
-        + BENCH_TRACKS_FRECENCY_DDL
-    )
+    return BENCH_TRACKS_TABLE_DDL + tracks_fts_virtual_ddl(if_not_exists=False) + BENCH_TRACKS_FRECENCY_DDL

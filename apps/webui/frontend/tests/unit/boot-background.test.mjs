@@ -57,6 +57,12 @@ test('overlay mode clears the separator rules of each hidden region', () => {
 	);
 	assert.ok(rule, 'tw-active must clear the deck-col and wavestack borders per hidden edge');
 	// Opposite direction: outside overlay mode the deck columns keep their rules.
-	assert.match(PERFORMANCE_PAGE, /\.deck-col:first-child \{\s*\n\s*grid-area: decks-left;\s*\n\s*border-right: 1px solid #3d4652;/);
-	assert.match(PERFORMANCE_PAGE, /\.deck-col:last-child \{\s*\n\s*grid-area: decks-right;\s*\n\s*border-left: 1px solid #3d4652;/);
+	assert.match(
+		PERFORMANCE_PAGE,
+		/\.deck-col:first-child \{\s*\n\s*grid-area: decks-left;\s*\n\s*border-right: 1px solid #3d4652;/
+	);
+	assert.match(
+		PERFORMANCE_PAGE,
+		/\.deck-col:last-child \{\s*\n\s*grid-area: decks-right;\s*\n\s*border-left: 1px solid #3d4652;/
+	);
 });

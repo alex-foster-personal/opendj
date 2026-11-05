@@ -3,10 +3,7 @@
  */
 
 export type UnexpectedPauseCause =
-	| 'context-suspended'
-	| 'source-ended-early'
-	| 'worklet-error'
-	| 'autoplay-handoff-failed';
+	'context-suspended' | 'source-ended-early' | 'worklet-error' | 'autoplay-handoff-failed';
 
 export type PauseOrigin = 'command' | 'natural-end' | 'unload' | 'dropout' | 'worklet' | 'other';
 
@@ -45,10 +42,7 @@ export function diagnoseUnexpectedPause(input: {
 	}
 	if (input.origin === 'worklet') return null;
 	if (input.origin === 'natural-end') return null;
-	if (
-		input.duration_ms !== null &&
-		input.position_ms + EARLY_END_SLACK_MS >= input.duration_ms
-	) {
+	if (input.duration_ms !== null && input.position_ms + EARLY_END_SLACK_MS >= input.duration_ms) {
 		return null;
 	}
 	if (input.playing && NON_RUNNING_CONTEXT.has(input.context_state)) {

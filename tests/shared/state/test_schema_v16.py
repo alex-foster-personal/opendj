@@ -3,6 +3,7 @@
 [if] schema v16 is applied [then] marker table and indexes exist, [else stop].
 [if] changelog membership is probed [then] SQLite uses the composite index, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -30,12 +31,9 @@ def _index_names(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
-def _explain_uses_index(
-    conn: sqlite3.Connection, changelog_table: str, encoded_pk: str
-) -> bool:
+def _explain_uses_index(conn: sqlite3.Connection, changelog_table: str, encoded_pk: str) -> bool:
     plan = conn.execute(
-        f"EXPLAIN QUERY PLAN SELECT 1 FROM {changelog_table} "
-        "WHERE table_name = ? AND row_pk = ? LIMIT 1",
+        f"EXPLAIN QUERY PLAN SELECT 1 FROM {changelog_table} WHERE table_name = ? AND row_pk = ? LIMIT 1",
         ("track_fields", encoded_pk),
     ).fetchall()
     detail = " ".join(str(cell) for row in plan for cell in row).upper()
@@ -73,10 +71,13 @@ def test_v15_to_v16_upgrade_adds_marker_table_and_hub_index(tmp_path: Path) -> N
 
     upgraded = sqlite3.connect(str(path))
     try:
-        assert upgraded.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-            (MARKER_TABLE,),
-        ).fetchone() is not None
+        assert (
+            upgraded.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (MARKER_TABLE,),
+            ).fetchone()
+            is not None
+        )
         assert "idx_hub_changelog_table" in _index_names(upgraded, "hub_changelog")
         marker = upgraded.execute(
             f"SELECT marker FROM {MARKER_TABLE} WHERE marker = ?",
@@ -151,9 +152,7 @@ def _seed_large_backfill_fixture(conn: sqlite3.Connection, *, row_count: int) ->
     conn.commit()
 
 
-def test_second_open_rw_is_constant_time_on_large_database(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_second_open_rw_is_constant_time_on_large_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] 30k stamped rows reopen [then] second open is fast and O(1) queries, [else stop]."""
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
     path = tmp_path / "state.db"
@@ -193,10 +192,14 @@ def test_second_open_rw_is_constant_time_on_large_database(
     state_db.open_rw(path).close()
     elapsed = time.monotonic() - started
 
-    marker = real_connect(str(path)).execute(
-        f"SELECT 1 FROM {MARKER_TABLE} WHERE marker = ?",
-        (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
-    ).fetchone()
+    marker = (
+        real_connect(str(path))
+        .execute(
+            f"SELECT 1 FROM {MARKER_TABLE} WHERE marker = ?",
+            (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
+        )
+        .fetchone()
+    )
     assert marker is not None
     # Three one-shot markers are consulted on every open (v15 track_fields
     # stamp backfill, v17 hub changelog stamp repair, and the AGENTS.md

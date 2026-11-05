@@ -49,6 +49,8 @@ def _gate(status: str, conclusion: str | None, completed_at: str = "2026-11-04T0
 def _pull(**overrides: Any) -> dict:
     pull: dict[str, Any] = {
         "head": {"sha": HEAD},
+        "state": "open",
+        "merged": False,
         "mergeable": True,
         "merge_commit_sha": MERGE,
         "labels": [{"name": "ci:nightly"}],
@@ -150,6 +152,19 @@ def test_an_unmergeable_pull_request_is_skipped() -> None:
     admission = resolve_admission(PR_RUN, api, _no_sleep)
     assert admission.checkout_ref == ""
     assert "is not mergeable into main" in admission.skip
+
+
+@pytest.mark.parametrize(("merged", "fragment"), [(True, "is already merged"), (False, "is closed")])
+def test_a_pull_request_that_is_no_longer_open_is_skipped_without_polling(merged: bool, fragment: str) -> None:
+    """if a merged pull request is polled for mergeability then its E2E goes red after the lander merged it"""
+    # GitHub answers `mergeable: null` for a closed pull request for good; the lander merges on a green
+    # ci gate, often before this workflow_run starts (#8597, run 41995964780, Thu 5 Nov 2026).
+    closed = _pull(state="closed", merged=merged, mergeable=None, merge_commit_sha=None)
+    api = RecordedApi({GATE_PATH: {"check_runs": [_gate("completed", "success")]}}, pulls=[closed])
+    admission = resolve_admission(PR_RUN, api, _no_sleep)
+    assert admission.checkout_ref == ""
+    assert fragment in admission.skip
+    assert api.calls == [GATE_PATH, PULL_PATH]
 
 
 def test_a_green_current_head_is_admitted_at_its_pinned_merge_commit() -> None:

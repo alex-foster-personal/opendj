@@ -35,11 +35,7 @@ def pin(**over) -> dict:
 
 # ----- parse_pr_body ------------------------------------------------------
 def test_pin_arrow_sha_lines_are_read_with_their_shas() -> None:
-    refs = parse_pr_body(
-        "Landed the pin review pass.\n\n"
-        "pin b44c957f082f -> b63f6d7b\n"
-        "pin 8f60606750c6 -> ce81d24b\n"
-    )
+    refs = parse_pr_body("Landed the pin review pass.\n\npin b44c957f082f -> b63f6d7b\npin 8f60606750c6 -> ce81d24b\n")
     assert refs.pin_shas == {"b44c957f082f": "b63f6d7b", "8f60606750c6": "ce81d24b"}
 
 
@@ -181,9 +177,7 @@ def test_an_unreachable_configured_url_fails_the_run_even_though_another_daemon_
     assert "configured daemon http://127.0.0.1:1 unreachable" in capsys.readouterr().out
 
 
-def test_when_every_configured_daemon_is_reachable_the_run_succeeds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_when_every_configured_daemon_is_reachable_the_run_succeeds(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     _stub_discovery(monkeypatch)
     body = _body_path(tmp_path)
     assert main(["914", "--body", body, "--skip-silver"]) == 0

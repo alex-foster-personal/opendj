@@ -10,6 +10,7 @@ Kind 9-11 rows stay unmapped (issue #263 Rejected for I/J/K slots).
 ANLZ PCOB/PCO2 ``hot_cue`` pad indices use a different numbering; that path
 must not import this module.
 """
+
 from __future__ import annotations
 
 HOT_CUE_SLOTS: str = "ABCDEFGH"

@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.reversal."""
+
 from __future__ import annotations
 
 import shlex
@@ -54,9 +55,7 @@ def test_reversal_records_copy_delete_rename(tmp_path) -> None:
     # overwrite without backup
     log.append(CopyResult(op=_op("overwrite", dst), ok=True, actual_hash="", dst_size=1))
     # delete
-    log.append(
-        CopyResult(op=_op("delete", dst), ok=True, actual_hash="", dst_size=0)
-    )
+    log.append(CopyResult(op=_op("delete", dst), ok=True, actual_hash="", dst_size=0))
     # rename: must emit `mv dst -> backup_path` inverse. Regression for [C1].
     rename_new = tmp_path / "new" / "a.mp3"
     rename_old = tmp_path / "old" / "a.mp3"

@@ -2,6 +2,7 @@
 
 [if] a release-pressure session ranks suggest-next [then] low-energy tracks get a small bump that never outranks a manual pairing, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -35,9 +36,7 @@ def _ctx(energies: list[int]) -> SessionContext:
 
 def _library_all_energies(current_energy: int) -> list[TrackFeature]:
     tracks = [TrackFeature("cur", "Cur", 120.0, "8A", current_energy)]
-    tracks.extend(
-        TrackFeature(f"e-{e}", f"A{e}", 120.5, "8A", e) for e in range(1, 11)
-    )
+    tracks.extend(TrackFeature(f"e-{e}", f"A{e}", 120.5, "8A", e) for e in range(1, 11))
     return tracks
 
 
@@ -53,8 +52,9 @@ def test_release_session_keeps_high_energy_candidates(tmp_path) -> None:
             top_n=10,
         )
         ids = {s.stable_id for s in out}
-        assert any(s.stable_id.startswith("e-") and s.candidate and s.candidate.energy >= 8
-                   for s in out), "high-energy candidates must remain listed"
+        assert any(s.stable_id.startswith("e-") and s.candidate and s.candidate.energy >= 8 for s in out), (
+            "high-energy candidates must remain listed"
+        )
         assert "e-10" in ids or "e-9" in ids or "e-8" in ids
     finally:
         conn.close()

@@ -17,5 +17,9 @@ def _safe(title: str, artist: str) -> bool:
 def test_a_padded_artist_or_title_never_reaches_the_safe_tier() -> None:
     """[if] the raw artist or title carries leading or trailing whitespace [then] the row is not safe tier, [else stop]."""
     assert _safe("8A - 6 - Ember Tide", "Vessel Choir"), "control: the same row, unpadded, is safe tier"
-    assert not _safe("8A - 6 - Ember Tide", " Vessel Choir "), "if trimming rides in the safe tier then an unaudited artist edit auto-applies"
-    assert not _safe(" 8A - 6 - Ember Tide ", "Vessel Choir"), "if a padded title is safe tier then trimming is unaudited"
+    assert not _safe("8A - 6 - Ember Tide", " Vessel Choir "), (
+        "if trimming rides in the safe tier then an unaudited artist edit auto-applies"
+    )
+    assert not _safe(" 8A - 6 - Ember Tide ", "Vessel Choir"), (
+        "if a padded title is safe tier then trimming is unaudited"
+    )

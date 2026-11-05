@@ -23,7 +23,10 @@ type SourceStamped = Pick<AnlzData, 'beatgrid_source' | 'beatgrid_source_basis'>
 
 /** True when `data` is what the engine serves this track under the lane-wide
  * `selected` source. */
-export function anlzSourceMatchesSelection(data: SourceStamped, selected: AnlzBeatgridSource): boolean {
+export function anlzSourceMatchesSelection(
+	data: SourceStamped,
+	selected: AnlzBeatgridSource
+): boolean {
 	if (data.beatgrid_source === selected) return true;
 	return selected === 'rekordbox' && isUnmappedDefault(data);
 }

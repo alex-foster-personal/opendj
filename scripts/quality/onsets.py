@@ -78,9 +78,7 @@ def pick_onsets(
     threshold = np.median(windows, axis=1)[: len(strength)] * ONSET_PEAK_FACTOR + ONSET_PEAK_DELTA
     candidates = (
         np.flatnonzero(
-            (strength[1:-1] > strength[:-2])
-            & (strength[1:-1] >= strength[2:])
-            & (strength[1:-1] > threshold[1:-1])
+            (strength[1:-1] > strength[:-2]) & (strength[1:-1] >= strength[2:]) & (strength[1:-1] > threshold[1:-1])
         )
         + 1
     )
@@ -116,16 +114,10 @@ def compare_onsets(
 ) -> OnsetComparison:
     """Match each reference onset to its nearest render onset."""
     assert_onset_hop_resolution(hop_samples, sample_rate_hz, gate_ms)
-    ref_onsets = pick_onsets(
-        onset_strength(reference, sample_rate_hz, hop_samples), sample_rate_hz, hop_samples
-    )
-    test_onsets = pick_onsets(
-        onset_strength(rendered, sample_rate_hz, hop_samples), sample_rate_hz, hop_samples
-    )
+    ref_onsets = pick_onsets(onset_strength(reference, sample_rate_hz, hop_samples), sample_rate_hz, hop_samples)
+    test_onsets = pick_onsets(onset_strength(rendered, sample_rate_hz, hop_samples), sample_rate_hz, hop_samples)
     if ref_onsets.size == 0:
-        raise HarnessIntegrityError(
-            "no onsets found in the reference; displacement and recovery are undefined"
-        )
+        raise HarnessIntegrityError("no onsets found in the reference; displacement and recovery are undefined")
     displacements: list[float] = []
     for onset in ref_onsets:
         if test_onsets.size == 0:

@@ -142,9 +142,7 @@ test('performance: the library floor never pushes UI outside the window at the s
 		return { scrollHeight: root.scrollHeight, clientHeight: root.clientHeight };
 	});
 
-	expect(overflow.scrollHeight).toBeLessThanOrEqual(
-		overflow.clientHeight + OVERFLOW_TOLERANCE_PX
-	);
+	expect(overflow.scrollHeight).toBeLessThanOrEqual(overflow.clientHeight + OVERFLOW_TOLERANCE_PX);
 });
 
 test('performance: the track list never paints over the browser bottom bar at 1280x800', async ({
@@ -268,9 +266,7 @@ test('performance: switching to LESS frees real height to the library versus MOR
 	// `.deck-col [data-deck='3']`'s max-height rule - like
 	// performance-less-mode-mixer-levels.spec.ts already does.
 	const deck3 = page.locator(".rb-deck[data-deck='3']").first();
-	await expect
-		.poll(async () => (await deck3.boundingBox())?.height ?? -1)
-		.toBeLessThanOrEqual(10);
+	await expect.poll(async () => (await deck3.boundingBox())?.height ?? -1).toBeLessThanOrEqual(10);
 
 	const lessBox = await tableWrap.boundingBox();
 	expect(lessBox).not.toBeNull();
@@ -560,12 +556,10 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	await expect
 		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
 		.toBeLessThan(lessHeight - 4);
-	await expect
-		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
-		.toBe(true);
-	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${shrinkStableId}"]`)).toHaveClass(
-		/rb-row-selected/
-	);
+	await expect.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 }).toBe(true);
+	await expect(
+		page.locator(`[data-testid="track-row"][data-stable-id="${shrinkStableId}"]`)
+	).toHaveClass(/rb-row-selected/);
 
 	// Inverse: establish a fresh selection in the smaller MORE viewport, then expand with the keyboard chord.
 	await tableWrap.evaluate((el) => {
@@ -585,10 +579,8 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	await expect
 		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
 		.toBeGreaterThan(moreHeight + 4);
-	await expect
-		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
-		.toBe(true);
-	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${expandStableId}"]`)).toHaveClass(
-		/rb-row-selected/
-	);
+	await expect.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 }).toBe(true);
+	await expect(
+		page.locator(`[data-testid="track-row"][data-stable-id="${expandStableId}"]`)
+	).toHaveClass(/rb-row-selected/);
 });

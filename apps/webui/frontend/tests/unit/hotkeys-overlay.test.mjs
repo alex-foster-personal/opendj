@@ -26,15 +26,9 @@ let gestureMod;
 let registryMod;
 
 before(async () => {
-	filterMod = await loadTypeScriptModule(
-		'src/lib/components/rb/hotkeys/hotkeys-filter.ts'
-	);
-	gestureMod = await loadTypeScriptModule(
-		'src/lib/components/rb/hotkeys/hotkeys-gesture.ts'
-	);
-	registryMod = await loadTypeScriptModule(
-		'src/lib/components/rb/hotkeys/hotkeys-registry.ts'
-	);
+	filterMod = await loadTypeScriptModule('src/lib/components/rb/hotkeys/hotkeys-filter.ts');
+	gestureMod = await loadTypeScriptModule('src/lib/components/rb/hotkeys/hotkeys-gesture.ts');
+	registryMod = await loadTypeScriptModule('src/lib/components/rb/hotkeys/hotkeys-registry.ts');
 });
 
 const SAMPLE = [
@@ -63,9 +57,7 @@ test('if the query is empty [then] every entry is returned unfiltered with no hi
 	assert.equal(rows.length, SAMPLE.length);
 	for (const row of rows) {
 		assert.deepEqual(row.chordPieces, [{ text: row.entry.chord, matched: false }]);
-		assert.deepEqual(row.descriptionPieces, [
-			{ text: row.entry.description, matched: false }
-		]);
+		assert.deepEqual(row.descriptionPieces, [{ text: row.entry.description, matched: false }]);
 	}
 	const fromRegistry = filterMod.filterHotkeys(registryMod.HOTKEY_REGISTRY, '   ');
 	assert.equal(fromRegistry.length, registryMod.HOTKEY_REGISTRY.length);

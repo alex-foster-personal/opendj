@@ -136,9 +136,11 @@ def main() -> int:
     # modal_vocal_farm is IMPORTED, so the card has to be in the environment
     # before that import or the run is attributed to the wrong silicon.
     if os.environ.get("MDT_FARM_GPU") != GPU:
-        os.execve(sys.executable,
-                  [sys.executable, "-m", "scripts.bench.four_stem_gpu_matrix"],
-                  dict(os.environ, MDT_FARM_GPU=GPU))
+        os.execve(
+            sys.executable,
+            [sys.executable, "-m", "scripts.bench.four_stem_gpu_matrix"],
+            dict(os.environ, MDT_FARM_GPU=GPU),
+        )
 
     import modal  # noqa: F401  (proves the dep before any GPU spend)
 
@@ -148,12 +150,14 @@ def main() -> int:
         raise SystemExit(
             f"error: asked for {GPU}, farm hydrated on {farm.GPU_KIND}. The "
             "re-exec did not take; refusing to attribute a measurement to the "
-            "wrong card.")
+            "wrong card."
+        )
     for model in MODELS:
         if model not in farm.BAKED_MODELS:
             raise SystemExit(
                 f"error: {model} is not baked into the farm image, so its cold "
-                "weight download would be billed to this measurement.")
+                "weight download would be billed to this measurement."
+            )
     farm._assert_contract_matches()
 
     flags = gate_flags(*GATE_JSONS)
@@ -163,8 +167,7 @@ def main() -> int:
 
     for track_dir in track_dirs:
         if track_dir.name not in flags:
-            raise SystemExit(
-                f"error: {track_dir.name} has no gate row; its window was never gated")
+            raise SystemExit(f"error: {track_dir.name} has no gate row; its window was never gated")
 
     done = _load_cells()
     if done:
@@ -183,7 +186,7 @@ def main() -> int:
     # Do not open a modal app just to re-read the cache: a fully resumed run
     # should cost nothing at all.
     any_todo = any((d.name, m) not in done for d in track_dirs for m in MODELS)
-    with (farm.app.run() if any_todo else contextlib.nullcontext()):
+    with farm.app.run() if any_todo else contextlib.nullcontext():
         for track_dir in track_dirs:
             track = track_dir.name
             mix_mono, rate = _mono_read(str(track_dir / "mixture.wav"))
@@ -192,12 +195,12 @@ def main() -> int:
             for stem in STEMS:
                 audio, stem_rate = _mono_read(str(track_dir / f"{stem}.wav"))
                 if stem_rate != rate:
-                    raise SystemExit(
-                        f"error: {track} true {stem} is {stem_rate} Hz, mixture is {rate} Hz")
+                    raise SystemExit(f"error: {track} true {stem} is {stem_rate} Hz, mixture is {rate} Hz")
                 if len(audio) != window_samples:
                     raise SystemExit(
                         f"error: {track} true {stem} is {len(audio)} samples, mixture is "
-                        f"{window_samples} -- the window is not sample-aligned")
+                        f"{window_samples} -- the window is not sample-aligned"
+                    )
                 truth[stem] = audio
             floors[track] = {s: _si_sdr_db(truth[s], mix_mono) for s in STEMS}
             del mix_mono
@@ -207,13 +210,17 @@ def main() -> int:
             for model in todo:
                 print(f"[gpu] {track} :: {model}", flush=True)
                 result = farm.separate_track.remote(
-                    mixture_bytes, f"4stem-{model}", "mixture.wav",
-                    model, OVERLAP, SHIFTS,
+                    mixture_bytes,
+                    f"4stem-{model}",
+                    "mixture.wav",
+                    model,
+                    OVERLAP,
+                    SHIFTS,
                     "asset-store",  # the only dest that hands the stem bytes back
                     str(track_dir / "mixture.wav"),
-                    {"tag": f"{model}-ov{OVERLAP}", "model": model,
-                     "overlap": OVERLAP, "shifts": SHIFTS, "rung": -1},
-                    "", "flac",
+                    {"tag": f"{model}-ov{OVERLAP}", "model": model, "overlap": OVERLAP, "shifts": SHIFTS, "rung": -1},
+                    "",
+                    "flac",
                 )
                 if "error" in result:
                     raise SystemExit(f"error: {track}/{model}: {result['error']}")
@@ -223,11 +230,15 @@ def main() -> int:
                     if len(estimate) != window_samples:
                         raise SystemExit(
                             f"error: {track}/{model} {stem} came back {len(estimate)} "
-                            f"samples, window is {window_samples}")
+                            f"samples, window is {window_samples}"
+                        )
                     scores[stem] = _si_sdr_db(truth[stem], estimate)
                     del estimate
                 cell = {
-                    "track": track, "model": model, "gpu": GPU, "si_sdr": scores,
+                    "track": track,
+                    "model": model,
+                    "gpu": GPU,
+                    "si_sdr": scores,
                     "separate_s": result["timings"]["separate_s"],
                     "load_s": result["timings"]["load_s"],
                     "container_s": result["container_s"],
@@ -235,9 +246,12 @@ def main() -> int:
                 }
                 _persist(cell)  # the moment it exists, before anything else
                 done[(track, model)] = cell
-                print("      " + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS)
-                      + f"   sep {cell['separate_s']}s container {cell['container_s']}s",
-                      flush=True)
+                print(
+                    "      "
+                    + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS)
+                    + f"   sep {cell['separate_s']}s container {cell['container_s']}s",
+                    flush=True,
+                )
                 del result
             del truth, mixture_bytes
             gc.collect()
@@ -254,24 +268,28 @@ def main() -> int:
                 raise RuntimeError(f"{track}/{model} has no score for {missing}")
             cube[track][model] = cell["si_sdr"]
             container_s_total += float(cell["container_s"])
-            timings.append({
-                "track": track, "model": model,
-                "separate_s": cell["separate_s"], "load_s": cell["load_s"],
-                "container_s": cell["container_s"],
-                # The window is 60s, so separate_s IS seconds per audio-minute.
-                "gpu_s_per_audio_minute": round(float(cell["separate_s"]), 2),
-            })
+            timings.append(
+                {
+                    "track": track,
+                    "model": model,
+                    "separate_s": cell["separate_s"],
+                    "load_s": cell["load_s"],
+                    "container_s": cell["container_s"],
+                    # The window is 60s, so separate_s IS seconds per audio-minute.
+                    "gpu_s_per_audio_minute": round(float(cell["separate_s"]), 2),
+                }
+            )
 
     payload = {
         "question": (
             "Does the per-stem model inversion in ladder_4stem_all.json (plain htdemucs "
             "wins bass by 0.775 dB, hdemucs_mmi wins vocals by 0.790) hold across tracks, "
-            "and where does the never-scored htdemucs_ft land per stem?"),
+            "and where does the never-scored htdemucs_ft land per stem?"
+        ),
         "dataset": "MUSDB18-HQ test",
         "reference_kind": "TRUE MUSDB18-HQ stem",
         "window_length_s": 60.0,
-        "windows_chosen_by":
-            "scripts/bench/stem_content_gate.py, before any model score existed",
+        "windows_chosen_by": "scripts/bench/stem_content_gate.py, before any model score existed",
         "windows_verified_by": ".tmp/bench/4stem-matrix/verify_fetch.py",
         "knobs": {"overlap": OVERLAP, "shifts": SHIFTS, "sample_rate_hz": 44100},
         "default_model": DEFAULT_MODEL,
@@ -295,16 +313,14 @@ def main() -> int:
     width = max(len(t) for t in cube) + 2
     for stem in STEMS:
         print(f"\n=== {stem} (SI-SDR dB vs TRUE stem, 60s window, {GPU}) ===")
-        print("track".ljust(width) + "".join(m.rjust(14) for m in MODELS)
-              + "         floor  gated")
+        print("track".ljust(width) + "".join(m.rjust(14) for m in MODELS) + "         floor  gated")
         for track in sorted(cube):
             row = track.ljust(width)
             row += "".join(f"{cube[track][m][stem]:14.3f}" for m in MODELS)
             row += f"{floors[track][stem]:14.3f}"
             row += "  yes" if flags[track]["stem_passed"][stem] else "   NO"
             print(row)
-    print(f"\ncontainer {payload['container_s_total']}s on {GPU} "
-          f"= ${payload['gpu_usd_spent']}")
+    print(f"\ncontainer {payload['container_s_total']}s on {GPU} = ${payload['gpu_usd_spent']}")
     print(f"[OK] wrote {OUT_JSON}")
     return 0
 

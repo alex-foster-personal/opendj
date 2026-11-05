@@ -72,7 +72,10 @@ test('aiApplySetting posts the instruction and returns the proposal', async () =
 
 test('a non-2xx detail envelope maps to Error with path and status', async () => {
 	globalThis.fetch = async () =>
-		jsonResponse({ detail: { code: 'AI_OFF', message: 'disabled' } }, { status: 503, statusText: 'Unavailable' });
+		jsonResponse(
+			{ detail: { code: 'AI_OFF', message: 'disabled' } },
+			{ status: 503, statusText: 'Unavailable' }
+		);
 
 	const caught = await aiClient.aiSearchSettings('x', []).then(
 		() => null,

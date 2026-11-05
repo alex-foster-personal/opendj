@@ -20,9 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def test_evaluate_emits_declared_floor_on_live_tree() -> None:
     """[if] LATENCY-03 wiring is intact [then] evaluate echoes the baseline floor, [else stop]."""
-    floor = json.loads((REPO / "ops/quality/baseline.json").read_text())["metrics"][
-        "latency.input_to_applied_ms"
-    ]
+    floor = json.loads((REPO / "ops/quality/baseline.json").read_text())["metrics"]["latency.input_to_applied_ms"]
     metrics = quality_latency.evaluate(REPO)
     assert len(metrics) == 1
     assert metrics[0]["key"] == "latency.input_to_applied_ms"

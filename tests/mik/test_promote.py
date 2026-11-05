@@ -6,6 +6,7 @@ applying, and the staged row surviving as an audit trail.
 
 [if] a row is promoted to known/unknown/deleted/claimed [then] it writes once/raises, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -25,9 +26,7 @@ from .conftest import STAGED_FIELD_COUNT
 pytestmark = pytest.mark.requirement("META-01")
 
 
-def test_promotion_moves_scalars_and_the_series(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promotion_moves_scalars_and_the_series(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
@@ -37,54 +36,27 @@ def test_promotion_moves_scalars_and_the_series(
     )
     assert result.fields_written == STAGED_FIELD_COUNT - 1  # all but the series
     assert result.segment_rows == 2
-    assert (
-        state_conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
-        == "7"
-    )
+    assert state_conn.execute("SELECT value_json FROM track_fields WHERE field_name='energy'").fetchone()[0] == "7"
     rows = state_conn.execute(
-        "SELECT seq, start_ms, length_ms, energy FROM track_energy_segments "
-        "ORDER BY seq"
+        "SELECT seq, start_ms, length_ms, energy FROM track_energy_segments ORDER BY seq"
     ).fetchall()
     assert rows == [(0, 0, 60000, 5), (1, 60000, 30000, 8)]
-    assert (
-        state_conn.execute(
-            "SELECT confidence FROM track_fields WHERE field_name='key'"
-        ).fetchone()[0]
-        == 0.91
-    )
+    assert state_conn.execute("SELECT confidence FROM track_fields WHERE field_name='key'").fetchone()[0] == 0.91
 
 
-def test_promotion_is_idempotent(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promotion_is_idempotent(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
-    first = promoter.promote(
-        state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40
-    )
-    second = promoter.promote(
-        state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40
-    )
+    first = promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40)
+    second = promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40)
     assert first.fields_written == STAGED_FIELD_COUNT - 1
     assert second.fields_written == 0
     assert second.segment_rows == 0
     assert second.already_promoted == STAGED_FIELD_COUNT
     written = state_conn.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0]
     assert written == STAGED_FIELD_COUNT - 1
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_energy_segments"
-        ).fetchone()[0]
-        == 2
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_energy_segments").fetchone()[0] == 2
     # No spurious history: the second pass wrote nothing to overwrite.
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_field_history"
-        ).fetchone()[0]
-        == 0
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_field_history").fetchone()[0] == 0
 
 
 def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
@@ -106,12 +78,7 @@ def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
         now="2024-06-01T00:00:00+00:00",
     )
     assert first.fields_written == STAGED_FIELD_COUNT - 1
-    assert (
-        state_conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
-        == "7"
-    )
+    assert state_conn.execute("SELECT value_json FROM track_fields WHERE field_name='energy'").fetchone()[0] == "7"
 
     rescan_store = make_mik_store(
         [
@@ -144,38 +111,23 @@ def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
     )
     assert second.fields_written == STAGED_FIELD_COUNT - 1
     assert second.already_promoted == 0
-    assert (
-        state_conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
-        == "9"
-    )
+    assert state_conn.execute("SELECT value_json FROM track_fields WHERE field_name='energy'").fetchone()[0] == "9"
 
 
-def test_repointing_to_a_different_track_raises(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_repointing_to_a_different_track_raises(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     add_track("b" * 40, file_path="/Users/old/other.mp3")
     promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40)
     with pytest.raises(promoter.PromotionConflict, match="already promoted"):
-        promoter.promote(
-            state_conn, staged["gate"], source_row_id="1", stable_id="b" * 40
-        )
+        promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="b" * 40)
 
 
-def test_promoting_to_an_unknown_track_raises(
-    state_conn: sqlite3.Connection, staged
-) -> None:
+def test_promoting_to_an_unknown_track_raises(state_conn: sqlite3.Connection, staged) -> None:
     with pytest.raises(promoter.PromotionError, match="not in tracks"):
-        promoter.promote(
-            state_conn, staged["gate"], source_row_id="1", stable_id="z" * 40
-        )
+        promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="z" * 40)
 
 
-def test_promoting_to_a_soft_deleted_track_raises(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promoting_to_a_soft_deleted_track_raises(state_conn: sqlite3.Connection, add_track, staged) -> None:
     """[if] the target stable_id's tracks row has deleted_at set [then]
     promote() raises PromotionError instead of resurrecting analysis onto a
     tombstoned track, [else stop].
@@ -191,19 +143,13 @@ def test_promoting_to_a_soft_deleted_track_raises(
         (datetime.now(UTC).isoformat(), "a" * 40),
     )
     with pytest.raises(promoter.PromotionError, match="not in tracks"):
-        promoter.promote(
-            state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40
-        )
+        promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40)
 
 
-def test_promoting_an_unknown_source_row_raises(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promoting_an_unknown_source_row_raises(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40)
     with pytest.raises(promoter.PromotionError, match="no staged rows"):
-        promoter.promote(
-            state_conn, staged["gate"], source_row_id="404", stable_id="a" * 40
-        )
+        promoter.promote(state_conn, staged["gate"], source_row_id="404", stable_id="a" * 40)
 
 
 def test_the_gate_still_applies_at_promotion_time(
@@ -213,22 +159,13 @@ def test_the_gate_still_applies_at_promotion_time(
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     write_verdicts({"energy": "passed"})
     strict = EquivalenceGate.load(data_dir)
-    result = promoter.promote(
-        state_conn, strict, source_row_id="1", stable_id="a" * 40
-    )
+    result = promoter.promote(state_conn, strict, source_row_id="1", stable_id="a" * 40)
     assert result.fields_written == 1
-    assert sorted(result.blocked_by_gate) == sorted(
-        set(loader.GATED_FIELDS) - {"energy"}
-    )
-    assert {
-        row[0]
-        for row in state_conn.execute("SELECT field_name FROM track_fields")
-    } == {"energy"}
+    assert sorted(result.blocked_by_gate) == sorted(set(loader.GATED_FIELDS) - {"energy"})
+    assert {row[0] for row in state_conn.execute("SELECT field_name FROM track_fields")} == {"energy"}
 
 
-def test_the_staged_row_survives_as_an_audit_trail(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_the_staged_row_survives_as_an_audit_trail(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote(
         state_conn,
@@ -238,8 +175,7 @@ def test_the_staged_row_survives_as_an_audit_trail(
         now="2026-07-28T10:00:00+00:00",
     )
     rows = state_conn.execute(
-        "SELECT promoted_stable_id, promoted_at, unmatched_reason "
-        "FROM unmatched_source_analysis"
+        "SELECT promoted_stable_id, promoted_at, unmatched_reason FROM unmatched_source_analysis"
     ).fetchall()
     assert len(rows) == STAGED_FIELD_COUNT
     for promoted, promoted_at, reason in rows:
@@ -248,33 +184,25 @@ def test_the_staged_row_survives_as_an_audit_trail(
         assert reason == "no_candidate"  # why it was staged is not rewritten
 
 
-def test_discover_finds_a_row_once_the_track_exists(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_discover_finds_a_row_once_the_track_exists(state_conn: sqlite3.Connection, add_track, staged) -> None:
     assert promoter.discover(state_conn) == {}
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     assert promoter.discover(state_conn) == {"1": "a" * 40}
 
 
-def test_discover_ignores_already_promoted_rows(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_discover_ignores_already_promoted_rows(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote_all(state_conn, staged["gate"], {"1": "a" * 40})
     assert promoter.discover(state_conn) == {}
 
 
-def test_discover_leaves_an_ambiguous_row_staged(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_discover_leaves_an_ambiguous_row_staged(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     add_track("b" * 40, file_path="/Users/old/orphan.mp3")
     assert promoter.discover(state_conn) == {}
 
 
-def test_pending_counts_track_the_backlog(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_pending_counts_track_the_backlog(state_conn: sqlite3.Connection, add_track, staged) -> None:
     assert promoter.pending_counts(state_conn) == {"no_candidate": 1}
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote_all(state_conn, staged["gate"], {"1": "a" * 40})

@@ -76,7 +76,9 @@ export function ackOpKey(operation: string): string {
 		.replace(/[^a-z0-9]+/g, '_')
 		.replace(/^_+|_+$/g, '');
 	if (key === '') {
-		throw new RangeError(`worklet operation name yields no stage key: ${JSON.stringify(operation)}`);
+		throw new RangeError(
+			`worklet operation name yields no stage key: ${JSON.stringify(operation)}`
+		);
 	}
 	return key;
 }

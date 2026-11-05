@@ -19,6 +19,7 @@ Regression one-liners:
   - if a spec claims import_supported without a write entry point then broken
   - if an adapter's name disagrees with its registry key then broken
 """
+
 from __future__ import annotations
 
 import pytest
@@ -44,13 +45,11 @@ def test_entry_satisfies_the_protocol_its_family_names(name: str) -> None:
     loaded = load_adapter(name)
     if spec.family == "module":
         assert isinstance(loaded, OpenDjAdapter), (
-            f"{name}: registry declares family 'module' but "
-            f"{spec.target_path} does not satisfy OpenDjAdapter"
+            f"{name}: registry declares family 'module' but {spec.target_path} does not satisfy OpenDjAdapter"
         )
     elif spec.family == "class":
         assert isinstance(loaded, Adapter), (
-            f"{name}: registry declares family 'class' but "
-            f"{spec.target_path} does not satisfy apps.open_dj.Adapter"
+            f"{name}: registry declares family 'class' but {spec.target_path} does not satisfy apps.open_dj.Adapter"
         )
     else:
         pytest.fail(f"{name}: unhandled adapter family {spec.family!r}")
@@ -82,8 +81,7 @@ def test_import_supported_implies_a_write_entry_point(name: str) -> None:
     loaded = load_adapter(name)
     entry_point = "import_library" if spec.family == "module" else "write"
     assert callable(getattr(loaded, entry_point, None)), (
-        f"{name}: import_supported=True but {spec.target_path} exposes no "
-        f"callable {entry_point}"
+        f"{name}: import_supported=True but {spec.target_path} exposes no callable {entry_point}"
     )
 
 

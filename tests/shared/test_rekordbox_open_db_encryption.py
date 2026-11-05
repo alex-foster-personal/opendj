@@ -39,9 +39,7 @@ def _plain_sqlite(path: Path, rows: int = 5000) -> Path:
     connection = sqlite3.connect(path)
     try:
         connection.execute("CREATE TABLE djmdContent (ID INTEGER PRIMARY KEY)")
-        connection.executemany(
-            "INSERT INTO djmdContent (ID) VALUES (?)", [(n,) for n in range(rows)]
-        )
+        connection.executemany("INSERT INTO djmdContent (ID) VALUES (?)", [(n,) for n in range(rows)])
         connection.commit()
     finally:
         connection.close()
@@ -59,9 +57,7 @@ def test_a_plain_rekordbox_database_opens_and_reads(tmp_path: Path) -> None:
     database = rekordbox_db.open_db(_plain_sqlite(tmp_path / "master.plain.db"))
     try:
         with database.engine.connect() as connection:
-            count = connection.execute(
-                text("SELECT count(*) FROM djmdContent")
-            ).scalar()
+            count = connection.execute(text("SELECT count(*) FROM djmdContent")).scalar()
     finally:
         database.close()
     assert count == 5000
@@ -134,6 +130,4 @@ def test_setup_detection_and_the_opener_cannot_disagree(tmp_path: Path) -> None:
     encrypted = _not_plain(tmp_path / "encrypted.db")
     missing = tmp_path / "absent.db"
     for candidate in (plain, encrypted, missing):
-        assert detect.is_plain_sqlite(candidate) == rekordbox_db.is_plain_sqlite(
-            candidate
-        )
+        assert detect.is_plain_sqlite(candidate) == rekordbox_db.is_plain_sqlite(candidate)

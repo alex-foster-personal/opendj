@@ -24,9 +24,9 @@ function fakeContext(options = {}) {
 		'audioWorklet' in options ? options.audioWorklet : { addModule: async () => {} };
 	const resume =
 		options.resume ??
-		(async function () {
+		async function () {
 			this.state = 'running';
-		});
+		};
 	const ctx = { state, audioWorklet, resume };
 	return ctx;
 }

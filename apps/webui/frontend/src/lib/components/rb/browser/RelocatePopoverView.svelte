@@ -69,7 +69,9 @@
 	use:pointFloatingAction={{ x, y }}
 >
 	{#if writebackRefusal !== null}
-		<button type="button" role="menuitem" disabled title={writebackRefusal}>{writebackRefusal}</button>
+		<button type="button" role="menuitem" disabled title={writebackRefusal}
+			>{writebackRefusal}</button
+		>
 	{:else if loading}
 		<button type="button" role="menuitem" disabled>Finding candidates...</button>
 	{:else if errorMessage !== null}

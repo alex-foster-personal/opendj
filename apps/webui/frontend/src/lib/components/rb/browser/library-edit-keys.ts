@@ -56,7 +56,10 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 		void _runLibraryEdit(action, deps.pane());
 	}
 
-	async function _runLibraryEdit(action: 'select_all' | 'copy' | 'cut' | 'paste', p: PaneStore): Promise<void> {
+	async function _runLibraryEdit(
+		action: 'select_all' | 'copy' | 'cut' | 'paste',
+		p: PaneStore
+	): Promise<void> {
 		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
 			await import('./track-clipboard');
 		if (action === 'select_all') {
@@ -70,7 +73,10 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 				return;
 			}
 			const fromPlaylist =
-				deps.source() === 'collection' && p.kind === 'playlist' && p.playlist_id !== null && !p.whole_collection
+				deps.source() === 'collection' &&
+				p.kind === 'playlist' &&
+				p.playlist_id !== null &&
+				!p.whole_collection
 					? p.playlist_id
 					: null;
 			// Cutting from something that is not a playlist (All Tracks,
@@ -89,8 +95,13 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 	}
 
 	async function _pasteTracks(p: PaneStore): Promise<void> {
-		const { getTrackClipboard, partitionPaste, pasteBlockReason, pasteToastMessage, setTrackClipboard } =
-			await import('./track-clipboard');
+		const {
+			getTrackClipboard,
+			partitionPaste,
+			pasteBlockReason,
+			pasteToastMessage,
+			setTrackClipboard
+		} = await import('./track-clipboard');
 		const clip = getTrackClipboard();
 		const blocked = pasteBlockReason(p, deps.source(), clip);
 		if (blocked !== null || clip === null || p.playlist_id === null) {
@@ -99,7 +110,8 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 		}
 		const destId = p.playlist_id;
 		const destTitle = p.title;
-		const move = clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
+		const move =
+			clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
 		try {
 			const dest = await getPlaylistTracksEtag(destId);
 			const plan = partitionPaste(
@@ -107,9 +119,10 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 				dest.detail.tracks.map((t) => t.stable_id)
 			);
 			if (plan.add.length > 0 || move) {
-				const src = move && clip.source_playlist_id !== null
-					? await getPlaylistTracksEtag(clip.source_playlist_id)
-					: null;
+				const src =
+					move && clip.source_playlist_id !== null
+						? await getPlaylistTracksEtag(clip.source_playlist_id)
+						: null;
 				await transferPlaylistTracks(destId, dest.etag, {
 					stable_ids: clip.stable_ids,
 					mode: move ? 'move' : 'add',
@@ -125,8 +138,11 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 			// so the pasted rows are on screen as soon as the write lands.
 			const sourceId = move ? clip.source_playlist_id : null;
 			await Promise.all(
-				deps.panes()
-					.filter((q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId))
+				deps
+					.panes()
+					.filter(
+						(q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId)
+					)
 					.map(async (q) => {
 						const node = deps.currentNode(q);
 						if (node !== null) await deps.loadPane(q, node);
@@ -135,7 +151,10 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 			if (p.playlist_id === destId && plan.add.length > 0) await _revealPasted(p, plan.add);
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
-				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
+				pushToast(
+					'playlist changed elsewhere - press Cmd+V again to paste into the latest version',
+					'error'
+				);
 			} else {
 				pushToast(`paste failed: ${String(exc)}`, 'error');
 			}

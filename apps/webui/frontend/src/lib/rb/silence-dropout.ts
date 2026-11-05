@@ -69,7 +69,9 @@ function _newestErrorEvent(events: readonly PerfEvent[]): PerfEvent | null {
 	return null;
 }
 
-export function lastPerfError(events: readonly PerfEvent[]): { kind: string; message: string } | null {
+export function lastPerfError(
+	events: readonly PerfEvent[]
+): { kind: string; message: string } | null {
 	const row = _newestErrorEvent(events);
 	if (row === null) return null;
 	return { kind: row.kind, message: row.message };
@@ -116,7 +118,8 @@ export function diagnoseSilenceCause(input: DiagnoseSilenceCauseInput): SilenceC
 export function formatAudioCutToast(input: FormatAudioCutToastInput): string {
 	const live = input.decks.filter(_claimsLive);
 	const deckIds = live.map((deck) => String(deck.id)).join(',') || '?';
-	const bpms = live.map((deck) => (deck.bpm === null ? '?' : String(Math.round(deck.bpm)))).join('/') || '?';
+	const bpms =
+		live.map((deck) => (deck.bpm === null ? '?' : String(Math.round(deck.bpm)))).join('/') || '?';
 	const sync = live.map(_syncLabel).join('/') || 'off';
 	const last =
 		input.last_error === null
@@ -125,7 +128,10 @@ export function formatAudioCutToast(input: FormatAudioCutToastInput): string {
 	return `AUDIO CUT decks=${deckIds} bpm=${bpms} sync=${sync} cause=${input.cause} ${last}`;
 }
 
-function _causeMessage(cause: SilenceCause, last: { kind: string; message: string } | null): string {
+function _causeMessage(
+	cause: SilenceCause,
+	last: { kind: string; message: string } | null
+): string {
 	const tail = last === null ? 'last=none' : `last=${last.kind}: ${last.message}`;
 	return `silent while claimed live cause=${cause} ${tail}`;
 }

@@ -6,6 +6,7 @@ is the captured hello refusal body (same shape as
 ``apps.sync_hub.service._require_same_wire``) served over a real socket so
 ``HttpTransport`` and the feedback/ops routes run the production path.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -46,9 +47,7 @@ def wire_mismatch_app() -> FastAPI:
 
 def serve_wire_mismatch_hub() -> Iterator[str]:
     port = free_port()
-    config = uvicorn.Config(
-        wire_mismatch_app(), host="127.0.0.1", port=port, log_level="warning"
-    )
+    config = uvicorn.Config(wire_mismatch_app(), host="127.0.0.1", port=port, log_level="warning")
     server, thread = start_uvicorn_in_thread(config, what="the wire-mismatch hub")
     try:
         yield f"http://127.0.0.1:{port}"

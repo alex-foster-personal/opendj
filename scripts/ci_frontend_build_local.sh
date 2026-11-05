@@ -7,10 +7,10 @@
 #
 # ci.yml's own frontend-build job keeps its three inline steps rather than
 # calling this script: collapsing them would remove the literal `pnpm build`
-# text that tests/scripts/test_ci_frontend_build_artifact.py pins to exactly
+# text that (private path) pins to exactly
 # one occurrence in that job, and would lose per-step timing in the Actions
 # UI for the job most contended for shared-runner minutes. See
-# docs/decisions/ADR-0028-e2e-frontend-artifact-local-build.md.
+# (private path).
 #
 # Callers must already have Node on PATH: ci.yml's frontend-build job and
 # e2e.yml's gate/extended jobs both set it up via actions/setup-node before
@@ -18,7 +18,7 @@
 # this script is otherwise self-contained (and idempotent to rerun even when
 # a caller already activated pnpm itself).
 #
-# Pinned by tests/scripts/test_ci_frontend_build_artifact.py.
+# Pinned by (private path).
 set -euo pipefail
 
 SHA="${1:?full git sha required}"
@@ -29,7 +29,7 @@ FRONTEND_DIR="${ROOT}/apps/webui/frontend"
 # Pinned identically to apps/webui/frontend/package.json's "packageManager"
 # and every other corepack step in .github/workflows/*.yml; update together.
 corepack enable
-corepack prepare pnpm@11.9.0 --activate
+corepack prepare pnpm@11.11.0 --activate
 
 (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile)
 (cd "$FRONTEND_DIR" && pnpm build)

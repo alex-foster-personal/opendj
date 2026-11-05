@@ -85,7 +85,7 @@ FULL_HISTORY = 0
 # the depth rule's selector.
 HISTORY_DEPENDENT = {
     ("ci.yml", "test"), ("ci.yml", "fast"), ("ci.yml", "contracts"),
-    ("ci.yml", "quality"), ("adr-check.yml", "gate"),
+    ("ci.yml", "quality"), ("pr-body-gates.yml", "adr"),
 }
 PYTHON = "3.11"
 LOCK_SYNC_RE = re.compile(rf"^\s*scripts/ci_venv\.sh {re.escape(PYTHON)} --lock (\S+)\s*$", re.M)

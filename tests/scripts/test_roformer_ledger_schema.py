@@ -12,6 +12,7 @@ Regression lines:
 - if median is not the median of per_track_sisdr's own values then broken
 - if accepted is not a bool then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -51,9 +52,7 @@ def test_every_run_has_required_keys() -> None:
 def test_per_track_sisdr_is_nonempty_numeric() -> None:
     for entry in _load_runs():
         per_track = entry["per_track_sisdr"]
-        assert isinstance(per_track, dict) and per_track, (
-            f"run {entry['config_tag']!r} has an empty per_track_sisdr"
-        )
+        assert isinstance(per_track, dict) and per_track, f"run {entry['config_tag']!r} has an empty per_track_sisdr"
         for slug, score in per_track.items():
             assert isinstance(slug, str) and slug
             assert isinstance(score, (int, float)), f"{slug} score is not numeric: {score!r}"
@@ -63,8 +62,7 @@ def test_median_matches_per_track_scores() -> None:
     for entry in _load_runs():
         expected = round(statistics.median(entry["per_track_sisdr"].values()), 3)
         assert entry["median"] == pytest.approx(expected, abs=1e-6), (
-            f"run {entry['config_tag']!r}: median {entry['median']} != "
-            f"statistics.median(per_track_sisdr) {expected}"
+            f"run {entry['config_tag']!r}: median {entry['median']} != statistics.median(per_track_sisdr) {expected}"
         )
 
 

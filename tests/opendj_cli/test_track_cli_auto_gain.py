@@ -10,6 +10,7 @@ Regression lines:
 - if `auto-gain <id> set <dB>` does not make the user's value win then broken
 - if `auto-gain <id> clear` does not hand the track back to the analysis then broken
 """
+
 from __future__ import annotations
 
 import json

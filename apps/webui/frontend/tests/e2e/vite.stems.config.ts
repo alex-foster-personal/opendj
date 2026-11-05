@@ -5,9 +5,7 @@ const frontendPort = Number(process.env.STEMS_E2E_FRONTEND_PORT);
 const apiOrigin = process.env.STEMS_E2E_API_BASE;
 
 if (!Number.isSafeInteger(frontendPort) || apiOrigin === undefined) {
-	throw new Error(
-		'the stems e2e vite config needs STEMS_E2E_FRONTEND_PORT and STEMS_E2E_API_BASE'
-	);
+	throw new Error('the stems e2e vite config needs STEMS_E2E_FRONTEND_PORT and STEMS_E2E_API_BASE');
 }
 
 export default defineConfig({

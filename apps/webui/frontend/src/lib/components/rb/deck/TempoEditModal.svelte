@@ -12,7 +12,7 @@
 	import { coalesceLatest } from '$lib/rb/coalesce';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
-	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
+	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
 		halveDoubleVisibility,
@@ -293,12 +293,7 @@
 		{@const effective = _effectiveBpm(id)}
 		{@const buttons = halveDoubleVisibility(effective ?? NaN)}
 		{@const gridless = gridFeaturesInert(deck)}
-		{@const keyPlayhead = keyAtPlayheadNow(
-			deck.anlz,
-			deck.position_ms,
-			deck.key_shift_semitones,
-			deck.key
-		)}
+		{@const keyPlayhead = deckKeyAtPlayheadNow(deck)}
 		{@const keyText = keyPlayhead.display ?? '--'}
 		{@const keyColor = camelotKeyColor(keyText === '--' ? null : keyText)}
 		<div class="deck-row" class:primary={id === deckId} class:unloaded={!loaded}>

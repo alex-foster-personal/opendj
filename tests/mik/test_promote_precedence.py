@@ -6,6 +6,7 @@ each redefining them.
 
 [if] a row is promoted to known/unknown/deleted/claimed [then] it writes once/raises, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -53,17 +54,11 @@ def test_precedence_blocks_a_field_already_supplied_by_another_source(
         stable_id="a" * 40,
     )
     assert "energy" in result.blocked_by_precedence
-    assert (
-        state_conn.execute(
-            "SELECT source FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
-        == "rekordbox"
-    )
+    assert state_conn.execute("SELECT source FROM track_fields WHERE field_name='energy'").fetchone()[0] == "rekordbox"
     # Left staged, not consumed: a later attempt can still promote it.
     assert (
         state_conn.execute(
-            "SELECT promoted_stable_id FROM unmatched_source_analysis "
-            "WHERE field_name='energy'"
+            "SELECT promoted_stable_id FROM unmatched_source_analysis WHERE field_name='energy'"
         ).fetchone()[0]
         is None
     )
@@ -93,12 +88,7 @@ def test_overwrite_flag_does_not_help_a_field_where_the_source_always_outranks_m
         overwrite_lower_precedence=True,
     )
     assert "bpm" in result.blocked_by_precedence
-    assert (
-        state_conn.execute(
-            "SELECT source FROM track_fields WHERE field_name='bpm'"
-        ).fetchone()[0]
-        == "rekordbox"
-    )
+    assert state_conn.execute("SELECT source FROM track_fields WHERE field_name='bpm'").fetchone()[0] == "rekordbox"
 
 
 def test_overwrite_flag_lets_mik_replace_a_non_outranking_source(
@@ -123,12 +113,7 @@ def test_overwrite_flag_lets_mik_replace_a_non_outranking_source(
         overwrite_lower_precedence=True,
     )
     assert "energy" not in result.blocked_by_precedence
-    assert (
-        state_conn.execute(
-            "SELECT source FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
-        == "mik"
-    )
+    assert state_conn.execute("SELECT source FROM track_fields WHERE field_name='energy'").fetchone()[0] == "mik"
 
 
 def test_key_below_confidence_floor_is_blocked_regardless_of_overwrite(
@@ -138,9 +123,7 @@ def test_key_below_confidence_floor_is_blocked_regardless_of_overwrite(
     data_dir: Path,
     write_verdicts,
 ) -> None:
-    gate = _stage_one(
-        state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.5
-    )
+    gate = _stage_one(state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.5)
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
@@ -150,12 +133,7 @@ def test_key_below_confidence_floor_is_blocked_regardless_of_overwrite(
         overwrite_lower_precedence=True,
     )
     assert result.blocked_by_key_floor == 1
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_fields WHERE field_name='key'"
-        ).fetchone()[0]
-        == 0
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_fields WHERE field_name='key'").fetchone()[0] == 0
 
 
 def test_key_in_review_band_with_a_prior_source_is_flagged_not_written(
@@ -165,9 +143,7 @@ def test_key_in_review_band_with_a_prior_source_is_flagged_not_written(
     data_dir: Path,
     write_verdicts,
 ) -> None:
-    gate = _stage_one(
-        state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8
-    )
+    gate = _stage_one(state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8)
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     _prov.write_field(
         state_conn,
@@ -187,12 +163,7 @@ def test_key_in_review_band_with_a_prior_source_is_flagged_not_written(
         overwrite_lower_precedence=True,
     )
     assert "a" * 40 in result.key_review_band
-    assert (
-        state_conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name='key'"
-        ).fetchone()[0]
-        == '"8B"'
-    )
+    assert state_conn.execute("SELECT value_json FROM track_fields WHERE field_name='key'").fetchone()[0] == '"8B"'
 
 
 def test_key_in_review_band_with_no_prior_source_still_writes(
@@ -202,23 +173,14 @@ def test_key_in_review_band_with_no_prior_source_still_writes(
     data_dir: Path,
     write_verdicts,
 ) -> None:
-    gate = _stage_one(
-        state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8
-    )
+    gate = _stage_one(state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8)
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(state_conn, gate, source_row_id="1", stable_id="a" * 40)
     assert result.key_review_band == []
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_fields WHERE field_name='key'"
-        ).fetchone()[0]
-        == 1
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_fields WHERE field_name='key'").fetchone()[0] == 1
 
 
-def test_promotion_persists_verification_provenance(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promotion_persists_verification_provenance(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
@@ -228,16 +190,13 @@ def test_promotion_persists_verification_provenance(
     )
     assert result.verification_rows == STAGED_FIELD_COUNT
     rows = state_conn.execute(
-        "SELECT field_name, status FROM analysis_field_verification "
-        "WHERE source='mik'"
+        "SELECT field_name, status FROM analysis_field_verification WHERE source='mik'"
     ).fetchall()
     assert {row[0] for row in rows} == set(loader.GATED_FIELDS)
     assert all(status == "passed" for _, status in rows)
 
 
-def test_promote_all_is_atomic(
-    state_conn: sqlite3.Connection, add_track, staged
-) -> None:
+def test_promote_all_is_atomic(state_conn: sqlite3.Connection, add_track, staged) -> None:
     add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     with pytest.raises(promoter.PromotionError):
         promoter.promote_all(

@@ -15,7 +15,8 @@ before(async () => {
 	ed = await loadTypeScriptModule('src/lib/set-notes/editor/index.ts');
 });
 
-const NOTE = 'open [[track:a1|Opener]] [[stem:s2:vocals|Acap]] then [webkit](track:b2) or [site](https://x.example/p) end';
+const NOTE =
+	'open [[track:a1|Opener]] [[stem:s2:vocals|Acap]] then [webkit](track:b2) or [site](https://x.example/p) end';
 
 /** The real parsed note plus the position inside the first node matching `pick`. */
 function at(pick) {
@@ -36,15 +37,25 @@ test('a chip is followed only on Cmd/Ctrl-click, like a text link', () => {
 	assert.equal(ed.clickTarget(c.state, c.pos, c.node, false), null);
 	assert.deepEqual(ed.clickTarget(c.state, c.pos, c.node, true), { kind: 'track', stableId: 'a1' });
 	const s = chip('Acap');
-	assert.deepEqual(ed.clickTarget(s.state, s.pos, s.node, true), { kind: 'stem', stableId: 's2', stem: 'vocals' });
+	assert.deepEqual(ed.clickTarget(s.state, s.pos, s.node, true), {
+		kind: 'stem',
+		stableId: 's2',
+		stem: 'vocals'
+	});
 });
 
 test('a text link is followed only on Cmd/Ctrl-click, so a plain click stays editable', () => {
 	const track = linkText('webkit');
 	assert.equal(ed.clickTarget(track.state, track.pos, null, false), null);
-	assert.deepEqual(ed.clickTarget(track.state, track.pos, null, true), { kind: 'track', stableId: 'b2' });
+	assert.deepEqual(ed.clickTarget(track.state, track.pos, null, true), {
+		kind: 'track',
+		stableId: 'b2'
+	});
 	const web = linkText('site');
-	assert.deepEqual(ed.clickTarget(web.state, web.pos, null, true), { kind: 'http', url: 'https://x.example/p' });
+	assert.deepEqual(ed.clickTarget(web.state, web.pos, null, true), {
+		kind: 'http',
+		url: 'https://x.example/p'
+	});
 });
 
 test('a Cmd/Ctrl-click on plain text follows nothing', () => {

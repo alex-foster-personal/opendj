@@ -5,6 +5,7 @@ digest. Cross-bitrate twins (same fingerprint prefix, same duration_ms,
 different size_bytes) should still collide when callers pass only the
 fingerprint tier inputs. That is the dedup invariant for META-03.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -58,14 +59,10 @@ def test_isrc_pattern_regex() -> None:
 
 @pytest.mark.requirement("META-03")
 def test_fingerprint_branch_deterministic() -> None:
-    digest, tier = stable_id_for(
-        isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000
-    )
+    digest, tier = stable_id_for(isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000)
     assert tier == "fingerprint"
     assert len(digest) == 40
-    digest2, _ = stable_id_for(
-        isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000
-    )
+    digest2, _ = stable_id_for(isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000)
     assert digest == digest2
 
 
@@ -73,12 +70,8 @@ def test_fingerprint_branch_deterministic() -> None:
 def test_fingerprint_ignores_suffix_beyond_64_chars() -> None:
     """The dedup invariant: fp prefix + duration + size drives identity."""
     base_fp = "A" * 64
-    a, _ = stable_id_for(
-        isrc=None, fingerprint=base_fp + "extra", duration_ms=1000, size_bytes=100
-    )
-    b, _ = stable_id_for(
-        isrc=None, fingerprint=base_fp + "DIFFERENT_SUFFIX", duration_ms=1000, size_bytes=100
-    )
+    a, _ = stable_id_for(isrc=None, fingerprint=base_fp + "extra", duration_ms=1000, size_bytes=100)
+    b, _ = stable_id_for(isrc=None, fingerprint=base_fp + "DIFFERENT_SUFFIX", duration_ms=1000, size_bytes=100)
     assert a == b, "suffix beyond 64 chars must not affect identity"
 
 
@@ -94,9 +87,7 @@ def test_fingerprint_different_durations_give_different_ids() -> None:
 
 @pytest.mark.requirement("META-03")
 def test_inferred_branch_uses_path_mtime() -> None:
-    digest, tier = stable_id_for(
-        isrc=None, fingerprint=None, abs_path="/a/b/c.mp3", mtime=1700000000.0
-    )
+    digest, tier = stable_id_for(isrc=None, fingerprint=None, abs_path="/a/b/c.mp3", mtime=1700000000.0)
     assert tier == "inferred"
     assert len(digest) == 40
 

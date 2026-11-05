@@ -61,7 +61,9 @@ def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
     return env
 
 
-def _run_hook(hook: Path, worktree: Path, env: dict[str, str], previous: str = NULL) -> subprocess.CompletedProcess[str]:
+def _run_hook(
+    hook: Path, worktree: Path, env: dict[str, str], previous: str = NULL
+) -> subprocess.CompletedProcess[str]:
     head = git(worktree, "rev-parse", "HEAD").strip()
     return subprocess.run(
         [_resolved("bash"), str(hook), previous, head, "1"],
@@ -113,13 +115,9 @@ def test_named_interpreter_that_is_missing_is_not_replaced(primary: Path, tmp_pa
     """[if] MDT_SPARSE_HOOK_PYTHON names a missing program [then] exit 3, no fallback, [else stop]."""
     worktree = tmp_path / "wt-bad-override"
     add_worktree(primary, worktree, env={sw.CFG.OPT_OUT_ENV: "1"})
-    bin_dir = _bin_dir(
-        tmp_path, {"git": _resolved("git"), "bash": _resolved("bash"), "python3": sys.executable}
-    )
+    bin_dir = _bin_dir(tmp_path, {"git": _resolved("git"), "bash": _resolved("bash"), "python3": sys.executable})
     missing = str(tmp_path / "no-such-python")
-    done = _run_hook(
-        tmp_path / "hooks" / "post-checkout", worktree, _env(bin_dir, MDT_SPARSE_HOOK_PYTHON=missing)
-    )
+    done = _run_hook(tmp_path / "hooks" / "post-checkout", worktree, _env(bin_dir, MDT_SPARSE_HOOK_PYTHON=missing))
     assert done.returncode == HOOK_EXIT_UNAVAILABLE, (done.returncode, done.stderr)
     assert NAMED_ERROR in done.stderr and missing in done.stderr, done.stderr
 
@@ -127,9 +125,7 @@ def test_named_interpreter_that_is_missing_is_not_replaced(primary: Path, tmp_pa
 def test_plain_python_is_used_when_python3_is_absent(primary: Path, tmp_path: Path) -> None:
     """[if] only `python` exists, as on native Windows [then] the new worktree is sparse, [else stop]."""
     git_path = _resolved("git")
-    bin_dir = _bin_dir(
-        tmp_path, {"git": git_path, "bash": _resolved("bash"), "python": sys.executable}
-    )
+    bin_dir = _bin_dir(tmp_path, {"git": git_path, "bash": _resolved("bash"), "python": sys.executable})
     worktree = tmp_path / "wt-plain-python"
     done = subprocess.run(
         [git_path, "-C", str(primary), "worktree", "add", "-q", str(worktree), "-b", worktree.name],

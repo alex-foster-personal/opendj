@@ -299,9 +299,7 @@ async function waitForSignInReady(page: Page, budget: Budget) {
 	]);
 	if (await signedInButton.isVisible()) {
 		await signedInButton.click({ timeout: budget.waitMs() });
-		await page
-			.getByRole('menuitem', { name: 'Sign out' })
-			.click({ timeout: budget.waitMs() });
+		await page.getByRole('menuitem', { name: 'Sign out' }).click({ timeout: budget.waitMs() });
 		await signInButton.waitFor({ state: 'visible', timeout: budget.waitMs() });
 	}
 	await page.waitForFunction(
@@ -325,10 +323,7 @@ interface GoogleClickOutcome {
 }
 
 /** Click `locator`, distinguishing "did not click" from "was not there". */
-async function clickGoogleControl(
-	locator: Locator,
-	label: string
-): Promise<GoogleClickOutcome> {
+async function clickGoogleControl(locator: Locator, label: string): Promise<GoogleClickOutcome> {
 	try {
 		await locator.click({ timeout: 5_000 });
 		return { clicked: true, error: null };
@@ -510,10 +505,9 @@ async function driveSignInClick(
 			})
 			.catch(() => null);
 		const loginResponse = page
-			.waitForResponse(
-				(response) => isLoginPost(response.request().method(), response.url()),
-				{ timeout: waitMs }
-			)
+			.waitForResponse((response) => isLoginPost(response.request().method(), response.url()), {
+				timeout: waitMs
+			})
 			.catch(() => null);
 		// Read the gate from the PAGE's clock, the same one `recordPerfSpan`
 		// stamps spans with, as the last thing before the click. Every span

@@ -7,6 +7,7 @@ Covers:
   * Callable injection still wins over the default fetcher.
   * Collector swallows exceptions raised by custom fetchers.
 """
+
 from __future__ import annotations
 
 import logging

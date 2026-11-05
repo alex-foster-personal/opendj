@@ -261,6 +261,36 @@ test('every stage of the stem load publishes a named phase', () => {
 	assert.match(engineFunction('function _landStems('), /phase: 'switching'/);
 });
 
+test('unload and load-swap still drop every retained PCM field', () => {
+	const unloadBody = engineFunction('async unload(deck: DeckId): Promise<void> {');
+	assert.ok(unloadBody.includes('_releasePendingStemUpgrade'), 'unload must release pending stem upgrades');
+	assert.ok(unloadBody.includes('dispose()'), 'unload must dispose the processor');
+	assert.ok(unloadBody.includes('_emptyRuntime()'), 'unload must reset runtime through _emptyRuntime');
+
+	const assignNeedle = 'rt.audioBuffer = candidateBuffer';
+	const assignAt = source.indexOf(assignNeedle);
+	assert.ok(assignAt > 0, 'load-swap audioBuffer assignment not found');
+	const releaseAt = source.lastIndexOf('_releasePendingStemUpgrade', assignAt);
+	assert.ok(
+		releaseAt >= 0 && releaseAt < assignAt,
+		'_releasePendingStemUpgrade must run before rt.audioBuffer = candidateBuffer'
+	);
+	const afterAssign = source.slice(assignAt, assignAt + 4000);
+	assert.ok(
+		afterAssign.includes('await incumbentProcessor.dispose()'),
+		'load-swap must await incumbent dispose'
+	);
+
+	const runtimePath = new URL('../../src/lib/rb/deck-runtime.ts', import.meta.url);
+	const runtimeSource = readFileSync(runtimePath, 'utf8');
+	const emptyStart = runtimeSource.indexOf('export function _emptyRuntime()');
+	assert.ok(emptyStart > 0, '_emptyRuntime not found in deck-runtime.ts');
+	const emptyBody = runtimeSource.slice(emptyStart, runtimeSource.indexOf('\n}\n', emptyStart));
+	assert.match(emptyBody, /audioBuffer: null/);
+	assert.match(emptyBody, /pendingStemUpgrade: null/);
+	assert.match(emptyBody, /heldNeutralStems: null/);
+});
+
 test('the default loading state names its phase, and a phase carries through', () => {
 	assert.deepEqual(stems.loadingStemDeckState().load, { phase: 'probing', progress: null, reason: null });
 	const fetching = stems.loadingStemDeckState({

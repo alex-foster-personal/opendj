@@ -60,9 +60,7 @@ def _check(body: dict, check_id: str) -> dict:
     return matches[0]
 
 
-def test_empty_library_is_advisory_and_does_not_hold_the_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_empty_library_is_advisory_and_does_not_hold_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch, tmp_path)
     body = client.get("/api/v1/preflight").json()
 
@@ -74,9 +72,7 @@ def test_empty_library_is_advisory_and_does_not_hold_the_gate(
     assert body["advisories"] >= 1, body
 
 
-def test_corrupt_setup_record_stays_blocking(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_corrupt_setup_record_stays_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "setup.json").write_text("{ this is not json", encoding="utf-8")
     client = _build_client(monkeypatch, tmp_path)
     body = client.get("/api/v1/preflight").json()
@@ -87,9 +83,7 @@ def test_corrupt_setup_record_stays_blocking(
     assert body["status"] == "fail", body
 
 
-def test_every_row_carries_an_explainer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_every_row_carries_an_explainer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch, tmp_path)
     body = client.get("/api/v1/preflight").json()
 
@@ -99,9 +93,7 @@ def test_every_row_carries_an_explainer(
         assert check["severity"] in {"blocking", "advisory"}
 
 
-def test_engine_and_database_rows_are_blocking(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_engine_and_database_rows_are_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Control: the change must not quietly downgrade the rows that matter.
 
     Without this, making everything advisory would satisfy the first test
@@ -114,9 +106,7 @@ def test_engine_and_database_rows_are_blocking(
     assert _check(body, "state-db")["severity"] == "blocking"
 
 
-def test_dismissed_empty_library_is_advisory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dismissed_empty_library_is_advisory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The user said "continue without importing". That is not a fault."""
     setup_record.set_dismissed(tmp_path, True)
     client = _build_client(monkeypatch, tmp_path)

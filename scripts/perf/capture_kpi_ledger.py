@@ -20,10 +20,7 @@ from urllib.request import Request
 SOURCE = "scripts.perf.capture_kpis"
 ROUND = "perf-capture"
 CAPTURE_TAG = "capture=perf-capture"
-S5_METHOD = (
-    "GET /api/v1/tracks/{id}/anlz?points=38400 + GET /audio (full body), "
-    "n=5 median, max of 3 tracks"
-)
+S5_METHOD = "GET /api/v1/tracks/{id}/anlz?points=38400 + GET /audio (full body), n=5 median, max of 3 tracks"
 S12_METHOD = "apps.sync_hub.sync_timing.PhaseTimer via run_sync HttpTransport"
 S5_REQUIRED = ("packaged_deck_load_total_ms",)
 S12_REQUIRED = ("cloudsync_first_sync_s", "cloudsync_noop_sync_s")
@@ -162,19 +159,13 @@ def withheld_row(
     )
 
 
-def required_error_rows(
-    scenarios: Sequence[str], meta: CaptureMeta, reason: str
-) -> list[dict[str, Any]]:
+def required_error_rows(scenarios: Sequence[str], meta: CaptureMeta, reason: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if "S5" in scenarios:
-        rows.extend(
-            error_row(kpi=kpi, unit=S5_UNIT, method=S5_METHOD, meta=meta, reason=reason)
-            for kpi in S5_REQUIRED
-        )
+        rows.extend(error_row(kpi=kpi, unit=S5_UNIT, method=S5_METHOD, meta=meta, reason=reason) for kpi in S5_REQUIRED)
     if "S12" in scenarios:
         rows.extend(
-            error_row(kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason)
-            for kpi in S12_REQUIRED
+            error_row(kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason) for kpi in S12_REQUIRED
         )
     return rows
 

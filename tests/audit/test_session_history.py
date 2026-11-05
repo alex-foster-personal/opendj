@@ -1,4 +1,5 @@
 """Path-safety regression tests for Rekordbox session-history exports."""
+
 from __future__ import annotations
 
 from pathlib import Path

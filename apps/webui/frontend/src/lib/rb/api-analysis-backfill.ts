@@ -5,7 +5,7 @@
  * One function per queue control, and each one is the UI half of a triple the
  * repo's agent-native parity rule requires: HTTP endpoint, CLI subcommand
  * (`python -m apps.analysis.queue_cli <verb>`), UI control. A parity test
- * (tests/webui/test_queue_routes.py) reads THIS file and the panel to check
+ * ((private path)) reads THIS file and the panel to check
  * the third leg exists, so a control added here without its endpoint or its
  * CLI command fails the suite rather than shipping as a browser-only flow.
  *
@@ -118,6 +118,8 @@ export async function enqueueBackfill(args: {
 	lane: string;
 	backend: string;
 	note?: string | undefined;
+	/** true also starts the runner in the daemon; false only plans the batch. */
+	drain: boolean;
 }): Promise<BackfillEnqueueResult> {
 	const r = await fetch(`${API_BASE}/api/v1/analysis/backfill/enqueue`, {
 		method: 'POST',
@@ -126,7 +128,8 @@ export async function enqueueBackfill(args: {
 			stable_ids: args.stableIds,
 			lane: args.lane,
 			backend: args.backend,
-			note: args.note ?? null
+			note: args.note ?? null,
+			drain: args.drain
 		})
 	});
 	if (!r.ok) await _err(r);

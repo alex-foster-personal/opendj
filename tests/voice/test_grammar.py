@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.grammar (VOICE-01)."""
+
 from __future__ import annotations
 
 import pytest
@@ -31,6 +32,10 @@ pytestmark = pytest.mark.requirement("VOICE-01")
         ("save that last transition as cue points", "SAVE_CUE", {}),
         ("save transition", "SAVE_CUE", {}),
         ("bookmark this transition", "SAVE_CUE", {}),
+        ("save cue", "SAVE_CUE", {}),
+        ("save cue point", "SAVE_CUE", {}),
+        ("bookmark this cue", "SAVE_CUE", {}),
+        ("find save cue", "SEARCH", {"query": "save cue"}),
         ("rate this 5 stars", "RATE_TRACK", {"stars": 5}),
         ("rate 4 stars", "RATE_TRACK", {"stars": 4}),
         ("rate this five stars", "RATE_TRACK", {"stars": 5}),

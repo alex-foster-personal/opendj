@@ -28,7 +28,9 @@ export function findMention(state: EditorState): Pick<Mention, 'query' | 'from' 
 	const m = MENTION_RE.exec($from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc'));
 	if (!m) return null;
 	const from = $from.pos - m[1].length - 1;
-	return state.doc.rangeHasMark(from, from + 1, noteSchema.marks.link) ? null : { query: m[1], from, to: $from.pos };
+	return state.doc.rangeHasMark(from, from + 1, noteSchema.marks.link)
+		? null
+		: { query: m[1], from, to: $from.pos };
 }
 
 export function mentionPlugin(on: {

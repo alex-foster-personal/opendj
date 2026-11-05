@@ -95,6 +95,9 @@ NON_GATE_JOBS = frozenset(
         # e2e.yml's advisory Electron shell job (ELECTRON-6208): continue-on-error and out of
         # `e2e verdict`'s needs until the owner swaps it for the WebKit steps.
         "e2e electron shell",
+        # Nightly only: files the rebaseline issue after the schedule run's absolute bundle
+        # ceiling check (ADR-NEW-bundle-budget-pr-delta); never a verdict.
+        "bundle rebaseline issue",
     }
 )
 PYTEST_JOBS = frozenset({"pytest fast lane"})

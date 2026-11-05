@@ -2,7 +2,7 @@
  * Typed fetch client for the edit-suite batch: find-and-replace, bulk-edit,
  * mytag-editor (issues #180, #178, #179). Kept in its own module rather
  * than api-rb.ts/api.ts - those are single-owner hotspot files for this
- * fan-out wave (see .planning/FANOUT-CONVENTIONS.md); this file is net-new
+ * fan-out wave (see (private path)); this file is net-new
  * so it carries no lane-ownership risk.
  *
  * CONVERTED onto the generated OpenAPI client (`src/lib/api/client.ts`); the
@@ -14,6 +14,7 @@
 import type { components } from '../api-types';
 import { ApiError, api, unwrap } from '../api/client';
 import { RbApiError } from './api-rb-error';
+import type { TagCatalogEntry, TagTypeRow } from './tag-display';
 
 /** One conflicting row from a `BatchConflictError` (see `backend.py`). */
 export interface EditSuiteConflictRow {
@@ -35,7 +36,12 @@ export interface EditSuiteConflictRow {
 function _toEditSuiteError(error: unknown): never {
 	if (error instanceof ApiError) {
 		const detail = (error.body as { detail?: { error?: string; message?: string } } | null)?.detail;
-		throw new RbApiError(error.status, detail?.error ?? `HTTP_${error.status}`, error.message, error.body);
+		throw new RbApiError(
+			error.status,
+			detail?.error ?? `HTTP_${error.status}`,
+			error.message,
+			error.body
+		);
 	}
 	throw error;
 }
@@ -68,7 +74,9 @@ export interface FindReplaceScope {
 	case_sensitive?: boolean;
 }
 
-export async function previewFindReplace(scope: FindReplaceScope): Promise<FindReplacePreviewResult> {
+export async function previewFindReplace(
+	scope: FindReplaceScope
+): Promise<FindReplacePreviewResult> {
 	try {
 		return await unwrap(
 			api.POST('/api/v1/find-replace/preview', {
@@ -139,50 +147,122 @@ export async function listMyTags(): Promise<MyTagCatalog> {
 	}
 }
 
-export type MyTagAssignResult = components['schemas']['MyTagAssignOut'];
+// ---------------------------------------------------------------- undoable tags
+// Every write names this page load's undo stack, so Cmd+Z reverts only what this
+// page did and a relaunch starts empty (PRD E31).
 
-export async function assignMyTags(body: {
+export type TagSuggestion = components['schemas']['TagSuggestionOut'];
+type TagWrite = components['schemas']['WriteOut'];
+
+const UNDO_SESSION = crypto.randomUUID();
+const undoHeader = { 'X-Undo-Session': UNDO_SESSION };
+/** When each tag write still on the undo stack happened, oldest first. */
+const tagWriteTimes: number[] = [];
+
+export function newestTagWriteAt(): number | null {
+	return tagWriteTimes.at(-1) ?? null;
+}
+
+async function _write(request: () => Promise<TagWrite>): Promise<TagWrite> {
+	const write = await _send(request);
+	if (write.undo_id !== null) tagWriteTimes.push(Date.now());
+	return write;
+}
+
+function _toTagError(error: unknown): never {
+	if (error instanceof ApiError) {
+		const detail = (error.body as { detail?: { error?: string; message?: string } } | null)?.detail;
+		throw new RbApiError(
+			error.status,
+			detail?.error ?? `HTTP_${error.status}`,
+			detail?.message ?? error.message,
+			error.body
+		);
+	}
+	throw error;
+}
+
+async function _send<T>(request: () => Promise<T>): Promise<T> {
+	try {
+		return await request();
+	} catch (exc) {
+		_toTagError(exc);
+	}
+}
+
+export async function fetchTagCatalog(): Promise<TagCatalogEntry[]> {
+	return (await _send(() => unwrap(api.GET('/api/v1/mytags/catalog', {})))).tags;
+}
+
+export async function fetchTagAssignments(): Promise<Record<string, string[]>> {
+	return (await _send(() => unwrap(api.GET('/api/v1/mytags/assignments', {})))).tracks;
+}
+
+export async function fetchTagTypes(): Promise<TagTypeRow[]> {
+	return (await _send(() => unwrap(api.GET('/api/v1/tag-types', {})))).rows;
+}
+
+export async function suggestTags(
+	q: string,
+	type: string | null,
+	trackIds: readonly string[]
+): Promise<TagSuggestion[]> {
+	const query = { q, track_id: [...trackIds], ...(type === null ? {} : { type }) };
+	return (await _send(() => unwrap(api.GET('/api/v1/mytags/suggest', { params: { query } }))))
+		.suggestions;
+}
+
+export async function assignTags(body: {
 	stable_ids: string[];
-	expected_etags: Record<string, string>;
 	add?: string[];
 	remove?: string[];
-}): Promise<MyTagAssignResult> {
-	try {
-		return await unwrap(
-			api.POST('/api/v1/mytags/assign', {
-				body: body as components['schemas']['MyTagAssignIn']
+	type?: string | null;
+}): Promise<TagWrite> {
+	return _write(() =>
+		unwrap(
+			api.POST('/api/v1/mytags/assignments', {
+				params: { header: undoHeader },
+				body: { add: [], remove: [], ...body }
 			})
-		);
-	} catch (error) {
-		_toEditSuiteError(error);
-	}
+		)
+	);
 }
 
-export interface MyTagSweepPrecondition {
-	expected_catalog_revision: string;
-	expected_track_count: number;
+export async function renameTag(name: string, newName: string, merge: boolean): Promise<TagWrite> {
+	return _write(() =>
+		unwrap(
+			api.PATCH('/api/v1/mytags/{name}', {
+				params: { path: { name }, header: undoHeader },
+				body: { name: newName, merge }
+			})
+		)
+	);
 }
 
-export async function renameMyTag(
-	body: MyTagSweepPrecondition & {
-		old_name: string;
-		new_name: string;
-		confirm_merge: boolean;
-	}
-): Promise<components['schemas']['MyTagSweepOut']> {
-	try {
-		return await unwrap(api.POST('/api/v1/mytags/rename', { body }));
-	} catch (error) {
-		_toEditSuiteError(error);
-	}
+export async function deleteTag(name: string): Promise<TagWrite> {
+	return _write(() =>
+		unwrap(api.DELETE('/api/v1/mytags/{name}', { params: { path: { name }, header: undoHeader } }))
+	);
 }
 
-export async function deleteMyTag(
-	body: MyTagSweepPrecondition & { name: string }
-): Promise<components['schemas']['MyTagSweepOut']> {
-	try {
-		return await unwrap(api.POST('/api/v1/mytags/delete', { body }));
-	} catch (error) {
-		_toEditSuiteError(error);
-	}
+export async function patchTagType(
+	id: string,
+	changes: { show_as_column?: boolean; show_in_tags?: boolean }
+): Promise<TagWrite> {
+	return _write(() =>
+		unwrap(
+			api.PATCH('/api/v1/tag-types/{type_id}', {
+				params: { path: { type_id: id }, header: undoHeader },
+				body: changes
+			})
+		)
+	);
+}
+
+export async function undoLastLibraryChange(): Promise<components['schemas']['UndoOut']> {
+	const undone = await _send(() =>
+		unwrap(api.POST('/api/v1/undo', { params: { header: undoHeader } }))
+	);
+	tagWriteTimes.pop();
+	return undone;
 }

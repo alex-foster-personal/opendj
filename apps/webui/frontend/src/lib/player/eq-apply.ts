@@ -14,10 +14,7 @@ export interface EqParam {
 	linearRampToValueAtTime(v: number, t: number): void;
 }
 
-export function eqRampPlan(
-	nowSec: number,
-	rampSec: number
-): { startSec: number; endSec: number } {
+export function eqRampPlan(nowSec: number, rampSec: number): { startSec: number; endSec: number } {
 	return { startSec: nowSec, endSec: nowSec + rampSec };
 }
 

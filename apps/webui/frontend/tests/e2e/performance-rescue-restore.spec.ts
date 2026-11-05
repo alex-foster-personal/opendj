@@ -1,9 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import {
-	advanceBeatStamp,
-	msToBeatPosition
-} from '../../src/lib/rb/performance-rescue-math';
+import { advanceBeatStamp, msToBeatPosition } from '../../src/lib/rb/performance-rescue-math';
 import type { PerformanceBrowserIpc } from '../../src/lib/rb/performance-ipc.svelte';
 import { FIXTURE_MANIFEST_PATH } from './playwright.performance.config';
 
@@ -156,7 +153,8 @@ test.describe('RESCUE-02/03 playback restore', () => {
 			.toEqual([true, true, true]);
 
 		const perfRows = await page.evaluate(() => {
-			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
+			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] })
+				.__mdtPerfLog;
 			if (read === undefined) {
 				throw new Error('__mdtPerfLog is not installed; the latency instrument is missing');
 			}
@@ -184,7 +182,12 @@ test.describe('RESCUE-02/03 playback restore', () => {
 
 		const after = await query(page);
 		const elapsedWallMs = Date.now() - capturedAt;
-		const expectedBeat = advanceBeatStamp(recordedBeatStamp, GRID_MS_FROM(before), 1, elapsedWallMs);
+		const expectedBeat = advanceBeatStamp(
+			recordedBeatStamp,
+			GRID_MS_FROM(before),
+			1,
+			elapsedWallMs
+		);
 		for (const deckId of deckIds) {
 			const deck = after.decks[deckId];
 			const actualBeat = msToBeatPosition(deck.beatgrid_ms, deck.position_ms);
@@ -202,7 +205,9 @@ test.describe('RESCUE-02/03 playback restore', () => {
 		await page.reload();
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 		const state = await query(page);
-		expect(([1, 2, 3, 4] as const).every((deckId) => state.decks[deckId].playing === false)).toBe(true);
+		expect(([1, 2, 3, 4] as const).every((deckId) => state.decks[deckId].playing === false)).toBe(
+			true
+		);
 	});
 });
 

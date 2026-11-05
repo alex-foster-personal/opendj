@@ -27,31 +27,23 @@ def _library_row(body: dict) -> dict:
     return next(check for check in body["checks"] if check["id"] == "library-attached")
 
 
-def test_rekordbox_library_unreachable_helper(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rekordbox_library_unreachable_helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     rb_dir = tmp_path / "rekordbox-app"
     rb_dir.mkdir()
-    monkeypatch.setattr(
-        "apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir
-    )
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir)
     assert _rekordbox_library_unreachable(data_dir) is True
 
 
-def test_library_attached_names_unplugged_rekordbox_drive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_library_attached_names_unplugged_rekordbox_drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir = tmp_path / "empty"
     data_dir.mkdir()
     state_path = data_dir / "state" / "state.db"
 
     rb_dir = tmp_path / "rekordbox-installed"
     rb_dir.mkdir()
-    monkeypatch.setattr(
-        "apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir
-    )
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir)
 
     body = run_preflight(state_path).model_dump()
     row = _library_row(body)
@@ -64,9 +56,7 @@ def test_library_attached_names_unplugged_rekordbox_drive(
     assert "import a folder" in row["user_remediation"].lower()
 
 
-def test_generic_empty_library_when_rekordbox_not_installed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generic_empty_library_when_rekordbox_not_installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No Pioneer folder -> the generic first-import message, not the USB copy."""
     data_dir = tmp_path / "empty"
     data_dir.mkdir()
@@ -75,9 +65,7 @@ def test_generic_empty_library_when_rekordbox_not_installed(
     # Must not exist: an empty Pioneer folder still means "rekordbox installed
     # but library unreachable", which is the positive case above.
     missing = tmp_path / "no-rekordbox"
-    monkeypatch.setattr(
-        "apps.shared.platform_paths.rekordbox_app_dir", lambda: missing
-    )
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: missing)
 
     body = run_preflight(state_path).model_dump()
     row = _library_row(body)

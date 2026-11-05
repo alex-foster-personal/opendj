@@ -20,7 +20,7 @@ Single-line intent:
   - [if] a commit between an import's first read and first write fails the import [then] fail, [else stop].
   - [if] the import does not hold the writer lock while it runs [then] fail, [else stop].
   - [if] the blocked concurrent write is lost rather than landing after the import [then] fail, [else stop].
-  - [if] a caller-owned transaction around the import is committed or nested-BEGIN'd [then] fail, [else stop].
+  - [if] a writer-managed transaction around the import is committed or nested-BEGIN'd [then] fail, [else stop].
 """
 
 from __future__ import annotations
@@ -104,9 +104,7 @@ def _state_path(tmp_path: Path) -> Path:
     return path
 
 
-def _inject_before_first_write(
-    monkeypatch: pytest.MonkeyPatch, commit: ConcurrentCommit
-) -> None:
+def _inject_before_first_write(monkeypatch: pytest.MonkeyPatch, commit: ConcurrentCommit) -> None:
     """Commit from a second connection between the importer's first read and first write."""
     original: Callable[[sqlite3.Connection], str] = sync_stamp.ensure_local_machine
 
@@ -235,10 +233,9 @@ def test_an_import_inside_a_caller_owned_transaction_neither_nests_begin_nor_com
     conn = state_db.open_rw(state_path)
     writer = StateWriter(conn, actor="test-write-lock")
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        report = folder.ingest_folder(writer, [root], dry_run=False)
-        assert conn.in_transaction, "the import committed a transaction it did not open"
-        conn.execute("ROLLBACK")
+        with writer.transaction(commit=False):
+            report = folder.ingest_folder(writer, [root], dry_run=False)
+            assert conn.in_transaction, "the import committed a transaction it did not open"
     finally:
         writer.close()
         conn.close()

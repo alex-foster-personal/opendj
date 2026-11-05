@@ -43,9 +43,7 @@ def find_violations(data_dir: Path) -> list[str]:
 
     anlz_cache = resolved_dir / ANLZ_CACHE_REL
     if anlz_cache.exists():
-        violations.append(
-            f"{VIOLATION_PREFIX} forbidden ANLZ cache at {anlz_cache}"
-        )
+        violations.append(f"{VIOLATION_PREFIX} forbidden ANLZ cache at {anlz_cache}")
 
     return violations
 

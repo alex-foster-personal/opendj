@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.capture`."""
+
 from __future__ import annotations
 
 import signal
@@ -53,6 +54,7 @@ def test_detect_input_device_returns_none_when_missing(monkeypatch):
 def test_detect_input_device_handles_missing_ffmpeg(monkeypatch):
     def _raise(*a, **k):
         raise FileNotFoundError("ffmpeg")
+
     monkeypatch.setattr(capture.subprocess, "run", _raise)
     assert capture.detect_input_device() is None
 

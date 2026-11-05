@@ -41,6 +41,7 @@ warm-up takes the cross-process lock through ``apps.shared.file_lock``
 (Windows ``msvcrt.locking``). Callers must stop when the warm-up is refused
 rather than lazy-compile unlocked (issue #7227).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -313,9 +314,7 @@ def _open_lock_safe(path: Path, *, require_self_owned: bool) -> int | None:
         os.close(fd)
         return None
     uid = _current_uid()
-    if not stat.S_ISREG(st.st_mode) or (
-        require_self_owned and uid is not None and st.st_uid != uid
-    ):
+    if not stat.S_ISREG(st.st_mode) or (require_self_owned and uid is not None and st.st_uid != uid):
         os.close(fd)
         return None
     return fd

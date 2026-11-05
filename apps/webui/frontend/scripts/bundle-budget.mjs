@@ -49,7 +49,7 @@
 // and were outside the predecessor gate too. Widening to CSS would change what
 // the 250 KB number means, so it is deliberately left alone. See README.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join, dirname, normalize, relative } from 'node:path';
 import { BudgetError, BUDGETS_DIR, loadBudgets } from './bundle-budget-load.mjs';
@@ -65,6 +65,28 @@ import { BudgetError, BUDGETS_DIR, loadBudgets } from './bundle-budget-load.mjs'
 // their attribution strings in base.json; main's released #7892 sidebar bucket lives under
 // budgets/ai-sidebar/, and library first-paint growth from that PR is a charge file.
 // PR #8342 tempo curve growth is budgets/other-lazy/charges/8342.json (482304 + 2048 => 484352).
+//
+// TWO READINGS OF THE SAME NUMBERS (ADR-NEW-bundle-budget-pr-delta, Wed 4 Nov 2026):
+//   --baseline <json> --own <ids>   a PULL REQUEST is charged by its own delta: each surface's
+//                                   bytes minus the same surface in main's measurement at the
+//                                   merge base (`--json --measure` output of a main run), and
+//                                   the allowance is the sum of THIS PR's own charge files
+//                                   (`--own` names their ids: the PR number and the branch).
+//                                   Default allowance 0. The absolute ceiling is printed as a
+//                                   warning only. Two concurrent PRs each under the ceiling can
+//                                   no longer cross it together and red every later PR.
+//   --report-only                   a PUSH TO MAIN measures and publishes; a ceiling crossing
+//                                   is a warning, never a red main.
+//   (neither)                       the NIGHTLY ratchet: the absolute ceiling, limit = base +
+//                                   charges, fails the run, and ci.yml opens a rebaseline issue.
+// Coverage (every chunk charged to a surface) fails in every mode.
+
+
+// Build noise on a PR delta: two builds of the same source differ by a few bytes gzip per surface
+// (chunk hashes and import order; 1 to 21 B measured on CI Thu 5 Nov 2026, #8534 run 42043423398).
+// A PR's delta passes while it is within its own charges plus this floor, so noise never reds a PR
+// and a real feature (hundreds of bytes and up) still needs a charge file.
+const PR_DELTA_NOISE_BYTES = 128;
 
 // ---------------------------------------------------------------- helpers ---
 
@@ -157,6 +179,41 @@ function main() {
   // --budgets points the gate at another budgets/ tree; the unit tests use it for synthetic charges.
   const budgetsIndex = args.indexOf('--budgets');
   const budgetsDir = budgetsIndex >= 0 ? args[budgetsIndex + 1] : BUDGETS_DIR;
+  const _value = (flag) => {
+    const index = args.indexOf(flag);
+    if (index < 0) return null;
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) _fail(`${flag} needs a value`);
+    return value;
+  };
+  const baselinePath = _value('--baseline');
+  const ownIds = (_value('--own') ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const reportOnly = args.includes('--report-only');
+  const measurePath = _value('--measure');
+  const sha = _value('--sha');
+  if (baselinePath && reportOnly) _fail('--baseline and --report-only are different readings; pass one');
+  if (ownIds.length && !baselinePath) _fail('--own names this PR\'s charges and only means something with --baseline');
+  let baseline = null;
+  if (baselinePath) {
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(baselinePath, 'utf8'));
+    } catch (error) {
+      _fail(`--baseline ${baselinePath}: cannot read as JSON: ${error.message}`);
+    }
+    if (!parsed || typeof parsed.totals !== 'object' || parsed.totals === null) {
+      _fail(`--baseline ${baselinePath}: no "totals" object; it must be a \`--json\` measurement of main`);
+    }
+    for (const [name, total] of Object.entries(parsed.totals)) {
+      if (!Number.isInteger(total?.bytes) || total.bytes < 0) {
+        _fail(`--baseline ${baselinePath}: totals.${name}.bytes is not a non-negative integer`);
+      }
+    }
+    baseline = parsed;
+  }
   let BUDGETS;
   try {
     BUDGETS = loadBudgets(budgetsDir);
@@ -271,8 +328,13 @@ function main() {
     }
   }
 
+  const measurement = { sha: sha ?? baseline?.sha ?? null, totals, unattributed, budgets: BUDGETS };
+  if (measurePath) {
+    mkdirSync(dirname(measurePath), { recursive: true });
+    writeFileSync(measurePath, JSON.stringify(measurement, null, 2));
+  }
   if (asJson) {
-    console.log(JSON.stringify({ totals, unattributed, budgets: BUDGETS }, null, 2));
+    console.log(JSON.stringify(measurement, null, 2));
   } else {
     console.log('bundle budgets (gzip bytes, JS under _app/immutable/):');
     for (const budget of BUDGETS) {
@@ -306,13 +368,68 @@ function main() {
   }
   for (const budget of BUDGETS) {
     const { bytes } = totals[budget.name];
-    if (bytes > budget.limit) {
+    const over = bytes > budget.limit;
+    if (baseline) {
+      // A pull request: its own delta against main at the merge base, within its own charges.
+      const before = baseline.totals[budget.name];
+      const own = budget.charges.filter((charge) => ownIds.includes(charge.id));
+      const allowance = own.reduce((sum, charge) => sum + charge.bytes, 0);
+      if (before === undefined) {
+        // A surface this PR introduces: nothing to diff against, so its base limit is the allowance.
+        if (!asJson) console.log(`  ${budget.name}: new surface, no baseline; read against its own limit ${budget.limit}`);
+        if (over) {
+          failed = true;
+          console.error(
+            `[ERROR] new budget "${budget.name}" exceeded: ${bytes} bytes gzip against its ${budget.limit} limit ` +
+              `(a new surface's first limit follows the rebaseline rule, budgets/README.md).`,
+          );
+        }
+        continue;
+      }
+      const delta = bytes - before.bytes;
+      const overDelta = delta > allowance + PR_DELTA_NOISE_BYTES;
+      const verdict = overDelta ? 'OVER' : 'ok';
+      if (!asJson) {
+        console.log(
+          `  ${budget.name.padEnd(12)} main ${String(before.bytes).padStart(7)} -> ${String(bytes).padStart(7)}` +
+            `  delta ${String(delta).padStart(6)}  allowance ${String(allowance).padStart(5)}` +
+            (own.length ? ` (${own.map((c) => c.id).join(', ')})` : '') +
+            `  [${verdict}]`,
+        );
+      }
+      if (overDelta) {
+        failed = true;
+        console.error(
+          `[ERROR] budget "${budget.name}" grows by ${delta} bytes gzip over main (${before.bytes} -> ${bytes}) ` +
+            `against this PR's allowance of ${allowance} (plus ${PR_DELTA_NOISE_BYTES} B build noise)` +
+            (own.length ? ` (${own.map((c) => c.id).join(', ')})` : ' (no charge file of its own)') +
+            `. If this PR grows the surface on purpose, add budgets/${budget.name}/charges/<pr>.json ` +
+            `for the growth (budgets/README.md); main's own size is a nightly ratchet, not this PR's.`,
+        );
+      }
+      if (over) {
+        console.log(
+          `::warning title=bundle budget ceiling::"${budget.name}" is ${bytes} against the ${budget.limit} ceiling ` +
+            `(main ${before.bytes}); the nightly ratchet reports it, this PR is judged on its delta.`,
+        );
+      }
+      continue;
+    }
+    if (over && reportOnly) {
+      console.log(
+        `::warning title=bundle budget ceiling::"${budget.name}" is ${bytes} against the ${budget.limit} ceiling ` +
+          `(base ${budget.base.limit} + charges ${budget.charged}); report only on a push to main, the nightly ratchet decides.`,
+      );
+      continue;
+    }
+    if (over) {
       failed = true;
       console.error(
         `[ERROR] budget "${budget.name}" exceeded: ${bytes} bytes gzip against a ${budget.limit} limit, ` +
           `over by ${bytes - budget.limit} bytes (${budget.note}); limit ${budget.limit} = base ` +
-          `${budget.base.limit} + charges ${budget.charged}. If this PR grows the surface on purpose, ` +
-          `add budgets/${budget.name}/charges/<pr>.json (budgets/README.md).`,
+          `${budget.base.limit} + charges ${budget.charged}. If a PR grows the surface on purpose, ` +
+          `add budgets/${budget.name}/charges/<pr>.json for the growth; on main this is a rebaseline ` +
+          `(budgets/README.md). A PR run is judged on its own delta with --baseline.`,
       );
     }
   }

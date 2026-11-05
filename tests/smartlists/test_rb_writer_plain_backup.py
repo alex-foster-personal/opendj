@@ -34,9 +34,7 @@ def _library(path: Path, rows: int = 500) -> Path:
     connection = sqlite3.connect(path)
     try:
         connection.execute("CREATE TABLE djmdContent (ID INTEGER PRIMARY KEY)")
-        connection.executemany(
-            "INSERT INTO djmdContent (ID) VALUES (?)", [(n,) for n in range(rows)]
-        )
+        connection.executemany("INSERT INTO djmdContent (ID) VALUES (?)", [(n,) for n in range(rows)])
         connection.commit()
     finally:
         connection.close()
@@ -92,9 +90,7 @@ def test_the_copy_includes_commits_still_sitting_in_the_wal(tmp_path: Path) -> N
         engine.dispose()
 
     with sqlite3.connect(destination) as copy:
-        assert copy.execute(
-            "SELECT count(*) FROM djmdContent WHERE ID = 9999"
-        ).fetchone()[0] == 1
+        assert copy.execute("SELECT count(*) FROM djmdContent WHERE ID = 9999").fetchone()[0] == 1
 
 
 def test_a_plain_source_must_produce_a_readable_copy(tmp_path: Path) -> None:

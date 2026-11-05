@@ -36,7 +36,9 @@ before(async () => {
 		new URL('./fixtures/playlist-pending-availability-captured.json', import.meta.url)
 	);
 	// A captured real server row, reshaped onto the list endpoint's fields.
-	const row = JSON.parse(readFileSync(fixture, 'utf8')).find((r) => r.file_availability === 'present');
+	const row = JSON.parse(readFileSync(fixture, 'utf8')).find(
+		(r) => r.file_availability === 'present'
+	);
 	const { is_streaming: _drop, comments: _comments, ...rest } = row;
 	base = { ...rest, notes: null };
 });
@@ -71,7 +73,11 @@ describe('a streaming All Tracks row is streaming from the moment it is mapped',
 
 	it('a present row is not marked streaming and still loads', () => {
 		const row = listRow({ file_availability: 'present', file_exists: true });
-		assert.equal(row.is_streaming, null, 'unknown stays null so the rb-meta fallback still applies');
+		assert.equal(
+			row.is_streaming,
+			null,
+			'unknown stays null so the rb-meta fallback still applies'
+		);
 		assert.equal(refusal.trackDragRefusal(row), null);
 		assert.equal(contract.rowIsLocallyAvailable(row), true);
 	});
@@ -81,7 +87,14 @@ describe('listRowIsStreaming', () => {
 	it('answers true for streaming and a named scheme status', () => {
 		assert.equal(wire.listRowIsStreaming('streaming'), true);
 		assert.equal(wire.listRowIsStreaming('tidal-streaming'), true);
-		for (const status of ['present', 'absent', 'awaiting_volume', 'AVAILABILITY_PENDING', null, undefined]) {
+		for (const status of [
+			'present',
+			'absent',
+			'awaiting_volume',
+			'AVAILABILITY_PENDING',
+			null,
+			undefined
+		]) {
 			assert.equal(wire.listRowIsStreaming(status), null, String(status));
 		}
 	});

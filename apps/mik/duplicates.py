@@ -46,11 +46,11 @@ songs is a conflict: it is written by none of them and reported.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
+from apps.shared.state.ingest.path_collisions import _file_identity
 from apps.sync_hub.sync_set import identity_duplicate_remap
 
 from . import sources_match as sources
@@ -171,14 +171,6 @@ def _metadata_chunks(conn: sqlite3.Connection) -> Iterable[list[str]]:
                 run = []
             run.append((duration, stable_id))
         yield [sid for _d, sid in run]
-
-
-def _file_identity(path: str) -> tuple[int, int] | None:
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return None
-    return (stat.st_dev, stat.st_ino)
 
 
 def _same_file_rows(conn: sqlite3.Connection) -> Iterable[list[str]]:

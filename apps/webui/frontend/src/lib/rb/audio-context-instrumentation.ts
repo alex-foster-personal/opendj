@@ -32,6 +32,7 @@ import { isMasterMuted } from '$lib/player/master-mute.svelte';
 // in `armDeviceOutputProbe`, so they stay out of the first-paint "/" chunk.
 import type { DeviceOutputProbeHandle } from '$lib/rb/device-output-probe';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { registerSpeakerLinkGraph } from '$lib/rb/speaker-link-control';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	flushWorkletAckWindow,
@@ -409,6 +410,8 @@ export function armAudioContextWatchdog(
 		isAnyDeckPlaying,
 		typeof navigator !== 'undefined' && navigator.mediaDevices ? navigator.mediaDevices : null
 	);
+	// AUDIO-DEVICE-05: the Bluetooth speaker reconnect recreates this same graph.
+	registerSpeakerLinkGraph(recreateGraph);
 	_outputStallRecovery = installOutputStallRecovery(_outputRebind, {
 		recreateGraph,
 		pushToast,

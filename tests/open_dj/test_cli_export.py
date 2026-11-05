@@ -1,13 +1,21 @@
 """Tests for ``open-dj-tool export`` (Phase 15 CLI finisher, OPEN-01/02)."""
+
 from __future__ import annotations
 
 import json
+import os
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
 from apps.open_dj.cli import main
+
+_PINNED = datetime(2024, 3, 1, 8, 0, 0, tzinfo=UTC)
+_PINNED_Z = "2024-03-01T08:00:00Z"
+_CROSS_A_WALL_CLOCK_SECOND_S = 1.1
 
 # --------------------------------------------------------------- fake module
 
@@ -29,9 +37,7 @@ class _FakeModuleAdapter:
         self.calls: list[dict] = []
 
     def export_library(self, *, source_path, out_path, include_cues):
-        self.calls.append(
-            {"source_path": source_path, "out_path": out_path, "include_cues": include_cues}
-        )
+        self.calls.append({"source_path": source_path, "out_path": out_path, "include_cues": include_cues})
         return _FakeExportResult(self._doc)
 
 
@@ -83,11 +89,10 @@ def _sample_library() -> OpenDjLibrary:
 @pytest.mark.requirement("OPEN-01")
 class TestExportModuleFamily:
     """[if] module exports are requested [then] their contract remains available, [else stop]."""
+
     """Rekordbox / djay adapters via the module-family path."""
 
-    def test_export_writes_canonical_doc(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_export_writes_canonical_doc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = _FakeModuleAdapter(_minimal_doc())
 
         def _fake_load(name: str):
@@ -118,13 +123,9 @@ class TestExportModuleFamily:
         # include_cues default is True.
         assert fake.calls[0]["include_cues"] is True
 
-    def test_export_no_cues_flag(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_export_no_cues_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = _FakeModuleAdapter(_minimal_doc())
-        monkeypatch.setattr(
-            "apps.open_dj.cli.load_adapter", lambda name: fake
-        )
+        monkeypatch.setattr("apps.open_dj.cli.load_adapter", lambda name: fake)
         source = tmp_path / "lib.db"
         source.write_bytes(b"")
         out = tmp_path / "out.open-dj.json"
@@ -160,9 +161,7 @@ class TestExportModuleFamily:
             )
         assert excinfo.value.code == 2
 
-    def test_export_adapter_raises_returns_exit_2(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_export_adapter_raises_returns_exit_2(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         class _Boom:
             def export_library(self, *, source_path, out_path, include_cues):
                 raise RuntimeError("db corrupted")
@@ -185,6 +184,7 @@ class TestExportModuleFamily:
 @pytest.mark.requirement("OPEN-01")
 class TestExportClassFamily:
     """[if] class exports are requested [then] their contract remains available, [else stop]."""
+
     """Serato / Traktor adapters via the class-family path (read/write)."""
 
     def test_traktor_export_roundtrip(self, tmp_path: Path) -> None:
@@ -213,3 +213,52 @@ class TestExportClassFamily:
         doc = json.loads(out.read_bytes())
         assert doc["tracks"], "expected at least one track"
         assert any(t["title"] == "CLI One" for t in doc["tracks"])
+
+    def test_traktor_two_exports_of_untouched_source_are_byte_identical(
+        self, tmp_path: Path
+    ) -> None:
+        from apps.adapters.traktor import TraktorAdapter
+
+        fixture_nml = tmp_path / "collection.nml"
+        TraktorAdapter().write(_sample_library(), fixture_nml)
+        os.utime(fixture_nml, (_PINNED.timestamp(), _PINNED.timestamp()))
+        first_out = tmp_path / "first.open-dj.json"
+        second_out = tmp_path / "second.open-dj.json"
+        args_base = ["export", "--adapter", "traktor", "--source", str(fixture_nml)]
+        assert main([*args_base, "--out", str(first_out)]) == 0
+        time.sleep(_CROSS_A_WALL_CLOCK_SECOND_S)
+        assert main([*args_base, "--out", str(second_out)]) == 0
+        first = first_out.read_bytes()
+        assert first == second_out.read_bytes()
+        assert _all_modified_at(json.loads(first)) == {_PINNED_Z}
+
+    def test_serato_two_exports_of_untouched_source_are_byte_identical(
+        self, tmp_path: Path
+    ) -> None:
+        from apps.adapters.serato import SeratoAdapter
+
+        serato_dir = tmp_path / "_Serato_"
+        SeratoAdapter().write(_sample_library(), serato_dir)
+        db_path = serato_dir / "database V2"
+        os.utime(db_path, (_PINNED.timestamp(), _PINNED.timestamp()))
+        first_out = tmp_path / "first.open-dj.json"
+        second_out = tmp_path / "second.open-dj.json"
+        args_base = ["export", "--adapter", "serato", "--source", str(serato_dir)]
+        assert main([*args_base, "--out", str(first_out)]) == 0
+        time.sleep(_CROSS_A_WALL_CLOCK_SECOND_S)
+        assert main([*args_base, "--out", str(second_out)]) == 0
+        first = first_out.read_bytes()
+        assert first == second_out.read_bytes()
+        assert _all_modified_at(json.loads(first)) == {_PINNED_Z}
+
+
+def _all_modified_at(node: object) -> set[str]:
+    """Every provenance ``modified_at`` anywhere in an exported document."""
+    if isinstance(node, dict):
+        found = {node["modified_at"]} if "modified_at" in node else set()
+        for value in node.values():
+            found |= _all_modified_at(value)
+        return found
+    if isinstance(node, list):
+        return set().union(*(_all_modified_at(item) for item in node))
+    return set()

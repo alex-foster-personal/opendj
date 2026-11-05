@@ -72,8 +72,17 @@ function anlzOf(detail, beats) {
 function rowBars(win, frame = {}) {
 	const mono = '#cfcfcf';
 	const palette = {
-		bg: '#000000', low: '#111111', mid: '#222222', high: '#333333', mono, tick: '#444444',
-		cueHotCue: '#35c04f', cueLoop: '#e8a13a', cueMemory: '#ff3b30', cueOutline: '#c8cdd2', phrase: '#888888'
+		bg: '#000000',
+		low: '#111111',
+		mid: '#222222',
+		high: '#333333',
+		mono,
+		tick: '#444444',
+		cueHotCue: '#35c04f',
+		cueLoop: '#e8a13a',
+		cueMemory: '#ff3b30',
+		cueOutline: '#c8cdd2',
+		phrase: '#888888'
 	};
 	const rects = [];
 	const base = {
@@ -86,11 +95,24 @@ function rowBars(win, frame = {}) {
 			if (this.fillStyle === mono) rects.push(...path.rects);
 		}
 	};
-	const ctx = new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
+	const ctx = new Proxy(base, {
+		get: (t, k) => (k in t ? t[k] : () => {}),
+		set: (t, k, v) => ((t[k] = v), true)
+	});
 	const durationMs = win.durS * 1000;
 	render.drawWaveRow(ctx, {
-		widthCss: ROW_W, heightCss: ROW_H, positionMs: durationMs / 2, durationMs, anlz: anlzOf(win.detail, win.beats),
-		palette, pitch: win.durS / render.WAVE_WINDOW_S, windowS: render.WAVE_WINDOW_S, playheadFrac: 0.5, loop: null, waveformDesign: 'blocks', ...frame
+		widthCss: ROW_W,
+		heightCss: ROW_H,
+		positionMs: durationMs / 2,
+		durationMs,
+		anlz: anlzOf(win.detail, win.beats),
+		palette,
+		pitch: win.durS / render.WAVE_WINDOW_S,
+		windowS: render.WAVE_WINDOW_S,
+		playheadFrac: 0.5,
+		loop: null,
+		waveformDesign: 'blocks',
+		...frame
 	});
 	return rects.sort((a, b) => a.x - b.x);
 }
@@ -98,7 +120,8 @@ function rowBars(win, frame = {}) {
 /** The 'true-peak' row's norm: the loudest point of any band, the painter's monoNorm. */
 function peakNorm(detail) {
 	let peak = 0;
-	for (const band of [detail.low, detail.mid, detail.high]) for (const v of band) if (v > peak) peak = v;
+	for (const band of [detail.low, detail.mid, detail.high])
+		for (const v of band) if (v > peak) peak = v;
 	return { divisor: peak, clampAtOne: false };
 }
 const UNIT = { divisor: 1, clampAtOne: false };
@@ -106,8 +129,15 @@ const UNIT = { divisor: 1, clampAtOne: false };
 /** The layout the row builds, from the same pure pieces. */
 function edgesOf(win, beats = win.beats) {
 	const pxPerS = ROW_W / win.durS;
-	const changes = layout.changeAnchorsPx(layout.detectChangePoints(win.detail, win.durS, peakNorm(win.detail)), win.detail.length, ROW_W);
-	return { changes, edges: layout.snappedBlockEdges(ROW_W, changes, layout.beatAnchorsPx(beats, pxPerS)) };
+	const changes = layout.changeAnchorsPx(
+		layout.detectChangePoints(win.detail, win.durS, peakNorm(win.detail)),
+		win.detail.length,
+		ROW_W
+	);
+	return {
+		changes,
+		edges: layout.snappedBlockEdges(ROW_W, changes, layout.beatAnchorsPx(beats, pxPerS))
+	};
 }
 
 test('the fixtures carry moderate changes that a fixed 3px pitch splits mid-block (control)', () => {
@@ -115,7 +145,10 @@ test('the fixtures carry moderate changes that a fixed 3px pitch splits mid-bloc
 		const { changes } = edgesOf(win);
 		assert.ok(changes.length >= 5, `${win.file}: ${changes.length} changes`);
 		const midBlock = Array.from(changes).filter((x) => x % render.BLOCK_PITCH_PX !== 0);
-		assert.ok(midBlock.length >= 3, `${win.file}: only ${midBlock.length} changes fall mid-block on the fixed pitch`);
+		assert.ok(
+			midBlock.length >= 3,
+			`${win.file}: only ${midBlock.length} changes fall mid-block on the fixed pitch`
+		);
 	}
 });
 
@@ -132,7 +165,10 @@ test('every moderate change starts a block, and the block before it holds none o
 			const b = edges.indexOf(x);
 			// The painter's bucket for the block before: points up to ceil(x*n/w)-1.
 			const prevLast = Math.ceil((edges[b] / ROW_W) * n) - 1;
-			assert.ok(prevLast < points[c], `${win.file}: block before ${x}px reaches change point ${points[c]}`);
+			assert.ok(
+				prevLast < points[c],
+				`${win.file}: block before ${x}px reaches change point ${points[c]}`
+			);
 			const ownFirst = Math.floor((edges[b] / ROW_W) * n);
 			assert.ok(ownFirst <= points[c], `${win.file}: block at ${x}px starts after its change`);
 		}
@@ -147,7 +183,9 @@ test('a painted beat with no change nearby starts a block; one near a change yie
 		let onGrid = 0;
 		for (const x of beatX) {
 			if (x < 0 || x >= ROW_W) continue; // off the row
-			const near = Array.from(changes).some((c) => Math.abs(c - x) < layout.BLOCK_SNAP_CFG.BEAT_YIELD_PX);
+			const near = Array.from(changes).some(
+				(c) => Math.abs(c - x) < layout.BLOCK_SNAP_CFG.BEAT_YIELD_PX
+			);
 			if (near) continue;
 			assert.ok(starts.has(x), `${win.file}: beat at ${x}px starts no block`);
 			onGrid++;
@@ -168,15 +206,24 @@ test('pitch stays within 2..4 px and the painted gap stays 1px', () => {
 	for (const win of windows) {
 		const { edges } = edgesOf(win);
 		assert.ok(edges[0] === 0 || edges[0] === 1, `${win.file}: first edge ${edges[0]}`);
-		assert.ok(edges[edges.length - 1] >= ROW_W && edges[edges.length - 1] < ROW_W + 3, `${win.file}: closing edge ${edges[edges.length - 1]}`);
+		assert.ok(
+			edges[edges.length - 1] >= ROW_W && edges[edges.length - 1] < ROW_W + 3,
+			`${win.file}: closing edge ${edges[edges.length - 1]}`
+		);
 		for (let b = 1; b < edges.length; b++) {
 			const p = edges[b] - edges[b - 1];
-			assert.ok(p >= layout.BLOCK_PITCH_MIN_PX && p <= layout.BLOCK_PITCH_MAX_PX, `${win.file}: pitch ${p} at ${edges[b - 1]}`);
+			assert.ok(
+				p >= layout.BLOCK_PITCH_MIN_PX && p <= layout.BLOCK_PITCH_MAX_PX,
+				`${win.file}: pitch ${p} at ${edges[b - 1]}`
+			);
 		}
 		const bars = rowBars(win);
 		assert.ok(bars.length > 100, `${win.file}: ${bars.length} bars`);
 		for (let i = 1; i < bars.length; i++) {
-			assert.ok(bars[i].x - (bars[i - 1].x + bars[i - 1].w) >= render.BLOCK_GAP_PX, `${win.file}: bars touch at ${bars[i].x}`);
+			assert.ok(
+				bars[i].x - (bars[i - 1].x + bars[i - 1].w) >= render.BLOCK_GAP_PX,
+				`${win.file}: bars touch at ${bars[i].x}`
+			);
 		}
 		for (const r of bars) assert.ok(r.w >= 1 && r.w <= 3, `${win.file}: bar ${r.w}px at ${r.x}`);
 	}
@@ -185,16 +232,28 @@ test('pitch stays within 2..4 px and the painted gap stays 1px', () => {
 test('with no change and no beat the layout is the fixed 3px pitch (overshoot control)', () => {
 	// Any width, not just multiples of 3: no anchor means the old grid exactly.
 	for (let w = 1; w <= 61; w++) {
-		assert.deepEqual(Array.from(layout.snappedBlockEdges(w, [], [])), Array.from(render.uniformBlockEdges(w)), `width ${w}`);
+		assert.deepEqual(
+			Array.from(layout.snappedBlockEdges(w, [], [])),
+			Array.from(render.uniformBlockEdges(w)),
+			`width ${w}`
+		);
 	}
 	// After the last anchor the tail is the fixed pitch from that anchor, not stretched to w.
 	assert.deepEqual(Array.from(layout.snappedBlockEdges(20, [6], [])), [0, 3, 6, 9, 12, 15, 18, 21]);
 	// A flat signal finds no change at all.
 	const flat = Array.from({ length: 1000 }, () => 0.5);
-	assert.equal(layout.detectChangePoints({ low: flat, mid: flat, high: flat, length: 1000 }, 8, UNIT).length, 0);
+	assert.equal(
+		layout.detectChangePoints({ low: flat, mid: flat, high: flat, length: 1000 }, 8, UNIT).length,
+		0
+	);
 	// A single step finds exactly one, at the step.
 	const step = Array.from({ length: 1000 }, (_, i) => (i < 400 ? 0.1 : 0.9));
-	assert.deepEqual(Array.from(layout.detectChangePoints({ low: step, mid: step, high: step, length: 1000 }, 8, UNIT)), [400]);
+	assert.deepEqual(
+		Array.from(
+			layout.detectChangePoints({ low: step, mid: step, high: step, length: 1000 }, 8, UNIT)
+		),
+		[400]
+	);
 });
 
 test('change detection keeps at least REFRACTORY_S between changes at any point rate', () => {
@@ -207,13 +266,17 @@ test('change detection keeps at least REFRACTORY_S between changes at any point 
 	assert.deepEqual(Array.from(layout.detectChangePoints(detail, 10, UNIT)), [400]);
 	// Control: 11 points (87.3 ms) apart is past the refractory, so both count.
 	const low2 = Array.from({ length: n }, (_, i) => (i === 400 || i === 411 ? 1 : 0.05));
-	assert.deepEqual(Array.from(layout.detectChangePoints({ ...detail, low: low2 }, 10, UNIT)), [400, 411]);
+	assert.deepEqual(
+		Array.from(layout.detectChangePoints({ ...detail, low: low2 }, 10, UNIT)),
+		[400, 411]
+	);
 });
 
 test('two changes under 2 px apart share one block that starts at the earlier', () => {
 	const edges = Array.from(layout.snappedBlockEdges(60, [30, 31], []));
 	assert.ok(edges.includes(30) && !edges.includes(31), edges.join(','));
-	for (let b = 1; b < edges.length; b++) assert.ok(edges[b] - edges[b - 1] >= layout.BLOCK_PITCH_MIN_PX, edges.join(','));
+	for (let b = 1; b < edges.length; b++)
+		assert.ok(edges[b] - edges[b - 1] >= layout.BLOCK_PITCH_MIN_PX, edges.join(','));
 	// Control: 2 px apart both start a block.
 	const two = Array.from(layout.snappedBlockEdges(60, [30, 32], []));
 	assert.ok(two.includes(30) && two.includes(32), two.join(','));
@@ -230,13 +293,25 @@ test('change detection reads the level the painter shows, not per-band levels', 
 	assert.equal(layout.detectChangePoints(detail, 8, { divisor: 0.9, clampAtOne: false }).length, 0);
 	// Control: the same step in the painted max band is a change.
 	const loud = Array.from({ length: n }, (_, i) => (i < 400 ? 0.1 : 0.9));
-	assert.deepEqual(Array.from(layout.detectChangePoints({ low: loud, mid: quiet, high: quiet, length: n }, 8, { divisor: 0.9, clampAtOne: false })), [400]);
+	assert.deepEqual(
+		Array.from(
+			layout.detectChangePoints({ low: loud, mid: quiet, high: quiet, length: n }, 8, {
+				divisor: 0.9,
+				clampAtOne: false
+			})
+		),
+		[400]
+	);
 	// legacy-p99 clamps at full height like its painter: a rise that only
 	// happens above the divisor paints nothing new, so it is no change.
 	const over = Array.from({ length: n }, (_, i) => (i < 400 ? 0.6 : 1));
 	const od = { low: over, mid: quiet, high: quiet, length: n };
 	assert.equal(layout.detectChangePoints(od, 8, { divisor: 0.5, clampAtOne: true }).length, 0);
-	assert.deepEqual(Array.from(layout.detectChangePoints(od, 8, { divisor: 0.5, clampAtOne: false })), [400], 'control: unclamped it rises');
+	assert.deepEqual(
+		Array.from(layout.detectChangePoints(od, 8, { divisor: 0.5, clampAtOne: false })),
+		[400],
+		'control: unclamped it rises'
+	);
 });
 
 test('production rows snap by default; blocksSnap false paints exactly the fixed-pitch row', () => {
@@ -251,7 +326,10 @@ test('production rows snap by default; blocksSnap false paints exactly the fixed
 		const starts = new Set(snapped.map((r) => r.x));
 		const { changes } = edgesOf(win);
 		const lit = Array.from(changes).filter((x) => x % render.BLOCK_PITCH_PX !== 0 && starts.has(x));
-		assert.ok(lit.length >= 3, `${win.file}: default row put only ${lit.length} off-grid changes on a bar edge`);
+		assert.ok(
+			lit.length >= 3,
+			`${win.file}: default row put only ${lit.length} off-grid changes on a bar edge`
+		);
 	}
 });
 
@@ -271,7 +349,10 @@ test('the block at a change steps up from the block before it more than on the f
 			// On the fixed pitch the change lights the block it falls in.
 			if (f >= 1) fixedStep += fixedH[f] - fixedH[f - 1];
 		}
-		assert.ok(snapStep > fixedStep, `${win.file}: snapped step ${snapStep.toFixed(2)} vs fixed ${fixedStep.toFixed(2)}`);
+		assert.ok(
+			snapStep > fixedStep,
+			`${win.file}: snapped step ${snapStep.toFixed(2)} vs fixed ${fixedStep.toFixed(2)}`
+		);
 	}
 });
 
@@ -283,10 +364,17 @@ test('before the lazy snapper lands the cached band image holds the fixed pitch,
 	const recordingCtx = (rects) => {
 		const base = {
 			fillStyle: '',
-			fillRect(x, y, w, h) { if (this.fillStyle === mono) rects.push({ x, y, w, h }); },
-			fill(path) { if (this.fillStyle === mono) rects.push(...path.rects); }
+			fillRect(x, y, w, h) {
+				if (this.fillStyle === mono) rects.push({ x, y, w, h });
+			},
+			fill(path) {
+				if (this.fillStyle === mono) rects.push(...path.rects);
+			}
 		};
-		return new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
+		return new Proxy(base, {
+			get: (t, k) => (k in t ? t[k] : () => {}),
+			set: (t, k, v) => ((t[k] = v), true)
+		});
 	};
 	const hadDocument = 'document' in globalThis;
 	const prevDocument = globalThis.document;
@@ -324,7 +412,10 @@ test('before the lazy snapper lands the cached band image holds the fixed pitch,
 		await fresh.__test_loadBlockSnap();
 		paint();
 		assert.equal(images.length, 2, 'the snapper landing rebuilds the band image');
-		assert.ok(images[1].some((r) => r.x % fresh.BLOCK_PITCH_PX !== 0), 'loaded: snapped edges in the rebuilt image');
+		assert.ok(
+			images[1].some((r) => r.x % fresh.BLOCK_PITCH_PX !== 0),
+			'loaded: snapped edges in the rebuilt image'
+		);
 		paint();
 		assert.equal(images.length, 2, 'once snapped the image is reused, not rebuilt per frame');
 	} finally {
@@ -336,8 +427,16 @@ test('before the lazy snapper lands the cached band image holds the fixed pitch,
 test('change detection rejects a duration that is not finite and positive', () => {
 	const { detail } = windows[0];
 	for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-		assert.throws(() => layout.detectChangePoints(detail, bad, UNIT), RangeError, `duration ${bad}`);
-		assert.throws(() => layout.detectChangePoints(detail, 10, { divisor: bad, clampAtOne: false }), RangeError, `divisor ${bad}`);
+		assert.throws(
+			() => layout.detectChangePoints(detail, bad, UNIT),
+			RangeError,
+			`duration ${bad}`
+		);
+		assert.throws(
+			() => layout.detectChangePoints(detail, 10, { divisor: bad, clampAtOne: false }),
+			RangeError,
+			`divisor ${bad}`
+		);
 	}
 	// Control: a valid duration on a too-short waveform is still just no changes.
 	const one = { low: [0.5], mid: [0.5], high: [0.5], length: 1 };
@@ -348,13 +447,20 @@ test('beat anchors land on the same pixel as the painted grid line, changes stay
 	const math = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts');
 	// Fractions on both sides of .5: a floored beat sits a pixel left of its line on the upper half.
 	// 2 px/s keeps beats over 10 px apart, so the grid paints every one (WAVEZOOM-02).
-	const beats = [10.1, 20.25, 30.35, 40.245, 50.255].map((t, i) => ({ n: (i % 4) + 1, bpm: 120, t }));
+	const beats = [10.1, 20.25, 30.35, 40.245, 50.255].map((t, i) => ({
+		n: (i % 4) + 1,
+		bpm: 120,
+		t
+	}));
 	const pxPerS = 2;
 	const lines = math.visibleBeatLines(beats, 0, pxPerS, 120, 40).map((l) => l.x);
 	assert.equal(lines.length, beats.length, 'CONTROL: every beat paints a line');
 	assert.deepEqual(Array.from(layout.beatAnchorsPx(beats, pxPerS)), lines);
 	// Control: change anchors keep flooring (the bucket before a change must not reach it).
-	assert.deepEqual(Array.from(layout.changeAnchorsPx(Int32Array.from([307, 505]), 1000, 100)), [30, 50]);
+	assert.deepEqual(
+		Array.from(layout.changeAnchorsPx(Int32Array.from([307, 505]), 1000, 100)),
+		[30, 50]
+	);
 });
 
 test('anchors at the row ends still start blocks (Sol P1 4303506953 on PR #6534)', () => {
@@ -380,9 +486,15 @@ test('anchors at the row ends still start blocks (Sol P1 4303506953 on PR #6534)
 	assert.ok(both[0] === 1 && both.includes(W - 2), both.join(','));
 	assert.ok(pitchesOk(both), both.join(','));
 	// Control: an anchor on pixel 0 is the existing first edge, so the grid is the old one.
-	assert.deepEqual(Array.from(layout.snappedBlockEdges(W, [0], [])), Array.from(render.uniformBlockEdges(W)));
+	assert.deepEqual(
+		Array.from(layout.snappedBlockEdges(W, [0], [])),
+		Array.from(render.uniformBlockEdges(W))
+	);
 	// Control: anchors off the row are ignored, not clamped onto it.
-	assert.deepEqual(Array.from(layout.snappedBlockEdges(W, [], [-1, W])), Array.from(render.uniformBlockEdges(W)));
+	assert.deepEqual(
+		Array.from(layout.snappedBlockEdges(W, [], [-1, W])),
+		Array.from(render.uniformBlockEdges(W))
+	);
 });
 
 test('the linear-time lookback finds exactly the changes a full rescan finds (Sol P1 4303676528 on PR #6534)', () => {
@@ -421,10 +533,15 @@ test('the linear-time lookback finds exactly the changes a full rescan finds (So
 	}
 	// Seeded noise with long lookbacks (high resolution): ties, plateaus and drops.
 	let seed = 7;
-	const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-	for (const [n, durS] of [[4000, 2], [20000, 2], [3000, 30]]) {
+	const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+	for (const [n, durS] of [
+		[4000, 2],
+		[20000, 2],
+		[3000, 30]
+	]) {
 		// Mostly quiet with sparse bursts, quantized so ties occur.
-		const q = () => Array.from({ length: n }, () => Math.round((rnd() < 0.01 ? rnd() : rnd() * 0.05) * 16) / 16);
+		const q = () =>
+			Array.from({ length: n }, () => Math.round((rnd() < 0.01 ? rnd() : rnd() * 0.05) * 16) / 16);
 		const bands = { low: q(), mid: q(), high: q(), length: n };
 		const got = Array.from(layout.detectChangePoints(bands, durS, UNIT));
 		assert.ok(got.length > 0, `CONTROL: ${n} points over ${durS}s has changes`);
@@ -443,20 +560,37 @@ test('a snapped bar across a band-cache tile edge paints the same columns as the
 	const edges = layout.snappedBlockEdges(W, changes, []);
 	const straddler = Array.from(edges).findIndex((e, b) => e < tile && edges[b + 1] - 1 > tile);
 	assert.ok(straddler >= 0, 'CONTROL: one bar straddles the tile edge');
-	assert.ok(straddler < tile / 3, 'CONTROL: fewer blocks than the fixed pitch puts before the edge');
+	assert.ok(
+		straddler < tile / 3,
+		'CONTROL: fewer blocks than the fixed pitch puts before the edge'
+	);
 	const heights = new Float32Array(edges.length - 1).fill(1);
 	const detail = { low: [1, 1], mid: [1, 1], high: [1, 1], length: 2 };
 	const waveform = { kind: 'mono', preview: detail, detail };
-	const blocks = { curve: 'true-peak', variant: 'max', beatPeriodS: null, mirrored: true, snap: true, beats: null };
+	const blocks = {
+		curve: 'true-peak',
+		variant: 'max',
+		beatPeriodS: null,
+		mirrored: true,
+		snap: true,
+		beats: null
+	};
 	const palette = { low: '#1', mid: '#2', high: '#3', mono: '#4' };
 	const columns = (x0, x1) => {
 		const cov = new Uint8Array(W);
 		const cover = (r) => {
 			for (let x = Math.max(0, r.x); x < Math.min(x1 - x0, r.x + r.w); x++) cov[x0 + x] = 1;
 		};
-		const ctx = { fillStyle: '', globalAlpha: 1, fill: (path) => path.rects.forEach(cover), fillRect: (x, y, w, h) => cover({ x, y, w, h }) };
+		const ctx = {
+			fillStyle: '',
+			globalAlpha: 1,
+			fill: (path) => path.rects.forEach(cover),
+			fillRect: (x, y, w, h) => cover({ x, y, w, h })
+		};
 		render.__test_drawBands(ctx, waveform, 1, W, W, ROW_H, palette, 'blocks', blocks, 0, {
-			x0, x1, blockColumns: { heights, shares: null, edges }
+			x0,
+			x1,
+			blockColumns: { heights, shares: null, edges }
 		});
 		return cov;
 	};
@@ -464,7 +598,11 @@ test('a snapped bar across a band-cache tile edge paints the same columns as the
 	const right = columns(tile, W);
 	const tiled = columns(0, tile).map((v, x) => v | right[x]);
 	assert.deepEqual(Array.from(tiled), Array.from(whole));
-	assert.equal(whole[tile - 1] + whole[tile], 2, 'CONTROL: the straddling bar covers both sides of the edge');
+	assert.equal(
+		whole[tile - 1] + whole[tile],
+		2,
+		'CONTROL: the straddling bar covers both sides of the edge'
+	);
 });
 
 test('on a thinned grid only painted beat lines anchor, and each keeps its edge (Sol P1 4426841369 on PR #6534)', async () => {
@@ -473,23 +611,38 @@ test('on a thinned grid only painted beat lines anchor, and each keeps its edge 
 	// each kept line rounds to 1 px before it, inside the anchor merge gap, where
 	// the earlier anchor wins: anchoring it would take the line's edge away.
 	const pxPerS = 3;
-	const beats = Array.from({ length: 480 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: 1 + i * 0.5 }));
+	const beats = Array.from({ length: 480 }, (_, i) => ({
+		n: (i % 4) + 1,
+		bpm: 120,
+		t: 1 + i * 0.5
+	}));
 	const W = Math.ceil(241 * pxPerS);
 	const anchors = Array.from(layout.beatAnchorsPx(beats, pxPerS));
-	assert.ok(anchors.length > 0 && anchors.length < beats.length / 4, `CONTROL: the grid thinned (${anchors.length} of ${beats.length})`);
+	assert.ok(
+		anchors.length > 0 && anchors.length < beats.length / 4,
+		`CONTROL: the grid thinned (${anchors.length} of ${beats.length})`
+	);
 	const edges = new Set(layout.snappedBlockEdges(W, [], anchors));
 	// Every line a scrolled window paints starts a block, at the row's own origin.
 	for (const tLeft of [0, 17.3, 63.9, 150.25]) {
 		const origin = Math.round(tLeft * pxPerS);
 		const lines = math.visibleBeatLines(beats, tLeft, pxPerS, 96 * pxPerS, 40, false, origin);
 		assert.ok(lines.length > 0, `CONTROL: the window at ${tLeft} s paints lines`);
-		for (const l of lines) assert.ok(edges.has(l.x + origin), `the line at ${l.x + origin} px starts a block (window ${tLeft} s)`);
+		for (const l of lines)
+			assert.ok(
+				edges.has(l.x + origin),
+				`the line at ${l.x + origin} px starts a block (window ${tLeft} s)`
+			);
 	}
 	// Hidden beats bend nothing: kept lines sit 24 px apart (16 beats of 1.5 px),
 	// so between the first and last anchor every block keeps the fixed 3 px pitch.
-	for (let i = 1; i < anchors.length; i++) assert.equal(anchors[i] - anchors[i - 1], 24, 'CONTROL: kept lines 24 px apart');
-	const row = Array.from(layout.snappedBlockEdges(W, [], anchors)).filter((e) => e >= anchors[0] && e <= anchors.at(-1));
-	for (let b = 1; b < row.length; b++) assert.equal(row[b] - row[b - 1], 3, `fixed pitch at ${row[b - 1]} px`);
+	for (let i = 1; i < anchors.length; i++)
+		assert.equal(anchors[i] - anchors[i - 1], 24, 'CONTROL: kept lines 24 px apart');
+	const row = Array.from(layout.snappedBlockEdges(W, [], anchors)).filter(
+		(e) => e >= anchors[0] && e <= anchors.at(-1)
+	);
+	for (let b = 1; b < row.length; b++)
+		assert.equal(row[b] - row[b - 1], 3, `fixed pitch at ${row[b - 1]} px`);
 	// Control: at deck zoom nothing thins, and every beat anchors.
 	assert.equal(layout.beatAnchorsPx(beats, 40).length, beats.length);
 });
@@ -515,16 +668,31 @@ test('variable-tempo slow window snaps every painted beat line (issue #8335)', a
 	assert.equal(math.beatLineStrideForWindow(beats, 0, pxPerS, Infinity), 4);
 	const slowLines = math.visibleBeatLines(beats, tLeftSlow, pxPerS, widthCss, 40, false, 0);
 	const slowXs = new Set(slowLines.map((l) => l.x));
-	for (const x of [121, 132, 143]) assert.ok(slowXs.has(x), `CONTROL: slow window paints beat at ${x} px`);
+	for (const x of [121, 132, 143])
+		assert.ok(slowXs.has(x), `CONTROL: slow window paints beat at ${x} px`);
 	const anchors = Array.from(layout.beatAnchorsPx(beats, pxPerS, false, 1));
 	for (const x of [121, 132, 143]) assert.ok(anchors.includes(x), `stride-1 anchor at ${x} px`);
-	const detail = { length: 1200, low: Array(1200).fill(0.3), mid: Array(1200).fill(0.3), high: Array(1200).fill(0.3) };
+	const detail = {
+		length: 1200,
+		low: Array(1200).fill(0.3),
+		mid: Array(1200).fill(0.3),
+		high: Array(1200).fill(0.3)
+	};
 	const mono = '#cfcfcf';
 	const lines = [];
 	const blockLefts = new Set();
 	const palette = {
-		bg: '#000', low: '#1', mid: '#2', high: '#3', mono, tick: '#4',
-		cueHotCue: '#35c04f', cueLoop: '#e8a13a', cueMemory: '#ff3b30', cueOutline: '#c8cdd2', phrase: '#888'
+		bg: '#000',
+		low: '#1',
+		mid: '#2',
+		high: '#3',
+		mono,
+		tick: '#4',
+		cueHotCue: '#35c04f',
+		cueLoop: '#e8a13a',
+		cueMemory: '#ff3b30',
+		cueOutline: '#c8cdd2',
+		phrase: '#888'
 	};
 	const ctx = {
 		fillStyle: '',
@@ -538,9 +706,18 @@ test('variable-tempo slow window snaps every painted beat line (issue #8335)', a
 		drawImage() {}
 	};
 	render.drawWaveRow(ctx, {
-		widthCss, heightCss: ROW_H, positionMs, durationMs: durS * 1000,
-		anlz: anlzOf(detail, beats), palette, pitch: 1, windowS, playheadFrac: 0.5, loop: null,
-		waveformDesign: 'blocks', blocksSnap: true
+		widthCss,
+		heightCss: ROW_H,
+		positionMs,
+		durationMs: durS * 1000,
+		anlz: anlzOf(detail, beats),
+		palette,
+		pitch: 1,
+		windowS,
+		playheadFrac: 0.5,
+		loop: null,
+		waveformDesign: 'blocks',
+		blocksSnap: true
 	});
 	for (const x of [121, 132, 143]) {
 		assert.ok(lines.includes(x), `painted line at ${x} px`);
@@ -549,9 +726,25 @@ test('variable-tempo slow window snaps every painted beat line (issue #8335)', a
 	const fastLeft = slowDurS + 4;
 	const fastStride = math.beatLineStrideForWindow(beats, fastLeft, pxPerS, widthCss);
 	assert.equal(fastStride, 4);
-	const fastLines = math.visibleBeatLines(beats, fastLeft, pxPerS, widthCss, 40, false, Math.round(fastLeft * pxPerS));
-	const fastEdges = new Set(
-		layout.snappedBlockEdges(Math.ceil(durS * pxPerS), [], layout.beatAnchorsPx(beats, pxPerS, false, fastStride))
+	const fastLines = math.visibleBeatLines(
+		beats,
+		fastLeft,
+		pxPerS,
+		widthCss,
+		40,
+		false,
+		Math.round(fastLeft * pxPerS)
 	);
-	for (const l of fastLines) assert.ok(fastEdges.has(l.x + Math.round(fastLeft * pxPerS)), `thinned line at ${l.x} px has an edge`);
+	const fastEdges = new Set(
+		layout.snappedBlockEdges(
+			Math.ceil(durS * pxPerS),
+			[],
+			layout.beatAnchorsPx(beats, pxPerS, false, fastStride)
+		)
+	);
+	for (const l of fastLines)
+		assert.ok(
+			fastEdges.has(l.x + Math.round(fastLeft * pxPerS)),
+			`thinned line at ${l.x} px has an edge`
+		);
 });

@@ -36,8 +36,7 @@ def _window(signal: np.ndarray, sample_rate_hz: int) -> np.ndarray:
     end = int(MEASUREMENT_WINDOW_END_S * sample_rate_hz)
     if signal.shape[-1] < end:
         raise metrics.HarnessIntegrityError(
-            f"signal of {signal.shape[-1]} samples is shorter than the measurement window end "
-            f"at {end}"
+            f"signal of {signal.shape[-1]} samples is shorter than the measurement window end at {end}"
         )
     return signal[..., start:end]
 
@@ -68,9 +67,7 @@ def score_cell(
         metrics.assert_channel_distinctness_preserved(excerpt, rendered, label)
 
         alignment = metrics.estimate_delay_samples(excerpt, rendered, sample_rate_hz, label)
-        aligned_reference, aligned_render = metrics.apply_delay(
-            excerpt, rendered, alignment.delay_samples
-        )
+        aligned_reference, aligned_render = metrics.apply_delay(excerpt, rendered, alignment.delay_samples)
         reference_window = _window(aligned_reference, sample_rate_hz)
         render_window = _window(aligned_render, sample_rate_hz)
 
@@ -87,9 +84,7 @@ def score_cell(
                 "align_self_similarity": alignment.self_similarity,
                 "align_self_similarity_delay_samples": alignment.self_similarity_delay_samples,
                 "align_carrier": alignment.carrier,
-                "lsd_db": metrics.log_spectral_distance(
-                    reference_window, render_window, sample_rate_hz
-                ),
+                "lsd_db": metrics.log_spectral_distance(reference_window, render_window, sample_rate_hz),
                 "residual_dbr": residual.residual_dbr,
                 "residual_rho": residual.correlation_rho,
                 "onset_displacement_p95_ms": onsets.displacement_p95_ms,

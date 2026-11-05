@@ -24,7 +24,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if the parser accepts an unknown feature then validation went loose
  */
 
-const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 const FRONTEND_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 let ipc;
@@ -42,7 +41,10 @@ function _tupleNames(text, pattern, name) {
 }
 
 function serverLanes() {
-	const text = readFileSync(`${REPO_ROOT}apps/analysis/lane_enums.py`, 'utf8');
+	const text = readFileSync(
+		fileURLToPath(new URL('../../../../../apps/analysis/lane_enums.py', import.meta.url)),
+		'utf8'
+	);
 	// check_lane validates against SELECTION_LANES = (*LANES, *SELECTION_ONLY_LANES).
 	assert.match(
 		text,

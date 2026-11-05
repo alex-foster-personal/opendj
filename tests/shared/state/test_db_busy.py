@@ -2,6 +2,7 @@
 
 [if] SQLite raises locked or busy operational errors [then] is_sqlite_busy classifies them, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3

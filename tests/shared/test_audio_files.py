@@ -4,6 +4,7 @@ Ties to INFRA-02 (shared filesystem scanner used by locate + future tools).
 We also ship a tiny programmatically-generated MP3 (``silent.mp3``) so
 the tag reader can parse it without hitting a real audio library.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,16 +15,19 @@ from apps.shared import audio_files
 
 # Minimal, valid MP3 frame generated on the fly. Tiny (~100 bytes) — good
 # enough for the tag reader to identify the file as audio.
-_SILENT_MP3 = bytes.fromhex(
-    # ID3v2.3 header: "ID3", version, flags, size (4-byte synchsafe) = 0
-    "494433030000000000"
-    "00"
-    # 10 MPEG1 Layer3 frames @ 64kbps/44.1kHz/mono — header only (208 bytes payload ea).
-) + (
-    # MPEG audio frame header FF FB 90 64 (0xFFFB = sync+MPEG1+L3, 0x90 = 128kbps/44.1k,
-    # 0x64 = private+stereo — crudely valid). 417 bytes/frame for 128kbps/44.1k.
-    b"\xff\xfb\x90\x64" + b"\x00" * 413
-) * 3
+_SILENT_MP3 = (
+    bytes.fromhex(
+        # ID3v2.3 header: "ID3", version, flags, size (4-byte synchsafe) = 0
+        "49443303000000000000"
+        # 10 MPEG1 Layer3 frames @ 64kbps/44.1kHz/mono — header only (208 bytes payload ea).
+    )
+    + (
+        # MPEG audio frame header FF FB 90 64 (0xFFFB = sync+MPEG1+L3, 0x90 = 128kbps/44.1k,
+        # 0x64 = private+stereo — crudely valid). 417 bytes/frame for 128kbps/44.1k.
+        b"\xff\xfb\x90\x64" + b"\x00" * 413
+    )
+    * 3
+)
 
 
 @pytest.fixture(scope="module")
@@ -85,9 +89,7 @@ def test_scan_music_files_handles_missing_root(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("INFRA-02")
-def test_scan_music_files_uses_default_roots_when_none(
-    monkeypatch: pytest.MonkeyPatch, sample_tree: Path
-) -> None:
+def test_scan_music_files_uses_default_roots_when_none(monkeypatch: pytest.MonkeyPatch, sample_tree: Path) -> None:
     """When ``roots=None``, falls back to ``paths.MUSIC_ROOTS``."""
     from apps.shared import paths as shared_paths
 

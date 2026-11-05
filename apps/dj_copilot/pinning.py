@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -98,11 +99,8 @@ def assign_peak_pin_slots(goal: SetGoal, total: int) -> dict[int, str]:
     return dict(zip(chosen, goal.peak_pins, strict=True))
 
 
-def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
-    allowed = {i for i, track in enumerate(tracks) if track.stable_id in goal.opener_pins}
-    if not allowed:
-        raise PinUnsatisfiableError("pin_not_in_playlist", missing=tuple(goal.opener_pins))
-
+def _opener_occurrence_item_key(goal: SetGoal):
+    """Return a sort key over (index, track) pairs for opener/start picks."""
     def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
         position, track = occurrence
         return _opener_occurrence_rank_key(
@@ -112,8 +110,28 @@ def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
             open_on_key=goal.open_on_key,
         )
 
-    candidates = [(i, tracks[i]) for i in allowed]
+    return key
+
+
+def _best_occurrence_among(
+    tracks: list[TrackFeature],
+    goal: SetGoal,
+    positions: Iterable[int],
+) -> int:
+    key = _opener_occurrence_item_key(goal)
+    candidates = [(i, tracks[i]) for i in positions]
     return min(candidates, key=key)[0]
+
+
+def _best_start_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
+    return _best_occurrence_among(tracks, goal, range(len(tracks)))
+
+
+def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
+    allowed = [i for i, track in enumerate(tracks) if track.stable_id in goal.opener_pins]
+    if not allowed:
+        raise PinUnsatisfiableError("pin_not_in_playlist", missing=tuple(goal.opener_pins))
+    return _best_occurrence_among(tracks, goal, allowed)
 
 
 def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, SlotReservation]:
@@ -194,6 +212,4 @@ def start_occurrence_for_pinned(
 ) -> int:
     if 0 in reservations:
         return reservations[0].occurrence
-    from .solver import _best_start_occurrence
-
     return _best_start_occurrence(tracks, goal)

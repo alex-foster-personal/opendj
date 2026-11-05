@@ -39,6 +39,7 @@ Acceptance criteria, one test each:
 
 [if] an out-of-set table raises anything but SyncApplyError [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -64,9 +65,7 @@ _ABSENT_TABLE = "not_a_synced_table"
 # ----- helpers ---------------------------------------------------------------
 
 
-def _log(
-    conn: sqlite3.Connection, changelog: str, table: str, pk: tuple[str, ...]
-) -> None:
+def _log(conn: sqlite3.Connection, changelog: str, table: str, pk: tuple[str, ...]) -> None:
     """Append one changelog entry naming ``table``, bypassing the writer.
 
     ``sync_stamp.stamp_and_log`` cannot write an out-of-set table name in a
@@ -238,12 +237,8 @@ def test_the_rank_index_and_the_spec_index_agree_on_the_sync_set() -> None:
 
 def test_apply_rank_orders_parents_below_children() -> None:
     """A direct read of the helper, so a call-site failure is not the only signal."""
-    assert apply_rank("tracks", source="unit") < apply_rank(
-        "track_locations", source="unit"
-    )
-    assert apply_rank("tracks", source="unit") < apply_rank(
-        "playlists", source="unit"
-    )
+    assert apply_rank("tracks", source="unit") < apply_rank("track_locations", source="unit")
+    assert apply_rank("tracks", source="unit") < apply_rank("playlists", source="unit")
 
 
 def test_apply_rank_names_its_caller_in_the_refusal() -> None:

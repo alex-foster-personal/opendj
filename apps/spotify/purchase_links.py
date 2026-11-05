@@ -8,6 +8,7 @@ caller.
 No store is queried and no availability is implied: these are search URLs the
 operator opens in a browser to buy the track manually.
 """
+
 from __future__ import annotations
 
 from urllib.parse import quote_plus

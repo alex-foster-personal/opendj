@@ -22,13 +22,18 @@ import { resolveUv } from './fixtures/resolve-uv.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
-const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/usb_import_wait_server.py', import.meta.url));
+const SERVER_SCRIPT = fileURLToPath(
+	new URL('./fixtures/usb_import_wait_server.py', import.meta.url)
+);
 const DRAIN = 'POST /api/v1/analysis-queue/run';
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'unknown']);
 /** _DRAIN_SETTLE_S in fixtures/usb_import_wait_server.py, read from its source. */
 const DRAIN_SETTLE_MS =
-	Number(/^_DRAIN_SETTLE_S = ([0-9.]+)$/m.exec(readFileSync(SERVER_SCRIPT, 'utf8'))?.[1] ?? Number.NaN) * 1000;
-if (!Number.isFinite(DRAIN_SETTLE_MS)) throw new Error('could not read _DRAIN_SETTLE_S from the fixture server');
+	Number(
+		/^_DRAIN_SETTLE_S = ([0-9.]+)$/m.exec(readFileSync(SERVER_SCRIPT, 'utf8'))?.[1] ?? Number.NaN
+	) * 1000;
+if (!Number.isFinite(DRAIN_SETTLE_MS))
+	throw new Error('could not read _DRAIN_SETTLE_S from the fixture server');
 
 let serverProcess;
 let apiBase;
@@ -52,7 +57,9 @@ before(async () => {
 			const match = /^READY (\d+)$/.exec(line);
 			if (match) resolve(Number(match[1]));
 		});
-		serverProcess.once('exit', (code) => reject(new Error(`fixture server exited ${code} before READY:\n${stderr}`)));
+		serverProcess.once('exit', (code) =>
+			reject(new Error(`fixture server exited ${code} before READY:\n${stderr}`))
+		);
 	});
 	apiBase = `http://127.0.0.1:${port}`;
 	paths = await (await fetch(`${apiBase}/test/paths`)).json();
@@ -64,7 +71,8 @@ after(async () => {
 	// The server waits up to 120 s (_DRAIN_SETTLE_S) for the real drain it
 	// started to finish before exiting, so a 15 s stop bound fails a loaded
 	// runner while the server is doing exactly what it should.
-	if (serverProcess) await stopFixtureServer(serverProcess, apiBase, { timeoutMs: DRAIN_SETTLE_MS + 15_000 });
+	if (serverProcess)
+		await stopFixtureServer(serverProcess, apiBase, { timeoutMs: DRAIN_SETTLE_MS + 15_000 });
 });
 
 /** Every API request the real daemon served so far, in order. */
@@ -98,9 +106,13 @@ describe('USB import waits for the real folder import before analyzing (USBIMP-0
 		const firstTerminal = log.findIndex((e) => e.path === jobPath && TERMINAL.has(e.job_status));
 		assert.ok(firstTerminal >= 0, `no job read answered a terminal status: ${JSON.stringify(log)}`);
 		assert.equal(log[firstTerminal].job_status, 'succeeded', JSON.stringify(log[firstTerminal]));
-		assert.ok(log.indexOf(drains[0]) > firstTerminal, `drain landed before the terminal read: ${JSON.stringify(log)}`);
+		assert.ok(
+			log.indexOf(drains[0]) > firstTerminal,
+			`drain landed before the terminal read: ${JSON.stringify(log)}`
+		);
 		assert.equal(reads.at(-1), log[firstTerminal], 'no job read after the terminal one');
-		for (const read of reads.slice(0, -1)) assert.ok(!TERMINAL.has(read.job_status), JSON.stringify(read));
+		for (const read of reads.slice(0, -1))
+			assert.ok(!TERMINAL.has(read.job_status), JSON.stringify(read));
 
 		// The point of waiting: the drain's own backlog already holds the stick's track.
 		assert.deepEqual(drains[0].backlog_files, [paths.track]);
@@ -132,14 +144,21 @@ describe('USB import waits for the real folder import before analyzing (USBIMP-0
 		assert.equal(reads.at(-1).job_status, 'failed', JSON.stringify(reads));
 		const finished = await setupApi.getSetupJob(job.id);
 		assert.match(finished.error ?? '', /no such folder/, JSON.stringify(finished));
-		assert.deepEqual(log.filter((e) => label(e) === DRAIN), [], JSON.stringify(log));
+		assert.deepEqual(
+			log.filter((e) => label(e) === DRAIN),
+			[],
+			JSON.stringify(log)
+		);
 	});
 
 	it('a stick the setup route refuses up front queues nothing and never drains', async () => {
 		const from = (await served()).length;
 		await assert.rejects(setupApi.startFolderImport({ folders: [paths.missing_stick] }));
 		const log = (await served()).slice(from);
-		assert.deepEqual(log.map((e) => [label(e), e.status]), [['POST /api/v1/setup/import/folder', 409]]);
+		assert.deepEqual(
+			log.map((e) => [label(e), e.status]),
+			[['POST /api/v1/setup/import/folder', 409]]
+		);
 	});
 
 	it('the click path hands the job to the wait instead of draining inline', () => {

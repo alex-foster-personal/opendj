@@ -4,6 +4,7 @@
  * Backend lists present mounts via GET /api/v1/usb/volumes (read-only).
  * Local metadata (yours / music / name / forgotten) persists in localStorage.
  * Never writes to a USB mount from this pass.
+ * Future agentic check/fix: (private path)/
  */
 import { ApiError, api, unwrap } from '../api/client';
 import { uiPrefs } from '$lib/rb/prefs.svelte';

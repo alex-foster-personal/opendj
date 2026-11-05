@@ -30,7 +30,10 @@ export function focusedTrackInfoDeck(decks: readonly TrackInfoDeck[]): DeckId | 
 
 /** What the open overlay shows, or null once its deck empties or loads another track. */
 export function shownTrackInfo(decks: readonly TrackInfoDeck[]): OpenedTrackInfo | null {
-	return openedTrackInfo(trackInfo.opened, (deck) => decks.find((d) => d.id === deck)?.stableId ?? null);
+	return openedTrackInfo(
+		trackInfo.opened,
+		(deck) => decks.find((d) => d.id === deck)?.stableId ?? null
+	);
 }
 
 /** Close if open, else open for the focused deck; with no deck loaded, refuse. */

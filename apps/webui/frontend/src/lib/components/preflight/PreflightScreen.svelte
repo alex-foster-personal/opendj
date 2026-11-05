@@ -41,7 +41,11 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
 	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
-	import { checkPreflight, preflightGate, requestPermissions } from '$lib/preflight/preflight.svelte';
+	import {
+		checkPreflight,
+		preflightGate,
+		requestPermissions
+	} from '$lib/preflight/preflight.svelte';
 	import {
 		checkOffersRunSetup,
 		preflightExplainers,
@@ -71,9 +75,7 @@
 	} = $props();
 
 	const hiddenIds = $derived(new Set(hideCheckIds));
-	const visibleChecks = $derived(
-		preflightGate.checks.filter((check) => !hiddenIds.has(check.id))
-	);
+	const visibleChecks = $derived(preflightGate.checks.filter((check) => !hiddenIds.has(check.id)));
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let pendingAction = $state<PreflightActionId | null>(null);

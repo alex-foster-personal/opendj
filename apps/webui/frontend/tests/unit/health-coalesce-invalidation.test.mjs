@@ -93,7 +93,9 @@ afterEach(() => {
 
 /** A fresh, fully isolated copy of the api.ts + events-bus.ts graph. */
 async function loadGraph() {
-	return loadTypeScriptModule('tests/unit/fixtures/health-coalesce-entry.ts', { viteApiBase: API_BASE });
+	return loadTypeScriptModule('tests/unit/fixtures/health-coalesce-entry.ts', {
+		viteApiBase: API_BASE
+	});
 }
 
 /** Open the bus on the graph's own events-bus instance and deliver hello. */
@@ -138,7 +140,11 @@ test('a tracks change inside the TTL invalidates the cached health read', async 
 
 	const afterImport = await mod.getHealth();
 	assert.equal(calls, 2, 'a tracks change must invalidate the cached entry, forcing a re-fetch');
-	assert.equal(afterImport.health.state_db.tracks, 5, 'the boot pane must see the post-import count');
+	assert.equal(
+		afterImport.health.state_db.tracks,
+		5,
+		'the boot pane must see the post-import count'
+	);
 });
 
 test('a resync (seq gap) inside the TTL invalidates the cached health read too', async () => {
@@ -225,7 +231,11 @@ test('a stalled initial health fetch is abandoned, not joined forever', async ()
 		await assert.rejects(stalled, /timed out/i);
 
 		const after = await mod.getHealth();
-		assert.equal(calls, 2, 'a caller after the stall settles must get a fresh request, not join it');
+		assert.equal(
+			calls,
+			2,
+			'a caller after the stall settles must get a fresh request, not join it'
+		);
 		assert.equal(after.health.state_db.tracks, 5);
 	} finally {
 		mock.timers.reset();

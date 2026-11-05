@@ -46,6 +46,7 @@ export function installTabLeadership(): { leadership: TabLeadership; dispose: ()
 
 /** The banner's "Take control" button. */
 export function takeTabControl(): void {
-	if (_active === null) throw new Error('take control pressed with no /performance leadership installed');
+	if (_active === null)
+		throw new Error('take control pressed with no /performance leadership installed');
 	_active.takeControl();
 }

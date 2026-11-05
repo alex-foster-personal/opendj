@@ -6,6 +6,8 @@ router's ``GET /playlists/{playlist_id}`` cannot capture ``history``.
   * ``GET  /api/v1/playlist-history``        live window + cursor
   * ``POST /api/v1/playlist-history/undo``   invert the command at cursor-1
   * ``POST /api/v1/playlist-history/redo``   re-apply the command at cursor
+  * ``POST /api/v1/playlist-history/jump``   undo/redo until one entry is the
+    cursor edge (the history popover's click, and its agent equivalent)
 
 Empty stack is HTTP 409 ``{error: nothing_to_undo|nothing_to_redo}``. Snapshot
 mismatch reuses the write-router ConflictError -> 409 ``conflict``. No
@@ -23,7 +25,7 @@ from pydantic import BaseModel
 
 from apps.shared.events import publish
 
-from ..backend import StateBackend
+from ..backend import ConflictError, StateBackend
 from ..deps import get_write_state
 from ..playlist_history import PlaylistEditCommand, PlaylistHistoryEmptyError
 from ..playlist_store import PlaylistRow, PlaylistStore
@@ -40,6 +42,7 @@ class HistoryEntryOut(BaseModel):
     playlist_id: str
     ts: str
     label: str
+    stable_ids: list[str] = []
 
 
 class HistoryGetOut(BaseModel):
@@ -59,6 +62,24 @@ class HistoryApplyOut(BaseModel):
     etag: str | None = None
     can_undo: bool
     can_redo: bool
+
+
+class HistoryJumpIn(BaseModel):
+    command_id: str
+
+
+class HistoryJumpStepOut(BaseModel):
+    command_id: str
+    op: str
+    action: str
+    playlist_id: str
+
+
+class HistoryJumpOut(BaseModel):
+    cursor: int
+    can_undo: bool
+    can_redo: bool
+    steps: list[HistoryJumpStepOut]
 
 
 def _row_out(row: PlaylistRow) -> PlaylistWriteOut:
@@ -143,3 +164,35 @@ def redo_playlist_edit(
     except PlaylistHistoryEmptyError:
         return _empty("redo")
     return _apply_out(command, current, "redo", store)
+
+
+@router.post("/jump", response_model=HistoryJumpOut, operation_id="jump_playlist_history")
+def jump_playlist_history(
+    body: HistoryJumpIn,
+    _backend: StateDep,
+    store: StoreDep,
+) -> HistoryJumpOut:
+    """Undo an applied entry and every newer one, or redo a pending entry and
+    every older one. 404 when the entry left the live window."""
+    try:
+        steps = store.jump_to(body.command_id)
+    except ConflictError:
+        # Steps before the conflict are journaled and live: tell clients.
+        publish("library.changed", {"kind": "playlists", "ids": []})
+        raise
+    touched = list(dict.fromkeys(command.playlist_id for _a, command, _c in steps))
+    if touched:
+        publish("library.changed", {"kind": "playlists", "ids": touched})
+    hist = store.history()
+    return HistoryJumpOut(
+        cursor=hist["cursor"],
+        can_undo=hist["can_undo"],
+        can_redo=hist["can_redo"],
+        steps=[
+            HistoryJumpStepOut(
+                command_id=command.command_id, op=command.op,
+                action=action, playlist_id=command.playlist_id,
+            )
+            for action, command, _current in steps
+        ],
+    )

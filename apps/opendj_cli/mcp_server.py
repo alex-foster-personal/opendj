@@ -1,6 +1,7 @@
 """Stdio MCP server for installed Open DJ (AGENT-11).
 
-Eight tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
+Nine tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
+``animate_control`` (ANIM-03),
 ``library``, ``ui_url``, ``open_route``, ``update_check``, and
 ``update_apply``. Safety rails live in :mod:`mcp_safety`. The AutoDJ tools
 (AGENT-29: mix state, track profiles, mix windows, transition plans) are
@@ -23,6 +24,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import httpx
 
+from apps.opendj_cli.animate import animate_order
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
 from apps.opendj_cli.blocked import annotate_blocked
 from apps.opendj_cli.client import (
@@ -35,12 +37,16 @@ from apps.opendj_cli.client import (
     OrderTimedOut,
 )
 from apps.opendj_cli.engine_status import build_engine_status
+from apps.opendj_cli.mcp_audio_tools import register_audio_tools
 from apps.opendj_cli.mcp_client_errors_tools import register_client_errors_tools
+from apps.opendj_cli.mcp_deck_tools import register_deck_tools
 from apps.opendj_cli.mcp_dj_tools import register_dj_tools
 from apps.opendj_cli.mcp_energy_tools import register_energy_tools
 from apps.opendj_cli.mcp_enrichment_tools import register_enrichment_tools
 from apps.opendj_cli.mcp_genre_tools import register_genre_tools
+from apps.opendj_cli.mcp_key_tools import register_key_tools
 from apps.opendj_cli.mcp_offload_tools import register_offload_tools
+from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
@@ -48,8 +54,13 @@ from apps.opendj_cli.mcp_safety import (
     validate_api_path,
 )
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
+from apps.opendj_cli.mcp_session_tools import register_session_tools
+from apps.opendj_cli.mcp_source_flags_tools import register_source_flags_tools
+from apps.opendj_cli.mcp_set_tools import register_set_tools
+from apps.opendj_cli.mcp_tempo_tools import register_tempo_tools
+from apps.opendj_cli.mcp_track_tools import register_track_tools
 from apps.opendj_cli.mcp_update_tools import register_update_tools
-from apps.opendj_cli.orders import single
+from apps.opendj_cli.orders import RAMP, ramp_deadline_s, single
 from apps.opendj_cli.origin import (
     EngineIdentityMismatch,
     EngineNotRunning,
@@ -325,6 +336,72 @@ def _library_do_request(
         raise _tool_error({"error": "usage", "message": str(error)}) from error
 
 
+def _post_guarded(
+    client: EngineClient, guarded_order: dict[str, Any], safety: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Post one guarded order and shape the page's result as a tool document."""
+    origin = client.origin
+    try:
+        result = client.post_order(guarded_order)
+    except NoPerformancePage as error:
+        raise _tool_error(
+            {
+                "error": "no_performance_page",
+                "origin": origin.base_url,
+                "remedy": REMEDY_VERB,
+                "message": str(error),
+            }
+        ) from error
+    except (OrderRejected, OrderTimedOut, MalformedResult) as error:
+        raise _tool_error({"error": "order_failed", "message": str(error)}) from error
+    except EngineNotRunning as error:
+        raise _engine_not_running(error) from error
+
+    try:
+        document = annotate_blocked(dict(result))  # AGENT-55/54
+    except MalformedResult as error:
+        raise _tool_error({"error": "order_failed", "message": str(error)}) from error
+    if safety:
+        document["safety"] = safety
+    return document
+
+
+def _animate_control(
+    control: str, expr: str, deck: int | None, command_timeout_s: float
+) -> dict[str, Any]:
+    """ANIM-03: the body of the ``animate_control`` tool."""
+    try:
+        # Parsed before the engine is looked up, like the CLI: a typo is
+        # answered as a typo even with the app closed.
+        try:
+            order = animate_order(deck, control, expr)
+        except InvocationError as error:
+            raise SafetyRefusal("usage", str(error)) from error
+        origin = _resolve_verified_origin()
+        guarded_order, safety = guard_order(order)
+    except SafetyRefusal as error:
+        raise _tool_error(
+            {"error": error.code, "message": str(error), **error.fields}
+        ) from error
+    except EngineIdentityMismatch as error:
+        raise _engine_identity_mismatch(error) from error
+    except EngineNotRunning as error:
+        raise _engine_not_running(error) from error
+
+    client = EngineClient(origin=origin, timeout_s=command_timeout_s)
+    try:
+        # The page holds a ramp open for its whole duration, so size the
+        # deadline from the live clock exactly as the CLI's --over does.
+        client.timeout_s = ramp_deadline_s(order[RAMP]["over"], command_timeout_s, client.mirror())
+    except NoPerformancePage as error:
+        raise _tool_error(
+            {"error": "no_performance_page", "origin": origin.base_url, "remedy": REMEDY_VERB, "message": str(error)}
+        ) from error
+    except EngineNotRunning as error:
+        raise _engine_not_running(error) from error
+    return _post_guarded(client, guarded_order, safety)
+
+
 def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
     server = MCPServer(name=SERVER_NAME, version=SERVER_VERSION)
 
@@ -410,30 +487,24 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
 
-        client = EngineClient(origin=origin, timeout_s=command_timeout_s)
-        try:
-            result = client.post_order(guarded_order)
-        except NoPerformancePage as error:
-            raise _tool_error(
-                {
-                    "error": "no_performance_page",
-                    "origin": origin.base_url,
-                    "remedy": REMEDY_VERB,
-                    "message": str(error),
-                }
-            ) from error
-        except (OrderRejected, OrderTimedOut, MalformedResult) as error:
-            raise _tool_error({"error": "order_failed", "message": str(error)}) from error
-        except EngineNotRunning as error:
-            raise _engine_not_running(error) from error
+        return _post_guarded(
+            EngineClient(origin=origin, timeout_s=command_timeout_s), guarded_order, safety
+        )
 
-        try:
-            document = annotate_blocked(dict(result))  # AGENT-8332/54
-        except MalformedResult as error:
-            raise _tool_error({"error": "order_failed", "message": str(error)}) from error
-        if safety:
-            document["safety"] = safety
-        return document
+    @server.tool(annotations=_DESTRUCTIVE)
+    def animate_control(control: str, expr: str, deck: int | None = None) -> dict[str, Any]:
+        """Animate one dial or fader on the beat clock (ANIM-03), like its right-click Animate box.
+
+        ``control``: eq_low, eq_mid, eq_high, trim, filter, fader, crossfader,
+        stem_vocal, stem_instrumental, stem_drums or stem_bass. ``deck`` is 1..4,
+        omitted for the crossfader. ``expr`` is the CLI ramp tail:
+        ``<to 0..1> --over <N>beats|bars|phrases|ms [--anchor next_beat|next_downbeat|next_phrase] [--clock master|1-4]``,
+        e.g. ``0 --over 8bars --anchor next_downbeat`` kills EQ LOW over 8 bars from the next downbeat.
+        A bad expression is refused before anything is sent, naming the failing token.
+        The call returns when the ramp ends. Moving the control by hand, or any set
+        command to it (e.g. ``command`` verb ``eq``), stops it (take-over).
+        """
+        return _animate_control(control, expr, deck, command_timeout_s)
 
     @server.tool(annotations=_DESTRUCTIVE)
     def library(
@@ -570,12 +641,36 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
             document["reachable"] = False
         return document
 
+    def _dispatch_order(order: dict[str, Any]) -> dict[str, Any]:
+        try:
+            origin = _resolve_verified_origin()
+            guarded_order, safety = guard_order(order)
+        except SafetyRefusal as error:
+            raise _tool_error({"error": error.code, "message": str(error), **error.fields}) from error
+        except EngineIdentityMismatch as error:
+            raise _engine_identity_mismatch(error) from error
+        except EngineNotRunning as error:
+            raise _engine_not_running(error) from error
+        return _post_guarded(EngineClient(origin=origin, timeout_s=command_timeout_s), guarded_order, safety)
+
+    def _read_mirror() -> dict[str, Any]:
+        try:
+            return EngineClient(origin=_resolve_verified_origin(), timeout_s=command_timeout_s).mirror()
+        except NoPerformancePage as error:
+            raise _tool_error({"error": "no_performance_page", "remedy": REMEDY_VERB, "message": str(error)}) from error
+        except EngineIdentityMismatch as error:
+            raise _engine_identity_mismatch(error) from error
+        except EngineNotRunning as error:
+            raise _engine_not_running(error) from error
+
+    register_key_tools(server, post_order=_dispatch_order, read_mirror=_read_mirror, tool_error=_tool_error)
     register_update_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_deck_tools(server, run_order=lambda order: command(order=order))
     register_dj_tools(
         server,
         lock_path=lambda: _state.lock_path,
@@ -595,7 +690,31 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_audio_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_played_length_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_source_flags_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     register_client_errors_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_session_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,
@@ -608,6 +727,24 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         engine_not_running=_engine_not_running,
     )
     register_offload_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_track_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_set_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_tempo_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

@@ -38,9 +38,7 @@ def test_truth_echo_median_r_is_one_on_every_band(waveform_bundle: Path) -> None
     manifest_path = waveform_bundle / "manifest.json"
     positive = controls._waveform_positive(manifest_path)
     assert positive["candidate"] == "truth_echo"
-    report = waveform_lane.score_bundle(
-        waveform_bundle, {"truth_echo": _arm("positive_control", positive["results"])}
-    )
+    report = waveform_lane.score_bundle(waveform_bundle, {"truth_echo": _arm("positive_control", positive["results"])})
     arm = report["arms"]["truth_echo"]
     for name in BAND_NAMES:
         assert abs(arm[name]["median"] - 1.0) <= waveform_score.POSITIVE_CONTROL_TOLERANCE
@@ -68,9 +66,7 @@ def test_an_omitted_fixture_drags_the_median_down(waveform_bundle: Path) -> None
     one = {
         "synthetic-ramp": positive["results"]["synthetic-ramp"],
     }
-    report = waveform_lane.score_bundle(
-        waveform_bundle, {"candidate": _arm("candidate", one)}
-    )
+    report = waveform_lane.score_bundle(waveform_bundle, {"candidate": _arm("candidate", one)})
     arm = report["arms"]["candidate"]
     assert arm["n_omitted"] == 1
     for name in BAND_NAMES:

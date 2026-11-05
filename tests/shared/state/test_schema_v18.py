@@ -2,6 +2,7 @@
 
 [if] v18 is applied [then] path_availability exists, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -16,12 +17,7 @@ pytestmark = pytest.mark.requirement("PERF-RB-01")
 
 
 def _objects(conn: sqlite3.Connection) -> set[str]:
-    return {
-        str(row[0])
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type IN ('table', 'index')"
-        )
-    }
+    return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')")}
 
 
 def test_fresh_ladder_creates_path_availability() -> None:

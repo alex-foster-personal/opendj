@@ -20,12 +20,16 @@ and the server refusing the request from ever disagreeing (ENT-02): both read
 the SAME ``code`` / ``message`` / ``ui_title`` off this response instead of
 each spelling their own.
 
-WHY THE ENGINE APP.  New server capability is registered in
+WHY THE ENGINE APP.  Account and entitlements are registered in
 ``apps.engine_core.app`` the way ``jobs_router`` / ``setup_router`` /
 ``assistant_router`` are, not in the legacy ``apps/webui/server/app.py``. The
 engine wraps the legacy app and is the surface the committed
-``apps/webui/openapi.json`` is dumped from, so a route registered anywhere
-else is a route no generated client can see.
+``apps/webui/openapi.json`` is dumped from, so those routes registered only on
+the chassis stay visible to generated clients. ``GET /api/v1/flags`` is the
+exception: the SPA calls it on every load of the legacy webui daemon, so its
+router lives in ``apps.feature_flags.http`` and mounts on the legacy
+composition root (``apps/webui/server/app_wiring.py``), which the engine
+inherits by wrapping that app.
 
 Requirements (mini-PRD):
   * ✔︎ ✅ 🎯 /account answers signed-in and signed-out, and in both cases
@@ -56,6 +60,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
+import apps.feature_flags.http as _flags_http
 from apps.entitlements import (
     FEATURES,
     NOT_IN_PLAN_CODE,
@@ -67,20 +72,19 @@ from apps.entitlements import (
     has,
     quota,
 )
-from apps.feature_flags import (
-    FlagState,
-    FlagStore,
-    store_build_refusal,
-    store_profile_is_source,
+from apps.feature_flags.http import (
+    FlagOut,
+    FlagsOut,
+    RefusalOut,
+    flags_router,
 )
-from apps.feature_flags.profiles import selected_profile
+from apps.shared.engine_app_state import require_app_state
 from apps.shared.sandbox import is_sandboxed
 from apps.webui.server.auth import SESSION_COOKIE_NAME, SessionUser
 from apps.webui.server.routes.auth import session_store, signed_in_user
 
 account_router = APIRouter(prefix="/account", tags=["account"])
 entitlements_router = APIRouter(prefix="/entitlements", tags=["entitlements"])
-flags_router = APIRouter(prefix="/flags", tags=["feature-flags"])
 
 #: The published policy this disclosure has to stay true to.
 PRIVACY_POLICY_URL: str = "https://open-dj.com/privacy"
@@ -132,16 +136,6 @@ class PlanOut(BaseModel):
             note=plan.note,
             provider=plan.provider,
         )
-
-
-class RefusalOut(BaseModel):
-    """The one refusal shape, so a control and its tooltip cannot disagree."""
-
-    model_config = ConfigDict(frozen=True)
-
-    code: str
-    message: str
-    ui_title: str
 
 
 class LocalDataOut(BaseModel):
@@ -198,69 +192,7 @@ class EntitlementsOut(BaseModel):
     features: list[FeatureEntitlementOut]
 
 
-class FlagOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    flag_id: str
-    enabled: bool
-    default: bool
-    overridden: bool
-    owner: str
-    note: str
-    retire_by: str
-    #: SAND-01. Non-null only when this flag is off BECAUSE the shipped App
-    #: Store profile turned it off, and it carries the fourth refusal
-    #: sentence. Null covers both "this flag is on" and "it is off for some
-    #: other reason", which are the same fact from a control's point of view:
-    #: nothing there entitles it to say "App Store".
-    refusal: RefusalOut | None = None
-
-
-class FlagsOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    #: Absolute path of the flag file, present or not.
-    path: str
-    file_present: bool
-    #: The named build profile this process resolved (``full`` when none was
-    #: selected). A CONFIG fact.
-    build_profile: str
-    #: Whether this process is inside a macOS App Sandbox container. A
-    #: RUNTIME fact, and reported beside the profile rather than folded into
-    #: it because SAND-04 turns on the two being able to disagree: a
-    #: mis-packaged bundle is sandboxed on the full profile, and a developer
-    #: can run the store profile unsandboxed.
-    sandboxed: bool
-    flags: list[FlagOut]
-
-
 # ----- helpers ------------------------------------------------------------
-def _flag_store(request: Request) -> FlagStore:
-    store = getattr(request.app.state, "feature_flags", None)
-    if store is None:
-        raise RuntimeError(
-            "feature flags are not mounted on app.state.feature_flags; flags "
-            "are read ONCE at startup by apps.engine_core.app.create_app and "
-            "this route will not re-read the file per request to cover for a "
-            "missing boot step"
-        )
-    return store
-
-
-def _store_build_refusal(flag: FlagState, *, from_store_profile: bool, sandboxed: bool) -> RefusalOut | None:
-    """Adapt :func:`apps.feature_flags.store_build_refusal` to the account wire model.
-
-    The decision itself lives in ``apps.feature_flags`` so the USB gate
-    (``apps.webui.server.routes.usb_gate``) computes the SAME refusal from
-    the SAME inputs this endpoint discloses, rather than each guessing at
-    attribution on its own (SAND-01 review, PR #1668).
-    """
-    refusal = store_build_refusal(flag, from_store_profile=from_store_profile, sandboxed=sandboxed)
-    if refusal is None:
-        return None
-    return RefusalOut(code=refusal.code, message=refusal.message, ui_title=refusal.ui_title)
-
-
 def _refusal() -> RefusalOut:
     return RefusalOut(
         code=NOT_IN_PLAN_CODE,
@@ -270,14 +202,17 @@ def _refusal() -> RefusalOut:
 
 
 def _state_db_path(request: Request) -> str:
-    path = getattr(request.app.state, "state_db_path", None)
-    if path is None:
-        raise RuntimeError(
-            "app.state.state_db_path is not set, so this route cannot tell "
-            "the user WHERE their account row lives. A disclosure that names "
-            "no path is not a disclosure"
+    return str(
+        require_app_state(
+            request,
+            "state_db_path",
+            missing=(
+                "app.state.state_db_path is not set, so this route cannot tell "
+                "the user WHERE their account row lives. A disclosure that names "
+                "no path is not a disclosure"
+            ),
         )
-    return str(path)
+    )
 
 
 def _local_data(state_db: str) -> list[LocalDataOut]:
@@ -466,43 +401,6 @@ def read_entitlement(feature_id: str) -> FeatureEntitlementOut:
     )
 
 
-# ----- feature flags ------------------------------------------------------
-@flags_router.get("", response_model=FlagsOut)
-def read_flags(request: Request) -> FlagsOut:
-    """The declared flags, as resolved once at engine boot.
-
-    A separate surface from /entitlements on purpose (FLAG-01): these are
-    engineering-owned code-path toggles, not anything an account is entitled
-    to, and folding them into one response is the first step toward one store.
-    """
-    store = _flag_store(request)
-    from_store_profile = store_profile_is_source(store)
-    sandboxed = is_sandboxed()
-    return FlagsOut(
-        path=str(store.path),
-        file_present=store.file_present,
-        build_profile=selected_profile(),
-        sandboxed=sandboxed,
-        flags=[
-            FlagOut(
-                flag_id=flag.flag_id,
-                enabled=flag.enabled,
-                default=flag.default,
-                overridden=flag.overridden,
-                owner=flag.owner,
-                note=flag.note,
-                retire_by=flag.retire_by,
-                refusal=_store_build_refusal(
-                    flag,
-                    from_store_profile=from_store_profile,
-                    sandboxed=sandboxed,
-                ),
-            )
-            for flag in store.snapshot()
-        ],
-    )
-
-
 __all__ = [
     "ACCOUNT_DELETE_CONFIRM",
     "DELETE_HINT",
@@ -522,3 +420,10 @@ __all__ = [
     "entitlements_router",
     "flags_router",
 ]
+
+
+def _flags_sandboxed_probe() -> bool:
+    return is_sandboxed()
+
+
+_flags_http._sandboxed_probe = _flags_sandboxed_probe

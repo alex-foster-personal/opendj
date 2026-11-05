@@ -76,8 +76,15 @@ DIVERGED = "diverged"
 # Hard refusal list. Enforced regardless of what the carry-list says, because a
 # well-meaning edit to .worktreeinclude must not be able to start a 25G rsync.
 FORBIDDEN_ROOTS: tuple[str, ...] = (
-    "data/", ".tmp/", ".venv/", "node_modules/", ".claude/", ".git/",
-    ".mypy_cache/", "blog/", "downloads/",
+    "data/",
+    ".tmp/",
+    ".venv/",
+    "node_modules/",
+    ".claude/",
+    ".git/",
+    ".mypy_cache/",
+    "blog/",
+    "downloads/",
 )
 #: Remote checkout used for any host without an entry below. "~/..." is
 #: resolved on the REMOTE host, so it is portable across machines (#910).
@@ -109,8 +116,7 @@ def carry_list(repo: Path) -> list[str]:
         raise SystemExit(1)
 
     patterns = [
-        line.strip() for line in inc.read_text().splitlines()
-        if line.strip() and not line.strip().startswith("#")
+        line.strip() for line in inc.read_text().splitlines() if line.strip() and not line.strip().startswith("#")
     ]
     out: list[str] = []
     for pat in patterns:
@@ -189,18 +195,14 @@ def classify(direction: str, rel: str, h: Hashes) -> Decision:
 
     if h.remote is None:
         if h.baseline is not None:
-            return Decision(rel, DIVERGED,
-                            "deleted on the remote after the last recorded sync")
-        return _carried_by(direction, "push", rel,
-                           "remote has no copy yet",
-                           "remote has no copy yet; run push instead")
+            return Decision(rel, DIVERGED, "deleted on the remote after the last recorded sync")
+        return _carried_by(direction, "push", rel, "remote has no copy yet", "remote has no copy yet; run push instead")
 
     if h.local == h.remote:
         return Decision(rel, IN_SYNC, "identical on both sides")
 
     if h.baseline is None:
-        return Decision(rel, DIVERGED,
-                        "copies differ and no sync was ever recorded for this host")
+        return Decision(rel, DIVERGED, "copies differ and no sync was ever recorded for this host")
 
     local_changed = h.local != h.baseline
     remote_changed = h.remote != h.baseline
@@ -208,13 +210,21 @@ def classify(direction: str, rel: str, h: Hashes) -> Decision:
     if local_changed and remote_changed:
         return Decision(rel, DIVERGED, "both sides changed since the last sync")
     if local_changed:
-        return _carried_by(direction, "push", rel,
-                           "only the local copy changed",
-                           "only the local copy changed; pulling would lose it, run push")
+        return _carried_by(
+            direction,
+            "push",
+            rel,
+            "only the local copy changed",
+            "only the local copy changed; pulling would lose it, run push",
+        )
     if remote_changed:
-        return _carried_by(direction, "pull", rel,
-                           "only the remote copy changed",
-                           "only the remote copy changed; pushing would lose it, run pull")
+        return _carried_by(
+            direction,
+            "pull",
+            rel,
+            "only the remote copy changed",
+            "only the remote copy changed; pushing would lose it, run pull",
+        )
     # Neither side moved off the baseline yet the hashes differ: unreachable,
     # and a silent guess here is exactly the bug this function exists to stop.
     raise AssertionError(f"{rel}: unclassifiable hashes {h}")
@@ -222,8 +232,7 @@ def classify(direction: str, rel: str, h: Hashes) -> Decision:
 
 def plan_sync(direction: str, hashes: dict[str, Hashes]) -> Plan:
     plan = Plan()
-    bucket = {IN_SYNC: plan.in_sync, SEND: plan.send,
-              BLOCKED: plan.blocked, DIVERGED: plan.diverged}
+    bucket = {IN_SYNC: plan.in_sync, SEND: plan.send, BLOCKED: plan.blocked, DIVERGED: plan.diverged}
     for rel, h in sorted(hashes.items()):
         d = classify(direction, rel, h)
         bucket[d.action].append(d)
@@ -231,7 +240,10 @@ def plan_sync(direction: str, hashes: dict[str, Hashes]) -> Plan:
 
 
 def updated_baselines(
-    direction: str, plan: Plan, hashes: dict[str, Hashes], old: dict[str, str],
+    direction: str,
+    plan: Plan,
+    hashes: dict[str, Hashes],
+    old: dict[str, str],
 ) -> dict[str, str]:
     """Baselines after a successful live transfer of exactly `plan.send`.
 
@@ -281,8 +293,10 @@ def _parse_remote_hashes(out: str, files: list[str]) -> dict[str, str | None]:
 
     unanswered = [f for f in files if f not in parsed]
     if unanswered:
-        print(f"[ERROR] remote answered for {len(parsed)}/{len(files)} files; "
-              f"first unanswered: {unanswered[0]}", file=sys.stderr)
+        print(
+            f"[ERROR] remote answered for {len(parsed)}/{len(files)} files; first unanswered: {unanswered[0]}",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
     return parsed
 
@@ -316,12 +330,11 @@ def do_worktree(repo: Path, dest: Path, live: bool) -> int:
         return 1
     files = carry_list(repo)
     missing = [f for f in files if not (dest / f).exists()]
-    differs = [
-        f for f in files
-        if (dest / f).exists() and (dest / f).read_bytes() != (repo / f).read_bytes()
-    ]
-    print(f"\nprovision {dest.name}: {len(files)} carried, {len(missing)} missing, "
-          f"{len(differs)} differ ({_size(missing, repo)/1024:.0f} KB to copy)")
+    differs = [f for f in files if (dest / f).exists() and (dest / f).read_bytes() != (repo / f).read_bytes()]
+    print(
+        f"\nprovision {dest.name}: {len(files)} carried, {len(missing)} missing, "
+        f"{len(differs)} differ ({_size(missing, repo) / 1024:.0f} KB to copy)"
+    )
     for f in missing[:20]:
         print(f"  + {f}")
     for f in differs[:10]:
@@ -333,8 +346,7 @@ def do_worktree(repo: Path, dest: Path, live: bool) -> int:
         target = dest / f
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((repo / f).read_bytes())
-    print(f"\n[OK] copied {len(missing)} files into {dest.name}. "
-          f"{len(differs)} differing files left untouched.\n")
+    print(f"\n[OK] copied {len(missing)} files into {dest.name}. {len(differs)} differing files left untouched.\n")
     return 0
 
 
@@ -381,8 +393,9 @@ def _remote_hash_script(root: str, files: list[str]) -> str:
 def _remote_hashes(host: str, root: str, files: list[str]) -> dict[str, str | None]:
     proc = _run("ssh", host, _remote_hash_script(root, files))
     if proc.returncode != 0:
-        print(f"[ERROR] could not hash {host}:{root} (ssh exit {proc.returncode})\n"
-              f"{proc.stderr.strip()}", file=sys.stderr)
+        print(
+            f"[ERROR] could not hash {host}:{root} (ssh exit {proc.returncode})\n{proc.stderr.strip()}", file=sys.stderr
+        )
         raise SystemExit(1)
     return _parse_remote_hashes(proc.stdout, files)
 
@@ -414,10 +427,7 @@ def do_remote(repo: Path, host: str, direction: str, live: bool) -> int:
     state = _load_state(state_path)
     baselines: dict[str, str] = state.get("hosts", {}).get(host, {})
     remote = _remote_hashes(host, root, files)
-    hashes = {
-        f: Hashes(local=_sha256(repo / f), remote=remote[f], baseline=baselines.get(f))
-        for f in files
-    }
+    hashes = {f: Hashes(local=_sha256(repo / f), remote=remote[f], baseline=baselines.get(f)) for f in files}
 
     plan = plan_sync(direction, hashes)
     _print_plan(direction, host, root, plan)
@@ -426,18 +436,19 @@ def do_remote(repo: Path, host: str, direction: str, live: bool) -> int:
     # A real conflict is a stop, not a warning: transferring the agreed files
     # while one is diverged would report success over a half-done sync.
     if plan.diverged:
-        print(f"\n[ERROR] {len(plan.diverged)} file(s) changed on BOTH sides since the "
-              f"last sync with {host}. Nothing transferred.\n"
-              f"        Resolve by hand, then re-run.", file=sys.stderr)
+        print(
+            f"\n[ERROR] {len(plan.diverged)} file(s) changed on BOTH sides since the "
+            f"last sync with {host}. Nothing transferred.\n"
+            f"        Resolve by hand, then re-run.",
+            file=sys.stderr,
+        )
         for d in plan.diverged:
             print(f"        {d.rel}: {d.reason}", file=sys.stderr)
         return 2
 
     if not plan.send:
-        print(f"\n[OK] nothing to {direction}: all {len(files)} files agree "
-              f"with {host}\n")
-        _save_state(state_path, _merge_state(state, host,
-                    updated_baselines(direction, plan, hashes, baselines)))
+        print(f"\n[OK] nothing to {direction}: all {len(files)} files agree with {host}\n")
+        _save_state(state_path, _merge_state(state, host, updated_baselines(direction, plan, hashes, baselines)))
         return 0
 
     moving = [d.rel for d in plan.send]
@@ -456,8 +467,10 @@ def do_remote(repo: Path, host: str, direction: str, live: bool) -> int:
         cmd = common + [f"{host}:{root}/./{f}" for f in moving] + ["."]
 
     if not live:
-        print(f"\n[DRY RUN] would {direction} {len(moving)} file(s) "
-              f"({_size(moving, repo)/1024:.0f} KB). pass --live to transfer\n")
+        print(
+            f"\n[DRY RUN] would {direction} {len(moving)} file(s) "
+            f"({_size(moving, repo) / 1024:.0f} KB). pass --live to transfer\n"
+        )
         return 0
 
     proc = subprocess.run(cmd, cwd=str(repo))
@@ -465,11 +478,12 @@ def do_remote(repo: Path, host: str, direction: str, live: bool) -> int:
         print(f"[ERROR] rsync exited {proc.returncode}", file=sys.stderr)
         return proc.returncode
 
-    _save_state(state_path, _merge_state(state, host,
-                updated_baselines(direction, plan, hashes, baselines)))
-    print(f"\n[OK] {direction} complete: {len(moving)} transferred, "
-          f"{len(plan.in_sync)} already in sync, {len(plan.blocked)} skipped "
-          f"(run the opposite direction for those)\n")
+    _save_state(state_path, _merge_state(state, host, updated_baselines(direction, plan, hashes, baselines)))
+    print(
+        f"\n[OK] {direction} complete: {len(moving)} transferred, "
+        f"{len(plan.in_sync)} already in sync, {len(plan.blocked)} skipped "
+        f"(run the opposite direction for those)\n"
+    )
     return 0
 
 
@@ -489,7 +503,7 @@ def do_status(repo: Path, host: str) -> int:
         r = _run("ssh", host, f"test -f {root}/{f} && echo yes || echo no")
         if r.stdout.strip() != "yes":
             missing_remote.append(f)
-    print(f"\n{host}: {len(files)-len(missing_remote)}/{len(files)} carried files present")
+    print(f"\n{host}: {len(files) - len(missing_remote)}/{len(files)} carried files present")
     for f in missing_remote[:20]:
         print(f"  MISSING  {f}")
     print()
@@ -518,7 +532,7 @@ def main() -> int:
 
     if args.mode == "list":
         files = carry_list(repo)
-        print(f"\n{len(files)} carried files ({_size(files, repo)/1024:.0f} KB):")
+        print(f"\n{len(files)} carried files ({_size(files, repo) / 1024:.0f} KB):")
         for f in files:
             print(f"  {f}")
         print()

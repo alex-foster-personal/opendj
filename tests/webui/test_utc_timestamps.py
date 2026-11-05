@@ -7,9 +7,7 @@ from datetime import UTC, datetime
 
 from apps.webui.server.utc_timestamps import utc_now_iso_ms
 
-_ISO_MS_Z = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"
-)
+_ISO_MS_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
 
 def test_utc_now_iso_ms_matches_millisecond_z_suffix() -> None:

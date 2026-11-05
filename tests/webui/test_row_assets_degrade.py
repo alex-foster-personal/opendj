@@ -21,6 +21,7 @@ Regression one-liners:
   - if a row whose chain stopped early is read again on the next page then broken
   - if a missing share root reports a cover as unresolved then broken
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,9 +58,7 @@ from tests.webui.test_row_assets_cache import (
 
 pytestmark = [
     pytest.mark.requirement("LIBM-137"),
-    pytest.mark.skipif(
-        not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED, reason="needs the fd-anchored walk"
-    ),
+    pytest.mark.skipif(not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED, reason="needs the fd-anchored walk"),
 ]
 
 SID = "sid-under-test"
@@ -230,9 +229,7 @@ def test_the_uncached_path_serves_nothing_from_path_keyed_memory(share: Path) ->
 # ----- P3: hard links and the size bound --------------------------------------
 
 
-def test_a_hard_link_to_an_outside_file_is_not_read_or_remembered(
-    share: Path, tmp_path: Path
-) -> None:
+def test_a_hard_link_to_an_outside_file_is_not_read_or_remembered(share: Path, tmp_path: Path) -> None:
     outside = tmp_path / "outside-file.2EX"
     outside.write_bytes(two_ex(OUTSIDE))
     inside = share / ANLZ_DIR / "ANLZ0000.2EX"
@@ -297,9 +294,7 @@ def _swap_parent_for_a_symlink(root: Path, tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_a_symlinked_parent_does_not_get_another_tree_served(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_symlinked_parent_does_not_get_another_tree_served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _nested_share(monkeypatch, tmp_path)
     try:
         assert level_of(call()) == INSIDE
@@ -431,9 +426,7 @@ def test_the_explicit_call_leaks_no_descriptor_when_the_root_cannot_be_examined(
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_the_explicit_call_moves_the_resolved_form_anchor_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_explicit_call_moves_the_resolved_form_anchor_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A symlinked share root is reached under two names (the link, and what it
     resolves to); each has its own anchor, and both must follow the call."""
     target = (tmp_path / "library").resolve()
@@ -473,9 +466,7 @@ def test_a_real_root_replaced_by_a_symlink_stays_refused(share: Path, tmp_path: 
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_a_symlinked_root_re_pointed_is_still_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_symlinked_root_re_pointed_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     build(tmp_path / "libA", INSIDE)
     build(tmp_path / "libB", OTHER_LIBRARY)
     link = tmp_path / "share-link"
@@ -528,7 +519,9 @@ def test_a_missing_share_root_reports_the_cover_missing_not_unresolved(
     try:
         gone = call()
         assert (gone.preview_b64, gone.artwork_available, gone.artwork_status) == (
-            None, False, "file_missing",
+            None,
+            False,
+            "file_missing",
         )
         assert call(_meta(img=None)).artwork_status == "no_image_path"
     finally:

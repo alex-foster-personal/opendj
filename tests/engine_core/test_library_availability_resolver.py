@@ -5,6 +5,7 @@
 Split from ``test_library_availability.py``: these pin path-map.json
 classification, the idle reprobe, and resolver-stamp invalidation.
 """
+
 from __future__ import annotations
 
 import json
@@ -119,11 +120,7 @@ def test_worker_classifies_mapped_only_track_present_from_its_data_dir(
     finally:
         conn.close()
 
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}
-    }
+    env = {key: value for key, value in os.environ.items() if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}}
     repo_root = Path(__file__).resolve().parents[2]
     proc = subprocess.run(
         [
@@ -172,8 +169,7 @@ def test_changed_path_map_reprobes_a_persisted_absent_row(
     try:
         _upsert_track(conn, stable_id, str(stored))
         conn.execute(
-            "INSERT INTO track_availability "
-            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
             (stable_id, "absent", str(stored), fresh),
         )
         conn.commit()
@@ -195,8 +191,7 @@ def test_changed_path_map_reprobes_a_persisted_absent_row(
         ).fetchone()
         assert row == ("present", str(mapped_audio))
         conn.execute(
-            "UPDATE track_availability SET state = 'absent', checked_path = ?, "
-            "checked_at = ? WHERE stable_id = ?",
+            "UPDATE track_availability SET state = 'absent', checked_path = ?, checked_at = ? WHERE stable_id = ?",
             (str(stored), fresh, stable_id),
         )
         conn.commit()
@@ -213,8 +208,7 @@ def test_changed_path_map_reprobes_a_persisted_absent_row(
     conn = state_db.open_rw(state_db_path)
     try:
         held = conn.execute(
-            "SELECT state, checked_path, checked_at FROM track_availability "
-            "WHERE stable_id = ?",
+            "SELECT state, checked_path, checked_at FROM track_availability WHERE stable_id = ?",
             (stable_id,),
         ).fetchone()
     finally:
@@ -325,15 +319,9 @@ def test_idle_worker_notices_path_map_edit_after_complete(
     finally:
         conn.close()
 
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}
-    }
+    env = {key: value for key, value in os.environ.items() if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}}
     repo_root = Path(__file__).resolve().parents[2]
-    env["PYTHONPATH"] = str(repo_root) + (
-        os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
-    )
+    env["PYTHONPATH"] = str(repo_root) + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
     proc = subprocess.run(
         [
             sys.executable,
@@ -478,15 +466,9 @@ print("ok")
 
 def _resolver_subprocess_env() -> dict[str, str]:
     """Child env with path-map overrides removed, matching the idle probe."""
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}
-    }
+    env = {key: value for key, value in os.environ.items() if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}}
     repo_root = Path(__file__).resolve().parents[2]
-    env["PYTHONPATH"] = str(repo_root) + (
-        os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
-    )
+    env["PYTHONPATH"] = str(repo_root) + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
     return env
 
 
@@ -555,8 +537,7 @@ def test_restored_db_reprobes_when_the_machine_id_differs(
     try:
         _upsert_track(conn, stable_id, str(audio))
         conn.execute(
-            "INSERT INTO track_availability "
-            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
             (stable_id, "absent", str(audio), fresh),
         )
         conn.commit()
@@ -618,8 +599,7 @@ def test_sidecar_resolver_stamp_does_not_bind_a_restored_state_db(
     try:
         _upsert_track(conn, stable_id, str(stored))
         conn.execute(
-            "INSERT INTO track_availability "
-            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
             (stable_id, "absent", str(stored), fresh),
         )
         conn.commit()
@@ -644,8 +624,7 @@ def test_sidecar_resolver_stamp_does_not_bind_a_restored_state_db(
         markers = _resolver_markers(conn)
         assert markers == [_RESOLVER_MARKER_PREFIX + _resolver_fingerprint(data_dir)]
         conn.execute(
-            "UPDATE track_availability SET state = 'absent', checked_path = ?, "
-            "checked_at = ? WHERE stable_id = ?",
+            "UPDATE track_availability SET state = 'absent', checked_path = ?, checked_at = ? WHERE stable_id = ?",
             (str(stored), fresh, stable_id),
         )
         conn.commit()
@@ -662,8 +641,7 @@ def test_sidecar_resolver_stamp_does_not_bind_a_restored_state_db(
     conn = state_db.open_rw(state_db_path)
     try:
         held = conn.execute(
-            "SELECT state, checked_path, checked_at FROM track_availability "
-            "WHERE stable_id = ?",
+            "SELECT state, checked_path, checked_at FROM track_availability WHERE stable_id = ?",
             (stable_id,),
         ).fetchone()
     finally:
@@ -699,8 +677,7 @@ def test_resolver_invalidation_stays_queued_under_a_write_lock(
     try:
         _upsert_track(conn, stable_id, str(stored))
         conn.execute(
-            "INSERT INTO track_availability "
-            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
             (stable_id, "absent", str(stored), fresh),
         )
         conn.commit()
@@ -718,15 +695,8 @@ def test_resolver_invalidation_stays_queued_under_a_write_lock(
         while time.monotonic() - started < 40.0:
             snapshot = worker.status()
             if snapshot.phase == "failed":
-                pytest.fail(
-                    "resolver invalidation parked the worker in failed: "
-                    f"{snapshot.last_error}"
-                )
-            if (
-                snapshot.phase == "queued"
-                and snapshot.last_error
-                and "lock retries" in snapshot.last_error
-            ):
+                pytest.fail(f"resolver invalidation parked the worker in failed: {snapshot.last_error}")
+            if snapshot.phase == "queued" and snapshot.last_error and "lock retries" in snapshot.last_error:
                 break
             time.sleep(0.05)
         else:
@@ -752,8 +722,7 @@ def test_resolver_invalidation_stays_queued_under_a_write_lock(
             verify = state_db.open_rw(state_db_path)
             try:
                 row = verify.execute(
-                    "SELECT state, checked_path FROM track_availability "
-                    "WHERE stable_id = ?",
+                    "SELECT state, checked_path FROM track_availability WHERE stable_id = ?",
                     (stable_id,),
                 ).fetchone()
             finally:
@@ -761,10 +730,7 @@ def test_resolver_invalidation_stays_queued_under_a_write_lock(
             if row == ("present", str(mapped_audio)):
                 break
             if worker.status().phase == "failed":
-                pytest.fail(
-                    "worker failed after the write lock was released: "
-                    f"{worker.status().last_error}"
-                )
+                pytest.fail(f"worker failed after the write lock was released: {worker.status().last_error}")
             time.sleep(0.05)
         else:
             pytest.fail(
@@ -775,9 +741,7 @@ def test_resolver_invalidation_stays_queued_under_a_write_lock(
         assert not stamp_path.exists()
         stamped = state_db.open_ro(state_db_path)
         try:
-            assert _resolver_markers(stamped) == [
-                _RESOLVER_MARKER_PREFIX + _resolver_fingerprint(data_dir)
-            ]
+            assert _resolver_markers(stamped) == [_RESOLVER_MARKER_PREFIX + _resolver_fingerprint(data_dir)]
         finally:
             stamped.close()
     finally:
@@ -932,8 +896,7 @@ def test_first_empty_map_generation_reprobes_a_fresh_absent_row(
     try:
         _upsert_track(conn, stable_id, str(audio))
         conn.execute(
-            "INSERT INTO track_availability "
-            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
             (stable_id, "absent", str(audio), fresh),
         )
         conn.commit()
@@ -951,8 +914,7 @@ def test_first_empty_map_generation_reprobes_a_fresh_absent_row(
             verify = state_db.open_ro(state_db_path)
             try:
                 row = verify.execute(
-                    "SELECT state, checked_at FROM track_availability "
-                    "WHERE stable_id = ?",
+                    "SELECT state, checked_at FROM track_availability WHERE stable_id = ?",
                     (stable_id,),
                 ).fetchone()
                 markers = _resolver_markers(verify)
@@ -962,8 +924,7 @@ def test_first_empty_map_generation_reprobes_a_fresh_absent_row(
                 row is not None
                 and row[0] == "absent"
                 and row[1] != fresh
-                and markers
-                == [_RESOLVER_MARKER_PREFIX + _resolver_fingerprint(data_dir)]
+                and markers == [_RESOLVER_MARKER_PREFIX + _resolver_fingerprint(data_dir)]
             ):
                 break
             snapshot = worker.status()
@@ -1052,23 +1013,14 @@ def test_classification_path_map_read_stays_queued_and_retries(
         opened = time.monotonic()
         while time.monotonic() - opened < THREAD_HANG_GUARD_S:
             if proc.poll() is not None:
-                pytest.fail(
-                    "worker exited before opening state.db: "
-                    + "".join(err_lines)
-                )
+                pytest.fail("worker exited before opening state.db: " + "".join(err_lines))
             if any(_UNREADABLE_MAP_LOG in line for line in err_lines):
-                pytest.fail(
-                    "path-map read failed before the worker opened state.db: "
-                    + "".join(err_lines)
-                )
+                pytest.fail("path-map read failed before the worker opened state.db: " + "".join(err_lines))
             if _process_has_file_open(proc.pid, state_db_path):
                 break
             time.sleep(0.01)
         else:
-            pytest.fail(
-                "worker never opened state.db after the first path-map read: "
-                + "".join(err_lines)
-            )
+            pytest.fail("worker never opened state.db after the first path-map read: " + "".join(err_lines))
         map_path.write_text("{", encoding="utf-8")
         release.set()
         seen = time.monotonic()
@@ -1076,25 +1028,17 @@ def test_classification_path_map_read_stays_queued_and_retries(
             if any(_UNREADABLE_MAP_LOG in line for line in err_lines):
                 break
             if proc.poll() is not None:
-                pytest.fail(
-                    "worker exited before the classification read: "
-                    + "".join(err_lines)
-                )
+                pytest.fail("worker exited before the classification read: " + "".join(err_lines))
             time.sleep(0.01)
         else:
-            pytest.fail(
-                "classification read never reported the malformed path map: "
-                + "".join(err_lines)
-            )
+            pytest.fail("classification read never reported the malformed path map: " + "".join(err_lines))
         map_path.write_text(map_payload, encoding="utf-8")
         flag.write_text("open", encoding="utf-8")
         try:
             returncode = proc.wait(timeout=THREAD_HANG_GUARD_S)
         except subprocess.TimeoutExpired:
             proc.kill()
-            pytest.fail(
-                "worker did not classify the repaired map: " + "".join(err_lines)
-            )
+            pytest.fail("worker did not classify the repaired map: " + "".join(err_lines))
         assert proc.stdout is not None
         stdout = proc.stdout.read()
         assert returncode == 0, "".join(err_lines) or stdout
@@ -1111,9 +1055,7 @@ def test_classification_path_map_read_stays_queued_and_retries(
 _MAPPED_TRACK_COUNT = 4
 
 
-def _seed_mapped_present_tracks(
-    data_dir: Path, state_db_path: Path
-) -> tuple[Path, Path, Path, Path]:
+def _seed_mapped_present_tracks(data_dir: Path, state_db_path: Path) -> tuple[Path, Path, Path, Path]:
     """Four stored-missing tracks whose first sweep is present via path-map."""
     stored_root = data_dir / "stored-missing"
     present_root = data_dir / "mapped-present"
@@ -1429,9 +1371,7 @@ def test_idle_worker_wakes_a_refused_sweep_when_the_path_map_changes(
     seeded row present. The worker runs in a fresh process whose
     environment does not carry MDT_PATH_MAP or MDT_DATA_DIR.
     """
-    stored_root, present_root, missing_root, restored_root = _seed_mapped_present_tracks(
-        data_dir, state_db_path
-    )
+    stored_root, present_root, missing_root, restored_root = _seed_mapped_present_tracks(data_dir, state_db_path)
     _run_resolver_subprocess(
         _WORKER_REFUSED_MAP_WAKES,
         [
@@ -1457,9 +1397,7 @@ def test_idle_worker_stays_refused_when_the_path_map_is_unchanged(
     in a fresh process whose environment does not carry MDT_PATH_MAP or
     MDT_DATA_DIR.
     """
-    stored_root, present_root, missing_root, _restored_root = _seed_mapped_present_tracks(
-        data_dir, state_db_path
-    )
+    stored_root, present_root, missing_root, _restored_root = _seed_mapped_present_tracks(data_dir, state_db_path)
     _run_resolver_subprocess(
         _WORKER_REFUSED_MAP_STAYS,
         [
@@ -1625,8 +1563,7 @@ def test_idle_worker_holds_an_empty_map_refusal_without_a_marker(
             stable_id = _stable(f"e{index}")
             _upsert_track(conn, stable_id, str(audio))
             conn.execute(
-                "INSERT INTO track_availability "
-                "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO track_availability (stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
                 (stable_id, "present", str(audio), _STALE_CHECKED_AT),
             )
         conn.commit()

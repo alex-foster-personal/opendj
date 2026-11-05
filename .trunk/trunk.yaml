@@ -23,6 +23,27 @@ runtimes:
     - python@3.14.4
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
+  # Formatter overrides for the ratified styles (issue #4456, (private path) part 9).
+  # Trunk merges these into the plugin definitions by name.
+  definitions:
+    # Trunk's default is `shfmt -w -s`; the -s simplify rewrite was not ratified.
+    - name: shfmt
+      commands:
+        - name: format
+          run: shfmt -w -i 4 -ci ${target}
+    # Trunk passes explicit paths, and ruff only applies [tool.ruff.format] exclude
+    # (*.md, .planning/**) to explicit paths under --force-exclude.
+    - name: ruff
+      commands:
+        - name: format
+          run: ruff format --force-exclude ${target}
+    # Ratified for apps/webui/frontend's ts, js, mjs and svelte only. Run from that
+    # directory so its .prettierrc, .prettierignore and plugin resolution apply.
+    - name: prettier
+      files: [typescript, javascript, svelte]
+      commands:
+        - name: format
+          run_from: apps/webui/frontend
   enabled:
     - actionlint@1.7.12
     - dotenv-linter@4.0.0
@@ -31,11 +52,18 @@ lint:
     - osv-scanner@2.6.0
     - renovate@44.115.13
     # Same version as ops/quality/requirements.txt so trunk and `just quality`
-    # agree; ruff reads [tool.ruff] from pyproject.toml. Lint only for now: trunk
-    # ships ruff's format command disabled, and it stays disabled until issue
-    # #4456's Python parts land. Ratified formatter: ruff format, line-length 120
-    # and the *.md exclusion from pyproject.toml (specs/formatter-adoption.md).
-    - ruff@0.16.3
+    # agree; ruff reads [tool.ruff] from pyproject.toml. Its format command is on
+    # since part 9 of issue #4456 (line-length 120, the *.md and .planning/
+    # exclusions; the run command above adds --force-exclude).
+    - ruff@0.16.3:
+        commands: [lint, format]
+    # The ratified shell style, shfmt 3.14.1 `-i 4 -ci` (run command above).
+    - shfmt@3.14.1
+    # prettier 3.9.9 + prettier-plugin-svelte 4.1.1, the versions
+    # apps/webui/frontend/package.json pins (issue #4456 part 9).
+    - prettier@3.9.9:
+        packages:
+          - prettier-plugin-svelte@4.1.1
     - shellcheck@0.11.0
     - trufflehog@3.97.9
     - yamllint@1.38.0
@@ -52,11 +80,6 @@ lint:
     - bandit
     # Only CKV_GHA_7 on workflow_dispatch inputs here; zizmor/actionlint cover workflows.
     - checkov
-    # Ratified for apps/webui/frontend only: prettier 3.9.9 + prettier-plugin-svelte
-    # 4.1.1, useTabs, singleQuote, trailingComma none, printWidth 100 (issue #4456).
-    # Enabled by that part together with its .prettierrc; trunk's default file list
-    # also covers markdown, yaml, json and html, which must stay unformatted.
-    - prettier
     # No cargo fmt/clippy gate in CI; clippy failed to build all 5 crates in the sample.
     - clippy
     - rustfmt
@@ -66,16 +89,17 @@ lint:
     - gitleaks
     # pinact 5 rejects the `-format` flag trunk plugins v1.11.0 passes; all actions are SHA-pinned already.
     - pinact
-    # Ratified as shfmt 3.14.1 `-i 4 -ci` (issue #4456), enabled by the shell part.
-    # Its run command gets overridden then: trunk's default is `shfmt -w -s`, and
-    # the -s simplify rewrite was not part of what was ratified.
-    - shfmt
     # No TOML formatter was chosen (issue #4456): churn with no gate.
     - taplo
     # Rewrite PNG/SVG evidence assets in place.
     - oxipng
     - svgo
   ignore:
+    # prettier is ratified for apps/webui/frontend only.
+    - linters: [prettier]
+      paths:
+        - "**"
+        - "!apps/webui/frontend/**"
     # Vendored upstream sources are not ours to lint (mirrors [tool.ruff] extend-exclude).
     - linters: [ALL]
       paths:

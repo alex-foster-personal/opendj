@@ -192,11 +192,11 @@ def test_a_new_ubuntu_latest_job_in_a_real_workflow_goes_red(tmp_path: Path) -> 
     """Mutation control on a copy of the real tree: append one hosted job and the scan must name it."""
     for path in WORKFLOW_DIR.glob("*.y*ml"):
         (tmp_path / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
-    target = tmp_path / "tenx-evidence.yml"
+    target = tmp_path / "pr-body-gates.yml"
     target.write_text(
         target.read_text(encoding="utf-8")
         + "\n  sneaky:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n",
         encoding="utf-8",
     )
     problems = unlisted_hosted_pins(workflow_jobs(tmp_path), ALLOWED_HOSTED)
-    assert problems == ["tenx-evidence.yml:sneaky runs-on 'ubuntu-latest'"], problems
+    assert problems == ["pr-body-gates.yml:sneaky runs-on 'ubuntu-latest'"], problems

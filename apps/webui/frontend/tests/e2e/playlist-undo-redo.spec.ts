@@ -150,11 +150,14 @@ test('playlist undo/redo: mixed edits, panel, hotkey, reload, IPC', async ({ pag
 	expect(afterBody.cursor).toBe(beforeBody.cursor);
 	expect(afterBody.entries.map((e) => e.op)).toEqual(beforeBody.entries.map((e) => e.op));
 
-	await page.evaluate((command: PerformanceCommand) => {
-		const ipc = window.musicDjToolsPerformance;
-		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		return ipc.dispatch(command);
-	}, { type: 'playlist_undo' } satisfies PerformanceCommand);
+	await page.evaluate(
+		(command: PerformanceCommand) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) throw new Error('performance IPC is not installed');
+			return ipc.dispatch(command);
+		},
+		{ type: 'playlist_undo' } satisfies PerformanceCommand
+	);
 	await _openPlaylist(page, originalName);
 	await expect.poll(async () => (await _visibleStableIds(page)).join('\0')).toBe('');
 

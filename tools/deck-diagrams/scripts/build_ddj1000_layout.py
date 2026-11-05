@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build DDJ-1000 midi.json + layout.json from FLX10 template + DDJ-1000 PDF deltas."""
+
 from __future__ import annotations
 
 import json
@@ -456,7 +457,9 @@ def main() -> None:
     MIDI_OUT.write_text(json.dumps(midi, indent=2) + "\n")
     layout = build_layout(midi)
     LAYOUT_OUT.write_text(json.dumps(layout, indent=2) + "\n")
-    figs = sorted({_fig(c["notes"]) for c in midi["controls"] if _fig(c.get("notes", ""))}, key=lambda x: (x[0], int(x[1:])))
+    figs = sorted(
+        {_fig(c["notes"]) for c in midi["controls"] if _fig(c.get("notes", ""))}, key=lambda x: (x[0], int(x[1:]))
+    )
     print(f"wrote {MIDI_OUT.name}: {len(midi['controls'])} rows, {len(figs)} fig tags")
     print(f"wrote {LAYOUT_OUT.name}: {len(layout['controls'])} controls")
 

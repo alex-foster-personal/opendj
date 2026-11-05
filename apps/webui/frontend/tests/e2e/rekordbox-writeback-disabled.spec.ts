@@ -54,7 +54,13 @@ const BROKEN_TRACK = {
 const PREFLIGHT_PASS = {
 	status: 'pass',
 	checks: [
-		{ id: 'engine-alive', label: 'Engine alive', status: 'pass', detail: 'the endpoint answered', remediation: null },
+		{
+			id: 'engine-alive',
+			label: 'Engine alive',
+			status: 'pass',
+			detail: 'the endpoint answered',
+			remediation: null
+		},
 		{
 			id: 'state-db',
 			label: 'State database',
@@ -69,7 +75,13 @@ const PREFLIGHT_PASS = {
 			detail: 'read 1 byte from a sampled track in 2ms',
 			remediation: null
 		},
-		{ id: 'library-attached', label: 'Library attached', status: 'pass', detail: '1 tracks', remediation: null }
+		{
+			id: 'library-attached',
+			label: 'Library attached',
+			status: 'pass',
+			detail: '1 tracks',
+			remediation: null
+		}
 	]
 };
 

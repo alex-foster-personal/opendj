@@ -18,6 +18,7 @@ from typing import Any
 
 from apps.autodj.plan import PlanError, parse_plan
 from apps.shared.state.migrations_v25 import PAIR_TRANSITION_SOURCES
+from apps.shared.state.migrations_v28 import PAIR_VERDICTS
 
 _COLUMNS = "out_track_id, in_track_id, plan_json, source, style, created_at, updated_at, times_played"
 
@@ -85,6 +86,11 @@ def _write(
         "source = excluded.source, style = excluded.style, updated_at = excluded.updated_at, "
         "times_played = excluded.times_played",
         (document["out"]["track"], document["in"]["track"], text, source, style, now, now, played),
+    )
+    # A new plan for the pair is a different transition: a verdict on the old one must not be read as one on it.
+    conn.execute(
+        "DELETE FROM pair_verdicts WHERE out_track_id = ? AND in_track_id = ?",
+        (document["out"]["track"], document["in"]["track"]),
     )
 
 
@@ -158,6 +164,63 @@ def _bumped(conn: sqlite3.Connection, saved: PairTransition) -> PairTransition:
         (_now(), saved.out_track_id, saved.in_track_id),
     )
     return _saved(conn, saved.out_track_id, saved.in_track_id)
+
+
+# ----- the decision record and the verdict (AUTOPLAY-8881, ADR-0139) -----
+# Pure logging: nothing in the planner reads these.
+
+
+def save_decision(conn: sqlite3.Connection, out_track_id: str, in_track_id: str, decision: Mapping[str, Any]) -> None:
+    """Store the lookahead's decision for this pair, replacing the last one: most recent wins, as for plans."""
+    conn.execute(
+        "INSERT INTO pair_decisions (out_track_id, in_track_id, decision_json, decided_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT (out_track_id, in_track_id) DO UPDATE SET decision_json = excluded.decision_json, "
+        "decided_at = excluded.decided_at",
+        (out_track_id, in_track_id, json.dumps(dict(decision), sort_keys=True), _now()),
+    )
+
+
+def last_decision(conn: sqlite3.Connection, pair: tuple[str, str] | None = None) -> dict[str, Any] | None:
+    """The newest stored decision (or this pair's), with the pair's saved plan meta and verdict when it has run."""
+    where, args = ("WHERE d.out_track_id = ? AND d.in_track_id = ?", pair) if pair is not None else ("", ())
+    row = conn.execute(
+        "SELECT d.out_track_id, d.in_track_id, d.decision_json, d.decided_at, t.style, t.times_played, v.verdict, "
+        "v.verdict_at FROM pair_decisions d LEFT JOIN pair_transitions t "
+        "ON t.out_track_id = d.out_track_id AND t.in_track_id = d.in_track_id LEFT JOIN pair_verdicts v "
+        "ON v.out_track_id = d.out_track_id AND v.in_track_id = d.in_track_id "
+        f"{where} ORDER BY d.decided_at DESC LIMIT 1",
+        args,
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "out_track_id": row[0],
+        "in_track_id": row[1],
+        "decision": json.loads(row[2]),
+        "decided_at": row[3],
+        # A saved plan that never ran (times_played 0) has not been heard, so it is not "played".
+        "played": None if row[4] is None or not row[5] else {"style": row[4], "times_played": row[5]},
+        "verdict": row[6],
+        "verdict_at": row[7],
+    }
+
+
+def set_verdict(conn: sqlite3.Connection, out_track_id: str, in_track_id: str, verdict: str) -> PairTransition:
+    """The listener's one-tap verdict on the transition that ran between this pair: good, meh or bad.
+
+    :class:`PairNotFound` when nothing has run between them, so a verdict is never stored on a pair never heard."""
+    if verdict not in PAIR_VERDICTS:
+        raise ValueError(f"verdict must be one of {list(PAIR_VERDICTS)}, got {verdict!r}")
+    saved = _saved(conn, out_track_id, in_track_id)
+    if saved.times_played < 1:
+        raise PairNotFound(f"the saved transition for {out_track_id} into {in_track_id} has never played")
+    conn.execute(
+        "INSERT INTO pair_verdicts (out_track_id, in_track_id, verdict, verdict_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT (out_track_id, in_track_id) DO UPDATE SET verdict = excluded.verdict, "
+        "verdict_at = excluded.verdict_at",
+        (saved.out_track_id, saved.in_track_id, verdict, _now()),
+    )
+    return saved
 
 
 # ----- replaying on other decks --------------------------------------------

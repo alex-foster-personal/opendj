@@ -28,11 +28,8 @@ def test_the_digest_half_of_the_swept_list_stays_alphabetical() -> None:
     the digest set rather than sorted into it.
     """
     digest = set(hub_protocol.DIGEST_TABLES)
-    tables = [table for table, _column in normalize_stamps.STAMP_COLUMNS
-              if table in digest]
-    assert tables == sorted(tables), (
-        f"STAMP_COLUMNS' digest half is out of alphabetical order: {tables}"
-    )
+    tables = [table for table, _column in normalize_stamps.STAMP_COLUMNS if table in digest]
+    assert tables == sorted(tables), f"STAMP_COLUMNS' digest half is out of alphabetical order: {tables}"
     assert "lyric_verdict" in digest, (
         "schema v10 put lyric_verdict in the sync set; if it is not in the "
         "digest set here, the rest of this module's coverage is a lie"

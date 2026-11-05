@@ -12,7 +12,14 @@ before(async () => {
 	plan = await loadTypeScriptModule('src/lib/rb/auto-play-next-plan.ts');
 });
 
-const pick = { candidate: 'c1', style: 'long_blend', bars: 32, score: 0.41, out_start_bar: 97, rationale: 'why' };
+const pick = {
+	candidate: 'c1',
+	style: 'long_blend',
+	bars: 32,
+	score: 0.41,
+	out_start_bar: 97,
+	rationale: 'why'
+};
 const answer = (over = {}) => ({
 	order: { plan: { id: 'plan-1' } },
 	reason: 'intent smooth',
@@ -41,7 +48,9 @@ test('an order selects the planner path with its pick', () => {
 });
 
 test('no order selects the featurette with the planner reason', () => {
-	const choice = plan.selectTransitionPath(answer({ order: null, pick: null, reason: 'nothing eligible' }));
+	const choice = plan.selectTransitionPath(
+		answer({ order: null, pick: null, reason: 'nothing eligible' })
+	);
 	assert.deepEqual(choice, { path: 'featurette', reason: 'nothing eligible' });
 });
 
@@ -57,9 +66,20 @@ test('the request carries the decks, intent and variety memory', async () => {
 });
 
 test('a refusal and an unreachable planner are reasons, never exceptions', async () => {
-	const refused = await plan.requestPlannedTransition(request, signal, fetched(422, { error: 'deck_empty', message: 'deck 2 holds no track' }));
-	assert.deepEqual(refused, { path: 'featurette', reason: 'planner answered 422: deck 2 holds no track' });
-	const unreadable = await plan.requestPlannedTransition(request, signal, async () => new Response('boom', { status: 500 }));
+	const refused = await plan.requestPlannedTransition(
+		request,
+		signal,
+		fetched(422, { error: 'deck_empty', message: 'deck 2 holds no track' })
+	);
+	assert.deepEqual(refused, {
+		path: 'featurette',
+		reason: 'planner answered 422: deck 2 holds no track'
+	});
+	const unreadable = await plan.requestPlannedTransition(
+		request,
+		signal,
+		async () => new Response('boom', { status: 500 })
+	);
 	assert.deepEqual(unreadable, { path: 'featurette', reason: 'planner answered 500: boom' });
 	const down = await plan.requestPlannedTransition(request, signal, async () => {
 		throw new TypeError('Load failed');
@@ -77,14 +97,35 @@ test('the readout names the path and its hover says why', () => {
 });
 
 test('a 200 the page cannot act on falls back with the reason', async () => {
-	const noPlanId = await plan.requestPlannedTransition(request, signal, fetched(200, answer({ order: { plan: {} } })));
-	assert.deepEqual(noPlanId, { path: 'featurette', reason: 'planner answer malformed: order carries no plan id' });
-	const noPick = await plan.requestPlannedTransition(request, signal, fetched(200, answer({ pick: null })));
-	assert.deepEqual(noPick, { path: 'featurette', reason: 'planner answer malformed: an order without its pick' });
-	const notJson = await plan.requestPlannedTransition(request, signal, async () => new Response('<html>', { status: 200 }));
+	const noPlanId = await plan.requestPlannedTransition(
+		request,
+		signal,
+		fetched(200, answer({ order: { plan: {} } }))
+	);
+	assert.deepEqual(noPlanId, {
+		path: 'featurette',
+		reason: 'planner answer malformed: order carries no plan id'
+	});
+	const noPick = await plan.requestPlannedTransition(
+		request,
+		signal,
+		fetched(200, answer({ pick: null }))
+	);
+	assert.deepEqual(noPick, {
+		path: 'featurette',
+		reason: 'planner answer malformed: an order without its pick'
+	});
+	const notJson = await plan.requestPlannedTransition(
+		request,
+		signal,
+		async () => new Response('<html>', { status: 200 })
+	);
 	assert.equal(notJson.path, 'featurette');
 	// Control: a well-formed answer still selects the planner.
-	assert.equal((await plan.requestPlannedTransition(request, signal, fetched(200, answer()))).path, 'planner');
+	assert.equal(
+		(await plan.requestPlannedTransition(request, signal, fetched(200, answer()))).path,
+		'planner'
+	);
 });
 
 test('an unscored pick runs the planner and the readout says M is not measured', async () => {
@@ -105,7 +146,10 @@ test('prepare posts the pair and a refusal is an error the watch can retry', asy
 	assert.equal(sent.url, plan.PREPARE_URL);
 	assert.deepEqual(sent.body, { out_deck: 1, in_deck: 2, intent: 'smooth' });
 	await assert.rejects(
-		plan.requestPrepare({ out_deck: 1, in_deck: 2, intent: 'smooth' }, fetched(409, { message: 'no page' })),
+		plan.requestPrepare(
+			{ out_deck: 1, in_deck: 2, intent: 'smooth' },
+			fetched(409, { message: 'no page' })
+		),
 		/planner answered 409: no page/
 	);
 });
@@ -116,20 +160,34 @@ test('a completed plan is saved for the pair; a replay only counts', async () =>
 		sent.push(JSON.parse(init.body));
 		return new Response('{}', { status: 200 });
 	};
-	await plan.reportPlayed({ out: 'a', in: 'b', saved: false, plan: { id: 1 }, style: 'wave' }, fetchImpl);
-	await plan.reportPlayed({ out: 'a', in: 'b', saved: true, plan: { id: 1 }, style: 'wave' }, fetchImpl);
+	await plan.reportPlayed(
+		{ out: 'a', in: 'b', saved: false, plan: { id: 1 }, style: 'wave' },
+		fetchImpl
+	);
+	await plan.reportPlayed(
+		{ out: 'a', in: 'b', saved: true, plan: { id: 1 }, style: 'wave' },
+		fetchImpl
+	);
 	assert.deepEqual(sent, [
 		{ out: 'a', in: 'b', plan: { id: 1 }, source: 'planner', style: 'wave' },
 		{ out: 'a', in: 'b' }
 	]);
 	await assert.rejects(
-		plan.reportPlayed({ out: 'a', in: 'b', saved: true, plan: null, style: 'wave' }, async () => new Response('gone', { status: 404 })),
+		plan.reportPlayed(
+			{ out: 'a', in: 'b', saved: true, plan: null, style: 'wave' },
+			async () => new Response('gone', { status: 404 })
+		),
 		/played answered 404/
 	);
 });
 
 test('a saved replay reads as saved on the readout', () => {
-	const run = plan.planRunOf(plan.selectTransitionPath(answer({ saved: true, scored: false, pick: { ...pick, score: null } })), 3);
+	const run = plan.planRunOf(
+		plan.selectTransitionPath(
+			answer({ saved: true, scored: false, pick: { ...pick, score: null } })
+		),
+		3
+	);
 	assert.equal(plan.runLabel(run), 'saved: long_blend 32');
 	assert.match(plan.runTitle(run), /Saved transition for this pair/);
 });

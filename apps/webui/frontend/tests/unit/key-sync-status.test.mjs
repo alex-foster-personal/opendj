@@ -20,7 +20,7 @@ before(async () => {
 });
 
 function decks(overrides) {
-	const base = (id) => ({ stable_id: `sid-${id}`, key: '8A', key_sync_enabled: false, is_master: false });
+	const base = (id) => ({ stable_id: `sid-${id}`, key: '8A', key_sync_enabled: false, key_sync_mode: 'exact', key_sync_target: null, is_master: false });
 	return Object.fromEntries([1, 2, 3, 4].map((id) => [id, { ...base(id), ...(overrides[id] ?? {}) }]));
 }
 

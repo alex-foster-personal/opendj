@@ -52,6 +52,7 @@ Regression lines:
 
 [if] the preflight accepts an identity this machine cannot sign with [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -128,8 +129,7 @@ def test_identity_absent_from_every_keychain_is_refused() -> None:
     )
     result = _run(_signing_env(ABSENT_IDENTITY))
     assert "signing identity" in result.stdout, (
-        "a configured identity that no keychain holds must be reported as an unmet "
-        f"precondition, got:\n{result.stdout}"
+        f"a configured identity that no keychain holds must be reported as an unmet precondition, got:\n{result.stdout}"
     )
     assert ABSENT_IDENTITY in result.stdout
 
@@ -141,9 +141,7 @@ def test_failure_report_shows_what_the_machine_actually_has() -> None:
     if not held:
         pytest.skip("UNAVAILABLE: this host holds no valid codesigning identity to list")
     result = _run(_signing_env(ABSENT_IDENTITY))
-    assert held[0] in result.stdout, (
-        f"the report must list what IS present, expected {held[0]!r}:\n{result.stdout}"
-    )
+    assert held[0] in result.stdout, f"the report must list what IS present, expected {held[0]!r}:\n{result.stdout}"
 
 
 @darwin_only
@@ -204,9 +202,7 @@ def test_a_host_that_cannot_measure_identities_refuses_rather_than_passing() -> 
     directory), so the branch is pinned in the production source.
     """
     body = PREFLIGHT.read_text(encoding="utf-8")
-    branch = re.search(
-        r"if ! command -v security[^\n]*\n(.*?)\n\s*else\b", body, re.DOTALL
-    )
+    branch = re.search(r"if ! command -v security[^\n]*\n(.*?)\n\s*else\b", body, re.DOTALL)
     assert branch is not None, "the no-security branch is no longer where this guard reads it"
     source = branch.group(1)
     assert "fail " in source, (

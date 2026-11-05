@@ -1,26 +1,29 @@
 <script lang="ts">
 	/**
-	 * PLACEHOLDER for the ranked-candidates section, and deliberately inert.
+	 * Recommended section on /performance. Live behavior is paired-track
+	 * rows (and their explicit error states) for the deck-1-loaded track.
+	 * Ranked-candidate presentation is unbuilt and hidden for V1.
 	 *
 	 * `BrowserPanel.svelte` has imported this component since cfbfe55
 	 * ("wip(spike)", Fri 24 Jul 2026 01:19) but the file was never committed,
 	 * so `/performance` failed to build for anyone without that author's
-	 * working tree. This restores the build WITHOUT inventing the feature.
+	 * working tree. 6951f99938 restored the build WITHOUT inventing the
+	 * ranked-candidates feature. Later commits added the paired-track rows
+	 * (PR #1285) and hid the old inert "not implemented, N candidates
+	 * available" marker for V1 (JIK, Thu 1 Oct 2026: hide unbuilt UI rather
+	 * than show it inert; LIBUX-38; issue #876, merging NEXT and RECOMMENDED
+	 * into one rail, stays open as the tracker for remaining panel work).
 	 *
-	 * The `candidates` funnel is unbuilt, and it renders NOTHING for it: the
-	 * earlier inert "not implemented, N candidates available" marker
-	 * was hidden for V1 (JIK, Thu 1 Oct 2026: hide unbuilt UI rather than
-	 * show it inert; issue #876, merging NEXT and RECOMMENDED into one rail,
-	 * stays open). The props below are exactly the ones BrowserPanel already
-	 * passes, so replacing this file with the real implementation needs no
-	 * change at the call site.
-	 *
-	 * TODO(owner of cfbfe55): replace with the real recommended-tracks section.
+	 * The `candidates` plumbing is live: BrowserPanel fills it from
+	 * SuggestNextStrip's oncandidates and passes it here. This file renders
+	 * nothing from that array. The props below are exactly the ones
+	 * BrowserPanel already passes, so a ranked-candidates presentation can
+	 * land here with no call-site change.
 	 *
 	 * Pin 72ac80073f92 (issue #878), the maintainer: "lv1 pairing completion would be
 	 * very easy. And we could default show paired track in recommended bar
-	 * for now? Not used otherwise atm." The candidates funnel above is still
-	 * unbuilt, but LV1 pairing (POST /api/v1/pairings, already live) is real
+	 * for now? Not used otherwise atm." Ranked-candidate presentation is
+	 * still unbuilt, but LV1 pairing (POST /api/v1/pairings, already live) is real
 	 * data, so this section ALSO shows any existing pairing for `stableId`
 	 * (the deck-1-loaded track) by default - a second, independent row, not
 	 * a candidate. "Not used otherwise atm" per the pin: this is the only

@@ -31,6 +31,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -50,8 +51,7 @@ STEMS: tuple[str, ...] = ("vocals", "drums", "bass", "other")
 # per-stem verdict, which is the only thing the comparison has to protect.
 TOL_DB: float = 0.05
 # ladder_4stem_all arm ids that share this run's knobs (overlap 0.25, 44.1 kHz).
-LADDER_ARMS: dict[str, str] = {
-    "hdemucs_mmi": "hdemucs_mmi-ov25", "htdemucs": "htdemucs-ov25"}
+LADDER_ARMS: dict[str, str] = {"hdemucs_mmi": "hdemucs_mmi-ov25", "htdemucs": "htdemucs-ov25"}
 
 
 def _rows_from_ladder(gpu_cube: dict[str, Any]) -> list[dict[str, Any]]:
@@ -65,13 +65,18 @@ def _rows_from_ladder(gpu_cube: dict[str, Any]) -> list[dict[str, Any]]:
         for stem in STEMS:
             cpu = arms[arm_id]["stems"][stem]["si_sdr"]
             gpu = gpu_cube[track][model][stem]
-            rows.append({
-                "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
-                "track": track, "model": model, "stem": stem,
-                "cpu_si_sdr": cpu, "gpu_si_sdr": gpu,
-                "gpu_minus_cpu_db": round(gpu - cpu, 3),
-                "agrees": abs(gpu - cpu) <= TOL_DB,
-            })
+            rows.append(
+                {
+                    "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+                    "track": track,
+                    "model": model,
+                    "stem": stem,
+                    "cpu_si_sdr": cpu,
+                    "gpu_si_sdr": gpu,
+                    "gpu_minus_cpu_db": round(gpu - cpu, 3),
+                    "agrees": abs(gpu - cpu) <= TOL_DB,
+                }
+            )
     return rows
 
 
@@ -91,13 +96,18 @@ def _rows_from_cells(gpu_cube: dict[str, Any]) -> list[dict[str, Any]]:
         for stem in STEMS:
             cpu = cell["si_sdr"][stem]
             gpu = gpu_cube[track][model][stem]
-            rows.append({
-                "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
-                "track": track, "model": model, "stem": stem,
-                "cpu_si_sdr": cpu, "gpu_si_sdr": gpu,
-                "gpu_minus_cpu_db": round(gpu - cpu, 3),
-                "agrees": abs(gpu - cpu) <= TOL_DB,
-            })
+            rows.append(
+                {
+                    "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+                    "track": track,
+                    "model": model,
+                    "stem": stem,
+                    "cpu_si_sdr": cpu,
+                    "gpu_si_sdr": gpu,
+                    "gpu_minus_cpu_db": round(gpu - cpu, 3),
+                    "agrees": abs(gpu - cpu) <= TOL_DB,
+                }
+            )
     return rows
 
 
@@ -122,30 +132,32 @@ def main() -> int:
         "cells_by_source": by_source,
         "n_disagreements": len(disagreements),
         "max_abs_gpu_minus_cpu_db": abs(worst["gpu_minus_cpu_db"]),
-        "mean_abs_gpu_minus_cpu_db": round(
-            statistics.fmean(abs(r["gpu_minus_cpu_db"]) for r in rows), 4),
+        "mean_abs_gpu_minus_cpu_db": round(statistics.fmean(abs(r["gpu_minus_cpu_db"]) for r in rows), 4),
         "worst_cell": worst,
         "verdict": (
-            "AGREE: the card changes the clock, not the quality, so the GPU cube "
-            "carries the per-stem verdict"
-            if not disagreements else
-            "DISAGREE: a model default cannot be settled on one kind of hardware "
-            "and shipped on another"),
+            "AGREE: the card changes the clock, not the quality, so the GPU cube carries the per-stem verdict"
+            if not disagreements
+            else "DISAGREE: a model default cannot be settled on one kind of hardware and shipped on another"
+        ),
         "cells": rows,
     }
     OUT_JSON.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     for source, count in by_source.items():
         print(f"  {count:3d} cells from {source}")
     print(f"\n{len(rows) - len(disagreements)}/{len(rows)} cells agree within {TOL_DB} dB")
-    print(f"worst |delta| {payload['max_abs_gpu_minus_cpu_db']} dB "
-          f"({worst['track']} / {worst['model']} / {worst['stem']}), "
-          f"mean |delta| {payload['mean_abs_gpu_minus_cpu_db']} dB")
+    print(
+        f"worst |delta| {payload['max_abs_gpu_minus_cpu_db']} dB "
+        f"({worst['track']} / {worst['model']} / {worst['stem']}), "
+        f"mean |delta| {payload['mean_abs_gpu_minus_cpu_db']} dB"
+    )
     print(f"[OK] wrote {OUT_JSON.relative_to(REPO_ROOT)}")
     if disagreements:
         print("\n[ERROR] disagreements:", file=sys.stderr)
         for row in disagreements[:20]:
-            print(f"  {row['track']}/{row['model']}/{row['stem']}: "
-                  f"cpu {row['cpu_si_sdr']} gpu {row['gpu_si_sdr']}", file=sys.stderr)
+            print(
+                f"  {row['track']}/{row['model']}/{row['stem']}: cpu {row['cpu_si_sdr']} gpu {row['gpu_si_sdr']}",
+                file=sys.stderr,
+            )
         return 1
     return 0
 

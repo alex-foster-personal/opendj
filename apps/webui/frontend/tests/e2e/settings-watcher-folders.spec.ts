@@ -17,5 +17,7 @@ test('the watcher-folders settings row loads in the open overlay and validates p
 	await expect(textarea).toBeVisible({ timeout: 15_000 });
 	await textarea.fill('/definitely/not/a/real/folder-4014');
 	await page.locator('.so-path-lines button', { hasText: 'Apply' }).click();
-	await expect(page.locator('.so-path-lines-msg')).toContainText(/does not exist|not exist|missing/i);
+	await expect(page.locator('.so-path-lines-msg')).toContainText(
+		/does not exist|not exist|missing/i
+	);
 });

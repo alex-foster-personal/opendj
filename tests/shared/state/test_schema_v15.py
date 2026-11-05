@@ -3,6 +3,7 @@
 [if] schema v15 is applied [then] NULL updated_at rows copy modified_at, [else stop].
 [if] v15 backfill runs [then] active-role changelog rows are appended, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -79,9 +80,7 @@ def test_v15_has_no_standalone_sql() -> None:
     assert _V15 == []
 
 
-def test_v15_backfills_only_null_updated_at_from_modified_at(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v15_backfills_only_null_updated_at_from_modified_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] v14 rows have NULL updated_at [then] backfill copies modified_at only, [else stop]."""
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
     path = tmp_path / "state.db"
@@ -102,9 +101,7 @@ def test_v15_backfills_only_null_updated_at_from_modified_at(
 
     state_db.open_rw(path).close()
     before_second = sqlite3.connect(str(path))
-    track_fields_before = before_second.execute(
-        "SELECT COUNT(*) FROM track_fields"
-    ).fetchone()[0]
+    track_fields_before = before_second.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0]
     changelog_before = before_second.execute(
         "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
     ).fetchone()[0]
@@ -114,14 +111,9 @@ def test_v15_backfills_only_null_updated_at_from_modified_at(
 
     migrated = sqlite3.connect(str(path))
     try:
+        assert migrated.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0] == track_fields_before
         assert (
-            migrated.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0]
-            == track_fields_before
-        )
-        assert (
-            migrated.execute(
-                "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-            ).fetchone()[0]
+            migrated.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[0]
             == changelog_before
         )
         legacy = migrated.execute(
@@ -141,9 +133,7 @@ def test_v15_backfills_only_null_updated_at_from_modified_at(
         ).fetchall()
         assert len(logged) == 2
         assert (
-            migrated.execute(
-                "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-            ).fetchone()[0]
+            migrated.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[0]
             == 2
         )
     finally:
@@ -157,9 +147,7 @@ def test_v15_backfills_only_null_updated_at_from_modified_at(
     fresh.close()
 
 
-def test_v15_backfill_appends_hub_changelog_when_hub_role(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v15_backfill_appends_hub_changelog_when_hub_role(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] MDT_IS_HUB=1 [then] v15 logs hub_changelog not local_changelog, [else stop]."""
     monkeypatch.setenv("MDT_IS_HUB", "1")
     path = tmp_path / "state.db"
@@ -182,9 +170,7 @@ def test_v15_backfill_appends_hub_changelog_when_hub_role(
 
     conn = sqlite3.connect(str(path))
     try:
-        assert (
-            conn.execute("SELECT COUNT(*) FROM hub_changelog").fetchone()[0] == 2
-        )
+        assert conn.execute("SELECT COUNT(*) FROM hub_changelog").fetchone()[0] == 2
         assert conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0] == 0
     finally:
         conn.close()
@@ -212,23 +198,17 @@ def test_v15_migration_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyP
         (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
     )
     conn.commit()
-    before = conn.execute(
-        "SELECT value_json, modified_at, updated_at FROM track_fields"
-    ).fetchone()
+    before = conn.execute("SELECT value_json, modified_at, updated_at FROM track_fields").fetchone()
     backfill_track_fields_stamps(conn)
-    after_once = conn.execute(
-        "SELECT value_json, modified_at, updated_at FROM track_fields"
-    ).fetchone()
-    changelog_once = conn.execute(
-        "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-    ).fetchone()[0]
+    after_once = conn.execute("SELECT value_json, modified_at, updated_at FROM track_fields").fetchone()
+    changelog_once = conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[
+        0
+    ]
     backfill_track_fields_stamps(conn)
-    after_twice = conn.execute(
-        "SELECT value_json, modified_at, updated_at FROM track_fields"
-    ).fetchone()
-    changelog_twice = conn.execute(
-        "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-    ).fetchone()[0]
+    after_twice = conn.execute("SELECT value_json, modified_at, updated_at FROM track_fields").fetchone()
+    changelog_twice = conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[
+        0
+    ]
     conn.close()
     assert before[0] == after_once[0] == after_twice[0]
     assert after_once == after_twice
@@ -236,9 +216,7 @@ def test_v15_migration_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert changelog_once == changelog_twice == 1
 
 
-def test_v15_reoffers_already_stamped_rows_missing_changelog(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v15_reoffers_already_stamped_rows_missing_changelog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] #3112 left stamped rows without changelog [then] open re-offers once, [else stop]."""
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
     path = tmp_path / "state.db"
@@ -272,19 +250,12 @@ def test_v15_reoffers_already_stamped_rows_missing_changelog(
             "FROM track_fields WHERE field_name = 'bpm'"
         ).fetchone()
         assert row == ("128", "rekordbox", _T_LEGACY, _T_LEGACY, None)
-        assert (
-            conn.execute(
-                "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-            ).fetchone()[0]
-            == 1
-        )
+        assert conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[0] == 1
     finally:
         conn.close()
 
 
-def test_v15_reoffers_non_null_origin_rows_missing_changelog(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v15_reoffers_non_null_origin_rows_missing_changelog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] #3112 stamped a row with domain origin [then] open re-offers without mutating it, [else stop]."""
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
     path = tmp_path / "state.db"
@@ -327,9 +298,7 @@ def test_v15_reoffers_non_null_origin_rows_missing_changelog(
         conn.close()
 
 
-def test_v15_backfill_rolls_back_row_and_changelog_on_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v15_backfill_rolls_back_row_and_changelog_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] v15 backfill fails mid-pass [then] no row or changelog is claimed, [else stop]."""
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
     path = tmp_path / "state.db"
@@ -363,9 +332,7 @@ def test_v15_backfill_rolls_back_row_and_changelog_on_failure(
 
     failed = sqlite3.connect(str(path))
     try:
-        null_count = failed.execute(
-            "SELECT COUNT(*) FROM track_fields WHERE updated_at IS NULL"
-        ).fetchone()[0]
+        null_count = failed.execute("SELECT COUNT(*) FROM track_fields WHERE updated_at IS NULL").fetchone()[0]
         changelog_count = failed.execute(
             "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
         ).fetchone()[0]
@@ -378,16 +345,9 @@ def test_v15_backfill_rolls_back_row_and_changelog_on_failure(
     state_db.open_rw(path).close()
     recovered = sqlite3.connect(str(path))
     try:
+        assert recovered.execute("SELECT COUNT(*) FROM track_fields WHERE updated_at IS NULL").fetchone()[0] == 0
         assert (
-            recovered.execute(
-                "SELECT COUNT(*) FROM track_fields WHERE updated_at IS NULL"
-            ).fetchone()[0]
-            == 0
-        )
-        assert (
-            recovered.execute(
-                "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'"
-            ).fetchone()[0]
+            recovered.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_fields'").fetchone()[0]
             == 2
         )
     finally:

@@ -65,5 +65,7 @@ export function committedMixDirection(
 	currentValue: number
 ): HeadphoneMixDirection {
 	if (lastRequest === null) return committed;
-	return Math.abs(currentValue - lastRequest.value) < MIX_ENDPOINT_EPSILON ? lastRequest.direction : committed;
+	return Math.abs(currentValue - lastRequest.value) < MIX_ENDPOINT_EPSILON
+		? lastRequest.direction
+		: committed;
 }

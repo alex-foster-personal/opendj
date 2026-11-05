@@ -30,10 +30,8 @@ class _Word:
     line_final: bool
 
 
-def _w(idx: int, word: str, start: float | None, end: float | None,
-       witness: str | None, final: bool = False) -> _Word:
-    return _Word(idx=idx, word=word, start_s=start, end_s=end,
-                 witness=witness, line_final=final)
+def _w(idx: int, word: str, start: float | None, end: float | None, witness: str | None, final: bool = False) -> _Word:
+    return _Word(idx=idx, word=word, start_s=start, end_s=end, witness=witness, line_final=final)
 
 
 def test_any_word_row_shape_is_accepted():
@@ -54,14 +52,16 @@ def test_groups_on_line_final_and_keeps_trailing_words():
 
 
 def test_quality_uses_judged_words_only_and_bands_follow_constants():
-    lines = derive_lines([
-        _w(0, "a", 1.0, 1.1, "agree"),
-        _w(1, "b", 1.2, 1.3, "contradict"),
-        _w(2, "c", 1.4, 1.5, None, final=True),  # unjudged: out of denominator
-        _w(3, "d", 2.0, 2.1, None, final=True),  # wholly unjudged line
-        _w(4, "e", 3.0, 3.1, "lost"),
-        _w(5, "f", 3.2, 3.3, "contradict", final=True),
-    ])
+    lines = derive_lines(
+        [
+            _w(0, "a", 1.0, 1.1, "agree"),
+            _w(1, "b", 1.2, 1.3, "contradict"),
+            _w(2, "c", 1.4, 1.5, None, final=True),  # unjudged: out of denominator
+            _w(3, "d", 2.0, 2.1, None, final=True),  # wholly unjudged line
+            _w(4, "e", 3.0, 3.1, "lost"),
+            _w(5, "f", 3.2, 3.3, "contradict", final=True),
+        ]
+    )
     assert lines[0].quality == 0.5 and lines[0].band == "uncertain"
     assert lines[0].n_judged == 2 and lines[0].n_red == 1
     assert lines[1].quality is None and lines[1].band == "unjudged"
@@ -70,12 +70,14 @@ def test_quality_uses_judged_words_only_and_bands_follow_constants():
 
 def test_paragraphs_come_from_gaps_never_from_guesswork():
     gap = PARAGRAPH_GAP_S + 0.1
-    lines = derive_lines([
-        _w(0, "verse", 1.0, 1.5, "agree", final=True),
-        _w(1, "chorus", 1.5 + gap, 1.9 + gap, "agree", final=True),
-        _w(2, "untimed", None, None, "agree", final=True),
-        _w(3, "coda", 50.0, 50.5, "agree", final=True),
-    ])
+    lines = derive_lines(
+        [
+            _w(0, "verse", 1.0, 1.5, "agree", final=True),
+            _w(1, "chorus", 1.5 + gap, 1.9 + gap, "agree", final=True),
+            _w(2, "untimed", None, None, "agree", final=True),
+            _w(3, "coda", 50.0, 50.5, "agree", final=True),
+        ]
+    )
     assert lines[0].para_final is True, "a real gap ends a paragraph"
     assert lines[1].para_final is False, "no timing on the NEXT line = no evidence"
     assert lines[2].para_final is False, "an untimed line cannot claim a gap"
@@ -83,8 +85,10 @@ def test_paragraphs_come_from_gaps_never_from_guesswork():
 
 
 def test_close_lines_do_not_break_paragraphs():
-    lines = derive_lines([
-        _w(0, "one", 1.0, 1.5, "agree", final=True),
-        _w(1, "two", 1.8, 2.2, "agree", final=True),
-    ])
+    lines = derive_lines(
+        [
+            _w(0, "one", 1.0, 1.5, "agree", final=True),
+            _w(1, "two", 1.8, 2.2, "agree", final=True),
+        ]
+    )
     assert lines[0].para_final is False

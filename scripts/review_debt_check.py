@@ -1,4 +1,4 @@
-"""Whether a PR's OWN `.planning/debt/<pr>.md` is well formed (issue #2980).
+"""Whether a PR's OWN `(private path)/<pr>.md` is well formed (issue #2980).
 
 Split into its own module from the start, on the same 600-line seam
 `review_ledger.py` and `review_thread_refs.py` already split
@@ -20,9 +20,7 @@ from scripts import debt_index
 from scripts.review_ledger import OWNER, REPO, debt_text_at
 
 
-def verdict_from_text(
-    number: int, text: str, debt_dir: Path = debt_index.DEBT_DIR
-) -> tuple[str | None, list[str]]:
+def verdict_from_text(number: int, text: str, debt_dir: Path = debt_index.DEBT_DIR) -> tuple[str | None, list[str]]:
     """(this PR's own format error, or None; sibling main-side problems),
     given TEXT ALREADY IN HAND. This is the pure core `check_pr_head_debt_file`
     fetches for, split out so a test can drive it with a fixture instead of a
@@ -47,7 +45,7 @@ def verdict_from_text(
 def check_pr_head_debt_file(
     number: int, head_sha: str, owner: str = OWNER, repo: str = REPO
 ) -> tuple[str | None, list[str]]:
-    """`verdict_from_text`, fed by fetching `.planning/debt/<number>.md` at
+    """`verdict_from_text`, fed by fetching `(private path)/<number>.md` at
     the PR's own pinned head -- the same read `_debt_permalinks` performs for
     the ledger check, and the same reason: a local checkout could belong to
     any branch, or none.
@@ -56,14 +54,12 @@ def check_pr_head_debt_file(
     return verdict_from_text(number, text)
 
 
-def render_debt_verdict(
-    number: int, head_sha: str, error: str | None, main_side: list[str]
-) -> str:
+def render_debt_verdict(number: int, head_sha: str, error: str | None, main_side: list[str]) -> str:
     """The report block `review_thread_triage` prints for a debt verdict, or
     `""` when there is nothing to say -- kept out of the caller so its own
     file stays under the repo's 600-line file-size ratchet."""
     if error:
-        return f"DEBT FILE INVALID (.planning/debt/{number}.md at {head_sha}): {error}"
+        return f"DEBT FILE INVALID ((private path)/{number}.md at {head_sha}): {error}"
     if main_side:
         lines = ["main-side debt file problem(s) (pre-existing on main, not this PR's):"]
         lines += [f"  {problem}" for problem in main_side]

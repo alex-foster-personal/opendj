@@ -36,6 +36,11 @@ function formatBpm(bpm: number | null): string {
 }
 
 export function bpmCellText(row: BpmCellRow): BpmCellText {
+	// KEY-FALLBACK-01: a BPM from a fallback source (Mixed In Key tag) shows even
+	// though our own lane failed or has not run.
+	if ((row.bpm_status === 'failed' || row.bpm_status === 'missing') && hasUsableBpm(row.bpm)) {
+		return { text: formatBpm(row.bpm), kind: 'value' };
+	}
 	switch (row.bpm_status) {
 		case 'failed':
 			return { text: 'failed', kind: 'failed' };

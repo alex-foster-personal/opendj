@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Literal
 from .writer_common import (
     MEMBERSHIPS_TABLE,
     PLAYLISTS_TABLE,
-    immediate_transaction,
     next_playlist_revision,
 )
 
@@ -32,8 +31,7 @@ def write_membership_order_keys(
     """UPDATE order_key for live membership rows named by ``address``."""
     if not rows:
         return
-    transaction = host._tx() if host._conn.in_transaction else immediate_transaction(host._conn)
-    with transaction as conn:
+    with host._tx() as conn:
         now = next_playlist_revision(conn, playlist_id, host._now_iso())
         changed = 0
         for address_value, new_key in rows:

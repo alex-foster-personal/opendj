@@ -26,7 +26,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const API_BASE = 'https://offload-shared-load.example.test';
 const SID_OFF = 'd'.repeat(40);
 const SID_LOCAL = 'e'.repeat(40);
-const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
+const STRETCH_STUB = fileURLToPath(
+	new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url)
+);
 const realFetch = globalThis.fetch;
 
 let m;
@@ -36,16 +38,30 @@ let midDownload;
 let calls;
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 function operation(stableId, state) {
 	return {
-		op_id: `op-${stableId.slice(0, 4)}`, kind: 'restore', mode: 'temporary', playlist_id: null, state,
-		stable_ids: [stableId], tracks_total: 1, tracks_done: state === 'done' ? 1 : 0, bytes_total: 64,
-		bytes_done: state === 'done' ? 64 : 0, bytes_freed: 0, current: null,
-		results: state === 'done' ? { [stableId]: { state: 'temporary', note: null, error: null } } : {},
-		error: null, dry_run: false
+		op_id: `op-${stableId.slice(0, 4)}`,
+		kind: 'restore',
+		mode: 'temporary',
+		playlist_id: null,
+		state,
+		stable_ids: [stableId],
+		tracks_total: 1,
+		tracks_done: state === 'done' ? 1 : 0,
+		bytes_total: 64,
+		bytes_done: state === 'done' ? 64 : 0,
+		bytes_freed: 0,
+		current: null,
+		results:
+			state === 'done' ? { [stableId]: { state: 'temporary', note: null, error: null } } : {},
+		error: null,
+		dry_run: false
 	};
 }
 
@@ -57,10 +73,15 @@ function installDaemon() {
 		calls.push(`${request.method} ${url.pathname}`);
 		if (url.pathname === '/api/v1/offload/tracks') {
 			const sid = url.searchParams.get('stable_ids');
-			return json({ [sid]: sid === SID_OFF && !restored ? { state: 'offloaded', expires_at: null } : null });
+			return json({
+				[sid]: sid === SID_OFF && !restored ? { state: 'offloaded', expires_at: null } : null
+			});
 		}
 		if (url.pathname === '/api/v1/offload/restore') {
-			assert.deepEqual(JSON.parse(await request.text()), { stable_ids: [SID_OFF], mode: 'temporary' });
+			assert.deepEqual(JSON.parse(await request.text()), {
+				stable_ids: [SID_OFF],
+				mode: 'temporary'
+			});
 			return json(operation(SID_OFF, 'running'), 202);
 		}
 		if (url.pathname.startsWith('/api/v1/offload/operations/')) {
@@ -70,24 +91,40 @@ function installDaemon() {
 		}
 		if (url.pathname.endsWith('/audio')) {
 			if (url.pathname.includes(SID_OFF) && !restored) {
-				return json({ detail: { code: 'TRACK_OFFLOADED', message: 'offloaded; restore it before loading' } }, 409);
+				return json(
+					{ detail: { code: 'TRACK_OFFLOADED', message: 'offloaded; restore it before loading' } },
+					409
+				);
 			}
 			return new Response(new Uint8Array(4 * 48_000 * 4));
 		}
 		if (url.pathname.endsWith('/anlz')) {
 			return json({
-				stable_id: url.pathname.match(/[0-9a-f]{40}/)[0], points: 38_400,
+				stable_id: url.pathname.match(/[0-9a-f]{40}/)[0],
+				points: 38_400,
 				waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
-				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }, beatgrid_source: 'rekordbox',
-				cues: [], phrases: [], vocals: { status: 'not_analyzed' }, local_waveform: { status: 'decoded' }
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] },
+				beatgrid_source: 'rekordbox',
+				cues: [],
+				phrases: [],
+				vocals: { status: 'not_analyzed' },
+				local_waveform: { status: 'decoded' }
 			});
 		}
 		if (url.pathname.endsWith('/hot-cues')) {
-			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
+			return json(
+				['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))
+			);
 		}
 		const track = url.pathname.match(/\/tracks\/([0-9a-f]{40})(\/stems)?$/);
-		if (track?.[2] !== undefined) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
-		if (track !== null) return json({ stable_id: track[1], title: 'Offload', artist: 'Fixture', bpm: null });
+		if (track?.[2] !== undefined)
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (track !== null)
+			return json({ stable_id: track[1], title: 'Offload', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
 }
@@ -138,7 +175,11 @@ test('a dispatcher load of an offloaded track restores it, then the deck has it'
 });
 
 test('an AutoPlay hand-off of an offloaded track restores it first too', async () => {
-	await m.ipc.dispatchPerformanceCommand({ type: 'load', deck: 2, stable_id: SID_OFF }, undefined, 'autoplay-handoff');
+	await m.ipc.dispatchPerformanceCommand(
+		{ type: 'load', deck: 2, stable_id: SID_OFF },
+		undefined,
+		'autoplay-handoff'
+	);
 	restoreBeforeAudio();
 	assert.equal(m.audio.deckStates[2].stable_id, SID_OFF);
 });
@@ -154,8 +195,16 @@ test('an agent reading the performance state mid-download sees the deck download
 	midDownload = null;
 	await m.ipc.dispatchPerformanceCommand({ type: 'load', deck: 4, stable_id: SID_OFF });
 	assert.deepEqual(midDownload[4], {
-		stable_id: SID_OFF, op_id: `op-${SID_OFF.slice(0, 4)}`, state: 'running', bytes_done: 0, bytes_total: 64
+		stable_id: SID_OFF,
+		op_id: `op-${SID_OFF.slice(0, 4)}`,
+		state: 'running',
+		bytes_done: 0,
+		bytes_total: 64
 	});
 	assert.equal(midDownload[1], null);
-	assert.equal(m.ipc.queryPerformanceState().cloud_downloads[4], null, 'cleared once the track is back');
+	assert.equal(
+		m.ipc.queryPerformanceState().cloud_downloads[4],
+		null,
+		'cleared once the track is back'
+	);
 });

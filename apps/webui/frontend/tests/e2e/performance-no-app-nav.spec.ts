@@ -74,7 +74,10 @@ test('every page the strip linked is reachable from performance without a typed 
 
 	const picker = page.locator('details.mode-picker');
 	await picker.locator('summary[aria-label="Choose app mode"]').click();
-	await picker.locator('a.mode-card[data-testid="mode-card"]').filter({ hasText: 'Library' }).click();
+	await picker
+		.locator('a.mode-card[data-testid="mode-card"]')
+		.filter({ hasText: 'Library' })
+		.click();
 	await page.waitForURL((url) => url.pathname === '/');
 
 	// LIBWS-01: / is the full-bleed Crate Desk, whose top bar's Pages menu
@@ -88,12 +91,17 @@ test('every page the strip linked is reachable from performance without a typed 
 	await expect(page).toHaveURL(/\/admin/);
 });
 
-test('developer pages stay out of the Crate Desk Pages menu while the pref is off', async ({ page }) => {
+test('developer pages stay out of the Crate Desk Pages menu while the pref is off', async ({
+	page
+}) => {
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	const picker = page.locator('details.mode-picker');
 	await picker.locator('summary[aria-label="Choose app mode"]').click();
-	await picker.locator('a.mode-card[data-testid="mode-card"]').filter({ hasText: 'Library' }).click();
+	await picker
+		.locator('a.mode-card[data-testid="mode-card"]')
+		.filter({ hasText: 'Library' })
+		.click();
 	await page.waitForURL((url) => url.pathname === '/');
 
 	const pages = page.getByTestId('library-pages-menu');

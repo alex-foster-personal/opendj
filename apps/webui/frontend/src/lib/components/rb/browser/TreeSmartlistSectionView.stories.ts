@@ -13,7 +13,12 @@ import TreeSmartlistSectionView from './TreeSmartlistSectionView.svelte';
  */
 type Smartlist = NonNullable<ComponentProps<typeof TreeSmartlistSectionView>['rows']>[number];
 
-const smartlist = (id: string, name: string, rule_summary: string, count: number | null): Smartlist => ({
+const smartlist = (
+	id: string,
+	name: string,
+	rule_summary: string,
+	count: number | null
+): Smartlist => ({
 	id,
 	name,
 	rule: { field: 'bpm', op: 'between', value: [120, 126] },

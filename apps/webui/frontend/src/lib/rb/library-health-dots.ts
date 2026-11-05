@@ -173,11 +173,16 @@ export function libraryHealthDot(
 		return unknownDot(label, 'the engine returned no availability breakdown for this library');
 	}
 	const here = availability as LibraryAvailability;
-	if (AVAILABILITY_KEYS.filter((key) => key !== 'total').reduce((sum, key) => sum + here[key], 0) !== here.total) {
+	if (
+		AVAILABILITY_KEYS.filter((key) => key !== 'total').reduce((sum, key) => sum + here[key], 0) !==
+		here.total
+	) {
 		return unknownDot(label, 'the availability buckets do not sum to the live row total');
 	}
 	const playlistPart =
-		playlistCount > 0 ? `${plural(playlistCount, 'playlist', 'playlists')} found` : 'no playlists found';
+		playlistCount > 0
+			? `${plural(playlistCount, 'playlist', 'playlists')} found`
+			: 'no playlists found';
 	const elsewhere =
 		`Not counted: ${here.off_machine} on other machines, ${here.awaiting_volume} awaiting a volume, ` +
 		`${here.streaming} streaming, ${here.pathless} without a path.`;
@@ -225,7 +230,9 @@ export const COVERAGE_RECHECK_DELAYS_MS: readonly number[] = [3000, 3000, 6000, 
  * the schedule reaches further, about two minutes, before it stops and waits
  * for the next library event.
  */
-export const RECONCILE_RECHECK_DELAYS_MS: readonly number[] = [3000, 5000, 10000, 15000, 30000, 60000];
+export const RECONCILE_RECHECK_DELAYS_MS: readonly number[] = [
+	3000, 5000, 10000, 15000, 30000, 60000
+];
 
 export function coverageRecheckDelayMs(
 	outcome: CoverageOutcome,
@@ -243,8 +250,7 @@ export const HEALTH_REFETCH_MS = 60_000;
 /** What one read told the re-ask schedule. A summary still being taken for
  * the first time (HEALTH-15) is `refreshing` with no counts painted. */
 export type CoverageOutcome =
-	| { ok: true; refreshing: boolean; refresh_error: string | null }
-	| { ok: false };
+	{ ok: true; refreshing: boolean; refresh_error: string | null } | { ok: false };
 
 export type CoverageRefresh = {
 	load: () => Promise<void>;
@@ -352,7 +358,10 @@ function _coverageVerdict(
 	if (step !== 'lyrics') {
 		const index = coverage.stems_index;
 		if (!index || !STEMS_INDEX_STATES.includes(index.state)) {
-			return unknownDot(label, 'the coverage response does not say whether the cloud stem index was read');
+			return unknownDot(
+				label,
+				'the coverage response does not say whether the cloud stem index was read'
+			);
 		}
 		const indexUnknown = index.state === 'unknown';
 		const why = index.reason ?? 'no reason given';
@@ -360,7 +369,10 @@ function _coverageVerdict(
 			const local: unknown = coverage.local?.stems;
 			const inCloud: unknown = coverage.in_cloud?.stems;
 			if (!isCount(local) || !isCount(inCloud) || local + inCloud !== done) {
-				return unknownDot(label, 'the local and in-cloud stem counts are missing or do not sum to done');
+				return unknownDot(
+					label,
+					'the local and in-cloud stem counts are missing or do not sum to done'
+				);
 			}
 			if (indexUnknown && pending > 0) {
 				// Not amber: some of these are probably safe in the cloud. Not green:
@@ -375,7 +387,10 @@ function _coverageVerdict(
 		} else {
 			const fetching: unknown = coverage.awaiting_stem_download;
 			if (!isCount(fetching) || !isCount(coverage.waiting_on_stems)) {
-				return unknownDot(label, 'the vocals stem-dependency counts are missing or not whole numbers');
+				return unknownDot(
+					label,
+					'the vocals stem-dependency counts are missing or not whole numbers'
+				);
 			}
 			const parts = [
 				fetching > 0 ? `${fetching} with stems in cloud, fetched one at a time` : '',
@@ -398,7 +413,15 @@ function _coverageVerdict(
 	// Corruption is a DISTINCT, always-surfaced state: a subset of the work
 	// still to do, never folded into a quiet amber.
 	if (corrupt > 0) {
-		return { label, state: 'error', detail: `${plural(corrupt, 'corrupt entry', 'corrupt entries')} - ${counts}` };
+		return {
+			label,
+			state: 'error',
+			detail: `${plural(corrupt, 'corrupt entry', 'corrupt entries')} - ${counts}`
+		};
 	}
-	return { label, state: pending === 0 && failed === 0 ? 'complete' : 'incomplete', detail: counts };
+	return {
+		label,
+		state: pending === 0 && failed === 0 ? 'complete' : 'incomplete',
+		detail: counts
+	};
 }

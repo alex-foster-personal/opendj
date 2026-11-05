@@ -29,6 +29,7 @@ def _clean_cloudsync_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ):
         monkeypatch.delenv(name, raising=False)
 
+
 LIVE_POLICY_ROWS = "SELECT COUNT(*) FROM sync_policies WHERE deleted_at IS NULL"
 CHANGELOG_ROWS = f"SELECT COUNT(*) FROM local_changelog WHERE table_name = '{POLICIES_TABLE}'"
 _HUB = "https://hub.example-tailnet.ts.net:8871"
@@ -45,9 +46,7 @@ def _expected_portable() -> dict[str, tuple[str, int | None]]:
     return {
         kind: (
             artifact.default_mode_by_machine_class["portable"],
-            artifact.cache_budget_mb
-            if artifact.default_mode_by_machine_class["portable"] == "cached"
-            else None,
+            artifact.cache_budget_mb if artifact.default_mode_by_machine_class["portable"] == "cached" else None,
         )
         for kind, artifact in FILE_POLICY.artifacts.items()
     }
@@ -57,8 +56,7 @@ def _live_cells(data_dir: Path) -> dict[str, tuple[str, int | None]]:
     conn = state_db.open_ro(state_db_path(data_dir))
     try:
         rows = conn.execute(
-            "SELECT asset_kind, mode, cache_budget_mb FROM sync_policies "
-            "WHERE machine_id = ? AND deleted_at IS NULL",
+            "SELECT asset_kind, mode, cache_budget_mb FROM sync_policies WHERE machine_id = ? AND deleted_at IS NULL",
             (local_id(data_dir),),
         ).fetchall()
     finally:
@@ -115,9 +113,7 @@ def test_hub_process_never_seeds(tmp_path: Path) -> None:
     data_dir = make_fleet_dir(tmp_path, with_hub=True)
     _enable_cloudsync(data_dir)
 
-    result = policy_bootstrap.ensure_enabled_spoke_policy(
-        data_dir, env={"MDT_IS_HUB": "1"}
-    )
+    result = policy_bootstrap.ensure_enabled_spoke_policy(data_dir, env={"MDT_IS_HUB": "1"})
 
     assert result.status == "skipped-hub"
     assert result.written is False
@@ -160,8 +156,7 @@ def test_author_machine_is_the_seed_target(tmp_path: Path) -> None:
         kinds = {
             row[0]
             for row in conn.execute(
-                "SELECT asset_kind FROM sync_policies "
-                "WHERE machine_id = ? AND deleted_at IS NULL",
+                "SELECT asset_kind FROM sync_policies WHERE machine_id = ? AND deleted_at IS NULL",
                 (me,),
             )
         }
@@ -177,9 +172,7 @@ def test_adopted_machine_identity_is_the_seed_target(tmp_path: Path) -> None:
     file_id = local_id(data_dir)
     conn = state_db.open_rw(state_db_path(data_dir))
     try:
-        name = conn.execute(
-            "SELECT name FROM machines WHERE machine_id = ?", (file_id,)
-        ).fetchone()[0]
+        name = conn.execute("SELECT name FROM machines WHERE machine_id = ?", (file_id,)).fetchone()[0]
         conn.execute(
             "UPDATE machines SET machine_id = ? WHERE machine_id = ?",
             ("restored-identity", file_id),
@@ -196,7 +189,6 @@ def test_adopted_machine_identity_is_the_seed_target(tmp_path: Path) -> None:
     assert result.status == "seeded", result
     rows = count(
         data_dir,
-        "SELECT COUNT(*) FROM sync_policies "
-        "WHERE machine_id = 'restored-identity' AND deleted_at IS NULL",
+        "SELECT COUNT(*) FROM sync_policies WHERE machine_id = 'restored-identity' AND deleted_at IS NULL",
     )
     assert rows == len(FILE_POLICY.artifacts)

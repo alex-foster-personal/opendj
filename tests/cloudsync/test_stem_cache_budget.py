@@ -15,6 +15,7 @@ would be asserting on whatever the machine happened to have free that day.
   least recently used, and eviction stops there.
 * [if] a bundle is loaded or playing on a deck [then] it is never evicted.
 """
+
 from __future__ import annotations
 
 import os
@@ -93,9 +94,7 @@ def test_local_only_bundle_is_never_evicted_and_is_queued_for_upload(tmp_path: P
     make_bundle(stems_dir, "local-only-oldest", atime=1_000_000)
     indexed = make_bundle(stems_dir, "indexed-newer", atime=2_000_000)
 
-    report = enforce(
-        stems_dir, data_dir, index={"indexed-newer": indexed}, disk=disk_usage(free=0)
-    )
+    report = enforce(stems_dir, data_dir, index={"indexed-newer": indexed}, disk=disk_usage(free=0))
 
     assert (stems_dir / "local-only-oldest").exists()
     assert "local-only-oldest" not in report.evicted_stable_ids
@@ -136,10 +135,7 @@ def test_rerendered_bundle_whose_bytes_differ_from_the_index_is_never_evicted(
 
     assert (stems_dir / "rerendered").exists()
     assert report.evicted_stable_ids == ()
-    assert (
-        budget.load_upload_queue(data_dir)["rerendered"]["reason"]
-        == budget.REASON_CONTENT_DIFFERS
-    )
+    assert budget.load_upload_queue(data_dir)["rerendered"]["reason"] == budget.REASON_CONTENT_DIFFERS
 
 
 @pytest.mark.requirement("STEM-40")
@@ -202,9 +198,7 @@ def test_eviction_stops_at_the_floor(tmp_path: Path):
     }
     one_bundle = bundle_bytes(stems_dir, "oldest")
 
-    report = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle)
-    )
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle))
 
     assert report.evicted_stable_ids == ("oldest",)
     assert report.bytes_freed == one_bundle
@@ -227,9 +221,7 @@ def test_short_by_one_byte_more_than_a_bundle_takes_two_and_no_more(tmp_path: Pa
     }
     one_bundle = bundle_bytes(stems_dir, "oldest")
 
-    report = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1)
-    )
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1))
 
     assert report.evicted_stable_ids == ("oldest", "middle")
     assert (stems_dir / "newest").exists()
@@ -266,9 +258,7 @@ def test_a_bundle_open_on_a_deck_is_never_evicted(tmp_path: Path):
     registry = OpenDeckRegistry()
     registry.mark_open("on-deck")
 
-    report = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=0), protected=registry.open_ids()
-    )
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0), protected=registry.open_ids())
 
     assert (stems_dir / "on-deck").exists()
     assert report.evicted_stable_ids == ("idle",)
@@ -308,9 +298,7 @@ def test_nothing_is_evicted_when_this_machine_cannot_rehydrate(tmp_path: Path):
     stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
     index = {"old": make_bundle(stems_dir, "old", atime=1_000_000)}
 
-    report = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=0), can_rehydrate=False
-    )
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0), can_rehydrate=False)
 
     assert (stems_dir / "old").exists()
     assert report.evicted_stable_ids == ()
@@ -391,13 +379,15 @@ def test_status_never_writes(tmp_path: Path):
     stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
     make_bundle(stems_dir, "local-only", atime=1_000_000)
     budget.status(
-        stems_dir, data_dir=data_dir, index={}, protected=frozenset(),
-        can_rehydrate=True, disk=disk_usage(free=0),
+        stems_dir,
+        data_dir=data_dir,
+        index={},
+        protected=frozenset(),
+        can_rehydrate=True,
+        disk=disk_usage(free=0),
     )
     assert not (data_dir / "state").exists()
     assert (stems_dir / "local-only").exists()
-
-
 
 
 @pytest.mark.requirement("STEM-41")
@@ -410,9 +400,7 @@ def test_max_evict_bytes_bounds_one_pass_and_the_next_pass_continues(tmp_path: P
     }
     one_bundle = bundle_bytes(stems_dir, "oldest")
 
-    bounded = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=0), max_evict_bytes=one_bundle
-    )
+    bounded = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0), max_evict_bytes=one_bundle)
     assert bounded.evicted_stable_ids == ("oldest",)
 
     unbounded = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0))
@@ -430,13 +418,18 @@ def test_status_says_what_reaching_the_floor_would_evict_lru_first(tmp_path: Pat
         name: make_bundle(stems_dir, name, atime=atime)
         for name, atime in (("old", 1_000), ("mid", 2_000), ("new", 3_000), ("deck", 500))
     }
-    make_bundle(stems_dir, "local-only", atime=100)        # oldest of all, but not in R2
+    make_bundle(stems_dir, "local-only", atime=100)  # oldest of all, but not in R2
     one = bundle_bytes(stems_dir, "old")
 
     def status(shortfall: int, **overrides):
         return budget.status(
-            stems_dir, data_dir=data_dir, index=index, protected=frozenset({"deck"}),
-            can_rehydrate=True, disk=disk_usage(free=FLOOR_BYTES - shortfall), **overrides,
+            stems_dir,
+            data_dir=data_dir,
+            index=index,
+            protected=frozenset({"deck"}),
+            can_rehydrate=True,
+            disk=disk_usage(free=FLOOR_BYTES - shortfall),
+            **overrides,
         )
 
     over = status(one + 1)
@@ -464,8 +457,12 @@ def test_would_evict_matches_what_enforce_then_evicts(tmp_path: Path):
     }
     disk = disk_usage(free=FLOOR_BYTES - bundle_bytes(stems_dir, "old") - 1)
     predicted = budget.status(
-        stems_dir, data_dir=data_dir, index=index, protected=frozenset(),
-        can_rehydrate=True, disk=disk,
+        stems_dir,
+        data_dir=data_dir,
+        index=index,
+        protected=frozenset(),
+        can_rehydrate=True,
+        disk=disk,
     )
 
     report = enforce(stems_dir, data_dir, index=index, disk=disk)
@@ -473,7 +470,6 @@ def test_would_evict_matches_what_enforce_then_evicts(tmp_path: Path):
     assert list(report.evicted_stable_ids) == ["old", "mid"]
     assert predicted["would_evict_count"] == len(report.evicted_stable_ids)
     assert predicted["would_evict_bytes"] == report.bytes_freed
-
 
 
 @pytest.mark.requirement("STEM-40")

@@ -23,9 +23,9 @@ from __future__ import annotations
 import bisect
 import math
 import statistics
-from itertools import pairwise
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from itertools import pairwise
 from typing import Any
 
 from apps.autodj.sections import UNKNOWN, phrase_label
@@ -101,6 +101,38 @@ class TrackProfile:
     #: Mixxx intro start), or None when the track has none. ``mix_windows``
     #: makes it THE in window when present.
     transition_in_bar: int | None = None
+    #: AUTOPLAY-HEARD: the tempo a deck plays this track at (its BPM times the deck's pitch), when it is on one; None
+    #: means its own BPM. Only the pair judgement reads it: the bar clock stays on ``bpm``.
+    heard_bpm: float | None = None
+    #: AUTOPLAY-REACH: the +-percent pitch range of the deck this track plays on (the engine's real Beat Sync bound,
+    #: ``tempoBoundsFromPitchRange``); None when no deck reports one, and the planner keeps its 6% default.
+    deck_pitch_range_pct: float | None = None
+
+    @property
+    def judged_bpm(self) -> float | None:
+        """The tempo the pair is judged at: the heard tempo when a deck reports one, else the track's own."""
+        return self.heard_bpm if self.heard_bpm is not None else self.bpm
+
+    def as_heard(
+        self, *, key_shift: int = 0, heard_bpm: float | None = None, pitch_range_pct: float | None = None
+    ) -> TrackProfile:
+        """AUTOPLAY-HEARD: this profile as a deck plays it: keys shifted by ``key_shift`` semitones, ``heard_bpm`` set,
+        and (AUTOPLAY-REACH) the deck's pitch range as its Beat Sync reach."""
+        if key_shift == 0 and heard_bpm is None and pitch_range_pct is None:
+            return self
+        from apps.shared.harmonic import shift_camelot
+
+        def shifted(key: Any) -> Any:
+            return shift_camelot(key, key_shift) if isinstance(key, str) and key else key
+
+        segments = tuple({**segment, "key": shifted(segment.get("key"))} for segment in self.key_segments)
+        return replace(
+            self,
+            key=shifted(self.key),
+            key_segments=segments,
+            heard_bpm=heard_bpm,
+            deck_pitch_range_pct=pitch_range_pct,
+        )
 
     # ----- bar arithmetic -------------------------------------------------
     @property
@@ -353,9 +385,7 @@ def _hot_cues(cues: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
     )
 
 
-def _transition_in_bar(
-    stable_id: str, cues: Sequence[Mapping[str, Any]], downbeats: tuple[float, ...]
-) -> int | None:
+def _transition_in_bar(stable_id: str, cues: Sequence[Mapping[str, Any]], downbeats: tuple[float, ...]) -> int | None:
     """The bar of the track's ``transition_in`` cue (AGENT-51), or None.
 
     The store saves the cue ON a downbeat, but the grid can move after that
@@ -554,26 +584,41 @@ TRIM_MAX_DB = 20.0 * math.log10(TRIM_MAX_GAIN)
 
 
 def match_trim_db(
-    out_profile: TrackProfile, in_profile: TrackProfile, out_trim_db: float = 0.0
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    out_trim_db: float = 0.0,
+    *,
+    out_auto_gain_db: float = 0.0,
+    in_auto_gain_db: float = 0.0,
 ) -> tuple[float | None, str]:
     """AGENT-31: the canon's match-the-outgoing trim (canon AutoDJ doc step 7): incoming gain that puts it at the
-    outgoing deck's PLAYING level, its integrated LUFS plus the outgoing trim ``out_trim_db`` (Codex #7594: else
-    consecutive transitions drift by every earlier trim). None, with the reason, when either LUFS is unknown;
-    capped at the knob's +6.02 dB, saying so."""
+    outgoing deck's PLAYING level, its integrated LUFS plus live auto-gain offsets plus the outgoing trim
+    ``out_trim_db`` (Codex #7594: else consecutive transitions drift by every earlier trim). None, with the reason,
+    when either LUFS is unknown; capped at the knob's +6.02 dB, saying so."""
     if out_profile.lufs is None or in_profile.lufs is None:
         missing = out_profile if out_profile.lufs is None else in_profile
         return None, f"no trim: {missing.stable_id} loudness unknown ({missing.lufs_reason})"
-    if not math.isfinite(out_trim_db):
+    if not _finite_number(out_trim_db):
         raise ValueError(f"outgoing trim {out_trim_db} dB is not a number")
-    reference = out_profile.lufs + out_trim_db
-    wanted = reference - in_profile.lufs
-    if out_trim_db != 0.0:
-        return _capped(
-            wanted,
-            f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS with the outgoing trim "
-            f"{out_trim_db:+.1f} dB ({reference:.1f} LUFS)",
-        )
-    return _capped(wanted, f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS")
+    if not _finite_number(out_auto_gain_db):
+        raise ValueError(f"outgoing auto gain {out_auto_gain_db} dB is not a number")
+    if not _finite_number(in_auto_gain_db):
+        raise ValueError(f"incoming auto gain {in_auto_gain_db} dB is not a number")
+    reference = out_profile.lufs + out_auto_gain_db + out_trim_db
+    wanted = reference - in_profile.lufs - in_auto_gain_db
+    if out_auto_gain_db == 0.0 and in_auto_gain_db == 0.0:
+        if out_trim_db != 0.0:
+            return _capped(
+                wanted,
+                f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS with the outgoing trim "
+                f"{out_trim_db:+.1f} dB ({reference:.1f} LUFS)",
+            )
+        return _capped(wanted, f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS")
+    return _capped(
+        wanted,
+        f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS with the outgoing trim {out_trim_db:+.1f} dB "
+        f"and auto gain {out_auto_gain_db:+.1f}/{in_auto_gain_db:+.1f} dB ({reference:.1f} LUFS)",
+    )
 
 
 def _capped(wanted: float, what: str) -> tuple[float, str]:

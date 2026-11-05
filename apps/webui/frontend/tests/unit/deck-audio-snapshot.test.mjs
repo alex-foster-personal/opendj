@@ -44,9 +44,7 @@ test('buildDeckAudioSnapshot accepts equal clocks and rejects presentation ahead
 
 	assert.throws(
 		() =>
-			buildDeckAudioSnapshot(
-				_validInput({ renderContextTimeS: 4.9, presentationContextTimeS: 5 })
-			),
+			buildDeckAudioSnapshot(_validInput({ renderContextTimeS: 4.9, presentationContextTimeS: 5 })),
 		/presentation_context_time_s.*render_context_time_s/i
 	);
 });

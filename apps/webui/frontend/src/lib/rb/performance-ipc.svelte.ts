@@ -43,7 +43,8 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
-import { COMPATIBLE_KEY_SHIFT_MAX, KEY_NUDGE_STEPS, isKeyNudgeStep, readKeyNudgeStep, writeKeyNudgeStep, type KeyNudgeStep, type KeySyncStatus } from '$lib/player/key/camelot';
+import { VERDICTS, postVerdict, type Verdict } from '$lib/rb/autoplay-why';
+import { COMPATIBLE_KEY_SHIFT_MAX, KEY_NUDGE_STEPS, isKeyNudgeStep, isKeySyncMode, readKeyNudgeStep, writeKeyNudgeStep, type KeyLadderRow, type KeyNudgeStep, type KeySyncMode, type KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
@@ -87,6 +88,7 @@ import {
 	installScopedSyncRunner,
 	drillGraphRebuild,
 	isMasterMuted,
+	keyShiftOptions,
 	keySyncPreview,
 	keySyncStatus,
 	mixerState,
@@ -108,8 +110,11 @@ import {
 	type GridEditIntent
 } from '$lib/rb/grid-edit-command';
 import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
+import { DECK_MOVE_DEFAULT_CROSSFADE_BEATS, DECK_MOVE_MAX_CROSSFADE_BEATS, moveDeck, type DeckMoveMode } from '$lib/rb/deck-move';
+import { webAudioDeckMovePort } from '$lib/rb/deck-move-port.svelte';
 import { onPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { deckFacingMessage, reportFoldedLaunch } from '$lib/rb/deck-load-context';
+import { DECK_LOAD_ERROR_TOAST_MS, reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import { allDecks, deckCommandSource, withDeckCommandSource, type CommandSource } from './deck-stop-log';
@@ -139,6 +144,7 @@ import {
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
+	setMixerStems,
 	setAutoPlayEarly,
 	setAutoPlayTwoDeck,
 	setPerfView,
@@ -207,7 +213,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
-import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
+import { deckLoadErrors } from '$lib/player/state.svelte';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import {
 	closeTrackInfo,
@@ -216,7 +222,16 @@ import {
 	type TrackInfoDeck
 } from '$lib/rb/track-info-state.svelte';
 import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler, uiPrefs } from '$lib/rb/prefs.svelte';
-import { TRACK_LOAD_RESET_IDS, readTrackLoadReset, writeTrackLoadReset, type TrackLoadResetPrefs } from '$lib/rb/track-load-reset';
+import {
+	TRACK_LOAD_RESET_IDS,
+	applyTrackLoadChannelReset,
+	readTrackLoadReset,
+	resetNowPrefs,
+	stemResetActions,
+	writeTrackLoadReset,
+	type TrackLoadResetId,
+	type TrackLoadResetPrefs
+} from '$lib/rb/track-load-reset';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
 export {
@@ -334,6 +349,10 @@ export type PerformanceCommand =
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	/** DECKUX-6794: snapped jump onto the fixed bar grid; the sign is the direction, |bars| the block (4, or 8 with Shift). */
 	| { type: 'grid_jump'; deck: DeckId; bars: number }
+	/** DECKMOVE-01: clone deck `from` (track, playhead on the audio clock, live loop, transport, key, strip, stems)
+	 * onto `to`; `move` then crossfades `crossfade_beats` (default 8, 0 cuts) and unloads `from`, `copy` leaves
+	 * it playing. A playing `to` is refused unless `force`. */
+	| { type: 'deck_move'; from: DeckId; to: DeckId; crossfade_beats?: number; mode?: DeckMoveMode; force?: boolean }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
 	| { type: 'tempo'; deck: DeckId; ratio: number }
@@ -366,8 +385,11 @@ export type PerformanceCommand =
 	| { type: 'stem_separate'; deck: DeckId; stable_id?: string }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
-	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
+	/** KEYSYNC-01: optional mode (exact, relative, compatible) and target (a deck or 'master'); omitted keeps the deck's own. */
+	| { type: 'key_sync'; deck: DeckId; enabled: boolean; mode?: KeySyncMode; target?: DeckId | 'master' }
 	| { type: 'key_nudge'; deck: DeckId; semitones: number }
+	/** KEYSYNC-01 ladder: an absolute key shift (-12..12, 0 = original key); turns key lock on, KEY SYNC off. */
+	| { type: 'key_shift'; deck: DeckId; semitones: number }
 	// GRIDEDIT-6235/-6235d: the deck's grid adjust / grid shift, one press (or a
 	// reset of one half) on the stored grid edit of the track the deck holds.
 	// Queued on the deck's persistence scope, as hot-cue writes are: a preset's
@@ -389,7 +411,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_level'; value: number }
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
-	| { type: 'browser_select_playlist'; playlist_id: string }
+	// LIBUX-8626: stable_id also selects and scrolls to that track once the list shows.
+	| { type: 'browser_select_playlist'; playlist_id: string; stable_id?: string }
 	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
 	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
 	| { type: 'headphone_outputs_refresh' }
@@ -416,6 +439,9 @@ export type PerformanceCommand =
 	| { type: 'show_pads'; enabled: boolean }
 	/** DECKGAP-7691: which mixer values reset when a track loads (one choice, every deck). */
 	| { type: 'track_load_reset'; level: boolean; stems: boolean; eq: boolean; trim: boolean; filter: boolean }
+	/** DECKGAP-7691h: the panel's Reset now. Applies the ticked resets (or `parts`) to this
+	 * deck at once, as ordinary mixer and stem commands through this dispatcher. */
+	| { type: 'reset_deck_now'; deck: DeckId; parts?: TrackLoadResetId[] }
 	/** DECKGAP-7691b: the key nudge arrows' step size, shared by every deck. */
 	| { type: 'key_nudge_step'; step: KeyNudgeStep }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
@@ -425,6 +451,8 @@ export type PerformanceCommand =
 	| { type: 'auto_play_next_cancel' }
 	/** AUTOPLAN-06: the AutoPlay menu's Decide now. */
 	| { type: 'auto_play_decide_now' }
+	// AUTOPLAY-8881b: the one-tap verdict on the transition that ran (ADR-0139). Pure logging.
+	| { type: 'autoplay_verdict'; out: string; in: string; verdict: Verdict }
 	| { type: 'auto_play_next_intent'; intent: TransitionIntent }
 	/** AUTOPLAN-01: the AutoPlay menu's early planning checkbox and target. */
 	| { type: 'auto_play_early'; enabled?: boolean; decide_after_s?: number }
@@ -433,6 +461,8 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
+	/** The mixer's S button: stem dials beside the EQ on every channel with stems. */
+	| { type: 'mixer_stems'; enabled: boolean }
 	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
 	| { type: 'deck_autocue'; enabled: boolean }
 	/** COLORFX-01..05: the channel color knob's effect (FILTER, SPACE, ECHO), the
@@ -447,7 +477,7 @@ export type PerformanceCommand =
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
-	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment?: string | null }
+	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment?: string | null; out_ms?: number | null }
 	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
 	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string }
 	/** #884: the pad-press/MIDI trigger entry point, distinct from hot_cue_save
@@ -472,6 +502,9 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
+	// LIBUX-8626: undo an applied history entry and every newer one, or redo a
+	// pending entry and every older one (the undo popover's row click).
+	| { type: 'playlist_history_jump'; command_id: string }
 	| { type: 'cmdk_open'; query?: string }
 	| { type: 'cmdk_close' }
 	| { type: 'cmdk_pick'; index: number; id?: string; deck?: DeckId; target?: DeckId; confirm?: boolean; vocals_only?: boolean }
@@ -520,6 +553,13 @@ export interface PerformanceDeckSnapshot {
 	key_sync_enabled: boolean;
 	/** Whether the KEY SYNC arm is actually following a master now (DECKUX-34). */
 	key_sync_status: KeySyncStatus;
+	/** KEYSYNC-01: exact (default), relative or compatible. */
+	key_sync_mode: KeySyncMode;
+	/** KEYSYNC-01: the deck KEY SYNC follows, or 'master'. */
+	key_sync_target: DeckId | 'master';
+	/** KEYSYNC-01 ladder per target deck ("1".."4", loaded keyed decks only):
+	 * rows +6..-6 of {shift, key, pattern, desirable} (Mixed In Key patterns). */
+	key_options: Partial<Record<`${DeckId}`, KeyLadderRow[]>>;
 	master_tempo_enabled: boolean;
 	slip_enabled: boolean;
 	slip_active: boolean;
@@ -684,6 +724,8 @@ export interface PerformanceState {
 	color_fx: Record<DeckId, ColorFxDeckView>;
 	ui: {
 		show_stems: boolean;
+		/** The mixer's S button, so a mixer_stems command can be read back. */
+		mixer_stems: boolean;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
 		auto_play_enabled: boolean;
 		/** DECKCTL-6235: the AU switch, so a deck_autocue command can be read back. */
@@ -742,7 +784,7 @@ export interface PerformanceBrowserPaneSnapshot {
  * command protocol. Registering the narrow adapter keeps both boundaries
  * explicit and makes a missing mounted browser fail loudly for an agent. */
 export interface PerformanceBrowserAdapter {
-	selectPlaylist(playlistId: string): Promise<void>;
+	selectPlaylist(playlistId: string, stableId?: string): Promise<void>;
 	readSnapshot(): PerformanceBrowserPaneSnapshot;
 }
 
@@ -776,6 +818,7 @@ export function registerAutoPlayNextController(controller: AutoPlayNextControlle
 export interface PlaylistHistoryAdapter {
 	undo(): Promise<void>;
 	redo(): Promise<void>;
+	jump(commandId: string): Promise<void>;
 }
 
 let _playlistHistoryAdapter: PlaylistHistoryAdapter | null = null;
@@ -1120,6 +1163,9 @@ export interface PerformanceHotCueDriver {
 	/** Immediate jump - the same path an unquantized click always took.
 	 * pressT0Ms is Q1's operator-felt press stamp. */
 	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
+	/** HOTCUE-LOOP-01: engage a loop hot cue's stored range exactly (no
+	 * re-snap), right after `jump` landed on its start. */
+	engageLoop(deck: DeckId, loop: { in_ms: number; out_ms: number }): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
 	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
 	 * operator-felt press stamp. A resolver `armAt` is called with the
@@ -1142,10 +1188,18 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 		};
 	},
 	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
+	engageLoop: (deck, loop) => engine.setLoop(deck, loop, false),
 	arm: (deck, positionMs, armAt, pressT0Ms) => engine.armHotCueTrigger(deck, positionMs, armAt, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
+
+/** HOTCUE-LOOP-01 (rekordbox/CDJ, mimicked): a loop hot cue's range, or null
+ * for a point cue. A loop hot cue jumps to its start on the quantize grid at
+ * once, then engages that same loop; it is never armed for a later downbeat. */
+function _loopHotCueRange(cue: HotCue): { in_ms: number; out_ms: number } | null {
+	return cue.is_loop && cue.out_ms !== null && cue.out_ms > cue.in_ms ? { in_ms: cue.in_ms, out_ms: cue.out_ms } : null;
+}
 
 /** Rust engine mode (NAE-13) drives hot cues through its own driver
  * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
@@ -1573,11 +1627,15 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type };
 	}
 	if (type === 'browser_select_playlist') {
-		_exactKeys(record, ['type', 'playlist_id']);
+		_exactKeys(record, ['type', 'playlist_id', 'stable_id']);
 		if (typeof record.playlist_id !== 'string' || record.playlist_id.trim() === '') {
 			throw new TypeError('playlist_id must be a non-empty string');
 		}
-		return { type, playlist_id: record.playlist_id };
+		if (record.stable_id === undefined) return { type, playlist_id: record.playlist_id };
+		if (typeof record.stable_id !== 'string' || record.stable_id === '') {
+			throw new TypeError('stable_id must be a non-empty string when given');
+		}
+		return { type, playlist_id: record.playlist_id, stable_id: record.stable_id };
 	}
 	if (type === 'midi_takeover_mode') {
 		_exactKeys(record, ['type', 'mode']);
@@ -1681,6 +1739,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, step: record.step };
 	}
+	if (type === 'reset_deck_now') {
+		_exactKeys(record, ['type', 'deck', 'parts']);
+		const deck = _deck(record.deck);
+		if (record.parts === undefined) return { type, deck };
+		return { type, deck, parts: _resetParts(record.parts) };
+	}
 	if (type === 'track_load_reset') {
 		_exactKeys(record, ['type', ...TRACK_LOAD_RESET_IDS]);
 		const [level, stems, eq, trim, filter] = TRACK_LOAD_RESET_IDS.map((id) => _boolean(id, record[id]));
@@ -1711,6 +1775,16 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'auto_play_decide_now') {
 		_exactKeys(record, ['type']);
 		return { type };
+	}
+	if (type === 'autoplay_verdict') {
+		_exactKeys(record, ['type', 'out', 'in', 'verdict']);
+		if (typeof record.out !== 'string' || record.out === '' || typeof record.in !== 'string' || record.in === '') {
+			throw new Error('autoplay_verdict: out and in must be stable ids');
+		}
+		if (!VERDICTS.includes(record.verdict as Verdict)) {
+			throw new Error(`autoplay_verdict: unknown verdict ${String(record.verdict)}`);
+		}
+		return { type, out: record.out, in: record.in, verdict: record.verdict as Verdict };
 	}
 	if (type === 'auto_play_next_intent') {
 		_exactKeys(record, ['type', 'intent']);
@@ -1800,6 +1874,27 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
+	if (type === 'playlist_history_jump') {
+		_exactKeys(record, ['type', 'command_id']);
+		if (typeof record.command_id !== 'string' || record.command_id === '') {
+			throw new TypeError('playlist_history_jump requires a non-empty command_id');
+		}
+		return { type, command_id: record.command_id };
+	}
+	if (type === 'deck_move') {
+		_exactKeys(record, ['type', 'from', 'to', 'crossfade_beats', 'mode', 'force']);
+		const from = _deck(record.from), to = _deck(record.to);
+		if (from === to) throw new RangeError(`deck_move from and to are both deck ${from}`);
+		if (record.mode !== undefined && record.mode !== 'move' && record.mode !== 'copy') throw new TypeError("deck_move mode must be 'move' or 'copy'");
+		const beats = record.crossfade_beats === undefined ? undefined : _finite('crossfade_beats', record.crossfade_beats);
+		if (beats !== undefined && (beats < 0 || beats > DECK_MOVE_MAX_CROSSFADE_BEATS)) throw new RangeError(`crossfade_beats must be 0..${DECK_MOVE_MAX_CROSSFADE_BEATS}; got ${beats}`);
+		return {
+			type, from, to,
+			...(beats === undefined ? {} : { crossfade_beats: beats }),
+			...(record.mode === undefined ? {} : { mode: record.mode }),
+			...(record.force === undefined ? {} : { force: _boolean('force', record.force) })
+		};
+	}
 	if (type === 'rescue_resume') {
 		_exactKeys(record, ['type', 'decks', 'master_deck']);
 		if (!Array.isArray(record.decks) || record.decks.length === 0) {
@@ -1848,7 +1943,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
 	if (type === 'color_fx') return parseColorFxCommand(record);
-	if (type === 'show_stems' || type === 'deck_autocue') {
+	if (type === 'show_stems' || type === 'mixer_stems' || type === 'deck_autocue') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
@@ -1989,8 +2084,17 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'armed']);
 		return { type, deck, armed: _boolean('armed', record.armed) };
 	} else if (type === 'key_sync') {
-		_exactKeys(record, ['type', 'deck', 'enabled']);
-		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+		_exactKeys(record, ['type', 'deck', 'enabled', 'mode', 'target']);
+		const command: Extract<PerformanceCommand, { type: 'key_sync' }> = { type, deck, enabled: _boolean('enabled', record.enabled) };
+		if (record.mode !== undefined) {
+			if (!isKeySyncMode(record.mode)) throw new RangeError(`key_sync mode must be exact, relative or compatible; got ${String(record.mode)}`);
+			command.mode = record.mode;
+		}
+		if (record.target !== undefined) {
+			if (record.target !== 'master' && ![1, 2, 3, 4].includes(record.target as number)) throw new RangeError(`key_sync target must be a deck 1..4 or master; got ${String(record.target)}`);
+			command.target = record.target as DeckId | 'master';
+		}
+		return command;
 	} else if (type === 'seek') {
 		_exactKeys(record, ['type', 'deck', 'position_ms', 'exact']);
 		const position_ms = _finite('position_ms', record.position_ms);
@@ -2108,6 +2212,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_gain') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
+	} else if (type === 'key_shift') {
+		_exactKeys(record, ['type', 'deck', 'semitones']);
+		const semitones = record.semitones;
+		if (typeof semitones !== 'number' || !Number.isInteger(semitones) || semitones < -12 || semitones > 12) {
+			throw new RangeError(`key_shift semitones must be an integer from -12 to 12; got ${String(semitones)}`);
+		}
+		return { type, deck, semitones };
 	} else if (type === 'key_nudge') {
 		_exactKeys(record, ['type', 'deck', 'semitones']);
 		const semitones = record.semitones;
@@ -2157,7 +2268,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, assign: record.assign };
 	} else if (type === 'hot_cue_save') {
-		_exactKeys(record, ['type', 'deck', 'slot', 'in_ms', 'revision', 'comment']);
+		_exactKeys(record, ['type', 'deck', 'slot', 'in_ms', 'revision', 'comment', 'out_ms']);
 		const in_ms = _finite('in_ms', record.in_ms);
 		if (!Number.isInteger(in_ms) || in_ms < 0) throw new RangeError('in_ms must be a non-negative integer');
 		const base: Extract<PerformanceCommand, { type: 'hot_cue_save' }> = {
@@ -2168,7 +2279,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			revision: _revision('revision', record.revision)
 		};
 		const comment = _optionalStringOrNull('comment', record.comment);
-		return comment === undefined ? base : { ...base, comment };
+		const withComment = comment === undefined ? base : { ...base, comment };
+		// HOTCUE-LOOP-01: out_ms makes it a loop hot cue (start and end).
+		if (record.out_ms === undefined || record.out_ms === null) return withComment;
+		const out_ms = _finite('out_ms', record.out_ms);
+		if (!Number.isInteger(out_ms) || out_ms <= in_ms) {
+			throw new RangeError(`out_ms must be an integer after in_ms ${in_ms}, got ${out_ms}`);
+		}
+		return { ...withComment, out_ms };
 	} else if (type === 'hot_cue_clear') {
 		_exactKeys(record, ['type', 'deck', 'slot', 'revision']);
 		return { type, deck, slot: _hotCueSlot(record.slot), revision: _revision('revision', record.revision) };
@@ -2453,6 +2571,13 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		beat_sync_enabled: deck.beat_sync_enabled,
 		key_sync_enabled: deck.key_sync_enabled,
 		key_sync_status: keySyncStatus(deckId),
+		key_sync_mode: deck.key_sync_mode,
+		key_sync_target: deck.key_sync_target ?? 'master',
+		key_options: Object.fromEntries(
+			DECK_IDS.filter((target) => target !== deckId)
+				.map((target) => [`${target}`, keyShiftOptions(deckId, target)] as const)
+				.filter((entry) => entry[1] !== null)
+		),
 		master_tempo_enabled: deck.master_tempo_enabled,
 		slip_enabled: deck.slip_enabled,
 		slip_active: deck.slip_active,
@@ -2649,6 +2774,7 @@ export function queryPerformanceState(): PerformanceState {
 		color_fx: colorFxView(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
+			mixer_stems: uiPrefs.mixer_stems,
 			auto_play_enabled: uiPrefs.auto_play_enabled,
 			deck_autocue: uiPrefs.deck_autocue,
 			auto_play_two_deck: uiPrefs.auto_play_two_deck,
@@ -2705,6 +2831,49 @@ function _feedbackMark(vote: 'bad' | 'good' | 'great') {
 }
 
 // ----------------------------------------------------------- command routing
+
+/** DECKGAP-7691h: `parts` is a non-empty list of distinct reset items. */
+function _resetParts(value: unknown): TrackLoadResetId[] {
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new TypeError(`reset_deck_now parts must be a non-empty array of ${TRACK_LOAD_RESET_IDS.join(', ')}`);
+	}
+	const parts: TrackLoadResetId[] = [];
+	for (const item of value) {
+		if (!(TRACK_LOAD_RESET_IDS as readonly unknown[]).includes(item)) {
+			throw new TypeError(`reset_deck_now parts: unknown item ${String(item)}; expected ${TRACK_LOAD_RESET_IDS.join(', ')}`);
+		}
+		if (parts.includes(item as TrackLoadResetId)) throw new TypeError(`reset_deck_now parts: ${String(item)} named twice`);
+		parts.push(item as TrackLoadResetId);
+	}
+	return parts;
+}
+
+/**
+ * DECKGAP-7691h: Reset now. The channel half is the on-load reset itself
+ * (`applyTrackLoadChannelReset`), its writers sent as `fader` / `trim` / `eq` /
+ * `filter` commands, as the Rust load path sends them; the stem half returns
+ * mute, solo and stem level to what a new track publishes. Each write is an
+ * ordinary command through this dispatcher, so both engines take it.
+ */
+async function _resetDeckNow(deck: DeckId, enabled: TrackLoadResetPrefs): Promise<void> {
+	const commands: PerformanceCommand[] = [];
+	applyTrackLoadChannelReset(mixerState.channels[deck], {
+		setFader: (value) => commands.push({ type: 'fader', deck, value }),
+		setTrim: (value) => commands.push({ type: 'trim', deck, value }),
+		setFilter: (value) => commands.push({ type: 'filter', deck, value }),
+		setEq: (band, value) => commands.push({ type: 'eq', deck, band, value })
+	}, enabled);
+	const stems = getDeckState(deck).stems;
+	if (stems.status === 'ready') {
+		for (const action of stemResetActions(enabled, stems.controls, stems.available_controls)) {
+			if (action.kind === 'stem_solo') commands.push({ type: 'stem_solo', deck, stem: action.stem, solo: action.solo });
+			else if (action.kind === 'stem_mute') commands.push({ type: 'stem_mute', deck, stem: action.stem, muted: action.muted });
+			else if (action.kind === 'stem_gain') commands.push({ type: 'stem_gain', deck, stem: action.stem, value: action.value });
+			else { const _exhaustive: never = action; throw new Error(`Unhandled stem reset: ${String(_exhaustive)}`); }
+		}
+	}
+	for (const next of commands) await dispatchPerformanceCommand(next);
+}
 
 function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
@@ -2784,6 +2953,8 @@ export function performanceCommandQueueScopes(
 		return ['headphone'];
 	}
 	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
+	// DECKMOVE-01: both decks and the master election (the master follows the audio).
+	if (command.type === 'deck_move') return [command.from, command.to, 'sync'];
 	const deck = _commandDeck(command);
 	// AUTOGAIN-04: an awaited server write then a trim-stage apply. It holds
 	// its deck's scope for the whole await, so a preset's all-scope barrier
@@ -2825,6 +2996,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
+		command.type === 'mixer_stems' ||
 		command.type === 'autoplay' ||
 		// TOPVIEW: the two-track AutoPlay toggle is a preference write with no deck.
 		command.type === 'auto_play_two_track' ||
@@ -2863,6 +3035,7 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'auto_play_next_arm'
 		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'auto_play_decide_now'
+		|| command.type === 'autoplay_verdict'
 		|| command.type === 'auto_play_next_intent'
 		|| command.type === 'load_play_intent'
 		|| command.type === 'playlist_undo'
@@ -2871,8 +3044,12 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'cmdk_pick'
 		|| command.type === 'cmdk_mode'
 		|| command.type === 'playlist_redo'
+		|| command.type === 'playlist_history_jump'
 		|| command.type === 'feedback_mark'
 		|| command.type === 'deck_autocue'
+		// DECKGAP-7691h: dispatches its own deck-scoped mixer and stem commands
+		// below; holding the deck scope here would queue them behind itself.
+		|| command.type === 'reset_deck_now'
 	) {
 		return null;
 	}
@@ -2899,6 +3076,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_tempo' ||
 		command.type === 'key_sync' ||
 		command.type === 'key_nudge' ||
+		command.type === 'key_shift' ||
 		// KEYSHIFT-03: a shifted load runs the same KEY nudges as key_nudge,
 		// which feed KEY SYNC followers, so it claims the shared sync scope too.
 		(command.type === 'load' && command.key_shift !== undefined && command.key_shift !== 0)
@@ -3127,6 +3305,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.engageBeatLoop(command.deck, command.beats, command.start_ms);
 	} else if (command.type === 'beat_jump') {
 		await engine.beatJump(command.deck, command.beats);
+	} else if (command.type === 'deck_move') {
+		const moved = await moveDeck(webAudioDeckMovePort(), {
+			from: command.from, to: command.to, mode: command.mode ?? 'move', force: command.force === true,
+			crossfade_beats: command.crossfade_beats ?? DECK_MOVE_DEFAULT_CROSSFADE_BEATS
+		});
+		pushToast(`Deck ${moved.from} ${moved.mode === 'move' ? 'moved' : 'copied'} to deck ${moved.to}`, 'info');
 	} else if (command.type === 'grid_jump') {
 		const plan = await engine.gridJump(command.deck, command.bars);
 		// A refusal moves nothing and says why (DECKUX-6794 AC-13), the way a
@@ -3199,9 +3383,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'slip') {
 		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {
-		await engine.setKeySync(command.deck, command.enabled);
+		await engine.setKeySync(command.deck, command.enabled, {
+			...(command.mode === undefined ? {} : { mode: command.mode }),
+			...(command.target === undefined ? {} : { target: command.target })
+		});
 	} else if (command.type === 'key_nudge') {
 		await engine.nudgeKey(command.deck, command.semitones);
+	} else if (command.type === 'key_shift') {
+		await engine.setKeyShift(command.deck, command.semitones);
 	} else if (command.type === 'grid_edit') {
 		const st = getDeckState(command.deck);
 		_assertGridEditTarget(command, st);
@@ -3237,7 +3426,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setMasterMuted(command.muted, { persist: command.persist !== false });
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
-		await _browserAdapter.selectPlaylist(command.playlist_id);
+		await _browserAdapter.selectPlaylist(command.playlist_id, command.stable_id);
 		_activeBrowserPlaylist = command.playlist_id;
 	} else if (command.type === 'preview_cue') {
 		// The UI path gets the refusal as a toast. An agent gets it as a failed
@@ -3282,6 +3471,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'mixer_stems') {
+		setMixerStems(command.enabled);
 	} else if (command.type === 'deck_autocue') {
 		await setAutoCue(command.enabled);
 	} else if (command.type === 'color_fx') {
@@ -3327,7 +3518,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
 		// Untrusted own grids (static_grid_untrusted: true) must not BeatSyncMax-snap.
+		// A loop hot cue (HOTCUE-LOOP-01) keeps its loop's own endpoints.
 		const beatSyncMaxSnap =
+			command.out_ms === undefined &&
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(getDeckState(command.deck).anlz);
 		const savedPositionMs = beatSyncMaxSnap
 			? Math.round(
@@ -3338,7 +3531,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			)
 			: command.in_ms;
 		const result = await saveHotCue(
-			stableId, command.slot, savedPositionMs, command.revision, command.comment
+			stableId, command.slot, savedPositionMs, command.revision, command.comment, command.out_ms ?? null
 		);
 		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
 		hotCueReversals[command.deck] = {
@@ -3383,7 +3576,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const plan = planHotCueTrigger(
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
 			playing,
-			loopEngaged,
+			// A loop hot cue (HOTCUE-LOOP-01) lands at once, like a press in a loop.
+			loopEngaged || _loopHotCueRange(cue) !== null,
 			positionSec,
 			beats
 		);
@@ -3391,6 +3585,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			hotCueArmed[command.deck] = null;
 			waveformSeekArmed[command.deck] = null;
 			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
+			const loopCue = _loopHotCueRange(cue);
+			if (loopCue !== null) await _hotCueDriver.engageLoop(command.deck, loopCue);
 		} else {
 			waveformSeekArmed[command.deck] = null;
 			// Mark BEFORE the row can file: the eventual schedule reads this same
@@ -3420,6 +3616,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setShowPads(command.enabled);
 	} else if (command.type === 'key_nudge_step') {
 		writeKeyNudgeStep(command.step);
+	} else if (command.type === 'reset_deck_now') {
+		await _resetDeckNow(command.deck, resetNowPrefs(command.parts));
 	} else if (command.type === 'track_load_reset') {
 		const { level, stems, eq, trim, filter } = command;
 		writeTrackLoadReset({ level, stems, eq, trim, filter });
@@ -3438,6 +3636,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
 		}
 		await _autoPlayNextController.cancel();
+	} else if (command.type === 'autoplay_verdict') {
+		await postVerdict({ out_track_id: command.out, in_track_id: command.in }, command.verdict);
 	} else if (command.type === 'auto_play_decide_now') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_decide_now: no AutoPlay Next controller is mounted on this route');
@@ -3526,6 +3726,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error('playlist_redo requires a mounted playlist history panel');
 		}
 		await _playlistHistoryAdapter.redo();
+	} else if (command.type === 'playlist_history_jump') {
+		if (_playlistHistoryAdapter === null) {
+			throw new Error('playlist_history_jump requires a mounted playlist history panel');
+		}
+		await _playlistHistoryAdapter.jump(command.command_id);
 	} else if (command.type === 'rescue_resume') {
 		const plans = command.decks.map((entry) => ({
 			deck: entry.deck,
@@ -3553,12 +3758,26 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
  * row there); `banner_only` is a load whose caller suppressed the toast. */
 const _persistedCommandErrors = new WeakMap<object, 'toasted' | 'banner_only'>();
 
+/** Refused loads that never reach `engine.load` still need mirror + banner parity. */
+export function recordDeckLoadRefusal(deck: DeckId, message: string): void {
+	deckLoadErrors[deck] = message;
+	performanceCommandStatus.deck_errors[deck] = message;
+	pushToast(message, 'error', DECK_LOAD_ERROR_TOAST_MS);
+}
+
 function _persistCommandError(
 	deck: DeckId | null, error: unknown, command?: PerformanceCommand
 ): void {
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
+	if (
+		command?.type === 'load' &&
+		deck !== null &&
+		deckLoadErrors[deck] == null
+	) {
+		deckLoadErrors[deck] = messageText;
+	}
 	const errorObject = typeof error === 'object' && error !== null ? error : null;
 	if (
 		(command !== undefined &&
@@ -4145,7 +4364,7 @@ export function silencePreviewForUserLoad(deck: DeckId): void {
  */
 function _executeAs(command: PerformanceCommand, pressT0Ms: number | undefined, source: CommandSource): Promise<void> {
 	const deck = _commandDeck(command);
-	const decks = deck !== null ? [deck] : command.type === 'rescue_stop_all' ? allDecks() : [];
+	const decks = deck !== null ? [deck] : command.type === 'rescue_stop_all' ? allDecks() : command.type === 'deck_move' ? [command.from, command.to] : [];
 	return withDeckCommandSource(decks, source, () => _execute(command, pressT0Ms));
 }
 
@@ -4448,6 +4667,9 @@ export async function runPerformanceCommandFromUi(
 	} catch (error) {
 		if (error instanceof ScopedCommandInvalidatedError) {
 			console.debug(`[performance-ipc] ${command.type} not run, no command session: ${error.message}`);
+			if (command.type === 'load') {
+				recordDeckLoadRefusal(command.deck, _errorMessage(error));
+			}
 			return { ok: false, reason: 'no_session', error };
 		}
 		const reported =

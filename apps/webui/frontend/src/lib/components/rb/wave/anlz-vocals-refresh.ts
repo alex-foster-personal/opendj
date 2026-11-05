@@ -20,7 +20,10 @@ export interface AnlzVocalsRefreshPorts {
 
 const _inflight = new Map<string, Promise<void>>();
 
-function _cachedVocalsStatus(ports: AnlzVocalsRefreshPorts, stable_id: string): Vocals['status'] | null {
+function _cachedVocalsStatus(
+	ports: AnlzVocalsRefreshPorts,
+	stable_id: string
+): Vocals['status'] | null {
 	const cached = ports.getReadyAnlz(stable_id);
 	if (cached === null) return null;
 	return vocalsOf(cached).status;
@@ -68,8 +71,7 @@ export function refreshAnlzVocalsIfNeeded(
 			return;
 		}
 
-		const merged: AnlzWithVocals =
-			base === null ? fresh : { ...base, vocals: fresh.vocals };
+		const merged: AnlzWithVocals = base === null ? fresh : { ...base, vocals: fresh.vocals };
 		await ports.refreshAnlzCacheEntry(stable_id, merged);
 		ports.notifyVocalsSink(stable_id, merged, previous);
 	})().finally(() => {

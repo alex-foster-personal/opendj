@@ -45,12 +45,14 @@ function asString(value: unknown, context: string): string {
 }
 
 function asStringOrNull(value: unknown, context: string): string | null {
-	if (value === undefined) throw new Error(`dedup: ${context} is missing (expected string or null)`);
+	if (value === undefined)
+		throw new Error(`dedup: ${context} is missing (expected string or null)`);
 	return value === null ? null : asString(value, context);
 }
 
 function asNumberOrNull(value: unknown, context: string): number | null {
-	if (value === undefined) throw new Error(`dedup: ${context} is missing (expected number or null)`);
+	if (value === undefined)
+		throw new Error(`dedup: ${context} is missing (expected number or null)`);
 	if (value === null) return null;
 	if (typeof value !== 'number') throw new Error(`dedup: ${context} is not a number`);
 	return value;
@@ -81,7 +83,8 @@ function asDecisionAction(value: unknown, context: string): DecisionAction {
 }
 
 function parseDecision(value: unknown, context: string): Decision | null {
-	if (value === undefined) throw new Error(`dedup: ${context} is missing (expected object or null)`);
+	if (value === undefined)
+		throw new Error(`dedup: ${context} is missing (expected object or null)`);
 	if (value === null) return null;
 	const object = asObject(value, context);
 	return {
@@ -124,10 +127,7 @@ function parseCluster(value: unknown, context: string) {
 	return {
 		cluster_id: clusterId,
 		cluster_key: asString(object.cluster_key, `${clusterContext}.cluster_key`),
-		survivor_stable_id: asString(
-			object.survivor_stable_id,
-			`${clusterContext}.survivor_stable_id`
-		),
+		survivor_stable_id: asString(object.survivor_stable_id, `${clusterContext}.survivor_stable_id`),
 		rationale: asStringOrNull(object.rationale, `${clusterContext}.rationale`),
 		flagged_manual_review: asBoolean(
 			object.flagged_manual_review,
@@ -240,7 +240,9 @@ function asDedupError(error: unknown, route: string): Error {
 	if (error instanceof ApiError) {
 		return new Error(`${route} failed: ${error.status} ${error.message}`);
 	}
-	return new Error(`daemon unreachable (${error instanceof Error ? error.message : String(error)})`);
+	return new Error(
+		`daemon unreachable (${error instanceof Error ? error.message : String(error)})`
+	);
 }
 
 /** Progress of the on-device library fingerprint scan (GET/POST /dedup/scan). */

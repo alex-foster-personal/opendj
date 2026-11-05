@@ -22,7 +22,9 @@ const browser = () => ({
 	enabled: true,
 	headless: true,
 	provider: playwright(chromiumPath ? { launchOptions: { executablePath: chromiumPath } } : {}),
-	instances: [{ browser: 'chromium' as const }]
+	// PW_BROWSER=webkit runs the contracts in WebKit, the engine of the packaged
+	// WKWebView shell (drag and drop differs from Chromium there).
+	instances: [{ browser: (process.env.PW_BROWSER ?? 'chromium') as 'chromium' | 'webkit' }]
 });
 
 export default defineConfig({

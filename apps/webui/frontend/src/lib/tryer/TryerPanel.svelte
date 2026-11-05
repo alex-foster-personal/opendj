@@ -32,7 +32,12 @@
 	import TryerLanes from './TryerLanes.svelte';
 	import { LANE_KNOBS } from './tryer-lanes';
 
-	let { outId, inId, n, contextBars }: { outId: string; inId: string; n: number; contextBars: number } = $props();
+	let {
+		outId,
+		inId,
+		n,
+		contextBars
+	}: { outId: string; inId: string; n: number; contextBars: number } = $props();
 
 	let job = $state<TryJob | null>(null);
 	let error = $state<string | null>(null);
@@ -47,7 +52,8 @@
 	$effect(() => {
 		Promise.all([trackLabel(outId), trackLabel(inId)]).then(
 			([out, incoming]) => (titles = { out, in: incoming }),
-			(failure: unknown) => (error = `track names: ${failure instanceof Error ? failure.message : String(failure)}`)
+			(failure: unknown) =>
+				(error = `track names: ${failure instanceof Error ? failure.message : String(failure)}`)
 		);
 	});
 
@@ -151,7 +157,13 @@
 
 	function toggleBlind(): void {
 		if (job === null) return;
-		blindOrder = blindOrder === null ? shuffledOrder(job.candidates.map((c) => c.id), Math.random) : null;
+		blindOrder =
+			blindOrder === null
+				? shuffledOrder(
+						job.candidates.map((c) => c.id),
+						Math.random
+					)
+				: null;
 	}
 
 	function cancel(): void {
@@ -203,11 +215,17 @@
 		<span class="pair" title="Outgoing ({outId}) into incoming ({inId})">
 			{titles === null ? `${outId} → ${inId}` : `${titles.out} → ${titles.in}`}
 		</span>
-		<button onclick={render} disabled={busy}>{job === null ? 'Render candidates' : 'Render again'}</button>
+		<button onclick={render} disabled={busy}
+			>{job === null ? 'Render candidates' : 'Render again'}</button
+		>
 		<button disabled title={NOT_IMPLEMENTED_TITLE}>Render more (R)</button>
 		<button disabled title={NOT_IMPLEMENTED_TITLE}>Rank up/down (J/K)</button>
 		{#if job !== null}
-			<button onclick={toggleBlind} aria-pressed={blindOrder !== null} title="Hide scores and shuffle the chips (B)">
+			<button
+				onclick={toggleBlind}
+				aria-pressed={blindOrder !== null}
+				title="Hide scores and shuffle the chips (B)"
+			>
 				Blind
 			</button>
 			<button
@@ -223,9 +241,11 @@
 	</header>
 
 	<p class="task">
-		Each card is one way to mix these two tracks, rendered from your audio. Play them (keys 1-{Math.min(n, 9)}, or
-		click a waveform to jump there), compare, then <strong>Pick</strong> the one you would play in a set. The score
-		ranks them; VETO means a hard check failed.
+		Each card is one way to mix these two tracks, rendered from your audio. Play them (keys 1-{Math.min(
+			n,
+			9
+		)}, or click a waveform to jump there), compare, then <strong>Pick</strong> the one you would play
+		in a set. The score ranks them; VETO means a hard check failed.
 	</p>
 
 	{#if busy}<p role="status">Rendering {n} candidates...</p>{/if}
@@ -234,7 +254,9 @@
 	{#if job !== null}
 		<p class="meta">
 			<span title="Scorer version that ranked these candidates">scorer {job.scorer_version}</span>
-			<span title="Bars of context scored on each side of the transition">{job.context_bars} context bars</span>
+			<span title="Bars of context scored on each side of the transition"
+				>{job.context_bars} context bars</span
+			>
 			{#if job.pick !== null}
 				<span class="picked">
 					picked {job.pick.picked_candidate_id}
@@ -249,18 +271,23 @@
 				<span
 					><i
 						class="swatch line"
-						style:border-top="2px {knob.dash.length === 0 ? 'solid' : 'dashed'} {knob.color}"
+						style:border-top="2px {knob.dash.length === 0 ? 'solid' : 'dashed'}
+						{knob.color}"
 					></i>{knob.label}</span
 				>
 			{/each}
 			<span><i class="swatch tick bar"></i>bar line</span>
 			<span><i class="swatch tick beat"></i>beat</span>
-			<span title="Line height is the knob position: top = full, bottom = off; filter is off at the middle"
+			<span
+				title="Line height is the knob position: top = full, bottom = off; filter is off at the middle"
 				>higher line = more</span
 			>
 		</div>
 		{#if shared.length > 0 && blindOrder === null}
-			<div class="shared" title="Notes every candidate carries; each card below lists only what differs, in red">
+			<div
+				class="shared"
+				title="Notes every candidate carries; each card below lists only what differs, in red"
+			>
 				<strong>Same for every candidate:</strong>
 				<ul>
 					{#each shared as note (note)}<li>{note}</li>{/each}
@@ -271,7 +298,9 @@
 			{#each chips as chip, slot (chip.id)}
 				{@const bar = scoreBarPercent(chip)}
 				{#if slot === 0 && blindOrder === null}
-					<li class="group" title="Candidates rank within groups: measured alignment first">{chip.rank_group}</li>
+					<li class="group" title="Candidates rank within groups: measured alignment first">
+						{chip.rank_group}
+					</li>
 				{:else if slot === divider}
 					<li
 						class="group divider"
@@ -287,46 +316,73 @@
 					class:picked={job.pick?.picked_candidate_id === chip.id}
 				>
 					<div class="info">
-					<button class="chip" onclick={() => play(chip)} title={slot < 6 ? `Play this candidate's render (key ${slot + 1})` : "Play this candidate's render"}>
-						<strong>{CHIP_LETTERS[slot]}</strong>
-						{#if blindOrder === null}
-							<span class="style">{chip.style}, <span title="Transition length in bars">{chip.bars}</span> bars</span>
-						{/if}
-					</button>
-					{#if blindOrder === null}
-						<div class="score">
-							{#if bar === null}
-								<span title="Fewer than 4 of 7 core factors were measured, so no score is given">unscored</span>
-							{:else}
-								<span class="bar" style:width="{bar}%"></span>
-								<span title="Composite transition score M, 0 to 1 (0 when a veto fired)">{chip.score?.toFixed(2)}</span>
+						<button
+							class="chip"
+							onclick={() => play(chip)}
+							title={slot < 6
+								? `Play this candidate's render (key ${slot + 1})`
+								: "Play this candidate's render"}
+						>
+							<strong>{CHIP_LETTERS[slot]}</strong>
+							{#if blindOrder === null}
+								<span class="style"
+									>{chip.style}, <span title="Transition length in bars">{chip.bars}</span> bars</span
+								>
 							{/if}
-							<span title="Core quality factors the scorer measured, out of all core factors">
-								{chip.measured.k} of {chip.measured.n} measured
+						</button>
+						{#if blindOrder === null}
+							<div class="score">
+								{#if bar === null}
+									<span title="Fewer than 4 of 7 core factors were measured, so no score is given"
+										>unscored</span
+									>
+								{:else}
+									<span class="bar" style:width="{bar}%"></span>
+									<span title="Composite transition score M, 0 to 1 (0 when a veto fired)"
+										>{chip.score?.toFixed(2)}</span
+									>
+								{/if}
+								<span title="Core quality factors the scorer measured, out of all core factors">
+									{chip.measured.k} of {chip.measured.n} measured
+								</span>
+							</div>
+							{#if isVetoed(chip)}<span
+									class="veto"
+									title="A hard check failed; this candidate scores 0">VETO</span
+								>{/if}
+							<ul class="flags">
+								{#each redFlags(chip) as flag (flag)}
+									{#if !shared.includes(flag)}<li
+											class="differs"
+											title="Veto: measured value and its limit"
+										>
+											{flag}
+										</li>{/if}
+								{/each}
+								{#each unmeasured(chip) as gap (gap)}
+									{#if !shared.includes(gap)}<li
+											class="differs gap"
+											title="Not measured, so not counted; only this candidate or some others"
+										>
+											{gap}
+										</li>{/if}
+								{/each}
+							</ul>
+							<span class="timing" title="Milliseconds to render, then to score, this candidate">
+								{chip.render_ms === null
+									? `not rendered: ${chip.refused}`
+									: `${chip.render_ms.toFixed(0)} ms render`}, {chip.score_ms.toFixed(0)} ms score
 							</span>
-						</div>
-						{#if isVetoed(chip)}<span class="veto" title="A hard check failed; this candidate scores 0">VETO</span>{/if}
-						<ul class="flags">
-							{#each redFlags(chip) as flag (flag)}
-								{#if !shared.includes(flag)}<li class="differs" title="Veto: measured value and its limit">{flag}</li>{/if}
-							{/each}
-							{#each unmeasured(chip) as gap (gap)}
-								{#if !shared.includes(gap)}<li class="differs gap" title="Not measured, so not counted; only this candidate or some others">{gap}</li>{/if}
-							{/each}
-						</ul>
-						<span class="timing" title="Milliseconds to render, then to score, this candidate">
-							{chip.render_ms === null ? `not rendered: ${chip.refused}` : `${chip.render_ms.toFixed(0)} ms render`}, {chip.score_ms.toFixed(
-								0
-							)} ms score
-						</span>
-					{/if}
-					<button
-						onclick={() => pick(chip.id)}
-						disabled={busy || job.pick !== null}
-						title={job.pick === null ? 'Pick this candidate (Enter)' : 'Undo the current pick first'}
-					>
-						Pick
-					</button>
+						{/if}
+						<button
+							onclick={() => pick(chip.id)}
+							disabled={busy || job.pick !== null}
+							title={job.pick === null
+								? 'Pick this candidate (Enter)'
+								: 'Undo the current pick first'}
+						>
+							Pick
+						</button>
 					</div>
 					{#if chip.render_ms !== null}
 						<TryerLanes

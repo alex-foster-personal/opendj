@@ -126,10 +126,7 @@ test('reload reset and buffer bounds are explicit and deterministic', () => {
 			48000
 		)
 	);
-	assert.throws(
-		() => adapter.assertStretchLoadIsFresh(60),
-		/one-shot/
-	);
+	assert.throws(() => adapter.assertStretchLoadIsFresh(60), /one-shot/);
 	assert.doesNotThrow(() => adapter.assertStretchLoadIsFresh(0));
 	assert.throws(
 		() =>
@@ -289,7 +286,9 @@ test('create awaits ensureStretchWorkletReady before the handshake factory call'
 	assert.ok(readyAt !== -1 && handshakeAt !== -1 && readyAt < handshakeAt);
 	assert.ok(createBody.includes("'worklet ready handshake'"));
 	assert.ok(!createBody.includes('processor creation timed out'));
-	assert.ok(!readSource('src/lib/rb/stretch-worklet-ready.ts').includes('processor creation timed out'));
+	assert.ok(
+		!readSource('src/lib/rb/stretch-worklet-ready.ts').includes('processor creation timed out')
+	);
 	assert.ok(createBody.includes("recordWorkletAck('processor creation'"));
 });
 
@@ -297,7 +296,7 @@ test('create awaits ensureStretchWorkletReady before the handshake factory call'
 function fakeAudioContext() {
 	const startedAt = performance.now();
 	return {
-		state: "running",
+		state: 'running',
 		sampleRate: 48_000,
 		destination: { inputs: new Set() },
 		get currentTime() {

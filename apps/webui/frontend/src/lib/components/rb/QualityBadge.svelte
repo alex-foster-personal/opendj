@@ -59,11 +59,10 @@
 			// q.blurb is the backend's REASON here, not a rung description.
 			return `Quality unknown -- ${q.blurb}${ext ? `, ${ext}` : ''}.`;
 		}
-		const measured =
-			q.kbps === null
-				? 'bitrate not measurable'
-				: `Effective ${q.kbps} kbps`;
-		const lossless = q.lossless ? ' Lossless container, so the rung is set by format, not bitrate.' : '';
+		const measured = q.kbps === null ? 'bitrate not measurable' : `Effective ${q.kbps} kbps`;
+		const lossless = q.lossless
+			? ' Lossless container, so the rung is set by format, not bitrate.'
+			: '';
 		return (
 			`${q.label} -- ${q.blurb}. ${measured}${ext ? `, ${ext}` : ''}.` +
 			` Rung ${q.rank === null ? 'unknown' : q.rank + 1} of ${q.of}.${lossless}`

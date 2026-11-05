@@ -220,7 +220,9 @@ test('reduced motion disables the opacity fade only - the 100ms corridor grace m
 		...text.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\t\}/g)
 	].map((match) => match[1]);
 	assert.ok(reducedMotionBodies.length > 0, 'expected a prefers-reduced-motion media query');
-	const deckButtonBodies = reducedMotionBodies.filter((candidate) => /\.deck-btns\s*\{/.test(candidate));
+	const deckButtonBodies = reducedMotionBodies.filter((candidate) =>
+		/\.deck-btns\s*\{/.test(candidate)
+	);
 	assert.equal(
 		deckButtonBodies.length,
 		1,

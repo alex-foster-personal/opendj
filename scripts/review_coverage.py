@@ -32,13 +32,15 @@ Policy change, issue #1016 (Thu 3 Sep 2026): CodeRabbit is rate-limited on
 every PR and Devin's trial expired at #530, so both are gone from
 EXPECTED_REVIEWERS -- see the same issue's `.coderabbit.yaml` for CodeRabbit's
 disable and CLAUDE.md's "BOT REVIEW THREADS" clause for the matching policy
-text. Codex (`chatgpt-codex-connector`) replaces them as the sole expected
-reviewer. Codex posts NO check-run at all -- confirmed live on #1049 and #1051
-(Thu 3 Sep 2026): `gh pr checks` lists no "Codex" row even though
-`pulls/<n>/reviews` carries a real `COMMENTED` review from
-`chatgpt-codex-connector[bot]`. So Codex has no status line to be a weaker
-instrument than; its evidence artifact IS the only instrument, not a
-cross-check on one. See CHECKLESS_REVIEWERS below.
+text. `EXPECTED_REVIEWERS` now names five ALTERNATIVES -- Codex, Sol, Grok,
+Cursor and Claude -- and any ONE real review at the current head covers the
+set (`review_sol.substitute_alternatives`); none reviewing still fails. Codex
+(`chatgpt-codex-connector`) was the first of the five to post NO check-run at
+all -- confirmed live on #1049 and #1051 (Thu 3 Sep 2026): `gh pr checks`
+lists no "Codex" row even though `pulls/<n>/reviews` carries a real
+`COMMENTED` review from `chatgpt-codex-connector[bot]`. Every expected
+reviewer is now checkless, so for all five the evidence artifact is the whole
+signal, not a cross-check on a status line. See CHECKLESS_REVIEWERS below.
 
 Requirements (mini-PRD):
   / A reviewer whose check is absent, skipped, rate limited or credit-blocked
@@ -142,8 +144,9 @@ REPO = "private_owner/music-dj-tools"
 #: produces a real review to require.
 #: Sol joined Thu 4 Sep 2026 (issue #1211): the Codex GitHub app ran out of
 #: quota at ~18:30Z and has posted a usage-limit notice instead of a review
-#: ever since. The three are ALTERNATIVES, not additional requirements -- see
-#: `review_sol.substitute_alternatives`, applied in `triage` below.
+#: ever since. The five are ALTERNATIVES, not additional requirements: any ONE
+#: review at the head covers the set -- see `review_sol.substitute_alternatives`,
+#: applied in `triage` below with EXPECTED_REVIEWERS.
 #: Claude joined Sun 6 Sep 2026, authorized by the maintainer: by then BOTH ChatGPT
 #: subscription seats Sol can reach were walled too, with a stated reset of
 #: Thu 11 Sep, so every named reviewer was down at once and no new PR head
@@ -176,8 +179,9 @@ OUTAGE_MARKERS: tuple[str, ...] = (
 #: Reviewers recognized by login PLUS an embedded marker rather than by a bot
 #: login alone, each with the matcher that owns that pair. A CLI lane posts
 #: through `gh` as the maintainer, so neither signal is sufficient by itself; the
-#: matchers live beside the markers they read (scripts/review_sol.py,
-#: scripts/review_claude.py) so a writer and its reader cannot drift apart.
+#: public matcher names stay on the lane modules (scripts/review_sol.py,
+#: scripts/review_claude.py); the shared body lives in scripts/review_identity.py
+#: so a writer and its reader cannot drift apart.
 _MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
     SOL: is_sol_artifact,
     CLAUDE: is_claude_artifact,
@@ -186,15 +190,16 @@ _MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
 
 #: Reviewers that post NO check-run at all, ever -- they review by submitting a
 #: PR review (and/or inline comments) directly, so there is no status line to
-#: require or cross-check against. Codex is the confirmed case (see the module
-#: docstring): looking it up in `_checks()` always returns None, which the
-#: check-based path below reads as "no check reported", indistinguishable from
-#: a reviewer that never ran. For a name listed here, evidence is not a
-#: cross-check on a weaker status signal, it is the ONLY signal, so
-#: `classify_reviewer` skips the check lookup entirely rather than misreading
-#: its permanent absence as a failure.
-#: Sol and Claude post no check either: each is a CLI run whose only trace on
-#: the PR is the review it submits, so evidence is their sole instrument too.
+#: require or cross-check against. Every name in EXPECTED_REVIEWERS is now
+#: checkless (Codex, Sol, Grok, Cursor, Claude): looking one up in `_checks()`
+#: always returns None, which the check-based path below reads as "no check
+#: reported", indistinguishable from a reviewer that never ran. For a name
+#: listed here, evidence is not a cross-check on a weaker status signal, it is
+#: the ONLY signal, so `classify_reviewer` skips the check lookup entirely
+#: rather than misreading its permanent absence as a failure.
+#: Sol and Claude are CLI runs, and Grok and Cursor are subscription lanes
+#: (LANES_BY_NAME in scripts/review_subscription.py), so their only trace on
+#: the PR is the review they submit and evidence is their whole signal too.
 CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE, *LANES_BY_NAME})
 
 #: Reviewers KNOWN to be unavailable, with the owner of restoring each. A gate
@@ -214,9 +219,9 @@ CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE, *LANES_BY
 #: is deleted per its own remediation. Nothing about the outage is inferred
 #: here: the trigger was an artifact on a diff, not a status line.
 #:
-#: As of issue #1016 (Thu 3 Sep 2026) this dict is structurally empty, not
-#: just currently empty: `outage` is only ever set on the check-based path in
-#: `classify_reviewer`, and the sole entry in EXPECTED_REVIEWERS (Codex) is a
+#: This dict is structurally empty, not just currently empty: `outage` is only
+#: ever set on the check-based path in `classify_reviewer`, and every entry in
+#: EXPECTED_REVIEWERS (Codex, Sol, Grok, Cursor, Claude) is a
 #: CHECKLESS_REVIEWERS entry that never takes that path. It stays wired up for
 #: whichever future reviewer posts a check again.
 KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}

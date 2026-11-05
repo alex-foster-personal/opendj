@@ -22,6 +22,7 @@
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
+	import SpeakerLinkSection from './SpeakerLinkSection.svelte';
 	import { CLOSE_PATH, PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { audioOutputStatus, djioFallbackTitle } from '$lib/rb/audio-output-status.svelte';
@@ -695,6 +696,7 @@
 					<button type="button" class="hp-retry" onclick={onacquire}>Retry device access</button>
 				{/if}
 			</section>
+			<SpeakerLinkSection />
 			{#if headphoneState.output_mode === 'two_outputs'}
 				<section class="hp-section" aria-label="Cue alignment">
 					<h3>Cue alignment</h3>

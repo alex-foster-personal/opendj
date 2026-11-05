@@ -1,4 +1,4 @@
-"""Shared CLI helpers -- state DB path + repo construction."""
+"""Shared CLI helpers -- repo construction and smartlist JSON snapshots."""
 from __future__ import annotations
 
 import json
@@ -10,17 +10,13 @@ from apps.shared.state.phase08_open import open_phase08_state_db
 from apps.smartlists.repo import SmartlistsRepo, smartlist_revision
 
 
-def open_state_db(path: Path | None = None) -> sqlite3.Connection:
-    return open_phase08_state_db(path)
-
-
 def read_rule_json(path: Path) -> dict[str, object]:
     """Load a smartlist rule AST from a JSON file (raises OSError / JSONDecodeError)."""
     return json.loads(path.read_text())
 
 
 def build_repo(path: Path | None = None) -> tuple[SmartlistsRepo, sqlite3.Connection]:
-    conn = open_state_db(path)
+    conn = open_phase08_state_db(path)
     return SmartlistsRepo(conn, ensure_schema=False), conn
 
 
@@ -45,4 +41,4 @@ def smartlist_json(row: SmartlistRow) -> dict[str, object]:
     }
 
 
-__all__ = ["build_repo", "open_state_db", "read_rule_json", "smartlist_json"]
+__all__ = ["build_repo", "read_rule_json", "smartlist_json"]

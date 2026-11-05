@@ -1,8 +1,12 @@
 """Unit tests for subprocess-isolated bounded file open (#2749).
 
 [if] a file is readable [then] the probe returns ok inside its timeout, [else stop].
-[if] an open blocks (writer-less FIFO) [then] the probe times out and reaps its worker, [else stop].
+[if] a read blocks (writer-less FIFO, silent named pipe) [then] the probe times out and reaps its worker, [else stop].
 [if] a probe just timed out [then] the next probe of a readable file is still fast, [else stop].
+
+The blocking path is a FIFO with no writer on POSIX and, on Windows (which has
+no mkfifo), a named pipe whose server never writes: the worker's open succeeds
+and its one-byte read blocks, the same shape as a stalled network mount.
 """
 
 from __future__ import annotations
@@ -11,6 +15,9 @@ import os
 import subprocess
 import sys
 import time
+import uuid
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import psutil
@@ -18,8 +25,8 @@ import pytest
 
 from apps.shared.bounded_file_open import (
     _parse_worker_stderr,
-    _process_kwargs,
-    _terminate_probe_worker,
+    _spawn_probe_worker,
+    _stop_probe_worker,
     _worker_command,
     probe_readable_byte,
 )
@@ -45,25 +52,39 @@ def _probe_workers_alive(path: Path) -> list[psutil.Process]:
     return alive
 
 
-def _spawn_blocking_worker(path: Path) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(
-        _worker_command(path),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        **(_process_kwargs()),
-    )
+@contextmanager
+def _blocking_path(tmp_path: Path, name: str) -> Iterator[Path]:
+    """A path whose one-byte read blocks until the context closes."""
+    if sys.platform != "win32":
+        fifo = tmp_path / f"{name}.fifo"
+        os.mkfifo(fifo)
+        yield fifo
+        return
+    from multiprocessing.connection import Listener
 
-
-def _cleanup_worker(proc: subprocess.Popen[bytes]) -> None:
+    sep = chr(92)  # a backslash: names live under two of them, ".", then "pipe"
+    address = f"{sep}{sep}.{sep}pipe{sep}odj-bounded-open-{name}-{uuid.uuid4().hex}"
+    listener = Listener(address=address, family="AF_PIPE")
     try:
-        _terminate_probe_worker(proc)
-        proc.wait()
+        yield Path(address)
     finally:
-        if proc.stdout is not None:
-            proc.stdout.close()
-        if proc.stderr is not None:
-            proc.stderr.close()
+        listener.close()
+
+
+@contextmanager
+def _blocking_worker(path: Path) -> Iterator[subprocess.Popen[bytes]]:
+    proc, root = _spawn_probe_worker(path)
+    try:
+        time.sleep(0.5)  # long enough to be blocked inside its read
+        yield proc
+    finally:
+        try:
+            _stop_probe_worker(proc, root)
+        finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
 
 
 def test_reads_one_byte_from_real_file(tmp_path: Path) -> None:
@@ -77,46 +98,33 @@ def test_reads_one_byte_from_real_file(tmp_path: Path) -> None:
 
 
 def test_fifo_without_writer_times_out_and_leaves_no_child(tmp_path: Path) -> None:
-    fifo = tmp_path / "blocked.fifo"
-    os.mkfifo(fifo)
-    start = time.monotonic()
-    result = probe_readable_byte(fifo, timeout_s=PROBE_TIMEOUT_S)
-    elapsed = time.monotonic() - start
-    assert result.outcome == "timeout"
-    assert elapsed < PROBE_TIMEOUT_S + PROBE_SLACK_S
-    assert not _probe_workers_alive(fifo)
+    with _blocking_path(tmp_path, "blocked") as fifo:
+        start = time.monotonic()
+        result = probe_readable_byte(fifo, timeout_s=PROBE_TIMEOUT_S)
+        elapsed = time.monotonic() - start
+        assert result.outcome == "timeout"
+        assert elapsed < PROBE_TIMEOUT_S + PROBE_SLACK_S
+        assert not _probe_workers_alive(fifo)
 
 
 def test_probe_workers_alive_ignores_worker_on_different_fifo_path(tmp_path: Path) -> None:
     """[if] a worker blocks on another fifo [then] scoped probe for this fifo is empty, [else stop]."""
-    fifo_here = tmp_path / "here.fifo"
-    fifo_other = tmp_path / "other.fifo"
-    os.mkfifo(fifo_here)
-    os.mkfifo(fifo_other)
-
-    other_worker = _spawn_blocking_worker(fifo_other)
-    try:
+    with ExitStack() as stack:
+        fifo_here = stack.enter_context(_blocking_path(tmp_path, "here"))
+        fifo_other = stack.enter_context(_blocking_path(tmp_path, "other"))
+        stack.enter_context(_blocking_worker(fifo_other))
         assert not _probe_workers_alive(fifo_here)
-    finally:
-        _cleanup_worker(other_worker)
 
 
 def test_probe_workers_alive_detects_worker_for_same_fifo_path(tmp_path: Path) -> None:
     """[if] a worker blocks on this fifo [then] scoped probe reports it alive, [else stop]."""
-    fifo = tmp_path / "blocked.fifo"
-    os.mkfifo(fifo)
-
-    worker = _spawn_blocking_worker(fifo)
-    try:
+    with _blocking_path(tmp_path, "blocked") as fifo, _blocking_worker(fifo):
         assert _probe_workers_alive(fifo)
-    finally:
-        _cleanup_worker(worker)
 
 
 def test_second_probe_after_fifo_timeout_still_fast(tmp_path: Path) -> None:
-    fifo = tmp_path / "blocked.fifo"
-    os.mkfifo(fifo)
-    first = probe_readable_byte(fifo, timeout_s=PROBE_TIMEOUT_S)
+    with _blocking_path(tmp_path, "blocked") as fifo:
+        first = probe_readable_byte(fifo, timeout_s=PROBE_TIMEOUT_S)
     assert first.outcome == "timeout"
 
     target = tmp_path / "readable.mp3"
@@ -126,6 +134,15 @@ def test_second_probe_after_fifo_timeout_still_fast(tmp_path: Path) -> None:
     elapsed = time.monotonic() - start
     assert second.outcome == "ok"
     assert elapsed < PROBE_TIMEOUT_S + 0.5
+
+
+def test_stopping_a_blocked_worker_leaves_no_process_behind(tmp_path: Path) -> None:
+    """[if] a blocked probe worker is stopped [then] its whole tree is gone, launcher and interpreter alike, [else stop]."""
+    with _blocking_path(tmp_path, "tree") as fifo:
+        with _blocking_worker(fifo) as worker:
+            tree = [worker.pid] + [c.pid for c in psutil.Process(worker.pid).children(recursive=True)]
+        assert worker.returncode is not None
+        assert [pid for pid in tree if psutil.pid_exists(pid)] == []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]

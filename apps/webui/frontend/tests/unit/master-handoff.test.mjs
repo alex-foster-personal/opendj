@@ -30,12 +30,22 @@ const STEMS_OFF = { status: 'unavailable', layout: null, controls: null };
 
 function stemControls(mutedAll) {
 	const c = {};
-	for (const id of ['vocal', 'instrumental', 'drums', 'bass', 'other']) c[id] = { muted: mutedAll, solo: false, gain: 0.5 };
+	for (const id of ['vocal', 'instrumental', 'drums', 'bass', 'other'])
+		c[id] = { muted: mutedAll, solo: false, gain: 0.5 };
 	return c;
 }
 
 function channel(over = {}) {
-	return { trim: 0.5, fader: 1, assign: 'A', eq_low: 0.5, eq_mid: 0.5, eq_high: 0.5, filter: 0.5, ...over };
+	return {
+		trim: 0.5,
+		fader: 1,
+		assign: 'A',
+		eq_low: 0.5,
+		eq_mid: 0.5,
+		eq_high: 0.5,
+		filter: 0.5,
+		...over
+	};
 }
 
 /** Deck 1 on A, deck 2 on B, crossfader centred, everything at unity. */
@@ -51,7 +61,12 @@ function state({ ch1 = {}, ch2 = {}, mixer = {}, d1 = {}, d2 = {} } = {}) {
 			crossfader: 0.5,
 			master: 1,
 			headphones: {},
-			channels: { 1: channel(ch1), 2: channel({ assign: 'B', ...ch2 }), 3: channel(), 4: channel() },
+			channels: {
+				1: channel(ch1),
+				2: channel({ assign: 'B', ...ch2 }),
+				3: channel(),
+				4: channel()
+			},
 			...mixer
 		}
 	};
@@ -87,8 +102,14 @@ describe('heard level after EQ, filter and stems', () => {
 		assert.ok(h.filterPowerShare(0.25) < 1 && h.filterPowerShare(0) < h.filterPowerShare(0.25));
 		assert.ok(h.filterPowerShare(1) < h.filterPowerShare(0.75));
 		const low = { fader: 0.06 };
-		assert.ok(db(state({ ch1: low }), 1) > h.MASTER_QUIET_DB, 'control: the fader alone is above -30 dB');
-		assert.ok(db(state({ ch1: { ...low, filter: 0 } }), 1) < h.MASTER_QUIET_DB, 'the closed filter is not counted');
+		assert.ok(
+			db(state({ ch1: low }), 1) > h.MASTER_QUIET_DB,
+			'control: the fader alone is above -30 dB'
+		);
+		assert.ok(
+			db(state({ ch1: { ...low, filter: 0 } }), 1) < h.MASTER_QUIET_DB,
+			'the closed filter is not counted'
+		);
 	});
 	it('every stem muted is silent', () => {
 		const muted = { status: 'ready', layout: 'demucs4', controls: stemControls(true) };
@@ -133,14 +154,26 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 		let st = h.LEVEL_HANDOFF_IDLE;
 		const paused = decksFrom(faded, { 1: true });
 		for (let t = 0; t <= 2000; t += 100) {
-			const step = h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks: paused, nowMs: t });
+			const step = h.stepLevelHandoff(st, {
+				master: 1,
+				locked: false,
+				masterBpm: 120,
+				decks: paused,
+				nowMs: t
+			});
 			assert.equal(step.handoffTo, null, 'a paused candidate never takes MASTER');
 			st = step.state;
 		}
 		const playing = decksFrom(faded);
 		let handed = null;
 		for (let t = 2000; t <= 4000 && handed === null; t += 100) {
-			const step = h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks: playing, nowMs: t });
+			const step = h.stepLevelHandoff(st, {
+				master: 1,
+				locked: false,
+				masterBpm: 120,
+				decks: playing,
+				nowMs: t
+			});
 			if (step.handoffTo !== null) handed = { to: step.handoffTo, at: t };
 			st = step.state;
 		}
@@ -150,8 +183,15 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 		const quiet = decksFrom(state({ ch1: { fader: 0.01 } }));
 		const loud = decksFrom(state());
 		let st = h.LEVEL_HANDOFF_IDLE;
-		const at = (decks, t) => h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks, nowMs: t });
-		for (const [decks, t] of [[quiet, 0], [quiet, 300], [loud, 400], [quiet, 500], [quiet, 900]]) {
+		const at = (decks, t) =>
+			h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks, nowMs: t });
+		for (const [decks, t] of [
+			[quiet, 0],
+			[quiet, 300],
+			[loud, 400],
+			[quiet, 500],
+			[quiet, 900]
+		]) {
 			const step = at(decks, t);
 			assert.equal(step.handoffTo, null, `t=${t}`);
 			st = step.state;
@@ -162,7 +202,11 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 		const s = state({ ch1: { fader: 0.01 }, ch2: { fader: 0.05 } });
 		assert.ok(db(s, 2) <= h.CANDIDATE_LOUD_DB);
 		assert.equal(runHold(decksFrom(s), { ms: 3000 }), null);
-		const three = [...decksFrom(state({ ch1: { fader: 0.01 } })).slice(0, 2), { id: 3, playing: true, levelDb: 0 }, { id: 4, playing: false, levelDb: 0 }];
+		const three = [
+			...decksFrom(state({ ch1: { fader: 0.01 } })).slice(0, 2),
+			{ id: 3, playing: true, levelDb: 0 },
+			{ id: 4, playing: false, levelDb: 0 }
+		];
 		assert.equal(runHold(three, { ms: 3000 }).to, 3);
 	});
 	it('a LOCKED master never moves on level', () => {
@@ -172,7 +216,8 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 	it('a decided handoff is decided again by the same hold when its scheduler turn comes', () => {
 		const quiet = decksFrom(state({ ch1: { fader: 0.01 } }));
 		const loud = decksFrom(state());
-		const step = (st, decks, nowMs) => h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks, nowMs });
+		const step = (st, decks, nowMs) =>
+			h.stepLevelHandoff(st, { master: 1, locked: false, masterBpm: 120, decks, nowMs });
 		const fired = runHold(quiet, { ms: 3000 });
 		let st = h.LEVEL_HANDOFF_IDLE;
 		for (let t = 0; t <= fired.at; t += h.HANDOFF_TICK_MS) st = step(st, quiet, t).state;
@@ -183,15 +228,23 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 		const redip = step(recovered, quiet, fired.at + 200).state;
 		assert.equal(step(redip, quiet, fired.at + 300).handoffTo, null);
 		// if another deck is louder by the time the turn comes then that deck wins
-		const three = [...quiet.slice(0, 2), { id: 3, playing: true, levelDb: 3 }, { id: 4, playing: false, levelDb: 0 }];
+		const three = [
+			...quiet.slice(0, 2),
+			{ id: 3, playing: true, levelDb: 3 },
+			{ id: 4, playing: false, levelDb: 0 }
+		];
 		assert.equal(step(st, three, fired.at + 300).handoffTo, 3);
 		// if the target stopped then nothing is handed off
-		assert.equal(step(st, decksFrom(state({ ch1: { fader: 0.01 } }), { 1: true }), fired.at + 300).handoffTo, null);
+		assert.equal(
+			step(st, decksFrom(state({ ch1: { fader: 0.01 } }), { 1: true }), fired.at + 300).handoffTo,
+			null
+		);
 	});
 
 	it('a corrupt tempo or a ready stem state with no layout throws instead of reading as plausible', () => {
 		// if a zero, negative or NaN tempo silently gets the 500 ms fallback then corrupt state times the handoff
-		for (const bad of [0, -120, NaN, Infinity]) assert.throws(() => h.handoffHoldMs(bad), /not a BPM/);
+		for (const bad of [0, -120, NaN, Infinity])
+			assert.throws(() => h.handoffHoldMs(bad), /not a BPM/);
 		assert.equal(h.handoffHoldMs(null), 500);
 		// if ready stems with no layout read as the full mix then a broken stem contract can hold MASTER
 		const noLayout = { status: 'ready', layout: null, controls: stemControls(false) };
@@ -199,16 +252,33 @@ describe('level handoff: below -30 dB for one beat while another playing deck is
 	});
 	it('a NaN or +Infinity level throws instead of reading as silence', () => {
 		// if a broken level formats as -inf then the cause hides behind a silent-looking message
-		assert.throws(() => h.masterHandoffMessage(1, 2, 'master-left', { masterDb: NaN, toDb: 0 }), /not a dB value/);
-		assert.throws(() => h.masterHandoffMessage(1, 2, 'master-left', { masterDb: -40, toDb: Infinity }), /not a dB value/);
+		assert.throws(
+			() => h.masterHandoffMessage(1, 2, 'master-left', { masterDb: NaN, toDb: 0 }),
+			/not a dB value/
+		);
+		assert.throws(
+			() => h.masterHandoffMessage(1, 2, 'master-left', { masterDb: -40, toDb: Infinity }),
+			/not a dB value/
+		);
 	});
 	it('a failed queued level handoff is surfaced as an error toast, not only logged', () => {
 		// if the failure is only logged then the stale master stays with nothing telling the DJ
 		const seen = [];
-		election.reportLevelHandoffFailure(1, new Error('boom'), (...a) => seen.push(['event', ...a]), (...a) => seen.push(['toast', ...a]));
-		assert.deepEqual(seen.map((r) => r[0]), ['event', 'toast']);
+		election.reportLevelHandoffFailure(
+			1,
+			new Error('boom'),
+			(...a) => seen.push(['event', ...a]),
+			(...a) => seen.push(['toast', ...a])
+		);
+		assert.deepEqual(
+			seen.map((r) => r[0]),
+			['event', 'toast']
+		);
 		assert.equal(seen[1][1], 'MASTER handoff from deck 1 failed: boom');
-		assert.match(readFrontendSource('src/lib/rb/audio-engine.svelte.ts'), /reportLevelHandoffFailure\(master, e, recordPerfEvent, pushToast\)/);
+		assert.match(
+			readFrontendSource('src/lib/rb/audio-engine.svelte.ts'),
+			/reportLevelHandoffFailure\(master, e, recordPerfEvent, pushToast\)/
+		);
 	});
 
 	it('the handoff message names both decks and both levels', () => {
@@ -225,7 +295,12 @@ describe('MASTER button: click picks in AUTO, the lock gesture locks', () => {
 	const locked1 = { master_deck: 1, master_mode: 'locked' };
 	it('a plain click never locks', () => {
 		for (const cur of [auto1, locked1, { master_deck: null, master_mode: 'auto' }]) {
-			for (const deck of [1, 2]) assert.deepEqual(election.masterButtonCommand(cur, deck, false), { type: 'master', deck, lock: false });
+			for (const deck of [1, 2])
+				assert.deepEqual(election.masterButtonCommand(cur, deck, false), {
+					type: 'master',
+					deck,
+					lock: false
+				});
 		}
 	});
 	it('long-press or Shift/Alt-click locks, and on the locked master unlocks', () => {
@@ -237,18 +312,31 @@ describe('MASTER button: click picks in AUTO, the lock gesture locks', () => {
 	it('a repeated plain click on the paused master keeps it in AUTO in both engines', () => {
 		// if the same-master shortcut re-elects then MASTER goes to null while nothing plays
 		const manual = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
-		assert.match(manual, /if \(options\?\.lock === false && _masterDeck === deck\) \{\s*\/\/[^\n]*\n\s*_masterMode = 'auto';\s*return;/);
+		assert.match(
+			manual,
+			/if \(options\?\.lock === false && _masterDeck === deck\) \{\s*\/\/[^\n]*\n\s*_masterMode = 'auto';\s*return;/
+		);
 		const rust = readFrontendSource('src/lib/audio-engine/rust-transport.ts');
-		assert.match(rust, /if \(lock === false && rustMaster\.deck === deck\) \{\s*rustMaster\.mode = 'auto';\s*return;/);
+		assert.match(
+			rust,
+			/if \(lock === false && rustMaster\.deck === deck\) \{\s*rustMaster\.mode = 'auto';\s*return;/
+		);
 	});
 	it('the header wires click, Shift/Alt and a long-press to it, and Deck sends its command', () => {
 		const header = readFrontendSource('src/lib/components/rb/deck/DeckHeader.svelte');
 		assert.match(header, /await onMaster\(event\.shiftKey \|\| event\.altKey\)/);
-		assert.match(header, /setTimeout\(\(\) => \{[\s\S]*?void onMaster\(true\);[\s\S]*?\}, MASTER_LOCK_LONG_PRESS_MS\)/);
+		assert.match(
+			header,
+			/setTimeout\(\(\) => \{[\s\S]*?void onMaster\(true\);[\s\S]*?\}, MASTER_LOCK_LONG_PRESS_MS\)/
+		);
 		// if a cancelled gesture or a secondary button can arm the hold then the lock flips unasked
 		assert.match(header, /onpointercancel=\{cancelMasterHold\}/);
 		assert.match(header, /if \(!event\.isPrimary \|\| event\.button !== 0\) return;/);
-		assert.match(header, /class:locked=\{deck\.is_master && masterMode === 'locked'\}/, 'the LOCK badge is gone');
+		assert.match(
+			header,
+			/class:locked=\{deck\.is_master && masterMode === 'locked'\}/,
+			'the LOCK badge is gone'
+		);
 		const deck = readFrontendSource('src/lib/components/rb/Deck.svelte');
 		assert.match(deck, /masterButtonCommand\(queryPerformanceState\(\), deckId, lockGesture\)/);
 	});
@@ -267,18 +355,34 @@ describe('the engine: stop, end and unload always hand off; every change re-chec
 		assert.match(stopped, /if \(_masterMode === 'locked'\) _masterMode = 'auto';/);
 		assert.match(stopped, /_electPlayingMaster\(\{ force: true, reason \}\)/);
 		const transition = body(src, 'function _handleAudibleTransition(');
-		assert.match(transition, /if \(_masterDeck === deck && !st\.playing\) \{\s*_handOffStoppedMaster\('master-left'\);/);
-		assert.doesNotMatch(transition.split('_handOffStoppedMaster')[0], /_masterMode !== 'auto'\) return/, 'a lock still blocks the stop handoff');
-		assert.match(src, /if \(_masterDeck === deck && !st\.playing\) _handOffStoppedMaster\('natural-end'\);/);
+		assert.match(
+			transition,
+			/if \(_masterDeck === deck && !st\.playing\) \{\s*_handOffStoppedMaster\('master-left'\);/
+		);
+		assert.doesNotMatch(
+			transition.split('_handOffStoppedMaster')[0],
+			/_masterMode !== 'auto'\) return/,
+			'a lock still blocks the stop handoff'
+		);
+		assert.match(
+			src,
+			/if \(_masterDeck === deck && !st\.playing\) _handOffStoppedMaster\('natural-end'\);/
+		);
 	});
 	it('re-checks on play/pause, EQ, filter, stems, the mixer and a 100 ms tick', () => {
 		const src = engine();
 		assert.match(body(src, 'function _handleAudibleTransition('), /_maybeHandoffOnAir\(\);/);
-		assert.match(src, /logEqApply\(deck, pressT0Ms, now, PARAM_SMOOTH_S\); _maybeHandoffOnAir\(\);/);
+		assert.match(
+			src,
+			/logEqApply\(deck, pressT0Ms, now, PARAM_SMOOTH_S\); _maybeHandoffOnAir\(\);/
+		);
 		assert.match(src, /logMixerApply\(FILTER_APPLY_KIND[^\n]*\n\t\t_maybeHandoffOnAir\(\);/);
 		assert.match(src, /'muted', muted, [^\n]*\); _maybeHandoffOnAir\(\);/);
 		assert.match(src, /'solo', solo, [^\n]*\); _maybeHandoffOnAir\(\);/);
-		assert.match(src, /nowMs - _lastHandoffCheckMs >= HANDOFF_TICK_MS\) _maybeHandoffOnAir\(nowMs\)/);
+		assert.match(
+			src,
+			/nowMs - _lastHandoffCheckMs >= HANDOFF_TICK_MS\) _maybeHandoffOnAir\(nowMs\)/
+		);
 	});
 	it('the level election runs under the scheduler claim and re-validates there, never from the frame loop directly', () => {
 		const onAir = body(engine(), 'function _maybeHandoffOnAir(');
@@ -286,14 +390,23 @@ describe('the engine: stop, end and unload always hand off; every change re-chec
 		assert.match(onAir, /_masterDeck !== master \|\| _masterMode === 'locked'\) return;/);
 		assert.match(onAir, /const due = _stepLevelHandoff\(performance\.now\(\)\);/);
 		assert.equal((onAir.match(/_electPlayingMaster\(/g) ?? []).length, 1);
-		assert.ok(onAir.indexOf('_electPlayingMaster(') > onAir.indexOf('runAutomaticMasterElection('), 'master changes outside the claim');
+		assert.ok(
+			onAir.indexOf('_electPlayingMaster(') > onAir.indexOf('runAutomaticMasterElection('),
+			'master changes outside the claim'
+		);
 	});
 
 	it('a manual MASTER command, even on the current master, restarts the hold and voids a queued handoff', () => {
 		// if a click on the AUTO master keeps the old quiet clock then a queued handoff undoes the pick
 		const src = engine();
-		assert.match(body(src, 'async setDeckMaster('), /_levelHandoff = LEVEL_HANDOFF_IDLE;\s*_levelHandoffGeneration \+= 1;/);
-		assert.match(body(src, 'function _maybeHandoffOnAir('), /if \(generation !== _levelHandoffGeneration \|\| _masterDeck !== master/);
+		assert.match(
+			body(src, 'async setDeckMaster('),
+			/_levelHandoff = LEVEL_HANDOFF_IDLE;\s*_levelHandoffGeneration \+= 1;/
+		);
+		assert.match(
+			body(src, 'function _maybeHandoffOnAir('),
+			/if \(generation !== _levelHandoffGeneration \|\| _masterDeck !== master/
+		);
 	});
 	it('every master change resets the level hold, and the extroute set is passed in, not defaulted', () => {
 		// if a switch away and back keeps the old quiet clock then the deck hands off without a beat as master
@@ -304,6 +417,9 @@ describe('the engine: stop, end and unload always hand off; every change re-chec
 		assert.match(election, /masterMuted: boolean,\s*routed: ReadonlySet<DeckId>/);
 	});
 	it('every master change is logged as a performance event', () => {
-		assert.match(body(engine(), 'function _assignMaster('), /recordPerfEvent\('master-handoff', masterHandoffMessage\(/);
+		assert.match(
+			body(engine(), 'function _assignMaster('),
+			/recordPerfEvent\('master-handoff', masterHandoffMessage\(/
+		);
 	});
 });

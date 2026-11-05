@@ -10,10 +10,22 @@ export const AUTO_GAIN_ENABLED_SETTING: SettingDef = {
 	id: 'auto_gain.enabled',
 	label: 'Auto gain',
 	group: 'performance',
-	keywords: ['auto gain', 'autogain', 'gain', 'trim', 'loudness', 'lufs', 'normalise', 'normalize', 'level', 'volume', 'replaygain'],
+	keywords: [
+		'auto gain',
+		'autogain',
+		'gain',
+		'trim',
+		'loudness',
+		'lufs',
+		'normalise',
+		'normalize',
+		'level',
+		'volume',
+		'replaygain'
+	],
 	title: 'Match every track to one loudness when it loads on a deck',
 	detail:
-		'Like rekordbox Auto Gain: at load each deck applies the target minus the track\'s measured integrated loudness (LUFS) at the trim stage, under the TRIM knob, which still works on top. A boost stops where the track\'s true peak would pass -1 dBTP. A track with no loudness analysis plays at 0 dB and its mixer readout says AG N/A. Click the AG readout under TRIM to set your own value for a track. Stored in ui-prefs.',
+		"Like rekordbox Auto Gain: at load each deck applies the target minus the track's measured integrated loudness (LUFS) at the trim stage, under the TRIM knob, which still works on top. A boost stops where the track's true peak would pass -1 dBTP. A track with no loudness analysis plays at 0 dB and its mixer readout says AG N/A. Click the AG readout under TRIM to set your own value for a track. Stored in ui-prefs.",
 	implemented: true,
 	control: { kind: 'boolean' }
 };

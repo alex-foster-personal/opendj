@@ -21,7 +21,7 @@ How the library gets here, and why (Codex 4129637635):
 - No rekordbox database at all: the rows under test are the ones that HAVE no
   rekordbox mapping, so there is nothing to map them to.
 - The present-audio rows point at the committed real mp3 that
-  tests/test_rb_assets.py also uses, checksum-verified before the copy, not
+  (private path) also uses, checksum-verified before the copy, not
   fabricated bytes.
 - The state rows are written through the production ``StateWriter`` API, the
   same calls an import writes. There is no locked real snapshot holding
@@ -30,6 +30,7 @@ How the library gets here, and why (Codex 4129637635):
   streaming fixture in tests/fixtures (conformance/09-streaming-only) calls its
   URI synthetic. When one exists, it replaces _hydrate_state.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -120,9 +121,7 @@ def _hydrate_state(data_dir: Path) -> None:
                 duration_ms=180_000,
                 file_path=file_path,
             )
-        writer.upsert_track_location(
-            stable_id=UNMAPPED_URI_PRESENT, kind="local", file_path=str(audio)
-        )
+        writer.upsert_track_location(stable_id=UNMAPPED_URI_PRESENT, kind="local", file_path=str(audio))
         writer.insert_playlist(
             playlist_id=PLAYLIST_ID,
             name="Unmapped streaming",
@@ -196,9 +195,7 @@ def test_local_row_carries_no_provider(engine_listings: dict[str, dict], listing
     assert row["streaming_provider"] is None
 
 
-def test_present_audio_behind_a_streaming_uri_names_no_provider(
-    engine_listings: dict[str, dict], listing: str
-) -> None:
+def test_present_audio_behind_a_streaming_uri_names_no_provider(engine_listings: dict[str, dict], listing: str) -> None:
     """control: the provider follows is_streaming, not the bare URI prefix"""
     row = _rows(engine_listings, listing)[UNMAPPED_URI_PRESENT]
     assert row["has_rb_mapping"] is False
@@ -220,8 +217,6 @@ def test_present_audio_behind_a_streaming_uri_names_no_provider(
         (None, None),
     ],
 )
-def test_streaming_provider_parses_the_shared_prefix_set(
-    path: str | None, provider: str | None
-) -> None:
+def test_streaming_provider_parses_the_shared_prefix_set(path: str | None, provider: str | None) -> None:
     """if a non-streaming path names a provider, or a streaming URI names none, then broken"""
     assert platform_paths.streaming_provider(path) == provider

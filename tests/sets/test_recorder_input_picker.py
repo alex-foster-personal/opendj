@@ -2,6 +2,7 @@
 
 [if] REC lists or starts an input [then] it is by name or explicitly none, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -75,6 +76,7 @@ def test_list_input_devices_names_the_platform_off_macos():
 
 def test_list_input_devices_reports_a_hung_ffmpeg():
     """[if] the listing times out [then] CaptureUnavailable says so."""
+
     def run(argv, **kwargs):
         raise subprocess.TimeoutExpired(cmd=argv, timeout=kwargs["timeout"])
 
@@ -132,16 +134,12 @@ class _RunningPopen:
 def test_startup_check_refuses_a_capture_that_already_exited(tmp_path: Path):
     """[if] ffmpeg exits inside the startup window [then] REC fails with its stderr."""
     with pytest.raises(capture.CaptureUnavailable, match="device not found"):
-        capture.start_capture(
-            tmp_path, 4, popen=cast(Any, _ExitedPopen), ffmpeg="ffmpeg", startup_check_s=0.1
-        )
+        capture.start_capture(tmp_path, 4, popen=cast(Any, _ExitedPopen), ffmpeg="ffmpeg", startup_check_s=0.1)
 
 
 def test_startup_check_passes_a_capture_that_is_still_running(tmp_path: Path):
     """[if] ffmpeg is alive after the window [then] the handle is returned."""
-    handle = capture.start_capture(
-        tmp_path, 4, popen=cast(Any, _RunningPopen), ffmpeg="ffmpeg", startup_check_s=0.1
-    )
+    handle = capture.start_capture(tmp_path, 4, popen=cast(Any, _RunningPopen), ffmpeg="ffmpeg", startup_check_s=0.1)
     assert handle.argv[handle.argv.index("-i") + 1] == ":4"
     handle.log_fh.close()
 
@@ -187,6 +185,7 @@ def test_devices_route_lists_inputs_and_the_preselected_one(picker_client):
 
 def test_devices_route_is_503_with_the_reason_when_it_cannot_list(tmp_path: Path):
     """[if] inputs cannot be listed [then] 503 carries why, never an empty list."""
+
     def broken() -> list[capture.InputDevice]:
         raise capture.CaptureUnavailable("ffmpeg is needed to record set audio")
 
@@ -257,9 +256,7 @@ def test_the_started_input_is_remembered_by_the_daemon_across_restarts(picker_cl
     assert client.get("/api/sets/recorder/remembered-input").json() == {
         "remembered": {"kind": "device", "name": "BlackHole 2ch"}
     }
-    restarted = RecorderService(
-        sets_root=service.sets_root, db_path=service.db_path, capture_enabled=False
-    )
+    restarted = RecorderService(sets_root=service.sets_root, db_path=service.db_path, capture_enabled=False)
     assert restarted.remembered_input() == {"kind": "device", "name": "BlackHole 2ch"}
 
     second = "2026-10-02T22-10-00"
@@ -268,9 +265,7 @@ def test_the_started_input_is_remembered_by_the_daemon_across_restarts(picker_cl
         json={"session_id": second, "source": "none", "sources": []},
     )
     client.post(f"/api/sets/recorder/{second}/stop")
-    assert client.get("/api/sets/recorder/remembered-input").json() == {
-        "remembered": {"kind": "none", "name": None}
-    }
+    assert client.get("/api/sets/recorder/remembered-input").json() == {"remembered": {"kind": "none", "name": None}}
 
 
 def test_a_refused_start_leaves_the_remembered_input_alone(picker_client):
@@ -345,7 +340,9 @@ def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
     twins = [capture.InputDevice(0, "USB Audio", False), capture.InputDevice(1, "USB Audio", False)]
     app = FastAPI()
     app.state.sets_recorder_service = RecorderService(
-        sets_root=tmp_path, db_path=tmp_path / "sets.db", capture_enabled=False,
+        sets_root=tmp_path,
+        db_path=tmp_path / "sets.db",
+        capture_enabled=False,
         list_devices=lambda: twins,
     )
     app.include_router(router)

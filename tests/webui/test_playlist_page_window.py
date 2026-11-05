@@ -91,8 +91,22 @@ def _mixed_rows() -> list[tuple]:
     Inserted shuffled so rowid order says nothing about the sort order.
     """
     keys: list[str | None] = [
-        None, None, "", "00000003", "00000003", "000000031", "00000010", "0000001",
-        "V", "VV", "a", "Z", "0", None, "00000002", "zzzzzzzzzzzzzzzzzzzzzzzz",
+        None,
+        None,
+        "",
+        "00000003",
+        "00000003",
+        "000000031",
+        "00000010",
+        "0000001",
+        "V",
+        "VV",
+        "a",
+        "Z",
+        "0",
+        None,
+        "00000002",
+        "zzzzzzzzzzzzzzzzzzzzzzzz",
     ]
     rows = []
     for position in range(120):
@@ -143,8 +157,7 @@ def test_null_order_key_sorts_by_padded_position(mixed_db: Path) -> None:
     """The oracle itself is today's rule, so a change to both sides cannot hide."""
     conn = sqlite3.connect(str(mixed_db))
     rows = conn.execute(
-        "SELECT item_id, order_key, position FROM playlist_memberships "
-        "WHERE playlist_id = ? AND deleted_at IS NULL",
+        "SELECT item_id, order_key, position FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL",
         (MIXED,),
     ).fetchall()
     conn.close()
@@ -169,8 +182,11 @@ def client(mixed_db: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     oracle = SqliteBackend(mixed_db).get_playlist(MIXED)
     monkeypatch.setattr(SqliteBackend, "get_playlist", _full_read_forbidden)
     app = create_app(
-        backend=SqliteBackend(mixed_db), bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(mixed_db),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     app.state.page_oracle = oracle
     with TestClient(app) as c:

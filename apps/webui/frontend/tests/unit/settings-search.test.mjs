@@ -18,7 +18,16 @@ test('filterSettings matches keywords and synonyms', async () => {
 test('settingRowVisible hideTodo drops an unimplemented row and keeps a built one', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
 	// In-test fixture: the shipped catalog has no todo row (SETSTUB-01).
-	const row = { id: 'fixture.todo', label: 'x', group: 'advanced', keywords: [], title: 'x', detail: 'x', implemented: false, control: { kind: 'boolean' } };
+	const row = {
+		id: 'fixture.todo',
+		label: 'x',
+		group: 'advanced',
+		keywords: [],
+		title: 'x',
+		detail: 'x',
+		implemented: false,
+		control: { kind: 'boolean' }
+	};
 	assert.equal(mod.settingRowVisible(row, { hideTodo: true }), false);
 	assert.equal(mod.settingRowVisible(row, { hideTodo: false }), true);
 	assert.equal(mod.settingRowVisible({ ...row, implemented: true }, { hideTodo: true }), true);
@@ -29,7 +38,10 @@ test('SETSTUB-01 hideTodo changes nothing on the shipped catalog, which has no t
 	const all = mod.filterSettings('', { hideTodo: false, group: null });
 	const slim = mod.filterSettings('', { hideTodo: true, group: null });
 	assert.ok(all.all.length > 30, `control: catalog rows listed (${all.all.length})`);
-	assert.deepEqual(slim.all.map((s) => s.id), all.all.map((s) => s.id));
+	assert.deepEqual(
+		slim.all.map((s) => s.id),
+		all.all.map((s) => s.id)
+	);
 	assert.ok(all.all.every((s) => s.implemented));
 });
 
@@ -48,11 +60,7 @@ test('filterSettings appends AI ids without duplicates', async () => {
 	});
 	assert.ok(r.keyword.some((s) => s.id === 'theme'));
 	assert.ok(r.aiExtra.some((s) => s.id === 'beat_sync_max'));
-	assert.equal(
-		r.all.filter((s) => s.id === 'theme').length,
-		1,
-		'theme must not duplicate'
-	);
+	assert.equal(r.all.filter((s) => s.id === 'theme').length, 1, 'theme must not duplicate');
 });
 
 test('filterSettings finds DECKUX-02 jog radial waveform setting', async () => {

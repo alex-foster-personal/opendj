@@ -40,20 +40,34 @@ export interface OffloadOperation {
 const asOperation = (body: unknown): OffloadOperation => body as OffloadOperation;
 
 export async function offloadTracks(stableIds: string[]): Promise<OffloadOperation> {
-	return asOperation(await unwrap(api.POST('/api/v1/offload/tracks', { body: { stable_ids: stableIds } })));
+	return asOperation(
+		await unwrap(api.POST('/api/v1/offload/tracks', { body: { stable_ids: stableIds } }))
+	);
 }
 
 export async function offloadPlaylist(playlistId: string): Promise<OffloadOperation> {
 	return asOperation(
-		await unwrap(api.POST('/api/v1/offload/playlists/{playlist_id}', { params: { path: { playlist_id: playlistId } } }))
+		await unwrap(
+			api.POST('/api/v1/offload/playlists/{playlist_id}', {
+				params: { path: { playlist_id: playlistId } }
+			})
+		)
 	);
 }
 
-export async function restoreTracks(stableIds: string[], mode: RestoreMode): Promise<OffloadOperation> {
-	return asOperation(await unwrap(api.POST('/api/v1/offload/restore', { body: { stable_ids: stableIds, mode } })));
+export async function restoreTracks(
+	stableIds: string[],
+	mode: RestoreMode
+): Promise<OffloadOperation> {
+	return asOperation(
+		await unwrap(api.POST('/api/v1/offload/restore', { body: { stable_ids: stableIds, mode } }))
+	);
 }
 
-export async function restorePlaylist(playlistId: string, mode: RestoreMode): Promise<OffloadOperation> {
+export async function restorePlaylist(
+	playlistId: string,
+	mode: RestoreMode
+): Promise<OffloadOperation> {
 	return asOperation(
 		await unwrap(
 			api.POST('/api/v1/offload/playlists/{playlist_id}/restore', {
@@ -75,12 +89,18 @@ export async function getTrackOffloadStates(
 }
 
 export async function getOperation(opId: string): Promise<OffloadOperation> {
-	return asOperation(await unwrap(api.GET('/api/v1/offload/operations/{op_id}', { params: { path: { op_id: opId } } })));
+	return asOperation(
+		await unwrap(
+			api.GET('/api/v1/offload/operations/{op_id}', { params: { path: { op_id: opId } } })
+		)
+	);
 }
 
 export async function cancelOperation(opId: string): Promise<OffloadOperation> {
 	return asOperation(
-		await unwrap(api.POST('/api/v1/offload/operations/{op_id}/cancel', { params: { path: { op_id: opId } } }))
+		await unwrap(
+			api.POST('/api/v1/offload/operations/{op_id}/cancel', { params: { path: { op_id: opId } } })
+		)
 	);
 }
 
@@ -103,8 +123,16 @@ function size(bytes: number): string {
 
 /** "Offloading 3 of 12 tracks, 1.20 of 4.80 GB" (the Spotify playlist-download header line). */
 export function operationLabel(op: OffloadOperation): string {
-	const verb = op.kind === 'offload' ? 'Offloading' : op.kind === 'restore' ? 'Downloading' : 'Sweeping';
-	const done = op.state === 'done' ? 'Done' : op.state === 'cancelled' ? 'Cancelled' : op.state === 'failed' ? 'Failed' : verb;
+	const verb =
+		op.kind === 'offload' ? 'Offloading' : op.kind === 'restore' ? 'Downloading' : 'Sweeping';
+	const done =
+		op.state === 'done'
+			? 'Done'
+			: op.state === 'cancelled'
+				? 'Cancelled'
+				: op.state === 'failed'
+					? 'Failed'
+					: verb;
 	return `${done}: ${op.tracks_done} of ${op.tracks_total} tracks, ${size(op.bytes_done)} of ${size(op.bytes_total)}`;
 }
 

@@ -45,7 +45,7 @@
 		class:ok={chipState() === 'ok'}
 		class:inconclusive={chipState() === 'inconclusive'}
 		class:stalled={chipState() === 'off' && icon === 'cloud-alert'}
-		title={title}
+		{title}
 		aria-label={ariaLabel}
 		aria-haspopup="dialog"
 		aria-expanded={popoverOpen}

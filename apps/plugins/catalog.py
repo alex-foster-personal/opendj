@@ -66,9 +66,7 @@ from apps.plugins.regular import open_regular_file
 from apps.plugins.signing import NO_TRUSTED_KEY_MESSAGE, TRUSTED_STORE_KEYS, SignatureError, verify
 from apps.plugins.state import write_atomic
 
-CATALOG_BASE_URL: str = (
-    "https://raw.githubusercontent.com/private_owner/opendj-store/main/index"
-)
+CATALOG_BASE_URL: str = "https://raw.githubusercontent.com/private_owner/opendj-store/main/index"
 CATALOG_URL_ENV: str = "MDT_PLUGIN_CATALOG_URL"
 INDEX_SCHEMA: int = 1
 FETCH_TIMEOUT_S: float = 10.0
@@ -221,9 +219,7 @@ def _index_body(payload: bytes, channel: str) -> dict[str, Any]:
     if not isinstance(raw, dict) or raw.get("schema") != INDEX_SCHEMA:
         raise CatalogError("bad-index", f"index schema must be {INDEX_SCHEMA}")
     if raw.get("channel") != channel:
-        raise CatalogError(
-            "bad-index", f"index says channel {raw.get('channel')!r}, fetched as {channel!r}"
-        )
+        raise CatalogError("bad-index", f"index says channel {raw.get('channel')!r}, fetched as {channel!r}")
     _known_keys(raw, _INDEX_KEYS, "the index")
     return raw
 
@@ -305,7 +301,9 @@ def http_fetch(url: str, *, max_bytes: int = MAX_INDEX_BYTES) -> bytes:
             if encoding not in {"", "identity"}:
                 # A tiny compressed body can inflate past any cap before a decoded chunk is
                 # seen, so an encoded body is refused and only raw bytes are ever read.
-                raise CatalogFetchError("encoded-body", f"{url} sent a {encoding}-encoded body; only plain bodies are read")
+                raise CatalogFetchError(
+                    "encoded-body", f"{url} sent a {encoding}-encoded body; only plain bodies are read"
+                )
             return read_bounded(response.iter_raw(), url, max_bytes)
     except httpx.HTTPError as exc:
         raise CatalogFetchError("unreachable", f"{url}: {exc}") from exc
@@ -394,7 +392,9 @@ class CatalogCache:
         except (FileNotFoundError, NotADirectoryError):  # no record, or no catalog folder to hold one
             return None
         except (OSError, ValueError, KeyError, TypeError) as exc:
-            raise CatalogError("bad-cache", f"{path} is unreadable ({exc}); delete it to reset the replay floor") from exc
+            raise CatalogError(
+                "bad-cache", f"{path} is unreadable ({exc}); delete it to reset the replay floor"
+            ) from exc
         if stamp.tzinfo is None or not is_sha256(digest):
             raise CatalogError("bad-cache", f"{path} is malformed; delete it to reset the replay floor")
         return stamp, digest
@@ -486,9 +486,7 @@ def _cached_floor(channel: str, cache: CatalogCache, trusted: Mapping[str, str] 
     return previous.generated, hashlib.sha256(cached[0]).hexdigest()
 
 
-def _older_than(
-    channel: str, fetched: Catalog, digest: str, floor: tuple[datetime, str] | None
-) -> CatalogError | None:
+def _older_than(channel: str, fetched: Catalog, digest: str, floor: tuple[datetime, str] | None) -> CatalogError | None:
     if floor is None or fetched.generated > floor[0]:
         return None
     if fetched.generated == floor[0]:
@@ -603,8 +601,9 @@ def read_channel(
     stale = _behind_record(channel, cache, catalog, payload)
     if stale is not None:
         return CatalogRead(channel, url, None, stale)
-    return CatalogRead(channel, url, catalog, fault, stamp, stale=fault is not None,
-                       payload=payload, signature=signature)
+    return CatalogRead(
+        channel, url, catalog, fault, stamp, stale=fault is not None, payload=payload, signature=signature
+    )
 
 
 def read_screenshot(

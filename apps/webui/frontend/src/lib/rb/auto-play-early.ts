@@ -38,7 +38,11 @@ export function requiredLeadMs(bpm: number | null): number {
 }
 
 /** Master position at which the decision is due; null when the track's length is unknown, so nothing can be scheduled. */
-export function decisionDueMs(durationMs: number | null, targetMs: number, bpm: number | null): number | null {
+export function decisionDueMs(
+	durationMs: number | null,
+	targetMs: number,
+	bpm: number | null
+): number | null {
 	if (durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return null;
 	return Math.max(0, Math.min(targetMs, durationMs - requiredLeadMs(bpm)));
 }
@@ -53,7 +57,10 @@ export function prepareWaitMs(leadMs: number): number {
 }
 
 /** Up to `size` distinct picks, best first. `pick` gets the tracks already taken, so it can offer the next best. */
-export function buildShortlist(pick: (taken: ReadonlySet<string>) => string | null, size: number): string[] {
+export function buildShortlist(
+	pick: (taken: ReadonlySet<string>) => string | null,
+	size: number
+): string[] {
 	const taken = new Set<string>();
 	while (taken.size < size) {
 		const next = pick(taken);
@@ -78,6 +85,8 @@ export interface DecideRequest {
 	out_deck: number;
 	in_deck: number;
 	shortlist: readonly string[];
+	/** AUTOPLAY-HEARD: the key shift each shortlisted track would load with, so the server judges the key it will be heard in. */
+	in_key_shifts: Readonly<Record<string, number>>;
 	intent: TransitionIntent;
 	recent_styles: readonly string[];
 	earliest_ms: number;
@@ -93,7 +102,8 @@ function _record(value: unknown): value is Record<string, unknown> {
 }
 
 function _answerOf(body: unknown): DecideAnswer {
-	if (!_record(body) || typeof body.reason !== 'string') return { track: null, reason: 'decide answered with no reason' };
+	if (!_record(body) || typeof body.reason !== 'string')
+		return { track: null, reason: 'decide answered with no reason' };
 	if (body.track === null) return { track: null, reason: body.reason };
 	const window = body.window;
 	if (
@@ -105,11 +115,20 @@ function _answerOf(body: unknown): DecideAnswer {
 	) {
 		return { track: null, reason: 'decide answered a track without its window' };
 	}
-	return { track: body.track, window: window as unknown as DecidedWindow, style: body.style, bars: body.bars, reason: body.reason };
+	return {
+		track: body.track,
+		window: window as unknown as DecidedWindow,
+		style: body.style,
+		bars: body.bars,
+		reason: body.reason
+	};
 }
 
 /** The window and track, or why not. A failed request is a reason for the fallback, never an exception. */
-export async function requestDecision(request: DecideRequest, fetchImpl: typeof fetch = fetch): Promise<DecideAnswer> {
+export async function requestDecision(
+	request: DecideRequest,
+	fetchImpl: typeof fetch = fetch
+): Promise<DecideAnswer> {
 	const signal = AbortSignal.timeout(DECIDE_TIMEOUT_MS);
 	try {
 		const response = await fetchImpl(DECIDE_URL, {
@@ -118,10 +137,17 @@ export async function requestDecision(request: DecideRequest, fetchImpl: typeof 
 			body: JSON.stringify(request),
 			signal
 		});
-		if (!response.ok) return { track: null, reason: `decide answered ${response.status}: ${(await response.text()).slice(0, 200)}` };
+		if (!response.ok)
+			return {
+				track: null,
+				reason: `decide answered ${response.status}: ${(await response.text()).slice(0, 200)}`
+			};
 		return _answerOf(await response.json());
 	} catch (error) {
-		return { track: null, reason: `decide unreachable: ${error instanceof Error ? error.message : String(error)}` };
+		return {
+			track: null,
+			reason: `decide unreachable: ${error instanceof Error ? error.message : String(error)}`
+		};
 	}
 }
 
@@ -141,7 +167,10 @@ export function decisionLine(
 	if (!enabled) return 'Early planning is off: AutoPlay hands off at the end of the track.';
 	const { phase, track, style, bars, window, due_ms, reason } = decision;
 	const target = track === null ? 'the next track' : track.slice(0, 12);
-	const plan = window === null ? '' : ` at bar ${window.start_bar} (${window.label}), ${style} over ${bars} bars`;
+	const plan =
+		window === null
+			? ''
+			: ` at bar ${window.start_bar} (${window.label}), ${style} over ${bars} bars`;
 	switch (phase) {
 		case 'idle':
 			if (due_ms === null) return 'Decides once the master is playing.';

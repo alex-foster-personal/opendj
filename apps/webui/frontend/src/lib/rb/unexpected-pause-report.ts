@@ -53,9 +53,7 @@ export function recordDeckStopOf(
 	recordDeckStop({ deck: st.deck_id, cause, position_ms: st.position_ms, stable_id: st.stable_id });
 }
 
-export function setPlayingPositionReader(
-	reader: (() => readonly PlayingPosition[]) | null
-): void {
+export function setPlayingPositionReader(reader: (() => readonly PlayingPosition[]) | null): void {
 	_playingPositionReader = reader;
 }
 

@@ -20,7 +20,10 @@ import { fileURLToPath } from 'node:url';
 
 import { guardedWebServerCommand } from './support/guarded-web-server';
 import { resolveProgram } from './support/resolve-program';
-import { TRANSITION_IN_CUE_API_PORT, TRANSITION_IN_CUE_FRONTEND_PORT } from './vite.transition-in-cue.config';
+import {
+	TRANSITION_IN_CUE_API_PORT,
+	TRANSITION_IN_CUE_FRONTEND_PORT
+} from './vite.transition-in-cue.config';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -32,7 +35,8 @@ const NO_POSIX_LAUNCHER = process.platform === 'win32';
 const UV = NO_POSIX_LAUNCHER ? 'uv' : resolveProgram('uv');
 // A fresh library every run, built in the main process before the engine
 // starts (workers re-import this config beside a live engine, so never there).
-if (process.env.TEST_WORKER_INDEX === undefined) rmSync(FIXTURE_DATA_DIR, { recursive: true, force: true });
+if (process.env.TEST_WORKER_INDEX === undefined)
+	rmSync(FIXTURE_DATA_DIR, { recursive: true, force: true });
 
 const engine = {
 	command: guardedWebServerCommand('transition-in-cue-engine', [

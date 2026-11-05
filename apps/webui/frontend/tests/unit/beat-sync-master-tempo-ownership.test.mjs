@@ -206,7 +206,9 @@ test('pause and beat-sync disable bump re-anchor operation generation', () => {
 	const pauseBody = engineBlockAfter('pause(deck: DeckId, pressT0Ms?: number): Promise<void> {');
 	assert.match(pauseBody, /_bumpReanchorOperation\(deck\)/);
 
-	const beatSyncBody = engineBlockAfter('setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
+	const beatSyncBody = engineBlockAfter(
+		'setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {'
+	);
 	const disableAt = beatSyncBody.indexOf('if (!enabled) {');
 	assert.notEqual(disableAt, -1);
 	assert.match(beatSyncBody.slice(disableAt, disableAt + 400), /_bumpReanchorOperation\(deck\)/);
@@ -221,7 +223,9 @@ test('the schedule ack path re-checks re-anchor generation after processor.sched
 });
 
 test('ramp pending clears only when the owner generation matches', () => {
-	const releaseBody = engineBlockAfter('function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {');
+	const releaseBody = engineBlockAfter(
+		'function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {'
+	);
 	assert.match(releaseBody, /reanchorRampOwnerGeneration === generation/);
 });
 

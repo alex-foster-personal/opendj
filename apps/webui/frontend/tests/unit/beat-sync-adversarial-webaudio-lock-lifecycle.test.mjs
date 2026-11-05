@@ -74,18 +74,32 @@ test('1b. the automatic re-join runs under the shared sync claim, behind the com
 	// its follower position or tempo overwritten.
 	const source = readFrontendSource(ENGINE);
 	const elect = body(source, 'function _electPlayingMaster(', '\n}\n');
-	assert.match(elect, /_automaticRejoinRunner\(async \(\) => \{/, 'the re-join does not go through the claim runner');
-	assert.doesNotMatch(elect, /void _synchronizeFollowers\(/, 'the re-join is detached from every claim');
+	assert.match(
+		elect,
+		/_automaticRejoinRunner\(async \(\) => \{/,
+		'the re-join does not go through the claim runner'
+	);
+	assert.doesNotMatch(
+		elect,
+		/void _synchronizeFollowers\(/,
+		'the re-join is detached from every claim'
+	);
 	// It re-checks the master when its turn comes: a later command may have
 	// moved it again while the re-join waited.
 	assert.match(elect, /if \(_masterDeck !== next \|\| !deckStates\[next\]\.playing\) return;/);
 	const ipc = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	const install = body(ipc, 'installAutomaticRejoinRunner((work) => {', '\n});\n');
-	assert.match(install, /_commandScheduler\s*\.run\(\[\.\.\.DECK_IDS, 'sync'\], /, 'the runner does not take every deck plus sync');
+	assert.match(
+		install,
+		/_commandScheduler\s*\.run\(\[\.\.\.DECK_IDS, 'sync'\], /,
+		'the runner does not take every deck plus sync'
+	);
 
 	// What that claim buys, on the real scheduler: a deck command sent after
 	// the one that moved the master waits for the re-join, not the other way.
-	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const { ScopedCommandScheduler } = await loadTypeScriptModule(
+		'src/lib/rb/performance-command-scheduler.ts'
+	);
 	const scheduler = new ScopedCommandScheduler();
 	const order = [];
 	let rejoined;
@@ -109,24 +123,46 @@ test('control: only the automatic handoff reasons re-join; claims and re-electio
 	}
 	// Their callers already join the deck that asked; a second, re-anchoring
 	// join of every follower here would re-seek decks that are in phase.
-	for (const reason of ['manual', 'play-claim', 'first-claim', 'beat-sync-enable', 'unlock-reelect', 'dispose', null]) {
+	for (const reason of [
+		'manual',
+		'play-claim',
+		'first-claim',
+		'beat-sync-enable',
+		'unlock-reelect',
+		'dispose',
+		null
+	]) {
 		assert.ok(!AUTOMATIC_HANDOFF_REASONS.has(reason), `${reason} is not a handoff`);
 	}
 });
 
 test('control: the MANUAL master switch does re-join (so the guard can say yes)', () => {
 	const source = readFrontendSource(ENGINE);
-	const manual = body(source, 'async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {', '\n\t}\n');
-	assert.match(manual, /_synchronizeFollowers\(deck, followers, \{ reanchorDecks: new Set\(followers\)(, quietPlanRefusal: true)? \}\)/); // PLAY-27 adds quietPlanRefusal
+	const manual = body(
+		source,
+		'async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {',
+		'\n\t}\n'
+	);
+	assert.match(
+		manual,
+		/_synchronizeFollowers\(deck, followers, \{ reanchorDecks: new Set\(followers\)(, quietPlanRefusal: true)? \}\)/
+	); // PLAY-27 adds quietPlanRefusal
 });
 
 test('2. a partial schedule failure still records the phase lock of every follower that locked', () => {
 	const source = readFrontendSource(ENGINE);
-	const sync = body(source, 'async function _synchronizeFollowers(', '\nconst _resyncTracking = createBeatgridResyncTracking');
+	const sync = body(
+		source,
+		'async function _synchronizeFollowers(',
+		'\nconst _resyncTracking = createBeatgridResyncTracking'
+	);
 	const failureBranch = sync.indexOf('if (failedDecks.length > 0) {');
 	const failureThrow = sync.indexOf('throw new Error(message', failureBranch);
 	const firstRecord = sync.indexOf('_phaseLock.record(');
-	assert.ok(failureBranch > 0 && failureThrow > failureBranch && firstRecord > 0, 'anchors located');
+	assert.ok(
+		failureBranch > 0 && failureThrow > failureBranch && firstRecord > 0,
+		'anchors located'
+	);
 	// Fixed means: a record for succeeded decks happens before (or inside)
 	// the branch that throws. Observed: the only record is after it.
 	assert.ok(
@@ -138,7 +174,14 @@ test('2. a partial schedule failure still records the phase lock of every follow
 	// follower when the master's own schedule failed ('master-max'), has no
 	// planned tempo in force, so a lock recorded for it would trim against a
 	// plan that never ran.
-	const loop = sync.slice(sync.lastIndexOf('for (const item of planned)', firstRecord), firstRecord);
+	const loop = sync.slice(
+		sync.lastIndexOf('for (const item of planned)', firstRecord),
+		firstRecord
+	);
 	assert.match(loop, /failedDecks\.includes\(item\.deck\)/, 'a failed follower is not locked');
-	assert.match(loop, /failedDecks\.includes\(master\)/, 'nothing is locked when the master schedule failed');
+	assert.match(
+		loop,
+		/failedDecks\.includes\(master\)/,
+		'nothing is locked when the master schedule failed'
+	);
 });

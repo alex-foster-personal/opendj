@@ -18,6 +18,8 @@ from apps.database.enrollment_table_docs import ENROLLMENT_TABLE_DOCS
 
 TABLE_DOCS: dict[str, str] = {
     "pair_transitions": "The saved transition for one ordered pair of tracks, as a plan. Most recent wins. Machine-local.",
+    "pair_decisions": "AutoPlay's last lookahead decision per ordered pair, for post-mortems. Pure logging. Machine-local.",
+    "pair_verdicts": "The listener's one-tap good / meh / bad on the transition that ran per ordered pair. Pure logging. Machine-local.",
     # ----- apps.shared.state.schema.TABLES (the schema authority) --------
     "tracks": (
         "Canonical per-track identity row: one per song, regardless of how "
@@ -525,6 +527,14 @@ TABLE_DOCS: dict[str, str] = {
         "and it refreshes updated_at in place when the twin is unchanged. "
         "Machine-local bookkeeping: it carries no origin_device_id and is "
         "not in SYNC_TABLES, so it does not ride hub sync."
+    ),
+    "set_targets": (
+        "Optional target length of a playlist shown as a set (LIBUX-8679); "
+        "machine-local, not in SYNC_TABLES (apps/shared/set_target/store.py)."
+    ),
+    "set_skips": (
+        "Tracks marked skip-in-set per playlist (LIBUX-8679), left out of the "
+        "set played length; machine-local (apps/shared/set_target/store.py)."
     ),
     # Migration v9 enrollment tables (ADR 12), in their own module for the
     # same 600-line reason this file was split out of column_docs.py.

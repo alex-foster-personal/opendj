@@ -84,7 +84,9 @@ test('a hanging AudioContext resume reports audio-output-dead and keeps the page
 		const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
 		return read?.() ?? [];
 	});
-	expect(perfRows.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error')).toBeTruthy();
+	expect(
+		perfRows.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error')
+	).toBeTruthy();
 
 	const title = await page.evaluate(() => document.title);
 	expect(typeof title).toBe('string');

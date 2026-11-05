@@ -65,10 +65,7 @@ test('shared deck and mixer wires match both lists', () => {
 			assert.deepEqual(tempo.source, { ch: deck, kind: 'cc', id: 0 });
 			assert.equal(tempo.action.lsbOffset, 32);
 		}
-		const fader4 = one(
-			map,
-			(b) => b.action.target === 'fader' && b.action.deck === 4
-		);
+		const fader4 = one(map, (b) => b.action.target === 'fader' && b.action.deck === 4);
 		assert.deepEqual(fader4.source, { ch: 5, kind: 'cc', id: 20 });
 		const low3 = one(map, (b) => b.action.band === 'low' && b.action.deck === 3);
 		assert.deepEqual(low3.source, { ch: 5, kind: 'cc', id: 21 });
@@ -139,7 +136,15 @@ const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 async function wheelRig(view) {
 	const jog = await vite.ssrLoadModule('/src/lib/rb/midi/jog.ts');
 	const seen = { seeks: [], tempos: [], refused: 0 };
-	const deck = { playing: false, followsSyncMaster: false, pitch: 1, rangePct: 8, positionMs: 1000, durationMs: 60000, ...view };
+	const deck = {
+		playing: false,
+		followsSyncMaster: false,
+		pitch: 1,
+		rangePct: 8,
+		positionMs: 1000,
+		durationMs: 60000,
+		...view
+	};
 	const wheel = new jog.JogWheel(() => deck, {
 		seek: (ms) => seen.seeks.push(ms),
 		tempo: (ratio) => seen.tempos.push(ratio),

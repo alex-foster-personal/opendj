@@ -10,6 +10,7 @@
  * Regression lines:
  * - if a deck artwork src skips the online lookup for a track with no local art then broken
  * - if the library row artwork src asks for the online lookup then broken
+ * - if the library row cover is marked an expected failure without the retry on its onerror then broken
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -41,5 +42,8 @@ test('library rows never ask for the online lookup', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /artworkUrl\(row\.stable_id, 's'\)/);
 	assert.doesNotMatch(table, /deckArtworkUrl|online=true/);
-	assert.doesNotMatch(table, /data-expected-resource-error/);
+	// LIBM-185 marks the row cover as an expected failure because LIBM-181
+	// retries it (placeholder + backoff); the mark is only honest while the
+	// error still goes to that retry.
+	assert.match(table, /data-expected-resource-error\s+onload=\{[^}]*\}\s+onerror=\{\(\) => _onArtworkError\(row\.stable_id\)\}/);
 });

@@ -16,6 +16,7 @@ installable on the host (see :data:`writer_onelibrary.WRITER_AVAILABLE`).
 Tests do *not* write to the real USB mount (``/Volumes/MAINTAINER``)
 — everything lives under ``tmp_path``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,10 +42,7 @@ pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.skipif(
         not WRITER_AVAILABLE,
-        reason=(
-            "OneLibrary writer unavailable: "
-            f"{WRITER_IMPORT_ERROR}. Install the repository dependencies."
-        ),
+        reason=(f"OneLibrary writer unavailable: {WRITER_IMPORT_ERROR}. Install the repository dependencies."),
     ),
 ]
 
@@ -65,9 +63,7 @@ pytestmark = [
 # and must stay collectible either way (PR #718 review).
 # -----------------------------------------------------------------------
 def _fixture_onelibrary() -> Path:
-    return (
-        resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
-    )
+    return resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
 
 
 @pytest.fixture(scope="function")
@@ -102,9 +98,7 @@ def scratch_onelibrary(tmp_path: Path) -> Path:
 # -----------------------------------------------------------------------
 
 
-def test_round_trip_5_tracks(
-    fixture_onelibrary: Path, scratch_onelibrary: Path
-) -> None:
+def test_round_trip_5_tracks(fixture_onelibrary: Path, scratch_onelibrary: Path) -> None:
     """Write overlays for 5 tracks + one playlist containing them, then
     round-trip via the reader.
 
@@ -130,9 +124,7 @@ def test_round_trip_5_tracks(
         TrackUpdate(id=4, title="Round Trip Title 4", rating=2, bpmx100=12400),
         TrackUpdate(id=5, title="Round Trip Title 5", rating=1, bpmx100=12200),
     ]
-    playlist = PlaylistSpec(
-        name="PrototypeB Round-Trip Playlist", track_ids=[1, 2, 3, 4, 5]
-    )
+    playlist = PlaylistSpec(name="PrototypeB Round-Trip Playlist", track_ids=[1, 2, 3, 4, 5])
 
     result: OneLibraryWriteResult = write_onelibrary(
         template_path=fixture_onelibrary,
@@ -154,15 +146,12 @@ def test_round_trip_5_tracks(
     # SQLCipher encrypts the entire file including the header bytes.
     header = scratch_onelibrary.read_bytes()[:16]
     assert not header.startswith(b"SQLite format 3"), (
-        "Output looks like a plain SQLite file; SQLCipher encryption "
-        f"was NOT applied. Header: {header!r}"
+        f"Output looks like a plain SQLite file; SQLCipher encryption was NOT applied. Header: {header!r}"
     )
 
     # --- Round-trip read -----------------------------------
     (playlist_id,) = result.playlist_ids
-    rt = read_playlist_roundtrip(
-        onelibrary_path=scratch_onelibrary, playlist_id=playlist_id
-    )
+    rt = read_playlist_roundtrip(onelibrary_path=scratch_onelibrary, playlist_id=playlist_id)
     assert rt["name"] == "PrototypeB Round-Trip Playlist"
     track_ids = [t["id"] for t in rt["tracks"]]
     assert track_ids == [1, 2, 3, 4, 5]
@@ -181,9 +170,7 @@ def test_round_trip_5_tracks(
     assert ratings == [5, 4, 3, 2, 1]
 
 
-def test_round_trip_empty_library(
-    fixture_onelibrary: Path, scratch_onelibrary: Path
-) -> None:
+def test_round_trip_empty_library(fixture_onelibrary: Path, scratch_onelibrary: Path) -> None:
     """Writing nothing yields a copy of the template that still reads
     back the *original* playlists and contents.
 
@@ -217,9 +204,7 @@ def test_round_trip_empty_library(
     assert scratch_count == template_count
 
 
-def test_round_trip_special_chars(
-    fixture_onelibrary: Path, scratch_onelibrary: Path
-) -> None:
+def test_round_trip_special_chars(fixture_onelibrary: Path, scratch_onelibrary: Path) -> None:
     """UTF-8: accents / umlauts / CJK / emoji all survive the round-trip.
 
     Validates both the playlist *name* path (row stored in ``playlist``
@@ -236,9 +221,7 @@ def test_round_trip_special_chars(
     )
 
     (playlist_id,) = result.playlist_ids
-    rt = read_playlist_roundtrip(
-        onelibrary_path=scratch_onelibrary, playlist_id=playlist_id
-    )
+    rt = read_playlist_roundtrip(onelibrary_path=scratch_onelibrary, playlist_id=playlist_id)
     assert rt["name"] == weird_playlist_name
     assert len(rt["tracks"]) == 1
     assert rt["tracks"][0]["title"] == weird_title
@@ -247,9 +230,7 @@ def test_round_trip_special_chars(
     assert "🎧" in rt["name"]
 
 
-def test_overwrite_false_raises(
-    fixture_onelibrary: Path, scratch_onelibrary: Path
-) -> None:
+def test_overwrite_false_raises(fixture_onelibrary: Path, scratch_onelibrary: Path) -> None:
     """Pre-existing output path + overwrite=False must raise."""
     # Seed the output once.
     write_onelibrary(
@@ -279,9 +260,7 @@ def test_fixture_output_path_is_refused(fixture_onelibrary: Path) -> None:
     assert not fixture_output.exists()
 
 
-def test_symlinked_fixture_output_path_is_refused(
-    fixture_onelibrary: Path, tmp_path: Path
-) -> None:
+def test_symlinked_fixture_output_path_is_refused(fixture_onelibrary: Path, tmp_path: Path) -> None:
     """A fixture reached through an ad-hoc ``tests/fixtures/`` symlink is
     protected too, not just the in-repo path and the external host.
 
@@ -310,9 +289,7 @@ def test_symlinked_fixture_output_path_is_refused(
         link.unlink(missing_ok=True)
 
 
-def test_missing_template_raises(
-    tmp_path: Path, scratch_onelibrary: Path
-) -> None:
+def test_missing_template_raises(tmp_path: Path, scratch_onelibrary: Path) -> None:
     """A non-existent template path raises a clean error (not a crash)."""
     bogus = tmp_path / "does-not-exist.db"
     with pytest.raises(OneLibraryWriteError, match="Template OneLibrary not found"):
@@ -322,13 +299,9 @@ def test_missing_template_raises(
         )
 
 
-def test_unknown_track_id_raises(
-    fixture_onelibrary: Path, scratch_onelibrary: Path
-) -> None:
+def test_unknown_track_id_raises(fixture_onelibrary: Path, scratch_onelibrary: Path) -> None:
     """An overlay referring to an ID that isn't in the template raises."""
-    with pytest.raises(
-        OneLibraryWriteError, match="not present in template DB"
-    ):
+    with pytest.raises(OneLibraryWriteError, match="not present in template DB"):
         write_onelibrary(
             template_path=fixture_onelibrary,
             output_path=scratch_onelibrary,

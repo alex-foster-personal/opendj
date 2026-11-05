@@ -166,21 +166,18 @@ describe('scaledWheelStep', () => {
 		// The events-per-detent constant is the single number the maintainer retunes. If
 		// the multiplier ever stops being its reciprocal there are two sources
 		// of truth and changing the knob silently does nothing.
-		assert.equal(
-			mod.WHEEL_SENSITIVITY.trackpad,
-			1 / mod.WHEEL_TRACKPAD_EVENTS_PER_DETENT
-		);
+		assert.equal(mod.WHEEL_SENSITIVITY.trackpad, 1 / mod.WHEEL_TRACKPAD_EVENTS_PER_DETENT);
 	});
 });
 
 //-----------------------------------------------------------------------------
-// the acceptance test: equivalent gestures move a fader comparably
+// the acceptance test: the configured starting ratio is applied consistently
 //-----------------------------------------------------------------------------
 
-describe('equivalent physical gestures', () => {
+describe('configured trackpad starting ratio', () => {
 	const EPSILON = 1e-12;
 
-	it('moves a level fader by a comparable amount on trackpad and mouse', () => {
+	it('applies the synthetic event-count ratio to a level fader', () => {
 		const mouse = mountControl(mod.WHEEL_STEP.fader, 0.5);
 		mouse.fire(mouseDetent(1));
 		const mouseTravel = mouse.value - 0.5;
@@ -195,7 +192,7 @@ describe('equivalent physical gestures', () => {
 		assert.ok(
 			Math.abs(trackpadTravel - mouseTravel) < EPSILON,
 			`trackpad burst moved ${trackpadTravel}, mouse detent moved ${mouseTravel} - ` +
-				'an equivalent gesture must travel the same distance on both devices'
+				'the configured starting ratio must scale the synthetic event counts consistently'
 		);
 	});
 

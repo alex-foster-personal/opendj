@@ -24,7 +24,8 @@ import pytest
 from scripts import b2_journal
 from scripts.b2store import STORE_ROOT
 
-#----- journal ------------------------------------------------------------
+# ----- journal ------------------------------------------------------------
+
 
 def test_legacy_key_strips_the_store_root() -> None:
     path = f"{STORE_ROOT}/stems/p/a/vocals.flac"
@@ -172,7 +173,8 @@ def test_new_journal_mappings_includes_objects_already_present_in_r2() -> None:
     recorded, permanently, despite R2 already holding the object."""
     already_present = ("stems/p/a/vocals.flac", "assets/aa/aa", 100)
     result = b2_journal.new_journal_mappings(
-        planned=[already_present], final_remote={"assets/aa/aa": 100},
+        planned=[already_present],
+        final_remote={"assets/aa/aa": 100},
         already_journaled=set(),
     )
     assert result == [("stems/p/a/vocals.flac", "assets/aa/aa")]
@@ -211,7 +213,8 @@ def test_journal_new_mappings_excludes_swapped_keys(tmp_path: Path) -> None:
     assert b2_journal.journaled_mappings(journal) == set()
 
 
-#----- swap detection -------------------------------------------------------
+# ----- swap detection -------------------------------------------------------
+
 
 def test_swapped_during_upload_detects_a_changed_digest() -> None:
     """Regression guard: bifrost2's rail hashes a source (`sha256sum`), then a
@@ -221,9 +224,7 @@ def test_swapped_during_upload_detects_a_changed_digest() -> None:
     jobs = [("/store/p/a/vocals.flac", "assets/aa/aa")]
     pre = {"/store/p/a/vocals.flac": "digest-before"}
     post = {"/store/p/a/vocals.flac": "digest-after"}
-    assert b2_journal.swapped_during_upload(jobs, pre, post) == [
-        "/store/p/a/vocals.flac"
-    ]
+    assert b2_journal.swapped_during_upload(jobs, pre, post) == ["/store/p/a/vocals.flac"]
 
 
 def test_swapped_during_upload_is_empty_when_digests_match() -> None:

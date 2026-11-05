@@ -442,9 +442,7 @@ def test_a_file_a_closure_module_runs_by_a_readable_path_is_followed_like_an_imp
     ],
     ids=["import-module", "dunder-import", "computed-name"],
 )
-def test_a_literal_name_load_beside_a_path_load_is_still_followed(
-    tmp_path: Path, load: str, reached: set[str]
-) -> None:
+def test_a_literal_name_load_beside_a_path_load_is_still_followed(tmp_path: Path, load: str, reached: set[str]) -> None:
     """Sentry on #8139: a path loader in the same file made the name loads unshown, so a literal
     `import_module` target in another scope was dropped. Each kind of load is read on its own; the
     caller's scope stays whole, as it does for any path load."""

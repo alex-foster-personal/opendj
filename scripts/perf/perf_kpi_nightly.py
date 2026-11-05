@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
 import json
 import os
 import shutil
-import signal
 import socket
 import sqlite3
 import statistics
@@ -21,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.process_tree import KILL_CONFIRM_S, root_of, spawn_tree, stop_tree
 from scripts.perf.capture_kpi_ledger import format_appended
 from scripts.perf.capture_kpis import capture_s5_against_engine
 from scripts.perf.kpi_ceiling import CEILING_FACTOR, ceiling_verdict, trailing_median_ms
@@ -318,14 +317,14 @@ def _engine_unavailable(
 
 
 def stop_scratch_engine(proc: subprocess.Popen[Any]) -> None:
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(proc.pid, signal.SIGTERM)
-    try:
-        proc.wait(timeout=ENGINE_STOP_GRACE_S)
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
+    """Stop the scratch engine's whole tree (polite for ENGINE_STOP_GRACE_S, then forced).
+
+    Raises ProcessTreeError when ``proc`` was not started by spawn_tree or any
+    of its tree outlives the forced rung: a nightly that cannot prove its
+    engine is gone must say so, not leave it holding the scratch port.
+    """
+    stop_tree(root_of(proc), grace_s=ENGINE_STOP_GRACE_S + KILL_CONFIRM_S)
+    proc.wait(timeout=ENGINE_STOP_GRACE_S)
 
 
 def _scratch_engine_argv(data_dir: Path, port: int) -> list[str] | None:
@@ -432,12 +431,11 @@ def acquire_nightly_engine(
     log_path = config.state_dir / SCRATCH_ENGINE_LOG_NAME
     url = f"http://127.0.0.1:{port}"
     with log_path.open("ab") as log_handle:
-        proc = subprocess.Popen(
+        proc, _root = spawn_tree(
             argv,
             cwd=REPO_ROOT,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
         )
 
     deadline = time.monotonic() + ENGINE_READY_TIMEOUT_S

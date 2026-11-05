@@ -36,11 +36,12 @@ import { makeDiskWriteChain } from './disk-write-chain';
  *   ✔︎ Inert / read-only controls ignore the wheel entirely.
  *     [if] a control passes disabled [then] no set() call is made and the
  *       page scroll is left alone
- *   ✔︎ A trackpad gesture moves a control by about as much as the equivalent
- *     mouse gesture, on every wheel-adjustable control at once.
- *     [if] a trackpad burst of WHEEL_TRACKPAD_EVENTS_PER_DETENT events and a
- *       single mouse detent are dispatched at the same control [then] the two
- *       totals agree to within a rounding epsilon ⛔️
+ *   ✔︎ The configurable starting ratio is applied consistently to every
+ *     wheel-adjustable control at once.
+ *     [if] a synthetic trackpad burst of WHEEL_TRACKPAD_EVENTS_PER_DETENT
+ *       events and a single mouse detent are dispatched at the same control
+ *       [then] their totals reflect the configured starting ratio to within a
+ *       rounding epsilon ⛔️
  *     [if] a control is added with use:wheelAdjust and no sensitivity code of
  *       its own [then] it still gets the trackpad scaling ⛔️
  *   ✔︎ The factors are configurable at runtime and persist across reloads.
@@ -91,21 +92,21 @@ export const WHEEL_STEP = {
 export type WheelInputKind = 'mouse' | 'trackpad';
 
 /**
- * THE SENSITIVITY KNOB. Trackpad wheel events that add up to one mouse detent's
- * worth of travel. Change this one number and every wheel-adjustable control
- * retunes together: all dials, the channel level faders, the crossfader, the
- * pitch faders, the headphone mix/level, and the shift-selected dial driven by
- * the page-level wheel in knob-control.
+ * THE SENSITIVITY KNOB. Starting estimate for the event-count ratio used to
+ * scale trackpad input relative to one mouse detent. Change this one number and
+ * every wheel-adjustable control retunes together: all dials, the channel level
+ * faders, the crossfader, the pitch faders, the headphone mix/level, and the
+ * shift-selected dial driven by the page-level wheel in knob-control.
  *
  * Derivation: the wheel handlers are direction-only, so one wheel EVENT moves a
  * control by one full step. A notched mouse wheel emits one event per physical
  * detent, which is the assumption that was built for. A macOS trackpad emits a
  * dense burst of events for a single two-finger movement, so the same gesture
- * walked the control several steps and read as hypersensitive. the maintainer calibrated
- * the ratio by hand on the Air, Mon 31 Aug 2026: "currently should be I think
- * 3x less sensitive for trackpads". It is a feel number rather than a derived
- * one, so it lives here as a single named constant instead of being buried in
- * a handler.
+ * walked the control several steps and read as hypersensitive. the maintainer's initial
+ * estimate on Mon 31 Aug 2026 was "currently should be I think 3x less
+ * sensitive for trackpads"; it had not been measured on real hardware when it
+ * was recorded. This named constant supplies the shipped starting value, while
+ * the separate persisted trackpad setting is the calibration mechanism.
  */
 export const WHEEL_TRACKPAD_EVENTS_PER_DETENT = 3;
 

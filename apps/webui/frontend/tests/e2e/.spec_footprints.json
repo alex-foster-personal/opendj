@@ -261,7 +261,7 @@
   "src/lib/components/rb/deck/loop-cluster-actions.ts",
   "src/lib/components/rb/deck/pitch-fader-geometry.ts",
   "src/lib/components/rb/deck/strip-anlz-prefetch.ts",
-  "src/lib/components/rb/deck/strip-native-grid.ts",
+  "src/lib/components/rb/deck/strip-grid-provider.ts",
   "src/lib/components/rb/deck/strip-waveform-render.ts",
   "src/lib/components/rb/feedback/FeedbackPinMarkers.svelte",
   "src/lib/components/rb/hotkeys/HotkeysOverlay.svelte",

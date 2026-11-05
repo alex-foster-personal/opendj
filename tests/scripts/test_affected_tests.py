@@ -187,4 +187,3 @@ def test_a_rename_lists_the_deleted_old_path(tmp_path):
     changed = _changed_against("HEAD~1", root=tmp_path)
     assert "apps/old_name.py" in changed
     assert "apps/new_name.py" in changed
-

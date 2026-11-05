@@ -35,7 +35,14 @@ before(async () => {
 
 function laneSpans(lines, positionMs) {
 	const html = mod.render(mod.LyricsLane, {
-		props: { lyrics: { lines }, loadError: null, positionMs, pitch: 1, windowSeconds: 24, playheadFrac: 0.5 }
+		props: {
+			lyrics: { lines },
+			loadError: null,
+			positionMs,
+			pitch: 1,
+			windowSeconds: 24,
+			playheadFrac: 0.5
+		}
 	}).body;
 	return [...html.matchAll(/<span([^>]*)class="lyric-line[^"]*"[^>]*>([^<]*)<\/span>/g)].map(
 		(match) => ({ tag: match[0], text: match[2] })

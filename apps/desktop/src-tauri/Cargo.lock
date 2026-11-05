@@ -2834,6 +2834,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "odj-output-probe"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tungstenite",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2856,9 +2864,11 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "midir",
+ "odj-output-probe",
  "rfd 0.15.4",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -2868,7 +2878,6 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-wdio-webdriver",
  "tempfile",
- "tungstenite",
  "url",
 ]
 

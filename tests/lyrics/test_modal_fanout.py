@@ -49,34 +49,30 @@ def test_container_cap_meets_the_r6_floor_and_is_wired(script: Path) -> None:
     m = re.search(r"^MAX_CONTAINERS: int = (\d+)$", text, re.MULTILINE)
     assert m is not None, f"{script.name}: MAX_CONTAINERS declaration missing"
     assert int(m.group(1)) >= MIN_MAX_CONTAINERS, (
-        f"{script.name}: MAX_CONTAINERS {m.group(1)} below the R6 floor "
-        f"{MIN_MAX_CONTAINERS}")
-    assert "max_containers=MAX_CONTAINERS" in text, (
-        f"{script.name}: MAX_CONTAINERS is not wired into @app.cls")
+        f"{script.name}: MAX_CONTAINERS {m.group(1)} below the R6 floor {MIN_MAX_CONTAINERS}"
+    )
+    assert "max_containers=MAX_CONTAINERS" in text, f"{script.name}: MAX_CONTAINERS is not wired into @app.cls"
 
 
-@pytest.mark.parametrize(("script", "functions"), FANOUT_ENTRYPOINTS,
-                         ids=lambda v: v.name if isinstance(v, Path) else "fns")
-def test_every_dispatch_entrypoint_uses_starmap(
-    script: Path, functions: list[str]
-) -> None:
+@pytest.mark.parametrize(
+    ("script", "functions"), FANOUT_ENTRYPOINTS, ids=lambda v: v.name if isinstance(v, Path) else "fns"
+)
+def test_every_dispatch_entrypoint_uses_starmap(script: Path, functions: list[str]) -> None:
     text = script.read_text(encoding="utf-8")
     for name in functions:
         body = _function_body(text, name)
         assert ".starmap(" in body, f"{script.name}:{name} lost its starmap fan-out"
-        assert "order_outputs=False" in body, (
-            f"{script.name}:{name} must stream results as they complete")
+        assert "order_outputs=False" in body, f"{script.name}:{name} must stream results as they complete"
 
 
 def test_asr_subcommands_route_through_the_fanned_out_runner() -> None:
     text = ASR_SPIKE.read_text(encoding="utf-8")
     for name in ("cmd_transcribe", "cmd_transcribe_files"):
-        assert "_run_jobs(" in _function_body(text, name), (
-            f"{name} no longer dispatches via _run_jobs")
+        assert "_run_jobs(" in _function_body(text, name), f"{name} no longer dispatches via _run_jobs"
 
 
 @pytest.mark.parametrize("script", [ASR_SPIKE, ALIGN_SPIKE], ids=lambda p: p.name)
 def test_no_serial_per_job_remote_calls(script: Path) -> None:
     assert ".remote(" not in script.read_text(encoding="utf-8"), (
-        f"{script.name}: a per-job .remote() call is the serial dispatch "
-        f"pattern R6 removed")
+        f"{script.name}: a per-job .remote() call is the serial dispatch pattern R6 removed"
+    )

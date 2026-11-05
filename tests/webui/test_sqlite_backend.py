@@ -9,6 +9,7 @@ Covers:
     (issue #762: an existing state.db must be migrated before it is served,
     fail-fast if migration fails, never silently downgrade to InMemory).
 """
+
 from __future__ import annotations
 
 import json
@@ -75,22 +76,25 @@ def fresh_state_db(tmp_path: Path) -> Path:
     conn = state_db.open_rw(db_path)
     try:
         for sid, tier, title, artists, album, isrc, dur, fp in [
-            ("sid-001", "isrc", "Midnight Drive",
-             ["Tamsin Quell"], "Drive", "USAAA0000001", 240_000,
-             "/music/midnight.mp3"),
-            ("sid-002", "fingerprint", "Oxide",
-             ["Beta", "Gamma"], "Minerals", None, 312_500,
-             "/music/oxide.mp3"),
-            ("sid-003", "inferred", "Gulf",
-             ["Gamma"], "Ambient 1", None, 600_000, "/music/gulf.flac"),
+            (
+                "sid-001",
+                "isrc",
+                "Midnight Drive",
+                ["Tamsin Quell"],
+                "Drive",
+                "USAAA0000001",
+                240_000,
+                "/music/midnight.mp3",
+            ),
+            ("sid-002", "fingerprint", "Oxide", ["Beta", "Gamma"], "Minerals", None, 312_500, "/music/oxide.mp3"),
+            ("sid-003", "inferred", "Gulf", ["Gamma"], "Ambient 1", None, 600_000, "/music/gulf.flac"),
         ]:
             conn.execute(
                 "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                 "  artists_json, album, isrc, duration_ms, file_path, "
                 "  content_hash, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (sid, tier, title, json.dumps(artists), album, isrc, dur, fp,
-                 None, ISO, ISO),
+                (sid, tier, title, json.dumps(artists), album, isrc, dur, fp, None, ISO, ISO),
             )
         # EAV fields on sid-001
         for field, val, source, conf in [
@@ -133,8 +137,7 @@ def fresh_state_db(tmp_path: Path) -> Path:
             ("pl-002", "sid-002", 1),
         ]:
             conn.execute(
-                "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                "  position) VALUES (?, ?, ?)",
+                "INSERT INTO playlist_memberships(playlist_id, stable_id,   position) VALUES (?, ?, ?)",
                 (pid, sid, pos),
             )
     finally:
@@ -144,15 +147,19 @@ def fresh_state_db(tmp_path: Path) -> Path:
 
 # --- round-trip reads ----------------------------------------------------
 
+
 class TestRoundTripReads:
     def test_list_tracks_projects_eav_fields(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         page = backend.list_tracks(TrackFilter())
         assert page.next_cursor is None
         assert [t.stable_id for t in page.items] == [
-            "sid-001", "sid-002", "sid-003",
+            "sid-001",
+            "sid-002",
+            "sid-003",
         ]
         t1 = page.items[0]
         assert t1.title == "Midnight Drive"
@@ -205,13 +212,13 @@ class TestRoundTripReads:
         assert second.next_cursor is None
 
     def test_list_tracks_filters_across_keyset_chunks(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         conn = sqlite3.connect(fresh_state_db)
         try:
             conn.execute(
-                "UPDATE track_fields SET value_json = ? "
-                "WHERE stable_id = ? AND field_name = 'bpm'",
+                "UPDATE track_fields SET value_json = ? WHERE stable_id = ? AND field_name = 'bpm'",
                 (json.dumps(100.0), "sid-002"),
             )
             conn.execute(
@@ -239,7 +246,8 @@ class TestRoundTripReads:
         assert tail.next_cursor is None
 
     def test_list_tracks_query_is_limited_to_the_requested_keyset_chunk(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         statements: list[str] = []
 
@@ -251,13 +259,11 @@ class TestRoundTripReads:
                     yield conn
 
         page = TracedBackend(fresh_state_db).list_tracks(TrackFilter(limit=2))
-        track_selects = [
-            statement for statement in statements
-            if "FROM tracks WHERE deleted_at IS NULL" in statement
-        ]
+        track_selects = [statement for statement in statements if "FROM tracks WHERE deleted_at IS NULL" in statement]
 
         assert [track.stable_id for track in page.items] == [
-            "sid-001", "sid-002",
+            "sid-001",
+            "sid-002",
         ]
         assert track_selects == [
             "SELECT stable_id, title, artists_json, album, "
@@ -266,13 +272,13 @@ class TestRoundTripReads:
         ]
 
     def test_list_tracks_rejects_nan_numeric_fields(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         conn = sqlite3.connect(fresh_state_db)
         try:
             conn.execute(
-                "UPDATE track_fields SET value_json = ? "
-                "WHERE stable_id = ? AND field_name = ?",
+                "UPDATE track_fields SET value_json = ? WHERE stable_id = ? AND field_name = ?",
                 ("NaN", "sid-002", "bpm"),
             )
             conn.execute(
@@ -285,12 +291,18 @@ class TestRoundTripReads:
             conn.close()
         backend = SqliteBackend(fresh_state_db)
 
-        assert [track.stable_id for track in backend.list_tracks(
-            TrackFilter(bpm_min=120.0),
-        ).items] == ["sid-001"]
-        assert [track.stable_id for track in backend.list_tracks(
-            TrackFilter(rating_min=0),
-        ).items] == ["sid-001"]
+        assert [
+            track.stable_id
+            for track in backend.list_tracks(
+                TrackFilter(bpm_min=120.0),
+            ).items
+        ] == ["sid-001"]
+        assert [
+            track.stable_id
+            for track in backend.list_tracks(
+                TrackFilter(rating_min=0),
+            ).items
+        ] == ["sid-001"]
 
     def test_get_track_roundtrip(self, fresh_state_db: Path) -> None:
         backend = SqliteBackend(fresh_state_db)
@@ -298,7 +310,8 @@ class TestRoundTripReads:
         assert track.title == "Midnight Drive"
         assert track.bpm == 124.0
         assert track.provenance["tags"].value == [
-            "deep-house", "smooth",
+            "deep-house",
+            "smooth",
         ]
 
     def test_get_track_not_found(self, fresh_state_db: Path) -> None:
@@ -307,11 +320,12 @@ class TestRoundTripReads:
             backend.get_track("nope")
 
     def test_list_playlists_and_memberships(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         pls = backend.list_playlists()
-        assert [p.playlist_id for p in pls] == ["pl-001", "pl-002"]
+        assert [p.playlist_id for p in pls] == ["_incoming", "pl-001", "pl-002"]
         pl1 = next(p for p in pls if p.playlist_id == "pl-001")
         assert pl1.vendor == "rekordbox"
         assert pl1.items == ["sid-003", "sid-001"]
@@ -326,6 +340,8 @@ class TestRoundTripReads:
         backend = SqliteBackend(fresh_state_db)
         with pytest.raises(NotFoundError):
             backend.get_playlist("missing")
+        inbox = backend.get_playlist("_incoming")
+        assert inbox.name == "Inbox"
 
     def test_stats(self, fresh_state_db: Path) -> None:
         backend = SqliteBackend(fresh_state_db)
@@ -338,7 +354,8 @@ class TestRoundTripReads:
         }
 
     def test_get_file_paths_bulk_matches_tracks_bulk_file_paths(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """pin e0f3a90652a9: the narrow read must agree with the general
         one on the one field they share, dedupe repeats, and omit ids that
@@ -349,9 +366,7 @@ class TestRoundTripReads:
         narrow = backend.get_file_paths_bulk(ids)
         full = backend.get_tracks_bulk(ids)
 
-        assert narrow == {
-            sid: t.file_path for sid, t in full.items()
-        }
+        assert narrow == {sid: t.file_path for sid, t in full.items()}
         assert narrow == {
             "sid-001": "/music/midnight.mp3",
             "sid-002": "/music/oxide.mp3",
@@ -363,7 +378,9 @@ class TestRoundTripReads:
         assert backend.get_file_paths_bulk([]) == {}
 
     def test_get_file_paths_bulk_never_invokes_the_eav_fetch(
-        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fresh_state_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """pin e0f3a90652a9, review thread PRRT_kwDOSEvNd86fkJ-n: the
         InMemoryBackend/get_tracks_bulk-monkeypatch guards in
@@ -379,6 +396,7 @@ class TestRoundTripReads:
         raise AssertionError from fail_if_called, confirmed locally before
         this test was pushed -- sid-001 alone carries 5 EAV rows in
         fresh_state_db, so the regression is not a near-miss."""
+
         def fail_if_called(*args: object, **kwargs: object) -> dict[str, dict]:
             raise AssertionError(
                 "get_file_paths_bulk must never invoke _fetch_fields -- "
@@ -388,9 +406,7 @@ class TestRoundTripReads:
         monkeypatch.setattr(sb_mod, "_fetch_fields", fail_if_called)
 
         backend = SqliteBackend(fresh_state_db)
-        result = backend.get_file_paths_bulk(
-            ["sid-001", "sid-002", "sid-003", "missing-id"]
-        )
+        result = backend.get_file_paths_bulk(["sid-001", "sid-002", "sid-003", "missing-id"])
 
         assert result == {
             "sid-001": "/music/midnight.mp3",
@@ -401,17 +417,27 @@ class TestRoundTripReads:
 
 # --- fallbacks for Phase-5-missing entities ------------------------------
 
+
 class TestFallbackPaths:
     def test_list_pairings_reads_sqlite_not_fallback(
-        self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        fresh_state_db: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         fallback = InMemoryBackend()
         now = _iso_now()
-        fallback.seed_pairing(Pairing(
-            pairing_id="p-fallback-only", from_stable_id="a", to_stable_id="b",
-            direction="->", source="manual", notes=None,
-            created_at=now, updated_at=now,
-        ))
+        fallback.seed_pairing(
+            Pairing(
+                pairing_id="p-fallback-only",
+                from_stable_id="a",
+                to_stable_id="b",
+                direction="->",
+                source="manual",
+                notes=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
         backend = SqliteBackend(fresh_state_db, fallback=fallback)
         with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
             assert backend.list_pairings() == []
@@ -419,15 +445,20 @@ class TestFallbackPaths:
         assert not any("list_pairings" in r.getMessage() for r in caplog.records)
 
     def test_get_queue_falls_back(
-        self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        fresh_state_db: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         fallback = InMemoryBackend()
         fallback.seed_queue(
             "dedup",
-            [QueueItem(
-                stable_id="sid-001", kind="dedup",
-                payload={"cluster": ["sid-001", "sid-001-dup"]},
-            )],
+            [
+                QueueItem(
+                    stable_id="sid-001",
+                    kind="dedup",
+                    payload={"cluster": ["sid-001", "sid-001-dup"]},
+                )
+            ],
             note="seeded",
         )
         backend = SqliteBackend(fresh_state_db, fallback=fallback)
@@ -435,12 +466,12 @@ class TestFallbackPaths:
             items, note = backend.get_queue("dedup")
         assert len(items) == 1
         assert note == "seeded"
-        assert any(
-            "get_queue" in r.getMessage() for r in caplog.records
-        )
+        assert any("get_queue" in r.getMessage() for r in caplog.records)
 
     def test_missing_tracks_table_falls_back(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Build a DB that has NO tracks table. Use raw sqlite3 so we can
         # intentionally omit migrations.
@@ -450,10 +481,15 @@ class TestFallbackPaths:
         conn.close()
         fallback = InMemoryBackend()
         now = _iso_now()
-        fallback.seed_track(Track(
-            stable_id="fb-1", title="Fallback Track", bpm=100.0,
-            created_at=now, updated_at=now,
-        ))
+        fallback.seed_track(
+            Track(
+                stable_id="fb-1",
+                title="Fallback Track",
+                bpm=100.0,
+                created_at=now,
+                updated_at=now,
+            )
+        )
         backend = SqliteBackend(db_path, fallback=fallback)
         with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
             page = backend.list_tracks(TrackFilter())
@@ -461,14 +497,18 @@ class TestFallbackPaths:
             pls = backend.list_playlists()
         assert [t.stable_id for t in page.items] == ["fb-1"]
         assert got.title == "Fallback Track"
-        assert pls == []
+        assert len(pls) == 1
+        assert pls[0].playlist_id == "_incoming"
+        assert pls[0].items == ["fb-1"]
         msgs = [r.getMessage() for r in caplog.records]
         assert any("list_tracks" in m for m in msgs)
         assert any("get_track" in m for m in msgs)
         assert any("list_playlists" in m for m in msgs)
 
     def test_missing_tracks_table_falls_back_for_file_paths_bulk(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         db_path = tmp_path / "nostate.db"
         conn = sqlite3.connect(str(db_path))
@@ -476,10 +516,14 @@ class TestFallbackPaths:
         conn.close()
         fallback = InMemoryBackend()
         now = _iso_now()
-        fallback.seed_track(Track(
-            stable_id="fb-1", file_path="/music/fb-1.mp3",
-            created_at=now, updated_at=now,
-        ))
+        fallback.seed_track(
+            Track(
+                stable_id="fb-1",
+                file_path="/music/fb-1.mp3",
+                created_at=now,
+                updated_at=now,
+            )
+        )
         backend = SqliteBackend(db_path, fallback=fallback)
         with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
             got = backend.get_file_paths_bulk(["fb-1"])
@@ -488,7 +532,8 @@ class TestFallbackPaths:
         assert any("get_file_paths_bulk" in m for m in msgs)
 
     def test_missing_playlists_table_falls_back_for_get(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         db_path = tmp_path / "nopl.db"
         conn = sqlite3.connect(str(db_path))
@@ -500,7 +545,8 @@ class TestFallbackPaths:
             backend.get_playlist("anything")
 
     def test_stats_falls_back_when_tables_missing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         db_path = tmp_path / "empty.db"
         conn = sqlite3.connect(str(db_path))
@@ -516,29 +562,35 @@ class TestFallbackPaths:
         }
 
     def test_update_track_writes_through_state_writer(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
         etag = _served_etag(current)
         updated = backend.update_track(
-            "sid-001", {"notes": "updated from webui"},
-            expected_etag=etag, source="webui",
+            "sid-001",
+            {"notes": "updated from webui"},
+            expected_etag=etag,
+            source="webui",
         )
         assert updated.notes == "updated from webui"
         # Real persistence: sqlite (not the fallback) carries the edit.
         assert backend.get_track("sid-001").notes == "updated from webui"
 
     def test_update_track_genre_persists_across_reopen(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
 
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
         etag = _served_etag(current)
         backend.update_track(
-            "sid-001", {"genre": "Breaks"},
-            expected_etag=etag, source="webui",
+            "sid-001",
+            {"genre": "Breaks"},
+            expected_etag=etag,
+            source="webui",
         )
         reopened = SqliteBackend(fresh_state_db)
         track = reopened.get_track("sid-001")
@@ -546,15 +598,18 @@ class TestFallbackPaths:
         assert track.provenance["genre"].source == "webui"
 
     def test_update_track_comments_persists_across_reopen(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
 
         backend = SqliteBackend(fresh_state_db)
         current = backend.get_track("sid-001")
         etag = _served_etag(current)
         backend.update_track(
-            "sid-001", {"comments": "late-night set"},
-            expected_etag=etag, source="webui",
+            "sid-001",
+            {"comments": "late-night set"},
+            expected_etag=etag,
+            source="webui",
         )
         reopened = SqliteBackend(fresh_state_db)
         track = reopened.get_track("sid-001")
@@ -562,7 +617,8 @@ class TestFallbackPaths:
         assert track.provenance["comments"].source == "webui"
 
     def test_update_track_tempo_pref_round_trips_and_defaults_null(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """PREF-01: unset is a real null, not a fabricated {regular: None, ...}."""
 
@@ -573,16 +629,20 @@ class TestFallbackPaths:
         updated = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 140.0, "min": 138.0, "max": 142.0}},
-            expected_etag=etag, source="webui",
+            expected_etag=etag,
+            source="webui",
         )
         assert updated.tempo_pref == {"regular": 140.0, "min": 138.0, "max": 142.0}
         # Real persistence, not the InMemory fallback.
         assert backend.get_track("sid-001").tempo_pref == {
-            "regular": 140.0, "min": 138.0, "max": 142.0,
+            "regular": 140.0,
+            "min": 138.0,
+            "max": 142.0,
         }
 
     def test_update_track_tempo_pref_min_gte_max_rejected(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         from apps.webui.server.backend import BackendError
 
@@ -593,13 +653,15 @@ class TestFallbackPaths:
             backend.update_track(
                 "sid-001",
                 {"tempo_pref": {"regular": 140.0, "min": 145.0, "max": 145.0}},
-                expected_etag=etag, source="webui",
+                expected_etag=etag,
+                source="webui",
             )
         # Nothing persisted: the reject happens before any write.
         assert backend.get_track("sid-001").tempo_pref is None
 
     def test_update_track_tempo_pref_clamps_regular_into_new_range(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """A regular tempo now outside a newly-set range is clamped into it,
         never left out of bounds (PREF-01 trap case)."""
@@ -609,7 +671,8 @@ class TestFallbackPaths:
         below = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 130.0, "min": 138.0, "max": 142.0}},
-            expected_etag=etag, source="webui",
+            expected_etag=etag,
+            source="webui",
         )
         assert below.tempo_pref == {"regular": 138.0, "min": 138.0, "max": 142.0}
 
@@ -617,12 +680,14 @@ class TestFallbackPaths:
         above = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 150.0, "min": 138.0, "max": 142.0}},
-            expected_etag=etag2, source="webui",
+            expected_etag=etag2,
+            source="webui",
         )
         assert above.tempo_pref == {"regular": 142.0, "min": 138.0, "max": 142.0}
 
     def test_update_track_tempo_pref_clear_to_null(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
 
         backend = SqliteBackend(fresh_state_db)
@@ -630,18 +695,22 @@ class TestFallbackPaths:
         set_ = backend.update_track(
             "sid-001",
             {"tempo_pref": {"regular": 140.0, "min": None, "max": None}},
-            expected_etag=etag, source="webui",
+            expected_etag=etag,
+            source="webui",
         )
         assert set_.tempo_pref == {"regular": 140.0, "min": None, "max": None}
         etag2 = _served_etag(set_)
         cleared = backend.update_track(
-            "sid-001", {"tempo_pref": None},
-            expected_etag=etag2, source="webui",
+            "sid-001",
+            {"tempo_pref": None},
+            expected_etag=etag2,
+            source="webui",
         )
         assert cleared.tempo_pref is None
 
     def test_update_track_writes_file_path_via_upsert(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """relocate-files: file_path is a flat ``tracks`` column, not EAV,
         so it must round-trip through ``StateWriter.upsert_track`` -- the
@@ -652,8 +721,10 @@ class TestFallbackPaths:
         before = backend.get_track("sid-001")
         etag = _served_etag(before)
         updated = backend.update_track(
-            "sid-001", {"file_path": "/music/relocated/midnight.mp3"},
-            expected_etag=etag, source="webui",
+            "sid-001",
+            {"file_path": "/music/relocated/midnight.mp3"},
+            expected_etag=etag,
+            source="webui",
         )
         assert updated.file_path == "/music/relocated/midnight.mp3"
         assert updated.title == before.title
@@ -665,7 +736,8 @@ class TestFallbackPaths:
         assert reread.file_path == "/music/relocated/midnight.mp3"
 
     def test_update_track_post_mutation_guard_failure_rolls_back_transaction(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """A pathname mismatch after upsert must roll back before COMMIT."""
 
@@ -682,14 +754,18 @@ class TestFallbackPaths:
 
         with pytest.raises(RuntimeError, match="candidate pathname changed"):
             backend.update_track(
-                "sid-001", {"file_path": "/music/relocated/midnight.mp3"},
-                expected_etag=etag, source="webui", mutation_guard=_fail_postcheck,
+                "sid-001",
+                {"file_path": "/music/relocated/midnight.mp3"},
+                expected_etag=etag,
+                source="webui",
+                mutation_guard=_fail_postcheck,
             )
         assert checks == 2
         assert backend.get_track("sid-001").file_path == before.file_path
 
     def test_update_track_concurrent_updates_no_lost_update(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         """Adversarial R4 finding (TOCTOU on update_track).
 
@@ -720,8 +796,10 @@ class TestFallbackPaths:
             start.wait()
             try:
                 out = backend.update_track(
-                    "sid-001", {"notes": note},
-                    expected_etag=shared_etag, source="webui",
+                    "sid-001",
+                    {"notes": note},
+                    expected_etag=shared_etag,
+                    source="webui",
                 )
                 results[tag] = ("ok", out.notes)
             except ConflictError as exc:
@@ -735,31 +813,23 @@ class TestFallbackPaths:
         t2.start()
         t1.join(timeout=join_timeout_seconds)
         t2.join(timeout=join_timeout_seconds)
-        assert not t1.is_alive(), (
-            f"worker a did not finish within join timeout "
-            f"{join_timeout_seconds}s"
-        )
-        assert not t2.is_alive(), (
-            f"worker b did not finish within join timeout "
-            f"{join_timeout_seconds}s"
-        )
+        assert not t1.is_alive(), f"worker a did not finish within join timeout {join_timeout_seconds}s"
+        assert not t2.is_alive(), f"worker b did not finish within join timeout {join_timeout_seconds}s"
 
         outcomes = sorted(v[0] for v in results.values())
-        assert outcomes == ["conflict", "ok"], (
-            f"expected exactly one ok + one conflict, got {results}"
-        )
+        assert outcomes == ["conflict", "ok"], f"expected exactly one ok + one conflict, got {results}"
 
         # Final durable state must reflect the winner, not be silently
         # overwritten by the loser.
-        winner_note = next(
-            v[1] for v in results.values() if v[0] == "ok"
-        )
+        winner_note = next(v[1] for v in results.values() if v[0] == "ok")
         final = backend.get_track("sid-001")
         assert final.notes == winner_note
         assert final.provenance["notes"].source == "webui"
 
     def test_update_tracks_rolls_back_every_row_when_a_later_write_fails(
-        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fresh_state_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """If one StateWriter call fails, an earlier row must not persist."""
         from apps.webui.server.backend import TrackUpdate
@@ -779,16 +849,20 @@ class TestFallbackPaths:
 
         monkeypatch.setattr(sb_mod.StateWriter, "set_field", fail_second_write)
         with pytest.raises(RuntimeError, match="injected second write failure"):
-            backend.update_tracks([
-                TrackUpdate("sid-001", {"notes": "first changed"}, _served_etag(first)),
-                TrackUpdate("sid-002", {"notes": "second changed"}, _served_etag(second)),
-            ])
+            backend.update_tracks(
+                [
+                    TrackUpdate("sid-001", {"notes": "first changed"}, _served_etag(first)),
+                    TrackUpdate("sid-002", {"notes": "second changed"}, _served_etag(second)),
+                ]
+            )
 
         assert backend.get_track("sid-001").notes == first.notes
         assert backend.get_track("sid-002").notes == second.notes
 
     def test_update_tag_members_rejects_a_member_added_before_transaction_lock(
-        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fresh_state_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The transaction validates the observed scope after its writer lock."""
         backend = SqliteBackend(fresh_state_db)
@@ -806,8 +880,12 @@ class TestFallbackPaths:
                 try:
                     with sb_mod.StateWriter(race_conn, actor="test-racer") as writer:
                         writer.set_field(
-                            "sid-002", "tags", ["late"], source="webui",
-                            modified_at=_iso_now(), confidence=1.0,
+                            "sid-002",
+                            "tags",
+                            ["late"],
+                            source="webui",
+                            modified_at=_iso_now(),
+                            confidence=1.0,
                         )
                 finally:
                     race_conn.close()
@@ -816,7 +894,8 @@ class TestFallbackPaths:
         monkeypatch.setattr(sb_mod._state_db, "open_rw", open_rw_after_racing_add)
         with pytest.raises(MyTagScopeConflictError) as exc_info:
             backend.update_tag_members(
-                "late", "renamed",
+                "late",
+                "renamed",
                 expected_catalog_revision=expected_catalog_revision,
                 expected_track_count=0,
             )
@@ -825,16 +904,23 @@ class TestFallbackPaths:
         assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
 
     def test_create_and_delete_pairing_persists_in_sqlite(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         now = _iso_now()
-        p = backend.create_pairing(Pairing(
-            pairing_id="ignored", from_stable_id="sid-001",
-            to_stable_id="sid-002", direction="->",
-            source="manual", notes="test",
-            created_at=now, updated_at=now,
-        ))
+        p = backend.create_pairing(
+            Pairing(
+                pairing_id="ignored",
+                from_stable_id="sid-001",
+                to_stable_id="sid-002",
+                direction="->",
+                source="manual",
+                notes="test",
+                created_at=now,
+                updated_at=now,
+            )
+        )
         # create_pairing stores the supplied wire id on http_pairings.
         assert p.pairing_id == "ignored"
         listed = backend.list_pairings()
@@ -847,16 +933,23 @@ class TestFallbackPaths:
         assert backend2.list_pairings() == []
 
     def test_create_and_delete_pairing_persists_in_state_db(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         now = _iso_now()
-        p = backend.create_pairing(Pairing(
-            pairing_id="ignored", from_stable_id="sid-001",
-            to_stable_id="sid-002", direction="->",
-            source="manual", notes="test",
-            created_at=now, updated_at=now,
-        ))
+        p = backend.create_pairing(
+            Pairing(
+                pairing_id="ignored",
+                from_stable_id="sid-001",
+                to_stable_id="sid-002",
+                direction="->",
+                source="manual",
+                notes="test",
+                created_at=now,
+                updated_at=now,
+            )
+        )
         # A second backend is a restarted daemon: the pairing is still there.
         reborn = SqliteBackend(fresh_state_db)
         [listed] = reborn.list_pairings()
@@ -869,7 +962,8 @@ class TestFallbackPaths:
         assert backend2.list_pairings() == []
 
     def test_last_writer_delegates(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         assert backend.last_writer() is None
@@ -877,36 +971,44 @@ class TestFallbackPaths:
 
 # --- factory -------------------------------------------------------------
 
+
 class TestFactory:
     def test_make_backend_returns_sqlite_when_file_exists(
-        self, fresh_state_db: Path,
+        self,
+        fresh_state_db: Path,
     ) -> None:
         backend = make_backend(fresh_state_db)
         assert isinstance(backend, SqliteBackend)
 
     def test_make_backend_returns_inmemory_when_missing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         backend = make_backend(tmp_path / "does-not-exist.db")
         assert isinstance(backend, InMemoryBackend)
 
     def test_make_backend_returns_inmemory_when_path_is_dir(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         backend = make_backend(tmp_path)  # dir, not file
         assert isinstance(backend, InMemoryBackend)
 
     def test_make_backend_default_path_uses_shared_paths(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from apps.shared import paths as shared_paths
+
         missing = tmp_path / "not-there.db"
         monkeypatch.setattr(shared_paths, "STATE_DB", missing)
         backend = make_backend()
         assert isinstance(backend, InMemoryBackend)
 
     def test_make_backend_migrates_a_stale_existing_db(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """issue #762: an unmigrated (v5) db must be upgraded before serving.
 
@@ -941,15 +1043,14 @@ class TestFactory:
 
         verify_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
-            version = verify_conn.execute(
-                "SELECT MAX(version) FROM schema_meta"
-            ).fetchone()[0]
+            version = verify_conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
         finally:
             verify_conn.close()
         assert version == state_schema.SCHEMA_VERSION
 
     def test_make_backend_refuses_tracks_without_schema_meta(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Issue #790: a foreign old tracks table must fail before migration.
 
@@ -961,12 +1062,8 @@ class TestFactory:
         db_path = tmp_path / "state.db"
         conn = sqlite3.connect(str(db_path))
         try:
-            conn.execute(
-                "CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)"
-            )
-            conn.execute(
-                "INSERT INTO tracks VALUES ('legacy-1', 'Legacy Track')"
-            )
+            conn.execute("CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)")
+            conn.execute("INSERT INTO tracks VALUES ('legacy-1', 'Legacy Track')")
             conn.commit()
         finally:
             conn.close()
@@ -974,8 +1071,61 @@ class TestFactory:
         with pytest.raises(StaleStateSchemaError, match="version 0"):
             make_backend(db_path)
 
+    def test_make_backend_accepts_schema_meta_with_whitespace_in_create_sql(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Issue #500: CREATE TABLE formatting must not hide schema_meta.
+
+        SQLite rewrites CREATE TABLE text (drops IF NOT EXISTS). Extra
+        whitespace or newlines in the stored SQL still names a versioned
+        table, so boot must not take the unversioned-tracks path.
+        """
+        db_path = tmp_path / "state.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE schema_meta (
+
+                    version    INTEGER PRIMARY KEY,
+
+                    applied_at TEXT    NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
+                (state_schema.SCHEMA_VERSION, ISO),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        assert sb_mod._tracks_table_missing_schema_meta(db_path) is False
+        has_tracks, version = sb_mod.read_tracks_schema_version(
+            db_path, busy_timeout_s=1.0,
+        )
+        assert has_tracks is True
+        assert version == state_schema.SCHEMA_VERSION
+        try:
+            backend = make_backend(db_path)
+        except StaleStateSchemaError as exc:
+            raise AssertionError(
+                "whitespace schema_meta was treated as unversioned"
+            ) from exc
+        except sqlite3.OperationalError:
+            # Stub schema is enough to prove the unversioned-tracks gate
+            # did not fire; later boot steps may still refuse missing tables.
+            return
+        assert isinstance(backend, SqliteBackend)
+
     def test_make_backend_raises_when_migration_cannot_write_and_leaves_version_unchanged(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Negative control (issue #762 AC4, partial -- see caveat below): a
         real write failure on the migrate-or-die path must abort
@@ -1017,9 +1167,7 @@ class TestFactory:
 
         pre_conn = sqlite3.connect(str(db_path))
         try:
-            pre_version = pre_conn.execute(
-                "SELECT MAX(version) FROM schema_meta"
-            ).fetchone()[0]
+            pre_version = pre_conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
         finally:
             pre_conn.close()
         assert pre_version == 5
@@ -1032,9 +1180,7 @@ class TestFactory:
 
         verify_conn = sqlite3.connect(str(db_path))
         try:
-            version = verify_conn.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM schema_meta"
-            ).fetchone()[0]
+            version = verify_conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_meta").fetchone()[0]
         finally:
             verify_conn.close()
         assert version == pre_version, (
@@ -1048,7 +1194,8 @@ class TestSchemaGuard:
     """SqliteBackend's own defense-in-depth guard (issue #762 AC2)."""
 
     def test_sqlite_backend_refuses_a_stale_tracks_schema(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A real Phase 5 db (has ``tracks``) below SCHEMA_VERSION must be
         refused loudly at construction, even when a caller bypasses
@@ -1067,9 +1214,11 @@ class TestSchemaGuard:
 
 # --- EAV edge cases ------------------------------------------------------
 
+
 class TestEavEdgeCases:
     def test_bad_artists_json_is_null_artist(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         db_path = tmp_path / "s.db"
         conn = state_db.open_rw(db_path)
@@ -1087,7 +1236,8 @@ class TestEavEdgeCases:
         assert t.artist is None
 
     def test_non_list_artists_json_scalar_string(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         db_path = tmp_path / "s.db"
         conn = state_db.open_rw(db_path)
@@ -1096,8 +1246,7 @@ class TestEavEdgeCases:
                 "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                 "  artists_json, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                ("x", "inferred", "Scalar",
-                 json.dumps("Solo Artist"), ISO, ISO),
+                ("x", "inferred", "Scalar", json.dumps("Solo Artist"), ISO, ISO),
             )
         finally:
             conn.close()

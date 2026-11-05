@@ -9,6 +9,7 @@ shows ``track_id = "7d865e959b2466918c9863afca942d0fb89d7c9a"`` next to
 ``sha1("GBCEN0900132")`` digest. This test uses the real digest so the
 actual algorithm is the regression anchor.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -84,12 +85,13 @@ def test_tier1_normalise_isrc_helper() -> None:
 def test_tier2_happy_path() -> None:
     fp = "A" * 64 + "IGNORED"
     digest, tier = ids.stable_id(
-        isrc=None, fingerprint=fp, duration_ms=634000, size_bytes=12_345_678,
+        isrc=None,
+        fingerprint=fp,
+        duration_ms=634000,
+        size_bytes=12_345_678,
     )
     assert tier == "fingerprint"
-    expected = hashlib.sha1(
-        f"{'A' * 64}|634000|12345678".encode("utf-8")
-    ).hexdigest()
+    expected = hashlib.sha1(f"{'A' * 64}|634000|12345678".encode("utf-8")).hexdigest()
     assert digest == expected
 
 
@@ -103,34 +105,40 @@ def test_tier2_uses_fingerprint_prefix_64() -> None:
 
 def test_tier2_requires_duration_and_size() -> None:
     _, tier = ids.stable_id(
-        isrc=None, fingerprint="X" * 64, duration_ms=None,
-        size_bytes=10, abs_path="/a.mp3", mtime=1.0,
+        isrc=None,
+        fingerprint="X" * 64,
+        duration_ms=None,
+        size_bytes=10,
+        abs_path="/a.mp3",
+        mtime=1.0,
     )
     assert tier == "inferred"
 
 
 def test_isrc_missing_falls_to_fingerprint() -> None:
     _, tier = ids.stable_id(
-        isrc=None, fingerprint="C" * 64, duration_ms=100, size_bytes=200,
+        isrc=None,
+        fingerprint="C" * 64,
+        duration_ms=100,
+        size_bytes=200,
     )
     assert tier == "fingerprint"
 
 
 def test_empty_string_isrc_falls_to_fingerprint() -> None:
     _, tier = ids.stable_id(
-        isrc="", fingerprint="D" * 64, duration_ms=100, size_bytes=200,
+        isrc="",
+        fingerprint="D" * 64,
+        duration_ms=100,
+        size_bytes=200,
     )
     assert tier == "fingerprint"
 
 
 def test_tier3_path_mtime_fallback() -> None:
-    digest, tier = ids.stable_id(
-        isrc=None, abs_path="/music/song.mp3", mtime=1700000000.0
-    )
+    digest, tier = ids.stable_id(isrc=None, abs_path="/music/song.mp3", mtime=1700000000.0)
     assert tier == "inferred"
-    assert digest == hashlib.sha1(
-        b"/music/song.mp3|1700000000.0"
-    ).hexdigest()
+    assert digest == hashlib.sha1(b"/music/song.mp3|1700000000.0").hexdigest()
 
 
 def test_tier3_marks_inferred_source() -> None:
@@ -148,8 +156,12 @@ def test_tier3_streaming_empty_path_is_accepted() -> None:
 def test_all_missing_raises() -> None:
     with pytest.raises(ValueError):
         ids.stable_id(
-            isrc=None, fingerprint=None, duration_ms=None,
-            size_bytes=None, abs_path=None, mtime=None,
+            isrc=None,
+            fingerprint=None,
+            duration_ms=None,
+            size_bytes=None,
+            abs_path=None,
+            mtime=None,
         )
 
 
@@ -165,12 +177,8 @@ def test_tier3_nfc_nfd_spellings_share_one_inferred_id() -> None:
 
 
 def test_tier3_case_only_spellings_share_one_inferred_id() -> None:
-    upper_digest, tier_upper = ids.stable_id(
-        isrc=None, abs_path="/music/Song.wav", mtime=2.0
-    )
-    lower_digest, tier_lower = ids.stable_id(
-        isrc=None, abs_path="/music/song.wav", mtime=2.0
-    )
+    upper_digest, tier_upper = ids.stable_id(isrc=None, abs_path="/music/Song.wav", mtime=2.0)
+    lower_digest, tier_lower = ids.stable_id(isrc=None, abs_path="/music/song.wav", mtime=2.0)
     assert tier_upper == tier_lower == "inferred"
     canonical = path_collision_key("/music/Song.wav")
     expected = hashlib.sha1(f"{canonical}|2.0".encode()).hexdigest()

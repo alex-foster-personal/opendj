@@ -1,4 +1,5 @@
 """Candidate filter tests (AI-01, AI-02)."""
+
 from __future__ import annotations
 
 import pytest
@@ -15,9 +16,7 @@ pytestmark = [
 
 
 def _ctx(recent: list[PlayedTrack]) -> SessionContext:
-    return SessionContext(
-        recent=recent, source="manual", captured_at=FIXED_NOW
-    )
+    return SessionContext(recent=recent, source="manual", captured_at=FIXED_NOW)
 
 
 def _cur(**kw) -> PlayedTrack:
@@ -34,9 +33,7 @@ def _cur(**kw) -> PlayedTrack:
 
 
 def test_empty_library_returns_empty() -> None:
-    out, trace = filter_candidates(
-        current_track=_cur(), library=[], context=_ctx([])
-    )
+    out, trace = filter_candidates(current_track=_cur(), library=[], context=_ctx([]))
     assert out == []
     assert trace.total_dropped() == 0
 
@@ -67,9 +64,7 @@ def test_artist_cooldown() -> None:
         )
         for i in range(3)
     ]
-    out, trace = filter_candidates(
-        current_track=_cur(), library=lib, context=_ctx(recent)
-    )
+    out, trace = filter_candidates(current_track=_cur(), library=lib, context=_ctx(recent))
     assert [c.stable_id for c in out] == ["t-b"]
     assert trace.dropped_artist == 1
 
@@ -101,9 +96,7 @@ def test_energy_slope_cap_rejects_reverse() -> None:
         TrackFeature("t-ok", "Ok", 120.0, "8A", 7),
         TrackFeature("t-bad", "Bad", 120.0, "8A", 2),  # would reverse > 2 steps
     ]
-    out, trace = filter_candidates(
-        current_track=_cur(energy=7), library=lib, context=_ctx(recent)
-    )
+    out, trace = filter_candidates(current_track=_cur(energy=7), library=lib, context=_ctx(recent))
     ids = {c.stable_id for c in out}
     assert "t-ok" in ids
     assert "t-bad" not in ids

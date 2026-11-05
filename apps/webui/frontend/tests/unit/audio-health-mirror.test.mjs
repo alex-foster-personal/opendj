@@ -121,8 +121,12 @@ describe('buildAudioHealthMirror', () => {
 
 	it('reports unknown, never ok, when there is no snapshot', () => {
 		const out = build({
-			snapshot: null, rms: null, rmsAgeMs: null,
-			silenceVerdict: 'ok', events: [], nowMs: NOW
+			snapshot: null,
+			rms: null,
+			rmsAgeMs: null,
+			silenceVerdict: 'ok',
+			events: [],
+			nowMs: NOW
 		});
 		assert.equal(out.output, null);
 		assert.equal(out.display.cssClass, 'unknown');
@@ -134,7 +138,9 @@ describe('buildAudioHealthMirror', () => {
 			snapshot: snap('not_delivering', 'dead', 0),
 			rms: 0.47,
 			rmsAgeMs: 30_000,
-			silenceVerdict: 'ok', events: [], nowMs: NOW
+			silenceVerdict: 'ok',
+			events: [],
+			nowMs: NOW
 		});
 		assert.equal(out.meter.fresh, false, 'a 30s-old reading is not live signal');
 		assert.equal(out.meter.rms, 0.47, 'the value is still reported, just not trusted');
@@ -145,7 +151,9 @@ describe('buildAudioHealthMirror', () => {
 			snapshot: snap('ok', 12.5),
 			rms: 0.3,
 			rmsAgeMs: 80,
-			silenceVerdict: 'ok', events: [], nowMs: NOW
+			silenceVerdict: 'ok',
+			events: [],
+			nowMs: NOW
 		});
 		assert.equal(out.display.cssClass, 'ok');
 		assert.equal(out.meter.fresh, true);
@@ -159,19 +167,29 @@ describe('buildAudioHealthMirror', () => {
 		// shape as `master-silence-report.ts:55` reporting rms 1.0 for a null
 		// analyser, which is a large part of why this outage went undiagnosed.
 		const out = build({
-			snapshot: snap('ok'), rms: null, rmsAgeMs: null,
-			silenceVerdict: 'ok', events: [], nowMs: NOW
+			snapshot: snap('ok'),
+			rms: null,
+			rmsAgeMs: null,
+			silenceVerdict: 'ok',
+			events: [],
+			nowMs: NOW
 		});
 		assert.equal(out.meter.fresh, false, 'no age reading is not evidence of a fresh one');
 	});
 
 	it('ignores unrelated perf events so the block stays about audio', () => {
 		const out = build({
-			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
+			snapshot: snap('ok'),
+			rms: 0.3,
+			rmsAgeMs: 50,
+			silenceVerdict: 'ok',
 			events: [evt('deck-load-timing', 1000), evt('audio-output-dead', 2000)],
 			nowMs: NOW
 		});
-		assert.deepEqual(out.recent_faults.map((r) => r.kind), ['audio-output-dead']);
+		assert.deepEqual(
+			out.recent_faults.map((r) => r.kind),
+			['audio-output-dead']
+		);
 	});
 
 	it('does not report a healthy audio row as a fault', () => {
@@ -181,7 +199,10 @@ describe('buildAudioHealthMirror', () => {
 		// audio-domain rows that report that things are FINE. An agent reading
 		// this block to answer "is anything wrong" was told yes, always.
 		const out = build({
-			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
+			snapshot: snap('ok'),
+			rms: 0.3,
+			rmsAgeMs: 50,
+			silenceVerdict: 'ok',
 			events: [
 				evt('audio-context', 3000, 'sample_rate_hz=48000', 'info'),
 				evt('audio-output-alive', 2000, 'output is back', 'info'),
@@ -198,7 +219,10 @@ describe('buildAudioHealthMirror', () => {
 		// satisfies "no false faults" perfectly and publishes an empty timeline
 		// through an outage.
 		const out = build({
-			snapshot: snap('not_delivering', 'dead', 0), rms: 0, rmsAgeMs: 50, silenceVerdict: 'silent-while-playing',
+			snapshot: snap('not_delivering', 'dead', 0),
+			rms: 0,
+			rmsAgeMs: 50,
+			silenceVerdict: 'silent-while-playing',
 			events: [
 				evt('audio-output-alive', 4000, 'output is back', 'info'),
 				evt('audio-output-dead', 3000, 'rendering into a dead output', 'error'),
@@ -212,7 +236,10 @@ describe('buildAudioHealthMirror', () => {
 			['silent-while-playing', 'audio-output-rebind-deferred', 'audio-output-dead'],
 			'every non-info audio row is a fault, newest first'
 		);
-		assert.deepEqual(out.recent_faults.map((r) => r.severity), ['error', 'warn', 'error']);
+		assert.deepEqual(
+			out.recent_faults.map((r) => r.severity),
+			['error', 'warn', 'error']
+		);
 	});
 
 	it('carries a row written before severity existed as unknown, not as healthy', () => {
@@ -221,7 +248,10 @@ describe('buildAudioHealthMirror', () => {
 		// -reads-as-good defect this whole module exists to remove. It is
 		// labelled instead, so a reader can tell it from a diagnosed fault.
 		const out = build({
-			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
+			snapshot: snap('ok'),
+			rms: 0.3,
+			rmsAgeMs: 50,
+			silenceVerdict: 'ok',
 			events: [evt('audio-output-dead', 1000, 'legacy row', null)],
 			nowMs: NOW
 		});
@@ -231,10 +261,15 @@ describe('buildAudioHealthMirror', () => {
 
 	it('refuses a sample time from the future rather than reporting a negative age', () => {
 		assert.throws(
-			() => build({
-				snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
-				events: [evt('audio-output-dead', -5000)], nowMs: NOW
-			}),
+			() =>
+				build({
+					snapshot: snap('ok'),
+					rms: 0.3,
+					rmsAgeMs: 50,
+					silenceVerdict: 'ok',
+					events: [evt('audio-output-dead', -5000)],
+					nowMs: NOW
+				}),
 			/future/i
 		);
 	});
@@ -305,9 +340,14 @@ describe('audio faults survive unrelated ring traffic', () => {
 	it('agrees with the mirror about which rows are audio-health faults', () => {
 		// One predicate, imported by the mirror. Two copies could let the ring
 		// retain rows the fold ignores, or evict rows it looks for.
-		const at = (kind, severity) => ring.audioHealthFaultSeverity({
-			t: new Date(NOW).toISOString(), kind, deck: null, message: 'x', severity
-		});
+		const at = (kind, severity) =>
+			ring.audioHealthFaultSeverity({
+				t: new Date(NOW).toISOString(),
+				kind,
+				deck: null,
+				message: 'x',
+				severity
+			});
 		assert.equal(at('audio-output-dead', 'error'), 'error');
 		assert.equal(at('audio-output-rebind-deferred', 'warn'), 'warn');
 		assert.equal(at('silent-while-playing', 'error'), 'error');
@@ -317,7 +357,11 @@ describe('audio faults survive unrelated ring traffic', () => {
 		assert.equal(at('audio-context', 'info'), null, 'a device floor is not a fault');
 		assert.equal(at('xrun', 'error'), null, 'xrun has its own counter and would crowd the bucket');
 		assert.equal(at('deck-load', 'error'), null, 'not an audio-health row at all');
-		assert.equal(at('audio-output-dead', undefined), 'unknown', 'a legacy row is unknown, not healthy');
+		assert.equal(
+			at('audio-output-dead', undefined),
+			'unknown',
+			'a legacy row is unknown, not healthy'
+		);
 	});
 
 	it('persists the severity it recorded, so a reload can still tell the two apart', () => {

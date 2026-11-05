@@ -5,6 +5,7 @@ Tue 6 Oct 2026, found by the #57 worker: a hidden tab that held its Web Lock but
 lost the mirror lease stopped claiming orders, the mirror still had a document on
 record, so POST /commands passed its open-page check and then waited forever.
 """
+
 from __future__ import annotations
 
 import asyncio

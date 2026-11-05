@@ -85,6 +85,7 @@ from apps.shared.state.db import open_ro
 from .. import boot_grace, coverage_cache, library_playable, rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
+from ..inbox_playlist import INBOX_PLAYLIST_ID
 from ..sqlite_backend import SqliteBackend
 
 log = logging.getLogger(__name__)
@@ -371,6 +372,14 @@ def _scan_broken_ids(backend: StateBackend) -> tuple[int, set[str]]:
     return total, {ref.stable_id for ref in refs}
 
 
+def _stored_playlists(backend: StateBackend) -> list[Playlist]:
+    """Playlists that participate in reconcile counts (not the derived Inbox)."""
+    return [
+        pl for pl in backend.list_playlists()
+        if pl.playlist_id != INBOX_PLAYLIST_ID
+    ]
+
+
 def _playlist_membership(
     playlists: list[Playlist],
 ) -> dict[str, list[str]]:
@@ -442,7 +451,7 @@ def list_broken_tracks(
     # Whole track rows (title, artist, the lane-owned bpm and key) for the
     # page only: the scan above already knows which rows are broken.
     tracks = backend.get_tracks_bulk([ref.stable_id for ref in page])
-    member_of = _playlist_membership(backend.list_playlists()) if page else {}
+    member_of = _playlist_membership(_stored_playlists(backend)) if page else {}
     rows: list[BrokenTrackOut] = []
     for ref in page:
         track = tracks.get(ref.stable_id)
@@ -520,7 +529,7 @@ def scan_summary(backend: StateBackend) -> dict[str, object]:
     """The full library scan behind the summary: every row's path, stat'd."""
     started = time.monotonic()
     total_tracks, broken_ids = _scan_broken_ids(backend)
-    playlists = backend.list_playlists()
+    playlists = _stored_playlists(backend)
 
     per_playlist = [
         PlaylistBrokenSummary(

@@ -58,9 +58,7 @@ def client(data_dir: Path) -> Iterator[TestClient]:
 
 
 def _configure_name(data_dir: Path, name: str | None) -> None:
-    sync_config.write_config(
-        data_dir, sync_config.CloudSyncConfig(enabled=False, hub_url=None, machine_name=name)
-    )
+    sync_config.write_config(data_dir, sync_config.CloudSyncConfig(enabled=False, hub_url=None, machine_name=name))
 
 
 def _insert_same_host_peer(data_dir: Path) -> None:
@@ -88,9 +86,7 @@ def _local_row(rows: list[dict[str, object]]) -> dict[str, object]:
     return local[0]
 
 
-def test_self_registration_uses_the_configured_machine_name(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_self_registration_uses_the_configured_machine_name(client: TestClient, data_dir: Path) -> None:
     """if GET /machines registers the hostname while a machine_name is configured then broken"""
     _configure_name(data_dir, CONFIGURED_NAME)
     response = client.get("/api/v1/cloudsync/machines")
@@ -98,9 +94,7 @@ def test_self_registration_uses_the_configured_machine_name(
     assert _local_row(response.json())["name"] == CONFIGURED_NAME
 
 
-def test_same_host_peer_holding_the_hostname_does_not_500(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_same_host_peer_holding_the_hostname_does_not_500(client: TestClient, data_dir: Path) -> None:
     """if a same-host hub row holding the hostname makes GET /machines 500 then broken"""
     _configure_name(data_dir, CONFIGURED_NAME)
     _insert_same_host_peer(data_dir)
@@ -110,9 +104,7 @@ def test_same_host_peer_holding_the_hostname_does_not_500(
     assert names == sorted([CONFIGURED_NAME, default_machine_name()])
 
 
-def test_no_configured_name_still_registers_the_hostname(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_no_configured_name_still_registers_the_hostname(client: TestClient, data_dir: Path) -> None:
     """if an unconfigured machine stops self-registering under its hostname then broken"""
     _configure_name(data_dir, None)
     response = client.get("/api/v1/cloudsync/machines")
@@ -120,9 +112,7 @@ def test_no_configured_name_still_registers_the_hostname(
     assert _local_row(response.json())["name"] == default_machine_name()
 
 
-def test_malformed_config_fails_loudly_instead_of_using_the_hostname(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_malformed_config_fails_loudly_instead_of_using_the_hostname(client: TestClient, data_dir: Path) -> None:
     """if a malformed cloudsync-config.json silently registers the hostname then broken"""
     sync_config.config_path(data_dir).write_text("{not json", encoding="utf-8")
     response = client.get("/api/v1/cloudsync/machines")
@@ -131,9 +121,7 @@ def test_malformed_config_fails_loudly_instead_of_using_the_hostname(
 
 
 @pytest.mark.requirement("CLOUDSYNC-8314")
-def test_configured_name_held_by_another_id_is_409_with_the_reason(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_configured_name_held_by_another_id_is_409_with_the_reason(client: TestClient, data_dir: Path) -> None:
     """if renaming onto another machine id's name answers a bare 500 or changes a row then broken"""
     _configure_name(data_dir, "silver")
     assert client.get("/api/v1/cloudsync/machines").status_code == 200
@@ -142,13 +130,10 @@ def test_configured_name_held_by_another_id_is_409_with_the_reason(
         stale_conn.execute(
             "INSERT INTO machines(machine_id, name, platform, is_hub, data_root, "
             "first_seen, last_seen) VALUES (?, 'silver-preview', 'macos', 0, NULL, ?, ?)",
-            (PEER_MACHINE_ID, "2026-10-20T09:00:00.000000+00:00",
-             "2026-10-20T09:00:00.000000+00:00"),
+            (PEER_MACHINE_ID, "2026-10-20T09:00:00.000000+00:00", "2026-10-20T09:00:00.000000+00:00"),
         )
         stale_conn.commit()
-        before = stale_conn.execute(
-            "SELECT machine_id, name FROM machines ORDER BY machine_id"
-        ).fetchall()
+        before = stale_conn.execute("SELECT machine_id, name FROM machines ORDER BY machine_id").fetchall()
     finally:
         stale_conn.close()
 
@@ -161,9 +146,7 @@ def test_configured_name_held_by_another_id_is_409_with_the_reason(
     assert PEER_MACHINE_ID in detail["message"] and "silver-preview" in detail["message"]
     check_conn = sqlite3.connect(data_dir / "state" / "state.db")
     try:
-        after = check_conn.execute(
-            "SELECT machine_id, name FROM machines ORDER BY machine_id"
-        ).fetchall()
+        after = check_conn.execute("SELECT machine_id, name FROM machines ORDER BY machine_id").fetchall()
     finally:
         check_conn.close()
     assert after == before

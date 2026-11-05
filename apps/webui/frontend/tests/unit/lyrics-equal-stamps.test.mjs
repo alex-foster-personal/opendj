@@ -19,8 +19,7 @@ let api;
 let originalFetch;
 
 function serveLines(lines) {
-	globalThis.fetch = async () =>
-		Response.json({ stable_id: 'sid-l', source: 'lrclib', lines });
+	globalThis.fetch = async () => Response.json({ stable_id: 'sid-l', source: 'lrclib', lines });
 }
 
 before(async () => {

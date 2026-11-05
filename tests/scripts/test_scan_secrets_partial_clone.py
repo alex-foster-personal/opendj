@@ -32,9 +32,7 @@ SCAN_SECRETS = ROOT / "scripts" / "security" / "scan_secrets.sh"
 SECURITY_YML = ROOT / ".github" / "workflows" / "security.yml"
 
 
-def _run_materialize(
-    repo: Path, env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
+def _run_materialize(repo: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     run_env = os.environ.copy()
     if env:
         run_env.update(env)
@@ -316,11 +314,7 @@ def test_scheduled_scan_step_has_gh_token_and_no_persisted_creds() -> None:
     assert job["timeout-minutes"] == 20
     job_if = job.get("if") or ""
     assert "endsWith(github.repository, '/music-dj-tools')" not in job_if
-    checkouts = [
-        s
-        for s in job["steps"]
-        if str(s.get("uses", "")).startswith("actions/checkout@")
-    ]
+    checkouts = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout@")]
     assert len(checkouts) == 1
     with_ = checkouts[0].get("with") or {}
     assert with_.get("persist-credentials") is False
@@ -330,3 +324,18 @@ def test_scheduled_scan_step_has_gh_token_and_no_persisted_creds() -> None:
     assert len(scan_steps) == 1
     env = scan_steps[0].get("env") or {}
     assert "GH_TOKEN" in env
+
+
+def test_pr_scan_fetches_unfiltered_with_token_and_goes_neutral_on_fetch_failure() -> None:
+    doc = yaml.safe_load(SECURITY_YML.read_text(encoding="utf-8"))
+    steps = doc["jobs"]["pr"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    fetch = next(s for s in steps if s.get("id") == "fetch")
+    scan = next(s for s in steps if s.get("name", "").startswith("Scan (new findings"))
+    assert names.index(fetch["name"]) < names.index(scan["name"])
+    assert "GH_TOKEN" in (fetch.get("env") or {})
+    assert "--no-filter origin" in fetch["run"]
+    assert "GIT_CONFIG_VALUE_0" in fetch["run"]
+    assert "[UNKNOWN] secrets scan: fetch failed" in fetch["run"]
+    assert "steps.fetch.outputs.fetched" in str(scan["continue-on-error"])
+    assert "steps.fetch.outputs.merge_base" in scan["env"]["SECURITY_BASE_SHA"]

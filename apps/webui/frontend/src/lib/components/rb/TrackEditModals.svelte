@@ -29,5 +29,5 @@
 {:else if openModal === 'bulk-edit'}
 	<BulkEditModal {stableIds} {etags} {rows} {onclose} {onapplied} />
 {:else if openModal === 'mytag'}
-	<MyTagEditorModal {stableIds} {etags} {onclose} {onapplied} />
+	<MyTagEditorModal {stableIds} {onclose} {onapplied} />
 {/if}

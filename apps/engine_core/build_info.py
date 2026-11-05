@@ -27,6 +27,9 @@ Requirements:
   -> :func:`resolve_build_info`
 - ✔︎ ✅ 🎯 A repo checkout is described from live git, marked ``repo``.
   -> :func:`resolve_build_info`
+- ✔︎ ✅ 🎯 INSTALL-44: the manifest's ``identity.lineage`` (colour name, lines,
+  descent from the previous build) is served as ``lineage``; a checkout
+  computes it from live git. -> :class:`LineageOut`
 - ✔︎ ✅ 🎯 A manifest that is missing, unparseable or incomplete produces a
   503 naming the path and the reason, never a blank or a guess.
   -> :class:`BuildInfoUnavailable`, :func:`add_build_info_route`
@@ -40,7 +43,7 @@ Acceptance tests:
 - [if] no manifest env is set inside a git checkout [then] the response is
   200 with source=repo and the checkout's real dirty flag, [else ⛔️].
 - [if] no manifest env is set inside a git checkout [then] the response also
-  carries ``app_version`` from ``tauri.conf.json``, the semver the updater
+  carries ``app_version`` from ``apps/desktop/electron/package.json``, the semver the updater
   compares, [else ⛔️].
 """
 
@@ -59,12 +62,13 @@ from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from apps.engine_core.build_lineage import LineageError, compute_lineage
 from apps.engine_core.config import ENGINE_VERSION
 from apps.engine_core.refusal import unavailable_response
+from apps.shared.app_version import APP_PACKAGE_REL
 
 MANIFEST_ENV: str = "OPENDJ_PAYLOAD_MANIFEST"
 BUILD_INFO_PATH: str = "/api/v1/build-info"
-TAURI_CONF_REL: Path = Path("apps/desktop/src-tauri/tauri.conf.json")
 
 #: The error code a caller branches on when this engine cannot state what it
 #: is. Spelled once, so the /build-info body and every route that DERIVES
@@ -89,6 +93,25 @@ REQUIRED_IDENTITY_KEYS: tuple[str, ...] = (
 
 class BuildInfoUnavailable(RuntimeError):
     """The engine cannot state its identity. Always names why."""
+
+
+class LineageOut(BaseModel):
+    """Which long-lived line this build carries, as a colour (INSTALL-44).
+
+    Stamped at build time by :func:`apps.engine_core.build_lineage.compute_lineage`.
+    ``previous_git_sha_full`` is the build that was running when this one was
+    made; ``descends_from_previous`` is null when there was none to compare.
+    """
+
+    color_name: str
+    color_hex: str
+    lines: list[str]
+    line_shares: dict[str, float]
+    unresolved_lines: list[str]
+    previous_git_sha_full: str | None
+    descends_from_previous: bool | None
+    missing_commits: int | None
+    missing_from: str | None
 
 
 class BuildInfoOut(BaseModel):
@@ -130,6 +153,10 @@ class BuildInfoOut(BaseModel):
     #: construct BuildInfoOut directly (tests, update-channel fixtures) do
     #: not need to supply a meaningless pid; the live route always sets it.
     pid: int | None = None
+    #: INSTALL-44. Null with ``lineage_unavailable`` saying why: a build from
+    #: before the stamp existed, or a checkout git could not place on a line.
+    lineage: LineageOut | None = None
+    lineage_unavailable: str | None = None
 
 
 @dataclass(frozen=True)
@@ -190,7 +217,12 @@ def _from_manifest(manifest_path: Path) -> BuildInfoOut:
         raise BuildInfoUnavailable(
             f"{manifest_path} identity is missing {missing}"
         )
+    raw_lineage = identity.get("lineage")
     return BuildInfoOut(
+        lineage=LineageOut(**raw_lineage) if isinstance(raw_lineage, dict) else None,
+        lineage_unavailable=None
+        if isinstance(raw_lineage, dict)
+        else str(identity.get("lineage_unavailable") or f"{manifest_path} predates the lineage stamp"),
         source="payload",
         engine_version=identity.get("engine_version", ENGINE_VERSION),
         git_sha=identity["git_sha"],
@@ -236,15 +268,16 @@ def head_time_as_utc(raw: str) -> str:
     return committed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _tauri_app_version(repo_root: Path) -> str:
-    """The semver the updater compares, read from the desktop shell config.
+def _repo_app_version(repo_root: Path) -> str:
+    """The semver the updater compares, read from the app's ``package.json``.
 
     A repo checkout has no payload manifest, but the update channel still needs
-    the same version string ``tauri-plugin-updater`` will compare. Reading it
-    from ``tauri.conf.json`` keeps the two halves aligned without inventing a
-    second source.
+    the same version string the updater will compare. The path is
+    ``apps/shared/app_version.py``'s ``APP_PACKAGE_REL``, so the source moves in
+    one place; this reader keeps its own parse only to name what is wrong in a
+    ``BuildInfoUnavailable`` instead of answering ``unknown``.
     """
-    conf_path = repo_root / TAURI_CONF_REL
+    conf_path = repo_root / APP_PACKAGE_REL
     if not conf_path.is_file():
         raise BuildInfoUnavailable(
             f"no payload manifest and {conf_path} is missing, so this checkout "
@@ -272,7 +305,14 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
             "describe the source it is running from"
         )
     sha_full = _git(repo_root, "rev-parse", "HEAD")
+    try:
+        lineage: LineageOut | None = LineageOut(**compute_lineage(repo_root, previous_git_sha_full=None))
+        lineage_unavailable: str | None = None
+    except LineageError as error:
+        lineage, lineage_unavailable = None, str(error)
     return BuildInfoOut(
+        lineage=lineage,
+        lineage_unavailable=lineage_unavailable,
         source="repo",
         engine_version=ENGINE_VERSION,
         git_sha=sha_full[:8],
@@ -281,7 +321,7 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
         git_dirty=_git(repo_root, "status", "--porcelain") != "",
         built_at_utc=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         built_at_kind="engine-start",
-        app_version=_tauri_app_version(repo_root),
+        app_version=_repo_app_version(repo_root),
     )
 
 
@@ -354,6 +394,7 @@ __all__ = [
     "BuildIdentity",
     "BuildInfoOut",
     "BuildInfoUnavailable",
+    "LineageOut",
     "add_build_info_route",
     "head_time_as_utc",
     "resolve_build_info",

@@ -59,13 +59,13 @@ def regions_from_ratio(ratio: np.ndarray) -> list[tuple[float, float]]:
 
 
 def main() -> None:
-    stems_dirs = {os.path.basename(p) for p in glob.glob("data/state/stems/*") if os.path.isdir(p)}
-    cache = {os.path.basename(p)[:-5] for p in glob.glob("data/state/vocal-cache/*.json")}
+    stems_dirs = {os.path.basename(p) for p in glob.glob("(private path)/*") if os.path.isdir(p)}
+    cache = {os.path.basename(p)[:-5] for p in glob.glob("(private path)/*.json")}
     db = sqlite3.connect("file:data/state/state.db?mode=ro", uri=True)
 
     rows = []
     for sid in sorted(stems_dirs & cache):
-        bundle = f"data/state/stems/{sid}"
+        bundle = f"(private path)/{sid}"
         try:
             envs = {}
             sr = None
@@ -84,7 +84,7 @@ def main() -> None:
         v_env, m_env = v_env[:k], m_env[:k]
         ratio = np.where(m_env > 1e-6, v_env / np.maximum(m_env, 1e-12), 0.0)
 
-        cached = json.load(open(f"data/state/vocal-cache/{sid}.json"))
+        cached = json.load(open(f"(private path)/{sid}.json"))
         spans = regions_from_ratio(ratio)
         dur = k * HOP_S
         cov = 100.0 * sum(e - s for s, e in spans) / dur
@@ -126,8 +126,17 @@ def main() -> None:
         print(f"median ratio in LOUD half of mix:       {np.median([r['ratio_loud_med'] for r in rows]):.3f}")
         print(f"frac of quiet frames above ON_RATIO 0.10: median {np.median(fq):.3f}, max {fq.max():.3f}")
         d = [(r["cov_recomp"] - r["cov_cached"]) for r in rows if r["cov_cached"] is not None]
-        print(f"recomputed-vs-cached coverage delta: median {np.median(d):+.1f} pts, max abs {max(abs(x) for x in d):.1f}")
-    json.dump(rows, open("/private/tmp/claude-502/-Users-dev-Music-music-dj-tools/31adbe50-f905-4cda-8e46-3083bd0f8ced/scratchpad/q0_free.json", "w"), indent=1)
+        print(
+            f"recomputed-vs-cached coverage delta: median {np.median(d):+.1f} pts, max abs {max(abs(x) for x in d):.1f}"
+        )
+    json.dump(
+        rows,
+        open(
+            "/private/tmp/claude-502/-Users-dev-Music-music-dj-tools/31adbe50-f905-4cda-8e46-3083bd0f8ced/scratchpad/q0_free.json",
+            "w",
+        ),
+        indent=1,
+    )
 
 
 main()

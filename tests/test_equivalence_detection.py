@@ -99,12 +99,7 @@ def _mik(idx: int, **kw) -> MikRow:
 
 
 def _pairings(rb_kw_fn=lambda i: {}, mik_kw_fn=lambda i: {}) -> list[Pairing]:
-    return [
-        Pairing(
-            tier="exact_path", left=_rb(i, **rb_kw_fn(i)), right=_mik(i, **mik_kw_fn(i))
-        )
-        for i in range(N)
-    ]
+    return [Pairing(tier="exact_path", left=_rb(i, **rb_kw_fn(i)), right=_mik(i, **mik_kw_fn(i))) for i in range(N)]
 
 
 def _spec(
@@ -163,9 +158,7 @@ def test_centi_bpm_declared_as_bpm_is_a_declared_unit_mismatch():
     verdict, _agreement, _clusters = _run(spec, _pairings())
     assert verdict.status == FAILED
     assert verdict.suite_status == SUITE_MAPPING_BUG
-    assert any("DECLARED UNIT IMPLAUSIBLE" in r for r in verdict.reasons), (
-        verdict.reasons
-    )
+    assert any("DECLARED UNIT IMPLAUSIBLE" in r for r in verdict.reasons), verdict.reasons
 
 
 def test_every_value_doubled_is_a_mapping_bug():
@@ -223,9 +216,7 @@ def test_a_wrong_mapping_confined_to_one_notation_is_a_mapping_bug():
             return {}
         return {"key_raw": relative_major[idx % 12 + 1]}
 
-    spec = _spec(
-        "key", "key", "mixed_camelot_musical", "camelot", "key_raw", "key_camelot"
-    )
+    spec = _spec("key", "key", "mixed_camelot_musical", "camelot", "key_raw", "key_camelot")
     verdict, agreement, clusters = _run(spec, _pairings(rb_kw_fn=rb_kw))
     assert verdict.status == FAILED, verdict.reasons
     assert clusters[0].classification == MAPPING_BUG
@@ -306,18 +297,14 @@ def test_an_absent_column_is_untested():
 
 
 def test_an_unknown_loudness_unit_is_untested_never_guessed():
-    spec = _spec(
-        "loudness", "loudness", "dbfs", "unknown_db_family", "loudness", "volume"
-    )
+    spec = _spec("loudness", "loudness", "dbfs", "unknown_db_family", "loudness", "volume")
     verdict, _agreement, _clusters = _run(spec, _pairings())
     assert verdict.status == UNTESTED
     assert verdict.suite_status == SUITE_UNKNOWN_UNIT
 
 
 def test_cross_family_loudness_is_untested():
-    spec = _spec(
-        "loudness", "loudness", "dbfs", "lufs_integrated", "loudness", "volume"
-    )
+    spec = _spec("loudness", "loudness", "dbfs", "lufs_integrated", "loudness", "volume")
     verdict, _agreement, _clusters = _run(spec, _pairings())
     assert verdict.status == UNTESTED
     assert verdict.suite_status == SUITE_UNKNOWN_UNIT
@@ -329,10 +316,7 @@ def test_cross_family_loudness_is_untested():
 
 def test_too_few_comparable_pairs_is_untested_not_a_passing_rate():
     spec = _spec("bpm", "bpm", "centi_bpm", "bpm", "bpm_raw", "tempo", tolerance=1.0)
-    few = [
-        Pairing(tier="exact_path", left=_rb(i), right=_mik(i))
-        for i in range(CFG.min_comparable - 1)
-    ]
+    few = [Pairing(tier="exact_path", left=_rb(i), right=_mik(i)) for i in range(CFG.min_comparable - 1)]
     verdict, agreement, _clusters = _run(spec, few)
     assert agreement.rate == 1.0  # a perfect rate...
     assert verdict.status == UNTESTED  # ...over too little data is not evidence
@@ -384,9 +368,7 @@ def test_a_genuine_two_notation_column_still_reports_the_collapse():
     sentinel. The finding must fire, and must count only the 2 spellings that
     produced a canonical value.
     """
-    spec = _spec(
-        "key", "key", "mixed_camelot_musical", "camelot", "key_raw", "key_camelot"
-    )
+    spec = _spec("key", "key", "mixed_camelot_musical", "camelot", "key_raw", "key_camelot")
     rows = (
         [_rb(0, key_raw="1A") for _ in range(10)]
         + [_rb(0, key_raw="Abm") for _ in range(10)]  # Abm IS 1A

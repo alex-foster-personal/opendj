@@ -54,7 +54,12 @@
 		</button>
 	{/each}
 </div>
-<p class="preflight-action-status" data-testid="preflight-action-status" role="status" aria-live="polite">
+<p
+	class="preflight-action-status"
+	data-testid="preflight-action-status"
+	role="status"
+	aria-live="polite"
+>
 	{status ?? ''}
 </p>
 {#if footer}

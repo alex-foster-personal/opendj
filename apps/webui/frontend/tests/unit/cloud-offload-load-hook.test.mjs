@@ -18,14 +18,30 @@ const BASE = 'https://offload-hook.example.test';
 
 function operation(over = {}) {
 	return {
-		op_id: 'op1', kind: 'restore', mode: 'temporary', playlist_id: null, state: 'done', stable_ids: [SID],
-		tracks_total: 1, tracks_done: 1, bytes_total: 10, bytes_done: 10, bytes_freed: 0, current: null,
-		results: { [SID]: { state: 'temporary', note: null, error: null } }, error: null, dry_run: false, ...over
+		op_id: 'op1',
+		kind: 'restore',
+		mode: 'temporary',
+		playlist_id: null,
+		state: 'done',
+		stable_ids: [SID],
+		tracks_total: 1,
+		tracks_done: 1,
+		bytes_total: 10,
+		bytes_done: 10,
+		bytes_freed: 0,
+		current: null,
+		results: { [SID]: { state: 'temporary', note: null, error: null } },
+		error: null,
+		dry_run: false,
+		...over
 	};
 }
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 async function withEngine(handler, body) {
@@ -45,12 +61,18 @@ async function withEngine(handler, body) {
 }
 
 test('a load of an offloaded track restores it for 24h on that deck first', async () => {
-	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', { viteApiBase: BASE });
+	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', {
+		viteApiBase: BASE
+	});
 	await withEngine(
 		async (request, url) => {
-			if (url.pathname === '/api/v1/offload/tracks') return json({ [SID]: { state: 'offloaded', expires_at: null } });
+			if (url.pathname === '/api/v1/offload/tracks')
+				return json({ [SID]: { state: 'offloaded', expires_at: null } });
 			if (url.pathname === '/api/v1/offload/restore') {
-				assert.deepEqual(JSON.parse(await request.text()), { stable_ids: [SID], mode: 'temporary' });
+				assert.deepEqual(JSON.parse(await request.text()), {
+					stable_ids: [SID],
+					mode: 'temporary'
+				});
 				return json(operation({ state: 'running' }), 202);
 			}
 			if (url.pathname === '/api/v1/offload/operations/op1') return json(operation());
@@ -58,14 +80,24 @@ test('a load of an offloaded track restores it for 24h on that deck first', asyn
 		},
 		async (calls) => {
 			await ops.ensureLocalBeforeLoad(2, SID);
-			assert.deepEqual(calls, ['GET /api/v1/offload/tracks', 'POST /api/v1/offload/restore', 'GET /api/v1/offload/operations/op1']);
-			assert.equal(ops.offloadOps.deckDownloads[2], undefined, 'the deck bar is gone once the track is back');
+			assert.deepEqual(calls, [
+				'GET /api/v1/offload/tracks',
+				'POST /api/v1/offload/restore',
+				'GET /api/v1/offload/operations/op1'
+			]);
+			assert.equal(
+				ops.offloadOps.deckDownloads[2],
+				undefined,
+				'the deck bar is gone once the track is back'
+			);
 		}
 	);
 });
 
 test('a load of a local track costs one state read and nothing else', async () => {
-	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', { viteApiBase: BASE });
+	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', {
+		viteApiBase: BASE
+	});
 	await withEngine(
 		async () => json({ [SID]: null }),
 		async (calls) => {
@@ -76,12 +108,23 @@ test('a load of a local track costs one state read and nothing else', async () =
 });
 
 test('a failed download fails the load with the reason', async () => {
-	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', { viteApiBase: BASE });
+	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', {
+		viteApiBase: BASE
+	});
 	await withEngine(
 		async (_request, url) => {
-			if (url.pathname === '/api/v1/offload/tracks') return json({ [SID]: { state: 'offloaded', expires_at: null } });
-			if (url.pathname === '/api/v1/offload/restore') return json(operation({ state: 'running' }), 202);
-			return json(operation({ state: 'failed', results: { [SID]: { state: null, note: null, error: 'OffloadVerifyError', message: 'bad bytes' } } }));
+			if (url.pathname === '/api/v1/offload/tracks')
+				return json({ [SID]: { state: 'offloaded', expires_at: null } });
+			if (url.pathname === '/api/v1/offload/restore')
+				return json(operation({ state: 'running' }), 202);
+			return json(
+				operation({
+					state: 'failed',
+					results: {
+						[SID]: { state: null, note: null, error: 'OffloadVerifyError', message: 'bad bytes' }
+					}
+				})
+			);
 		},
 		async () => {
 			await assert.rejects(ops.ensureLocalBeforeLoad(1, SID), /TRACK_OFFLOADED/);
@@ -90,7 +133,9 @@ test('a failed download fails the load with the reason', async () => {
 });
 
 test('progress reads that keep failing end the line as failed, never stuck running', async () => {
-	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', { viteApiBase: BASE });
+	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', {
+		viteApiBase: BASE
+	});
 	await withEngine(
 		async () => json({ detail: { code: 'ENGINE_GONE', message: 'gone' } }, 503),
 		async () => {
@@ -106,7 +151,9 @@ test('progress reads that keep failing end the line as failed, never stuck runni
 });
 
 test('an unreadable offload state never blocks a deck load', async () => {
-	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', { viteApiBase: BASE });
+	const ops = await loadTypeScriptModule('src/lib/offload/offload-ops.svelte.ts', {
+		viteApiBase: BASE
+	});
 	const originalWarn = console.warn;
 	const warnings = [];
 	console.warn = (...args) => warnings.push(args.join(' '));

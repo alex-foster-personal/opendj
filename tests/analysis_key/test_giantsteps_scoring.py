@@ -1,6 +1,6 @@
 """Plumbing coverage for the boundary-F@1bar scorer, on plain numbers.
 
-Per `specs/native-analysis-v1-lanes/nav1-key-record.md`: a mutation test that
+Per `(private path)`: a mutation test that
 injects an offset and checks the boundary moves with it is REGRESSION coverage
 of the scoring plumbing, never the real NATIVE-05 measurement (that is
 `test_giantsteps_plus_boundary.py`, on real GiantSteps+ audio through the real
@@ -58,9 +58,10 @@ def test_a_boundary_exactly_one_bar_away_still_matches() -> None:
     assert boundary_within_tolerance(18.0, 20.0, grid, tolerance_bars=1.0) is True
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the mandated mutation: shift the annotation by 2 bars and it must go red
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_shifting_the_annotation_by_two_bars_turns_a_match_into_a_miss() -> None:
     """The scorer's own validity check: it must not be trivially green.
@@ -93,14 +94,17 @@ def test_score_track_mutation_two_bar_shift_drops_f_measure_to_zero() -> None:
     assert corrupted_score.f_measure == pytest.approx(0.0)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # precision/recall/matching shape
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_a_false_positive_detection_costs_precision_not_recall() -> None:
     grid = _grid(60)
     score = score_track(
-        detected_boundaries_s=[20.0, 45.0], annotated_boundaries_s=[20.0], grid=grid,
+        detected_boundaries_s=[20.0, 45.0],
+        annotated_boundaries_s=[20.0],
+        grid=grid,
     )
     assert score.n_matched == 1
     assert score.recall == pytest.approx(1.0)
@@ -110,7 +114,9 @@ def test_a_false_positive_detection_costs_precision_not_recall() -> None:
 def test_a_missed_annotation_costs_recall_not_precision() -> None:
     grid = _grid(60)
     score = score_track(
-        detected_boundaries_s=[20.0], annotated_boundaries_s=[20.0, 45.0], grid=grid,
+        detected_boundaries_s=[20.0],
+        annotated_boundaries_s=[20.0, 45.0],
+        grid=grid,
     )
     assert score.n_matched == 1
     assert score.precision == pytest.approx(1.0)
@@ -121,7 +127,9 @@ def test_matching_is_one_to_one_not_double_counted() -> None:
     """Two annotations near one detection must not both claim it."""
     grid = _grid(60)
     score = score_track(
-        detected_boundaries_s=[20.0], annotated_boundaries_s=[19.0, 21.0], grid=grid,
+        detected_boundaries_s=[20.0],
+        annotated_boundaries_s=[19.0, 21.0],
+        grid=grid,
     )
     assert score.n_matched == 1
 
@@ -137,7 +145,9 @@ def test_greedy_nearest_first_would_undercount_this_maximum_matching() -> None:
     not the greedy-nearest-first result."""
     grid = _grid(60, bar_s=2.0)  # tolerance_bars=1.0 * 2.0s/bar = 2s tolerance
     score = score_track(
-        detected_boundaries_s=[8.5, 11.0], annotated_boundaries_s=[10.0, 12.0], grid=grid,
+        detected_boundaries_s=[8.5, 11.0],
+        annotated_boundaries_s=[10.0, 12.0],
+        grid=grid,
     )
     assert score.n_matched == 2, "a valid size-2 matching exists; greedy nearest-first finds only 1"
 
@@ -156,10 +166,11 @@ def test_zero_bars_in_the_grid_refuses_rather_than_dividing_by_zero() -> None:
         bar_duration_at(BarGrid(starts=(), ends=()), 10.0)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # variable-tempo grid: bar-coordinate distance, not a symmetric seconds count
 # (P1 BLOCKING, sol-review #3948)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def _variable_grid() -> BarGrid:
     """One long bar (4s), then four short bars (1s each): 0-4, 4-5, 5-6, 6-7, 7-8."""

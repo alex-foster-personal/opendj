@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -19,12 +18,13 @@ from apps.cloud.asset_store import AssetStoreError
 from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.stem_source import STEM_BUNDLE_NOT_INDEXED, STEM_BUNDLE_PRESIGN_FAILED
 from apps.shared.stable_id import is_safe_stable_id_segment
-from apps.shared.state import db as state_db
 from apps.sync_hub import entitlement_gate, service_credentials, stem_meter
 from apps.sync_hub.service_request import (
-    SYNC_NO_DB_MESSAGE_ASSET_ROUTERS,
+    _asset_hub_conn as _hub_conn,
+)
+from apps.sync_hub.service_request import (
     _data_dir,
-    _db_path,
+    _require_credential,
 )
 
 StemIndexFetcher = Callable[[], stem_index.StemAssetIndex]
@@ -33,25 +33,6 @@ router = APIRouter(prefix="/stems", tags=["sync-stems"])
 _auth = service_credentials.credential_responses
 
 _PRESIGN_EXPIRY_S: int = asset_store.DEFAULT_PRESIGN_EXPIRY_SECONDS
-
-
-@contextmanager
-def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = state_db.open_rw(
-        _db_path(request, sync_no_db_message=SYNC_NO_DB_MESSAGE_ASSET_ROUTERS)
-    )
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-def _require_credential(
-    request: Request, conn: sqlite3.Connection, machine_id: str, endpoint: str
-) -> service_credentials.CredentialVerdict:
-    return service_credentials.require_credential(
-        request, conn, machine_id, data_dir=_data_dir(request), endpoint=endpoint
-    )
 
 
 def _gate_stems(

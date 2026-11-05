@@ -21,7 +21,9 @@ Draining is deliberately NOT an endpoint. A drain holds a process pool for
 minutes to hours; running it inside the daemon's request worker would block
 the event loop and die with the request. The runner is
 ``python -m apps.analysis.queue_cli run``, and this router is how an agent or
-the UI plans, watches and steers it.
+the UI plans, watches and steers it. ``enqueue`` with ``drain: true`` starts
+that same runner as a child process (:mod:`..backfill_drain`), which is what
+the track context menu's Re-analyze sends: a packaged app has no terminal.
 
 Requirements (mini-PRD):
   ✔︎ ✅ POST /analysis/backfill/enqueue: admit, plan, persist.
@@ -29,6 +31,8 @@ Requirements (mini-PRD):
     item with its named reason, never absent from the response
     [if] no stable_ids are given [then ⛔️] 422
     [if] a stable_id is not in the library [then ⛔️] 422 naming it
+    [if] the note reads as the engine's own (a drained batch's mark, a
+         cascade's prefix) [then ⛔️] 422 reserved_note, and no batch is made
   ✔︎ ✅ GET /analysis/backfill/progress: aggregate + per-item + the plan.
     [if] the batch does not exist [then ⛔️] 404
     [if] nothing has run [then] counts are zeros, never an empty object
@@ -50,8 +54,10 @@ from pydantic import BaseModel, Field
 from apps.analysis import queue as queue_api
 from apps.analysis import queue_store, queue_targets
 from apps.analysis import store as analysis_store
+from apps.analysis.queue_cascade_note import reserved_note_reason
 from apps.shared.paths import STATE_DB
 
+from .. import backfill_drain
 from ..backend import StateBackend
 from ..deps import get_write_state
 
@@ -140,6 +146,13 @@ class BackfillEnqueueIn(BaseModel):
     lane: str = Field(description="beatgrid, key, waveform, loudness or vocal")
     backend: str = Field(description="Producer to run, own_<lane>.<producer>")
     note: str | None = Field(default=None, description="Why this batch exists")
+    drain: bool = Field(
+        default=False,
+        description=(
+            "Also start the runner for this batch, as a child process of the "
+            "daemon. False only plans: the batch waits for `queue_cli run`"
+        ),
+    )
 
 
 class BackfillEnqueueOut(BaseModel):
@@ -238,12 +251,23 @@ def enqueue_backfill(
                 "message": "enqueue needs at least one stable_id",
             },
         )
+    # The note is where the engine marks a batch as its own; an operator's that
+    # read so would be settled as an interrupted drain on the next start.
+    reserved = reserved_note_reason(body.note)
+    if reserved is not None:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "reserved_note", "message": reserved},
+        )
     conn = _open(request)
     try:
         candidates = queue_targets.candidates_from_state(
             conn, body.stable_ids, lane=body.lane, backend=body.backend
         )
-        result = queue_api.enqueue(conn, candidates, note=body.note)
+        # A drained batch is marked in the same insert that creates it, so a
+        # drain the engine never finished is found on the next start.
+        note = backfill_drain.drain_note(body.note) if body.drain else body.note
+        result = queue_api.enqueue(conn, candidates, note=note)
     except queue_api.QueueError as exc:
         raise HTTPException(
             status_code=422,
@@ -251,6 +275,8 @@ def enqueue_backfill(
         ) from exc
     finally:
         conn.close()
+    if body.drain and result.admitted > 0:
+        backfill_drain.start(_db_path(request), result.batch_id, body.backend)
     return BackfillEnqueueOut(
         batch_id=result.batch_id,
         offered=result.offered,

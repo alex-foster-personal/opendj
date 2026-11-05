@@ -132,7 +132,12 @@ test('[if] a deck loads under Max [then] that deck syncs; Max off or already on 
 });
 
 test('[if] the policy is asked [then] only the off-to-on edge and a Max load enable decks', () => {
-	const decks = { 1: _view(true, false), 2: _view(true, true), 3: _view(false, false), 4: _view(true, false) };
+	const decks = {
+		1: _view(true, false),
+		2: _view(true, true),
+		3: _view(false, false),
+		4: _view(true, false)
+	};
 	const enable = (deck) => ({ type: 'beat_sync', deck, enabled: true });
 	assert.deepEqual(m.beatSyncMaxToggleCommands(false, true, decks), [enable(1), enable(4)]);
 	assert.deepEqual(m.beatSyncMaxToggleCommands(true, false, decks), []);
@@ -152,7 +157,11 @@ test('[if] the load path or the setter is rewired [then] the wiring contract fai
 		/if \(command\.type !== 'load'\) return settled;[\s\S]{0,300}await enableBeatSyncAfterLoad\(loadedDeck\);/,
 		'a load must queue its deck enable after the load scope settles'
 	);
-	assert.match(ipc, /dispatch: \(command\) => runPerformanceCommandFromUi\(command\)/, 'deck SYNC button path');
+	assert.match(
+		ipc,
+		/dispatch: \(command\) => runPerformanceCommandFromUi\(command\)/,
+		'deck SYNC button path'
+	);
 	const prefs = readFrontendSource('src/lib/rb/prefs.svelte.ts');
 	assert.match(prefs, /announceBeatSyncMaxChange\(previous, next\)/);
 });

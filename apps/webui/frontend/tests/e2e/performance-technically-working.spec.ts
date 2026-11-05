@@ -26,7 +26,9 @@ async function techState(page: Page) {
 async function realTrackStableId(request: APIRequestContext): Promise<string> {
 	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
 	expect(response.ok(), 'real available-track listing must succeed').toBeTruthy();
-	const payload = (await response.json()) as { items: Array<{ stable_id: string; file_exists: boolean }> };
+	const payload = (await response.json()) as {
+		items: Array<{ stable_id: string; file_exists: boolean }>;
+	};
 	const track = payload.items.find((item) => item.file_exists);
 	expect(track, 'real library must expose at least one on-disk track').toBeTruthy();
 	return track!.stable_id;
@@ -72,7 +74,9 @@ test('cmd+r toggles overlay mode, and top/bottom edges reveal on hover without a
 	await expect(root).not.toHaveClass(/tw-active/);
 });
 
-test('holding cmd+r peeks only while held, and the resolved hold does not also toggle mode', async ({ page }) => {
+test('holding cmd+r peeks only while held, and the resolved hold does not also toggle mode', async ({
+	page
+}) => {
 	await page.keyboard.down('Control');
 	await page.keyboard.press('r'); // enter overlay mode first
 	await page.keyboard.up('Control');
@@ -88,7 +92,9 @@ test('holding cmd+r peeks only while held, and the resolved hold does not also t
 	await page.keyboard.up('Control');
 	await expect.poll(() => techState(page).then((s) => s.peeking)).toBe(false);
 	await expect
-		.poll(() => techState(page).then((s) => s.active), { message: 'a resolved hold must not also toggle mode' })
+		.poll(() => techState(page).then((s) => s.active), {
+			message: 'a resolved hold must not also toggle mode'
+		})
 		.toBe(true);
 });
 
@@ -113,7 +119,9 @@ test('cmd+e toggles the eq overlay and ignores real OS key-repeat', async ({ pag
 		);
 	});
 	await expect
-		.poll(() => techState(page).then((s) => s.eq_raised), { message: 'repeat must not re-toggle back off' })
+		.poll(() => techState(page).then((s) => s.eq_raised), {
+			message: 'repeat must not re-toggle back off'
+		})
 		.toBe(true);
 
 	await page.keyboard.down('Control');
@@ -154,7 +162,9 @@ test('hotkeys are suppressed while the event target is a text input', async ({ p
 		.toBe(false);
 });
 
-test('losing window focus resolves an in-flight hold instead of sticking it down', async ({ page }) => {
+test('losing window focus resolves an in-flight hold instead of sticking it down', async ({
+	page
+}) => {
 	await page.keyboard.down('Control');
 	await page.keyboard.press('r');
 	await page.keyboard.up('Control');
@@ -163,7 +173,9 @@ test('losing window focus resolves an in-flight hold instead of sticking it down
 	await page.keyboard.down('r');
 	await page.waitForTimeout(450); // cross the real hold threshold first
 	await expect
-		.poll(() => techState(page).then((s) => s.peeking), { message: 'the hold must have resolved before blur' })
+		.poll(() => techState(page).then((s) => s.peeking), {
+			message: 'the hold must have resolved before blur'
+		})
 		.toBe(true);
 
 	await page.evaluate(() => window.dispatchEvent(new Event('blur')));
@@ -173,7 +185,9 @@ test('losing window focus resolves an in-flight hold instead of sticking it down
 		})
 		.toBe(false);
 	await expect
-		.poll(() => techState(page).then((s) => s.active), { message: 'a resolved hold must not also toggle mode' })
+		.poll(() => techState(page).then((s) => s.active), {
+			message: 'a resolved hold must not also toggle mode'
+		})
 		.toBe(true);
 
 	// The dangling native keyup for 'r' never arrives once focus is lost
@@ -280,7 +294,9 @@ test('the homeless-group backdrop shows only for the Opt reveal, never for a cmd
 	// the revealed topbar/mixer.
 	await page.keyboard.down('Alt');
 	await expect
-		.poll(() => backdropOpacity(page), { message: 'Opt-held reveal must paint the dimming backdrop' })
+		.poll(() => backdropOpacity(page), {
+			message: 'Opt-held reveal must paint the dimming backdrop'
+		})
 		.toBe('rgba(0, 0, 0, 0.55)');
 	await page.keyboard.up('Alt');
 	await expect.poll(() => backdropOpacity(page)).toBe('rgba(0, 0, 0, 0)');
@@ -291,7 +307,9 @@ test('the homeless-group backdrop shows only for the Opt reveal, never for a cmd
 	await page.keyboard.down('r');
 	await page.waitForTimeout(450);
 	await expect
-		.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().technically_working.peeking))
+		.poll(() =>
+			page.evaluate(() => window.musicDjToolsPerformance!.query().technically_working.peeking)
+		)
 		.toBe(true);
 	await expect
 		.poll(() => backdropOpacity(page), {
@@ -380,9 +398,7 @@ test('overlay mode leaves no deck-column or wave-stack rule painted, and each re
 	// only that one, so the fix cannot be "never paint them again".
 	await page.mouse.move(1000, 5);
 	await expect(root).toHaveClass(/tw-top-visible/);
-	await expect
-		.poll(rules)
-		.toEqual({ left: TRANSPARENT, right: TRANSPARENT, top: before.top });
+	await expect.poll(rules).toEqual({ left: TRANSPARENT, right: TRANSPARENT, top: before.top });
 });
 
 for (const [view, testId] of [

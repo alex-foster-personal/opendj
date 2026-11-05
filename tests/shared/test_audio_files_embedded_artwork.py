@@ -4,6 +4,7 @@ Pictures are embedded with stdlib ID3 / FLAC / ffmpeg helpers in
 ``tests/support/embed_picture.py``. The product does not write tags and
 does not depend on mutagen (GPL).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -130,9 +131,7 @@ def test_apic_declaring_webp_with_wav_riff_bytes_is_rejected(tmp_path: Path) -> 
 
 
 @pytest.mark.requirement("CAT-05")
-def test_first_unusable_frame_does_not_hide_a_later_valid_cover(
-    tmp_path: Path, jpeg_bytes: bytes
-) -> None:
+def test_first_unusable_frame_does_not_hide_a_later_valid_cover(tmp_path: Path, jpeg_bytes: bytes) -> None:
     dst = tmp_path / "t.mp3"
     raw = (FIXTURE_ROOT / "src-320.mp3").read_bytes()
     frames = [
@@ -144,33 +143,25 @@ def test_first_unusable_frame_does_not_hide_a_later_valid_cover(
 
 
 @pytest.mark.requirement("CAT-05")
-def test_apic_declaring_png_with_real_jpeg_bytes_is_rejected(
-    tmp_path: Path, jpeg_bytes: bytes
-) -> None:
+def test_apic_declaring_png_with_real_jpeg_bytes_is_rejected(tmp_path: Path, jpeg_bytes: bytes) -> None:
     dst = _mp3(tmp_path, jpeg_bytes, mime="image/png")
     assert audio_files.read_embedded_artwork(dst) is None
 
 
 @pytest.mark.requirement("CAT-05")
-def test_apic_declaring_uppercase_mime_still_round_trips(
-    tmp_path: Path, jpeg_bytes: bytes
-) -> None:
+def test_apic_declaring_uppercase_mime_still_round_trips(tmp_path: Path, jpeg_bytes: bytes) -> None:
     dst = _mp3(tmp_path, jpeg_bytes, mime="IMAGE/JPEG")
     assert audio_files.read_embedded_artwork(dst) == (jpeg_bytes, "image/jpeg")
 
 
 @pytest.mark.requirement("CAT-05")
-def test_apic_with_empty_mime_and_jpeg_bytes_is_rejected(
-    tmp_path: Path, jpeg_bytes: bytes
-) -> None:
+def test_apic_with_empty_mime_and_jpeg_bytes_is_rejected(tmp_path: Path, jpeg_bytes: bytes) -> None:
     dst = _mp3(tmp_path, jpeg_bytes, mime="")
     assert audio_files.read_embedded_artwork(dst) is None
 
 
 @pytest.mark.requirement("CAT-05")
-def test_flac_picture_with_empty_mime_and_jpeg_bytes_is_rejected(
-    tmp_path: Path, jpeg_bytes: bytes
-) -> None:
+def test_flac_picture_with_empty_mime_and_jpeg_bytes_is_rejected(tmp_path: Path, jpeg_bytes: bytes) -> None:
     dst = tmp_path / "t.flac"
     raw = (FIXTURE_ROOT / "src.flac").read_bytes()
     dst.write_bytes(insert_flac_picture(raw, jpeg_bytes, mime=""))

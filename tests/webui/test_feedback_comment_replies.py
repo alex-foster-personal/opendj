@@ -232,9 +232,7 @@ def test_archive_preserves_replies(client: TestClient, tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("FB-13")
-def test_list_comments_without_replies_field_still_returns_200(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_list_comments_without_replies_field_still_returns_200(client: TestClient, tmp_path: Path) -> None:
     """[if] a comment lacks replies [then] GET still returns 200 with replies [], [else stop]."""
     pin = _create(client)
     path = tmp_path / "feedback" / "comments.json"

@@ -20,9 +20,9 @@ test('Show in playlists lists seeded fixture membership and navigates on click',
 		stableId = (await firstRow.getAttribute('data-stable-id')) ?? '';
 		expect(stableId).toBeTruthy();
 
-		await expect(
-			page.locator(PLAYLIST_ROW).filter({ hasText: FIXTURE_PLAYLIST_NAME })
-		).toBeVisible({ timeout: 30_000 });
+		await expect(page.locator(PLAYLIST_ROW).filter({ hasText: FIXTURE_PLAYLIST_NAME })).toBeVisible(
+			{ timeout: 30_000 }
+		);
 	});
 
 	await test.step('popover lists fixture playlist membership', async () => {

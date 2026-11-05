@@ -53,7 +53,11 @@ test('while the shed defers, the decode slot does not resolve until released', a
 	});
 
 	await new Promise((resolve) => setTimeout(resolve, 30));
-	assert.equal(resolved, false, 'the work effect (decode starting) must be absent while the gate is closed');
+	assert.equal(
+		resolved,
+		false,
+		'the work effect (decode starting) must be absent while the gate is closed'
+	);
 
 	await shedModule.resumeEagerStemDecodeOwedJob();
 	await pending;
@@ -113,7 +117,10 @@ test('decodeStemBuffers awaits the eager-stem-decode slot before decoding', () =
 	const gateIndex = body.indexOf('await awaitEagerStemDecodeSlot(');
 	const decodeIndex = body.indexOf('decodeStemParts(');
 	assert.notEqual(gateIndex, -1, 'decodeStemBuffers must await the shed slot');
-	assert.ok(gateIndex < decodeIndex, 'the shed slot must be awaited BEFORE the CPU-heavy decode starts');
+	assert.ok(
+		gateIndex < decodeIndex,
+		'the shed slot must be awaited BEFORE the CPU-heavy decode starts'
+	);
 });
 
 // ------------------------------------------------- STEM-47: a named, bounded hold
@@ -159,7 +166,7 @@ test('the DJ can start a held decode, and is told how many were waiting', async 
 	shedModule.setEagerStemDecodeShed(null);
 });
 
-test('LOAD NOW on one deck starts only that deck\'s held decode', async () => {
+test("LOAD NOW on one deck starts only that deck's held decode", async () => {
 	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
 	const timer = { setTimer: () => null, clearTimer: () => {} };
 	let otherStarted = false;
@@ -169,14 +176,14 @@ test('LOAD NOW on one deck starts only that deck\'s held decode', async () => {
 	assert.equal(shedModule.releaseEagerStemDecodeNow(1), 1);
 	assert.equal(await mine, 'forced');
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(otherStarted, false, 'another deck\'s decode started under the same pressure');
+	assert.equal(otherStarted, false, "another deck's decode started under the same pressure");
 	// The other deck's hold still ends the ordinary way.
 	await shedModule.resumeEagerStemDecodeOwedJob();
 	assert.equal(await other, 'released');
 	shedModule.setEagerStemDecodeShed(null);
 });
 
-test('LOAD NOW for a deck\'s new track never starts its old track\'s held decode', async () => {
+test("LOAD NOW for a deck's new track never starts its old track's held decode", async () => {
 	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
 	const timer = { setTimer: () => null, clearTimer: () => {} };
 	let token = 1;
@@ -184,11 +191,15 @@ test('LOAD NOW for a deck\'s new track never starts its old track\'s held decode
 	const old = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 1 });
 	void old.then(() => (oldStarted = true));
 	token = 2;
-	const current = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 2 });
+	const current = shedModule.awaitEagerStemDecodeSlot({
+		...timer,
+		deck: 1,
+		stale: () => token !== 2
+	});
 	assert.equal(shedModule.releaseEagerStemDecodeNow(1), 1);
 	assert.equal(await current, 'forced');
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(oldStarted, false, 'the old track\'s decode started beside the new one');
+	assert.equal(oldStarted, false, "the old track's decode started beside the new one");
 	await shedModule.resumeEagerStemDecodeOwedJob();
 	assert.equal(await old, 'released');
 	shedModule.setEagerStemDecodeShed(null);
@@ -229,7 +240,10 @@ test('a hold nobody releases ends at the bound instead of lasting the whole trac
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	assert.equal(settled, false, 'the bound must not fire before its time');
 	assert.equal(armedMs, shedModule.EAGER_STEM_DECODE_MAX_DEFER_MS);
-	assert.ok(armedMs > 0 && armedMs <= 15_000, 'a bound longer than 15 s is the old dead-button report');
+	assert.ok(
+		armedMs > 0 && armedMs <= 15_000,
+		'a bound longer than 15 s is the old dead-button report'
+	);
 	fire();
 	assert.equal(await pending, 'timed_out');
 	assert.equal(cleared, 1);

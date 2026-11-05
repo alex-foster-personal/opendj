@@ -9,6 +9,7 @@
 - if complete(note=None) wipes the note the runner just annotated then the
   stage progress is lost at exactly the moment it matters -- broken
 """
+
 from __future__ import annotations
 
 from pathlib import Path

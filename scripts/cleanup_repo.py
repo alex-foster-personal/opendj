@@ -152,21 +152,13 @@ def worktree_hazards(repo: Path, paths: list[Path]) -> list[str]:
 
             nested_top = Path(_git(nested_repo, "rev-parse", "--show-toplevel")).resolve()
             if nested_top != nested_repo:
-                hazards.append(
-                    f"embedded Git metadata {marker} resolves outside its directory to {nested_top}"
-                )
+                hazards.append(f"embedded Git metadata {marker} resolves outside its directory to {nested_top}")
                 continue
 
-            other_worktrees = [
-                worktree
-                for worktree in registered_worktrees(nested_repo)
-                if worktree != nested_repo
-            ]
+            other_worktrees = [worktree for worktree in registered_worktrees(nested_repo) if worktree != nested_repo]
             if other_worktrees:
                 rendered = ", ".join(str(worktree) for worktree in other_worktrees)
-                hazards.append(
-                    f"nested repository {nested_repo} has registered worktrees: {rendered}"
-                )
+                hazards.append(f"nested repository {nested_repo} has registered worktrees: {rendered}")
 
             dirty = _git(
                 nested_repo,
@@ -250,9 +242,7 @@ def open_handles(paths: list[Path]) -> tuple[list[dict[str, str]], str | None]:
             pid = value
         elif field == "c":
             command = value
-        elif field == "n" and any(
-            value == exact or value.startswith(descendant) for exact, descendant in prefixes
-        ):
+        elif field == "n" and any(value == exact or value.startswith(descendant) for exact, descendant in prefixes):
             key = (pid, value)
             if key not in seen:
                 seen.add(key)
@@ -308,26 +298,21 @@ def apply_cleanup(
     hazards = worktree_hazards(repo, sources)
     if hazards:
         sample = "\n".join(f"  {hazard}" for hazard in hazards[:20])
-        raise CleanupError(
-            f"cleanup targets overlap protected Git worktrees; nothing moved:\n{sample}"
-        )
+        raise CleanupError(f"cleanup targets overlap protected Git worktrees; nothing moved:\n{sample}")
 
     handles, warning = open_handles(sources)
     if warning:
         raise CleanupError(f"{warning}; refusing --apply")
     if handles:
         sample = "\n".join(
-            f"  pid={item['pid']} command={item['command']} path={item['path']}"
-            for item in handles[:20]
+            f"  pid={item['pid']} command={item['command']} path={item['path']}" for item in handles[:20]
         )
         raise CleanupError(f"cleanup targets are in active use; nothing moved:\n{sample}")
 
     trash_root.mkdir(parents=True, exist_ok=True)
     source_devices = {path.lstat().st_dev for _, path, _, _ in found}
     if source_devices != {trash_root.stat().st_dev}:
-        raise CleanupError(
-            "Trash root is on another filesystem; refusing a non-atomic copy-and-delete move"
-        )
+        raise CleanupError("Trash root is on another filesystem; refusing a non-atomic copy-and-delete move")
 
     session = _session_dir(trash_root)
     moves = [
@@ -373,9 +358,7 @@ def apply_cleanup(
             moves=moves,
             error=str(exc),
         )
-        raise CleanupError(
-            f"cleanup stopped after a move failed; inspect {manifest}: {exc}"
-        ) from exc
+        raise CleanupError(f"cleanup stopped after a move failed; inspect {manifest}: {exc}") from exc
 
     for relative in EMPTY_SPIKE_PARENTS:
         with contextlib.suppress(OSError):
@@ -424,14 +407,8 @@ def main(argv: list[str] | None = None) -> int:
         total_bytes = sum(size for _, _, size, _ in found)
         total_files = sum(files for _, _, _, files in found)
         for target, _, size, files in found:
-            print(
-                f"[PLAN] {target.relative_path}: {human_bytes(size)}, "
-                f"{files} files ({target.reason})"
-            )
-        print(
-            f"[PLAN] total: {human_bytes(total_bytes)}, {total_files} files "
-            f"across {len(found)} exact paths"
-        )
+            print(f"[PLAN] {target.relative_path}: {human_bytes(size)}, {files} files ({target.reason})")
+        print(f"[PLAN] total: {human_bytes(total_bytes)}, {total_files} files across {len(found)} exact paths")
 
         if not args.apply:
             print("[DRY RUN] nothing moved; re-run with --apply to quarantine these paths")

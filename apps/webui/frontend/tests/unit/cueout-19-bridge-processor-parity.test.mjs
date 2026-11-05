@@ -51,7 +51,10 @@ function loadProcessorClasses() {
 	new Function(source)();
 	globalThis.AudioWorkletProcessor = prior.AudioWorkletProcessor;
 	globalThis.registerProcessor = prior.registerProcessor;
-	return { SenderProcessor: registered['cue-bridge-sender'], ReceiverProcessor: registered['cue-bridge-receiver'] };
+	return {
+		SenderProcessor: registered['cue-bridge-sender'],
+		ReceiverProcessor: registered['cue-bridge-receiver']
+	};
 }
 
 /**
@@ -115,7 +118,13 @@ function processorPull(receiver, frames = QUANTUM) {
 	// cue-bridge-processor.js); `result.priming` there is the CueBridgeRing.pull()-
 	// shaped "was this call itself a priming call" flag, distinct from
 	// `receiver._priming`, which is the state the call left behind.
-	return { left, right, result: receiver._lastPull, fill: receiver.fill, priming: receiver._priming };
+	return {
+		left,
+		right,
+		result: receiver._lastPull,
+		fill: receiver.fill,
+		priming: receiver._priming
+	};
 }
 
 function primeRingToTarget(ring, target) {
@@ -168,7 +177,12 @@ test('steady state holds the target fill exactly in ring and processor', () => {
 	const ring = new ringMod.CueBridgeRing();
 	const { sender, receiver } = createPortBridge(ringMod.CUE_BRIDGE_RING_CAPACITY);
 	primeRingToTarget(ring, ringMod.CUE_BRIDGE_TARGET_FRAMES);
-	primeProcessorToTarget(sender, receiver, ringMod.CUE_BRIDGE_TARGET_FRAMES, ringMod.CUE_BRIDGE_RING_CAPACITY);
+	primeProcessorToTarget(
+		sender,
+		receiver,
+		ringMod.CUE_BRIDGE_TARGET_FRAMES,
+		ringMod.CUE_BRIDGE_RING_CAPACITY
+	);
 	const chunk = stereoChunk(0.5, -0.5);
 	for (let i = 0; i < 24; i += 1) {
 		ringPush(ring, chunk.left, chunk.right);
@@ -184,7 +198,12 @@ test('drop-above-band matches between ring and processor', () => {
 	const ring = new ringMod.CueBridgeRing();
 	const { sender, receiver } = createPortBridge(ringMod.CUE_BRIDGE_RING_CAPACITY);
 	primeRingToTarget(ring, ringMod.CUE_BRIDGE_TARGET_FRAMES);
-	primeProcessorToTarget(sender, receiver, ringMod.CUE_BRIDGE_TARGET_FRAMES, ringMod.CUE_BRIDGE_RING_CAPACITY);
+	primeProcessorToTarget(
+		sender,
+		receiver,
+		ringMod.CUE_BRIDGE_TARGET_FRAMES,
+		ringMod.CUE_BRIDGE_RING_CAPACITY
+	);
 	// Two real-sized pushes, not one double-length one: a real process() call
 	// always hands the sender exactly one render quantum (the sender's scratch
 	// buffer is sized for that), so a 256-frame single push is not a shape the
@@ -206,7 +225,12 @@ test('duplicate-below-band matches between ring and processor', () => {
 	const ring = new ringMod.CueBridgeRing();
 	const { sender, receiver } = createPortBridge(ringMod.CUE_BRIDGE_RING_CAPACITY);
 	primeRingToTarget(ring, ringMod.CUE_BRIDGE_TARGET_FRAMES);
-	primeProcessorToTarget(sender, receiver, ringMod.CUE_BRIDGE_TARGET_FRAMES, ringMod.CUE_BRIDGE_RING_CAPACITY);
+	primeProcessorToTarget(
+		sender,
+		receiver,
+		ringMod.CUE_BRIDGE_TARGET_FRAMES,
+		ringMod.CUE_BRIDGE_RING_CAPACITY
+	);
 	while (ring.fill >= ringMod.CUE_BRIDGE_TARGET_FRAMES - ringMod.CUE_BRIDGE_DRIFT_BAND_FRAMES) {
 		ringPull(ring);
 		processorPull(receiver);
@@ -231,7 +255,12 @@ test('underrun repriming matches between ring and processor', () => {
 	const ring = new ringMod.CueBridgeRing();
 	const { sender, receiver } = createPortBridge(ringMod.CUE_BRIDGE_RING_CAPACITY);
 	primeRingToTarget(ring, ringMod.CUE_BRIDGE_TARGET_FRAMES);
-	primeProcessorToTarget(sender, receiver, ringMod.CUE_BRIDGE_TARGET_FRAMES, ringMod.CUE_BRIDGE_RING_CAPACITY);
+	primeProcessorToTarget(
+		sender,
+		receiver,
+		ringMod.CUE_BRIDGE_TARGET_FRAMES,
+		ringMod.CUE_BRIDGE_RING_CAPACITY
+	);
 	while (ring.fill > 0) ringPull(ring);
 	while (receiver.fill > 0) processorPull(receiver);
 	// The drain above stops the instant fill reads 0, which can land exactly on

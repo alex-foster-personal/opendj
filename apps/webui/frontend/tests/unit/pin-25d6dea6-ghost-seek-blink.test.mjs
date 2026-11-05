@@ -44,7 +44,11 @@ test('ghost seek frame is hidden with no armed seek whatever the clock says', ()
 		const frame = overlays.ghostSeekFrame(null, nowMs);
 		assert.equal(frame.ghostSeekMs, null);
 		assert.equal(frame.ghostSeekVisible, false);
-		assert.equal(frame.blinkPhase, null, 'a disarmed deck must not force repaints on a blink clock');
+		assert.equal(
+			frame.blinkPhase,
+			null,
+			'a disarmed deck must not force repaints on a blink clock'
+		);
 	}
 });
 

@@ -27,17 +27,19 @@ export const UI_SKIN_SETTING: SettingDef = {
 	id: 'ui_skin',
 	label: 'UI skin',
 	group: 'performance',
-	keywords: ['skin', 'theme', 'light', 'gothic', 'mono', 'grayscale', 'gray', 'minimal', 'dev'],
+	keywords: ['skin', 'theme', 'light', 'gothic', 'mono', 'grayscale', 'gray', 'minimal', 'dev', 'green', 'green room', 'rounded', 'streaming', 'practice', 'controller', 'hardware'],
 	title: 'Chrome skin layered over the light/dark theme',
 	detail:
-		'Gothic (default) is a near-black grayscale skin with hairline borders, square controls and monospace type. Default keeps the rekordbox-style chrome. Light is the warm light skin. The top-bar skin button cycles Default, Gothic, Light. With Waveform design and Waveform colors on Auto, the waveforms follow the skin.',
+		'Gothic (default) is a near-black grayscale skin with hairline borders, square controls and monospace type. Default keeps the rekordbox-style chrome. Light is the warm light skin. Green Room is a near-black skin with a green accent, rounded panels, pill controls and a geometric sans. Practice deck is the dark schematic palette of the hardware practice replica (open /practice/ddj-flx4). The top-bar skin button cycles Default, Gothic, Light, Green Room, Practice deck. With Waveform design and Waveform colors on Auto, the waveforms follow the skin.',
 	implemented: true,
 	control: {
 		kind: 'enum',
 		options: [
 			{ value: 'default', label: 'Default' },
 			{ value: 'mono-dev', label: 'Gothic (mono dev preview)' },
-			{ value: 'light', label: 'Light' }
+			{ value: 'light', label: 'Light' },
+			{ value: 'green-room', label: 'Green Room' },
+			{ value: 'practice-ddj-flx4', label: 'Practice deck' }
 		]
 	}
 };

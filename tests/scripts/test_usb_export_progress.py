@@ -150,19 +150,20 @@ def _render(renderable) -> str:
 def test_panel_reports_written_files_rate_eta_and_elapsed() -> None:
     rendered = _render(
         mon._panel(
-            start_bytes=1_000, cur=_sample(30.0, 3_000, files=12),
-            rate=100.0, expect=10_000, t0=0.0,
+            start_bytes=1_000,
+            cur=_sample(30.0, 3_000, files=12),
+            rate=100.0,
+            expect=10_000,
+            t0=0.0,
         )
     )
     for label in ("written", "files", "rate", "ETA", "elapsed"):
         assert label in rendered, rendered
-    assert "12" in rendered            # file count
-    assert "2.0 KB" in rendered        # 3000 - 1000 written
-    assert "1m 20s" in rendered        # (10000 - 2000) remaining at 100 B/s
+    assert "12" in rendered  # file count
+    assert "2.0 KB" in rendered  # 3000 - 1000 written
+    assert "1m 20s" in rendered  # (10000 - 2000) remaining at 100 B/s
 
 
 def test_panel_calls_a_zero_rate_stalled_rather_than_showing_an_eta() -> None:
-    rendered = _render(
-        mon._panel(start_bytes=0, cur=_sample(30.0, 500), rate=0.0, expect=10_000, t0=0.0)
-    )
+    rendered = _render(mon._panel(start_bytes=0, cur=_sample(30.0, 500), rate=0.0, expect=10_000, t0=0.0))
     assert "stalled" in rendered

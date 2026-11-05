@@ -45,6 +45,7 @@ Run (R2_* come from Doppler; boto3 is inline, so no repo venv needed):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -129,7 +130,7 @@ def list_r2_bundles(client: Any, bucket: str, preset: str) -> list[Bundle]:
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for item in page.get("Contents", []):
             key = item["Key"]
-            rest = key[len(prefix):]
+            rest = key[len(prefix) :]
             if "/" not in rest:
                 continue  # not <stable_id>/<file>, so not part of a bundle
             stable_id = rest.split("/", 1)[0]
@@ -163,9 +164,7 @@ def _download(client: Any, bucket: str, bundle: Bundle, into: Path) -> dict[str,
         client.download_file(bucket, key, str(target))
         got = target.stat().st_size
         if got != size:
-            raise RuntimeError(
-                f"r2 download short for {key}: got {got} bytes, expected {size}"
-            )
+            raise RuntimeError(f"r2 download short for {key}: got {got} bytes, expected {size}")
         local[name] = got
     return local
 
@@ -190,13 +189,10 @@ def sync_bundle(
     try:
         local_sizes = _download(client, bucket, bundle, scratch)
         store.save(str(scratch), f"{STEMS_REMOTE_ROOT}/{preset}")
-        remote = remote_sizes(
-            store.ls(f"{STEMS_REMOTE_ROOT}/{preset}/{bundle.stable_id}")
-        )
+        remote = remote_sizes(store.ls(f"{STEMS_REMOTE_ROOT}/{preset}/{bundle.stable_id}"))
         if remote != local_sizes:
             raise RuntimeError(
-                f"bifrost2 copy of {bundle.stable_id} does not match R2: "
-                f"remote {remote} vs local {local_sizes}"
+                f"bifrost2 copy of {bundle.stable_id} does not match R2: remote {remote} vs local {local_sizes}"
             )
         if delete_after:
             # Only reachable after the size check above, so the R2 copy is
@@ -215,18 +211,16 @@ def build_parser() -> argparse.ArgumentParser:
         prog="uv run scripts/r2_stem_sync.py",
         description="Resumable R2 -> bifrost2 stem archive sync",
     )
-    parser.add_argument("--preset", required=True,
-                        help="preset tag whose bundles to move, e.g. htdemucs-ov0.1")
+    parser.add_argument("--preset", required=True, help="preset tag whose bundles to move, e.g. htdemucs-ov0.1")
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--limit", type=int, default=0,
-                        help="cap bundles this run (0 = all outstanding)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="report the outstanding set and move nothing")
+    parser.add_argument("--limit", type=int, default=0, help="cap bundles this run (0 = all outstanding)")
+    parser.add_argument("--dry-run", action="store_true", help="report the outstanding set and move nothing")
     parser.add_argument(
-        "--delete-after", action="store_true",
+        "--delete-after",
+        action="store_true",
         help="delete each bundle from R2 once bifrost2 verifies it. Off by "
-             "default: keeping both copies costs little and R2 has no egress "
-             "fee, so deleting is a choice, not a cleanup step.",
+        "default: keeping both copies costs little and R2 has no egress "
+        "fee, so deleting is a choice, not a cleanup step.",
     )
     return parser
 
@@ -261,8 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.dry_run:
         for bundle in batch[:10]:
-            print(f"  would move {bundle.stable_id} "
-                  f"({bundle.total_bytes / 1e6:.0f} MB, {len(bundle.keys)} objects)")
+            print(f"  would move {bundle.stable_id} ({bundle.total_bytes / 1e6:.0f} MB, {len(bundle.keys)} objects)")
         if len(batch) > 10:
             print(f"  ... and {len(batch) - 10} more")
         return 0
@@ -273,13 +266,10 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[tuple[str, str]] = []
     for index, bundle in enumerate(batch, start=1):
         try:
-            elapsed = sync_bundle(
-                client, store, args.bucket, args.preset, bundle, args.delete_after
-            )
+            elapsed = sync_bundle(client, store, args.bucket, args.preset, bundle, args.delete_after)
         except Exception as exc:
             failures.append((bundle.stable_id, f"{type(exc).__name__}: {exc}"))
-            print(f"[{index}/{len(batch)}] FAIL {bundle.stable_id}: {exc}",
-                  flush=True)
+            print(f"[{index}/{len(batch)}] FAIL {bundle.stable_id}: {exc}", flush=True)
             continue
         moved += 1
         moved_bytes += bundle.total_bytes
@@ -292,16 +282,12 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     rate = moved_bytes / 1e6 / transfer_s if transfer_s > 0 else 0.0
-    print(
-        f"\ndone: {moved} moved ({moved_bytes / 1e9:.2f} GB at {rate:.1f} MB/s), "
-        f"{len(failures)} failed"
-    )
+    print(f"\ndone: {moved} moved ({moved_bytes / 1e9:.2f} GB at {rate:.1f} MB/s), {len(failures)} failed")
     for stable_id, reason in failures:
         print(f"  {stable_id}: {reason}")
     if failures:
         print(
-            "re-run to retry: the outstanding set is recomputed from the two "
-            "listings, so only the failures remain.",
+            "re-run to retry: the outstanding set is recomputed from the two listings, so only the failures remain.",
             file=sys.stderr,
         )
         return 1

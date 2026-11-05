@@ -1,4 +1,4 @@
-"""Re-runnable fixture scenario harness for CLOUDSYNC (``specs/design_decision_07.md``
+"""Re-runnable fixture scenario harness for CLOUDSYNC (``(private path)``
 point 3: named, re-runnable scenarios that run in two modes with the SAME
 assertions -- ``sim`` (this module, N data-dirs behind one in-process hub,
 fast) and ``fleet`` (real machines, real daemons, wired below but not yet
@@ -45,6 +45,7 @@ below, re-exporting the common module's public names so every caller that
 already does ``from tests.cloudsync import scenario_runner`` and reads
 ``scenario_runner.X`` keeps the surface it had.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,23 +86,15 @@ def _find_scenario(name: str) -> Scenario:
         candidates.append(scenario)
         if scenario.name == name:
             return scenario
-    raise ScenarioError(
-        f"no scenario named {name!r} under {SCENARIOS_DIR} "
-        f"(have: {[c.name for c in candidates]})"
-    )
+    raise ScenarioError(f"no scenario named {name!r} under {SCENARIOS_DIR} (have: {[c.name for c in candidates]})")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m tests.cloudsync.scenario_runner",
-        description=(
-            "Run one CLOUDSYNC fixture scenario (specs/design_decision_07.md "
-            "point 3)."
-        ),
+        description=("Run one CLOUDSYNC fixture scenario ((private path) point 3)."),
     )
-    parser.add_argument(
-        "--scenario", required=True, help="scenario name (the YAML's 'name' field)"
-    )
+    parser.add_argument("--scenario", required=True, help="scenario name (the YAML's 'name' field)")
     parser.add_argument("--mode", choices=("sim", "fleet"), default="sim")
     parser.add_argument(
         "--machine",
@@ -125,18 +118,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def _run_fleet_cli(scenario: Scenario, args: argparse.Namespace) -> None:
     if args.machine is None:
-        raise ScenarioError(
-            f"--mode fleet needs --machine (one of: {', '.join(FLEET_MACHINE_IDS)})"
-        )
+        raise ScenarioError(f"--mode fleet needs --machine (one of: {', '.join(FLEET_MACHINE_IDS)})")
     if args.hub_url is None:
         raise ScenarioError("--mode fleet needs --hub-url (the hub daemon's URL)")
     if args.data_dir is None:
         raise ScenarioError("--mode fleet needs --data-dir (this machine's real data root)")
     raise NotImplementedError(
-        f"fleet mode is not implemented yet (specs/design_decision_07.md point "
+        f"fleet mode is not implemented yet ((private path) point "
         f"3). Running scenario {scenario.name!r} for real would need machine "
         f"{args.machine!r} (choices: {', '.join(FLEET_MACHINE_IDS)}; agentbox "
-        f"is the hub per the D7 decision in specs/cloudsync-spec.md) running "
+        f"is the hub per the D7 decision in (private path)) running "
         f"the real daemon against its own --data-dir {args.data_dir}, "
         f"reachable at --hub-url {args.hub_url!r}, coordinated with the other "
         f"fleet members by hand or by an orchestrating agent. Sim mode "

@@ -35,8 +35,7 @@ def add_opendj_plays(db_path: Path) -> None:
                     "2026-07-21T23:00:00+00:00",
                     "1",
                     "odj-audition",
-                    '{"title":"Audition","artist":"A","audible_s":12.0,'
-                    '"played_fraction":0.05,"threshold_s":60.0}',
+                    '{"title":"Audition","artist":"A","audible_s":12.0,"played_fraction":0.05,"threshold_s":60.0}',
                 ),
                 (
                     "late-private",
@@ -44,8 +43,7 @@ def add_opendj_plays(db_path: Path) -> None:
                     "2026-07-21T23:10:00+00:00",
                     "2",
                     "odj-full",
-                    '{"title":"Full","artist":"B","audible_s":240.0,'
-                    '"played_fraction":1.0,"threshold_s":60.0}',
+                    '{"title":"Full","artist":"B","audible_s":240.0,"played_fraction":1.0,"threshold_s":60.0}',
                 ),
             ],
         )

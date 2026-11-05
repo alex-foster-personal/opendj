@@ -71,7 +71,7 @@ async function loadAndPlayDeck1(page: Page): Promise<void> {
 	// ~103px tall, its tree scroller is starved to 4px, and once the fixture
 	// carries a handful of playlists the row lands below the fold, where a
 	// click cannot reach it. That layout fault is real and logged in
-	// .planning/TECH-DEBT.md; it is not what this spec measures.
+	// (private path); it is not what this spec measures.
 	const firstRow = page.locator(TRACK_ROW).first();
 	await expect(firstRow).toBeVisible({ timeout: 30_000 });
 	const stableId = await firstRow.getAttribute('data-stable-id');
@@ -81,7 +81,9 @@ async function loadAndPlayDeck1(page: Page): Promise<void> {
 		await ipc.dispatch({ type: 'load', deck: 1, stable_id: sid! });
 		await ipc.dispatch({ type: 'play', deck: 1, playing: true });
 	}, stableId);
-	await page.waitForFunction(() => window.musicDjToolsPerformance!.query().decks[1].playing === true);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance!.query().decks[1].playing === true
+	);
 }
 
 test('a playing deck on default mixer state is non-silent at AudioContext.destination', async ({
@@ -98,8 +100,8 @@ test('a playing deck on default mixer state is non-silent at AudioContext.destin
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await loadAndPlayDeck1(page);
 
-	const masterMuted = await page.evaluate(
-		() => (window as Window & { __mdtMasterMute?: { get(): boolean } }).__mdtMasterMute?.get()
+	const masterMuted = await page.evaluate(() =>
+		(window as Window & { __mdtMasterMute?: { get(): boolean } }).__mdtMasterMute?.get()
 	);
 	expect(masterMuted, 'fresh storage must start unmuted or this check is vacuous').toBe(false);
 

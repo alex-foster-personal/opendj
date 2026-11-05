@@ -10,6 +10,7 @@ tests on top of it, and ``scripts/preview_drift_core.py`` builds ``evaluate()``
 on top of both. One direction only: this module imports nothing from either
 of the other two.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -55,10 +56,7 @@ def _git(cwd: Path, *args: str) -> str:
         check=False,
     )
     if proc.returncode != 0:
-        raise MeasurementError(
-            f"git {' '.join(args)} failed in {cwd} "
-            f"(exit {proc.returncode}): {proc.stderr.strip()}"
-        )
+        raise MeasurementError(f"git {' '.join(args)} failed in {cwd} (exit {proc.returncode}): {proc.stderr.strip()}")
     return proc.stdout
 
 
@@ -97,8 +95,7 @@ def _trees_identical(cwd: Path, left: str, right: str, *paths: str) -> bool:
     if proc.returncode in (0, 1):
         return proc.returncode == 0
     raise MeasurementError(
-        f"git diff --quiet {left} {right} failed in {cwd} "
-        f"(exit {proc.returncode}): {proc.stderr.strip()}"
+        f"git diff --quiet {left} {right} failed in {cwd} (exit {proc.returncode}): {proc.stderr.strip()}"
     )
 
 
@@ -153,10 +150,7 @@ def _describe(cwd: Path, shas: list[str]) -> dict[str, tuple[datetime, str]]:
         check=False,
     )
     if proc.returncode != 0:
-        raise MeasurementError(
-            f"git log --no-walk failed in {cwd} "
-            f"(exit {proc.returncode}): {proc.stderr.strip()}"
-        )
+        raise MeasurementError(f"git log --no-walk failed in {cwd} (exit {proc.returncode}): {proc.stderr.strip()}")
     described: dict[str, tuple[datetime, str]] = {}
     for line in proc.stdout.splitlines():
         if not line:
@@ -170,10 +164,7 @@ def _describe(cwd: Path, shas: list[str]) -> dict[str, tuple[datetime, str]]:
     if missing:
         # Presence, not absence: every sha asked for must come back, or the
         # measurement is partial and must not be rendered as a verdict.
-        raise MeasurementError(
-            f"git log returned {len(described)} of {len(shas)} commits; "
-            f"first missing: {missing[0]}"
-        )
+        raise MeasurementError(f"git log returned {len(described)} of {len(shas)} commits; first missing: {missing[0]}")
     return described
 
 
@@ -243,11 +234,7 @@ class Report:
         """
         if self.serves_main_tree:
             return []
-        return [
-            c
-            for c in self.preview_only
-            if c.age_hours > self.max_age_hours and not c.superseded and not c.landed
-        ]
+        return [c for c in self.preview_only if c.age_hours > self.max_age_hours and not c.superseded and not c.landed]
 
     def as_dict(self) -> dict[str, object]:
         return {

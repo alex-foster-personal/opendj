@@ -26,19 +26,36 @@ from tests.analysis_bench import synthetic_key
 def bundle(tmp_path: Path) -> Path:
     staged = tmp_path / "key-v1"
     fixtures = synthetic_key.build(staged)
-    bundles.seal_bundle(
-        staged, lane="key", version="v1", manifest_extra=synthetic_key.manifest_extra(fixtures)
-    )
+    bundles.seal_bundle(staged, lane="key", version="v1", manifest_extra=synthetic_key.manifest_extra(fixtures))
     return staged
 
 
 def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     store_root = tmp_path / "asset-store"
-    assert cli.main(["fixtures", "push", "--lane", "key", "--version", "v1",
-                     "--bundle-dir", str(bundle), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "push",
+                "--lane",
+                "key",
+                "--version",
+                "v1",
+                "--bundle-dir",
+                str(bundle),
+                "--store",
+                str(store_root),
+            ]
+        )
+        == 0
+    )
     pulled = tmp_path / "pulled"
-    assert cli.main(["fixtures", "pull", "--lane", "key", "--version", "v1",
-                     "--dest", str(pulled), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            ["fixtures", "pull", "--lane", "key", "--version", "v1", "--dest", str(pulled), "--store", str(store_root)]
+        )
+        == 0
+    )
 
     log = tmp_path / "spec.md"
     log.write_text("# spec\n\n## Experiment log\n")
@@ -46,14 +63,35 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     # truth_echo stands in for the missing candidate role (see module docstring):
     # its own arm role stays positive_control, and the other three declared
     # controls (constant_key, most_common_key, truth_echo_mik) come along too.
-    assert cli.main(["run", "--lane", "key", "--candidate", "truth_echo",
-                     "--bundle-dir", str(pulled), "--workdir", str(tmp_path / "arms"),
-                     "--out", str(report_path), "--post", "--log-path", str(log)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "key",
+                "--candidate",
+                "truth_echo",
+                "--bundle-dir",
+                str(pulled),
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--out",
+                str(report_path),
+                "--post",
+                "--log-path",
+                str(log),
+            ]
+        )
+        == 0
+    )
 
     report = json.loads(report_path.read_text())
     assert report["scorer_version"] == "1.0.0"
     assert set(report["arms"]) == {
-        "truth_echo", "truth_echo_mik", "constant_key", "most_common_key",
+        "truth_echo",
+        "truth_echo_mik",
+        "constant_key",
+        "most_common_key",
     }
     assert report["bundle"]["bundle_id"] == bundles.verify_bundle(bundle)["bundle_id"]
 
@@ -77,9 +115,23 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
 def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) -> None:
     log = tmp_path / "spec.md"
     log.write_text("# spec\n")
-    code = cli.main(["run", "--lane", "key", "--candidate", "constant_key",
-                     "--bundle-dir", str(bundle), "--workdir", str(tmp_path / "arms"),
-                     "--no-controls", "--post", "--log-path", str(log)])
+    code = cli.main(
+        [
+            "run",
+            "--lane",
+            "key",
+            "--candidate",
+            "constant_key",
+            "--bundle-dir",
+            str(bundle),
+            "--workdir",
+            str(tmp_path / "arms"),
+            "--no-controls",
+            "--post",
+            "--log-path",
+            str(log),
+        ]
+    )
     assert code == 2
     assert "cannot be posted" in capsys.readouterr().err
     assert log.read_text() == "# spec\n"
@@ -88,15 +140,39 @@ def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) 
 def test_key_builder_forwards_paths_resolved_against_the_callers_cwd(tmp_path: Path) -> None:
     """The builder runs as a child in the repo root; a relative path the caller typed must
     still name the file under the caller's cwd, not under the repo (Codex on #3830)."""
-    args = cli._parser().parse_args([
-        "fixtures", "build", "--lane", "key", "--version", "v1", "--dir", "out",
-        "--rekordbox", "rb.db", "--mik-windows", "mik.db", "--mik-macos", "c.mikdb",
-        "--audio-root", "audio", "--copy-manifest", "m.jsonl", "--seed", "7",
-    ])
+    args = cli._parser().parse_args(
+        [
+            "fixtures",
+            "build",
+            "--lane",
+            "key",
+            "--version",
+            "v1",
+            "--dir",
+            "out",
+            "--rekordbox",
+            "rb.db",
+            "--mik-windows",
+            "mik.db",
+            "--mik-macos",
+            "c.mikdb",
+            "--audio-root",
+            "audio",
+            "--copy-manifest",
+            "m.jsonl",
+            "--seed",
+            "7",
+        ]
+    )
     with contextlib.chdir(tmp_path):
         argv = cli._key_builder_argv(args)
-    for flag, name in (("--out", "out"), ("--rekordbox", "rb.db"), ("--mik-windows", "mik.db"),
-                       ("--mik-macos", "c.mikdb"), ("--audio-root", "audio"),
-                       ("--copy-manifest", "m.jsonl")):
+    for flag, name in (
+        ("--out", "out"),
+        ("--rekordbox", "rb.db"),
+        ("--mik-windows", "mik.db"),
+        ("--mik-macos", "c.mikdb"),
+        ("--audio-root", "audio"),
+        ("--copy-manifest", "m.jsonl"),
+    ):
         assert argv[argv.index(flag) + 1] == str(tmp_path / name), flag
     assert argv[argv.index("--seed") + 1] == "7"

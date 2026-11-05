@@ -307,5 +307,15 @@ to KiB (321,536) plus 1 KiB of jitter => 322,560. Payback: none planned.
 RAISED Tue 3 Nov 2026 (PR #6802 wave zoom merged onto main 1da0577f16 with the fold-notice follow-up): the merged tree
 measures 323,481 here, 921 B over 322,560. Ceiled to KiB (323,584) plus 1 KiB of jitter => 324,608. Payback: none
 planned; the zoom and the plan overlay are the features on /performance.
+RAISED Mon 2 Nov 2026 (+3 KiB, wave-mixer, PR #7692, merged main 7837e09617): one clean vite
+build each, main itself measures 323,484; main + this PR 325,991 (+2,507). Carried onto main's 324,608, so
+327,680. Payback: none planned. Charge file budgets/performance/charges/7692.json.
+RAISED Tue 3 Nov 2026 (PR #7901 version stacks and works, merged onto main 80d4c76d90 with the v26 foundation): this PR
+measured +7,872 B on one clean local vite build each against main ab7e1a6150. Added to main's 323,481: 331,353.
+Ceiled to KiB plus 1 KiB of jitter => 332,800. Merge note (main wave-mixer #7692 x #7901): main's released raise
+lands first; this ceiling stacks the version-stack feature on that trunk. Charge file budgets/performance/charges/7901.json.
+Payback owed (over the 4 KiB V1 allowance): load WorksModals and VersionStackPanel on first use.
 { name: 'performance', limit: 324608, measured: 323481, note: '/performance and children' }
 ```
+
+REBASELINED Thu 5 Nov 2026 (preventive rebaseline, surface within 3% of ceiling, Thu 5 Nov 2026; main 86084188b4, #8869, run 42023794899, frontend job 127238947586): CI measured 399,251 B gzip, 98.7% of base 361,472 + charges 43,008 (7898, 7901, 7909, 8626, 8728, 8801, 8869) = 404,480, about 5.2 KB left. Measured ceiled to KiB (399,360) plus 1 KiB => 400,384 by the README rule, superseded by measured plus 2% (399,251 x 1.02 = 407,236 => 407,552); the seven charges are folded into the base and deleted. Payback: none planned, the payback notes in the folded charge files still stand. Headroom note: the README's "next KiB plus 1 KiB" rule leaves headroom below build noise on large surfaces (local other-lazy read 486,102 against CI 485,775; library tipped on 15 B of noise on Thu 5 Nov 2026), so this preventive rebaseline uses CI measured plus 2%, rounded up to the next KiB: 399,251 x 1.02 = 407,236 => 407,552.

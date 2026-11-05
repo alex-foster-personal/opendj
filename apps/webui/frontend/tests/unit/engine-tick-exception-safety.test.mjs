@@ -96,7 +96,7 @@ test('SOURCE: a throw inside the tick is recorded, not swallowed', () => {
 	const reporter = readFrontendSource('src/lib/rb/presentation-clock-report.ts');
 	const body = reporter.slice(reporter.indexOf('export function notePresentationTickFailure'));
 	assert.ok(
-		body.includes("recordPerfEvent(") && body.includes("'error'"),
+		body.includes('recordPerfEvent(') && body.includes("'error'"),
 		'if notePresentationTickFailure does not record at error severity then broken - a ' +
 			'warn-severity row never reaches /api/v1/client-errors and the incident stays ' +
 			'inside the browser that suffered it'
@@ -149,9 +149,7 @@ test('SOURCE: the frozen-playhead watchdog is wired, not merely written', () => 
 		'src/lib/components/rb/wave/WaveRow.svelte',
 		'src/lib/components/rb/deck/StripWaveform.svelte'
 	];
-	const wired = consumers.filter((path) =>
-		readFrontendSource(path).includes('presentation-stall')
-	);
+	const wired = consumers.filter((path) => readFrontendSource(path).includes('presentation-stall'));
 	assert.ok(
 		wired.length >= 1,
 		'if nothing imports the presentation-stall watchdog then broken - a pure module ' +

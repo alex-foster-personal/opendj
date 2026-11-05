@@ -94,10 +94,14 @@ def test_nothing_is_recorded_when_no_key_is_current(tmp_path):
 @pytest.mark.parametrize(
     ("cached", "source"),
     [
-        (os.path.join("scripts", "__pycache__", "affected_tests.cpython-311.pyc"),
-         os.path.join("scripts", "affected_tests.py")),
-        (os.path.join("tests", "__pycache__", "conftest.cpython-311-pytest-9.1.1.pyc"),
-         os.path.join("tests", "conftest.py")),
+        (
+            os.path.join("scripts", "__pycache__", "affected_tests.cpython-311.pyc"),
+            os.path.join("scripts", "affected_tests.py"),
+        ),
+        (
+            os.path.join("tests", "__pycache__", "conftest.cpython-311-pytest-9.1.1.pyc"),
+            os.path.join("tests", "conftest.py"),
+        ),
         (os.path.join("__pycache__", "top.cpython-311.pyc"), "top.py"),
     ],
 )

@@ -38,9 +38,7 @@
 
 	const shownKeys = $derived<readonly string[]>(pendingKeys ?? keys);
 	const anySelected = $derived(shownKeys.length > 0);
-	const compatibleKeys = $derived(
-		referenceKey === null ? [] : compatibleLibraryKeys(referenceKey)
-	);
+	const compatibleKeys = $derived(referenceKey === null ? [] : compatibleLibraryKeys(referenceKey));
 	const referenceText = $derived(
 		referenceKey === null ? null : (displayKey(referenceKey, notation)?.text ?? referenceKey)
 	);
@@ -159,11 +157,8 @@
 			title={compatibleTitle}
 			onclick={_compatible}>Compatible</button
 		>
-		<button
-			type="button"
-			data-testid="library-key-reset"
-			disabled={!anySelected}
-			onclick={_reset}>Reset</button
+		<button type="button" data-testid="library-key-reset" disabled={!anySelected} onclick={_reset}
+			>Reset</button
 		>
 		<button type="button" class="close" onclick={onClose}>Close</button>
 	</div>

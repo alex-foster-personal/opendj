@@ -5,11 +5,16 @@ Regression lines:
     a full disk fails mid-install with a cryptic pnpm error
   - if the preflight runs after the install then it guards nothing
   - if the script stops failing on a full disk then the tripwire is gone
+  - if a poisoned frontend node_modules is left in place then the typing
+    gate fails 84 times and `pnpm build` dies `vite: not found`
+  - if repair keeps .pnpm-workspace-state-v1.json then pnpm short-circuits
+    and the tree stays poisoned
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 import stat
 import subprocess
 from pathlib import Path
@@ -164,3 +169,193 @@ def test_a_commented_or_echoed_install_does_not_count() -> None:
     assert not _installs_into(f'echo "{install}"', frontend, frontend)
     assert not _installs_into(f"# pnpm -C {frontend} install --frozen-lockfile", "", frontend)
     assert _installs_into(f"# deps for the live-engine client\n{install}", frontend, frontend)
+
+
+STATE = ".pnpm-workspace-state-v1.json"
+TS_STORE = Path(".pnpm") / "typescript@1.0.0" / "node_modules" / "typescript"
+
+
+def _write_pnpm_stub(path: Path, log: Path, *, mode: str) -> None:
+    """`mode` is repair (relink a healthy tree), fail (exit 1), or leave-broken."""
+    log_q = shlex.quote(str(log))
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        f"printf '%s\\n' \"$*\" >> {log_q}",
+        f"if [ -e node_modules/{STATE} ]; then printf 'STATE_PRESENT\\n' >> {log_q}; fi",
+    ]
+    if mode == "repair":
+        lines += [
+            "mkdir -p node_modules/.pnpm/typescript@1.0.0/node_modules/typescript",
+            "ln -sfn .pnpm/typescript@1.0.0/node_modules/typescript node_modules/typescript",
+            "mkdir -p node_modules/.bin",
+            "printf '#!/usr/bin/env bash\\nexit 0\\n' > node_modules/.bin/vite",
+            "chmod +x node_modules/.bin/vite",
+            "exit 0",
+        ]
+    elif mode == "fail":
+        lines.append("exit 1")
+    else:
+        lines.append("exit 0")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _fake_env(tmp_path: Path, *, pnpm_mode: str = "repair") -> tuple[dict[str, str], Path]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("corepack", "node"):
+        (fake_bin / name).write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        (fake_bin / name).chmod(0o755)
+    pnpm_log = tmp_path / "pnpm-calls.log"
+    _write_pnpm_stub(fake_bin / "pnpm", pnpm_log, mode=pnpm_mode)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "RUNNER_NAME": "probe-runner",
+        "MDT_CI_MIN_FREE_GB": "0",
+    }
+    return env, pnpm_log
+
+
+def _run_preflight(frontend: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(SCRIPT), str(frontend)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _plant_healthy_tree(frontend: Path) -> Path:
+    nm = frontend / "node_modules"
+    store = nm / TS_STORE
+    store.mkdir(parents=True)
+    (nm / "typescript").symlink_to(TS_STORE)
+    bin_dir = nm / ".bin"
+    bin_dir.mkdir()
+    vite = bin_dir / "vite"
+    vite.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    vite.chmod(0o755)
+    (nm / STATE).write_text("{}\n", encoding="utf-8")
+    return nm
+
+
+def test_absent_node_modules_skips_the_probe(tmp_path: Path) -> None:
+    """if a fresh checkout with no tree yet is treated as poisoned then preflight
+    demands pnpm before the workflow install that creates the tree"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    env, log = _fake_env(tmp_path)
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "probe-runner: corepack and node present" in result.stdout
+    assert not log.exists()
+
+
+def test_healthy_tree_does_not_call_pnpm_or_drop_workspace_state(tmp_path: Path) -> None:
+    """if a good public layer still runs install then every job pays a relink
+    and a green tree can lose its workspace-state file"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    env, log = _fake_env(tmp_path)
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "probe-runner: corepack and node present" in result.stdout
+    assert not log.exists()
+    assert (nm / STATE).exists()
+
+
+def test_dangling_public_link_triggers_repair(tmp_path: Path) -> None:
+    """if a dangling typescript link is left then the typing gate dies
+    ERR_MODULE_NOT_FOUND before it reads a file"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    marker = nm / ".pnpm" / "keep-me"
+    marker.write_text("stay\n", encoding="utf-8")
+    (nm / "typescript").unlink()
+    (nm / "typescript").symlink_to(".pnpm/missing/node_modules/typescript")
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "repaired frontend node_modules" in result.stdout
+    assert log.exists()
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert not (nm / STATE).exists()
+    assert marker.exists()
+    assert (nm / "typescript").exists()
+
+
+def test_escaped_public_link_triggers_repair(tmp_path: Path) -> None:
+    """if only dangling links are rejected then a live quality-gate-base-*
+    target still rewrites the public layer and the next job inherits it"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    outside = tmp_path / "quality-gate-base-fake" / "apps" / "webui" / "frontend" / "node_modules" / TS_STORE
+    outside.mkdir(parents=True)
+    (nm / "typescript").unlink()
+    (nm / "typescript").symlink_to(os.path.relpath(outside, nm))
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert (nm / "typescript").exists()
+
+
+def test_empty_bin_triggers_repair(tmp_path: Path) -> None:
+    """if .bin exists with no vite then `pnpm build` dies `vite: not found`"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    vite = nm / ".bin" / "vite"
+    vite.unlink()
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert (nm / ".bin" / "vite").exists()
+
+
+def test_repair_failure_when_pnpm_exits_1_names_the_runner(tmp_path: Path) -> None:
+    """if the reinstall fails closed without ::error:: then the job still
+    looks like 84 scanner RuntimeErrors"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    (nm / "typescript").unlink()
+    (nm / "typescript").symlink_to(".pnpm/missing/node_modules/typescript")
+    env, log = _fake_env(tmp_path, pnpm_mode="fail")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::error::" in result.stderr
+    assert "probe-runner" in result.stderr
+    assert "install --frozen-lockfile" in log.read_text(encoding="utf-8")
+
+
+def test_repair_failure_when_pnpm_leaves_the_tree_broken_names_the_runner(
+    tmp_path: Path,
+) -> None:
+    """if a no-op install is treated as success then a poisoned runner stays
+    poisoned for every later job"""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    (nm / "typescript").unlink()
+    (nm / "typescript").symlink_to(".pnpm/missing/node_modules/typescript")
+    env, log = _fake_env(tmp_path, pnpm_mode="leave-broken")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::error::" in result.stderr
+    assert "probe-runner" in result.stderr
+    assert "still poisoned after reinstall" in result.stderr
+    assert "install --frozen-lockfile" in log.read_text(encoding="utf-8")

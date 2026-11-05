@@ -51,9 +51,8 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import lru_cache
 from fnmatch import fnmatch
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path, PurePosixPath
 
 from scripts.affected_tests import REPO, _imports_of, build_graph, reverse_reach
@@ -1987,6 +1986,16 @@ class InputPinnedGuard:
 REQUIREMENTS_WEEKDAY_GUARD = "(private path)"
 OPENAPI_CURRENCY_GUARD = "tests/quality/test_openapi_is_current.py"
 INPUT_PINNED_DISTANCE = 0
+WORKFLOW_INPUTS: tuple[str, ...] = (".github/workflows/", "ci/")
+WORKFLOW_READER_GUARDS: tuple[str, ...] = (
+    "(private path)",
+    "(private path)",
+    "(private path)",
+    "(private path)",
+    "(private path)",
+    "tests/scripts/test_trunk_queue.py",
+)
+TREE_READ_CENSUS_GUARD = "(private path)"
 INPUT_PINNED_GUARDS: tuple[InputPinnedGuard, ...] = (
     # The checksum scans only .planning/REQUIREMENTS.md (scripts/requirements_weekday_checksum.py).
     InputPinnedGuard(
@@ -2001,6 +2010,24 @@ INPUT_PINNED_GUARDS: tuple[InputPinnedGuard, ...] = (
         "openapi currency guard (route or contract change)",
         files=frozenset({"apps/webui/openapi.json", "apps/webui/frontend/src/lib/api-types.ts"}),
         prefixes=("apps/webui/server/", "apps/engine_core/"),
+    ),
+    # Workflow readers: each parses .github/workflows/*.yml or a ci/ data file directly, so a
+    # workflow edit reaches them by name at best, and the cap or the weak-link demotion dropped
+    # them. #8633 made the shard matrix `fromJSON(...)` and left the ledger guard red on main
+    # while main's own selections skipped them (#8727; test_trunk_queue.py stayed red past #8781).
+    # ci/ is in the prefix set because ci/test-scopes.yml, ci/pr-always-run.txt and
+    # ci/trunk-merge-queue.json are their other inputs.
+    *(
+        InputPinnedGuard(module, "workflow reader guard (.github/workflows or ci/ change)", prefixes=WORKFLOW_INPUTS)
+        for module in WORKFLOW_READER_GUARDS
+    ),
+    # The census runs nested pytest sessions under the root conftest, so a new conftest plugin
+    # (#8630's leak gate) changes what those sessions report.
+    InputPinnedGuard(
+        TREE_READ_CENSUS_GUARD,
+        "tree-read census guard (conftest, test support or census change)",
+        files=frozenset({"conftest.py", "tests/conftest.py", "scripts/pytest_tree_read_census.py"}),
+        prefixes=("tests/support/", *WORKFLOW_INPUTS),
     ),
 )
 

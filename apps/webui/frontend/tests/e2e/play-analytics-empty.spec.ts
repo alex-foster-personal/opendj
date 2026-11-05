@@ -27,7 +27,10 @@ test('a library with no recorded sets shows the empty state, not the raw 503', a
 	const empty = page.getByTestId('play-analytics-no-sets');
 	await expect(empty).toBeVisible();
 	await expect(empty).toContainText('No sets recorded yet');
-	await expect(empty.getByRole('link', { name: 'Sessions / REC' })).toHaveAttribute('href', '/sets');
+	await expect(empty.getByRole('link', { name: 'Sessions / REC' })).toHaveAttribute(
+		'href',
+		'/sets'
+	);
 	await expect(page.getByText(/failed: 503/)).toHaveCount(0);
 	await expect(page.getByText(/event store does not exist/)).toHaveCount(0);
 });

@@ -15,7 +15,8 @@ export function statusLine(row: PluginRow): string {
 		return row.installed_version === null
 			? 'Removed - unloads next time Open DJ starts'
 			: 'Turns off next time Open DJ starts';
-	if (row.pending === 'update') return `Updates to ${row.installed_version} next time Open DJ starts`;
+	if (row.pending === 'update')
+		return `Updates to ${row.installed_version} next time Open DJ starts`;
 	switch (row.load_status) {
 		case 'loaded':
 			return 'Running';
@@ -99,7 +100,10 @@ export function canSideload(preview: SideloadPreview | null, noticeRead: boolean
 }
 
 /** The labs rows to show: all of them when labs is on, else only installed ones, so a hidden catalog never hides an Uninstall. */
-export function labsShown<T extends { installed_version: string | null }>(rows: T[], optIn: boolean): T[] {
+export function labsShown<T extends { installed_version: string | null }>(
+	rows: T[],
+	optIn: boolean
+): T[] {
 	return optIn ? rows : rows.filter((row) => row.installed_version !== null);
 }
 
@@ -109,7 +113,11 @@ export function installConfirmCopy(
 	kind: 'install' | 'update'
 ): { title: string; line: string; button: string } {
 	if (kind === 'install') {
-		return { title: `Install ${row.name}?`, line: 'It turns on next time Open DJ starts.', button: 'Install' };
+		return {
+			title: `Install ${row.name}?`,
+			line: 'It turns on next time Open DJ starts.',
+			button: 'Install'
+		};
 	}
 	const to = row.available_version ? ` to ${row.available_version}` : '';
 	const line = row.enabled

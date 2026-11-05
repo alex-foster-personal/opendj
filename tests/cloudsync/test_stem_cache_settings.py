@@ -4,6 +4,7 @@
 * [if] the settings file holds a bad or unknown value [then] loading raises.
 * [if] one switch is saved [then] the other defaults are not pinned.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,7 +75,8 @@ def test_saving_one_switch_does_not_pin_the_other_defaults(tmp_path: Path):
     # Control: an explicit floor IS stored and wins over the default.
     budget.save_settings(tmp_path, StemCacheSettings(floor_gib=30.0, floor_fraction=0.10))
     assert json.loads(budget.settings_path(tmp_path).read_text(encoding="utf-8")) == {
-        "floor_fraction": 0.10, "floor_gib": 30.0,
+        "floor_fraction": 0.10,
+        "floor_gib": 30.0,
     }
     assert budget.floor_bytes(460 * GIB, budget.load_settings(tmp_path)) == 46 * GIB
 
@@ -85,8 +87,15 @@ def test_a_settings_file_written_before_the_default_changed_keeps_its_floor(tmp_
     path = budget.settings_path(tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"auto_evict": False, "enforce_interval_s": 300.0, "floor_fraction": 0.1,
-                    "floor_gib": 30.0, "max_cache_gib": None}),
+        json.dumps(
+            {
+                "auto_evict": False,
+                "enforce_interval_s": 300.0,
+                "floor_fraction": 0.1,
+                "floor_gib": 30.0,
+                "max_cache_gib": None,
+            }
+        ),
         encoding="utf-8",
     )
     assert budget.floor_bytes(460 * GIB, budget.load_settings(tmp_path)) == 46 * GIB

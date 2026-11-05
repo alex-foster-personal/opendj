@@ -15,7 +15,8 @@ before(async () => {
 	clock = await loadTypeScriptModule('src/lib/rb/dial-clock.ts');
 });
 
-const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+const close = (actual, expected) =>
+	assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
 
 describe('dial value <-> clock time', () => {
 	test('the landmarks of the 270-degree dial', () => {
@@ -31,10 +32,23 @@ describe('dial value <-> clock time', () => {
 	});
 
 	test('every spelling of three o clock is the same position', () => {
-		for (const text of ['3', '3pm', '3 pm', '3am', '3PM', "3 o'clock", '3 oclock', "3o'clock", '3:00', '15:00', '15']) {
+		for (const text of [
+			'3',
+			'3pm',
+			'3 pm',
+			'3am',
+			'3PM',
+			"3 o'clock",
+			'3 oclock',
+			"3o'clock",
+			'3:00',
+			'15:00',
+			'15'
+		]) {
 			close(clock.dialValueFromClock(text), 5 / 6);
 		}
-		for (const text of ['9', '9pm', '21:00', "9 o'clock"]) close(clock.dialValueFromClock(text), 1 / 6);
+		for (const text of ['9', '9pm', '21:00', "9 o'clock"])
+			close(clock.dialValueFromClock(text), 1 / 6);
 		close(clock.dialValueFromClock('0:00'), 0.5);
 		close(clock.dialValueFromClock('24:00'), 0.5);
 	});

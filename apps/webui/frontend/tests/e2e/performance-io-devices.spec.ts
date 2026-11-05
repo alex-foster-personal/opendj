@@ -15,26 +15,38 @@
 import { expect, test, type Page } from '@playwright/test';
 
 type Listed = { id: string; label: string };
-type Access = { status: string; action: string; message: string | null; detail: string | null; notices: string[] };
+type Access = {
+	status: string;
+	action: string;
+	message: string | null;
+	detail: string | null;
+	notices: string[];
+};
 
 async function bootPerformance(page: Page): Promise<void> {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 }
 
-async function headphones(page: Page): Promise<{ outputs: Listed[]; inputs: Listed[]; device_access: Access }> {
+async function headphones(
+	page: Page
+): Promise<{ outputs: Listed[]; inputs: Listed[]; device_access: Access }> {
 	return page.evaluate(() => {
 		const hp = window.musicDjToolsPerformance!.query().mixer.headphones as unknown as {
 			outputs: Listed[];
 			inputs: Listed[];
 			device_access: Access;
 		};
-		return JSON.parse(JSON.stringify({ outputs: hp.outputs, inputs: hp.inputs, device_access: hp.device_access }));
+		return JSON.parse(
+			JSON.stringify({ outputs: hp.outputs, inputs: hp.inputs, device_access: hp.device_access })
+		);
 	});
 }
 
 /** What the browser itself says, asked directly: the control for every claim below. */
-async function rawDevices(page: Page): Promise<{ kind: string; deviceId: string; label: string }[]> {
+async function rawDevices(
+	page: Page
+): Promise<{ kind: string; deviceId: string; label: string }[]> {
 	return page.evaluate(async () =>
 		(await navigator.mediaDevices.enumerateDevices()).map((device) => ({
 			kind: device.kind,
@@ -51,7 +63,10 @@ async function openIo(page: Page) {
 	return panel;
 }
 
-async function selectableOptions(page: Page, label: string): Promise<{ value: string; text: string }[]> {
+async function selectableOptions(
+	page: Page,
+	label: string
+): Promise<{ value: string; text: string }[]> {
 	return page
 		.getByLabel(label, { exact: true })
 		.locator('option:not([disabled])')
@@ -75,7 +90,9 @@ test('the device list is read at boot, before anyone opens I/O', async ({ page }
 	expect(state.outputs.length).toBeGreaterThan(0);
 });
 
-test('I/O lists the system default output with a non-empty label and names a withheld list', async ({ page }) => {
+test('I/O lists the system default output with a non-empty label and names a withheld list', async ({
+	page
+}) => {
 	await bootPerformance(page);
 	const raw = await rawDevices(page);
 	const panel = await openIo(page);
@@ -89,7 +106,10 @@ test('I/O lists the system default output with a non-empty label and names a wit
 		const options = await selectableOptions(page, select);
 		// Presence of the good thing: a default the operator can read and pick.
 		const systemDefault = options.find((option) => option.value === 'default');
-		expect(systemDefault, `${select} has no system default row: ${JSON.stringify(options)}`).toBeDefined();
+		expect(
+			systemDefault,
+			`${select} has no system default row: ${JSON.stringify(options)}`
+		).toBeDefined();
 		expect(systemDefault!.text).not.toBe('');
 		// And no blank row anywhere: an empty id or label is the browser's
 		// placeholder, which is the exact thing that used to be drawn.
@@ -100,7 +120,10 @@ test('I/O lists the system default output with a non-empty label and names a wit
 	}
 
 	const access = panel.locator('[data-io-device-access]');
-	await expect(access).toHaveAttribute('data-io-device-access', /^(listed|permission_needed|permission_denied)$/);
+	await expect(access).toHaveAttribute(
+		'data-io-device-access',
+		/^(listed|permission_needed|permission_denied)$/
+	);
 	const status = await access.getAttribute('data-io-device-access');
 	const withheldByBrowser = raw.some(
 		(device) => device.kind.startsWith('audio') && (device.deviceId === '' || device.label === '')
@@ -113,13 +136,21 @@ test('I/O lists the system default output with a non-empty label and names a wit
 	}
 });
 
-test('with device access granted, every output the browser names is listed', async ({ page, context }) => {
+test('with device access granted, every output the browser names is listed', async ({
+	page,
+	context
+}) => {
 	await context.grantPermissions(['microphone']);
 	await bootPerformance(page);
 	const raw = await rawDevices(page);
-	const named = raw.filter((device) => device.kind === 'audiooutput' && device.deviceId !== '' && device.label !== '');
+	const named = raw.filter(
+		(device) => device.kind === 'audiooutput' && device.deviceId !== '' && device.label !== ''
+	);
 	// UNKNOWN, not a pass: a host whose browser names no output cannot measure this.
-	test.skip(named.length === 0, 'this host names no audio output even with access granted; nothing to compare');
+	test.skip(
+		named.length === 0,
+		'this host names no audio output even with access granted; nothing to compare'
+	);
 
 	await openIo(page);
 	await expect.poll(async () => (await headphones(page)).device_access.status).toBe('listed');
@@ -142,7 +173,9 @@ test('with device access granted, every output the browser names is listed', asy
 test('the engine parity route returns the same device list the panel shows', async ({ page }) => {
 	await bootPerformance(page);
 	await openIo(page);
-	await expect.poll(async () => (await headphones(page)).device_access.status).not.toBe('not_checked');
+	await expect
+		.poll(async () => (await headphones(page)).device_access.status)
+		.not.toBe('not_checked');
 	const shown = await headphones(page);
 	// GET is the read-only mirror an agent polls. It answers 503 until the page
 	// has published a mirror, and the mirror is published once a second, so the
@@ -160,7 +193,9 @@ test('the engine parity route returns the same device list the panel shows', asy
 	const mirrored = await (await page.request.get('/api/v1/performance/headphones')).json();
 	expect(mirrored.outputs).toEqual(shown.outputs);
 	expect(mirrored.inputs).toEqual(shown.inputs);
-	expect(mirrored.outputs.some((output: Listed) => output.id === 'default' && output.label !== '')).toBe(true);
+	expect(
+		mirrored.outputs.some((output: Listed) => output.id === 'default' && output.label !== '')
+	).toBe(true);
 	// POST runs the same enumeration through the page and returns the state it produced.
 	const refreshed = await page.request.post('/api/v1/performance/headphones/outputs/refresh');
 	expect(refreshed.status(), await refreshed.text()).toBe(200);
@@ -183,7 +218,8 @@ test.describe('fault injection: a device API that cannot be asked', () => {
 			name: 'rejecting',
 			status: 'enumeration_failed',
 			install: () => {
-				navigator.mediaDevices.enumerateDevices = () => Promise.reject(new DOMException('injected', 'NotReadableError'));
+				navigator.mediaDevices.enumerateDevices = () =>
+					Promise.reject(new DOMException('injected', 'NotReadableError'));
 			}
 		},
 		{
@@ -195,14 +231,21 @@ test.describe('fault injection: a device API that cannot be asked', () => {
 		}
 	];
 	for (const fault of faults) {
-		test(`a ${fault.name} device API renders ${fault.status} with a retry, never an empty list`, async ({ page }) => {
+		test(`a ${fault.name} device API renders ${fault.status} with a retry, never an empty list`, async ({
+			page
+		}) => {
 			await page.addInitScript(fault.install);
 			await bootPerformance(page);
 			const panel = await openIo(page);
 			const access = panel.locator('[data-io-device-access]');
-			await expect(access).toHaveAttribute('data-io-device-access', fault.status, { timeout: 20_000 });
+			await expect(access).toHaveAttribute('data-io-device-access', fault.status, {
+				timeout: 20_000
+			});
 			await expect(panel.locator('[data-io-device-access-message]')).not.toBeEmpty();
-			await expect(panel.locator('[data-io-device-access-action]')).toHaveAttribute('data-io-device-access-action', 'retry');
+			await expect(panel.locator('[data-io-device-access-action]')).toHaveAttribute(
+				'data-io-device-access-action',
+				'retry'
+			);
 			const state = await headphones(page);
 			expect(state.outputs).toContainEqual({
 				id: 'default',

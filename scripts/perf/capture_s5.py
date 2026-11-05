@@ -135,9 +135,7 @@ def _fetch_stems_payload(engine: str, stable_id: str) -> dict[str, Any]:
     )
     if status != 200:
         code = _detail_code(body)
-        raise ProbeError(
-            f"GET /stems for {stable_id} returned HTTP {status}" + (f" {code}" if code else "")
-        )
+        raise ProbeError(f"GET /stems for {stable_id} returned HTTP {status}" + (f" {code}" if code else ""))
     try:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -159,8 +157,7 @@ def stems_payload_is_ready(payload: dict[str, Any], stable_id: str) -> bool:
         if code == "STEM_BUNDLE_HYDRATING":
             return False
         raise ProbeError(
-            f"stemmed track {stable_id} has no stem bundle: "
-            f"{code or 'unavailable'} (HTTP 200 unavailable)"
+            f"stemmed track {stable_id} has no stem bundle: {code or 'unavailable'} (HTTP 200 unavailable)"
         )
     parts = payload.get("parts")
     if payload.get("stable_id") != stable_id or not isinstance(parts, dict) or not parts:
@@ -190,10 +187,7 @@ def require_stem_bundle(
     deadline = time.monotonic() + deadline_s
     while not stems_payload_is_ready(_fetch_stems_payload(engine, stable_id), stable_id):
         if time.monotonic() >= deadline:
-            raise ProbeError(
-                f"stemmed track {stable_id} still STEM_BUNDLE_HYDRATING after "
-                f"{deadline_s:g} s deadline"
-            )
+            raise ProbeError(f"stemmed track {stable_id} still STEM_BUNDLE_HYDRATING after {deadline_s:g} s deadline")
         time.sleep(poll_s)
 
 

@@ -172,8 +172,14 @@
 			void handleMakeComponent();
 		}}
 	>
-		<span title="Selected tracks that will form the component">{selectionInOrder.length}</span> tracks as
-		<input type="text" placeholder="Component name" bind:value={compName} data-testid="make-component-name" />
+		<span title="Selected tracks that will form the component">{selectionInOrder.length}</span>
+		tracks as
+		<input
+			type="text"
+			placeholder="Component name"
+			bind:value={compName}
+			data-testid="make-component-name"
+		/>
 		<label
 			>slot
 			<select bind:value={compSlot} data-testid="make-component-slot">
@@ -182,9 +188,16 @@
 				{/each}
 			</select></label
 		>
-		<input type="text" placeholder="#tags" bind:value={compTags} data-testid="make-component-tags" />
-		<button type="submit" data-testid="make-component-save" disabled={!compName.trim() || selectionInOrder.length === 0}
-			>Save component</button
+		<input
+			type="text"
+			placeholder="#tags"
+			bind:value={compTags}
+			data-testid="make-component-tags"
+		/>
+		<button
+			type="submit"
+			data-testid="make-component-save"
+			disabled={!compName.trim() || selectionInOrder.length === 0}>Save component</button
 		>
 		<button
 			type="button"

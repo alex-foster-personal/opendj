@@ -22,19 +22,14 @@ def _write_wav(path: Path, seconds: float = 1.0) -> None:
         wav.setsampwidth(2)
         wav.setframerate(8000)
         wav.writeframes(
-            b"".join(
-                int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2
-                for i in range(frames)
-            )
+            b"".join(int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2 for i in range(frames))
         )
 
 
 class _RefuseScripts(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == "scripts" or fullname.startswith("scripts."):
-            raise ModuleNotFoundError(
-                f"{fullname} is not shipped in the engine payload", name=fullname
-            )
+            raise ModuleNotFoundError(f"{fullname} is not shipped in the engine payload", name=fullname)
         return None
 
 
@@ -64,15 +59,17 @@ def test_push_missing_dry_run_without_scripts_package(
     _write_wav(stems_root / "vocals.wav")
     _write_wav(stems_root / "instrumental.wav")
     (stems_root / "manifest.json").write_text(
-        json.dumps({
-            "schema_version": 3,
-            "stable_id": "sid1",
-            "layout": "roformer2",
-            "model": {"name": "m", "version": "v"},
-            "source": {"path": "/x/a.wav", "sha256": "0" * 64},
-            "files": {"vocals": "vocals.wav", "instrumental": "instrumental.wav"},
-            "audio": {"sample_rate": 8000, "channels": 2, "frame_count": 8000},
-        }),
+        json.dumps(
+            {
+                "schema_version": 3,
+                "stable_id": "sid1",
+                "layout": "roformer2",
+                "model": {"name": "m", "version": "v"},
+                "source": {"path": "/x/a.wav", "sha256": "0" * 64},
+                "files": {"vocals": "vocals.wav", "instrumental": "instrumental.wav"},
+                "audio": {"sample_rate": 8000, "channels": 2, "frame_count": 8000},
+            }
+        ),
         encoding="utf-8",
     )
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from apps.reconcile.contract import CONTRACT_VERSION, ReconcileService
+from apps.reconcile.source_flags import flags_by_stable_id, read_store, scan, write_store
 
 
 def build_service(*, music_roots: list[Path] | None = None, dedup_db: Path | None = None) -> ReconcileService:
@@ -18,4 +19,5 @@ def build_service(*, music_roots: list[Path] | None = None, dedup_db: Path | Non
     return LocalReconcileService(music_roots=music_roots, dedup_db=dedup_db)
 
 
-__all__ = ["CONTRACT_VERSION", "build_service"]
+# SRCFLAG-01: the source-flag scan and store, re-exported for the delivery layers.
+__all__ = ["CONTRACT_VERSION", "build_service", "flags_by_stable_id", "read_store", "scan", "write_store"]

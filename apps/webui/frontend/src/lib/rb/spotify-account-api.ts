@@ -33,7 +33,8 @@ function _expectBoolean(value: unknown, field: string): boolean {
 }
 
 function _expectNonEmptyString(value: unknown, field: string): string {
-	if (typeof value !== 'string' || value === '') throw new Error(`Spotify account contract violation: ${field}`);
+	if (typeof value !== 'string' || value === '')
+		throw new Error(`Spotify account contract violation: ${field}`);
 	return value;
 }
 
@@ -45,7 +46,8 @@ function _expectCount(value: unknown, field: string): number {
 }
 
 function _expectNullableBoolean(value: unknown, field: string): boolean | null {
-	if (value !== null && typeof value !== 'boolean') throw new Error(`Spotify account contract violation: ${field}`);
+	if (value !== null && typeof value !== 'boolean')
+		throw new Error(`Spotify account contract violation: ${field}`);
 	return value;
 }
 
@@ -67,7 +69,8 @@ function _parsePlaylist(value: unknown, index: number): SpotifyAccountPlaylist {
 	// The id is base-62 and the player URL is the one built from it, as the
 	// engine guarantees, so a one-sided change cannot open another playlist.
 	const spotifyId = _expectNonEmptyString(value.spotify_id, at('spotify_id'));
-	if (!/^[A-Za-z0-9]+$/.test(spotifyId)) throw new Error(`Spotify account contract violation: ${at('spotify_id')}`);
+	if (!/^[A-Za-z0-9]+$/.test(spotifyId))
+		throw new Error(`Spotify account contract violation: ${at('spotify_id')}`);
 	if (value.open_url !== `https://open.spotify.com/playlist/${spotifyId}`) {
 		throw new Error(`Spotify account contract violation: ${at('open_url')}`);
 	}
@@ -138,7 +141,8 @@ export function parseSpotifyAccountListing(body: unknown): SpotifyAccountListing
 	}
 	if (!body.connected) {
 		const reason = _expectString(body.reason, 'reason');
-		if (!NOT_CONNECTED_REASONS.has(reason)) throw new Error('Spotify account contract violation: reason');
+		if (!NOT_CONNECTED_REASONS.has(reason))
+			throw new Error('Spotify account contract violation: reason');
 		// The engine always sends playlists, empty when disconnected.
 		if (!Array.isArray(body.playlists) || body.playlists.length !== 0) {
 			throw new Error('Spotify account contract violation: playlists');
@@ -171,7 +175,11 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
  * over the network (agentbox, a remote daemon) the redirect lands on the
  * browser's own loopback and the sign-in can never complete.
  */
-export function spotifyConnectRunsHere(apiBase: string, pageHostname: string, nativeShell: boolean): boolean {
+export function spotifyConnectRunsHere(
+	apiBase: string,
+	pageHostname: string,
+	nativeShell: boolean
+): boolean {
 	const engineHost = apiBase === '' ? null : new URL(apiBase, 'http://127.0.0.1').hostname;
 	// A desktop shell hands the sign-in to the system browser on its own
 	// machine, so only the engine's address matters there.
@@ -189,7 +197,9 @@ export function spotifyConnectRunsOnThisPage(nativeShell: boolean): boolean {
  * public PKCE id naming the user's own Spotify app, not a secret.
  */
 export async function saveSpotifyClientId(clientId: string): Promise<void> {
-	await unwrap(api.PUT('/api/v1/spotify/account/client-id', { body: { client_id: clientId.trim() } }));
+	await unwrap(
+		api.PUT('/api/v1/spotify/account/client-id', { body: { client_id: clientId.trim() } })
+	);
 }
 
 /** Start the in-app sign-in; returns the URL to open in a real browser. */
@@ -207,4 +217,3 @@ export async function getSpotifyConnectStatus(): Promise<{
 	const body = await unwrap(api.GET('/api/v1/spotify/account/connect'));
 	return body as { phase: SpotifyConnectPhase; detail: string | null };
 }
-

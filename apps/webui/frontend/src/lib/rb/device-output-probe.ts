@@ -46,6 +46,8 @@ export interface DeviceOutputProbeEffects {
 		combined_verdict: CombinedOutputHealthVerdict;
 	}) => void;
 	onToast?: (message: string) => void;
+	/** AUDIO-DEVICE-05: the combined verdict just became not_delivering. */
+	onNotDelivering?: (device: DeviceDeliverySnapshot | null) => void;
 	addDeviceChangeListener?: (fn: () => void) => () => void;
 	subscribePerfEvents?: (fn: (kind: string, message: string) => void) => () => void;
 }
@@ -102,6 +104,7 @@ export function installDeviceOutputProbe(
 			effects.onToast?.(
 				'Output device is not delivering audio. Switch the macOS output to another device and back, or reconnect the headphones.'
 			);
+			effects.onNotDelivering?.(deviceProbe);
 		}
 		lastToastVerdict = combined;
 	};

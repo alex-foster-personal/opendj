@@ -86,15 +86,24 @@ test('the tempo and key cells open the editor above themselves, and tempo can be
 
 test('LIBPG-7694 the table opens the editor from the K/B cells and prints the session edit', async () => {
 	const { readFileSync } = await import('node:fs');
-	const table = readFileSync(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url), 'utf8');
+	const table = readFileSync(
+		new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(table, /ondblclick=\{\(e\) => openCellEdit\(e, row, 'key'\)\}/);
 	assert.match(table, /ondblclick=\{\(e\) => openCellEdit\(e, row, 'bpm'\)\}/);
 	assert.match(table, /oncontextmenu=\{\(e\) => openCellEditMenu\(e, row, 'bpm'\)\}/);
 	assert.match(table, /keyCellSpans\(cellKey, uiPrefs\.key_notation, findQuery\)/);
-	assert.match(table, /\{#if bpmEdited\}\s*\{bpmCellText\(\{ bpm: cellBpm, bpm_status: 'ok' \}\)\.text\}/);
+	assert.match(
+		table,
+		/\{#if bpmEdited\}\s*\{bpmCellText\(\{ bpm: cellBpm, bpm_status: 'ok' \}\)\.text\}/
+	);
 	// The K/B fit measures what the cells print, edits included.
 	assert.match(table, /rows: rows\.map\(\(row\) => editedMusicalRow\(row\)\)/);
-	const popover = readFileSync(new URL('../../src/lib/components/rb/browser/BpmKeyEditPopover.svelte', import.meta.url), 'utf8');
+	const popover = readFileSync(
+		new URL('../../src/lib/components/rb/browser/BpmKeyEditPopover.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(popover, /data-testid="bpm-key-edit"/);
 	assert.match(popover, /data-testid="bpm-key-edit-tap"/);
 	assert.match(popover, /title=\{kind === 'bpm'/);
@@ -104,13 +113,17 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 	let entry;
 	before(async () => {
 		entry = await loadTypeScriptModule('tests/unit/fixtures/bpm-key-overrides-entry.ts', {
-			alias: { '$lib/rb/performance-ipc.svelte': `${FRONTEND_ROOT}/tests/unit/fixtures/bpm-key-overrides-stub-ipc.ts` }
+			alias: {
+				'$lib/rb/performance-ipc.svelte': `${FRONTEND_ROOT}/tests/unit/fixtures/bpm-key-overrides-stub-ipc.ts`
+			}
 		});
 	});
 
 	const decks = (key) => ({
 		ids: [1],
-		states: { 1: { stable_id: 'trk', position_ms: 0, bpm: 120, key, key_shift_semitones: 0, anlz: null } },
+		states: {
+			1: { stable_id: 'trk', position_ms: 0, bpm: 120, key, key_shift_semitones: 0, anlz: null }
+		},
 		pitchRanges: { 1: 8 }
 	});
 
@@ -123,17 +136,29 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 
 	test('a refused nudge stops the rest, and the cell keeps the typed key', async () => {
 		entry.answerWith([true, false, true]);
-		await entry.commitKeyEdit('trk2', '5A', { ...decks('8A'), states: { 1: { ...decks('8A').states[1], stable_id: 'trk2' } } });
+		await entry.commitKeyEdit('trk2', '5A', {
+			...decks('8A'),
+			states: { 1: { ...decks('8A').states[1], stable_id: 'trk2' } }
+		});
 		assert.equal(entry.sent.length, 2, 'no nudge after the refused one');
 		assert.equal(entry.editedKey('trk2', null), '5A');
 	});
 
 	test('every nudge is one semitone, and a step past the shift range is not sent', async () => {
 		entry.answerWith([]);
-		await entry.commitKeyEdit('trk3', '5A', { ...decks('8A'), states: { 1: { ...decks('8A').states[1], stable_id: 'trk3' } } });
-		assert.deepEqual(entry.sent.map((c) => c.semitones), [1, 1, 1]);
+		await entry.commitKeyEdit('trk3', '5A', {
+			...decks('8A'),
+			states: { 1: { ...decks('8A').states[1], stable_id: 'trk3' } }
+		});
+		assert.deepEqual(
+			entry.sent.map((c) => c.semitones),
+			[1, 1, 1]
+		);
 		entry.answerWith([]);
-		const far = { ...decks('8A'), states: { 1: { ...decks('8A').states[1], stable_id: 'trk4', key_shift_semitones: 10 } } };
+		const far = {
+			...decks('8A'),
+			states: { 1: { ...decks('8A').states[1], stable_id: 'trk4', key_shift_semitones: 10 } }
+		};
 		await entry.commitKeyEdit('trk4', '5A', far);
 		assert.equal(entry.sent.length, 0);
 	});

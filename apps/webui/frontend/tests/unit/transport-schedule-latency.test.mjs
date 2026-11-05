@@ -188,7 +188,11 @@ test('the master-ready floor still carries the sync margin, not the immediate on
 test('safeTransportScheduleTime declares the immediate safety as its default', () => {
 	const text = playerSource('lib/player/transport/schedule-math.ts');
 	const at = text.indexOf('export function safeTransportScheduleTime(');
-	assert.notEqual(at, -1, 'if safeTransportScheduleTime moved then this guard is pointed at nothing');
+	assert.notEqual(
+		at,
+		-1,
+		'if safeTransportScheduleTime moved then this guard is pointed at nothing'
+	);
 	const signature = text.slice(at, text.indexOf('): number {', at));
 	assert.ok(
 		signature.includes('safetySec = TRANSPORT_IMMEDIATE_SAFETY_S'),
@@ -221,7 +225,9 @@ test('safeSyncScheduleTime declares the sync margin as its default safety', () =
 // added startAtContextSec to play() and forcedWhen to schedulePlainTransport, so the
 // play() and schedulePlainTransport anchors in this section moved with those signatures.
 test('the two non-sync play branches schedule through the plain-transport helper', () => {
-	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
+	const body = engineBlockAfter(
+		'	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {'
+	);
 	assert.ok(
 		!body.includes('SYNC_SCHEDULE_SAFETY_S'),
 		'if play() names SYNC_SCHEDULE_SAFETY_S again then the branch that becomes master, ' +
@@ -274,10 +280,14 @@ test('the plain schedule horizon is the shared helper, not a hand-rolled margin'
 });
 
 test('LATENCY-02 engine.play stays free of QUANTIZED LAUNCH branching', () => {
-	const playBody = engineBlockAfter('async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
+	const playBody = engineBlockAfter(
+		'async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {'
+	);
 	assert.doesNotMatch(playBody, /QUANTIZED LAUNCH/);
 	assert.doesNotMatch(playBody, /armQuantizedLaunch/);
-	const scheduleBody = engineBlockAfter('const schedulePlainTransport = async (forcedWhen?: number): Promise<void> => {');
+	const scheduleBody = engineBlockAfter(
+		'const schedulePlainTransport = async (forcedWhen?: number): Promise<void> => {'
+	);
 	assert.doesNotMatch(scheduleBody, /QUANTIZED LAUNCH/);
 	assert.doesNotMatch(scheduleBody, /armQuantizedLaunch/);
 });

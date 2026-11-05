@@ -91,7 +91,10 @@ async function _hydrate(ownGeneration: number): Promise<void> {
 			// operator has since left, OR rejected outright -- either way,
 			// without this the feed sits empty or on the old snapshot for
 			// up to 60 s, until the next interval tick (Sol review, PR #3676).
-			if (requestedScope !== null && trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope) {
+			if (
+				requestedScope !== null &&
+				trackifyPlaylistScope(uiPrefs.last_playlist) !== requestedScope
+			) {
 				_hydrateOrToast(ownGeneration);
 			}
 		}

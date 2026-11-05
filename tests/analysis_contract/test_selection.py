@@ -327,7 +327,7 @@ def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> No
 def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
-    assert sorted(body["serving"]) == ["beatgrid", "key", "phrase", "waveform"]
+    assert sorted(body["serving"]) == ["beatgrid", "key", "loudness", "phrase", "waveform"]
     assert body["lanes"]["beatgrid"] == {
         "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }

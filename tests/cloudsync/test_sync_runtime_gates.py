@@ -27,9 +27,7 @@ pytestmark = pytest.mark.requirement("CLOUDSYNC-14")
 def _write_gig_prefs(data_dir: Path) -> None:
     prefs_dir = data_dir / "state"
     prefs_dir.mkdir(parents=True, exist_ok=True)
-    (prefs_dir / "ui-prefs.json").write_text(
-        json.dumps({"app_posture": "gig"}), encoding="utf-8"
-    )
+    (prefs_dir / "ui-prefs.json").write_text(json.dumps({"app_posture": "gig"}), encoding="utf-8")
 
 
 def test_refuse_sync_round_returns_gig_posture(tmp_path: Path) -> None:
@@ -145,9 +143,7 @@ def test_cli_sync_exits_3_when_gig_posture(tmp_path: Path) -> None:
     assert sync_status.read_results(tmp_path) == ()
 
 
-def test_cli_sync_force_exits_0_under_gig_posture(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_cli_sync_force_exits_0_under_gig_posture(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] CLI sync --force under gig posture [then] exit 0 and a journal row."""
     _write_gig_prefs(enroll_spoke_dir)
     result = subprocess.run(

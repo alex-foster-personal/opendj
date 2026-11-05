@@ -38,21 +38,45 @@
 	</select>
 
 	{#if predicate.op === 'between'}
-		<input type={valueInputType} bind:value={predicate.valueLo} placeholder="lower bound" aria-label="Lower bound" />
+		<input
+			type={valueInputType}
+			bind:value={predicate.valueLo}
+			placeholder="lower bound"
+			aria-label="Lower bound"
+		/>
 		<span class="and-label">and</span>
-		<input type={valueInputType} bind:value={predicate.valueHi} placeholder="upper bound" aria-label="Upper bound" />
+		<input
+			type={valueInputType}
+			bind:value={predicate.valueHi}
+			placeholder="upper bound"
+			aria-label="Upper bound"
+		/>
 	{:else if predicate.op === 'in'}
 		<div class="value-list" aria-label="Values">
 			{#each predicate.valueList as _value, index (index)}
 				<div class="value-list-row">
-					<input type="text" bind:value={predicate.valueList[index]} placeholder="value" aria-label={`Value ${index + 1}`} />
-					<button type="button" onclick={() => removeListValue(index)} aria-label={`Remove value ${index + 1}`}>&times;</button>
+					<input
+						type="text"
+						bind:value={predicate.valueList[index]}
+						placeholder="value"
+						aria-label={`Value ${index + 1}`}
+					/>
+					<button
+						type="button"
+						onclick={() => removeListValue(index)}
+						aria-label={`Remove value ${index + 1}`}>&times;</button
+					>
 				</div>
 			{/each}
 			<button type="button" onclick={addListValue}>+ value</button>
 		</div>
 	{:else}
-		<input type={valueInputType} bind:value={predicate.value} placeholder="value" aria-label="Value" />
+		<input
+			type={valueInputType}
+			bind:value={predicate.value}
+			placeholder="value"
+			aria-label="Value"
+		/>
 	{/if}
 
 	{#if FIELD_TYPES[predicate.field] === 'date'}
@@ -82,7 +106,8 @@
 	.and-label {
 		color: var(--muted);
 	}
-	.value-list, .value-list-row {
+	.value-list,
+	.value-list-row {
 		display: flex;
 		gap: 0.4rem;
 		flex-wrap: wrap;

@@ -101,11 +101,19 @@ test('underrun yields silence, increments the underrun counter, and re-enters pr
 		result = ring.pull(left, right);
 	}
 	assert.equal(ring.underrunCount, 1);
-	assert.equal(left[QUANTUM - 1], 0, 'if the tail of the underrun quantum is not silent then stale audio plays - broken');
+	assert.equal(
+		left[QUANTUM - 1],
+		0,
+		'if the tail of the underrun quantum is not silent then stale audio plays - broken'
+	);
 	assert.equal(right[QUANTUM - 1], 0);
 	assert.equal(ring.priming, true);
 	const next = ring.pull(left, right);
-	assert.equal(next.underrun, false, 'if priming counts a second underrun then the counter overstates dropouts - broken');
+	assert.equal(
+		next.underrun,
+		false,
+		'if priming counts a second underrun then the counter overstates dropouts - broken'
+	);
 	assert.equal(ring.underrunCount, 1);
 	assert.ok(left.every((sample) => sample === 0));
 	assert.ok(right.every((sample) => sample === 0));
@@ -179,7 +187,11 @@ test('fill below the band duplicates exactly one frame per quantum', () => {
 	assert.equal(result.duplicated, true);
 	assert.notEqual(left[0], 0);
 	assert.notEqual(right[0], 0);
-	assert.equal(left[1], left[0], 'if slot 1 is not the same frame as slot 0 then nothing was duplicated - broken');
+	assert.equal(
+		left[1],
+		left[0],
+		'if slot 1 is not the same frame as slot 0 then nothing was duplicated - broken'
+	);
 	assert.equal(right[1], right[0]);
 	assert.equal(
 		ring.fill,
@@ -213,23 +225,46 @@ test('reported latency equals target frames over sample rate in milliseconds', (
 });
 
 test('a failed cue bridge start is not cached and closes its half-built context', () => {
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
-	const body = source.slice(source.indexOf('async function _ensureCueBridge'), source.indexOf('interface _OutputSelectableMediaDevices'));
-	assert.match(body, /catch \(error\) \{[\s\S]*if \(_cueBridgeReady === ready\) _cueBridgeReady = null;/,
-		'if a rejected bridge start stays cached then one transient failure disables cue until reload - broken');
-	assert.match(body, /catch \(error\) \{[\s\S]*await _closeCueContext\(cueContext\)[\s\S]*throw error;/,
-		'if the half-built cue context is not closed on failure then every retry leaks an AudioContext - broken');
+	const source = readFileSync(
+		new URL('../../src/lib/player/headphones.ts', import.meta.url),
+		'utf8'
+	);
+	const body = source.slice(
+		source.indexOf('async function _ensureCueBridge'),
+		source.indexOf('interface _OutputSelectableMediaDevices')
+	);
+	assert.match(
+		body,
+		/catch \(error\) \{[\s\S]*if \(_cueBridgeReady === ready\) _cueBridgeReady = null;/,
+		'if a rejected bridge start stays cached then one transient failure disables cue until reload - broken'
+	);
+	assert.match(
+		body,
+		/catch \(error\) \{[\s\S]*await _closeCueContext\(cueContext\)[\s\S]*throw error;/,
+		'if the half-built cue context is not closed on failure then every retry leaks an AudioContext - broken'
+	);
 });
 
 test('a bridge that finishes after the route tore the graph down is closed, not published', () => {
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
-	const body = source.slice(source.indexOf('async function _ensureCueBridge'), source.indexOf('interface _OutputSelectableMediaDevices'));
+	const source = readFileSync(
+		new URL('../../src/lib/player/headphones.ts', import.meta.url),
+		'utf8'
+	);
+	const body = source.slice(
+		source.indexOf('async function _ensureCueBridge'),
+		source.indexOf('interface _OutputSelectableMediaDevices')
+	);
 	assert.match(source, /async function _closeCueContext[\s\S]*?cueContext\.close\(\)/);
 	const guard = body.indexOf('_headphoneNodes !== nodes');
-	assert.ok(guard > 0 && guard < body.indexOf('nodes.bridgeInput.connect(wired.bridgeSender)'),
-		'if ownership is not checked before publishing then a teardown mid-start attaches the bridge to a dead graph - broken');
-	assert.match(body.slice(guard), /_closeCueContext\(cueContext\)[\s\S]*?throw/,
-		'if a stale bridge is not closed then every teardown race leaks an AudioContext - broken');
+	assert.ok(
+		guard > 0 && guard < body.indexOf('nodes.bridgeInput.connect(wired.bridgeSender)'),
+		'if ownership is not checked before publishing then a teardown mid-start attaches the bridge to a dead graph - broken'
+	);
+	assert.match(
+		body.slice(guard),
+		/_closeCueContext\(cueContext\)[\s\S]*?throw/,
+		'if a stale bridge is not closed then every teardown race leaks an AudioContext - broken'
+	);
 });
 
 function sinkContext({ failResume = false, failRestore = false } = {}) {
@@ -259,9 +294,15 @@ test('a failed cue sink change puts the context back on the previous device', as
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	const ctx = sinkContext({ failResume: true });
 	const holder = { cueDeviceId: 'old-phones' };
-	await assert.rejects(headphones.applyCueSinkTransaction(ctx, 'new-phones', holder), /resume refused/);
-	assert.equal(ctx.sinkId, 'old-phones',
-		'if a failed selection leaves the live context on the new device then monitor audio plays on hardware the UI does not show - broken');
+	await assert.rejects(
+		headphones.applyCueSinkTransaction(ctx, 'new-phones', holder),
+		/resume refused/
+	);
+	assert.equal(
+		ctx.sinkId,
+		'old-phones',
+		'if a failed selection leaves the live context on the new device then monitor audio plays on hardware the UI does not show - broken'
+	);
 	assert.equal(holder.cueDeviceId, 'old-phones');
 });
 
@@ -269,9 +310,15 @@ test('a cue sink that cannot be restored is silenced, not left on the wrong devi
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	const ctx = sinkContext({ failResume: true, failRestore: true });
 	const holder = { cueDeviceId: 'old-phones' };
-	await assert.rejects(headphones.applyCueSinkTransaction(ctx, 'new-phones', holder), /resume refused/);
-	assert.equal(ctx.state, 'suspended',
-		'if an unrestorable context keeps running then cue audio is routed to an unpublished device - broken');
+	await assert.rejects(
+		headphones.applyCueSinkTransaction(ctx, 'new-phones', holder),
+		/resume refused/
+	);
+	assert.equal(
+		ctx.state,
+		'suspended',
+		'if an unrestorable context keeps running then cue audio is routed to an unpublished device - broken'
+	);
 	assert.equal(holder.cueDeviceId, null);
 });
 
@@ -286,11 +333,24 @@ test('a successful cue sink change records the new device', async () => {
 });
 
 test('a bridge worklet that throws is reported, not left as silent output', () => {
-	const wiring = readFileSync(new URL('../../src/lib/player/cue-bridge-wiring.ts', import.meta.url), 'utf8');
-	assert.match(wiring, /bridgeSender\.onprocessorerror = \(\) => handlers\.onProcessorError\('sender'\)/,
-		'if the sender has no processorerror handler then a thrown worklet outputs silence while liveness reads healthy - broken');
-	assert.match(wiring, /bridgeReceiver\.onprocessorerror = \(\) => handlers\.onProcessorError\('receiver'\)/);
-	assert.doesNotMatch(wiring, /onUnderrun\?:/, 'the handlers are required, so no caller can wire a bridge that fails silently');
+	const wiring = readFileSync(
+		new URL('../../src/lib/player/cue-bridge-wiring.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		wiring,
+		/bridgeSender\.onprocessorerror = \(\) => handlers\.onProcessorError\('sender'\)/,
+		'if the sender has no processorerror handler then a thrown worklet outputs silence while liveness reads healthy - broken'
+	);
+	assert.match(
+		wiring,
+		/bridgeReceiver\.onprocessorerror = \(\) => handlers\.onProcessorError\('receiver'\)/
+	);
+	assert.doesNotMatch(
+		wiring,
+		/onUnderrun\?:/,
+		'the handlers are required, so no caller can wire a bridge that fails silently'
+	);
 });
 
 test('a failed bridge is torn down so re-selecting the output rebuilds it', async () => {
@@ -299,31 +359,56 @@ test('a failed bridge is torn down so re-selecting the output rebuilds it', asyn
 	const nodes = {
 		bridgeSender: { disconnect: () => calls.push('sender') },
 		bridgeReceiver: { disconnect: () => calls.push('receiver') },
-		bridgeInput: { disconnect: (target) => calls.push(target === undefined ? 'input-all' : 'input-sender') },
+		bridgeInput: {
+			disconnect: (target) => calls.push(target === undefined ? 'input-all' : 'input-sender')
+		},
 		cueContext: { close: async () => calls.push('close') },
 		cueDeviceId: 'bt-1',
 		bridgeControl: null
 	};
 	const message = await headphones.failCueBridge('receiver', nodes);
 	assert.match(message, /receiver/);
-	assert.deepEqual([nodes.bridgeSender, nodes.bridgeReceiver, nodes.cueContext, nodes.cueDeviceId], [null, null, null, null],
-		'if the dead bridge stays attached then _ensureCueBridge reuses it and re-selecting never recovers - broken');
-	assert.ok(calls.includes('close'), 'if the dead cue context is not closed then it leaks - broken');
-	assert.ok(calls.includes('input-sender'),
-		'if bridgeInput keeps its edge to the dead sender then every failure leaks a worklet node into the main graph - broken');
-	assert.ok(!calls.includes('input-all'), 'disconnecting all of bridgeInput would also cut the rebuilt bridge - broken');
+	assert.deepEqual(
+		[nodes.bridgeSender, nodes.bridgeReceiver, nodes.cueContext, nodes.cueDeviceId],
+		[null, null, null, null],
+		'if the dead bridge stays attached then _ensureCueBridge reuses it and re-selecting never recovers - broken'
+	);
+	assert.ok(
+		calls.includes('close'),
+		'if the dead cue context is not closed then it leaks - broken'
+	);
+	assert.ok(
+		calls.includes('input-sender'),
+		'if bridgeInput keeps its edge to the dead sender then every failure leaks a worklet node into the main graph - broken'
+	);
+	assert.ok(
+		!calls.includes('input-all'),
+		'disconnecting all of bridgeInput would also cut the rebuilt bridge - broken'
+	);
 });
 
 test('a failed bridge mutes the monitor gains and a new cue context stays silent until pinned', () => {
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
+	const source = readFileSync(
+		new URL('../../src/lib/player/headphones.ts', import.meta.url),
+		'utf8'
+	);
 	const fail = source.match(/export async function failCueBridge[\s\S]*?\n\}\n/)[0];
-	assert.match(fail, /mixerState\.headphones\.active = false;[\s\S]*?applyHeadphoneMix\(\);/,
-		'if the live monitor gains are not zeroed after a bridge failure then a rebuild plays the stale mix - broken');
+	assert.match(
+		fail,
+		/mixerState\.headphones\.active = false;[\s\S]*?applyHeadphoneMix\(\);/,
+		'if the live monitor gains are not zeroed after a bridge failure then a rebuild plays the stale mix - broken'
+	);
 	const ensure = source.match(/async function _ensureCueBridge[\s\S]*?\n\}\n/)[0];
-	assert.match(ensure, /new AudioContext\([^)]*\);(?:\s*\/\/[^\n]*)*\s*await cueContext\.suspend\(\);/,
-		'if a new cue context runs before setSinkId pins it then monitor audio plays through the room default output - broken');
-	assert.doesNotMatch(ensure, /cueContext\.resume\(\)/,
-		'only the sink transaction may resume the cue context, after setSinkId lands');
+	assert.match(
+		ensure,
+		/new AudioContext\([^)]*\);(?:\s*\/\/[^\n]*)*\s*await cueContext\.suspend\(\);/,
+		'if a new cue context runs before setSinkId pins it then monitor audio plays through the room default output - broken'
+	);
+	assert.doesNotMatch(
+		ensure,
+		/cueContext\.resume\(\)/,
+		'only the sink transaction may resume the cue context, after setSinkId lands'
+	);
 });
 
 test('a vanished cue device suspends the cue context so it cannot fall back to the room', async () => {
@@ -331,18 +416,30 @@ test('a vanished cue device suspends the cue context so it cannot fall back to t
 	const ctx = sinkContext();
 	ctx.state = 'running';
 	await headphones.silenceVanishedCueOutput({ cueContext: ctx });
-	assert.equal(ctx.state, 'suspended',
-		'if the cue context keeps running after its device vanished then Chrome can reroute monitor audio to the default output - broken');
+	assert.equal(
+		ctx.state,
+		'suspended',
+		'if the cue context keeps running after its device vanished then Chrome can reroute monitor audio to the default output - broken'
+	);
 	await headphones.silenceVanishedCueOutput({ cueContext: null });
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
-	assert.match(source, /if \(plan\.clearCue\) \{[\s\S]*?await silenceVanishedCueOutput\(/,
-		'if the vanished-device branch does not silence the cue context then the guard above is dead code - broken');
+	const source = readFileSync(
+		new URL('../../src/lib/player/headphones.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		source,
+		/if \(plan\.clearCue\) \{[\s\S]*?await silenceVanishedCueOutput\(/,
+		'if the vanished-device branch does not silence the cue context then the guard above is dead code - broken'
+	);
 });
 
 test('a restored cue device resumes only after its sink is applied', async () => {
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	const ctx = sinkContext();
 	await headphones.applyCueSinkTransaction(ctx, 'bt-1', { cueDeviceId: null });
-	assert.deepEqual(ctx.calls, ['sink:bt-1', 'resume'],
-		'if the context resumes before setSinkId lands then monitor audio plays on the old output meanwhile - broken');
+	assert.deepEqual(
+		ctx.calls,
+		['sink:bt-1', 'resume'],
+		'if the context resumes before setSinkId lands then monitor audio plays on the old output meanwhile - broken'
+	);
 });

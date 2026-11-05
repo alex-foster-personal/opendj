@@ -103,19 +103,17 @@ test('a part that appears, disappears or changes shape is named', () => {
 	const recorded = buildManifest(selected());
 
 	const missing = { ...recorded, parts: recorded.parts.slice(0, 3) };
-	assert.deepEqual(
-		manifestMismatches(missing, buildManifest(selected())),
-		['part other is decoded by this run but absent from the manifest']
-	);
+	assert.deepEqual(manifestMismatches(missing, buildManifest(selected())), [
+		'part other is decoded by this run but absent from the manifest'
+	]);
 
 	const extra = {
 		...recorded,
 		parts: [...recorded.parts, { part: 'piano', name: 'p.flac', bytes: 1, sha256: 'ff' }]
 	};
-	assert.deepEqual(
-		manifestMismatches(extra, buildManifest(selected())),
-		['part piano is pinned by the manifest but was not decoded by this run']
-	);
+	assert.deepEqual(manifestMismatches(extra, buildManifest(selected())), [
+		'part piano is pinned by the manifest but was not decoded by this run'
+	]);
 
 	const stale = { ...recorded, version: MANIFEST_VERSION - 1 };
 	assert.match(manifestMismatches(stale, buildManifest(selected()))[0], /manifest version/);

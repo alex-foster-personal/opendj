@@ -80,11 +80,7 @@ def reap(
     only_pids: list[int] | None = None,
 ) -> dict:
     targets = [
-        r
-        for r in rows
-        if r.verdict == "reapable"
-        and r.age_s >= min_age_s
-        and (not only_pids or r.pid in only_pids)
+        r for r in rows if r.verdict == "reapable" and r.age_s >= min_age_s and (not only_pids or r.pid in only_pids)
     ]
     identities = {r.pid: procs[r.pid].start for r in targets}
     killed: list[dict] = []
@@ -121,9 +117,7 @@ def reap(
                 "cwd": row.cwd,
                 "command": row.command[:160],
                 "env": row.env,
-                "outcome": _outcome(
-                    dry_run=dry_run, still_alive=still, signalled=row.pid in signalled
-                ),
+                "outcome": _outcome(dry_run=dry_run, still_alive=still, signalled=row.pid in signalled),
             }
         )
     counts: dict[str, int] = {}
@@ -169,9 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         print_census(procs, rows, as_json=args.json)
         exit_code = 0
     elif args.cmd == "reap":
-        report = reap(
-            procs, rows, min_age_s=args.min_age_s, dry_run=args.dry_run, only_pids=args.only_pid
-        )
+        report = reap(procs, rows, min_age_s=args.min_age_s, dry_run=args.dry_run, only_pids=args.only_pid)
         line = json.dumps(report)
         print(line)
         if args.report:

@@ -1,4 +1,5 @@
 """SMART-02 -- diff_sets helper."""
+
 from __future__ import annotations
 
 import pytest

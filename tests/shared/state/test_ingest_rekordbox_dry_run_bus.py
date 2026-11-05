@@ -1,12 +1,11 @@
 """Regression for Codex P05-F02 / INFRA-03.
 
-Dry-run ingest must NOT deliver events to subscribers, because the outer
-SAVEPOINT is rolled back and the mutations are never persisted. Prior to
-the fix, ``writer.bus.publish`` was called inline from every
-``upsert_track`` / ``set_field`` / ``set_vendor_id`` / ``insert_playlist``
-inside the savepoint, so subscribers saw phantom events for rows that
-never landed.
+Dry-run ingest must NOT deliver events to subscribers, because
+``StateWriter.transaction(commit=False)`` rolls the unit back and drops
+queued bus events. Subscribers must never see phantom events for rows
+that never landed.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -29,9 +28,7 @@ def rb_fixture(rb_plain_db_path: Path, tmp_path: Path) -> Path:
     return dst
 
 
-def test_dry_run_delivers_no_events_to_subscribers(
-    rb_fixture: Path, state_db_path: Path
-) -> None:
+def test_dry_run_delivers_no_events_to_subscribers(rb_fixture: Path, state_db_path: Path) -> None:
     conn = state_db.open_rw(state_db_path)
     bus = FakeEventBus()
     received: list = []
@@ -53,9 +50,7 @@ def test_dry_run_delivers_no_events_to_subscribers(
     assert bus.events == []
 
 
-def test_live_run_still_publishes_events(
-    rb_fixture: Path, state_db_path: Path
-) -> None:
+def test_live_run_still_publishes_events(rb_fixture: Path, state_db_path: Path) -> None:
     conn = state_db.open_rw(state_db_path)
     bus = FakeEventBus()
     w = StateWriter(conn, bus=bus, actor="ingest-rb")
@@ -76,7 +71,7 @@ def test_dry_run_restores_bus_on_exception(
     bus = FakeEventBus()
     w = StateWriter(conn, bus=bus, actor="ingest-rb")
 
-    # Force the ingest to blow up inside the SAVEPOINT.
+    # Force the ingest to blow up before the writer-managed unit.
     def boom(*_a, **_k):
         raise RuntimeError("synthetic ingest failure")
 

@@ -367,6 +367,118 @@
         "title": "AccountUserOut",
         "type": "object"
       },
+      "AcousticProofIn": {
+        "properties": {
+          "failed_windows": {
+            "minimum": 0.0,
+            "title": "Failed Windows",
+            "type": "integer"
+          },
+          "mic_label": {
+            "minLength": 1,
+            "title": "Mic Label",
+            "type": "string"
+          },
+          "mic_transport": {
+            "title": "Mic Transport",
+            "type": "string"
+          },
+          "peak_correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Correlation"
+          },
+          "verdict": {
+            "enum": [
+              "heard",
+              "not_delivering",
+              "inconclusive"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "windows_required": {
+            "minimum": 1.0,
+            "title": "Windows Required",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "verdict",
+          "failed_windows",
+          "windows_required",
+          "mic_label",
+          "mic_transport"
+        ],
+        "title": "AcousticProofIn",
+        "type": "object"
+      },
+      "AcousticProofOut": {
+        "properties": {
+          "age_s": {
+            "title": "Age S",
+            "type": "number"
+          },
+          "failed_windows": {
+            "title": "Failed Windows",
+            "type": "integer"
+          },
+          "mic_label": {
+            "title": "Mic Label",
+            "type": "string"
+          },
+          "mic_transport": {
+            "title": "Mic Transport",
+            "type": "string"
+          },
+          "peak_correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Correlation"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "heard",
+              "not_delivering",
+              "inconclusive"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "windows_required": {
+            "title": "Windows Required",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "verdict",
+          "failed_windows",
+          "windows_required",
+          "peak_correlation",
+          "mic_label",
+          "mic_transport",
+          "received_at",
+          "age_s"
+        ],
+        "title": "AcousticProofOut",
+        "type": "object"
+      },
       "AdoptOut": {
         "properties": {
           "created": {
@@ -1274,6 +1386,232 @@
         "title": "AppPostureScalersOut",
         "type": "object"
       },
+      "AppUpdateCancelIn": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "AppUpdateCancelIn",
+        "type": "object"
+      },
+      "AppUpdateCancelOut": {
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "git_sha_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha Full"
+          },
+          "install": {
+            "$ref": "#/components/schemas/UpdateApplyStatusOut"
+          }
+        },
+        "required": [
+          "cancelled",
+          "command_id",
+          "git_sha_full",
+          "install"
+        ],
+        "title": "AppUpdateCancelOut",
+        "type": "object"
+      },
+      "AppUpdateInstallAccepted": {
+        "properties": {
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "countdown_ends_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countdown Ends At Utc"
+          },
+          "countdown_s": {
+            "title": "Countdown S",
+            "type": "number"
+          },
+          "git_sha_full": {
+            "title": "Git Sha Full",
+            "type": "string"
+          },
+          "manifest_url": {
+            "title": "Manifest Url",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "command_id",
+          "git_sha_full",
+          "app_version",
+          "manifest_url",
+          "countdown_s",
+          "countdown_ends_at_utc",
+          "warning"
+        ],
+        "title": "AppUpdateInstallAccepted",
+        "type": "object"
+      },
+      "AppUpdateReadyIn": {
+        "properties": {
+          "artifact": {
+            "title": "Artifact",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "artifact"
+        ],
+        "title": "AppUpdateReadyIn",
+        "type": "object"
+      },
+      "AppUpdateRefusedOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "detail"
+        ],
+        "title": "AppUpdateRefusedOut",
+        "type": "object"
+      },
+      "AppUpdateStatusOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "install": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateApplyStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingBuildOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running_app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running App Version"
+          },
+          "running_git_sha_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Git Sha Full"
+          },
+          "state": {
+            "enum": [
+              "none",
+              "pending",
+              "installed",
+              "artifact-changed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "pending",
+          "running_git_sha_full",
+          "running_app_version",
+          "detail"
+        ],
+        "title": "AppUpdateStatusOut",
+        "type": "object"
+      },
       "ApplyIn": {
         "additionalProperties": false,
         "properties": {
@@ -2047,6 +2385,66 @@
         "title": "AudioHeadsetModeOut",
         "type": "object"
       },
+      "AudioInputDeviceOut": {
+        "properties": {
+          "acoustic_proof_allowed": {
+            "title": "Acoustic Proof Allowed",
+            "type": "boolean"
+          },
+          "channels": {
+            "title": "Channels",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "transport": {
+            "title": "Transport",
+            "type": "string"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "name",
+          "transport",
+          "channels",
+          "acoustic_proof_allowed"
+        ],
+        "title": "AudioInputDeviceOut",
+        "type": "object"
+      },
+      "AudioInputDevicesOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/AudioInputDeviceOut"
+            },
+            "title": "Inputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inputs"
+        ],
+        "title": "AudioInputDevicesOut",
+        "type": "object"
+      },
       "AudioInterferenceItemOut": {
         "properties": {
           "key": {
@@ -2114,6 +2512,29 @@
       },
       "AudioOutputHealthOut": {
         "properties": {
+          "acoustic_proof": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acoustic Proof"
+          },
+          "bluetooth_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bluetooth Address"
+          },
           "checked_at": {
             "title": "Checked At",
             "type": "string"
@@ -2128,6 +2549,17 @@
               }
             ],
             "title": "Default Device Name"
+          },
+          "default_device_transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Device Transport"
           },
           "default_device_uid": {
             "anyOf": [
@@ -2161,6 +2593,17 @@
               }
             ],
             "title": "Device Delivering"
+          },
+          "device_is_alive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Is Alive"
           },
           "hal_overload_recent": {
             "anyOf": [
@@ -2210,6 +2653,39 @@
               }
             ],
             "title": "Reason"
+          },
+          "running_somewhere_before_probe": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Somewhere Before Probe"
+          },
+          "sample_clock_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Clock Ratio"
+          },
+          "shell_link_fault": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shell Link Fault"
           },
           "verdict": {
             "title": "Verdict",
@@ -2554,6 +3030,74 @@
           "computed_at"
         ],
         "title": "AudioQualityTrackOut",
+        "type": "object"
+      },
+      "AudioReconnectSpeakerOut": {
+        "properties": {
+          "bluetooth_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bluetooth Address"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "device_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Uid"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "reconnected": {
+            "title": "Reconnected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reconnected"
+        ],
+        "title": "AudioReconnectSpeakerOut",
         "type": "object"
       },
       "AudioSwitchOutputOut": {
@@ -3357,6 +3901,12 @@
             "description": "Producer to run, own_<lane>.<producer>",
             "title": "Backend",
             "type": "string"
+          },
+          "drain": {
+            "default": false,
+            "description": "Also start the runner for this batch, as a child process of the daemon. False only plans: the batch waits for `queue_cli run`",
+            "title": "Drain",
+            "type": "boolean"
           },
           "lane": {
             "description": "beatgrid, key, waveform, loudness or vocal",
@@ -4322,6 +4872,76 @@
         "title": "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
         "type": "object"
       },
+      "BpmAlternative": {
+        "description": "One tempo a track could be served at (GRID-OCTAVE-02): ours or Mixed In Key's.",
+        "properties": {
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "source": {
+            "enum": [
+              "own",
+              "mik"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "bpm"
+        ],
+        "title": "BpmAlternative",
+        "type": "object"
+      },
+      "BpmPickIn": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "enum": [
+              "own",
+              "mik"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "BpmPickIn",
+        "type": "object"
+      },
+      "BpmPickOut": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source"
+        ],
+        "title": "BpmPickOut",
+        "type": "object"
+      },
       "BrokenTrackList": {
         "properties": {
           "next_offset": {
@@ -4611,6 +5231,27 @@
               }
             ],
             "title": "Lane Label"
+          },
+          "lineage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LineageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lineage_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lineage Unavailable"
           },
           "manifest_path": {
             "anyOf": [
@@ -5466,6 +6107,115 @@
           "blocking"
         ],
         "title": "CheckedViolationOut",
+        "type": "object"
+      },
+      "ClassicalIn": {
+        "additionalProperties": false,
+        "properties": {
+          "catalogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalogue"
+          },
+          "composer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composer"
+          },
+          "conductor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor"
+          },
+          "ensemble": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ensemble"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "movement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement"
+          },
+          "recording_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recording Year"
+          },
+          "soloist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soloist"
+          }
+        },
+        "title": "ClassicalIn",
+        "type": "object"
+      },
+      "ClassicalOut": {
+        "properties": {
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "title": "ClassicalOut",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -8648,54 +9398,6 @@
         "title": "DecisionOut",
         "type": "object"
       },
-      "DecisionRecordOut": {
-        "properties": {
-          "action": {
-            "enum": [
-              "merge",
-              "keep-all",
-              "skip"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "cluster_id": {
-            "title": "Cluster Id",
-            "type": "integer"
-          },
-          "cluster_key": {
-            "title": "Cluster Key",
-            "type": "string"
-          },
-          "decided_at": {
-            "title": "Decided At",
-            "type": "string"
-          },
-          "pending_apply": {
-            "default": true,
-            "title": "Pending Apply",
-            "type": "boolean"
-          },
-          "revision": {
-            "title": "Revision",
-            "type": "string"
-          },
-          "survivor": {
-            "title": "Survivor",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cluster_id",
-          "cluster_key",
-          "survivor",
-          "action",
-          "decided_at",
-          "revision"
-        ],
-        "title": "DecisionRecordOut",
-        "type": "object"
-      },
       "DeckAutoLoopToggle": {
         "additionalProperties": false,
         "properties": {
@@ -9320,6 +10022,86 @@
           "reason"
         ],
         "title": "DeletedTrackOut",
+        "type": "object"
+      },
+      "DescentOut": {
+        "description": "Does the flagged build contain the one running now? (INSTALL-44)\n\n``descended`` / ``not-descended`` only when the build was stamped against\nthe very build now running; ``unverified`` when it was stamped against\nanother (or none); ``unknown`` when it carries no lineage stamp at all.",
+        "properties": {
+          "missing_commits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Commits"
+          },
+          "missing_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing From"
+          },
+          "previous_git_sha_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Git Sha Full"
+          },
+          "running_git_sha_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Git Sha Full"
+          },
+          "verdict": {
+            "enum": [
+              "descended",
+              "not-descended",
+              "unverified",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "verdict",
+          "running_git_sha_full",
+          "previous_git_sha_full",
+          "missing_commits",
+          "missing_from",
+          "warning"
+        ],
+        "title": "DescentOut",
         "type": "object"
       },
       "DigestDiffSampleOut": {
@@ -10032,6 +10814,50 @@
         "title": "EntitlementsOut",
         "type": "object"
       },
+      "EntriesMoveIn": {
+        "additionalProperties": false,
+        "description": "Lines to lift out as one block, and the line to land above (none: the end).",
+        "properties": {
+          "before_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Item Id"
+          },
+          "before_section_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Section Id"
+          },
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "section_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Section Ids",
+            "type": "array"
+          }
+        },
+        "title": "EntriesMoveIn",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "details": {
@@ -10588,6 +11414,20 @@
           "exists"
         ],
         "title": "FileProbeOut",
+        "type": "object"
+      },
+      "FileTagsOut": {
+        "properties": {
+          "proposed": {
+            "additionalProperties": true,
+            "title": "Proposed",
+            "type": "object"
+          }
+        },
+        "required": [
+          "proposed"
+        ],
+        "title": "FileTagsOut",
         "type": "object"
       },
       "FindReplaceApplyIn": {
@@ -11968,6 +12808,16 @@
               }
             ],
             "title": "Reason"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoStabilityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12845,6 +13695,14 @@
             "title": "Playlist Id",
             "type": "string"
           },
+          "stable_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
           "ts": {
             "title": "Ts",
             "type": "string"
@@ -12894,6 +13752,78 @@
           "entries"
         ],
         "title": "HistoryGetOut",
+        "type": "object"
+      },
+      "HistoryJumpIn": {
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id"
+        ],
+        "title": "HistoryJumpIn",
+        "type": "object"
+      },
+      "HistoryJumpOut": {
+        "properties": {
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryJumpStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cursor",
+          "can_undo",
+          "can_redo",
+          "steps"
+        ],
+        "title": "HistoryJumpOut",
+        "type": "object"
+      },
+      "HistoryJumpStepOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "op",
+          "action",
+          "playlist_id"
+        ],
+        "title": "HistoryJumpStepOut",
         "type": "object"
       },
       "HostInfoOut": {
@@ -13044,6 +13974,18 @@
             "minimum": 0.0,
             "title": "In Ms",
             "type": "integer"
+          },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Loop end in ms (HOTCUE-LOOP-01). Set it to save a loop hot cue, the loop that was active when the cue was set; must be after in_ms and inside the track. Omit or null for a point cue.",
+            "title": "Out Ms"
           }
         },
         "required": [
@@ -13211,6 +14153,27 @@
           "survivor_pk"
         ],
         "title": "IdentityRejectModel",
+        "type": "object"
+      },
+      "IdentityRemapPairModel": {
+        "description": "A remap claim, or a claim the hub contradicted at apply time.",
+        "properties": {
+          "loser_pk": {
+            "minLength": 1,
+            "title": "Loser Pk",
+            "type": "string"
+          },
+          "survivor_pk": {
+            "minLength": 1,
+            "title": "Survivor Pk",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loser_pk",
+          "survivor_pk"
+        ],
+        "title": "IdentityRemapPairModel",
         "type": "object"
       },
       "InferIn": {
@@ -13863,6 +14826,44 @@
           "value"
         ],
         "title": "KeyBody",
+        "type": "object"
+      },
+      "KeyClashOut": {
+        "properties": {
+          "from_id": {
+            "title": "From Id",
+            "type": "string"
+          },
+          "from_key": {
+            "title": "From Key",
+            "type": "string"
+          },
+          "gross": {
+            "title": "Gross",
+            "type": "boolean"
+          },
+          "steps": {
+            "title": "Steps",
+            "type": "integer"
+          },
+          "to_id": {
+            "title": "To Id",
+            "type": "string"
+          },
+          "to_key": {
+            "title": "To Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_id",
+          "to_id",
+          "from_key",
+          "to_key",
+          "steps",
+          "gross"
+        ],
+        "title": "KeyClashOut",
         "type": "object"
       },
       "KeyIn": {
@@ -14662,6 +15663,145 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
+      "LibraryTabOut": {
+        "additionalProperties": false,
+        "description": "One tab: its list (null = blank list), per-tab search and sort.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          },
+          "search": {
+            "default": "",
+            "title": "Search",
+            "type": "string"
+          },
+          "sort_dir": {
+            "default": 1,
+            "enum": [
+              1,
+              -1
+            ],
+            "title": "Sort Dir",
+            "type": "integer"
+          },
+          "sort_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Key"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name"
+        ],
+        "title": "LibraryTabOut",
+        "type": "object"
+      },
+      "LibraryTabsActionIn": {
+        "additionalProperties": false,
+        "description": "``open`` needs ``playlist_id`` (``name`` optional); ``switch``/``close`` need ``index``.",
+        "properties": {
+          "action": {
+            "enum": [
+              "list",
+              "open",
+              "switch",
+              "close"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "LibraryTabsActionIn",
+        "type": "object"
+      },
+      "LibraryTabsActionOut": {
+        "properties": {
+          "library_tabs": {
+            "$ref": "#/components/schemas/LibraryTabsOut"
+          }
+        },
+        "required": [
+          "library_tabs"
+        ],
+        "title": "LibraryTabsActionOut",
+        "type": "object"
+      },
+      "LibraryTabsOut": {
+        "additionalProperties": false,
+        "description": "Open tabs in strip order and the active index. No tabs = nothing saved yet.",
+        "properties": {
+          "active": {
+            "default": 0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "tabs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LibraryTabOut"
+            },
+            "title": "Tabs",
+            "type": "array"
+          }
+        },
+        "title": "LibraryTabsOut",
+        "type": "object"
+      },
       "LifecycleQuitIn": {
         "properties": {
           "force": {
@@ -14685,6 +15825,97 @@
           }
         },
         "title": "LifecycleQuitOut",
+        "type": "object"
+      },
+      "LineageOut": {
+        "description": "Which long-lived line this build carries, as a colour (INSTALL-44).\n\nStamped at build time by :func:`apps.engine_core.build_lineage.compute_lineage`.\n``previous_git_sha_full`` is the build that was running when this one was\nmade; ``descends_from_previous`` is null when there was none to compare.",
+        "properties": {
+          "color_hex": {
+            "title": "Color Hex",
+            "type": "string"
+          },
+          "color_name": {
+            "title": "Color Name",
+            "type": "string"
+          },
+          "descends_from_previous": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descends From Previous"
+          },
+          "line_shares": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Line Shares",
+            "type": "object"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "missing_commits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Commits"
+          },
+          "missing_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing From"
+          },
+          "previous_git_sha_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Git Sha Full"
+          },
+          "unresolved_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "color_name",
+          "color_hex",
+          "lines",
+          "line_shares",
+          "unresolved_lines",
+          "previous_git_sha_full",
+          "descends_from_previous",
+          "missing_commits",
+          "missing_from"
+        ],
+        "title": "LineageOut",
         "type": "object"
       },
       "LinkAnswerOut": {
@@ -14809,6 +16040,32 @@
           }
         },
         "title": "LinksPatchIn",
+        "type": "object"
+      },
+      "ListSectionsOut": {
+        "description": "A list's sections top to bottom, and how they are owned, which a caller needs\nto add one: a set's are ``set``.",
+        "properties": {
+          "owner_kind": {
+            "enum": [
+              "playlist",
+              "set"
+            ],
+            "title": "Owner Kind",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SectionOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "owner_kind",
+          "rows"
+        ],
+        "title": "ListSectionsOut",
         "type": "object"
       },
       "ListingOut": {
@@ -18126,6 +19383,98 @@
         "title": "PendingBatch",
         "type": "object"
       },
+      "PendingBuildOut": {
+        "properties": {
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "artifact": {
+            "title": "Artifact",
+            "type": "string"
+          },
+          "built_at_utc": {
+            "title": "Built At Utc",
+            "type": "string"
+          },
+          "descent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DescentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flagged_at_utc": {
+            "title": "Flagged At Utc",
+            "type": "string"
+          },
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "git_sha_full": {
+            "title": "Git Sha Full",
+            "type": "string"
+          },
+          "lineage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LineageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "release_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Channel"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact",
+          "app_version",
+          "git_sha_full",
+          "git_sha",
+          "built_at_utc",
+          "release_channel",
+          "notes",
+          "flagged_at_utc",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "PendingBuildOut",
+        "type": "object"
+      },
       "PendingOut": {
         "properties": {
           "batches": {
@@ -19453,6 +20802,56 @@
           "detail"
         ],
         "title": "PlayItUnmetOut",
+        "type": "object"
+      },
+      "PlayedLengthIn": {
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "PlayedLengthIn",
+        "type": "object"
+      },
+      "PlayedLengthOut": {
+        "properties": {
+          "from_mix_points": {
+            "title": "From Mix Points",
+            "type": "integer"
+          },
+          "from_rule": {
+            "title": "From Rule",
+            "type": "integer"
+          },
+          "played_s": {
+            "title": "Played S",
+            "type": "number"
+          },
+          "total_s": {
+            "title": "Total S",
+            "type": "number"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "played_s",
+          "total_s",
+          "from_mix_points",
+          "from_rule",
+          "unknown"
+        ],
+        "title": "PlayedLengthOut",
         "type": "object"
       },
       "PlaylistApplyRequest": {
@@ -21396,6 +22795,20 @@
             "title": "Capabilities",
             "type": "array"
           },
+          "identity_remap_pairs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IdentityRemapPairModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Remap Pairs"
+          },
           "machine_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -21462,6 +22875,13 @@
               "$ref": "#/components/schemas/IdentityRejectModel"
             },
             "title": "Identity Rejects",
+            "type": "array"
+          },
+          "identity_remaps_contradicted": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRemapPairModel"
+            },
+            "title": "Identity Remaps Contradicted",
             "type": "array"
           },
           "quarantined": {
@@ -23089,6 +24509,12 @@
       },
       "RelocateApplyIn": {
         "properties": {
+          "allow_different_recording": {
+            "default": false,
+            "description": "Adopt a candidate whose length differs from the track by more than 1 %, or whose length cannot be read. Off by default: a length mismatch usually means a different recording (RECON-07).",
+            "title": "Allow Different Recording",
+            "type": "boolean"
+          },
           "confirm": {
             "description": "Must be true. Explicit safety gate -- this writes to the live rekordbox database or the state layer.",
             "title": "Confirm",
@@ -23649,6 +25075,16 @@
             "title": "Stems",
             "type": "object"
           },
+          "tempo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoCurveRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "vocals": {
             "additionalProperties": true,
             "title": "Vocals",
@@ -24071,6 +25507,16 @@
       "SearchHit": {
         "description": "One hydrated result row + the FTS match excerpt.",
         "properties": {
+          "analysis_hints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackAnalysisHintsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "artist": {
             "anyOf": [
               {
@@ -24114,6 +25560,13 @@
             ],
             "title": "Bpm"
           },
+          "bpm_alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/BpmAlternative"
+            },
+            "title": "Bpm Alternatives",
+            "type": "array"
+          },
           "bpm_confidence": {
             "anyOf": [
               {
@@ -24136,6 +25589,11 @@
             ],
             "title": "Bpm Confidence Error"
           },
+          "bpm_disputed": {
+            "default": false,
+            "title": "Bpm Disputed",
+            "type": "boolean"
+          },
           "bpm_method": {
             "anyOf": [
               {
@@ -24146,6 +25604,21 @@
               }
             ],
             "title": "Bpm Method"
+          },
+          "bpm_pick": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Pick"
           },
           "bpm_reason": {
             "anyOf": [
@@ -24379,6 +25852,28 @@
             ],
             "title": "Key"
           },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
           "key_reason": {
             "anyOf": [
               {
@@ -24389,6 +25884,24 @@
               }
             ],
             "title": "Key Reason"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
           },
           "key_status": {
             "enum": [
@@ -24485,6 +25998,13 @@
               }
             ],
             "title": "Rating"
+          },
+          "source_flags": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFlagOut"
+            },
+            "title": "Source Flags",
+            "type": "array"
           },
           "spotify_pending": {
             "default": false,
@@ -24659,6 +26179,41 @@
         "title": "SectionCreateIn",
         "type": "object"
       },
+      "SectionOut": {
+        "properties": {
+          "before_position": {
+            "title": "Before Position",
+            "type": "integer"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "before_position",
+          "color"
+        ],
+        "title": "SectionOut",
+        "type": "object"
+      },
       "SectionUpdateIn": {
         "additionalProperties": false,
         "properties": {
@@ -24718,6 +26273,118 @@
           "proposal_ids"
         ],
         "title": "SelectionIn",
+        "type": "object"
+      },
+      "SessionPlayedIn": {
+        "properties": {
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id"
+        ],
+        "title": "SessionPlayedIn",
+        "type": "object"
+      },
+      "SessionPlayedOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "expired": {
+            "description": "Idle longer than expiry_ms; ids are kept until resume or new",
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expiry_ms": {
+            "title": "Expiry Ms",
+            "type": "integer"
+          },
+          "idle_ms": {
+            "title": "Idle Ms",
+            "type": "integer"
+          },
+          "last_activity_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity Ms"
+          },
+          "played": {
+            "items": {
+              "$ref": "#/components/schemas/SessionPlayedRowOut"
+            },
+            "title": "Played",
+            "type": "array"
+          },
+          "played_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Played Ids",
+            "type": "array"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At Ms"
+          }
+        },
+        "required": [
+          "session_id",
+          "started_at_ms",
+          "last_activity_ms",
+          "idle_ms",
+          "expired",
+          "expiry_ms",
+          "count",
+          "played_ids",
+          "played"
+        ],
+        "title": "SessionPlayedOut",
+        "type": "object"
+      },
+      "SessionPlayedRowOut": {
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "at_ms"
+        ],
+        "title": "SessionPlayedRowOut",
         "type": "object"
       },
       "SetNoteOut": {
@@ -24867,6 +26534,109 @@
           "base_rev"
         ],
         "title": "SetNotePutIn",
+        "type": "object"
+      },
+      "SetSkipIn": {
+        "properties": {
+          "skipped": {
+            "title": "Skipped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skipped"
+        ],
+        "title": "SetSkipIn",
+        "type": "object"
+      },
+      "SetSummaryOut": {
+        "properties": {
+          "clashes": {
+            "items": {
+              "$ref": "#/components/schemas/KeyClashOut"
+            },
+            "title": "Clashes",
+            "type": "array"
+          },
+          "over_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over S"
+          },
+          "played_s": {
+            "title": "Played S",
+            "type": "number"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "readout": {
+            "title": "Readout",
+            "type": "string"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "skipped_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Ids",
+            "type": "array"
+          },
+          "target_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target S"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "played_s",
+          "target_s",
+          "over_s",
+          "skipped",
+          "skipped_ids",
+          "clashes",
+          "readout"
+        ],
+        "title": "SetSummaryOut",
+        "type": "object"
+      },
+      "SetTargetIn": {
+        "properties": {
+          "target_s": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Target length in seconds; null clears it.",
+            "title": "Target S"
+          }
+        },
+        "required": [
+          "target_s"
+        ],
+        "title": "SetTargetIn",
         "type": "object"
       },
       "SettingItem": {
@@ -25701,6 +27471,39 @@
           "display_name"
         ],
         "title": "SoundcloudTracklistRowModel",
+        "type": "object"
+      },
+      "SourceFlagOut": {
+        "description": "SRCFLAG-01..03: one flag-only finding about a track's source file.",
+        "properties": {
+          "code": {
+            "enum": [
+              "length_mismatch",
+              "stems_other_recording",
+              "hardlinked_write"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "SourceFlagOut",
         "type": "object"
       },
       "SpeakerStateOut": {
@@ -27495,6 +29298,39 @@
         "title": "SuggestedSourcesOut",
         "type": "object"
       },
+      "SuggestionFlagsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "member_ids"
+        ],
+        "title": "SuggestionFlagsIn",
+        "type": "object"
+      },
+      "SuggestionFlagsOut": {
+        "properties": {
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "member_ids"
+        ],
+        "title": "SuggestionFlagsOut",
+        "type": "object"
+      },
       "SuggestionOut": {
         "properties": {
           "artist": {
@@ -28266,6 +30102,105 @@
         "title": "SystemVolumeOut",
         "type": "object"
       },
+      "TagAssignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Add",
+            "type": "array"
+          },
+          "remove": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remove",
+            "type": "array"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "TagAssignIn",
+        "type": "object"
+      },
+      "TagAssignmentsOut": {
+        "properties": {
+          "tracks": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Tracks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "tracks"
+        ],
+        "title": "TagAssignmentsOut",
+        "type": "object"
+      },
+      "TagCatalogOut": {
+        "properties": {
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagSummaryOut"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "title": "TagCatalogOut",
+        "type": "object"
+      },
+      "TagCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "default": "general",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TagCreateIn",
+        "type": "object"
+      },
       "TagMetaIn": {
         "additionalProperties": false,
         "properties": {
@@ -28298,6 +30233,142 @@
           }
         },
         "title": "TagMetaIn",
+        "type": "object"
+      },
+      "TagPatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "merge": {
+            "default": false,
+            "title": "Merge",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "TagPatchIn",
+        "type": "object"
+      },
+      "TagSuggestionOut": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "name_norm": {
+            "title": "Name Norm",
+            "type": "string"
+          },
+          "similar": {
+            "title": "Similar",
+            "type": "boolean"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "name_norm",
+          "type",
+          "color",
+          "track_count",
+          "similar"
+        ],
+        "title": "TagSuggestionOut",
+        "type": "object"
+      },
+      "TagSuggestionsOut": {
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/TagSuggestionOut"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "suggestions"
+        ],
+        "title": "TagSuggestionsOut",
+        "type": "object"
+      },
+      "TagSummaryOut": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "name_norm": {
+            "title": "Name Norm",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "name_norm",
+          "type",
+          "color",
+          "track_count"
+        ],
+        "title": "TagSummaryOut",
         "type": "object"
       },
       "TagSynonymIn": {
@@ -28372,6 +30443,56 @@
           "singular"
         ],
         "title": "TagTypeCreateIn",
+        "type": "object"
+      },
+      "TagTypeOut": {
+        "properties": {
+          "column_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column Width"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "show_as_column": {
+            "title": "Show As Column",
+            "type": "integer"
+          },
+          "show_in_tags": {
+            "title": "Show In Tags",
+            "type": "integer"
+          },
+          "singular": {
+            "title": "Singular",
+            "type": "string"
+          },
+          "sort_index": {
+            "title": "Sort Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "singular",
+          "show_as_column",
+          "show_in_tags",
+          "column_width",
+          "sort_index"
+        ],
+        "title": "TagTypeOut",
         "type": "object"
       },
       "TagTypeUpdateIn": {
@@ -28449,6 +30570,22 @@
         "title": "TagTypeUpdateIn",
         "type": "object"
       },
+      "TagTypesOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TagTypeOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "TagTypesOut",
+        "type": "object"
+      },
       "TagUndoIn": {
         "properties": {
           "write_id": {
@@ -28473,6 +30610,107 @@
           "stable_id"
         ],
         "title": "TagWriteIn",
+        "type": "object"
+      },
+      "TempoCurveRowOut": {
+        "description": "The row strip's tempo curve (row-assets ``tempo``): the stored segments.\nNull on a steady or never-judged track, so the strip paints nothing.",
+        "properties": {
+          "largest_change_pct": {
+            "title": "Largest Change Pct",
+            "type": "number"
+          },
+          "nominal_bpm": {
+            "title": "Nominal Bpm",
+            "type": "number"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TempoCurveSegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "verdict": {
+            "enum": [
+              "drift",
+              "free_intro",
+              "changes"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "nominal_bpm",
+          "largest_change_pct",
+          "segments"
+        ],
+        "title": "TempoCurveRowOut",
+        "type": "object"
+      },
+      "TempoCurveSegmentOut": {
+        "properties": {
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "bpm_end": {
+            "title": "Bpm End",
+            "type": "number"
+          },
+          "bpm_start": {
+            "title": "Bpm Start",
+            "type": "number"
+          },
+          "delta_pct": {
+            "title": "Delta Pct",
+            "type": "number"
+          },
+          "direction": {
+            "enum": [
+              "faster",
+              "slower",
+              "none"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "steady",
+              "ramp",
+              "jump",
+              "unstable"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "number"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "bpm",
+          "bpm_start",
+          "bpm_end",
+          "delta_pct",
+          "kind",
+          "severity",
+          "direction"
+        ],
+        "title": "TempoCurveSegmentOut",
         "type": "object"
       },
       "TempoPrefOut": {
@@ -28756,6 +30994,57 @@
           "segments"
         ],
         "title": "TempoStabilityOut",
+        "type": "object"
+      },
+      "TempoStabilityRowOut": {
+        "description": "The BPM Stability column (issue #7879), decided by the daemon.\n\nRead from the scan's stored tempo verdict; ``text`` and ``tone`` are the\n#7879 strings and colors, so the browser renders them and computes nothing.\nAbsent (null) when the track's tempo was never judged: the column is blank.",
+        "properties": {
+          "change_count": {
+            "title": "Change Count",
+            "type": "integer"
+          },
+          "largest_change_pct": {
+            "title": "Largest Change Pct",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "enum": [
+              "none",
+              "amber",
+              "red",
+              "deep_red"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "steady",
+              "drift",
+              "free_intro",
+              "changes"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "largest_change_pct",
+          "change_count",
+          "text",
+          "tone",
+          "title"
+        ],
+        "title": "TempoStabilityRowOut",
         "type": "object"
       },
       "TierEstimateOut": {
@@ -29280,6 +31569,24 @@
         "title": "ToolCall",
         "type": "object"
       },
+      "TrackAnalysisHintsOut": {
+        "description": "Analyzer facts a row carries. ``dynamic_tempo`` is the stored tempo\nverdict is not steady; absent when the tempo was never judged.",
+        "properties": {
+          "dynamic_tempo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dynamic Tempo"
+          }
+        },
+        "title": "TrackAnalysisHintsOut",
+        "type": "object"
+      },
       "TrackIndexItemOut": {
         "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions, cover verdict and stem bundle summary are\nread off disk per row, which was 7.8 s of a cold 9,713-row index (stems\nanother 1.2 s). They are never sent here (excluded and absent from the\nschema); the browser asks ``POST /library/row-assets`` for the rows in view.\n\nAlso left out, because no library view reads them off an index row:\n``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,\n``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``\nserves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,\nclassifying every lyric file for ASR hallucinations.",
         "properties": {
@@ -29293,6 +31600,16 @@
               }
             ],
             "title": "Album"
+          },
+          "analysis_hints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackAnalysisHintsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "artist": {
             "anyOf": [
@@ -29316,6 +31633,13 @@
             ],
             "title": "Bpm"
           },
+          "bpm_alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/BpmAlternative"
+            },
+            "title": "Bpm Alternatives",
+            "type": "array"
+          },
           "bpm_confidence": {
             "anyOf": [
               {
@@ -29338,6 +31662,11 @@
             ],
             "title": "Bpm Confidence Error"
           },
+          "bpm_disputed": {
+            "default": false,
+            "title": "Bpm Disputed",
+            "type": "boolean"
+          },
           "bpm_method": {
             "anyOf": [
               {
@@ -29348,6 +31677,21 @@
               }
             ],
             "title": "Bpm Method"
+          },
+          "bpm_pick": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Pick"
           },
           "bpm_reason": {
             "anyOf": [
@@ -29573,6 +31917,28 @@
             ],
             "title": "Key"
           },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
           "key_reason": {
             "anyOf": [
               {
@@ -29583,6 +31949,24 @@
               }
             ],
             "title": "Key Reason"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
           },
           "key_status": {
             "anyOf": [
@@ -29688,6 +32072,13 @@
               }
             ],
             "title": "Rating"
+          },
+          "source_flags": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFlagOut"
+            },
+            "title": "Source Flags",
+            "type": "array"
           },
           "stable_id": {
             "title": "Stable Id",
@@ -29824,6 +32215,16 @@
             ],
             "title": "Album"
           },
+          "analysis_hints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackAnalysisHintsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "artist": {
             "anyOf": [
               {
@@ -29871,6 +32272,13 @@
             ],
             "title": "Bpm"
           },
+          "bpm_alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/BpmAlternative"
+            },
+            "title": "Bpm Alternatives",
+            "type": "array"
+          },
           "bpm_confidence": {
             "anyOf": [
               {
@@ -29893,6 +32301,11 @@
             ],
             "title": "Bpm Confidence Error"
           },
+          "bpm_disputed": {
+            "default": false,
+            "title": "Bpm Disputed",
+            "type": "boolean"
+          },
           "bpm_method": {
             "anyOf": [
               {
@@ -29903,6 +32316,21 @@
               }
             ],
             "title": "Bpm Method"
+          },
+          "bpm_pick": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Pick"
           },
           "bpm_reason": {
             "anyOf": [
@@ -30121,6 +32549,28 @@
             ],
             "title": "Key"
           },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
           "key_reason": {
             "anyOf": [
               {
@@ -30131,6 +32581,24 @@
               }
             ],
             "title": "Key Reason"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
           },
           "key_status": {
             "anyOf": [
@@ -30281,6 +32749,13 @@
               }
             ],
             "title": "Rating"
+          },
+          "source_flags": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFlagOut"
+            },
+            "title": "Source Flags",
+            "type": "array"
           },
           "stable_id": {
             "title": "Stable Id",
@@ -30644,6 +33119,46 @@
             ],
             "title": "Key"
           },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
+          },
           "last_played_at": {
             "anyOf": [
               {
@@ -30985,6 +33500,16 @@
       "TrackRowOut": {
         "description": "Hydrated playlist track row (shared API contract item 4).\n\nReturned by playlist detail in membership order so the browser table\nrenders without the old 29x per-row GET fan-out. ``etag`` is the same\nquoted sha1 the single-track endpoints emit (etag.py conventions), so\na row can be PATCHed directly with If-Match. ``vocals`` is the same\nfour-status field as /anlz so library PreviewStrip blue bars paint\nwithout a per-row analysis fetch.",
         "properties": {
+          "analysis_hints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackAnalysisHintsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "artist": {
             "anyOf": [
               {
@@ -31028,6 +33553,13 @@
             ],
             "title": "Bpm"
           },
+          "bpm_alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/BpmAlternative"
+            },
+            "title": "Bpm Alternatives",
+            "type": "array"
+          },
           "bpm_confidence": {
             "anyOf": [
               {
@@ -31050,6 +33582,11 @@
             ],
             "title": "Bpm Confidence Error"
           },
+          "bpm_disputed": {
+            "default": false,
+            "title": "Bpm Disputed",
+            "type": "boolean"
+          },
           "bpm_method": {
             "anyOf": [
               {
@@ -31060,6 +33597,21 @@
               }
             ],
             "title": "Bpm Method"
+          },
+          "bpm_pick": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Pick"
           },
           "bpm_reason": {
             "anyOf": [
@@ -31293,6 +33845,28 @@
             ],
             "title": "Key"
           },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
           "key_reason": {
             "anyOf": [
               {
@@ -31303,6 +33877,24 @@
               }
             ],
             "title": "Key Reason"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
           },
           "key_status": {
             "enum": [
@@ -31395,6 +33987,13 @@
               }
             ],
             "title": "Rating"
+          },
+          "source_flags": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFlagOut"
+            },
+            "title": "Source Flags",
+            "type": "array"
           },
           "spotify_pending": {
             "default": false,
@@ -31611,6 +34210,15 @@
             "minimum": 1.0,
             "title": "In Deck",
             "type": "integer"
+          },
+          "in_key_shifts": {
+            "additionalProperties": {
+              "maximum": 6.0,
+              "minimum": -6.0,
+              "type": "integer"
+            },
+            "title": "In Key Shifts",
+            "type": "object"
           },
           "intent": {
             "anyOf": [
@@ -32409,6 +35017,13 @@
             "title": "Beat Sync Max",
             "type": "boolean"
           },
+          "collapsed_sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collapsed Sections",
+            "type": "array"
+          },
           "compatible_filter": {
             "$ref": "#/components/schemas/CompatibleFilterOut"
           },
@@ -32476,6 +35091,11 @@
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
+          "library_classical_layout": {
+            "default": false,
+            "title": "Library Classical Layout",
+            "type": "boolean"
+          },
           "library_density": {
             "default": "compact",
             "enum": [
@@ -32493,6 +35113,7 @@
                 "artist",
                 "key",
                 "bpm",
+                "tempostab",
                 "plays",
                 "rating",
                 "comments",
@@ -32500,7 +35121,8 @@
                 "quality",
                 "energy",
                 "genre",
-                "stems"
+                "stems",
+                "tags"
               ],
               "type": "string"
             },
@@ -32513,6 +35135,28 @@
             },
             "title": "Library Key Filter",
             "type": "array"
+          },
+          "library_optional_columns": {
+            "items": {
+              "enum": [
+                "work",
+                "composer",
+                "ensemble",
+                "label",
+                "year"
+              ],
+              "type": "string"
+            },
+            "title": "Library Optional Columns",
+            "type": "array"
+          },
+          "library_sidebar_art": {
+            "default": true,
+            "title": "Library Sidebar Art",
+            "type": "boolean"
+          },
+          "library_tabs": {
+            "$ref": "#/components/schemas/LibraryTabsOut"
           },
           "library_watcher_folders": {
             "items": {
@@ -32631,6 +35275,21 @@
             "default": true,
             "title": "Show Tempo Lane",
             "type": "boolean"
+          },
+          "sort_within_sections": {
+            "default": false,
+            "title": "Sort Within Sections",
+            "type": "boolean"
+          },
+          "speaker_auto_recover": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "on",
+              "off"
+            ],
+            "title": "Speaker Auto Recover",
+            "type": "string"
           },
           "spotify_shrink_main_for_player": {
             "default": true,
@@ -32778,6 +35437,20 @@
             ],
             "title": "Beat Sync Max"
           },
+          "collapsed_sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collapsed Sections"
+          },
           "compatible_filter": {
             "anyOf": [
               {
@@ -32913,6 +35586,17 @@
               }
             ]
           },
+          "library_classical_layout": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Classical Layout"
+          },
           "library_density": {
             "anyOf": [
               {
@@ -32938,6 +35622,7 @@
                     "artist",
                     "key",
                     "bpm",
+                    "tempostab",
                     "plays",
                     "rating",
                     "comments",
@@ -32945,7 +35630,8 @@
                     "quality",
                     "energy",
                     "genre",
-                    "stems"
+                    "stems",
+                    "tags"
                   ],
                   "type": "string"
                 },
@@ -32970,6 +35656,48 @@
               }
             ],
             "title": "Library Key Filter"
+          },
+          "library_optional_columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "work",
+                    "composer",
+                    "ensemble",
+                    "label",
+                    "year"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Optional Columns"
+          },
+          "library_sidebar_art": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Sidebar Art"
+          },
+          "library_tabs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryTabsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "library_watcher_folders": {
             "anyOf": [
@@ -33189,6 +35917,33 @@
               }
             ],
             "title": "Show Tempo Lane"
+          },
+          "sort_within_sections": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Within Sections"
+          },
+          "speaker_auto_recover": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "on",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Auto Recover"
           },
           "spotify_shrink_main_for_player": {
             "anyOf": [
@@ -33493,6 +36248,28 @@
             ],
             "title": "Completed At Utc"
           },
+          "countdown_ends_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countdown Ends At Utc"
+          },
+          "countdown_remaining_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countdown Remaining S"
+          },
           "enqueued_at_utc": {
             "title": "Enqueued At Utc",
             "type": "string"
@@ -33514,7 +36291,8 @@
                 "enum": [
                   "installed",
                   "no-update",
-                  "refused"
+                  "refused",
+                  "cancelled"
                 ],
                 "type": "string"
               },
@@ -34621,6 +37399,65 @@
         "title": "VendorCapabilityOut",
         "type": "object"
       },
+      "VerdictIn": {
+        "additionalProperties": false,
+        "properties": {
+          "in": {
+            "minLength": 1,
+            "title": "In",
+            "type": "string"
+          },
+          "out": {
+            "minLength": 1,
+            "title": "Out",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "good",
+              "meh",
+              "bad"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "out",
+          "in",
+          "verdict"
+        ],
+        "title": "VerdictIn",
+        "type": "object"
+      },
+      "VerdictOut": {
+        "properties": {
+          "in_track_id": {
+            "title": "In Track Id",
+            "type": "string"
+          },
+          "out_track_id": {
+            "title": "Out Track Id",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "good",
+              "meh",
+              "bad"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "out_track_id",
+          "in_track_id",
+          "verdict"
+        ],
+        "title": "VerdictOut",
+        "type": "object"
+      },
       "VerifiedIn": {
         "additionalProperties": false,
         "properties": {
@@ -35083,6 +37920,69 @@
         "title": "WorkDismissalIn",
         "type": "object"
       },
+      "WorkLinkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "song",
+            "enum": [
+              "classical",
+              "song"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Member Ids",
+            "type": "array"
+          },
+          "role": {
+            "default": "remix",
+            "enum": [
+              "original",
+              "recording",
+              "remix",
+              "cover",
+              "edit",
+              "live",
+              "mashup"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "work_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Id"
+          }
+        },
+        "required": [
+          "member_ids"
+        ],
+        "title": "WorkLinkIn",
+        "type": "object"
+      },
       "WorkMemberIn": {
         "additionalProperties": false,
         "properties": {
@@ -35131,6 +38031,115 @@
         "title": "WorkMemberIn",
         "type": "object"
       },
+      "WorkMemberUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "is_primary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Primary"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "original",
+                  "recording",
+                  "remix",
+                  "cover",
+                  "edit",
+                  "live",
+                  "mashup"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "WorkMemberUpdateIn",
+        "type": "object"
+      },
+      "WorkMergeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "into": {
+            "minLength": 1,
+            "title": "Into",
+            "type": "string"
+          }
+        },
+        "required": [
+          "into"
+        ],
+        "title": "WorkMergeIn",
+        "type": "object"
+      },
+      "WorkMoveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Member Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "member_ids"
+        ],
+        "title": "WorkMoveIn",
+        "type": "object"
+      },
+      "WorkOverlayOut": {
+        "properties": {
+          "classical": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Classical",
+            "type": "object"
+          },
+          "members": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "title": "Members",
+            "type": "object"
+          },
+          "works": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Works",
+            "type": "object"
+          }
+        },
+        "required": [
+          "works",
+          "members",
+          "classical"
+        ],
+        "title": "WorkOverlayOut",
+        "type": "object"
+      },
       "WorkPrefIn": {
         "additionalProperties": false,
         "properties": {
@@ -35144,6 +38153,45 @@
           "top_member_id"
         ],
         "title": "WorkPrefIn",
+        "type": "object"
+      },
+      "WorkStackOut": {
+        "properties": {
+          "members": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "suggestions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work"
+          }
+        },
+        "required": [
+          "work",
+          "members",
+          "suggestions"
+        ],
+        "title": "WorkStackOut",
         "type": "object"
       },
       "WorkUpdateIn": {
@@ -35796,6 +38844,125 @@
           "action"
         ],
         "title": "DecisionIn",
+        "type": "object"
+      },
+      "apps__webui__server__routes__dedup_review__DecisionRecordOut": {
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "pending_apply": {
+            "default": true,
+            "title": "Pending Apply",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "cluster_key",
+          "survivor",
+          "action",
+          "decided_at",
+          "revision"
+        ],
+        "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "apps__webui__server__routes__dj_transitions_record__DecisionRecordOut": {
+        "properties": {
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decision": {
+            "additionalProperties": true,
+            "title": "Decision",
+            "type": "object"
+          },
+          "in_track_id": {
+            "title": "In Track Id",
+            "type": "string"
+          },
+          "out_track_id": {
+            "title": "Out Track Id",
+            "type": "string"
+          },
+          "played": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "good",
+                  "meh",
+                  "bad"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "verdict_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict At"
+          }
+        },
+        "required": [
+          "out_track_id",
+          "in_track_id",
+          "decision",
+          "decided_at",
+          "played",
+          "verdict",
+          "verdict_at"
+        ],
+        "title": "DecisionRecordOut",
         "type": "object"
       },
       "apps__webui__server__routes__enrich__DecisionIn": {
@@ -37463,6 +40630,252 @@
         ]
       }
     },
+    "/api/v1/app-update/artifact": {
+      "get": {
+        "operationId": "app_update_artifact_api_v1_app_update_artifact_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Update Artifact",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/cancel": {
+      "post": {
+        "description": "Withdraw the local install still counting down (INSTALL-43).\n\nThe same action as pressing Esc Space x4 in the app. Refused when no\ninstall is counting down, or once the shell has started installing.",
+        "operationId": "app_update_cancel_api_v1_app_update_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AppUpdateCancelIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateCancelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateRefusedOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Update Cancel",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/install": {
+      "post": {
+        "operationId": "app_update_install_api_v1_app_update_install_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateInstallAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateRefusedOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "summary": "App Update Install",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/install/{command_id}": {
+      "get": {
+        "operationId": "app_update_install_status_api_v1_app_update_install__command_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "command_id",
+            "required": true,
+            "schema": {
+              "title": "Command Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateApplyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Update Install Status",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/manifest.json": {
+      "get": {
+        "operationId": "app_update_manifest_api_v1_app_update_manifest_json_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response App Update Manifest Api V1 App Update Manifest Json Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Update Manifest",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/ready": {
+      "post": {
+        "operationId": "app_update_ready_api_v1_app_update_ready_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppUpdateReadyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateRefusedOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateRefusedOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "App Update Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/app-update/status": {
+      "get": {
+        "operationId": "app_update_status_api_v1_app_update_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUpdateStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Update Status",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/api/v1/artwork/suggestions": {
       "get": {
         "operationId": "get_suggestions_api_v1_artwork_suggestions_get",
@@ -38111,6 +41524,69 @@
         ]
       }
     },
+    "/api/v1/audio/acoustic-proof": {
+      "post": {
+        "description": "AUDIO-DEVICE-04: the webview's latest mic-vs-master verdict.",
+        "operationId": "post_acoustic_proof_api_v1_audio_acoustic_proof_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcousticProofIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcousticProofOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Acoustic Proof",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/input-devices": {
+      "get": {
+        "operationId": "get_input_devices_api_v1_audio_input_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioInputDevicesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Input Devices",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
     "/api/v1/audio/output-health": {
       "get": {
         "operationId": "get_output_health_api_v1_audio_output_health_get",
@@ -38127,6 +41603,28 @@
           }
         },
         "summary": "Get Output Health",
+        "tags": [
+          "audio"
+        ]
+      }
+    },
+    "/api/v1/audio/reconnect-speaker": {
+      "post": {
+        "description": "AUDIO-DEVICE-05: disconnect and reconnect the main Bluetooth output.",
+        "operationId": "post_reconnect_speaker_api_v1_audio_reconnect_speaker_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioReconnectSpeakerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Reconnect Speaker",
         "tags": [
           "audio"
         ]
@@ -41543,7 +45041,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DecisionRecordOut"
+                  "$ref": "#/components/schemas/apps__webui__server__routes__dedup_review__DecisionRecordOut"
                 }
               }
             },
@@ -41897,6 +45395,118 @@
           }
         },
         "summary": "Prepare Transition",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
+    "/api/v1/dj/transitions/last": {
+      "get": {
+        "operationId": "get_last_api_v1_dj_transitions_last_get",
+        "parameters": [
+          {
+            "description": "<out stable id>:<in stable id>; omitted = the newest decision",
+            "in": "query",
+            "name": "pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "<out stable id>:<in stable id>; omitted = the newest decision",
+              "title": "Pair"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__webui__server__routes__dj_transitions_record__DecisionRecordOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Last",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
+    "/api/v1/dj/transitions/verdict": {
+      "post": {
+        "operationId": "post_verdict_api_v1_dj_transitions_verdict_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerdictIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Verdict",
         "tags": [
           "dj-transition"
         ]
@@ -46117,6 +49727,57 @@
         "tags": [
           "mytags"
         ]
+      },
+      "post": {
+        "operationId": "create_tag_api_v1_mytags_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tag",
+        "tags": [
+          "library-organization"
+        ]
       }
     },
     "/api/v1/mytags/assign": {
@@ -46157,6 +49818,100 @@
         "summary": "Assign Mytags",
         "tags": [
           "mytags"
+        ]
+      }
+    },
+    "/api/v1/mytags/assignments": {
+      "get": {
+        "operationId": "tag_assignments_api_v1_mytags_assignments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tag Assignments",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "description": "The undoable assign. ``POST /mytags/assign`` stays for ETag-checked callers.",
+        "operationId": "assign_tags_api_v1_mytags_assignments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagAssignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Tags",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/mytags/catalog": {
+      "get": {
+        "operationId": "tag_catalog_api_v1_mytags_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tag Catalog",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -46259,6 +50014,197 @@
         "summary": "Rename Mytag",
         "tags": [
           "mytags"
+        ]
+      }
+    },
+    "/api/v1/mytags/suggest": {
+      "get": {
+        "operationId": "suggest_tags_api_v1_mytags_suggest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagSuggestionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Tags",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/mytags/{name}": {
+      "delete": {
+        "operationId": "delete_tag_api_v1_mytags__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Tag",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "patch": {
+        "description": "Rename (``merge`` to combine with an existing tag), retype, or both.",
+        "operationId": "patch_tag_api_v1_mytags__name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Tag",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -48411,6 +52357,48 @@
         ]
       }
     },
+    "/api/v1/playlist-history/jump": {
+      "post": {
+        "description": "Undo an applied entry and every newer one, or redo a pending entry and\nevery older one. 404 when the entry left the live window.",
+        "operationId": "jump_playlist_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryJumpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryJumpOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Jump Playlist History",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
     "/api/v1/playlist-history/redo": {
       "post": {
         "operationId": "redo_playlist_edit_api_v1_playlist_history_redo_post",
@@ -49095,6 +53083,68 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/entries:move": {
+      "post": {
+        "operationId": "move_playlist_entries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntriesMoveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Entries",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/items/{item_id}": {
       "delete": {
         "operationId": "delete_playlist_item",
@@ -49490,6 +53540,203 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/sections": {
+      "get": {
+        "operationId": "list_sections_of_list_api_v1_playlists__playlist_id__sections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSectionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sections Of List",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/set-skips/{stable_id}": {
+      "put": {
+        "operationId": "put_set_skip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSkipIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Set Skip",
+        "tags": [
+          "set-target"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/set-summary": {
+      "get": {
+        "operationId": "get_set_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Set Summary",
+        "tags": [
+          "set-target"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/set-target": {
+      "put": {
+        "operationId": "put_set_target",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTargetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Set Target",
+        "tags": [
+          "set-target"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/sets": {
       "get": {
         "operationId": "list_playlist_sets",
@@ -49753,6 +54000,58 @@
         "summary": "Create Run",
         "tags": [
           "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/thumbnail": {
+      "get": {
+        "description": "Square playlist thumbnail (ARTTHUMB-8728): mosaic, single cover, or placeholder.\n\nAgent parity: ``opendj playlist thumbnail <id> [--size 64|232] [--out FILE]``.\nThe path deliberately lacks ``/artwork``, so a skin's artwork grayscale\nrule applies only if that skin opts in.",
+        "operationId": "get_playlist_thumbnail_api_v1_playlists__playlist_id__thumbnail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "64 = sidebar rows, 232 = playlist cards",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 64,
+              "description": "64 = sidebar rows, 232 = playlist cards",
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/svg+xml": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Playlist Thumbnail",
+        "tags": [
+          "playlists"
         ]
       }
     },
@@ -50768,6 +55067,78 @@
         "summary": "Ui File",
         "tags": [
           "plugins"
+        ]
+      }
+    },
+    "/api/v1/practice/devices": {
+      "get": {
+        "operationId": "list_practice_devices_api_v1_practice_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response List Practice Devices Api V1 Practice Devices Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Practice Devices",
+        "tags": [
+          "practice"
+        ]
+      }
+    },
+    "/api/v1/practice/devices/{device}": {
+      "get": {
+        "operationId": "get_practice_device_api_v1_practice_devices__device__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device",
+            "required": true,
+            "schema": {
+              "title": "Device",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Practice Device Api V1 Practice Devices  Device  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Practice Device",
+        "tags": [
+          "practice"
         ]
       }
     },
@@ -52011,6 +56382,108 @@
         ]
       }
     },
+    "/api/v1/session/new": {
+      "post": {
+        "operationId": "session_new_api_v1_session_new_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlayedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session New",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/v1/session/played": {
+      "get": {
+        "operationId": "session_played_get_api_v1_session_played_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlayedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session Played Get",
+        "tags": [
+          "performance"
+        ]
+      },
+      "post": {
+        "operationId": "session_played_add_api_v1_session_played_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPlayedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlayedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Played Add",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/v1/session/resume": {
+      "post": {
+        "operationId": "session_resume_api_v1_session_resume_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlayedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session Resume",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
     "/api/v1/set-notes/{scope}": {
       "get": {
         "operationId": "get_set_note",
@@ -53141,6 +57614,124 @@
         "summary": "Get Smartlist Tracks",
         "tags": [
           "smartlists"
+        ]
+      }
+    },
+    "/api/v1/source-flags": {
+      "get": {
+        "operationId": "list_source_flags_api_v1_source_flags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "length_mismatch",
+                "stems_other_recording",
+                "hardlinked_write"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Source Flags Api V1 Source Flags Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Source Flags",
+        "tags": [
+          "source-flags"
+        ]
+      }
+    },
+    "/api/v1/source-flags/scan": {
+      "post": {
+        "operationId": "scan_source_flags_api_v1_source_flags_scan_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Scan Source Flags Api V1 Source Flags Scan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scan Source Flags",
+        "tags": [
+          "source-flags"
+        ]
+      }
+    },
+    "/api/v1/source-flags/{stable_id}": {
+      "get": {
+        "operationId": "get_source_flags_api_v1_source_flags__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Source Flags Api V1 Source Flags  Stable Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Source Flags",
+        "tags": [
+          "source-flags"
         ]
       }
     },
@@ -55787,7 +60378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RowsOut"
+                  "$ref": "#/components/schemas/TagTypesOut"
                 }
               }
             },
@@ -55852,6 +60443,56 @@
       }
     },
     "/api/v1/tag-types/{type_id}": {
+      "delete": {
+        "operationId": "delete_tag_type_api_v1_tag_types__type_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_id",
+            "required": true,
+            "schema": {
+              "title": "Type Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Tag Type",
+        "tags": [
+          "library-organization"
+        ]
+      },
       "patch": {
         "operationId": "update_tag_type_api_v1_tag_types__type_id__patch",
         "parameters": [
@@ -56992,6 +61633,47 @@
         ]
       }
     },
+    "/api/v1/tracks/played-length": {
+      "post": {
+        "operationId": "tracks_played_length",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayedLengthIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayedLengthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tracks Played Length",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/quality-ladder": {
       "get": {
         "description": "The six venue rungs, so the UI legend is not a second copy of them.",
@@ -57463,6 +62145,244 @@
         "summary": "Get Beatgrid Fallback",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/bpm-pick": {
+      "delete": {
+        "operationId": "clear_bpm_pick_api_v1_tracks__stable_id__bpm_pick_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BpmPickOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Bpm Pick",
+        "tags": [
+          "grid-edit"
+        ]
+      },
+      "put": {
+        "description": "Serve ``source``'s tempo where ours and Mixed In Key's disagree; the dispute marker goes.",
+        "operationId": "set_bpm_pick_api_v1_tracks__stable_id__bpm_pick_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BpmPickIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BpmPickOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Bpm Pick",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/classical": {
+      "get": {
+        "operationId": "get_classical_api_v1_tracks__stable_id__classical_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassicalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Classical",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "patch": {
+        "operationId": "set_classical_api_v1_tracks__stable_id__classical_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassicalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Classical",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/classical/file-tags": {
+      "get": {
+        "description": "What the file's tags say. A proposal only: nothing is stored or linked.",
+        "operationId": "read_file_tags_api_v1_tracks__stable_id__classical_file_tags_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read File Tags",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -59442,6 +64362,48 @@
         ]
       }
     },
+    "/api/v1/ui-prefs/library-tabs": {
+      "post": {
+        "description": "The library tab strip for agents: list, open, switch or close one tab.",
+        "operationId": "post_library_tabs_api_v1_ui_prefs_library_tabs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryTabsActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryTabsActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Library Tabs",
+        "tags": [
+          "ui-prefs"
+        ]
+      }
+    },
     "/api/v1/ui-prefs/watcher-folders:validate": {
       "post": {
         "description": "LIBM-129: existence check before save. The folder-rescan scheduler watches them.",
@@ -60810,6 +65772,223 @@
         ]
       }
     },
+    "/api/v1/works/link-candidates": {
+      "get": {
+        "operationId": "link_candidates_api_v1_works_link_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Member",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Candidates",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/overlay": {
+      "get": {
+        "operationId": "works_overlay_api_v1_works_overlay_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkOverlayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Works Overlay",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/stack": {
+      "get": {
+        "operationId": "work_stack_api_v1_works_stack_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Member",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "playlist_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Playlist Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkStackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Work Stack",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/suggest": {
+      "get": {
+        "operationId": "suggest_versions_api_v1_works_suggest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Member",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Versions",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/suggestion-flags": {
+      "post": {
+        "operationId": "suggestion_flags_api_v1_works_suggestion_flags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionFlagsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionFlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggestion Flags",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
     "/api/v1/works/{work_id}": {
       "delete": {
         "operationId": "delete_work_api_v1_works__work_id__delete",
@@ -61092,6 +66271,146 @@
         "tags": [
           "library-organization"
         ]
+      },
+      "patch": {
+        "operationId": "update_member_api_v1_works__work_id__members__member_kind___member_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_kind",
+            "required": true,
+            "schema": {
+              "title": "Member Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkMemberUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Member",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}/members:move": {
+      "post": {
+        "operationId": "move_members_api_v1_works__work_id__members_move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkMoveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Members",
+        "tags": [
+          "library-organization"
+        ]
       }
     },
     "/api/v1/works/{work_id}/pref": {
@@ -61151,6 +66470,121 @@
           }
         },
         "summary": "Set Work Pref",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}:merge": {
+      "post": {
+        "operationId": "merge_works_api_v1_works__work_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkMergeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Works",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works:link": {
+      "post": {
+        "operationId": "link_tracks_api_v1_works_link_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkLinkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Tracks",
         "tags": [
           "library-organization"
         ]

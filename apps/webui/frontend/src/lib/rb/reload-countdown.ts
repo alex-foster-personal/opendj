@@ -129,7 +129,8 @@ function _overlay(): HTMLElement {
 		el = document.createElement('div');
 		el.id = OVERLAY_ID;
 		el.style.cssText = OVERLAY_CSS;
-		el.innerHTML = '<div style="font-size:22vmin;font-variant-numeric:tabular-nums"></div><div></div>';
+		el.innerHTML =
+			'<div style="font-size:22vmin;font-variant-numeric:tabular-nums"></div><div></div>';
 		document.body.appendChild(el);
 	}
 	return el;

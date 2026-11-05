@@ -73,9 +73,7 @@ def _insert_track(state_path: Path, stable_id: str, file_path: str) -> None:
         "not exercised here)"
     ),
 )
-def test_lifespan_shutdown_completes_after_blocked_audio_probe(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_lifespan_shutdown_completes_after_blocked_audio_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fifo = tmp_path / "blocked.fifo"
     os.mkfifo(fifo)
     monkeypatch.setattr(preflight_checks, "AUDIO_ACCESS_TIMEOUT_S", 0.5)
@@ -103,6 +101,4 @@ def test_lifespan_shutdown_completes_after_blocked_audio_probe(
         audio_row = next(c for c in response.json()["checks"] if c["id"] == "audio-access")
         assert audio_row["status"] == "fail"
     elapsed = time.monotonic() - start
-    assert elapsed < SHUTDOWN_BUDGET_S, (
-        f"lifespan shutdown took {elapsed:.1f}s after a blocked audio probe"
-    )
+    assert elapsed < SHUTDOWN_BUDGET_S, f"lifespan shutdown took {elapsed:.1f}s after a blocked audio probe"

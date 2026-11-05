@@ -94,8 +94,8 @@ PATTERNS: list[Rule] = [
     Rule(
         "SAVE_CUE",
         re.compile(
-            r"^\s*(?:save|bookmark)\s+(?:that|the|this)?\s*(?:last\s+)?"
-            r"transition(?:\s+as)?\s*(?:cue(?:\s+points?)?)?\s*$"
+            r"^\s*(?:save|bookmark)\s+(?:(?:that|the|this|a)\s+)?(?:last\s+)?"
+            r"(?:transition(?:\s+as)?\s*(?:cue(?:\s+points?)?)?|cue(?:\s+points?)?)\s*$"
         ),
     ),
     Rule(

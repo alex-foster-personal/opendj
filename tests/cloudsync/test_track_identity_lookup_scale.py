@@ -16,6 +16,7 @@ Controls beside it: the probe must see growth once the indexes are dropped; a
 lowercase stored ISRC must still match; matches keep stored (rowid) order; and
 an identity repair reads a shared playlist's members once, not once per track.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,8 +69,14 @@ def _seed_library(conn: sqlite3.Connection, count: int) -> None:
         " VALUES (?, 'fingerprint', ?, ?, ?, ?, ?, ?, ?)",
         [
             (
-                f"stored-{i}", f"stored {i}", _isrc("SEE", i), _digest("c", i),
-                _digest("a", i), _T0, _T0, _DEV_A,
+                f"stored-{i}",
+                f"stored {i}",
+                _isrc("SEE", i),
+                _digest("c", i),
+                _digest("a", i),
+                _T0,
+                _T0,
+                _DEV_A,
             )
             for i in range(count)
         ],
@@ -122,9 +129,7 @@ def _apply_steps(conn: sqlite3.Connection, apply: Apply) -> int:
     return steps
 
 
-def _steps_at(
-    tmp_path: Path, count: int, apply: Apply, *, drop_indexes: bool = False
-) -> int:
+def _steps_at(tmp_path: Path, count: int, apply: Apply, *, drop_indexes: bool = False) -> int:
     conn = _open_hub(tmp_path / f"lib-{count}-{drop_indexes}")
     try:
         _seed_library(conn, count)
@@ -143,9 +148,7 @@ APPLIES: dict[str, Apply] = {
 
 
 @pytest.mark.parametrize("apply_name", sorted(APPLIES))
-def test_per_row_apply_work_does_not_grow_with_the_library(
-    tmp_path: Path, apply_name: str
-) -> None:
+def test_per_row_apply_work_does_not_grow_with_the_library(tmp_path: Path, apply_name: str) -> None:
     apply = APPLIES[apply_name]
     small = _steps_at(tmp_path, SMALL_LIBRARY, apply)
     large = _steps_at(tmp_path, LARGE_LIBRARY, apply)
@@ -177,9 +180,7 @@ def test_isrc_lookup_still_matches_a_lowercase_stored_isrc(tmp_path: Path) -> No
     conn = _open_hub(tmp_path)
     try:
         _seed_library(conn, SMALL_LIBRARY)
-        conn.execute(
-            "UPDATE tracks SET isrc = lower(isrc) WHERE stable_id = 'stored-7'"
-        )
+        conn.execute("UPDATE tracks SET isrc = lower(isrc) WHERE stable_id = 'stored-7'")
         matches = matches_by_isrc(conn, "incoming", _isrc("SEE", 7), None)
     finally:
         conn.close()
@@ -192,9 +193,7 @@ def test_hash_matches_come_back_in_stored_order(tmp_path: Path) -> None:
     conn = _open_hub(tmp_path)
     try:
         _seed_library(conn, SMALL_LIBRARY)
-        matches = matches_by_hash(
-            conn, "incoming", content_hash=_digest("c", 9), audio_hash=_digest("a", 3)
-        )
+        matches = matches_by_hash(conn, "incoming", content_hash=_digest("c", 9), audio_hash=_digest("a", 3))
     finally:
         conn.close()
     assert [match.pk for match in matches] == ["stored-3", "stored-9"]
@@ -208,9 +207,7 @@ def _membership_reads(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> in
         engine.hub_track_bundles(conn, stable_ids)
     finally:
         conn.set_trace_callback(None)
-    return sum(
-        "FROM playlist_memberships WHERE playlist_id" in sql for sql in statements
-    )
+    return sum("FROM playlist_memberships WHERE playlist_id" in sql for sql in statements)
 
 
 def test_repair_bundle_reads_a_shared_playlist_once(tmp_path: Path) -> None:
@@ -232,9 +229,7 @@ def test_repair_bundle_reads_a_shared_playlist_once(tmp_path: Path) -> None:
     # One track's bundle reads the playlist's membership a fixed number of
     # times (the member list, and since round 4 its tracks' verdicts in one
     # read); ten tracks sharing the playlist must not read it again.
-    assert one >= 1 and ten == one, (
-        f"one track read the shared playlist's members {one}x, ten tracks {ten}x"
-    )
+    assert one >= 1 and ten == one, f"one track read the shared playlist's members {one}x, ten tracks {ten}x"
     playlists = [change for change in bundles if change.table == "playlists"]
     assert [change.pk for change in playlists] == [("pl-all",)]
     assert playlists[0].members is not None and len(playlists[0].members) == SMALL_LIBRARY

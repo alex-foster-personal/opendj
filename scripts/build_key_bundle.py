@@ -3,11 +3,11 @@
 Homed in ``scripts/`` rather than ``apps/analysis_key/`` because it reads vendor
 dbs and decodes audio. ``apps.analysis_key`` stays free of that.
 
-This STAGES ``data/bench/key/<version>/`` (wavs, ``key-truth.json``, a pre-seal
+This STAGES ``(private path)/<version>/`` (wavs, ``key-truth.json``, a pre-seal
 manifest). It does NOT seal: run
 
     python -m apps.analysis_bench fixtures seal --lane key --version v1 \\
-        --dir data/bench/key/v1
+        --dir (private path)
 
 afterward. Sealing twice would rewrite identity metadata.
 
@@ -207,7 +207,7 @@ def _refuse_tiny_rekordbox(db_path: Path, n_content: int, *, allow_tiny: bool) -
             f"(need >= {MIN_DJMD_CONTENT}). That is the pruned test-shape "
             "fixture, not a live library. Place a decrypted master.plain.db of "
             "the live library at $MDT_DATA_DIR/master.plain.db (or this "
-            "worktree's data/master.plain.db) and pass its sha256. Tests may "
+            "worktree's (private path)) and pass its sha256. Tests may "
             "pass --allow-tiny."
         )
 
@@ -292,9 +292,7 @@ def _match_mik_to_copy(
             continue
         copy_row, tier = matched[0]
         tier_rank = {"exact_path": 0, "windows_rel": 1, "basename": 2}[tier]
-        candidates_by_rel.setdefault(copy_row.rel, []).append(
-            (tier_rank, -conf, row_id, song, tier)
-        )
+        candidates_by_rel.setdefault(copy_row.rel, []).append((tier_rank, -conf, row_id, song, tier))
 
     winners: dict[str, dict[str, Any]] = {}
     for rel, cands in candidates_by_rel.items():
@@ -315,9 +313,13 @@ def _match_mik_to_copy(
 
 def _probe_duration_s(path: Path) -> float | None:
     cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=nk=1:nw=1",
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nk=1:nw=1",
         str(path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
@@ -329,16 +331,29 @@ def _probe_duration_s(path: Path) -> float | None:
         return None
 
 
-def decode_excerpt(
-    src: Path, out_path: Path, *, start_s: float, excerpt_s: float
-) -> dict[str, Any]:
+def decode_excerpt(src: Path, out_path: Path, *, start_s: float, excerpt_s: float) -> dict[str, Any]:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-nostdin", "-v", "info",
-        "-ss", str(start_s), "-t", str(excerpt_s),
-        "-i", str(src),
-        "-ac", "1", "-ar", str(SAMPLE_RATE),
-        "-af", "volumedetect", "-f", "wav", "-y", str(out_path),
+        "ffmpeg",
+        "-nostdin",
+        "-v",
+        "info",
+        "-ss",
+        str(start_s),
+        "-t",
+        str(excerpt_s),
+        "-i",
+        str(src),
+        "-ac",
+        "1",
+        "-ar",
+        str(SAMPLE_RATE),
+        "-af",
+        "volumedetect",
+        "-f",
+        "wav",
+        "-y",
+        str(out_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, check=False)
     if proc.returncode != 0:
@@ -375,9 +390,7 @@ def _count_rekordbox(db_path: Path) -> dict[str, int]:
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "djmdContent" not in tables:
-            raise SystemExit(
-                f"[key-bundle] {db_path} has no djmdContent table"
-            )
+            raise SystemExit(f"[key-bundle] {db_path} has no djmdContent table")
         total = int(conn.execute("SELECT count(*) FROM djmdContent").fetchone()[0])
     except sqlite3.OperationalError as exc:
         raise SystemExit(f"[key-bundle] cannot read {db_path}: {exc}") from exc
@@ -420,7 +433,7 @@ def _require_live_rekordbox(rekordbox: Path) -> None:
             f"[key-bundle] rekordbox db not found: {rekordbox}. Place a decrypted "
             "master.plain.db of the live library (djmdContent in the thousands, "
             "FolderPath values that NFC-match copy-manifest orig_path) at "
-            "$MDT_DATA_DIR/master.plain.db or this worktree's data/master.plain.db "
+            "$MDT_DATA_DIR/master.plain.db or this worktree's (private path) "
             "and pass its sha256."
         )
     if rekordbox.stat().st_size == 0:
@@ -522,7 +535,9 @@ def _population_from_present(
 
 
 def _sample_population(
-    population: list[PopulationRow], spec: BuildSpec, den: Denominators,
+    population: list[PopulationRow],
+    spec: BuildSpec,
+    den: Denominators,
 ) -> tuple[list[PopulationRow], bool]:
     den.counts["population_present_rb_mik"] = len(population)
     if len(population) > spec.sample_size:
@@ -552,7 +567,10 @@ def _prepare_out(out: Path) -> Path:
 
 
 def _stage_excerpt(
-    row: PopulationRow, wav_dir: Path, spec: BuildSpec, den: Denominators,
+    row: PopulationRow,
+    wav_dir: Path,
+    spec: BuildSpec,
+    den: Denominators,
 ) -> tuple[dict[str, Any], dict[str, str]] | None:
     excerpt_s = EXCERPT_S if row.duration_s >= EXCERPT_S else max(0.1, row.duration_s)
     if spec.allow_tiny and row.duration_s < EXCERPT_S:
@@ -573,9 +591,7 @@ def _stage_excerpt(
         "window_start_s": decoded["window_start_s"],
         "window_end_s": round(decoded["window_start_s"] + decoded["excerpt_s"], 3),
         "score_start_s": round(decoded["window_start_s"] + GUARD_S, 3),
-        "score_end_s": round(
-            decoded["window_start_s"] + decoded["excerpt_s"] - GUARD_S, 3
-        ),
+        "score_end_s": round(decoded["window_start_s"] + decoded["excerpt_s"] - GUARD_S, 3),
         "excerpt_s": decoded["excerpt_s"],
         "source_duration_s": row.duration_s,
         "audio_payload_sha256": sha256_audio_payload(row.src_path),
@@ -660,7 +676,9 @@ def build(spec: BuildSpec) -> dict[str, Any]:
     rb_counts = _count_rekordbox(spec.rekordbox)
     den.counts["djmd_content"] = rb_counts["djmd_content"]
     _refuse_tiny_rekordbox(
-        spec.rekordbox, rb_counts["djmd_content"], allow_tiny=spec.allow_tiny,
+        spec.rekordbox,
+        rb_counts["djmd_content"],
+        allow_tiny=spec.allow_tiny,
     )
 
     copy_rows = load_copy_manifest(spec.copy_manifest)
@@ -674,9 +692,7 @@ def build(spec: BuildSpec) -> dict[str, Any]:
     present_by_rel = _present_from_rekordbox(spec, by_orig, den)
     mik_songs = read_mik_windows(spec.mik_windows)
     den.counts["mik_windows_song"] = len(mik_songs)
-    den.counts["mik_windows_parseable_key"] = sum(
-        1 for s in mik_songs if _is_parseable_mik_key(s.get("main_key"))
-    )
+    den.counts["mik_windows_parseable_key"] = sum(1 for s in mik_songs if _is_parseable_mik_key(s.get("main_key")))
     mik_winners = _match_mik_to_copy(mik_songs, by_orig, by_base, by_rel, den)
     population = _population_from_present(spec, present_by_rel, mik_winners, den)
     sampled, sampled_flag = _sample_population(population, spec, den)
@@ -710,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         default=None,
-        help="default data/bench/key/<version>/",
+        help="default (private path)/<version>/",
     )
     build_cmd.add_argument(
         "--allow-tiny",

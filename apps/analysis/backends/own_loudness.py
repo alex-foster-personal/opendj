@@ -13,7 +13,7 @@ import importlib
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import Any
 
 from apps.analysis.pcm_fingerprint import (
     SAMPLE_RATE_HZ,
@@ -27,9 +27,6 @@ from ..record import AnalysisRecord
 from . import register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 
-if TYPE_CHECKING:
-    from apps.analysis_loudness.contract import LoudnessAnalysisService
-
 # Pre-v2 analysis columns this loudness-only record cannot measure. They
 # exist because the table still requires them; they are not measurements
 # and cannot project from a loudness-lane pointer.
@@ -41,7 +38,7 @@ _PLACEHOLDER_KEY_CONFIDENCE = 0.0
 _PLACEHOLDER_ENERGY = 0
 
 
-def _load_loudness_service() -> LoudnessAnalysisService:
+def _load_loudness_service() -> Any:
     """Build the loudness service without a static ``apps.analysis_loudness`` import.
 
     The producer already imports :mod:`apps.analysis.lanes`. A static import
@@ -51,7 +48,7 @@ def _load_loudness_service() -> LoudnessAnalysisService:
     through the factory the package publishes behind its contract.
     """
     factory = importlib.import_module(".".join(("apps", "analysis_loudness", "http"))).build_service
-    service: LoudnessAnalysisService = factory()
+    service: Any = factory()
     return service
 
 

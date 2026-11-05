@@ -24,6 +24,7 @@ Mini-PRD
 ✔︎ R3 a frame this module cannot decode (compressed / encrypted) is kept
        opaque and re-emitted unchanged; it is never dropped.
 """
+
 from __future__ import annotations
 
 import functools
@@ -144,7 +145,9 @@ class Id3Tag:
 
     def set_txxx(self, description: str, value: str) -> None:
         wanted = description.upper()
-        self.remove(lambda f: f.frame_id == "TXXX" and not f.opaque and _decode_txxx(f.data, f.major)[0].upper() == wanted)
+        self.remove(
+            lambda f: f.frame_id == "TXXX" and not f.opaque and _decode_txxx(f.data, f.major)[0].upper() == wanted
+        )
         self.frames.append(Frame("TXXX", encode_txxx(description, value, self.version)))
 
     def set_popm(self, email: str, rating: int, count: int = 0) -> None:
@@ -215,7 +218,9 @@ def _parse_frames(body: bytes, offset: int, major: int, tag_unsync: bool, path: 
         start = offset + HEADER_SIZE
         end = start + size
         if size == 0:
-            raise Id3Error(f"{path}: frame {frame_id_raw.decode()} has no data bytes, but the spec requires at least one")
+            raise Id3Error(
+                f"{path}: frame {frame_id_raw.decode()} has no data bytes, but the spec requires at least one"
+            )
         if end > len(body):
             raise Id3Error(f"{path}: frame {frame_id_raw.decode()} runs past the end of the tag")
         frame_id = frame_id_raw.decode("ascii")
@@ -226,7 +231,9 @@ def _parse_frames(body: bytes, offset: int, major: int, tag_unsync: bool, path: 
         offset = end
     if any(body[offset:]):
         # Fewer bytes than a frame header are left, and they are not padding: the tag is cut short.
-        raise Id3Error(f"{path}: {len(body) - offset} trailing bytes at tag offset {offset} are not a whole frame header")
+        raise Id3Error(
+            f"{path}: {len(body) - offset} trailing bytes at tag offset {offset} are not a whole frame header"
+        )
     return frames, offset, unsynced
 
 
@@ -240,7 +247,9 @@ def _check_reserved_frame_flags(path: Path, frame_id: str, major: int, status: i
         raise Id3Error(f"{path}: frame {frame_id} sets reserved format flag bits 0x{reserved_format:02x}")
 
 
-def _unwrap_frame_data(data: bytes, fmt: int, major: int, tag_unsync: bool, where: str) -> tuple[int | None, bytes, int]:
+def _unwrap_frame_data(
+    data: bytes, fmt: int, major: int, tag_unsync: bool, where: str
+) -> tuple[int | None, bytes, int]:
     """Split off a group byte, then undo v2.4's length indicator and
     unsynchronisation, for a frame that is not sealed. Returns the group id,
     the frame body, and the format flags left to keep."""

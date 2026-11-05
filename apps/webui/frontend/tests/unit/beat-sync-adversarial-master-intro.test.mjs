@@ -92,7 +92,6 @@ function loadDeck(deck, beats, extra = {}) {
 	});
 }
 
-
 async function playingMaster(deck, beats, atMs) {
 	loadDeck(deck, beats);
 	await m.executeInRustEngine({ type: 'play', deck, playing: true });
@@ -118,7 +117,14 @@ before(async () => {
 	bsm = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
 });
 
-function plan(masterGrid, followerGrid, masterSec, followerSec, mode = 'beat', masterTempoRatio = 1) {
+function plan(
+	masterGrid,
+	followerGrid,
+	masterSec,
+	followerSec,
+	mode = 'beat',
+	masterTempoRatio = 1
+) {
 	return bsm.computeFollowerSyncPlan({
 		masterGrid,
 		followerGrid,
@@ -171,11 +177,13 @@ test('control: inside the grid the join is unchanged (a real beat index, a real 
 	const i = Math.floor((60 - 0.5) / (60 / 128));
 	assert.equal(p.masterBeatIndex, i);
 	assert.equal(p.masterBeatNumber, master[i].n);
-	assert.ok(Math.abs(p.beatPhase - ((60 - master[i].t) / (60 / 128))) < 1e-9);
+	assert.ok(Math.abs(p.beatPhase - (60 - master[i].t) / (60 / 128)) < 1e-9);
 	// Past the LAST beat is still refused: an outro is not extrapolated.
-	assert.throws(() => plan(master, grid(126, 0.05, 600), master.at(-1).t + 0.1, 30), /outside the beat grid/);
+	assert.throws(
+		() => plan(master, grid(126, 0.05, 600), master.at(-1).t + 0.1, 30),
+		/outside the beat grid/
+	);
 });
-
 
 test('control: an intro beat counts its number BACKWARDS from the first beat, and its phase too', () => {
 	// First beat (n=1) at 0.5 s, 0.5 s apart (120 BPM): 0.3 s is 0.6 of the way

@@ -32,9 +32,7 @@ _HUB = "https://hub.example-tailnet.ts.net:8871"
 _NOW = datetime(2026, 11, 4, 12, 0, 0, tzinfo=UTC)
 
 
-def _build_client(
-    monkeypatch: pytest.MonkeyPatch, data_dir: Path, *, create_state_db: bool = True
-) -> TestClient:
+def _build_client(monkeypatch: pytest.MonkeyPatch, data_dir: Path, *, create_state_db: bool = True) -> TestClient:
     state_path = data_dir / "state" / "state.db"
     if create_state_db:
         state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,9 +90,7 @@ def _write_sync_result(data_dir: Path, *, status: str) -> None:
     )
 
 
-def test_unconfigured_empty_library_stays_fail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unconfigured_empty_library_stays_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] an unconfigured empty library is pending-waiting [then] broken, [else stop]."""
     client = _build_client(monkeypatch, tmp_path)
     body = client.get("/api/v1/preflight").json()
@@ -105,9 +101,7 @@ def test_unconfigured_empty_library_stays_fail(
     assert LIBRARY_ATTACHED_REMEDIATION in library["remediation"]
 
 
-def test_configured_empty_without_journal_is_pending_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_empty_without_journal_is_pending_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     client = _build_client(monkeypatch, tmp_path)
     body = client.get("/api/v1/preflight").json()
@@ -120,9 +114,7 @@ def test_configured_empty_without_journal_is_pending_waiting(
     assert not library["remediation"].startswith("Import your music to get started.")
 
 
-def test_configured_empty_after_error_stays_pending_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_empty_after_error_stays_pending_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     _write_sync_result(tmp_path, status="error")
     client = _build_client(monkeypatch, tmp_path)
@@ -131,9 +123,7 @@ def test_configured_empty_after_error_stays_pending_waiting(
     assert "waiting for CloudSync" in library["detail"]
 
 
-def test_configured_empty_after_deferred_stays_pending_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_empty_after_deferred_stays_pending_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     _write_sync_result(tmp_path, status="deferred")
     client = _build_client(monkeypatch, tmp_path)
@@ -142,9 +132,7 @@ def test_configured_empty_after_deferred_stays_pending_waiting(
     assert "waiting for CloudSync" in library["detail"]
 
 
-def test_configured_empty_after_ok_pull_stays_fail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_empty_after_ok_pull_stays_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] an empty hub after a successful pull stays waiting forever [then] broken, [else stop]."""
     _configure_cloudsync(tmp_path)
     _write_sync_result(tmp_path, status="ok")
@@ -155,9 +143,7 @@ def test_configured_empty_after_ok_pull_stays_fail(
     assert LIBRARY_ATTACHED_REMEDIATION in library["remediation"]
 
 
-def test_dismissed_wins_over_cloudsync_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dismissed_wins_over_cloudsync_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     setup_record.set_dismissed(tmp_path, True)
     client = _build_client(monkeypatch, tmp_path)
@@ -167,9 +153,7 @@ def test_dismissed_wins_over_cloudsync_waiting(
     assert "waiting for CloudSync" not in library["detail"]
 
 
-def test_malformed_journal_falls_back_to_unconfigured_fail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_malformed_journal_falls_back_to_unconfigured_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     (tmp_path / "cloudsync-status.json").write_text("{ not json", encoding="utf-8")
     response = _build_client(monkeypatch, tmp_path).get("/api/v1/preflight")
@@ -179,9 +163,7 @@ def test_malformed_journal_falls_back_to_unconfigured_fail(
     assert "waiting for CloudSync" not in library["detail"]
 
 
-def test_configured_with_tracks_stays_pass(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_with_tracks_stays_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     state_path = tmp_path / "state" / "state.db"
     _insert_track(state_path, "a" * 40)
@@ -191,9 +173,7 @@ def test_configured_with_tracks_stays_pass(
     assert "1 tracks" in library["detail"]
 
 
-def test_configured_no_state_db_is_pending_waiting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_configured_no_state_db_is_pending_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_cloudsync(tmp_path)
     client = _build_client(monkeypatch, tmp_path, create_state_db=False)
     library = _check(client.get("/api/v1/preflight").json(), "library-attached")

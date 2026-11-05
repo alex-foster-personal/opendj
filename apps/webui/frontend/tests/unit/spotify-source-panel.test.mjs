@@ -99,11 +99,15 @@ test('an imported-list error is reported above the rows, not instead of them', (
 
 test('an imported row with no Spotify id keeps an inert play button that says why', () => {
 	// The row is not silently unplayable.
-	const html = renderPanel({ playlists: [playlist({ playlist_id: 'weird/id', vendor_pl_id: null })] });
+	const html = renderPanel({
+		playlists: [playlist({ playlist_id: 'weird/id', vendor_pl_id: null })]
+	});
 	assert.match(html, /aria-label="Play Lantern Drift in the Spotify side player \(unavailable\)"/);
 	assert.match(html, /disabled/);
 	assert.match(html, /No Spotify playlist id was saved for this imported playlist/);
-	const playable = renderPanel({ playlists: [playlist({ playlist_id: 'spotify:abc', vendor_pl_id: 'abc' })] });
+	const playable = renderPanel({
+		playlists: [playlist({ playlist_id: 'spotify:abc', vendor_pl_id: 'abc' })]
+	});
 	assert.match(playable, /aria-label="Play Lantern Drift in the Spotify side player"/);
 	assert.equal(playable.includes('(unavailable)'), false);
 });
@@ -157,7 +161,13 @@ function accountPlaylist(id, extra = {}) {
 }
 
 function connectedAccount(playlists) {
-	return { connected: true, user_id: 'me', display_name: 'Invented DJ', total_reported: playlists.length, playlists };
+	return {
+		connected: true,
+		user_id: 'me',
+		display_name: 'Invented DJ',
+		total_reported: playlists.length,
+		playlists
+	};
 }
 
 test('SPOT-6555: a connected account names itself, counts its playlists and the imported share', () => {
@@ -192,7 +202,11 @@ test('SPOT-6555: account rows show under the loading notice while the imported l
 		playlists: [playlist({ playlist_id: 'spotify:bbb', name: 'Imported bbb', vendor_pl_id: 'bbb' })]
 	});
 	assert.match(html, /Loading imported Spotify playlists\.\.\./);
-	assert.match(html, /aria-label="Play Invented aaa in the Spotify side player"/, `rendered: ${html}`);
+	assert.match(
+		html,
+		/aria-label="Play Invented aaa in the Spotify side player"/,
+		`rendered: ${html}`
+	);
 	assert.match(html, /aria-label="Play Invented bbb in the Spotify side player"/);
 	assert.match(html, /aria-label="Filter Spotify playlists"/);
 	// Imports are not claimed until their list has landed.
@@ -208,12 +222,21 @@ test('SPOT-6555: a connected account with no playlists says so, not the imported
 
 test('SPOT-6555: a signed-out listing shows its reason and keeps the imported rows', () => {
 	const html = renderPanel({
-		initialAccount: { connected: false, reason: 'not_signed_in', message: 'Sign in to Spotify.', playlists: [] },
+		initialAccount: {
+			connected: false,
+			reason: 'not_signed_in',
+			message: 'Sign in to Spotify.',
+			playlists: []
+		},
 		playlists: [playlist()]
 	});
 	// SSR is not on the engine's machine, so it points there instead of Connect.
 	assert.match(html, /Sign in to list all your Spotify playlists\./);
-	assert.equal(html.includes('playlists</span'), false, 'a signed-out listing must not name an account');
+	assert.equal(
+		html.includes('playlists</span'),
+		false,
+		'a signed-out listing must not name an account'
+	);
 	assert.equal(html.includes('aria-label="Imported into Open DJ"'), true);
 	assert.match(html, /1 \/ 1/);
 });

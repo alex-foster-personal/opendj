@@ -20,6 +20,7 @@ Usage::
     doppler run --project general --config dev_personal -- \
       uv run --no-sync python scripts/spotify_playlist_sweep.py [--limit N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,9 +63,7 @@ def _local_index(db: Path) -> tuple[set[str], set[str]]:
         sys.exit(f"[ERROR] state DB not found: {db}")
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
-        rows = con.execute(
-            "SELECT isrc, title, artists_json FROM tracks WHERE file_path IS NOT NULL"
-        ).fetchall()
+        rows = con.execute("SELECT isrc, title, artists_json FROM tracks WHERE file_path IS NOT NULL").fetchall()
     finally:
         con.close()
     isrcs = {r[0].upper() for r in rows if r[0]}
@@ -118,10 +117,7 @@ def _playlist_gap(sp, pl: dict, isrcs: set[str], names: set[str]) -> PlaylistGap
             total += 1
             isrc = ((tr.get("external_ids") or {}).get("isrc") or "").upper()
             artists = tr.get("artists") or [{}]
-            key = (
-                f"{(artists[0].get('name') or '').casefold().strip()}"
-                f"|{tr['name'].casefold().strip()}"
-            )
+            key = f"{(artists[0].get('name') or '').casefold().strip()}|{tr['name'].casefold().strip()}"
             if isrc and isrc in isrcs:
                 continue
             if key in names:
@@ -164,8 +160,7 @@ def main() -> None:
             print(f"  [WARN] {pl.get('name')!r}: {exc}")
             continue
         gaps.append(gap)
-        print(f"  {i:>3}/{len(playlists)}  {gap.missing:>4} missing / "
-              f"{gap.total:>4}  {gap.name[:48]}")
+        print(f"  {i:>3}/{len(playlists)}  {gap.missing:>4} missing / {gap.total:>4}  {gap.name[:48]}")
 
     gaps = rank_gaps(gaps)
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)

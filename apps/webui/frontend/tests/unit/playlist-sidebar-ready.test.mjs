@@ -45,16 +45,25 @@ const sidebar = readFileSync(sidebarUrl, 'utf8');
 /** One index frame: every offset in the ordering test is measured inside this. */
 const initStart = panel.indexOf('async function _init()');
 const initEnd = panel.indexOf('async function _restoreBootPane()');
-assert.ok(initStart >= 0 && initEnd > initStart, 'could not isolate _init() in BrowserPanel.svelte');
+assert.ok(
+	initStart >= 0 && initEnd > initStart,
+	'could not isolate _init() in BrowserPanel.svelte'
+);
 const init = panel.slice(initStart, initEnd);
 
 test('playlist sidebar becomes usable when metadata arrives, before the all-track page walk', () => {
 	const metadata = init.indexOf('playlists = reconcileBootSnapshot(');
 	assert.ok(metadata >= 0, 'expected _init() to assign the hydrated playlists');
 	const tracks = init.indexOf('await _restoreBootPane();', metadata);
-	assert.ok(tracks > metadata, 'expected _init() to await the first track pane after the playlists');
+	assert.ok(
+		tracks > metadata,
+		'expected _init() to await the first track pane after the playlists'
+	);
 	const ready = init.indexOf('playlistsLoading = false;', metadata);
-	assert.ok(ready > metadata, 'expected _init() to clear the loading flag after the playlists land');
+	assert.ok(
+		ready > metadata,
+		'expected _init() to clear the loading flag after the playlists land'
+	);
 	assert.ok(ready < tracks, 'playlist navigation must not wait for every track to load');
 	compile(panel, { filename: panelUrl.pathname, generate: 'client' });
 });
@@ -110,7 +119,10 @@ test('the readiness flag reaches the sidebar and gates whether it renders rows',
 	const guard = sidebar.indexOf('{#if playlistsLoading}');
 	assert.ok(guard >= 0, 'SpotifySourcePanel must branch on playlistsLoading');
 	const rows = sidebar.indexOf('{#each visibleRows as row', guard);
-	assert.ok(rows > guard, 'the playlist rows must sit in the ready branch after playlistsLoading clears');
+	assert.ok(
+		rows > guard,
+		'the playlist rows must sit in the ready branch after playlistsLoading clears'
+	);
 	assert.equal(
 		sidebar.slice(guard, rows).includes('{/if}'),
 		false,

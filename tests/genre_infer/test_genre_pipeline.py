@@ -73,6 +73,27 @@ def test_second_run_is_up_to_date_and_calls_nothing(tmp_path: Path, providers_li
     assert providers_live.hits["/alpha/decisions"] == before["/alpha/decisions"] + 1
 
 
+def test_terminal_unknown_digest_is_up_to_date_and_calls_nothing(
+    tmp_path: Path, providers_live: ProviderServer
+) -> None:
+    """[if] both answers are unusable [then] their digest prevents another call, [else stop]."""
+    providers_live.transform["/alpha/decisions"] = lambda reply: {**reply, "answers": {}}
+    providers_live.transform["/v1/chat/completions"] = lambda reply: {**reply, "choices": []}
+    _data, state = library(tmp_path)
+    conn = _conn(state)
+
+    first = pipeline.infer_tracks(conn, ["t-fred"])
+    fused = {f.provider: f for f in findings.findings_for(conn, ["t-fred"])["t-fred"]}["odj-fused"]
+    assert first.count(pipeline.OUTCOME_FAILED) == 1
+    assert fused.status == findings.STATUS_UNKNOWN
+    assert fused.request_digest is not None
+
+    before = dict(providers_live.hits)
+    again = pipeline.infer_tracks(conn, ["t-fred"])
+    assert again.count(pipeline.OUTCOME_UP_TO_DATE) == 1
+    assert dict(providers_live.hits) == before
+
+
 def test_placeholder_titles_are_skipped_without_a_call(tmp_path: Path, providers_live: ProviderServer) -> None:
     _data, state = library(tmp_path)
     summary = pipeline.infer_tracks(_conn(state), ["t-id"])

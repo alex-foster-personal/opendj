@@ -91,17 +91,17 @@ class LaneVerdict:
     @property
     def passed(self) -> bool:
         judged = self.tracks_ok + self.tracks_producer_outcome
-        return (self.drain_exit == 0 and self.tracks_ok >= 1
-                and judged == self.tracks_total and not self.failures)
+        return self.drain_exit == 0 and self.tracks_ok >= 1 and judged == self.tracks_total and not self.failures
 
 
 class Unmeasurable(RuntimeError):
     """The harness cannot establish its own preconditions; no verdict exists."""
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # install + clean room
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def install_payload(payload: Path, work: Path) -> tuple[Path, bool]:
     """``(installed payload dir, whether opendj-python had to be grafted)``."""
@@ -146,8 +146,7 @@ def prove_network_denied(installed: Path, env: dict[str, str]) -> dict[str, str]
         "print('connected')\n"
     )
     python = str(installed / "runtime/bin/python3")
-    inside = subprocess.run(sandboxed([python, "-c", probe]), env=env,
-                            capture_output=True, text=True, check=False)
+    inside = subprocess.run(sandboxed([python, "-c", probe]), env=env, capture_output=True, text=True, check=False)
     try:
         socket.create_connection(PROBE_HOST, 5).close()
         outside = "connected"
@@ -161,17 +160,20 @@ def prove_network_denied(installed: Path, env: dict[str, str]) -> dict[str, str]
     return {"inside_sandbox": inside.stdout.strip(), "outside_sandbox": outside}
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # backfill
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-def run_payload(
-    installed: Path, env: dict[str, str], *args: str
-) -> subprocess.CompletedProcess[str]:
+
+def run_payload(installed: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         sandboxed([str(installed / PYTHON_LAUNCHER), *args]),
-        env=env, cwd=env["TMPDIR"], capture_output=True, text=True,
-        check=False, timeout=STEP_TIMEOUT_S,
+        env=env,
+        cwd=env["TMPDIR"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=STEP_TIMEOUT_S,
     )
 
 
@@ -181,40 +183,36 @@ def ingest_library(installed: Path, env: dict[str, str], db: Path, library: Path
         if done.returncode != 0:
             raise Unmeasurable(f"state.cli {args[0]} failed:\n{done.stdout}\n{done.stderr}")
     with sqlite3.connect(db) as conn:
-        ids = [row[0] for row in conn.execute(
-            "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id")]
+        ids = [
+            row[0] for row in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id")
+        ]
     if not ids:
         raise Unmeasurable(f"folder ingest of {library} produced no tracks")
     return ids
 
 
-def drain_lane(installed: Path, env: dict[str, str], db: Path, lane: str,
-               stable_ids: list[str]) -> LaneVerdict:
+def drain_lane(installed: Path, env: dict[str, str], db: Path, lane: str, stable_ids: list[str]) -> LaneVerdict:
     verdict = LaneVerdict(lane=lane, tracks_total=len(stable_ids))
     backend = f"own_{lane}.backfill"
     queue = ("-m", "apps.analysis.queue_cli", "--db", str(db), "--json")
     ids = [arg for sid in stable_ids for arg in ("--stable-id", sid)]
     started = time.monotonic()
-    enqueued = run_payload(installed, env, *queue, "enqueue", "--lane", lane,
-                           "--backend", backend, *ids)
+    enqueued = run_payload(installed, env, *queue, "enqueue", "--lane", lane, "--backend", backend, *ids)
     if enqueued.returncode != 0:
         verdict.failures.append(f"enqueue exit {enqueued.returncode}: {enqueued.stderr[-1500:]}")
         return verdict
     batch_id = json.loads(enqueued.stdout)["batch_id"]
-    drained = run_payload(
-        installed, env, *queue, "run", "--batch-id", batch_id, "--backend", backend
-    )
+    drained = run_payload(installed, env, *queue, "run", "--batch-id", batch_id, "--backend", backend)
     verdict.drain_exit = drained.returncode
     verdict.seconds = round(time.monotonic() - started, 1)
     if drained.returncode != 0:
-        verdict.failures.append(f"drain exit {drained.returncode}: "
-                                f"{(drained.stderr or drained.stdout)[-2500:]}")
+        verdict.failures.append(f"drain exit {drained.returncode}: {(drained.stderr or drained.stdout)[-2500:]}")
     return verdict
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # verdict by presence
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 Measurement = dict[str, Any] | None
 
@@ -268,9 +266,9 @@ def _measurement(lane: str, payload: dict[str, Any]) -> Measurement:
 def judge_lane(db: Path, verdict: LaneVerdict, stable_ids: list[str]) -> LaneVerdict:
     backend = f"own_{verdict.lane}.backfill"
     with sqlite3.connect(db) as conn:
-        rows = dict(conn.execute(
-            "SELECT stable_id, record_json FROM analysis WHERE backend = ?", (backend,)
-        ).fetchall())
+        rows = dict(
+            conn.execute("SELECT stable_id, record_json FROM analysis WHERE backend = ?", (backend,)).fetchall()
+        )
     for sid in stable_ids:
         if sid not in rows:
             verdict.failures.append(f"{sid}: no {backend} record")
@@ -284,17 +282,17 @@ def judge_lane(db: Path, verdict: LaneVerdict, stable_ids: list[str]) -> LaneVer
             verdict.evidence.append({"stable_id": sid, "producer_outcome": reason})
             continue
         if block.get("status") != "ok" or measured is None:
-            verdict.failures.append(
-                f"{sid}: {verdict.lane} status={block.get('status')} reason={reason}")
+            verdict.failures.append(f"{sid}: {verdict.lane} status={block.get('status')} reason={reason}")
             continue
         verdict.tracks_ok += 1
         verdict.evidence.append({"stable_id": sid, **measured})
     return verdict
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # main
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def run_acceptance(payload: Path, library: Path, work: Path, ffmpeg: Path) -> dict[str, Any]:
     for required in (payload / ENGINE_LAUNCHER, library, ffmpeg):
@@ -306,8 +304,7 @@ def run_acceptance(payload: Path, library: Path, work: Path, ffmpeg: Path) -> di
     db = work / "data" / "state" / "state.db"
     db.parent.mkdir(parents=True, exist_ok=True)
     stable_ids = ingest_library(installed, env, db, library)
-    lanes = [judge_lane(db, drain_lane(installed, env, db, lane, stable_ids), stable_ids)
-             for lane in LANES]
+    lanes = [judge_lane(db, drain_lane(installed, env, db, lane, stable_ids), stable_ids) for lane in LANES]
     manifest = json.loads((installed / "manifest.json").read_text(encoding="utf-8"))
     return {
         "payload": str(payload),
@@ -330,12 +327,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, help="also write the JSON report here")
     args = parser.parse_args(argv)
     if args.work.exists() and any(args.work.iterdir()):
-        print(f"[ERROR] --work {args.work} must be empty: a reused data dir is not a fresh install",
-              file=sys.stderr)
+        print(f"[ERROR] --work {args.work} must be empty: a reused data dir is not a fresh install", file=sys.stderr)
         return EXIT_UNKNOWN
     try:
-        report = run_acceptance(args.payload.resolve(), args.library.resolve(),
-                                args.work.resolve(), args.ffmpeg)
+        report = run_acceptance(args.payload.resolve(), args.library.resolve(), args.work.resolve(), args.ffmpeg)
     except Unmeasurable as exc:
         print(f"[UNKNOWN] {exc}", file=sys.stderr)
         return EXIT_UNKNOWN
@@ -345,9 +340,12 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(text + "\n", encoding="utf-8")
     for lane in report["lanes"]:
         mark = "[OK]" if lane["passed"] else "[FAIL]"
-        print(f"{mark} {lane['lane']}: {lane['tracks_ok']}/{lane['tracks_total']} ok with a "
-              f"measurement, {lane['tracks_producer_outcome']} named producer outcome, "
-              f"drain exit {lane['drain_exit']} ({lane['seconds']}s)", file=sys.stderr)
+        print(
+            f"{mark} {lane['lane']}: {lane['tracks_ok']}/{lane['tracks_total']} ok with a "
+            f"measurement, {lane['tracks_producer_outcome']} named producer outcome, "
+            f"drain exit {lane['drain_exit']} ({lane['seconds']}s)",
+            file=sys.stderr,
+        )
     return EXIT_PASS if report["passed"] else EXIT_FAIL
 
 

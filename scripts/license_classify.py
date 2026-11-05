@@ -24,11 +24,46 @@ RANK = {Cat.PERMISSIVE: 0, Cat.WEAK: 1, Cat.STRONG: 2, Cat.NONCOM: 3, Cat.UNKNOW
 FLAGGED = (Cat.WEAK, Cat.STRONG, Cat.NONCOM, Cat.UNKNOWN)
 
 _PERMISSIVE_MARKERS = (
-    "mit", "mit-0", "bsd", "bsd-2-clause", "bsd-3-clause", "apache", "apache-2.0", "isc", "iscl",
-    "psf", "psf-2.0", "python-2.0", "cnri-python", "zlib", "unlicense", "cc0-1.0", "0bsd", "hpnd",
-    "bsl-1.0", "boost", "public domain", "ofl", "ofl-1.1", "openssl", "curl", "unicode", "blueoak-1.0.0",
-    "wtfpl", "zpl-2.1", "python software foundation", "historical", "ncsa", "pil", "libpng", "x11",
-    "cc-by-4.0", "cc-by-3.0", "afl-2.1", "artistic-2.0", "llvm-exception",
+    "mit",
+    "mit-0",
+    "bsd",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "apache",
+    "apache-2.0",
+    "isc",
+    "iscl",
+    "psf",
+    "psf-2.0",
+    "python-2.0",
+    "cnri-python",
+    "zlib",
+    "unlicense",
+    "cc0-1.0",
+    "0bsd",
+    "hpnd",
+    "bsl-1.0",
+    "boost",
+    "public domain",
+    "ofl",
+    "ofl-1.1",
+    "openssl",
+    "curl",
+    "unicode",
+    "blueoak-1.0.0",
+    "wtfpl",
+    "zpl-2.1",
+    "python software foundation",
+    "historical",
+    "ncsa",
+    "pil",
+    "libpng",
+    "x11",
+    "cc-by-4.0",
+    "cc-by-3.0",
+    "afl-2.1",
+    "artistic-2.0",
+    "llvm-exception",
 )
 _STRONG_MARKERS = ("agpl", "sspl", "eupl", "osl-3")
 _NONCOM_MARKERS = ("cc-by-nc", "cc-by-nc-sa", "cc-by-nc-nd", "non-commercial")
@@ -50,8 +85,7 @@ def _token_category(token: str) -> str:
     if "gpl" in lowered or "gnu general public" in lowered or _has_marker(lowered, _STRONG_MARKERS):
         return Cat.STRONG
     if any(
-        marker in lowered
-        for marker in ("mpl", "mozilla", "epl", "epl-1.0", "epl-2.0", "eclipse", "cddl", "cecill-c")
+        marker in lowered for marker in ("mpl", "mozilla", "epl", "epl-1.0", "epl-2.0", "eclipse", "cddl", "cecill-c")
     ):
         return Cat.WEAK
     if _has_marker(lowered, _PERMISSIVE_MARKERS):

@@ -5,7 +5,9 @@ import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
 
 import { LIBRARY_JOBS_E2E_FRONTEND_PORT } from './library-jobs-e2e-endpoints';
 
-const frontendPort = Number(process.env.LIBRARY_JOBS_E2E_FRONTEND_PORT ?? LIBRARY_JOBS_E2E_FRONTEND_PORT);
+const frontendPort = Number(
+	process.env.LIBRARY_JOBS_E2E_FRONTEND_PORT ?? LIBRARY_JOBS_E2E_FRONTEND_PORT
+);
 const apiOrigin = process.env.LIBRARY_JOBS_E2E_API_BASE;
 
 if (!Number.isSafeInteger(frontendPort) || apiOrigin === undefined) {

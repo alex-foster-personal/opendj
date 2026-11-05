@@ -26,5 +26,7 @@ export function remoteSpeakerFlag(configured: unknown): RemoteSpeakerFlag {
  * member expression is spelled out whole so vite's `define` replaces it.
  */
 export function remoteSpeakerBuildFlag(): RemoteSpeakerFlag {
-	return remoteSpeakerFlag(import.meta.env === undefined ? undefined : import.meta.env.VITE_REMOTE_SPEAKER);
+	return remoteSpeakerFlag(
+		import.meta.env === undefined ? undefined : import.meta.env.VITE_REMOTE_SPEAKER
+	);
 }

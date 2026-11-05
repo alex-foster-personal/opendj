@@ -13,7 +13,7 @@ canary org's mirror, because their runners are organization-only. A vendor enabl
 other repository is refused, and a repository that is no vendor's target runs nothing, so
 a vendor's minutes are always summed in the one repository that can spend them.
 
-Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config: ci/runner-canary.json.
+Decision record: (private path). Config: ci/runner-canary.json.
 Standard library only: the gate job runs the hosted image's bare `python3`, with no venv.
 
 Exit codes: 0 green (writes `vendors=` and `labels=` to $GITHUB_OUTPUT), 1 red (over budget,
@@ -157,8 +157,7 @@ def parse_enabled_vendors(raw: str, config: CanaryConfig) -> list[str]:
     """`vars.CANARY_VENDORS_ENABLED` as a JSON list of known vendor names, in config order."""
     if not raw.strip():
         raise BudgetGateError(
-            "no vendors enabled: vars.CANARY_VENDORS_ENABLED is unset or empty; "
-            'set it to a JSON list such as ["avrea"]'
+            'no vendors enabled: vars.CANARY_VENDORS_ENABLED is unset or empty; set it to a JSON list such as ["avrea"]'
         )
     try:
         parsed = json.loads(raw)
@@ -171,8 +170,7 @@ def parse_enabled_vendors(raw: str, config: CanaryConfig) -> list[str]:
     unknown = sorted(set(parsed) - config.vendors.keys())
     if unknown:
         raise BudgetGateError(
-            f"vars.CANARY_VENDORS_ENABLED names unknown vendor(s) {unknown}; "
-            f"known: {sorted(config.vendors)}"
+            f"vars.CANARY_VENDORS_ENABLED names unknown vendor(s) {unknown}; known: {sorted(config.vendors)}"
         )
     return [name for name in config.vendors if name in parsed]
 
@@ -182,8 +180,7 @@ def check_repository(owner: str, repository: str, config: CanaryConfig) -> None:
     own jobs listing would read as a fresh, zero-minute budget."""
     if owner not in config.allowed_owners or repository not in config.target_repositories:
         raise BudgetGateError(
-            f"{repository} (owner {owner!r}) runs no canary vendor; the targets are "
-            f"{list(config.target_repositories)}"
+            f"{repository} (owner {owner!r}) runs no canary vendor; the targets are {list(config.target_repositories)}"
         )
 
 
@@ -196,8 +193,7 @@ def require_vendors_target(repository: str, vendors: Iterable[str], config: Cana
     ]
     if misrouted:
         raise BudgetGateError(
-            "; ".join(misrouted) + f", not {repository}; remove it from this repository's "
-            "vars.CANARY_VENDORS_ENABLED"
+            "; ".join(misrouted) + f", not {repository}; remove it from this repository's vars.CANARY_VENDORS_ENABLED"
         )
 
 
@@ -249,9 +245,7 @@ def billed_basis_minutes(job: dict[str, Any], vendor: Vendor, now: datetime) -> 
         return 0
     started = job.get("started_at")
     if not isinstance(started, str):  # Sol P1 on b6303e8f0: unknown, never zero
-        raise BillingUnreadable(
-            f"job {job.get('id')} has no started_at, so its minutes are unknown"
-        )
+        raise BillingUnreadable(f"job {job.get('id')} has no started_at, so its minutes are unknown")
     start = _parse_ts(started)
     completed = job.get("completed_at")
     end = _parse_ts(completed) if completed else now
@@ -297,9 +291,7 @@ def evaluate_budgets(
         if vendor.target_repo not in jobs_by_repo:
             raise BillingUnreadable(f"{name}'s target {vendor.target_repo} was not read")
         jobs = jobs_by_repo[vendor.target_repo]
-        used = sum(
-            billed_basis_minutes(job, vendor, now) for job in jobs if vendor.label in _labels(job)
-        )
+        used = sum(billed_basis_minutes(job, vendor, now) for job in jobs if vendor.label in _labels(job))
         budgets.append(
             VendorBudget(
                 vendor=name,
@@ -330,9 +322,7 @@ class GateDecision:
         return f"::notice title={PLANNED_VENDORS_TITLE}::{','.join(self.vendors)}"
 
 
-def select_vendors(
-    *, owner: str, repository: str, enabled_raw: str, requested: str, config: CanaryConfig
-) -> list[str]:
+def select_vendors(*, owner: str, repository: str, enabled_raw: str, requested: str, config: CanaryConfig) -> list[str]:
     """Which vendors this run covers. Pure, and decided before any billing read."""
     check_repository(owner, repository, config)
     enabled = parse_enabled_vendors(enabled_raw, config)
@@ -367,9 +357,7 @@ def gate_decision(
     ]
     if refusals:
         raise BudgetGateError("; ".join(refusals) + "; canary refused")
-    return GateDecision(
-        vendors=vendors, labels={v: config.vendors[v].label for v in vendors}, budgets=budgets
-    )
+    return GateDecision(vendors=vendors, labels={v: config.vendors[v].label for v in vendors}, budgets=budgets)
 
 
 # ----- the GitHub read (imperative shell) --------------------------------------
@@ -382,15 +370,12 @@ def collect_paginated(fetch_page: Callable[[int], dict[str, Any]], items_key: st
     total: int | None = None
     while total is None or len(items) < total:
         body = fetch_page(page)
-        if not isinstance(body.get("total_count"), int) or not isinstance(
-            body.get(items_key), list
-        ):
+        if not isinstance(body.get("total_count"), int) or not isinstance(body.get(items_key), list):
             raise BillingUnreadable(f"response has no total_count/{items_key}: {str(body)[:200]}")
         total = body["total_count"]
         if total > LISTING_CAP:
             raise BillingUnreadable(
-                f"{total} {items_key} exceed the {LISTING_CAP}-row listing cap, "
-                "so the sum would be partial"
+                f"{total} {items_key} exceed the {LISTING_CAP}-row listing cap, so the sum would be partial"
             )
         if not body[items_key] and len(items) < total:
             raise BillingUnreadable(f"pagination ended at {len(items)} of {total} {items_key}")
@@ -428,7 +413,7 @@ def fetch_month_jobs(api_url: str, repo: str, token: str, now: datetime) -> list
     """Every job (all attempts) of every canary run in `repo` that can bill this month.
 
     Only this workflow's runs: no other workflow names a vendor label, which
-    tests/scripts/test_runner_canary_workflow.py pins.
+    (private path) pins.
     """
     base = f"{api_url.rstrip('/')}/repos/{repo}/actions"
     runs = collect_paginated(
@@ -445,9 +430,7 @@ def _run_jobs_page(base: str, run_id: int, token: str) -> Callable[[int], dict[s
     """The page reader for one run's jobs, bound to that run."""
 
     def fetch(page: int) -> dict[str, Any]:
-        return _get_json(
-            f"{base}/runs/{run_id}/jobs?filter=all&per_page={PER_PAGE}&page={page}", token
-        )
+        return _get_json(f"{base}/runs/{run_id}/jobs?filter=all&per_page={PER_PAGE}&page={page}", token)
 
     return fetch
 
@@ -466,10 +449,7 @@ def _write_summary(decision: GateDecision, month: str) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
-    rows = [
-        f"| {b.vendor} | {b.used_minutes:g} | {b.limit_minutes:g} | {b.free_minutes} |"
-        for b in decision.budgets
-    ]
+    rows = [f"| {b.vendor} | {b.used_minutes:g} | {b.limit_minutes:g} | {b.free_minutes} |" for b in decision.budgets]
     text = "\n".join(
         [
             f"### Runner canary budget gate ({month}, UTC)",
@@ -527,10 +507,7 @@ def main(argv: list[str] | None = None) -> int:
             now=now,
         )
     except BillingUnreadable as exc:
-        print(
-            "::error::budget gate UNKNOWN: billed minutes could not be read "
-            f"({exc}); canary refused"
-        )
+        print(f"::error::budget gate UNKNOWN: billed minutes could not be read ({exc}); canary refused")
         return 2
     except BudgetGateError as exc:
         print(f"::error::budget gate: {exc}")

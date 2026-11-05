@@ -51,14 +51,18 @@ function sourceFiles(dir) {
 
 let confirmSettings;
 before(async () => {
-	confirmSettings = (await loadTypeScriptModule('src/lib/settings/confirm-drop-mode.ts')).CONFIRM_SETTINGS;
+	confirmSettings = (await loadTypeScriptModule('src/lib/settings/confirm-drop-mode.ts'))
+		.CONFIRM_SETTINGS;
 });
 
 test('every remembered prompt answer has an implemented Confirmations row', () => {
 	const rows = new Map(confirmSettings.map((row) => [row.id, row]));
 	for (const key of declaredConfirmKeys()) {
 		const row = rows.get(`confirm.${key}`);
-		assert.ok(row, `confirm.${key} is remembered but has no settings row, so it can never be reset`);
+		assert.ok(
+			row,
+			`confirm.${key} is remembered but has no settings row, so it can never be reset`
+		);
 		assert.equal(row.group, 'confirmations');
 		assert.equal(row.implemented, true, `confirm.${key} must be a live control, not a planned one`);
 	}
@@ -75,7 +79,11 @@ test('the apply layer can read and write every remembered answer', () => {
 		const id = `confirm.${key}`;
 		const cases = apply.match(new RegExp(`case '${id.replace('.', '\\.')}':`, 'g')) ?? [];
 		assert.equal(cases.length, 2, `${id} needs one read case and one write case in apply.ts`);
-		assert.match(apply, new RegExp(`\\n\\t'${id.replace('.', '\\.')}',`), `${id} must be in the apply allowlist`);
+		assert.match(
+			apply,
+			new RegExp(`\\n\\t'${id.replace('.', '\\.')}',`),
+			`${id} must be in the apply allowlist`
+		);
 		assert.match(
 			apply,
 			new RegExp(`setConfirmPref\\('${key}',`),
@@ -94,7 +102,10 @@ test('no prompt remembers its answer under an undeclared key', () => {
 	}
 	assert.ok(used.size >= 3, `control: the scan must find the known call sites, found ${[...used]}`);
 	for (const key of used) {
-		assert.ok(declared.has(key), `setConfirmPref('${key}') remembers under a key the prefs type does not declare`);
+		assert.ok(
+			declared.has(key),
+			`setConfirmPref('${key}') remembers under a key the prefs type does not declare`
+		);
 	}
 });
 
@@ -108,12 +119,19 @@ test('the delete row says it also governs smartlist deletes', () => {
 	const row = confirmSettings.find((r) => r.id === 'confirm.delete_playlist');
 	assert.match(row.label, /smartlist/i);
 	assert.match(row.title, /smartlist/i);
-	assert.ok(row.keywords.includes('smartlist'), 'searching settings for smartlist must find the row');
+	assert.ok(
+		row.keywords.includes('smartlist'),
+		'searching settings for smartlist must find the row'
+	);
 	assert.match(row.detail, /turn it back on to be asked again/i);
 });
 
 test('each boolean confirmation row says how to get the prompt back', () => {
 	for (const row of confirmSettings.filter((r) => r.control.kind === 'boolean')) {
-		assert.match(row.detail, /turn it back on to be asked again/i, `${row.id} must say how to reset it`);
+		assert.match(
+			row.detail,
+			/turn it back on to be asked again/i,
+			`${row.id} must say how to reset it`
+		);
 	}
 });

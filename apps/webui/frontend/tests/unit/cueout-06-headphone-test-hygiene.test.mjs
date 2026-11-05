@@ -16,10 +16,26 @@ test('HeadphoneCluster and the device probe agree on the I/O accessible name', (
 	const probe = readFileSync(PROBE, 'utf8');
 	assert.match(cluster, new RegExp(`aria-label="${ACCESSIBLE_NAME}"`));
 	assert.match(cluster, /onclick=\{handleSetOutputs\}/, 'SET OUTPUTS is the I/O trigger');
-	assert.match(cluster, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/, 'I/O opens the panel without acquiring a device');
-	assert.doesNotMatch(cluster, /function handleSetOutputs\(\): void \{[^}]*onacquire\(\);/, 'opening the panel never acquires');
-	assert.match(cluster, /Choose output \/ allow device access/, 'device access stays an explicit panel action');
-	assert.match(cluster, /><span>SET<\/span><span>OUTPUTS<\/span></, 'pin 894af5672c3b: visible text is SET OUTPUTS');
+	assert.match(
+		cluster,
+		/function handleSetOutputs\(\): void \{[^}]*openIo\(\);/,
+		'I/O opens the panel without acquiring a device'
+	);
+	assert.doesNotMatch(
+		cluster,
+		/function handleSetOutputs\(\): void \{[^}]*onacquire\(\);/,
+		'opening the panel never acquires'
+	);
+	assert.match(
+		cluster,
+		/Choose output \/ allow device access/,
+		'device access stays an explicit panel action'
+	);
+	assert.match(
+		cluster,
+		/><span>SET<\/span><span>OUTPUTS<\/span></,
+		'pin 894af5672c3b: visible text is SET OUTPUTS'
+	);
 	assert.match(probe, new RegExp(`name: '${ACCESSIBLE_NAME}'`));
 	assert.match(probe, /name: 'Choose output \/ allow device access'/);
 	assert.doesNotMatch(
@@ -28,5 +44,9 @@ test('HeadphoneCluster and the device probe agree on the I/O accessible name', (
 		'probe must target the accessible name, not a visible glyph'
 	);
 	assert.doesNotMatch(probe, /name: 'ADD OUTPUT'/);
-	assert.match(probe, /timeout:\s*5_?000/, 'name lookup must fail within seconds, not the 120s test timeout');
+	assert.match(
+		probe,
+		/timeout:\s*5_?000/,
+		'name lookup must fail within seconds, not the 120s test timeout'
+	);
 });

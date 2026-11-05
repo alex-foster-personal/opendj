@@ -49,7 +49,11 @@ test("first run stores Auto, which paints the Gothic skin's mono palette (CHROME
 	const { uiPrefs } = await _loadPrefs();
 	assert.equal(uiPrefs.wave_palette, 'auto');
 	assert.equal(root.dataset.wavePalette, 'mono');
-	assert.equal(root.dataset.theme, 'dark', 'control: the theme attribute IS applied by the same boot path');
+	assert.equal(
+		root.dataset.theme,
+		'dark',
+		'control: the theme attribute IS applied by the same boot path'
+	);
 });
 
 test('a pre-#4219 blob without the key loads the Auto default (CHROME-15 migration)', async () => {
@@ -106,9 +110,15 @@ test('an idle deck waveform repaints on a palette switch (palette is reactive st
 	// the main waveform kept the old colors until a seek. A .svelte file cannot
 	// be mounted here, so this pins the two lines that make the repaint happen.
 	const { readFileSync } = await import('node:fs');
-	const src = readFileSync(new URL('../../src/lib/components/rb/wave/WaveRow.svelte', import.meta.url), 'utf8');
+	const src = readFileSync(
+		new URL('../../src/lib/components/rb/wave/WaveRow.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(src, /let palette = \$state\.raw<WavePalette \| null>\(null\);/);
-	assert.match(src, /void uiPrefs\.wave_palette;\s*\n\s*(?:void uiPrefs\.ui_skin;\s*\n\s*)?palette = readPalette\(el\);/);
+	assert.match(
+		src,
+		/void uiPrefs\.wave_palette;\s*\n\s*(?:void uiPrefs\.ui_skin;\s*\n\s*)?palette = readPalette\(el\);/
+	);
 	const staticRepaint = src.slice(src.indexOf('// Static repaint on load/seek'));
 	assert.match(staticRepaint.slice(0, staticRepaint.indexOf('draw(true);')), /void palette;/);
 });

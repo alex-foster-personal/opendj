@@ -7,11 +7,10 @@ build environment, or from Doppler project ``general`` config
 ``apps.shared.google_oauth_client`` inside the staged payload. The engine
 loads that file before ``_oauth_config()``. Values are never logged.
 """
+
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from apps.shared.google_oauth_client import (
     CLIENT_SECRET_ENV_NAMES,
     first_present,
 )
+from scripts.payload_doppler import read_doppler_secret
 
 BUNDLED_RELATIVE = Path("app/apps/shared/bundled_google_oauth.json")
 
@@ -45,47 +45,17 @@ def bundled_oauth_path(payload_dir: Path) -> Path:
     return payload_dir / BUNDLED_RELATIVE
 
 
-def _doppler_get(name: str) -> str:
-    """Read one Doppler secret. Never logs stdout (the value)."""
-    doppler = shutil.which("doppler")
-    if doppler is None:
-        return ""
-    try:
-        result = subprocess.run(
-            [
-                doppler,
-                "secrets",
-                "get",
-                name,
-                "--project",
-                "general",
-                "--config",
-                "dev_personal",
-                "--plain",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    if result.returncode != 0:
-        return ""
-    return result.stdout.strip()
-
-
 def _resolve_credentials(env: Mapping[str, str]) -> tuple[str, str]:
     client_id = first_present(env, CLIENT_ID_ENV_NAMES) or ""
     client_secret = first_present(env, CLIENT_SECRET_ENV_NAMES) or ""
     if not client_id:
         for name in CLIENT_ID_ENV_NAMES:
-            client_id = _doppler_get(name)
+            client_id = read_doppler_secret(name)
             if client_id:
                 break
     if not client_secret:
         for name in CLIENT_SECRET_ENV_NAMES:
-            client_secret = _doppler_get(name)
+            client_secret = read_doppler_secret(name)
             if client_secret:
                 break
     if not client_id:
@@ -95,9 +65,7 @@ def _resolve_credentials(env: Mapping[str, str]) -> tuple[str, str]:
     return client_id, client_secret
 
 
-def bake_google_oauth(
-    payload_dir: Path, env: Mapping[str, str] | None = None
-) -> Path:
+def bake_google_oauth(payload_dir: Path, env: Mapping[str, str] | None = None) -> Path:
     """Write the bundled client JSON into the staged payload.
 
     ``env`` defaults to ``os.environ``. Tests pass an isolated mapping so a
@@ -106,9 +74,7 @@ def bake_google_oauth(
     """
     import os
 
-    client_id, client_secret = _resolve_credentials(
-        os.environ if env is None else env
-    )
+    client_id, client_secret = _resolve_credentials(os.environ if env is None else env)
     dest = bundled_oauth_path(payload_dir)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(

@@ -7,12 +7,18 @@ UI's existing ``library.changed`` subscribers refetch without a reload.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from apps.shared.events import publish
 
 
-def on_setup_import_progress(job: dict[str, Any], line: dict[str, Any]) -> None:
+def on_setup_import_progress(
+    job: dict[str, Any],
+    line: dict[str, Any],
+    *,
+    on_tracks_replaced: Callable[[], None] | None = None,
+) -> None:
     """Publish full-library invalidation when the worker reports completion."""
     progress = line.get("progress")
     if isinstance(progress, bool) or not isinstance(progress, (int, float)):
@@ -21,6 +27,8 @@ def on_setup_import_progress(job: dict[str, Any], line: dict[str, Any]) -> None:
         return
 
     publish("library.changed", {"kind": "tracks", "ids": []})
+    if on_tracks_replaced is not None:
+        on_tracks_replaced()
 
     payload = job.get("payload")
     if not isinstance(payload, dict):

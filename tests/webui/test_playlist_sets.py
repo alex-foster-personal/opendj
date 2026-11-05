@@ -3,6 +3,7 @@
 [if] a playlist set is created, run, or listed [then] play_count and items react, [else stop].
 [if] SET-05 playlist-set routes drift from the store contract [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -79,9 +80,7 @@ def test_create_two_sets_and_list(client: TestClient, db_path: Path) -> None:
     assert all(s["play_count"] == 0 for s in body)
 
 
-def test_performance_run_increments_without_playlist_mutation(
-    client: TestClient, db_path: Path
-) -> None:
+def test_performance_run_increments_without_playlist_mutation(client: TestClient, db_path: Path) -> None:
     """[if] a set is performed [then] play_count increments and playlist unchanged."""
     playlist_id = _create_playlist(client, "Gig")
     before = client.get(f"/api/v1/playlists/{playlist_id}")

@@ -1,6 +1,6 @@
 """MUSDB18-HQ ABSOLUTE leaderboard: the 10-rung ladder vs TRUE vocal stems.
 
-scripts/modal_vocal_ladder.py scores every rung against rung 10 (a PSEUDO
+(private path) scores every rung against rung 10 (a PSEUDO
 reference), so any rung sharing rung 10's model family scores well by family
 resemblance alone -- htdemucs_ft rungs are graded against an htdemucs_ft
 reference. This script removes that circularity: it runs the SAME ten rungs
@@ -38,6 +38,7 @@ one -- the imported module's `main` is the pseudo-reference ladder):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -131,9 +132,7 @@ def _resolve_pair(title: str) -> tuple[Path, Path]:
             "the two is truncated, scoring against it would be meaningless"
         )
     if mixture_s <= EXCERPT_LEN_S:
-        raise RuntimeError(
-            f"{title}: track is {mixture_s:.1f}s, shorter than the {EXCERPT_LEN_S}s excerpt"
-        )
+        raise RuntimeError(f"{title}: track is {mixture_s:.1f}s, shorter than the {EXCERPT_LEN_S}s excerpt")
     print(f"{title}: mixture+vocals both {mixture_s:.2f}s (44.1 kHz stereo)")
     return mixture, vocals
 
@@ -172,16 +171,11 @@ def _run_track(title: str) -> TrackRun:
             raise RuntimeError(f"{path} cut to {cut_s:.3f}s, expected {length_s:.3f}s")
     print(f"{title}: excerpts cut, mixture bytes={len(mixture_excerpt)}")
 
-    args = [
-        (mixture_excerpt, f"{rung.id}.flac", rung.model, rung.overlap, rung.shifts)
-        for rung in LADDER
-    ]
+    args = [(mixture_excerpt, f"{rung.id}.flac", rung.model, rung.overlap, rung.shifts) for rung in LADDER]
     results = list(ladder_separate.starmap(args))
     clips = _write_clips(results, prefix=f"{slug}-", out_dir=_CLIPS_DIR)
     raw = _si_sdr_scores(truth_path, clips)
-    sisdr_by_rung = {
-        Path(path).stem.replace(f"{slug}-", ""): value for path, value in raw.items()
-    }
+    sisdr_by_rung = {Path(path).stem.replace(f"{slug}-", ""): value for path, value in raw.items()}
     missing = {rung.id for rung in LADDER} - set(sisdr_by_rung)
     if missing:
         raise RuntimeError(f"{title}: no SI-SDR returned for {sorted(missing)}")
@@ -198,9 +192,7 @@ def _family(model: str) -> str:
 def _print_track_table(run: TrackRun, pseudo: dict[str, float | None]) -> None:
     print(f"\nMUSDB18-HQ ABSOLUTE LADDER -- {run.title}")
     print("-" * 96)
-    print(
-        f"{'rung':<8}{'params':<34}{'sep_s':>8}{'SI-SDR vs TRUE':>16}{'pseudo SI-SDR':>15}"
-    )
+    print(f"{'rung':<8}{'params':<34}{'sep_s':>8}{'SI-SDR vs TRUE':>16}{'pseudo SI-SDR':>15}")
     print("-" * 96)
     for rung, result in zip(LADDER, run.results, strict=False):
         truth = run.sisdr_by_rung[rung.id]
@@ -211,10 +203,7 @@ def _print_track_table(run: TrackRun, pseudo: dict[str, float | None]) -> None:
             pseudo_str = f"{pseudo_value:.2f}"
         else:
             pseudo_str = "n/a"
-        print(
-            f"{rung.id:<8}{rung.params:<34}{result['separate_s']:>8.1f}"
-            f"{truth:>16.2f}{pseudo_str:>15}"
-        )
+        print(f"{rung.id:<8}{rung.params:<34}{result['separate_s']:>8.1f}{truth:>16.2f}{pseudo_str:>15}")
     print("-" * 96)
     best = max(run.sisdr_by_rung.items(), key=lambda kv: kv[1])
     print(f"best rung: {best[0]} at {best[1]:.2f} dB vs TRUE")
@@ -228,8 +217,12 @@ def _family_verdict(runs: list[TrackRun]) -> None:
     for run in runs:
         plain_scores = [run.sisdr_by_rung[r.id] for r in plain]
         ft_scores = [run.sisdr_by_rung[r.id] for r in finetuned]
-        plain_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs") / len(plain)
-        ft_time = sum(res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs_ft") / len(finetuned)
+        plain_time = sum(
+            res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs"
+        ) / len(plain)
+        ft_time = sum(
+            res["separate_s"] for r, res in zip(LADDER, run.results, strict=False) if r.model == "htdemucs_ft"
+        ) / len(finetuned)
         print(
             f"{run.title}\n"
             f"  htdemucs    (rungs 3-6):  best {max(plain_scores):6.2f} dB  "

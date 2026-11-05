@@ -181,9 +181,7 @@ def test_resolve_tier_reads_low_from_prefs(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("PERFMODE-01")
-def test_local_stems_refusal_honors_prefs_low(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_stems_refusal_honors_prefs_low(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     [if] prefs set perf_tier to low [then] local_stems_tier_refusal returns a refusal, [else stop].
     """
@@ -195,9 +193,7 @@ def test_local_stems_refusal_honors_prefs_low(
 
 
 @pytest.mark.requirement("PERFMODE-01")
-def test_cli_exit_two_when_host_unreadable(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_exit_two_when_host_unreadable(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """
     [if] read_host_facts raises HostInfoUnavailable [then] the CLI main() exits 2, [else stop].
     """

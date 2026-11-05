@@ -125,9 +125,7 @@ def test_trigger_drift_fires_when_commits_land_but_nothing_runs(monkeypatch):
 def test_trigger_drift_quiet_when_runs_match_commits(monkeypatch):
     """If commits landed and runs started on main then triggers are firing, or broken."""
     monkeypatch.setattr(mod, "_fetch_default_branch_commit_count", lambda branch, since: 6)
-    result = mod._check_trigger_drift(
-        _runs(6, duration_seconds=300, conclusion="success"), "main", NOW
-    )
+    result = mod._check_trigger_drift(_runs(6, duration_seconds=300, conclusion="success"), "main", NOW)
     assert result.ok
 
 
@@ -165,9 +163,7 @@ def test_staleness_fires_when_pushes_land_but_ci_is_silent(monkeypatch):
 def test_staleness_quiet_when_ci_ran_recently(monkeypatch):
     """If a run completed 2 hours ago then CI is alive, or broken."""
     monkeypatch.setattr(mod, "_fetch_default_branch_commit_count", lambda branch, since: 4)
-    result = mod._check_staleness(
-        [_run(age_minutes=120, duration_seconds=300, conclusion="success")], "main", NOW
-    )
+    result = mod._check_staleness([_run(age_minutes=120, duration_seconds=300, conclusion="success")], "main", NOW)
     assert result.ok
 
 
@@ -208,9 +204,7 @@ def test_verdict_line_uses_house_output_tokens():
     then the notifier cannot parse it, or broken.
     """
     ok_line = mod.CheckResult("billing", True, "healthy", "fine", 8, mod.EXIT_OK).verdict_line()
-    bad_line = mod.CheckResult(
-        "billing", False, "billing", "bad", 8, mod.EXIT_BILLING
-    ).verdict_line()
+    bad_line = mod.CheckResult("billing", False, "billing", "bad", 8, mod.EXIT_BILLING).verdict_line()
     assert ok_line.startswith("[OK] billing:")
     assert bad_line.startswith("[ERROR] billing:")
 
@@ -297,9 +291,7 @@ def test_trunk_verified_catches_a_failed_job_inside_a_cancelled_run(monkeypatch)
     This is the 5f7466d3 case: the ratchet genuinely reported failure and went unseen for
     hours because the run's own top line said 'cancelled'.
     """
-    monkeypatch.setattr(
-        trunk_mod, "fetch_run_jobs", lambda run_id: [_job("quality ratchet", "failure")]
-    )
+    monkeypatch.setattr(trunk_mod, "fetch_run_jobs", lambda run_id: [_job("quality ratchet", "failure")])
     result = mod._check_trunk_verified([_trunk_run(conclusion="cancelled")], "main")
     assert not result.ok
     assert result.classification == "trunk-failed"
@@ -316,7 +308,5 @@ def test_trunk_verified_alarms_when_the_gating_workflow_is_absent():
 def test_trunk_verified_ignores_pull_request_runs(monkeypatch):
     """If PR runs count as trunk then a green PR masks an unverified main."""
     monkeypatch.setattr(trunk_mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success")])
-    pr_only = [
-        _run(age_minutes=1, duration_seconds=300, conclusion="success", event="pull_request")
-    ]
+    pr_only = [_run(age_minutes=1, duration_seconds=300, conclusion="success", event="pull_request")]
     assert mod._check_trunk_verified(pr_only, "main").classification == "insufficient-data"

@@ -8,6 +8,7 @@ through. Regression lines:
 - if an unparseable key is rewritten or dropped then the data problem hides
 - if the ?key= filter compares raw strings then "Am" stops finding "8A" rows
 """
+
 from __future__ import annotations
 
 import json

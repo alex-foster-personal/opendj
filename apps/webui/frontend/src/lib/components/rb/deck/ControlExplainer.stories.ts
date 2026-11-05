@@ -81,7 +81,13 @@ export const PinnedWithAction: Story = {
 
 /** Compact one-line help with no bullets. */
 export const Compact: Story = {
-	args: { programmaticOpen: true, compact: true, placement: 'below', title: 'Open the settings panel', bullets: [] }
+	args: {
+		programmaticOpen: true,
+		compact: true,
+		placement: 'below',
+		title: 'Open the settings panel',
+		bullets: []
+	}
 };
 
 /** disabled: no rich popover is ever shown, so hovering does nothing. */

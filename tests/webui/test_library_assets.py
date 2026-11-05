@@ -46,4 +46,5 @@ def test_remote_mode_uses_only_crate_derived_roots(tmp_path: Path) -> None:
     assert all(root.is_dir() for root in storage.roots)
     assert not local_state.exists()
 
+
 pytestmark = pytest.mark.rb_parity

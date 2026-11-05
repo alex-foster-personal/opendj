@@ -31,6 +31,7 @@ CONCURRENCY_ENV: str = "WEB_CONCURRENCY"
 # SqliteBackend whenever state.db exists.
 DEFAULT_STATE_BACKEND: str = "sqlite"
 
+
 class EngineBootError(RuntimeError):
     """Refusal to boot. The message always names the offending condition."""
 
@@ -76,17 +77,13 @@ def build_config(data_dir: str | Path, host: str, port: int) -> EngineConfig:
     """Validate CLI input into a config. Relative data dirs are rejected."""
     resolved = Path(data_dir).expanduser()
     if not resolved.is_absolute():
-        raise EngineBootError(
-            f"--data-dir must be an absolute path, got {str(data_dir)!r}"
-        )
+        raise EngineBootError(f"--data-dir must be an absolute path, got {str(data_dir)!r}")
     if not 1 <= port <= 65535:
         raise EngineBootError(f"--port must be 1..65535, got {port}")
     return EngineConfig(data_dir=resolved, host=host, port=port)
 
 
-def assert_single_worker(
-    workers: int, *, environ: MutableMapping[str, str] | None = None
-) -> None:
+def assert_single_worker(workers: int, *, environ: MutableMapping[str, str] | None = None) -> None:
     """The engine owns a singleton lock, so a second worker is a bug.
 
     A second uvicorn worker is a second engine process racing for the same
@@ -95,20 +92,15 @@ def assert_single_worker(
     """
     env = os.environ if environ is None else environ
     if workers != 1:
-        raise EngineBootError(
-            f"engine is single-worker by design; --workers={workers} refused"
-        )
+        raise EngineBootError(f"engine is single-worker by design; --workers={workers} refused")
     raw = env.get(CONCURRENCY_ENV)
     if raw is not None and str(raw).strip() != "":
         raise EngineBootError(
-            f"{CONCURRENCY_ENV}={raw!r} is set; the engine is single-worker by "
-            "design. Unset it before booting."
+            f"{CONCURRENCY_ENV}={raw!r} is set; the engine is single-worker by design. Unset it before booting."
         )
 
 
-def apply_env_contract(
-    cfg: EngineConfig, *, environ: MutableMapping[str, str] | None = None
-) -> None:
+def apply_env_contract(cfg: EngineConfig, *, environ: MutableMapping[str, str] | None = None) -> None:
     """Set the env the legacy modules read at import time.
 
     ``MDT_DATA_DIR`` comes from ``--data-dir`` and always wins.
@@ -143,8 +135,7 @@ def prepare_layout(cfg: EngineConfig) -> None:
         probe.unlink()
     except OSError as exc:
         raise EngineBootError(
-            f"logs dir {cfg.logs_dir} is not writable ({exc}). Fix the "
-            "permissions or pass a --data-dir this user owns."
+            f"logs dir {cfg.logs_dir} is not writable ({exc}). Fix the permissions or pass a --data-dir this user owns."
         ) from exc
 
 

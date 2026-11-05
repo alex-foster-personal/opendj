@@ -28,7 +28,7 @@ Path plausibility, measured not guessed
 The folder classes in :data:`CURATED_SEGMENTS` and :data:`STAGING_SEGMENTS` come
 from the actual candidate paths in ``link-repair-review.csv`` on this machine:
 'Manual Library', 'rekordbox' and the Music.app 'Media.localized' tree are the
-curated destinations; 'Convert temp', 'Convert temp 2 (BACKUP)', 'TODO',
+curated destinations; 'Convert temp', 'Convert temp 2 (BACKUP)', an inbox folder,
 '_merged-from-recovered-...', '... copy' and '... BACKUP ...' are working
 scratch. A file living in scratch is more likely a transient duplicate of the
 real thing, so it ranks below.

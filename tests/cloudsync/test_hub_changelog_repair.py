@@ -3,6 +3,7 @@
 [if] hub repair re-offers true stamps [then] spoke at max seq converges, [else stop].
 [if] spoke is newer than repaired hub row [then] LWW keeps spoke value, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -56,6 +57,7 @@ def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
     app.include_router(service.router, prefix="/api/v1")
     with TestClient(app) as http:
         yield _TestClientTransport(http)
+
 
 _T_HUB = "2026-08-05T20:12:14.347000+00:00"
 _T_SPOKE_OLD = "2024-04-17T21:53:19.274000+00:00"
@@ -202,9 +204,7 @@ def _expected_converged_domain() -> dict[str, Any]:
 
 
 def _sync_state(conn: sqlite3.Connection) -> tuple[int, int]:
-    row = conn.execute(
-        "SELECT last_push_seq, last_pull_seq FROM sync_state WHERE peer = 'hub'"
-    ).fetchone()
+    row = conn.execute("SELECT last_push_seq, last_pull_seq FROM sync_state WHERE peer = 'hub'").fetchone()
     assert row is not None
     return int(row[0]), int(row[1])
 
@@ -267,8 +267,7 @@ def test_hub_repair_lets_spoke_past_max_seq_converge(
     hub_conn = _open(hub_dir)
     try:
         rows = hub_conn.execute(
-            "SELECT seq, updated_at FROM hub_changelog "
-            "WHERE table_name = 'track_fields' ORDER BY seq"
+            "SELECT seq, updated_at FROM hub_changelog WHERE table_name = 'track_fields' ORDER BY seq"
         ).fetchall()
         assert len(rows) == 2
         assert rows[-1][0] > max_seq
@@ -315,12 +314,8 @@ def test_hub_repair_lets_spoke_past_max_seq_converge(
         spoke_before = _domain_rows(spoke_conn, _STABLE_ID)
         hub_before = _domain_rows(hub_conn, _STABLE_ID)
         spoke_sync_before = _sync_state(spoke_conn)
-        hub_changelog_before = hub_conn.execute(
-            f"SELECT COUNT(*) FROM {HUB_CHANGELOG_TABLE}"
-        ).fetchone()[0]
-        spoke_changelog_before = spoke_conn.execute(
-            f"SELECT COUNT(*) FROM {LOCAL_CHANGELOG_TABLE}"
-        ).fetchone()[0]
+        hub_changelog_before = hub_conn.execute(f"SELECT COUNT(*) FROM {HUB_CHANGELOG_TABLE}").fetchone()[0]
+        spoke_changelog_before = spoke_conn.execute(f"SELECT COUNT(*) FROM {LOCAL_CHANGELOG_TABLE}").fetchone()[0]
     finally:
         spoke_conn.close()
         hub_conn.close()
@@ -337,12 +332,8 @@ def test_hub_repair_lets_spoke_past_max_seq_converge(
     try:
         assert _domain_rows(spoke_conn, _STABLE_ID) == spoke_before == hub_before
         assert _sync_state(spoke_conn) == spoke_sync_before
-        hub_changelog_after = hub_conn.execute(
-            f"SELECT COUNT(*) FROM {HUB_CHANGELOG_TABLE}"
-        ).fetchone()[0]
-        spoke_changelog_after = spoke_conn.execute(
-            f"SELECT COUNT(*) FROM {LOCAL_CHANGELOG_TABLE}"
-        ).fetchone()[0]
+        hub_changelog_after = hub_conn.execute(f"SELECT COUNT(*) FROM {HUB_CHANGELOG_TABLE}").fetchone()[0]
+        spoke_changelog_after = spoke_conn.execute(f"SELECT COUNT(*) FROM {LOCAL_CHANGELOG_TABLE}").fetchone()[0]
     finally:
         spoke_conn.close()
         hub_conn.close()
@@ -384,8 +375,7 @@ def test_spoke_newer_than_repaired_hub_row_keeps_local_value(
         conn = _open(data_dir)
         try:
             row = conn.execute(
-                "SELECT value_json, updated_at FROM track_fields "
-                "WHERE stable_id = ? AND field_name = 'bpm'",
+                "SELECT value_json, updated_at FROM track_fields WHERE stable_id = ? AND field_name = 'bpm'",
                 (_STABLE_ID,),
             ).fetchone()
             assert row == ("140.0", _T_SPOKE_NEWER)
@@ -418,9 +408,7 @@ def test_hub_apply_logs_live_domain_stamp_not_epoch(tmp_path: Path) -> None:
             },
         )
         engine_apply.hub_apply(conn, [incoming])
-        logged = conn.execute(
-            "SELECT updated_at FROM hub_changelog WHERE table_name = 'track_fields'"
-        ).fetchone()
+        logged = conn.execute("SELECT updated_at FROM hub_changelog WHERE table_name = 'track_fields'").fetchone()
         assert logged is not None
         assert logged[0] == _T_SPOKE_OLD
         assert logged[0] != EPOCH

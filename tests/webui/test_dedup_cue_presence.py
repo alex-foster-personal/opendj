@@ -3,6 +3,7 @@
 - [if] two duplicate tracks are compared and one has cue points the other lacks [then] the comparison UI shows this before a merge decision is made, [else stop].
 - [if] a merge would discard the only copy with cue points [then] the user gets an explicit warning before confirming, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -161,8 +162,7 @@ def _insert_cue(
     conn = sqlite3.connect(str(master_path))
     try:
         conn.execute(
-            "INSERT INTO djmdCue (ID, ContentID, InMsec, OutMsec, Kind, rb_local_deleted) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO djmdCue (ID, ContentID, InMsec, OutMsec, Kind, rb_local_deleted) VALUES (?, ?, ?, ?, ?, ?)",
             (cue_id, content_id, in_msec, out_msec, kind, deleted),
         )
         conn.commit()
@@ -251,7 +251,8 @@ def app_client(seeded_backend: InMemoryBackend, cue_fixture: tuple[Path, Path]):
 
 @pytest.fixture
 def app_client_no_cue_db(
-    seeded_backend: InMemoryBackend, dedup_db: Path,
+    seeded_backend: InMemoryBackend,
+    dedup_db: Path,
 ) -> Iterator:
     from fastapi.testclient import TestClient
 
@@ -298,7 +299,8 @@ def test_clusters_show_asymmetric_cue_presence(app_client, dedup_db: Path) -> No
 
 
 def test_memory_loop_counts_as_loop_not_hot_cue(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     master_path = tmp_path / "master.plain.db"
     _make_master_plain_db(master_path)
@@ -321,7 +323,8 @@ def test_memory_loop_counts_as_loop_not_hot_cue(
 
 
 def test_hot_cue_loop_counts_in_both_hot_and_loop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     master_path = tmp_path / "master.plain.db"
     _make_master_plain_db(master_path)
@@ -381,7 +384,8 @@ def test_deleted_cue_excluded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_missing_dbs_return_empty_fields_not_500(
-    app_client_no_cue_db, monkeypatch: pytest.MonkeyPatch,
+    app_client_no_cue_db,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     missing = Path("/nonexistent/state.db")
     monkeypatch.setattr(rb_config, "STATE_DB", missing)
@@ -397,7 +401,10 @@ def test_missing_dbs_return_empty_fields_not_500(
 
 
 def test_beatgrid_from_analysis_data_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dedup_db: Path, seeded_backend: InMemoryBackend,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dedup_db: Path,
+    seeded_backend: InMemoryBackend,
 ) -> None:
     from fastapi.testclient import TestClient
 
@@ -439,7 +446,10 @@ def test_beatgrid_from_analysis_data_path(
 
 
 def test_beatgrid_from_analysis_canonical_lane(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dedup_db: Path, seeded_backend: InMemoryBackend,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dedup_db: Path,
+    seeded_backend: InMemoryBackend,
 ) -> None:
     from fastapi.testclient import TestClient
 
@@ -471,7 +481,8 @@ def test_beatgrid_from_analysis_canonical_lane(
 
 
 def test_apply_still_rewrites_playlists_only(
-    cue_fixture: tuple[Path, Path], dedup_db: Path,
+    cue_fixture: tuple[Path, Path],
+    dedup_db: Path,
 ) -> None:
     from fastapi.testclient import TestClient
 

@@ -70,11 +70,7 @@ def test_model_round_trips_and_suggests_the_same_way():
     m2 = GenreModel.from_json(m.to_json())
     probe = {k: vec[k] for k in ("g0-0", "g2-3")}
     s1, s2 = suggest(m, probe), suggest(m2, probe)
-    assert (
-        {k: v.genre for k, v in s1.items()}
-        == {k: v.genre for k, v in s2.items()}
-        == {"g0-0": "a", "g2-3": "c"}
-    )
+    assert {k: v.genre for k, v in s1.items()} == {k: v.genre for k, v in s2.items()} == {"g0-0": "a", "g2-3": "c"}
     assert s1["g0-0"].top[0][0] == "a" and len(s1["g0-0"].top) == 3
     assert 0.0 < s1["g0-0"].confidence <= 1.0
 

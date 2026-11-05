@@ -9,7 +9,7 @@
 // [if] the manifest cannot be read [then] StemTags shows "-" and the title
 //   names the bundle as invalid with the reason
 // [if] the manifest is there but every stem file is gone from disk [then]
-//   StemTags currently still reads as ready with 0B (BUG, see below)
+//   StemTags shows "-" and the title names the bundle invalid with the missing files
 // [if] the deck track has no stems anywhere [then] the deck says NO STEMS and
 //   the hover title says none on this machine and none in the cloud
 // [if] stems are switched off, or no track is loaded [then] the deck does NOT
@@ -140,16 +140,14 @@ describe('StemTags (browser Stems column)', () => {
 		assert.equal(out.title, 'stem bundle invalid: unknown');
 	});
 
-	test('bundle recorded but every stem file missing on disk: current rendering', () => {
+	test('bundle recorded but every stem file missing on disk: a dash, and the title names it invalid', () => {
 		const out = stemTags(SUMMARIES.all_files_missing);
-		// BUG #6247: the column renders a "ready" row (no dash, no word for
-		// missing files) for a bundle whose files are all gone; the only hint
-		// is 0B and unlit tags. Asserting current behavior, per #6241.
-		assert.equal(out.empty, false);
-		assert.deepEqual(out.onTags, []);
-		assert.equal(out.text, 'VID ht 0B');
-		assert.equal(out.title, 'htdemucs ·  · total 0B · V=0B (), I=0B (), D=0B ()');
-		assert.doesNotMatch(out.title, /missing|invalid|no local/);
+		assert.equal(out.empty, true);
+		assert.equal(out.text, '-');
+		assert.equal(
+			out.title,
+			'stem bundle invalid: every stem file listed in manifest.json is missing: bass.flac, drums.flac, other.flac, vocals.flac'
+		);
 	});
 
 	test('one stem file missing on disk: that tag stays unlit, the others light', () => {
@@ -287,7 +285,10 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		);
 		assert.equal(out.label, 'FETCHING STEMS 2/5');
 		assert.equal(out.labelBusy, true);
-		assert.match(out.labelTitle, /^Fetching this track's stems from the cloud: 2 of 5 files, 12\.3 MB so far\./);
+		assert.match(
+			out.labelTitle,
+			/^Fetching this track's stems from the cloud: 2 of 5 files, 12\.3 MB so far\./
+		);
 	});
 
 	test('stem load running (fetch, progress not reported yet): FETCHING STEMS, no count', () => {
@@ -296,14 +297,21 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		);
 		assert.equal(out.label, 'FETCHING STEMS');
 		assert.equal(out.labelBusy, true);
-		assert.match(out.labelTitle, /^Fetching this track's stems from the cloud\. The deck already plays/);
+		assert.match(
+			out.labelTitle,
+			/^Fetching this track's stems from the cloud\. The deck already plays/
+		);
 	});
 
 	test('stem load running (local read, decode, switch): each phase has its own label', () => {
 		const phases = [
 			['downloading', 'LOADING STEMS', /^Reading the stem files from this machine\./],
 			['decoding', 'DECODING STEMS', /^Decoding the stem audio\./],
-			['switching', 'SWITCHING TO STEMS', /^The stems are decoded and are taking over the playing deck/]
+			[
+				'switching',
+				'SWITCHING TO STEMS',
+				/^The stems are decoded and are taking over the playing deck/
+			]
 		];
 		for (const [phase, label, tip] of phases) {
 			const out = deckStemRow(mod.loadingStemDeckState({ phase, progress: null, reason: null }));

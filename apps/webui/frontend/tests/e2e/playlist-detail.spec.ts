@@ -16,7 +16,9 @@ import { expect, test } from '@playwright/test';
 
 const NOT_COMPUTED_MESSAGE = 'Rekordbox/djay sync diff not computed for this playlist.';
 
-test('playlist detail: populated and empty playlists render the honest diff state', async ({ page }) => {
+test('playlist detail: populated and empty playlists render the honest diff state', async ({
+	page
+}) => {
 	for (const playlist of [
 		{ id: 'e2e-fixture-populated', name: 'E2E Fixture Set' },
 		{ id: 'e2e-fixture-empty', name: 'E2E Empty Set' }

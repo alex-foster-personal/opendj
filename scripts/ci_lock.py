@@ -7,7 +7,7 @@ Sep 2026. When PyPI was slow to answer the shared agentbox IP, those requests
 timed out and turned trunk red (issue #4252). A pylock.toml names each wheel by
 URL and hash, so `uv pip sync` from it never reads an index page, and a warm
 cache makes zero requests. `uv pip sync` is exact by definition: it removes any
-package the lock does not name. ADR: docs/decisions/ADR-NEW-ci-venvs-sync-from-pylock.md.
+package the lock does not name. ADR: (private path).
 
 Usage:
     python -m scripts.ci_lock compile [--upgrade]   # regenerate every lock (network)
@@ -199,9 +199,7 @@ def lock_problems(lock: Lock, root: Path = REPO_ROOT) -> list[str]:
         for name in sorted(source_only - SOURCE_BUILDS)
     )
     for line in requirement_lines(source):
-        problems.extend(
-            f"{lock.output}: {p}" for p in _requirement_problems(_parse(line), packages)
-        )
+        problems.extend(f"{lock.output}: {p}" for p in _requirement_problems(_parse(line), packages))
     return problems
 
 
@@ -226,15 +224,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
     compile_parser = sub.add_parser("compile", help="regenerate every CI lock (network)")
-    compile_parser.add_argument(
-        "--upgrade", action="store_true", help="re-pin everything to latest"
-    )
-    check_parser = sub.add_parser(
-        "check", help="verify every CI lock matches its source (no network)"
-    )
-    check_parser.add_argument(
-        "--repo-root", type=Path, default=REPO_ROOT, help="tree to check (default: this repo)"
-    )
+    compile_parser.add_argument("--upgrade", action="store_true", help="re-pin everything to latest")
+    check_parser = sub.add_parser("check", help="verify every CI lock matches its source (no network)")
+    check_parser.add_argument("--repo-root", type=Path, default=REPO_ROOT, help="tree to check (default: this repo)")
     args = parser.parse_args(argv)
 
     if args.command == "compile":

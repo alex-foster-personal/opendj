@@ -16,6 +16,7 @@ visible once per state rather than once per tick.
 The logger name stays ``apps.sync_hub.engine`` because
 ``tests/cloudsync/test_hub_sync_round3.py`` asserts on it.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -33,9 +34,7 @@ log = logging.getLogger("apps.sync_hub.engine")
 
 EXAMPLES_PER_GROUP: int = 3
 
-_active_pass: ContextVar[QuarantinePass | None] = ContextVar(
-    "quarantine_pass", default=None
-)
+_active_pass: ContextVar[QuarantinePass | None] = ContextVar("quarantine_pass", default=None)
 
 #: ``scope -> {(table, group): membership fingerprint}`` as last reported at
 #: ERROR by this process. Each pass REPLACES its scope's entry, so a group

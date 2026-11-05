@@ -17,9 +17,7 @@ def _finding(*, fingerprint: str = "deck-1-silent", host: str = "agentbox-01") -
             sha=SHA,
             surface="area:performance-screen",
             host=host,
-            repro=findings.Reproduction(
-                act_sequence=("load deck 1", "press play"), trace_session="trace-847"
-            ),
+            repro=findings.Reproduction(act_sequence=("load deck 1", "press play"), trace_session="trace-847"),
             evidence=findings.Evidence(trace_url="https://trace.example/847", screenshot=None),
             honest_coverage="Chromium production build on agentbox.",
         )
@@ -96,12 +94,8 @@ def test_unavailable_findings_do_not_file_bug_issues() -> None:
             sha=SHA,
             surface="area:performance-screen",
             host="bifrost2",
-            repro=findings.Reproduction(
-                act_sequence=("open app",), trace_session="trace-unavailable"
-            ),
-            evidence=findings.Evidence(
-                trace_url="https://trace.example/unavailable", screenshot=None
-            ),
+            repro=findings.Reproduction(act_sequence=("open app",), trace_session="trace-unavailable"),
+            evidence=findings.Evidence(trace_url="https://trace.example/unavailable", screenshot=None),
             honest_coverage="No output devices were exposed.",
         )
     )
@@ -145,8 +139,6 @@ def test_open_bug_dedupe_does_not_depend_on_eventual_search_index() -> None:
     """If an issue was just filed then a later run lists its open body directly, or broken."""
     source = Path(mod.__file__).read_text(encoding="utf-8")
 
-    assert (
-        "repos/{self._repository}/issues?state=open&labels=bug&per_page=100&page={page}" in source
-    )
+    assert "repos/{self._repository}/issues?state=open&labels=bug&per_page=100&page={page}" in source
     assert '"--limit", "1000"' not in source
     assert '"--search", footer' not in source

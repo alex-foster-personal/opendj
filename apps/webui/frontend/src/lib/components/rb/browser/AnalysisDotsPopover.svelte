@@ -94,6 +94,7 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import type { GridFlag } from '$lib/rb/analysis-issues';
+	import type { SourceFlag } from '$lib/rb/library-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import AnalysisDots from './AnalysisDots.svelte';
 
@@ -104,7 +105,8 @@
 		title,
 		stableId = null,
 		gridFlag = null,
-		ongridflagdismiss
+		ongridflagdismiss,
+		sourceFlags = []
 	}: {
 		badge?: AnalysisBadge;
 		issues?: AnalysisIssues;
@@ -116,7 +118,13 @@
 		gridFlag?: GridFlag | null;
 		/** Persist the dismissal. Absent = the control renders inert. */
 		ongridflagdismiss?: (dismissed: boolean) => Promise<void>;
+		/** SRCFLAG-01/03: findings about the source file (flag-only). */
+		sourceFlags?: SourceFlag[];
 	} = $props();
+
+	const sourceSeverity = $derived<'warning' | 'info' | null>(
+		sourceFlags.length === 0 ? null : sourceFlags.some((f) => f.severity === 'warning') ? 'warning' : 'info'
+	);
 
 	/** Small debounce so a fast pointer skim across a virtualized column of
 	 * rows does not flash a popover per row - same band as SuggestNextStrip's
@@ -380,7 +388,14 @@
 	onfocusout={onFocusOut}
 	onkeydown={onKeydown}
 >
-	<AnalysisDots {badge} {issues} {mode} {...(title !== undefined ? { title } : {})} suppressDotTitles={true} />
+	<AnalysisDots
+		{badge}
+		{issues}
+		{mode}
+		{...(title !== undefined ? { title } : {})}
+		suppressDotTitles={true}
+		sourceFlagged={mode === 'issues' ? sourceSeverity : null}
+	/>
 
 	{#if hovered}
 		<div
@@ -413,6 +428,13 @@
 					</li>
 				{/each}
 			</ul>
+			{#if mode === 'issues' && sourceFlags.length > 0}
+				<div class="pop-flag" data-testid="source-flags">
+					{#each sourceFlags as flag (flag.code)}
+						<div class="pop-flag-text" data-code={flag.code} title={flag.message}>{flag.message}</div>
+					{/each}
+				</div>
+			{/if}
 			{#if mode === 'issues' && gridFlag !== null}
 				<div class="pop-flag">
 					<div class="pop-flag-text" title={gridFlag.message}>{gridFlag.message}</div>

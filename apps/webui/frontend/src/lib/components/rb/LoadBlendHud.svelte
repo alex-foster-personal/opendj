@@ -1,10 +1,6 @@
 <script lang="ts">
 	/** Tiny readout for the Load-to-CH click-drag intro blend. No engine writes. */
-	let {
-		t,
-		fader,
-		scrubDeltaMs
-	}: { t: number; fader: number; scrubDeltaMs: number } = $props();
+	let { t, fader, scrubDeltaMs }: { t: number; fader: number; scrubDeltaMs: number } = $props();
 
 	const scrubSign = $derived(scrubDeltaMs >= 0 ? '+' : '');
 </script>

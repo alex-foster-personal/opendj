@@ -120,9 +120,7 @@ def _corrupt_smartlists_index(db: Path) -> None:
     try:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         page_size = conn.execute("PRAGMA page_size").fetchone()[0]
-        (root,) = conn.execute(
-            "SELECT rootpage FROM sqlite_master WHERE name = 'idx_smartlists_name'"
-        ).fetchone()
+        (root,) = conn.execute("SELECT rootpage FROM sqlite_master WHERE name = 'idx_smartlists_name'").fetchone()
     finally:
         conn.close()
     raw = bytearray(db.read_bytes())
@@ -143,9 +141,7 @@ def machine_data_dir(tmp_path: Path) -> Path:
 
 
 @pytest.mark.requirement("LIBM-112")
-def test_backup_creates_verified_dated_copy_without_cloudsync(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_backup_creates_verified_dated_copy_without_cloudsync(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] an unenrolled machine has authoritative rows [then] backup creates a verified dated copy, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     assert backup.path.name.startswith("state-authoritative-")
@@ -155,9 +151,7 @@ def test_backup_creates_verified_dated_copy_without_cloudsync(
 
 
 @pytest.mark.requirement("LIBM-113")
-def test_selective_restore_smartlists_leaves_tracks_untouched(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_selective_restore_smartlists_leaves_tracks_untouched(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] only smartlists are restored from backup [then] tracks remain unchanged, [else stop]."""
     dest = tmp_path / "backups"
     backup = backup_state_db(machine_data_dir, dest, keep=3)
@@ -191,9 +185,7 @@ def test_selective_restore_smartlists_leaves_tracks_untouched(
 
 
 @pytest.mark.requirement("LIBM-112")
-def test_corrupted_source_is_refused_and_leaves_no_backup(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_corrupted_source_is_refused_and_leaves_no_backup(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] the live state.db fails integrity check [then] backup refuses and writes no file, [else stop]."""
     dest = tmp_path / "backups"
     live = sab.state_db_path(machine_data_dir)
@@ -235,9 +227,7 @@ def test_backup_row_count_mismatch_deletes_partial(
     assert list(dest.iterdir()) == []
 
 
-def test_restore_refuses_while_engine_lock_held(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_refuses_while_engine_lock_held(machine_data_dir: Path, tmp_path: Path) -> None:
     """Safety: no writes under live engine lock."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     live = sab.state_db_path(machine_data_dir)
@@ -251,9 +241,7 @@ def test_restore_refuses_while_engine_lock_held(
 
 
 @pytest.mark.requirement("LIBM-113")
-def test_restore_play_orders_includes_entries(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_play_orders_includes_entries(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] play_orders is restored from backup [then] entries are restored together, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     live = sab.state_db_path(machine_data_dir)
@@ -277,9 +265,7 @@ def test_restore_play_orders_includes_entries(
 
 
 @pytest.mark.requirement("PAIR-04")
-def test_restore_pairings_from_backup_taken_before_snapshot_json(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_pairings_from_backup_taken_before_snapshot_json(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] a backup's pairings table predates snapshot_json [then] it still restores, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     old = sqlite3.connect(backup.path)
@@ -302,27 +288,21 @@ def test_restore_pairings_from_backup_taken_before_snapshot_json(
 
     conn = sqlite3.connect(live)
     try:
-        rows = conn.execute(
-            "SELECT from_stable_id, to_stable_id, direction, snapshot_json FROM pairings"
-        ).fetchall()
+        rows = conn.execute("SELECT from_stable_id, to_stable_id, direction, snapshot_json FROM pairings").fetchall()
     finally:
         conn.close()
     assert rows == [("track-a", "track-b", "into", None)]
 
 
 @pytest.mark.requirement("LIBM-113")
-def test_restore_track_fields_notes_tags_only(
-    machine_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_track_fields_notes_tags_only(machine_data_dir: Path, tmp_path: Path) -> None:
     """[if] track_fields notes and tags are restored [then] rating rows remain untouched, [else stop]."""
     backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
     live = sab.state_db_path(machine_data_dir)
     conn = sqlite3.connect(live)
     try:
         conn.execute("DELETE FROM track_fields WHERE field_name IN ('notes', 'tags')")
-        conn.execute(
-            "UPDATE track_fields SET value_json = '\"1\"' WHERE field_name = 'rating'"
-        )
+        conn.execute("UPDATE track_fields SET value_json = '\"1\"' WHERE field_name = 'rating'")
         conn.commit()
     finally:
         conn.close()
@@ -331,12 +311,8 @@ def test_restore_track_fields_notes_tags_only(
 
     conn = sqlite3.connect(live)
     try:
-        notes = conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name = 'notes'"
-        ).fetchone()[0]
-        rating = conn.execute(
-            "SELECT value_json FROM track_fields WHERE field_name = 'rating'"
-        ).fetchone()[0]
+        notes = conn.execute("SELECT value_json FROM track_fields WHERE field_name = 'notes'").fetchone()[0]
+        rating = conn.execute("SELECT value_json FROM track_fields WHERE field_name = 'rating'").fetchone()[0]
         assert notes == '"note text"'
         assert rating == '"1"'
     finally:
@@ -348,12 +324,7 @@ def test_cli_backup_and_selective_restore_exit_codes(
 ) -> None:
     """CLI exits 0 on success and 1 on refused restore."""
     dest = tmp_path / "backups"
-    assert (
-        sab.main(
-            ["backup", "--data-dir", str(machine_data_dir), "--dest", str(dest), "--keep", "2"]
-        )
-        == 0
-    )
+    assert sab.main(["backup", "--data-dir", str(machine_data_dir), "--dest", str(dest), "--keep", "2"]) == 0
     assert "[OK] backup" in capsys.readouterr().out
     (newest,) = list_backups(dest)
     live = sab.state_db_path(machine_data_dir)

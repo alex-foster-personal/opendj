@@ -6,7 +6,7 @@
 # needs no sudo, and attaches to the packaged (hardened-runtime) app. It is the
 # ONLY native CPU profiler available on this machine -- xctrace needs a full
 # Xcode that is not installed, dtrace is SIP-blocked, and `perf` does not exist
-# on macOS. See docs/perf/profiling-harness.md.
+# on macOS. See (private path).
 #
 # FILE REQUIREMENTS (mini-PRD)
 #
@@ -52,7 +52,10 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
-        *) POSITIONAL+=("$1"); shift ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
     esac
 done
 
@@ -111,7 +114,7 @@ sample_one() {
     # Prove the PRESENCE of a real measurement before reporting anything from
     # it. An absent call graph means the sample failed, and an empty symbol
     # list from a failed sample is indistinguishable from a genuinely idle
-    # process (.claude/rules/verification.md).
+    # process ((private path)).
     if ! grep -q '^Call graph:' "$out"; then
         echo "[ERROR] UNKNOWN: ${out} has no 'Call graph:' section, so nothing was measured." >&2
         exit 4

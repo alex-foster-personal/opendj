@@ -108,9 +108,7 @@ def test_apply_moves_only_the_allowlist_and_writes_a_recovery_manifest(
     assert len(sessions) == 1
     manifest = json.loads((sessions[0] / "cleanup-manifest.json").read_text())
     assert manifest["state"] == "complete"
-    assert {move["relative_path"] for move in manifest["moves"]} == {
-        target.relative_path for target in CLEANUP_TARGETS
-    }
+    assert {move["relative_path"] for move in manifest["moves"]} == {target.relative_path for target in CLEANUP_TARGETS}
     assert all(move["status"] == "moved" for move in manifest["moves"])
     for target in CLEANUP_TARGETS:
         assert (sessions[0] / target.relative_path / "artifact.bin").is_file()
@@ -255,6 +253,4 @@ def test_apply_allows_a_clean_standalone_downloaded_clone(tmp_path: Path) -> Non
     assert not nested.exists()
     sessions = [path for path in trash.iterdir() if path.is_dir()]
     assert len(sessions) == 1
-    assert (
-        sessions[0] / "spikes/carabiner-link/upstream/downloaded.txt"
-    ).read_text() == "regenerable\n"
+    assert (sessions[0] / "spikes/carabiner-link/upstream/downloaded.txt").read_text() == "regenerable\n"

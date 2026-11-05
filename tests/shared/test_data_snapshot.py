@@ -3,6 +3,7 @@
 Does not use the ``requires_darwin`` / ``requires_audio_stack`` custom
 markers (W4 owns registering those); this module runs on every platform.
 """
+
 from __future__ import annotations
 
 import io
@@ -64,9 +65,7 @@ def test_pack_raises_when_master_plain_db_missing(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("member", ["state/state.db", "master.plain.db"])
-def test_pack_rejects_symlinked_required_members_before_creating_tar(
-    tmp_path: Path, member: str
-) -> None:
+def test_pack_rejects_symlinked_required_members_before_creating_tar(tmp_path: Path, member: str) -> None:
     data_dir = _make_data_dir(tmp_path, with_vocal_cache=False)
     required_path = data_dir / member
     target = tmp_path / f"real-{required_path.name}"
@@ -83,9 +82,7 @@ def test_pack_rejects_symlinked_required_members_before_creating_tar(
     assert not out.exists()
 
 
-def test_pack_checks_cache_size_before_reading_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pack_checks_cache_size_before_reading_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir = _make_data_dir(tmp_path, with_vocal_cache=False)
     cache_dir = data_dir / "state" / "vocal-cache"
     cache_dir.mkdir()
@@ -244,9 +241,7 @@ def _write_required_snapshot(
         r"state/vocal-cache\entry.json",
     ],
 )
-def test_unpack_rejects_windows_backslash_member_aliases(
-    tmp_path: Path, alias: str
-) -> None:
+def test_unpack_rejects_windows_backslash_member_aliases(tmp_path: Path, alias: str) -> None:
     snapshot = tmp_path / "backslash-alias.tar"
     _write_required_snapshot(snapshot, extra_members=[(alias, b"{}")])
     dest = tmp_path / "dest"
@@ -268,9 +263,7 @@ def test_unpack_rejects_archive_over_byte_cap_before_opening_tar(
         data_snapshot.unpack(snapshot, tmp_path / "dest")
 
 
-def test_unpack_rejects_member_count_cap_before_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unpack_rejects_member_count_cap_before_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = tmp_path / "too-many.tar"
     _write_required_snapshot(snapshot)
     monkeypatch.setattr(data_snapshot, "MAX_MEMBER_COUNT", 1)
@@ -282,9 +275,7 @@ def test_unpack_rejects_member_count_cap_before_writing(
     assert not dest.exists()
 
 
-def test_unpack_rejects_member_byte_cap_before_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unpack_rejects_member_byte_cap_before_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = tmp_path / "member-too-large.tar"
     _write_required_snapshot(snapshot)
     monkeypatch.setattr(data_snapshot, "MAX_MEMBER_BYTES", 1)
@@ -296,9 +287,7 @@ def test_unpack_rejects_member_byte_cap_before_writing(
     assert not dest.exists()
 
 
-def test_unpack_rejects_total_member_byte_cap_before_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unpack_rejects_total_member_byte_cap_before_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = tmp_path / "total-too-large.tar"
     _write_required_snapshot(snapshot)
     monkeypatch.setattr(data_snapshot, "MAX_TOTAL_MEMBER_BYTES", 3)
@@ -310,9 +299,7 @@ def test_unpack_rejects_total_member_byte_cap_before_writing(
     assert not dest.exists()
 
 
-def test_unpack_rejects_malformed_vocal_cache_json_before_writing(
-    tmp_path: Path
-) -> None:
+def test_unpack_rejects_malformed_vocal_cache_json_before_writing(tmp_path: Path) -> None:
     snapshot = tmp_path / "bad-cache-json.tar"
     _write_required_snapshot(
         snapshot,
@@ -330,18 +317,14 @@ def test_cli_pack_and_unpack_json_round_trip(tmp_path: Path, capsys: pytest.Capt
     data_dir = _make_data_dir(tmp_path)
     out = tmp_path / "snapshot.tar"
 
-    exit_code = data_snapshot.main(
-        ["pack", "--data-dir", str(data_dir), "--out", str(out), "--json"]
-    )
+    exit_code = data_snapshot.main(["pack", "--data-dir", str(data_dir), "--out", str(out), "--json"])
     assert exit_code == 0
     pack_output = json.loads(capsys.readouterr().out)
     assert pack_output["out"] == str(out)
     assert pack_output["path_map_roots"]
 
     dest = tmp_path / "unpacked-cli"
-    exit_code = data_snapshot.main(
-        ["unpack", "--snapshot", str(out), "--dest", str(dest), "--json"]
-    )
+    exit_code = data_snapshot.main(["unpack", "--snapshot", str(out), "--dest", str(dest), "--json"])
     assert exit_code == 0
     unpack_output = json.loads(capsys.readouterr().out)
     assert unpack_output["dest"] == str(dest)

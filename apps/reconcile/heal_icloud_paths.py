@@ -11,7 +11,7 @@ Entry points::
 Ambiguous / fuzzy-only rows stay ``needs_confirm`` for relocate / apply --tracks.
 Never mechanical Documents->Music prefix rewrite. Never brctl download.
 
-TODO(machine-paths): MUSIC_ROOTS and iCloud-zone roots are host-local. Other
+NOTE(machine-paths): MUSIC_ROOTS and iCloud-zone roots are host-local. Other
 machines must set MDT_MUSIC_ROOTS / path-map; do not assume this laptop's
 /Users/<name>/Music layout. See apps.shared.icloud_zone module docstring.
 """
@@ -41,8 +41,8 @@ Status = Literal["ready_unique", "needs_confirm", "no_twin", "already_music"]
 _IDENTITY_SIGNALS = frozenset({"size_match", "id3_match", "duration_match"})
 
 MACHINE_PATHS_WARNING = (
-    "TODO(machine-paths): MUSIC_ROOTS and iCloud-zone roots are host-local. "
-    "Other hosts must set MDT_MUSIC_ROOTS and MDT_PATH_MAP / data/path-map.json. "
+    "NOTE(machine-paths): MUSIC_ROOTS and iCloud-zone roots are host-local. "
+    "Other hosts must set MDT_MUSIC_ROOTS and MDT_PATH_MAP / (private path). "
     "heal-to-Music is not a cross-machine path-map substitute. Apply RB rewrites "
     "only on the host that owns that Rekordbox library."
 )

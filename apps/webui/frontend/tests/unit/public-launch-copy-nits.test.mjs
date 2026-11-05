@@ -48,9 +48,10 @@ test('control: the requirement-id pattern catches the original eyebrow and spare
 	assert.ok(!REQ_ID.test('SESSION HISTORY'));
 });
 
-test('the deck header title and artist carry a hover title, so an ellipsized name can be read', () => {
+test('the deck header title and artist carry a hover tip, so an ellipsized name can be read', () => {
 	const header = source('lib/components/rb/deck/DeckHeader.svelte');
-	assert.match(header, /<span class="title" title=\{deck\.title \?\? undefined\}>/);
+	// LIBUX-57: the title's tip shows only when it is cut off (truncation-tip.ts).
+	assert.match(header, /<span class="title" data-custom-tip="" use:truncationTip>/);
 	assert.match(header, /<span class="artist" title=\{deck\.artist \|\| undefined\}>/);
 });
 

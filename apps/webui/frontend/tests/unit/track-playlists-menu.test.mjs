@@ -12,9 +12,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const FRONTEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('showInPlaylistsMenuItem uses the exact Show in playlists label', async () => {
-	const menu = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/track-playlists-menu.ts'
-	);
+	const menu = await loadTypeScriptModule('src/lib/components/rb/browser/track-playlists-menu.ts');
 	assert.equal(menu.SHOW_IN_PLAYLISTS_LABEL, 'Show in playlists');
 	assert.equal(menu.showInPlaylistsMenuItem(() => {}).label, 'Show in playlists');
 	assert.equal(menu.showInPlaylistsMenuItem(() => {}).id, 'show-in-playlists');
@@ -40,7 +38,10 @@ test('TrackContextMenu wires the popover and menu helper without BrowserPanel ed
 		'utf8'
 	);
 
-	assert.match(trackContextMenu, /'show-in-playlists': \(\) => onshowinplaylists\(row, menuX, menuY\)/);
+	assert.match(
+		trackContextMenu,
+		/'show-in-playlists': \(\) => onshowinplaylists\(row, menuX, menuY\)/
+	);
 	assert.match(trackTable, /<TrackRowPopovers bind:playlistsMenu/);
 	assert.match(trackRowPopovers, /import\('\.\/TrackPlaylistsPopover\.svelte'\)/);
 	assert.match(trackRowPopovers, /<PlaylistsPopover/);

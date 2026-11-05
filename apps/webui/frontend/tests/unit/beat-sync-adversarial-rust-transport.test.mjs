@@ -176,7 +176,10 @@ test('2. after the master is paused, the remaining synced follower stays phase-l
 
 	await m.executeInRustEngine({ type: 'play', deck: 1, playing: false });
 	const newMaster = m.rustMaster.deck;
-	assert.ok(newMaster === 2 || newMaster === 3, `precondition: a follower was elected (${newMaster})`);
+	assert.ok(
+		newMaster === 2 || newMaster === 3,
+		`precondition: a follower was elected (${newMaster})`
+	);
 	const other = newMaster === 2 ? 3 : 2;
 	positions[newMaster] = 31_000;
 	positions[other] = 41_000;
@@ -227,7 +230,7 @@ test('3. a lock dropped mid-trim sends the base back (no permanent 0.3% offset)'
 	assert.ok(
 		Math.abs(lastTempo - join.tempo) < 1e-12,
 		`deck 2 left at ${lastTempo} vs sync base ${join.tempo} ` +
-			`(${(((lastTempo / join.tempo) - 1) * 100).toFixed(3)}%)`
+			`(${((lastTempo / join.tempo - 1) * 100).toFixed(3)}%)`
 	);
 });
 
@@ -253,7 +256,10 @@ test('3b. control (#1134): a trimming follower PROMOTED to master keeps its temp
 	await settle();
 	// Its tempo is now the master's: sending the old base would move the clock
 	// every other deck locks to.
-	assert.deepEqual(sent.filter((c) => c.type === 'tempo' && c.deck === 2), []);
+	assert.deepEqual(
+		sent.filter((c) => c.type === 'tempo' && c.deck === 2),
+		[]
+	);
 	assert.equal(m.deckStates[2].pitch, trim.ratio);
 });
 
@@ -264,7 +270,10 @@ test('3c. control: a tempo the DJ set after Beat Sync went off is left alone', a
 	sent = [];
 	m.phaseLockTick();
 	await settle();
-	assert.deepEqual(sent.filter((c) => c.type === 'tempo' && c.deck === 2), []);
+	assert.deepEqual(
+		sent.filter((c) => c.type === 'tempo' && c.deck === 2),
+		[]
+	);
 	assert.equal(m.deckStates[2].pitch, 1.02);
 	assert.equal(m.phaseLocksForTest()[2], undefined, 'the lock is still dropped');
 });
@@ -279,12 +288,18 @@ test('3d. control: a lock dropped by a track change sends nothing to the new tra
 	positions[2] = join.seekMs - 10;
 	m.phaseLockTick();
 	await settle();
-	assert.ok(sent.some((c) => c.type === 'tempo' && c.deck === 2 && c.ratio > 1), 'precondition: trimming');
+	assert.ok(
+		sent.some((c) => c.type === 'tempo' && c.deck === 2 && c.ratio > 1),
+		'precondition: trimming'
+	);
 	sent = [];
 	loadDeck(2, grid(122, 0.2, 1200), { stable_id: 'another-track', pitch: 1 });
 	m.phaseLockTick();
 	await settle();
-	assert.deepEqual(sent.filter((c) => c.deck === 2), []);
+	assert.deepEqual(
+		sent.filter((c) => c.deck === 2),
+		[]
+	);
 });
 
 test('5. feed-forward: a tempo change inside the follower grid moves the lock base and sends it', async () => {
@@ -301,11 +316,18 @@ test('5. feed-forward: a tempo change inside the follower grid moves the lock ba
 	positions[2] = (region[0].t + mi * (region[1].t - region[0].t)) * 1000;
 	m.phaseLockTick();
 	await settle();
-	assert.ok(Math.abs(m.phaseLocksForTest()[2].base - 128 / 130) < 1e-9, `base ${m.phaseLocksForTest()[2].base}`);
+	assert.ok(
+		Math.abs(m.phaseLocksForTest()[2].base - 128 / 130) < 1e-9,
+		`base ${m.phaseLocksForTest()[2].base}`
+	);
 	const tempo = sent.filter((c) => c.type === 'tempo' && c.deck === 2);
 	assert.equal(tempo.length, 1);
 	assert.ok(Math.abs(tempo[0].ratio - 128 / 130) < 1e-9);
-	assert.deepEqual(sent.filter((c) => c.type === 'seek'), [], 'followed, not re-seeked');
+	assert.deepEqual(
+		sent.filter((c) => c.type === 'seek'),
+		[],
+		'followed, not re-seeked'
+	);
 });
 
 test('control: a manual master switch re-joins the followers to the new master', async () => {

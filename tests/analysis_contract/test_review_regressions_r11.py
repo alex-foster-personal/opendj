@@ -32,6 +32,7 @@ system-wide, not just at the two reported sites:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -49,10 +50,11 @@ from apps.analysis.lanes import (
 from apps.analysis.record import RecordContractError, validate_record_contract
 from tests.analysis_contract.conftest import key_payload, own_record
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 11, thread 1: adjacent key segments must MEET in time, not merely
 # avoid overlapping (apps/analysis/lane_payloads.py:316)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_a_gap_between_key_segments_in_time_is_refused() -> None:
     """A same-bar-boundary gap in seconds belongs to no segment.
@@ -117,10 +119,11 @@ def test_a_gap_between_key_segments_never_reaches_the_store(db) -> None:
     assert count == 0, "the invalid segments block must never reach the store"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 11, thread 2: a boolean duration_s must be refused explicitly
 # (apps/analysis/lanes.py:156)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_a_true_duration_s_is_refused() -> None:
     """`bool` is an `int` subclass: `math.isfinite(True)` is `True` and
@@ -170,10 +173,11 @@ def test_a_record_with_a_boolean_duration_s_never_reaches_the_store(db) -> None:
     assert count == 0, "a record with a boolean duration_s must never reach the store"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 12, thread 1: a non-numeric duration_s must raise the contract
 # error, not a raw TypeError from math.isfinite (apps/analysis/lanes.py:159)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("duration_s", ["300", b"300", [300], {"s": 300}])
 def test_a_non_numeric_duration_s_raises_the_contract_error(duration_s: object) -> None:
@@ -194,11 +198,12 @@ def test_a_record_with_a_string_duration_s_is_refused_by_the_record_contract() -
         validate_record_contract(record)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 12, thread 2: a record with `duration_s: null` must be refused by
 # the record contract, since `None` is also the lane gate's "no duration
 # supplied" sentinel (apps/analysis/record.py:235)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_a_record_with_a_null_duration_s_is_refused_by_the_record_contract() -> None:
     """`AnalysisRecord.from_json` accepts `duration_s: null`, and the lane gate
@@ -217,11 +222,11 @@ def test_a_record_with_a_numeric_duration_s_still_validates() -> None:
     validate_record_contract(own_record(lane="key"))
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 12, thread 3: an integer too large for a C double raises
 # OverflowError inside math.isfinite; every isfinite site shares the class
 # (lanes.py:160, lane_payloads_shared.py:64, lane_payloads.py:499 and :585)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 HUGE_INT = 10**400
 
@@ -234,9 +239,7 @@ def test_an_oversized_integer_duration_s_is_a_contract_error() -> None:
 
 def test_an_oversized_integer_confidence_is_a_contract_error() -> None:
     with pytest.raises(LaneContractError, match="finite"):
-        validate_lane_result(
-            "key", LaneResult(status="missing", confidence=HUGE_INT)
-        )
+        validate_lane_result("key", LaneResult(status="missing", confidence=HUGE_INT))
 
 
 def test_an_oversized_integer_payload_number_is_a_contract_error() -> None:

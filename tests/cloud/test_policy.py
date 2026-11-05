@@ -28,9 +28,7 @@ def _write_policy_config(data_dir: Path, mode: object) -> None:
     (state_dir / "cloudsync-policy.json").write_text(json.dumps({"mode": mode}), encoding="utf-8")
 
 
-def _run_policy(
-    data_dir: Path, mode_override: str | None = None
-) -> subprocess.CompletedProcess[str]:
+def _run_policy(data_dir: Path, mode_override: str | None = None) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "MDT_DATA_DIR": str(data_dir),
@@ -53,9 +51,7 @@ def test_default_policy_path_is_anchored_to_the_project_root(tmp_path: Path) -> 
     environment = {key: value for key, value in os.environ.items() if key != "MDT_DATA_DIR"}
     inherited_pythonpath = environment.get("PYTHONPATH")
     environment["PYTHONPATH"] = (
-        str(PROJECT_ROOT)
-        if inherited_pythonpath is None
-        else f"{PROJECT_ROOT}{os.pathsep}{inherited_pythonpath}"
+        str(PROJECT_ROOT) if inherited_pythonpath is None else f"{PROJECT_ROOT}{os.pathsep}{inherited_pythonpath}"
     )
     result = subprocess.run(
         [

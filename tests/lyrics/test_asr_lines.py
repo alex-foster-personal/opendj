@@ -37,9 +37,7 @@ def test_punctuation_break_starts_new_line() -> None:
 
 
 def test_twelve_word_cap_starts_new_line() -> None:
-    words = tuple(
-        AsrWord(f"w{i}", float(i), float(i) + 0.1) for i in range(14)
-    )
+    words = tuple(AsrWord(f"w{i}", float(i), float(i) + 0.1) for i in range(14))
     lines = group_asr_words_into_lines(words)
     assert len(lines[0].text.split()) == 13
     assert lines[1].text.split() == ["w13"]

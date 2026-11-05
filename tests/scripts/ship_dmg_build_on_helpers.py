@@ -1,6 +1,6 @@
 """Shared fixtures for the ship-dmg --build-on contract tests.
 
-Extracted from tests/scripts/test_ship_dmg_build_on.py when that module
+Extracted from (private path) when that module
 crossed the 600-line review limit. The two test modules that import this one
 (test_ship_dmg_build_on.py, test_ship_dmg_build_host_probe.py) drive the same
 shipped script through the same fake ssh, so the fakes belong in one place
@@ -16,15 +16,17 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tests.platform_capabilities import posix_bash_or_skip
+
 REPO = Path(__file__).resolve().parents[2]
-SCRIPT = REPO / ".agents/skills/ship-dmg/scripts/ship_dmg.sh"
+SCRIPT = REPO / "(private path)"
 
 
 def _run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     import os
 
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        [posix_bash_or_skip(), str(SCRIPT), *args],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -75,8 +77,6 @@ def _fake_ssh(tmp: str, reply: str) -> Path:
     return fake
 
 
-def _probe(
-    path: str, head: str, tree: str, have: str = "yes", flag: str = "yes", dirty: str = "0"
-) -> str:
+def _probe(path: str, head: str, tree: str, have: str = "yes", flag: str = "yes", dirty: str = "0") -> str:
     """One CANDIDATE line plus the DONE sentinel that proves the probe finished."""
     return f"CANDIDATE {path} {head} {tree} {have} {flag} {dirty}\nDONE"

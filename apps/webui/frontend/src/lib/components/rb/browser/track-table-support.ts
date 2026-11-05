@@ -1,4 +1,11 @@
-export { analysisIssuesFor, bpmGridHoverText, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
+export {
+	analysisIssuesFor,
+	bpmGridHoverText,
+	errColumnTitle,
+	gridFlagFor,
+	lengthFlagText,
+	sourceFileFlagsFor
+} from '$lib/rb/analysis-issues';
 export { gridProvenanceFor, requestGridProvenance } from '$lib/rb/grid-provenance.svelte';
 export { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 export { displayKey, formatKey } from '$lib/rb/key-notation';
@@ -12,6 +19,17 @@ export { arrowHead, buildCurveSegments, hopStroke, paintChainHops, segmentPath }
 export { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 export { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 export { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+export { draggedDeckRows } from '$lib/rb/deck-track-drop';
+export {
+	dropTargetAt,
+	gapFromPointer,
+	rowWindow,
+	slotCountOf,
+	slotOfRow,
+	type SectionHeader
+} from '$lib/library/playlist-sections';
+export type { EntriesMove } from '$lib/library/playlist-sections-store.svelte';
+export { animateSectionToggle } from '$lib/library/section-motion';
 export {
 	bpmHeatLabel,
 	classifyBpmHeat,
@@ -38,3 +56,28 @@ export { compatibleKeyChecked, compatibleRowKeyShift } from '$lib/rb/next-only-f
 export { keyShiftSuperscript, shiftedKeyText } from '$lib/rb/compatible-filter-copy';
 export type { CompatibleKeyShift } from '$lib/player/key/camelot';
 export { loadKeyHoverCard } from './key-hover-card-load';
+export {
+	OPTIONAL_COLUMNS,
+	OPTIONAL_COLUMN_LABELS,
+	classicalArtist,
+	classicalTitle,
+	composerOf,
+	filedUnderText,
+	labelOf,
+	performerOf,
+	primaryWorkId,
+	stackIndicator,
+	workCellText,
+	yearOf,
+	type OptionalColumn
+} from '$lib/rb/library-works';
+export {
+	refreshSuggestionFlags,
+	reportWorksFailure,
+	startWorksOverlay,
+	viaWorkHits,
+	worksView
+} from '$lib/rb/works-overlay.svelte';
+export { shiftDropAction } from './works-drop';
+export { default as VersionStackPanel } from './VersionStackPanel.svelte';
+export { default as WorksModals } from './WorksModals.svelte';

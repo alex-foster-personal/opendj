@@ -15,6 +15,7 @@ live. Missing psutil prints UNAVAILABLE and skips the check.
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import sys
@@ -123,9 +124,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     session.config.stash[_BASELINE_KEY] = baseline
     if baseline is None:
         session.config.stash[_UNAVAILABLE_KEY] = True
-        _line_writer(session.config)(
-            "UNAVAILABLE: psutil is not installed; child-process leak check skipped"
-        )
+        _line_writer(session.config)("UNAVAILABLE: psutil is not installed; child-process leak check skipped")
     else:
         session.config.stash[_UNAVAILABLE_KEY] = False
 
@@ -137,9 +136,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     baseline = session.config.stash.get(_BASELINE_KEY, None)
     if baseline is None:
         return
-    if session.config.pluginmanager.get_plugin("dsession") is not None and not hasattr(
-        session.config, "workerinput"
-    ):
+    if session.config.pluginmanager.get_plugin("dsession") is not None and not hasattr(session.config, "workerinput"):
         return
     leaks = leaked_processes(baseline)
     if not leaks:

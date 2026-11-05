@@ -14,7 +14,15 @@
  * read every word. Exits non-zero when the title matches no story, a story
  * throws, or the selector is absent: an empty set is a failure, never a pass.
  */
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+	createReadStream,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -38,7 +46,14 @@ if (!existsSync(join(STATIC_DIR, 'index.json'))) {
 	throw new Error(`${STATIC_DIR}/index.json not found: run pnpm build-storybook first`);
 }
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
+const MIME = {
+	'.html': 'text/html',
+	'.js': 'text/javascript',
+	'.css': 'text/css',
+	'.json': 'application/json',
+	'.svg': 'image/svg+xml',
+	'.woff2': 'font/woff2'
+};
 
 const server = createServer((request, response) => {
 	const path = join(STATIC_DIR, decodeURIComponent(new URL(request.url, 'http://x').pathname));
@@ -53,11 +68,14 @@ await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const index = JSON.parse(readFileSync(join(STATIC_DIR, 'index.json'), 'utf8'));
-const stories = Object.values(index.entries).filter((entry) => entry.type === 'story' && entry.title === values.title);
+const stories = Object.values(index.entries).filter(
+	(entry) => entry.type === 'story' && entry.title === values.title
+);
 if (stories.length === 0) throw new Error(`no story has title ${values.title}`);
 
 mkdirSync(OUT_DIR, { recursive: true });
-for (const stale of readdirSync(OUT_DIR).filter((name) => name.endsWith('.png'))) rmSync(join(OUT_DIR, stale));
+for (const stale of readdirSync(OUT_DIR).filter((name) => name.endsWith('.png')))
+	rmSync(join(OUT_DIR, stale));
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 640, height: 480 }, deviceScaleFactor: 2 });
@@ -65,7 +83,9 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(String(error)));
 try {
 	for (const story of stories) {
-		await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story`, { waitUntil: 'networkidle' });
+		await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story`, {
+			waitUntil: 'networkidle'
+		});
 		const element = page.locator(values.selector);
 		await element.waitFor({ timeout: 15_000 });
 		const name = story.id.split('--')[1];

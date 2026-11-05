@@ -29,7 +29,11 @@ export function createTrackSearch(limit: number) {
 			Object.assign(state, { hits, error: null, searched: true });
 		} catch (error) {
 			if (mine !== seq) return;
-			Object.assign(state, { hits: [], error: error instanceof Error ? error.message : String(error), searched: true });
+			Object.assign(state, {
+				hits: [],
+				error: error instanceof Error ? error.message : String(error),
+				searched: true
+			});
 		}
 	}
 

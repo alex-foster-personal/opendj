@@ -15,6 +15,7 @@ Regression one-liners:
   - if decide with nothing named is accepted then broken
   - if an image off the store's own host is fetched then broken
 """
+
 from __future__ import annotations
 
 import json

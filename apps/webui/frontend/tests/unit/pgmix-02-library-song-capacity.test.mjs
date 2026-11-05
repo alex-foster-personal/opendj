@@ -43,7 +43,10 @@ test('a non-finite or negative capacity is ignored', () => {
 test('the art height matches the deck row growth on the page', () => {
 	assert.equal(cap.MIXER_COLUMN_ART_PX, 64);
 	const page = readFrontendSource('src/routes/performance/+page.svelte');
-	assert.match(page, /--mixer-col-art-extra: \$\{librarySongCapacity\.showMixerColumnArt \? MIXER_COLUMN_ART_PX : 0\}px/);
+	assert.match(
+		page,
+		/--mixer-col-art-extra: \$\{librarySongCapacity\.showMixerColumnArt \? MIXER_COLUMN_ART_PX : 0\}px/
+	);
 	const mixer = readFrontendSource('src/lib/components/rb/Mixer.svelte');
 	assert.match(mixer, /data-testid=\{`mixer-play-deck-\$\{deck\}`\}/);
 	assert.match(mixer, /type: 'play',/);

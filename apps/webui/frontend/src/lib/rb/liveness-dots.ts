@@ -21,7 +21,7 @@
  *   again. A verdict already painted is kept, marked as being re-checked.
  */
 
-import type { LibraryHealthDot } from "./library-health-dots";
+import type { LibraryHealthDot } from './library-health-dots';
 
 /** How long after page load a timeout reads as "starting up" (engine boot,
  * measured at about 2 minutes on silver with the analysis worker busy). */
@@ -31,106 +31,100 @@ export const STARTUP_GRACE_MS = 120_000;
  * cadence this is about 7.5 s of silence after the boot window. */
 export const FAILURES_BEFORE_DOWN = 3;
 
-export type ProbeOutcome =
-  { ok: true } | { ok: false; timedOut: boolean; why: string };
+export type ProbeOutcome = { ok: true } | { ok: false; timedOut: boolean; why: string };
 
-export type LivenessSubject = "engine" | "dev server";
+export type LivenessSubject = 'engine' | 'dev server';
 
 export type LivenessTracker = {
-  /** Fold one probe outcome into the dot to paint. */
-  observe: (outcome: ProbeOutcome, nowMs: number) => LibraryHealthDot;
+	/** Fold one probe outcome into the dot to paint. */
+	observe: (outcome: ProbeOutcome, nowMs: number) => LibraryHealthDot;
 };
 
 export function createLivenessTracker(
-  label: "Frontend" | "Backend",
-  subject: LivenessSubject,
-  startedAtMs: number,
+	label: 'Frontend' | 'Backend',
+	subject: LivenessSubject,
+	startedAtMs: number
 ): LivenessTracker {
-  let failures = 0;
-  let answeredOnce = false;
-  return {
-    observe(outcome, nowMs) {
-      if (outcome.ok) {
-        failures = 0;
-        answeredOnce = true;
-        return { label, state: "complete", detail: `${subject} online` };
-      }
-      failures += 1;
-      const booting = !answeredOnce && nowMs - startedAtMs < STARTUP_GRACE_MS;
-      if (outcome.timedOut && booting) {
-        return {
-          label,
-          state: "waiting",
-          detail: `${subject} starting up - busy booting, retrying (${outcome.why})`,
-        };
-      }
-      if (failures < FAILURES_BEFORE_DOWN) {
-        return {
-          label,
-          state: "waiting",
-          detail: `${subject} slow to answer - retrying, ${failures} of ${FAILURES_BEFORE_DOWN} tries missed (${outcome.why})`,
-        };
-      }
-      return {
-        label,
-        state: "error",
-        detail: `${subject} not answering - ${outcome.why} (${failures} tries in a row)`,
-      };
-    },
-  };
+	let failures = 0;
+	let answeredOnce = false;
+	return {
+		observe(outcome, nowMs) {
+			if (outcome.ok) {
+				failures = 0;
+				answeredOnce = true;
+				return { label, state: 'complete', detail: `${subject} online` };
+			}
+			failures += 1;
+			const booting = !answeredOnce && nowMs - startedAtMs < STARTUP_GRACE_MS;
+			if (outcome.timedOut && booting) {
+				return {
+					label,
+					state: 'waiting',
+					detail: `${subject} starting up - busy booting, retrying (${outcome.why})`
+				};
+			}
+			if (failures < FAILURES_BEFORE_DOWN) {
+				return {
+					label,
+					state: 'waiting',
+					detail: `${subject} slow to answer - retrying, ${failures} of ${FAILURES_BEFORE_DOWN} tries missed (${outcome.why})`
+				};
+			}
+			return {
+				label,
+				state: 'error',
+				detail: `${subject} not answering - ${outcome.why} (${failures} tries in a row)`
+			};
+		}
+	};
 }
 
 /** The packaged app's page row: the engine serves the UI, so it mirrors the Backend dot. */
 export function appUiDot(backend: LibraryHealthDot): LibraryHealthDot {
-  const label = "App UI";
-  if (backend.state === "complete") {
-    return {
-      label,
-      state: "complete",
-      detail: "served by the engine, which is answering",
-    };
-  }
-  if (backend.state === "waiting") {
-    return {
-      label,
-      state: "waiting",
-      detail: "served by the engine, which is starting up or busy",
-    };
-  }
-  if (backend.state === "error") {
-    return {
-      label,
-      state: "error",
-      detail: "served by the engine, which is not answering",
-    };
-  }
-  return { label, state: backend.state, detail: "served by the engine" };
+	const label = 'App UI';
+	if (backend.state === 'complete') {
+		return {
+			label,
+			state: 'complete',
+			detail: 'served by the engine, which is answering'
+		};
+	}
+	if (backend.state === 'waiting') {
+		return {
+			label,
+			state: 'waiting',
+			detail: 'served by the engine, which is starting up or busy'
+		};
+	}
+	if (backend.state === 'error') {
+		return {
+			label,
+			state: 'error',
+			detail: 'served by the engine, which is not answering'
+		};
+	}
+	return { label, state: backend.state, detail: 'served by the engine' };
 }
 
 /** A coverage read that timed out: amber "still counting", or the painted verdict kept and marked. */
 export function coverageTimeoutDot(
-  previous: LibraryHealthDot,
-  label: LibraryHealthDot["label"],
-  why: string,
+	previous: LibraryHealthDot,
+	label: LibraryHealthDot['label'],
+	why: string
 ): LibraryHealthDot {
-  const hasVerdict =
-    previous.state === "complete" ||
-    previous.state === "incomplete" ||
-    previous.state === "error";
-  if (hasVerdict) {
-    const base = previous.detail.replace(
-      / \(re-check timed out, retrying\)$/,
-      "",
-    );
-    return {
-      label,
-      state: previous.state,
-      detail: `${base} (re-check timed out, retrying)`,
-    };
-  }
-  return {
-    label,
-    state: "waiting",
-    detail: `still counting - the engine is busy and has not answered yet (${why}); retrying`,
-  };
+	const hasVerdict =
+		previous.state === 'complete' || previous.state === 'incomplete' || previous.state === 'error';
+	if (hasVerdict) {
+		const base = previous.detail.replace(/ \(re-check timed out, retrying\)$/, '');
+		return {
+			label,
+			state: previous.state,
+			detail: `${base} (re-check timed out, retrying)`
+		};
+	}
+	return {
+		label,
+		state: 'waiting',
+		detail: `still counting - the engine is busy and has not answered yet (${why}); retrying`
+	};
 }

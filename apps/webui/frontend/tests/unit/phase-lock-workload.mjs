@@ -80,7 +80,10 @@ export function trueBeatTimes({ beats, startSec = 0.2, bpmAt }) {
  * (interval histograms in 5 and 10 ms steps; half the beats within 2 to 9 ms
  * of a smooth line, one in twenty 15 to 50 ms off it), not from any one track.
  */
-export function storedGrid(trueTimes, { stepMs, jitterMs = 0, strayShare = 0, strayMs = 0, seed = 1 }) {
+export function storedGrid(
+	trueTimes,
+	{ stepMs, jitterMs = 0, strayShare = 0, strayMs = 0, seed = 1 }
+) {
 	const random = lcg(seed);
 	const step = stepMs / 1000;
 	return _beats(
@@ -98,7 +101,14 @@ export function evenGrid(periodSec, count, startSec = 0) {
 
 // ------------------------------------------------- the lock as it was
 
-const LEGACY = { deadbandMs: 2, releaseMs: 1, correctionBeats: 4, maxTrim: 0.003, reseekBeats: 0.25, reseekMs: 15 };
+const LEGACY = {
+	deadbandMs: 2,
+	releaseMs: 1,
+	correctionBeats: 4,
+	maxTrim: 0.003,
+	reseekBeats: 0.25,
+	reseekMs: 15
+};
 
 function _position(beats, positionSec) {
 	const n = beats.length;
@@ -119,7 +129,8 @@ export function storedPhaseErrorMs(input) {
 	const f = _position(input.followerBeats, input.followerPositionSec);
 	if (m === null || f === null) return null;
 	const mi = Math.floor(m);
-	const beatWallMs = ((input.masterBeats[mi + 1].t - input.masterBeats[mi].t) / input.masterTempo) * 1000;
+	const beatWallMs =
+		((input.masterBeats[mi + 1].t - input.masterBeats[mi].t) / input.masterTempo) * 1000;
 	const normalization = input.normalization ?? 1;
 	const unit = Math.min(1, 1 / normalization);
 	const diff = f / normalization - m;
@@ -130,9 +141,11 @@ export function storedPhaseErrorMs(input) {
 export function legacyPhaseLockDecision(input) {
 	const base = input.followerBaseTempo;
 	const errorMs = storedPhaseErrorMs(input);
-	if (errorMs === null) return { action: 'unmeasured', tempo: base, errorMs: null, base, overLineTicks: 0 };
+	if (errorMs === null)
+		return { action: 'unmeasured', tempo: base, errorMs: null, base, overLineTicks: 0 };
 	const mi = Math.floor(_position(input.masterBeats, input.masterPositionSec));
-	const beatWallMs = ((input.masterBeats[mi + 1].t - input.masterBeats[mi].t) / input.masterTempo) * 1000;
+	const beatWallMs =
+		((input.masterBeats[mi + 1].t - input.masterBeats[mi].t) / input.masterTempo) * 1000;
 	if (Math.abs(errorMs) > Math.min(LEGACY.reseekBeats * beatWallMs, LEGACY.reseekMs)) {
 		return { action: 'reseek', tempo: base, errorMs, base, overLineTicks: 0 };
 	}
@@ -213,7 +226,8 @@ export function lockWorkload({
 		if (stored === null) break;
 		ticks += 1;
 		storedAbsMs.push(Math.abs(stored));
-		const truth = truthBeats === undefined ? null : storedPhaseErrorMs({ ...input, followerBeats: truthBeats });
+		const truth =
+			truthBeats === undefined ? null : storedPhaseErrorMs({ ...input, followerBeats: truthBeats });
 		if (truth !== null) truthAbsMs.push(Math.abs(truth));
 		const decision = decide(input);
 		if (decision.errorMs !== null) lockAbsMs.push(Math.abs(decision.errorMs));
@@ -239,7 +253,8 @@ export function lockWorkload({
 			const diff = f - m;
 			const target = f - (diff - Math.round(diff));
 			const lo = Math.max(0, Math.min(Math.floor(target), n - 2));
-			followerSec = followerBeats[lo].t + (target - lo) * (followerBeats[lo + 1].t - followerBeats[lo].t);
+			followerSec =
+				followerBeats[lo].t + (target - lo) * (followerBeats[lo + 1].t - followerBeats[lo].t);
 			base = 1;
 			tempo = 1;
 			trimming = false;

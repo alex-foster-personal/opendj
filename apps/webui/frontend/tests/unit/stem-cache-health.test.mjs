@@ -96,7 +96,10 @@ test('low disk with eviction paused is amber, not red, and says what turning it 
 	);
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /automatic eviction is paused in settings, nothing evicted/);
-	assert.match(dot.detail, /Turning it on would evict the 208 least recently used stem bundles \(7\.0 GiB\)/);
+	assert.match(
+		dot.detail,
+		/Turning it on would evict the 208 least recently used stem bundles \(7\.0 GiB\)/
+	);
 	assert.match(dot.detail, /stay available from the cloud/);
 });
 
@@ -107,7 +110,10 @@ test('one bundle is singular, and nothing evictable never promises an eviction',
 		null
 	);
 	assert.match(one.detail, /evicting the 1 least recently used stem bundle \(1\.0 GiB\)/);
-	const none = policy.stemCacheHealthDot(status({ ...low, blocked_reason: 'auto_evict_off' }), null);
+	const none = policy.stemCacheHealthDot(
+		status({ ...low, blocked_reason: 'auto_evict_off' }),
+		null
+	);
 	assert.match(none.detail, /would evict no stem bundle is safe to evict/);
 	assert.doesNotMatch(none.detail, /stay available from the cloud/);
 });

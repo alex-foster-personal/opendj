@@ -32,7 +32,9 @@
 	});
 
 	const pair = $derived(
-		rows.length === 2 && rows[0].track && rows[1].track ? compareTracks(rows[0].track, rows[1].track) : null
+		rows.length === 2 && rows[0].track && rows[1].track
+			? compareTracks(rows[0].track, rows[1].track)
+			: null
 	);
 	const name = (row: { id: string; track: Track | null }): string =>
 		truncateLabel(row.track?.title || row.id);
@@ -44,14 +46,20 @@
 	{/if}
 	{#each rows as row (row.id)}
 		<div class="sn-compare-row" data-testid="set-notes-compare-row">
-			<span class="sn-compare-name" title={row.track?.title ?? `No track ${row.id} in this library`}>{name(row)}</span>
+			<span class="sn-compare-name" title={row.track?.title ?? `No track ${row.id} in this library`}
+				>{name(row)}</span
+			>
 			<span
 				class="readout-numeric"
-				title={row.track?.bpm != null ? 'Tempo in beats per minute, from the library' : 'No BPM in the library for this song yet'}
+				title={row.track?.bpm != null
+					? 'Tempo in beats per minute, from the library'
+					: 'No BPM in the library for this song yet'}
 				>{row.track?.bpm != null ? row.track.bpm.toFixed(1) : '?'} BPM</span
 			>
-			<span title={row.track?.key ? 'Musical key, from the library' : 'No key in the library for this song yet'}
-				>{row.track?.key ?? '?'}</span
+			<span
+				title={row.track?.key
+					? 'Musical key, from the library'
+					: 'No key in the library for this song yet'}>{row.track?.key ?? '?'}</span
 			>
 		</div>
 	{/each}

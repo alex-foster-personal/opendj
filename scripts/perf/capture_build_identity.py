@@ -112,9 +112,7 @@ def _http_json(method: str, url: str, timeout_s: float = _PROBE_TIMEOUT_S) -> tu
 
 def _probe_engine(engine: str, timeout_s: float = _PROBE_TIMEOUT_S) -> str | None:
     try:
-        status, _payload = _http_json(
-            "GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s
-        )
+        status, _payload = _http_json("GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s)
     except ConnectionError as exc:
         return f"engine unreachable: {exc}"
     if status != 200:

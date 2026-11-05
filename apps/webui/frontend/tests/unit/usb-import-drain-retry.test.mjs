@@ -28,10 +28,13 @@ function stubFetch(drainStatuses, jobs = {}) {
 			const id = path.slice('/api/v1/jobs/'.length);
 			const answer = jobs[id] ?? 'succeeded';
 			if (typeof answer === 'number') {
-				return new Response(JSON.stringify({ detail: { code: 'X', message: `job ${id} answered ${answer}` } }), {
-					status: answer,
-					headers: { 'content-type': 'application/json' }
-				});
+				return new Response(
+					JSON.stringify({ detail: { code: 'X', message: `job ${id} answered ${answer}` } }),
+					{
+						status: answer,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
 			}
 			return new Response(JSON.stringify({ id, kind: 'setup.import-rekordbox', status: answer }), {
 				status: 200,
@@ -55,7 +58,10 @@ test('a drain refused because one is running is asked for again until it starts'
 	}
 	const drains = stub.calls.filter((c) => c === 'POST /api/v1/analysis-queue/run');
 	assert.equal(drains.length, 3, JSON.stringify(stub.calls));
-	assert.ok(stub.calls.indexOf(drains[0]) > stub.calls.indexOf('GET /api/v1/jobs/job-1'), JSON.stringify(stub.calls));
+	assert.ok(
+		stub.calls.indexOf(drains[0]) > stub.calls.indexOf('GET /api/v1/jobs/job-1'),
+		JSON.stringify(stub.calls)
+	);
 });
 
 test('control: a drain that starts at once is asked for exactly once', async () => {
@@ -65,14 +71,20 @@ test('control: a drain that starts at once is asked for exactly once', async () 
 	} finally {
 		stub.restore();
 	}
-	assert.equal(stub.calls.filter((c) => c === 'POST /api/v1/analysis-queue/run').length, 1, JSON.stringify(stub.calls));
+	assert.equal(
+		stub.calls.filter((c) => c === 'POST /api/v1/analysis-queue/run').length,
+		1,
+		JSON.stringify(stub.calls)
+	);
 });
 
 // Sol P1, PR #6223: a reload during the import loses the page's waiter, so the
 // job id is remembered and the wait resumes on boot.
 function stubStorage(initial) {
 	const original = globalThis.localStorage;
-	const store = new Map(initial === undefined ? [] : [[usbImport.PENDING_IMPORT_KEY, JSON.stringify(initial)]]);
+	const store = new Map(
+		initial === undefined ? [] : [[usbImport.PENDING_IMPORT_KEY, JSON.stringify(initial)]]
+	);
 	globalThis.localStorage = {
 		getItem: (k) => (store.has(k) ? store.get(k) : null),
 		setItem: (k, v) => store.set(k, String(v)),
@@ -114,9 +126,18 @@ test('control: nothing remembered means nothing is read or drained on boot', asy
 
 test('LibraryNav checks the same key before loading the import module', async () => {
 	const { readFileSync } = await import('node:fs');
-	const src = readFileSync(new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url), 'utf8');
-	assert.ok(src.includes(`localStorage.getItem('${usbImport.PENDING_IMPORT_KEY}')`), 'LibraryNav reads a different key');
-	assert.match(src, /import\('\$lib\/rb\/usb-import'\)\.then\(\s*\(mod\) => mod\.resumePendingUsbAnalysis\(\)/);
+	const src = readFileSync(
+		new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.ok(
+		src.includes(`localStorage.getItem('${usbImport.PENDING_IMPORT_KEY}')`),
+		'LibraryNav reads a different key'
+	);
+	assert.match(
+		src,
+		/import\('\$lib\/rb\/usb-import'\)\.then\(\s*\(mod\) => mod\.resumePendingUsbAnalysis\(\)/
+	);
 });
 
 test('every remembered job resumes, not only the latest', async () => {
@@ -128,7 +149,10 @@ test('every remembered job resumes, not only the latest', async () => {
 		stub.restore();
 		storage.restore();
 	}
-	assert.deepEqual(stub.calls.filter((c) => c.startsWith('GET')).sort(), ['GET /api/v1/jobs/job-a', 'GET /api/v1/jobs/job-b']);
+	assert.deepEqual(stub.calls.filter((c) => c.startsWith('GET')).sort(), [
+		'GET /api/v1/jobs/job-a',
+		'GET /api/v1/jobs/job-b'
+	]);
 	assert.equal(stub.calls.filter((c) => c.startsWith('POST')).length, 2);
 	assert.equal(storage.store.has(usbImport.PENDING_IMPORT_KEY), false);
 });
@@ -143,7 +167,11 @@ test('a job that cannot be read yet stays remembered; one the daemon lost (404) 
 		storage.restore();
 	}
 	assert.deepEqual(JSON.parse(storage.store.get(usbImport.PENDING_IMPORT_KEY)), ['flaky']);
-	assert.equal(stub.calls.filter((c) => c.startsWith('POST')).length, 0, 'nothing drains for an unread or failed import');
+	assert.equal(
+		stub.calls.filter((c) => c.startsWith('POST')).length,
+		0,
+		'nothing drains for an unread or failed import'
+	);
 });
 
 test('a drain that errors leaves the job remembered for the next load', async () => {
@@ -160,8 +188,14 @@ test('a drain that errors leaves the job remembered for the next load', async ()
 
 test('a resume chunk that fails to load is said in a toast with Retry', async () => {
 	const { readFileSync } = await import('node:fs');
-	const src = readFileSync(new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url), 'utf8');
-	assert.match(src, /pushToast\(`Analysis of a stick from before the reload did not resume: \$\{why\}`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending/);
+	const src = readFileSync(
+		new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		src,
+		/pushToast\(`Analysis of a stick from before the reload did not resume: \$\{why\}`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending/
+	);
 	assert.match(src, /onMount\(\(\) => \{\s*startUsbWatch\(\);\s*resumeUsbAnalysisIfPending\(\);/);
 });
 
@@ -207,8 +241,14 @@ test('Open says a job it could not store in an error toast, before claiming the 
 
 test('an unreadable store at boot is said in a toast with Retry, not skipped', async () => {
 	const { readFileSync } = await import('node:fs');
-	const src = readFileSync(new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url), 'utf8');
-	assert.match(src, /pushToast\(`Sticks opened before the reload could not be read back[^`]*`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending\s*\}\);\s*return;/);
+	const src = readFileSync(
+		new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		src,
+		/pushToast\(`Sticks opened before the reload could not be read back[^`]*`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending\s*\}\);\s*return;/
+	);
 });
 
 test('neither the import wait nor the drain retry has a deadline that drops the analysis', async () => {

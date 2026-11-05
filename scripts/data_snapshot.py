@@ -29,6 +29,7 @@ Agent-native: pure CLI, no interactive prompts, no hidden defaults.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,9 +70,7 @@ def _discover_folder_path_roots(master_plain_db: Path) -> list[str]:
     """
     conn = sqlite3.connect(f"file:{master_plain_db}?mode=ro", uri=True)
     try:
-        rows = conn.execute(
-            "SELECT DISTINCT FolderPath FROM djmdContent WHERE FolderPath IS NOT NULL"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT FolderPath FROM djmdContent WHERE FolderPath IS NOT NULL").fetchall()
     finally:
         conn.close()
 
@@ -112,19 +111,14 @@ def _vocal_cache_files(vocal_cache_dir: Path) -> list[Path]:
     for entry in sorted(vocal_cache_dir.iterdir()):
         metadata = entry.lstat()
         if not stat.S_ISREG(metadata.st_mode) or entry.suffix != ".json":
-            raise ValueError(
-                f"vocal cache contains unsupported member {entry}; only regular .json files may be packed"
-            )
+            raise ValueError(f"vocal cache contains unsupported member {entry}; only regular .json files may be packed")
         if metadata.st_size > MAX_JSON_MEMBER_BYTES:
             raise ValueError(
-                f"JSON member byte limit exceeded for {entry}: "
-                f"{metadata.st_size} > {MAX_JSON_MEMBER_BYTES}"
+                f"JSON member byte limit exceeded for {entry}: {metadata.st_size} > {MAX_JSON_MEMBER_BYTES}"
             )
         payload = entry.read_bytes()
         if len(payload) != metadata.st_size:
-            raise ValueError(
-                f"vocal cache member changed while being read: {entry}"
-            )
+            raise ValueError(f"vocal cache member changed while being read: {entry}")
         _validate_json_object(payload, str(entry))
         files.append(entry)
     return files
@@ -132,10 +126,7 @@ def _vocal_cache_files(vocal_cache_dir: Path) -> list[Path]:
 
 def _validate_json_object(payload: bytes, label: str) -> None:
     if len(payload) > MAX_JSON_MEMBER_BYTES:
-        raise ValueError(
-            f"JSON member byte limit exceeded for {label}: "
-            f"{len(payload)} > {MAX_JSON_MEMBER_BYTES}"
-        )
+        raise ValueError(f"JSON member byte limit exceeded for {label}: {len(payload)} > {MAX_JSON_MEMBER_BYTES}")
     try:
         parsed = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -146,23 +137,14 @@ def _validate_json_object(payload: bytes, label: str) -> None:
 
 def _validate_resource_limits(member_sizes: list[tuple[str, int]]) -> None:
     if len(member_sizes) > MAX_MEMBER_COUNT:
-        raise ValueError(
-            f"snapshot member count limit exceeded: "
-            f"{len(member_sizes)} > {MAX_MEMBER_COUNT}"
-        )
+        raise ValueError(f"snapshot member count limit exceeded: {len(member_sizes)} > {MAX_MEMBER_COUNT}")
     total_bytes = 0
     for name, size in member_sizes:
         if size < 0 or size > MAX_MEMBER_BYTES:
-            raise ValueError(
-                f"snapshot member byte limit exceeded for {name}: "
-                f"{size} > {MAX_MEMBER_BYTES}"
-            )
+            raise ValueError(f"snapshot member byte limit exceeded for {name}: {size} > {MAX_MEMBER_BYTES}")
         total_bytes += size
     if total_bytes > MAX_TOTAL_MEMBER_BYTES:
-        raise ValueError(
-            f"snapshot total member byte limit exceeded: "
-            f"{total_bytes} > {MAX_TOTAL_MEMBER_BYTES}"
-        )
+        raise ValueError(f"snapshot total member byte limit exceeded: {total_bytes} > {MAX_TOTAL_MEMBER_BYTES}")
 
 
 def pack(data_dir: Path, out: Path) -> dict[str, Any]:
@@ -180,9 +162,7 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
 
     roots = _discover_folder_path_roots(master_plain_db)
     path_map_bytes = _generated_path_map_json(roots)
-    cache_files = (
-        _vocal_cache_files(vocal_cache_dir) if vocal_cache_dir.is_dir() else []
-    )
+    cache_files = _vocal_cache_files(vocal_cache_dir) if vocal_cache_dir.is_dir() else []
     pack_sizes = [
         (STATE_DB_MEMBER, state_db_size),
         (MASTER_PLAIN_DB_MEMBER, master_plain_db_size),
@@ -190,10 +170,7 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     ]
     if vocal_cache_dir.is_dir():
         pack_sizes.append((VOCAL_CACHE_MEMBER, 0))
-        pack_sizes.extend(
-            (f"{VOCAL_CACHE_MEMBER}/{path.name}", path.stat().st_size)
-            for path in cache_files
-        )
+        pack_sizes.extend((f"{VOCAL_CACHE_MEMBER}/{path.name}", path.stat().st_size) for path in cache_files)
     _validate_resource_limits(pack_sizes)
 
     members: list[dict[str, Any]] = []
@@ -203,9 +180,7 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
         members.append({"member": STATE_DB_MEMBER, "bytes": state_db_size})
 
         tar.add(master_plain_db, arcname=MASTER_PLAIN_DB_MEMBER)
-        members.append(
-            {"member": MASTER_PLAIN_DB_MEMBER, "bytes": master_plain_db_size}
-        )
+        members.append({"member": MASTER_PLAIN_DB_MEMBER, "bytes": master_plain_db_size})
 
         if vocal_cache_dir.is_dir():
             tar.add(vocal_cache_dir, arcname=VOCAL_CACHE_MEMBER, recursive=False)
@@ -279,9 +254,7 @@ def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
     return members
 
 
-def _validate_json_members(
-    tar: tarfile.TarFile, members: list[tarfile.TarInfo]
-) -> None:
+def _validate_json_members(tar: tarfile.TarFile, members: list[tarfile.TarInfo]) -> None:
     for member in members:
         is_cache_json = member.name.startswith(f"{VOCAL_CACHE_MEMBER}/")
         if member.name != PATH_MAP_MEMBER and not is_cache_json:
@@ -308,17 +281,11 @@ def _extract_regular_file(member: tarfile.TarInfo, source: BinaryIO, dest: Path)
         while chunk := source.read(1024 * 1024):
             written += len(chunk)
             if written > member.size or written > MAX_MEMBER_BYTES:
-                raise ValueError(
-                    f"snapshot member exceeded declared size while extracting: "
-                    f"{member.name}"
-                )
+                raise ValueError(f"snapshot member exceeded declared size while extracting: {member.name}")
             out.write(chunk)
     if written != member.size:
         target.unlink(missing_ok=True)
-        raise ValueError(
-            f"snapshot member size mismatch for {member.name}: "
-            f"declared {member.size}, read {written}"
-        )
+        raise ValueError(f"snapshot member size mismatch for {member.name}: declared {member.size}, read {written}")
 
 
 def unpack(snapshot: Path, dest: Path) -> dict[str, Any]:
@@ -332,10 +299,7 @@ def unpack(snapshot: Path, dest: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"snapshot not found: {snapshot}")
     archive_bytes = snapshot.stat().st_size
     if archive_bytes > MAX_ARCHIVE_BYTES:
-        raise ValueError(
-            f"snapshot archive byte limit exceeded: "
-            f"{archive_bytes} > {MAX_ARCHIVE_BYTES}"
-        )
+        raise ValueError(f"snapshot archive byte limit exceeded: {archive_bytes} > {MAX_ARCHIVE_BYTES}")
 
     with tarfile.open(snapshot, "r") as tar:
         members = _validated_members(tar)

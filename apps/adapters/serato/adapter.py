@@ -53,6 +53,7 @@ from apps.open_dj import (
     Playlist,
     Track,
 )
+from apps.open_dj.provenance import utc_mtime
 from apps.shared.id3v2 import Id3Error
 
 # --------------------------------------------------------------- options
@@ -311,6 +312,7 @@ class SeratoAdapter:
         db_path = source / "database V2"
         if not db_path.exists():
             raise FileNotFoundError(f"Serato database V2 not found at {db_path}")
+        stamp = utc_mtime(db_path)
         db = DatabaseV2.read(db_path)
 
         tracks: list[Track] = []
@@ -350,6 +352,7 @@ class SeratoAdapter:
                     cues=cues,
                     beats=beats,
                     extensions=extensions,
+                    source_modified_at=stamp,
                 )
             )
             report.bump("tracks_read")

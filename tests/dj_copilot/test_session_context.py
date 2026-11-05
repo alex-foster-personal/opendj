@@ -1,4 +1,5 @@
 """SessionContext loader tests (AI-01)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -67,10 +68,7 @@ def test_phase12_source(tmp_path) -> None:
             "INSERT INTO session_events"
             "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
             "VALUES (?, ?, ?, ?, ?, ?, 'now_playing')",
-            [
-                (f"t-{i}", f"A{i}", 120.0 + i, "8A", 5, now)
-                for i in range(3)
-            ],
+            [(f"t-{i}", f"A{i}", 120.0 + i, "8A", 5, now) for i in range(3)],
         )
         ctx = load_session_context(conn=conn, source="phase12", limit=12)
         assert ctx.source == "phase12"

@@ -143,7 +143,10 @@ function paintRow(loop) {
 	return loopFills(calls);
 }
 
-function paintStripCalls(loop, { waveform = WAVEFORM, durationMs = DURATION_MS, loopCues = [] } = {}) {
+function paintStripCalls(
+	loop,
+	{ waveform = WAVEFORM, durationMs = DURATION_MS, loopCues = [] } = {}
+) {
 	const { ctx, calls } = recordingCtx();
 	strip.drawStripWaveform(ctx, {
 		widthPx: STRIP_W,
@@ -231,9 +234,14 @@ test('a stored loop hot cue does not hide the engaged-loop band on either wavefo
 	);
 	const stripCue = stripCalls.find((call) => call.fillStyle === strip.LOOP_CUE_COLOR);
 	assert.ok(Math.abs(stripCue.x - (loopCue.in_ms / DURATION_MS) * STRIP_W) < 0.001);
-	assert.ok(Math.abs(stripCue.w - ((loopCue.out_ms - loopCue.in_ms) / DURATION_MS) * STRIP_W) < 0.001);
+	assert.ok(
+		Math.abs(stripCue.w - ((loopCue.out_ms - loopCue.in_ms) / DURATION_MS) * STRIP_W) < 0.001
+	);
 
-	const disengagedCalls = paintStripCalls({ ...activeLoop, engaged: false }, { waveform: null, loopCues: [loopCue] });
+	const disengagedCalls = paintStripCalls(
+		{ ...activeLoop, engaged: false },
+		{ waveform: null, loopCues: [loopCue] }
+	);
 	assert.ok(
 		!disengagedCalls.some((call) => call.fillStyle === activeFill),
 		'the preview active-loop band must disappear when the loop is disengaged'

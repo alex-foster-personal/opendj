@@ -18,7 +18,11 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { type OnboardingEngine, startOnboardingEngine, writeMusicFolder } from './support/onboarding-engine';
+import {
+	type OnboardingEngine,
+	startOnboardingEngine,
+	writeMusicFolder
+} from './support/onboarding-engine';
 import {
 	TIME_TO_WIZARD_BUDGET_MS,
 	allTracksRowCount,
@@ -50,12 +54,18 @@ test.afterEach(async ({}, testInfo) => {
 });
 
 test.describe('onboarding gauntlet: happy path', () => {
-	test('a new user lands, the wizard opens itself, and a folder import fills All Tracks', async ({ page }, testInfo) => {
+	test('a new user lands, the wizard opens itself, and a folder import fills All Tracks', async ({
+		page
+	}, testInfo) => {
 		const music = `${engine.musicRoot}/My Music`;
 		writeMusicFolder(music, TRACKS);
 
 		const before = await readSetupStatus(engine.origin);
-		expect(before).toMatchObject({ library_empty: true, dev_mode: false, should_show_wizard: true });
+		expect(before).toMatchObject({
+			library_empty: true,
+			dev_mode: false,
+			should_show_wizard: true
+		});
 
 		const statusCalls: string[] = [];
 		page.on('request', (request) => {
@@ -66,10 +76,21 @@ test.describe('onboarding gauntlet: happy path', () => {
 		const landing = await landWithOnlyThePackagedTrigger(page, engine.origin);
 		const timeToWizardMs = landing.timeToWizardMs;
 		testInfo.annotations.push({ type: 'time-to-wizard-ms', description: String(timeToWizardMs) });
-		expect(landing.preflightRequestsHeld, 'control: the preflight hold never intercepted a request').toBeGreaterThan(0);
-		expect(landing.preflightResponsesBeforeWizard, 'a preflight answer reached the page before the wizard').toBe(0);
-		expect(statusCalls.length, 'the packaged first-run gate never asked GET /api/v1/setup/status').toBeGreaterThan(0);
-		expect(timeToWizardMs, `wizard took ${timeToWizardMs} ms`).toBeLessThan(TIME_TO_WIZARD_BUDGET_MS);
+		expect(
+			landing.preflightRequestsHeld,
+			'control: the preflight hold never intercepted a request'
+		).toBeGreaterThan(0);
+		expect(
+			landing.preflightResponsesBeforeWizard,
+			'a preflight answer reached the page before the wizard'
+		).toBe(0);
+		expect(
+			statusCalls.length,
+			'the packaged first-run gate never asked GET /api/v1/setup/status'
+		).toBeGreaterThan(0);
+		expect(timeToWizardMs, `wizard took ${timeToWizardMs} ms`).toBeLessThan(
+			TIME_TO_WIZARD_BUDGET_MS
+		);
 
 		await chooseFolderBranch(page);
 		const scan = await checkFolder(page, music);
@@ -79,7 +100,10 @@ test.describe('onboarding gauntlet: happy path', () => {
 		const importStarted = Date.now();
 		const jobId = await startFolderImport(page);
 		const job = await waitForTerminalJob(engine.origin, jobId);
-		testInfo.annotations.push({ type: 'import-ms', description: String(Date.now() - importStarted) });
+		testInfo.annotations.push({
+			type: 'import-ms',
+			description: String(Date.now() - importStarted)
+		});
 		expect(job.status, JSON.stringify(job)).toBe('succeeded');
 
 		await continueToDone(page);
@@ -90,7 +114,11 @@ test.describe('onboarding gauntlet: happy path', () => {
 		// No reload anywhere above: the rows must arrive in the running page.
 		await allTracksRowCount(page, TRACKS);
 		const after = await readSetupStatus(engine.origin);
-		expect(after).toMatchObject({ library_empty: false, tracks: TRACKS, should_show_wizard: false });
+		expect(after).toMatchObject({
+			library_empty: false,
+			tracks: TRACKS,
+			should_show_wizard: false
+		});
 	});
 
 	test('the Done screen reports how many tracks the import wrote (#3422)', async ({ page }) => {
@@ -110,7 +138,9 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await expect(done.getByText(`${TRACKS} tracks`, { exact: true })).toBeVisible();
 	});
 
-	test('"Start playing" on the Done screen closes the wizard and leaves it closed', async ({ page }) => {
+	test('"Start playing" on the Done screen closes the wizard and leaves it closed', async ({
+		page
+	}) => {
 		const music = `${engine.musicRoot}/My Music`;
 		writeMusicFolder(music, TRACKS);
 		await landAndTimeWizard(page, engine.origin);
@@ -130,7 +160,9 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await allTracksRowCount(page, TRACKS);
 	});
 
-	test('first-run screens show a new user no endpoints, error codes or env-var names (#2590)', async ({ page }) => {
+	test('first-run screens show a new user no endpoints, error codes or env-var names (#2590)', async ({
+		page
+	}) => {
 		await landAndTimeWizard(page, engine.origin);
 		const dialog = setupDialog(page);
 		const seen: string[] = [await dialog.innerText()];
@@ -141,11 +173,19 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await dialog.getByLabel('A folder of audio files (no rekordbox needed)').check();
 		await expect(dialog.getByRole('heading', { name: 'Point at a folder' })).toBeVisible();
 		seen.push(await dialog.innerText());
-		expect(seen.every((text) => text.trim().length > 0), 'a first-run screen rendered no text').toBe(true);
+		expect(
+			seen.every((text) => text.trim().length > 0),
+			'a first-run screen rendered no text'
+		).toBe(true);
 
-
-		const internals = [/\/api\/v1\//, /\brekordbox_not_found\b/, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/];
-		const leaks = seen.flatMap((text) => internals.filter((pattern) => pattern.test(text)).map(String));
+		const internals = [
+			/\/api\/v1\//,
+			/\brekordbox_not_found\b/,
+			/\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/
+		];
+		const leaks = seen.flatMap((text) =>
+			internals.filter((pattern) => pattern.test(text)).map(String)
+		);
 		expect(leaks, 'internals visible on a first-run screen').toEqual([]);
 	});
 });

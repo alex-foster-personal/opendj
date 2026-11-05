@@ -91,7 +91,6 @@ import json
 import math
 import os
 import re
-import statistics
 import subprocess
 import sys
 import traceback
@@ -109,6 +108,7 @@ from scripts.ci_test_budget import (
     fit,
     load_config,
     summary_line,
+    unpriced_module_seconds,
 )
 from scripts.ci_test_selection_rules import (
     DURATIONS_NAME,
@@ -282,6 +282,55 @@ def declared_tests(body: str) -> list[str]:
     return parse_declarations(body)[0]
 
 
+#: Test roots and suffixes of the non-pytest (frontend) suites; the frontend job runs them regardless.
+FRONTEND_TEST_ROOT = "apps/webui/frontend/tests/"
+FRONTEND_TEST_SUFFIXES = (".test.mjs", ".test.js", ".test.ts", ".spec.ts")
+
+
+def _is_pytest_target(path: str) -> bool:
+    """True for `tests/**/*.py` or a `::` node id under it."""
+    return path.startswith("tests/") and path.split("::", 1)[0].endswith(".py")
+
+
+def split_frontend_declarations(declared: list[str], root: Path) -> tuple[list[str], list[str]]:
+    """(pytest-side declarations, existing frontend test paths): a frontend test is accepted, not refused.
+
+    Only an existing path that is not a pytest target and sits under the frontend test root or
+    carries a frontend test suffix moves to the second list; a missing path stays in the first, so
+    `undeclarable` refuses it exactly as before.
+    """
+    pytest_side: list[str] = []
+    frontend: list[str] = []
+    for path in declared:
+        is_frontend_name = path.startswith(FRONTEND_TEST_ROOT) or path.endswith(FRONTEND_TEST_SUFFIXES)
+        if not _is_pytest_target(path) and is_frontend_name and (root / path).is_file():
+            frontend.append(path)
+        else:
+            pytest_side.append(path)
+    return pytest_side, frontend
+
+
+def split_lane_ignored_declarations(
+    declared: list[str], ignores: list[str], root: Path
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """(declarations the lane may run or refuse, [(existing lane-ignored test, the ignore it sits under)]).
+
+    A test that exists but is lane-ignored runs in another step (the reqs-check native step, say),
+    so naming it is accepted and ignored for pytest selection, never refused. A missing path stays
+    in the first list, so `undeclarable` refuses it exactly as before.
+    """
+    kept: list[str] = []
+    ignored: list[tuple[str, str]] = []
+    for path in declared:
+        exists = bool(lane_universe([path], [], root))
+        matched = next((ignore for ignore in ignores if exists and not lane_universe([path], [ignore], root)), None)
+        if matched is not None:
+            ignored.append((path, matched))
+        else:
+            kept.append(path)
+    return kept, ignored
+
+
 def undeclarable(paths: list[str], ignores: list[str], root: Path) -> list[str]:
     """Declared paths this lane never runs: not a test module, absent, or lane-ignored.
 
@@ -431,9 +480,11 @@ SHARD_TARGET_SECONDS = 240.0
 
 
 def _module_weights(modules: list[str], durations: dict[str, float]) -> dict[str, float]:
-    """Recorded seconds per module; an untimed module weighs the median timed one."""
-    known = [durations[m] for m in modules if m in durations]
-    default = statistics.median(known) if known else 1.0
+    """Recorded seconds per module; an untimed module costs what the budget prices it at (CI-UNPRICED).
+
+    An empty ledger weighs every module one second, so a fresh checkout still shards fail-open.
+    """
+    default = unpriced_module_seconds(durations) if durations else 1.0
     return {m: durations.get(m, default) for m in modules}
 
 
@@ -467,8 +518,8 @@ def shard_matrix(record_path: Path, max_shards: int) -> list[int]:
 def assign_shards(modules: list[str], durations: dict[str, float], shards: int) -> list[list[str]]:
     """Greedy least-loaded assignment, heaviest module first; ties go to the lower shard.
 
-    A module the ledger has never timed (a new test file) weighs the median recorded module,
-    so it is neither free nor dominant.
+    A module the ledger has never timed (a new test file) weighs the ledger's p90 module, the
+    price the budget gives it, so the shards it lands on are planned as loaded as they run.
     """
     weights = _module_weights(modules, durations)
     loads = [0.0] * shards
@@ -683,6 +734,17 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
         declared, bundle_prs, errors = run_declarations(event, bundle_json, range_record)
     except FullSuite as unreadable:
         declarations_unknown = str(unreadable)
+    declared, frontend_declared = split_frontend_declarations(declared, root)
+    for frontend_path in frontend_declared:
+        print(f"CI-Tests: {frontend_path} is not a pytest target (frontend); ignored for pytest selection", file=sys.stderr)
+    declared, lane_ignored = split_lane_ignored_declarations(declared, ignores, root)
+    for ignored_path, ignored_by in lane_ignored:
+        print(
+            f"CI-Tests: {ignored_path} is lane-ignored for the fast lane ({ignored_by}); ignored for pytest selection",
+            file=sys.stderr,
+        )
+    if lane_ignored and not declared and not frontend_declared and not errors:
+        print("CI-Tests: every declared path is ignored for pytest selection; selecting from the diff as if no CI-Tests line were present", file=sys.stderr)
     declared, errors, dropped_declarations = _checked_declarations(
         event, declared, errors, undeclarable(declared, ignores, root), range_record
     )
@@ -729,7 +791,12 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     hard = budget is not None and budget.hard
     problem = _precondition_problem(budget, shards, declarations_unknown, declaration_error)
     if problem:
-        _full_or_refuse(hard, f"cannot honor the hard cap: {problem}")
+        rerun_hint = (
+            " (after fixing the PR body, push an empty commit or close and reopen the PR; a rerun reuses the old body)"
+            if problem.startswith("invalid declaration")
+            else ""
+        )
+        _full_or_refuse(hard, f"cannot honor the hard cap: {problem}{rerun_hint}")
         return record("full", f"fell back to the full suite: {problem}")
     capped_over: str | None = None
     try:

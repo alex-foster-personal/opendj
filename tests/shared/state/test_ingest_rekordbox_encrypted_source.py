@@ -1,6 +1,6 @@
 """Fresh-checkout regression: ``ingest-rb`` against the ENCRYPTED working copy.
 
-``paths.copy_live_dbs()`` writes ``data/master.db.copy`` as a byte-for-byte
+``paths.copy_live_dbs()`` writes ``(private path)`` as a byte-for-byte
 copy of the live Rekordbox ``master.db``, which is SQLCipher-encrypted. The
 README sequence (``cli init`` then ``cli ingest-rb`` with no ``--rb-db``)
 therefore used to die on a fresh checkout with::
@@ -8,7 +8,7 @@ therefore used to die on a fresh checkout with::
     sqlite3.DatabaseError: file is not a database
 
 because ``ingest_rb`` opens its source with ``unlock=False``. ``ingest-rb``
-now decrypts the working copy to ``data/master.plain.db`` first and ingests
+now decrypts the working copy to ``(private path)`` first and ingests
 that, which is the decrypted working copy this repo already treats as
 canonical.
 
@@ -17,6 +17,7 @@ re-encrypting the committed plain fixture with pyrekordbox's own key, so the
 production unlock path runs unmodified and no live Rekordbox install is
 touched.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -51,9 +52,7 @@ def _encrypt(plain_src: Path, encrypted_out: Path, key: str) -> None:
 
     con = sqlcipher3.connect(str(plain_src))
     try:
-        con.execute(
-            "ATTACH DATABASE ? AS encrypted KEY ?", (str(encrypted_out), key)
-        )
+        con.execute("ATTACH DATABASE ? AS encrypted KEY ?", (str(encrypted_out), key))
         con.execute("SELECT sqlcipher_export('encrypted')").fetchone()
         con.commit()
         con.execute("DETACH DATABASE encrypted")
@@ -84,9 +83,7 @@ def _has_marker(db_path: Path) -> bool:
 
 
 @pytest.fixture(scope="module")
-def encrypted_master_copy(
-    rb_plain_db_path: Path, tmp_path_factory: pytest.TempPathFactory
-) -> Path:
+def encrypted_master_copy(rb_plain_db_path: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The committed plain fixture, SQLCipher-encrypted ONCE per module.
 
     ``sqlcipher_export`` of the whole fixture is 20-30 s on a CI runner, and it
@@ -113,9 +110,7 @@ def encrypted_master_copy(
 
 
 @pytest.fixture
-def checkout_layout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Path]:
+def checkout_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     """A fresh checkout's data dir and paths, with NO ``master.db.copy`` yet.
 
     The ``encrypted`` path is where ``copy_live_dbs()`` would write the
@@ -132,9 +127,7 @@ def checkout_layout(
     monkeypatch.setattr(shared_paths, "REKORDBOX_PLAIN_DB", plain)
     monkeypatch.setattr(shared_paths, "STATE_DIR", data_dir / "state")
     # No live DB in a hermetic run, so the staleness warning stays quiet.
-    monkeypatch.setattr(
-        shared_paths, "REKORDBOX_LIVE_DB", tmp_path / "no-such-live" / "master.db"
-    )
+    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", tmp_path / "no-such-live" / "master.db")
     return {
         "data_dir": data_dir,
         "encrypted": encrypted,
@@ -144,9 +137,7 @@ def checkout_layout(
 
 
 @pytest.fixture
-def fresh_checkout(
-    encrypted_master_copy: Path, checkout_layout: dict[str, Path]
-) -> dict[str, Path]:
+def fresh_checkout(encrypted_master_copy: Path, checkout_layout: dict[str, Path]) -> dict[str, Path]:
     """A data dir holding only an ENCRYPTED ``master.db.copy`` -- no plain copy.
 
     This is exactly the post-``copy_live_dbs()`` state of a fresh checkout.
@@ -221,9 +212,7 @@ def test_refresh_decrypt_rebuilds_the_plain_copy(
     _mark(fresh_checkout["plain"])
     capsys.readouterr()
 
-    assert (
-        state_cli.main(["--db", str(state_db), "ingest-rb", "--refresh-decrypt"]) == 0
-    )
+    assert state_cli.main(["--db", str(state_db), "ingest-rb", "--refresh-decrypt"]) == 0
     out = capsys.readouterr().out
     assert not _has_marker(fresh_checkout["plain"]), "plain copy was not rebuilt"
     assert "decrypted" in out.lower()
@@ -232,7 +221,7 @@ def test_refresh_decrypt_rebuilds_the_plain_copy(
 def test_missing_working_copy_names_the_step_that_produces_it(
     checkout_layout: dict[str, Path], capsys: pytest.CaptureFixture
 ) -> None:
-    """Fail fast, and say which command populates ``data/master.db.copy``."""
+    """Fail fast, and say which command populates ``(private path)``."""
     fresh_checkout = checkout_layout
     assert not fresh_checkout["encrypted"].exists()
     state_db = fresh_checkout["state_db"]
@@ -277,9 +266,7 @@ def test_explicit_rb_db_override_skips_the_decrypt_step(
     assert state_cli.main(["--db", str(state_db), "init"]) == 0
     capsys.readouterr()
 
-    rc = state_cli.main(
-        ["--db", str(state_db), "ingest-rb", "--rb-db", str(override)]
-    )
+    rc = state_cli.main(["--db", str(state_db), "ingest-rb", "--rb-db", str(override)])
     out = capsys.readouterr().out
     assert rc == 0
     assert str(override) in out

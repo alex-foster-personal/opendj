@@ -52,9 +52,7 @@ def _hanging_http_server() -> Iterator[str]:
 @pytest.mark.requirement("CSSTATUS-10")
 def test_classify_transport_failure_includes_elapsed_for_502() -> None:
     """[if] a 502 transport failure is classified [then] its kind is proxy timeout, [else stop]."""
-    classified = classify_transport_failure(
-        "POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 31.2s)"
-    )
+    classified = classify_transport_failure("POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 31.2s)")
     assert classified is not None
     assert classified.kind == "proxy_or_hub_timeout"
     assert classified.elapsed_s == 31.2
@@ -62,9 +60,7 @@ def test_classify_transport_failure_includes_elapsed_for_502() -> None:
 
 
 def test_classify_transport_failure_client_timeout() -> None:
-    classified = classify_transport_failure(
-        "POST https://hub/push client timeout after 120.0s: timed out"
-    )
+    classified = classify_transport_failure("POST https://hub/push client timeout after 120.0s: timed out")
     assert classified is not None
     assert classified.kind == "client_timeout"
     assert classified.elapsed_s == 120.0

@@ -44,17 +44,28 @@ test('wave row vocals title names every barless state and stays quiet for rekord
 	);
 	assert.equal(
 		vocals.waveRowVocalsTitle(
-			anlzWithVocals({ status: 'demucs', fps: 150, regions: [{ start_s: 1, end_s: 2, intensity: 1 }] })
+			anlzWithVocals({
+				status: 'demucs',
+				fps: 150,
+				regions: [{ start_s: 1, end_s: 2, intensity: 1 }]
+			})
 		),
 		'vocals: local detection'
 	);
 	assert.equal(
 		vocals.waveRowVocalsTitle(
-			anlzWithVocals({ status: 'rekordbox', fps: 150, regions: [{ start_s: 1, end_s: 2, intensity: 1 }] })
+			anlzWithVocals({
+				status: 'rekordbox',
+				fps: 150,
+				regions: [{ start_s: 1, end_s: 2, intensity: 1 }]
+			})
 		),
 		null
 	);
-	assert.throws(() => vocals.waveRowVocalsTitle(anlzWithVocals({ status: 'bogus' })), /unknown status/);
+	assert.throws(
+		() => vocals.waveRowVocalsTitle(anlzWithVocals({ status: 'bogus' })),
+		/unknown status/
+	);
 });
 
 function classHost() {

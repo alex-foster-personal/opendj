@@ -115,7 +115,10 @@ def test_autoplay_decision_reads_back_what_the_page_published(app: FastAPI) -> N
 @pytest.mark.requirement("AUTOPLAN-04")
 def test_a_status_read_does_not_restart_a_failed_prepare(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a status read finds a failed prepare [then] it says failed and starts nothing, not a warming retry, [else stop]."""
-    app.state.ui_mirror = {**_mirror(), "decks": {**_mirror()["decks"], "2": {**_mirror()["decks"]["2"], "stable_id": "trk-in"}}}
+    app.state.ui_mirror = {
+        **_mirror(),
+        "decks": {**_mirror()["decks"], "2": {**_mirror()["decks"]["2"], "stable_id": "trk-in"}},
+    }
     started: list[str] = []
 
     class _Pool:
@@ -128,10 +131,12 @@ def test_a_status_read_does_not_restart_a_failed_prepare(app: FastAPI, monkeypat
     client = TestClient(app)
     assert client.post("/dj/transition/prepare", json={**body, "status_only": True}).json()["state"] == "warming"
     assert started == ["prepare"], "if a first read starts nothing then a decision waits on no prepare, broken"
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     app.state.transition_plan_cache.finish(key, "failed", "no renderer")
     failed = client.post("/dj/transition/prepare", json={**body, "status_only": True}).json()
     assert (failed["state"], failed["reason"]) == ("failed", "no renderer"), "if a failure reads as warming then broken"
     assert started == ["prepare"], "if a status read restarts it then broken"
-    assert client.post("/dj/transition/prepare", json=body).json()["state"] == "warming", "control: a plain call still retries"
+    assert client.post("/dj/transition/prepare", json=body).json()["state"] == "warming", (
+        "control: a plain call still retries"
+    )
     assert started == ["prepare", "prepare"]

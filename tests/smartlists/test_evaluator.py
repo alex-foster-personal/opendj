@@ -1,4 +1,5 @@
 """SMART-02 -- evaluator compile + evaluate tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -16,13 +17,15 @@ pytestmark = pytest.mark.requirement("SMART-02")
 
 @pytest.fixture
 def seeded_library(fixture_library):
-    fixture_library.add_many([
-        {"stable_id": "a", "fields": {"genre": "House", "bpm": 125, "rating": 5}},
-        {"stable_id": "b", "fields": {"genre": "House", "bpm": 118, "rating": 3}},
-        {"stable_id": "c", "fields": {"genre": "Techno", "bpm": 128, "rating": 5}},
-        {"stable_id": "d", "fields": {"genre": "House", "bpm": 124, "rating": 2}},
-        {"stable_id": "e", "fields": {"genre": "House", "bpm": 126, "rating": 5, "energy": 9}},
-    ])
+    fixture_library.add_many(
+        [
+            {"stable_id": "a", "fields": {"genre": "House", "bpm": 125, "rating": 5}},
+            {"stable_id": "b", "fields": {"genre": "House", "bpm": 118, "rating": 3}},
+            {"stable_id": "c", "fields": {"genre": "Techno", "bpm": 128, "rating": 5}},
+            {"stable_id": "d", "fields": {"genre": "House", "bpm": 124, "rating": 2}},
+            {"stable_id": "e", "fields": {"genre": "House", "bpm": 126, "rating": 5, "energy": 9}},
+        ]
+    )
     return fixture_library
 
 
@@ -47,40 +50,33 @@ def test_compile_is_deterministic() -> None:
 
 
 def test_compile_paired_with_equality() -> None:
-    sql, params = compile_rule(
-        {"field": "paired_with", "op": "=", "value": "anchor-id"}
-    , selection=RBX)
+    sql, params = compile_rule({"field": "paired_with", "op": "=", "value": "anchor-id"}, selection=RBX)
     assert "SELECT to_stable_id FROM pairings" in sql
     assert params == ["anchor-id", "anchor-id"]
 
 
 def test_compile_paired_with_in_list() -> None:
-    sql, params = compile_rule(
-        {"field": "paired_with", "op": "in", "value": ["a", "b", "c"]}
-    , selection=RBX)
+    sql, params = compile_rule({"field": "paired_with", "op": "in", "value": ["a", "b", "c"]}, selection=RBX)
     assert "IN (?, ?, ?)" in sql
     assert params == ["a", "b", "c", "a", "b", "c"]
 
 
 def test_compile_contains_string_uses_like() -> None:
-    sql, params = compile_rule(
-        {"field": "genre", "op": "contains", "value": "House"}
-    , selection=RBX)
+    sql, params = compile_rule({"field": "genre", "op": "contains", "value": "House"}, selection=RBX)
     assert "LIKE ?" in sql
     assert params == ["%House%"]
 
 
 def test_compile_contains_list_uses_json_each() -> None:
-    sql, params = compile_rule(
-        {"field": "custom_tags", "op": "contains", "value": "peak"}
-    , selection=RBX)
+    sql, params = compile_rule({"field": "custom_tags", "op": "contains", "value": "peak"}, selection=RBX)
     assert "json_each" in sql
     assert params == ["peak"]
 
 
 def test_simple_genre_filter(seeded_library, state_conn) -> None:
     result = evaluate(
-        {"field": "genre", "op": "=", "value": "House"}, state_conn,
+        {"field": "genre", "op": "=", "value": "House"},
+        state_conn,
     )
     assert set(result) == {"a", "b", "d", "e"}
 
@@ -166,7 +162,8 @@ def test_custom_tags_contains(fixture_library, state_conn) -> None:
 def test_order_by_bpm_desc(seeded_library, state_conn) -> None:
     result = evaluate(
         {"field": "genre", "op": "=", "value": "House"},
-        state_conn, order_by="bpm desc",
+        state_conn,
+        order_by="bpm desc",
     )
     assert result == ["e", "a", "d", "b"]
 
@@ -174,7 +171,8 @@ def test_order_by_bpm_desc(seeded_library, state_conn) -> None:
 def test_order_by_bpm_asc(seeded_library, state_conn) -> None:
     result = evaluate(
         {"field": "genre", "op": "=", "value": "House"},
-        state_conn, order_by="bpm asc",
+        state_conn,
+        order_by="bpm asc",
     )
     assert result == ["b", "d", "a", "e"]
 
@@ -183,26 +181,31 @@ def test_order_by_rejects_unknown(seeded_library, state_conn) -> None:
     with pytest.raises(EvaluatorError):
         evaluate(
             {"field": "genre", "op": "=", "value": "House"},
-            state_conn, order_by="title asc",
+            state_conn,
+            order_by="title asc",
         )
 
 
 def test_limit_clamps_result(seeded_library, state_conn) -> None:
     result = evaluate(
         {"field": "genre", "op": "=", "value": "House"},
-        state_conn, order_by="bpm desc", limit=2,
+        state_conn,
+        order_by="bpm desc",
+        limit=2,
     )
     assert len(result) == 2
 
 
 def test_sql_injection_probe_is_parameterised(
-    fixture_library, state_conn,
+    fixture_library,
+    state_conn,
 ) -> None:
     fixture_library.add_track("mal")
     fixture_library.add_field("mal", "genre", "'; DROP TABLE tracks; --")
     result = evaluate(
         {
-            "field": "genre", "op": "=",
+            "field": "genre",
+            "op": "=",
             "value": "'; DROP TABLE tracks; --",
         },
         state_conn,
@@ -213,7 +216,9 @@ def test_sql_injection_probe_is_parameterised(
 
 
 def test_paired_with_equality_joins_pairings(
-    fixture_library, state_conn, pairings_repo_slm,
+    fixture_library,
+    state_conn,
+    pairings_repo_slm,
 ) -> None:
     fixture_library.add_track("anchor")
     fixture_library.add_track("b_paired")
@@ -230,7 +235,9 @@ def test_paired_with_equality_joins_pairings(
 
 
 def test_paired_with_ignores_out_of(
-    fixture_library, state_conn, pairings_repo_slm,
+    fixture_library,
+    state_conn,
+    pairings_repo_slm,
 ) -> None:
     fixture_library.add_track("anchor")
     fixture_library.add_track("neighbour")
@@ -243,7 +250,9 @@ def test_paired_with_ignores_out_of(
 
 
 def test_paired_with_reads_reverse_stored_edges(
-    fixture_library, state_conn, pairings_repo_slm,
+    fixture_library,
+    state_conn,
+    pairings_repo_slm,
 ) -> None:
     """If anchor's pairing is stored as (x, anchor, out_of|either) then x matches, else stop."""
     for sid in ("anchor", "b_rev", "c_rev", "d_into_anchor"):
@@ -269,7 +278,8 @@ def test_relative_date_compiles(fixture_library, state_conn) -> None:
     fixture_library.add_track("recent")
     result = evaluate(
         {
-            "field": "added_date", "op": ">",
+            "field": "added_date",
+            "op": ">",
             "value": {"$relative": "-90d"},
         },
         state_conn,

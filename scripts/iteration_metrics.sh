@@ -93,8 +93,8 @@ record = {
 }
 with open(path, "a", encoding="utf-8") as handle:
     handle.write(json.dumps(record) + "\n")
-' "${METRICS_FILE}" "${step}" "${started}" "${exit_code}" "${sha}" "$(hostname -s)" 2>/dev/null \
-        || printf '[WARN] iteration-metrics: append to %s failed, timing for %s NOT recorded\n' \
+' "${METRICS_FILE}" "${step}" "${started}" "${exit_code}" "${sha}" "$(hostname -s)" 2>/dev/null ||
+        printf '[WARN] iteration-metrics: append to %s failed, timing for %s NOT recorded\n' \
             "${METRICS_FILE}" "${step}" >&2
     return 0
 }

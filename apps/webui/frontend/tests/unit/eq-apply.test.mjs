@@ -20,9 +20,7 @@ before(async () => {
 });
 
 function readInputToAppliedFloorMs() {
-	const baseline = JSON.parse(
-		readFileSync(`${REPO_ROOT}/ops/quality/baseline.json`, 'utf8')
-	);
+	const baseline = JSON.parse(readFileSync(`${REPO_ROOT}/ops/quality/baseline.json`, 'utf8'));
 	return baseline.metrics['latency.input_to_applied_ms'];
 }
 
@@ -76,7 +74,9 @@ test('press-to-apply compares against the baseline floor, not a hardcoded consta
 });
 
 test('setEq accepts the stamp, applies the ramp, logs, and does not call _setParam', () => {
-	const body = engineBlockAfter('setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void {');
+	const body = engineBlockAfter(
+		'setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void {'
+	);
 	assert.match(body, /pressT0Ms/);
 	assert.match(body, /applyEqRamp\(/);
 	assert.match(body, /logEqApply\(/);
@@ -97,10 +97,7 @@ test('MIDI mixer_channel eq forwards pressT0Ms into dispatchPerformanceCommand',
 		glue.includes("{ type: 'eq', deck, band, value }"),
 		'MIDI eq must dispatch the eq command'
 	);
-	assert.ok(
-		/type:\s*'eq'[\s\S]*pressT0Ms/.test(glue),
-		'MIDI eq must forward pressT0Ms'
-	);
+	assert.ok(/type:\s*'eq'[\s\S]*pressT0Ms/.test(glue), 'MIDI eq must forward pressT0Ms');
 });
 
 test('EQ apply instrumentation does not read master mute state', () => {

@@ -237,7 +237,7 @@ function _drawPreview(
 	}
 	if (design === 'line') {
 		ctx.strokeStyle = colors.mono;
-		ctx.lineWidth = 1;
+		ctx.lineWidth = heightPx / STRIP_MIN_BACKING.heightPx;
 		ctx.beginPath();
 		for (let i = 0; i < n; i++) {
 			const x = i * w + w / 2;
@@ -293,10 +293,12 @@ function _drawLoopCueBands(
 	for (const cue of loopCues) {
 		const band = loopBandPx({ ...cue, engaged: true }, (ms) => (ms / durationMs) * widthPx, widthPx);
 		if (band === null) continue;
-		const markerHeight = Math.min(LOOP_CUE_MARKER_PX, heightPx);
+		// DECKUX-8337: sized for the 40 px-high buffer, scaled with the real one.
+		const scale = heightPx / STRIP_MIN_BACKING.heightPx;
+		const markerHeight = Math.min(LOOP_CUE_MARKER_PX * scale, heightPx);
 		ctx.fillStyle = LOOP_CUE_COLOR;
 		ctx.fillRect(band.left, 0, band.right - band.left, markerHeight);
-		ctx.lineWidth = 1;
+		ctx.lineWidth = scale;
 		ctx.strokeStyle = LOOP_CUE_OUTLINE;
 		ctx.strokeRect(band.left + 0.5, 0.5, Math.max(0, band.right - band.left - 1), markerHeight - 1);
 	}
@@ -334,4 +336,33 @@ function _drawBlocks(
 			if (barH > 0) ctx.fillRect(x, heightPx - barH, BLOCK_BAR_PX, barH);
 		}
 	}
+}
+
+//-----------------------------------------------------------------------------
+// DECKUX-8337: backing store sized to the strip, not a fixed 400x40
+//-----------------------------------------------------------------------------
+
+/** The strip's drawn size before layout has measured it, and its floor. */
+export const STRIP_MIN_BACKING = { widthPx: 400, heightPx: 40 } as const;
+
+/** Cap per side: a 5K ultrawide at 2x stays sharp, and one repaint on resize stays cheap. */
+export const STRIP_MAX_BACKING_PX = 4096;
+
+/**
+ * Device pixels the strip canvas draws at for a CSS box and pixel density.
+ * A fixed 400x40 buffer stretched to a 900 px strip at 2x upscaled 4.5x and
+ * pixelated on wide screens. Repaints only when this changes (resize, DPR).
+ */
+export function stripBackingSize(
+	cssWidthPx: number,
+	cssHeightPx: number,
+	devicePixelRatio: number
+): { widthPx: number; heightPx: number } {
+	if (!(devicePixelRatio > 0)) throw new Error(`stripBackingSize: devicePixelRatio must be > 0, got ${devicePixelRatio}`);
+	const side = (css: number, floor: number): number =>
+		Math.min(STRIP_MAX_BACKING_PX, Math.max(floor, Math.round(Math.max(0, css) * devicePixelRatio)));
+	return {
+		widthPx: side(cssWidthPx, STRIP_MIN_BACKING.widthPx),
+		heightPx: side(cssHeightPx, STRIP_MIN_BACKING.heightPx)
+	};
 }

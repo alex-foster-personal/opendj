@@ -144,12 +144,14 @@ def test_list_smartlists_include_counts_matches_tracks(client, state_db_path):
 
 
 def test_list_smartlists_count_re_evaluates_after_field_mutation(
-    client, state_db_path,
+    client,
+    state_db_path,
 ):
     rule = {"field": "rating", "op": ">=", "value": 4}
     sid = _create_smartlist(state_db_path, "four stars", rule)
     before = client.get(
-        "/api/v1/smartlists", params={"include_counts": True},
+        "/api/v1/smartlists",
+        params={"include_counts": True},
     )
     before_tracks = client.get(f"/api/v1/smartlists/{sid}/tracks")
     assert before.json()[0]["count"] == len(before_tracks.json()["items"]) == 2
@@ -157,8 +159,7 @@ def test_list_smartlists_count_re_evaluates_after_field_mutation(
     conn = sqlite3.connect(str(state_db_path))
     try:
         conn.execute(
-            "UPDATE track_fields SET value_json=? "
-            "WHERE stable_id=? AND field_name='rating'",
+            "UPDATE track_fields SET value_json=? WHERE stable_id=? AND field_name='rating'",
             (json.dumps(4), "sl-track-002"),
         )
         conn.commit()
@@ -166,14 +167,16 @@ def test_list_smartlists_count_re_evaluates_after_field_mutation(
         conn.close()
 
     after = client.get(
-        "/api/v1/smartlists", params={"include_counts": True},
+        "/api/v1/smartlists",
+        params={"include_counts": True},
     )
     after_tracks = client.get(f"/api/v1/smartlists/{sid}/tracks")
     assert after.json()[0]["count"] == len(after_tracks.json()["items"]) == 3
 
 
 def test_list_smartlists_corrupt_rule_keeps_collection_available(
-    client, state_db_path,
+    client,
+    state_db_path,
 ):
     good_id = _create_smartlist(state_db_path, "good", _BPM_RULE)
     bad_id = _create_smartlist(state_db_path, "bad", _BPM_RULE)
@@ -188,7 +191,8 @@ def test_list_smartlists_corrupt_rule_keeps_collection_available(
         conn.close()
 
     response = client.get(
-        "/api/v1/smartlists", params={"include_counts": True},
+        "/api/v1/smartlists",
+        params={"include_counts": True},
     )
 
     assert response.status_code == 200

@@ -9,9 +9,12 @@ let cache;
 const originalFetch = globalThis.fetch;
 
 before(async () => {
-	cache = await loadTypeScriptModule('src/lib/components/rb/wave/beatgrid-fallback-cache.svelte.ts', {
-		viteApiBase: API_BASE
-	});
+	cache = await loadTypeScriptModule(
+		'src/lib/components/rb/wave/beatgrid-fallback-cache.svelte.ts',
+		{
+			viteApiBase: API_BASE
+		}
+	);
 });
 
 function jsonResponse(body, init = {}) {

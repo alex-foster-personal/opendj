@@ -4,12 +4,12 @@ Usage:
   uv run --no-sync python -m scripts.preview_pins_ledger
   uv run --no-sync python -m scripts.preview_pins_ledger --feedback-dir <data-dir>/feedback
 
-The ledger is ``docs/controller/preview-pins-ledger.json``. With no
+The ledger is ``(private path)``. With no
 ``--feedback-dir`` the pin set comes from the committed snapshots it names; with
 one, the Preview-build pins in that live store must also be in the ledger (read
 only, never written). Exit 0 prints the pin count; exit 1 prints every problem.
 
-Requirements (acceptance tests in tests/scripts/test_preview_pins_ledger.py):
+Requirements (acceptance tests in (private path)):
   ✔︎ ✅ 🎯 Ledger and snapshots agree both ways on the Preview pin set.
     [if] a snapshot pin is missing from the ledger [then ⛔️]
     [if] the ledger names a pin no snapshot holds [then ⛔️]
@@ -41,9 +41,7 @@ SKIP_DIRS = {"node_modules", "fixtures", ".svelte-kit", "build", "dist", "__pyca
 DISPOSITIONS = {"shipped", "partial", "deferred", "held", "open"}
 BUILT = {"shipped", "partial"}
 ROW = re.compile(r"^- \[( |x)\] \*\*([A-Za-z0-9-]+)\*\*")
-REQ_TOKEN = re.compile(
-    r"(?<![A-Za-z0-9-])[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d+[a-z]?(?![A-Za-z0-9])"
-)
+REQ_TOKEN = re.compile(r"(?<![A-Za-z0-9-])[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d+[a-z]?(?![A-Za-z0-9])")
 
 
 @dataclass(frozen=True)
@@ -127,19 +125,12 @@ def _preview_ids(pins: list[dict], builds: set[str]) -> set[str]:
 # ----------------------------------------------------------------- checks
 
 
-def find_problems(
-    ledger: dict, rows: dict[str, ReqRow], tests: dict[Path, str], snapshot_ids: set[str]
-) -> list[str]:
+def find_problems(ledger: dict, rows: dict[str, ReqRow], tests: dict[Path, str], snapshot_ids: set[str]) -> list[str]:
     """Every way the ledger fails to account for a Preview pin; empty means complete."""
     problems: list[str] = []
     pins = {p["id"]: p for p in ledger["pins"]}
-    problems += [
-        f"pin {i}: in a snapshot, missing from the ledger"
-        for i in sorted(snapshot_ids - pins.keys())
-    ]
-    problems += [
-        f"pin {i}: in the ledger, in no snapshot" for i in sorted(pins.keys() - snapshot_ids)
-    ]
+    problems += [f"pin {i}: in a snapshot, missing from the ledger" for i in sorted(snapshot_ids - pins.keys())]
+    problems += [f"pin {i}: in the ledger, in no snapshot" for i in sorted(pins.keys() - snapshot_ids)]
     tested = {rid for text in tests.values() for rid in REQ_TOKEN.findall(text)}
     for pin_id, pin in sorted(pins.items()):
         disposition = pin["disposition"]
@@ -166,17 +157,14 @@ def find_problems(
 def check(root: Path = PROJECT_ROOT, feedback_dirs: list[Path] | None = None) -> list[str]:
     ledger = json.loads((root / LEDGER.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8"))
     builds = set(ledger["preview_builds"])
-    rows = read_requirement_rows(
-        (root / REQUIREMENTS.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8")
-    )
+    rows = read_requirement_rows((root / REQUIREMENTS.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8"))
     snapshot_ids = read_snapshot_pin_ids(root, ledger["snapshots"], builds)
     problems = find_problems(ledger, rows, index_test_files(root), snapshot_ids)
     ledger_ids = {p["id"] for p in ledger["pins"]}
     for feedback_dir in feedback_dirs or []:
         live = read_live_pin_ids(feedback_dir, builds)
         problems += [
-            f"pin {i}: in live store {feedback_dir}, missing from the ledger"
-            for i in sorted(live - ledger_ids)
+            f"pin {i}: in live store {feedback_dir}, missing from the ledger" for i in sorted(live - ledger_ids)
         ]
     return problems
 

@@ -194,10 +194,7 @@ def test_cancel_run_publishes_github_notice_before_post(tmp_path: Path) -> None:
 
 def test_completed_run_409_counts_as_already_completed(tmp_path: Path) -> None:
     def _raise_409(_args: list[str]) -> str:
-        raise PreconditionError(
-            "gh api --method POST repos/example/actions/runs/1/cancel failed with exit 1: "
-            "HTTP 409"
-        )
+        raise PreconditionError("gh api --method POST repos/example/actions/runs/1/cancel failed with exit 1: HTTP 409")
 
     log = tmp_path / "log"
     outcome = cancel_run(
@@ -211,9 +208,7 @@ def test_completed_run_409_counts_as_already_completed(tmp_path: Path) -> None:
     assert "outcome=already_completed" in log.read_text(encoding="utf-8")
 
 
-def test_cancel_run_prefers_github_actor_over_os_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cancel_run_prefers_github_actor_over_os_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """if actor is omitted on Actions then the audit row names GITHUB_ACTOR not the runner account"""
     monkeypatch.setenv("GITHUB_ACTOR", "maintainer")
     monkeypatch.setenv("USER", "runner-shared")

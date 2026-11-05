@@ -4,6 +4,9 @@ import type { StemDeckState } from '$lib/rb/stem-types';
 export const CONTROLLER_NEURAL_STEMS = ['drums', 'bass', 'other', 'vocal'] as const;
 
 export function controllerStemPadsAvailable(stems: StemDeckState): boolean {
-	return stems.status === 'ready' && stems.layout === 'demucs4' &&
-		CONTROLLER_NEURAL_STEMS.every((stem) => stems.available_controls.includes(stem));
+	return (
+		stems.status === 'ready' &&
+		stems.layout === 'demucs4' &&
+		CONTROLLER_NEURAL_STEMS.every((stem) => stems.available_controls.includes(stem))
+	);
 }

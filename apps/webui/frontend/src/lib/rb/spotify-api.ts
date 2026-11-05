@@ -41,7 +41,8 @@ function _isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function _expectString(value: unknown, field: string): string {
-	if (typeof value !== 'string') throw new Error(`Spotify pending-track contract violation: ${field}`);
+	if (typeof value !== 'string')
+		throw new Error(`Spotify pending-track contract violation: ${field}`);
 	return value;
 }
 
@@ -79,7 +80,9 @@ function _pendingTrack(value: unknown, index: number): SpotifyPendingTrack {
 	if (!_isRecord(value)) throw new Error(`Spotify pending-track contract violation: row ${index}`);
 	const status = _expectString(value.status, `row ${index}.status`);
 	if (status !== 'pending') {
-		throw new Error(`Spotify pending-track contract violation: row ${index}.status must be pending`);
+		throw new Error(
+			`Spotify pending-track contract violation: row ${index}.status must be pending`
+		);
 	}
 	return {
 		pending_id: _expectNumber(value.pending_id, `row ${index}.pending_id`),

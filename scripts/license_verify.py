@@ -60,11 +60,15 @@ def verify_bundled_licenses(payload_dir: Path) -> None:
             raise LicenseInventoryError(f"{staged} is missing or empty: the app would ship without {name}")
     inventory = (payload_dir / LICENSES_FILE_NAME).read_text(encoding="utf-8")
     if len(inventory) < MIN_LICENSES_FILE_CHARS:
-        raise LicenseInventoryError(f"{LICENSES_FILE_NAME} is only {len(inventory)} chars: license texts were not rendered")
+        raise LicenseInventoryError(
+            f"{LICENSES_FILE_NAME} is only {len(inventory)} chars: license texts were not rendered"
+        )
     records = component_records(inventory)
     for ecosystem in ECOSYSTEMS:
         if not any(eco == ecosystem for _, eco in records):
-            raise LicenseInventoryError(f"{LICENSES_FILE_NAME} lists no {ecosystem} component: an inventory failed silently")
+            raise LicenseInventoryError(
+                f"{LICENSES_FILE_NAME} lists no {ecosystem} component: an inventory failed silently"
+            )
     attributed = attributed_member_lists(inventory)
     textless_names = {name for _, name in KNOWN_TEXTLESS}
     unattributed = [

@@ -200,7 +200,11 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 	if (toast !== null) link.toast = toast;
 	if (active) return;
 	active = true;
-	installPerformanceHotCueDriver(rustHotCueDriver);
+	// HOTCUE-LOOP-01: a loop hot cue engages its stored range on this engine.
+	installPerformanceHotCueDriver({
+		...rustHotCueDriver,
+		engageLoop: (deck, loop) => executeRustCommand({ type: 'loop', deck, loop, quantize: false })
+	});
 	registerAutoGainApplier(_sendAutoGain);
 }
 

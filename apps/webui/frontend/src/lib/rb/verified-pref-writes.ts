@@ -74,7 +74,10 @@ export function makeVerifiedPrefWriters(deps: {
 	}
 
 	/** A key is saved only if no newer local write replaced it meanwhile. */
-	function markConfirmSaved(patch: Record<string, unknown>, revs: Map<string, number | undefined>): void {
+	function markConfirmSaved(
+		patch: Record<string, unknown>,
+		revs: Map<string, number | undefined>
+	): void {
 		for (const key of Object.keys(patch)) {
 			if (unsavedConfirm.get(key) === revs.get(key)) unsavedConfirm.delete(key);
 		}
@@ -179,7 +182,11 @@ export function hydrateConfirmFromDisk(
 		if (isUnsaved(key)) continue;
 		// null deletes; drop mode takes 'add'|'move'; every other key takes a boolean.
 		if (value === null) delete next[key];
-		else if (key === 'playlist_drop_mode' ? value === 'add' || value === 'move' : typeof value === 'boolean')
+		else if (
+			key === 'playlist_drop_mode'
+				? value === 'add' || value === 'move'
+				: typeof value === 'boolean'
+		)
 			next[key] = value;
 	}
 	uiPrefs.confirm = next;

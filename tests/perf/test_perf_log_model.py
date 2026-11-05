@@ -99,9 +99,7 @@ def test_read_survives_concurrent_wal_writes(tmp_path) -> None:
         try:
             while not stop.is_set():
                 n += 1
-                payload = json.dumps([_perf_row(i) for i in range(n, n + 5)]).encode(
-                    "utf-16-le"
-                )
+                payload = json.dumps([_perf_row(i) for i in range(n, n + 5)]).encode("utf-16-le")
                 connection.execute(
                     "UPDATE ItemTable SET value = ? WHERE key = 'mdt.perfEventLog'",
                     (payload,),
@@ -131,8 +129,7 @@ def test_read_survives_concurrent_wal_writes(tmp_path) -> None:
 
     assert reads > 0, "the writer never got a chance to race a read"
     assert failures == [], (
-        f"{len(failures)} of {reads + len(failures)} reads failed under "
-        f"concurrent WAL writes: {failures[:3]}"
+        f"{len(failures)} of {reads + len(failures)} reads failed under concurrent WAL writes: {failures[:3]}"
     )
 
 
@@ -247,9 +244,7 @@ def test_a_fetch_wall_with_no_member_breakdown_withholds_the_ceiling() -> None:
     treatment as a contested multi-member group: non-parallelizable, ceiling
     withheld.
     """
-    model = deck_load_phase_model(
-        {"fetchWall": 90, "totalBeforeSwap": 90, "total": 90}
-    )
+    model = deck_load_phase_model({"fetchWall": 90, "totalBeforeSwap": 90, "total": 90})
     assert model is not None
     assert model.contested_fetch_group is True
     by_name = {phase.name: phase for phase in model.phases}
@@ -273,9 +268,7 @@ def test_a_lone_fetch_members_remainder_is_not_credited_as_parallel() -> None:
     the lone member still gives a real floor, so `contested_fetch_group`
     stays False and the load's ceiling is not withheld -- it is simply zero.
     """
-    model = deck_load_phase_model(
-        {"fetchWall": 90000, "fetchAudio": 0, "totalBeforeSwap": 90000, "total": 90000}
-    )
+    model = deck_load_phase_model({"fetchWall": 90000, "fetchAudio": 0, "totalBeforeSwap": 90000, "total": 90000})
     assert model is not None
     assert model.contested_fetch_group is False
     by_name = {phase.name: phase for phase in model.phases}

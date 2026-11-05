@@ -38,7 +38,7 @@ function _tokens(text: string, inLink: boolean): Piece[] {
 		if (plain) out.push(noteSchema.text(plain));
 		plain = '';
 	};
-	for (let i = 0; i < text.length; ) {
+	for (let i = 0; i < text.length;) {
 		INLINE_RE.lastIndex = i;
 		const m = INLINE_RE.exec(text);
 		const [, escaped, kind, stableId, stem, label, linkText, href, bold] = m ?? [];
@@ -51,7 +51,8 @@ function _tokens(text: string, inLink: boolean): Piece[] {
 		} else if (target) {
 			flush();
 			const link = marks.link.create({ href });
-			for (const p of _tokens(linkText, true)) out.push(p === 'strong' ? p : p.mark(link.addToSet(p.marks)));
+			for (const p of _tokens(linkText, true))
+				out.push(p === 'strong' ? p : p.mark(link.addToSet(p.marks)));
 		} else if (bold !== undefined) {
 			flush();
 			out.push('strong');
@@ -69,7 +70,8 @@ function _tokens(text: string, inLink: boolean): Piece[] {
 /** Pairs the ** delimiters; an unpaired last one is literal text. */
 function _inline(text: string): PMNode[] {
 	const pieces = _tokens(text, false);
-	const unpaired = pieces.filter((p) => p === 'strong').length % 2 === 1 ? pieces.lastIndexOf('strong') : -1;
+	const unpaired =
+		pieces.filter((p) => p === 'strong').length % 2 === 1 ? pieces.lastIndexOf('strong') : -1;
 	let bold = false;
 	const out: PMNode[] = [];
 	pieces.forEach((p, i) => {

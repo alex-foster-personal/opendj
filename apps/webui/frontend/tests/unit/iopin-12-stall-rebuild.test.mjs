@@ -10,7 +10,7 @@
 // output-stall rebuild under a playing deck) and
 // tests/e2e/audio-output-topology.spec.ts (master 1/2 and cue 3/4 routing on a
 // real four-channel graph). The claims that still have only these wiring
-// checks are listed in .planning/debt/3837.md.
+// checks are listed in (private path).
 //
 // The output-stall rebuild (issue #2155: a new AudioContext with the loaded
 // decks re-attached) is the one graph build that runs while decks are loaded.
@@ -55,7 +55,9 @@ const SID = 'c'.repeat(40);
 const SID_2 = 'd'.repeat(40);
 // node:test cannot host the Signalsmith worklet; this stand-in keeps the load
 // and re-attach paths real up to the processor boundary.
-const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
+const STRETCH_STUB = fileURLToPath(
+	new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url)
+);
 
 let audio;
 let stores;
@@ -77,7 +79,10 @@ const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
 //-----------------------------------------------------------------------------
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 function installDaemon() {
@@ -98,12 +103,20 @@ function installDaemon() {
 			});
 		}
 		if (url.endsWith('/hot-cues')) {
-			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
+			return json(
+				['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))
+			);
 		}
 		if (url.endsWith('/audio')) return new Response(new Uint8Array(4 * 4800));
 		const track = url.match(/\/tracks\/([0-9a-f]{40})(\/stems)?$/);
-		if (track?.[2] !== undefined) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
-		if (track !== null) return json({ stable_id: track[1], title: 'Stall Rebuild', artist: 'Fixture', bpm: null });
+		if (track?.[2] !== undefined)
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (track !== null)
+			return json({ stable_id: track[1], title: 'Stall Rebuild', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
 }
@@ -116,7 +129,8 @@ before(async () => {
 	installWindow('');
 	globalThis.AudioContext = FakeAudioContext;
 	// The engine's transport clock runs on animation frames; play() starts it.
-	globalThis.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 16);
+	globalThis.requestAnimationFrame = (callback) =>
+		setTimeout(() => callback(performance.now()), 16);
 	globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle);
 	const entry = await loadTypeScriptModule('tests/unit/fixtures/djio-fallback-entry.ts', {
 		viteApiBase: API_BASE,
@@ -157,13 +171,18 @@ after(async () => {
 	delete globalThis.window;
 });
 
-const recreateFailedToast = () => stores.toasts.find((toast) => /graph recreate failed/.test(toast.message));
+const recreateFailedToast = () =>
+	stores.toasts.find((toast) => /graph recreate failed/.test(toast.message));
 
 /** Load deck 1 for real and prove it holds its track before a case rebuilds under it. */
 async function loadDeckOne() {
 	await audio.engine.load(1, SID);
 	assert.equal(audio.getDeckState(1).stable_id, SID, 'precondition: deck 1 is loaded');
-	assert.equal(audio.getDeckState(1).processor_error, null, 'precondition: deck 1 has no processor error');
+	assert.equal(
+		audio.getDeckState(1).processor_error,
+		null,
+		'precondition: deck 1 has no processor error'
+	);
 }
 
 //-----------------------------------------------------------------------------
@@ -179,18 +198,38 @@ test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built retries t
 	FakeAudioContext.maxChannelCount = 2;
 	await instrumentation._recoverOutputStallForTests();
 	assert.ok(recreateFailedToast(), 'precondition: the recreate really failed and said so');
-	assert.deepEqual(retrySleeps, [15_000, 30_000, 60_000], 'if the first failure unloads with no retry then a slow addModule ejects the set (bug #58) - broken');
-	assert.equal(audio.gigDeckGraphIsPresent(), false, 'precondition: the failed rebuild was discarded');
+	assert.deepEqual(
+		retrySleeps,
+		[15_000, 30_000, 60_000],
+		'if the first failure unloads with no retry then a slow addModule ejects the set (bug #58) - broken'
+	);
+	assert.equal(
+		audio.gigDeckGraphIsPresent(),
+		false,
+		'precondition: the failed rebuild was discarded'
+	);
 	const deck = audio.getDeckState(1);
 	assert.equal(
 		deck.stable_id,
 		null,
 		'if the deck keeps its track after its processor is gone then the deck shows a track play() rejects as "no track loaded" - broken'
 	);
-	assert.match(deck.processor_error ?? '', /audio engine could not restart, reload the track/, 'if the deck carries no error then the operator sees an empty deck with no reason - broken');
-	assert.match(deck.processor_error ?? '', /extroute needs 4 output channels/, 'the deck names the build error that caused it');
+	assert.match(
+		deck.processor_error ?? '',
+		/audio engine could not restart, reload the track/,
+		'if the deck carries no error then the operator sees an empty deck with no reason - broken'
+	);
+	assert.match(
+		deck.processor_error ?? '',
+		/extroute needs 4 output channels/,
+		'the deck names the build error that caused it'
+	);
 	assert.match(deck.processor_error ?? '', /reload the track/, 'the deck names the fix');
-	assert.equal(registry.countRegisteredAudioContexts(), 0, 'neither the replaced context nor the failed one stays registered');
+	assert.equal(
+		registry.countRegisteredAudioContexts(),
+		0,
+		'neither the replaced context nor the failed one stays registered'
+	);
 
 	FakeAudioContext.maxChannelCount = 4;
 	await audio.engine.load(1, SID);
@@ -212,16 +251,32 @@ test('IOPIN-12 wiring check: a rebuild whose teardown of the old graph rejects s
 	};
 	try {
 		await instrumentation._recoverOutputStallForTests();
-		assert.deepEqual(retrySleeps, [15_000], 'precondition: the first attempt failed on the teardown and one retry ran');
-		assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
+		assert.deepEqual(
+			retrySleeps,
+			[15_000],
+			'precondition: the first attempt failed on the teardown and one retry ran'
+		);
+		assert.equal(
+			recreateFailedToast(),
+			undefined,
+			'the retry succeeded, so nothing says the recreate failed'
+		);
 		assert.equal(
 			audio.gigDeckGraphIsPresent(),
 			true,
 			'if the old context stays installed with its deck nodes cleared then every later build fails "audio graph is missing" - broken'
 		);
 		assert.notEqual(FakeAudioContext.instances.at(-1), old, 'the retry built a new context');
-		assert.equal(audio.getDeckState(1).stable_id, SID, 'if a failed teardown still unloads then one stuck close ejects the set (bug #58) - broken');
-		assert.equal(audio.getDeckState(1).processor_error, null, 'the re-attaching note is cleared once the deck is back');
+		assert.equal(
+			audio.getDeckState(1).stable_id,
+			SID,
+			'if a failed teardown still unloads then one stuck close ejects the set (bug #58) - broken'
+		);
+		assert.equal(
+			audio.getDeckState(1).processor_error,
+			null,
+			'the re-attaching note is cleared once the deck is back'
+		);
 		await audio.engine.play(1);
 		assert.equal(audio.getDeckState(1).playing, true, 'the kept deck plays on the rebuilt graph');
 	} finally {
@@ -236,11 +291,23 @@ test('IOPIN-12 wiring control: a rebuild that succeeds keeps the loaded deck, re
 	const old = FakeAudioContext.instances.at(-1);
 	await instrumentation._recoverOutputStallForTests();
 	assert.equal(recreateFailedToast(), undefined, 'precondition: the recreate succeeded');
-	assert.notEqual(FakeAudioContext.instances.at(-1), old, 'precondition: the rebuild made a new context');
-	assert.equal(audio.getDeckState(1).stable_id, SID, 'if a successful rebuild unloads decks then every stall recovery ejects the set - broken');
+	assert.notEqual(
+		FakeAudioContext.instances.at(-1),
+		old,
+		'precondition: the rebuild made a new context'
+	);
+	assert.equal(
+		audio.getDeckState(1).stable_id,
+		SID,
+		'if a successful rebuild unloads decks then every stall recovery ejects the set - broken'
+	);
 	assert.equal(audio.getDeckState(1).processor_error, null);
 	await audio.engine.play(1);
-	assert.equal(audio.getDeckState(1).playing, true, 'the re-attached deck plays on the new context');
+	assert.equal(
+		audio.getDeckState(1).playing,
+		true,
+		'the re-attached deck plays on the new context'
+	);
 	assert.equal(
 		registry.countRegisteredAudioContexts(),
 		1,
@@ -267,11 +334,23 @@ test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails 
 	} finally {
 		stretch.StretchDeckProcessor.create = realCreate;
 	}
-	assert.equal(creates, 8, 'precondition: four attempts each re-attached deck 1 and failed on deck 2');
+	assert.equal(
+		creates,
+		8,
+		'precondition: four attempts each re-attached deck 1 and failed on deck 2'
+	);
 	assert.ok(recreateFailedToast(), 'precondition: the recreate failed and said so');
-	assert.equal(audio.getDeckState(1).stable_id, SID, 'if a deck the rebuild DID re-attach is unloaded too then one failed deck ejects the whole set - broken');
+	assert.equal(
+		audio.getDeckState(1).stable_id,
+		SID,
+		'if a deck the rebuild DID re-attach is unloaded too then one failed deck ejects the whole set - broken'
+	);
 	assert.equal(audio.getDeckState(1).processor_error, null);
-	assert.equal(audio.getDeckState(2).stable_id, null, 'the deck left without a processor is unloaded');
+	assert.equal(
+		audio.getDeckState(2).stable_id,
+		null,
+		'the deck left without a processor is unloaded'
+	);
 	assert.match(audio.getDeckState(2).processor_error ?? '', /could not start on the new context/);
 	await audio.engine.play(1);
 	assert.equal(audio.getDeckState(1).playing, true, 'the re-attached deck still plays');
@@ -291,7 +370,11 @@ async function failFirstAttemptThenRecover({ autoPlay }) {
 	await loadDeckOne();
 	await audio.engine.load(2, SID_2);
 	await audio.engine.play(1);
-	assert.equal(audio.getDeckState(1).playing, true, 'precondition: deck 1 is playing when the stall hits');
+	assert.equal(
+		audio.getDeckState(1).playing,
+		true,
+		'precondition: deck 1 is playing when the stall hits'
+	);
 	// Assigned, not set through setAutoPlayEnabled: that would persist to the daemon double.
 	prefs.uiPrefs.auto_play_enabled = autoPlay;
 	const realCreate = stretch.StretchDeckProcessor.create;
@@ -329,40 +412,91 @@ async function failFirstAttemptThenRecover({ autoPlay }) {
 		prefs.uiPrefs.auto_play_enabled = true;
 	}
 	assert.deepEqual(retrySleeps, [15_000], 'precondition: one failed attempt, one retry');
-	assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
+	assert.equal(
+		recreateFailedToast(),
+		undefined,
+		'the retry succeeded, so nothing says the recreate failed'
+	);
 	assert.deepEqual(audio.reattachingDecks(), []);
 	return duringRetry;
 }
 
 test('bug #58: the first addModule fails, a retry succeeds, and the decks stay loaded and resumable (AutoPlay OFF: paused, "press play")', async () => {
 	const duringRetry = await failFirstAttemptThenRecover({ autoPlay: false });
-	assert.deepEqual(stretch.stubAddModuleTimeouts, [15_000, 30_000], 'the retry allows addModule longer than the first try');
-	assert.equal(duringRetry.deck1.stable_id, SID, 'if a failed attempt unloads the deck then a slow addModule ejects the set (bug #58) - broken');
-	assert.equal(duringRetry.deck2.stable_id, SID_2, 'every deck keeps its track identity while re-attaching');
+	assert.deepEqual(
+		stretch.stubAddModuleTimeouts,
+		[15_000, 30_000],
+		'the retry allows addModule longer than the first try'
+	);
+	assert.equal(
+		duringRetry.deck1.stable_id,
+		SID,
+		'if a failed attempt unloads the deck then a slow addModule ejects the set (bug #58) - broken'
+	);
+	assert.equal(
+		duringRetry.deck2.stable_id,
+		SID_2,
+		'every deck keeps its track identity while re-attaching'
+	);
 	assert.equal(duringRetry.deck1.playing, false, 'the deck is stopped while it has no processor');
-	assert.match(duringRetry.deck1.processor_error ?? '', /re-?attaching/, 'if the deck says nothing while re-attaching then the operator sees a silent loaded deck - broken');
+	assert.match(
+		duringRetry.deck1.processor_error ?? '',
+		/re-?attaching/,
+		'if the deck says nothing while re-attaching then the operator sees a silent loaded deck - broken'
+	);
 	assert.deepEqual(duringRetry.reattaching, [1, 2], 'agents can read which decks are re-attaching');
-	assert.match(duringRetry.playRejection ?? '', /re-attaching after an audio engine restart/, 'play during the retry says why it cannot start');
-	assert.equal(duringRetry.recoveryStop, 'graph-rebuild-failed', 'if the stop is not tagged as engine recovery then AutoPlay disarms itself 31 s later (bug #58) - broken');
+	assert.match(
+		duringRetry.playRejection ?? '',
+		/re-attaching after an audio engine restart/,
+		'play during the retry says why it cannot start'
+	);
+	assert.equal(
+		duringRetry.recoveryStop,
+		'graph-rebuild-failed',
+		'if the stop is not tagged as engine recovery then AutoPlay disarms itself 31 s later (bug #58) - broken'
+	);
 
-	for (const [deck, sid] of [[1, SID], [2, SID_2]]) {
-		assert.equal(audio.getDeckState(deck).stable_id, sid, `deck ${deck} is still loaded after the retry`);
-		assert.equal(audio.getDeckState(deck).playing, false, `deck ${deck} comes back paused with a DJ driving, not suddenly audible`);
+	for (const [deck, sid] of [
+		[1, SID],
+		[2, SID_2]
+	]) {
+		assert.equal(
+			audio.getDeckState(deck).stable_id,
+			sid,
+			`deck ${deck} is still loaded after the retry`
+		);
+		assert.equal(
+			audio.getDeckState(deck).playing,
+			false,
+			`deck ${deck} comes back paused with a DJ driving, not suddenly audible`
+		);
 	}
 	assert.equal(
 		audio.getDeckState(1).processor_error,
 		'audio engine recovered, press play',
 		'if the deck that was playing comes back silent with no prompt then the DJ cannot tell it recovered - broken'
 	);
-	assert.equal(audio.getDeckState(2).processor_error, null, 'a deck that was already paused gets no prompt');
+	assert.equal(
+		audio.getDeckState(2).processor_error,
+		null,
+		'a deck that was already paused gets no prompt'
+	);
 	await audio.engine.play(1);
-	assert.equal(audio.getDeckState(1).playing, true, 'if the kept deck cannot play then "resumable" is a lie - broken');
+	assert.equal(
+		audio.getDeckState(1).playing,
+		true,
+		'if the kept deck cannot play then "resumable" is a lie - broken'
+	);
 	assert.equal(audio.getDeckState(1).processor_error, null, 'pressing play clears the prompt');
 });
 
 test('bug #58: with AutoPlay ON a successful retry resumes the deck that was playing, at its saved position, by itself', async () => {
 	const duringRetry = await failFirstAttemptThenRecover({ autoPlay: true });
-	assert.equal(duringRetry.deck1.playing, false, 'precondition: the deck was stopped while re-attaching');
+	assert.equal(
+		duringRetry.deck1.playing,
+		false,
+		'precondition: the deck was stopped while re-attaching'
+	);
 	const savedPositionMs = duringRetry.deck1.position_ms;
 	assert.equal(
 		audio.getDeckState(1).playing,
@@ -374,7 +508,11 @@ test('bug #58: with AutoPlay ON a successful retry resumes the deck that was pla
 		`deck 1 resumes from its saved position (${savedPositionMs} ms), not from the top`
 	);
 	assert.equal(audio.getDeckState(1).processor_error, null, 'a resumed deck shows no prompt');
-	assert.equal(audio.getDeckState(2).playing, false, 'control: a deck that was paused before the stall stays paused');
+	assert.equal(
+		audio.getDeckState(2).playing,
+		false,
+		'control: a deck that was paused before the stall stays paused'
+	);
 });
 
 //-----------------------------------------------------------------------------
@@ -386,24 +524,43 @@ test('IOPIN-12 wiring control: a master output selection parked across a stall r
 	// selection it runs in, but a rebuild still must, or a sink that lands after
 	// the old route is gone publishes onto the rebuilt one.
 	installWindow('');
-	const mediaDevices = { enumerateDevices: async () => [], addEventListener() {}, removeEventListener() {} };
-	Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices }, configurable: true, writable: true });
+	const mediaDevices = {
+		enumerateDevices: async () => [],
+		addEventListener() {},
+		removeEventListener() {}
+	};
+	Object.defineProperty(globalThis, 'navigator', {
+		value: { mediaDevices },
+		configurable: true,
+		writable: true
+	});
 	player.mixerState.headphones.outputs = [{ id: 'dev-a', label: 'dev-a' }];
 	let landSink = null;
-	FakeAudioContext.prototype.setSinkId = () => new Promise((resolve) => { landSink = resolve; });
+	FakeAudioContext.prototype.setSinkId = () =>
+		new Promise((resolve) => {
+			landSink = resolve;
+		});
 	try {
 		const pending = audio.engine.selectMasterOutput('dev-a');
 		assert.equal(typeof landSink, 'function', 'precondition: the selection is parked on setSinkId');
 		const parkedOn = FakeAudioContext.instances.at(-1);
 		await instrumentation._recoverOutputStallForTests();
-		assert.notEqual(FakeAudioContext.instances.at(-1), parkedOn, 'precondition: the rebuild replaced the context under the selection');
+		assert.notEqual(
+			FakeAudioContext.instances.at(-1),
+			parkedOn,
+			'precondition: the rebuild replaced the context under the selection'
+		);
 		landSink();
 		await assert.rejects(
 			pending,
 			/stale headphone operation/,
 			'if the rebuild stops retiring in-flight selections then a late sink publishes onto the rebuilt route - broken'
 		);
-		assert.equal(player.mixerState.headphones.selected_master_output_device_id, null, 'the retired selection published nothing');
+		assert.equal(
+			player.mixerState.headphones.selected_master_output_device_id,
+			null,
+			'the retired selection published nothing'
+		);
 	} finally {
 		delete FakeAudioContext.prototype.setSinkId;
 		if (savedNavigator === undefined) delete globalThis.navigator;

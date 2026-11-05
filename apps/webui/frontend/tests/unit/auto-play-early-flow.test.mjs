@@ -28,7 +28,16 @@ const ENTRY = [
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';"
 ].join('\n');
 
-const WINDOW = { start_bar: 97, start_ms: 220_000, max_bars: 32, label: 'outro', energy: 0.4, vocal_free_bars: 32, score: 0.7, reason: 'r' };
+const WINDOW = {
+	start_bar: 97,
+	start_ms: 220_000,
+	max_bars: 32,
+	label: 'outro',
+	energy: 0.4,
+	vocal_free_bars: 32,
+	score: 0.7,
+	reason: 'r'
+};
 
 function _shim() {
 	const saved = new Map();
@@ -49,14 +58,24 @@ function _shim() {
 }
 
 function _json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 const PLAN_ANSWER = {
 	order: { plan: { id: 'plan-1' } },
 	reason: 'chosen',
 	intent: 'smooth',
-	pick: { candidate: 'c', style: 'bass_swap_blend', bars: 16, score: 0.5, out_start_bar: 97, rationale: '' },
+	pick: {
+		candidate: 'c',
+		style: 'bass_swap_blend',
+		bars: 16,
+		score: 0.5,
+		out_start_bar: 97,
+		rationale: ''
+	},
 	out_bar_now: 80,
 	considered: 1,
 	rendered: 1,
@@ -98,7 +117,13 @@ async function withSet(options, run) {
 		}
 		if (url.endsWith('/dj/transition/prepare')) {
 			calls.prepare.push(JSON.parse(init.body));
-			return _json({ state: prepareState, candidates: 1, reason: '', render_ms: 1, in_track: 'cued' });
+			return _json({
+				state: prepareState,
+				candidates: 1,
+				reason: '',
+				render_ms: 1,
+				in_track: 'cued'
+			});
 		}
 		if (url.endsWith('/dj/transition/plan')) {
 			calls.plan.push(JSON.parse(init.body));
@@ -131,7 +156,12 @@ async function withSet(options, run) {
 			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true },
 			{ stable_id: 'next-2', key: '8A', bpm: 124, file_exists: true }
 		]);
-		Object.assign(mod.deckStates[2], { stable_id: 'cued', playing: false, anlz: { beatgrid: { beats: [] } }, duration_ms: 300_000 });
+		Object.assign(mod.deckStates[2], {
+			stable_id: 'cued',
+			playing: false,
+			anlz: { beatgrid: { beats: [] } },
+			duration_ms: 300_000
+		});
 		Object.assign(mod.deckStates[1], {
 			stable_id: 'src-1',
 			playing: true,
@@ -159,7 +189,11 @@ test('under the target the engine is not asked', async () => {
 		await new Promise((resolve) => setTimeout(resolve, 600));
 		assert.deepEqual(calls.decide, [], 'if AutoPlay decides before its target then broken');
 		assert.equal(mod.autoPlayDecision.phase, 'idle');
-		assert.equal(mod.autoPlayDecision.due_ms, 180_000, 'if the readout cannot say when it decides then broken');
+		assert.equal(
+			mod.autoPlayDecision.due_ms,
+			180_000,
+			'if the readout cannot say when it decides then broken'
+		);
 	});
 });
 
@@ -168,15 +202,39 @@ test('past the target one plan is scheduled for the decided window', async () =>
 		await until(() => mod.autoPlayDecision.phase === 'scheduled', 'the plan');
 		await new Promise((resolve) => setTimeout(resolve, 400));
 		assert.equal(calls.decide.length, 1, 'if AutoPlay decides twice for one track then broken');
-		assert.deepEqual(calls.decide[0].shortlist, ['next-2'], "if AutoPlay's own pick is not the shortlist then broken");
+		assert.deepEqual(
+			calls.decide[0].shortlist,
+			['next-2'],
+			"if AutoPlay's own pick is not the shortlist then broken"
+		);
 		assert.equal(calls.decide[0].target_ms, 180_000);
-		assert.equal(calls.decide[0].earliest_ms, 190_000 + 12_000, 'if a window it cannot reach is asked for then broken');
+		assert.equal(
+			calls.decide[0].earliest_ms,
+			190_000 + 12_000,
+			'if a window it cannot reach is asked for then broken'
+		);
 		assert.equal(runner.scheduled.length, 1);
-		assert.equal(calls.plan[0].from_ms, WINDOW.start_ms, 'if the plan is not for the decided window then broken');
+		assert.equal(
+			calls.plan[0].from_ms,
+			WINDOW.start_ms,
+			'if the plan is not for the decided window then broken'
+		);
 		assert.equal(mod.autoPlayDecision.lead_ms, WINDOW.start_ms - 190_000);
-		assert.equal(mod.autoPlayDecision.bars, 16, 'if the readout keeps the provisional plan then broken');
-		assert.equal(calls.prepare[0].from_ms, WINDOW.start_ms, 'if the decided window is not scored first then the M floor never sees it');
-		assert.equal(mod.deckStates[2].playing, false, 'if the old handoff ran beside the plan then broken');
+		assert.equal(
+			mod.autoPlayDecision.bars,
+			16,
+			'if the readout keeps the provisional plan then broken'
+		);
+		assert.equal(
+			calls.prepare[0].from_ms,
+			WINDOW.start_ms,
+			'if the decided window is not scored first then the M floor never sees it'
+		);
+		assert.equal(
+			mod.deckStates[2].playing,
+			false,
+			'if the old handoff ran beside the plan then broken'
+		);
 	});
 });
 
@@ -196,18 +254,31 @@ test('a failed plan falls back with the reason and the old handoff keeps the cue
 		runner.current.status = 'failed';
 		await until(() => mod.autoPlayDecision.phase === 'fallback', 'the fallback');
 		assert.match(mod.autoPlayDecision.reason, /ended failed/);
-		assert.equal(mod.autoPlayDecision.track, 'cued', 'if the cued track is forgotten then the fallback picks again, broken');
+		assert.equal(
+			mod.autoPlayDecision.track,
+			'cued',
+			'if the cued track is forgotten then the fallback picks again, broken'
+		);
 		mod.deckStates[1].position_ms = 290_000;
-		await until(() => infos.some((line) => line.includes('end-of-track handoff: the planned transition ended failed')), 'the log line');
+		await until(
+			() =>
+				infos.some((line) =>
+					line.includes('end-of-track handoff: the planned transition ended failed')
+				),
+			'the log line'
+		);
 	});
 });
 
 test('no answer from the engine falls back with its reason', async () => {
-	await withSet({ decide: { track: null, reason: 'no phrase start left in the master' } }, async ({ mod, runner }) => {
-		await until(() => mod.autoPlayDecision.phase === 'fallback', 'the fallback');
-		assert.match(mod.autoPlayDecision.reason, /no phrase start/);
-		assert.deepEqual(runner.scheduled, []);
-	});
+	await withSet(
+		{ decide: { track: null, reason: 'no phrase start left in the master' } },
+		async ({ mod, runner }) => {
+			await until(() => mod.autoPlayDecision.phase === 'fallback', 'the fallback');
+			assert.match(mod.autoPlayDecision.reason, /no phrase start/);
+			assert.deepEqual(runner.scheduled, []);
+		}
+	);
 });
 
 test('a seek back before the decision point gets a new decision, and past it does not', async () => {
@@ -253,7 +324,10 @@ test('AutoPlay off leaves a running plan to finish', async () => {
 
 test('early planning off leaves the end-of-track handoff alone', async () => {
 	await withSet({ early: false, position: 290_000 }, async ({ calls, infos }) => {
-		await until(() => infos.some((line) => line.includes('end-of-track handoff: early planning is off')), 'the log line');
+		await until(
+			() => infos.some((line) => line.includes('end-of-track handoff: early planning is off')),
+			'the log line'
+		);
 		assert.deepEqual(calls.decide, [], 'if the flag does not restore the old path then broken');
 	});
 });
@@ -262,7 +336,11 @@ test('Decide now runs before the target, from the playhead', async () => {
 	await withSet({ position: 60_000 }, async ({ mod, calls }) => {
 		await mod.decideAutoPlayNow();
 		await until(() => mod.autoPlayDecision.phase === 'scheduled', 'the plan');
-		assert.equal(calls.decide[0].target_ms, 60_000, 'if the soft target still holds Decide now back then broken');
+		assert.equal(
+			calls.decide[0].target_ms,
+			60_000,
+			'if the soft target still holds Decide now back then broken'
+		);
 	});
 });
 
@@ -290,7 +368,11 @@ test('the old handoff waits while a decision holds the follower', async () => {
 		await until(() => mod.autoPlayDecision.phase === 'preparing', 'the prepare');
 		mod.deckStates[1].position_ms = 290_000;
 		await new Promise((resolve) => setTimeout(resolve, 600));
-		assert.equal(infos.filter((line) => line.includes('end-of-track handoff')).length, 0, 'if both own the follower then broken');
+		assert.equal(
+			infos.filter((line) => line.includes('end-of-track handoff')).length,
+			0,
+			'if both own the follower then broken'
+		);
 		mod.uiPrefs.auto_play_enabled = false;
 	});
 });

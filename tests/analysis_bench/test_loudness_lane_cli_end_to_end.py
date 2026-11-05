@@ -34,18 +34,66 @@ def bundle(tmp_path: Path) -> Path:
 
 def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     store_root = tmp_path / "asset-store"
-    assert cli.main(["fixtures", "push", "--lane", "loudness", "--version", "v1",
-                     "--bundle-dir", str(bundle), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "push",
+                "--lane",
+                "loudness",
+                "--version",
+                "v1",
+                "--bundle-dir",
+                str(bundle),
+                "--store",
+                str(store_root),
+            ]
+        )
+        == 0
+    )
     pulled = tmp_path / "pulled"
-    assert cli.main(["fixtures", "pull", "--lane", "loudness", "--version", "v1",
-                     "--dest", str(pulled), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "pull",
+                "--lane",
+                "loudness",
+                "--version",
+                "v1",
+                "--dest",
+                str(pulled),
+                "--store",
+                str(store_root),
+            ]
+        )
+        == 0
+    )
 
     log = tmp_path / "spec.md"
     log.write_text("# spec\n\n## Experiment log\n")
     report_path = tmp_path / "report.json"
-    assert cli.main(["run", "--lane", "loudness", "--candidate", "truth_echo",
-                     "--bundle-dir", str(pulled), "--workdir", str(tmp_path / "arms"),
-                     "--out", str(report_path), "--post", "--log-path", str(log)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "loudness",
+                "--candidate",
+                "truth_echo",
+                "--bundle-dir",
+                str(pulled),
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--out",
+                str(report_path),
+                "--post",
+                "--log-path",
+                str(log),
+            ]
+        )
+        == 0
+    )
 
     report = json.loads(report_path.read_text())
     assert report["scorer_version"] == "1.0.0"
@@ -63,9 +111,23 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
 def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) -> None:
     log = tmp_path / "spec.md"
     log.write_text("# spec\n")
-    code = cli.main(["run", "--lane", "loudness", "--candidate", "constant_lufs",
-                     "--bundle-dir", str(bundle), "--workdir", str(tmp_path / "arms"),
-                     "--no-controls", "--post", "--log-path", str(log)])
+    code = cli.main(
+        [
+            "run",
+            "--lane",
+            "loudness",
+            "--candidate",
+            "constant_lufs",
+            "--bundle-dir",
+            str(bundle),
+            "--workdir",
+            str(tmp_path / "arms"),
+            "--no-controls",
+            "--post",
+            "--log-path",
+            str(log),
+        ]
+    )
     assert code == 2
     assert "cannot be posted" in capsys.readouterr().err
     assert log.read_text() == "# spec\n"

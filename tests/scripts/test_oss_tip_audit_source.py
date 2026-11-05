@@ -169,7 +169,7 @@ def test_a_symlink_is_audited_by_its_link_text_not_by_its_target(tmp_path: Path)
     broken = tmp_path / "broken.link"
     working = tmp_path / "working.link"
     os.symlink(_REAL_HOME_ROOT + "/gone.md", broken)
-    # Relative: an absolute tmp_path under /home/<login> is itself a
+    # Relative: an absolute tmp_path under /home/user> is itself a
     # linux-home-path finding, which this half of the test must not plant.
     os.symlink(target.name, working)
 
@@ -177,14 +177,12 @@ def test_a_symlink_is_audited_by_its_link_text_not_by_its_target(tmp_path: Path)
 
     # The broken link's TEXT names a home, and it is reported at line 1 of the
     # text, not skipped for pointing at nothing.
-    assert [(f.path, f.line, f.match) for f in result.findings] == [
-        ("broken.link", 1, _REAL_HOME_ROOT)
-    ], [f.render() for f in result.findings]
-    # The working link's TARGET is the leak and its link text is not, so reading
-    # the target would report a mailbox against a pathname git does not publish.
-    assert not [f for f in result.findings if f.path == "working.link"], [
+    assert [(f.path, f.line, f.match) for f in result.findings] == [("broken.link", 1, _REAL_HOME_ROOT)], [
         f.render() for f in result.findings
     ]
+    # The working link's TARGET is the leak and its link text is not, so reading
+    # the target would report a mailbox against a pathname git does not publish.
+    assert not [f for f in result.findings if f.path == "working.link"], [f.render() for f in result.findings]
     # Control: the target IS a finding when it is audited as its own path, so
     # the silence above is about the link and not about the planted address.
     assert [f.match for f in audit_paths(tmp_path, [target]).findings] == [mailbox]
@@ -212,12 +210,16 @@ def test_a_pathname_git_permits_but_utf8_forbids_is_audited_not_a_crash(
     # on-disk route cannot express the case this gate has to survive. The index
     # is also the thing the gate actually reads, which makes this the more
     # faithful setup rather than a workaround.
-    blob = subprocess.run(
-        ["git", "-C", str(tmp_path), "hash-object", "-w", "--stdin"],
-        input=f"path {_USERS + _LOGIN}/Music\n".encode(),
-        capture_output=True,
-        check=True,
-    ).stdout.decode().strip()
+    blob = (
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "hash-object", "-w", "--stdin"],
+            input=f"path {_USERS + _LOGIN}/Music\n".encode(),
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode()
+        .strip()
+    )
     subprocess.run(
         [
             b"git",
@@ -290,9 +292,7 @@ def test_an_unreadable_head_is_an_audit_failure_not_a_clean_report(
 
     with pytest.raises(OSError) as raised:
         audit_index(root)
-    assert "ls-tree" in str(raised.value), (
-        "the failure must name what could not be read, not just fail"
-    )
+    assert "ls-tree" in str(raised.value), "the failure must name what could not be read, not just fail"
 
 
 def test_an_unborn_repository_still_audits_its_index(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ Regression one-liners:
   - if an audio page's payload or granule position changes then broken
   - if a failed write leaves the original changed or a temp file behind then broken
 """
+
 from __future__ import annotations
 
 import struct
@@ -78,8 +79,14 @@ def test_written_comments_are_seen_by_two_independent_readers(tmp_path: Path, co
     """[if] BPM / key / ISRC / rating / OPENDJ / comment (DESCRIPTION) are set [then] tinytag and ffprobe read them, [else stop]."""
     ogg = ta.make_tagged_audio(tmp_path, codec)
     meta = ogg_comment.read(ogg)
-    for key, value in (("BPM", "128"), ("initialkey", "8A"), ("ISRC", "USRC17607839"), ("RATING", "4"),
-                       ("OPENDJ_ENERGY", "7"), ("DESCRIPTION", "cue at 1:04 ☾")):
+    for key, value in (
+        ("BPM", "128"),
+        ("initialkey", "8A"),
+        ("ISRC", "USRC17607839"),
+        ("RATING", "4"),
+        ("OPENDJ_ENERGY", "7"),
+        ("DESCRIPTION", "cue at 1:04 ☾"),
+    ):
         meta.set(key, value)
     ogg_comment.save(ogg, meta)
 
@@ -88,7 +95,11 @@ def test_written_comments_are_seen_by_two_independent_readers(tmp_path: Path, co
     assert read.title == ta.STANDARD_TAGS["title"]  # untouched comment survives
     probed = ta.ffprobe_tags(ogg)
     assert (probed["bpm"], probed["initialkey"], probed["isrc"], probed["rating"], probed["opendj_energy"]) == (
-        "128", "8A", "USRC17607839", "4", "7"
+        "128",
+        "8A",
+        "USRC17607839",
+        "4",
+        "7",
     )
     assert ogg_comment.read(ogg).get("INITIALKEY") == ["8A"]  # replaced, not duplicated
 
@@ -138,9 +149,7 @@ def test_the_vorbis_setup_header_is_kept_byte_for_byte(tmp_path: Path) -> None:
     assert after.id_page == before.id_page
 
 
-def test_a_failed_write_leaves_the_original_file_intact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_failed_write_leaves_the_original_file_intact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] writing fails midway [then] the original file is byte-identical, [else stop]."""
     ogg = ta.make_tagged_audio(tmp_path, "opus")
     before = ogg.read_bytes()

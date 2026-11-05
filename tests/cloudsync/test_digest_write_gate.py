@@ -110,9 +110,7 @@ def _digest_is_honest(conn: sqlite3.Connection) -> protocol.SyncDigest:
 # ----- the saving -------------------------------------------------------------
 
 
-def test_noop_sync_after_a_settled_sync_walks_no_digest(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_noop_sync_after_a_settled_sync_walks_no_digest(spoke_a: Path, hub: _TestClientTransport) -> None:
     first = Since()
     _settled_pair(spoke_a, hub)
     assert first.walks >= 2, "positive control: the first sync must walk both sides"
@@ -126,9 +124,7 @@ def test_noop_sync_after_a_settled_sync_walks_no_digest(
     assert since.hits >= 2, "both sides must be served by the gate, not skipped"
 
 
-def test_changelog_logged_edit_rewalks_and_still_converges(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_changelog_logged_edit_rewalks_and_still_converges(spoke_a: Path, hub: _TestClientTransport) -> None:
     _settled_pair(spoke_a, hub)
     conn = _open(spoke_a)
     try:
@@ -214,9 +210,7 @@ def test_rolled_back_schema_change_never_lends_its_digest_to_a_later_one(
         conn.execute("ROLLBACK")
         conn.execute("ALTER TABLE track_fields ADD COLUMN second_probe INTEGER")
         cookie_after = conn.execute("PRAGMA schema_version").fetchone()[0]
-        assert cookie_after == cookie_before + 1, (
-            "precondition: the committed ALTER reuses the rolled-back cookie"
-        )
+        assert cookie_after == cookie_before + 1, "precondition: the committed ALTER reuses the rolled-back cookie"
 
         _digest_is_honest(conn)
     finally:
@@ -248,9 +242,7 @@ def test_missing_trigger_disables_the_gate(spoke_a: Path) -> None:
         protocol.sync_digest(conn)
         intact = Since()
         protocol.sync_digest(conn)
-        assert (intact.walks, intact.hits) == (0, 1), (
-            "positive control: an intact gate must serve the second digest"
-        )
+        assert (intact.walks, intact.hits) == (0, 1), "positive control: an intact gate must serve the second digest"
         conn.execute(f"DROP TRIGGER {migrations_v21.trigger_name('track_fields', 'UPDATE')}")
         broken = Since()
         protocol.sync_digest(conn)

@@ -17,8 +17,7 @@ export type GridEditPart = 'adjust' | 'shift';
 
 /** What one press asks the engine to do. */
 export type GridEditIntent =
-	| { kind: 'nudge'; offset_ms: number; beats: number }
-	| { kind: 'reset'; part: GridEditPart };
+	{ kind: 'nudge'; offset_ms: number; beats: number } | { kind: 'reset'; part: GridEditPart };
 
 /** Same micro-ms rounding as the server, so a held run of 2 ms steps stays exact. */
 export function roundMs(ms: number): number {
@@ -63,20 +62,35 @@ export function parseGridEditIntent(value: unknown): GridEditIntent {
 	const record = value as Record<string, unknown>;
 	const keys = Object.keys(record).sort().join(',');
 	if (record.kind === 'nudge') {
-		if (keys !== 'beats,kind,offset_ms') throw new TypeError(`grid_edit nudge takes kind, offset_ms, beats; got ${keys}`);
+		if (keys !== 'beats,kind,offset_ms')
+			throw new TypeError(`grid_edit nudge takes kind, offset_ms, beats; got ${keys}`);
 		const { offset_ms, beats } = record;
-		if (typeof offset_ms !== 'number' || !Number.isFinite(offset_ms) || Math.abs(offset_ms) > GRID_ADJUST_MAX_OFFSET_MS) {
-			throw new RangeError(`grid_edit offset_ms must be a finite number within +/-${GRID_ADJUST_MAX_OFFSET_MS}; got ${String(offset_ms)}`);
+		if (
+			typeof offset_ms !== 'number' ||
+			!Number.isFinite(offset_ms) ||
+			Math.abs(offset_ms) > GRID_ADJUST_MAX_OFFSET_MS
+		) {
+			throw new RangeError(
+				`grid_edit offset_ms must be a finite number within +/-${GRID_ADJUST_MAX_OFFSET_MS}; got ${String(offset_ms)}`
+			);
 		}
-		if (typeof beats !== 'number' || !Number.isInteger(beats) || Math.abs(beats) > _MAX_STEP_BEATS) {
-			throw new RangeError(`grid_edit beats must be a whole number within +/-${_MAX_STEP_BEATS}; got ${String(beats)}`);
+		if (
+			typeof beats !== 'number' ||
+			!Number.isInteger(beats) ||
+			Math.abs(beats) > _MAX_STEP_BEATS
+		) {
+			throw new RangeError(
+				`grid_edit beats must be a whole number within +/-${_MAX_STEP_BEATS}; got ${String(beats)}`
+			);
 		}
 		return { kind: 'nudge', offset_ms: roundMs(offset_ms), beats };
 	}
 	if (record.kind === 'reset') {
 		if (keys !== 'kind,part') throw new TypeError(`grid_edit reset takes kind, part; got ${keys}`);
 		if (record.part !== 'adjust' && record.part !== 'shift') {
-			throw new TypeError(`grid_edit reset part must be "adjust" or "shift"; got ${String(record.part)}`);
+			throw new TypeError(
+				`grid_edit reset part must be "adjust" or "shift"; got ${String(record.part)}`
+			);
 		}
 		return { kind: 'reset', part: record.part };
 	}
@@ -132,7 +146,12 @@ export function createGridNudgeCoalescer<C extends _Nudge, T>(
 		merge(command, sameTarget) {
 			if (command.edit.kind !== 'nudge') return null;
 			const queued = pending.get(command.deck);
-			if (queued === undefined || queued.command.edit.kind !== 'nudge' || !sameTarget(queued.command)) return null;
+			if (
+				queued === undefined ||
+				queued.command.edit.kind !== 'nudge' ||
+				!sameTarget(queued.command)
+			)
+				return null;
 			const merged = mergeNudges(queued.command.edit, command.edit);
 			if (merged === null) return null;
 			queued.command.edit = { kind: 'nudge', ...merged };

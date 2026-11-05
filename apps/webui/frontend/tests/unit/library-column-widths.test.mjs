@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 test('compact utility columns fit real analysis grids and keep room for row numbers', async () => {
-	const { compactUtilityWidths } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	const { compactUtilityWidths } = await loadTypeScriptModule(
+		'src/lib/rb/library-column-widths.ts'
+	);
 	assert.deepEqual(compactUtilityWidths(19), { funnel: 18, err: 20, cloud: 28, order: 24 });
 	assert.equal(compactUtilityWidths(8558).order, 32);
 	assert.equal(compactUtilityWidths(100000).order, 42);
@@ -28,7 +30,10 @@ test('auto-fit follows viewport and row-number changes while preserving manually
 	assert.match(source, /const maxRowOrder = \$derived\(rows\.reduce/);
 	assert.match(source, /const compact = compactUtilityWidths\(maxRowOrder\);/);
 	assert.match(source, /const musical = wrapEl === null \? null : fitMusicalColumns\(\{/);
-	assert.match(source, /musical === null \? \{\} : autoMusicalWidths\(current, musical, manuallyResizedColumns\)/);
+	assert.match(
+		source,
+		/musical === null \? \{\} : autoMusicalWidths\(current, musical, manuallyResizedColumns\)/
+	);
 	assert.match(source, /manuallyResizedColumns\.add\(col\)/);
 	assert.match(source, /void wrapWidth;/);
 	assert.match(source, /\.c-funnel,[\s\S]*?\.c-cloud \{\s*padding: 0 2px;/);

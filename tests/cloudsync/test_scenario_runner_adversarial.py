@@ -37,18 +37,14 @@ pytestmark = pytest.mark.requirement("CAT-04")
 
 #: The tables plan W9 added to the edit verb. The four original ones predate
 #: this tripwire and are covered (or not) by the scenarios that introduced them.
-WIDENED_TABLES: frozenset[str] = frozenset(
-    {"track_fields", "track_locations", "playlist_memberships"}
-)
+WIDENED_TABLES: frozenset[str] = frozenset({"track_fields", "track_locations", "playlist_memberships"})
 
 _MACHINES: list[dict[str, str]] = [
     {"id": "hub", "role": "hub"},
     {"id": "spoke-a", "role": "spoke"},
     {"id": "spoke-b", "role": "spoke"},
 ]
-_SEED: dict[str, Any] = {
-    "tracks": [{"stable_id": "trk-1", "title": "original", "on": ["spoke-a", "spoke-b"]}]
-}
+_SEED: dict[str, Any] = {"tracks": [{"stable_id": "trk-1", "title": "original", "on": ["spoke-a", "spoke-b"]}]}
 
 
 @pytest.fixture(autouse=True)
@@ -133,9 +129,7 @@ def test_expecting_a_transport_error_with_no_fault_fails(tmp_path: Path) -> None
     ],
     ids=["missing-row", "already-tombstoned"],
 )
-def test_delete_refuses_a_row_it_cannot_tombstone(
-    tmp_path: Path, steps: list[dict[str, Any]]
-) -> None:
+def test_delete_refuses_a_row_it_cannot_tombstone(tmp_path: Path, steps: list[dict[str, Any]]) -> None:
     """if delete silently no-ops on a missing or already tombstoned row then broken"""
     print("if delete silently no-ops on a missing or already tombstoned row then broken")
     with pytest.raises(ScenarioError, match="no LIVE tracks row"):
@@ -200,6 +194,4 @@ def test_every_new_verb_and_table_is_exercised_by_a_committed_scenario() -> None
         f"no committed scenario uses {sorted((_ADVERSARIAL_ACTIONS | {'reorder'}) - actions)}"
     )
     assert WIDENED_TABLES <= _EDITABLE_TABLES, "a widened table is not editable at all"
-    assert tables >= WIDENED_TABLES, (
-        f"no committed scenario edits {sorted(WIDENED_TABLES - tables)}"
-    )
+    assert tables >= WIDENED_TABLES, f"no committed scenario edits {sorted(WIDENED_TABLES - tables)}"

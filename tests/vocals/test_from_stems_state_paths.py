@@ -84,9 +84,7 @@ def test_state_tracks_can_be_narrowed_to_requested_ids(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     audio = _state(data_dir, tmp_path)
 
-    tracks = cli.load_state_tracks(
-        cli.Ctx(data_dir=data_dir), ["unmapped", "deleted", "ghost"]
-    )
+    tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir), ["unmapped", "deleted", "ghost"])
 
     assert [t.stable_id for t in tracks] == ["unmapped"]
     assert tracks[0].audio_path == audio["unmapped"]
@@ -104,9 +102,7 @@ def test_state_tracks_apply_the_data_dirs_path_map(tmp_path: Path) -> None:
         )
     conn.commit()
     conn.close()
-    (data_dir / "path-map.json").write_text(
-        json.dumps({"entries": [{"from": "/Volumes/Gone", "to": str(tmp_path)}]})
-    )
+    (data_dir / "path-map.json").write_text(json.dumps({"entries": [{"from": "/Volumes/Gone", "to": str(tmp_path)}]}))
 
     tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir), ["mapped"])
 
@@ -137,9 +133,7 @@ def _write_bundle(stems: Path, stable_id: str) -> None:
     )
 
 
-def test_from_stems_runs_without_master_db(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_from_stems_runs_without_master_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """[if] from-stems runs where no master.plain.db exists [then] it plans every live bundle, mapped or not, and exits 0, [else stop]."""
     data_dir = tmp_path / "data"
     _state(data_dir, tmp_path)

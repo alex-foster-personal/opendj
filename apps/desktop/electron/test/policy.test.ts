@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import {
+	appNameFromPackage,
+	DEFAULT_APP_NAME,
 	STARTING_WINDOW_H_PT,
 	STARTING_WINDOW_W_PT,
 	USAGE,
@@ -332,4 +334,17 @@ test('the menu keeps quit, close, the edit roles, full screen and the window men
 test('an unpackaged dev build keeps reload and developer tools (the opposite direction)', () => {
 	const roles = menuRoles(macMenuTemplate('Open DJ', false));
 	assert.ok(roles.includes('reload') && roles.includes('toggleDevTools'));
+});
+
+test('the app name is the packed productName for the product and a lane, so a lane gets its own profile and lock (row 65)', () => {
+	assert.equal(appNameFromPackage({ productName: 'Open DJ' }), 'Open DJ');
+	assert.equal(appNameFromPackage({ productName: 'Open DJ (B)' }), 'Open DJ (B)');
+	assert.equal(appNameFromPackage({ productName: 'Open DJ (Preview)' }), 'Open DJ (Preview)');
+	assert.notEqual(appNameFromPackage({ productName: 'Open DJ (B)' }), DEFAULT_APP_NAME);
+});
+
+test('a missing, foreign or unsafe productName falls back to the product name', () => {
+	for (const pkg of [null, undefined, {}, { productName: 7 }, { productName: 'Evil' }, { productName: 'Open DJ (../x)' }, { productName: 'Open DJ (a b)' }]) {
+		assert.equal(appNameFromPackage(pkg), DEFAULT_APP_NAME, JSON.stringify(pkg));
+	}
 });

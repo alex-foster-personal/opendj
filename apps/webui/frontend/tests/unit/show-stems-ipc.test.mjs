@@ -37,7 +37,9 @@ let ipc;
 
 before(async () => {
 	await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
-	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts', { viteApiBase: API_BASE });
+	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts', {
+		viteApiBase: API_BASE
+	});
 });
 
 test('show_stems command toggles pref and query().ui.show_stems', async () => {

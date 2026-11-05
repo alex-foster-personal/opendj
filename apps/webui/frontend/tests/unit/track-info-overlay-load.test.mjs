@@ -21,5 +21,8 @@ test('the load effect tracks only stableId and runs the loader untracked', () =>
 	assert.equal(loader.length, 1, 'exactly one effect starts the loader');
 	assert.match(loader[0], /const id = stableId;\s*untrack\(\(\) => void _load\(id\)\);/);
 	// Control: the loader really does touch the reactive state the effect must not track.
-	assert.match(SRC, /async function _load[\s\S]*?load = \{ state: 'loading' \};[\s\S]*?if \(!isUsbTrackId\(id\)\) requestGridProvenance\(id\);/);
+	assert.match(
+		SRC,
+		/async function _load[\s\S]*?load = \{ state: 'loading' \};[\s\S]*?if \(!isUsbTrackId\(id\)\) requestGridProvenance\(id\);/
+	);
 });

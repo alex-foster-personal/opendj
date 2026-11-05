@@ -95,6 +95,7 @@
 		fillAutolistPane,
 		autolistNode,
 		isAutolistId,
+		isInboxPlaylistId,
 		AUTOLIST_ID,
 		queryAutolists,
 		emptyAutolistSelection,
@@ -156,9 +157,11 @@
 	import {
 		dispatchPerformanceCommand,
 		performanceCommandStatus,
+		recordDeckLoadRefusal,
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi, silencePreviewForUserLoad
 	} from '$lib/rb/performance-ipc.svelte';
+	import { DECK_LOAD_ERROR_TOAST_MS } from '$lib/rb/deck-load-context';
 	import SpinnerIcon from './browser/SpinnerIcon.svelte';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
@@ -167,19 +170,35 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
-		deletePlaylistItem,
 		duplicatePlaylist,
 		getPlaylistTracksEtag,
 		transferPlaylistTracks,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
-		movePlaylistItems,
 		PlaylistConflictError,
 		patchPlaylist,
 		putPlaylistTreeOrder,
+		removePlaylistItems,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
+	import {
+		removeRowsInPlace,
+		restorableRemoval,
+		restoreRowsInPlace,
+		type RowRemoval
+	} from './browser/pane-row-removal';
+	import {
+		registerPlaylistUndoRestorer,
+		undoPlaylistFromChrome
+	} from '$lib/rb/playlist-history-chrome.svelte';
+	import {
+		removedTracksToastMessage,
+		TRACK_CRUD_TOAST_GROUP,
+		type PendingHistoryRestore
+	} from '$lib/rb/playlist-history-apply';
+	import type { PlaylistHistoryEntry } from '$lib/rb/playlist-history';
+	import { trackRowKey } from './browser/track-table-keyboard';
 	import {
 		compareTreeOrder,
 		createLatestRead,
@@ -225,6 +244,8 @@
 		setHideBrokenLinks,
 		setLastPlaylist,
 		setLibraryDensity,
+		setSectionCollapsed,
+		setSortWithinSections,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
 		setAvailableOfflineFilter,
@@ -269,9 +290,13 @@
 	} from '$lib/rb/deck-slots';
 	import TrackEditModals from './TrackEditModals.svelte';
 	import LibraryHeaderTools from './browser/LibraryHeaderTools.svelte';
+	import SetTargetReadout from './browser/SetTargetReadout.svelte';
+	import { setTargetState } from '$lib/rb/set-target-state.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
+	import { createLibraryTabsController } from './browser/library-tabs-controller';
+	import { serializeLibraryTabs } from '$lib/rb/library-tabs';
 	import {
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
@@ -315,6 +340,21 @@
 		missingTracksNode
 	} from './browser/missing-tracks';
 	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
+	import SessionPlayedBanner from './browser/SessionPlayedBanner.svelte';
+	import { recordSessionPlayed, sessionPlayed } from '$lib/rb/session-played.svelte';
+	import {
+		arrangeSections,
+		loadSections,
+		SectionSortBar,
+		sectionActions,
+		sectionsOf,
+		sectionsVisible,
+		sectionWriteMessage,
+		watchSections
+	} from '$lib/library/section-table';
+	import SelectionPlayedLength from './browser/SelectionPlayedLength.svelte';
+	import { applyOptimisticEntriesMove } from '$lib/library/entries-move-local';
+	import { showSectionsLocally } from '$lib/library/playlist-sections-store.svelte';
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
@@ -366,7 +406,8 @@
 	// 4 independent PaneStore instances - selection, search, sort, and
 	// scroll cursor per pane survive tab switches. Only the active pane
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
-	const panes: PaneStore[] = [createPaneStore()];
+	// $state so opening/closing a tab (push/splice) re-renders the strip.
+	const panes: PaneStore[] = $state([createPaneStore()]);
 	let activePane = $state(0);
 	/** IOPIN-01: ownership is application state, not incidental DOM focus
 	 * (focus zone, deck target and double-Enter live in browser-keyboard). */
@@ -378,6 +419,20 @@
 		searchMode: () => searchMode,
 		openSearchMode: (mode) => openSearchMode(mode)
 	});
+	// LIBUX tabs: close / Cmd+T/W/Shift+[ ] / persist to ui-prefs / agent replay.
+	const libraryTabs = createLibraryTabsController({
+		panes,
+		activePane: () => activePane,
+		setActivePane: (index) => (activePane = index),
+		newPane: createPaneStore,
+		isKnownPlaylist: (id) => id === 'all' || treeNodes.some((n) => n.playlist_id === id),
+		nodeFor: (id, name) =>
+			_nodeForNav({ playlist_id: id, playlist_name: name, search: '', selected_id: null, scroll_top: 0 }),
+		loadPane: _loadPane,
+		report: (message) => pushToast(message, 'error'),
+		warn: (message) => pushToast(message, 'warn')
+	});
+	$effect(() => libraryTabs.persistSoon(serializeLibraryTabs(panes, activePane)));
 	let browseScrollRevision = 0;
 	let browseScroll = $state<{ order: number; direction: -1 | 1; revision: number } | null>(null);
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
@@ -576,6 +631,10 @@
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
+	// SESSION-PLAYED-01: every deck load joins the session played set (green
+	// titles), which the engine keeps on disk across crashes and relaunches.
+	$effect(() => recordSessionPlayed(loadedIds));
+	const playedIds = $derived(new Set([...loadedIds, ...sessionPlayed.visible]));
 	const deckLoadBusy = $derived(DECK_IDS.some((d) => performanceCommandStatus.deck_pending[d] > 0));
 	// Pin 2ac3a0: playlist deck-membership + multi-pane tints for PlaylistTree,
 	// derived from panes' ALREADY HYDRATED rows only - never a fetch of an
@@ -717,6 +776,7 @@
 				(p) =>
 					!uiPrefs.hide_broken_links ||
 					isWithinCreateGrace(p.playlist_id) ||
+					isInboxPlaylistId(p.playlist_id) ||
 					!playlistMostlyBroken(p)
 			)
 			// The user's tree order (LIBTREE-01), else the rekordbox Seq walk
@@ -739,7 +799,10 @@
 	const hiddenBrokenPlaylistCount = $derived(
 		uiPrefs.hide_broken_links
 			? playlists.filter(
-					(p) => !isWithinCreateGrace(p.playlist_id) && playlistMostlyBroken(p)
+					(p) =>
+						!isWithinCreateGrace(p.playlist_id) &&
+						!isInboxPlaylistId(p.playlist_id) &&
+						playlistMostlyBroken(p)
 				).length
 			: 0
 	);
@@ -983,6 +1046,21 @@
 		return raw === null ? null : _applyKeyFilterFinal(raw);
 	});
 	const renderedRows = $derived(searchFilterFallback ?? visibleRows);
+	// Sections are drawn from the server's list, over whichever rows the pane
+	// settled on. AutoPlay and the rest keep reading renderedRows: a divider or a
+	// collapsed section changes what the table shows, never what plays next (D6).
+	const openSections = $derived(pane.kind === 'playlist' ? sectionsOf(pane.playlist_id) : []);
+	const tableView = $derived(
+		sectionsVisible({
+			count: openSections.length,
+			sorted: pane.sort_key !== null,
+			sortWithinSections: uiPrefs.sort_within_sections,
+			searching: pane.search.trim() !== ''
+		})
+			? arrangeSections(renderedRows, openSections, new Set(uiPrefs.collapsed_sections))
+			: { rows: renderedRows, headers: [] }
+	);
+	const tableRows = $derived(tableView.rows);
 	const filterBypassNote = $derived(
 		searchFilterFallback === null
 			? null
@@ -992,7 +1070,7 @@
 	// renderedRows/pane). The virtualization lane replaces THIS provider,
 	// not TrackTable's props.
 	const provider = makeClientRowProvider(
-		() => renderedRows,
+		() => tableRows,
 		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
 	// LIBM-175: list and whole-collection modes pass no placeholder, so
@@ -1084,6 +1162,7 @@
 				};
 			}
 		});
+		const unregisterUndoRestorer = registerPlaylistUndoRestorer(_restoreUndoneRemoval);
 		const unregisterMidiBrowser = registerBrowseAdapter({
 			moveSelection: _moveMidiSelection,
 			loadSelected: _loadMidiSelection
@@ -1104,6 +1183,10 @@
 		const onKey = browserKeys.onKey;
 		window.addEventListener('keydown', onKey);
 		window.addEventListener('keydown', onLibraryEditKey);
+		window.addEventListener('keydown', libraryTabs.onKeydown);
+		const unsubscribeLibraryTabs = subscribeKind('ui_prefs', () => {
+			libraryTabs.onRemoteChange().catch((e: unknown) => pushToast(`library tabs: ${String(e)}`, 'error'));
+		});
 		// PERF-UI-01: first crossing into a short viewport collapses
 		// Next/Recommended so thead + one track row fit in the leftover
 		// library row. Edge-triggered so a manual chevron re-expand is
@@ -1202,6 +1285,7 @@
 			uninstallBrowserSortIpc();
 			unregisterMidiBrowser();
 			unregisterPerformanceBrowser();
+			unregisterUndoRestorer();
 			connAlive = false;
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
@@ -1217,6 +1301,9 @@
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 			window.removeEventListener('keydown', onLibraryEditKey);
+			window.removeEventListener('keydown', libraryTabs.onKeydown);
+			unsubscribeLibraryTabs();
+			libraryTabs.dispose();
 			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
@@ -1396,7 +1483,9 @@
 	 */
 	async function _restoreBootPane(): Promise<void> {
 		const target = panes[0];
-		if (target.playlist_id !== null) return; // a deep link already claimed it
+		const deepLinked = target.playlist_id !== null; // a deep link already claimed it
+		if (await libraryTabs.restore(!deepLinked)) return;
+		if (deepLinked) return;
 		const choice = resolveBootPlaylist({
 			remembered: uiPrefs.last_playlist,
 			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
@@ -1665,10 +1754,11 @@
 	}
 
 	/** The order path: a pane that landed on its error fails the order. */
-	async function _selectPlaylistForOrder(playlistId: string): Promise<void> {
+	async function _selectPlaylistForOrder(playlistId: string, stableId?: string): Promise<void> {
 		await _selectPlaylistFromCommand(playlistId);
 		const error = panes[activePane].error;
 		if (error !== null) throw new Error(`browser_select_playlist: ${error}`);
+		if (stableId !== undefined) _revealTrack(stableId);
 	}
 
 	function _openPlaylistInNewTab(node: PlaylistNode): void {
@@ -1677,7 +1767,12 @@
 			activePane = existing;
 			return;
 		}
-		const target = resolveNewTabIndex(panes);
+		// A free slot gets a real new tab; a full strip reuses the first unlocked one.
+		let target: number | null;
+		if (canAddPaneSlot(panes.length)) {
+			panes.push(createPaneStore());
+			target = panes.length - 1;
+		} else target = resolveNewTabIndex(panes);
 		if (target === null) {
 			pushToast(
 				`ALL ${MAX_PANE_SLOTS} LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist`,
@@ -1979,7 +2074,8 @@
 			node.kind !== 'playlist' ||
 			node.playlist_id === 'all' ||
 			isMissingTracksId(node.playlist_id) ||
-			isAutolistId(node.playlist_id)
+			isAutolistId(node.playlist_id) ||
+			isInboxPlaylistId(node.playlist_id)
 		)
 			return;
 		try {
@@ -2014,13 +2110,17 @@
 	});
 
 	function movePlaylistUi(movedId: string, targetId: string, place: DropPlace): void {
-		const next = movePlaylistInOrder(treeOrderIds(playlists), movedId, targetId, place);
+		const order = treeOrderIds(playlists).filter((id) => !isInboxPlaylistId(id));
+		const next = movePlaylistInOrder(order, movedId, targetId, place);
 		// The row moving under the pointer is the confirmation; no toast.
 		if (next !== null) void _writePlaylistTreeOrder(next);
 	}
 
 	function sortPlaylistsByNameUi(): void {
-		void _writePlaylistTreeOrder(nameSortedIds(playlists), 'Playlists sorted A-Z');
+		void _writePlaylistTreeOrder(
+			nameSortedIds(playlists).filter((id) => !isInboxPlaylistId(id)),
+			'Playlists sorted A-Z'
+		);
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
@@ -2028,7 +2128,8 @@
 			node.kind === 'all_tracks' ||
 			node.playlist_id === 'all' ||
 			isMissingTracksId(node.playlist_id) ||
-			isAutolistId(node.playlist_id)
+			isAutolistId(node.playlist_id) ||
+			isInboxPlaylistId(node.playlist_id)
 		)
 			return;
 		const next = name.trim();
@@ -2049,7 +2150,8 @@
 			node.kind === 'all_tracks' ||
 			node.playlist_id === 'all' ||
 			isMissingTracksId(node.playlist_id) ||
-			isAutolistId(node.playlist_id)
+			isAutolistId(node.playlist_id) ||
+			isInboxPlaylistId(node.playlist_id)
 		)
 			return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
@@ -2174,9 +2276,11 @@
 				if (node !== null) await _loadPane(panes[activePane], node);
 			}
 			await _refreshPlaylists();
-			pushToast(
-				`${effectiveMode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`,
-				'info'
+			const target = playlists.find((row) => row.playlist_id === playlistId)?.name ?? 'playlist';
+			_trackCrudToast(
+				effectiveMode === 'add'
+					? addToPlaylistToastMessage(stableIds.length, target)
+					: `Moved ${stableIds.length} ${stableIds.length === 1 ? 'track' : 'tracks'} to "${target}"`
 			);
 		} catch (exc) {
 			pushToast(`playlist drop failed: ${String(exc)}`, 'error');
@@ -2550,6 +2654,29 @@
 		}
 	}
 
+	// ------------------------------------------------------ comment edits
+
+	/** LIBUX-56: the Comment cell editor's save. Same PATCH and conflict rule as a rating. */
+	async function commentRow(row: BrowserRow, next: string): Promise<void> {
+		if (row.stable_id.startsWith('usb-')) {
+			pushToast('stick tracks are read only: the comment was not saved', 'error');
+			return;
+		}
+		try {
+			const etag = row.etag === '' ? (await getTrack(row.stable_id)).etag : row.etag;
+			const { etag: fresh } = await patchTrack(row.stable_id, etag, { comments: next });
+			row.comments = next;
+			row.etag = fresh;
+		} catch (exc) {
+			if (exc instanceof ConflictError) {
+				row.etag = exc.etag;
+				pushToast('comment conflict: track changed elsewhere - the comment was not saved', 'error');
+				return;
+			}
+			pushToast(`comment update failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	// -------------------------------------------------------- deck loading
 	// Narrowed to exactly the fields deck-load needs (not the full
 	// BrowserRow) so the column-view lane's lighter ColumnTrackRow can
@@ -2845,7 +2972,9 @@
 		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
 			if (isRemovedStickRow(row)) {
-				pushToast('cannot load: Stick removed', 'error');
+				const stickMsg = 'cannot load: Stick removed';
+				if (deck !== null) recordDeckLoadRefusal(deck, stickMsg);
+				else pushToast(stickMsg, 'error', DECK_LOAD_ERROR_TOAST_MS);
 				return;
 			}
 			// OFFLOAD: an offloaded track is downloaded first by the shared load hook
@@ -2853,9 +2982,9 @@
 			const offloaded = rowIsOffloaded(row);
 			const loadRefusal = offloaded ? null : libraryAudioLoadRefusal(row);
 			if (loadRefusal !== null) {
-				// Refuse before dispatchPerformanceCommand. Absent and
-				// unchecked/pending rows never become a deck error toast.
-				pushToast(loadRefusal, 'error');
+				// Refuse before dispatchPerformanceCommand.
+				if (deck !== null) recordDeckLoadRefusal(deck, loadRefusal);
+				else pushToast(loadRefusal, 'error', DECK_LOAD_ERROR_TOAST_MS);
 				return;
 			}
 			// LIBWS-06: Library mode has no decks; building one here would wake
@@ -2867,7 +2996,7 @@
 			}
 			const target = deck ?? _lowestFreeDeck();
 			if (target === null) {
-				pushToast('no free deck: all 4 decks are loaded', 'error');
+				pushToast('no free deck: all 4 decks are loaded', 'error', DECK_LOAD_ERROR_TOAST_MS);
 				return;
 			}
 			// The master is never a victim (pin d2c156a503bb) - pickDoubleClickDeck
@@ -2877,7 +3006,10 @@
 			// (the "Load onto deck N" button never consults the picker at all).
 			// Revalidate at the load boundary, where every path converges, not at the pick.
 			if (decks[target].is_master) {
-				pushToast(`cannot load: CH${target} is the live master - unload or reassign it first`, 'error');
+				recordDeckLoadRefusal(
+					target,
+					`cannot load: CH${target} is the live master - unload or reassign it first`
+				);
 				return;
 			}
 			silencePreviewForUserLoad(target); // same turn as the click, before the load is queued (pin 104cf3b626fd)
@@ -3102,12 +3234,12 @@
 		}
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
-		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
+		const orderedIds = range ? tableRows.map((r) => r.stable_id) : [];
 		// A whole-collection search shows its own rows, not the playlist's, so a
 		// Ctrl-select must name tracks from those rows: every consumer of
 		// `selected_ids` (inspector, bulk edit, context menu) then agrees.
 		const orderedRows = range || wholeCollectionActive
-			? renderedRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
+			? tableRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
 			: undefined;
 		p.select(row.stable_id, extend, range, orderedIds, row.order, orderedRows);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
@@ -3399,6 +3531,13 @@
 	// drag-and-drop moves row.order positions, which only lines up with the
 	// visible row order when there is no client sort/search in effect.
 	const editablePane = $derived(source === 'collection' && canMutatePlaylist(pane));
+	// LIBUX-8679: the editable playlist pane is the set the header readout,
+	// row dimming and "Skip in set" act on; refetch when its membership changes.
+	$effect(() => setTargetState.attach(editablePane ? pane.playlist_id : null));
+	$effect(() => {
+		void pane.rows.map((r) => r.stable_id).join(',');
+		untrack(() => void setTargetState.refresh());
+	});
 	// PAIR-10: a Spotify pane, an autolist, or a taglist is read-only, so its rows
 	// never offer the pair command. Taglists and autolists both report as collection.
 	const readOnlyPane = $derived(
@@ -3460,33 +3599,103 @@
 		void _mutateActivePane((items) => [...items, stableId]);
 	}
 
-	function removeRow(row: BrowserRow): void {
-		void _removeMembership(row);
+	/** LIBUX-8676: a track add/remove confirmation, with Undo, grouped so a
+	 * burst of edits is one toast rather than a stack. */
+	function _trackCrudToast(message: string): void {
+		pushToast(message, 'info', TOAST_DEFAULT_MS, undefined, {}, TRACK_CRUD_TOAST_GROUP, {
+			label: 'Undo',
+			handler: undoPlaylistFromChrome
+		});
 	}
 
-	async function _removeMembership(row: BrowserRow): Promise<void> {
+	/** LIBUX-8676: in-place removals, newest last, so their undo can restore
+	 * the same rows in place. Bounded: only the newest can match an undo. */
+	const REMOVAL_MEMORY = 20;
+	let recentRemovals: RowRemoval<BrowserRow>[] = [];
+	/** Rows mid green-expand after an undo restored them, keyed by trackRowKey. */
+	let restoringRowKeys = $state<ReadonlySet<string>>(new Set());
+
+	function _rememberRemoval(removal: RowRemoval<BrowserRow>): void {
+		recentRemovals = [...recentRemovals, removal].slice(-REMOVAL_MEMORY);
+	}
+
+	/**
+	 * LIBUX-8676 (the maintainer, Wed 4 Nov 2026: "Undo for that should be almost
+	 * instant and have the reverse animation with green"): when the undo about
+	 * to run reverses this pane's last removal, put those rows back NOW, green,
+	 * selected. The undo write then commits (fresh etag) or reverts it.
+	 */
+	function _restoreUndoneRemoval(entry: PlaylistHistoryEntry): PendingHistoryRestore | null {
+		const p = panes[activePane];
+		const removal = restorableRemoval(recentRemovals, entry, p);
+		if (removal === null) return null;
+		recentRemovals = recentRemovals.slice(0, -1);
+		const pending = restoreRowsInPlace({
+			pane: p,
+			removal,
+			markRestoring: (keys) => (restoringRowKeys = keys),
+			rowKey: trackRowKey
+		});
+		return {
+			commit: pending.commit,
+			revert: () => {
+				pending.revert();
+				// The pane may now disagree with the server: read it fresh.
+				const node = _currentNode(p);
+				if (node !== null) void _loadPane(p, node);
+			}
+		};
+	}
+
+	function removeRow(row: BrowserRow): void {
+		void _removeMemberships([row]);
+	}
+
+	/** Rows mid red-collapse (LIBUX-8626), keyed by trackRowKey. */
+	let removingRowKeys = $state<ReadonlySet<string>>(new Set());
+
+	// LIBUX-8626: remove in place, never `_loadPane` - a reload reset the rows,
+	// selection and scroll, so the list flashed and the user lost their place.
+	async function _removeMemberships(rows: BrowserRow[]): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
+		if (rows.length === 0 || id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
 		}
-		if (!row.item_id) {
-			pushToast('playlist row has no membership id - reload and try again', 'error');
-			return;
-		}
 		try {
-			await deletePlaylistItem(id, row.item_id);
+			const outcome = await removeRowsInPlace({
+				pane: p,
+				rows,
+				visible: renderedRows,
+				remove: removePlaylistItems,
+				markRemoving: (keys) => (removingRowKeys = keys),
+				rowKey: trackRowKey
+			});
+			if (outcome === 'superseded') return;
+			_rememberRemoval(outcome);
 		} catch (exc) {
 			pushToast(`playlist update failed: ${String(exc)}`, 'error');
 			return;
 		}
-		// FLOW-06: every other membership mutation in this file confirms with a
-		// toast; this one silently succeeded, indistinguishable from a no-op.
-		pushToast(`Removed "${row.title ?? row.stable_id}" from playlist`, 'info');
-		const node = _currentNode(p);
-		if (node !== null) await _loadPane(p, node);
+		// FLOW-06: every other membership mutation in this file confirms with a toast.
+		// LIBUX-8676: it names the playlist and offers Undo; one toast per batch.
+		_trackCrudToast(
+			removedTracksToastMessage(
+				rows.map((row) => row.title ?? row.stable_id),
+				_currentNode(p)?.name ?? null
+			)
+		);
+	}
+
+	/** LIBUX-8626: select a track in the active pane and scroll it into view. */
+	function _revealTrack(stableId: string): void {
+		const row = renderedRows.find((r) => r.stable_id === stableId);
+		if (row === undefined) return;
+		selectRow(row);
+		browseScrollRevision += 1;
+		browseScroll = { order: row.order, direction: 1, revision: browseScrollRevision };
 	}
 
 	// FLOW-07: relocate rewrites the track's own path, not a playlist
@@ -3537,7 +3746,7 @@
 			await appendTracksToPlaylist(node.playlist_id, ids);
 			invalidatePlaylistFirstPage(node.playlist_id);
 			await _refreshPlaylists();
-			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
+			_trackCrudToast(addToPlaylistToastMessage(ids.length, node.name));
 		} catch (exc) {
 			pushToast(`add to playlist failed: ${String(exc)}`, 'error');
 		}
@@ -3560,88 +3769,64 @@
 		pushToast(removeFromLibraryToastMessage(okCount), 'info');
 	}
 
-	function reorderRows(fromOrder: number, toOrder: number, count = 1): void {
-		void _moveMembershipSlice(fromOrder, toOrder, count);
-	}
+	// ------------------------------------------------- sections and moves
+	let renamingSectionId = $state<string | null>(null);
 
-	async function _moveMembershipSlice(
-		fromOrder: number,
-		toOrder: number,
-		count: number
-	): Promise<void> {
+	$effect(watchSections);
+
+	$effect(() => {
+		// The etag turns over when the list changes, which can move a divider.
+		void pane.etag;
+		const id = pane.kind === 'playlist' ? pane.playlist_id : null;
+		if (id === null) return;
+		loadSections(id).catch((exc: unknown) => {
+			pushToast(`sections failed to load: ${sectionWriteMessage(exc)}`, 'error');
+		});
+	});
+
+	function _editablePlaylistId(): string | null {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
+		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return null;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
-			return;
+			return null;
 		}
 		if (p.truncated) {
 			pushToast('playlist is truncated - membership editing is disabled to preserve unrendered tracks', 'error');
-			return;
+			return null;
 		}
-		if (p.etag === '') {
-			pushToast('playlist still loading - try again in a moment', 'error');
-			return;
-		}
-		const rowsByOrder = new Map(p.rows.map((row) => [row.order, row]));
-		const slice: BrowserRow[] = [];
-		for (let order = fromOrder; order < fromOrder + count; order += 1) {
-			const row = rowsByOrder.get(order);
-			if (row === undefined) {
-				pushToast('playlist row has no membership id - reload and try again', 'error');
-				return;
-			}
-			slice.push(row);
-		}
-		const target = rowsByOrder.get(toOrder);
-		if (target === undefined) {
-			pushToast('playlist row has no membership id - reload and try again', 'error');
-			return;
-		}
-		for (const row of [...slice, target]) {
-			if (!row.item_id) {
-				pushToast('playlist row has no membership id - reload and try again', 'error');
-				return;
-			}
-		}
-		if (toOrder >= fromOrder && toOrder < fromOrder + count) {
-			return;
-		}
-		const body: {
-			range_start: string;
-			range_length: number;
-			range_end: string;
-			before_item_id?: string;
-			after_item_id?: string;
-		} = {
-			range_start: slice[0].item_id!,
-			range_length: count,
-			range_end: slice[count - 1].item_id!
-		};
-		if (toOrder > fromOrder + count - 1) {
-			body.after_item_id = target.item_id!;
-		} else if (toOrder < fromOrder) {
-			body.before_item_id = target.item_id!;
-		} else {
-			return;
-		}
-		try {
-			await movePlaylistItems(id, p.etag, body);
-			// FLOW-06: silent on success today, so a drag-reorder looked identical
-			// to a dropped/ignored gesture until the row visibly re-sorted.
-			pushToast(count === 1 ? 'Moved track' : `Moved ${count} tracks`, 'info');
-		} catch (exc) {
-			if (exc instanceof PlaylistConflictError) {
-				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
-			} else {
-				pushToast(`playlist update failed: ${String(exc)}`, 'error');
-				return;
-			}
-		}
-		const node = _currentNode(p);
-		if (node !== null) await _loadPane(p, node);
+		return id;
 	}
+
+	const sectionsUi = sectionActions({
+		editableListId: _editablePlaylistId,
+		rows: () => pane.rows,
+		sections: () => openSections,
+		selectedOrders: () => pane.selected_orders,
+		setRenaming: (id) => (renamingSectionId = id),
+		// REORDER-ROW-02: a drop shows at once and is read back quietly. The old
+		// reload ran _loadPane, whose beginLoad empties p.rows: the whole list
+		// blanked and repainted on every drop.
+		applyMoveLocally: (move) => {
+			const id = pane.playlist_id;
+			if (id === null) return null;
+			return applyOptimisticEntriesMove(pane, openSections, (next) => showSectionsLocally(id, next), move);
+		},
+		refreshListQuietly: async () => {
+			const p = pane;
+			const id = p.playlist_id;
+			if (id === null) return;
+			invalidatePlaylistFirstPage(id);
+			const fresh = p.kind === 'smartlist' ? await _fetchSmartlistRows(id) : await _fetchPlaylistRows(id);
+			if (p.playlist_id !== id) return;
+			p.rows = fresh.rows;
+			p.truncated = fresh.truncated;
+			p.etag = fresh.etag;
+			pruneSelection(p, fresh.rows);
+		},
+		toast: pushToast
+	});
 </script>
 
 <section
@@ -3720,6 +3905,7 @@
 				{tabs}
 				active={activePane}
 				onactivate={(i) => (activePane = i)}
+				onclose={libraryTabs.close}
 				ontogglesticky={togglePaneSticky}
 				onreorder={reorderPaneTabs}
 				ondropplaylist={dropPlaylistOnTabBar}
@@ -3737,6 +3923,9 @@
 				</button>
 				<!-- LIBUX-49: the pencil sits at the toolbar's left end, clear of the search box (which grows
 					 leftwards) and of the feedback dock over the bottom-right corner. -->
+				{#if editablePane}
+					<SetTargetReadout summary={setTargetState.summary} onsettarget={(t) => void setTargetState.setTarget(t)} />
+				{/if}
 				<LibraryHeaderTools
 					hasSelection={pane.selected_ids.length > 0}
 					editable={editablePane}
@@ -3875,6 +4064,17 @@
 				>
 					← Back
 				</button>
+				{#if editablePane}
+					<button
+						type="button"
+						class="rb-lit-button"
+						data-testid="add-section"
+						title="Add a section divider above the selected track, or at the end (POST /api/v1/sections)"
+						onclick={sectionsUi.addFromHeader}
+					>
+						+ Section
+					</button>
+				{/if}
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
@@ -3913,11 +4113,20 @@
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
 			<PlaylistSetTabs playlistId={pane.playlist_id} rows={pane.rows} selectedOrders={pane.selected_orders} />
 		{/if}
+		{#if openSections.length > 0 && pane.sort_key !== null && pane.search.trim() === ''}
+			<SectionSortBar
+				within={uiPrefs.sort_within_sections}
+				onwithin={setSortWithinSections}
+				onrestore={restorePlaylistOrder}
+			/>
+		{/if}
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null && setRoutesView.active && setRoutesView.playlistId === pane.playlist_id}
 			{#await loadComponentRouteList() then routeList}
 				<routeList.default playlistId={pane.playlist_id} rows={pane.rows} />
 			{/await}
 		{:else}
+		<SessionPlayedBanner />
+		<SelectionPlayedLength rows={pane.rows} selectedOrders={pane.selected_orders} />
 		<OffloadProgress />
 		<LibraryLoadIndicator
 			loading={pane.loading}
@@ -3931,9 +4140,11 @@
 			pairError={pairingGraph.error ?? pairingIndex.error}
 			pairPulses={pairingGraph.pulses}
 			{provider}
+			stackPlaylistId={pane.playlist_id}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}
 			{loadedIds}
+			{playedIds}
 			{vocalsById}
 			{markerAnlzById}
 			{previewStripById}
@@ -3970,9 +4181,23 @@
 			onpreviewseek={library === null ? previewSeek : library.preview}
 			onrefused={(reason) => pushToast(reason, 'error')}
 			onrate={rateRow}
+			oncomment={commentRow}
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
-			onreorder={reorderRows}
+			onremoverows={_removeMemberships}
+			{removingRowKeys}
+			{restoringRowKeys}
+			sectionHeaders={tableView.headers}
+			{renamingSectionId}
+			onsectionrenamestart={(id) => (renamingSectionId = id)}
+			onsectionrename={sectionsUi.rename}
+			onsectionrenamecancel={() => (renamingSectionId = null)}
+			onsectionremove={sectionsUi.remove}
+			onsectioninsert={sectionsUi.insertAbove}
+			onsectiontoggle={setSectionCollapsed}
+			onsectiondragitems={sectionsUi.dragItems}
+			oninsertsection={(row) => sectionsUi.insert(row.order - 1)}
+			onmoveentries={sectionsUi.move}
 			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}

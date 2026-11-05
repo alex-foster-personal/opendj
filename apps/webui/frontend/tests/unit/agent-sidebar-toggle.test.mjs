@@ -55,8 +55,16 @@ test('Cmd+I toggles on Apple and Ctrl+I elsewhere, including a non-Latin layout 
 test("only the platform's own modifier toggles: the other one, or both, never do", () => {
 	assert.equal(toggle.isAssistantToggleKey(ctrl(), MAC), false, 'Ctrl+I on a Mac');
 	assert.equal(toggle.isAssistantToggleKey(press(), PC), false, 'Meta+I off a Mac');
-	assert.equal(toggle.isAssistantToggleKey(press({ ctrlKey: true }), MAC), false, 'Ctrl+Cmd+I on a Mac');
-	assert.equal(toggle.isAssistantToggleKey(press({ ctrlKey: true }), PC), false, 'Ctrl+Meta+I off a Mac');
+	assert.equal(
+		toggle.isAssistantToggleKey(press({ ctrlKey: true }), MAC),
+		false,
+		'Ctrl+Cmd+I on a Mac'
+	);
+	assert.equal(
+		toggle.isAssistantToggleKey(press({ ctrlKey: true }), PC),
+		false,
+		'Ctrl+Meta+I off a Mac'
+	);
 });
 
 test('a bare I, an extra modifier, or another letter never toggles', () => {
@@ -79,7 +87,8 @@ test('typing in a field outside the sidebar never toggles', () => {
 test("the sidebar's own composer still takes the chord, so it closes from there", () => {
 	const composer = {
 		tagName: 'TEXTAREA',
-		closest: (selector) => (selector === `[${toggle.ASSISTANT_ROOT_ATTR}]` ? { tagName: 'ASIDE' } : null)
+		closest: (selector) =>
+			selector === `[${toggle.ASSISTANT_ROOT_ATTR}]` ? { tagName: 'ASIDE' } : null
 	};
 	assert.equal(toggle.isAssistantToggleKey(press({ target: composer }), MAC), true);
 });
@@ -148,33 +157,63 @@ test('the chord is listed in the hotkeys overlay registry', () => {
 });
 
 test('AISIDE-7892j: the chord row shows only while the assistant flag is on', () => {
-	const listed = (enabled) => registry.availableHotkeys(registry.HOTKEY_REGISTRY, enabled).map((e) => e.id);
+	const listed = (enabled) =>
+		registry.availableHotkeys(registry.HOTKEY_REGISTRY, enabled).map((e) => e.id);
 	assert.equal(listed(true).length, registry.HOTKEY_REGISTRY.length);
 	assert.ok(listed(true).includes('assistant-toggle'));
 	assert.ok(!listed(false).includes('assistant-toggle'));
-	assert.equal(listed(false).length, registry.HOTKEY_REGISTRY.length - 1, 'no other row disappears');
+	assert.equal(
+		listed(false).length,
+		registry.HOTKEY_REGISTRY.length - 1,
+		'no other row disappears'
+	);
 });
 
 test('AISIDE-7892j: the sidebar shows only when the daemon declares assistant.sidebar on', () => {
 	assert.equal(flag.ASSISTANT_SIDEBAR_FLAG_ID, 'assistant.sidebar');
 	assert.equal(flag.assistantSidebarEnabledIn([]), false, 'flags unread: hidden');
-	assert.equal(flag.assistantSidebarEnabledIn([{ flag_id: 'cmdk.v2', enabled: true }]), false, 'another flag on');
-	assert.equal(flag.assistantSidebarEnabledIn([{ flag_id: 'assistant.sidebar', enabled: false }]), false);
-	assert.equal(flag.assistantSidebarEnabledIn([{ flag_id: 'assistant.sidebar', enabled: true }]), true);
+	assert.equal(
+		flag.assistantSidebarEnabledIn([{ flag_id: 'cmdk.v2', enabled: true }]),
+		false,
+		'another flag on'
+	);
+	assert.equal(
+		flag.assistantSidebarEnabledIn([{ flag_id: 'assistant.sidebar', enabled: false }]),
+		false
+	);
+	assert.equal(
+		flag.assistantSidebarEnabledIn([{ flag_id: 'assistant.sidebar', enabled: true }]),
+		true
+	);
 });
 
 test('AISIDE-7892j: the chord is handled only while the flag is on', () => {
 	assert.equal(toggle.assistantChordApplies(true, press(), MAC), true);
-	assert.equal(toggle.assistantChordApplies(false, press(), MAC), false, 'flag off: the event passes through');
+	assert.equal(
+		toggle.assistantChordApplies(false, press(), MAC),
+		false,
+		'flag off: the event passes through'
+	);
 	assert.equal(toggle.assistantChordApplies(true, press({ key: 'j', code: 'KeyJ' }), MAC), false);
-	assert.equal(toggle.assistantChordApplies(true, ctrl(), MAC), false, 'the platform rule still applies');
+	assert.equal(
+		toggle.assistantChordApplies(true, ctrl(), MAC),
+		false,
+		'the platform rule still applies'
+	);
 	assert.equal(toggle.assistantChordApplies(true, ctrl(), PC), true);
 });
 
 test('AISIDE-7892j: the mount renders its tab only while the flag is on', () => {
-	const tabIn = (isEnabled) => ssr.render(ssr.AgentSidebarMount, { props: { isEnabled } }).body.includes('assistant-tab');
-	assert.equal(tabIn(() => true), true);
-	assert.equal(tabIn(() => false), false);
+	const tabIn = (isEnabled) =>
+		ssr.render(ssr.AgentSidebarMount, { props: { isEnabled } }).body.includes('assistant-tab');
+	assert.equal(
+		tabIn(() => true),
+		true
+	);
+	assert.equal(
+		tabIn(() => false),
+		false
+	);
 });
 
 test('the chord label names Cmd on Apple platforms and Ctrl everywhere else', () => {
@@ -224,9 +263,18 @@ test('AISIDE-7892e: Free preview shows only for the gateway; a user key bills th
 test('AISIDE-7892i: a failed draft check is a note on the draft, not a disabled assistant', () => {
 	const reason = 'the engine answered 503';
 	const body = view({ availability: 'keyless', draft: 'pause deck 1', instantError: reason });
-	assert.ok(body.includes(labels.instantCheckFailedNote(reason)), 'the failure is shown, with its reason');
-	assert.ok(!/<textarea[^>]*\sdisabled/.test(body), 'the composer stays open for the edit that retries');
-	assert.ok(!body.includes(labels.AVAILABILITY_NOTICE.unreachable), 'the assistant is not reported down');
+	assert.ok(
+		body.includes(labels.instantCheckFailedNote(reason)),
+		'the failure is shown, with its reason'
+	);
+	assert.ok(
+		!/<textarea[^>]*\sdisabled/.test(body),
+		'the composer stays open for the edit that retries'
+	);
+	assert.ok(
+		!body.includes(labels.AVAILABILITY_NOTICE.unreachable),
+		'the assistant is not reported down'
+	);
 	assert.ok(body.includes('only instant commands work'), 'still the keyless notice');
 });
 
@@ -248,7 +296,11 @@ test('AISIDE-7892i: a failed check refuses the draft instead of queueing it fore
 	});
 	assert.equal(labels.sendOutcome(at({})), 'queue', 'still asking: queued, as before');
 	assert.equal(labels.sendOutcome(at({ instantCheckFailed: true })), 'refuse');
-	assert.equal(labels.sendOutcome(at({ instantCheckFailed: true, keyless: false })), 'send', 'a model needs no check');
+	assert.equal(
+		labels.sendOutcome(at({ instantCheckFailed: true, keyless: false })),
+		'send',
+		'a model needs no check'
+	);
 	assert.equal(labels.sendOutcome(at({ instantCheckFailed: true, instantDraft: true })), 'send');
 });
 
@@ -266,7 +318,11 @@ const TOOL_ARGUMENTS = {
 	usb_list: [],
 	usb_eject: ['volume_id']
 };
-const REQUIRED_ARGUMENTS = { library_read: ['path'], system_volume_set: ['volume'], usb_eject: ['volume_id'] };
+const REQUIRED_ARGUMENTS = {
+	library_read: ['path'],
+	system_volume_set: ['volume'],
+	usb_eject: ['volume_id']
+};
 
 test('every story tool call uses the argument names of the shipped tool', () => {
 	const tools = Object.values(ssr.stories)
@@ -274,14 +330,18 @@ test('every story tool call uses the argument names of the shipped tool', () => 
 		.filter((item) => item.kind === 'tool');
 	assert.ok(tools.length >= 8, `the stories must record tool calls, found ${tools.length}`);
 	const names = new Set(tools.map((tool) => tool.call.name));
-	for (const name of ['library_read', 'system_volume_set', 'command', 'app_state']) assert.ok(names.has(name), name);
+	for (const name of ['library_read', 'system_volume_set', 'command', 'app_state'])
+		assert.ok(names.has(name), name);
 	for (const { call } of tools) {
 		const allowed = TOOL_ARGUMENTS[call.name];
 		assert.ok(allowed, `${call.name} is not a shipped tool`);
 		const given = Object.keys(call.arguments);
-		for (const key of given) assert.ok(allowed.includes(key), `${call.name} has no ${key} argument`);
-		for (const key of REQUIRED_ARGUMENTS[call.name] ?? []) assert.ok(given.includes(key), `${call.name} needs ${key}`);
-		if (call.name === 'command') assert.equal(given.length, 1, 'command takes exactly one of verb or order');
+		for (const key of given)
+			assert.ok(allowed.includes(key), `${call.name} has no ${key} argument`);
+		for (const key of REQUIRED_ARGUMENTS[call.name] ?? [])
+			assert.ok(given.includes(key), `${call.name} needs ${key}`);
+		if (call.name === 'command')
+			assert.equal(given.length, 1, 'command takes exactly one of verb or order');
 	}
 });
 
@@ -320,9 +380,23 @@ test('a chunk that fails, or a mount that throws, reaches onError instead of van
 	const { scheduler, release } = manualBootScheduler();
 	const errors = [];
 	const broken = new Error('chunk 404');
-	toggle.deferLoad('a', () => Promise.reject(broken), () => assert.fail('never ready'), (e) => errors.push(e), scheduler);
+	toggle.deferLoad(
+		'a',
+		() => Promise.reject(broken),
+		() => assert.fail('never ready'),
+		(e) => errors.push(e),
+		scheduler
+	);
 	const threw = new Error('mount threw');
-	toggle.deferLoad('b', async () => 'x', () => { throw threw; }, (e) => errors.push(e), scheduler);
+	toggle.deferLoad(
+		'b',
+		async () => 'x',
+		() => {
+			throw threw;
+		},
+		(e) => errors.push(e),
+		scheduler
+	);
 	release();
 	await settle();
 	assert.deepEqual(errors, [broken, threw]);

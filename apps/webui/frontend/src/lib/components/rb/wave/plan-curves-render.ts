@@ -16,8 +16,14 @@ const HALO_COLOR = 'rgba(0, 0, 0, 0.4)';
 const BAND_ALPHA = 0.14;
 const EDGE_WIDTH_PX = 2;
 const SOLID: number[] = [];
-const KNOB_DASH = Object.fromEntries(PLAN_KNOBS.map((knob) => [knob.name, knob.dash])) as Record<PlanKnob, number[]>;
-const KNOB_COLOR: Record<PlanKnob, 'planFader' | 'planEqLow' | 'planEqMid' | 'planEqHigh' | 'planFilter'> = {
+const KNOB_DASH = Object.fromEntries(PLAN_KNOBS.map((knob) => [knob.name, knob.dash])) as Record<
+	PlanKnob,
+	number[]
+>;
+const KNOB_COLOR: Record<
+	PlanKnob,
+	'planFader' | 'planEqLow' | 'planEqMid' | 'planEqHigh' | 'planFilter'
+> = {
 	fader: 'planFader',
 	eq_low: 'planEqLow',
 	eq_mid: 'planEqMid',
@@ -25,7 +31,13 @@ const KNOB_COLOR: Record<PlanKnob, 'planFader' | 'planEqLow' | 'planEqMid' | 'pl
 	filter: 'planFilter'
 };
 
-function _traceCurve(ctx: CanvasRenderingContext2D, curve: PlanCurve, tLeft: number, pxPerS: number, band: number): void {
+function _traceCurve(
+	ctx: CanvasRenderingContext2D,
+	curve: PlanCurve,
+	tLeft: number,
+	pxPerS: number,
+	band: number
+): void {
 	ctx.beginPath();
 	for (let p = 0; p < curve.points.length; p++) {
 		const point = curve.points[p];
@@ -36,7 +48,13 @@ function _traceCurve(ctx: CanvasRenderingContext2D, curve: PlanCurve, tLeft: num
 	}
 }
 
-function _drawSpan(ctx: CanvasRenderingContext2D, color: string, startX: number, endX: number, h: number): void {
+function _drawSpan(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	startX: number,
+	endX: number,
+	h: number
+): void {
 	ctx.fillStyle = color;
 	ctx.globalAlpha = BAND_ALPHA;
 	ctx.fillRect(startX, 0, endX - startX, h);

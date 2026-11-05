@@ -36,9 +36,6 @@ export function releaseBeaconBody(response: Response): void {
 	void response.arrayBuffer().catch((error: unknown) => {
 		// Same observable path as releaseBody. A missed beacon is still a
 		// stale client, not an exception thrown into the page.
-		console.warn(
-			`releaseBeaconBody: reading an unread ${response.status} body failed`,
-			error
-		);
+		console.warn(`releaseBeaconBody: reading an unread ${response.status} body failed`, error);
 	});
 }

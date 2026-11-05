@@ -141,12 +141,12 @@ test('real loader: replay uploads after consent, stops and discards on play, res
 	await row.locator('button[title="Load onto deck 1"]').click();
 	await expect(page.locator('[data-testid="play-deck-1"]')).toBeEnabled({ timeout: 30_000 });
 	// The recording must not carry what the screen shows: the fixture title is
-	// visible in the track table (text AND `title` attributes) and on the deck,
+	// visible in the track table text and on the deck,
 	// so wait for a segment recorded with it on screen and read the decoded
 	// rrweb events for it. Positive control first: the DOM really has it.
-	// The cell's `title` attribute is the bare track title; its innerText also
-	// carries the hover-only deck chooser ("load to deck: 1 2 3 4").
-	const fixtureTitle = ((await row.locator('td.c-title').getAttribute('title')) ?? '').trim();
+	// The cell's .title-text span is the bare track title; the cell's own
+	// innerText also carries the hover-only deck chooser ("load to deck: 1 2 3 4").
+	const fixtureTitle = ((await row.locator('td.c-title .title-text').textContent()) ?? '').trim();
 	expect(fixtureTitle.length).toBeGreaterThan(0);
 	await expect(page.getByText(fixtureTitle).first()).toBeVisible();
 	const recordedBefore = envelopes.reduce((n, e) => n + e.recordings.length, 0);

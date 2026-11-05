@@ -5,7 +5,7 @@
  * [if] /anlz 200 for a mapped track with no AnalysisDataPath [then] load
  * publishes the deck and Play is enableable, [else stop].
  *
- * Backend contract: tests/webui/test_anlz_no_analysis_data_path.py.
+ * Backend contract: (private path).
  * Deferred grid upgrade: deck-beatgrid-fallback-upgrade.test.mjs.
  * H10 / other 404 rejection: audio-engine-controller.test.mjs.
  */
@@ -89,82 +89,98 @@ function installBrowserAudioGlobals() {
 			setSinkId: async () => {}
 		};
 	});
-	defineGlobal('AudioContext', class AudioContext {
-		constructor() {
-			this.state = 'running';
-			this.sampleRate = 48_000;
-			this.currentTime = 0;
-			this.baseLatency = 128 / 48_000;
-			this.outputLatency = 0.032;
-			this.destination = {
-				maxChannelCount: 2,
-				channelCount: 2,
-				channelInterpretation: 'speakers',
-				connect() {},
-				disconnect() {}
-			};
-			this.audioWorklet = {
-				addModule: async () => {}
-			};
+	defineGlobal(
+		'AudioContext',
+		class AudioContext {
+			constructor() {
+				this.state = 'running';
+				this.sampleRate = 48_000;
+				this.currentTime = 0;
+				this.baseLatency = 128 / 48_000;
+				this.outputLatency = 0.032;
+				this.destination = {
+					maxChannelCount: 2,
+					channelCount: 2,
+					channelInterpretation: 'speakers',
+					connect() {},
+					disconnect() {}
+				};
+				this.audioWorklet = {
+					addModule: async () => {}
+				};
+			}
+			#node(extra = {}) {
+				return {
+					context: this,
+					connect() {},
+					disconnect() {},
+					gain: makeAudioParam(),
+					frequency: makeAudioParam(1000),
+					Q: makeAudioParam(1),
+					type: 'lowpass',
+					delayTime: makeAudioParam(0),
+					channelCount: 2,
+					channelCountMode: 'max',
+					channelInterpretation: 'speakers',
+					...extra
+				};
+			}
+			createGain() {
+				return this.#node();
+			}
+			createAnalyser() {
+				return this.#node();
+			}
+			createBiquadFilter() {
+				return this.#node();
+			}
+			createChannelSplitter() {
+				return this.#node();
+			}
+			createChannelMerger() {
+				return this.#node();
+			}
+			createDelay() {
+				return this.#node();
+			}
+			createMediaStreamDestination() {
+				return {
+					context: this,
+					stream: { getTracks: () => [] },
+					connect() {},
+					disconnect() {}
+				};
+			}
+			createBuffer(channels, length, sampleRate) {
+				return {
+					numberOfChannels: channels,
+					length,
+					sampleRate,
+					duration: length / sampleRate,
+					getChannelData: () => new Float32Array(length)
+				};
+			}
+			async decodeAudioData(bytes) {
+				const byteLength = bytes.byteLength ?? bytes.length ?? 0;
+				const sampleRate = 48_000;
+				const length = Math.max(1, Math.floor(byteLength / 4));
+				return {
+					duration: length / sampleRate,
+					length,
+					numberOfChannels: 2,
+					sampleRate,
+					getChannelData: () => new Float32Array(length)
+				};
+			}
+			getOutputTimestamp() {
+				return { contextTime: 0, performanceTime: performance.now() };
+			}
+			addEventListener() {}
+			removeEventListener() {}
+			async resume() {}
+			async close() {}
 		}
-		#node(extra = {}) {
-			return { context: this, connect() {}, disconnect() {}, gain: makeAudioParam(), frequency: makeAudioParam(1000), Q: makeAudioParam(1), type: 'lowpass', delayTime: makeAudioParam(0), channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers', ...extra };
-		}
-		createGain() {
-			return this.#node();
-		}
-		createAnalyser() {
-			return this.#node();
-		}
-		createBiquadFilter() {
-			return this.#node();
-		}
-		createChannelSplitter() {
-			return this.#node();
-		}
-		createChannelMerger() {
-			return this.#node();
-		}
-		createDelay() {
-			return this.#node();
-		}
-		createMediaStreamDestination() {
-			return {
-				context: this,
-				stream: { getTracks: () => [] },
-				connect() {},
-				disconnect() {}
-			};
-		}
-		createBuffer(channels, length, sampleRate) {
-			return {
-				numberOfChannels: channels,
-				length,
-				sampleRate,
-				duration: length / sampleRate,
-				getChannelData: () => new Float32Array(length)
-			};
-		}
-		async decodeAudioData(bytes) {
-			const byteLength = bytes.byteLength ?? bytes.length ?? 0;
-			const sampleRate = 48_000;
-			const length = Math.max(1, Math.floor(byteLength / 4));
-			return {
-				duration: length / sampleRate,
-				length,
-				numberOfChannels: 2,
-				sampleRate,
-				getChannelData: () => new Float32Array(length)
-			};
-		}
-		getOutputTimestamp() {
-			return { contextTime: 0, performanceTime: performance.now() };
-		}
-		addEventListener() {}
-		removeEventListener() {}
-		async resume() {}
-		async close() {}
-	});
+	);
 }
 
 function emptyRescuedAnlz({ ownBeats = false } = {}) {
@@ -217,10 +233,7 @@ function stubFetch({ ownBeats = false } = {}) {
 			return new Response(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
 		}
 		if (url.endsWith(`/tracks/${SID}/stems`)) {
-			return json(
-				{ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } },
-				404
-			);
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
 		}
 		if (url.endsWith(`/tracks/${SID}`)) {
 			return json({

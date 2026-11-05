@@ -38,9 +38,7 @@ def _track_row(conn: sqlite3.Connection, stable_id: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
-def _row_change_from_track(
-    conn: sqlite3.Connection, row: sqlite3.Row, digest: str
-) -> protocol.RowChange:
+def _row_change_from_track(conn: sqlite3.Connection, row: sqlite3.Row, digest: str) -> protocol.RowChange:
     columns = protocol.table_columns(conn, "tracks")
     full = conn.execute(
         f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = ?",
@@ -97,9 +95,7 @@ def run_for_hub_backfill(
     return report
 
 
-def _fetch_pending_ids(
-    channel: HubTransport, conn: sqlite3.Connection, limit: int | None
-) -> list[str]:
+def _fetch_pending_ids(channel: HubTransport, conn: sqlite3.Connection, limit: int | None) -> list[str]:
     """Fetch the bounded hash-pending stable-id list from the hub."""
     pending_ids: list[str] = []
     cursor: str | None = None
@@ -163,9 +159,7 @@ def _hash_hub_rows(
     return push_rows
 
 
-def _resolve_backfill_transport(
-    data_dir: Path, hub_url: str | None, transport: HubTransport | None
-) -> HubTransport:
+def _resolve_backfill_transport(data_dir: Path, hub_url: str | None, transport: HubTransport | None) -> HubTransport:
     """Return the injected or configured transport after config validation."""
     if transport is not None:
         return transport

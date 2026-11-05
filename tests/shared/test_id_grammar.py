@@ -14,12 +14,15 @@ _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 def test_matching_value_returned_unchanged() -> None:
     value = "abc123def4567890abcdef1234567890"
-    assert require_matching(
-        value,
-        _BACKUP_ID,
-        field="backup_id",
-        description="32 lowercase hex characters (uuid4().hex)",
-    ) is value
+    assert (
+        require_matching(
+            value,
+            _BACKUP_ID,
+            field="backup_id",
+            description="32 lowercase hex characters (uuid4().hex)",
+        )
+        is value
+    )
 
 
 def test_default_refuse_raises_value_error_with_exact_message() -> None:
@@ -31,9 +34,7 @@ def test_default_refuse_raises_value_error_with_exact_message() -> None:
             field="backup_id",
             description="32 lowercase hex characters (uuid4().hex)",
         )
-    assert str(exc.value) == (
-        f"backup_id must be 32 lowercase hex characters (uuid4().hex), got {bad!r}"
-    )
+    assert str(exc.value) == (f"backup_id must be 32 lowercase hex characters (uuid4().hex), got {bad!r}")
 
 
 def test_custom_refuse_receives_same_message() -> None:
@@ -55,12 +56,15 @@ def test_custom_refuse_receives_same_message() -> None:
 def test_fullmatch_rejects_trailing_junk_with_unanchored_pattern() -> None:
     exact = "a" * 32
     junk = exact + "x"
-    assert require_matching(
-        exact,
-        _BACKUP_ID,
-        field="backup_id",
-        description="32 lowercase hex characters (uuid4().hex)",
-    ) == exact
+    assert (
+        require_matching(
+            exact,
+            _BACKUP_ID,
+            field="backup_id",
+            description="32 lowercase hex characters (uuid4().hex)",
+        )
+        == exact
+    )
     with pytest.raises(ValueError):
         require_matching(
             junk,
@@ -126,9 +130,12 @@ def test_does_not_strip_whitespace_before_matching() -> None:
                 field="backup_id",
                 description="32 lowercase hex characters (uuid4().hex)",
             )
-    assert require_matching(
-        inner,
-        _BACKUP_ID,
-        field="backup_id",
-        description="32 lowercase hex characters (uuid4().hex)",
-    ) is inner
+    assert (
+        require_matching(
+            inner,
+            _BACKUP_ID,
+            field="backup_id",
+            description="32 lowercase hex characters (uuid4().hex)",
+        )
+        is inner
+    )

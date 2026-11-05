@@ -19,31 +19,31 @@ BIN="${VOICE_WHISPER_BIN:-}"
 
 # Try common binary names if not given explicitly.
 if [[ -z "${BIN}" ]]; then
-  for candidate in whisper-server whisper-cpp-server; do
-    if command -v "${candidate}" >/dev/null 2>&1; then
-      BIN="${candidate}"
-      break
-    fi
-  done
+    for candidate in whisper-server whisper-cpp-server; do
+        if command -v "${candidate}" >/dev/null 2>&1; then
+            BIN="${candidate}"
+            break
+        fi
+    done
 fi
 
 if [[ -z "${BIN}" ]]; then
-  echo "[voice] could not find whisper-server or whisper-cpp-server" >&2
-  echo "[voice] install via 'brew install whisper-cpp' or build from vendor/whisper.cpp" >&2
-  echo "[voice] see apps/voice/MODELS.md for details" >&2
-  exit 1
+    echo "[voice] could not find whisper-server or whisper-cpp-server" >&2
+    echo "[voice] install via 'brew install whisper-cpp' or build from vendor/whisper.cpp" >&2
+    echo "[voice] see apps/voice/MODELS.md for details" >&2
+    exit 1
 fi
 
 if [[ ! -f "${MODEL}" ]]; then
-  echo "[voice] model weights missing at ${MODEL}" >&2
-  echo "[voice] run 'bash ./models/download-ggml-model.sh small.en' from the whisper.cpp checkout" >&2
-  exit 1
+    echo "[voice] model weights missing at ${MODEL}" >&2
+    echo "[voice] run 'bash ./models/download-ggml-model.sh small.en' from the whisper.cpp checkout" >&2
+    exit 1
 fi
 
 echo "[voice] starting ${BIN} -m ${MODEL} on port ${PORT}"
 exec "${BIN}" \
-  -m "${MODEL}" \
-  --port "${PORT}" \
-  --inference-path /inference \
-  --host 127.0.0.1 \
-  --threads 4
+    -m "${MODEL}" \
+    --port "${PORT}" \
+    --inference-path /inference \
+    --host 127.0.0.1 \
+    --threads 4

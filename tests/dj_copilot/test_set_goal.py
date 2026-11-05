@@ -1,4 +1,5 @@
 """SetGoal validation + JSON round-trip (PLAY-02)."""
+
 from __future__ import annotations
 
 import pytest

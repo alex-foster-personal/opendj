@@ -20,6 +20,7 @@ def find_track_in_wheel(result: dict[str, Any], stable_id: str) -> dict[str, Any
                     return track
     raise AssertionError(f"{stable_id} not found in result")
 
+
 # djmdGenre rows: (ID, Name)
 GENRES = {
     "g-techno": "Peak Time Techno",
@@ -54,8 +55,7 @@ def _make_state_db(
             )
         for stable_id, vendor_id in vendor_ids.items():
             conn.execute(
-                "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
-                "VALUES (?, 'rekordbox', ?)",
+                "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)",
                 (stable_id, vendor_id),
             )
         for p in playlists:
@@ -67,8 +67,7 @@ def _make_state_db(
             )
         for i, m in enumerate(memberships):
             conn.execute(
-                "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES (?, ?, ?)",
                 (m["playlist_id"], m["stable_id"], i),
             )
         for field in track_fields or []:
@@ -108,8 +107,7 @@ def _make_master_db(path: Path, *, content: list[dict]) -> None:
             )
         for c in content:
             conn.execute(
-                "INSERT INTO djmdContent (ID, GenreID, DJPlayCount, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO djmdContent (ID, GenreID, DJPlayCount, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (
                     c["vendor_id"],
                     c.get("genre_id"),
@@ -150,7 +148,10 @@ def wheel_dbs(tmp_path: Path) -> tuple[Path, Path]:
         {"playlist_id": "pl-1", "stable_id": "t-house-1"},
     ]
     _make_state_db(
-        state_db, tracks=tracks, memberships=memberships, playlists=playlists,
+        state_db,
+        tracks=tracks,
+        memberships=memberships,
+        playlists=playlists,
         vendor_ids=vendor_ids,
     )
     _make_master_db(

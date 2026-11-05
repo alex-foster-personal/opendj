@@ -1,4 +1,5 @@
 """stop_accept_loop wakes a thread blocked in accept() and fails loudly on a leak."""
+
 from __future__ import annotations
 
 import socket

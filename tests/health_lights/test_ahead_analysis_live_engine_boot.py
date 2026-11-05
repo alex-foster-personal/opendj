@@ -4,6 +4,7 @@ The live module is slow and LANE_IGNORES'd; these run on the sharded lane.
 
 [if] boot helpers accept an impostor [then] fail closed, [else stop].
 """
+
 from __future__ import annotations
 
 import http.server
@@ -40,16 +41,13 @@ def test_logged_boot_id_parses_the_ok_line(tmp_path: Path) -> None:
 
 def test_health_from_another_process_on_the_port_is_not_this_engine(tmp_path: Path) -> None:
     """[if] health boot_id does not match the log [then] not this engine, [else stop]."""
+
     class _Impostor(http.server.BaseHTTPRequestHandler):
         boot_id = "someone-else"
         raw: bytes | None = None
 
         def do_GET(self) -> None:
-            body = (
-                self.raw
-                if self.raw is not None
-                else json.dumps({"status": "ok", "boot_id": self.boot_id}).encode()
-            )
+            body = self.raw if self.raw is not None else json.dumps({"status": "ok", "boot_id": self.boot_id}).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.end_headers()
@@ -136,8 +134,7 @@ def test_only_a_bind_collision_counts_as_a_lost_port_race(tmp_path: Path) -> Non
     assert not _lost_port_race(spawned)
 
     log_path.write_text(
-        "Address already in use\n"
-        f"bind failed on ('127.0.0.1', {port})\n",
+        f"Address already in use\nbind failed on ('127.0.0.1', {port})\n",
         encoding="utf-8",
     )
     assert not _lost_port_race(spawned)

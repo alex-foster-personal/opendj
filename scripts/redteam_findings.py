@@ -334,9 +334,7 @@ def _lock_exclusive(lock_file: BinaryIO) -> None:
                 if error.errno not in _WIN_CONTENTION:
                     raise LockUnavailable(f"cannot lock {lock_file.name}: {error}") from error
                 if time.monotonic() >= deadline:
-                    raise LockUnavailable(
-                        f"another pod held {lock_file.name} for {_LOCK_TIMEOUT_S:g}s"
-                    ) from error
+                    raise LockUnavailable(f"another pod held {lock_file.name} for {_LOCK_TIMEOUT_S:g}s") from error
                 time.sleep(_LOCK_POLL_S)
             else:
                 return
@@ -350,9 +348,7 @@ def _lock_exclusive(lock_file: BinaryIO) -> None:
                 if error.errno not in _POSIX_CONTENTION:
                     raise LockUnavailable(f"cannot lock {lock_file.name}: {error}") from error
                 if time.monotonic() >= deadline:
-                    raise LockUnavailable(
-                        f"another pod held {lock_file.name} for {_LOCK_TIMEOUT_S:g}s"
-                    ) from error
+                    raise LockUnavailable(f"another pod held {lock_file.name} for {_LOCK_TIMEOUT_S:g}s") from error
                 time.sleep(_LOCK_POLL_S)
             else:
                 return
@@ -468,20 +464,14 @@ class FindingStore:
         On any failure the temp file is removed and the existing index is left
         exactly as it was, which is the whole point.
         """
-        fd, tmp_name = tempfile.mkstemp(
-            dir=self._index_path.parent, prefix=f".{self._index_path.name}.", suffix=".tmp"
-        )
+        fd, tmp_name = tempfile.mkstemp(dir=self._index_path.parent, prefix=f".{self._index_path.name}.", suffix=".tmp")
         tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
-            mode = (
-                stat.S_IMODE(self._index_path.stat().st_mode)
-                if self._index_path.exists()
-                else 0o644
-            )
+            mode = stat.S_IMODE(self._index_path.stat().st_mode) if self._index_path.exists() else 0o644
             os.chmod(tmp, mode)
             os.replace(tmp, self._index_path)
         except BaseException:
@@ -519,9 +509,7 @@ class FindingStore:
             try:
                 records.append(Finding.from_dict(json.loads(line)))
             except (json.JSONDecodeError, TypeError, ValueError) as error:
-                raise ValueError(
-                    f"invalid finding index record at line {line_number}: {error}"
-                ) from error
+                raise ValueError(f"invalid finding index record at line {line_number}: {error}") from error
             key = (records[-1].fingerprint, records[-1].sha)
             if key in keys:
                 raise ValueError(f"finding index duplicates immutable key {key[0]!r} at {key[1]}")

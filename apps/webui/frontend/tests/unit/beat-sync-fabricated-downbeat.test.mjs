@@ -60,13 +60,11 @@ function issue1777FollowerGrid() {
 }
 
 before(async () => {
-	({
-		computeFollowerSyncPlan,
-		BAR_SYNC_EXTRAPOLATED_ANCHOR,
-		beatIsExtrapolated
-	} = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
-	({ hasRealBeatGrid, effectiveBeatSync, gridFeaturesInert } =
-		await loadTypeScriptModule('src/lib/player/grid-features.ts'));
+	({ computeFollowerSyncPlan, BAR_SYNC_EXTRAPOLATED_ANCHOR, beatIsExtrapolated } =
+		await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
+	({ hasRealBeatGrid, effectiveBeatSync, gridFeaturesInert } = await loadTypeScriptModule(
+		'src/lib/player/grid-features.ts'
+	));
 });
 
 test('BAR sync in the measured span picks a non-extrapolated anchor', () => {

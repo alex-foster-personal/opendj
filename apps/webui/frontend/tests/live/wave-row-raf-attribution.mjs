@@ -40,7 +40,9 @@ try {
 	const result = await page.evaluate((sampleMs) => {
 		const samples = window.__mdtWaveRowRafSamples;
 		if (samples === undefined || samples.length < 500) {
-			throw new Error(`expected four active WaveRow callbacks over ${sampleMs}ms, got ${samples?.length ?? 0}`);
+			throw new Error(
+				`expected four active WaveRow callbacks over ${sampleMs}ms, got ${samples?.length ?? 0}`
+			);
 		}
 		const callbackMs = samples.reduce((total, value) => total + value, 0);
 		return { callbacks: samples.length, callbackMs, share: callbackMs / sampleMs };

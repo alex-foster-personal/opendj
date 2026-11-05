@@ -5,9 +5,9 @@ Desktop & Documents sync makes ``~/Documents`` and
 (same inode after realpath). Healing must land under configured MUSIC_ROOTS
 outside this zone -- a Documents <-> CloudDocs string swap is not a heal.
 
-TODO(machine-paths): iCloud-zone conjunctions and Music roots are host-local.
+iCloud-zone conjunctions and Music roots are host-local.
 MUSIC_ROOTS defaults to $HOME/Music; other hosts must set MDT_MUSIC_ROOTS.
-Cross-machine prefix relocation uses MDT_PATH_MAP / data/path-map.json --
+Cross-machine prefix relocation uses MDT_PATH_MAP / (private path) --
 heal-to-Music is not a substitute. Documents and CloudDocs are often the same
 store. Apply RB rewrites only on the host that owns that Rekordbox library.
 Future overrides (MDT_ICLOUD_ZONE_ROOTS / MDT_LOCAL_DOCUMENTS) belong in
@@ -106,5 +106,5 @@ def assert_music_roots_outside_icloud_zone(
             raise RuntimeError(
                 f"MUSIC_ROOT {root} is inside iCloud zone ({reason}); "
                 "set MDT_MUSIC_ROOTS to a durable non-sync root (e.g. ~/Music). "
-                "TODO(machine-paths): roots are host-local -- other machines differ."
+                "Roots are host-local -- other machines differ."
             )

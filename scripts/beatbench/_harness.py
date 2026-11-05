@@ -111,8 +111,7 @@ def run(
     analyzer = build_analyzer()
     load_s = round(time.time() - load_started, 3)
     print(
-        f"[{candidate}] loaded in {load_s}s, {len(fixtures)} fixtures, "
-        f"{args.workers} workers",
+        f"[{candidate}] loaded in {load_s}s, {len(fixtures)} fixtures, {args.workers} workers",
         flush=True,
     )
 

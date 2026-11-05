@@ -39,9 +39,7 @@ const TRACK_ROW = '[data-testid="track-row"]';
  */
 async function raiseStall(page: Page, blockedCount: number): Promise<void> {
 	await page.evaluate(async (count) => {
-		const store = await import(
-			new URL('/src/lib/rb/autoplay-stall.svelte.ts', location.href).href
-		);
+		const store = await import(new URL('/src/lib/rb/autoplay-stall.svelte.ts', location.href).href);
 		const pure = await import(new URL('/src/lib/rb/autoplay-stall.ts', location.href).href);
 		store.raiseAutoPlayStall(
 			pure.describeAutoPlayStall({
@@ -62,9 +60,7 @@ async function raiseStall(page: Page, blockedCount: number): Promise<void> {
 
 async function clearStall(page: Page): Promise<void> {
 	await page.evaluate(async () => {
-		const store = await import(
-			new URL('/src/lib/rb/autoplay-stall.svelte.ts', location.href).href
-		);
+		const store = await import(new URL('/src/lib/rb/autoplay-stall.svelte.ts', location.href).href);
 		store.clearAutoPlayStall();
 	});
 }
@@ -104,7 +100,7 @@ test('a stall raised after mount appears, visibly, under the topbar', async ({ p
 	const box = await banner.boundingBox();
 	expect(box, 'a visible banner with no box is a contradiction').not.toBeNull();
 	expect(box!.height).toBeGreaterThan(0);
-	expect(box!.y).toBeGreaterThanOrEqual(await topbarBottom(page) - 1);
+	expect(box!.y).toBeGreaterThanOrEqual((await topbarBottom(page)) - 1);
 });
 
 test('the banner leaves the DOM when the stall is retired', async ({ page }) => {
@@ -178,7 +174,7 @@ test('the banner does not obscure the deck controls beneath it', async ({ page }
 	// FAIL, never skip (Codex r3974819407). A null box means the one check that
 	// answers "does the banner cover the decks" could not be MEASURED, and
 	// reporting no failure for an unmeasured acceptance condition is the exact
-	// defect .claude/rules/verification.md is about: a filter that promotes
+	// defect (private path) is about: a filter that promotes
 	// anything unmeasured. If the control moves, this test must be repointed,
 	// not quietly retired.
 	expect(

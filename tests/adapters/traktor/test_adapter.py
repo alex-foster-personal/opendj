@@ -45,6 +45,7 @@ def _sample_library() -> OpenDjLibrary:
         playlists=(Playlist(name="warmup", track_ids=()),),
     )
 
+
 pytestmark = pytest.mark.requirement("OPEN-02")
 
 
@@ -108,9 +109,7 @@ def test_cue_color_not_matching_palette_emits_warning(tmp_path) -> None:
         file_path="/Music/fixture/03.mp3",
         title="Custom Colour",
         artists=("X",),
-        cues=(
-            CuePoint(index=0, position_ms=0, type="hot", color_rgb=0xFF00FF),
-        ),
+        cues=(CuePoint(index=0, position_ms=0, type="hot", color_rgb=0xFF00FF),),
     )
     lib = OpenDjLibrary(version="0.1", tracks=(t,))
     report = adapter.write(lib, tmp_path / "collection.nml")
@@ -141,11 +140,11 @@ def test_preserve_extended_data_false_drops(tmp_path) -> None:
     # Manually construct a collection.nml with an <EXTENDEDDATA> child.
     raw = (
         b"<?xml version='1.0' encoding='utf-8'?>\n"
-        b"<NML VERSION=\"20\">\n"
+        b'<NML VERSION="20">\n'
         b"  <HEAD></HEAD><MUSICFOLDERS></MUSICFOLDERS>\n"
-        b"  <COLLECTION ENTRIES=\"1\">\n"
-        b"    <ENTRY TITLE=\"t\" ARTIST=\"x\">\n"
-        b"      <LOCATION DIR=\"/:Music/:\" FILE=\"e.mp3\" VOLUME=\"\"></LOCATION>\n"
+        b'  <COLLECTION ENTRIES="1">\n'
+        b'    <ENTRY TITLE="t" ARTIST="x">\n'
+        b'      <LOCATION DIR="/:Music/:" FILE="e.mp3" VOLUME=""></LOCATION>\n'
         b"      <EXTENDEDDATA>base64stuff</EXTENDEDDATA>\n"
         b"    </ENTRY>\n"
         b"  </COLLECTION>\n"
@@ -208,9 +207,11 @@ def test_traktor_playlist_membership_roundtrip(tmp_path) -> None:
     )
     # Resolve to the adapter's own stable IDs so we can assert set equality.
     from apps.adapters.traktor.adapter import _stable_track_id as _traktor_id
+
     expected_ids = {_traktor_id(t1.file_path), _traktor_id(t2.file_path)}
 
     import dataclasses as _dc
+
     # Rewrite playlist to reference the hashed IDs as a typed library would.
     hashed_lib = OpenDjLibrary(
         version="0.1",
@@ -237,9 +238,7 @@ def test_traktor_playlist_membership_roundtrip(tmp_path) -> None:
     pl_members = set(lib_back.playlists[0].track_ids)
     assert pl_members, "playlist must not be empty after round-trip"
     track_ids_back = {t.track_id for t in lib_back.tracks}
-    assert pl_members.issubset(track_ids_back), (
-        f"playlist members {pl_members} not in track set {track_ids_back}"
-    )
+    assert pl_members.issubset(track_ids_back), f"playlist members {pl_members} not in track set {track_ids_back}"
     assert pl_members == expected_ids
 
 

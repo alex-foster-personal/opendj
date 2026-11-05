@@ -1,9 +1,11 @@
 """``opendj dj try``: the transition try-er on the command line (TRYER-11).
 
     opendj dj try --out X --in Y [-n 6] [--context-bars 4] [--json]
-    opendj dj try pick JOB CANDIDATE [--json]
+    opendj dj try pick JOB CANDIDATE --etag ETAG [--json]
     opendj dj try show JOB [--json]
-    opendj dj try undo JOB [--json]
+    opendj dj try undo JOB --etag ETAG [--json]
+
+Read ``--etag`` from ``opendj dj try show JOB``.
 
 Output is always the JSON job document ``POST /api/v1/dj/try`` returns (the
 ``--json`` flag is accepted for symmetry with the other surfaces and changes

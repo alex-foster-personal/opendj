@@ -569,10 +569,32 @@ class InMemoryBackend:
             }
 
     def list_playlists(self) -> list[Playlist]:
+        from apps.webui.server.inbox_playlist import (
+            inbox_updated_at,
+            unfiled_ids_in_memory,
+            with_inbox,
+        )
+
         with self._mutex:
-            return list(self._playlists.values())
+            stored = list(self._playlists.values())
+            ids = unfiled_ids_in_memory(self._tracks, self._playlists)
+            ats = [self._tracks[sid].updated_at for sid in ids]
+
+        return with_inbox(stored, ids, updated_at=inbox_updated_at(ats))
 
     def get_playlist(self, playlist_id: str) -> Playlist:
+        from apps.webui.server.inbox_playlist import (
+            INBOX_PLAYLIST_ID,
+            inbox_updated_at,
+            make_inbox,
+            unfiled_ids_in_memory,
+        )
+
+        if playlist_id == INBOX_PLAYLIST_ID:
+            with self._mutex:
+                ids = unfiled_ids_in_memory(self._tracks, self._playlists)
+                ats = [self._tracks[sid].updated_at for sid in ids]
+            return make_inbox(items=ids, updated_at=inbox_updated_at(ats))
         with self._mutex:
             pl = self._playlists.get(playlist_id)
         if pl is None:

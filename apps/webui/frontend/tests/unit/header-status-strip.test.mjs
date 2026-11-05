@@ -19,7 +19,11 @@ test('the header status strip groups health readouts with middle-dot separators'
 test('tracks and playlists are numeric readouts with hover titles', () => {
 	/** if tracks and playlists lose their hover title then broken */
 	const numericMatches = LAYOUT.match(/readout-numeric[^>]*title=\{/g) ?? [];
-	assert.equal(numericMatches.length, 2, 'tracks and playlists each need readout-numeric with title');
+	assert.equal(
+		numericMatches.length,
+		2,
+		'tracks and playlists each need readout-numeric with title'
+	);
 	assert.doesNotMatch(
 		LAYOUT,
 		/\{health\.data\.state_db\.tracks\} tracks · \{health\.data\.state_db\.playlists\} playlists/

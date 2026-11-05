@@ -145,10 +145,11 @@
       "model": "XDJ-RX3",
       "popularity_rank": 10,
       "popularity_notes": "Popular all-in-one",
+      "midi_notes": "app map ships as XDJ_RX3_MAP in apps/webui/frontend/src/lib/rb/midi/maps/pioneer-xdj.ts (PR #7918); not hardware confirmed",
       "doc_tier": 1,
       "status": {
         "docs": "pending",
-        "midi": "pending",
+        "midi": "ok",
         "diagram": "pending",
         "checksum": "pending",
         "hover": "pending"

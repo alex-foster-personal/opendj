@@ -10,6 +10,7 @@
 	 * pending decision only. Undo restores the journaled memberships.
 	 */
 	import { onMount } from 'svelte';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import {
 		DedupConflictError,
 		applyDedupMerge,
@@ -296,13 +297,19 @@
 								checked={selectedSurvivor[cluster.cluster_key] === member.stable_id}
 								onchange={() => selectSurvivor(cluster.cluster_key, member.stable_id)}
 								/>
-								<img
-									class="artwork"
-									src={dedupArtworkUrl(member.stable_id)}
-									alt=""
-									loading="lazy"
-									onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
-								/>
+								{#if coverVisible(member.stable_id)}
+									<img
+										class="artwork"
+										src={coverSrc(dedupArtworkUrl(member.stable_id), member.stable_id)}
+										alt=""
+										loading="lazy"
+										data-expected-resource-error
+										onload={() => coverLoaded(member.stable_id)}
+										onerror={() => coverFailed(member.stable_id)}
+									/>
+								{:else}
+									<span class="artwork" aria-hidden="true"></span>
+								{/if}
 								<div class="member-info">
 									<div class="member-title">{memberLabel(member)}</div>
 									<div class="member-meta">

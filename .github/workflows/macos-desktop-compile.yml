@@ -82,7 +82,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/desktop/src-tauri/target
-          key: macos-desktop-compile-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+            apps/desktop/native/odj-output-probe/target
+          key: macos-desktop-compile-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock', 'apps/desktop/native/odj-output-probe/Cargo.lock') }}
           restore-keys: |
             macos-desktop-compile-
 
@@ -96,7 +97,7 @@ jobs:
           echo "- started (UTC): $started" >> "$GITHUB_STEP_SUMMARY"
           scripts/ci_cargo_selfheal.sh apps/desktop/src-tauri/Cargo.toml dev \
             cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin opendj-desktop
-          scripts/ci_cargo_selfheal.sh apps/desktop/src-tauri/Cargo.toml dev \
-            cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin odj-output-probe
+          scripts/ci_cargo_selfheal.sh apps/desktop/native/odj-output-probe/Cargo.toml dev \
+            cargo check --manifest-path apps/desktop/native/odj-output-probe/Cargo.toml --locked --bin odj-output-probe
           finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "- finished (UTC): $finished" >> "$GITHUB_STEP_SUMMARY"

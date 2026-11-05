@@ -66,11 +66,13 @@ test('Cmd+A, Cmd+C, Cmd+V copies tracks into another playlist and shows them at 
 	await page.waitForSelector(TRACK_ROW, { timeout: 60_000 });
 	await page.waitForSelector(TREE, { timeout: 60_000 });
 
-	const libraryIds = await page.locator(TRACK_ROW).evaluateAll((rows) =>
-		rows
-			.map((row) => row.getAttribute('data-stable-id'))
-			.filter((id): id is string => id !== null && id !== '')
-	);
+	const libraryIds = await page
+		.locator(TRACK_ROW)
+		.evaluateAll((rows) =>
+			rows
+				.map((row) => row.getAttribute('data-stable-id'))
+				.filter((id): id is string => id !== null && id !== '')
+		);
 	const distinct = [...new Set(libraryIds)];
 	expect(distinct.length).toBeGreaterThan(0);
 
@@ -116,11 +118,13 @@ test('a paste into a long playlist selects the appended rows and scrolls them in
 	await page.waitForSelector(TRACK_ROW, { timeout: 60_000 });
 	await page.waitForSelector(TREE, { timeout: 60_000 });
 
-	const libraryIds = await page.locator(TRACK_ROW).evaluateAll((rows) =>
-		rows
-			.map((row) => row.getAttribute('data-stable-id'))
-			.filter((id): id is string => id !== null && id !== '')
-	);
+	const libraryIds = await page
+		.locator(TRACK_ROW)
+		.evaluateAll((rows) =>
+			rows
+				.map((row) => row.getAttribute('data-stable-id'))
+				.filter((id): id is string => id !== null && id !== '')
+		);
 	const distinct = [...new Set(libraryIds)];
 	// Two tracks are enough: the destination repeats one 80 times (memberships,
 	// not distinct tracks) and the paste brings the other, which lands at 81.
@@ -130,7 +134,11 @@ test('a paste into a long playlist selects the appended rows and scrolls them in
 	const sourceName = `Clip one ${stamp}`;
 	const destName = `Clip long ${stamp}`;
 	await createPlaylist(page, sourceName, [pasted]);
-	await createPlaylist(page, destName, Array.from({ length: 80 }, () => filler));
+	await createPlaylist(
+		page,
+		destName,
+		Array.from({ length: 80 }, () => filler)
+	);
 	await expect(page.locator(ROW).filter({ hasText: destName })).toBeVisible({ timeout: 15_000 });
 
 	await page.locator(ROW).filter({ hasText: sourceName }).click();

@@ -18,7 +18,7 @@ class RefVerdict:
     message: str
 
 
-def _git_rev_parse(ref: str, repo_root: Path) -> str:
+def git_rev_parse(ref: str, repo_root: Path) -> str:
     proc = subprocess.run(
         ["git", "rev-parse", ref],
         cwd=repo_root,
@@ -28,9 +28,7 @@ def _git_rev_parse(ref: str, repo_root: Path) -> str:
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}"
-        )
+        raise RuntimeError(f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}")
     return proc.stdout.strip()
 
 
@@ -41,19 +39,13 @@ def emit_gate_result(code: int, message: str) -> int:
 
 
 def _git_lines(args: list[str], repo_root: Path) -> list[str]:
-    proc = subprocess.run(
-        ["git", *args], cwd=repo_root, capture_output=True, text=True, timeout=60, check=False
-    )
+    proc = subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, timeout=60, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"git {' '.join(args)} failed rc={proc.returncode}: {proc.stderr.strip()}"
-        )
+        raise RuntimeError(f"git {' '.join(args)} failed rc={proc.returncode}: {proc.stderr.strip()}")
     return [line for line in proc.stdout.splitlines() if line.strip()]
 
 
-def _is_unnumbered_placeholder(
-    path: str, added: set[str], modified: set[str], head_names: set[str]
-) -> bool:
+def _is_unnumbered_placeholder(path: str, added: set[str], modified: set[str], head_names: set[str]) -> bool:
     """True for an ``ADR-NEW-<slug>.md`` base touched without allocating a number.
 
     Such a file has no number, so no renumber on main can have touched it, and
@@ -118,8 +110,8 @@ def check_ref_freshness(
     and a full CI run.
     """
     try:
-        base_sha = _git_rev_parse(base_ref, repo_root)
-        head_sha = _git_rev_parse(head_ref, repo_root)
+        base_sha = git_rev_parse(base_ref, repo_root)
+        head_sha = git_rev_parse(head_ref, repo_root)
     except Exception as exc:
         return RefVerdict(2, f"[adr-check] UNKNOWN: could not resolve refs ({exc})")
 
@@ -135,17 +127,14 @@ def check_ref_freshness(
     except (OSError, subprocess.TimeoutExpired) as exc:
         return RefVerdict(
             2,
-            "[adr-check] UNKNOWN: ancestry probe failed "
-            f"(git merge-base --is-ancestor {base_ref} {head_ref}: {exc})",
+            f"[adr-check] UNKNOWN: ancestry probe failed (git merge-base --is-ancestor {base_ref} {head_ref}: {exc})",
         )
     if proc.returncode == 0:
         return None
     if proc.returncode == 1:
         try:
             fork = _git_lines(["merge-base", base_sha, head_sha], repo_root)
-            moved = _git_lines(
-                ["diff", "--name-only", fork[0], base_sha, "--", gated_dir], repo_root
-            )
+            moved = _git_lines(["diff", "--name-only", fork[0], base_sha, "--", gated_dir], repo_root)
             added = set(
                 _git_lines(
                     ["diff", "--name-only", "--diff-filter=A", fork[0], base_sha, "--", gated_dir],
@@ -159,23 +148,14 @@ def check_ref_freshness(
                 )
             )
             head_names = {
-                Path(p).name
-                for p in _git_lines(["ls-tree", "--name-only", head_sha, f"{gated_dir}/"], repo_root)
+                Path(p).name for p in _git_lines(["ls-tree", "--name-only", head_sha, f"{gated_dir}/"], repo_root)
             }
         except Exception as exc:
-            return RefVerdict(
-                2, f"[adr-check] UNKNOWN: could not measure what moved on {base_ref} ({exc})"
-            )
-        unnumbered = [
-            p for p in moved if _is_unnumbered_placeholder(p, added, modified, head_names)
-        ]
+            return RefVerdict(2, f"[adr-check] UNKNOWN: could not measure what moved on {base_ref} ({exc})")
+        unnumbered = [p for p in moved if _is_unnumbered_placeholder(p, added, modified, head_names)]
         moved = [p for p in moved if p not in unnumbered]
         if not moved:
-            only_new = (
-                f" (only unnumbered ADR-NEW placeholders: {', '.join(unnumbered[:5])})"
-                if unnumbered
-                else ""
-            )
+            only_new = f" (only unnumbered ADR-NEW placeholders: {', '.join(unnumbered[:5])})" if unnumbered else ""
             print(
                 f"[adr-check] {FRESH_ENOUGH_MSG} {gated_dir}/{only_new}: "
                 f"{base_ref}={base_sha[:12]} vs fork {fork[0][:12]}; accepting {head_ref}",

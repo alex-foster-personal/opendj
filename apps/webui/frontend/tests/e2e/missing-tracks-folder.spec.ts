@@ -14,10 +14,34 @@ const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const PREFLIGHT_PASS = {
 	status: 'pass',
 	checks: [
-		{ id: 'engine-alive', label: 'Engine alive', status: 'pass', detail: 'the endpoint answered', remediation: null },
-		{ id: 'state-db', label: 'State database', status: 'pass', detail: 'schema current', remediation: null },
-		{ id: 'audio-access', label: 'Audio access', status: 'pass', detail: 'track readable', remediation: null },
-		{ id: 'library-attached', label: 'Library attached', status: 'pass', detail: '3 tracks', remediation: null }
+		{
+			id: 'engine-alive',
+			label: 'Engine alive',
+			status: 'pass',
+			detail: 'the endpoint answered',
+			remediation: null
+		},
+		{
+			id: 'state-db',
+			label: 'State database',
+			status: 'pass',
+			detail: 'schema current',
+			remediation: null
+		},
+		{
+			id: 'audio-access',
+			label: 'Audio access',
+			status: 'pass',
+			detail: 'track readable',
+			remediation: null
+		},
+		{
+			id: 'library-attached',
+			label: 'Library attached',
+			status: 'pass',
+			detail: '3 tracks',
+			remediation: null
+		}
 	]
 };
 
@@ -171,7 +195,13 @@ async function stubPerformanceApis(
 	await page.route('**/api/v1/commands/next*', (route) => route.fulfill({ status: 409, json: {} }));
 	await page.route('**/api/v1/ingest/coverage**', (route) =>
 		route.fulfill({
-			json: { total_tracks: 3, on_disk: 1, unreachable: 2, missing: { vocals: 1, stems: 1 }, generated_at: 0 }
+			json: {
+				total_tracks: 3,
+				on_disk: 1,
+				unreachable: 2,
+				missing: { vocals: 1, stems: 1 },
+				generated_at: 0
+			}
 		})
 	);
 	await page.route('**/api/v1/reconcile/summary**', (route) =>
@@ -181,7 +211,9 @@ async function stubPerformanceApis(
 		route.fulfill({ json: { total: 2, tracks: BROKEN_TRACKS } })
 	);
 	await page.route('**/api/sets/recorder', (route) =>
-		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
+		route.fulfill({
+			json: { active: false, owned: false, pid: null, recoverable: false, session_id: null }
+		})
 	);
 	await stubPlaylistsRoute(page, (route) => {
 		if (options.playlistsFail) {
@@ -215,9 +247,15 @@ async function stubPerformanceApis(
 	);
 	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
 	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
-	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));
-	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
-	await page.route('**/api/v1/telemetry/heartbeat', (route) => route.fulfill({ status: 204, json: {} }));
+	await page.route('**/api/v1/feedback/comments', (route) =>
+		route.fulfill({ json: { comments: [] } })
+	);
+	await page.route('**/api/v1/feedback/general', (route) =>
+		route.fulfill({ status: 404, json: {} })
+	);
+	await page.route('**/api/v1/telemetry/heartbeat', (route) =>
+		route.fulfill({ status: 204, json: {} })
+	);
 	await page.route(/\/api\/v1\/jobs(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/performance/telemetry/pressure', (route) =>
 		route.fulfill({ json: { available: false, reason: 'not measured in the e2e gate' } })
@@ -229,7 +267,9 @@ async function stubPerformanceApis(
 	);
 }
 
-test('Missing Tracks folder shows the broken count and is not a user playlist', async ({ page }) => {
+test('Missing Tracks folder shows the broken count and is not a user playlist', async ({
+	page
+}) => {
 	const brokenRequests: string[] = [];
 	page.on('request', (request) => {
 		const url = request.url();

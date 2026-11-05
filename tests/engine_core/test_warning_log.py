@@ -68,9 +68,7 @@ def test_warning_log_writes_warning_with_boot_id(
     assert "recorded once" in json.loads(records[1])["message"]
 
 
-def test_warning_log_rotates_when_the_next_record_would_exceed_cap(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_warning_log_rotates_when_the_next_record_would_exceed_cap(tmp_path: Path, monkeypatch) -> None:
     path = tmp_path / "engine-warn.log"
     path.write_text("old", encoding="utf-8")
     monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
@@ -85,9 +83,7 @@ def test_warning_log_rotates_when_the_next_record_would_exceed_cap(
     assert archives[0].read_text(encoding="utf-8") == "old"
 
 
-def test_warning_log_prunes_archives_older_than_retention(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_warning_log_prunes_archives_older_than_retention(tmp_path: Path, monkeypatch) -> None:
     path = tmp_path / "engine-warn.log"
     old_archive = tmp_path / "engine-warn.log.20260101T000000Z"
     recent_archive = tmp_path / "engine-warn.log.20260901T000000Z"
@@ -162,9 +158,7 @@ def test_warning_log_scheduler_survives_enospc(
     assert capsys.readouterr().err.count("no space left on device") == 2
 
 
-def test_warning_log_caps_archive_count_at_twenty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_warning_log_caps_archive_count_at_twenty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "engine-warn.log"
     for index in range(25):
         archive = tmp_path / f"engine-warn.log.202609{index:02}T000000Z"
@@ -202,9 +196,7 @@ def test_warning_log_skips_rotation_on_low_disk(
     assert "rotation disabled" in errors[0].message
 
 
-def test_warning_log_rotation_resumes_after_disk_recovers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_warning_log_rotation_resumes_after_disk_recovers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "engine-warn.log"
     path.write_text("live", encoding="utf-8")
     monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
@@ -226,9 +218,7 @@ def test_warning_log_rotation_resumes_after_disk_recovers(
 
 
 @pytest.mark.requirement("OBS-5447")
-def test_uvicorn_graceful_shutdown_timeout_stays_off_sentry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_uvicorn_graceful_shutdown_timeout_stays_off_sentry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] warning_log ships uvicorn shutdown timeout [then] broken, [else stop]."""
     sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
     from sentry_sdk.transport import Transport
@@ -238,9 +228,7 @@ def test_uvicorn_graceful_shutdown_timeout_stays_off_sentry(
 
     class CapturingTransport(Transport):
         def capture_envelope(self, envelope) -> None:  # type: ignore[no-untyped-def]
-            envelopes.extend(
-                item.payload.json for item in envelope.items if item.payload.json is not None
-            )
+            envelopes.extend(item.payload.json for item in envelope.items if item.payload.json is not None)
 
     decision = decide_telemetry(
         {TELEMETRY_ENV: "1", DSN_ENV: "https://public@o0.ingest.de.sentry.io/1"},
@@ -260,14 +248,9 @@ def test_uvicorn_graceful_shutdown_timeout_stays_off_sentry(
         uvicorn_error.propagate = True
         close_sentry_client()
 
-    warn_rows = [
-        json.loads(line)
-        for line in (tmp_path / "engine-warn.log").read_text(encoding="utf-8").splitlines()
-    ]
+    warn_rows = [json.loads(line) for line in (tmp_path / "engine-warn.log").read_text(encoding="utf-8").splitlines()]
     assert any("timeout graceful shutdown exceeded" in row["message"] for row in warn_rows)
-    sink_rows = [
-        json.loads(line) for line in (tmp_path / "sink.jsonl").read_text().splitlines()
-    ]
+    sink_rows = [json.loads(line) for line in (tmp_path / "sink.jsonl").read_text().splitlines()]
     assert len(sink_rows) == 2
     messages = [item.get("message") for item in envelopes]
     assert "Cancel 1 running task(s), timeout graceful shutdown exceeded" not in messages

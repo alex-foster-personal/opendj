@@ -123,8 +123,7 @@ def test_scanner_catches_every_escape_hatch(source: str, rule: str) -> None:
     """If a suppression form is missed then the gate reports a false clean."""
     hits = qg._ts_escape_hatch_hits(source)
     assert rule in [r for _, r in hits], (
-        f"if {source!r} does not scan as a {rule} hit then the gate is blind "
-        f"to it, so broken (got {hits})"
+        f"if {source!r} does not scan as a {rule} hit then the gate is blind to it, so broken (got {hits})"
     )
 
 
@@ -158,8 +157,7 @@ def test_scanner_catches_any_inside_a_svelte_script_block() -> None:
         # were scanned for them. A gate that reds on a doc comment is a gate
         # somebody deletes.
         "// Returns: any of the following four lanes.",
-        "/**\n * @param mode - any of 'sweet' | 'half' | 'mid' | 'far'\n */\n"
-        "function f(mode: string) {}",
+        "/**\n * @param mode - any of 'sweet' | 'half' | 'mid' | 'far'\n */\nfunction f(mode: string) {}",
         "/* Accepts: any string the daemon sends. */",
         # String/template literals and trailing comments (round two of PR
         # #731 review): a token-adjacency regex cannot tell these from a
@@ -171,7 +169,7 @@ def test_scanner_catches_any_inside_a_svelte_script_block() -> None:
         # comment. A raw-line regex cannot tell these apart; a lexer can,
         # because a string literal never tokenizes as comment trivia.
         'const help = "Never use @ts-ignore here";',
-        'const msg = `@ts-nocheck is not a real pragma inside a template`;',
+        "const msg = `@ts-nocheck is not a real pragma inside a template`;",
     ],
 )
 def test_scanner_ignores_prose_that_merely_contains_the_letters(source: str) -> None:
@@ -185,16 +183,9 @@ def test_scanner_ignores_prose_that_merely_contains_the_letters(source: str) -> 
 def test_scanner_ignores_a_template_markup_comment_mentioning_any() -> None:
     """If .svelte markup outside <script> is parsed then a template HTML
     comment mentioning `any` would falsely score as an escape hatch."""
-    source = (
-        '<script lang="ts">\n'
-        "  const x = 1;\n"
-        "</script>\n"
-        "<!-- Renders: any row the pane holds -->\n"
-        "<div>{x}</div>\n"
-    )
+    source = '<script lang="ts">\n  const x = 1;\n</script>\n<!-- Renders: any row the pane holds -->\n<div>{x}</div>\n'
     assert qg._ts_escape_hatch_hits(source, suffix=".svelte") == [], (
-        "if the markup comment scores as a hit then non-script content is "
-        "being parsed as TypeScript, so broken"
+        "if the markup comment scores as a hit then non-script content is being parsed as TypeScript, so broken"
     )
 
 
@@ -205,7 +196,7 @@ def test_scanner_catches_any_cast_inside_svelte_markup() -> None:
         '<script lang="ts">\n'
         "  let count = 0;\n"
         "</script>\n"
-        '<button on:click={(e) => { const t = e.target as any; count++; }}>\n'
+        "<button on:click={(e) => { const t = e.target as any; count++; }}>\n"
         "  {count}\n"
         "</button>\n"
     )
@@ -220,12 +211,7 @@ def test_scanner_catches_any_inside_a_svelte_generics_declaration() -> None:
     """If the `generics` script attribute is never parsed then an `any`
     bound written there (`<script lang="ts" generics="T extends any">`) is
     invisible to the gate even though svelte-check compiles and checks it."""
-    source = (
-        '<script lang="ts" generics="T extends any">\n'
-        "  export let value: T;\n"
-        "</script>\n"
-        "<div>{value}</div>\n"
-    )
+    source = '<script lang="ts" generics="T extends any">\n  export let value: T;\n</script>\n<div>{value}</div>\n'
     hits = qg._ts_escape_hatch_hits(source, suffix=".svelte")
     assert ("any" in [rule for _, rule in hits]) is True, (
         f"if a `generics` attribute's `any` bound does not score as a hit "
@@ -237,15 +223,9 @@ def test_scanner_catches_any_inside_a_svelte_generics_declaration() -> None:
 
 def test_scanner_ignores_a_clean_svelte_generics_declaration() -> None:
     """A `generics` bound that never mentions `any` must not score."""
-    source = (
-        '<script lang="ts" generics="T extends string">\n'
-        "  export let value: T;\n"
-        "</script>\n"
-        "<div>{value}</div>\n"
-    )
+    source = '<script lang="ts" generics="T extends string">\n  export let value: T;\n</script>\n<div>{value}</div>\n'
     assert qg._ts_escape_hatch_hits(source, suffix=".svelte") == [], (
-        "if a clean `generics` bound scores as a hit then the parse of the "
-        "attribute text is wrong, so broken"
+        "if a clean `generics` bound scores as a hit then the parse of the attribute text is wrong, so broken"
     )
 
 
@@ -257,14 +237,7 @@ def test_scanner_catches_any_inside_a_svelte_script_jsdoc_type_tag() -> None:
     of PR #731 review). A checked JS component with a JSDoc `@type {any}`
     therefore scored zero. Each svelte script block's raw text must also go
     through `_anyHits`, the same TS parser used for standalone `.js`."""
-    source = (
-        '<script>\n'
-        "  // @ts-check\n"
-        "  /** @type {any} */\n"
-        "  let value;\n"
-        "</script>\n"
-        "<div>{value}</div>\n"
-    )
+    source = "<script>\n  // @ts-check\n  /** @type {any} */\n  let value;\n</script>\n<div>{value}</div>\n"
     hits = qg._ts_escape_hatch_hits(source, suffix=".svelte")
     assert "any" in [rule for _, rule in hits], (
         f"if a JSDoc @type {{any}} inside a <script> block scores no any "
@@ -312,14 +285,7 @@ def test_scanner_catches_a_jsdoc_wildcard_type_tag_in_a_svelte_js_script() -> No
     block, the other place Codex's finding named: `_jsDocAnyLines` already
     routes every script block's raw text through `_anyHits`, so the same
     `JSDocAllType` fix covers it without a separate code path."""
-    source = (
-        '<script>\n'
-        "  // @ts-check\n"
-        "  /** @type {*} */\n"
-        "  let value;\n"
-        "</script>\n"
-        "<div>{value}</div>\n"
-    )
+    source = "<script>\n  // @ts-check\n  /** @type {*} */\n  let value;\n</script>\n<div>{value}</div>\n"
     hits = qg._ts_escape_hatch_hits(source, suffix=".svelte")
     assert "any" in [rule for _, rule in hits], (
         f"if a JSDoc @type {{*}} inside a <script> block scores no any hit "
@@ -347,14 +313,7 @@ def test_scanner_catches_a_jsdoc_question_mark_type_tag_in_a_js_file() -> None:
 def test_scanner_catches_a_jsdoc_question_mark_type_tag_in_a_svelte_js_script() -> None:
     """The mirror case for a JavaScript Svelte `<script>` block, the other
     place Codex's finding named."""
-    source = (
-        '<script>\n'
-        "  // @ts-check\n"
-        "  /** @type {?} */\n"
-        "  let value;\n"
-        "</script>\n"
-        "<div>{value}</div>\n"
-    )
+    source = "<script>\n  // @ts-check\n  /** @type {?} */\n  let value;\n</script>\n<div>{value}</div>\n"
     hits = qg._ts_escape_hatch_hits(source, suffix=".svelte")
     assert "any" in [rule for _, rule in hits], (
         f"if a JSDoc @type {{?}} inside a <script> block scores no any hit "
@@ -404,8 +363,7 @@ def test_scanner_reports_the_line_number_of_each_hit() -> None:
     """If line numbers are wrong then the offender detail cannot be acted on."""
     source = "const ok = 1;\n// @ts-ignore\nconst bad = x as any;\n"
     assert qg._ts_escape_hatch_hits(source) == [(2, "ts-ignore"), (3, "any")], (
-        "if the scanner loses line numbers or ordering then its detail column "
-        "names the wrong place, so broken"
+        "if the scanner loses line numbers or ordering then its detail column names the wrong place, so broken"
     )
 
 
@@ -426,8 +384,7 @@ def test_project_scan_covers_hand_written_files_outside_src(path: object) -> Non
     """If a checked file outside src/ is missing then it is unprotected."""
     files = qg._ts_project_files()
     assert path in files, (
-        f"if {path} is absent from _ts_project_files() then the escape-hatch "
-        "gate does not cover it, so broken"
+        f"if {path} is absent from _ts_project_files() then the escape-hatch gate does not cover it, so broken"
     )
 
 
@@ -435,12 +392,10 @@ def test_project_scan_excludes_generated_and_vendored_directories() -> None:
     """If node_modules/.svelte-kit are walked then the scan is huge and noisy."""
     files = qg._ts_project_files()
     assert not any("node_modules" in p.parts for p in files), (
-        "if node_modules is walked then the scan is vendored code, not "
-        "hand-written frontend sources, so broken"
+        "if node_modules is walked then the scan is vendored code, not hand-written frontend sources, so broken"
     )
     assert not any(".svelte-kit" in p.parts for p in files), (
-        "if .svelte-kit is walked then the scan is generated output, not "
-        "hand-written frontend sources, so broken"
+        "if .svelte-kit is walked then the scan is generated output, not hand-written frontend sources, so broken"
     )
 
 
@@ -449,6 +404,5 @@ def test_live_frontend_tree_has_no_escape_hatches() -> None:
     hard zero is breached."""
     count, detail = qg._ts_escape_hatches()
     assert count == 0, (
-        f"if the frontend project carries a compiler suppression then the "
-        f"hard zero is breached, so broken: {detail}"
+        f"if the frontend project carries a compiler suppression then the hard zero is breached, so broken: {detail}"
     )

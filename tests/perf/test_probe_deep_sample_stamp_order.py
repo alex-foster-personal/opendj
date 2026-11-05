@@ -80,13 +80,13 @@ def test_a_deep_sample_is_stamped_before_its_expensive_vmmap_runs(
     """
     rows = [
         ProcessRow(
-            pid=SHELL_PID, ppid=1, pgid=SHELL_PID,
+            pid=SHELL_PID,
+            ppid=1,
+            pgid=SHELL_PID,
             command="/Applications/x/MacOS/opendj-desktop",
         )
     ]
-    monkeypatch.setattr(
-        "scripts.diagnostics.opendj_performance_probe.process_table", lambda: rows
-    )
+    monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.process_table", lambda: rows)
 
     def slow_deep_vmmap(self, processes):
         time.sleep(DEEP_WORK_SECONDS)

@@ -16,7 +16,14 @@ import EnrichCardView from './EnrichCardView.svelte';
  * of the 1,274-track library the card was first verified on.
  */
 const TOTAL = 1274;
-const full: LaneCounts = { total: TOTAL, done: TOTAL, missing: 0, failed: 0, declined: 0, unavailable: null };
+const full: LaneCounts = {
+	total: TOTAL,
+	done: TOTAL,
+	missing: 0,
+	failed: 0,
+	declined: 0,
+	unavailable: null
+};
 
 const summary = (
 	lanes: Record<string, Partial<LaneCounts>> = {},
@@ -45,7 +52,12 @@ const summary = (
 	...over
 });
 
-const lyrics = (found: number, none: number, pending: number, failed = 0): EnrichSummary['coverage'] => ({
+const lyrics = (
+	found: number,
+	none: number,
+	pending: number,
+	failed = 0
+): EnrichSummary['coverage'] => ({
 	on_disk: TOTAL,
 	done: { stems: TOTAL, lyrics: found },
 	terminal: { stems: 0, lyrics: none },
@@ -78,7 +90,10 @@ export const CollapsedNeedsYou: Story = {
 	args: {
 		expanded: false,
 		attention: true,
-		summary: summary({ key: { done: 44, missing: 1230 } }, { stems: { state: 'ask', pending: 1222, reason: null } })
+		summary: summary(
+			{ key: { done: 44, missing: 1230 } },
+			{ stems: { state: 'ask', pending: 1222, reason: null } }
+		)
 	}
 };
 
@@ -97,7 +112,11 @@ export const Working: Story = {
 export const Failed: Story = {
 	args: {
 		summary: summary({
-			strip: { done: 1271, failed: 3, failed_reasons: { 'the decode finished but produced no strip': 3 } },
+			strip: {
+				done: 1271,
+				failed: 3,
+				failed_reasons: { 'the decode finished but produced no strip': 3 }
+			},
 			beatgrid: { done: 351, missing: 923 }
 		})
 	}
@@ -113,7 +132,12 @@ export const Declined: Story = {
 				missing: 923,
 				declined_reasons: { grid_fit_bar_phase_below_floor: 12, grid_fit_too_few_beats: 1 }
 			},
-			key: { done: 8, declined: 1, missing: 1265, declined_reasons: { 'no_tonal_center: ambiguous_margin': 1 } }
+			key: {
+				done: 8,
+				declined: 1,
+				missing: 1265,
+				declined_reasons: { 'no_tonal_center: ambiguous_margin': 1 }
+			}
 		})
 	}
 };
@@ -137,7 +161,8 @@ export const CapabilityWarnings: Story = {
 					{
 						lane: 'artwork',
 						code: 'ARTWORK_ONLINE_OFF',
-						message: 'Missing covers are not looked up online (MusicBrainz / Cover Art Archive): online lookup is off.',
+						message:
+							'Missing covers are not looked up online (MusicBrainz / Cover Art Archive): online lookup is off.',
 						fix: 'Remove ODJ_ARTWORK_ONLINE=0 from the environment Open DJ starts with, then restart it.',
 						severity: 'blocking'
 					},
@@ -194,7 +219,16 @@ export const StemsFailed: Story = {
 	args: {
 		summary: summary(
 			{},
-			{ stems: { state: 'failed', pending: 0, failed: 37, reason: null, separated: 1113, not_yet: 0 } }
+			{
+				stems: {
+					state: 'failed',
+					pending: 0,
+					failed: 37,
+					reason: null,
+					separated: 1113,
+					not_yet: 0
+				}
+			}
 		)
 	}
 };
@@ -204,7 +238,10 @@ export const StemsUserDeclined: Story = {
 	args: {
 		summary: summary(
 			{ key: { done: 44, missing: 1230 } },
-			{ stems: { state: 'user_declined', pending: 1150, reason: null }, decisions: { stems: 'never' } }
+			{
+				stems: { state: 'user_declined', pending: 1150, reason: null },
+				decisions: { stems: 'never' }
+			}
 		)
 	}
 };
@@ -243,7 +280,11 @@ export const RealLibrary: Story = {
 	args: {
 		summary: summary(
 			{
-				strip: { done: 1271, failed: 3, failed_reasons: { 'the decode finished but produced no strip': 3 } },
+				strip: {
+					done: 1271,
+					failed: 3,
+					failed_reasons: { 'the decode finished but produced no strip': 3 }
+				},
 				beatgrid: { done: 347, declined: 13, missing: 914 },
 				key: { done: 8, declined: 1, missing: 1265 },
 				loudness: { done: 282, missing: 992 }

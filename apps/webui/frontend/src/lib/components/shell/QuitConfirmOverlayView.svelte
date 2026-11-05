@@ -3,18 +3,17 @@
 	// from the container, which owns the quit gate.
 	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 
-	let { open, onCancel, onConfirm }: { open: boolean; onCancel: () => void; onConfirm: () => void } =
-		$props();
+	let {
+		open,
+		onCancel,
+		onConfirm
+	}: { open: boolean; onCancel: () => void; onConfirm: () => void } = $props();
 </script>
 
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="qc-backdrop"
-		role="presentation"
-		style:z-index={OVERLAY_Z_INDEX.quitConfirm}
-	>
+	<div class="qc-backdrop" role="presentation" style:z-index={OVERLAY_Z_INDEX.quitConfirm}>
 		<div
 			class="qc-panel"
 			role="dialog"
@@ -26,9 +25,7 @@
 			<h2 class="qc-title">QUIT: are you sure?</h2>
 			<p class="qc-helper">cmd q again or enter to confirm</p>
 			<div class="qc-actions">
-				<button type="button" class="qc-btn qc-cancel" onclick={() => onCancel()}>
-					Cancel
-				</button>
+				<button type="button" class="qc-btn qc-cancel" onclick={() => onCancel()}> Cancel </button>
 				<button type="button" class="qc-btn qc-confirm" onclick={() => onConfirm()}>
 					Confirm
 				</button>

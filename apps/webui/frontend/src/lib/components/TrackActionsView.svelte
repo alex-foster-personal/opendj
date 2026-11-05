@@ -20,9 +20,7 @@
 </script>
 
 <p class="track-actions">
-	<button type="button" title={revealTitle} onclick={onReveal}>
-		Show in Finder
-	</button>
+	<button type="button" title={revealTitle} onclick={onReveal}> Show in Finder </button>
 	{#each buttons as { app, label, disabled, title } (app)}
 		<button
 			type="button"
@@ -33,8 +31,10 @@
 		>
 	{/each}
 	{#if outcome}
-		<span class="handoff-outcome" class:error={outcome.error} role={outcome.error ? 'alert' : 'status'}
-			>{outcome.text}</span
+		<span
+			class="handoff-outcome"
+			class:error={outcome.error}
+			role={outcome.error ? 'alert' : 'status'}>{outcome.text}</span
 		>
 	{/if}
 </p>

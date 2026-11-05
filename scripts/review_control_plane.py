@@ -135,7 +135,6 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     ".github/workflows/*",
     ".github/zizmor.yml",
     ".trunk/*",
-    ".mergify.yml",
     ".coderabbit.yaml",
     "scripts/review_*.py",
     "scripts/sol_review.py",

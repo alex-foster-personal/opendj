@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """AC gate: every layout control appears in deck.html with hover MIDI attrs + JS."""
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,7 @@ def verify_device(device_dir: Path) -> tuple[bool, str]:
     html = deck_path.read_text()
     if "pointerenter" not in html:
         return False, "deck.html missing pointerenter hover handler"
-    if "id=\"readout\"" not in html and "id='readout'" not in html:
+    if 'id="readout"' not in html and "id='readout'" not in html:
         return False, "deck.html missing #readout"
     missing_figs: list[str] = []
     bad_attrs: list[str] = []
@@ -81,7 +82,7 @@ def main(argv: list[str]) -> int:
             ok += 1
         else:
             failed += 1
-    print(f"SUMMARY ok={ok} fail={failed} total={ok+failed}")
+    print(f"SUMMARY ok={ok} fail={failed} total={ok + failed}")
     # AC for scale: require ok devices; fail if any non-stub failed when args given
     return 1 if failed else 0
 

@@ -170,9 +170,7 @@ def test_a_missing_mac_opener_is_named_not_searched_for(tmp_path: Path) -> None:
     sys.platform == "darwin",
     reason="on macOS the real route would launch an installed rekordbox; this checks the no-app answer",
 )
-def test_route_with_no_installed_app_says_so(
-    client: TestClient, seed_backend: InMemoryBackend, tmp_path: Path
-) -> None:
+def test_route_with_no_installed_app_says_so(client: TestClient, seed_backend: InMemoryBackend, tmp_path: Path) -> None:
     """The real route and resolver, no seam: off macOS, djay has no file-open
     path, so a local file gets 422 ``app_not_installed`` with its reason."""
     audio = tmp_path / "target.flac"

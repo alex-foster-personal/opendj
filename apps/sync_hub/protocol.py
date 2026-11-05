@@ -1,6 +1,6 @@
 """Wire format, canonical row serialization and per-table digest.
 
-Contract: ``specs/design_decision_04.md``. Everything here is pure -- it
+Contract: ``(private path)``. Everything here is pure -- it
 reads a connection to introspect columns and to hash rows, and never
 writes. The merge rules live in :mod:`apps.sync_hub.engine`.
 
@@ -56,6 +56,7 @@ package. This module keeps the wire payload dataclasses (``RowChange``,
 ``from apps.sync_hub import protocol`` and reads ``protocol.X`` keeps the
 surface it had.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -157,10 +158,7 @@ class RowChange:
     def from_wire(cls, payload: Mapping[str, Any]) -> RowChange:
         table = _require_str(payload, "table")
         if table not in SPEC_BY_TABLE:
-            raise SyncProtocolError(
-                f"{table!r} is not a pushable table; the sync set is "
-                f"{sorted(SPEC_BY_TABLE)}"
-            )
+            raise SyncProtocolError(f"{table!r} is not a pushable table; the sync set is {sorted(SPEC_BY_TABLE)}")
         raw_pk = _require_pk(payload, table, expected=len(SPEC_BY_TABLE[table].pk))
         values = payload.get("values")
         if not isinstance(values, dict):
@@ -168,9 +166,7 @@ class RowChange:
         members = _parse_members(payload, table)
         raw_hp = payload.get("hash_pending", False)
         if raw_hp not in (False, True, None):
-            raise SyncProtocolError(
-                f"{table}: 'hash_pending' must be a boolean or absent, got {raw_hp!r}"
-            )
+            raise SyncProtocolError(f"{table}: 'hash_pending' must be a boolean or absent, got {raw_hp!r}")
         hash_pending = bool(raw_hp)
         # Canonicalize BEFORE the row can reach a comparison or a table:
         # what this peer sent is the last chance to reject a timestamp that
@@ -181,11 +177,7 @@ class RowChange:
             pk=tuple(str(item) for item in raw_pk),
             values=canonical_values(table, values),
             members=(
-                None
-                if members is None
-                else tuple(
-                    canonical_values(MEMBERSHIP_TABLE, member) for member in members
-                )
+                None if members is None else tuple(canonical_values(MEMBERSHIP_TABLE, member) for member in members)
             ),
             hash_pending=hash_pending,
         )
@@ -316,43 +308,29 @@ class SyncDigest:
             raise SyncProtocolError("digest payload lacks a 'tables' object")
         seq = payload.get("seq", 0)
         if not isinstance(seq, int) or isinstance(seq, bool):
-            raise SyncProtocolError(
-                f"digest payload 'seq' must be an integer, got {seq!r}"
-            )
+            raise SyncProtocolError(f"digest payload 'seq' must be an integer, got {seq!r}")
         raw_quarantined = payload.get("quarantined")
         if raw_quarantined is not None and not isinstance(raw_quarantined, dict):
             raise SyncProtocolError(
-                f"digest payload 'quarantined' must be an object or absent, "
-                f"got {raw_quarantined!r}"
+                f"digest payload 'quarantined' must be an object or absent, got {raw_quarantined!r}"
             )
         raw_hash_pending = payload.get("hash_pending")
         if raw_hash_pending is not None and not isinstance(raw_hash_pending, dict):
             raise SyncProtocolError(
-                f"digest payload 'hash_pending' must be an object or absent, "
-                f"got {raw_hash_pending!r}"
+                f"digest payload 'hash_pending' must be an object or absent, got {raw_hash_pending!r}"
             )
         return cls(
             tables={str(k): str(v) for k, v in tables.items()},
             overall=_require_str(payload, "overall"),
             seq=seq,
-            quarantined=(
-                None
-                if raw_quarantined is None
-                else {str(k): int(v) for k, v in raw_quarantined.items()}
-            ),
-            hash_pending=(
-                None
-                if raw_hash_pending is None
-                else {str(k): int(v) for k, v in raw_hash_pending.items()}
-            ),
+            quarantined=(None if raw_quarantined is None else {str(k): int(v) for k, v in raw_quarantined.items()}),
+            hash_pending=(None if raw_hash_pending is None else {str(k): int(v) for k, v in raw_hash_pending.items()}),
         )
 
     def divergent_tables(self, other: SyncDigest) -> tuple[str, ...]:
         """Table names whose digests differ (or exist on only one side)."""
         names = sorted(set(self.tables) | set(other.tables))
-        return tuple(
-            name for name in names if self.tables.get(name) != other.tables.get(name)
-        )
+        return tuple(name for name in names if self.tables.get(name) != other.tables.get(name))
 
     def inconclusive_tables(self, other: SyncDigest) -> tuple[str, ...]:
         """Divergent tables whose comparison EXCLUDED rows on one side.
@@ -391,9 +369,7 @@ class TableDigest:
     settled: int = 0  #: Of ``quarantined``, rows the hub already settled (CLOUDSYNC-32).
 
 
-def table_digest(
-    conn: sqlite3.Connection, table: str, held: sync_set.HeldKeys | None = None
-) -> TableDigest:
+def table_digest(conn: sqlite3.Connection, table: str, held: sync_set.HeldKeys | None = None) -> TableDigest:
     """sha256 over the ordered SYNC-ELIGIBLE canonical rows of ``table``.
 
     Tombstones included: a peer that dropped a ``deleted_at`` row has
@@ -434,9 +410,7 @@ def table_digest(
     digest.update(canonical_bytes({"table": table, "columns": list(columns)}))
     quarantined = settled = 0
     hash_pending = 0
-    cursor = conn.execute(
-        f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
-    )
+    cursor = conn.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}")
     for row in cursor:
         reason = sync_set.excluded_reason(conn, table, columns, row, spec, tracking)
         if reason is not None:
@@ -449,9 +423,7 @@ def table_digest(
             record_quarantine(table, pk, reason)
             continue
         canonical = canonical_row(table, columns, row)
-        if table == "tracks" and sync_set.is_hash_pending_track(
-            dict(zip(columns, row, strict=True)), held=tracking
-        ):
+        if table == "tracks" and sync_set.is_hash_pending_track(dict(zip(columns, row, strict=True)), held=tracking):
             hash_pending += 1
         digest.update(canonical_bytes(canonical))
     return TableDigest(digest.hexdigest(), quarantined, hash_pending, settled)
@@ -467,9 +439,7 @@ def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
     current, and walks in full whenever they cannot. Callers keep the same
     contract, including holding one transaction across the call.
     """
-    return digest_gate.gated_digest(
-        conn, seq, lambda: compute_sync_digest(conn, seq=seq)
-    )
+    return digest_gate.gated_digest(conn, seq, lambda: compute_sync_digest(conn, seq=seq))
 
 
 def compute_sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
@@ -491,25 +461,15 @@ def compute_sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest
     """
     with quarantine_pass("digest"):
         held = sync_set.HeldKeys(conn)
-        computed = {
-            name: table_digest(conn, name, held) for name in sync_set.FK_ORDER
-        }
+        computed = {name: table_digest(conn, name, held) for name in sync_set.FK_ORDER}
         tables = {name: value.hash for name, value in computed.items()}
         overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
         return SyncDigest(
             tables=tables,
             overall=overall,
             seq=seq,
-            quarantined={
-                name: value.quarantined
-                for name, value in computed.items()
-                if value.quarantined
-            },
-            hash_pending={
-                name: value.hash_pending
-                for name, value in computed.items()
-                if value.hash_pending
-            },
+            quarantined={name: value.quarantined for name, value in computed.items() if value.quarantined},
+            hash_pending={name: value.hash_pending for name, value in computed.items() if value.hash_pending},
             settled={name: value.settled for name, value in computed.items() if value.settled},
         )
 

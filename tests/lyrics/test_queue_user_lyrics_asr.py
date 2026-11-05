@@ -107,9 +107,7 @@ def test_instrumental_is_done_and_fresh(tmp_path: Path) -> None:
     settled = queue_user.list_lane(conn, "lyrics", include_settled=True)
     assert settled[0].state == queue_store.ITEM_DONE
     assert settled[0].reason == "no_lyrics_found"
-    assert queue_user.artifact_is_fresh(
-        "lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path
-    )
+    assert queue_user.artifact_is_fresh("lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path)
     conn.close()
 
 
@@ -138,9 +136,7 @@ def test_no_source_is_done_until_vocals_hash_changes(tmp_path: Path) -> None:
             }
         },
     )
-    assert queue_user.artifact_is_fresh(
-        "lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path
-    )
+    assert queue_user.artifact_is_fresh("lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path)
     stem_index.save_cached_index(
         tmp_path,
         {
@@ -150,9 +146,7 @@ def test_no_source_is_done_until_vocals_hash_changes(tmp_path: Path) -> None:
             }
         },
     )
-    assert not queue_user.artifact_is_fresh(
-        "lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path
-    )
+    assert not queue_user.artifact_is_fresh("lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path)
 
 
 def _asr_verdict(stable_id: str, recorded_at: str) -> FetchVerdict:

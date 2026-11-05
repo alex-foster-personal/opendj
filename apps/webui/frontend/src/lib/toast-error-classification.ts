@@ -32,10 +32,12 @@ function contextString(context: Record<string, unknown>, keys: string[]): string
 
 function beatSyncSettings(context: Record<string, unknown>): string | undefined {
 	const parts: string[] = [];
-	if (context.beat_sync_mode !== undefined) parts.push(`Beat Sync: ${String(context.beat_sync_mode)}`);
+	if (context.beat_sync_mode !== undefined)
+		parts.push(`Beat Sync: ${String(context.beat_sync_mode)}`);
 	if (context.beat_sync_max === true) parts.push('Beat Sync Max: on');
 	if (context.master_deck !== undefined) parts.push(`master deck: ${String(context.master_deck)}`);
-	if (context.follower_deck !== undefined) parts.push(`follower deck: ${String(context.follower_deck)}`);
+	if (context.follower_deck !== undefined)
+		parts.push(`follower deck: ${String(context.follower_deck)}`);
 	return parts.length > 0 ? parts.join('; ') : undefined;
 }
 
@@ -65,7 +67,10 @@ export function classifyToastError(input: {
 			classification: 'browser-selection',
 			feature: featureOverride ?? 'Library selection',
 			settingsSummary: settings,
-			hint: settings !== undefined ? 'Retry after the pane finishes loading or pick another playlist.' : undefined
+			hint:
+				settings !== undefined
+					? 'Retry after the pane finishes loading or pick another playlist.'
+					: undefined
 		};
 	}
 
@@ -81,7 +86,10 @@ export function classifyToastError(input: {
 		};
 	}
 
-	if (/beat sync|beat-sync|bar fold|tempo lock/i.test(message) || context.beat_sync_mode !== undefined) {
+	if (
+		/beat sync|beat-sync|bar fold|tempo lock/i.test(message) ||
+		context.beat_sync_mode !== undefined
+	) {
 		const settings = beatSyncSettings(context);
 		return {
 			classification: 'beat-sync',
@@ -131,7 +139,10 @@ export function classifyToastError(input: {
 		};
 	}
 
-	if (/load failed|could not load|stems unavailable|unload/i.test(message) || context.load_stage !== undefined) {
+	if (
+		/load failed|could not load|stems unavailable|unload/i.test(message) ||
+		context.load_stage !== undefined
+	) {
 		return {
 			classification: 'deck-load',
 			feature: featureOverride ?? 'Deck load',

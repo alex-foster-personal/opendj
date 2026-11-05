@@ -21,7 +21,14 @@ function buildTrack(
 		const first = words.length;
 		const start = t;
 		for (const w of ln.text.split(/\s+/)) {
-			words.push({ word: w, start_s: t, end_s: t + 0.4, score: -0.2, line_final: false, src_idx: words.length });
+			words.push({
+				word: w,
+				start_s: t,
+				end_s: t + 0.4,
+				score: -0.2,
+				line_final: false,
+				src_idx: words.length
+			});
 			t += 0.5;
 		}
 		outLines.push({
@@ -79,7 +86,8 @@ const meta = {
 	// 0 px and clips its words away, so the root stands in for the deck slot.
 	decorators: [
 		(story, context) => {
-			const root = typeof document !== 'undefined' ? document.getElementById('storybook-root') : null;
+			const root =
+				typeof document !== 'undefined' ? document.getElementById('storybook-root') : null;
 			if (root) {
 				root.style.display = 'flex';
 				root.style.flexDirection = 'column';

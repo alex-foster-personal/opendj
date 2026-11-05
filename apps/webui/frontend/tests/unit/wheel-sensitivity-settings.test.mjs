@@ -174,6 +174,12 @@ describe('the settings panel control', () => {
 		);
 		assert.equal(wheel.WHEEL_TRACKPAD_EVENTS_PER_DETENT, 3);
 	});
+
+	it('presents the trackpad default as an adjustable starting estimate', () => {
+		const { detail } = defOf('wheel_sensitivity.trackpad');
+		assert.match(detail, /starting estimate/i);
+		assert.match(detail, /tune.*hardware/i);
+	});
 });
 
 //-----------------------------------------------------------------------------
@@ -243,14 +249,8 @@ describe('persistence across a reload', () => {
 describe('the panel refuses what the validator refuses', () => {
 	it('rejects a factor outside the bounds instead of storing it', () => {
 		store.clear();
-		assert.throws(
-			() => apply.applySettingChange('wheel_sensitivity.mouse', '0'),
-			RangeError
-		);
-		assert.throws(
-			() => apply.applySettingChange('wheel_sensitivity.mouse', '-3'),
-			RangeError
-		);
+		assert.throws(() => apply.applySettingChange('wheel_sensitivity.mouse', '0'), RangeError);
+		assert.throws(() => apply.applySettingChange('wheel_sensitivity.mouse', '-3'), RangeError);
 		assert.throws(
 			() =>
 				apply.applySettingChange(
@@ -260,7 +260,11 @@ describe('the panel refuses what the validator refuses', () => {
 			RangeError
 		);
 		assert.throws(
-			() => apply.applySettingChange('wheel_sensitivity.mouse', String(wheel.WHEEL_SENSITIVITY_MIN / 2)),
+			() =>
+				apply.applySettingChange(
+					'wheel_sensitivity.mouse',
+					String(wheel.WHEEL_SENSITIVITY_MIN / 2)
+				),
 			RangeError
 		);
 		assert.equal(persistedBlob(), null, 'a refused value was persisted anyway');
@@ -474,11 +478,7 @@ describe('the factors announce every change, whoever made it', () => {
 		);
 
 		window.__mdtWheelSensitivity.reset();
-		assert.deepEqual(
-			seen.at(-1),
-			{ ...live.WHEEL_SENSITIVITY },
-			'a reset told no subscriber'
-		);
+		assert.deepEqual(seen.at(-1), { ...live.WHEEL_SENSITIVITY }, 'a reset told no subscriber');
 
 		const before = seen.length;
 		unsubscribe();
@@ -515,10 +515,7 @@ describe('the factors announce every change, whoever made it', () => {
 
 	it('is what the settings panel renders from, not a private cache', () => {
 		const source = readFileSync(
-			new URL(
-				'../../src/lib/components/settings/SettingsOverlay.svelte',
-				import.meta.url
-			),
+			new URL('../../src/lib/components/settings/SettingsOverlay.svelte', import.meta.url),
 			'utf8'
 		);
 		assert.match(

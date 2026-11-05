@@ -1,4 +1,5 @@
 """Tests for helper functions in apps.sync.usb.state that don't need RB."""
+
 from __future__ import annotations
 
 import pytest
@@ -46,8 +47,6 @@ def test_load_canonical_tracks_shared_state_path_falls_through(
     monkeypatch.setattr("apps.sync.usb.state.load_from_rekordbox", fake_rb)
     from apps.sync.usb.state import load_canonical_tracks
 
-    result = load_canonical_tracks(
-        playlist_names=["Any"], use_shared_state=True
-    )
+    result = load_canonical_tracks(playlist_names=["Any"], use_shared_state=True)
     assert result == []
     assert called["n"] == 1

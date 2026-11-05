@@ -24,7 +24,8 @@
 		issues = {},
 		mode = 'coverage',
 		title,
-		suppressDotTitles = false
+		suppressDotTitles = false,
+		sourceFlagged = null
 	}: {
 		badge?: AnalysisBadge;
 		issues?: AnalysisIssues;
@@ -35,6 +36,8 @@
 		 * overlap ControlExplainer's own doc comment (pin dd4f0f5ae33f) warns
 		 * against - drop the native title there, keep only the container's. */
 		suppressDotTitles?: boolean;
+		/** SRCFLAG-01/03: the source file itself is flagged; rings the grid in that severity. */
+		sourceFlagged?: 'warning' | 'info' | null;
 	} = $props();
 
 	const doneCount = $derived(
@@ -83,6 +86,9 @@
 <span
 	class="analysis-dots"
 	class:all-done={allDone}
+	class:source-flagged={sourceFlagged !== null}
+	style={sourceFlagged !== null ? `--source-ring:${ANALYSIS_ISSUE_COLORS[sourceFlagged]}` : undefined}
+	data-source-flagged={sourceFlagged ?? undefined}
 	title={containerTitle}
 	aria-label={containerTitle}
 >
@@ -116,6 +122,11 @@
 	}
 	.analysis-dots.all-done {
 		outline: 1px solid color-mix(in srgb, var(--rb-text, #ddd) 35%, transparent);
+		outline-offset: 1px;
+	}
+	/* SRCFLAG-01/03: a finding about the file, not an analysis slot. */
+	.analysis-dots.source-flagged {
+		outline: 1px solid var(--source-ring);
 		outline-offset: 1px;
 	}
 	.dot {

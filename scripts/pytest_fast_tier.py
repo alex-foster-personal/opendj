@@ -105,8 +105,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--fast-tier-max-seconds",
         type=float,
         default=DEFAULT_MAX_SECONDS,
-        help="the ceiling between fast and slow, in recorded seconds "
-        f"(default {DEFAULT_MAX_SECONDS})",
+        help=f"the ceiling between fast and slow, in recorded seconds (default {DEFAULT_MAX_SECONDS})",
     )
     group.addoption(
         "--fast-tier-durations",
@@ -167,9 +166,7 @@ def _load_list(path: Path, *, explicit: bool, label: str) -> frozenset[str]:
         if explicit:
             raise pytest.UsageError(f"{LINE_PREFIX} {label} list not found: {path}")
         return frozenset()
-    entries = (
-        line.split("#", 1)[0].strip() for line in path.read_text(encoding="utf-8").splitlines()
-    )
+    entries = (line.split("#", 1)[0].strip() for line in path.read_text(encoding="utf-8").splitlines())
     return frozenset(entry for entry in entries if entry)
 
 
@@ -255,9 +252,7 @@ class FastTier:
         return True  # "all": measurement only
 
     @pytest.hookimpl(tryfirst=True)
-    def pytest_collection_modifyitems(
-        self, config: pytest.Config, items: list[pytest.Item]
-    ) -> None:
+    def pytest_collection_modifyitems(self, config: pytest.Config, items: list[pytest.Item]) -> None:
         collected = len(items)
         known = sum(1 for item in items if item.nodeid in self.ledger)
         coverage = known / collected if collected else 0.0
@@ -282,9 +277,7 @@ class FastTier:
         if self.tier in ("fast", "slow"):
             for label, entries in (("always-fast", self.always), ("never-fast", self.never)):
                 stale = sorted(
-                    entry
-                    for entry in entries
-                    if not any(_always_matches(entry, item.nodeid) for item in items)
+                    entry for entry in entries if not any(_always_matches(entry, item.nodeid) for item in items)
                 )
                 if stale:
                     raise pytest.UsageError(
@@ -299,9 +292,7 @@ class FastTier:
         evicted = sum(
             1
             for item in items
-            if self._evicted(item.nodeid)
-            and not _marked_slow(item)
-            and not self._forced(item.nodeid)
+            if self._evicted(item.nodeid) and not _marked_slow(item) and not self._forced(item.nodeid)
         )
         if deselected:
             config.hook.pytest_deselected(items=deselected)

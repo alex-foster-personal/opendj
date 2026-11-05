@@ -27,7 +27,7 @@ def _disposable_git_repo(tmp_path: Path) -> Path:
     (agentbox/nucbox-wsl reuse one workdir across jobs) can carry ambient
     uncommitted noise unrelated to the code under test, which broke two
     fast-tier legs for real on this PR (2026-09-29) -- exactly the gap
-    `.planning/debt/4034.md` had logged as a P2. `git status --porcelain`
+    `(private path)` had logged as a P2. `git status --porcelain`
     only needs a real `.git`, not the project's own tree, so this is a
     genuine clean/dirty checkout rather than a fabricated result.
     """
@@ -41,17 +41,13 @@ def _disposable_git_repo(tmp_path: Path) -> Path:
         subprocess.run(args, cwd=repo, check=True, capture_output=True)
     (repo / "README.md").write_text("disposable\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-q", "-m", "initial"], cwd=repo, check=True, capture_output=True
-    )
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=repo, check=True, capture_output=True)
     return repo
 
 
 def _git_head(repo: Path) -> str:
     """The disposable repo's own HEAD, read with real git."""
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
-    )
+    proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True)
     return proc.stdout.strip()
 
 
@@ -59,9 +55,7 @@ def _commit_another_change(repo: Path) -> str:
     """Move the disposable repo's HEAD to a new commit, leaving the tree clean."""
     (repo / "moved.txt").write_text("a later commit\n", encoding="utf-8")
     subprocess.run(["git", "add", "moved.txt"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-q", "-m", "move HEAD"], cwd=repo, check=True, capture_output=True
-    )
+    subprocess.run(["git", "commit", "-q", "-m", "move HEAD"], cwd=repo, check=True, capture_output=True)
     return _git_head(repo)
 
 
@@ -100,9 +94,7 @@ def test_main_refuses_a_capture_when_the_frontend_serves_a_different_build(
 
     this_sha = capture_mod._git_sha()
     engine_server, engine_url = _serve_engine(this_sha)
-    frontend_server, frontend_url = _serve_frontend(
-        version="some-other-checkouts-sha", vite_dev=False
-    )
+    frontend_server, frontend_url = _serve_frontend(version="some-other-checkouts-sha", vite_dev=False)
     try:
         exit_code = capture_mod.main(
             [
@@ -125,9 +117,7 @@ def test_main_refuses_a_capture_when_the_frontend_serves_a_different_build(
         frontend_server.server_close()
 
 
-def test_main_refuses_a_vite_dev_frontend_outright(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_main_refuses_a_vite_dev_frontend_outright(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Codex P1/BLOCKING, PR #4034, discussion_r4132371694: [if] --frontend is a
     vite-dev server [then] main() refuses before attempting any identity check
     against it at all, naming why (no non-proxied way to verify a dev server's
@@ -253,7 +243,7 @@ def test_verify_capture_targets_catches_the_checkout_going_dirty_between_two_cal
     it. Not the real `_REPO`: that broke this exact test on two self-hosted
     CI legs (2026-09-29) when the runner's reused workspace carried ambient
     uncommitted noise unrelated to this test, the gap already logged in
-    `.planning/debt/4034.md`.
+    `(private path)`.
     """
     import scripts.perf.capture_library_mode as capture_mod
 

@@ -57,7 +57,11 @@ test('one status reading is one availability: an error wins, then no reading, th
 });
 
 test('every non-ready availability has a notice, and keyless names what still works', () => {
-	assert.deepEqual(Object.keys(labels.AVAILABILITY_NOTICE).sort(), ['checking', 'keyless', 'unreachable']);
+	assert.deepEqual(Object.keys(labels.AVAILABILITY_NOTICE).sort(), [
+		'checking',
+		'keyless',
+		'unreachable'
+	]);
 	assert.match(labels.AVAILABILITY_NOTICE.keyless, /only instant commands work/);
 	assert.match(labels.KEYLESS_SEND_TITLE, /only instant commands work/);
 });
@@ -68,7 +72,10 @@ test('a setup refusal reads as the keyless notice, never the raw env var names',
 		assert.equal(text, labels.AVAILABILITY_NOTICE.keyless);
 		assert.doesNotMatch(text, /[A-Z]+_[A-Z_]+/);
 	}
-	assert.equal(labels.errorText('assistant_upstream_error', 'The model service answered 502.'), 'The model service answered 502.');
+	assert.equal(
+		labels.errorText('assistant_upstream_error', 'The model service answered 502.'),
+		'The model service answered 502.'
+	);
 });
 
 test('Esc in the composer closes only when the draft is empty and nothing is held, else blurs', () => {
@@ -91,7 +98,11 @@ test('Enter on a keyless draft still being checked queues, then resolves to send
 	assert.equal(labels.sendOutcome(at()), 'queue');
 	assert.equal(labels.sendOutcome(at({ instantDraft: true })), 'send');
 	assert.equal(labels.sendOutcome(at({ instantDraft: false })), 'refuse');
-	assert.equal(labels.sendOutcome(at({ keyless: false })), 'send', 'with a model every draft sends');
+	assert.equal(
+		labels.sendOutcome(at({ keyless: false })),
+		'send',
+		'with a model every draft sends'
+	);
 	for (const over of [{ draft: '  ' }, { busy: true }, { held: true }, { composerOpen: false }]) {
 		assert.equal(labels.sendOutcome(at(over)), 'ignore');
 	}

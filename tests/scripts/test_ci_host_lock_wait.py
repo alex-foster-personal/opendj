@@ -30,9 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "ci_host_lock.sh"
 
 
-def _run(
-    name: str, *cmd: str, lock_dir: Path, timeout_s: str = "60"
-) -> subprocess.CompletedProcess:
+def _run(name: str, *cmd: str, lock_dir: Path, timeout_s: str = "60") -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), name, *cmd],
         env={

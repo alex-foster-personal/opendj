@@ -78,9 +78,7 @@ _CLASS_SPACE: tuple[tuple[str, str], ...] = (
 
 
 @pytest.mark.parametrize("label,probe", _CLASS_SPACE, ids=[c[0] for c in _CLASS_SPACE])
-def test_every_spelling_in_the_class_space_is_detected(
-    tmp_path: Path, label: str, probe: str
-) -> None:
+def test_every_spelling_in_the_class_space_is_detected(tmp_path: Path, label: str, probe: str) -> None:
     """One spelling per case, so a regression names the spelling that broke."""
     path = _write(tmp_path, "probe.md", probe + "\n")
     result = audit_paths(tmp_path, [path])
@@ -100,9 +98,7 @@ def test_the_linux_rule_is_case_sensitive_on_purpose(tmp_path: Path) -> None:
     real_linux_home = "/" + "home" + "/" + _L
     path = _write(tmp_path, "keys.md", f"{keyboard_keys}\n{real_linux_home}\n")
     result = audit_paths(tmp_path, [path])
-    assert [f.match for f in result.findings] == [real_linux_home], [
-        f.render() for f in result.findings
-    ]
+    assert [f.match for f in result.findings] == [real_linux_home], [f.render() for f in result.findings]
 
 
 # An exemption is a hole with a reason. These two arrived as exemptions that
@@ -177,6 +173,4 @@ def test_each_exemption_stops_exactly_where_its_reason_stops(
     if must_be_reported:
         assert result.findings, f"{label}: {probe!r} is exempted but names an identity"
     else:
-        assert not result.findings, (
-            f"{label}: {probe!r} must stay exempt; got {[f.render() for f in result.findings]}"
-        )
+        assert not result.findings, f"{label}: {probe!r} must stay exempt; got {[f.render() for f in result.findings]}"

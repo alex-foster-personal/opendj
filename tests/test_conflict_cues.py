@@ -1,4 +1,5 @@
 """Phase 4 SYNC-04 Plan 3: cue-array resolver tests."""
+
 from __future__ import annotations
 
 import pytest

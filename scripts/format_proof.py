@@ -5,7 +5,8 @@ each part's commit. That is only safe if the commit really changed nothing but
 layout, and only works if the SHA blame is told about is the one main contains.
 
     python -m scripts.format_proof prove --base <rev> [--head <rev>]
-    python -m scripts.format_proof ignore-revs [--file .git-blame-ignore-revs] [--base REV]
+    python -m scripts.format_proof ignore-revs [--file .git-blame-ignore-revs] [--base REV [--new-only] [--all]]
+        [--install-shfmt]
 
 Requirements (mini-PRD):
   prove  ✔︎
@@ -39,6 +40,8 @@ Requirements (mini-PRD):
       [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
+        (a frontend source under apps/webui/frontend is proven by scripts/format_proof_prettier.py instead,
+        and a shell script by scripts/format_proof_shell.py)
       [if] a changed .py path is a symlink or a submodule, not a regular file [then ⛔️] exit 2 UNKNOWN
       [if] a file does not decode or parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
@@ -55,6 +58,17 @@ Requirements (mini-PRD):
       [if] --base is set and every base SHA is kept while HEAD adds more [then ⛔️] exit 0
       [if] --base is set and the base file is missing or header-only [then ⛔️] exit 0
       [if] --base is set and the clone cannot read the base rev [then ⛔️] exit 2 UNKNOWN
+    With --base and --new-only (pre-push step 3b) only the SHAs the base does not list, and listed
+    commits whose files the branch changed since its merge-base with the base, are proven again; every
+    SHA still gets the identity checks. A listed commit is immutable and was proven when it landed.
+      [if] the branch adds no entry and touches no listed commit's files [then ⛔️] prove never runs
+      [if] the branch adds a forged entry [then ⛔️] exit 1, since every new entry is proven
+      [if] --new-only is not given, or --all is [then ⛔️] every listed SHA is proven again (CI)
+    With --install-shfmt (pre-push step 3b, issue #4456 part 9) a missing or other-version shfmt is installed
+    on demand, sha256-checked, before a shell commit is re-proven.
+      [if] shfmt cannot be downloaded (offline) [then ⛔️] a loud SKIP line naming `just shfmt-install`, the
+        shell proof not run and the OK line counting it as SKIPPED; never a silent pass
+      [if] --install-shfmt is not given [then ⛔️] a missing shfmt stays exit 2 UNKNOWN (CI, `just fmt-proof`)
 
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
@@ -88,7 +102,11 @@ import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from scripts.format_proof_prettier import CFG as PRETTIER_CFG
+from scripts.format_proof_prettier import is_prettier_path, prove_prettier
 from scripts.format_proof_regions import formatter_disabled
+from scripts.format_proof_shell import CFG as SHELL_CFG
+from scripts.format_proof_shell import is_shell_path, is_shell_source, prove_shell
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -447,20 +465,52 @@ def _structural_failure(entries: list[tuple[str, str, str, str]]) -> Result | No
     return Result(1, lines=lines) if lines else None
 
 
-def prove(repo: Path, base: str, head: str) -> Result:
+def _split_by_prover(
+    repo: Path, head: str, entries: list[tuple[str, str, str, str]]
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """(.py, frontend source, shell script paths, UNKNOWN lines for the rest); only regular files hold source."""
+    regular = [(path, mode) for _, path, _, mode in entries if mode in CFG.REGULAR_FILE_MODES]
+    py_paths = [path for path, _ in regular if path.endswith(".py")]
+    fe_paths = [path for path, _ in regular if is_prettier_path(path)]
+    sh_paths: list[str] = []
+    unreadable: dict[str, str] = {}
+    for path, _ in regular:
+        if path in py_paths or path in fe_paths or not is_shell_path(path):
+            continue
+        try:
+            head_bytes = _blob(repo, head, path)
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else "(no stderr)"
+            unreadable[path] = f"[format-proof] UNKNOWN {path}: git show exited {exc.returncode}: {stderr}"
+            continue
+        if is_shell_source(path, head_bytes):
+            sh_paths.append(path)
+    provable = set(py_paths) | set(fe_paths) | set(sh_paths)
+    unprovable = [
+        unreadable.get(path)
+        or f"[format-proof] UNKNOWN {path} (mode {mode}): not a regular .py file, frontend source or shell script, "
+        "so nothing can prove it"
+        for _, path, _, mode in entries
+        if path not in provable
+    ]
+    return py_paths, fe_paths, sh_paths, unprovable
+
+
+def prove(repo: Path, base: str, head: str, frontend_dir: Path | None = None, install_shfmt: bool = False) -> Result:
+    """Python by AST here; frontend sources by `format_proof_prettier` (this checkout's node_modules); shell by shfmt."""
     entries = _changed_entries(repo, base, head)
     structural_failure = _structural_failure(entries)
     if structural_failure:
         return structural_failure
-    py_paths = [path for _, path, _, mode in entries if path.endswith(".py") and mode in CFG.REGULAR_FILE_MODES]
-    provable = set(py_paths)
-    unprovable = [
-        f"[format-proof] UNKNOWN {path} (mode {mode}): not a regular .py file, so no AST can prove it"
-        for _, path, _, mode in entries
-        if path not in provable
-    ]
-    if not py_paths:
-        return Result(2, lines=["[format-proof] UNKNOWN no regular .py file changed; nothing was proven", *unprovable])
+    py_paths, fe_paths, sh_paths, unprovable = _split_by_prover(repo, head, entries)
+    if not [*py_paths, *fe_paths, *sh_paths]:
+        return Result(
+            2,
+            lines=[
+                "[format-proof] UNKNOWN no .py file, frontend source or shell script changed; nothing was proven",
+                *unprovable,
+            ],
+        )
     result = Result(0, files_checked=len(py_paths))
     for path in py_paths:
         blobs = _blobs_or_unknown(repo, base, head, path)
@@ -485,16 +535,67 @@ def prove(repo: Path, base: str, head: str) -> Result:
             result.lines.append(f"[format-proof] FAIL {path}: a comment was added, removed, reworded or moved")
         elif [doc.text for doc in docs_before] != [doc.text for doc in docs_after]:
             result.docstring_normalized += 1
+    fe_ok = _merge_frontend_proof(repo, base, head, fe_paths, frontend_dir, result)
+    sh_ok = _merge_shell_proof(repo, base, head, sh_paths, result, install_shfmt) if result.exit_code != 2 else ""
+    return _finish(repo, base, head, result, bool(py_paths), [line for line in (fe_ok, sh_ok) if line], unprovable)
+
+
+def _merge_frontend_proof(
+    repo: Path, base: str, head: str, fe_paths: list[str], frontend_dir: Path | None, result: Result
+) -> str:
+    """Fold the prettier proof of fe_paths into result; an UNKNOWN replaces every line. Returns its OK line."""
+    if not fe_paths:
+        return ""
+    read_blob = lambda rev, path: _blob(repo, rev, path)  # noqa: E731
+    fe = prove_prettier(read_blob, base, head, fe_paths, frontend_dir or REPO / PRETTIER_CFG.FRONTEND)
+    if fe.exit_code == 2:
+        result.exit_code, result.lines = 2, fe.lines
+        return ""
+    result.exit_code = max(result.exit_code, fe.exit_code)
+    result.lines.extend(fe.lines)
+    return f"[format-proof] OK {fe.files_checked} frontend files are prettier@{fe.version}'s idempotent output"
+
+
+def _merge_shell_proof(
+    repo: Path, base: str, head: str, sh_paths: list[str], result: Result, install_shfmt: bool
+) -> str:
+    """Fold the shfmt proof of sh_paths into result; an UNKNOWN replaces every line. Returns its OK line."""
+    if not sh_paths:
+        return ""
+    sh = prove_shell(lambda rev, path: _blob(repo, rev, path), base, head, sh_paths, install_shfmt)
+    if sh.skipped:
+        result.lines.extend(sh.lines)
+        return ""
+    if sh.exit_code == 2:
+        result.exit_code, result.lines = 2, sh.lines
+        return ""
+    result.exit_code = max(result.exit_code, sh.exit_code)
+    result.lines.extend(sh.lines)
+    return (
+        f"[format-proof] OK {sh.files_checked} shell scripts are layout-only, shfmt@{sh.version} "
+        "-i 4 -ci output, heredocs byte-identical"
+    )
+
+
+def _finish(
+    repo: Path, base: str, head: str, result: Result, any_python: bool, other_ok: list[str], unprovable: list[str]
+) -> Result:
+    """A proven range with any unprovable file is UNKNOWN; a clean one gets its OK lines."""
     if result.exit_code == 0 and unprovable:
         result.exit_code = 2
         result.lines.extend(unprovable)
     if result.exit_code == 0:
-        result.lines.append(
-            f"[format-proof] OK {result.files_checked} .py files AST-equal "
-            f"({result.docstring_normalized} with a docstring ruff re-laid), "
-            f"base={_git(repo, 'rev-parse', base).stdout.strip()} head={_git(repo, 'rev-parse', head).stdout.strip()}"
-        )
+        result.lines.extend(_ok_lines(repo, base, head, result, any_python, other_ok))
     return result
+
+
+def _ok_lines(repo: Path, base: str, head: str, result: Result, any_python: bool, other_ok: list[str]) -> list[str]:
+    revs = f"base={_git(repo, 'rev-parse', base).stdout.strip()} head={_git(repo, 'rev-parse', head).stdout.strip()}"
+    python_ok = (
+        f"[format-proof] OK {result.files_checked} .py files AST-equal "
+        f"({result.docstring_normalized} with a docstring ruff re-laid)"
+    )
+    return [f"{line}, {revs}" for line in ([python_ok] if any_python else []) + other_ok]
 
 
 def _identity_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[str]]:
@@ -515,19 +616,20 @@ def _identity_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[st
     return 0, []
 
 
-def _proof_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[str]]:
-    """(0, []) when a listed commit has one parent and `prove` passes against it: the subject is only a claim."""
+def _proof_verdict(repo: Path, sha: str, shallow: bool, install_shfmt: bool) -> tuple[int, list[str]]:
+    """(0, SKIP lines) when a listed commit has one parent and `prove` passes against it: the subject is a claim."""
     parents = _git(repo, "rev-list", "--parents", "-n", "1", sha).stdout.split()[1:]
     if not parents and shallow:
         return 2, [f"[ignore-revs] UNKNOWN {sha}: this shallow clone cuts off its parent"]
     if len(parents) != 1:
         return 1, [f"[ignore-revs] FAIL {sha} has {len(parents)} parents, so no single diff proves it"]
-    proof = prove(repo, parents[0], sha)
+    proof = prove(repo, parents[0], sha, install_shfmt=install_shfmt)
     if proof.exit_code == 1:
         return 1, [f"[ignore-revs] FAIL {sha} is not format-only against its parent:", *proof.lines]
     if proof.exit_code == 2:
         return 2, [f"[ignore-revs] UNKNOWN {sha} cannot be proven format-only against its parent:", *proof.lines]
-    return 0, []
+    skipped = [line for line in proof.lines if line.startswith(SHELL_CFG.SKIP_PREFIX)]
+    return 0, ([f"[ignore-revs] SKIP {sha}: its shell scripts were NOT re-proven:", *skipped] if skipped else [])
 
 
 def _parse_ignore_revs_text(text: str) -> tuple[list[str], Result | None]:
@@ -557,30 +659,57 @@ def _ignore_revs_shas_at_rev(repo: Path, rev: str, rel_path: str) -> tuple[list[
     return shas, None
 
 
-def check_ignore_revs(repo: Path, path: Path, base: str | None = None) -> Result:
+def _shas_to_prove(repo: Path, shas: list[str], base: str, base_shas: list[str]) -> set[str]:
+    """The SHAs base does not list, plus listed commits whose files the branch changed since its fork."""
+    listed_at_base = set(base_shas)
+    to_prove = {sha for sha in shas if sha not in listed_at_base}
+    fork = _git(repo, "merge-base", base, "HEAD", check=False).stdout.strip()
+    branch_files = set(_git(repo, "diff", "--name-only", fork, "HEAD").stdout.split("\n")) if fork else set()
+    for sha in shas:
+        if sha in to_prove or _git(repo, "cat-file", "-t", sha, check=False).returncode != 0:
+            continue
+        listed_files = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).stdout.split("\n")
+        if branch_files & {name for name in listed_files if name}:
+            to_prove.add(sha)
+    return to_prove
+
+
+def _base_scope(repo: Path, shas: list[str], base: str, only_new: bool) -> set[str] | Result:
+    """The SHAs to prove, or a FAIL/UNKNOWN: every SHA base lists must still be listed at HEAD."""
+    base_shas, base_err = _ignore_revs_shas_at_rev(repo, base, CFG.IGNORE_REVS_FILE)
+    if base_err:
+        return base_err
+    assert base_shas is not None
+    missing = [sha for sha in base_shas if sha not in set(shas)]
+    if missing:
+        return Result(1, lines=[f"[ignore-revs] FAIL SHA {missing[0]} listed at base {base} is missing at HEAD"])
+    return _shas_to_prove(repo, shas, base, base_shas) if only_new else set(shas)
+
+
+def check_ignore_revs(
+    repo: Path, path: Path, base: str | None = None, only_new: bool = False, install_shfmt: bool = False
+) -> Result:
+    """Identity-check every listed SHA and prove it format-only; with base and only_new, prove only the new ones."""
     shas, parse_err = _parse_ignore_revs_text(path.read_text())
     if parse_err:
         return parse_err
+    to_prove: set[str] = set(shas)
     if base is not None:
-        base_shas, base_err = _ignore_revs_shas_at_rev(repo, base, CFG.IGNORE_REVS_FILE)
-        if base_err:
-            return base_err
-        assert base_shas is not None
-        head_set = set(shas)
-        for sha in base_shas:
-            if sha not in head_set:
-                return Result(
-                    1,
-                    lines=[f"[ignore-revs] FAIL SHA {sha} listed at base {base} is missing at HEAD"],
-                )
+        scoped = _base_scope(repo, shas, base, only_new)
+        if isinstance(scoped, Result):
+            return scoped
+        to_prove = scoped
     shallow = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     result = Result(0, files_checked=len(shas))
     unknown: list[str] = []
+    skipped: list[str] = []
     for sha in shas:
         verdict, lines = _identity_verdict(repo, sha, shallow)
+        if verdict == 0 and sha in to_prove:
+            verdict, lines = _proof_verdict(repo, sha, shallow, install_shfmt)
         if verdict == 0:
-            verdict, lines = _proof_verdict(repo, sha, shallow)
-        if verdict == 1:
+            skipped.extend(lines)
+        elif verdict == 1:
             result.exit_code = 1
             result.lines.extend(lines)
         elif verdict == 2:
@@ -589,7 +718,14 @@ def check_ignore_revs(repo: Path, path: Path, base: str | None = None) -> Result
         result.exit_code = 2
         result.lines.extend(unknown)
     if result.exit_code == 0:
-        result.lines.append(f"[ignore-revs] OK {len(shas)} listed commit(s), each in HEAD and proven format-only")
+        proven_on_base = len(shas) - len(to_prove)
+        scope = f"; {len(to_prove)} proven now, {proven_on_base} proven on base" if proven_on_base else ""
+        if skipped:
+            scope += f"; SHELL PROOF SKIPPED for {sum(line.startswith('[ignore-revs] SKIP') for line in skipped)}"
+        result.lines.extend(skipped)
+        result.lines.append(
+            f"[ignore-revs] OK {len(shas)} listed commit(s), each in HEAD and proven format-only{scope}"
+        )
     return result
 
 
@@ -605,11 +741,25 @@ def main(argv: list[str] | None = None) -> int:
     p_revs = sub.add_parser("ignore-revs", help="check every SHA in the blame ignore file")
     p_revs.add_argument("--file", type=Path, default=REPO / CFG.IGNORE_REVS_FILE)
     p_revs.add_argument("--base", default=None, help="rev whose listed SHAs must still appear at HEAD")
+    p_revs.add_argument(
+        "--new-only", action="store_true", help="with --base, prove only SHAs the base lacks or the branch touched"
+    )
+    p_revs.add_argument("--all", action="store_true", help="prove every listed SHA again; overrides --new-only")
+    for sub_parser in (p_prove, p_revs):
+        sub_parser.add_argument(
+            "--install-shfmt", action="store_true", help="install the pinned shfmt on demand; SKIP loudly when offline"
+        )
     args = parser.parse_args(argv)
     if args.command == "prove":
-        result = prove(REPO, args.base, args.head)
+        result = prove(REPO, args.base, args.head, install_shfmt=args.install_shfmt)
     elif args.command == "ignore-revs":
-        result = check_ignore_revs(REPO, args.file, base=args.base)
+        result = check_ignore_revs(
+            REPO,
+            args.file,
+            base=args.base,
+            only_new=args.base is not None and args.new_only and not args.all,
+            install_shfmt=args.install_shfmt,
+        )
     else:
         raise SystemExit(f"unhandled command {args.command}")
     print("\n".join(result.lines))

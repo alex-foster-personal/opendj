@@ -38,9 +38,7 @@ def test_reveal_empty_file_path_422(client: TestClient, seed_backend: InMemoryBa
     assert r.json()["detail"]["code"] == "not_a_local_file"
 
 
-def test_reveal_missing_file_422(
-    client: TestClient, seed_backend: InMemoryBackend, tmp_path: Path
-) -> None:
+def test_reveal_missing_file_422(client: TestClient, seed_backend: InMemoryBackend, tmp_path: Path) -> None:
     missing = tmp_path / "gone.flac"
     _set_file_path(seed_backend, "track-001", str(missing))
     r = client.post("/api/v1/tracks/track-001:reveal")

@@ -70,7 +70,7 @@ from scripts.build_engine_payload import PayloadBuildError
 
 ICON_SET_NAME: str = "AppIcon"
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
-DEFAULT_ICON_SOURCE: Path = REPO_ROOT / "apps/desktop/src-tauri/icons/AppIcon.icon"
+DEFAULT_ICON_SOURCE: Path = REPO_ROOT / "apps/desktop/shared/icons/AppIcon.icon"
 ASSETS_CAR_FILENAME: str = "Assets.car"
 SOURCE_SHA256_SIDECAR_FILENAME: str = "Assets.car.source.sha256"
 DEFAULT_COMMITTED_ASSETS_CAR: Path = DEFAULT_ICON_SOURCE / ASSETS_CAR_FILENAME
@@ -107,10 +107,7 @@ def _fill_matches_expected(fill_solid: str) -> bool:
         return False
     r, g, b, _a = (float(p) for p in parts)
     expected = [c / 255 for c in EXPECTED_FILL_RGB]
-    return all(
-        abs(actual - want) <= FILL_TOLERANCE
-        for actual, want in zip((r, g, b), expected, strict=True)
-    )
+    return all(abs(actual - want) <= FILL_TOLERANCE for actual, want in zip((r, g, b), expected, strict=True))
 
 
 def verify_icon_composer_source(source: Path = DEFAULT_ICON_SOURCE) -> None:
@@ -123,10 +120,7 @@ def verify_icon_composer_source(source: Path = DEFAULT_ICON_SOURCE) -> None:
     spec = json.loads(icon_json.read_text())
     fill_solid = spec.get("fill", {}).get("solid", "")
     if not _fill_matches_expected(fill_solid):
-        msg = (
-            f"{icon_json} fill {fill_solid!r} does not match the app-icon.png "
-            f"tile color {EXPECTED_FILL_RGB}"
-        )
+        msg = f"{icon_json} fill {fill_solid!r} does not match the app-icon.png tile color {EXPECTED_FILL_RGB}"
         raise PayloadBuildError(msg)
 
     groups = spec.get("groups", [])
@@ -163,11 +157,7 @@ def compute_source_digest(source: Path = DEFAULT_ICON_SOURCE) -> str:
     verify_icon_composer_source(source)
     hasher = hashlib.sha256()
     files = sorted(
-        (
-            path
-            for path in source.rglob("*")
-            if path.is_file() and path.name not in _generated_artifact_names()
-        ),
+        (path for path in source.rglob("*") if path.is_file() and path.name not in _generated_artifact_names()),
         key=lambda path: path.relative_to(source).as_posix(),
     )
     for path in files:
@@ -188,8 +178,7 @@ def read_source_sha256_sidecar(sidecar: Path = DEFAULT_SOURCE_SHA256_SIDECAR) ->
             if digest:
                 return digest
     msg = (
-        f"{sidecar} does not contain a {SOURCE_SHA256_PREFIX}<digest> line "
-        "identifying the Icon Composer source digest"
+        f"{sidecar} does not contain a {SOURCE_SHA256_PREFIX}<digest> line identifying the Icon Composer source digest"
     )
     raise PayloadBuildError(msg)
 
@@ -402,14 +391,9 @@ def check_icon_composer_asset(
     strategy = resolve_icon_asset_strategy(source, committed_car=committed_car, sidecar=sidecar)
     if strategy.mode is IconAssetMode.COMPILE:
         assert strategy.actool is not None
-        return (
-            f"compile actool={strategy.actool} source-sha256={strategy.source_digest}"
-        )
+        return f"compile actool={strategy.actool} source-sha256={strategy.source_digest}"
     assert strategy.committed_car is not None
-    return (
-        f"reuse-committed path={strategy.committed_car} "
-        f"source-sha256={strategy.source_digest}"
-    )
+    return f"reuse-committed path={strategy.committed_car} source-sha256={strategy.source_digest}"
 
 
 # ----- install into a built .app -----------------------------------------------

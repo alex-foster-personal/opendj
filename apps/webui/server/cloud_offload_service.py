@@ -12,6 +12,7 @@ The same worker runs the re-offload sweep every
 
 -Claude
 """
+
 from __future__ import annotations
 
 import logging
@@ -173,9 +174,7 @@ class OffloadService:
         dry_run: bool = False,
     ) -> Operation:
         CloudConfig.from_env()  # fail the request, not the worker, on missing creds
-        op = Operation(
-            uuid.uuid4().hex[:12], kind, list(dict.fromkeys(stable_ids)), mode, playlist_id, dry_run=dry_run
-        )
+        op = Operation(uuid.uuid4().hex[:12], kind, list(dict.fromkeys(stable_ids)), mode, playlist_id, dry_run=dry_run)
         with self._lock:
             self._ops[op.op_id] = op
             for stale in list(self._ops)[:-MAX_KEPT_OPERATIONS]:
@@ -207,10 +206,7 @@ class OffloadService:
             return total
         with ledger.open_ledger(ctx.data_dir) as conn:
             return sum(
-                f.size_bytes
-                for sid in op.stable_ids
-                for f in ledger.files_for(conn, sid)
-                if f.deleted_at is not None
+                f.size_bytes for sid in op.stable_ids for f in ledger.files_for(conn, sid) if f.deleted_at is not None
             )
 
     def run(self, op: Operation) -> None:

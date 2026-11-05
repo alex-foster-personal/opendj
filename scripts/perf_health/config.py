@@ -16,15 +16,13 @@ HOME = Path.home()
 # logs move when the identifier does. Same candidate list, same reason, as
 # scripts/diagnostics/opendj_performance_probe.py after the OPS-08 bake-off.
 BUNDLE_IDS = ("com.opendj.desktop", "com.opendj.desktop.lane-b")
-ENGINE_LOG_DIRS = tuple(
-    HOME / "Library" / "Application Support" / bundle_id / "logs" for bundle_id in BUNDLE_IDS
-)
+ENGINE_LOG_DIRS = tuple(HOME / "Library" / "Application Support" / bundle_id / "logs" for bundle_id in BUNDLE_IDS)
 # apps/webui/server/client_logs.DEFAULT_LOG_DIR: where the dev daemon writes.
 LEGACY_LOG_DIR = HOME / ".local" / "share" / "music-dj-tools" / "webui"
 CLIENT_LOG_DIRS = (*ENGINE_LOG_DIRS, LEGACY_LOG_DIR)
 
 CLIENT_ERROR_PREFIX = "webui-client-errors"
-# Q5 in docs/perf/QUEUE.md. Probed leniently so the check reports the day it lands.
+# Q5 in (private path). Probed leniently so the check reports the day it lands.
 CLIENT_PERF_PREFIX = "webui-client-perf"
 LOG_DATE_RE = re.compile(r"-(\d{4}-\d{2}-\d{2})\.log$")
 
@@ -53,9 +51,9 @@ PROBE_DIR = HOME / "Library" / "Application Support" / "OpenDJ Diagnostics" / "p
 # The probe samples every 15 seconds under launchd, so a newest sample older than a day
 # means it stopped, not that it is quiet.
 PROBE_MAX_SAMPLE_AGE_HOURS = 24.0
-PROBE_INSTALL_DOC = "docs/perf/diagnostics-probe.md"
+PROBE_INSTALL_DOC = "(private path)"
 
-QUEUE_DOC = "docs/perf/QUEUE.md"
+QUEUE_DOC = "(private path)"
 
 SEVERITY_OK = "OK"
 SEVERITY_INFO = "INFO"
@@ -70,9 +68,7 @@ EXIT_ERROR = 1
 # Each signature is counted separately so the headline number is decomposable: "4
 # deck-load failures" is only useful if you can see it was 3 broken links and 1 real
 # engine failure. Order is irrelevant; a row is attributed to the first match.
-SIGNALSMITH_SIGNATURES = (
-    ("signalsmith-timeout", re.compile(r"Signalsmith\b.*\btimed out\b", re.IGNORECASE)),
-)
+SIGNALSMITH_SIGNATURES = (("signalsmith-timeout", re.compile(r"Signalsmith\b.*\btimed out\b", re.IGNORECASE)),)
 DECK_LOAD_SIGNATURES = (
     ("engine-load-failed", re.compile(r"Deck \d+ load failed")),
     ("drop-load-failed", re.compile(r"drop load failed")),

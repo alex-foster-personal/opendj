@@ -31,10 +31,7 @@ def write_sine_wav(
             "-f",
             "lavfi",
             "-i",
-            (
-                f"aevalsrc={amplitude}*sin(2*PI*{frequency_hz}*t):"
-                f"d={duration_s}:s={sample_rate}"
-            ),
+            (f"aevalsrc={amplitude}*sin(2*PI*{frequency_hz}*t):d={duration_s}:s={sample_rate}"),
             "-c:a",
             "pcm_s16le",
             str(path),

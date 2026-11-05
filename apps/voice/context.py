@@ -73,15 +73,9 @@ class VoiceContext:
             event_bus=bus_impl,
             tts_engine=tts_impl,
             destructive=destructive_flag,
-            mute_until=(
-                settings_mod.load_mute_until(settings_store)
-                if settings_store is not None
-                else None
-            ),
+            mute_until=(settings_mod.load_mute_until(settings_store) if settings_store is not None else None),
             last_dispatch_at=(
-                settings_mod.load_last_dispatch_at(settings_store)
-                if settings_store is not None
-                else None
+                settings_mod.load_last_dispatch_at(settings_store) if settings_store is not None else None
             ),
             debounce_s=debounce,
             mute_duration_s=mute_duration,

@@ -132,7 +132,10 @@ export function autoplayChainFixture(manifestPath: string): {
 	stableIds: string[];
 } {
 	const manifest = readFixtureManifest(manifestPath);
-	if (manifest.autoplay_chain_playlist_id === null || manifest.autoplay_chain_playlist_name === null) {
+	if (
+		manifest.autoplay_chain_playlist_id === null ||
+		manifest.autoplay_chain_playlist_name === null
+	) {
 		throw new Error(
 			`fixture manifest at ${manifestPath} has no autoplay chain playlist -- ` +
 				'the fixture must be built with --seed-autoplay-chain'

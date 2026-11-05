@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import sys
 import tempfile
@@ -28,6 +27,7 @@ from apps.spotify.url_parse import parse_playlist_identifier
 
 from .config import TransferConfigurationError
 from .llm import LlmMatchError, OpenRouterBatchMatcher
+from .params import confidence_threshold_error, duration_tolerance_ms_error
 from .service import TransferContractError, execute_transfer
 from .soundcloud import SoundCloudClient, SoundCloudError
 
@@ -77,10 +77,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _validate_safety(args: argparse.Namespace, playlist_id: str) -> str | None:
-    if not math.isfinite(args.confidence_threshold) or not 0 < args.confidence_threshold <= 1:
-        return "confidence threshold must be finite and within (0, 1]"
-    if args.duration_tolerance_ms <= 0:
-        return "duration tolerance must be a positive integer"
+    if error := confidence_threshold_error(args.confidence_threshold):
+        return error
+    if error := duration_tolerance_ms_error(args.duration_tolerance_ms):
+        return error
     if args.live and not args.i_understand_the_risks:
         return "--live requires --i-understand-the-risks"
     if args.live and args.confirm_playlist_id != playlist_id:

@@ -5,11 +5,13 @@
 [if] spctl does not say accepted with source=Notarized Developer ID [then] verification raises, [else stop].
 [if] the bridge signature is empty [then] building latest.json raises, [else stop].
 [if] a release signs nested code [then] every codesign call carries a secure timestamp, [else stop].
+[if] the dmg volume root lacks an Applications symlink to /Applications beside the app [then] staging raises, [else stop].
 
 Regression lines:
   - if latest-mac.yml carries an absolute or spaced url then broken (GitHub rewrites spaces; the feed 404s)
   - if a release is built with --timestamp=none then broken (the notary service refuses it)
   - if the bridge latest.json points anywhere but the immutable app-v<version> tag then broken
+  - if the dmg opens without an Applications link beside the app then broken (no drag-to-install target)
 
 -Claude
 """
@@ -18,16 +20,18 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 import plistlib
 import subprocess
+import urllib.error
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 import yaml
 
-from scripts import electron_local_sign, electron_release
+from scripts import electron_local_sign, electron_publish, electron_release
 from scripts.electron_local_sign import SignTarget
 from scripts.electron_release import Artifacts, ReleaseError
 
@@ -229,3 +233,235 @@ def test_app_update_config_names_the_shell_feed(tmp_path: Path) -> None:
         "url": electron_release.UPDATE_FEED_URL,
         "updaterCacheDirName": "opendj-desktop-electron-updater",
     }
+
+
+# ----- notes and publishing (scripts/electron_publish.py) ---------------------------------
+
+NOTES = "Open DJ now runs on a new desktop shell. Your library carries over unchanged."
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_feeds_carry_the_user_notes_then_the_build_sha(tmp_path: Path) -> None:
+    zip_path = _zip(tmp_path)
+    feed = yaml.safe_load(electron_release.latest_mac_yml("1.0.0-alpha.2", zip_path, SHA, WHEN, NOTES))
+    bridge = electron_release.bridge_manifest("1.0.0-alpha.2", SHA, "a.app.tar.gz", "sig", "nightly", WHEN, NOTES)
+    assert feed["releaseNotes"] == bridge["notes"] == f"{NOTES}\n\nbuilt from {SHA}"
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_main_refuses_a_public_release_without_notes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert electron_release.main(["--out", str(tmp_path / "out")], env={}) == 1
+    assert "needs --notes" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+    with pytest.raises(ReleaseError, match="needs --notes"):
+        electron_release.require_release_notes("  ", proof=False)
+    electron_release.require_release_notes("", proof=True)
+
+
+def _built(tmp_path: Path, proof: bool = False) -> Path:
+    """A finished --out directory as electron_release writes it, with synthetic bytes."""
+    version = "1.0.0-alpha.2"
+    art = Artifacts(tmp_path, version)
+    art.dmg.write_bytes(b"dmg bytes")
+    _zip(tmp_path, version)
+    art.archive.write_bytes(b"\x1f\x8b archive bytes")
+    art.signature.write_text("minisign-sig\n", encoding="utf-8")
+    art.feed.write_text(electron_release.latest_mac_yml(version, art.zip, SHA, WHEN, NOTES), encoding="utf-8")
+    manifest = electron_release.bridge_manifest(
+        version, SHA, art.archive.name, "minisign-sig\n", "nightly", WHEN, NOTES
+    )
+    art.bridge.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    files = [art.dmg, art.zip, art.archive, art.signature, art.feed, art.bridge]
+    evidence = {
+        "version": version,
+        "git_sha": SHA,
+        "proof": proof,
+        "notes": NOTES,
+        "artifacts": {p.name: {"sha512": electron_release.sha512_b64(p), "size": p.stat().st_size} for p in files},
+    }
+    art.evidence.write_text(json.dumps(evidence), encoding="utf-8")
+    return tmp_path
+
+
+class _FakeGitHub:
+    """gh plus the public CDN: a release is served only after `lag` fetches of latest/download."""
+
+    def __init__(self, out: Path, exists: bool = False, lag: int = 0) -> None:
+        self.out, self.exists, self.lag, self.calls = out, exists, lag, []
+        self.serving = exists
+        self.draft = False
+
+    def gh(self, argv: list[str]) -> subprocess.CompletedProcess:
+        self.calls.append(list(argv))
+        if argv[:2] == ["release", "view"]:
+            if self.exists:
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"tagName": "x", "isDraft": self.draft}), "")
+            return subprocess.CompletedProcess(argv, 1, "", "release not found")
+        if argv[:2] == ["release", "create"]:
+            self.exists = self.serving = True
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise AssertionError(argv)
+
+    def fetch(self, url: str) -> bytes:
+        if not self.serving or self.lag > 0:
+            self.lag -= 1
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
+        return (self.out / url.rsplit("/", 1)[1]).read_bytes()
+
+
+@pytest.fixture
+def no_newer_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(electron_publish, "latest_published_version", lambda repo: "v0.1.5")
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_publish_uploads_all_six_assets_to_one_latest_release(tmp_path: Path, no_newer_release: None) -> None:
+    out = _built(tmp_path)
+    fake = _FakeGitHub(out, lag=3)
+    url = electron_publish.publish(out, fake.gh, fake.fetch, sleep=lambda s: None)
+    assert url == "https://github.com/alex-foster-personal/issue-assets/releases/tag/app-v1.0.0-alpha.2"
+    creates = [c for c in fake.calls if c[:2] == ["release", "create"]]
+    assert len(creates) == 1
+    create = creates[0]
+    assert create[2] == "app-v1.0.0-alpha.2" and "--latest" in create and "--prerelease" not in create
+    uploaded = sorted(Path(a).name for a in create[3:9])
+    assert uploaded == sorted(
+        [
+            "OpenDJ-1.0.0-alpha.2-arm64.dmg",
+            "OpenDJ-1.0.0-alpha.2-arm64-mac.zip",
+            "latest-mac.yml",
+            "OpenDJ-1.0.0-alpha.2-aarch64.app.tar.gz",
+            "OpenDJ-1.0.0-alpha.2-aarch64.app.tar.gz.sig",
+            "latest.json",
+        ]
+    )
+    assert create[create.index("--notes") + 1] == f"{NOTES}\n\nbuilt from {SHA}"
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_publish_on_an_existing_tag_uploads_nothing(tmp_path: Path) -> None:
+    out = _built(tmp_path)
+    fake = _FakeGitHub(out, exists=True)
+    electron_publish.publish(out, fake.gh, fake.fetch, sleep=lambda s: None)
+    assert not [c for c in fake.calls if c[:2] == ["release", "create"]]
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_publish_refuses_a_proof_or_tampered_build_before_upload(tmp_path: Path) -> None:
+    (tmp_path / "proof").mkdir()
+    proof = _built(tmp_path / "proof", proof=True)
+    fake = _FakeGitHub(proof)
+    with pytest.raises(ReleaseError, match="proof build"):
+        electron_publish.publish(proof, fake.gh, fake.fetch, sleep=lambda s: None)
+    (tmp_path / "real").mkdir()
+    out = _built(tmp_path / "real")
+    Artifacts(out, "1.0.0-alpha.2").dmg.write_bytes(b"other dmg bytes")
+    with pytest.raises(ReleaseError, match="not the verified build"):
+        electron_publish.publish(out, fake.gh, fake.fetch, sleep=lambda s: None)
+    assert fake.calls == []
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_bridge_must_point_at_the_tag_and_carry_the_sig(tmp_path: Path) -> None:
+    out = _built(tmp_path)
+    art = Artifacts(out, "1.0.0-alpha.2")
+    electron_publish.check_bridge_matches(art.bridge.read_text(encoding="utf-8"), art)
+    bridge = json.loads(art.bridge.read_text(encoding="utf-8"))
+    bridge["platforms"]["darwin-aarch64"]["url"] = "https://github.com/x/y/releases/latest/download/a.tar.gz"
+    with pytest.raises(ReleaseError, match="url"):
+        electron_publish.check_bridge_matches(json.dumps(bridge), art)
+    art.signature.write_text("another-sig", encoding="utf-8")
+    with pytest.raises(ReleaseError, match="signature"):
+        electron_publish.check_bridge_matches(art.bridge.read_text(encoding="utf-8"), art)
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_publish_refuses_a_version_not_above_the_latest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out = _built(tmp_path)
+    monkeypatch.setattr(electron_publish, "latest_published_version", lambda repo: "app-v1.0.0-alpha.2")
+    fake = _FakeGitHub(out)
+    with pytest.raises(ValueError, match="semver bump"):
+        electron_publish.publish(out, fake.gh, fake.fetch, sleep=lambda s: None)
+    assert not [c for c in fake.calls if c[:2] == ["release", "create"]]
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_public_check_fails_naming_stale_feeds_after_the_deadline(tmp_path: Path) -> None:
+    out = _built(tmp_path)
+    built = electron_publish.load_built_release(out)
+    stale = b"version: 0.1.5\n"
+    with pytest.raises(ReleaseError, match="after 3 attempts") as caught:
+        electron_publish.wait_until_public(built, lambda url: stale, attempts=3, sleep=lambda s: None)
+    assert "latest-mac.yml serves other bytes" in str(caught.value)
+    assert "latest.json serves other bytes" in str(caught.value)
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_public_check_compares_the_downloaded_zip_bytes(tmp_path: Path) -> None:
+    out = _built(tmp_path)
+    built = electron_publish.load_built_release(out)
+
+    def fetch(url: str) -> bytes:
+        name = url.rsplit("/", 1)[1]
+        return b"truncated" if name.endswith("-mac.zip") else (out / name).read_bytes()
+
+    problems = electron_publish.public_differences(built, fetch)
+    assert len(problems) == 1 and "-mac.zip" in problems[0]
+
+
+@pytest.mark.requirement("ELECTRON-8789")
+def test_publish_refuses_a_draft_left_by_an_interrupted_upload(tmp_path: Path) -> None:
+    out = _built(tmp_path)
+    fake = _FakeGitHub(out, exists=True)
+    fake.draft = True
+    with pytest.raises(ReleaseError, match="draft"):
+        electron_publish.publish(out, fake.gh, fake.fetch, sleep=lambda s: None)
+    assert not [c for c in fake.calls if c[:2] == ["release", "create"]]
+
+
+APP_NAME = "Open DJ.app"
+
+
+def _app_dir(tmp_path: Path) -> Path:
+    root = tmp_path / "app"
+    (root / APP_NAME / "Contents").mkdir(parents=True)
+    return root
+
+
+@pytest.mark.requirement("ELECTRON-8819")
+def test_dmg_layout_plan_carries_the_applications_link() -> None:
+    assert electron_release.dmg_layout(APP_NAME) == {APP_NAME: None, "Applications": "/Applications"}
+
+
+@pytest.mark.requirement("ELECTRON-8819")
+def test_stage_dmg_root_lays_the_app_beside_an_applications_symlink(tmp_path: Path) -> None:
+    root = _app_dir(tmp_path)
+    electron_release.stage_dmg_root(root, APP_NAME)
+    link = root / "Applications"
+    assert link.is_symlink() and str(link.readlink()) == "/Applications"
+    assert sorted(p.name for p in root.iterdir()) == ["Applications", APP_NAME]
+
+
+@pytest.mark.requirement("ELECTRON-8819")
+def test_stage_dmg_root_refuses_a_missing_app_a_wrong_link_or_a_stray_entry(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ReleaseError, match=r"has no Open DJ\.app"):
+        electron_release.stage_dmg_root(empty, APP_NAME)
+    wrong = _app_dir(tmp_path / "wrong")
+    (wrong / "Applications").symlink_to("/tmp")
+    with pytest.raises(ReleaseError, match="not /Applications"):
+        electron_release.stage_dmg_root(wrong, APP_NAME)
+    stray = _app_dir(tmp_path / "stray")
+    (stray / "notes.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(ReleaseError, match=r"notes\.txt"):
+        electron_release.stage_dmg_root(stray, APP_NAME)
+
+
+@pytest.mark.requirement("ELECTRON-8819")
+def test_package_images_the_staged_root_not_the_bare_app() -> None:
+    """The hdiutil -srcfolder is the app's folder (app + link), never the .app alone."""
+    source = inspect.getsource(electron_release.Release.package)
+    assert "stage_dmg_root(app.parent, app.name)" in source
+    srcfolder = source.split('"-srcfolder",', 1)[1].split(",", 1)[0].strip()
+    assert srcfolder == "str(app.parent)", srcfolder

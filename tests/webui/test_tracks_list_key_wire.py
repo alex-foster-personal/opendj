@@ -27,6 +27,7 @@ the ``analysis`` extra must report the leg UNAVAILABLE, not fail it. The
 record-level leg below starts at the record the drain writes, so the wire
 behaviour stays pinned even where the drain itself cannot run.
 """
+
 from __future__ import annotations
 
 import math
@@ -57,8 +58,10 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 STABLE_ID = "d" * 40
 DECODE_FINGERPRINT = "sha256:" + "3c" * 32
 DEPENDS_ON_BEATGRID = {
-    "backend": "own_beatgrid.backfill", "producer_version": "1.0.0",
-    "model_sha256": None, "decode_fingerprint": "sha256:" + "1f" * 32,
+    "backend": "own_beatgrid.backfill",
+    "producer_version": "1.0.0",
+    "model_sha256": None,
+    "decode_fingerprint": "sha256:" + "1f" * 32,
     "record_digest": "sha256:" + "2f" * 32,
 }
 
@@ -101,13 +104,24 @@ def _key_payload(camelot: str) -> dict:
     """Derived from the Camelot table, so the contract cross-checks all spellings."""
     pitch_class, is_minor = _CAMELOT_PITCH_CLASS[camelot]
     return {
-        "camelot": camelot, "openkey": "1m", "pitch_class": pitch_class,
-        "is_minor": is_minor, "confidence": 0.8,
+        "camelot": camelot,
+        "openkey": "1m",
+        "pitch_class": pitch_class,
+        "is_minor": is_minor,
+        "confidence": 0.8,
         "segments": {
-            "status": "ok", "reason": None,
+            "status": "ok",
+            "reason": None,
             "segments": [
-                {"start_bar": 0, "end_bar": 8, "start_s": 0.0, "end_s": 16.0,
-                 "key_camelot": camelot, "key_openkey": "1m", "confidence": 0.8},
+                {
+                    "start_bar": 0,
+                    "end_bar": 8,
+                    "start_s": 0.0,
+                    "end_s": 16.0,
+                    "key_camelot": camelot,
+                    "key_openkey": "1m",
+                    "confidence": 0.8,
+                },
             ],
         },
         "depends_on": {"beatgrid": dict(DEPENDS_ON_BEATGRID)},
@@ -116,14 +130,24 @@ def _key_payload(camelot: str) -> dict:
 
 def _own_key_record(stable_id: str) -> AnalysisRecord:
     return AnalysisRecord(
-        stable_id=stable_id, backend="own_key.backfill", backend_version="1.0.0",
+        stable_id=stable_id,
+        backend="own_key.backfill",
+        backend_version="1.0.0",
         analyzed_at=datetime(2026, 10, 8, tzinfo=UTC),
-        duration_s=200.0, sample_rate=44100,
-        bpm=120.0, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="1m", key_confidence=0.8,
-        energy=5, energy_source="inferred",
-        producer="backfill", producer_version="1.0.0", uses_model=False,
-        model_sha256=None, decode_fingerprint=DECODE_FINGERPRINT,
+        duration_s=200.0,
+        sample_rate=44100,
+        bpm=120.0,
+        bpm_confidence=0.9,
+        key_camelot="8A",
+        key_openkey="1m",
+        key_confidence=0.8,
+        energy=5,
+        energy_source="inferred",
+        producer="backfill",
+        producer_version="1.0.0",
+        uses_model=False,
+        model_sha256=None,
+        decode_fingerprint=DECODE_FINGERPRINT,
         lanes={"key": LaneResult(status="ok", payload=_key_payload("8A"))},
     )
 

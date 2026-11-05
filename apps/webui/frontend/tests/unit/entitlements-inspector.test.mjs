@@ -22,7 +22,7 @@ const PAGE_PATH = join(SRC, 'routes/admin/+page.svelte');
 function legacyHealth() {
 	return {
 		status: 'ok',
-		state_db: { path: 'data/state/state.db', tracks: 1, playlists: 1, pairings: 0 },
+		state_db: { path: '(private path)', tracks: 1, playlists: 1, pairings: 0 },
 		cloud: { lock_holder: null },
 		syncthing: null,
 		bind_host: '127.0.0.1',
@@ -133,7 +133,9 @@ test('empty entitlements catalog: no feature rows, no invented plan refusal', as
 	await bundle.entitlements.load();
 	const snapshot = bundle.collectInspectorSnapshot();
 
-	const featureRows = snapshot.rows.filter((entry) => entry.kind === 'entitlement' && entry.id !== 'plan');
+	const featureRows = snapshot.rows.filter(
+		(entry) => entry.kind === 'entitlement' && entry.id !== 'plan'
+	);
 	assert.equal(featureRows.length, 0);
 	assert.ok(!snapshot.activeRefusals.some((entry) => entry.kind === 'entitlement'));
 });

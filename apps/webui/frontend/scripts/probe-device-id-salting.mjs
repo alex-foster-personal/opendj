@@ -53,7 +53,10 @@ function compare(firstA, firstB, restartA) {
 	const real = firstA.filter((output) => !PSEUDO_DEVICE_IDS.has(output.id));
 	if (real.length === 0) return { verdict: 'UNKNOWN', reason: 'no real audiooutput enumerated' };
 	if (firstA.some((output) => output.label === '')) {
-		return { verdict: 'UNKNOWN', reason: 'labels hidden; the permission grant did not unlock them' };
+		return {
+			verdict: 'UNKNOWN',
+			reason: 'labels hidden; the permission grant did not unlock them'
+		};
 	}
 	const byLabel = (rows) => new Map(rows.map((row) => [row.label, row]));
 	const [b, restart] = [byLabel(firstB), byLabel(restartA)];
@@ -67,8 +70,10 @@ function compare(firstA, firstB, restartA) {
 	const all = (key) => rows.every((row) => row[key]);
 	const none = (key) => rows.every((row) => !row[key]);
 	let verdict = 'MIXED';
-	if (all('id_differs_across_origins') && all('id_stable_same_origin_after_restart')) verdict = 'SALTED_PER_ORIGIN';
-	else if (none('id_differs_across_origins') && all('id_stable_same_origin_after_restart')) verdict = 'NOT_SALTED';
+	if (all('id_differs_across_origins') && all('id_stable_same_origin_after_restart'))
+		verdict = 'SALTED_PER_ORIGIN';
+	else if (none('id_differs_across_origins') && all('id_stable_same_origin_after_restart'))
+		verdict = 'NOT_SALTED';
 	else if (!all('id_stable_same_origin_after_restart')) verdict = 'ROTATES_PER_LAUNCH';
 	return { verdict, rows };
 }
@@ -80,7 +85,11 @@ const originB = `http://127.0.0.1:${serverB.address().port}`;
 const channel = values.channel === 'chromium' ? undefined : values.channel;
 // The probe relaunches the SAME profile; the flag keeps a crashed first run from leaving a restore prompt.
 const launch = () =>
-	chromium.launchPersistentContext(profile, { channel, headless: true, args: ['--hide-crash-restore-bubble'] });
+	chromium.launchPersistentContext(profile, {
+		channel,
+		headless: true,
+		args: ['--hide-crash-restore-bubble']
+	});
 let result;
 try {
 	let context = await launch();
@@ -96,5 +105,7 @@ try {
 	serverB.close();
 	rmSync(profile, { recursive: true, force: true });
 }
-console.log(JSON.stringify({ channel: values.channel, origins: [originA, originB], ...result }, null, 2));
+console.log(
+	JSON.stringify({ channel: values.channel, origins: [originA, originB], ...result }, null, 2)
+);
 if (result.verdict === 'UNKNOWN') process.exit(2);

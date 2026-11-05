@@ -20,16 +20,22 @@ const ENTRY = [
 ].join('\n');
 
 const treeSource = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url)
+	),
 	'utf8'
 );
 // PlaylistTree passes plain values and callbacks to this props-only view.
 const viewSource = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url)
+	),
 	'utf8'
 );
 const renameSource = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/browser/tree-playlist-rename.svelte.ts', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/browser/tree-playlist-rename.svelte.ts', import.meta.url)
+	),
 	'utf8'
 );
 
@@ -98,7 +104,11 @@ test('empty-state CTA reuses the same create-then-rename flow as the header + bu
 		/oncreate=\{cancreate \? \(\) => oncreate\(\) : undefined\}/,
 		'the empty-state CTA must call the same oncreate the header + button calls, not a duplicate creation path'
 	);
-	assert.match(viewSource, /e\.stopPropagation\(\);\s*oncreate\(\);/, 'the header + button calls the same oncreate');
+	assert.match(
+		viewSource,
+		/e\.stopPropagation\(\);\s*oncreate\(\);/,
+		'the header + button calls the same oncreate'
+	);
 	assert.match(treeSource, /cancreate=\{oncreateplaylist !== undefined\}/);
 	assert.match(
 		treeSource,
@@ -129,10 +139,7 @@ test('createdId survives past the rename commit, unlike the transient editingId'
 
 test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows', () => {
 	assert.match(viewSource, /class:broken=\{node\.mostly_broken\}/);
-	assert.match(
-		viewSource,
-		/title=\{node\.mostly_broken \? mostlyBrokenTitle : undefined\}/
-	);
+	assert.match(viewSource, /title=\{node\.mostly_broken \? mostlyBrokenTitle : undefined\}/);
 	assert.match(treeSource, /mostlyBrokenTitle=\{formatMostlyBrokenTooltip\(\)\}/);
 	const policy = readFileSync(
 		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),

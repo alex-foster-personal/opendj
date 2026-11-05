@@ -9,7 +9,8 @@ test('jog radial waveform pref round-trips through settings apply and GET /api/v
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 
 	await page.evaluate(() => {
-		const mod = (window as unknown as { __mdtApplySetting?: (k: string, v: boolean) => void }).__mdtApplySetting;
+		const mod = (window as unknown as { __mdtApplySetting?: (k: string, v: boolean) => void })
+			.__mdtApplySetting;
 		if (mod !== undefined) {
 			mod('jog_radial_waveform', true);
 			return;

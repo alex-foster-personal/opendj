@@ -100,9 +100,7 @@ def _run_engine(tmp_path: Path, backend: InMemoryBackend) -> Iterator[Engine]:
         encoding="utf-8",
     )
     try:
-        yield Engine(
-            base_url=f"http://127.0.0.1:{port}", port=port, lock_path=lock_path, app=app
-        )
+        yield Engine(base_url=f"http://127.0.0.1:{port}", port=port, lock_path=lock_path, app=app)
     finally:
         # Graceful first, then insist. A test that WEDGES the page leaves the
         # engine still awaiting a future no page will ever complete, and

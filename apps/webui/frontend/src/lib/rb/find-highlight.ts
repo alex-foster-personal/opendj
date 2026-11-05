@@ -2,10 +2,7 @@ import { listingGenre } from './genre-source';
 import { displayKey, keyForms, type KeyNotation } from './key-notation';
 
 /** Split `text` into plain / hit spans for in-place find highlight. */
-export function highlightSpans(
-	text: string,
-	query: string
-): Array<{ text: string; hit: boolean }> {
+export function highlightSpans(text: string, query: string): Array<{ text: string; hit: boolean }> {
 	const q = query.trim();
 	if (q.length < 3 || text === '') return [{ text, hit: false }];
 	const lower = text.toLowerCase();

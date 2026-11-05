@@ -19,10 +19,10 @@ from fastapi import Request
 
 from apps.feature_flags import (
     FlagRefusal,
-    FlagStore,
     store_build_refusal,
     store_profile_is_source,
 )
+from apps.shared.engine_app_state import require_app_state
 from apps.shared.sandbox import is_sandboxed
 
 USB_EXPORT_FLAG: str = "usb.export"
@@ -50,26 +50,21 @@ class UsbExportGate:
         return self.flag_enabled and self.refusal is None
 
 
-def _flag_store(request: Request) -> FlagStore:
-    """Fail fast rather than defaulting to "enabled" when the store is not
-    mounted: a store build whose boot sequence failed to wire its FlagStore
-    must not silently serve USB wide open. ``apps.webui.server.app.create_app``
-    always wires one (see its ``feature_flags`` parameter).
-    """
-    store: FlagStore | None = getattr(request.app.state, "feature_flags", None)
-    if store is None:
-        raise RuntimeError(
+def usb_export_gate(request: Request) -> UsbExportGate:
+    """Read ``usb.export`` from the boot-time store and resolve its refusal."""
+    # Fail fast when feature_flags is not mounted: a store build whose boot
+    # sequence failed to wire its FlagStore must not silently serve USB wide
+    # open (``apps.webui.server.app.create_app`` always wires one).
+    store = require_app_state(
+        request,
+        "feature_flags",
+        missing=(
             "feature flags are not mounted on app.state.feature_flags; a USB "
             "route cannot be gated without reading the flag it is gated on. "
             "Wire app.state.feature_flags at boot (see "
             "apps.webui.server.app.create_app) before serving this route."
-        )
-    return store
-
-
-def usb_export_gate(request: Request) -> UsbExportGate:
-    """Read ``usb.export`` from the boot-time store and resolve its refusal."""
-    store = _flag_store(request)
+        ),
+    )
     flag = store.state(USB_EXPORT_FLAG)
     refusal = store_build_refusal(
         flag,

@@ -16,7 +16,11 @@ test('ready and unavailable STEMS tags use the shared rich hover and focus expla
 		'both ready and unavailable render branches must be wrapped'
 	);
 	for (const status of ['none', 'invalid', 'ready']) {
-		assert.match(source, new RegExp(`s\\.status === '${status}'`), `${status} state lacks explainer data`);
+		assert.match(
+			source,
+			new RegExp(`s\\.status === '${status}'`),
+			`${status} state lacks explainer data`
+		);
 	}
 	assert.equal(
 		(source.match(/tabindex="0"/g) ?? []).length,
@@ -31,7 +35,15 @@ test('ready and unavailable STEMS tags use the shared rich hover and focus expla
 });
 
 test('STEMS explainer exposes factual model, preset, format, total, and V/I/D details', () => {
-	for (const detail of ['Status:', 'Model:', 'Preset:', 'Format:', 'Total:', 'GROUPS.map', '_fmtBytes']) {
+	for (const detail of [
+		'Status:',
+		'Model:',
+		'Preset:',
+		'Format:',
+		'Total:',
+		'GROUPS.map',
+		'_fmtBytes'
+	]) {
 		assert.ok(source.includes(detail), `STEMS explainer omits ${detail}`);
 	}
 });

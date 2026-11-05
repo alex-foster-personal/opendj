@@ -26,7 +26,9 @@ function _rowViewAttr(el: Element, name: string, valid: (value: number) => boole
 	const raw = el.getAttribute(name);
 	const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
 	if (!Number.isFinite(value) || !valid(value)) {
-		throw new Error(`wave click: ${name} is missing or malformed on a waveform row (got ${raw ?? 'null'})`);
+		throw new Error(
+			`wave click: ${name} is missing or malformed on a waveform row (got ${raw ?? 'null'})`
+		);
 	}
 	return value;
 }
@@ -34,7 +36,10 @@ function _rowViewAttr(el: Element, name: string, valid: (value: number) => boole
 /** The loaded track and time under the pointer, or null off a wave surface
  * or on a deck with nothing (or nothing measured) loaded. */
 export function waveClickAt(event: MouseEvent, target: EventTarget | null): WaveClick | null {
-	const surface = target instanceof Element ? target.closest('[data-wave-surface="row"], [data-wave-surface="strip"]') : null;
+	const surface =
+		target instanceof Element
+			? target.closest('[data-wave-surface="row"], [data-wave-surface="strip"]')
+			: null;
 	if (!(surface instanceof HTMLElement)) return null;
 	const deckId = _deckOf(surface);
 	if (deckId === null) return null;

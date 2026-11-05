@@ -2,6 +2,7 @@ import type { HotCueMutation } from '$lib/rb/api-rb';
 import { quantizeToNearestGridBeat } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { engagedLoopForHotCue } from '$lib/rb/hot-cue-loop';
 import { deckHasTrustedBeatGrid, effectiveQuantize } from '$lib/player/grid-features';
 import { dispatchPerformanceCommand, type PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { pushToast } from '$lib/stores.svelte';
@@ -9,7 +10,10 @@ import { pushToast } from '$lib/stores.svelte';
 type DeckId = Extract<PerformanceCommand, { type: 'hot_cue_save' }>['deck'];
 
 export interface DeckHotCueActions {
-	saveHotCueAt: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
+	/** `outMs` (HOTCUE-LOOP-01): a number saves a loop hot cue from
+	 * `fixedPositionMs` to it, null a point cue; omitted, a live save stores
+	 * the deck's engaged loop when there is one. */
+	saveHotCueAt: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string, outMs?: number | null) => Promise<HotCueMutation>;
 	renameHotCueAt: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 	clearHotCueAt: (slot: HotCueSlot) => Promise<HotCueMutation>;
 	restoreHotCueAt: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
@@ -29,7 +33,8 @@ export function createDeckHotCueActions(
 		comment?: string,
 		fixedPositionMs?: number,
 		quantizeFixedPosition = false,
-		expectedStableId?: string
+		expectedStableId?: string,
+		outMs?: number | null
 	): Promise<HotCueMutation> {
 		const deck = readDeck();
 		if (deck.stable_id === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
@@ -38,10 +43,14 @@ export function createDeckHotCueActions(
 		}
 		const revision = deck.hot_cue_revisions[slot];
 		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
-		let ms = fixedPositionMs ?? deck.position_ms;
+		// rekordbox: a live save during an engaged loop stores that loop.
+		const liveLoop = fixedPositionMs === undefined && outMs === undefined ? engagedLoopForHotCue(deck) : null;
+		const loopOutMs = liveLoop?.out_ms ?? outMs ?? null;
+		let ms = liveLoop?.in_ms ?? fixedPositionMs ?? deck.position_ms;
 		const validPosition = Number.isFinite(ms) && ms >= 0;
 		const beats = deck.anlz?.beatgrid?.beats;
-		if (validPosition && (fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
+		// A loop's endpoints are already resolved; snapping its start would move it off its loop.
+		if (loopOutMs === null && validPosition && (fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
 			ms = Math.round(quantizeToNearestGridBeat(beats, ms / 1000, 1) * 1000); // off-grid positions are kept (SEEK-GRID-01)
 		}
 		if (Number.isFinite(ms) && ms >= 0) ms = Math.round(ms);
@@ -52,7 +61,8 @@ export function createDeckHotCueActions(
 				deck: deckId,
 				slot,
 				in_ms: ms,
-				revision
+				revision,
+				...(loopOutMs === null ? {} : { out_ms: loopOutMs })
 			};
 			const state = await dispatchPerformanceCommand(
 				comment === undefined ? command : { ...command, comment }
@@ -72,7 +82,10 @@ export function createDeckHotCueActions(
 		inMs: number,
 		comment: string
 	): Promise<HotCueMutation> {
-		return await saveHotCueAt(slot, comment, inMs);
+		// A rename keeps the cue what it is: a loop hot cue keeps its end.
+		const existing = readDeck().hot_cues.find((cue) => cue.slot === slot) ?? null;
+		const outMs = existing !== null && existing.is_loop ? existing.out_ms : null;
+		return await saveHotCueAt(slot, comment, inMs, false, undefined, outMs);
 	}
 
 	async function clearHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {

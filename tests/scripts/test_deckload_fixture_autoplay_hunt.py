@@ -45,8 +45,7 @@ def _membership(state_db: Path, playlist_id: str) -> list[str]:
         return [
             str(stable_id)
             for (stable_id,) in conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? ORDER BY position",
+                "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
                 (playlist_id,),
             )
         ]
@@ -58,10 +57,7 @@ def _playlist_names(state_db: Path) -> dict[str, str]:
     conn = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
     try:
         return {
-            str(playlist_id): str(name)
-            for playlist_id, name in conn.execute(
-                "SELECT playlist_id, name FROM playlists"
-            )
+            str(playlist_id): str(name) for playlist_id, name in conn.execute("SELECT playlist_id, name FROM playlists")
         }
     finally:
         conn.close()

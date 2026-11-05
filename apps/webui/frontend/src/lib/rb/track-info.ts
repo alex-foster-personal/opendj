@@ -95,6 +95,21 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 		provenance: prov('bpm')
 	}),
 	key: (t, _p, prov) => ({ label: 'Key', value: _text(t.key), provenance: prov('key') }),
+	key_source: (t) => ({ label: 'Key source', value: _text(t.key_source), provenance: null }),
+	// KEY-GUESS-01: a declined key keeps its best candidate, shown with "?" like the key cell.
+	key_guess: (t) => ({
+		label: 'Key guess',
+		value: t.key_guess === null || t.key_guess === undefined ? NOT_SET : `${t.key_guess}?`,
+		provenance: null
+	}),
+	key_guess_confidence: (t) => ({
+		label: 'Key guess confidence',
+		value:
+			t.key_guess_confidence === null || t.key_guess_confidence === undefined
+				? NOT_SET
+				: `${Math.round(t.key_guess_confidence * 100)}%`,
+		provenance: null
+	}),
 	duration_ms: (t, _p, prov) => ({
 		label: 'Duration',
 		value: t.duration_ms === null || t.duration_ms === undefined ? NOT_SET : formatDuration(t.duration_ms),

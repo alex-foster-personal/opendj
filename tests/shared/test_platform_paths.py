@@ -8,6 +8,7 @@ markers (W4 registers those; using them here before registration would
 fail ``--strict-markers``) -- use ``pytest.mark.skipif`` instead where a
 real-platform-only check is needed.
 """
+
 from __future__ import annotations
 
 import json
@@ -76,16 +77,12 @@ def test_import_succeeds_on_this_platform() -> None:
     assert pp.SHARE_ROOT == pp.REKORDBOX_APP_DIR / "share"
 
 
-@pytest.mark.parametrize(
-    "path", [r"C:relative\song.mp3", "D:track.flac", "1:/music", "?:/music"]
-)
+@pytest.mark.parametrize("path", [r"C:relative\song.mp3", "D:track.flac", "1:/music", "?:/music"])
 def test_is_any_absolute_rejects_invalid_windows_drive_paths(path: str) -> None:
     assert pp.is_any_absolute(path) is False
 
 
-@pytest.mark.parametrize(
-    "path", [r"C:\Music\song.mp3", "D:/Music/track.flac", r"\\server\share\song.mp3"]
-)
+@pytest.mark.parametrize("path", [r"C:\Music\song.mp3", "D:/Music/track.flac", r"\\server\share\song.mp3"])
 def test_is_any_absolute_accepts_windows_absolute_paths(path: str) -> None:
     assert pp.is_any_absolute(path) is True
 
@@ -100,9 +97,7 @@ def test_load_path_map_empty_when_no_source(monkeypatch: pytest.MonkeyPatch, tmp
     assert result == pp.PathMap(entries=())
 
 
-def test_load_path_map_reads_env_json_and_sorts_longest_first(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_path_map_reads_env_json_and_sorts_longest_first(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "custom-map.json"
     map_file.write_text(
         json.dumps(
@@ -145,9 +140,7 @@ def test_load_path_map_raises_on_malformed_json(monkeypatch: pytest.MonkeyPatch,
         pp.load_path_map()
 
 
-def test_load_path_map_raises_when_entries_not_a_list(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_path_map_raises_when_entries_not_a_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "bad-entries.json"
     map_file.write_text(json.dumps({"entries": {"from": "x", "to": "y"}}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
@@ -155,9 +148,7 @@ def test_load_path_map_raises_when_entries_not_a_list(
         pp.load_path_map()
 
 
-def test_load_path_map_raises_on_entry_missing_keys(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_path_map_raises_on_entry_missing_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "bad-entry.json"
     map_file.write_text(json.dumps({"entries": [{"from": "/x"}]}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
@@ -167,9 +158,7 @@ def test_load_path_map_raises_on_entry_missing_keys(
 
 def test_load_path_map_rejects_empty_destination(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "incomplete-map.json"
-    map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/user", "to": ""}]}), encoding="utf-8"
-    )
+    map_file.write_text(json.dumps({"entries": [{"from": "/Users/user", "to": ""}]}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
     with pytest.raises(ValueError, match="empty"):
         pp.load_path_map()
@@ -177,9 +166,7 @@ def test_load_path_map_rejects_empty_destination(monkeypatch: pytest.MonkeyPatch
 
 def test_load_path_map_preserves_windows_drive_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "drive-root.json"
-    map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/"}]}), encoding="utf-8"
-    )
+    map_file.write_text(json.dumps({"entries": [{"from": "/Users/user", "to": "D:/"}]}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
     assert pp.load_path_map().entries == (("/Users/user", "D:/"),)
 
@@ -195,9 +182,7 @@ def test_load_path_map_uses_mdt_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert pp.load_path_map().entries == (("/Users/user", "D:/music"),)
 
 
-def test_load_path_map_uses_explicit_data_dir_over_the_default(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_path_map_uses_explicit_data_dir_over_the_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     default_data = tmp_path / "default-data"
     explicit_data = tmp_path / "snapshot-data"
     default_data.mkdir()
@@ -338,9 +323,7 @@ def test_resolve_library_path_uses_load_path_map_when_none_passed(
     monkeypatch.setattr(pp, "IS_DARWIN", False)
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
     map_file = tmp_path / "map.json"
-    map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/user/Music", "to": "D:/lib"}]}), encoding="utf-8"
-    )
+    map_file.write_text(json.dumps({"entries": [{"from": "/Users/user/Music", "to": "D:/lib"}]}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
 
     result = pp.resolve_library_path("/Users/user/Music/a.wav")
@@ -352,9 +335,7 @@ def test_resolve_library_path_uses_load_path_map_when_none_passed(
 # ----- resolve_asset_path --------------------------------------------------
 
 
-def test_resolve_asset_path_rejects_share_symlink_escape(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_resolve_asset_path_rejects_share_symlink_escape(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] a /PIONEER asset symlinks outside share [then ⛔️] it resolves."""
     share_root = tmp_path / "share"
     link = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
@@ -377,9 +358,7 @@ def test_resolve_asset_path_rejects_share_symlink_escape(
     assert result.reason == "unsafe:share-symlink"
 
 
-def test_resolve_asset_path_preserves_explicit_path_map(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_resolve_asset_path_preserves_explicit_path_map(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] an explicit data-dir map is supplied [then] asset resolution uses it."""
     monkeypatch.setattr(pp, "IS_DARWIN", False)
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
@@ -468,9 +447,7 @@ def test_remote_mode_pioneer_share_root_is_inside_crate(tmp_path: Path) -> None:
     env = os.environ.copy()
     env.update({"MDT_LIBRARY_MODE": "remote", "MDT_CRATE_ROOT": str(crate)})
     code = (
-        "import json; from apps.shared import platform_paths as p; "
-        "print(json.dumps({'share_root':str(p.SHARE_ROOT)}))"
+        "import json; from apps.shared import platform_paths as p; print(json.dumps({'share_root':str(p.SHARE_ROOT)}))"
     )
     result = _run_path_probe(code, env=env)
     assert result == {"share_root": str(crate / "pioneer-share")}
-

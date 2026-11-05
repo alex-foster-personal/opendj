@@ -4,6 +4,7 @@ mechanical: :mod:`apps.equivalence.verdict` re-exports every name here, so
 ``from apps.equivalence.verdict import build_document`` (the existing import
 shape) is unaffected.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,14 +50,10 @@ def build_document(
             "generated_at": stamp,
             "consumer": "apps.shared.equivalence.EquivalenceGate",
             "rule": (
-                "A mapping without a PASSING equivalence test is UNVERIFIED "
-                "and must not feed the precedence policy."
+                "A mapping without a PASSING equivalence test is UNVERIFIED and must not feed the precedence policy."
             ),
             "basis_values": {
-                "cross_source": (
-                    "two sources hold the field; the verdict rests on "
-                    "post-normalisation agreement"
-                ),
+                "cross_source": ("two sources hold the field; the verdict rests on post-normalisation agreement"),
                 "single_source": (
                     "only one source holds the field, so NO agreement rate "
                     "exists and none was computed. Evidence is the full-column "
@@ -102,10 +99,7 @@ def _render_verdicts_table(document: dict[str, Any]) -> list[str]:
     lines: list[str] = [
         "## Verdicts",
         "",
-        (
-            "| Field | Verdict | Basis | Suite detail | Agreement "
-            "(post-normalisation) | Comparable | Why |"
-        ),
+        ("| Field | Verdict | Basis | Suite detail | Agreement (post-normalisation) | Comparable | Why |"),
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name, entry in document["fields"].items():
@@ -158,9 +152,7 @@ def _render_matching_section(meta: dict[str, Any]) -> list[str]:
     )
     lines += ["", "| Tier | Matches | Confidence |", "| --- | --- | --- |"]
     for tier, count in matching["by_tier"].items():
-        lines.append(
-            f"| {tier} | {count} | {matching['tier_confidence'].get(tier, '')} |"
-        )
+        lines.append(f"| {tier} | {count} | {matching['tier_confidence'].get(tier, '')} |")
     lines += ["", matching["note"], ""]
     return lines
 
@@ -227,10 +219,7 @@ def _render_field_consistency(consistency: dict[str, Any]) -> list[str]:
     )
     lines.append(
         "- derivability, exact-match rate per hypothesis: "
-        + ", ".join(
-            f"`{name}` {count}"
-            for name, count in consistency["hypothesis_exact_match"].items()
-        )
+        + ", ".join(f"`{name}` {count}" for name, count in consistency["hypothesis_exact_match"].items())
     )
     lines += [f"- NOTE: {finding}" for finding in consistency["findings"]]
     lines += [f"- VIOLATION: {violation}" for violation in consistency["violations"]]
@@ -242,14 +231,9 @@ def _render_field_bugs_and_clusters(entry: dict[str, Any]) -> list[str]:
     if entry["mapping_bugs"]:
         lines += ["", "### MAPPING BUGS (proven: our error, not disagreement)", ""]
         for bug in entry["mapping_bugs"]:
-            lines.append(
-                f"- **{bug['kind']}**: "
-                f"{bug.get('detail') or bug.get('interpretation', '')}"
-            )
+            lines.append(f"- **{bug['kind']}**: {bug.get('detail') or bug.get('interpretation', '')}")
             lines += [f"  - {example}" for example in bug.get("examples", [])[:3]]
-    suspects = [
-        c for c in entry["systematic_offsets"] if c["classification"] == "suspect"
-    ]
+    suspects = [c for c in entry["systematic_offsets"] if c["classification"] == "suspect"]
     if suspects:
         lines += ["", "### SUSPECT CLUSTERS (unresolved, need adjudication)", ""]
         for cluster in suspects:
@@ -267,20 +251,14 @@ def _render_field_detail(name: str, entry: dict[str, Any]) -> list[str]:
     lines: list[str] = [f"## `{name}`", ""]
     if entry.get("basis") == "single_source":
         lines += [
-            (
-                f"Basis **single_source** ({entry.get('shape', 'scalar')}). "
-                f"{entry.get('agreement_omitted_because', '')}"
-            ),
+            (f"Basis **single_source** ({entry.get('shape', 'scalar')}). {entry.get('agreement_omitted_because', '')}"),
             "",
         ]
     lines += _render_field_probes(entry)
     if entry.get("agreement") and entry["agreement"].get("form_counts"):
         lines.append(
             "- comparable rows by raw notation: "
-            + ", ".join(
-                f"`{form}` {count}"
-                for form, count in entry["agreement"]["form_counts"].items()
-            )
+            + ", ".join(f"`{form}` {count}" for form, count in entry["agreement"]["form_counts"].items())
         )
     lines += [f"- {reason}" for reason in entry["reasons"]]
     structure = entry.get("structure")
@@ -292,10 +270,7 @@ def _render_field_detail(name: str, entry: dict[str, Any]) -> list[str]:
     lines += _render_field_bugs_and_clusters(entry)
     if entry["disagreement_signatures"]:
         lines += ["", "Disagreement signatures (all of them, not a sample):", ""]
-        lines += [
-            f"- `{signature}`: {count}"
-            for signature, count in entry["disagreement_signatures"].items()
-        ]
+        lines += [f"- `{signature}`: {count}" for signature, count in entry["disagreement_signatures"].items()]
     if entry["disagreement_csv"]:
         lines += ["", f"Disagreeing rows dumped to `{entry['disagreement_csv']}`."]
     lines.append("")
@@ -335,10 +310,7 @@ def render_report(document: dict[str, Any]) -> str:
     lines: list[str] = [
         "# Equivalence suite report (rekordbox vs Mixed In Key)",
         "",
-        (
-            f"Generated {meta['generated_at']} by `{meta['suite']}` "
-            f"v{meta['suite_version']}."
-        ),
+        (f"Generated {meta['generated_at']} by `{meta['suite']}` v{meta['suite_version']}."),
         "",
         "> " + meta["rule"],
         "",
@@ -355,4 +327,3 @@ def render_report(document: dict[str, Any]) -> str:
     if known:
         lines += _render_known_answers(known)
     return "\n".join(lines)
-

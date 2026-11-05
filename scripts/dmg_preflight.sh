@@ -676,7 +676,7 @@ print("OK", pub_id)
 # can still proceed when the committed Assets.car matches the source digest.
 check_icon_composer_asset() {
     section "J. Icon Composer compiled asset (actool or verified fallback)"
-    local icon_source="$ROOT/apps/desktop/src-tauri/icons/AppIcon.icon"
+    local icon_source="$ROOT/apps/desktop/shared/icons/AppIcon.icon"
     if [ ! -d "$icon_source" ]; then
         fail "Icon Composer asset" \
              "no Icon Composer source at $icon_source" \
@@ -700,7 +700,7 @@ check_icon_composer_asset() {
     if [ "$status" -ne 0 ]; then
         fail "Icon Composer asset" \
              "$result" \
-             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate (private path) and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
+             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate apps/desktop/shared/icons/AppIcon.icon/Assets.car and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
         return
     fi
     case "$result" in

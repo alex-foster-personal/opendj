@@ -145,9 +145,7 @@ test('a stall shorter than the window is not a verdict', () => {
 
 test('a paused deck is never a verdict, however long it sits still', () => {
 	const mod = _stall();
-	const { verdicts } = runSamples(
-		frozenFor(mod.PRESENTATION_STALL_MS * 20, { playing: false })
-	);
+	const { verdicts } = runSamples(frozenFor(mod.PRESENTATION_STALL_MS * 20, { playing: false }));
 	assert.equal(
 		verdicts.length,
 		0,

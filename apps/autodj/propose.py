@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from apps.autodj.notation import print_score
@@ -24,13 +24,21 @@ from apps.autodj.plan import (
     SHAPE_STYLES,
     TransitionPlan,
     Validation,
+    beat_sync_reach_pct,
     first_dispatch_bar,
     live_mapping,
     pair_beat_sync_fold,
     parse_plan,
     validate_plan,
 )
-from apps.autodj.profile import DECK_LOAD_TRIM_DB, Section, TrackProfile, match_trim_db, trim_db_of_knob
+from apps.autodj.profile import (
+    DECK_LOAD_TRIM_DB,
+    Section,
+    TrackProfile,
+    _finite_number,
+    match_trim_db,
+    trim_db_of_knob,
+)
 from apps.autodj.scoring import PairScore, rank_key, score_windows
 from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS
 from apps.autodj.styles import (
@@ -460,6 +468,77 @@ def _outgoing_trim_db(live: Mapping[str, Any] | None, out_deck: int) -> tuple[fl
     return trim_db_of_knob(float(knob)), None
 
 
+_AUTO_GAIN_OFFSET_MIN_DB = -12.0
+_AUTO_GAIN_OFFSET_MAX_DB = 12.0
+
+
+def _deck_auto_gain_db(
+    live: Mapping[str, Any] | None, deck: int, expected_stable_id: str
+) -> tuple[float, str | None]:
+    """The deck's live auto-gain offset in dB for loudness match (AGENT-31, Codex #7594)."""
+    if live is None:
+        return 0.0, "offline proposal: no live auto gain, so the match assumes 0 dB"
+    if "auto_gain" not in live:
+        return 0.0, "the live mirror carries no auto_gain, so the match assumes 0 dB"
+    auto_gain = live_mapping(live["auto_gain"], "live mirror auto_gain")
+    entry = live_mapping(_present(auto_gain, str(deck), "live mirror auto_gain"), f"deck {deck} auto gain")
+    state = _present(entry, "state", f"deck {deck} auto gain")
+    if state == "empty":
+        return 0.0, None
+    if state == "error":
+        return 0.0, f"deck {deck} auto gain error, so the match assumes 0 dB"
+    if state != "ready":
+        raise ValueError(f"deck {deck} auto gain state {state!r} is unknown")
+    value = live_mapping(_present(entry, "value", f"deck {deck} auto gain"), f"deck {deck} auto gain value")
+    raw_stable = value.get("stable_id")
+    if not isinstance(raw_stable, str) or not raw_stable:
+        raise ValueError(f"deck {deck} auto gain ready value has no stable_id: a partial mirror is refused")
+    offset = value.get("effective_offset_db")
+    if not _finite_number(offset) or not (_AUTO_GAIN_OFFSET_MIN_DB <= float(offset) <= _AUTO_GAIN_OFFSET_MAX_DB):
+        raise ValueError(
+            f"deck {deck} auto gain offset {offset!r} is not a finite offset in -12..12 dB"
+        )
+    if raw_stable != expected_stable_id:
+        return 0.0, (
+            f"deck {deck} auto gain is for {raw_stable}, not {expected_stable_id}, so the match assumes 0 dB"
+        )
+    decks = live.get("decks")
+    if isinstance(decks, Mapping):
+        deck_row = decks.get(str(deck))
+        if isinstance(deck_row, Mapping):
+            got = deck_row.get("stable_id")
+            if isinstance(got, str) and got and got != expected_stable_id:
+                return 0.0, (
+                    f"deck {deck} auto gain is for {got}, not {expected_stable_id}, so the match assumes 0 dB"
+                )
+    return float(offset), None
+
+
+def match_live_trim_db(
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    live: Mapping[str, Any] | None,
+    out_deck: int,
+    in_deck: int,
+) -> tuple[float | None, str]:
+    """AGENT-31 loudness match using live outgoing trim and both decks' auto-gain offsets."""
+    out_trim_db, out_trim_note = _outgoing_trim_db(live, out_deck)
+    out_ag, out_ag_note = _deck_auto_gain_db(live, out_deck, out_profile.stable_id)
+    in_ag, in_ag_note = _deck_auto_gain_db(live, in_deck, in_profile.stable_id)
+    trim_db, trim_reason = match_trim_db(
+        out_profile, in_profile, out_trim_db, out_auto_gain_db=out_ag, in_auto_gain_db=in_ag
+    )
+    if trim_db is None:
+        return trim_db, trim_reason
+    notes: list[str] = []
+    for note in (out_trim_note, out_ag_note, in_ag_note):
+        if note is not None and note not in notes:
+            notes.append(note)
+    if notes:
+        trim_reason = f"{trim_reason}; {'; '.join(notes)}" if trim_reason else "; ".join(notes)
+    return trim_db, trim_reason
+
+
 def _present(level: Mapping[str, Any], key: str, where: str) -> Any:
     if key not in level:
         raise ValueError(f"{where} has no {key!r}: a partial mirror is refused, never read as unity")
@@ -488,6 +567,19 @@ def _windows_around(profile: TrackProfile, around_bar: float, min_out_bar: float
     return windows
 
 
+def _with_live_reach(in_profile: TrackProfile, live: Mapping[str, Any] | None, in_deck: int) -> TrackProfile:
+    """AUTOPLAY-8870b: the incoming profile with its deck's real pitch range from the live mirror, when the profile
+    does not carry one already, so the proposal's Beat Sync fold is the engine's, not the 6% default's."""
+    if in_profile.deck_pitch_range_pct is not None or live is None:
+        return in_profile
+    decks = live.get("decks")
+    state = decks.get(str(in_deck)) if isinstance(decks, Mapping) else None
+    pitch_range = state.get("pitch_range") if isinstance(state, Mapping) else None
+    if not isinstance(pitch_range, (int, float)) or pitch_range <= 0:
+        return in_profile
+    return replace(in_profile, deck_pitch_range_pct=float(pitch_range))
+
+
 def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry point
     out_profile: TrackProfile,
     in_profile: TrackProfile,
@@ -505,6 +597,7 @@ def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry poi
     ``around_bar`` (AGENT-50, "transition out around here"): leave from the outgoing phrase starts nearest that bar,
     whatever their window score, instead of the best-scored windows anywhere in the track."""
     parsed = parse_intent(intent)
+    in_profile = _with_live_reach(in_profile, live, in_deck)
     out_windows = (
         _windows_around(out_profile, around_bar, min_out_bar)
         if around_bar is not None
@@ -517,12 +610,9 @@ def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry poi
     proposals: list[Proposal] = []
     not_offered: list[dict[str, Any]] = []
     seen: set[tuple[str, int, int, int]] = set()
-    out_trim_db, out_trim_note = _outgoing_trim_db(live, out_deck)
-    trim_db, trim_reason = match_trim_db(out_profile, in_profile, out_trim_db)
-    if out_trim_note is not None and trim_db is not None:
-        trim_reason = f"{trim_reason}; {out_trim_note}" if trim_reason else out_trim_note
+    trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, live, out_deck, in_deck)
     # Every proposal is tempo sync_to_out, so the incoming deck plays this many grid bars per plan bar (Sentry #7809).
-    fold = pair_beat_sync_fold(out_profile.bpm, in_profile.bpm)
+    fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
     for rank, (style_name, wanted_bars) in enumerate(_PREFERENCES[parsed]):
         style = STYLES[style_name]
         if not style.available:

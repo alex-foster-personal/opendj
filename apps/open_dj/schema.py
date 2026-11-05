@@ -33,6 +33,7 @@ See also:
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -122,6 +123,11 @@ class Track:
     * ``artists`` is an ordered tuple of strings.
     * ``cues``/``beats`` are tuples of the per-anchor dataclasses above.
     * ``extensions`` holds ``x_*`` passthrough data.
+    * ``source_modified_at`` is adapter transport only: the vendor library
+      file mtime (or per-row source time) used to stamp ProvenanceValue
+      envelopes at the wire edge. It is not an open-dj wire property
+      (Track ``additionalProperties: false``) and is stripped by
+      :func:`_normalise` and :meth:`OpenDjLibrary.to_dict`.
     """
 
     track_id: str
@@ -139,6 +145,7 @@ class Track:
     beats: tuple[BeatGridPoint, ...] = ()
     isrc: str | None = None
     extensions: dict[str, Any] = field(default_factory=dict)
+    source_modified_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -160,8 +167,16 @@ class OpenDjLibrary:
     extensions: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a plain-dict representation (tuples kept as lists by asdict)."""
-        return asdict(self)
+        """Return a plain-dict representation (tuples kept as lists by asdict).
+
+        ``source_modified_at`` is adapter transport only and is stripped so
+        this dict matches :func:`serialize_jcs` / the open-dj wire shape.
+        """
+        data = asdict(self)
+        for track in data.get("tracks", []):
+            if isinstance(track, dict):
+                track.pop("source_modified_at", None)
+        return data
 
 
 # --------------------------------------------------------- capabilities
@@ -263,9 +278,13 @@ def _normalise(value: Any) -> Any:
     this normaliser bridges our frozen-dataclass API to that contract.
     """
     if is_dataclass(value) and not isinstance(value, type):
-        return _normalise(asdict(value))
+        data = asdict(value)
+        data.pop("source_modified_at", None)
+        return _normalise(data)
     if isinstance(value, dict):
-        return {k: _normalise(v) for k, v in value.items()}
+        return {
+            k: _normalise(v) for k, v in value.items() if k != "source_modified_at"
+        }
     if isinstance(value, (list, tuple)):
         return [_normalise(v) for v in value]
     return value

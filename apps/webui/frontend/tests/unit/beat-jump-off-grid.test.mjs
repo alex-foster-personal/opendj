@@ -41,10 +41,26 @@ const near = (actual, expected, label) =>
 
 test('[if] a jump starts past the end of a short grid [then] it moves exactly N edge beats, forward and back', () => {
 	for (const keepPhase of [false, true]) {
-		near(math.beatJumpTargetMs(SHORT_GRID, 150_000, 4, keepPhase), 151_920, `+4 keepPhase=${keepPhase}`);
-		near(math.beatJumpTargetMs(SHORT_GRID, 150_000, -4, keepPhase), 148_080, `-4 keepPhase=${keepPhase}`);
-		near(math.beatJumpTargetMs(SHORT_GRID, 150_000, 1, keepPhase), 150_480, `+1 keepPhase=${keepPhase}`);
-		near(math.beatJumpTargetMs(SHORT_GRID, 150_000, -32, keepPhase), 134_640, `-32 keepPhase=${keepPhase}`);
+		near(
+			math.beatJumpTargetMs(SHORT_GRID, 150_000, 4, keepPhase),
+			151_920,
+			`+4 keepPhase=${keepPhase}`
+		);
+		near(
+			math.beatJumpTargetMs(SHORT_GRID, 150_000, -4, keepPhase),
+			148_080,
+			`-4 keepPhase=${keepPhase}`
+		);
+		near(
+			math.beatJumpTargetMs(SHORT_GRID, 150_000, 1, keepPhase),
+			150_480,
+			`+1 keepPhase=${keepPhase}`
+		);
+		near(
+			math.beatJumpTargetMs(SHORT_GRID, 150_000, -32, keepPhase),
+			134_640,
+			`-32 keepPhase=${keepPhase}`
+		);
 	}
 });
 
@@ -55,8 +71,16 @@ test('[control] the old anchor rule would have landed near the last beat', () =>
 
 test('[if] a backward jump crosses back into the grid [then] it lands on the nearest grid beat', () => {
 	// 36.5 s is past the span (35.547 + 0.48); -4 edge beats = 34.58 s, nearest beat 34.587 s.
-	near(math.beatJumpTargetMs(SHORT_GRID, 36_500, -4), SHORT_GRID[72].t * 1000, 'back into the grid');
-	assert.ok(SHORT_GRID.some((b) => Math.abs(b.t * 1000 - math.beatJumpTargetMs(SHORT_GRID, 36_500, -4)) < 1e-6));
+	near(
+		math.beatJumpTargetMs(SHORT_GRID, 36_500, -4),
+		SHORT_GRID[72].t * 1000,
+		'back into the grid'
+	);
+	assert.ok(
+		SHORT_GRID.some(
+			(b) => Math.abs(b.t * 1000 - math.beatJumpTargetMs(SHORT_GRID, 36_500, -4)) < 1e-6
+		)
+	);
 });
 
 test('[if] a jump starts before a late-starting grid [then] it uses the first interval, snaps when it crosses in, stops at 0', () => {
@@ -66,17 +90,36 @@ test('[if] a jump starts before a late-starting grid [then] it uses the first in
 });
 
 test('[overshoot control] an in-grid jump still lands on grid beats, clamped at the grid end', () => {
-	near(math.beatJumpTargetMs(SHORT_GRID, 20_100, 4), SHORT_GRID[46].t * 1000, 'in-grid +4 from the nearest beat');
+	near(
+		math.beatJumpTargetMs(SHORT_GRID, 20_100, 4),
+		SHORT_GRID[46].t * 1000,
+		'in-grid +4 from the nearest beat'
+	);
 	near(math.beatJumpTargetMs(SHORT_GRID, 20_100, -4), SHORT_GRID[38].t * 1000, 'in-grid -4');
-	near(math.beatJumpTargetMs(SHORT_GRID, 20_100, 500), SHORT_GRID.at(-1).t * 1000, 'in-grid jump past the end clamps');
+	near(
+		math.beatJumpTargetMs(SHORT_GRID, 20_100, 500),
+		SHORT_GRID.at(-1).t * 1000,
+		'in-grid jump past the end clamps'
+	);
 	// Within one beat after the last beat is still on the grid: anchored on the last beat.
 	near(math.beatJumpTargetMs(SHORT_GRID, 35_800, -1), SHORT_GRID[73].t * 1000, 'edge tolerance');
 });
 
 test('[if] an off-grid jump runs past the audio [then] it steps back whole edge beats, not onto the last real beat', () => {
-	near(math.beatJumpTargetWithinDurationMs(SHORT_GRID, 181_000, DURATION_MS), 180_040, 'stepped back');
+	near(
+		math.beatJumpTargetWithinDurationMs(SHORT_GRID, 181_000, DURATION_MS),
+		180_040,
+		'stepped back'
+	);
 	const plan = math.beatJumpSeekPlan(SHORT_GRID, 180_000, 4, DURATION_MS, false);
 	near(plan.targetMs, 180_480, 'seek plan near the end');
-	assert.equal(math.beatJumpMovesTransportWithinDuration(SHORT_GRID, 150_000, 4, DURATION_MS), true);
-	assert.equal(math.beatJumpMovesTransportWithinDuration(SHORT_GRID, 180_400, 1, DURATION_MS), false, 'no whole beat left');
+	assert.equal(
+		math.beatJumpMovesTransportWithinDuration(SHORT_GRID, 150_000, 4, DURATION_MS),
+		true
+	);
+	assert.equal(
+		math.beatJumpMovesTransportWithinDuration(SHORT_GRID, 180_400, 1, DURATION_MS),
+		false,
+		'no whole beat left'
+	);
 });

@@ -12,8 +12,14 @@ const panel = readFileSync(
 );
 // The container wires the prefetch; its view draws the rows that fire it.
 const tree =
-	readFileSync(new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url), 'utf8') +
-	readFileSync(new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url), 'utf8');
+	readFileSync(
+		new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url),
+		'utf8'
+	) +
+	readFileSync(
+		new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url),
+		'utf8'
+	);
 
 function body(name) {
 	const start = panel.indexOf(`async function ${name}(`);

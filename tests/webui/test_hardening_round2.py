@@ -13,6 +13,7 @@ Regression one-liners:
 
 [if] dedup apply would discard survivor-lacking cue data [then] block without confirm_cue_loss, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -97,7 +98,9 @@ def dedup_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def client(
-    tmp_path: Path, dedup_db: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    dedup_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Cluster where the alias holds hot cues the survivor lacks."""
     state_path = tmp_path / "state.db"
@@ -109,15 +112,20 @@ def client(
     monkeypatch.setattr(rb_config, "STATE_DB", state_path)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", master_path)
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid=CANON, canonical_path="/music/canon.flac",
-        alias_sid=ALIAS, alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid=CANON,
+        canonical_path="/music/canon.flac",
+        alias_sid=ALIAS,
+        alias_path="/music/alias-128.mp3",
     )
     app = create_app(
         backend=SqliteBackend(state_path),
         state_db_path=str(state_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as test_client:
         yield test_client
@@ -151,7 +159,11 @@ def _playlist_items(client: TestClient, playlist_id: str) -> list[str]:
 
 
 def _apply(
-    client: TestClient, cluster_key: str, revision: str, *, confirm_cue_loss: bool | None = None,
+    client: TestClient,
+    cluster_key: str,
+    revision: str,
+    *,
+    confirm_cue_loss: bool | None = None,
 ) -> Any:
     body: dict[str, Any] = {"cluster_key": cluster_key, "survivor": CANON}
     if confirm_cue_loss is not None:

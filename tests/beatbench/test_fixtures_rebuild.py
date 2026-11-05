@@ -94,9 +94,7 @@ def _write_source_wav(path: str) -> None:
         fh.setnchannels(1)
         fh.setsampwidth(2)
         fh.setframerate(fx.SAMPLE_RATE)
-        fh.writeframes(
-            b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples)
-        )
+        fh.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples))
 
 
 def _anlz_document() -> dict:
@@ -107,8 +105,7 @@ def _anlz_document() -> dict:
         "beatgrid": {
             "beat_count": int(SOURCE_S / period),
             "beats": [
-                {"n": i % 4 + 1, "t": round(i * period, 4), "bpm": CLICK_BPM}
-                for i in range(int(SOURCE_S / period))
+                {"n": i % 4 + 1, "t": round(i * period, 4), "bpm": CLICK_BPM} for i in range(int(SOURCE_S / period))
             ],
         },
     }
@@ -153,10 +150,10 @@ def _make_handler(audio_path: str, anlz: bytes):
             if not span or not span.startswith("bytes="):
                 self._send(data, "audio/wav")
                 return
-            first, _, last = span[len("bytes="):].partition("-")
+            first, _, last = span[len("bytes=") :].partition("-")
             start = int(first or 0)
             end = int(last) if last else len(data) - 1
-            chunk = data[start:end + 1]
+            chunk = data[start : end + 1]
             self.send_response(206)
             self.send_header("Content-Type", "audio/wav")
             self.send_header("Content-Length", str(len(chunk)))

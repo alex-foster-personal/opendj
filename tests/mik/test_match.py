@@ -2,6 +2,7 @@
 
 [if] a song matches 0/1/many tracks [then] match_songs resolves/is ambiguous, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -41,20 +42,14 @@ def _song(
     )
 
 
-def test_exact_path_wins_over_fuzzy_tiers(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_exact_path_wins_over_fuzzy_tiers(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/Users/user/Music/x.mp3", title="X", artist="Y")
     index = matcher.TrackIndex.from_conn(state_conn)
-    report = matcher.match_songs(
-        [_song(1, path="/Users/user/Music/x.mp3", artist="Y", title="X")], index
-    )
+    report = matcher.match_songs([_song(1, path="/Users/user/Music/x.mp3", artist="Y", title="X")], index)
     assert report.matches[1].tier == "exact_path"
 
 
-def test_basename_tier_matches_a_moved_file(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_basename_tier_matches_a_moved_file(state_conn: sqlite3.Connection, add_track) -> None:
     """No MIK path resolves on disk, so basename is load-bearing, not optional."""
     add_track("a" * 40, file_path="/Volumes/NEW/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
@@ -63,37 +58,27 @@ def test_basename_tier_matches_a_moved_file(
     assert report.matches[1].is_fuzzy is True
 
 
-def test_exact_path_tier_finds_a_track_locations_alternate(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_exact_path_tier_finds_a_track_locations_alternate(state_conn: sqlite3.Connection, add_track) -> None:
     """P1 regression (PR #383 review): a recovered copy recorded only in
     track_locations (this machine's alternate path) must still be findable
     by the exact_path tier, matching what apps.mik.availability.probe
     already recognizes as playable through the shared location picker."""
     add_track("a" * 40, file_path="/nope/legacy.mp3")
-    upsert_location(
-        state_conn, stable_id="a" * 40, kind="local", file_path="/found/alt.mp3"
-    )
+    upsert_location(state_conn, stable_id="a" * 40, kind="local", file_path="/found/alt.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
     report = matcher.match_songs([_song(1, path="/found/alt.mp3")], index)
     assert report.matches[1].tier == "exact_path"
     assert report.matches[1].stable_id == "a" * 40
 
 
-def test_artist_title_tier_strips_the_energy_prefix(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_artist_title_tier_strips_the_energy_prefix(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, title="Control (Extended Mix)", artist="Eelke Kleijn")
     index = matcher.TrackIndex.from_conn(state_conn)
-    report = matcher.match_songs(
-        [_song(1, artist="Eelke Kleijn", title="7 - Control (Extended Mix)")], index
-    )
+    report = matcher.match_songs([_song(1, artist="Eelke Kleijn", title="7 - Control (Extended Mix)")], index)
     assert report.matches[1].tier == "artist_title"
 
 
-def test_ambiguous_tier_yields_no_stable_id(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_ambiguous_tier_yields_no_stable_id(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/one/x.mp3")
     add_track("b" * 40, file_path="/two/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
@@ -102,9 +87,7 @@ def test_ambiguous_tier_yields_no_stable_id(
     assert report.unmatched[1].reason == "ambiguous_candidates"
 
 
-def test_collision_winner_is_deterministic_and_losers_are_recorded(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_collision_winner_is_deterministic_and_losers_are_recorded(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/Users/user/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
     songs = [
@@ -121,9 +104,7 @@ def test_collision_winner_is_deterministic_and_losers_are_recorded(
     assert set(report2.matches) == {9}
 
 
-def test_every_song_lands_in_exactly_one_bucket(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_every_song_lands_in_exactly_one_bucket(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/Users/user/x.mp3")
     songs = [
         _song(1, path="/Users/user/x.mp3"),
@@ -135,14 +116,10 @@ def test_every_song_lands_in_exactly_one_bucket(
     assert set(report.matches) & set(report.unmatched) == set()
 
 
-def test_exact_path_only_mode_refuses_the_fuzzy_tiers(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_exact_path_only_mode_refuses_the_fuzzy_tiers(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/Volumes/NEW/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
-    report = matcher.match_songs(
-        [_song(1, path="/Users/old/x.mp3")], index, allow_fuzzy=False
-    )
+    report = matcher.match_songs([_song(1, path="/Users/old/x.mp3")], index, allow_fuzzy=False)
     assert report.matches == {}
     assert report.unmatched[1].reason == "no_candidate"
 
@@ -155,15 +132,11 @@ def test_matching_is_deterministic(state_conn: sqlite3.Connection, add_track) ->
     first = matcher.match_songs(songs, index)
     second = matcher.match_songs(list(reversed(songs)), index)
     assert first.matches == second.matches
-    assert {k: v.reason for k, v in first.unmatched.items()} == {
-        k: v.reason for k, v in second.unmatched.items()
-    }
+    assert {k: v.reason for k, v in first.unmatched.items()} == {k: v.reason for k, v in second.unmatched.items()}
 
 
 def test_fuzzy_keys_normalise_case() -> None:
-    assert matcher.basename_key("/a/THE TRACK.MP3") == matcher.basename_key(
-        "/b/the track.mp3"
-    )
+    assert matcher.basename_key("/a/THE TRACK.MP3") == matcher.basename_key("/b/the track.mp3")
 
 
 def test_fuzzy_keys_normalise_nfd_to_nfc() -> None:
@@ -176,9 +149,7 @@ def test_fuzzy_keys_normalise_nfd_to_nfc() -> None:
     assert matcher.norm_path(f"/a/{nfd}") == f"/a/{nfc}"
 
 
-def test_exact_path_tier_preserves_case(
-    state_conn: sqlite3.Connection, add_track
-) -> None:
+def test_exact_path_tier_preserves_case(state_conn: sqlite3.Connection, add_track) -> None:
     """Paths are data: two paths differing only in case are not the same path."""
     add_track("a" * 40, file_path="/Users/user/X.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)

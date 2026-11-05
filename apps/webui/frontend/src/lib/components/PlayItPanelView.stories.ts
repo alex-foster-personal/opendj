@@ -20,7 +20,12 @@ const tracks: Track[] = [
 	track(4, 'Sunrise Closer', 'Quiet Atlas')
 ];
 
-const step = (position: number, t: Track, hint: string, pin_role: Step['pin_role'] = null): Step => ({
+const step = (
+	position: number,
+	t: Track,
+	hint: string,
+	pin_role: Step['pin_role'] = null
+): Step => ({
 	position,
 	stable_id: t.stable_id,
 	title: t.title,
@@ -89,7 +94,12 @@ export const Goal: Story = {};
 
 /** Pins set and a solve in flight. */
 export const Solving: Story = {
-	args: { peakAtMin: 40, peakPins: [tracks[1].stable_id], closerPin: tracks[3].stable_id, solving: true }
+	args: {
+		peakAtMin: 40,
+		peakPins: [tracks[1].stable_id],
+		closerPin: tracks[3].stable_id,
+		solving: true
+	}
 };
 
 /** A proposed order with pinned roles. */
@@ -99,7 +109,9 @@ export const Proposed: Story = { args: { result: solve() } };
 export const ConstraintsUnmet: Story = {
 	args: {
 		result: solve({
-			constraints_unmet: [{ kind: 'peak_at', position: 3, detail: {} }] as Solve['constraints_unmet']
+			constraints_unmet: [
+				{ kind: 'peak_at', position: 3, detail: {} }
+			] as Solve['constraints_unmet']
 		})
 	}
 };
@@ -111,7 +123,10 @@ export const Unchanged: Story = {
 
 /** Applied: undo is offered. */
 export const Applied: Story = {
-	args: { result: solve(), applied: { previousOrder: tracks.map((t) => t.stable_id), undoEtag: 'W/"8"' } }
+	args: {
+		result: solve(),
+		applied: { previousOrder: tracks.map((t) => t.stable_id), undoEtag: 'W/"8"' }
+	}
 };
 
 /** The solver refused the goal. */
@@ -119,5 +134,7 @@ export const SolveError: Story = { args: { solveError: 'duration_min must be at 
 
 /** The playlist changed elsewhere before apply. */
 export const ApplyConflict: Story = {
-	args: { applyError: 'Playlist changed elsewhere since you solved -- re-run PLAY IT and try again.' }
+	args: {
+		applyError: 'Playlist changed elsewhere since you solved -- re-run PLAY IT and try again.'
+	}
 };

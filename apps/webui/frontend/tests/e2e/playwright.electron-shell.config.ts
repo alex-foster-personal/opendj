@@ -70,7 +70,13 @@ export const ELECTRON_SHELL_PORT = 8694;
 export const ELECTRON_SHELL_ORIGIN = `http://127.0.0.1:${ELECTRON_SHELL_PORT}`;
 
 /** Throwaway library the engine serves. Inside this worktree, gitignored. */
-export const FIXTURE_DATA_DIR = join(FRONTEND_ROOT, 'tests', 'e2e', 'fixtures', 'electron-shell-data');
+export const FIXTURE_DATA_DIR = join(
+	FRONTEND_ROOT,
+	'tests',
+	'e2e',
+	'fixtures',
+	'electron-shell-data'
+);
 
 /** HOME for the engine, so no default path can resolve to a real library. */
 const SANDBOX_HOME = join(FIXTURE_DATA_DIR, 'sandbox-home');
@@ -85,7 +91,9 @@ if (!existsSync(BUILD_INDEX)) {
 }
 const ELECTRON_MAIN = join(ELECTRON_APP_DIR, 'dist', 'main.js');
 if (!existsSync(ELECTRON_MAIN)) {
-	throw new Error(`electron-shell needs ${ELECTRON_MAIN}: run \`pnpm install && pnpm build\` in ${ELECTRON_APP_DIR}.`);
+	throw new Error(
+		`electron-shell needs ${ELECTRON_MAIN}: run \`pnpm install && pnpm build\` in ${ELECTRON_APP_DIR}.`
+	);
 }
 // The `electron` package's main export is the path of its binary.
 const ELECTRON_BINARY = createRequire(join(ELECTRON_APP_DIR, 'package.json'))('electron') as string;

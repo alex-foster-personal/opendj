@@ -6,7 +6,7 @@ split from round 2: a new file per round keeps each one's failure message
 naming the round that re-broke it.
 
 Every test here is one reproduction sketch from
-``.planning/cloudsync-round3-adversarial.md`` Part 2 ("R8. Smaller things")
+``(private path)`` Part 2 ("R8. Smaller things")
 turned into a regression. The mapping, so a failure names the defect it just
 let back in:
 
@@ -21,6 +21,7 @@ Acceptance criteria:
 - if a real ``deleted_at`` timestamp stops propagating (soft delete breaks),
   the fix over-tightened the boundary -- also broken.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -104,9 +105,7 @@ def _track_row(stable_id: str, *, updated_at: str, deleted_at: str | None) -> di
     "bad",
     ["not-a-timestamp-at-all", "2026-08-30T10:00:00", "", "2026-13-01T00:00:00+00:00"],
 )
-def test_an_unparseable_deleted_at_is_refused_with_422(
-    hub: _TestClientTransport, spoke_a: Path, bad: str
-) -> None:
+def test_an_unparseable_deleted_at_is_refused_with_422(hub: _TestClientTransport, spoke_a: Path, bad: str) -> None:
     """Round 3 R8: garbage ``deleted_at`` was accepted and stored verbatim.
 
     ``[observed]`` in the round 3 review: a push carrying
@@ -129,9 +128,7 @@ def test_an_unparseable_deleted_at_is_refused_with_422(
     assert "SYNC_PROTOCOL" in str(excinfo.value)
 
 
-def test_a_null_deleted_at_still_means_not_deleted(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_null_deleted_at_still_means_not_deleted(hub: _TestClientTransport, spoke_a: Path) -> None:
     """The fix must not touch the NULL case: NULL still means "not deleted".
 
     ``_checked_value`` returns ``None`` before the column-specific branch
@@ -150,9 +147,7 @@ def test_a_null_deleted_at_still_means_not_deleted(
     assert response["accepted"] == 1
 
 
-def test_a_real_deleted_at_timestamp_still_propagates(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_real_deleted_at_timestamp_still_propagates(hub: _TestClientTransport, spoke_a: Path) -> None:
     """A genuine soft delete must still sync -- the fix rejects garbage only."""
     result = _sync(spoke_a, hub, "spoke-a")
     response = hub.post(

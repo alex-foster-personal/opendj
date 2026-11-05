@@ -1,4 +1,5 @@
 """``opendj api DELETE .../items/{item_id}`` agent-native parity (LIBM-21)."""
+
 from __future__ import annotations
 
 import json
@@ -29,9 +30,14 @@ def seeded_db(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -82,7 +88,9 @@ def test_api_delete_item_and_missing_second_call(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Remove Set"}, timeout=30,
+        f"{base_url}/api/v1/playlists",
+        json={"name": "CLI Remove Set"},
+        timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]

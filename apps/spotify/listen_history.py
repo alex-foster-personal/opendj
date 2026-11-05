@@ -8,6 +8,7 @@ Nothing is persisted. A play is not an acquisition-queue entry; it becomes one
 only when the operator imports a playlist. This module is read-only on both
 sides: it reads Spotify and it reads state, and writes neither.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -82,26 +83,26 @@ def build_recent_plays(
     """Score parsed plays against the local library, newest first."""
     result = match_spotify_tracks((track for _played_at, track in parsed), local_tracks)
     if len(result.pairs) != len(parsed):
-        raise ValueError(
-            f"matcher returned {len(result.pairs)} pairs for {len(parsed)} plays"
-        )
+        raise ValueError(f"matcher returned {len(result.pairs)} pairs for {len(parsed)} plays")
 
     plays: list[RecentPlay] = []
     for (played_at, track), pair in zip(parsed, result.pairs, strict=True):
         ownership: OwnershipStatus = "owned" if pair.status == "matched" else pair.status
-        plays.append(RecentPlay(
-            played_at=played_at,
-            spotify_uri=track.spotify_uri,
-            isrc=track.isrc,
-            title=track.title,
-            artist=track.artists_joined,
-            album=track.album or None,
-            duration_ms=track.duration_ms or None,
-            ownership=ownership,
-            confidence=round(pair.confidence, 4),
-            matched_stable_id=pair.target.stable_id if pair.target is not None else None,
-            suggested_sources=suggested_sources(track.artists_joined, track.title),
-        ))
+        plays.append(
+            RecentPlay(
+                played_at=played_at,
+                spotify_uri=track.spotify_uri,
+                isrc=track.isrc,
+                title=track.title,
+                artist=track.artists_joined,
+                album=track.album or None,
+                duration_ms=track.duration_ms or None,
+                ownership=ownership,
+                confidence=round(pair.confidence, 4),
+                matched_stable_id=pair.target.stable_id if pair.target is not None else None,
+                suggested_sources=suggested_sources(track.artists_joined, track.title),
+            )
+        )
     plays.sort(key=lambda play: play.played_at, reverse=True)
     return plays
 

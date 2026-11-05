@@ -3,7 +3,9 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function gotoShellReady(page: Page, path: string): Promise<void> {
 	await page.goto(path);
-	await page.waitForFunction(() => (window as { __mdtPerfLog?: unknown }).__mdtPerfLog !== undefined);
+	await page.waitForFunction(
+		() => (window as { __mdtPerfLog?: unknown }).__mdtPerfLog !== undefined
+	);
 }
 
 test('admin entitlements inspector lists capabilities and live refusals', async ({ page }) => {

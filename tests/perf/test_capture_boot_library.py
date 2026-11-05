@@ -7,6 +7,7 @@ import json
 
 import pytest
 
+from scripts.perf import capture_boot_library
 from scripts.perf.capture_boot_library_ledger import span_to_ledger_rows
 from scripts.perf.kpi_scorecard import score_scenarios
 
@@ -27,6 +28,34 @@ def _happy_span() -> dict:
     }
 
 
+def test_playwright_wrapper_delegates_boot_library_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_runner(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(capture_boot_library, "run_playwright_capture", _fake_runner)
+
+    result = capture_boot_library._run_playwright_capture(
+        engine="http://engine.test",
+        frontend="http://frontend.test",
+        timeout_s=41,
+    )
+
+    assert result == {"ok": True}
+    assert captured == {
+        "engine": "http://engine.test",
+        "frontend": "http://frontend.test",
+        "frontend_root": capture_boot_library._FRONTEND_ROOT,
+        "playwright_config": capture_boot_library._PLAYWRIGHT_CONFIG,
+        "timeout_s": 41,
+        "google_storage_state": None,
+    }
+
+
 @pytest.mark.requirement("PERF-UI-03")
 def test_happy_span_writes_numeric_open_to_library_rows_ms() -> None:
     """[if] a span is 1800 ms [then] one open_to_library_rows_ms row holds 1800.0, [else stop]."""
@@ -42,6 +71,24 @@ def test_happy_span_writes_numeric_open_to_library_rows_ms() -> None:
     assert row["value"] == 1800.0
     assert row["unit"] == "ms"
     assert row["capture_id"] == "perf-capture"
+    assert row["round"] == "issue-2697"
+    assert row["source"] == (
+        "client perf-span open-to-library-rows from navigationStart to first track row paint"
+    )
+    assert row["method"] == "navigationStart to first track row first paint"
+    assert list(row)[:11] == [
+        "date",
+        "round",
+        "kpi",
+        "value",
+        "unit",
+        "machine",
+        "source",
+        "method",
+        "sha",
+        "capture_id",
+        "note",
+    ]
 
 
 @pytest.mark.requirement("PERF-UI-03")

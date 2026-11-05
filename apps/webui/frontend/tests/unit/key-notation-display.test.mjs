@@ -108,11 +108,15 @@ it('camelot_musical is the default and reads "8A • Am" (lowercase m = minor, m
 });
 
 it('a camelot_musical string whose halves disagree is not a key', () => {
-	assert.deepEqual(notation.displayKey('8A \u2022 C', 'camelot'), { text: '8A \u2022 C', parsed: false });
+	assert.deepEqual(notation.displayKey('8A \u2022 C', 'camelot'), {
+		text: '8A \u2022 C',
+		parsed: false
+	});
 });
 
 it('allKeyTexts lists all 24 keys in a notation', () => {
-	for (const n of notation.KEY_NOTATIONS) assert.equal(new Set(notation.allKeyTexts(n)).size, 24, n);
+	for (const n of notation.KEY_NOTATIONS)
+		assert.equal(new Set(notation.allKeyTexts(n)).size, 24, n);
 });
 
 it('a key in no notation is shown as stored and flagged, never guessed', () => {
@@ -133,7 +137,11 @@ it('every Camelot key round-trips through all three notations', () => {
 			const camelot = `${n}${mode}`;
 			for (const target of notation.KEY_NOTATIONS) {
 				const rendered = notation.displayKey(camelot, target).text;
-				assert.equal(notation.displayKey(rendered, 'camelot').text, camelot, `${camelot} via ${target}`);
+				assert.equal(
+					notation.displayKey(rendered, 'camelot').text,
+					camelot,
+					`${camelot} via ${target}`
+				);
 			}
 		}
 	}
@@ -141,14 +149,20 @@ it('every Camelot key round-trips through all three notations', () => {
 
 it('the key cell renders through the notation setting, not row.key', () => {
 	const table = readFileSync(
-		fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
+		),
 		'utf8'
 	);
 	const start = table.indexOf('class="c-key"');
 	assert.notEqual(start, -1, 'no Key cell in TrackTable');
 	const cell = table.slice(table.lastIndexOf('<td', start), table.indexOf('</td>', start));
 	assert.doesNotMatch(cell, /hl\(row\.key\)/, 'key cell prints the stored key string');
-	assert.match(table, /displayKey\(row\.key, uiPrefs\.key_notation\)/, 'key cell ignores the key_notation setting');
+	assert.match(
+		table,
+		/displayKey\(row\.key, uiPrefs\.key_notation\)/,
+		'key cell ignores the key_notation setting'
+	);
 	assert.match(cell, /class:key-unparsed=/, 'an unparsed key is not flagged');
 });
 
@@ -165,7 +179,11 @@ describe('deck surfaces print keys in the chosen notation', () => {
 			fileURLToPath(new URL('../../src/lib/components/rb/deck/DeckHeader.svelte', import.meta.url)),
 			'utf8'
 		);
-		assert.doesNotMatch(header, /key: \$\{deck\.key\}/, 'tooltip prints the stored key, bypassing key_notation');
+		assert.doesNotMatch(
+			header,
+			/key: \$\{deck\.key\}/,
+			'tooltip prints the stored key, bypassing key_notation'
+		);
 		assert.match(header, /key: \$\{origKeyShown\}/);
 	});
 });
@@ -174,7 +192,10 @@ describe('GET /ui-prefs hydrates key_notation', () => {
 	let prefs;
 	let originalFetch;
 	const jsonResponse = (body) =>
-		new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+		new Response(JSON.stringify(body), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
 
 	before(async () => {
 		prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
@@ -188,7 +209,8 @@ describe('GET /ui-prefs hydrates key_notation', () => {
 
 	it('a valid key_notation from disk is applied', async () => {
 		prefs.uiPrefs.key_notation = 'camelot';
-		globalThis.fetch = async () => jsonResponse({ key_notation: 'musical', library_hidden_columns: [], library_key_filter: [] });
+		globalThis.fetch = async () =>
+			jsonResponse({ key_notation: 'musical', library_hidden_columns: [], library_key_filter: [] });
 		await prefs.hydrateConfirmPrefsFromDisk();
 		assert.equal(prefs.uiPrefs.key_notation, 'musical');
 	});
@@ -201,9 +223,20 @@ describe('GET /ui-prefs hydrates key_notation', () => {
 			prefs.uiPrefs.key_notation = 'open_key';
 			prefs.uiPrefs.library_watcher_folders = [];
 			globalThis.fetch = async () => jsonResponse(body);
-			await assert.rejects(prefs.hydrateConfirmPrefsFromDisk(), /key_notation must be camelot_musical\|camelot\|open_key\|musical/);
-			assert.equal(prefs.uiPrefs.key_notation, 'open_key', 'a contract-violating value was applied');
-			assert.deepEqual(prefs.uiPrefs.library_watcher_folders, ['/x'], 'the rest of the response still hydrates');
+			await assert.rejects(
+				prefs.hydrateConfirmPrefsFromDisk(),
+				/key_notation must be camelot_musical\|camelot\|open_key\|musical/
+			);
+			assert.equal(
+				prefs.uiPrefs.key_notation,
+				'open_key',
+				'a contract-violating value was applied'
+			);
+			assert.deepEqual(
+				prefs.uiPrefs.library_watcher_folders,
+				['/x'],
+				'the rest of the response still hydrates'
+			);
 		});
 	}
 
@@ -221,8 +254,16 @@ describe('GET /ui-prefs hydrates key_notation', () => {
 			fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
 			'utf8'
 		);
-		assert.doesNotMatch(panel, /prefsPromise\.catch\(\(\) => \{\}\)/, 'boot swallows a prefs failure');
-		assert.match(panel, /prefsPromise\.catch\(\(exc: unknown\) => \{\s*pushToast\([^\n]*\);\s*throw exc;\s*\}\)/, 'a prefs failure is toasted but the boot carries on');
+		assert.doesNotMatch(
+			panel,
+			/prefsPromise\.catch\(\(\) => \{\}\)/,
+			'boot swallows a prefs failure'
+		);
+		assert.match(
+			panel,
+			/prefsPromise\.catch\(\(exc: unknown\) => \{\s*pushToast\([^\n]*\);\s*throw exc;\s*\}\)/,
+			'a prefs failure is toasted but the boot carries on'
+		);
 	});
 });
 
@@ -249,7 +290,11 @@ describe('find highlighting in the key cell follows the match in any notation (S
 
 describe('every key display outside the table honours key_notation', () => {
 	const SITES = {
-		'src/lib/components/rb/deck/DeckHeader.svelte': [/>\{keyShown\}<\/span/, /shownKey\(keyText\)/, />\{origKeyShown\}<\/span>/],
+		'src/lib/components/rb/deck/DeckHeader.svelte': [
+			/>\{keyShown\}<\/span/,
+			/shownKey\(keyText\)/,
+			/>\{origKeyShown\}<\/span>/
+		],
 		'src/lib/components/library/TrackInspector.svelte': [/shownKey\(single\.key\)/],
 		'src/lib/components/library/LibraryPreviewBar.svelte': [/shownKey\(row\.key\)/],
 		'src/lib/components/rb/CommandBar.svelte': [/shownKey\(row\.key\)/],
@@ -259,7 +304,8 @@ describe('every key display outside the table honours key_notation', () => {
 		it(rel, () => {
 			// shownKey (key-notation.ts) reads the source prefs.svelte.ts installs.
 			const src = readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-			for (const pattern of patterns) assert.match(src, pattern, `${rel} prints a key outside the setting`);
+			for (const pattern of patterns)
+				assert.match(src, pattern, `${rel} prints a key outside the setting`);
 		});
 	}
 	it('the deck header no longer prints the raw stored or playhead key', () => {
@@ -281,7 +327,10 @@ it('shownKey reads the notation source prefs.svelte.ts installs, and refuses bef
 	current = 'open_key';
 	assert.equal(fresh.shownKey('Am'), '1m');
 	assert.equal(fresh.shownKey(null), null);
-	const prefsSrc = readFileSync(fileURLToPath(new URL('../../src/lib/rb/prefs.svelte.ts', import.meta.url)), 'utf8');
+	const prefsSrc = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/prefs.svelte.ts', import.meta.url)),
+		'utf8'
+	);
 	assert.match(prefsSrc, /installKeyNotationSource\(\(\) => uiPrefs\.key_notation\)/);
 });
 

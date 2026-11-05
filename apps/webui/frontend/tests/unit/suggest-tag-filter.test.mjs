@@ -49,10 +49,11 @@ describe('visibleRationaleTags', () => {
 
 	it('keeps pairing tags, which nothing else on the tile says', () => {
 		assert.deepEqual(visibleRationaleTags(['bpm_match', 'pair_manual']), ['pair_manual']);
-		assert.deepEqual(
-			visibleRationaleTags(['pair_manual', 'pair_learned', 'pair_ai']),
-			['pair_manual', 'pair_learned', 'pair_ai']
-		);
+		assert.deepEqual(visibleRationaleTags(['pair_manual', 'pair_learned', 'pair_ai']), [
+			'pair_manual',
+			'pair_learned',
+			'pair_ai'
+		]);
 	});
 
 	it('keeps an unrecognised tag rather than hiding a new rationale', () => {

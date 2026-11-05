@@ -33,7 +33,11 @@ before(async () => {
 
 /** A minimal fake `Storage` whose `setItem`/`getItem`/`removeItem` can each be
  * told to throw, so tests need not spin up jsdom or a real browser. */
-function fakeStorage({ throwOnSetItem = false, throwOnGetItem = false, getItemReturns = null } = {}) {
+function fakeStorage({
+	throwOnSetItem = false,
+	throwOnGetItem = false,
+	getItemReturns = null
+} = {}) {
 	return {
 		setItem() {
 			if (throwOnSetItem) throw new DOMException('storage disabled', 'SecurityError');
@@ -127,9 +131,16 @@ describe('readParkedPinDraft (read side)', () => {
 				reported = err;
 			}
 		);
-		assert.ok(reported instanceof Error, 'the real storage error should reach onError, not be swallowed');
+		assert.ok(
+			reported instanceof Error,
+			'the real storage error should reach onError, not be swallowed'
+		);
 		assert.match(reported.message, /storage disabled/);
-		assert.equal(restored, null, 'there is nothing safe to restore from a read that failed outright');
+		assert.equal(
+			restored,
+			null,
+			'there is nothing safe to restore from a read that failed outright'
+		);
 		assert.equal(foreign, false);
 	});
 

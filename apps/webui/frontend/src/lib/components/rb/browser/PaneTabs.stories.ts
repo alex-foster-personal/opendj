@@ -56,7 +56,10 @@ export const Loading: Story = {
 /** Sticky (locked) tab: playlist selections route to another pane. */
 export const StickyTab: Story = {
 	args: {
-		tabs: [tab({ title: 'Warehouse Warmups', count: 128, sticky: true }), tab({ title: 'blank list' })]
+		tabs: [
+			tab({ title: 'Warehouse Warmups', count: 128, sticky: true }),
+			tab({ title: 'blank list' })
+		]
 	}
 };
 

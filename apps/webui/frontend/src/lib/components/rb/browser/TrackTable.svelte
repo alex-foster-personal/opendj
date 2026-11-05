@@ -21,7 +21,7 @@
 	// DOM-virtualizes the render: only the scrolled window (+overscan) is
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
-	import { tick, untrack, type Component, type Snippet } from 'svelte';
+	import { onMount, tick, untrack, type Component, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import {
 		artworkUrl,
@@ -55,6 +55,8 @@
 		bpmGridHoverText,
 		errColumnTitle,
 		gridFlagFor,
+		lengthFlagText,
+		sourceFileFlagsFor,
 		gridProvenanceFor,
 		requestGridProvenance,
 		camelotKeyColor,
@@ -82,7 +84,6 @@
 		formatKey,
 		LastPlayedCell,
 		loadBpmKeyEditPopover,
-		ContextMenu,
 		formatDraftBpm,
 		commitBpmEdit,
 		commitKeyEdit,
@@ -101,11 +102,42 @@
 		keyShiftSuperscript,
 		shiftedKeyText,
 		loadKeyHoverCard,
-		type CompatibleKeyShift
+		type CompatibleKeyShift,
+		animateSectionToggle,
+		draggedDeckRows,
+		dropTargetAt,
+		gapFromPointer,
+		rowWindow,
+		slotCountOf,
+		slotOfRow,
+		type EntriesMove,
+		type SectionHeader,
+		OPTIONAL_COLUMNS as OPTIONAL_COLUMN_IDS,
+		OPTIONAL_COLUMN_LABELS,
+		VersionStackPanel,
+		WorksModals,
+		classicalArtist,
+		classicalTitle,
+		composerOf,
+		filedUnderText,
+		labelOf,
+		performerOf,
+		primaryWorkId,
+		refreshSuggestionFlags,
+		reportWorksFailure,
+		shiftDropAction,
+		stackIndicator,
+		startWorksOverlay,
+		viaWorkHits,
+		workCellText,
+		worksView,
+		yearOf,
+		type OptionalColumn
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
 	import { audioQualityHover, ensureLibraryScans, setGridFlagDismissed } from '$lib/rb/library-scans';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import { KEY_SOURCE_HINT } from '$lib/player/key/camelot';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		previewCue,
@@ -127,24 +159,8 @@
 	} from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
-	import { draggedDeckRows } from '$lib/rb/deck-track-drop';
-	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
-	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
-	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
-	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
-	import LyricColumn from './LyricColumn.svelte';
-	import PreviewStrip from './PreviewStrip.svelte';
-	import {
-		fetchRowAssetsLazily,
-		holdArtworkForBoot,
-		PreviewStripFiller,
-		stripLessIdsNear
-	} from '$lib/rb/preview-strip-fill';
-	import QualityBadge from '../QualityBadge.svelte';
-	import RatingStars from './RatingStars.svelte';
-	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
-	import StemTags from './StemTags.svelte';
-	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
+	import TrackSectionRow from './TrackSectionRow.svelte';
+	import { dropLineTop } from '$lib/library/entries-move-local';
 	import {
 		computeVirtualWindow,
 		createRowVisibilityObserver,
@@ -153,6 +169,28 @@
 		scrollTopForRowIndex,
 		scrollTopForDeckLayoutAnchor
 	} from './virtual-window';
+	import { browseScrollTarget, nextMeasuredViewportHeight, shouldApplyBrowseScroll, shouldRestorePaneScroll } from './browse-scroll';
+	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
+	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
+	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
+	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
+	import LyricColumn from './LyricColumn.svelte';
+	import PreviewStrip from './PreviewStrip.svelte';
+	import BpmStabilityCell from './BpmStabilityCell.svelte';
+	import { bpmStabilityTitle } from './bpm-stability-title';
+	import {
+		fetchRowAssetsLazily,
+		holdArtworkForBoot,
+		PreviewStripFiller,
+		stripLessIdsNear
+	} from '$lib/rb/preview-strip-fill';
+	import QualityBadge from '../QualityBadge.svelte';
+	import RatingStars from './RatingStars.svelte';
+	import CommentCellEditor from './CommentCellEditor.svelte';
+	import { truncationTip } from '$lib/ui/truncation-tip';
+	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
+	import StemTags from './StemTags.svelte';
+	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
@@ -162,7 +200,13 @@
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
-	import TrackContextMenu from './TrackContextMenu.svelte';
+	import TrackContextMenu, {
+		TagCell,
+		tagTypeChooserEntries,
+		tagTypeColumns,
+		toggleTagTypeColumn,
+		toggleTagTypeInTags
+	} from './TrackContextMenu.svelte';
 	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
 	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
@@ -171,6 +215,12 @@
 	import SortArrowIcon from './SortArrowIcon.svelte';
 	import { minorIssuesFor } from '$lib/rb/track-minor-issues';
 	import { PLAY_TRIANGLE_PATH } from '$lib/ui/icon-glyphs';
+	import { isSetSkipShortcut, setTargetState } from '$lib/rb/set-target-state.svelte';
+	import BpmDisputeMarker from '../BpmDisputeMarker.svelte';
+	import BpmDisputeCard from '../BpmDisputeCard.svelte';
+	import { putBpmPick } from '$lib/rb/api-rb';
+	import type { BpmAlternative } from '$lib/rb/bpm-dispute';
+	import { grossClashEdges } from '$lib/rb/set-clash-marker';
 	import {
 		nextTrackTableIndex,
 		resolveActiveRowIndex,
@@ -181,6 +231,7 @@
 		trackTableRangeSpan,
 		type TrackTableNavKey
 	} from './track-table-keyboard';
+	import { dragEndIsCollapsingClick, markRowPress, type RowPressMark } from './row-click-intent';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -192,7 +243,7 @@
 	const OVERSCAN = 10;
 
 	// ----- AUTOPLAY-COL -----------------------------------------------------
-	const AUTOPLAY_COL_COUNT = 20;
+	const AUTOPLAY_COL_COUNT = 21;
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
@@ -243,7 +294,6 @@
 	// editor above the tempo or key cell. The value sticks for this session.
 	type CellEditKind = 'bpm' | 'key';
 	type CellEditTarget = { kind: CellEditKind; row: BrowserRow; anchor: HTMLElement };
-	let cellEditMenu = $state<(CellEditTarget & { x: number; y: number }) | null>(null);
 	let cellEdit = $state<CellEditTarget | null>(null);
 
 	// The editor is fetched on first use, so the /performance bundle does not carry it.
@@ -268,17 +318,24 @@
 		event.stopPropagation();
 		const anchor = event.currentTarget;
 		if (!(anchor instanceof HTMLElement)) return;
-		cellEditMenu = null;
 		showCellEdit({ kind, row, anchor });
 	}
 
+	/** Right-click on a tempo or key cell: the row's whole menu with Edit on top, never
+	 * Edit alone, so the cell does not hide Add to playlist / Remove from playlist. */
 	function openCellEditMenu(event: MouseEvent, row: BrowserRow, kind: CellEditKind): void {
-		event.preventDefault();
-		event.stopPropagation();
 		const anchor = event.currentTarget;
 		if (!(anchor instanceof HTMLElement)) return;
 		cellEdit = null;
-		cellEditMenu = { kind, row, anchor, x: event.clientX, y: event.clientY };
+		trackContextMenu?.open(event, row, [
+			{
+				id: 'edit',
+				label: 'Edit',
+				testId: 'cell-value-edit',
+				title: kind === 'bpm' ? 'Edit tempo' : 'Edit key',
+				run: () => showCellEdit({ kind, row, anchor })
+			}
+		]);
 	}
 
 	/** A row as its K/B cells print it, session edits applied, for the column fit. */
@@ -291,6 +348,27 @@
 			...(hasKeyEdit(row.stable_id) ? { key_status: 'ok' as const } : {}),
 			...(hasBpmEdit(row.stable_id) ? { bpm_status: 'ok' as const } : {})
 		};
+	}
+
+	// LIBUX-56: double-click the Comment cell, or the row menu's Edit comment,
+	// swaps the cell text for CommentCellEditor. Keyed by row order, since one
+	// track can sit on two rows of a playlist.
+	let commentEditOrder = $state<number | null>(null);
+
+	function openCommentEdit(event: MouseEvent | null, row: BrowserRow): void {
+		event?.preventDefault();
+		event?.stopPropagation();
+		if (oncomment === undefined) return;
+		cellEdit = null;
+		commentEditOrder = row.order;
+	}
+
+	async function saveComment(row: BrowserRow, next: string): Promise<void> {
+		try {
+			await oncomment?.(row, next);
+		} finally {
+			if (commentEditOrder === row.order) commentEditOrder = null;
+		}
 	}
 
 	function cellEditInitial(target: CellEditTarget): string {
@@ -405,6 +483,36 @@
 		};
 	}
 
+	// GRID-OCTAVE-02: the hover card on a disputed BPM's marker. It stays open
+	// while the pointer crosses into it, so its one-click button is reachable.
+	let bpmDispute = $state<{
+		row: BrowserRow;
+		anchor: { left: number; top: number; width: number; height: number };
+	} | null>(null);
+	let bpmDisputeCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function cancelBpmDisputeClose(): void {
+		if (bpmDisputeCloseTimer !== null) clearTimeout(bpmDisputeCloseTimer);
+		bpmDisputeCloseTimer = null;
+	}
+
+	function scheduleBpmDisputeClose(): void {
+		cancelBpmDisputeClose();
+		bpmDisputeCloseTimer = setTimeout(() => (bpmDispute = null), 250);
+	}
+
+	function openBpmDispute(e: MouseEvent, row: BrowserRow): void {
+		cancelBpmDisputeClose();
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		bpmDispute = { row, anchor: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
+	}
+
+	async function pickBpmAlternative(row: BrowserRow, alt: BpmAlternative): Promise<void> {
+		// The server announces library.changed (tracks, beatgrid_edit): the
+		// row and any deck holding the track re-read their tempo from it.
+		await putBpmPick(row.stable_id, alt.source);
+	}
+
 	function keyCompatStyle(key: string | null): string | undefined {
 		// A shifted match shows the key it plays in, so it takes that key's color.
 		const match = keyMatch(key);
@@ -415,7 +523,7 @@
 	}
 
 	function keyCellInert(row: BrowserRow): boolean {
-		return row.key_status === 'failed' || row.key_status === 'missing';
+		return (row.key === null || row.key === undefined) && (row.key_status === 'failed' || row.key_status === 'missing');
 	}
 
 	/** ONE notation for every row (ui-prefs key_notation), never the stored spelling. */
@@ -429,9 +537,25 @@
 		return shown?.parsed === true ? shown.text : undefined;
 	}
 
+	// The key cell is a hover-card host (one explainer per control), so the
+	// LIBUX-8682 clash reason rides the card note beside the KEY-CELL-01 reason.
+	function keyHoverNote(row: BrowserRow): string | null {
+		const parts = [keyCellInert(row) ? keyCellTitle(row) : null, clashEdges.get(row.stable_id) ?? null];
+		const present = parts.filter((part): part is string => part !== null);
+		return present.length === 0 ? null : present.join('\n');
+	}
+
 	function keyCellTitle(row: BrowserRow): string {
+		if (row.key !== null && row.key !== undefined && row.key_source && KEY_SOURCE_HINT[row.key_source] && row.key_status !== 'ok') {
+			return `${camelotKeyHoverLabel(row.key) ?? row.key} (${KEY_SOURCE_HINT[row.key_source]}; our analysis: ${row.key_reason ?? row.key_status})`;
+		}
 		if (row.key_status === 'failed') {
-			return row.key_reason ?? 'key analysis failed';
+			const reason = row.key_reason ?? 'key analysis failed';
+			// KEY-GUESS-01: the dimmed "8A?" cell explains itself on the key hover card (note line).
+			if ((row.key === null || row.key === undefined) && row.key_guess) {
+				return `Best guess ${row.key_guess} (ambiguous key, confidence ${Math.round((row.key_guess_confidence ?? 0) * 100)}%). ${reason}`;
+			}
+			return reason;
 		}
 		if (row.key_status === 'missing') {
 			return row.key_reason ?? 'key not analyzed yet';
@@ -550,6 +674,7 @@
 		selectedIds,
 		selectedOrders,
 		loadedIds,
+		playedIds = loadedIds,
 		vocalsById,
 		markerAnlzById,
 		previewStripById,
@@ -571,6 +696,17 @@
 		onrenderedrowcapacity,
 		onlibraryviewport,
 		onsort,
+		sectionHeaders = [],
+		renamingSectionId = null,
+		onsectionrenamestart,
+		onsectionrename,
+		onsectionrenamecancel,
+		onsectionremove,
+		onsectioninsert,
+		onsectiontoggle,
+		onsectiondragitems,
+		oninsertsection,
+		onmoveentries,
 		onselectrow,
 		onloadrow,
 		onkeycardfailed,
@@ -578,13 +714,17 @@
 		onloadconfirmcancelled,
 		onpreviewseek,
 		onrate,
+		oncomment = undefined,
 		onrefused,
 		onrowvisible,
 		onremoverow,
-		onreorder,
+		onremoverows,
+		removingRowKeys = new Set<string>(),
+		restoringRowKeys = new Set<string>(),
 		ongenrefilter,
 		genreFilterUntil = 0,
 		searchQuery = '',
+		stackPlaylistId = null as string | null,
 		findQuery = '',
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId = null as string | null,
@@ -615,6 +755,8 @@
 		selectedIds: string[];
 		selectedOrders: number[];
 		loadedIds: Set<string>;
+		/** SESSION-PLAYED-01: loaded now or earlier this session; paints the green title. */
+		playedIds?: ReadonlySet<string>;
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
 		vocalsById: Record<string, Vocals>;
@@ -665,6 +807,19 @@
 		 * (0, 0) when the table unmounts. */
 		onlibraryviewport?: (viewportPx: number, rowPx: number) => void;
 		onsort: (key: SortKey) => void;
+		/** Dividers to draw among `rows`, from arrangeSections. */
+		sectionHeaders?: readonly SectionHeader[];
+		renamingSectionId?: string | null;
+		onsectionrenamestart?: ((sectionId: string) => void) | undefined;
+		onsectionrename?: ((sectionId: string, title: string) => void) | undefined;
+		onsectionrenamecancel?: (() => void) | undefined;
+		onsectionremove?: ((sectionId: string) => void) | undefined;
+		onsectioninsert?: ((header: SectionHeader) => void) | undefined;
+		onsectiontoggle?: ((sectionId: string, collapsed: boolean) => void) | undefined;
+		/** A section's tracks, hidden ones included, or null if one cannot move. */
+		onsectiondragitems?: ((sectionId: string) => string[] | null) | undefined;
+		oninsertsection?: ((row: BrowserRow) => void) | undefined;
+		onmoveentries?: ((move: EntriesMove) => void) | undefined;
 		/** `event` carries the click's (or arrow key's) Shift/Cmd/Ctrl state;
 		 * keyboard moves reuse the same plain / Shift-range gestures. */
 		onselectrow: (row: BrowserRow, event?: MouseEvent | KeyboardEvent) => void;
@@ -695,15 +850,25 @@
 		/** Preview strip click: 0..1 ratio along the track. */
 		onpreviewseek?: ((row: BrowserRow, ratio: number) => void) | undefined;
 		onrate: (row: BrowserRow, next: number) => void;
+		/** LIBUX-56: save the Comment cell editor's text; absent means the comment is read only. */
+		oncomment?: ((row: BrowserRow, next: string) => Promise<void>) | undefined;
 		onrowvisible: (row: BrowserRow) => void;
 		/** Remove this row's membership position from the playlist. */
 		onremoverow?: (row: BrowserRow) => void;
-		/** Move the track at `fromOrder` (1-based) to `toOrder`'s slot. */
-		onreorder?: (fromOrder: number, toOrder: number, count?: number) => void;
+		/** LIBUX-8626: Delete/Backspace removes the whole selection in ONE write,
+		 * resolving once the rows are gone, so focus can move to the row that
+		 * took their place. */
+		onremoverows?: (rows: BrowserRow[]) => Promise<void>;
+		/** trackRowKey of rows mid red-collapse before they leave the list. */
+		removingRowKeys?: ReadonlySet<string>;
+		/** LIBUX-8676: trackRowKey of rows an undo just put back (green expand). */
+		restoringRowKeys?: ReadonlySet<string>;
 		/** A drag the table refused, with the reason. The table does not own a
 		 * toast channel, so the panel says it (pins 8ba0b15d975b /
 		 * 72be3e505510: a silent refusal reads as a broken feature). */
 		onrefused?: (reason: string) => void;
+		/** The open list, when it is a real playlist: a stack shows places in it. */
+		stackPlaylistId?: string | null;
 		onstemsdonext?: (stableIds: string[]) => void;
 		onlyricsdonext?: (stableIds: string[]) => void;
 		onopeneditmodal?: (kind: TrackEditModalKind) => void;
@@ -1032,6 +1197,13 @@
 		) {
 			return;
 		}
+		if (isSetSkipShortcut(event) && setTargetState.playlistId !== null && event.target === event.currentTarget) {
+			// LIBUX-8679: Cmd/Ctrl+Shift+X toggles "Skip in set" on the row (or its selection).
+			event.preventDefault();
+			event.stopPropagation();
+			void setTargetState.toggleSkip(selectedOrders.includes(row.order) ? [...selectedIds] : [row.stable_id]);
+			return;
+		}
 		const action = trackTableKeyAction(event);
 		if (action.kind === 'move') {
 			event.preventDefault();
@@ -1058,18 +1230,17 @@
 		if (
 			removable &&
 			(event.key === 'Delete' || event.key === 'Backspace') &&
-			onremoverow
+			(onremoverows || onremoverow)
 		) {
 			event.preventDefault();
 			event.stopPropagation();
-			if (selectedOrderSet.has(row.order)) {
-				for (const visible of rows) {
-					if (selectedOrderSet.has(visible.order)) {
-						onremoverow(visible);
-					}
-				}
+			const doomed = selectedOrderSet.has(row.order)
+				? rows.filter((visible) => selectedOrderSet.has(visible.order))
+				: [row];
+			if (onremoverows) {
+				void onremoverows(doomed).then(_focusRowAfterRemoval);
 			} else {
-				onremoverow(row);
+				for (const visible of doomed) onremoverow?.(visible);
 			}
 			return;
 		}
@@ -1131,13 +1302,21 @@
 		_revealAndFocusRow(target);
 	}
 
+	/** LIBUX-8626: the focused row left the DOM with the removal; hand roving
+	 * focus to the newly selected row so the next Backspace keeps working. */
+	async function _focusRowAfterRemoval(): Promise<void> {
+		activeRowKey = null;
+		await tick();
+		if (activeRowIndex >= 0) _revealAndFocusRow(activeRowIndex);
+	}
+
 	/** Scroll the virtualized window so the row is mounted and fully in view,
 	 * then move DOM focus to it (roving tabindex) once it has rendered. */
 	function _revealAndFocusRow(index: number): void {
 		const el = wrapEl;
 		if (el === null) return;
 		const next = scrollTopToRevealRow({
-			rowIndex: index,
+			rowIndex: slotOfRow(sectionHeaders, index),
 			rowHeight,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
 			viewportHeight,
@@ -1159,20 +1338,32 @@
 	let hoveredApId = $state<string | null>(null);
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
 	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
+	/** R-TT-1: columns come from tag type rows, so a new type needs no code here. */
+	const typeCols = $derived(tagTypeColumns());
 	const colCount = $derived(
 		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) +
-			(showLyricsCol ? 1 : 0) -
+			(showLyricsCol ? 1 : 0) +
+			typeCols.length -
 			uiPrefs.library_hidden_columns.length
 	);
 
 	// ----- LIBUX-54 hidden columns (chooser lives in ColumnChooserMenu) -----
 	const hiddenCols = $derived(new Set(uiPrefs.library_hidden_columns));
+	const optionalCols = $derived(worksView.optionalColumns);
+	const optionalOff = $derived(
+		OPTIONAL_COLUMN_IDS.filter((col) => !optionalCols.includes(col))
+	);
 	/** colWidths with hidden columns at 0: what the table width and the
 	 * MASTER fold badge are summed from. */
-	const shownWidths = $derived(shownColumnWidths(colWidths, uiPrefs.library_hidden_columns));
+	const shownWidths = $derived(
+		shownColumnWidths(colWidths, [...uiPrefs.library_hidden_columns, ...optionalOff])
+	);
 	const columnChooserPrefs = {
 		state: uiPrefs,
 		toggleColumn: toggleLibraryColumn,
+		tagTypes: tagTypeChooserEntries,
+		toggleTagTypeColumn,
+		toggleTagTypeInTags,
 		showAllColumns: showAllLibraryColumns,
 		setKeyNotation,
 		setDensity: setLibraryDensity,
@@ -1185,7 +1376,7 @@
 
 	const rowIndexOf = $derived.by(() => {
 		const map = new Map<string, number>();
-		for (let i = 0; i < rows.length; i++) map.set(rows[i].stable_id, i);
+		for (let i = 0; i < rows.length; i++) map.set(rows[i].stable_id, slotOfRow(sectionHeaders, i));
 		return map;
 	});
 
@@ -1223,7 +1414,7 @@
 	const tableWidthPx = $derived(
 		Object.entries(shownWidths).reduce(
 			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
-			0
+			typeCols.reduce((sum, col) => sum + col.width, 0)
 		)
 	);
 
@@ -1283,39 +1474,34 @@
 	/** PAIR-09: the PAIR arrow's own width, for the same clamp and for sitting
 	 * beside MASTER when both point off the same edge. */
 	let pairFoldWidth = $state(0);
-
+	let lastAppliedBrowseScrollRevision: number | null = $state(null);
+	let lastRestoredPaneKey: string | number | null = $state(null);
 	$effect(() => {
-		void restoreKey; // the one tracked dependency
-		activeRowKey = null;
-		anchorRowKey = null;
+		if (!shouldRestorePaneScroll(restoreKey, lastRestoredPaneKey)) return;
 		const el = wrapEl;
 		if (el !== null) {
 			const restored = untrack(() => scrollTop);
 			el.scrollTop = restored;
 			liveScrollTop = restored;
 		}
+		lastRestoredPaneKey = restoreKey;
+		activeRowKey = null;
+		anchorRowKey = null;
 	});
-
-	/** Keep controller/keyboard selection in view in a virtual table. Forward
-	 * movement leaves room below the selected row; backward leaves room above.
-	 * Mouse selection intentionally does not reposition the operator's list. */
+	// IOPIN-01 keep-in-view: apply only on new browseScroll.revision (LIBUX-2606).
 	$effect(() => {
 		const request = browseScroll;
-		if (request === null) return;
+		if (request === null || !shouldApplyBrowseScroll(request, lastAppliedBrowseScrollRevision)) return;
 		const el = wrapEl;
 		if (el === null) return;
-		const index = rows.findIndex((row) => row.order === request.order);
-		if (index < 0) return;
-		const offset = request.direction > 0 ? viewportHeight * 0.35 : viewportHeight * 0.65;
-		const target = scrollTopForRowIndex({
-			rowIndex: index,
-			rowHeight,
-			headerOffsetPx: TRACK_TABLE_THEAD_PX,
-			offsetFromTopPx: offset
-		});
+		const target = untrack(() =>
+			browseScrollTarget({ request, rows, viewportHeight, rowHeight, headerOffsetPx: TRACK_TABLE_THEAD_PX, slotOfRow: (index) => slotOfRow(sectionHeaders, index) })
+		);
+		if (target === null) return;
 		el.scrollTop = target;
 		liveScrollTop = target;
 		onscrollcursor(target);
+		lastAppliedBrowseScrollRevision = request.revision;
 	});
 
 	// ------------------------------------------------- DOM row virtualization
@@ -1347,12 +1533,12 @@
 	$effect(() => {
 		const el = wrapEl;
 		if (el === null) return;
-		viewportHeight = el.clientHeight;
+		viewportHeight = nextMeasuredViewportHeight(el.clientHeight, viewportHeight);
 		wrapWidth = el.clientWidth;
 		if (typeof ResizeObserver === 'undefined') return; // SSR guard
 		const ro = new ResizeObserver((entries) => {
 			for (const entry of entries) {
-				viewportHeight = entry.contentRect.height;
+				viewportHeight = nextMeasuredViewportHeight(entry.contentRect.height, viewportHeight);
 				wrapWidth = entry.contentRect.width;
 				const anchor = deckLayoutAnchor;
 				if (
@@ -1368,17 +1554,29 @@
 		return () => ro.disconnect();
 	});
 
+	const slotCount = $derived(slotCountOf(sectionHeaders, rows.length));
 	const windowInfo = $derived(
-		computeVirtualWindow({
-			scrollTop: liveScrollTop,
-			viewportHeight,
-			rowHeight,
-			rowCount: rows.length,
-			overscan: OVERSCAN,
-			headerOffsetPx: TRACK_TABLE_THEAD_PX
-		})
+		rowWindow(
+			computeVirtualWindow({
+				scrollTop: liveScrollTop,
+				viewportHeight,
+				rowHeight,
+				rowCount: slotCount,
+				overscan: OVERSCAN,
+				headerOffsetPx: TRACK_TABLE_THEAD_PX
+			}),
+			sectionHeaders,
+			rows.length,
+			rowHeight
+		)
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
+	// LIBUX-8682: a gross key clash between on-screen neighbours (skips bridged) marks the lower row.
+	const clashEdges = $derived(
+		setTargetState.summary === null
+			? new Map<string, string>()
+			: grossClashEdges(rows.map((r) => r.stable_id), setTargetState.skipIds, setTargetState.summary.clashes)
+	);
 	const renderedRowCapacity = $derived(
 		Math.min(
 			rows.length,
@@ -1445,7 +1643,7 @@
 		const el = wrapEl;
 		if (el === null) return;
 		const top = scrollTopForRowIndex({
-			rowIndex: idx,
+			rowIndex: slotOfRow(sectionHeaders, idx),
 			rowHeight: rh,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
 			offsetFromTopPx: Math.floor(vh / 3)
@@ -1462,7 +1660,7 @@
 	const masterOrder = $derived(masterIndex < 0 ? null : (rows[masterIndex]?.order ?? null));
 	const masterFold = $derived.by((): 'above' | 'below' | null =>
 		masterFoldVisibility({
-			rowIndex: masterIndex,
+			rowIndex: masterIndex < 0 ? -1 : slotOfRow(sectionHeaders, masterIndex),
 			rowHeight,
 			scrollTop: liveScrollTop,
 			viewportHeight,
@@ -1535,7 +1733,7 @@
 		const rh = untrack(() => rowHeight);
 		const vh = untrack(() => viewportHeight);
 		const target = scrollTopForRowIndex({
-			rowIndex: idx,
+			rowIndex: slotOfRow(sectionHeaders, idx),
 			rowHeight: rh,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
 			offsetFromTopPx: Math.floor(vh / 3)
@@ -1547,7 +1745,7 @@
 	function jumpToMaster(): void {
 		if (wrapEl === null || masterIndex < 0) return;
 		const target = scrollTopForRowIndex({
-			rowIndex: masterIndex,
+			rowIndex: slotOfRow(sectionHeaders, masterIndex),
 			rowHeight,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
 			offsetFromTopPx: viewportHeight * 0.35
@@ -1598,9 +1796,10 @@
 			: `Playlist position ${order}\n${reorderBlocked}`;
 	}
 
-	function timeCellTitle(ms: number | null): string {
+	function timeCellTitle(ms: number | null, lengthFlag: string | null): string {
 		if (ms === null) return 'Duration unknown';
-		return `Duration ${_fmtTime(ms)} (mm:ss)`;
+		const base = `Duration ${_fmtTime(ms)} (mm:ss)`;
+		return lengthFlag === null ? base : `${base}\n${lengthFlag}`;
 	}
 
 	function _fmtBpm(bpm: number | null): string {
@@ -1642,11 +1841,91 @@
 		);
 	}
 
-	// ----------------------------------------- drag-to-reorder (native DnD)
-	// Grip-initiated only (not the whole row): the row's own click/dblclick
-	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
-	// rune - it only matters for the lifetime of one drag gesture.
-	let _dragSourceOrder: { start: number; count: number } | null = null;
+	// ----------------------------------------- drag to move (native DnD)
+	// A drag lifts a block of lines. While it hovers, the lines from the gap down
+	// shift one slot with transform only (LIBUX-53, #7605), so no row re-lays-out
+	// on a frame. dropTargetAt names what the drop lands above, from the same slot
+	// numbers the gap is drawn from.
+	let dragBlock = $state<{ item_ids: string[]; section_ids: string[] } | null>(null);
+	let dropGap = $state<number | null>(null);
+	let tbodyEl = $state<HTMLTableSectionElement | null>(null);
+	/** REORDER-ROW-02: the tbody's top inside the scroll container, read on each
+	 * dragover, so the insertion line is drawn in the slot coordinates the gap is. */
+	let dropBodyTop = $state(0);
+	const draggedItems = $derived(new Set(dragBlock?.item_ids ?? []));
+
+	function _slotShift(slot: number): string | undefined {
+		return dropGap !== null && slot >= dropGap ? `translateY(${rowHeight}px)` : undefined;
+	}
+
+	function _rowBlock(row: BrowserRow): { item_ids: string[]; section_ids: string[] } | null {
+		const picked = selectedOrderSet.has(row.order)
+			? rows.filter((r) => selectedOrderSet.has(r.order))
+			: [row];
+		const itemIds = picked.map((r) => r.item_id);
+		if (itemIds.includes(null)) return null;
+		return { item_ids: itemIds as string[], section_ids: [] };
+	}
+
+	function _endEntriesDrag(): void {
+		dragBlock = null;
+		dropGap = null;
+	}
+
+	function onSectionDragStart(event: DragEvent, header: SectionHeader): void {
+		const itemIds = onsectiondragitems?.(header.section.id) ?? null;
+		if (!reorderable || itemIds === null) {
+			event.preventDefault();
+			return;
+		}
+		dragBlock = { item_ids: itemIds, section_ids: [header.section.id] };
+		event.dataTransfer?.setData('text/plain', header.section.title);
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+	}
+
+	/** dragenter and dragover both accept a move (REORDER-ROW-01): WebKit (the
+	 * packaged WKWebView) takes a target's accept from its dragenter whenever the
+	 * pointer crosses into a new element, so a release right after a crossing,
+	 * with no dragover yet, was refused when only dragover was cancelled. */
+	function onBodyDragOver(event: DragEvent): void {
+		if (dragBlock === null || tbodyEl === null) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+		const bodyTop = tbodyEl.getBoundingClientRect().top;
+		const y = event.clientY - bodyTop;
+		dropGap = gapFromPointer(y, rowHeight, slotCount);
+		if (wrapEl !== null) dropBodyTop = bodyTop - wrapEl.getBoundingClientRect().top + wrapEl.scrollTop;
+	}
+
+	function onBodyDragLeave(event: DragEvent): void {
+		// relatedTarget is null between cells on WebKit, so ask where the pointer went.
+		const box = tbodyEl?.getBoundingClientRect();
+		if (box === undefined) return;
+		const inside =
+			event.clientX >= box.left &&
+			event.clientX <= box.right &&
+			event.clientY >= box.top &&
+			event.clientY <= box.bottom;
+		if (!inside) dropGap = null;
+	}
+
+	function onBodyDrop(event: DragEvent): void {
+		const block = dragBlock;
+		const gap = dropGap;
+		_endEntriesDrag();
+		if (block === null || gap === null) return;
+		event.preventDefault();
+		onmoveentries?.({ ...block, ...dropTargetAt(gap, sectionHeaders, rows) });
+	}
+
+	async function toggleSection(header: SectionHeader): Promise<void> {
+		const collapsing = !header.collapsed;
+		onsectiontoggle?.(header.section.id, collapsing);
+		await tick();
+		if (tbodyEl !== null) {
+			animateSectionToggle(tbodyEl, { header, collapsing, rowHeight, viewportHeight });
+		}
+	}
 
 	// W33: a row drag on a sorted/searched playlist shows why reorder is off.
 	// Stays up for a few seconds after the drag so its button can be clicked.
@@ -1686,6 +1965,83 @@
 		if (_reorderHintTimer !== null) clearTimeout(_reorderHintTimer);
 	});
 
+	// ----- version stacks (R-VER, R-WORK-8): a plain drop never links ------------
+	const stackList = $derived(onremoverow === undefined ? null : stackPlaylistId);
+	let _dragTrackIds: string[] = [];
+	let stackHintRowId = $state<string | null>(null);
+	let stackOpenId = $state<string | null>(null);
+	let worksModals = $state<ReturnType<typeof WorksModals> | null>(null);
+	const stackOpenIndex = $derived(
+		stackOpenId === null ? -1 : rows.findIndex((r) => r.stable_id === stackOpenId)
+	);
+	const viaWork = $derived(searchQuery === '' ? null : viaWorkHits(searchQuery));
+
+	onMount(startWorksOverlay);
+	// Only the mounted window: a whole collection would be a 50k id POST per scroll.
+	$effect(() => {
+		const ids = visibleRows.map((r) => r.stable_id);
+		if (ids.length > 0) refreshSuggestionFlags(ids);
+	});
+
+	function indicatorFor(row: BrowserRow): string | null {
+		return stackIndicator(
+			worksView.overlay,
+			row.stable_id,
+			worksView.suggestionIds.has(row.stable_id)
+		);
+	}
+
+	function shownTitle(row: BrowserRow): string {
+		const title = row.title ?? '';
+		return worksView.classicalLayout
+			? classicalTitle(worksView.overlay, row.stable_id, title)
+			: title;
+	}
+
+	function shownArtist(row: BrowserRow): string {
+		const artist = row.artist ?? '';
+		return worksView.classicalLayout
+			? classicalArtist(worksView.overlay, row.stable_id, artist)
+			: artist;
+	}
+
+	function optionalCell(row: BrowserRow, col: OptionalColumn): string {
+		const overlay = worksView.overlay;
+		switch (col) {
+			case 'work':
+				return workCellText(overlay, row.stable_id);
+			case 'composer':
+				return composerOf(overlay, row.stable_id);
+			case 'ensemble':
+				return performerOf(overlay, row.stable_id);
+			case 'label':
+				return labelOf(overlay, row.stable_id);
+			case 'year':
+				return String(yearOf(overlay, row.stable_id) ?? '');
+			default: {
+				const _exhaustive: never = col;
+				throw new Error(`Unhandled: ${String(_exhaustive)}`);
+			}
+		}
+	}
+
+	function _stackOnto(dragged: string[], row: BrowserRow): void {
+		const action = shiftDropAction(
+			dragged,
+			row.stable_id,
+			(id) => primaryWorkId(worksView.overlay, id)
+		);
+		if (action === 'nothing') return;
+		if (action === 'already') {
+			onrefused?.('already versions');
+			return;
+		}
+		const stacked = [...new Set([...dragged, row.stable_id])];
+		worksModals?.stackTracks(stacked, row.title ?? '').catch((exc: unknown) =>
+			reportWorksFailure('link failed', exc)
+		);
+	}
+
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
 		// A refused drag used to just preventDefault and return: no cursor
 		// change, no message, nothing - indistinguishable from drag-to-deck
@@ -1709,10 +2065,16 @@
 			selectedOrderSet.has(row.order) && selectedIds.length > 1
 				? selectedIds
 				: [row.stable_id];
+		_dragTrackIds = [...ids];
 		// The MIME is still set for cross-app interop; drop targets accept on
 		// the in-app state because WKWebView hides it during dragover.
 		event.dataTransfer?.setData(TRACK_STABLE_MIME, ids.join(','));
-		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		// REORDER-ROW-01: in a playlist shown in membership order the row itself
+		// is a move handle too (rekordbox behaviour), so the drag allows a move
+		// onto the table body as well as the copy onto a deck or playlist.
+		const block = reorderable ? _rowBlock(row) : null;
+		dragBlock = block;
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = block === null ? 'copy' : 'copyMove';
 		// Without an explicit drag image WebKit snapshots this <tr> plus every
 		// composited layer overlapping it, so the whole browser panel appears
 		// to come along for the ride.
@@ -1728,46 +2090,111 @@
 		beginTrackDrag(ids, draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0));
 	}
 
-	function onRowDragEnd(): void {
+	/** LIBUX-8676: the last plain press on a row (row-click-intent.ts). */
+	let _rowPress: RowPressMark | null = null;
+
+	function onRowDragEnd(event: DragEvent, row: BrowserRow): void {
+		// dragend comes after any drop, so a drag that ended anywhere else must
+		// not stay armed for the next drop on a row.
+		_endEntriesDrag();
+		_dragTrackIds = [];
+		stackHintRowId = null;
 		removeTrackDragGhost();
 		endTrackDrag();
 		_lingerReorderHint();
+		// A press that WebKit turned into a drag but that barely moved and
+		// dropped nowhere was a click: collapse the selection like one.
+		const key = trackRowKey(row);
+		if (
+			dragEndIsCollapsingClick({
+				mark: _rowPress,
+				key,
+				end: event,
+				dropEffect: event.dataTransfer?.dropEffect,
+				selectedCount: selectedOrderSet.size
+			})
+		) {
+			_noteRowPointerFocus(row, event);
+			onselectrow(row);
+		}
+		_rowPress = null;
 	}
+
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
 		event.stopPropagation();
-		const selected = [...new Set(selectedOrders)].sort((a, b) => a - b);
-		if (
-			selectedOrderSet.has(row.order) &&
-			selected.length > 0 &&
-			selected[selected.length - 1] - selected[0] + 1 === selected.length &&
-			selected.includes(row.order)
-		) {
-			_dragSourceOrder = { start: selected[0], count: selected.length };
-		} else {
-			_dragSourceOrder = { start: row.order, count: 1 };
-		}
+		dragBlock = _rowBlock(row);
 		event.dataTransfer?.setData('text/plain', String(row.order));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 	}
 
-	function onRowDragOver(event: DragEvent): void {
-		if (_dragSourceOrder === null) return;
-		event.preventDefault();
-		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	/** Versions (#7901) gestures on a row: a stack-panel member dropped to copy
+	 * and unstack, or a Shift drag that stacks onto this row. They own the drop,
+	 * so the body's entries move never sees it. A plain move is the body's. */
+	function onRowDragOver(event: DragEvent, row: BrowserRow): void {
+		if (worksView.stackDrag !== null && stackList !== null) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
+		if (event.shiftKey && _dragTrackIds.length > 0) {
+			event.preventDefault();
+			event.stopPropagation();
+			dropGap = null;
+			stackHintRowId = row.stable_id;
+			return;
+		}
+		stackHintRowId = null;
 	}
 
 	function onRowDrop(event: DragEvent, row: BrowserRow): void {
-		event.preventDefault();
-		const source = _dragSourceOrder;
-		_dragSourceOrder = null;
-		if (source === null) return;
-		const { start, count } = source;
-		if (row.order >= start && row.order < start + count) return;
-		if (start === row.order) return;
-		onreorder?.(start, row.order, count);
+		stackHintRowId = null;
+		const stackDrag = worksView.stackDrag;
+		if (stackDrag !== null && stackList !== null) {
+			event.preventDefault();
+			event.stopPropagation();
+			_endEntriesDrag();
+			worksView.stackDrag = null;
+			worksView.modal = {
+				kind: 'copy-unstack',
+				member: stackDrag.member,
+				workId: stackDrag.workId,
+				playlistId: stackList,
+				position: row.order
+			};
+			return;
+		}
+		if (event.shiftKey && _dragTrackIds.length > 0) {
+			event.preventDefault();
+			event.stopPropagation();
+			_endEntriesDrag();
+			const dragged = _dragTrackIds;
+			_dragTrackIds = [];
+			_stackOnto(dragged, row);
+		}
 	}
 </script>
+
+{#snippet sectionRow(header: SectionHeader)}
+	<TrackSectionRow
+		{header}
+		{colCount}
+		{rowHeight}
+		editable={removable}
+		movable={reorderable}
+		renaming={renamingSectionId === header.section.id}
+		dragged={dragBlock?.section_ids.includes(header.section.id) === true}
+		transform={_slotShift(header.slot)}
+		onstartrename={() => onsectionrenamestart?.(header.section.id)}
+		onrename={(title) => onsectionrename?.(header.section.id, title)}
+		oncancelrename={() => onsectionrenamecancel?.()}
+		onremove={() => onsectionremove?.(header.section.id)}
+		ontoggle={() => void toggleSection(header)}
+		oninsertabove={() => onsectioninsert?.(header)}
+		ondragstart={(event) => onSectionDragStart(event, header)}
+		ondragend={_endEntriesDrag}
+	/>
+{/snippet}
 
 {#snippet sortableTh(key: SortKey, label: string, col: ColId & LibraryColTipId)}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1809,27 +2236,6 @@
 			<button type="button" onclick={_restoreOrder}>Restore playlist order</button>
 		</div>
 	{/if}
-	{#if cellEditMenu !== null}
-		{@const pending = cellEditMenu}
-		<ContextMenu
-			items={[
-				{
-					id: 'edit',
-					label: 'Edit',
-					testId: 'cell-value-edit',
-					title: pending.kind === 'bpm' ? 'Edit tempo' : 'Edit key',
-					run: () => {
-						showCellEdit({ kind: pending.kind, row: pending.row, anchor: pending.anchor });
-					}
-				}
-			]}
-			x={pending.x}
-			y={pending.y}
-			onclose={() => {
-				if (cellEditMenu === pending) cellEditMenu = null;
-			}}
-		/>
-	{/if}
 	{#if cellEdit !== null && BpmKeyEditPopover !== null}
 		{@const target = cellEdit}
 		{#key `${target.row.stable_id}:${target.kind}`}
@@ -1850,6 +2256,7 @@
 		{/key}
 	{/if}
 	<TrackContextMenu
+		{oninsertsection}
 		bind:this={trackContextMenu}
 		{selectedIds}
 		{selectedOrders}
@@ -1869,6 +2276,7 @@
 		onrelocate={(row, x, y) => {
 			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
 		}}
+		oneditcomment={oncomment ? (row) => openCommentEdit(null, row) : undefined}
 	/>
 	<!-- TrackPlaylistsPopover and RelocatePopover, fetched by the pick that opens them. -->
 	<TrackRowPopovers bind:playlistsMenu bind:relocateMenu {onrelocated} />
@@ -1955,11 +2363,12 @@
 			data-testid="track-table"
 			class={hiddenColumnClasses(uiPrefs.library_hidden_columns)}
 			class:rb-pair-pulses={pairPulses}
+			class:rb-multi-selected={selectedOrderSet.size > 1}
 			style={`width:${tableWidthPx}px`}
 			role="grid"
 			aria-label="Tracks"
 			aria-multiselectable="true"
-			aria-rowcount={rows.length + 1}
+			aria-rowcount={slotCount + 1}
 		>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
@@ -1973,6 +2382,7 @@
 				{#if !hiddenCols.has('artist')}<col style={`width:${colWidths.artist}px`} />{/if}
 				{#if !hiddenCols.has('key')}<col style={`width:${colWidths.key}px`} />{/if}
 				{#if !hiddenCols.has('bpm')}<col style={`width:${colWidths.bpm}px`} />{/if}
+				{#if !hiddenCols.has('tempostab')}<col style={`width:${colWidths.tempostab}px`} />{/if}
 				{#if !hiddenCols.has('plays')}<col style={`width:${colWidths.plays}px`} />{/if}
 				<col style={`width:${colWidths.last}px`} />
 				{#if !hiddenCols.has('rating')}<col style={`width:${colWidths.rating}px`} />{/if}
@@ -1982,9 +2392,12 @@
 				{#if !hiddenCols.has('energy')}<col style={`width:${colWidths.energy}px`} />{/if}
 				{#if !hiddenCols.has('genre')}<col style={`width:${colWidths.genre}px`} />{/if}
 				{#if !hiddenCols.has('stems')}<col style={`width:${colWidths.stems}px`} />{/if}
+				{#if !hiddenCols.has('tags')}<col style={`width:${colWidths.tags}px`} />{/if}
+				{#each typeCols as col (col.id)}<col style={`width:${col.width}px`} />{/each}
 				{#if showLyricsCol}
 					<col style={`width:${colWidths.lyrics}px`} />
 				{/if}
+				{#each optionalCols as col (col)}<col style={`width:${colWidths[col]}px`} />{/each}
 			</colgroup>
 			<thead bind:clientHeight={theadHeightPx} oncontextmenu={(e) => trackContextMenu?.openColumnChooser(e, columnChooserPrefs)}>
 				<tr aria-rowindex={1}>
@@ -2186,6 +2599,22 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- Issue #7879: the daemon's tempo-stability words; nothing computed here. -->
+					<th
+						class="h-tempostab"
+						style={`width:${colWidths.tempostab}px`}
+						title="BPM Stability - does the tempo hold, drift or change through the track (from the beatgrid scan)"
+					>
+						<span class="th-label"><span>BPM Stability</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'tempostab')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
@@ -2288,18 +2717,51 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<th class="h-tags" style={`width:${colWidths.tags}px`}>
+						<span class="th-label"><span>Tags</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'tags')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					{#each typeCols as col (col.id)}
+						<th class="h-tagtype" style={`width:${col.width}px`}>
+							<span class="th-label"><span>{col.label}</span></span>
+						</th>
+					{/each}
 					{#if showLyricsCol}
 						{@render sortableTh('lyrics', 'Lyrics', 'lyrics')}
 					{/if}
+					{#each optionalCols as col (col)}
+						<th
+							class={`h-${col} sortable`}
+							style={`width:${colWidths[col]}px`}
+							data-testid={`column-${col}`}
+							onclick={() => onsort(col)}
+						>
+							<span class="th-label"><span>{OPTIONAL_COLUMN_LABELS[col]}</span></span>
+						</th>
+					{/each}
 				</tr>
 			</thead>
-			<tbody>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<tbody
+				bind:this={tbodyEl}
+				ondragenter={onBodyDragOver}
+				ondragover={onBodyDragOver}
+				ondragleave={onBodyDragLeave}
+				ondrop={onBodyDrop}
+			>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
 						<td colspan={colCount}></td>
 					</tr>
 				{/if}
-				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (row.item_id ?? `${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
 						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
@@ -2321,11 +2783,15 @@
 					})}
 					{@const minorIssues = minorIssuesFor(row)}
 					{@const rowIndex = windowInfo.startIndex + i}
+					{@const rowSlot = slotOfRow(sectionHeaders, rowIndex)}
 					{@const cellBpm = editedBpm(row.stable_id, row.bpm)}
 					{@const cellKey = editedKey(row.stable_id, row.key)}
 					{@const bpmEdited = hasBpmEdit(row.stable_id)}
 					{@const keyEdited = hasKeyEdit(row.stable_id)}
-					<!-- key includes order: playlists CAN repeat a track -->
+					{#each sectionHeaders.filter((h) => h.beforeIndex === rowIndex) as header (header.section.id)}
+						{@render sectionRow(header)}
+					{/each}
+					<!-- key: playlists CAN repeat a track, so a playlist row keys on its membership item_id, which a move keeps (REORDER-ROW-02: a drop moves DOM nodes instead of remounting the list); other panes fall back to stable_id:order -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<!-- Svelte reuses this keyed node across pane switches; observeRow.update() rebinds the WeakMap + observer. Pane identity stays out of the each-key so rows are not remounted and focus is not dropped. -->
@@ -2335,7 +2801,7 @@
 						data-canonical-camelot-key={rowCanonicalCamelotKey(row)}
 						data-stable-id={row.stable_id}
 						data-row-index={rowIndex}
-						aria-rowindex={rowIndex + 2}
+						aria-rowindex={rowSlot + 2}
 						aria-selected={selectedOrderSet.has(row.order)}
 						tabindex={rowIndex === activeRowIndex ||
 						((activeRowIndex < windowInfo.startIndex ||
@@ -2345,6 +2811,8 @@
 							: -1}
 						draggable="true"
 						class:rb-row-selected={selectedOrderSet.has(row.order)}
+						class:rb-row-removing={removingRowKeys.has(trackRowKey(row))}
+						class:rb-row-restoring={restoringRowKeys.has(trackRowKey(row))}
 						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
@@ -2370,14 +2838,18 @@
 							'AVAILABILITY_PENDING'}
 						title={libraryRowHoverTitle(row)}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
+						class:rb-row-set-skip={setTargetState.skipIds.has(row.stable_id)}
 						style={_jobRowStyle(row.stable_id)}
+						style:transform={_slotShift(rowSlot)}
+						class:tt-dragged={row.item_id !== null && draggedItems.has(row.item_id)}
 						onclick={(event) => onRowPointer(event, row)}
 						ondblclick={(e) => onRowDblClick(e, row)}
 						oncontextmenu={(e) => trackContextMenu?.open(e, row)}
 						onkeydown={(e) => onTrackKeydown(e, row)}
 						ondragstart={(e) => onRowDragStart(e, row)}
-						ondragend={onRowDragEnd}
-						ondragover={onRowDragOver}
+						onpointerdown={(e) => (_rowPress = markRowPress(e, trackRowKey(row)))}
+						ondragend={(e) => onRowDragEnd(e, row)}
+						ondragover={(e) => onRowDragOver(e, row)}
 						ondrop={(e) => onRowDrop(e, row)}
 					>
 						<!-- Prefetch markers live INSIDE the first cell, never as a bare
@@ -2408,6 +2880,7 @@
 								stableId={row.stable_id}
 								title={errColumnTitle(row)}
 								gridFlag={gridFlagFor(row)}
+								sourceFlags={sourceFileFlagsFor(row)}
 								ongridflagdismiss={(dismissed) => _setGridFlagDismissed(row, dismissed)}
 							/>
 						</td>
@@ -2499,6 +2972,8 @@
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
+								tempo={uiPrefs.show_tempo_lane ? (row.tempo_curve ?? null) : null}
+								tempoTitle={row.grid_quality?.tempo?.title ?? null}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
 								previewing={previewCue.stable_id === row.stable_id}
@@ -2525,13 +3000,14 @@
 										src={_retrySrc(artworkUrl(row.stable_id, 's'), row.stable_id)}
 										alt=""
 										loading="lazy"
+										data-expected-resource-error
 										onload={(e) => _onArtworkLoad(e, row.stable_id)}
 										onerror={() => _onArtworkError(row.stable_id)}
 									/>
 								{/if}
 							{/if}
 						</td>
-						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
+						<td class="c-title" class:rb-row-loaded={playedIds.has(row.stable_id)} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
 							<!-- Pin 27f889893790: the quick-load box is anchored here (not
 							     .c-preview) so its hitbox can never sit over the mini preview
 							     strip (.preview-hit) - hovering it must never block the
@@ -2578,19 +3054,41 @@
 									</button>
 								{/if}
 							</span>
-							<span class="title-text"
-								>{#each hl(row.title) as part, i (i)}{#if part.hit}<mark
+							<!-- LIBUX-57: the full title shows on hover only when it is cut off. -->
+							<span class="title-line"><span class="title-text" data-custom-tip="" use:truncationTip={shownTitle(row)}
+								>{#each hl(shownTitle(row)) as part, i (i)}{#if part.hit}<mark
 											class="find-hit">{part.text}</mark
 										>{:else}{part.text}{/if}{/each}</span
 							>
+							{#if indicatorFor(row) !== null}
+								<button
+									type="button"
+									class="stack-indicator"
+									data-testid="stack-indicator"
+									aria-expanded={stackOpenId === row.stable_id}
+									aria-label="Versions"
+									onclick={(e) => {
+										e.stopPropagation();
+										stackOpenId = stackOpenId === row.stable_id ? null : row.stable_id;
+									}}
+									ondblclick={(e) => e.stopPropagation()}
+								>{indicatorFor(row)}</button>
+							{/if}
+							{#if viaWork !== null && viaWork.has(row.stable_id)}
+								<span class="filed-under" data-testid="via-work">via work</span>
+							{:else if !optionalCols.includes('work')}
+								<span class="filed-under">{filedUnderText(worksView.overlay, row.stable_id)}</span>
+							{/if}
+							</span>
 						</td>
-						<td class="c-artist" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.artist ?? ''}>
-							{#each hl(row.artist) as part, i (i)}
+						<td class="c-artist" class:rb-row-loaded={playedIds.has(row.stable_id)} title={row.artist ?? ''}>
+							{#each hl(shownArtist(row)) as part, i (i)}
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
 						</td>
 						<td
 							class="c-key"
+							class:set-clash-cell={clashEdges.has(row.stable_id)}
 							class:key-compat={keyCompat(cellKey)}
 							class:key-inert={keyCellInert(row) && !keyEdited}
 							class:key-unparsed={displayKey(cellKey, uiPrefs.key_notation)?.parsed === false}
@@ -2602,8 +3100,13 @@
 							ondblclick={(e) => openCellEdit(e, row, 'key')}
 							oncontextmenu={(e) => openCellEditMenu(e, row, 'key')}
 						>
-							{#if !keyEdited && (row.key_status === 'failed' || row.key_status === 'missing')}
-								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
+							{#if clashEdges.has(row.stable_id)}<span class="set-clash-edge" aria-hidden="true"></span>{/if}
+							{#if !keyEdited && (row.key === null || row.key === undefined) && row.key_status === 'failed' && row.key_guess}
+								<!-- KEY-GUESS-01: the analyzer's best candidate, dimmed, never a confirmed key. -->
+								<span class="key-guess">{displayKey(row.key_guess, uiPrefs.key_notation)?.text ?? row.key_guess}?</span>
+							{:else if !keyEdited && (row.key === null || row.key === undefined) && (row.key_status === 'failed' || row.key_status === 'missing')}
+								<!-- KEY-CELL-01: no status word in the cell; the reason is on the hover and in the Err column. -->
+								<span class="key-status" aria-hidden="true"></span>
 							{:else}
 								{#snippet keyCharacters(text: string)}
 									{#each text as character}<span class:camelot-suffix={uiPrefs.key_notation === 'camelot' && (character === 'A' || character === 'B')}>{character}</span>{/each}
@@ -2621,6 +3124,7 @@
 						</td>
 						<td
 							class="c-bpm"
+							class:set-clash-cell={clashEdges.has(row.stable_id)}
 							class:bpm-sweet={bpmCellHeat(cellBpm)?.lane === 'sweet'}
 							class:bpm-half={bpmCellHeat(cellBpm)?.lane === 'half'}
 							class:bpm-compatible={bpmCellCompatibility(cellBpm)?.compatible === true}
@@ -2630,19 +3134,30 @@
 							class:bpm-far={bpmCellHeat(cellBpm)?.lane === 'far'}
 							class:bpm-inert={bpmCellInert(row) && !bpmEdited}
 							style={bpmCellStyle(cellBpm)}
-							title={`${bpmCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
+							title={row.bpm_disputed ? undefined : `${bpmCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
 							onpointerenter={() => requestGridProvenance(row.stable_id)}
 							ondblclick={(e) => openCellEdit(e, row, 'bpm')}
 							oncontextmenu={(e) => openCellEditMenu(e, row, 'bpm')}
 						>
+							{#if clashEdges.has(row.stable_id)}<span class="set-clash-edge" aria-hidden="true" title={clashEdges.get(row.stable_id)}></span>{/if}
 							{#if bpmEdited}
 								{bpmCellText({ bpm: cellBpm, bpm_status: 'ok' }).text}
 							{:else if bpmCellText(row).kind === 'value'}
-								{bpmCellText(row).text}
+								{bpmCellText(row).text}{#if row.bpm_disputed}<!-- svelte-ignore a11y_no_static_element_interactions --><span
+										class="bpm-dispute"
+										data-custom-tip=""
+										data-testid="bpm-dispute-marker"
+										role="img"
+										aria-label="tempo disputed with Mixed In Key"
+										onmouseenter={(e) => openBpmDispute(e, row)}
+										onmouseleave={scheduleBpmDisputeClose}
+									><BpmDisputeMarker /></span>{/if}
 							{:else}
-								<span class="bpm-status" title={bpmCellTitle(row)}>{bpmCellText(row).text}</span>
+								<!-- KEY-CELL-01: no status word in the cell; the reason is on the hover and in the Err column. -->
+								<span class="bpm-status" title={bpmCellTitle(row)} aria-hidden="true"></span>
 							{/if}
 						</td>
+						<td class="c-tempostab" title={bpmStabilityTitle(row.grid_quality)}><BpmStabilityCell grid={row.grid_quality} /></td>
 						<td
 							class="c-plays"
 							title="play count: rekordbox plays plus Open DJ plays heard for 60 s or more"
@@ -2659,12 +3174,27 @@
 						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
-						<td class="c-comments" title={row.comments ?? ''}>
-							{#each hl(row.comments) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-							{/each}
+						<td
+							class="c-comments"
+							class:c-comments-editing={commentEditOrder === row.order}
+							title={row.comments ?? ''}
+							ondblclick={(e) => openCommentEdit(e, row)}
+						>
+							{#if commentEditOrder === row.order}
+								<CommentCellEditor
+									initial={row.comments ?? ''}
+									oncommit={(next) => saveComment(row, next)}
+									oncancel={() => {
+										if (commentEditOrder === row.order) commentEditOrder = null;
+									}}
+								/>
+							{:else}
+								{#each hl(row.comments) as part, i (i)}
+									{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+								{/each}
+							{/if}
 						</td>
-						<td class="c-time" title={timeCellTitle(row.duration_ms)}>{_fmtTime(row.duration_ms)}</td>
+						<td class="c-time" title={timeCellTitle(row.duration_ms, lengthFlagText(row))}>{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
 							<QualityBadge
 								quality={row.quality}
@@ -2720,11 +3250,25 @@
 							<StemTags stems={row.stems} />
 							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
+						<td class="c-tags"><TagCell stableId={row.stable_id} {selectedIds} /></td>
+						{#each typeCols as col (col.id)}
+							<td class="c-tagtype">
+								<TagCell stableId={row.stable_id} {selectedIds} typeId={col.id} />
+							</td>
+						{/each}
 						{#if showLyricsCol}
 							<LyricColumn {row} />
 						{/if}
+						{#each optionalCols as col (col)}
+							<td class={`c-optional c-${col}`} title={optionalCell(row, col)}>{optionalCell(row, col)}</td>
+						{/each}
 					</tr>
 				{/each}
+				{#if windowInfo.endIndex === rows.length}
+					{#each sectionHeaders.filter((h) => h.beforeIndex === rows.length) as header (header.section.id)}
+						{@render sectionRow(header)}
+					{/each}
+				{/if}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
 						<td colspan={colCount}></td>
@@ -2732,6 +3276,26 @@
 				{/if}
 			</tbody>
 		</table>
+		{#if dropGap !== null}
+			<div
+				class="tt-drop-line"
+				data-testid="tt-drop-line"
+				data-gap={dropGap}
+				aria-hidden="true"
+				style:top={`${dropLineTop(dropGap, rowHeight, dropBodyTop)}px`}
+				style:left={`${liveScrollLeft}px`}
+			></div>
+		{/if}
+		{#if stackOpenId !== null && stackOpenIndex >= 0}
+			<VersionStackPanel
+				stableId={stackOpenId}
+				playlistId={stackList}
+				rowPosition={rows[stackOpenIndex]?.order}
+				top={TRACK_TABLE_THEAD_PX + (stackOpenIndex + 1) * rowHeight}
+				onclose={() => (stackOpenId = null)}
+			/>
+		{/if}
+		<WorksModals bind:this={worksModals} />
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
 				{emptyMessage}{#if onemptyretry !== undefined}
@@ -2794,9 +3358,25 @@
 		ownKey={keyHover.row.key}
 		shift={hoverMatch?.shift ?? 0}
 		shiftedKey={hoverMatch?.key ?? null}
-		note={keyCellInert(keyHover.row) ? keyCellTitle(keyHover.row) : null}
+		note={keyHoverNote(keyHover.row)}
 		anchor={keyHover.anchor}
 		onDismiss={() => (keyHover = null)}
+	/>
+{/if}
+
+{#if bpmDispute !== null}
+	{@const disputed = bpmDispute.row}
+	<BpmDisputeCard
+		alternatives={disputed.bpm_alternatives ?? []}
+		shownBpm={disputed.bpm}
+		confidence={disputed.bpm_confidence}
+		note={`${bpmCellTitle(disputed)} Double-click, or right-click and choose Edit, to change it.`}
+		anchor={bpmDispute.anchor}
+		onpick={(alt) => pickBpmAlternative(disputed, alt)}
+		onerror={onkeycardfailed}
+		onenter={cancelBpmDisputeClose}
+		onleave={scheduleBpmDisputeClose}
+		onDismiss={() => (bpmDispute = null)}
 	/>
 {/if}
 
@@ -2851,6 +3431,45 @@
 {/if}
 
 <style>
+	.title-line {
+		display: flex;
+		align-items: baseline;
+		min-width: 0;
+	}
+	.title-line .title-text {
+		flex: 0 1 auto;
+		min-width: 0;
+	}
+	.stack-indicator {
+		flex: none;
+		background: none;
+		border: 0;
+		padding: 0 3px;
+		margin: 0;
+		color: inherit;
+		font: inherit;
+		opacity: 0.55;
+		cursor: pointer;
+	}
+	.stack-indicator:hover,
+	.stack-indicator:focus-visible {
+		opacity: 1;
+	}
+	.filed-under {
+		flex: 1 1 0;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		margin-left: 6px;
+		opacity: 0.45;
+		font-size: 0.9em;
+	}
+	.c-optional {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
 
 	/* ----- AUTOPLAY-COL --------------------------------------------------- */
 	.c-autoplay {
@@ -3081,6 +3700,30 @@
 		font-size: 7px;
 	}
 
+	tbody tr.tt-dragged {
+		opacity: 0.4;
+	}
+	/* REORDER-ROW-02: where a drag-move will land, centred in the open gap.
+	 * Height matches DROP_LINE_PX (entries-move-local.ts). */
+	.tt-drop-line {
+		position: absolute;
+		width: 100%;
+		height: 3px;
+		background: var(--rb-accent);
+		border-radius: 1.5px;
+		pointer-events: none;
+		z-index: 6;
+	}
+	/* The animated gap of a drag (#7605). Transform only, and it is the row's one
+	 * transition, so nothing re-lays-out while the pointer moves. */
+	tbody tr:not(.rb-row-job) {
+		transition: transform 100ms ease-out;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		tbody tr:not(.rb-row-job) {
+			transition: none;
+		}
+	}
 	tbody tr {
 		height: var(--tt-row-h);
 		cursor: default;
@@ -3198,6 +3841,51 @@
 		outline: 1px solid color-mix(in srgb, var(--rb-accent) 45%, transparent);
 		outline-offset: -1px;
 	}
+	/* LIBUX-8626: a removed row shows red and folds into its neighbour over
+	 * ROW_REMOVE_ANIMATION_MS (pane-row-removal.ts) before the splice. */
+	tbody tr.rb-row-removing {
+		pointer-events: none;
+	}
+	tbody tr.rb-row-removing > td {
+		animation: rb-row-remove 200ms ease-in forwards;
+		transform-origin: top;
+	}
+	/* LIBUX-8676: the reverse for an undo - the row unfolds green over
+	 * ROW_RESTORE_ANIMATION_MS and settles into its normal (selected) look. */
+	tbody tr.rb-row-restoring > td {
+		animation: rb-row-restore 200ms ease-out;
+		transform-origin: top;
+	}
+	@keyframes rb-row-restore {
+		0% {
+			background-color: var(--rb-green);
+			opacity: 0;
+			transform: scaleY(0);
+		}
+		60% {
+			background-color: var(--rb-green);
+			opacity: 1;
+			transform: scaleY(1);
+		}
+	}
+	/* LIBUX-8676 (the maintainer, Wed 4 Nov 2026): several tracks cannot load into one
+	 * deck, so the 1/2/3/4 load box never appears while more than one is
+	 * selected. visibility, not display: the box keeps its layout (the
+	 * single-select reveal stays an opacity fade), and a hidden box's buttons
+	 * take neither the pointer nor Tab focus. */
+	table.rb-multi-selected .deck-btns {
+		visibility: hidden;
+	}
+	@keyframes rb-row-remove {
+		0% {
+			background-color: var(--rb-red);
+		}
+		100% {
+			background-color: var(--rb-red);
+			opacity: 0;
+			transform: scaleY(0);
+		}
+	}
 	/* Keyboard focus (roving tabindex, track-table-keyboard.ts): the active
 	 * row a screen reader announces and arrows move from. */
 	tbody tr:focus-visible {
@@ -3251,10 +3939,16 @@
 	 * row fill (selected, menu, loaded, master, deck hover, job, Spotify pending)
 	 * keeps its own look, so the bar never sits on top of one. Skin hook:
 	 * --rb-mix-compat-bar (theme.css); the default mixes the skin's green with
-	 * its dim text so it stays muted on dark and light skins alike. */
+	 * its dim text so it stays muted on dark and light skins alike.
+	 * LIBM-8699: the bar rides the FIRST CELL's ::before (every tbody td is
+	 * position: relative), never the row's own ::before. Chrome and WebKit lay
+	 * a <tr>'s ::before out as a leading table cell even when it is absolutely
+	 * positioned, so every compatible row rendered one column right: the order
+	 * number under Preview, the strip under artwork, the cover stretched over
+	 * the title (the PAIR-09 bug, 9f1ba66f9e, back through this rule). */
 	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
 			.rb-row-spotify-pending
-		):not(.rb-row-deck-hover):not(.rb-row-job)::before {
+		):not(.rb-row-deck-hover):not(.rb-row-job) > td.c-funnel::before {
 		content: '';
 		position: absolute;
 		left: 0;
@@ -3539,6 +4233,11 @@
 	 * and marked so it reads as a data problem rather than a key. */
 	.c-key.key-unparsed {
 		text-decoration: underline dotted;
+		font-style: italic;
+	}
+	/* KEY-GUESS-01: an ambiguous key's best candidate reads as a guess, not a key. */
+	.key-guess {
+		opacity: 0.55;
 		font-style: italic;
 	}
 	.key-status,
@@ -3896,6 +4595,27 @@
 		color: var(--rb-text);
 		text-decoration: underline;
 		text-underline-offset: 2px;
+	}
+	/* LIBUX-8679: a skipped backup row only dims; it stays in place, playable and loadable. */
+	/* LIBUX-8682: gross key clash, a thin jagged red line on the border above the row, Key and BPM cells only. */
+	td.set-clash-cell {
+		position: relative;
+	}
+	.set-clash-edge {
+		position: absolute;
+		top: -2px;
+		left: 0;
+		right: 0;
+		height: 4px;
+		background:
+			linear-gradient(135deg, transparent 50%, var(--rb-red, #d9434e) 50%) 0 0 / 4px 4px repeat-x,
+			linear-gradient(45deg, var(--rb-red, #d9434e) 50%, transparent 50%) 0 0 / 4px 4px repeat-x;
+		opacity: 0.8;
+		pointer-events: auto;
+		z-index: 1;
+	}
+	tbody tr.rb-row-set-skip {
+		opacity: 0.45;
 	}
 	tbody tr.rb-row-find {
 		background: color-mix(in srgb, var(--rb-yellow, #e8a13a) 10%, transparent);
@@ -4285,6 +5005,15 @@
 	table.hide-bpm :is(th.h-bpm, td.c-bpm) {
 		display: none;
 	}
+	table.hide-tempostab :is(th.h-tempostab, td.c-tempostab) {
+		display: none;
+	}
+	/* Issue #7879: the cell's text styles live in BpmStabilityCell.svelte. */
+	.c-tempostab {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	table.hide-plays :is(th.h-plays, td.c-plays) {
 		display: none;
 	}
@@ -4304,6 +5033,9 @@
 		display: none;
 	}
 	table.hide-genre :is(th.h-genre, td.c-genre) {
+		display: none;
+	}
+	table.hide-tags :is(th.h-tags, td.c-tags) {
 		display: none;
 	}
 	table.hide-stems :is(th.h-stems, td.c-stems) {

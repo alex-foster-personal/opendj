@@ -14,6 +14,7 @@ Regression one-liners:
   - if a non-executable diskutil resolves to a path then broken
   - if a darwin host with /usr/sbin/diskutil reports diskutil_unavailable under a launchd PATH then broken
 """
+
 from __future__ import annotations
 
 import shutil
@@ -70,7 +71,8 @@ def test_a_non_executable_file_resolves_to_none(tmp_path: Path) -> None:
 
 
 def test_system_discovery_never_consults_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The class fix, on any platform: whatever PATH says, discovery uses the
     pinned file. PATH lookup is made a hard failure, not merely an empty one,
@@ -93,7 +95,8 @@ def test_system_discovery_never_consults_path(
 
 
 def test_system_discovery_still_fails_loudly_when_the_pinned_file_is_absent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The overshoot control: pinning the path must not turn a Mac that
     really has no diskutil into one that pretends to."""

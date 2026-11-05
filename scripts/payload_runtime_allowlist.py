@@ -168,8 +168,7 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "_IS_WINDOWS OpenMP setup branch; darwin never enters it."
     ),
     "pylib/torch/_inductor/cpp_builder.py:1446": (
-        "torch 2.13 perload_icx_libomp_win, called only from the same "
-        "_IS_WINDOWS branch; darwin never enters it."
+        "torch 2.13 perload_icx_libomp_win, called only from the same _IS_WINDOWS branch; darwin never enters it."
     ),
     "pylib/torch/_ops.py:1516": (
         "torch 2.13 torch.ops.load_library loads the caller's path after "
@@ -178,8 +177,7 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "torchaudio/lib/*.abi3.so, not a system search."
     ),
     "pylib/torch/cuda/__init__.py:93": (
-        "torch 2.13 ROCm amdsmi CDLL hook definition, built only when "
-        f"torch.version.hip is set; {_NO_TORCH_GPU}."
+        f"torch 2.13 ROCm amdsmi CDLL hook definition, built only when torch.version.hip is set; {_NO_TORCH_GPU}."
     ),
     "pylib/torch/cuda/__init__.py:99": f"torch 2.13 ROCm amdsmi CDLL hook; {_NO_TORCH_GPU}.",
     "pylib/torch/cuda/__init__.py:102": f"torch 2.13 ROCm amdsmi CDLL hook; {_NO_TORCH_GPU}.",

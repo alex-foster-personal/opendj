@@ -7,11 +7,9 @@ Uses the same perf-capture toolchain as S13 but a dedicated boot-library spec
 from __future__ import annotations
 
 import json
-import os
 import socket
 import subprocess
 import sys
-import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +22,7 @@ from scripts.perf.capture_boot_library_ledger import (
 )
 from scripts.perf.capture_kpi_ledger import format_appended
 from scripts.perf.capture_ledger import append_ledger_rows
+from scripts.perf.playwright_capture import run_playwright_capture
 
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
@@ -76,9 +75,7 @@ def _http_json(
 
 def _probe_engine(engine: str, timeout_s: float = _PROBE_TIMEOUT_S) -> str | None:
     try:
-        status, _payload = _http_json(
-            "GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s
-        )
+        status, _payload = _http_json("GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s)
     except ConnectionError as exc:
         return f"engine unreachable: {exc}"
     if status != 200:
@@ -92,57 +89,14 @@ def _run_playwright_capture(
     frontend: str,
     timeout_s: int,
 ) -> dict[str, Any]:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".json",
-        delete=False,
-        encoding="utf-8",
-    ) as handle:
-        result_path = handle.name
-    env = os.environ.copy()
-    env["PERFORMANCE_E2E_START_SERVERS"] = "0"
-    env["PERFORMANCE_E2E_BASE_URL"] = frontend.rstrip("/")
-    env["PERFORMANCE_E2E_API_BASE"] = engine.rstrip("/")
-    env["KPI_CAPTURE_ENGINE"] = engine.rstrip("/")
-    env["KPI_CAPTURE_FRONTEND"] = frontend.rstrip("/")
-    env["KPI_CAPTURE_RESULT"] = result_path
-    env["KPI_CAPTURE_TIMEOUT_S"] = str(timeout_s)
-    proc = subprocess.run(
-        [
-            "pnpm",
-            "exec",
-            "playwright",
-            "test",
-            "--config",
-            _PLAYWRIGHT_CONFIG,
-        ],
-        cwd=_FRONTEND_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
+    return run_playwright_capture(
+        engine=engine,
+        frontend=frontend,
+        frontend_root=_FRONTEND_ROOT,
+        playwright_config=_PLAYWRIGHT_CONFIG,
+        timeout_s=timeout_s,
+        google_storage_state=None,
     )
-    try:
-        raw = Path(result_path).read_text(encoding="utf-8")
-        result = json.loads(raw) if raw.strip() else {}
-    except (OSError, json.JSONDecodeError):
-        result = {
-            "ok": False,
-            "span": None,
-            "reason": (
-                "playwright capture did not write KPI_CAPTURE_RESULT "
-                f"(exit {proc.returncode})"
-            ),
-        }
-    finally:
-        Path(result_path).unlink(missing_ok=True)
-    if proc.returncode != 0 and not result.get("reason"):
-        result.setdefault("ok", False)
-        result.setdefault("span", None)
-        result["reason"] = (
-            result.get("reason")
-            or f"playwright exited {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
-        )
-    return result
 
 
 def _emit_withheld_stderr(rows: list[dict[str, Any]], ledger_path: Path) -> None:

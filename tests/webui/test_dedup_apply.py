@@ -15,6 +15,7 @@ Regression one-liners:
   - if missing state.db is not 503 then broken
   - if OpenAPI omits apply/undo If-Match as required then broken
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -40,25 +41,39 @@ ALIAS = "track-alias"
 OTHER = "track-other"
 
 
-def _seed_state_db(path: Path, *, canon_path: str | None = None,
-                   alias_path: str | None = None) -> None:
+def _seed_state_db(path: Path, *, canon_path: str | None = None, alias_path: str | None = None) -> None:
     conn = state_db.open_rw(path)
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=CANON, stable_id_tier="inferred",
-            title="Midnight Drive", artists=["Tamsin Quell"], album=None,
-            isrc=None, duration_ms=210_000, file_path=canon_path,
+            stable_id=CANON,
+            stable_id_tier="inferred",
+            title="Midnight Drive",
+            artists=["Tamsin Quell"],
+            album=None,
+            isrc=None,
+            duration_ms=210_000,
+            file_path=canon_path,
         )
         writer.upsert_track(
-            stable_id=ALIAS, stable_id_tier="inferred",
-            title="Midnight Drive (128k)", artists=["Tamsin Quell"], album=None,
-            isrc=None, duration_ms=210_000, file_path=alias_path,
+            stable_id=ALIAS,
+            stable_id_tier="inferred",
+            title="Midnight Drive (128k)",
+            artists=["Tamsin Quell"],
+            album=None,
+            isrc=None,
+            duration_ms=210_000,
+            file_path=alias_path,
         )
         writer.upsert_track(
-            stable_id=OTHER, stable_id_tier="inferred",
-            title="Unrelated", artists=["Other"], album=None,
-            isrc=None, duration_ms=180_000, file_path=None,
+            stable_id=OTHER,
+            stable_id_tier="inferred",
+            title="Unrelated",
+            artists=["Other"],
+            album=None,
+            isrc=None,
+            duration_ms=180_000,
+            file_path=None,
         )
     finally:
         writer.close()
@@ -85,15 +100,20 @@ def dedup_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def client(state_db_path: Path, dedup_db: Path) -> Iterator[TestClient]:
     _seed_cluster_db(
-        dedup_db, cluster_id=1,
-        canonical_sid=CANON, canonical_path="/music/canon.flac",
-        alias_sid=ALIAS, alias_path="/music/alias-128.mp3",
+        dedup_db,
+        cluster_id=1,
+        canonical_sid=CANON,
+        canonical_path="/music/canon.flac",
+        alias_sid=ALIAS,
+        alias_path="/music/alias-128.mp3",
     )
     app = create_app(
         backend=SqliteBackend(state_db_path),
         state_db_path=str(state_db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as test_client:
         yield test_client
@@ -108,7 +128,9 @@ def _revision(client: TestClient) -> tuple[str, str]:
 
 
 def _create_playlist(
-    client: TestClient, name: str, items: list[str],
+    client: TestClient,
+    name: str,
+    items: list[str],
 ) -> tuple[str, str]:
     created = client.post("/api/v1/playlists", json={"name": name})
     assert created.status_code == 201, created.text
@@ -123,7 +145,10 @@ def _create_playlist(
 
 
 def _apply(
-    client: TestClient, cluster_key: str, revision: str, survivor: str = CANON,
+    client: TestClient,
+    cluster_key: str,
+    revision: str,
+    survivor: str = CANON,
 ):
     return client.post(
         "/api/v1/dedup/clusters/1/apply",
@@ -133,7 +158,10 @@ def _apply(
 
 
 def _undo(
-    client: TestClient, cluster_key: str, revision: str, survivor: str = CANON,
+    client: TestClient,
+    cluster_key: str,
+    revision: str,
+    survivor: str = CANON,
 ):
     return client.post(
         "/api/v1/dedup/clusters/1/undo",
@@ -153,7 +181,9 @@ def test_merge_rewrites_every_alias_position_including_duplicates(
 ) -> None:
     cluster_key, revision = _revision(client)
     affected, _ = _create_playlist(
-        client, "Affected", [ALIAS, OTHER, ALIAS, CANON],
+        client,
+        "Affected",
+        [ALIAS, OTHER, ALIAS, CANON],
     )
     untouched, _ = _create_playlist(client, "Untouched", [OTHER, CANON])
     response = _apply(client, cluster_key, revision)
@@ -240,7 +270,8 @@ def test_stale_if_match_leaves_membership_unchanged(client: TestClient) -> None:
 
 
 def test_apply_does_not_delete_alias_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     canon_file = tmp_path / "canon.flac"
     alias_file = tmp_path / "alias.mp3"
@@ -254,15 +285,20 @@ def test_apply_does_not_delete_alias_file(
     monkeypatch.setattr(dedup_review, "DECISIONS_FILE", decisions_path)
     monkeypatch.setattr(dedup_decisions, "DECISIONS_FILE", decisions_path)
     _seed_cluster_db(
-        db_path, cluster_id=1,
-        canonical_sid=CANON, canonical_path=str(canon_file),
-        alias_sid=ALIAS, alias_path=str(alias_file),
+        db_path,
+        cluster_id=1,
+        canonical_sid=CANON,
+        canonical_path=str(canon_file),
+        alias_sid=ALIAS,
+        alias_path=str(alias_file),
     )
     app = create_app(
         backend=SqliteBackend(state_path),
         state_db_path=str(state_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as test_client:
         cluster_key, revision = _revision(test_client)
@@ -277,7 +313,8 @@ def test_apply_does_not_delete_alias_file(
 
 
 def test_missing_state_db_is_503(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apps.webui.server.backend import InMemoryBackend
 
@@ -291,8 +328,10 @@ def test_missing_state_db_is_503(
     app = create_app(
         backend=InMemoryBackend(),
         state_db_path=str(missing),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as test_client:
         response = test_client.post(

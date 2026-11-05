@@ -19,6 +19,7 @@ before it exits. That thread is draining, not leaking: it never calls
 
 -Claude
 """
+
 from __future__ import annotations
 
 import threading
@@ -36,9 +37,7 @@ def _thread_owner_module(thread: threading.Thread) -> str:
 
 
 def _is_sentry_owned(thread: threading.Thread) -> bool:
-    return thread.name == SENTRY_MONITOR_THREAD or _thread_owner_module(thread).startswith(
-        "sentry_sdk"
-    )
+    return thread.name == SENTRY_MONITOR_THREAD or _thread_owner_module(thread).startswith("sentry_sdk")
 
 
 def _is_sentry_monitor_object(obj: object) -> bool:
@@ -57,9 +56,7 @@ def _is_draining_sentry_monitor(thread: threading.Thread) -> bool:
     if thread.name != SENTRY_MONITOR_THREAD:
         return False
     closure = getattr(getattr(thread, "_target", None), "__closure__", None) or ()
-    monitors = [
-        cell.cell_contents for cell in closure if _is_sentry_monitor_object(cell.cell_contents)
-    ]
+    monitors = [cell.cell_contents for cell in closure if _is_sentry_monitor_object(cell.cell_contents)]
     if len(monitors) == 1:
         return monitors[0]._running is False
     if not thread.is_alive():
@@ -71,10 +68,7 @@ def _is_draining_sentry_monitor(thread: threading.Thread) -> bool:
 
 
 def _describe(thread: threading.Thread) -> str:
-    return (
-        f"{thread.name} (daemon={thread.daemon}, owner={_thread_owner_module(thread)}, "
-        f"ident={thread.ident})"
-    )
+    return f"{thread.name} (daemon={thread.daemon}, owner={_thread_owner_module(thread)}, ident={thread.ident})"
 
 
 # ---------------------------------------------------------------- public

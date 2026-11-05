@@ -2,7 +2,7 @@
 
 Tauri 2 native window wrapping the local engine's web UI. Compiles via
 `cargo check` and launches via `cargo tauri build --debug --no-bundle`;
-see `.planning/evidence/shell-smoke-2026-08-19.png` for a launch smoke test.
+see `(private path)` for a launch smoke test.
 
 ## Thin-shell rule (non-negotiable)
 
@@ -46,7 +46,8 @@ maintenance trap this thin-shell rule exists to avoid.
   itself with `hdiutil create -format UDZO` -- a plain file operation that
   needs no Finder and no logged-in user (#1711). It proves the artifact by
   mounting it, and is the only supported way to produce one.
-- Icons under `src-tauri/icons/` are generated from the existing open-dj
+- Icons under `shared/icons/` (shell-neutral; `tauri.conf.json` names them
+  as `../shared/icons/...`) are generated from the existing open-dj
   brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
   opaque RGB).
@@ -139,7 +140,7 @@ available.
   and the attempt count. Exact address, failure text, start command and the
   `no-cors` probe note live in a closed **Details for agents** disclosure,
   not in the default copy. See
-  `.planning/evidence/dmg-setup-screen-2026-08-19.png` for the older
+  `(private path)` for the older
   always-exposed layout this replaced.
 
 There is no third state: no blank window, no endless spinner, no fake data.
@@ -201,7 +202,7 @@ it from a Tauri sidecar. The wheel ships `apps/*` only
 repo root via `parents[N]` and reach into exactly those excluded
 directories: `apps/open_dj/schema_loader.py` wants `open-dj/schema/`,
 `apps/stems/cli.py` and `apps/vocals/` want `scripts/*_worker.py`,
-`apps/webui/server/routes/progress.py` wants `data/progress-tree.yaml` and
+`apps/webui/server/routes/progress.py` wants `(private path)` and
 shells out to git at the root. Only `platform_paths.py` has an env escape
 hatch. An installed-wheel engine would boot and then break silently on the
 first path touch. Staging a repo-shaped tree is what avoids that.

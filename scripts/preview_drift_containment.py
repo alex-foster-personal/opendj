@@ -10,6 +10,7 @@ preview-only commit's own content still survives anywhere in the served
 tree) live in ``scripts/preview_drift_supersession.py`` instead, so no file
 in the set crosses the 600-line file-size ratchet.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -26,9 +27,7 @@ from scripts.preview_drift_git import (
 )
 
 
-def _paths_ever_together_on_main(
-    cwd: Path, main_ref: str, treeish: str, paths: set[str]
-) -> bool:
+def _paths_ever_together_on_main(cwd: Path, main_ref: str, treeish: str, paths: set[str]) -> bool:
     """True when some SINGLE commit on ``main_ref`` matches ``treeish`` at
     EVERY one of ``paths`` SIMULTANEOUSLY.
 
@@ -73,9 +72,7 @@ def _paths_ever_together_on_main(
     False when ``treeish`` holds any of them present (main never introduced
     it, so there is genuinely nothing to coexist with).
     """
-    candidates = _git(
-        cwd, "log", main_ref, "--full-history", "--format=%H", "--", *sorted(paths)
-    ).split()
+    candidates = _git(cwd, "log", main_ref, "--full-history", "--format=%H", "--", *sorted(paths)).split()
     if not candidates:
         return _trees_identical(cwd, treeish, main_ref, *paths)
     return any(_trees_identical(cwd, treeish, sha, *paths) for sha in candidates)
@@ -123,9 +120,7 @@ def _union_diff_paths(cwd: Path, shas: list[str]) -> set[str]:
     return paths
 
 
-def _resolution_carrying_merges(
-    cwd: Path, main_ref: str, shas: list[str]
-) -> tuple[list[str], set[str]]:
+def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> tuple[list[str], set[str]]:
     """Merges whose recorded tree is NOT what merging their parents produces,
     AND whose resolved content main has not since gained some other way.
 
@@ -210,8 +205,7 @@ def _resolution_carrying_merges(
                 is_carrying = True
             elif proc.returncode != 0:
                 raise MeasurementError(
-                    f"git merge-tree failed for {sha} in {cwd} "
-                    f"(exit {proc.returncode}): {proc.stderr.strip()}"
+                    f"git merge-tree failed for {sha} in {cwd} (exit {proc.returncode}): {proc.stderr.strip()}"
                 )
             else:
                 replayed = proc.stdout.split("\n", 1)[0].strip()
@@ -221,9 +215,7 @@ def _resolution_carrying_merges(
         if not is_carrying:
             continue
         if len(parents) == 2:
-            touched = _diff_paths(cwd, parents[0], merge_tree) | _diff_paths(
-                cwd, parents[1], merge_tree
-            )
+            touched = _diff_paths(cwd, parents[0], merge_tree) | _diff_paths(cwd, parents[1], merge_tree)
             # Safe only when merge_tree matches ONE parent across the WHOLE
             # union: picking parent 0 at some paths and parent 1 at OTHER
             # paths can leave each path individually matching some parent
@@ -234,9 +226,7 @@ def _resolution_carrying_merges(
             # of the parents (or from a single legal parent for a genuine
             # conflict), so at least one parent's diff is always non-empty
             # here.
-            picked_one_parent_wholesale = any(
-                _trees_identical(cwd, merge_tree, parent, *touched) for parent in parents
-            )
+            picked_one_parent_wholesale = any(_trees_identical(cwd, merge_tree, parent, *touched) for parent in parents)
             if picked_one_parent_wholesale:
                 continue
             if _paths_ever_together_on_main(cwd, main_ref, merge_tree, touched):
@@ -251,9 +241,7 @@ def _resolution_carrying_merges(
     return carrying, trusted_paths
 
 
-def _mark_landed_commits(
-    cwd: Path, main_ref: str, preview_ref: str, commits: list[PreviewOnlyCommit]
-) -> None:
+def _mark_landed_commits(cwd: Path, main_ref: str, preview_ref: str, commits: list[PreviewOnlyCommit]) -> None:
     """Flag a preview-only commit as ``landed`` when the paths IT touched
     match, TOGETHER, some single commit on ``main_ref`` -- even though the
     tips as a whole differ. This is the squash case: main lands a
@@ -311,16 +299,12 @@ def _newest_touch_age_hours(cwd: Path, preview_ref: str, paths: set[str]) -> flo
     to the current combination and can fire immediately for a state that in
     fact just formed and has not had its grace period yet.
     """
-    last_touch_shas = {
-        _git(cwd, "log", "-1", "--format=%H", preview_ref, "--", path).strip() for path in paths
-    }
+    last_touch_shas = {_git(cwd, "log", "-1", "--format=%H", preview_ref, "--", path).strip() for path in paths}
     last_touch_shas.discard("")
     if not last_touch_shas:
         return 0.0
     described = _describe(cwd, sorted(last_touch_shas))
-    return min(
-        (_now() - described[sha][0]).total_seconds() / 3600.0 for sha in last_touch_shas
-    )
+    return min((_now() - described[sha][0]).total_seconds() / 3600.0 for sha in last_touch_shas)
 
 
 def _patch_equivalent_never_coexisted(

@@ -211,9 +211,7 @@ def assess_survival(runs: list[RunOutcome]) -> list[SurvivalOutcome]:
             other.run_id
             for other in stamped
             if other.run_id != run.run_id
-            and started
-            < _parse_github_timestamp(other.created_at, "created_at", other.run_id)
-            <= finished
+            and started < _parse_github_timestamp(other.created_at, "created_at", other.run_id) <= finished
         )
         if not overlapped_by:
             continue
@@ -288,17 +286,12 @@ def build_survival_report(
     boundary between them is named in the output every time.
     """
     if boundary_label is not None:
-        return SurvivalReport(
-            recent=tuple(outcomes), older=(), boundary=boundary_label, explicit=True
-        )
+        return SurvivalReport(recent=tuple(outcomes), older=(), boundary=boundary_label, explicit=True)
     recent = tuple(outcomes[:recent_window])
     older = tuple(outcomes[recent_window:])
     if recent:
         oldest = recent[-1]
-        boundary = (
-            f"the newest {len(recent)} raced runs, back to {oldest.head_sha[:8]} "
-            f"at {oldest.created_at}"
-        )
+        boundary = f"the newest {len(recent)} raced runs, back to {oldest.head_sha[:8]} at {oldest.created_at}"
     else:
         boundary = "no raced runs in range"
     return SurvivalReport(recent=recent, older=older, boundary=boundary, explicit=False)
@@ -389,17 +382,14 @@ def fetch_run(run_id: int) -> RunOutcome:
     )
 
 
-def fetch_recent_runs(
-    workflow: str, branch: str, limit: int, with_jobs: bool = True
-) -> list[RunOutcome]:
+def fetch_recent_runs(workflow: str, branch: str, limit: int, with_jobs: bool = True) -> list[RunOutcome]:
     """The newest `limit` COMPLETED runs of one workflow on one branch, with their jobs.
 
     In-flight runs are excluded: a run still executing is legitimately unknown, and
     reporting it alongside settled history would put a moving number in an audit record.
     """
     listing = _gh_api_json(
-        f"repos/{REPO}/actions/workflows/{workflow}/runs"
-        f"?branch={branch}&status=completed&per_page={limit}"
+        f"repos/{REPO}/actions/workflows/{workflow}/runs?branch={branch}&status=completed&per_page={limit}"
     )
     if not isinstance(listing, dict) or "workflow_runs" not in listing:
         raise PreconditionError(f"workflows/{workflow}/runs response has no workflow_runs key")

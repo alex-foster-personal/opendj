@@ -97,15 +97,9 @@ def preflight(frontend: str) -> str | None:
         return f"engine unreachable: {exc}"
     if status != 200:
         return f"engine health returned HTTP {status}"
-    configured = (
-        isinstance(payload, dict)
-        and payload.get("google_oauth_configured") is True
-    )
+    configured = isinstance(payload, dict) and payload.get("google_oauth_configured") is True
     if not configured:
-        return (
-            "Google OAuth is not configured; set "
-            f"{_OAUTH_ENV_NAMES[0]} and {_OAUTH_ENV_NAMES[1]}"
-        )
+        return f"Google OAuth is not configured; set {_OAUTH_ENV_NAMES[0]} and {_OAUTH_ENV_NAMES[1]}"
     return None
 
 
@@ -145,8 +139,7 @@ def finalize_storage_state(out: Path) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Open headed Chromium at the openDJ login page and save a Playwright "
-            "storageState for S13 KPI capture."
+            "Open headed Chromium at the openDJ login page and save a Playwright storageState for S13 KPI capture."
         ),
     )
     parser.add_argument(
@@ -159,10 +152,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--out",
-        help=(
-            "Destination path for the Playwright storageState JSON. "
-            f"Operator convention: {_DOCUMENTED_OUT}"
-        ),
+        help=(f"Destination path for the Playwright storageState JSON. Operator convention: {_DOCUMENTED_OUT}"),
     )
     parser.add_argument(
         "--request-order-log",

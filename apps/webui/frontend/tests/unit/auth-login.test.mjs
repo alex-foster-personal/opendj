@@ -73,13 +73,14 @@ test('startLogin POSTs origin and return_to from window.location', async () => {
 test('startLogin on 503 throws Error with the runbook message', async () => {
 	mockLocation();
 	const runbook = 'OAuth not configured: set OPENDJ_GOOGLE_OAUTH_CLIENT_ID';
-	mockFetch(async () =>
-		new Response(
-			JSON.stringify({
-				detail: { code: 'AUTH_NOT_CONFIGURED', message: runbook }
-			}),
-			{ status: 503, headers: { 'content-type': 'application/json' } }
-		)
+	mockFetch(
+		async () =>
+			new Response(
+				JSON.stringify({
+					detail: { code: 'AUTH_NOT_CONFIGURED', message: runbook }
+				}),
+				{ status: 503, headers: { 'content-type': 'application/json' } }
+			)
 	);
 	const mod = await loadTypeScriptModule('src/lib/auth.svelte.ts');
 	await assert.rejects(

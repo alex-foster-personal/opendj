@@ -38,6 +38,7 @@ copies and leaves the legacy keys in place, which is safe to re-run.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -84,32 +85,34 @@ def build_parser() -> argparse.ArgumentParser:
         "objects onto the content-addressed asset layout",
     )
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--prefix", default=LEGACY_STEMS_PREFIX,
-                        help="legacy key prefix to scan (default: stems/)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="read + hash every body, write/delete nothing")
-    parser.add_argument("--delete-after", action="store_true",
-                        help="delete each legacy key once its new object "
-                             "verifies byte-identical AND a durable rekey "
-                             "ledger recording the old -> new mapping has "
-                             "been written (see --ledger-key). Off by "
-                             "default: a re-key that re-uploads is cheap, a "
-                             "delete that was premature or unrecorded is not.")
-    parser.add_argument("--ledger-key",
-                        help="R2 key for the durable rekey ledger object. "
-                             "REQUIRED when --delete-after is used without "
-                             "--dry-run: content-addressed keys carry no "
-                             "preset/stable_id/filename, so the ledger is "
-                             "the only record of the bundle mapping once the "
-                             "legacy keys are deleted. Must lie OUTSIDE the "
-                             "scanned prefix (default stems/) so a later run "
-                             "cannot re-scan and delete it. Reusing the key "
-                             "across --limit batches extends the ledger "
-                             "(entries union by old key); an existing ledger "
-                             "for a different bucket or layout refuses the "
-                             "delete.")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="cap objects re-keyed this run (0 = all)")
+    parser.add_argument("--prefix", default=LEGACY_STEMS_PREFIX, help="legacy key prefix to scan (default: stems/)")
+    parser.add_argument("--dry-run", action="store_true", help="read + hash every body, write/delete nothing")
+    parser.add_argument(
+        "--delete-after",
+        action="store_true",
+        help="delete each legacy key once its new object "
+        "verifies byte-identical AND a durable rekey "
+        "ledger recording the old -> new mapping has "
+        "been written (see --ledger-key). Off by "
+        "default: a re-key that re-uploads is cheap, a "
+        "delete that was premature or unrecorded is not.",
+    )
+    parser.add_argument(
+        "--ledger-key",
+        help="R2 key for the durable rekey ledger object. "
+        "REQUIRED when --delete-after is used without "
+        "--dry-run: content-addressed keys carry no "
+        "preset/stable_id/filename, so the ledger is "
+        "the only record of the bundle mapping once the "
+        "legacy keys are deleted. Must lie OUTSIDE the "
+        "scanned prefix (default stems/) so a later run "
+        "cannot re-scan and delete it. Reusing the key "
+        "across --limit batches extends the ledger "
+        "(entries union by old key); an existing ledger "
+        "for a different bucket or layout refuses the "
+        "delete.",
+    )
+    parser.add_argument("--limit", type=int, default=0, help="cap objects re-keyed this run (0 = all)")
     return parser
 
 
@@ -131,18 +134,20 @@ def main(argv: list[str] | None = None) -> int:
     if not legacy_keys:
         print(f"no objects under {args.bucket}/{args.prefix}; nothing to re-key")
         return 0
-    print(f"found {len(legacy_keys)} legacy object(s) under "
-          f"{args.bucket}/{args.prefix}")
+    print(f"found {len(legacy_keys)} legacy object(s) under {args.bucket}/{args.prefix}")
 
     limited = legacy_keys[: args.limit] if args.limit > 0 else None
     result = migrate_legacy_stems(
-        store, args.bucket,
-        dry_run=args.dry_run, delete_after=args.delete_after,
-        prefix=args.prefix, keys=limited, ledger_key=args.ledger_key,
+        store,
+        args.bucket,
+        dry_run=args.dry_run,
+        delete_after=args.delete_after,
+        prefix=args.prefix,
+        keys=limited,
+        ledger_key=args.ledger_key,
     )
     mode = "dry-run (nothing written or deleted)" if args.dry_run else "live"
-    print(f"{mode}: migrated={result.migrated} deleted={result.deleted} "
-          f"failures={len(result.failures)}")
+    print(f"{mode}: migrated={result.migrated} deleted={result.deleted} failures={len(result.failures)}")
     if result.ledger_key:
         print(f"ledger written to {result.ledger_key}")
     for old_key, new_key in result.rekeyed[:20]:

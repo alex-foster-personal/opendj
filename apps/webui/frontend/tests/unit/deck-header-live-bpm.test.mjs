@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-const read = (path) => readFileSync(new URL(`../../src/lib/components/rb/deck/${path}`, import.meta.url), 'utf8');
+const read = (path) =>
+	readFileSync(new URL(`../../src/lib/components/rb/deck/${path}`, import.meta.url), 'utf8');
 const header = read('DeckHeader.svelte');
 const jog = read('JogDial.svelte');
 
@@ -20,7 +21,10 @@ function liveBpmCall(src) {
 test('the large BPM is derived exactly as the jog wheel derives its BPM', () => {
 	// if deck.bpm alone drives it, a pitched deck reads "122 from 122" while the wheel shows grid BPM x pitch -- broken.
 	assert.equal(liveBpmCall(header), liveBpmCall(jog));
-	assert.match(header, /const bpmText: string = \$derived\(liveBpm === null \? '--\.--' : liveBpm\.toFixed\(2\)\);/);
+	assert.match(
+		header,
+		/const bpmText: string = \$derived\(liveBpm === null \? '--\.--' : liveBpm\.toFixed\(2\)\);/
+	);
 });
 
 test('the "(from N bpm)" line keeps the analyzed original', () => {

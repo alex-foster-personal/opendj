@@ -71,7 +71,7 @@ const REPO = path.resolve(FRONTEND, '../../..');
  * overridable and the failure names the override instead of a bare ENOENT.
  */
 const FIXTURE_DIR =
-	process.env.Q18_FLAC_DIR ?? path.join(REPO, 'data/datasets/jamendolyrics-vocals');
+	process.env.Q18_FLAC_DIR ?? path.join(REPO, '(private path)');
 const PORT = 8719;
 /**
  * Where this run records what it decoded, and what it verifies against.
@@ -92,13 +92,13 @@ function parseArgs() {
 	let ledgerPath = null;
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--ledger') {
-			ledgerPath = args[i + 1] ?? path.join(REPO, 'docs/perf/kpi-ledger.json');
+			ledgerPath = args[i + 1] ?? path.join(REPO, '(private path)');
 		}
 	}
 	return {
 		recordMode: args.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1',
 		appendLedger: ledgerPath !== null || process.env.Q18_APPEND_LEDGER === '1',
-		ledgerPath: ledgerPath ?? path.join(REPO, 'docs/perf/kpi-ledger.json')
+		ledgerPath: ledgerPath ?? path.join(REPO, '(private path)')
 	};
 }
 
@@ -216,7 +216,12 @@ async function main() {
 			recorded = `unparseable: ${String(exc).split('\n')[0]}`;
 		}
 	}
-	const gate = manifestGate({ recordMode: RECORD_MODE, manifestExists, recorded, observed: manifest });
+	const gate = manifestGate({
+		recordMode: RECORD_MODE,
+		manifestExists,
+		recorded,
+		observed: manifest
+	});
 	if (gate.action === 'record') {
 		mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
 		writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, '\t')}\n`);
@@ -337,10 +342,7 @@ async function main() {
 				);
 				const reference2 = Object.fromEntries(
 					await Promise.all(
-						two.map(async (part) => [
-							part,
-							await ctx.decodeAudioData(twoBytes()[part].slice(0))
-						])
+						two.map(async (part) => [part, await ctx.decodeAudioData(twoBytes()[part].slice(0))])
 					)
 				);
 
@@ -366,11 +368,7 @@ async function main() {
 
 					decode.stemDecodeSession.forceLane('workers');
 					const t1 = performance.now();
-					const run = await decode.decodeStemParts(
-						ctx,
-						copyBundle(bytesForWidth, parts),
-						parts
-					);
+					const run = await decode.decodeStemParts(ctx, copyBundle(bytesForWidth, parts), parts);
 					const workerMs = Math.round(performance.now() - t1);
 
 					let maxAbsDiff = 0;
@@ -471,9 +469,7 @@ async function main() {
 				failures++;
 			}
 			if (w.maxAbsDiff >= LSB_16_BIT) {
-				console.log(
-					`  FAIL decode disagreed by ${w.maxAbsDiff} >= one 16-bit LSB (${LSB_16_BIT})`
-				);
+				console.log(`  FAIL decode disagreed by ${w.maxAbsDiff} >= one 16-bit LSB (${LSB_16_BIT})`);
 				failures++;
 			}
 			if (w.comparedSamples === 0) {

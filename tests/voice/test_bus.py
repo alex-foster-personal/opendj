@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.bus (VOICE-01)."""
+
 from __future__ import annotations
 
 import json
@@ -57,15 +58,14 @@ class TestMakeBus:
         """Phase 5 is shipped, so the happy path is StateBackedBus.
 
         We point the state DB at ``tmp_path`` to avoid touching the
-        developer's real ``data/state/state.db``.
+        developer's real ``(private path)``.
         """
-        monkeypatch.setattr(
-            "apps.shared.state.paths.STATE_DB", tmp_path / "state.db"
-        )
+        monkeypatch.setattr("apps.shared.state.paths.STATE_DB", tmp_path / "state.db")
         # The module-level constant used by db.open_rw's default path
         # lives in apps.shared.state.paths; the db module re-imports it,
         # so patch both spellings to be safe.
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         warnings: list[str] = []
         b = bus.make_bus(warn=warnings.append)
@@ -77,12 +77,11 @@ class TestMakeBus:
 
     def test_falls_back_when_state_db_cannot_open(self, monkeypatch):
         """A broken state layer must fall back to JSONL with one warning."""
+
         def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
-        monkeypatch.setattr(
-            "apps.shared.state.db.open_rw", _boom
-        )
+        monkeypatch.setattr("apps.shared.state.db.open_rw", _boom)
         warnings: list[str] = []
         b = bus.make_bus(warn=warnings.append)
         assert isinstance(b, bus.JsonlStubBus)
@@ -92,9 +91,7 @@ class TestMakeBus:
         def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
-        monkeypatch.setattr(
-            "apps.shared.state.db.open_rw", _boom
-        )
+        monkeypatch.setattr("apps.shared.state.db.open_rw", _boom)
         warnings: list[str] = []
         bus.make_bus(warn=warnings.append)
         bus.make_bus(warn=warnings.append)
@@ -105,22 +102,24 @@ class TestMakeBus:
 class TestStateBackedBus:
     def test_publish_writes_to_events_table(self, tmp_path, monkeypatch):
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
         try:
             eid = b.publish({"kind": "SEARCH", "slots": {"query": "x"}})
             assert eid >= 1
             import sqlite3 as _sqlite3
+
             with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
-                rows = conn.execute(
-                    "SELECT kind, actor FROM events WHERE actor = 'voice'"
-                ).fetchall()
+                rows = conn.execute("SELECT kind, actor FROM events WHERE actor = 'voice'").fetchall()
             assert rows == [("SEARCH", "voice")]
         finally:
             b.close()
 
     def test_publish_commits_so_row_survives_process_restart(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         """Adversarial R4 F2: publish() must explicitly commit.
 
@@ -130,6 +129,7 @@ class TestStateBackedBus:
         event row is durable.
         """
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
         try:
@@ -140,18 +140,18 @@ class TestStateBackedBus:
             # because SQLite's deferred transaction is still open on the
             # writer connection.
             import sqlite3 as _sqlite3
+
             with _sqlite3.connect(str(tmp_path / "state.db")) as probe:
-                rows = probe.execute(
-                    "SELECT kind FROM events WHERE actor = 'voice'"
-                ).fetchall()
-            assert rows == [("SEARCH",)], (
-                "publish() did not commit; fresh reader saw no rows"
-            )
+                rows = probe.execute("SELECT kind FROM events WHERE actor = 'voice'").fetchall()
+            assert rows == [("SEARCH",)], "publish() did not commit; fresh reader saw no rows"
         finally:
             b.close()
 
     def test_publish_is_durable_when_fanout_raises(
-        self, tmp_path, monkeypatch, caplog,
+        self,
+        tmp_path,
+        monkeypatch,
+        caplog,
     ):
         """Adversarial R4 F1: a raising in-process subscriber (or closed
         fanout bus) must not silently leave DB and bus out of sync.
@@ -164,6 +164,7 @@ class TestStateBackedBus:
         import logging
 
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
         try:
@@ -172,6 +173,7 @@ class TestStateBackedBus:
             # path fires but the fanout call explodes.
             def _boom(_event):
                 raise RuntimeError("fanout exploded")
+
             monkeypatch.setattr(b._bus, "publish", _boom)
 
             caplog.set_level(logging.ERROR, logger="apps.voice.bus")
@@ -185,15 +187,15 @@ class TestStateBackedBus:
             assert rows[0]["kind"] == "SEARCH"
 
             # Loud failure: structured error log, not silent desync.
-            assert any(
-                "fanout failed" in rec.getMessage()
-                for rec in caplog.records
-            ), "expected structured error log for fanout failure"
+            assert any("fanout failed" in rec.getMessage() for rec in caplog.records), (
+                "expected structured error log for fanout failure"
+            )
         finally:
             b.close()
 
     def test_recent_filters_by_kind(self, tmp_path, monkeypatch):
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
         try:
@@ -220,6 +222,7 @@ class TestRecentSeesAllActors:
 
     def test_voice_recent_sees_non_voice_actors(self, tmp_path, monkeypatch):
         from apps.shared.state import paths as state_paths
+
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
         try:
@@ -231,10 +234,10 @@ class TestRecentSeesAllActors:
             import json as _json
             import sqlite3 as _sqlite3
             import time as _time
+
             with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
                 conn.execute(
-                    "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO events (ts, kind, stable_id, payload_json, actor) VALUES (?, ?, ?, ?, ?)",
                     (
                         _time.time(),
                         "READ_BPM",
@@ -249,9 +252,7 @@ class TestRecentSeesAllActors:
             actors_seen_kinds = [r.get("kind") for r in rows]
             # Must include BOTH the voice row AND the phase12 row.
             assert len(rows) == 2, f"expected 2 rows, got {rows}"
-            assert any(r.get("bpm") == 130 for r in rows), (
-                "phase12 actor row was hidden by recent() actor filter"
-            )
+            assert any(r.get("bpm") == 130 for r in rows), "phase12 actor row was hidden by recent() actor filter"
 
             # And the explicit-actor opt-in still works.
             voice_only = b.recent("READ_BPM", limit=10, actor="voice")

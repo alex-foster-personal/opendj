@@ -38,9 +38,7 @@ export function isHotkeysOverlayVisible(state: HotkeysOverlayGestureState): bool
 	return state.holding || state.toggledOn;
 }
 
-export function applySlashHoldStart(
-	state: HotkeysOverlayGestureState
-): HotkeysOverlayGestureState {
+export function applySlashHoldStart(state: HotkeysOverlayGestureState): HotkeysOverlayGestureState {
 	return { ...state, holding: true };
 }
 

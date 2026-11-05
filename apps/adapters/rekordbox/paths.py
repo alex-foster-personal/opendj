@@ -26,7 +26,7 @@ import json
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -35,6 +35,7 @@ from apps.cloud import policy as cloud_policy
 from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.eviction import HydrationError
 from apps.shared import audio_quality, fs_residency, platform_paths
+from apps.shared.job_store import JobStoreLike
 from apps.shared.platform_paths import MappedPath
 from apps.shared.state import locations as track_locations
 from apps.shared.state import sync_stamp
@@ -43,9 +44,6 @@ from . import config
 from .cues import HOT_CUE_SLOTS
 from .errors import _open_ro, not_found, unavailable
 from .models import RbContent
-
-if TYPE_CHECKING:
-    from apps.engine_core.jobs.store import JobStore
 
 
 def resolve_content(stable_id: str) -> RbContent:
@@ -598,7 +596,7 @@ def resolve_playable_audio(
     stable_id: str,
     *,
     share: bool = False,
-    jobs_store: JobStore | None = None,
+    jobs_store: JobStoreLike | None = None,
 ) -> track_locations.PickedAudio:
     """Pick the single file the frontend may play via believed-state resolution.
 

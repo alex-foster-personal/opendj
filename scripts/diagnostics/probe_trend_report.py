@@ -160,21 +160,15 @@ def _require_engine_identity(health_url: str, started: float, budget_seconds: fl
     except _ReportBudgetSpent as exc:
         raise TrendReportError(
             health_url,
-            "engine identity check failed: "
-            + _budget_spent_detail(started, budget_seconds)
-            + "; nothing was posted",
+            "engine identity check failed: " + _budget_spent_detail(started, budget_seconds) + "; nothing was posted",
         ) from exc
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise TrendReportError(
             health_url,
             f"engine identity check failed: {type(exc).__name__}: {exc}",
         ) from exc
-    if not isinstance(health, dict) or health.get("status") != "ok" or not isinstance(
-        health.get("version"), str
-    ):
-        raise TrendReportError(
-            health_url, "engine identity check returned an invalid health record"
-        )
+    if not isinstance(health, dict) or health.get("status") != "ok" or not isinstance(health.get("version"), str):
+        raise TrendReportError(health_url, "engine identity check returned an invalid health record")
 
 
 def report_red_trend(
@@ -219,15 +213,11 @@ def report_red_trend(
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise TrendReportError(url, f"{type(exc).__name__}: {exc}") from exc
     if status != CLIENT_ERROR_ACCEPTED_STATUS:
-        raise TrendReportError(
-            url, f"HTTP {status}, expected {CLIENT_ERROR_ACCEPTED_STATUS}"
-        )
+        raise TrendReportError(url, f"HTTP {status}, expected {CLIENT_ERROR_ACCEPTED_STATUS}")
     if not isinstance(receipt, dict) or not isinstance(receipt.get("event_id"), str):
         raise TrendReportError(url, "engine returned no client-error event id")
     if receipt.get("stored") is not True:
-        raise TrendReportError(
-            url, "engine accepted the request but did not persist the client-error record"
-        )
+        raise TrendReportError(url, "engine accepted the request but did not persist the client-error record")
     return {
         "posted": True,
         "http_status": status,

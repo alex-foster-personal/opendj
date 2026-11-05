@@ -4,6 +4,7 @@
      racing a load cannot say which track it is paying to separate (Codex on
      #6819); the typed command already takes ``stable_id``.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,7 +16,9 @@ from apps.opendj_cli.verbs import InvocationError, parse_invocation
 def test_stem_separate_carries_the_named_track() -> None:
     """[if] stem_separate 1 track-a drops the id [then] the dispatcher cannot refuse a swapped deck, [else stop]."""
     assert parse_invocation(["stem_separate", "1", "track-a"]).command == {
-        "type": "stem_separate", "deck": 1, "stable_id": "track-a",
+        "type": "stem_separate",
+        "deck": 1,
+        "stable_id": "track-a",
     }
 
 

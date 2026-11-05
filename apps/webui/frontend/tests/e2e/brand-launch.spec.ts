@@ -70,7 +70,10 @@ async function openWithFreshLaunch(
 	// overlay it was meant to freeze has already played out.
 	await expect(page.locator(`#${BRAND_LAUNCH_PAUSE_STYLE_ID}`)).toHaveCount(1);
 	if (!opts?.keepPaused) {
-		await page.evaluate((styleId) => document.getElementById(styleId)?.remove(), BRAND_LAUNCH_PAUSE_STYLE_ID);
+		await page.evaluate(
+			(styleId) => document.getElementById(styleId)?.remove(),
+			BRAND_LAUNCH_PAUSE_STYLE_ID
+		);
 	}
 	return launch;
 }
@@ -196,7 +199,9 @@ test('first open plays the identity launch once without blocking the app', async
 	const launch = await openWithFreshLaunch(page, '/');
 	await expect(page.locator('body')).toBeVisible();
 	await expect(launch).toBeHidden({ timeout: BRAND_LAUNCH_DURATION_MS + 5_000 });
-	await expect.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1'))).toBe('complete');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1')))
+		.toBe('complete');
 
 	await page.reload();
 	await expect(launch).toBeHidden();
@@ -234,9 +239,9 @@ test('launch halves slide closed then fade removes overlay', async ({ page }) =>
 
 	await releaseLaunchAnimations(page);
 	await expect(launch).toHaveCount(0, { timeout: BRAND_LAUNCH_FADE_MS + 5_000 });
-	await expect.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1'))).toBe(
-		'complete'
-	);
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1')))
+		.toBe('complete');
 });
 
 test('reduced motion shows closed circle without slide', async ({ page }) => {
@@ -247,9 +252,9 @@ test('reduced motion shows closed circle without slide', async ({ page }) => {
 
 	await page.clock.runFor(BRAND_LAUNCH_DURATION_MS + 50);
 	await expect(launch).toHaveCount(0);
-	await expect.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1'))).toBe(
-		'complete'
-	);
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1')))
+		.toBe('complete');
 });
 
 test('library rows paint behind the launch overlay on /performance', async ({ page }) => {

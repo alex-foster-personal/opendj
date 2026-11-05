@@ -60,7 +60,9 @@ for (const group of ['flagged', 'control']) {
 const pl = await loadTypeScriptModule('src/lib/rb/phase-lock.ts');
 
 async function fetchBeats(stableId) {
-	const reply = await fetch(`${args.base}/api/v1/tracks/${stableId}/anlz?points=100`, { method: 'GET' });
+	const reply = await fetch(`${args.base}/api/v1/tracks/${stableId}/anlz?points=100`, {
+		method: 'GET'
+	});
 	if (reply.status !== 200) throw new Error(`${stableId}: anlz answered ${reply.status}`);
 	const beats = (await reply.json()).beatgrid?.beats;
 	if (!Array.isArray(beats) || beats.length < 2) throw new Error(`${stableId}: under 2 beats`);
@@ -126,29 +128,46 @@ const control = rows.filter((r) => r.group === 'control');
 // mean cannot be locked to a mean-tempo master by ANY trim: reported apart.
 const inRange = flagged.filter((r) => r.after.atPitchRangeFrac === 0);
 const outOfRange = flagged.filter((r) => r.after.atPitchRangeFrac > 0);
-const groups = { flagged, 'flagged, tempo inside the pitch range': inRange, 'flagged, a section outside it': outOfRange, control };
+const groups = {
+	flagged,
+	'flagged, tempo inside the pitch range': inRange,
+	'flagged, a section outside it': outOfRange,
+	control
+};
 
 // ---- the run must have measured something before any table is printed
 const failures = [];
 const flaggedBefore = summary(flagged, 'before');
-if (flaggedBefore.tracksWithAnyReseek === 0) failures.push('no flagged grid re-joins under the legacy lock');
+if (flaggedBefore.tracksWithAnyReseek === 0)
+	failures.push('no flagged grid re-joins under the legacy lock');
 for (const side of ['before', 'after']) {
 	const s = summary(control, side);
-	if (s.reseeksPerMinMax !== 0) failures.push(`control re-joins ${side}: max ${s.reseeksPerMinMax}`);
+	if (s.reseeksPerMinMax !== 0)
+		failures.push(`control re-joins ${side}: max ${s.reseeksPerMinMax}`);
 }
 // The control's invariant: an even grid is read as stored, so the lock does
 // to it exactly what it did before, tick for tick.
 for (const r of control) {
-	for (const key of ['trimTimeFrac', 'capTimeFrac', 'medianStoredErrMs', 'medianLockErrMs', 'baseMovesPerMin']) {
+	for (const key of [
+		'trimTimeFrac',
+		'capTimeFrac',
+		'medianStoredErrMs',
+		'medianLockErrMs',
+		'baseMovesPerMin'
+	]) {
 		if (r.before[key] !== r.after[key]) {
-			failures.push(`control ${r.stableId.slice(0, 10)} ${key} changed: ${r.before[key]} -> ${r.after[key]}`);
+			failures.push(
+				`control ${r.stableId.slice(0, 10)} ${key} changed: ${r.before[key]} -> ${r.after[key]}`
+			);
 		}
 	}
 }
 if (args['expect-before-median'] !== undefined) {
 	const expected = Number(args['expect-before-median']);
 	if (!(Math.abs(flaggedBefore.reseeksPerMinMedian - expected) <= 1)) {
-		failures.push(`flagged before-median ${flaggedBefore.reseeksPerMinMedian} is not the expected ${expected}`);
+		failures.push(
+			`flagged before-median ${flaggedBefore.reseeksPerMinMedian} is not the expected ${expected}`
+		);
 	}
 }
 if (failures.length > 0) {
@@ -173,12 +192,19 @@ for (const [name, subset] of Object.entries(groups)) {
 		);
 	}
 }
-lines.push('', '| stable id | beats | re-joins/min before | after | trimming before | after | median lock error ms after | share of time base sits on the pitch range |', '|---|---|---|---|---|---|---|---|');
+lines.push(
+	'',
+	'| stable id | beats | re-joins/min before | after | trimming before | after | median lock error ms after | share of time base sits on the pitch range |',
+	'|---|---|---|---|---|---|---|---|'
+);
 for (const r of flagged) {
 	lines.push(
 		`| ${r.stableId.slice(0, 10)} | ${r.beats} | ${r.before.reseeksPerMin.toFixed(1)} | ${r.after.reseeksPerMin.toFixed(1)} | ${pct(r.before.trimTimeFrac)} | ${pct(r.after.trimTimeFrac)} | ${r.after.medianLockErrMs.toFixed(2)} | ${pct(r.after.atPitchRangeFrac)} |`
 	);
 }
 
-writeFileSync(args.out, `${JSON.stringify({ pitchRangePct: WORKLOAD_PITCH_RANGE_PCT, summaries, rows }, null, '\t')}\n`);
+writeFileSync(
+	args.out,
+	`${JSON.stringify({ pitchRangePct: WORKLOAD_PITCH_RANGE_PCT, summaries, rows }, null, '\t')}\n`
+);
 console.log(lines.join('\n'));

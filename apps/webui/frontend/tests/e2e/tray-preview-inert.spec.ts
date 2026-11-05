@@ -37,7 +37,9 @@ const dispatch = (page: Page, command: PerformanceCommand): Promise<void> =>
 		await ipc.dispatch(cmd);
 	}, command);
 
-test('the tray Preview button is inert while idle and stops a playing preview', async ({ page }) => {
+test('the tray Preview button is inert while idle and stops a playing preview', async ({
+	page
+}) => {
 	test.setTimeout(120_000);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto('/performance');
@@ -56,7 +58,9 @@ test('the tray Preview button is inert while idle and stops a playing preview', 
 	const stableId = await row.getAttribute('data-stable-id');
 	expect(stableId, 'the fixture row has no data-stable-id').not.toBeNull();
 	await dispatch(page, { type: 'preview_cue', stable_id: stableId as string, ratio: 0.3 });
-	await expect.poll(async () => (await query(page)).preview.playing, { timeout: 30_000 }).toBe(true);
+	await expect
+		.poll(async () => (await query(page)).preview.playing, { timeout: 30_000 })
+		.toBe(true);
 
 	const stop = page.getByRole('button', { name: 'Stop library preview', exact: true });
 	await expect(stop).toBeEnabled();

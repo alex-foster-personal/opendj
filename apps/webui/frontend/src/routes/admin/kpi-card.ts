@@ -9,13 +9,7 @@
  * kind of rule a refactor flattens without noticing.
  */
 
-import {
-	ARROW,
-	formatDeltaWithUnit,
-	formatWithUnit,
-	judge,
-	type Verdict
-} from './format';
+import { ARROW, formatDeltaWithUnit, formatWithUnit, judge, type Verdict } from './format';
 import type { KpiDef, KpiSnapshot } from './kpi-api';
 import { KPI_WHY } from './kpi-why';
 import { originBadge, originText } from './kpi-provenance';
@@ -60,7 +54,8 @@ export function buildKpiCard(
 	snapshots: KpiSnapshot[],
 	options?: { timeAxis?: boolean; today?: string }
 ): KpiCardModel {
-	const directionText = kpi.direction === 'higher_better' ? 'Higher is better.' : 'Lower is better.';
+	const directionText =
+		kpi.direction === 'higher_better' ? 'Higher is better.' : 'Lower is better.';
 	const why = KPI_WHY[metric] ?? '';
 	const points = measuredPoints(metric, snapshots);
 	const latest = points.length > 0 ? points[points.length - 1] : null;
@@ -88,7 +83,9 @@ export function buildKpiCard(
 	}
 
 	const origin = snapshots[latest.index].provenance[metric];
-	body.push(`Latest reading from ${snapshots[latest.index].label} (${snapshots[latest.index].ts}).`);
+	body.push(
+		`Latest reading from ${snapshots[latest.index].label} (${snapshots[latest.index].ts}).`
+	);
 	const originLine = originText(origin);
 	if (originLine !== null) body.push(originLine);
 

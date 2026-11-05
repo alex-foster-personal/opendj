@@ -1512,6 +1512,121 @@ def test_the_trim_matches_the_outgoing_deck_as_it_plays_including_its_trim() -> 
         propose_transition(b, c, out_deck=1, in_deck=2, intent="smooth", live=live)
 
 
+def test_match_trim_includes_live_auto_gain_offsets() -> None:
+    """AGENT-31 (#7654): Codex pair with auto gain returns 0 dB; without auto gain still +6 dB."""
+    from apps.autodj.profile import match_trim_db
+
+    out_p, in_p = _loud("trk-out", -6.0), _loud("trk-in", -12.0)
+    assert match_trim_db(out_p, in_p, 0.0, out_auto_gain_db=-6.0, in_auto_gain_db=0.0) == (
+        0.0,
+        "match -12.0 to -6.0 LUFS with the outgoing trim +0.0 dB and auto gain -6.0/+0.0 dB (-12.0 LUFS): +0.0 dB",
+    )
+    assert match_trim_db(out_p, in_p)[0] == pytest.approx(6.0)
+
+
+def test_both_decks_auto_gained_to_the_same_target_need_no_trim() -> None:
+    from apps.autodj.profile import match_trim_db
+
+    out_p, in_p = _loud("trk-out", -6.0), _loud("trk-in", -6.0)
+    assert match_trim_db(out_p, in_p, 0.0, out_auto_gain_db=-6.0, in_auto_gain_db=-6.0)[0] == 0.0
+
+
+def _mirror_with_auto_gain() -> dict[str, Any]:
+    live = _live()
+    live["mixer"] = {"channels": {"1": {"trim": 0.5}, "2": {"trim": 0.5}}}
+    live["auto_gain"] = {
+        "1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": -6.0}},
+        "2": {"state": "ready", "value": {"stable_id": "trk-in", "effective_offset_db": 0.0}},
+    }
+    return live
+
+
+def test_live_propose_matches_loudness_with_auto_gain_on_the_mirror() -> None:
+    out_p, in_p = _loud("trk-out", -6.0), _loud("trk-in", -12.0)
+    rows = propose_transition(out_p, in_p, out_deck=1, in_deck=2, intent="smooth", live=_mirror_with_auto_gain())[
+        "proposals"
+    ]
+    assert rows and all(row["plan"]["in"]["trim_db"] == pytest.approx(0.0) for row in rows)
+    live_no_ag = _live()
+    live_no_ag["mixer"] = {"channels": {"1": {"trim": 0.5}, "2": {"trim": 0.5}}}
+    without = propose_transition(out_p, in_p, out_deck=1, in_deck=2, intent="smooth", live=live_no_ag)["proposals"]
+    assert without and all(row["plan"]["in"]["trim_db"] == pytest.approx(6.0) for row in without)
+    assert "the live mirror carries no auto_gain" in without[0]["plan"]["in"]["trim_reason"]
+
+
+def test_stale_auto_gain_ready_is_treated_as_zero_db() -> None:
+    from apps.autodj.propose import _deck_auto_gain_db
+
+    live = _mirror_with_auto_gain()
+    live["auto_gain"]["1"]["value"]["stable_id"] = "other"
+    offset, note = _deck_auto_gain_db(live, 1, "trk-out")
+    assert offset == 0.0 and note is not None and "other" in note and "trk-out" in note
+    live = _mirror_with_auto_gain()
+    live["decks"]["1"]["stable_id"] = "other"
+    offset, note = _deck_auto_gain_db(live, 1, "trk-out")
+    assert offset == 0.0 and note is not None
+
+
+def test_auto_gain_error_and_empty_play_at_zero_db() -> None:
+    from apps.autodj.propose import _deck_auto_gain_db
+
+    live = _mirror_with_auto_gain()
+    live["auto_gain"]["1"] = {"state": "error", "stable_id": "trk-out", "message": "boom"}
+    assert _deck_auto_gain_db(live, 1, "trk-out") == (0.0, "deck 1 auto gain error, so the match assumes 0 dB")
+    live["auto_gain"]["1"] = {"state": "empty"}
+    assert _deck_auto_gain_db(live, 1, "trk-out") == (0.0, None)
+
+
+@pytest.mark.parametrize(
+    "auto_gain",
+    [
+        "not-an-object",
+        {"2": {"state": "ready", "value": {"stable_id": "trk-in", "effective_offset_db": 0.0}}},
+        {"1": {"state": "weird"}},
+        {"1": {"state": "ready"}},
+        {"1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": True}}},
+        {"1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": "x"}}},
+        {"1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": float("nan")}}},
+        {"1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": 13.0}}},
+    ],
+)
+def test_malformed_present_auto_gain_raises(auto_gain: Any) -> None:
+    from apps.autodj.propose import _deck_auto_gain_db
+
+    live = _mirror_with_auto_gain()
+    live["auto_gain"] = auto_gain
+    with pytest.raises(
+        ValueError,
+        match=r"not an object|a partial mirror is refused|not a finite offset|unknown",
+    ):
+        _deck_auto_gain_db(live, 1, "trk-out")
+
+
+def test_offline_and_missing_auto_gain_key_assume_zero_db() -> None:
+    from apps.autodj.propose import _deck_auto_gain_db
+
+    assert _deck_auto_gain_db(None, 1, "trk-out") == (
+        0.0,
+        "offline proposal: no live auto gain, so the match assumes 0 dB",
+    )
+    assert _deck_auto_gain_db({"decks": {}}, 1, "trk-out") == (
+        0.0,
+        "the live mirror carries no auto_gain, so the match assumes 0 dB",
+    )
+    offset, note = _deck_auto_gain_db(_mirror_with_auto_gain(), 1, "trk-out")
+    assert offset == pytest.approx(-6.0) and note is None
+
+
+def test_missing_auto_gain_note_is_deduped_for_both_decks() -> None:
+    from apps.autodj.propose import match_live_trim_db
+
+    live = _live()
+    live["mixer"] = {"channels": {"1": {"trim": 0.5}, "2": {"trim": 0.5}}}
+    out_p, in_p = _loud("trk-out", -6.0), _loud("trk-in", -12.0)
+    _, reason = match_live_trim_db(out_p, in_p, live, 1, 2)
+    assert reason.count("the live mirror carries no auto_gain") == 1
+
+
 def test_a_glide_after_the_handover_stays_on_the_incoming_deck() -> None:
     """AGENT-32 (Sol P1 #7594): from the terminal master event on, the incoming deck is the leader, so a tempo move
     there stays on it; one before moves to the outgoing leader (control); a ramp straddling the handover is refused."""
@@ -1706,7 +1821,10 @@ def test_a_partial_or_malformed_live_mixer_is_refused_never_read_as_unity_trim(l
     Sol P1 #7594: chained ``or {}`` fallbacks read a partial mirror as a 0 dB outgoing trim."""
     from apps.autodj.propose import _outgoing_trim_db
 
-    with pytest.raises(ValueError, match="not an object|a partial mirror is refused|not a knob value"):
+    with pytest.raises(
+        ValueError,
+        match=r"not an object|a partial mirror is refused|not a knob value",
+    ):
         _outgoing_trim_db(live, 1)
 
 

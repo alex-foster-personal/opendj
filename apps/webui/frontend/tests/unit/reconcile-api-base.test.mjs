@@ -110,7 +110,8 @@ test('applyRelocate binds the CAS header and the full confirmation body', async 
 		expected_candidate_identity: 'token-9',
 		expected_original_path: '/old/a.flac',
 		expected_vendor_id: '42',
-		confirm: true
+		confirm: true,
+		allow_different_recording: false
 	});
 	assert.equal(result.target, 'rekordbox');
 });

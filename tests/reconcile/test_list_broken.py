@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.reconcile.list_broken`. Ties to RECON-01."""
+
 from __future__ import annotations
 
 import csv
@@ -16,9 +17,18 @@ from apps.reconcile import list_broken
 def test_csv_columns_match_the_reconcile_contract() -> None:
     """Column order + names must stay stable (downstream locate.py parses CSV)."""
     assert list_broken.CSV_COLUMNS == (
-        "id", "title", "artist", "album", "genre",
-        "bpm", "key", "duration_s", "file_size",
-        "original_path", "basename", "parent_dir",
+        "id",
+        "title",
+        "artist",
+        "album",
+        "genre",
+        "bpm",
+        "key",
+        "duration_s",
+        "file_size",
+        "original_path",
+        "basename",
+        "parent_dir",
     )
 
 
@@ -26,9 +36,18 @@ def test_csv_columns_match_the_reconcile_contract() -> None:
 def test_broken_row_as_csv_handles_nones() -> None:
     """None BPM/duration/file_size → empty string in the CSV output."""
     row = list_broken.BrokenRow(
-        id="42", title="t", artist="a", album="al", genre="g",
-        bpm=None, key="", duration_s=None, file_size=None,
-        original_path="/x/y.mp3", basename="y.mp3", parent_dir="/x",
+        id="42",
+        title="t",
+        artist="a",
+        album="al",
+        genre="g",
+        bpm=None,
+        key="",
+        duration_s=None,
+        file_size=None,
+        original_path="/x/y.mp3",
+        basename="y.mp3",
+        parent_dir="/x",
     )
     out = row.as_csv()
     assert out == ["42", "t", "a", "al", "g", "", "", "", "", "/x/y.mp3", "y.mp3", "/x"]
@@ -39,9 +58,7 @@ def test_broken_row_as_csv_handles_nones() -> None:
     ("length", "expected_duration_s"),
     [(250, 250), (None, None), ("not-a-number", None)],
 )
-def test_broken_row_from_coerces_rekordbox_length(
-    length: object, expected_duration_s: int | None
-) -> None:
+def test_broken_row_from_coerces_rekordbox_length(length: object, expected_duration_s: int | None) -> None:
     """[if] Rekordbox Length is valid or invalid [then] BrokenRow coerces it, [else stop]."""
     raw = SimpleNamespace(KeyName="8A", Length=length)
     rb = SimpleNamespace(
@@ -62,9 +79,18 @@ def test_broken_row_from_coerces_rekordbox_length(
 def test_broken_row_formats_bpm_to_two_decimals() -> None:
     """BPM is written as ``"128.00"`` (2 decimals) to keep CSV diff-stable."""
     row = list_broken.BrokenRow(
-        id="1", title="t", artist="a", album="", genre="",
-        bpm=128.0, key="", duration_s=250, file_size=1024,
-        original_path="/x", basename="x", parent_dir="/",
+        id="1",
+        title="t",
+        artist="a",
+        album="",
+        genre="",
+        bpm=128.0,
+        key="",
+        duration_s=250,
+        file_size=1024,
+        original_path="/x",
+        basename="x",
+        parent_dir="/",
     )
     out = row.as_csv()
     assert out[5] == "128.00"
@@ -91,9 +117,7 @@ def test_collect_broken_skips_streaming_and_existing_files(
         assert r.original_path, "broken row must have an original_path"
         assert not Path(r.original_path).exists(), r.original_path
         # Streaming prefixes must NEVER appear.
-        assert not r.original_path.startswith(
-            ("spotify:", "tidal:", "http://", "https://")
-        )
+        assert not r.original_path.startswith(("spotify:", "tidal:", "http://", "https://"))
     # Sanity: basename / parent_dir derive from original_path.
     for r in rows[:5]:
         assert r.basename == Path(r.original_path).name
@@ -129,9 +153,7 @@ def test_collect_broken_output_structure_is_sound(rb_pyrekordbox_db) -> None:
 
 
 @pytest.mark.requirement("RECON-01")
-def test_collect_broken_detects_forced_broken_rows(
-    tmp_rb_db: Path, tmp_path: Path
-) -> None:
+def test_collect_broken_detects_forced_broken_rows(tmp_rb_db: Path, tmp_path: Path) -> None:
     """Rewriting every FolderPath to a guaranteed-missing path proves the
     happy path in ``_collect_broken`` works. This also exercises the
     summary table (parent directory counter) which would otherwise be
@@ -142,14 +164,14 @@ def test_collect_broken_detects_forced_broken_rows(
     # untouched so we still exercise the is_streaming branch.
     con = sqlite3.connect(tmp_rb_db)
     con.execute(
-        "UPDATE djmdContent SET FolderPath = ? || '/' || ID || '.mp3' "
-        "WHERE FolderPath LIKE '/%'",
+        "UPDATE djmdContent SET FolderPath = ? || '/' || ID || '.mp3' WHERE FolderPath LIKE '/%'",
         (str(tmp_path / "definitely-not-a-real-dir-xyz"),),
     )
     con.commit()
     con.close()
 
     from pyrekordbox import Rekordbox6Database
+
     db = Rekordbox6Database(path=str(tmp_rb_db), unlock=False)
     try:
         rows = list_broken._collect_broken(db)
@@ -193,6 +215,7 @@ def test_main_end_to_end_writes_csv(
     monkeypatch.setattr(list_broken.paths, "copy_live_dbs", lambda: {"rekordbox": working, "djay": None})
     # Force open_db to use unlock=False so the plain fixture loads.
     from pyrekordbox import Rekordbox6Database
+
     monkeypatch.setattr(
         list_broken.rekordbox_db,
         "open_db",
@@ -208,9 +231,18 @@ def test_write_csv_roundtrips_through_dictreader(tmp_path: Path) -> None:
     """Writing + reading back yields the same CSV_COLUMNS fields."""
     rows = [
         list_broken.BrokenRow(
-            id="1", title="t", artist="a", album="b", genre="c",
-            bpm=120.5, key="8A", duration_s=200, file_size=4096,
-            original_path="/x/y.mp3", basename="y.mp3", parent_dir="/x",
+            id="1",
+            title="t",
+            artist="a",
+            album="b",
+            genre="c",
+            bpm=120.5,
+            key="8A",
+            duration_s=200,
+            file_size=4096,
+            original_path="/x/y.mp3",
+            basename="y.mp3",
+            parent_dir="/x",
         ),
     ]
     out = tmp_path / "broken.csv"

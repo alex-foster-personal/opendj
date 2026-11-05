@@ -27,7 +27,12 @@ from pathlib import Path
 
 import yaml
 
-from tests.scripts.ci_runner_routes import MAIN_TOKEN_RUNS_ON, TOKEN_RUNS_ON, without_main_reserve
+from tests.scripts.ci_runner_routes import (
+    MAIN_TOKEN_RUNS_ON,
+    TOKEN_RUNS_ON,
+    without_main_fix,
+    without_main_reserve,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 CI = REPO / ".github" / "workflows" / "ci.yml"
@@ -57,7 +62,9 @@ def test_the_upload_job_is_the_light_pool_job_downstream_of_the_shards() -> None
     job_id, job = _upload_job()
     runs_on = job.get("runs-on")
     assert runs_on == MAIN_TOKEN_RUNS_ON, f"{job_id} left the main-reserved light pool route"
-    assert without_main_reserve(runs_on) == TOKEN_RUNS_ON, f"{job_id} left the light pool route"
+    # MAIN_TOKEN_RUNS_ON carries the ci:trunk-repair main-fix reserve too (bcf95799a2), so
+    # both reserves come off before the light pool route is left.
+    assert without_main_fix(without_main_reserve(runs_on)) == TOKEN_RUNS_ON, f"{job_id} left the light pool route"
     assert "test" in (job["needs"] if isinstance(job["needs"], list) else [job["needs"]]), (
         f"{job_id} no longer waits on the pytest shards"
     )

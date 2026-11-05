@@ -3,9 +3,9 @@
 One home for the four steps every own-lane overlay performs identically: open
 the state DB read-only (or find that there is none), look a table up, resolve
 the lane's effective source, and pull the canonical lane block for a track.
-`own_beatgrid_overlay.py` carries private twins of the first two; they are left
-alone here rather than refactored, so this change stays inside the key lane's
-own files, and a later pass can point that module at these instead.
+`own_beatgrid_overlay.py` used to carry private twins of the first two
+(`_state_conn_ro`, `_table_present`); those are gone, and that module imports
+these helpers the same way the cues, key, and waveform overlays do.
 
 WHAT `None` MEANS, everywhere in this module: there is no own record, which is
 a STATE with a correct answer (`status: missing`, or rekordbox as the effective

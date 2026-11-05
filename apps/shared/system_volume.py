@@ -51,9 +51,7 @@ class SystemVolume:
 
 
 def _run(argv: list[str]) -> str:
-    return run_checked(
-        argv, label=Path(argv[0]).stem, timeout_s=COMMAND_TIMEOUT_S, error=SystemVolumeUnavailable
-    )
+    return run_checked(argv, label=Path(argv[0]).stem, timeout_s=COMMAND_TIMEOUT_S, error=SystemVolumeUnavailable)
 
 
 def check_percent(volume: object) -> int:

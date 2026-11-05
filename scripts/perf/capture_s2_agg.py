@@ -80,9 +80,7 @@ def _method(engine: str) -> str:
     return S2_METHOD_TEMPLATE.format(engine=engine or "unknown")
 
 
-def withheld_rows(
-    reason: str, meta: CaptureMeta, *, engine: str = "unknown"
-) -> list[dict[str, Any]]:
+def withheld_rows(reason: str, meta: CaptureMeta, *, engine: str = "unknown") -> list[dict[str, Any]]:
     method = _method(engine)
     return [
         withheld_row(kpi=S2_KPI, unit=S2_UNIT, method=method, meta=meta, reason=reason),
@@ -123,10 +121,7 @@ def presses_to_ledger_rows(
     samples = filter_complete_presses(raw_presses)
     if len(samples) < requested_presses:
         return withheld_rows(
-            (
-                f"fewer than {requested_presses} complete-floor ordinary presses "
-                f"(got {len(samples)})"
-            ),
+            (f"fewer than {requested_presses} complete-floor ordinary presses (got {len(samples)})"),
             meta,
             engine=engine,
         )
@@ -136,10 +131,7 @@ def presses_to_ledger_rows(
     p99 = nearest_rank_p99(values)
     floor = device_floor_ms(scored[-1])
     method = _method(engine)
-    note = (
-        f"n={requested_presses} presses, nearest-rank p99; engine={engine}; "
-        f"audio_output_device_floor_ms={floor}"
-    )
+    note = f"n={requested_presses} presses, nearest-rank p99; engine={engine}; audio_output_device_floor_ms={floor}"
     return [
         build_row(
             kpi=S2_KPI,

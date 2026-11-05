@@ -205,6 +205,7 @@ async function storedBlob(fields) {
 test('R9: a v1 blob with the radial waveform on boots off and is stamped v2', async () => {
 	const store = await storedBlob({ defaults_migration: 1, jog_radial_waveform: true, ui_skin: 'default' });
 	const prefs = await loadPrefs();
+	await settle();
 	assert.equal(prefs.PREFS_DEFAULTS_MIGRATION, 2);
 	assert.equal(prefs.uiPrefs.jog_radial_waveform, false, 'the old persisted true survived the migration');
 	const saved = JSON.parse(store.get(STORAGE_KEY));
@@ -216,6 +217,7 @@ test('R9: a v1 blob with the radial waveform on boots off and is stamped v2', as
 test('R9: a v2 blob with the radial waveform on keeps it on', async () => {
 	await storedBlob({ defaults_migration: 2, jog_radial_waveform: true });
 	const prefs = await loadPrefs();
+	await settle();
 	assert.equal(prefs.uiPrefs.jog_radial_waveform, true, 'an explicit pick after the migration was reset');
 });
 
@@ -227,6 +229,7 @@ test('R9: a blob with no version gets both migrations', async () => {
 		waveform_design: 'tri-band'
 	});
 	const prefs = await loadPrefs();
+	await settle();
 	assert.equal(prefs.uiPrefs.jog_radial_waveform, false);
 	assert.equal(prefs.uiPrefs.ui_skin, 'mono-dev', 'migration 1 did not run on an unversioned blob');
 	assert.equal(prefs.uiPrefs.waveform_design, 'auto');

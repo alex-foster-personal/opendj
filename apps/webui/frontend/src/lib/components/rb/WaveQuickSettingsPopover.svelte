@@ -40,12 +40,14 @@
 	function _defFor(row: WaveQsRow): SettingDef | null {
 		if (row.kind === 'inert') return null;
 		const def = resolveWaveQsSetting(SETTINGS_CATALOG, row.id);
-		if (!isAllowedSettingKey(def.id)) throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
+		if (!isAllowedSettingKey(def.id))
+			throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
 		return def;
 	}
 
 	function _value(def: SettingDef): boolean | string {
-		if (!isAllowedSettingKey(def.id)) throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
+		if (!isAllowedSettingKey(def.id))
+			throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
 		return readSettingValue(def.id);
 	}
 
@@ -79,8 +81,11 @@
 			})
 			.then(() => {
 				if (!mounted) return;
-				const first = panelEl?.querySelector<HTMLElement>('.wqs-group select, .wqs-group input:not(:disabled)');
-				if (first === undefined || first === null) throw new Error('waveform quick settings: no option control to focus');
+				const first = panelEl?.querySelector<HTMLElement>(
+					'.wqs-group select, .wqs-group input:not(:disabled)'
+				);
+				if (first === undefined || first === null)
+					throw new Error('waveform quick settings: no option control to focus');
 				first.focus();
 			});
 		const onPointer = (e: PointerEvent): void => {
@@ -117,7 +122,12 @@
 >
 	<header class="wqs-head">
 		<span class="wqs-title">Waveform</span>
-		<button type="button" class="wqs-all" title="Open every setting in the Settings overlay (Cmd+,)" onclick={_openFullSettings}>
+		<button
+			type="button"
+			class="wqs-all"
+			title="Open every setting in the Settings overlay (Cmd+,)"
+			onclick={_openFullSettings}
+		>
 			All settings
 		</button>
 	</header>
@@ -129,12 +139,20 @@
 					{#if def === null && row.kind === 'inert'}
 						<li class="wqs-row inert" data-wqs-row={row.id} title={WAVE_QS_INERT_TITLE}>
 							<span class="wqs-label">{row.label}</span>
-							<input type="checkbox" checked disabled aria-label={row.label} title={WAVE_QS_INERT_TITLE} />
+							<input
+								type="checkbox"
+								checked
+								disabled
+								aria-label={row.label}
+								title={WAVE_QS_INERT_TITLE}
+							/>
 							<p class="wqs-detail">{row.detail}</p>
 						</li>
 					{:else if def !== null}
 						<li class="wqs-row" data-wqs-row={def.id}>
-							<label class="wqs-label" for={`wqs-${def.id}`} title={waveQsRowTitle(def)}>{def.label}</label>
+							<label class="wqs-label" for={`wqs-${def.id}`} title={waveQsRowTitle(def)}
+								>{def.label}</label
+							>
 							{#if def.control.kind === 'boolean'}
 								<input
 									id={`wqs-${def.id}`}
@@ -149,7 +167,8 @@
 									id={`wqs-${def.id}`}
 									value={String(_value(def))}
 									title={def.title}
-									onchange={(e) => applySettingChange(def.id, (e.currentTarget as HTMLSelectElement).value)}
+									onchange={(e) =>
+										applySettingChange(def.id, (e.currentTarget as HTMLSelectElement).value)}
 								>
 									{#each def.control.options as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
@@ -157,7 +176,9 @@
 								</select>
 							{/if}
 							{#if def.preview !== undefined}
-								<div class="wqs-preview"><SettingPreview kind={def.preview} label={`${def.label} preview`} /></div>
+								<div class="wqs-preview">
+									<SettingPreview kind={def.preview} label={`${def.label} preview`} />
+								</div>
 							{/if}
 							<p class="wqs-detail" title={def.detail}>{def.detail}</p>
 						</li>

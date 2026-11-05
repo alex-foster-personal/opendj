@@ -65,8 +65,7 @@ def _verified_v5_sql() -> str:
     )
     entry = manifest["files"]["v5.sql"]
     assert entry["schema_version"] == _OLD_BUILD_VERSION, (
-        f"the pinned dump declares schema {entry['schema_version']}, this test "
-        f"is about v{_OLD_BUILD_VERSION}"
+        f"the pinned dump declares schema {entry['schema_version']}, this test is about v{_OLD_BUILD_VERSION}"
     )
     path = _FIXTURE_DIR / "v5.sql"
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -86,9 +85,7 @@ def _write_v5_database(path: Path) -> None:
     try:
         conn.executescript(_verified_v5_sql())
         stamped = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-        assert stamped == _OLD_BUILD_VERSION, (
-            f"the restored dump stamps schema {stamped}, not v{_OLD_BUILD_VERSION}"
-        )
+        assert stamped == _OLD_BUILD_VERSION, f"the restored dump stamps schema {stamped}, not v{_OLD_BUILD_VERSION}"
         now = datetime.now(UTC).isoformat()
         conn.execute(
             "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path,"
@@ -104,12 +101,9 @@ def _write_v5_database(path: Path) -> None:
             " VALUES (?, 'local', 'primary', ?, ?, ?)",
             ("timetravel01", "/music/timetravel.wav", now, now),
         )
-        old_id = conn.execute(
-            "SELECT id FROM track_locations WHERE stable_id = 'timetravel01'"
-        ).fetchone()
+        old_id = conn.execute("SELECT id FROM track_locations WHERE stable_id = 'timetravel01'").fetchone()
         assert old_id is not None and isinstance(old_id[0], int), (
-            "fixture must exhibit the OLD shape (INTEGER id) or this test"
-            " proves nothing"
+            "fixture must exhibit the OLD shape (INTEGER id) or this test proves nothing"
         )
         conn.commit()
     finally:
@@ -134,9 +128,7 @@ def test_rows_survive_the_rebuild_and_the_real_accessor_reads_them(
     migrated: sqlite3.Connection,
 ) -> None:
     locations = list_locations(migrated, "timetravel01")
-    assert len(locations) == 1, (
-        "the v5 row must come through the v7 table rebuild exactly once"
-    )
+    assert len(locations) == 1, "the v5 row must come through the v7 table rebuild exactly once"
     loc = locations[0]
     assert loc.stable_id == "timetravel01"
     assert loc.file_path == "/music/timetravel.wav"
@@ -171,9 +163,7 @@ def test_unclaimed_machine_id_is_refused_not_served(
         ("timetravel01",),
     )
     migrated.commit()
-    orphans = migrated.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL"
-    ).fetchone()[0]
+    orphans = migrated.execute("SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL").fetchone()[0]
     assert orphans == 1, "the fixture must actually contain an unclaimed row"
 
     with pytest.raises(LocationError, match="machine_id"):

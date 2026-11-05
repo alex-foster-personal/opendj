@@ -87,7 +87,10 @@ export async function listIoDevicesOnOpen(
 	}
 }
 
-async function _listIoDevices(deps: IoDeviceRefreshDeps, list: () => Promise<unknown>): Promise<void> {
+async function _listIoDevices(
+	deps: IoDeviceRefreshDeps,
+	list: () => Promise<unknown>
+): Promise<void> {
 	if (deps.rustUnsupported()) {
 		deps.publishFailure('api_missing', new Error(RUST_ENGINE_DEVICE_LIST_UNAVAILABLE));
 		return;

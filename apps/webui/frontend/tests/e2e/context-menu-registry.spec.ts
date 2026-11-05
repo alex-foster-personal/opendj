@@ -136,7 +136,9 @@ test.describe('W28 right-click registry smokes', () => {
 		// the three crossfader choices are checkboxes and exactly one is on.
 		const fader = ctx.getByRole('menuitemcheckbox', { name: /Crossfader:/ });
 		await expect(fader).toHaveCount(3);
-		await expect(ctx.locator('[role="menuitemcheckbox"][aria-checked="true"]', { hasText: 'Crossfader:' })).toHaveCount(1);
+		await expect(
+			ctx.locator('[role="menuitemcheckbox"][aria-checked="true"]', { hasText: 'Crossfader:' })
+		).toHaveCount(1);
 		// Inventory row 15: no longer an empty menu.
 		await expect(ctx).not.toContainText('No target actions');
 		await closeMenus(page);
@@ -167,16 +169,23 @@ test.describe('W28 right-click registry smokes', () => {
 		// header, so they must sit inside the read-only marker too.
 		await page.getByTestId('playlist-recently-deleted').click();
 		const child = page
-			.locator('[data-testid="playlist-recently-deleted-empty"], [data-testid="playlist-deleted-row"]')
+			.locator(
+				'[data-testid="playlist-recently-deleted-empty"], [data-testid="playlist-deleted-row"]'
+			)
 			.first();
 		await expect(child).toBeVisible();
 		// Prime Quick Draw so a zero count below is a classification, not a
 		// handler that had not arrived yet.
-		await page.locator('.perf-root').first().click({ button: 'right', position: { x: 2, y: 2 } });
+		await page
+			.locator('.perf-root')
+			.first()
+			.click({ button: 'right', position: { x: 2, y: 2 } });
 		await expect(page.locator(QUICK_DRAW)).toBeVisible();
 		await closeMenus(page);
 		await child.click({ button: 'right', position: { x: 30, y: 5 } });
-		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+		await page.evaluate(
+			() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+		);
 		await expect(page.locator(QUICK_DRAW)).toHaveCount(0);
 		await expect(page.locator(MENU)).toHaveCount(0);
 		expect(await browserMenuSuppressed(child)).toBe(true);
@@ -217,12 +226,16 @@ test.describe('W28 right-click registry smokes (tall viewport)', () => {
 		try {
 			await openPerformance(page);
 			await page.getByTestId('library-source-autolists').click();
-			const row = page.locator('[data-testid="smartlist-row"]').filter({ has: page.getByText(name, { exact: true }) });
+			const row = page
+				.locator('[data-testid="smartlist-row"]')
+				.filter({ has: page.getByText(name, { exact: true }) });
 			await expect(row).toBeVisible();
 			await row.click({ button: 'right' });
 			await expect(page.getByRole('menuitem', { name: 'Duplicate', exact: true })).toBeVisible();
 			// Inventory row 8: no dead Reveal on a smartlist.
-			await expect(page.getByRole('menuitem', { name: 'Reveal in tree', exact: true })).toHaveCount(0);
+			await expect(page.getByRole('menuitem', { name: 'Reveal in tree', exact: true })).toHaveCount(
+				0
+			);
 			await closeMenus(page);
 			expect(await browserMenuSuppressed(row)).toBe(true);
 		} finally {

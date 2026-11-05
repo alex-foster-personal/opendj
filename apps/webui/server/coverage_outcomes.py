@@ -41,6 +41,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.keyed_lock import KeyedLocks
+
 SCHEMA: int = 1
 FILENAME: str = "coverage-outcomes.json"
 STEPS: tuple[str, ...] = ("vocals", "stems", "lyrics", "analysis")
@@ -54,14 +56,12 @@ Key = tuple[str, str]
 # route and the stems job finish observer each build their own OutcomeStore
 # over the same path, and a per-object lock let one read-modify-write drop
 # another's entry.
-_PATH_LOCKS: dict[str, threading.Lock] = {}
-_PATH_LOCKS_GUARD = threading.Lock()
+_PATH_LOCKS = KeyedLocks()
 
 
 def _path_lock(path: Path) -> threading.Lock:
     key = os.path.abspath(path)
-    with _PATH_LOCKS_GUARD:
-        return _PATH_LOCKS.setdefault(key, threading.Lock())
+    return _PATH_LOCKS.lock_for(key)
 
 
 @dataclass(frozen=True)

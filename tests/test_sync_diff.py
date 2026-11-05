@@ -1,4 +1,5 @@
 """Phase 4 SYNC-05/06: sync_diff CSV emitter tests."""
+
 from __future__ import annotations
 
 import csv

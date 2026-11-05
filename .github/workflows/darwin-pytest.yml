@@ -1,0 +1,89 @@
+name: Darwin pytest
+
+# SAFETY (as (private path)): no pull_request trigger, so no PR
+# author can put code on the persistent airgap-mac box. The lane runs main's merged
+# code on push, and trusted workflow_dispatch runs (pick a branch to check one before
+# it lands). tests/scripts/test_darwin_marker_guard.py reads the selection globs below.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/shared/fs_residency.py"
+      - "apps/shared/icloud_zone.py"
+      - "apps/reconcile/heal_icloud_paths.py"
+      - "tests/shared/test_fs_residency.py"
+      - "tests/shared/test_offline_residency.py"
+      - "tests/shared/test_icloud_zone*.py"
+      - "tests/reconcile/test_heal_icloud*.py"
+      - "tests/webui/test_offline*.py"
+      - "pyproject.toml"
+      - "apps/shared/platform_paths.py"
+      - "(private path)"
+      - "uv.lock"
+      - ".github/workflows/darwin-pytest.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darwin-pytest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  darwin-pytest:
+    name: Darwin pytest (airgap-mac)
+    # Keep the existing packaging workflow on hosted macos-14. This focused
+    # lane is the only new consumer of the self-hosted airgap runner.
+    runs-on: [self-hosted, macOS, ARM64, airgap-mac]
+    timeout-minutes: 10
+    steps:
+      # Same reclaim as airgap-mac.yml: a foreign-owned entry or a stale git lock left by a
+      # cancelled job would fail checkout before any Darwin test runs.
+      - name: Reclaim the workspace before checkout
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ws="$GITHUB_WORKSPACE"
+          foreign=$(find "$ws" -xdev ! -user "$(id -un)" -print 2>/dev/null | head -20)
+          [[ -z "$foreign" ]] || { echo "::error::workspace entries not owned by $(id -un):"; echo "$foreign"; exit 1; }
+          if [[ -d "$ws/.git" ]]; then
+            if pgrep -u "$(id -un)" -x git >/dev/null; then echo "[hygiene] a git process is running; leaving locks"
+            else echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"; fi
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3 uv
+
+      - name: Install test environment
+        run: uv sync --locked --extra dev
+
+      - name: Run Darwin-gated tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          test_paths=(
+            tests/shared/test_fs_residency.py
+            (private path)
+            tests/shared/test_offline*.py
+            tests/shared/test_icloud_zone*.py
+            tests/reconcile/test_heal_icloud*.py
+            tests/webui/test_offline*.py
+          )
+          ((${#test_paths[@]} > 0)) || { echo "::error::Darwin test selection is empty"; exit 1; }
+          uv run --no-sync pytest -q -ra \
+            --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-darwin" \
+            "${test_paths[@]}"

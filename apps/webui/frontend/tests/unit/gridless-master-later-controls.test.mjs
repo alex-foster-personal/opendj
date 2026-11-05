@@ -53,7 +53,11 @@ test('[PLAY-28] a gridless master is not a Beat Sync clock for a later tempo or 
 		['no analysis', null]
 	]) {
 		const clock = grid.beatSyncClockMaster(1, { anlz });
-		assert.equal(clock, null, `${label}: if the clock stays the gridless deck then the next seek calls requireBeatGrid`);
+		assert.equal(
+			clock,
+			null,
+			`${label}: if the clock stays the gridless deck then the next seek calls requireBeatGrid`
+		);
 		assert.equal(
 			decisions.planSeekSync({
 				deck: 2,
@@ -78,7 +82,11 @@ test('[PLAY-28] a gridless master is not a Beat Sync clock for a later tempo or 
 			'free',
 			`${label}: a master seek under Beat Sync Max must not re-anchor followers through the grid`
 		);
-		assert.equal(decisions.syncMayWriteTempo(2, true, clock), false, `${label}: follower pitch must not be rejected as synced`);
+		assert.equal(
+			decisions.syncMayWriteTempo(2, true, clock),
+			false,
+			`${label}: follower pitch must not be rejected as synced`
+		);
 	}
 });
 
@@ -137,14 +145,21 @@ test('[PLAY-28] control: the unfiltered clock still syncs, and a trusted grid ke
 		'master-max'
 	);
 	assert.equal(decisions.syncMayWriteTempo(2, true, clock), true);
-	assert.equal(decisions.syncMayWriteTempo(1, true, clock), false, 'the master deck is never a follower');
+	assert.equal(
+		decisions.syncMayWriteTempo(1, true, clock),
+		false,
+		'the master deck is never a follower'
+	);
 	assert.equal(grid.beatSyncClockMaster(null, { anlz: withGrid(REAL_PQTZ_BEATS) }), null);
 });
 
 test('[PLAY-28] SHAPE GUARD: later tempo and seek ask the gridless-aware clock, and play still sees a playing master', () => {
 	const beatSyncMaster = engineBlockAfter('function _beatSyncMaster(): DeckId | null {');
 	assert.match(beatSyncMaster, /const master = _syncClockMaster\(\)/);
-	assert.match(beatSyncMaster, /return master === null \? null : beatSyncClockMaster\(master, deckStates\[master\]\)/);
+	assert.match(
+		beatSyncMaster,
+		/return master === null \? null : beatSyncClockMaster\(master, deckStates\[master\]\)/
+	);
 
 	const playingClock = engineBlockAfter('function _syncClockMaster(): DeckId | null {');
 	assert.match(
@@ -163,7 +178,9 @@ test('[PLAY-28] SHAPE GUARD: later tempo and seek ask the gridless-aware clock, 
 	assert.match(seek, /const activeMaster = _beatSyncMaster\(\)/);
 	assert.doesNotMatch(seek, /const activeMaster = _syncMaster\(\)/);
 
-	const tempo = engineBlockAfter('	async setTempoRatio(deck: DeckId, ratio: number): Promise<void> {');
+	const tempo = engineBlockAfter(
+		'	async setTempoRatio(deck: DeckId, ratio: number): Promise<void> {'
+	);
 	assert.match(tempo, /const activeMaster = _beatSyncMaster\(\)/);
 	assert.match(tempo, /activeMaster === deck/);
 	assert.doesNotMatch(
@@ -198,11 +215,22 @@ test('[PLAY-28] the unsynced mix clears a stale follower sync_error', () => {
 			cleared.push(deck);
 		}
 	);
-	assert.deepEqual(cleared, [2, 3], 'if a previous sync_error stays, the UI still shows a failure for an intentional unsynced mix');
+	assert.deepEqual(
+		cleared,
+		[2, 3],
+		'if a previous sync_error stays, the UI still shows a failure for an intentional unsynced mix'
+	);
 
-	const setMaster = engineBlockAfter('	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {');
-	assert.match(setMaster, /_mixWithoutBeatSync\(deck, followers, pushToast, recordPerfEvent, _clearSyncError\)/);
-	const engine = engineBlockAfter('function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason; to?: DeckId; levels?: { masterDb: number; toDb: number | null } }): DeckId | null {');
+	const setMaster = engineBlockAfter(
+		'	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {'
+	);
+	assert.match(
+		setMaster,
+		/_mixWithoutBeatSync\(deck, followers, pushToast, recordPerfEvent, _clearSyncError\)/
+	);
+	const engine = engineBlockAfter(
+		'function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason; to?: DeckId; levels?: { masterDb: number; toDb: number | null } }): DeckId | null {'
+	);
 	assert.match(
 		engine,
 		/_mixWithoutBeatSync\(next, followers, pushToast, recordPerfEvent, _clearSyncError\)/

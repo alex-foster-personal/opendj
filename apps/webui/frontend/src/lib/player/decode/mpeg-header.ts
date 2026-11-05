@@ -25,11 +25,7 @@ function _skipId3v2(bytes: Uint8Array): number {
 
 /** True when `offset` points at an MPEG frame sync word. */
 function _isFrameSync(bytes: Uint8Array, offset: number): boolean {
-	return (
-		offset + 1 < bytes.length &&
-		bytes[offset] === 0xff &&
-		(bytes[offset + 1] & 0xe0) === 0xe0
-	);
+	return offset + 1 < bytes.length && bytes[offset] === 0xff && (bytes[offset + 1] & 0xe0) === 0xe0;
 }
 
 /**

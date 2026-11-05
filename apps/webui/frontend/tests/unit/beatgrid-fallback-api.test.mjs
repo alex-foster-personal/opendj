@@ -32,7 +32,9 @@ const payload = {
 };
 
 before(async () => {
-	api = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback-api.ts', { viteApiBase: API_BASE });
+	api = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback-api.ts', {
+		viteApiBase: API_BASE
+	});
 	originalFetch = globalThis.fetch;
 });
 

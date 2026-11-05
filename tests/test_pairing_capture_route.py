@@ -2,7 +2,7 @@
 
 Self-contained: every functional test builds its OWN tmp state.db so
 nothing here needs the repo's live state.db. The one live-DB smoke at the
-bottom skips cleanly when data/state/state.db is absent.
+bottom skips cleanly when (private path) is absent.
 
 [if] a POST pairs the same track twice [then] 422 PAIRING_CAPTURE_INVALID, no persist, [else stop].
 
@@ -17,6 +17,7 @@ Regression one-liners:
   - if missing state.db does not 503 PAIRING_CAPTURE_DB_UNAVAILABLE then broken
   - if pre-migration db (no capture tables) does not list [] then broken
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

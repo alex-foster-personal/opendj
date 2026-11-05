@@ -28,9 +28,7 @@ export type TryerAction =
 	| { kind: 'blind' }
 	| { kind: 'cancel' };
 
-export function tryerEnabledIn(
-	flags: readonly { flag_id: string; enabled: boolean }[]
-): boolean {
+export function tryerEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
 	return flags.find((flag) => flag.flag_id === TRYER_FLAG_ID)?.enabled === true;
 }
 
@@ -47,14 +45,23 @@ export function keyAction(key: string): TryerAction | null {
 
 /** Whether the panel's window-level shortcuts must yield, because focus sits on a control that has its own
  *  keyboard activation (Enter on a focused Pick button must pick THAT candidate, not the auditioned one). */
-export function shortcutsYieldTo(target: { tagName: string; isContentEditable: boolean } | null): boolean {
+export function shortcutsYieldTo(
+	target: { tagName: string; isContentEditable: boolean } | null
+): boolean {
 	if (target === null) return false;
-	return target.isContentEditable || ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+	return (
+		target.isContentEditable ||
+		['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+	);
 }
 
 /** Play attempts by generation: a newer audition or a stop supersedes a pending one, whose rejection is then
  *  ignored rather than reported as a failure of the candidate now playing. */
-export function playbackAttempts(): { begin: () => number; supersede: () => void; isCurrent: (n: number) => boolean } {
+export function playbackAttempts(): {
+	begin: () => number;
+	supersede: () => void;
+	isCurrent: (n: number) => boolean;
+} {
 	let generation = 0;
 	return {
 		begin: () => ++generation,
@@ -100,7 +107,8 @@ export function createAuditioner(makeAudio: (url: string) => AudioLike, events: 
 					if (isLive(element)) events.onEnded();
 				});
 				element.addEventListener('error', () => {
-					if (isLive(element)) events.onFailure(candidateId, 'the render did not load (render the pair again)');
+					if (isLive(element))
+						events.onFailure(candidateId, 'the render did not load (render the pair again)');
 				});
 				current = { element, id: candidateId, url, attempt: 0 };
 			}
@@ -147,9 +155,7 @@ export function redFlags(candidate: TryCandidate): string[] {
 
 /** Factors the scorer could not measure, with its reason, so a gap never reads as a pass. */
 export function unmeasured(candidate: TryCandidate): string[] {
-	return Object.entries(candidate.unknown).map(
-		([factor, reason]) => `${words(factor)}: ${reason}`
-	);
+	return Object.entries(candidate.unknown).map(([factor, reason]) => `${words(factor)}: ${reason}`);
 }
 
 /** Notes (red flags and unmeasured gaps) every candidate carries, in the first candidate's order: shown once above
@@ -180,10 +186,7 @@ export function groupDividerIndex(chips: readonly TryCandidate[]): number | null
 }
 
 /** Blind mode: a shuffled display order (Fisher-Yates over an injected random source). */
-export function shuffledOrder(
-	ids: readonly string[],
-	random: () => number
-): string[] {
+export function shuffledOrder(ids: readonly string[], random: () => number): string[] {
 	const order = [...ids];
 	for (let i = order.length - 1; i > 0; i -= 1) {
 		const j = Math.floor(random() * (i + 1));
@@ -193,22 +196,17 @@ export function shuffledOrder(
 }
 
 /** Chips in display order (ranked, or shuffled when blind), lettered A-F by position. */
-export function chipOrder(
-	job: TryJob,
-	blindOrder: readonly string[] | null
-): TryCandidate[] {
-	const byId = new Map(
-		job.candidates.map((candidate) => [candidate.id, candidate])
-	);
+export function chipOrder(job: TryJob, blindOrder: readonly string[] | null): TryCandidate[] {
+	const byId = new Map(job.candidates.map((candidate) => [candidate.id, candidate]));
 	const ids = blindOrder ?? job.candidates.map((candidate) => candidate.id);
 	if (ids.length > CHIP_LETTERS.length)
-		throw new Error(`${ids.length} candidates, but chips are lettered only up to ${CHIP_LETTERS.length}`);
+		throw new Error(
+			`${ids.length} candidates, but chips are lettered only up to ${CHIP_LETTERS.length}`
+		);
 	return ids.map((id) => {
 		const candidate = byId.get(id);
 		if (candidate === undefined)
-			throw new Error(
-				`blind order names candidate ${id} the job does not hold`
-			);
+			throw new Error(`blind order names candidate ${id} the job does not hold`);
 		return candidate;
 	});
 }

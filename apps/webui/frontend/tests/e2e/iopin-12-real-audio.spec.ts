@@ -72,14 +72,21 @@ async function trackIds(page: Page, count: number): Promise<string[]> {
 		elements.map((element) => element.getAttribute('data-stable-id'))
 	);
 	const present = ids.filter((id): id is string => id !== null && id !== '');
-	expect(present.length, 'the fixture library must expose enough track rows').toBeGreaterThanOrEqual(count);
+	expect(
+		present.length,
+		'the fixture library must expose enough track rows'
+	).toBeGreaterThanOrEqual(count);
 	return present.slice(0, count);
 }
 
 async function load(page: Page, deck: 1 | 2, stableId: string): Promise<void> {
 	await page.evaluate(
 		async ({ deckId, sid }) => {
-			await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: deckId, stable_id: sid });
+			await window.musicDjToolsPerformance!.dispatch({
+				type: 'load',
+				deck: deckId,
+				stable_id: sid
+			});
 		},
 		{ deckId: deck, sid: stableId }
 	);
@@ -149,14 +156,19 @@ test('IOPIN-12: a djio request on this output loads and plays decks and reports 
 		return { max: destination.maxChannelCount, wired: destination.channelCount };
 	});
 	const topology = await outputTopology(page);
-	console.log(`[iopin-12] output maxChannelCount=${channels.max}, topology=${JSON.stringify(topology)}`);
+	console.log(
+		`[iopin-12] output maxChannelCount=${channels.max}, topology=${JSON.stringify(topology)}`
+	);
 	expect(topology.requested_profile).toBe(DJIO);
 
 	if (channels.max < 4) {
 		// The case observed live: laptop speakers selected, djio requested.
 		expect(topology.active_profile, 'stereo master is wired, not the 4-channel layout').toBeNull();
 		expect(topology.fallback?.available_channels).toBe(channels.max);
-		expect(channels.wired, 'the destination is never forced past what the device has').toBeLessThanOrEqual(channels.max);
+		expect(
+			channels.wired,
+			'the destination is never forced past what the device has'
+		).toBeLessThanOrEqual(channels.max);
 		// The toast raised at graph build lasts 15 s, and two loads plus the
 		// audibility poll can outlast it. The I/O panel notice is the surface that
 		// stays for the session, so that is the one asserted here.
@@ -187,7 +199,9 @@ test('IOPIN-12: the output-stall rebuild moves a playing deck onto a new AudioCo
 	await load(page, 1, first);
 	await play(page, 1);
 	await expectAudible(page, 'deck 1 before the rebuild');
-	expect(await contextStates(page), 'control: one live context before the rebuild').toEqual(['running']);
+	expect(await contextStates(page), 'control: one live context before the rebuild').toEqual([
+		'running'
+	]);
 
 	// The same armed recovery the liveness poll's `stalled` verdict runs.
 	await page.evaluate(async () => {
@@ -199,13 +213,18 @@ test('IOPIN-12: the output-stall rebuild moves a playing deck onto a new AudioCo
 
 	const states = await contextStates(page);
 	expect(states.length, 'if still one context then nothing was rebuilt').toBe(2);
-	expect(states[0], 'the replaced context is closed, not left running beside the new one').toBe('closed');
+	expect(states[0], 'the replaced context is closed, not left running beside the new one').toBe(
+		'closed'
+	);
 
 	const deck = await page.evaluate(() => {
 		const state = window.musicDjToolsPerformance!.query().decks[1];
 		return { stable_id: state.stable_id, processor_error: state.processor_error ?? null };
 	});
-	expect(deck.stable_id, 'if the deck lost its track then the rebuild unloaded a healthy deck').toBe(first);
+	expect(
+		deck.stable_id,
+		'if the deck lost its track then the rebuild unloaded a healthy deck'
+	).toBe(first);
 	expect(deck.processor_error).toBeNull();
 
 	await play(page, 1);

@@ -19,9 +19,9 @@ checkout="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fleet_af="${FLEET_AF_HOME:-$HOME/.local/share/fleet-af-live}"
 launcher="$fleet_af/fleet--mcp/dispatch_mcp.sh"
 if [[ ! -x "$launcher" ]]; then
-  echo "[ERROR] dispatch MCP: no fleet-af launcher at $launcher." \
-    "Create the fleet-af live clone (bash <fleet-af>/deploy--live-clone/install.sh," \
-    "or 'just live-clone::install' in fleet-af) or set FLEET_AF_HOME." >&2
-  exit 2
+    echo "[ERROR] dispatch MCP: no fleet-af launcher at $launcher." \
+        "Create the fleet-af live clone (bash <fleet-af>/deploy--live-clone/install.sh," \
+        "or 'just live-clone::install' in fleet-af) or set FLEET_AF_HOME." >&2
+    exit 2
 fi
 DISPATCH_MCP_CHECKOUT="$checkout" exec "$launcher" "$@"

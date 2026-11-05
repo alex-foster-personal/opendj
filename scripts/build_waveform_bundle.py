@@ -1,7 +1,7 @@
 """Build the waveform fixture bundle: rekordbox PWV6 truth for sampled tracks.
 
 ``python -m scripts.build_waveform_bundle build`` writes
-``data/bench/<lane>/<version>/`` (gitignored, ``data/*``) holding, per sampled
+``(private path)/<lane>/<version>/`` (gitignored, ``data/*``) holding, per sampled
 track, the rekordbox tri-band preview tag as JSON, plus a manifest and a
 ``SHA256SUMS``. ``apps.analysis_waveform.score`` reads that bundle; nothing else
 in the repo may reach into the library to score, so a number produced on this
@@ -159,16 +159,14 @@ def _mapped_tracks() -> list[tuple[str, str, str | None, float | None]]:
         )
     if not config.MASTER_PLAIN_DB.exists():
         raise SystemExit(
-            f"no decrypted rekordbox db at {config.MASTER_PLAIN_DB}; "
-            "re-decrypt it before building waveform truth"
+            f"no decrypted rekordbox db at {config.MASTER_PLAIN_DB}; re-decrypt it before building waveform truth"
         )
     state = sqlite3.connect(f"file:{config.STATE_DB}?mode=ro", uri=True)
     try:
         vendor_by_sid = {
             str(sid): str(vid)
             for sid, vid in state.execute(
-                "SELECT stable_id, vendor_id FROM track_vendor_ids "
-                "WHERE vendor = 'rekordbox' AND deleted_at IS NULL"
+                "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = 'rekordbox' AND deleted_at IS NULL"
             )
         }
     finally:
@@ -178,8 +176,7 @@ def _mapped_tracks() -> list[tuple[str, str, str | None, float | None]]:
         content = {
             str(vid): (path, length)
             for vid, path, length in master.execute(
-                "SELECT ID, AnalysisDataPath, Length FROM djmdContent "
-                "WHERE rb_local_deleted = 0"
+                "SELECT ID, AnalysisDataPath, Length FROM djmdContent WHERE rb_local_deleted = 0"
             )
         }
     finally:
@@ -300,9 +297,7 @@ def build(
                 "tag": TRUTH_TAG,
                 "scale": TRUTH_SCALE,
                 "columns": int(truth.shape[0]),
-                "bands": {
-                    name: truth[:, index].tolist() for index, name in enumerate(decode.BAND_NAMES)
-                },
+                "bands": {name: truth[:, index].tolist() for index, name in enumerate(decode.BAND_NAMES)},
             }
         ).encode("utf-8")
         audio = Path(row["audio_path"])
@@ -423,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default=BUNDLE_VERSION,
         help=(
-            "bundle directory name under data/bench/waveform/. A build whose truth set "
+            "bundle directory name under (private path)/. A build whose truth set "
             "differs from what is already on disk under this version refuses to "
             "overwrite it; pass a NEW version to land it in its own directory instead."
         ),

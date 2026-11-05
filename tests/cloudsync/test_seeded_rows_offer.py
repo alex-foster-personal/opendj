@@ -1,4 +1,5 @@
 """Seeded rows stay off the wire until someone edits them (migrations_v26)."""
+
 from __future__ import annotations
 
 from pathlib import Path

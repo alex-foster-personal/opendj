@@ -64,13 +64,19 @@ const baseCloudInput = {
 };
 
 test('an offloaded row is the muted cloud view, never a broken link (veto 2)', () => {
-	const view = cloud.trackCloudView({ ...baseCloudInput, offload: { state: 'offloaded', expires_at: null } });
+	const view = cloud.trackCloudView({
+		...baseCloudInput,
+		offload: { state: 'offloaded', expires_at: null }
+	});
 	assert.equal(view.kind, 'offloaded');
 	assert.equal(view.overlay, 'none');
 	assert.doesNotMatch(view.title, /broken link|missing/);
 	assert.match(view.title, /Loading it onto a deck downloads it first/);
 	assert.equal(wire.rowRendersUnavailable(offloadedRow), false);
-	assert.equal(wire.libraryRowHoverTitle(offloadedRow), 'Offloaded to the cloud. Loading it onto a deck downloads it first.');
+	assert.equal(
+		wire.libraryRowHoverTitle(offloadedRow),
+		'Offloaded to the cloud. Loading it onto a deck downloads it first.'
+	);
 });
 
 test('the same missing file without an offload record is still a broken link', () => {
@@ -125,7 +131,10 @@ test('menu: a local row offers Offload and explains why the downloads are off', 
 });
 
 test('menu: a temporary row can be kept for good or offloaded again', () => {
-	assert.equal(registry.trackAudioOf({ ...offloadedRow, file_exists: true, offload: { state: 'temporary' } }), 'temporary');
+	assert.equal(
+		registry.trackAudioOf({ ...offloadedRow, file_exists: true, offload: { state: 'temporary' } }),
+		'temporary'
+	);
 	const menu = trackMenu('temporary');
 	assert.equal(menu.offload.enabled, true);
 	assert.equal(menu['offload-restore-permanent'].enabled, true);
@@ -138,23 +147,50 @@ test('menu: a multi-row selection offloads every row and names the count', () =>
 });
 
 test('menu: a playlist offers offload and both downloads', () => {
-	const ids = registry.menuFor({ kind: 'playlist' }, { forbidDuplicates: false }).map((item) => item.id);
-	for (const id of ['offload-playlist', 'offload-playlist-restore-24h', 'offload-playlist-restore-permanent']) {
+	const ids = registry
+		.menuFor({ kind: 'playlist' }, { forbidDuplicates: false })
+		.map((item) => item.id);
+	for (const id of [
+		'offload-playlist',
+		'offload-playlist-restore-24h',
+		'offload-playlist-restore-permanent'
+	]) {
 		assert.ok(ids.includes(id), `${id} missing from the playlist menu`);
 	}
 });
 
 test('progress line reads the engine numbers verbatim', () => {
 	const op = {
-		op_id: 'x', kind: 'offload', mode: null, playlist_id: 'p', state: 'running', stable_ids: ['a', 'b'],
-		tracks_total: 12, tracks_done: 3, bytes_total: 4 * 1024 ** 3, bytes_done: 1024 ** 3, bytes_freed: 0,
-		current: 'a', results: {}, error: null, dry_run: false
+		op_id: 'x',
+		kind: 'offload',
+		mode: null,
+		playlist_id: 'p',
+		state: 'running',
+		stable_ids: ['a', 'b'],
+		tracks_total: 12,
+		tracks_done: 3,
+		bytes_total: 4 * 1024 ** 3,
+		bytes_done: 1024 ** 3,
+		bytes_freed: 0,
+		current: 'a',
+		results: {},
+		error: null,
+		dry_run: false
 	};
 	assert.equal(api.operationLabel(op), 'Offloading: 3 of 12 tracks, 1.00 GB of 4.00 GB');
 	assert.equal(api.operationPercent(op), 25);
-	assert.equal(api.operationPercent({ ...op, bytes_total: 0 }), null, 'an unknown total is not a guessed percent');
+	assert.equal(
+		api.operationPercent({ ...op, bytes_total: 0 }),
+		null,
+		'an unknown total is not a guessed percent'
+	);
 	assert.deepEqual(
-		api.operationErrors({ ...op, results: { ['b'.repeat(40)]: { state: null, note: null, error: 'TRACK_ON_DECK', message: 'on a deck' } } }),
+		api.operationErrors({
+			...op,
+			results: {
+				['b'.repeat(40)]: { state: null, note: null, error: 'TRACK_ON_DECK', message: 'on a deck' }
+			}
+		}),
 		['bbbbbbbb: on a deck']
 	);
 });
@@ -164,5 +200,9 @@ test('an offloaded row drags onto a deck; the same missing row without offload d
 	assert.match(drag.trackDragRefusal({ ...offloadedRow, offload: null }), /broken link/);
 	const meta = drop.draggedDeckRows([offloadedRow.stable_id], [offloadedRow], () => 0);
 	assert.deepEqual(meta[offloadedRow.stable_id].offload, { state: 'offloaded' });
-	assert.equal(drag.trackDragRefusal(meta[offloadedRow.stable_id]), null, 'the drop-side guard agrees');
+	assert.equal(
+		drag.trackDragRefusal(meta[offloadedRow.stable_id]),
+		null,
+		'the drop-side guard agrees'
+	);
 });

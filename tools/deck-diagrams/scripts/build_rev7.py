@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Parse DDJ-REV7 MIDI list tables into midi.json + layout.json."""
+
 from __future__ import annotations
 
 import json
@@ -428,9 +429,7 @@ def build_midi() -> dict:
             )
     return {
         "source": "docs/controller/reference/DDJ-REV7_MIDI_Message_List_E1.pdf",
-        "archived": (DEV / "source" / "DDJ-REV7_MIDI_Message_List_E1.pdf")
-        .relative_to(REPO_ROOT)
-        .as_posix(),
+        "archived": (DEV / "source" / "DDJ-REV7_MIDI_Message_List_E1.pdf").relative_to(REPO_ROOT).as_posix(),
         "device": "DDJ-REV7",
         "vendor": "AlphaTheta / Pioneer DJ",
         "channel_conventions": {
@@ -506,9 +505,7 @@ def main() -> None:
     (DEV / "layout.json").write_text(json.dumps(layout, indent=2) + "\n")
     print(f"wrote midi.json ({len(midi['controls'])} rows, {len(PRIMARY)} figs)")
     print(f"wrote layout.json ({len(layout['controls'])} controls)")
-    subprocess.check_call(
-        ["uv", "run", "python", str(SCRIPTS / "generate_html.py"), str(DEV)]
-    )
+    subprocess.check_call(["uv", "run", "python", str(SCRIPTS / "generate_html.py"), str(DEV)])
     r = subprocess.run(
         ["uv", "run", "python", str(SCRIPTS / "checksum.py"), str(DEV)],
         capture_output=True,

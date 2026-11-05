@@ -2,6 +2,7 @@
 
 [if] apps.sync is invoked with no args or subcommand help [then] usage or help exits zero, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

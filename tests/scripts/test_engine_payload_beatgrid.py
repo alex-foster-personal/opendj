@@ -118,8 +118,7 @@ def test_engine_launcher_carries_the_same_beatgrid_exports(payload: Path) -> Non
     engine_launcher = (payload / "bin/opendj-engine").read_text(encoding="utf-8")
     python_launcher = (payload / PYTHON_LAUNCHER_RELATIVE).read_text(encoding="utf-8")
     for line in (
-        'MDT_BEATGRID_RUNNER_PYTHON="$payload/'
-        f'{payload_beatgrid.RUNNER_LAUNCHER_RELATIVE}"',
+        f'MDT_BEATGRID_RUNNER_PYTHON="$payload/{payload_beatgrid.RUNNER_LAUNCHER_RELATIVE}"',
         f'MDT_BEATGRID_WEIGHTS="$payload/{payload_beatgrid.CHECKPOINT_RELATIVE}"',
         "export MDT_BEATGRID_RUNNER_PYTHON MDT_BEATGRID_WEIGHTS",
     ):
@@ -190,8 +189,7 @@ def test_installed_check_accepts_a_name_locked_at_several_versions_under_disjoin
     site = tmp_path / "site"
     (site / "networkx-3.6.1.dist-info").mkdir(parents=True)
     locked = parse_locked_export(
-        "networkx==3.6.1 ; python_full_version < '3.12'\n"
-        "networkx==3.7 ; python_full_version >= '3.12'\n"
+        "networkx==3.6.1 ; python_full_version < '3.12'\nnetworkx==3.7 ; python_full_version >= '3.12'\n"
     )
     assert_installed_is_locked(site, locked)
     (site / "networkx-3.6.1.dist-info").rename(site / "networkx-3.5.dist-info")
@@ -228,9 +226,7 @@ def test_fetch_checkpoint_refuses_a_download_with_the_wrong_digest(tmp_path: Pat
     source.write_bytes(b"some other checkpoint")
     cache = tmp_path / "cache"
     with pytest.raises(payload_beatgrid.PayloadBeatgridError, match="sha256"):
-        payload_beatgrid.fetch_checkpoint(
-            cache, url=source.as_uri(), expected_sha256=_sha(b"the pinned one")
-        )
+        payload_beatgrid.fetch_checkpoint(cache, url=source.as_uri(), expected_sha256=_sha(b"the pinned one"))
     # Nothing cached: a wrong file must not be found by the next build.
     assert not cache.exists() or not any(cache.iterdir())
 
@@ -241,9 +237,7 @@ def test_fetch_checkpoint_refuses_a_corrupt_cache_entry(tmp_path: Path) -> None:
     cache.mkdir()
     (cache / f"{expected}.ckpt").write_bytes(b"truncated")
     with pytest.raises(payload_beatgrid.PayloadBeatgridError, match=r"truncated|sha256"):
-        payload_beatgrid.fetch_checkpoint(
-            cache, url=(tmp_path / "never-read").as_uri(), expected_sha256=expected
-        )
+        payload_beatgrid.fetch_checkpoint(cache, url=(tmp_path / "never-read").as_uri(), expected_sha256=expected)
 
 
 def test_stage_checkpoint_copies_byte_identical_to_the_launcher_path(tmp_path: Path) -> None:
@@ -295,7 +289,8 @@ def _payload_with_real_digest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     cached = tmp_path / "c.ckpt"
     cached.write_bytes(b"stand-in weights")
     monkeypatch.setattr(
-        payload_beatgrid.weights, "CHECKPOINT_SHA256",
+        payload_beatgrid.weights,
+        "CHECKPOINT_SHA256",
         hashlib.sha256(b"stand-in weights").hexdigest(),
     )
     payload_beatgrid.stage_checkpoint(payload, cached)
@@ -311,18 +306,14 @@ def test_verify_refuses_a_checkpoint_without_its_license_notice(
         payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
 
 
-def test_verify_refuses_some_other_text_in_place_of_the_notice(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_verify_refuses_some_other_text_in_place_of_the_notice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     payload = _payload_with_real_digest(tmp_path, monkeypatch)
     (payload / payload_beatgrid.CHECKPOINT_LICENSE_RELATIVE).write_text("MIT License\n")
     with pytest.raises(payload_beatgrid.PayloadBeatgridError, match="not Beat This!'s MIT notice"):
         payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
 
 
-def test_verify_passes_the_notice_check_with_the_staged_notice(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_verify_passes_the_notice_check_with_the_staged_notice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Control: with the real notice staged, verification gets PAST the notice
     check and fails later, on the launcher this bare payload never had."""
     payload = _payload_with_real_digest(tmp_path, monkeypatch)

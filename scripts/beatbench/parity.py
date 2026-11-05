@@ -41,9 +41,7 @@ def beat_gap_ms(a: list[float], b: list[float]) -> float | None:
     return worst
 
 
-def align(
-    gpu: dict[str, dict[str, Any]], cpu: dict[str, dict[str, Any]]
-) -> dict[str, str] | None:
+def align(gpu: dict[str, dict[str, Any]], cpu: dict[str, dict[str, Any]]) -> dict[str, str] | None:
     """Map GPU keys to CPU keys, or None when the two runs are not comparable.
 
     The CPU runner records absolute paths and the farm records paths relative

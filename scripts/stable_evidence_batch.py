@@ -34,9 +34,7 @@ from scripts.stable_evidence import (
     suite_for_workflow,
 )
 
-RECORDED_WORKFLOWS: frozenset[str] = frozenset(
-    {"CI", "Full CI (on-demand)", "E2E", "macOS Packaging"}
-)
+RECORDED_WORKFLOWS: frozenset[str] = frozenset({"CI", "Full CI (on-demand)", "E2E", "macOS Packaging"})
 
 
 def _is_recordable(run: dict[str, Any]) -> bool:
@@ -61,9 +59,7 @@ def select_suite_runs(runs: Iterable[dict[str, Any]], since: str) -> list[dict[s
     between the two leaves the older result in the file (Codex P1 on #3844).
     A re-run of the same run id is a later completion of that id and wins.
     """
-    return newest_per_suite(
-        r for r in runs if _is_recordable(r) and str(r.get("updated_at") or "") >= since
-    )
+    return newest_per_suite(r for r in runs if _is_recordable(r) and str(r.get("updated_at") or "") >= since)
 
 
 def newest_per_suite(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -172,9 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence-dir", default=None)
     args = parser.parse_args(argv)
 
-    since = batch_since(
-        args.previous_started or None, datetime.now(UTC), timedelta(minutes=args.overlap_minutes)
-    )
+    since = batch_since(args.previous_started or None, datetime.now(UTC), timedelta(minutes=args.overlap_minutes))
     created_since = created_floor(since, timedelta(hours=args.lookback_hours))
     listed = fetch_completed_runs(
         args.repository,

@@ -140,9 +140,7 @@ def test_build_e2e_fingerprint_anchor() -> None:
     assert triage_fingerprint("build:E2E", _build_e2e_message()) == "878d8ed91bfc"
 
 
-def _collect_from_jsonl(
-    tmp_path: Path, lines: list[dict[str, object]], name: str = "nucbox"
-) -> list[SinkRecord]:
+def _collect_from_jsonl(tmp_path: Path, lines: list[dict[str, object]], name: str = "nucbox") -> list[SinkRecord]:
     sink = tmp_path / f"{name}-sink.jsonl"
     sink.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
     state = TriageState(offsets={}, run_history={}, last_comment={})
@@ -281,10 +279,7 @@ def test_dry_run_fixture_emits_one_create_and_one_comment(tmp_path: Path) -> Non
 
 def test_build_kind_records_are_excluded_from_triage(tmp_path: Path) -> None:
     assert triage_fingerprint("build:CI", _CI_FAILURE_MESSAGE) == "9e91f071611f"
-    records = [
-        _record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}", kind="build")
-        for i in range(100)
-    ]
+    records = [_record("build:CI", _CI_FAILURE_MESSAGE, host=f"nucbox-wsl-{i}", kind="build") for i in range(100)]
     result = run_triage(
         sources=[],
         state_path=tmp_path / "state.json",
@@ -332,15 +327,10 @@ def test_aggregate_counts_hosts_and_examples() -> None:
 _SSH_SINK = "~/Library/Logs/opendj/error-sink.jsonl"
 _SSH_TRUNCATIONS = "~/.cache/opendj-host-disk-mac/truncations.jsonl"
 
-_FLOOD_LINE = (
-    json.dumps({"source_site": "engine:flood", "message": "disk write failed", "host": "nucbox"})
-    + "\n"
-)
+_FLOOD_LINE = json.dumps({"source_site": "engine:flood", "message": "disk write failed", "host": "nucbox"}) + "\n"
 
 
-def _unreachable_ssh(
-    host: str, remote_path: str, offset: int, tail_bytes: int
-) -> tuple[bytes, int]:
+def _unreachable_ssh(host: str, remote_path: str, offset: int, tail_bytes: int) -> tuple[bytes, int]:
     """The real air-host failure of 2026-09-17T05:00:10Z: ssh itself exits 255.
 
     The remote command carries its own ``|| echo 0`` fallback, which only runs
@@ -358,9 +348,7 @@ def _boom_local(path: Path, offset: int, tail_bytes: int) -> tuple[bytes, int]:
 
 @pytest.mark.requirement("OPS-40")
 def test_unreachable_ssh_source_is_skipped_and_offsets_unchanged(tmp_path: Path) -> None:
-    source = HostSource(
-        name="air", mode="ssh", sink_path=_SSH_SINK, truncations_path=_SSH_TRUNCATIONS
-    )
+    source = HostSource(name="air", mode="ssh", sink_path=_SSH_SINK, truncations_path=_SSH_TRUNCATIONS)
     stored = {f"air:{_SSH_SINK}": 4096, f"air:{_SSH_TRUNCATIONS}": 512}
     state = TriageState(offsets=dict(stored), run_history={}, last_comment={})
 
@@ -385,9 +373,7 @@ def test_reachable_source_still_yields_records_beside_an_unreachable_one(tmp_pat
     bad = HostSource(name="air", mode="ssh", sink_path=_SSH_SINK)
 
     good_records, good_skip, good_reached = collect_host_records(good, state)
-    bad_records, bad_skip, bad_reached = collect_host_records(
-        bad, state, fetch_ssh=_unreachable_ssh
-    )
+    bad_records, bad_skip, bad_reached = collect_host_records(bad, state, fetch_ssh=_unreachable_ssh)
 
     assert len(good_records) == 1
     assert good_skip is None

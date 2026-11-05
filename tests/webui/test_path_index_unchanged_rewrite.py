@@ -7,6 +7,7 @@ Regression one-liners:
   - if a path is new then it is inserted
   - if the size is unchanged but mtime changed then the row is written inside the window
 """
+
 from __future__ import annotations
 
 import sqlite3

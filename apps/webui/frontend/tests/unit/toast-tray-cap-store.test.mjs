@@ -80,7 +80,6 @@ afterEach(() => {
 });
 
 test('five pushed toasts yield at most three visible in policy slice', async (t) => {
-
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts', {
 		viteApiBase: API_BASE
 	});

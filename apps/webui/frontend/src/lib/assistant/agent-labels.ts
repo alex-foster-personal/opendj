@@ -4,7 +4,11 @@
  */
 import type { ContextKind, ContextRef, Tier } from './agent-contract';
 
-export const TIER_LABEL: Record<Tier, string> = { instant: 'Instant', fast: 'Fast', think: 'Think' };
+export const TIER_LABEL: Record<Tier, string> = {
+	instant: 'Instant',
+	fast: 'Fast',
+	think: 'Think'
+};
 
 export const TIER_TITLE: Record<Tier, string> = {
 	instant: 'Answered by a rule on this computer, no model call',
@@ -38,7 +42,10 @@ export function toolLabel(name: string): string {
  */
 export type Availability = 'checking' | 'unreachable' | 'keyless' | 'ready';
 
-export function availabilityOf(status: { configured: boolean } | null, statusError: string | null): Availability {
+export function availabilityOf(
+	status: { configured: boolean } | null,
+	statusError: string | null
+): Availability {
 	if (statusError !== null) return 'unreachable';
 	if (status === null) return 'checking';
 	return status.configured ? 'ready' : 'keyless';
@@ -46,7 +53,8 @@ export function availabilityOf(status: { configured: boolean } | null, statusErr
 
 export const AVAILABILITY_NOTICE: Record<Exclude<Availability, 'ready'>, string> = {
 	checking: 'Checking whether the assistant is set up...',
-	unreachable: 'The assistant could not be reached. Check that the engine is running, then reopen this panel.',
+	unreachable:
+		'The assistant could not be reached. Check that the engine is running, then reopen this panel.',
 	keyless:
 		'No model is set up on this computer, so only instant commands work, such as "play deck 1" or "set the system volume to 20%". For anything else, add your OpenRouter key or the Open DJ gateway address and install token (not both) to the engine environment and restart it.'
 };
@@ -78,7 +86,11 @@ export function contextChipId(ref: ContextRef): string {
 }
 
 export function contextChip(ref: ContextRef): { id: string; label: string; title: string } {
-	return { id: contextChipId(ref), label: ref.label, title: `${CONTEXT_KIND_LABEL[ref.kind]}: ${ref.label}` };
+	return {
+		id: contextChipId(ref),
+		label: ref.label,
+		title: `${CONTEXT_KIND_LABEL[ref.kind]}: ${ref.label}`
+	};
 }
 
 //----- held-call keys
@@ -119,7 +131,8 @@ export function sendOutcome(facts: SendFacts): 'send' | 'queue' | 'refuse' | 'ig
 	return facts.instantDraft === null && !facts.instantCheckFailed ? 'queue' : 'refuse';
 }
 
-export const QUEUED_SEND_NOTE = 'Sends as soon as the engine confirms this is an instant command...';
+export const QUEUED_SEND_NOTE =
+	'Sends as soon as the engine confirms this is an instant command...';
 
 /** The draft check failed, not the assistant: the composer stays open and any edit asks again. */
 export function instantCheckFailedNote(reason: string): string {

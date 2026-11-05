@@ -58,3 +58,19 @@ def with_in_track(mirror: Mapping[str, Any], in_deck: int, in_id: str, in_bpm: f
         state["effective_bpm"] = in_bpm
     copy["decks"] = decks
     return copy
+
+
+def heard_on_deck(profile: TrackProfile, deck_state: Mapping[str, Any], *, with_tempo: bool) -> TrackProfile:
+    """AUTOPLAY-HEARD: ``profile`` as the deck plays it: its key shifted by the deck's applied key shift, and (for the
+    master, ``with_tempo``) its tempo at the deck's pitch. The profile unchanged when the deck holds another track."""
+    if deck_state.get("stable_id") != profile.stable_id:
+        return profile
+    key_sync = deck_state.get("key_sync")
+    shift = key_sync.get("shift_semitones") if isinstance(key_sync, Mapping) else None
+    effective = deck_state.get("effective_bpm") if with_tempo else None
+    pitch_range = deck_state.get("pitch_range")
+    return profile.as_heard(
+        pitch_range_pct=float(pitch_range) if isinstance(pitch_range, (int, float)) and pitch_range > 0 else None,
+        key_shift=shift if isinstance(shift, int) and not isinstance(shift, bool) else 0,
+        heard_bpm=float(effective) if isinstance(effective, (int, float)) and effective > 0 else None,
+    )

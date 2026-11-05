@@ -9,5 +9,9 @@ test('the setup page adds the frame probe only when the shell asked for it', () 
 	assert.equal(performancePagePath(true), '/performance?perfprobe=1');
 	assert.equal(performancePagePath(false), '/performance');
 	assert.equal(performancePagePath(undefined), '/performance');
-	assert.equal(performancePagePath('1'), '/performance', 'only the boolean the shells inject counts');
+	assert.equal(
+		performancePagePath('1'),
+		'/performance',
+		'only the boolean the shells inject counts'
+	);
 });

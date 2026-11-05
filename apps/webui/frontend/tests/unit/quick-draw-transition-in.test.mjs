@@ -33,8 +33,7 @@ function makeDeps(overrides = {}) {
 			record.push(`toast:${kind}:${message}`);
 		},
 		deckIds: [1, 2, 3, 4],
-		getDeckState: (id) =>
-			id === 1 ? { stable_id: 'track-a' } : { stable_id: 'other' },
+		getDeckState: (id) => (id === 1 ? { stable_id: 'track-a' } : { stable_id: 'other' }),
 		refreshHotCues: async (id) => {
 			record.push(`refresh:${id}`);
 		},
@@ -61,11 +60,7 @@ function makeDeps(overrides = {}) {
 test('transition-in runner PUTs, success toast, then refreshHotCues in order', async () => {
 	const { record, putArgs, deps } = makeDeps();
 	await mod.runTransitionInCue(defaultClick, deps);
-	assert.deepEqual(record, [
-		'put',
-		'toast:info:Transition-in cue set at bar 7',
-		'refresh:1'
-	]);
+	assert.deepEqual(record, ['put', 'toast:info:Transition-in cue set at bar 7', 'refresh:1']);
 	assert.deepEqual(putArgs, [['track-a', 12500]]);
 });
 

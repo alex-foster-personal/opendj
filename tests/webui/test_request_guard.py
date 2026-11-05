@@ -2,6 +2,7 @@
 
 [if] Host or a mutating Origin fails the allowlist [then] the guard rejects it, [else stop].
 """
+
 from __future__ import annotations
 
 import re
@@ -159,7 +160,9 @@ def test_configured_hostname_is_allowed_without_the_env_allowlist() -> None:
     too. This is also what every ``TestClient(app)`` call without an
     explicit loopback ``base_url`` relies on (default Host: testserver)."""
     app = create_app(
-        backend=InMemoryBackend(), mount_frontend=False, hostname="test-host",
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        hostname="test-host",
     )
     client = TestClient(app)
     resp = client.get("/api/v1/health", headers={"Host": "test-host"})
@@ -183,15 +186,7 @@ def _library_jobs_e2e_frontend_port() -> int:
     to another port moves this test with it instead of leaving a stale
     literal that passes for the wrong reason.
     """
-    source = (
-        REPOSITORY_ROOT
-        / "apps"
-        / "webui"
-        / "frontend"
-        / "tests"
-        / "e2e"
-        / "library-jobs-e2e-endpoints.ts"
-    )
+    source = REPOSITORY_ROOT / "apps" / "webui" / "frontend" / "tests" / "e2e" / "library-jobs-e2e-endpoints.ts"
     text = source.read_text(encoding="utf-8")
     match = re.search(r"export const LIBRARY_JOBS_E2E_FRONTEND_PORT\s*=\s*(\d+)\s*;", text)
     if match is None:

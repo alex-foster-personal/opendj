@@ -28,7 +28,12 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 1.553 }
 ];
 const withGrid = (beats) => ({ beatgrid: { source: 'rekordbox', beats, status: 'ok' } });
-const deck = (anlz, beat_sync_enabled = true) => ({ deck_id: 1, stable_id: 'sid', beat_sync_enabled, anlz });
+const deck = (anlz, beat_sync_enabled = true) => ({
+	deck_id: 1,
+	stable_id: 'sid',
+	beat_sync_enabled,
+	anlz
+});
 
 let grid;
 before(async () => {
@@ -42,7 +47,11 @@ test('[PLAY-25] a master with 0 beats, 1 beat or no analysis cannot be phase-loc
 		['1 beat', deck(withGrid(REAL_PQTZ_BEATS.slice(0, 1)))],
 		['no analysis', deck(null)]
 	]) {
-		assert.equal(grid.canPhaseLockTo(follower, master), false, `${label}: if play joins its phase then the handoff throws`);
+		assert.equal(
+			grid.canPhaseLockTo(follower, master),
+			false,
+			`${label}: if play joins its phase then the handoff throws`
+		);
 	}
 });
 
@@ -54,7 +63,9 @@ test('[PLAY-25] control: two gridded decks still phase-lock, and a gridless or u
 });
 
 test('[PLAY-25] SHAPE GUARD: every phase-join branch in play asks canPhaseLockTo about its master', () => {
-	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
+	const body = engineBlockAfter(
+		'	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {'
+	);
 	const joins = body.split('await joinPhase(').length - 1; // PLAY-27 routes every join through joinPhase
 	assert.ok(joins >= 3, `expected the three phase-join branches in play, found ${joins}`);
 	assert.match(body, /syncClock !== null && canPhaseLockTo\(st, deckStates\[syncClock\]\)/);
@@ -64,6 +75,13 @@ test('[PLAY-25] SHAPE GUARD: every phase-join branch in play asks canPhaseLockTo
 		/syncClock === deck \|\| !syncActive \|\| \(syncClock !== null && !canPhaseLockTo\(st, deckStates\[syncClock\]\)\)/,
 		'if the last branch can still join a gridless master then the 17:35Z dead air comes back'
 	);
-	assert.doesNotMatch(body, /&& syncActive\) \{\s*await _synchronizeFollowers/, 'no join may be gated on the follower alone');
-	assert.match(body, /\[beat-sync\] deck \$\{deck\} starts unsynced: master deck \$\{syncClock\} has no usable beat grid/);
+	assert.doesNotMatch(
+		body,
+		/&& syncActive\) \{\s*await _synchronizeFollowers/,
+		'no join may be gated on the follower alone'
+	);
+	assert.match(
+		body,
+		/\[beat-sync\] deck \$\{deck\} starts unsynced: master deck \$\{syncClock\} has no usable beat grid/
+	);
 });

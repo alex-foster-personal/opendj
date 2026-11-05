@@ -12,6 +12,7 @@ Regression one-liners:
   - if a comment that fits moves the audio offset then broken
   - if a non-FLAC file is rewritten instead of refused then broken
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -28,7 +29,10 @@ pytestmark = [pytest.mark.requirement("TAGIO-03"), pytest.mark.requires_ffmpeg]
 def _decodes(path: Path) -> bool:
     result = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
-        capture_output=True, text=True, timeout=60, check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
     return result.returncode == 0 and not result.stderr.strip()
 

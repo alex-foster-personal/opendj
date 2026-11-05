@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 324189,
+  "measured_with_pr": 324720,
+  "sha": "65d48be2be",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #8881 adds the AutoPlay menu's Why this track readout with the one-tap verdict (AutoPlayWhy.svelte, autoplay-why.ts) and the typed autoplay_verdict command; the AutoPlay menu sits in the top bar, which is on the initial library load. Local vite builds of the base branch (af--autoplay-planner-reach, main plus #8870) and of this head measured +531 B gzip; 112 B over the limit, ceiled to 1 KiB",
+  "payback": "none planned; lazy-loading the readout is a follow-up if the menu grows"
+}

@@ -33,7 +33,7 @@ _MIN_SCORED_SETTLE_S = 60
 
 #: Rows whose ratio is over the PERFMODE-14 family carry this, and only these
 #: rows can satisfy the PERFMODE-15 ratio clauses (the requirement reader in
-#: tests/scripts/test_trackify_mode_requirement.py ignores ratio rows without it).
+#: (private path) ignores ratio rows without it).
 PROCESS_FAMILY = "chromium+engine"
 
 RATIO_METHOD = (
@@ -123,9 +123,7 @@ def gig_baseline_rows(
     for mode, phase in (("gig", gig), ("trackify", trackify)):
         _require_engine_family(mode, phase)
         try:
-            perfmode14_require_scored_sample_count(
-                int(phase["sample_count"]), mode=mode, field="footprint_samples_mb"
-            )
+            perfmode14_require_scored_sample_count(int(phase["sample_count"]), mode=mode, field="footprint_samples_mb")
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
     if gig["footprint_mb"] <= 0 or gig["cpu_percent"] <= 0:

@@ -50,7 +50,9 @@ def test_the_windows_launchers_export_exactly_what_the_posix_ones_export() -> No
 
 
 def test_the_windows_launchers_unset_exactly_what_the_posix_ones_unset() -> None:
-    assert _posix_unset() == {"MDT_REKORDBOX_WRITEBACK_ENABLED"}, "the POSIX unset list changed; update the Windows launcher"
+    assert _posix_unset() == {"MDT_REKORDBOX_WRITEBACK_ENABLED"}, (
+        "the POSIX unset list changed; update the Windows launcher"
+    )
     assert _windows_unset(win.WINDOWS_PAYLOAD_PREAMBLE) == _posix_unset()
 
 

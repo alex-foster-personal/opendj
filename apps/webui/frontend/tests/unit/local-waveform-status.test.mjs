@@ -13,7 +13,11 @@ function anlzWith(local_waveform) {
 	return {
 		stable_id: 'abc123',
 		points: 0,
-		waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: 0, low: [], mid: [], high: [] } },
+		waveform: {
+			kind: 'mono',
+			preview: { length: 0, low: [], mid: [], high: [] },
+			detail: { length: 0, low: [], mid: [], high: [] }
+		},
 		beatgrid: { beat_count: 0, beats: [] },
 		cues: [],
 		phrases: [],

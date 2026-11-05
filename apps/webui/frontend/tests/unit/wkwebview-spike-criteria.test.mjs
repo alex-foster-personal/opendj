@@ -162,7 +162,10 @@ test('an empty or partial run is INCOMPLETE with the gap named, never PASS', () 
 	}
 	const gate = rollupGate(partial);
 	assert.equal(gate.verdict, 'INCOMPLETE');
-	assert.deepEqual(gate.unrecorded, SPIKE_CRITERIA.slice(3).map((criterion) => criterion.id));
+	assert.deepEqual(
+		gate.unrecorded,
+		SPIKE_CRITERIA.slice(3).map((criterion) => criterion.id)
+	);
 });
 
 test('one UNAVAILABLE keeps the gate closed even when nothing failed', () => {
@@ -214,8 +217,7 @@ test('rendered evidence carries the host header, every criterion row and no inve
 		id: 'WKV-01',
 		verdict: 'FAIL',
 		detail: 'timed out | with a pipe and\na newline',
-		evidence:
-			'apps/webui/frontend/test-results/wkwebview-spike/2026-01-01--abc1234/console.log'
+		evidence: 'apps/webui/frontend/test-results/wkwebview-spike/2026-01-01--abc1234/console.log'
 	});
 	const markdown = renderEvidenceMarkdown(document_);
 	assert.match(markdown, /# DESK-005 WKWebView spike evidence/);
@@ -229,7 +231,10 @@ test('rendered evidence carries the host header, every criterion row and no inve
 	assert.match(markdown, /NOT RECORDED/, 'unrecorded criteria must render as unrecorded');
 	assert.match(markdown, /timed out \\\| with a pipe and a newline/, 'cells must be escaped');
 	assert.match(markdown, /Host-disqualifying failures/);
-	assert.equal(markdown.split('\n').filter((line) => line.startsWith('| WKV-')).length, SPIKE_CRITERIA.length);
+	assert.equal(
+		markdown.split('\n').filter((line) => line.startsWith('| WKV-')).length,
+		SPIKE_CRITERIA.length
+	);
 });
 
 test('the harness and the criteria module hold no disallowed dash characters and no synthetic audio', () => {
@@ -238,7 +243,11 @@ test('the harness and the criteria module hold no disallowed dash characters and
 	);
 	for (const file of files) {
 		const text = readFileSync(file, 'utf8');
-		assert.doesNotMatch(text, /[\u2013\u2014]/, `${file} must not contain a disallowed dash character`);
+		assert.doesNotMatch(
+			text,
+			/[\u2013\u2014]/,
+			`${file} must not contain a disallowed dash character`
+		);
 		assert.doesNotMatch(
 			text,
 			/OscillatorNode|createOscillator|createBufferSource\(/,

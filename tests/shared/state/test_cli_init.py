@@ -1,4 +1,5 @@
 """Smoke tests for ``python -m apps.shared.state.cli init`` + ``stats``."""
+
 from __future__ import annotations
 
 from pathlib import Path

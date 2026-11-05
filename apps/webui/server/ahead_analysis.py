@@ -61,6 +61,10 @@ Requirements (mini-PRD):
     [if] the engine booted under 120 s ago and no index was served [then] no tick runs
     [if] 120 s have passed [then] the drain ticks, whether or not any index was served
     [if] the first /tracks/index is served [then] the grace ends at once
+  ✔︎ one analysis runner at a time (NATIVE-5054)
+    [if] a Re-analyze drain's child is running [then] a lane run waits for it
+    [if] a deck starts playing while the lane run waits [then] it launches no child once the
+         gate opens, cancels its batch, and the tick reports paused_playing
   ✔︎ lane children run in background QoS on macOS (PERF-DRAIN-01)
     [if] the host is darwin [then] the queue child starts under taskpolicy -b
     [if] taskpolicy is missing on darwin [then] the lane fails with a named error
@@ -111,10 +115,11 @@ from typing import Any
 import psutil
 
 from apps.analysis import queue_store
+from apps.shared.env_on_off import read_on_off_environ
 from apps.shared.events import publish as publish_engine_event
 from apps.shared.process_priority import background_argv, lowered_priority
 from apps.shared.shutdown_bound import SpawnAfterQuit
-from apps.webui.server import enrich_songs, enrich_sources
+from apps.webui.server import backfill_drain, enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
 from apps.webui.server.ahead_analysis_duds import DudLedger, is_dud
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
@@ -220,10 +225,13 @@ PAUSED_STATES: frozenset[str] = frozenset(
 
 
 def arm_from_environ(environ: Mapping[str, str]) -> bool:
-    raw = environ.get(AHEAD_ENV, "on").strip().lower()
-    if raw not in AHEAD_VALUES:
-        raise ValueError(f"{AHEAD_ENV}={raw!r} is not a member of {AHEAD_VALUES}")
-    return raw == "on"
+    return read_on_off_environ(
+        environ,
+        env_key=AHEAD_ENV,
+        allowed=AHEAD_VALUES,
+        default="on",
+        normalize=True,
+    )
 
 
 #-----------------------------------------------------------------------------
@@ -370,6 +378,18 @@ def reason_kind(reason: str) -> str:
 
 def _is_known_host_cause(reason: str) -> bool:
     return any(cause in reason for cause in KNOWN_HOST_CAUSES)
+
+
+#: Queue admission refusals name one track's own facts (its length), never the
+#: host: a chunk of duration-less tracks closed beatgrid, loudness and waveform
+#: library-wide on silver (Wed 4 Nov 2026). They fail the track, never the lane.
+#: ``already_current_version`` is the runner skipping a track the drain thought
+#: was not done: a disagreement about one track, never a host fault.
+PER_TRACK_REASON_PREFIXES: tuple[str, ...] = ("duration_unknown", "already_current_version")
+
+
+def _is_per_track_reason(reason: str) -> bool:
+    return reason.startswith(PER_TRACK_REASON_PREFIXES)
 
 
 #: How ``run_lane_via_queue`` words a queue call that outlived QUEUE_TIMEOUT_S.
@@ -576,6 +596,15 @@ class AheadDrain:
     def status(self) -> AheadStatus:
         return self._status
 
+    def halted(self) -> bool:
+        """True once :meth:`stop` was called."""
+        return self._halt.is_set()
+
+    @property
+    def sources(self) -> AheadSources:
+        """The callables this drain runs on, as built (read-only)."""
+        return self._src
+
     # --- one tick ---------------------------------------------------------
     def tick(self) -> str:
         with self._tick_lock:
@@ -630,7 +659,10 @@ class AheadDrain:
         if work is None:
             return "green"
         lane, chunk = work
-        self._run_lane(lane, dict(LANE_ORDER)[lane], chunk)
+        try:
+            self._run_lane(lane, dict(LANE_ORDER)[lane], chunk)
+        except LaneRunYielded:
+            return "paused_playing"
         return f"ran:{lane}"
 
     def _observe_xruns(self, *, in_grace: bool = False) -> bool:
@@ -719,6 +751,8 @@ class AheadDrain:
             self._xrun_anchor[0] = self._xrun_tick_sample
         try:
             errors = self._src.run_lane_fn(lane, backend, [sid])
+        except LaneRunYielded:
+            return  # the drain stopped while this run waited for the runner gate
         finally:
             if self._xrun_anchor is not None:
                 self._xrun_anchor[0] = None
@@ -901,6 +935,11 @@ class AheadDrain:
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
         chunk, errors = self._set_aside_duds(lane, chunk, errors)
+        per_track = {sid: why for sid, why in errors.items() if _is_per_track_reason(why)}
+        if per_track:
+            self._lane_failed[lane].update(per_track)
+            chunk = [sid for sid in chunk if sid not in per_track]
+            errors = {sid: why for sid, why in errors.items() if sid not in per_track}
         if _batch_timed_out(chunk, errors):
             log.warning(
                 "ahead analysis: lane %s set aside %s after a timeout; other work runs first, then each alone",
@@ -1167,10 +1206,13 @@ def mirror_xruns(mirror: Mapping[str, Any] | None, *, age_s: float) -> int | Non
         raise MirrorContractError(f"ui-mirror xrun_sentinel is {type(sentinel).__name__}, expected an object")
     if "xruns" not in sentinel:
         return None
-    count = sentinel["xruns"]
+    # XRUNHOLD-01: a page that counts xruns beyond its clock's resolution
+    # (``hold_xruns``) is guarded by that count; an older page by every xrun.
+    count = sentinel["hold_xruns"] if "hold_xruns" in sentinel else sentinel["xruns"]
     # type() and not isinstance(): JSON true is a bool, and bool is an int.
     if type(count) is not int or count < 0:
-        raise MirrorContractError(f"ui-mirror xrun_sentinel.xruns is {count!r}, expected a non-negative integer")
+        field = "hold_xruns" if "hold_xruns" in sentinel else "xruns"
+        raise MirrorContractError(f"ui-mirror xrun_sentinel.{field} is {count!r}, expected a non-negative integer")
     if "detector" not in sentinel:
         return None
     detector = sentinel["detector"]
@@ -1385,6 +1427,37 @@ def _last_line(text: str) -> str:
     return pick[:300]
 
 
+class LaneRunYielded(Exception):
+    """A lane run that waited for the runner gate must not start: a deck is
+    playing, or the drain was stopped. It launched nothing."""
+
+
+def run_queued_batch(
+    db: str,
+    batch_id: str,
+    backend: str,
+    *,
+    yield_fn: Callable[[], bool] | None = None,
+    abandon: Callable[[], bool] | None = None,
+) -> tuple[int, str, str]:
+    """``queue_cli run`` for one batch, once no other analysis runner is running.
+
+    One runner at a time in this daemon (``backfill_drain.RUNNER_GATE``): a
+    Re-analyze drain's child sizes its process pool as if it ran alone, and so
+    does this one, so two at once would double the memory admission budgets.
+
+    The wait can last as long as a Re-analyze batch, and the tick checked
+    playback before it, so ``yield_fn`` (a deck playing, the drain stopped)
+    is asked again once the gate is held: if it says yield, no child is
+    launched (:class:`LaneRunYielded`) and the gate is released at once.
+    ``abandon`` is the xrun guard of :func:`run_lane_via_queue`, passed to the child.
+    """
+    with backfill_drain.RUNNER_GATE:
+        if yield_fn is not None and yield_fn():
+            raise LaneRunYielded(f"batch {batch_id} yielded after waiting to run: a deck is playing or the drain stopped")
+        return _queue_cli(["run", "--batch-id", batch_id, "--backend", backend], db, abandon=abandon)
+
+
 def _failure_text(out: str, err: str) -> str:
     """The stream that names why a queue call failed.
 
@@ -1457,6 +1530,7 @@ def run_lane_via_queue(
     *,
     xruns_fn: Callable[[], int | None] | None = None,
     baseline_fn: Callable[[], int | None] | None = None,
+    yield_fn: Callable[[], bool] | None = None,
 ) -> Callable[[str, str, list[str]], dict[str, str]]:
     """The production lane runner, shared by the idle drain and while-playing runs.
 
@@ -1470,6 +1544,11 @@ def run_lane_via_queue(
 
     With no baseline (every idle run) nothing reads the counter and the
     call is never abandoned.
+
+    The run itself waits for the daemon's one runner gate (NATIVE-5054,
+    :func:`run_queued_batch`). If ``yield_fn`` says yield once the gate is
+    held (a deck started, the drain stopped), the batch is cancelled and
+    :class:`LaneRunYielded` reaches the tick, which reports ``paused_playing``.
     """
 
     def abandon_for(baseline: int) -> Callable[[], bool]:
@@ -1522,10 +1601,8 @@ def run_lane_via_queue(
         try:
             if abandon is not None and abandon():
                 raise LaneAbandoned()
-            code, out, err = _queue_cli(
-                ["run", "--batch-id", batch_id, "--backend", backend], db, abandon=abandon
-            )
-        except (LaneAbandoned, ProcessTreeNotStopped, MirrorContractError):
+            code, out, err = run_queued_batch(db, batch_id, backend, yield_fn=yield_fn, abandon=abandon)
+        except (LaneAbandoned, LaneRunYielded, ProcessTreeNotStopped, MirrorContractError):
             # In every case the batch must not stay open for a later tick to
             # enqueue beside. An unstopped tree or an unreadable counter then
             # fails the tick loudly instead of reading as an abandoned lane.
@@ -1684,6 +1761,20 @@ def build_for_app(app: Any) -> AheadDrain:
         received = getattr(app.state, "ui_mirror_received_monotonic", None)
         return mirror_xruns(mirror(), age_s=mirror_age_s(received, now=time.monotonic()))
 
+    deck_gate = DeckGate(mirror)
+    built: list[AheadDrain] = []
+
+    def must_yield() -> bool:
+        """Asked by a lane run that has just won the runner gate.
+
+        A while-playing run (its xrun anchor is set) is meant to run with a
+        deck playing, so only a stopped drain makes it yield; an idle run
+        also yields to a deck that started while it waited.
+        """
+        if any(drain.halted() for drain in built):
+            return True
+        return anchor[0] is None and deck_gate()
+
     def blank_tags() -> set[str]:
         conn = ingest_routes.open_ro()
         try:
@@ -1711,7 +1802,7 @@ def build_for_app(app: Any) -> AheadDrain:
             ingest_routes.open_ro, [(sid, paths[sid]) for sid in ids if sid in paths]
         )
 
-    return AheadDrain(
+    drain = AheadDrain(
         AheadSources(
             present_fn=rows.present,
             mapped_fn=rows.mapped,
@@ -1719,9 +1810,9 @@ def build_for_app(app: Any) -> AheadDrain:
             write_strip_fn=write_strip,
             done_fn=lambda _lane, backend: done_ids(ingest_routes.open_ro, backend),
             run_lane_fn=run_lane_via_queue(
-                db, ingest_routes.open_ro, xruns_fn=xruns, baseline_fn=lambda: anchor[0]
+                db, ingest_routes.open_ro, xruns_fn=xruns, baseline_fn=lambda: anchor[0], yield_fn=must_yield
             ),
-            playing_fn=DeckGate(mirror),
+            playing_fn=deck_gate,
             blank_tags_fn=blank_tags,
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
@@ -1737,6 +1828,8 @@ def build_for_app(app: Any) -> AheadDrain:
         startup_grace_s=STARTUP_GRACE_S,
         xrun_anchor=anchor,
     )
+    built.append(drain)
+    return drain
 
 
 __all__ = [
@@ -1754,6 +1847,7 @@ __all__ = [
     "XRUN_DETECTOR_STATES",
     "AheadDrain",
     "AheadSources",
+    "LaneRunYielded",
     "PlayableRows",
     "arm_from_environ",
     "build_for_app",
@@ -1763,5 +1857,6 @@ __all__ = [
     "mirror_deck_tracks",
     "mirror_xruns",
     "next_lane_work",
+    "run_queued_batch",
     "strip_targets",
 ]

@@ -82,7 +82,8 @@ export function tempoEpisodes(segments: readonly TempoLaneSegment[]): TempoEpiso
 	for (const segment of segments) {
 		if (segment.kind === 'steady') continue;
 		const open = out[out.length - 1];
-		if (open !== undefined && Math.abs(segment.start_s - lastEnd) < _ADJACENT_S) open.segments.push(segment);
+		if (open !== undefined && Math.abs(segment.start_s - lastEnd) < _ADJACENT_S)
+			open.segments.push(segment);
 		else out.push({ start_s: segment.start_s, segments: [segment], direction: 'none' });
 		lastEnd = segment.end_s;
 	}
@@ -107,7 +108,10 @@ const TURTLE = [
 ] as const;
 let _iconPaths: { rabbit: Path2D[]; turtle: Path2D[] } | null = null;
 function _icons(): { rabbit: Path2D[]; turtle: Path2D[] } {
-	_iconPaths ??= { rabbit: RABBIT.map((d) => new Path2D(d)), turtle: TURTLE.map((d) => new Path2D(d)) };
+	_iconPaths ??= {
+		rabbit: RABBIT.map((d) => new Path2D(d)),
+		turtle: TURTLE.map((d) => new Path2D(d))
+	};
 	return _iconPaths;
 }
 
@@ -138,7 +142,15 @@ function _withAlpha(hex: string, alpha: number): string {
 	return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-function _icon(ctx: CanvasRenderingContext2D, name: 'rabbit' | 'turtle', x: number, top: number, size: number, color: string, xStretch: number): void {
+function _icon(
+	ctx: CanvasRenderingContext2D,
+	name: 'rabbit' | 'turtle',
+	x: number,
+	top: number,
+	size: number,
+	color: string,
+	xStretch: number
+): void {
 	const width = size / xStretch;
 	ctx.save();
 	ctx.fillStyle = ICON_DISC;
@@ -203,13 +215,29 @@ export function drawTempoCurve(
 			// green above (midpoint of the piece). The slope already shows which way it
 			// moves, so a rising ramp still below nominal reads red, not green.
 			const midBpm = (segment.bpm_start + segment.bpm_end) / 2;
-			const color = unstable ? colors.unstable : midBpm < data.nominal_bpm ? colors.slower : colors.faster;
-			const pts: [number, number][] = [[px, py], [x(segment.start_s), y(segment.bpm_start)], [x(segment.end_s), y(segment.bpm_end)]];
+			const color = unstable
+				? colors.unstable
+				: midBpm < data.nominal_bpm
+					? colors.slower
+					: colors.faster;
+			const pts: [number, number][] = [
+				[px, py],
+				[x(segment.start_s), y(segment.bpm_start)],
+				[x(segment.end_s), y(segment.bpm_end)]
+			];
 			pieces.push({ color, dashed: unstable, tint: !unstable, pts });
 			px = x(segment.end_s);
 			py = y(segment.bpm_end);
 		}
-		pieces.push({ color: BASELINE, dashed: false, tint: false, pts: [[px, py], [px, base]] });
+		pieces.push({
+			color: BASELINE,
+			dashed: false,
+			tint: false,
+			pts: [
+				[px, py],
+				[px, base]
+			]
+		});
 	}
 	for (const piece of pieces) {
 		if (!piece.tint) continue;
@@ -244,7 +272,15 @@ export function drawTempoCurve(
 			if (sx < -iconW || sx > w || sx - lastX < iconW * 1.3) continue;
 			const ix = Math.max(0, Math.min(w - iconW, sx - iconW - 2 / stretch));
 			const color = episode.direction === 'slower' ? colors.slower : colors.faster;
-			_icon(ctx, episode.direction === 'slower' ? 'turtle' : 'rabbit', ix, band.top, band.iconPx, color, stretch);
+			_icon(
+				ctx,
+				episode.direction === 'slower' ? 'turtle' : 'rabbit',
+				ix,
+				band.top,
+				band.iconPx,
+				color,
+				stretch
+			);
 			lastX = sx;
 		}
 	}

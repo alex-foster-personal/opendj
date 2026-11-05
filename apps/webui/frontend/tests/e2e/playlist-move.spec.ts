@@ -1,5 +1,8 @@
 /**
- * LIBM-22: multi-select grip drag issues one POST items:move, not PUT tracks.
+ * LIBM-22: multi-select grip drag issues one move POST, not PUT tracks.
+ * REORDER-ROW-02: the move is POST entries:move (tracks and dividers as one
+ * block), and the drop lands where the pointer is, so the synthetic events
+ * carry the target row's coordinates.
  */
 import { expect, test } from '@playwright/test';
 
@@ -7,7 +10,7 @@ const TRACK_ROW = '[data-testid="track-row"]';
 const TREE = '[data-testid="playlist-tree"]';
 const ROW = '[data-testid="playlist-row"]';
 
-test('contiguous five-row grip drag POSTs items:move once', async ({ page }) => {
+test('contiguous five-row grip drag POSTs entries:move once', async ({ page }) => {
 	const playlistName = `Move slice ${Date.now()}`;
 	let moveCount = 0;
 	let putTrackCount = 0;
@@ -50,7 +53,7 @@ test('contiguous five-row grip drag POSTs items:move once', async ({ page }) => 
 
 	page.on('request', (request) => {
 		const url = request.url();
-		if (request.method() === 'POST' && url.includes('/items:move')) {
+		if (request.method() === 'POST' && url.includes('/entries:move')) {
 			moveCount += 1;
 		}
 		if (request.method() === 'PUT' && url.includes('/tracks')) {
@@ -74,15 +77,17 @@ test('contiguous five-row grip drag POSTs items:move once', async ({ page }) => 
 			throw new Error('expected grip on source row');
 		}
 		const dt = new DataTransfer();
+		const box = targetRow.getBoundingClientRect();
+		// Just above the last row's bottom edge: the gap after it, the end of the list.
+		const at = { clientX: box.left + box.width / 2, clientY: box.bottom - 1 };
 		grip.dispatchEvent(
 			new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt })
 		);
-		targetRow.dispatchEvent(
-			new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
-		);
-		targetRow.dispatchEvent(
-			new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })
-		);
+		for (const type of ['dragenter', 'dragover', 'drop']) {
+			targetRow.dispatchEvent(
+				new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, ...at })
+			);
+		}
 	});
 
 	await expect.poll(() => moveCount, { timeout: 10_000 }).toBe(1);

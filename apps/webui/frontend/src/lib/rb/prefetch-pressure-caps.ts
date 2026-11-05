@@ -70,7 +70,9 @@ export interface ArmPrefetchPressureCapScalingOptions {
 }
 
 /** Arm the pressure-driven cap stepper for the page lifetime. Returns teardown. */
-export function armPrefetchPressureCapScaling(options: ArmPrefetchPressureCapScalingOptions): () => void {
+export function armPrefetchPressureCapScaling(
+	options: ArmPrefetchPressureCapScalingOptions
+): () => void {
 	let xrunsAtPreviousTick = options.readXruns();
 	return options.subscribe(() => {
 		const xrunWindowElevated = options.readXruns() - xrunsAtPreviousTick > S1_XRUN_DELTA_MAX;

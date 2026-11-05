@@ -28,7 +28,7 @@ Exit codes
 ``0``  The command did what it says.
 ``1``  ``EXIT_TRACK_FAILURES`` -- a drain finished with at least one track
        whose backend failed on it. Says nothing about the next batch.
-``2``  ``EXIT_USAGE`` -- bad flags, unknown backend, unknown batch.
+``2``  ``EXIT_USAGE`` -- bad flags, unknown backend, unknown batch, a reserved note.
 ``5``  ``EXIT_INTERNAL_ERROR`` -- an exception escaped, so no verdict was
        reached at all. Distinct from 1 because Python exits 1 for an
        escaping exception, which would otherwise read as "some tracks
@@ -55,6 +55,7 @@ from . import queue_store, queue_targets, queue_user_cli
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
 from .lanes import own_backend, parse_own_backend
+from .queue_cascade_note import reserved_note_reason
 from .queue_runner import RunSummary, drain, run_batch
 from .store import open_conn
 
@@ -122,6 +123,9 @@ def _emit(payload: dict[str, Any], *, as_json: bool) -> None:
 #-----------------------------------------------------------------------------
 
 def cmd_enqueue(args: argparse.Namespace) -> int:
+    reserved = reserved_note_reason(args.note)
+    if reserved is not None:
+        raise queue_api.QueueError(reserved)
     conn = _conn(args.db)
     try:
         candidates = queue_targets.candidates_from_state(

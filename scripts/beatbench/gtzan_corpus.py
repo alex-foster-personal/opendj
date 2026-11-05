@@ -11,7 +11,7 @@ It is separate from `score_gtzan.py` for a reason that predates the file split:
 sharing a module with the scoring functions was unimportable in the test lane.
 That is how the merge and provenance guards below came to carry two
 benchmark-integrity checks with no test at all. Nothing here imports `mir_eval`
-or `numpy`, so `tests/beatbench/test_shard_provenance.py` exercises the real
+or `numpy`, so `(private path)` exercises the real
 code rather than skipping it, and a skip is never mistaken for a pass.
 """
 
@@ -21,6 +21,8 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+from apps.shared.hashing import sha256_file_hex
 
 
 def fixtures_digest(requested: dict[str, Any]) -> str:
@@ -55,25 +57,10 @@ def fixtures_digest(requested: dict[str, Any]) -> str:
     later round assert it is scoring the same fixtures, rather than assume it.
     """
     parts = [
-        f"{key}|{clip.get('annotation_sha256')}|{clip.get('decode_fingerprint')}"
-        f"|{clip.get('audio_sha256')}"
+        f"{key}|{clip.get('annotation_sha256')}|{clip.get('decode_fingerprint')}|{clip.get('audio_sha256')}"
         for key, clip in sorted(requested.items())
     ]
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
-
-
-def _file_sha256(path: Path) -> str:
-    """sha256 of a file's bytes, read in blocks so a 1.2 GB corpus stays flat.
-
-    Read for EVERY requested pair. Measured Thu 10 Sep 2026: 999 GTZAN files,
-    1.32 GB, 6.6 s -- which is why the "too expensive" argument for hashing
-    only the undecodable ones did not survive being checked.
-    """
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def digest_inputs_for(
@@ -129,7 +116,7 @@ def digest_inputs_for(
         inputs[key] = {
             "annotation_sha256": hashlib.sha256(annotation.read_bytes()).hexdigest(),
             "decode_fingerprint": fingerprint,
-            "audio_sha256": _file_sha256(audio),
+            "audio_sha256": sha256_file_hex(audio),
         }
     return inputs
 
@@ -160,7 +147,10 @@ def load_annotation(path: Path) -> tuple[list[float], list[float]]:
 # L4 shard and an H100 shard both say "cuda", so without this key they merge
 # as one benchmark. It is the accelerator MODEL, null on a CPU producer.
 PROVENANCE_KEYS = (
-    "producer", "producer_version", "beat_this_version", "torch_version",
+    "producer",
+    "producer_version",
+    "beat_this_version",
+    "torch_version",
     # The decode and inference dependencies, and the analyzer's own code
     # identity. Both producers RECORDED these and this identity excluded them,
     # so shards decoded by a different soundfile, run against a different
@@ -175,8 +165,16 @@ PROVENANCE_KEYS = (
     # (Codex P1 BLOCKING, PR #1660, discussion_r3977265421). Two shards decoded
     # by different torchaudio releases merged as one benchmark while the field
     # that would have shown it went unrecorded.
-    "numpy_version", "torchaudio_version", "soundfile_version", "runner_sha256",
-    "checkpoint", "model_sha256", "device", "gpu", "threshold", "fps",
+    "numpy_version",
+    "torchaudio_version",
+    "soundfile_version",
+    "runner_sha256",
+    "checkpoint",
+    "model_sha256",
+    "device",
+    "gpu",
+    "threshold",
+    "fps",
 )
 
 #: The one provenance key whose null is MEANINGFUL rather than missing: a CPU
@@ -227,9 +225,9 @@ def load_results(paths: list[Path]) -> tuple[dict[str, dict[str, Any]], dict[str
                 "such shard compare equal to every other."
             )
         empty = [
-            key for key in PROVENANCE_KEYS
-            if key not in NULLABLE_PROVENANCE_KEYS
-            and (payload[key] is None or payload[key] == "")
+            key
+            for key in PROVENANCE_KEYS
+            if key not in NULLABLE_PROVENANCE_KEYS and (payload[key] is None or payload[key] == "")
         ]
         if empty:
             raise SystemExit(
@@ -250,16 +248,15 @@ def load_results(paths: list[Path]) -> tuple[dict[str, dict[str, Any]], dict[str
         elif shard != provenance:
             differing = {
                 key: {str(provenance_source): provenance[key], str(path): shard[key]}
-                for key in PROVENANCE_KEYS if shard[key] != provenance[key]
+                for key in PROVENANCE_KEYS
+                if shard[key] != provenance[key]
             }
             raise SystemExit(
                 "error: shards disagree on analyzer provenance, so merging them "
-                "would produce a hybrid benchmark:\n"
-                + json.dumps(differing, indent=2)
+                "would produce a hybrid benchmark:\n" + json.dumps(differing, indent=2)
             )
         results = payload.get("results", {})
-        rows = results.items() if isinstance(results, dict) else (
-            (r["audio"], r) for r in results)
+        rows = results.items() if isinstance(results, dict) else ((r["audio"], r) for r in results)
         for key, row in rows:
             if key in merged:
                 raise SystemExit(

@@ -28,6 +28,14 @@ from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS, cam
 from apps.shared.paths import DATA_DIR
 
 from ..auto_gain_prefs import DEFAULT_AUTO_GAIN, AutoGainPrefsOut, merge_auto_gain, parse_auto_gain
+from ..library_tabs_prefs import (
+    LibraryTabsActionIn,
+    LibraryTabsActionOut,
+    LibraryTabsOut,
+    apply_library_tabs_action,
+    merge_library_tabs,
+    parse_library_tabs,
+)
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
 
@@ -104,6 +112,10 @@ _WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {
 # floored at 2 percent so jitter on a steady grid never fills the lane.
 TempoLaneScale = Literal["fixed_10", "relative"]
 _DEFAULT_TEMPO_LANE_SCALE: TempoLaneScale = "fixed_10"
+# AUDIO-DEVICE-06: auto-reconnect a stalled Bluetooth main speaker. auto = at
+# home (prep posture) only, never in gig posture; on = always; off = never.
+SpeakerAutoRecover = Literal["auto", "on", "off"]
+_DEFAULT_SPEAKER_AUTO_RECOVER: SpeakerAutoRecover = "auto"
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
@@ -120,6 +132,7 @@ LibraryHideableColumn = Literal[
     "artist",
     "key",
     "bpm",
+    "tempostab",
     "plays",
     "rating",
     "comments",
@@ -128,8 +141,13 @@ LibraryHideableColumn = Literal[
     "energy",
     "genre",
     "stems",
+    "tags",
 ]
 _LIBRARY_HIDEABLE_COLUMNS: tuple[str, ...] = get_args(LibraryHideableColumn)
+# Off by default, so "hidden" cannot express them. Table order, mirrored by
+# OPTIONAL_COLUMNS in frontend/src/lib/rb/library-works.ts.
+LibraryOptionalColumn = Literal["work", "composer", "ensemble", "label", "year"]
+_LIBRARY_OPTIONAL_COLUMNS: tuple[str, ...] = get_args(LibraryOptionalColumn)
 CompatibleBpmDirection = Literal["both", "above", "below", "same"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
 _DEFAULT_DECK_RIGHT_MIRROR = False
@@ -146,6 +164,8 @@ _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 
 _DEFAULT_MIDI_ENABLED = False
 # The docked Spotify player shrinks Open DJ to make room unless this is off.
 _DEFAULT_SPOTIFY_SHRINK_MAIN = True
+# ARTTHUMB-8592: playlist art thumbnails in the sidebar (library view option).
+_DEFAULT_LIBRARY_SIDEBAR_ART = True
 _WHEEL_MIN = 0.05
 _WHEEL_MAX = 4.0
 _LIBRARY_BROWSER_BOOL_KEYS: tuple[str, ...] = (
@@ -153,6 +173,7 @@ _LIBRARY_BROWSER_BOOL_KEYS: tuple[str, ...] = (
     *tuple(_DEFAULT_LIBRARY_FILTER_BOOLS),
     "midi_enabled",
     "spotify_shrink_main_for_player",
+    "library_sidebar_art",
 )
 
 # Karaoke lyric prefs (PR-4 section C). Every surface ships ON; the loading
@@ -407,6 +428,21 @@ def _parse_perf_view(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_speaker_auto_recover(raw: dict[str, Any]) -> str:
+    if "speaker_auto_recover" not in raw:
+        return _DEFAULT_SPEAKER_AUTO_RECOVER
+    value = raw["speaker_auto_recover"]
+    if value not in get_args(SpeakerAutoRecover):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "speaker_auto_recover must be " + "|".join(get_args(SpeakerAutoRecover)),
+            },
+        )
+    return value
+
+
 def _parse_tempo_lane_scale(raw: dict[str, Any]) -> str:
     if "tempo_lane_scale" not in raw:
         return _DEFAULT_TEMPO_LANE_SCALE
@@ -457,15 +493,67 @@ def _parse_library_hidden_columns(raw: dict[str, Any]) -> list[str]:
     return [col for col in _LIBRARY_HIDEABLE_COLUMNS if col in value]
 
 
+def _parse_section_view_prefs(raw: dict[str, Any]) -> dict[str, Any]:
+    within = raw.get("sort_within_sections", False)
+    collapsed = raw.get("collapsed_sections", [])
+    if not isinstance(within, bool):
+        message = "sort_within_sections must be a boolean"
+    elif not isinstance(collapsed, list) or not all(isinstance(s, str) for s in collapsed):
+        message = "collapsed_sections must be a list of section ids"
+    else:
+        return {"sort_within_sections": within, "collapsed_sections": collapsed}
+    raise HTTPException(status_code=422, detail={"code": "UI_PREFS_INVALID", "message": message})
+
+
+def _parse_library_optional_columns(raw: dict[str, Any]) -> list[str]:
+    """Optional library columns turned on, in table order; unknown ids are refused."""
+    value = raw.get("library_optional_columns", [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item in _LIBRARY_OPTIONAL_COLUMNS for item in value
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_optional_columns must be a list of column ids from "
+                + "|".join(_LIBRARY_OPTIONAL_COLUMNS),
+            },
+        )
+    return [col for col in _LIBRARY_OPTIONAL_COLUMNS if col in value]
+
+
+def _parse_library_classical_layout(raw: dict[str, Any]) -> bool:
+    value = raw.get("library_classical_layout", False)
+    if not isinstance(value, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_classical_layout must be a boolean",
+            },
+        )
+    return value
+
+
 def _merge_library_enum_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
     if body.library_density is not None:
         current["library_density"] = body.library_density
+    if body.sort_within_sections is not None:
+        current["sort_within_sections"] = body.sort_within_sections
+    if body.collapsed_sections is not None:
+        current["collapsed_sections"] = list(body.collapsed_sections)
     if body.key_notation is not None:
         current["key_notation"] = body.key_notation
     if body.library_hidden_columns is not None:
         current["library_hidden_columns"] = _parse_library_hidden_columns(
             {"library_hidden_columns": list(body.library_hidden_columns)}
         )
+    if body.library_optional_columns is not None:
+        current["library_optional_columns"] = _parse_library_optional_columns(
+            {"library_optional_columns": list(body.library_optional_columns)}
+        )
+    if body.library_classical_layout is not None:
+        current["library_classical_layout"] = body.library_classical_layout
 
 
 def _parse_key_notation(raw: dict[str, Any]) -> str:
@@ -489,6 +577,7 @@ def _library_browser_bool_defaults() -> dict[str, bool]:
         **_DEFAULT_LIBRARY_FILTER_BOOLS,
         "midi_enabled": _DEFAULT_MIDI_ENABLED,
         "spotify_shrink_main_for_player": _DEFAULT_SPOTIFY_SHRINK_MAIN,
+        "library_sidebar_art": _DEFAULT_LIBRARY_SIDEBAR_ART,
     }
 
 
@@ -856,14 +945,20 @@ def _load(path: Path) -> dict[str, Any]:
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
+            "sort_within_sections": False,
+            "collapsed_sections": [],
             "perf_view": _DEFAULT_PERF_VIEW,
+            "speaker_auto_recover": _DEFAULT_SPEAKER_AUTO_RECOVER,
             "tempo_lane_scale": _DEFAULT_TEMPO_LANE_SCALE,
             "key_notation": _DEFAULT_KEY_NOTATION,
             "library_hidden_columns": [],
+            "library_optional_columns": [],
+            "library_classical_layout": False,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
             "library_watcher_folders": [],
             "library_key_filter": [],
             "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
+            "library_tabs": parse_library_tabs(None),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -959,14 +1054,21 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
+        **_parse_section_view_prefs(raw),
         "perf_view": _parse_perf_view(raw),
+        # DECKUX-8360: read back what PUT wrote, or every boot's GET resets the mirror.
+        **_parse_bool_prefs(raw, {"deck_right_mirror": _DEFAULT_DECK_RIGHT_MIRROR}),
+        "speaker_auto_recover": _parse_speaker_auto_recover(raw),
         "tempo_lane_scale": _parse_tempo_lane_scale(raw),
         "key_notation": _parse_key_notation(raw),
         "library_hidden_columns": _parse_library_hidden_columns(raw),
+        "library_optional_columns": _parse_library_optional_columns(raw),
+        "library_classical_layout": _parse_library_classical_layout(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
         "library_key_filter": _parse_library_key_filter(raw),
         "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
+        "library_tabs": parse_library_tabs(raw.get("library_tabs")),
     }
 
 
@@ -1071,13 +1173,18 @@ class UiPrefsOut(BaseModel):
     perf_view: PerfView = _DEFAULT_PERF_VIEW
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
+    speaker_auto_recover: SpeakerAutoRecover = _DEFAULT_SPEAKER_AUTO_RECOVER
     show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
     tempo_lane_scale: TempoLaneScale = _DEFAULT_TEMPO_LANE_SCALE
     deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
+    sort_within_sections: bool = False
+    collapsed_sections: list[str] = Field(default_factory=list)
     key_notation: KeyNotation = _DEFAULT_KEY_NOTATION
     library_hidden_columns: list[LibraryHideableColumn] = Field(default_factory=list)
+    library_optional_columns: list[LibraryOptionalColumn] = Field(default_factory=list)
+    library_classical_layout: bool = False
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
@@ -1085,11 +1192,13 @@ class UiPrefsOut(BaseModel):
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
     spotify_shrink_main_for_player: bool = _DEFAULT_SPOTIFY_SHRINK_MAIN
+    library_sidebar_art: bool = _DEFAULT_LIBRARY_SIDEBAR_ART
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
     library_watcher_folders: list[str] = Field(default_factory=list)
     library_key_filter: list[str] = Field(default_factory=list)
     compatible_filter: CompatibleFilterOut = Field(default_factory=CompatibleFilterOut)
+    library_tabs: LibraryTabsOut = Field(default_factory=LibraryTabsOut)
 
 
 class UiPrefsPatch(BaseModel):
@@ -1132,6 +1241,7 @@ class UiPrefsPatch(BaseModel):
     # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
     deck_default_quantize: StrictBool | None = None
     show_sections: bool | None = None
+    speaker_auto_recover: SpeakerAutoRecover | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
     show_tempo_lane: StrictBool | None = None
     tempo_lane_scale: TempoLaneScale | None = None
@@ -1141,7 +1251,11 @@ class UiPrefsPatch(BaseModel):
     deck_autocue: StrictBool | SkipJsonSchema[None] = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
+    sort_within_sections: bool | None = None
+    collapsed_sections: list[str] | None = None
     key_notation: KeyNotation | None = None
+    library_optional_columns: list[LibraryOptionalColumn] | None = None
+    library_classical_layout: StrictBool | None = None
     library_hidden_columns: list[LibraryHideableColumn] | None = None
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
@@ -1150,11 +1264,13 @@ class UiPrefsPatch(BaseModel):
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
     spotify_shrink_main_for_player: bool | None = None
+    library_sidebar_art: bool | None = None
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
     library_watcher_folders: list[str] | None = None
     library_key_filter: list[str] | None = None
     compatible_filter: CompatibleFilterOut | None = None
+    library_tabs: LibraryTabsOut | None = None
 
     @model_validator(mode="after")
     def _refuse_null_view_prefs(self) -> UiPrefsPatch:
@@ -1318,7 +1434,21 @@ def post_library_key_filter(body: LibraryKeyFilterActionIn, request: Request) ->
     return LibraryKeyFilterActionOut(library_key_filter=current["library_key_filter"])
 
 
-_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view", "tempo_lane_scale")
+@router.post("/library-tabs", response_model=LibraryTabsActionOut)
+def post_library_tabs(body: LibraryTabsActionIn, request: Request) -> LibraryTabsActionOut:
+    """The library tab strip for agents: list, open, switch or close one tab."""
+    path = _path(request)
+    with _write_lock:
+        current = _load(path)
+        updated = apply_library_tabs_action(current["library_tabs"], body)
+        if updated is not current["library_tabs"]:
+            current["library_tabs"] = updated
+            _write_atomic(path, json.dumps(current, indent=2) + "\n")
+            publish("library.changed", {"kind": "ui_prefs", "ids": []})
+    return LibraryTabsActionOut(library_tabs=LibraryTabsOut.model_validate(current["library_tabs"]))
+
+
+_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view", "speaker_auto_recover", "tempo_lane_scale")
 
 
 def _merge_view_scalar_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -1390,6 +1520,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         )
     _merge_compatible_filter(current, body)
     merge_auto_gain(current, body.auto_gain)
+    merge_library_tabs(current, body.library_tabs)
     return current
 
 

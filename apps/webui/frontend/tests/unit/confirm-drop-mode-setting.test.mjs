@@ -95,6 +95,9 @@ test('searching for the prompt words finds the row', async () => {
 	const { filterSettings } = await loadTypeScriptModule('src/lib/settings/search.ts');
 	for (const query of ['confirm', 'drop', 'remember']) {
 		const { all } = filterSettings(query, { hideTodo: true, group: null });
-		assert.ok(all.some((def) => def.id === ID), `searching ${query} does not find ${ID}`);
+		assert.ok(
+			all.some((def) => def.id === ID),
+			`searching ${query} does not find ${ID}`
+		);
 	}
 });

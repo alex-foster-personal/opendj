@@ -64,7 +64,7 @@
 	 * and what is announced cannot drift apart. */
 	const visibleLabel = $derived(
 		auth.user
-			? (auth.user.name?.trim() || auth.user.email)
+			? auth.user.name?.trim() || auth.user.email
 			: signInUnavailable
 				? 'Sign-in unavailable'
 				: 'Sign in with Google'
@@ -199,7 +199,10 @@
 		place-items: center;
 		overflow: hidden;
 		cursor: pointer;
-		transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+		transition:
+			border-color 120ms ease,
+			color 120ms ease,
+			background 120ms ease;
 	}
 	/* Labeled pill: the circle plus its text, as ONE hit target, so a click on
 	   the words is a click on the control. Height stays the callers' size. */

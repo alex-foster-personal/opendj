@@ -3,6 +3,7 @@
 Creates a demo order against a tmp state DB + prints the open-dj JSON.
 Not a permanent test -- this is a sanity dial for developers.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,12 +25,8 @@ def main() -> int:
         conn = sqlite3.connect(str(db), isolation_level=None)
         conn.execute("PRAGMA foreign_keys = ON")
         try:
-            po_id = create_play_order(
-                conn, playlist_id="pl-demo", name="demo", generated_by="manual"
-            )
-            add_entry(
-                conn, po_id, "open-dj-t-00000001", 0, transition_hint="bpm-match"
-            )
+            po_id = create_play_order(conn, playlist_id="pl-demo", name="demo", generated_by="manual")
+            add_entry(conn, po_id, "open-dj-t-00000001", 0, transition_hint="bpm-match")
             add_entry(
                 conn,
                 po_id,

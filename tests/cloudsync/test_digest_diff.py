@@ -66,9 +66,7 @@ def test_format_mismatch_message_includes_row_sample() -> None:
 
 
 @pytest.mark.requirement("CSSTATUS-09")
-def test_digest_mismatch_names_row_and_newer_side(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_digest_mismatch_names_row_and_newer_side(hub: _TestClientTransport, spoke_a: Path) -> None:
     """[if] digests diverge after sync [then] the error names a row and newer side, [else stop]."""
     _seed_common_track((spoke_a,), "trk-1")
     _sync(spoke_a, hub, "spoke-a")
@@ -90,9 +88,7 @@ def test_digest_mismatch_names_row_and_newer_side(
     assert excinfo.value.diff[0].stable_id.startswith("tracks/")
 
 
-def test_rows_endpoint_lists_sync_eligible_rows(
-    hub: _TestClientTransport, spoke_a: Path, hub_dir: Path
-) -> None:
+def test_rows_endpoint_lists_sync_eligible_rows(hub: _TestClientTransport, spoke_a: Path, hub_dir: Path) -> None:
     _seed_common_track((spoke_a,), "trk-1")
     _sync(spoke_a, hub, "spoke-a")
     conn = state_db.open_ro(state_db_path(spoke_a))

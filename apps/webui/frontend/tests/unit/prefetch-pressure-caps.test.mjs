@@ -67,7 +67,10 @@ test('while playing, elevated pressure shrinks the byte cap; clearing grows it b
 	state.elevated = true;
 	tick();
 	const shrunk = mod.pressureScaledPrefetchByteCap(STANDARD_BYTES);
-	assert.ok(shrunk < STANDARD_BYTES, 'the work effect (a smaller cap) must be present while elevated and playing');
+	assert.ok(
+		shrunk < STANDARD_BYTES,
+		'the work effect (a smaller cap) must be present while elevated and playing'
+	);
 
 	state.elevated = false;
 	tick();

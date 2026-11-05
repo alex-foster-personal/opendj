@@ -364,6 +364,8 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # declarations agreed with each other, so nothing caught this test's
         # own per_authority dict going stale the day playlist_sets was added.
         "apps/shared/playlist_sets/schema.py": "playlist_sets",
+        # Set target length and skip-in-set flags (LIBUX-8679).
+        "apps/shared/set_target/store.py": "set_targets",
         "apps/spotify/state_aux.py": "spotify_playlist_links",
         "apps/launcher/scripts/db_schema.py": "tracks_frecency",
         # The one authority that is NOT PYTHON. Every derivation of this list

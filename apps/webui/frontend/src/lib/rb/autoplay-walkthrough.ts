@@ -117,13 +117,7 @@ function _rejectCaption(id: string): string {
 // ----- phases / frames (SA5 4.2, 4.5) --------------------------------------
 
 export type WalkthroughPhaseKind =
-	| 'anchor'
-	| 'reject'
-	| 'strand'
-	| 'simulate'
-	| 'accept'
-	| 'handoff'
-	| 'summary';
+	'anchor' | 'reject' | 'strand' | 'simulate' | 'accept' | 'handoff' | 'summary';
 
 export interface WalkthroughFrame {
 	phase: WalkthroughPhaseKind;

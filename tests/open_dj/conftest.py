@@ -1,4 +1,5 @@
 """Shared fixtures for tests/open_dj/."""
+
 from __future__ import annotations
 
 import json

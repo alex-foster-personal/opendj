@@ -12,9 +12,7 @@ from apps.shared import fingerprints as fp_mod
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 _AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac"}
 PHASE7_DEDUP_AUDIO_COUNT = sum(
-    1
-    for path in FIXTURE_ROOT.iterdir()
-    if path.is_file() and path.suffix.lower() in _AUDIO_SUFFIXES
+    1 for path in FIXTURE_ROOT.iterdir() if path.is_file() and path.suffix.lower() in _AUDIO_SUFFIXES
 )
 
 

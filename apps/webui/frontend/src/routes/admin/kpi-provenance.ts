@@ -25,8 +25,7 @@ export type KpiOrigin =
 export const ORIGIN_TEXT: Record<string, string> = {
 	derived: 'Origin: DERIVED from per-track cache telemetry by scripts/bench/kpi_derive.py.',
 	hand: 'Origin: HAND-ENTERED. Not reconstructable from telemetry, so nothing checks it.',
-	'hand-unverifiable':
-		'Origin: HAND-ENTERED and unverifiable. No telemetry survives for this run.',
+	'hand-unverifiable': 'Origin: HAND-ENTERED and unverifiable. No telemetry survives for this run.',
 	'configured-not-measured':
 		'Origin: CONFIG CONSTANT, not a measurement. It is the ceiling the run was allowed, ' +
 		'not what it reached.'

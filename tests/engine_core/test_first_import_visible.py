@@ -258,8 +258,7 @@ def test_health_counts_agree_with_readiness(probe: dict[str, Any]) -> None:
         f"first_import={_first_import_failure_evidence(probe)!r}"
     )
     assert health_tracks == readiness_total, (
-        f"/health state_db.tracks={health_tracks} but readiness "
-        f"total_tracks={readiness_total}"
+        f"/health state_db.tracks={health_tracks} but readiness total_tracks={readiness_total}"
     )
 
 
@@ -278,22 +277,16 @@ def test_health_and_readiness_answer_throughout_the_import(
     failed = [p for p in probes if p["code"] != 200]
     assert not failed, f"{len(failed)} probes did not answer 200: {failed[:4]}"
     slowest = max(p["s"] for p in probes)
-    assert slowest < ROUTE_BOUND_S, (
-        f"a probe took {slowest:.3f}s during the import "
-        f"(bound {ROUTE_BOUND_S}s)"
-    )
+    assert slowest < ROUTE_BOUND_S, f"a probe took {slowest:.3f}s during the import (bound {ROUTE_BOUND_S}s)"
 
 
-def test_a_reboot_on_the_populated_dir_serves_the_same_rows(
-    probe: dict[str, Any], reboot: dict[str, Any]
-) -> None:
+def test_a_reboot_on_the_populated_dir_serves_the_same_rows(probe: dict[str, Any], reboot: dict[str, Any]) -> None:
     """Control: creating the store at boot must leave an existing one alone."""
     assert reboot["backend"] == "SqliteBackend", reboot
     first = sorted(item["stable_id"] for item in probe["tracks"]["items"])
     again = sorted(item["stable_id"] for item in reboot["tracks"]["items"])
     assert again == first, (
-        f"{len(again)} rows after reboot, {len(first)} before; "
-        f"first_import={_first_import_failure_evidence(probe)!r}"
+        f"{len(again)} rows after reboot, {len(first)} before; first_import={_first_import_failure_evidence(probe)!r}"
     )
     assert reboot["health"]["state_db"]["tracks"] == FILES, (
         f"reboot /health state_db.tracks={reboot['health']['state_db']['tracks']}, "

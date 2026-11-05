@@ -12,6 +12,7 @@ the lane for the session, so 900 tracks never got a BPM or key.
 from __future__ import annotations
 
 from concurrent.futures import Future
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,10 @@ import pytest
 
 from apps.analysis import admission, queue_runner, queue_store
 from apps.analysis import queue as queue_api
-from apps.analysis.lanes import LaneResult
+from apps.analysis.lanes import LaneContractError, LaneResult
 from apps.analysis.queue_runner import RunSummary, _RunContext, _settle_one, run_batch
-from apps.analysis.store import open_conn
+from apps.analysis.record import AnalysisRecord
+from apps.analysis.store import StoredRecordError, open_conn, upsert_record
 from apps.shared.state import analysis_stale
 
 from .queue_probe_backends import PROBE_DIR_ENV, BeatgridProbeV1, _base_record, _beatgrid_payload
@@ -201,3 +203,91 @@ def test_explicit_null_lanes_fails_that_track_and_leaves_the_row(
     stored = conn.execute("SELECT record_json FROM analysis WHERE stable_id = ?", ("a",)).fetchone()[0]
     assert stored == malformed, "if the malformed row is overwritten then broken"
     conn.close()
+
+
+def _non_own_beatgrid_record(stable_id: str, payload: dict[str, object]) -> AnalysisRecord:
+    return AnalysisRecord(
+        stable_id=stable_id,
+        backend="librosa+madmom",
+        backend_version="test-1.0",
+        analyzed_at=datetime(2026, 10, 8, tzinfo=UTC),
+        duration_s=180.0,
+        sample_rate=44100,
+        bpm=128.0,
+        bpm_confidence=0.9,
+        key_camelot="8A",
+        key_openkey="1m",
+        key_confidence=0.8,
+        energy=5,
+        lanes={
+            "beatgrid": LaneResult(status="ok", confidence=0.9, payload=payload),
+        },
+    )
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_upsert_ok_beatgrid_without_beats_raises_and_inserts_nothing(tmp_path: Path) -> None:
+    """[if] a new ok beatgrid has no beats list [then] upsert raises, [else stop]."""
+    db = tmp_path / "state.db"
+    record = _non_own_beatgrid_record("t1", {"bpm": 128.0, "static_grid_untrusted": False})
+    with pytest.raises(StoredRecordError, match="no beats"):
+        upsert_record(record, db_path=db, cascade=False, publish_live_event=False)
+    conn = open_conn(db)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM analysis").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_upsert_ok_beatgrid_without_beats_leaves_seeded_row(tmp_path: Path) -> None:
+    """[if] an update ok beatgrid has no beats [then] the stored row is untouched, [else stop]."""
+    db = tmp_path / "state.db"
+    good_payload = {
+        "beats": [{"n": 1, "bpm": 128.0, "t": 0.0}],
+        "bpm": 128.0,
+        "static_grid_untrusted": False,
+    }
+    good = _non_own_beatgrid_record("t1", good_payload)
+    upsert_record(good, db_path=db, cascade=False, publish_live_event=False)
+    conn = open_conn(db)
+    try:
+        seeded = conn.execute(
+            "SELECT record_json FROM analysis WHERE stable_id = ?", ("t1",)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    bad = _non_own_beatgrid_record("t1", {"bpm": 129.0, "static_grid_untrusted": False})
+    with pytest.raises(StoredRecordError, match="no beats"):
+        upsert_record(bad, db_path=db, cascade=False, publish_live_event=False)
+    conn = open_conn(db)
+    try:
+        assert (
+            conn.execute(
+                "SELECT record_json FROM analysis WHERE stable_id = ?", ("t1",)
+            ).fetchone()[0]
+            == seeded
+        )
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_upsert_ok_beatgrid_non_bool_trust_flag_raises(tmp_path: Path) -> None:
+    """[if] bar_phase_untrusted is not a bool [then] upsert raises, [else stop]."""
+    db = tmp_path / "state.db"
+    record = _non_own_beatgrid_record(
+        "t1",
+        {
+            "beats": [],
+            "bpm": 128.0,
+            "bar_phase_untrusted": "false",
+        },
+    )
+    with pytest.raises(LaneContractError, match="must be a bool"):
+        upsert_record(record, db_path=db, cascade=False, publish_live_event=False)
+    conn = open_conn(db)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM analysis").fetchone()[0] == 0
+    finally:
+        conn.close()

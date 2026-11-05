@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.state`."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -151,21 +152,13 @@ def test_phase5_backend_uses_shared_state_db_and_aliased_table(tmp_path):
     #  * the sets table
     #  * the aliased set_events (NOT our own events table)
     with sqlite3.connect(str(db)) as conn:
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         assert "tracks" in tables  # Phase 5 schema applied
         assert "sets" in tables
         assert "set_events" in tables
         # Phase 5's canonical events table with (ts, kind, ...) columns
         # is the one that owns the 'events' name.
-        cols = [
-            r[1]
-            for r in conn.execute("PRAGMA table_info(events)").fetchall()
-        ]
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()]
         assert "kind" in cols and "payload_json" in cols
 
         # The set_events row we just wrote is readable.
@@ -177,7 +170,7 @@ def test_phase5_backend_uses_shared_state_db_and_aliased_table(tmp_path):
 
 
 def test_default_backend_still_uses_sets_db(tmp_path):
-    """Without backend=, SetsState keeps its own data/sets/sets.db schema."""
+    """Without backend=, SetsState keeps its own (private path) schema."""
     from apps.sets.state import Event, SetsState
 
     db = tmp_path / "sets.db"
@@ -194,14 +187,7 @@ def test_default_backend_still_uses_sets_db(tmp_path):
     )
 
     with sqlite3.connect(str(db)) as conn:
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        assert tables == {"sets", "events", "sqlite_sequence"} or (
-            tables >= {"sets", "events"}
-        )
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        assert tables == {"sets", "events", "sqlite_sequence"} or (tables >= {"sets", "events"})
         # No Phase 5 core tables under the default backend.
         assert "tracks" not in tables

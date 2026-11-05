@@ -70,6 +70,7 @@ export {
 	isAutolistId,
 	AUTOLIST_ID
 } from './autolist-ids';
+export { INBOX_PLAYLIST_ID, isInboxPlaylistId } from './inbox-id';
 export { queryAutolists } from '$lib/rb/api-autolists';
 export {
 	emptyAutolistSelection,

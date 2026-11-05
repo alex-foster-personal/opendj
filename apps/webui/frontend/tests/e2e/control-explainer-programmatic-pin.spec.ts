@@ -66,10 +66,13 @@ async function mountHarness(page: Page): Promise<void> {
 
 const pop = (page: Page) => page.locator('.explainer .pop');
 const closes = (page: Page) =>
-	page.evaluate(() => (window as unknown as { __harness: { closes(): number } }).__harness.closes());
+	page.evaluate(() =>
+		(window as unknown as { __harness: { closes(): number } }).__harness.closes()
+	);
 const setProg = (page: Page, v: boolean) =>
 	page.evaluate(
-		(value) => (window as unknown as { __harness: { setProg(x: boolean): void } }).__harness.setProg(value),
+		(value) =>
+			(window as unknown as { __harness: { setProg(x: boolean): void } }).__harness.setProg(value),
 		v
 	);
 
@@ -85,7 +88,9 @@ test.describe('ControlExplainer programmatic pin', () => {
 		expect(await closes(page)).toBe(0);
 	});
 
-	test('control: a user click-pin stays open while programmaticOpen stays false', async ({ page }) => {
+	test('control: a user click-pin stays open while programmaticOpen stays false', async ({
+		page
+	}) => {
 		await mountHarness(page);
 		await page.click('#trigger');
 		await expect(pop(page)).toBeVisible();

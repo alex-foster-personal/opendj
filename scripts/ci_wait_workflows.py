@@ -39,13 +39,22 @@ RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
     }
 )
 
+#: The pull_request activity types that run a workflow on a new head by themselves. A workflow
+#: whose `types` list names none of them (ci-rerun-failed.yml: `labeled` only) runs on demand:
+#: no push ever owes its checks, so a baseline that saw one must not wait for it at the next head.
+HEAD_PUSH_PULL_REQUEST_TYPES: frozenset[str] = frozenset({"opened", "synchronize", "reopened"})
+
 #: (workflow file name, job id): the identity a check name keeps across a rename.
 JobKey = tuple[str, str]
 
 #: A job `if:` that reads the in-run scope decision (`needs.<scope job>.outputs.in_scope`).
 _READS_IN_RUN_SCOPE = re.compile(r"needs\.[\w-]+\.outputs\.in_scope\b")
 #: Status functions that stop a job inheriting a skipped `needs` entry's skip.
-_RUNS_PAST_SKIPPED_NEEDS = re.compile(r"\b(?:always|cancelled)\(\)")
+#: Only `always()` counts: `!cancelled()` still skips when a gated `needs` job was
+#: skipped (ci-insights on a docs-only pull request). Matching `cancelled()` inside
+#: `!cancelled()` used to treat that negation as "runs past", misclassifying those
+#: jobs as always-created.
+_RUNS_PAST_SKIPPED_NEEDS = re.compile(r"\balways\(\)")
 
 # ----- workflow catalog ------------------------------------------------------
 
@@ -92,6 +101,19 @@ def _pull_request_trigger(on: dict) -> dict | None:
     return trigger
 
 
+def _on_demand_names(trigger: dict, document: dict) -> set[str] | None:
+    """Every name an on-demand workflow's jobs report (`HEAD_PUSH_PULL_REQUEST_TYPES`), or None
+    when a push to the pull request runs the workflow by itself."""
+    types = trigger.get("types")
+    if types is None or not HEAD_PUSH_PULL_REQUEST_TYPES.isdisjoint(types):
+        return None
+    names: set[str] = set()
+    for job_id, job in (document.get("jobs") or {}).items():
+        if isinstance(job, dict):
+            names.update(_job_display_names(job_id, job), {_raw_job_name(job_id, job)})
+    return names
+
+
 def _published_names(workflow: str, on: dict) -> frozenset[str] | None:
     """The names a workflow_run-proxied workflow publishes on the head; None for a
     workflow with its own pull_request trigger, whose every job lands there."""
@@ -106,10 +128,26 @@ def _published_names(workflow: str, on: dict) -> frozenset[str] | None:
     return published
 
 
+#: A matrix axis computed at run time (`fromJSON(...)`) has no literal leg list to
+#: expand, so each such expression is declared here with EVERY leg it can launch. ci.yml's
+#: pytest fast lane plans 0 to 5 shards (#8633, `--shards 5`); its legs are still named
+#: `shard N of 5`, so a baseline that saw any of them maps to this job, not to an unknown.
+DYNAMIC_MATRIX_LEGS: dict[str, tuple[int | str, ...]] = {
+    "${{ fromJSON(needs.scope.outputs.shards) }}": (1, 2, 3, 4, 5),
+}
+
+
 def _expand_matrix_job_name(name: str, matrix: dict) -> list[str]:
     if not matrix or len(matrix) != 1:
         return [name]
     key, values = next(iter(matrix.items()))
+    if isinstance(values, str) and f"matrix.{key}" in name:
+        if values not in DYNAMIC_MATRIX_LEGS:
+            raise ValueError(
+                f"job {name!r} expands matrix.{key} from the run-time expression {values!r}; "
+                "declare every leg it can launch in DYNAMIC_MATRIX_LEGS"
+            )
+        values = list(DYNAMIC_MATRIX_LEGS[values])
     if not isinstance(values, list) or not values:
         return [name]
     if not all(isinstance(value, (int, str)) for value in values):
@@ -129,7 +167,7 @@ def _scope_gated_job_ids(jobs: dict[str, dict]) -> frozenset[str]:
     """Jobs of an in-run-scoped workflow that the scope decision can skip.
 
     A job is scope-gated when its `if:` reads the scope output, or when it needs a
-    gated job and has no `always()` / `cancelled()` to run past that job's skip.
+    gated job and has no `always()` to run past that job's skip.
     Every other job (the scope job itself, the `ci gate` / `e2e verdict` aggregators)
     is created on every pull request, docs-only or not.
     """
@@ -164,6 +202,15 @@ def _job_display_names(job_id: str, job: dict) -> list[str]:
     return [raw_name]
 
 
+def job_check_names(job_id: str, job: dict) -> list[str]:
+    """Every check-run name one workflow job can report, its matrix (dynamic legs too) expanded.
+
+    The one expander for tests and tools that read job names off a workflow, so a run-time
+    matrix (`fromJSON(...)`) is read through DYNAMIC_MATRIX_LEGS instead of as a string.
+    """
+    return _job_display_names(job_id, job)
+
+
 @dataclass(frozen=True)
 class WorkflowCatalog:
     """Maps check-run names to workflow files and evaluates PR path filters."""
@@ -174,6 +221,8 @@ class WorkflowCatalog:
     #: Names an in-run-scoped workflow creates on every pull request whatever the
     #: changed paths, so a docs-only head must keep waiting for them.
     always_created_job_names: frozenset[str] = frozenset()
+    #: Names of on-demand workflows (`HEAD_PUSH_PULL_REQUEST_TYPES`): never owed by a head.
+    on_demand_job_names: frozenset[str] = frozenset()
     #: Every name a job can report under, keyed by the job's identity.
     job_names: dict[JobKey, frozenset[str]] = field(default_factory=dict)
     #: A matrix job GitHub skips reports ONE check under its unexpanded template
@@ -196,6 +245,7 @@ class WorkflowCatalog:
         always_created: set[str] = set()
         job_names: dict[JobKey, frozenset[str]] = {}
         alternatives: dict[str, frozenset[str]] = {}
+        on_demand: set[str] = set()
 
         for name in sorted(texts):
             document = yaml.safe_load(texts[name])
@@ -204,6 +254,9 @@ class WorkflowCatalog:
             on = _normalize_on(document)
             trigger = _pull_request_trigger(on)
             if trigger is None:
+                continue
+            if (names := _on_demand_names(trigger, document)) is not None:
+                on_demand.update(names)
                 continue
             published = _published_names(name, on)
             paths = tuple(trigger.get("paths") or ()) or None
@@ -248,6 +301,7 @@ class WorkflowCatalog:
             workflow_filters=workflow_filters,
             all_job_names=frozenset(check_to_workflow),
             always_created_job_names=frozenset(always_created),
+            on_demand_job_names=frozenset(on_demand),
             job_names=job_names,
             matrix_alternatives=alternatives,
         )
@@ -304,7 +358,7 @@ def renamed_alternatives(
     their own job, and names no head can emit again, are omitted: neither is renamed.
     """
     out: dict[str, frozenset[str]] = {}
-    for name in baseline - RETIRED_CHECK_NAMES:
+    for name in baseline - RETIRED_CHECK_NAMES - catalog.on_demand_job_names:
         renamed = _renamed_to(name, catalog, baseline_catalog)
         if renamed:
             out[name] = renamed
@@ -324,15 +378,21 @@ def derive_expected_for_changed_paths(
     names at the head (issue #5205: a main merge cut the fast tier from four legs to
     two), so the job stays owed under the names it can actually report. Unknown baseline
     names (in neither catalog) are kept fail-closed, EXCEPT names in
-    RETIRED_CHECK_NAMES, which no head can emit again. An empty result is deliberate:
+    RETIRED_CHECK_NAMES, which no head can emit again. Names of on-demand workflows
+    (label-triggered, `on_demand_job_names`) are dropped too: no head owes them. An empty
+    result is deliberate:
     expansion (workflows newly activated by a path change) stays with
     `poll_until_terminal`'s two-poll stabilization rule rather than inflating
     `expected` from YAML alone.
     """
     applicable = catalog.applicable_pull_request_job_names(changed_files)
     known = catalog.known_check_names()
+    always = catalog.always_created_job_names
     expected: set[str] = set()
-    for name in baseline - RETIRED_CHECK_NAMES:
+    for name in baseline - RETIRED_CHECK_NAMES - catalog.on_demand_job_names:
+        if name in always:
+            expected.add(name)
+            continue
         renamed = _renamed_to(name, catalog, baseline_catalog)
         if renamed is not None:
             expected |= renamed & applicable

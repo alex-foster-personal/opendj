@@ -1,8 +1,9 @@
 """Operator CLI: sample row-level digest divergence against a hub.
 
-    python -m scripts.cloudsync_digest_diff --data-dir DIR --hub URL
-    python -m scripts.cloudsync_digest_diff --data-dir DIR --hub URL --table tracks --limit 5
+python -m scripts.cloudsync_digest_diff --data-dir DIR --hub URL
+python -m scripts.cloudsync_digest_diff --data-dir DIR --hub URL --table tracks --limit 5
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,9 +67,7 @@ def main() -> int:
     conn = state_db.open_ro(state_db_path(args.data_dir))
     try:
         machine_id = conn.execute("SELECT machine_id FROM machines LIMIT 1").fetchone()[0]
-        rows = digest_diff.sample_divergence(
-            channel, conn, machine_id, tables, limit=args.limit
-        )
+        rows = digest_diff.sample_divergence(channel, conn, machine_id, tables, limit=args.limit)
     finally:
         conn.close()
     for row in rows:

@@ -33,10 +33,7 @@ before(async () => {
 });
 
 function assertClose(actual, expected, label) {
-	assert.ok(
-		Math.abs(actual - expected) < 1e-9,
-		`${label}: expected ${expected}, got ${actual}`
-	);
+	assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: expected ${expected}, got ${actual}`);
 }
 
 test('dy = 0 keeps fader 0, t 0, and EQ at the intro table', () => {
@@ -86,16 +83,7 @@ test('negative dy does not duck the master: fader 0, t 0', () => {
 
 test('horizontal +250 px scrubs +8000 ms and clamps to duration', () => {
 	assert.equal(SCRUB_MS_PER_PX, 32);
-	assert.equal(
-		loadBlendScrubMs({ dxPx: 250, originMs: 0, durationMs: 60000 }),
-		8000
-	);
-	assert.equal(
-		loadBlendScrubMs({ dxPx: 250, originMs: 0, durationMs: 1000 }),
-		1000
-	);
-	assert.equal(
-		loadBlendScrubMs({ dxPx: -10, originMs: 0, durationMs: 60000 }),
-		0
-	);
+	assert.equal(loadBlendScrubMs({ dxPx: 250, originMs: 0, durationMs: 60000 }), 8000);
+	assert.equal(loadBlendScrubMs({ dxPx: 250, originMs: 0, durationMs: 1000 }), 1000);
+	assert.equal(loadBlendScrubMs({ dxPx: -10, originMs: 0, durationMs: 60000 }), 0);
 });

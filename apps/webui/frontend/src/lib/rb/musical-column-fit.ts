@@ -61,7 +61,12 @@ export interface MusicalFitInput {
 	measure: MeasureText;
 }
 
-function _cellWidth(texts: Iterable<string>, font: string, padX: number, measure: MeasureText): number {
+function _cellWidth(
+	texts: Iterable<string>,
+	font: string,
+	padX: number,
+	measure: MeasureText
+): number {
 	let widest = 0;
 	for (const text of texts) {
 		if (text === '') continue;
@@ -114,7 +119,8 @@ export function fitMusicalColumns(input: MusicalFitInput): { key: number; bpm: n
 export function renderedTableFont(el: Element): TableFont {
 	const style = getComputedStyle(el);
 	const sizePx = Number.parseFloat(style.fontSize);
-	if (!Number.isFinite(sizePx) || sizePx <= 0) throw new Error(`table font size unreadable: ${style.fontSize}`);
+	if (!Number.isFinite(sizePx) || sizePx <= 0)
+		throw new Error(`table font size unreadable: ${style.fontSize}`);
 	return { family: style.fontFamily, sizePx };
 }
 

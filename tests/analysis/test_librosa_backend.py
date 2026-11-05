@@ -5,6 +5,7 @@ the production default everywhere, analyze real audio with only the PyPI
 ``analysis`` extra installed, and never fabricate downbeat capability it
 does not have. The learned ``librosa+madmom`` backend stays explicit-only.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -46,7 +47,12 @@ def _resolve_madmom_backend_in_subprocess(env: dict[str, str]) -> dict[str, obje
     genuine subprocess environment variable, never an in-process patch."""
     proc = subprocess.run(
         [sys.executable, "-c", _GET_MADMOM_BACKEND_PROBE],
-        capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=60, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+        timeout=60,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout.strip().splitlines()[-1])
@@ -122,9 +128,7 @@ def _write_accented_bar_click_track(path: Path, *, bpm: float = 128.0, duration_
         handle.setnchannels(1)
         handle.setsampwidth(2)
         handle.setframerate(sample_rate)
-        handle.writeframes(
-            b"".join(struct.pack("<h", int(max(-1.0, min(1.0, sample)) * 32000)) for sample in samples)
-        )
+        handle.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, sample)) * 32000)) for sample in samples))
 
 
 @pytest.mark.requirement("META-01")

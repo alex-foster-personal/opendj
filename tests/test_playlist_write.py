@@ -10,6 +10,7 @@ Regression one-liners:
   * if writes skip the shared-state events log then broken (provenance)
   * if unknown stable_ids are partially written instead of 422 then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -43,9 +44,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -56,9 +62,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -75,16 +84,13 @@ def _create(client: TestClient, name: str = "My Set") -> tuple[dict, str]:
 def _event_kinds(db_path: Path) -> list[str]:
     conn = sqlite3.connect(str(db_path))
     try:
-        return [
-            row[0] for row in conn.execute(
-                "SELECT kind FROM events ORDER BY id"
-            )
-        ]
+        return [row[0] for row in conn.execute("SELECT kind FROM events ORDER BY id")]
     finally:
         conn.close()
 
 
 # --- create ----------------------------------------------------------------
+
 
 def test_create_playlist_round_trips_through_read_api(client: TestClient) -> None:
     body, _etag = _create(client, "Warmup")
@@ -106,10 +112,12 @@ def test_create_playlist_empty_name_422(client: TestClient) -> None:
 
 # --- rename ----------------------------------------------------------------
 
+
 def test_rename_requires_if_match(client: TestClient) -> None:
     body, _ = _create(client)
     r = client.patch(
-        f"/api/v1/playlists/{body['playlist_id']}", json={"name": "X"},
+        f"/api/v1/playlists/{body['playlist_id']}",
+        json={"name": "X"},
     )
     assert r.status_code == 428
     assert r.json()["error"] == "precondition_required"
@@ -119,7 +127,8 @@ def test_rename_happy_path_rotates_etag(client: TestClient) -> None:
     body, etag = _create(client, "Old Name")
     r = client.patch(
         f"/api/v1/playlists/{body['playlist_id']}",
-        json={"name": "New Name"}, headers={"If-Match": etag},
+        json={"name": "New Name"},
+        headers={"If-Match": etag},
     )
     assert r.status_code == 200, r.text
     assert r.json()["name"] == "New Name"
@@ -129,11 +138,9 @@ def test_rename_happy_path_rotates_etag(client: TestClient) -> None:
 def test_rename_with_stale_etag_409_with_current(client: TestClient) -> None:
     body, etag = _create(client, "Original")
     pid = body["playlist_id"]
-    ok = client.patch(f"/api/v1/playlists/{pid}", json={"name": "Renamed"},
-                      headers={"If-Match": etag})
+    ok = client.patch(f"/api/v1/playlists/{pid}", json={"name": "Renamed"}, headers={"If-Match": etag})
     assert ok.status_code == 200
-    stale = client.patch(f"/api/v1/playlists/{pid}", json={"name": "Again"},
-                         headers={"If-Match": etag})
+    stale = client.patch(f"/api/v1/playlists/{pid}", json={"name": "Again"}, headers={"If-Match": etag})
     assert stale.status_code == 409
     conflict = stale.json()
     assert conflict["error"] == "conflict"
@@ -144,21 +151,20 @@ def test_rename_with_stale_etag_409_with_current(client: TestClient) -> None:
 
 def test_rename_omitted_name_is_noop_echo(client: TestClient) -> None:
     body, etag = _create(client, "Keep Me")
-    r = client.patch(f"/api/v1/playlists/{body['playlist_id']}", json={},
-                     headers={"If-Match": etag})
+    r = client.patch(f"/api/v1/playlists/{body['playlist_id']}", json={}, headers={"If-Match": etag})
     assert r.status_code == 200
     assert r.json()["name"] == "Keep Me"
     assert r.headers["ETag"] == etag
 
 
 def test_rename_unknown_playlist_404(client: TestClient) -> None:
-    r = client.patch("/api/v1/playlists/nope", json={"name": "X"},
-                     headers={"If-Match": '"whatever"'})
+    r = client.patch("/api/v1/playlists/nope", json={"name": "X"}, headers={"If-Match": '"whatever"'})
     assert r.status_code == 404
     assert r.json()["error"] == "not_found"
 
 
 # --- delete ----------------------------------------------------------------
+
 
 def test_delete_requires_if_match(client: TestClient) -> None:
     body, _ = _create(client)
@@ -169,8 +175,7 @@ def test_delete_requires_if_match(client: TestClient) -> None:
 def test_delete_with_stale_etag_409(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
-    client.patch(f"/api/v1/playlists/{pid}", json={"name": "Moved On"},
-                 headers={"If-Match": etag})
+    client.patch(f"/api/v1/playlists/{pid}", json={"name": "Moved On"}, headers={"If-Match": etag})
     r = client.delete(f"/api/v1/playlists/{pid}", headers={"If-Match": etag})
     assert r.status_code == 409
 
@@ -186,12 +191,13 @@ def test_delete_happy_path_then_404(client: TestClient, db_path: Path) -> None:
 
 # --- duplicate -------------------------------------------------------------
 
+
 def test_duplicate_copies_name_and_membership(client: TestClient) -> None:
     body, etag = _create(client, "Peak Hour")
     pid = body["playlist_id"]
-    put = client.put(f"/api/v1/playlists/{pid}/tracks",
-                     json={"stable_ids": ["t-002", "t-001"]},
-                     headers={"If-Match": etag})
+    put = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-002", "t-001"]}, headers={"If-Match": etag}
+    )
     assert put.status_code == 200, put.text
     dup = client.post(f"/api/v1/playlists/{pid}/duplicate")
     assert dup.status_code == 201, dup.text
@@ -205,15 +211,12 @@ def test_duplicate_copies_name_and_membership(client: TestClient) -> None:
 def test_duplicate_with_explicit_name_and_stale_source_etag(client: TestClient) -> None:
     body, etag = _create(client, "Source")
     pid = body["playlist_id"]
-    named = client.post(f"/api/v1/playlists/{pid}/duplicate",
-                        json={"name": "Fork A"})
+    named = client.post(f"/api/v1/playlists/{pid}/duplicate", json={"name": "Fork A"})
     assert named.status_code == 201
     assert named.json()["name"] == "Fork A"
     # Rotate the source's etag, then duplicate against the stale one -> 409.
-    client.patch(f"/api/v1/playlists/{pid}", json={"name": "Rotated"},
-                 headers={"If-Match": etag})
-    stale = client.post(f"/api/v1/playlists/{pid}/duplicate",
-                        headers={"If-Match": etag})
+    client.patch(f"/api/v1/playlists/{pid}", json={"name": "Rotated"}, headers={"If-Match": etag})
+    stale = client.post(f"/api/v1/playlists/{pid}/duplicate", headers={"If-Match": etag})
     assert stale.status_code == 409
 
 
@@ -224,26 +227,28 @@ def test_duplicate_unknown_playlist_404(client: TestClient) -> None:
 
 # --- membership replace ----------------------------------------------------
 
+
 def test_put_tracks_requires_if_match(client: TestClient) -> None:
     body, _ = _create(client)
-    r = client.put(f"/api/v1/playlists/{body['playlist_id']}/tracks",
-                   json={"stable_ids": ["t-001"]})
+    r = client.put(f"/api/v1/playlists/{body['playlist_id']}/tracks", json={"stable_ids": ["t-001"]})
     assert r.status_code == 428
 
 
 def test_put_tracks_full_replace_round_trip(client: TestClient) -> None:
     body, etag = _create(client, "Builder")
     pid = body["playlist_id"]
-    r1 = client.put(f"/api/v1/playlists/{pid}/tracks",
-                    json={"stable_ids": ["t-001", "t-002", "t-003"]},
-                    headers={"If-Match": etag})
+    r1 = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-001", "t-002", "t-003"]}, headers={"If-Match": etag}
+    )
     assert r1.status_code == 200, r1.text
     assert r1.json()["items"] == ["t-001", "t-002", "t-003"]
     assert r1.headers["ETag"] != etag  # membership change rotates the etag
     # Reorder + drop + add in ONE replace.
-    r2 = client.put(f"/api/v1/playlists/{pid}/tracks",
-                    json={"stable_ids": ["t-004", "t-002"]},
-                    headers={"If-Match": r1.headers["ETag"]})
+    r2 = client.put(
+        f"/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": ["t-004", "t-002"]},
+        headers={"If-Match": r1.headers["ETag"]},
+    )
     assert r2.status_code == 200
     assert r2.json()["items"] == ["t-004", "t-002"]
     # Read side sees the same order, hydrated.
@@ -255,13 +260,13 @@ def test_put_tracks_full_replace_round_trip(client: TestClient) -> None:
 def test_put_tracks_idempotent_replay_keeps_etag(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
-    r1 = client.put(f"/api/v1/playlists/{pid}/tracks",
-                    json={"stable_ids": ["t-003", "t-001"]},
-                    headers={"If-Match": etag})
+    r1 = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-003", "t-001"]}, headers={"If-Match": etag}
+    )
     e1 = r1.headers["ETag"]
-    r2 = client.put(f"/api/v1/playlists/{pid}/tracks",
-                    json={"stable_ids": ["t-003", "t-001"]},
-                    headers={"If-Match": e1})
+    r2 = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-003", "t-001"]}, headers={"If-Match": e1}
+    )
     assert r2.status_code == 200
     assert r2.headers["ETag"] == e1
     assert r2.json()["items"] == ["t-003", "t-001"]
@@ -270,12 +275,9 @@ def test_put_tracks_idempotent_replay_keeps_etag(client: TestClient) -> None:
 def test_put_tracks_stale_etag_409(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
-    r1 = client.put(f"/api/v1/playlists/{pid}/tracks",
-                    json={"stable_ids": ["t-001"]}, headers={"If-Match": etag})
+    r1 = client.put(f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-001"]}, headers={"If-Match": etag})
     assert r1.status_code == 200
-    stale = client.put(f"/api/v1/playlists/{pid}/tracks",
-                       json={"stable_ids": ["t-002"]},
-                       headers={"If-Match": etag})
+    stale = client.put(f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-002"]}, headers={"If-Match": etag})
     assert stale.status_code == 409
     assert stale.json()["current"]["items"] == ["t-001"]
 
@@ -283,9 +285,9 @@ def test_put_tracks_stale_etag_409(client: TestClient) -> None:
 def test_put_tracks_unknown_stable_id_422_writes_nothing(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
-    r = client.put(f"/api/v1/playlists/{pid}/tracks",
-                   json={"stable_ids": ["t-001", "t-ghost"]},
-                   headers={"If-Match": etag})
+    r = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-001", "t-ghost"]}, headers={"If-Match": etag}
+    )
     assert r.status_code == 422
     assert r.json()["error"] == "invalid_patch"
     assert "t-ghost" in r.json()["message"]
@@ -297,9 +299,9 @@ def test_put_tracks_unknown_stable_id_422_writes_nothing(client: TestClient) -> 
 def test_put_tracks_allows_duplicate_members(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
-    r = client.put(f"/api/v1/playlists/{pid}/tracks",
-                   json={"stable_ids": ["t-001", "t-001", "t-002"]},
-                   headers={"If-Match": etag})
+    r = client.put(
+        f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-001", "t-001", "t-002"]}, headers={"If-Match": etag}
+    )
     assert r.status_code == 200, r.text
     assert r.json()["items"] == ["t-001", "t-001", "t-002"]
 
@@ -348,7 +350,9 @@ def test_two_store_membership_replaces_serialise_before_etag_check(
         try:
             a_result.append(
                 store_a.replace_memberships(
-                    playlist_id, ["t-001"], expected_etag=etag,
+                    playlist_id,
+                    ["t-001"],
+                    expected_etag=etag,
                 )
             )
         except Exception as exc:  # test captures the API-layer conflict
@@ -358,7 +362,9 @@ def test_two_store_membership_replaces_serialise_before_etag_check(
         try:
             b_result.append(
                 store_b.replace_memberships(
-                    playlist_id, ["t-002"], expected_etag=etag,
+                    playlist_id,
+                    ["t-002"],
+                    expected_etag=etag,
                 )
             )
         except Exception as exc:  # test captures the API-layer conflict
@@ -371,8 +377,7 @@ def test_two_store_membership_replaces_serialise_before_etag_check(
         assert a_at_validation.wait(timeout=5), "first writer never reached validation"
         b_thread.start()
         assert not b_at_validation.wait(timeout=0.5), (
-            "second writer validated state before the first writer released "
-            "the database write lock"
+            "second writer validated state before the first writer released the database write lock"
         )
         release_a.set()
         a_thread.join(timeout=5)
@@ -397,16 +402,22 @@ def test_fixed_clock_never_reuses_a_stale_playlist_revision(db_path: Path) -> No
     try:
         created = store.create_playlist("Fixed clock")
         first = store.replace_memberships(
-            created.playlist_id, ["t-001"], expected_etag=created.etag,
+            created.playlist_id,
+            ["t-001"],
+            expected_etag=created.etag,
         )
         second = store.replace_memberships(
-            created.playlist_id, ["t-002"], expected_etag=first.etag,
+            created.playlist_id,
+            ["t-002"],
+            expected_etag=first.etag,
         )
 
         assert len({created.etag, first.etag, second.etag}) == 3
         with pytest.raises(ConflictError):
             store.replace_memberships(
-                created.playlist_id, ["t-003"], expected_etag=created.etag,
+                created.playlist_id,
+                ["t-003"],
+                expected_etag=created.etag,
             )
     finally:
         store.close()
@@ -447,17 +458,25 @@ def test_rename_cannot_precheck_while_membership_replace_holds_lock(
 
     def replace_a() -> None:
         try:
-            a_result.append(store_a.replace_memberships(
-                playlist_id, ["t-001"], expected_etag=etag,
-            ))
+            a_result.append(
+                store_a.replace_memberships(
+                    playlist_id,
+                    ["t-001"],
+                    expected_etag=etag,
+                )
+            )
         except Exception as exc:
             a_result.append(exc)
 
     def rename_b() -> None:
         try:
-            b_result.append(store_b.rename_playlist(
-                playlist_id, "Renamed", expected_etag=etag,
-            ))
+            b_result.append(
+                store_b.rename_playlist(
+                    playlist_id,
+                    "Renamed",
+                    expected_etag=etag,
+                )
+            )
         except Exception as exc:
             b_result.append(exc)
 
@@ -473,12 +492,8 @@ def test_rename_cannot_precheck_while_membership_replace_holds_lock(
         release_a.set()
         a_thread.join(timeout=THREAD_HANG_GUARD_S)
         b_thread.join(timeout=THREAD_HANG_GUARD_S)
-        assert not a_thread.is_alive(), (
-            f"HANG: membership-replace thread still alive after {THREAD_HANG_GUARD_S}s"
-        )
-        assert not b_thread.is_alive(), (
-            f"HANG: rename contender thread still alive after {THREAD_HANG_GUARD_S}s"
-        )
+        assert not a_thread.is_alive(), f"HANG: membership-replace thread still alive after {THREAD_HANG_GUARD_S}s"
+        assert not b_thread.is_alive(), f"HANG: rename contender thread still alive after {THREAD_HANG_GUARD_S}s"
         assert not isinstance(a_result[0], Exception)
         assert isinstance(b_result[0], ConflictError)
         current = store_a.get_playlist_row(playlist_id)
@@ -523,9 +538,13 @@ def test_delete_cannot_precheck_while_membership_replace_holds_lock(
 
     def replace_a() -> None:
         try:
-            a_result.append(store_a.replace_memberships(
-                playlist_id, ["t-001"], expected_etag=etag,
-            ))
+            a_result.append(
+                store_a.replace_memberships(
+                    playlist_id,
+                    ["t-001"],
+                    expected_etag=etag,
+                )
+            )
         except Exception as exc:
             a_result.append(exc)
 
@@ -559,25 +578,18 @@ def test_delete_cannot_precheck_while_membership_replace_holds_lock(
 
 # --- provenance / events ---------------------------------------------------
 
+
 def test_full_crud_appends_events_with_actor(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client, "Audit Me")
     pid = body["playlist_id"]
-    r = client.put(f"/api/v1/playlists/{pid}/tracks",
-                   json={"stable_ids": ["t-001"]}, headers={"If-Match": etag})
-    client.delete(f"/api/v1/playlists/{pid}",
-                  headers={"If-Match": r.headers["ETag"]})
+    r = client.put(f"/api/v1/playlists/{pid}/tracks", json={"stable_ids": ["t-001"]}, headers={"If-Match": etag})
+    client.delete(f"/api/v1/playlists/{pid}", headers={"If-Match": r.headers["ETag"]})
     kinds = _event_kinds(db_path)
-    for expected in ("playlist.insert", "playlist.memberships.set",
-                     "playlist.delete"):
+    for expected in ("playlist.insert", "playlist.memberships.set", "playlist.delete"):
         assert expected in kinds, f"missing event kind {expected} in {kinds}"
     conn = sqlite3.connect(str(db_path))
     try:
-        actors = {
-            row[0] for row in conn.execute(
-                "SELECT DISTINCT actor FROM events "
-                "WHERE kind LIKE 'playlist.%'"
-            )
-        }
+        actors = {row[0] for row in conn.execute("SELECT DISTINCT actor FROM events WHERE kind LIKE 'playlist.%'")}
     finally:
         conn.close()
     assert actors == {"webui"}

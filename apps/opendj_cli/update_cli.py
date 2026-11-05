@@ -1,5 +1,12 @@
-"""``opendj update check`` and ``opendj update apply``: the updater on the
-installed CLI (AGENT-13).
+"""``opendj update check|apply|ready|status|install|cancel``: the updater on the
+installed CLI (AGENT-13; ``ready``/``status``/``install`` are restart-to-update,
+INSTALL-39; ``cancel`` withdraws an install during its 10 s countdown, INSTALL-43).
+
+``ready <artifact.app.tar.gz> [--notes TEXT]`` flags a local build as the
+pending update (the tray shows "Restart to update"), ``status`` reads what is
+pending, and ``install`` makes the shell install it and waits until the
+relaunched app reports the flagged git sha. All three call
+:mod:`apps.engine_core.local_update_client`, the same core the MCP tools call.
 
 The packaged app ships ``~/.local/bin/opendj`` and ``opendj mcp``. Issue
 #2924 delivered the updater as ``POST /api/v1/update/apply`` plus
@@ -37,6 +44,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from apps.engine_core.local_update_client import (
+    InstallOutcome,
+    cancel_via_engine,
+    install_via_engine,
+    ready_via_engine,
+    status_via_engine,
+)
 from apps.engine_core.update_channel import (
     APPLY_TIMEOUT_S,
     EXIT_APPLIED,
@@ -51,9 +65,17 @@ from apps.opendj_cli.refusal import fail as _fail
 
 CHECK_COMMAND = "check"
 APPLY_COMMAND = "apply"
+READY_COMMAND = "ready"
+STATUS_COMMAND = "status"
+INSTALL_COMMAND = "install"
+CANCEL_COMMAND = "cancel"
 EXIT_USAGE = 1
 
-_USAGE = "usage: opendj update check | opendj update apply [--timeout-s SECONDS]"
+_USAGE = (
+    "usage: opendj update check | opendj update apply [--timeout-s SECONDS] | "
+    "opendj update ready <artifact.app.tar.gz> [--notes TEXT] | opendj update status | "
+    "opendj update install [--timeout-s SECONDS] | opendj update cancel"
+)
 
 
 def _usage(problem: str, *, as_json: bool) -> int:
@@ -73,7 +95,9 @@ def _engine(lock: Path | None, *, as_json: bool) -> EngineOrigin | int:
         )
 
 
-def _parse_apply(tokens: Sequence[str]) -> tuple[float, str] | tuple[None, str]:
+def _parse_apply(
+    tokens: Sequence[str], verb: str = APPLY_COMMAND
+) -> tuple[float, str] | tuple[None, str]:
     """``--timeout-s`` in seconds, or the reason the invocation is refused.
 
     A deadline has to be a real number: ``nan`` parses happily and then
@@ -84,16 +108,16 @@ def _parse_apply(tokens: Sequence[str]) -> tuple[float, str] | tuple[None, str]:
     while position < len(tokens):
         token = tokens[position]
         if token != "--timeout-s":
-            return None, f"update apply: unexpected argument {token!r}"
+            return None, f"update {verb}: unexpected argument {token!r}"
         if position + 1 >= len(tokens):
-            return None, "update apply: --timeout-s requires a number of seconds"
+            return None, f"update {verb}: --timeout-s requires a number of seconds"
         raw = tokens[position + 1]
         try:
             timeout_s = float(raw)
         except ValueError:
-            return None, f"update apply: --timeout-s expects seconds, got {raw!r}"
+            return None, f"update {verb}: --timeout-s expects seconds, got {raw!r}"
         if not timeout_s > 0:
-            return None, f"update apply: --timeout-s must be greater than zero, got {raw!r}"
+            return None, f"update {verb}: --timeout-s must be greater than zero, got {raw!r}"
         position += 2
     return timeout_s, ""
 
@@ -182,22 +206,152 @@ def _apply_text(outcome: ApplyOutcome) -> str:
     return "\n".join(lines)
 
 
+# ----- restart to update (INSTALL-39) --------------------------------------
+def _parse_ready(tokens: Sequence[str]) -> tuple[Path, str | None] | str:
+    """``<artifact> [--notes TEXT]``, or the reason the invocation is refused."""
+    artifact: Path | None = None
+    notes: str | None = None
+    position = 0
+    while position < len(tokens):
+        token = tokens[position]
+        if token == "--notes":
+            if position + 1 >= len(tokens):
+                return "update ready: --notes requires text"
+            notes = tokens[position + 1]
+            position += 2
+        elif token.startswith("--"):
+            return f"update ready: unexpected option {token!r}"
+        elif artifact is None:
+            artifact = Path(token)
+            position += 1
+        else:
+            return f"update ready: unexpected argument {token!r}"
+    if artifact is None:
+        return "update ready: name the updater archive, e.g. .../bundle/macos/Open DJ.app.tar.gz"
+    return artifact, notes
+
+
+def _print_reply(document: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(document, indent=2, sort_keys=True))
+        return
+    pending = document.get("pending") or {}
+    lines = [f"state: {document.get('state')}"]
+    if pending:
+        lines.append(
+            f"pending: {pending.get('git_sha')} v{pending.get('app_version')} "
+            f"built {pending.get('built_at_utc')} ({pending.get('artifact')})"
+        )
+    lines.append(f"running: {document.get('running_git_sha_full')}")
+    lineage = pending.get("lineage") or {}
+    if lineage:
+        lines.append(f"lineage: {lineage.get('color_name')} {lineage.get('lines')}")
+    warning = (pending.get("descent") or {}).get("warning")
+    if warning:
+        lines.append(f"[WARN] {warning}")
+    if document.get("detail"):
+        lines.append(f"detail: {document.get('detail')}")
+    print("\n".join(lines))
+
+
+def _ready(tokens: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    parsed = _parse_ready(tokens)
+    if isinstance(parsed, str):
+        return _usage(parsed, as_json=as_json)
+    origin = _engine(lock, as_json=as_json)
+    if isinstance(origin, int):
+        return origin
+    reply = ready_via_engine(origin.base_url, parsed[0], parsed[1])
+    if not reply.ok:
+        return _fail(as_json=as_json, code=reply.error or "refused", message=reply.detail or "", exit_code=EXIT_NOT_APPLIED)
+    _print_reply(reply.document, as_json=as_json)
+    return EXIT_APPLIED
+
+
+def _status(tokens: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    if tokens:
+        return _usage(f"update status: unexpected argument {tokens[0]!r}", as_json=as_json)
+    origin = _engine(lock, as_json=as_json)
+    if isinstance(origin, int):
+        return origin
+    reply = status_via_engine(origin.base_url)
+    if not reply.ok:
+        return _fail(as_json=as_json, code=reply.error or "refused", message=reply.detail or "", exit_code=EXIT_NOT_APPLIED)
+    _print_reply(reply.document, as_json=as_json)
+    return EXIT_APPLIED
+
+
+def _install(tokens: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    timeout_s, problem = _parse_apply(tokens, INSTALL_COMMAND)
+    if timeout_s is None:
+        return _usage(problem, as_json=as_json)
+    origin = _engine(lock, as_json=as_json)
+    if isinstance(origin, int):
+        return origin
+    outcome = install_via_engine(origin.base_url, timeout_s, lock_path=lock, progress=_progress)
+    print(json.dumps(outcome.document(), indent=2, sort_keys=True) if as_json else _install_text(outcome))
+    if not outcome.installed:
+        print(f"opendj: {outcome.reason}: {outcome.detail}", file=sys.stderr)
+    return outcome.code
+
+
+def _install_text(outcome: InstallOutcome) -> str:
+    return "\n".join(
+        [
+            f"before: git_sha_full={outcome.before.get('git_sha_full')}",
+            f"after: git_sha_full={outcome.after.get('git_sha_full')}",
+            f"installed: {'yes' if outcome.installed else f'no ({outcome.reason})'}",
+            f"detail: {outcome.detail}",
+        ]
+    )
+
+
+def _cancel(tokens: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    """Withdraw the install counting down; the CLI twin of Esc Space x4 (INSTALL-43)."""
+    if tokens:
+        return _usage(f"update cancel: unexpected argument {tokens[0]!r}", as_json=as_json)
+    origin = _engine(lock, as_json=as_json)
+    if isinstance(origin, int):
+        return origin
+    reply = cancel_via_engine(origin.base_url, "opendj update cancel")
+    if not reply.ok:
+        return _fail(as_json=as_json, code=reply.error or "refused", message=reply.detail or "", exit_code=EXIT_NOT_APPLIED)
+    if as_json:
+        print(json.dumps(reply.document, indent=2, sort_keys=True))
+    else:
+        print(f"cancelled: install of {reply.document.get('git_sha_full')} (command_id={reply.document.get('command_id')})")
+    return EXIT_APPLIED
+
+
+_VERBS = {
+    CHECK_COMMAND: _check,
+    APPLY_COMMAND: _apply,
+    READY_COMMAND: _ready,
+    STATUS_COMMAND: _status,
+    INSTALL_COMMAND: _install,
+    CANCEL_COMMAND: _cancel,
+}
+
+
 def run(tokens: Sequence[str], *, as_json: bool, lock: Path | None = None) -> int:
-    """Dispatch ``opendj update <verb>``; the verbs are ``check`` and ``apply``."""
+    """Dispatch ``opendj update <verb>``: check, apply, ready, status, install, cancel."""
     if not tokens:
         return _usage(_USAGE, as_json=as_json)
     command, *rest = tokens
-    if command == CHECK_COMMAND:
-        return _check(rest, as_json=as_json, lock=lock)
-    if command == APPLY_COMMAND:
-        return _apply(rest, as_json=as_json, lock=lock)
-    return _usage(f"unknown update verb {command!r}; {_USAGE}", as_json=as_json)
+    handler = _VERBS.get(command)
+    if handler is None:
+        return _usage(f"unknown update verb {command!r}; {_USAGE}", as_json=as_json)
+    return handler(rest, as_json=as_json, lock=lock)
 
 
 __all__ = [
     "APPLY_COMMAND",
+    "CANCEL_COMMAND",
     "CHECK_COMMAND",
     "EXIT_APPLY_FAILED",
     "EXIT_USAGE",
+    "INSTALL_COMMAND",
+    "READY_COMMAND",
+    "STATUS_COMMAND",
     "run",
 ]

@@ -53,7 +53,11 @@ test('Show in Finder renders enabled and names the reveal route it calls', () =>
 test('Open in Rekordbox and Open in djay render disabled while the apps probe is pending', () => {
 	for (const label of ['Open in Rekordbox', 'Open in djay']) {
 		const tag = buttonTag(label);
-		assert.match(tag, /\sdisabled/, `if ${label} is enabled before the probe then it can be a dead click`);
+		assert.match(
+			tag,
+			/\sdisabled/,
+			`if ${label} is enabled before the probe then it can be a dead click`
+		);
 		assert.match(tag, /title="Checking whether this app is installed/);
 		assert.doesNotMatch(tag, /not implemented - see PARITY-TODO/);
 	}
@@ -63,7 +67,12 @@ test('handoffButtonState enables only an installed app and names why otherwise',
 	const { handoffButtonState, HANDOFF_ROUTE_TITLE } = handoff;
 	const probe = [
 		{ app: 'rekordbox', label: 'rekordbox', available: true, reason: null },
-		{ app: 'djay', label: 'djay Pro', available: false, reason: 'djay Pro is not installed in /Applications on this Mac' }
+		{
+			app: 'djay',
+			label: 'djay Pro',
+			available: false,
+			reason: 'djay Pro is not installed in /Applications on this Mac'
+		}
 	];
 	const rb = handoffButtonState('rekordbox', probe);
 	assert.equal(rb.disabled, false);
@@ -84,7 +93,10 @@ test('the rendered actions carry no roadmap phase wording', () => {
 test('the track route renders TrackActions for its track and keeps no phase wording of its own', () => {
 	// The route itself loads its track in onMount, which SSR never runs, so the
 	// wiring from route to component is the one part pinned as source text.
-	const page = readFileSync(new URL('../../src/routes/track/[stable_id]/+page.svelte', import.meta.url), 'utf8');
+	const page = readFileSync(
+		new URL('../../src/routes/track/[stable_id]/+page.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(page, /<TrackActions stableId=\{track\.stable_id\} \/>/);
 	assert.doesNotMatch(page, /coming in Phase/);
 });

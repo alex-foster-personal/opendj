@@ -141,9 +141,7 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
 
 
 def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
-    assert probe["health_status"] == 200, (
-        f"health call failed against an unmigrated db: {probe['health_body']}"
-    )
+    assert probe["health_status"] == 200, f"health call failed against an unmigrated db: {probe['health_body']}"
     assert probe["health_body"]["status"] == "ok"
 
 
@@ -158,9 +156,7 @@ def test_v5_state_db_lands_on_the_ladder_top_after_boot(probe: dict) -> None:
     """
     conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
     try:
-        version = conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0]
+        version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
         # v7 first added the ``deleted_at`` column that the live incident's
         # unmigrated db was missing; querying it proves the shape survives
         # every subsequent migration too, not just the version counter.
@@ -206,9 +202,7 @@ def test_boot_aborts_end_to_end_when_migration_cannot_write(
 
     pre_conn = sqlite3.connect(str(db_path))
     try:
-        pre_version = pre_conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0]
+        pre_version = pre_conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
     finally:
         pre_conn.close()
     assert pre_version == 5
@@ -240,16 +234,13 @@ def test_boot_aborts_end_to_end_when_migration_cannot_write(
         f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-4000:]}"
     )
     assert "unable to open database file" in result.stderr, (
-        f"the migration error must surface, not be swallowed\n"
-        f"stderr: {result.stderr[-4000:]}"
+        f"the migration error must surface, not be swallowed\nstderr: {result.stderr[-4000:]}"
     )
     wal_path.rmdir()
 
     conn = sqlite3.connect(str(db_path))
     try:
-        version = conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0]
+        version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
     finally:
         conn.close()
     assert version == pre_version, (
@@ -381,15 +372,11 @@ def test_concurrent_make_backend_migrates_stale_db_without_sqlite_race(
         # processes doing that first-ever switch at once is a different
         # race (measured 10 of 64 boots on this fixture, none of them inside
         # apply_migrations) than the one this test pins. See
-        # .planning/debt/3527.md.
+        # (private path).
         journal_mode = pre_conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
         assert journal_mode == "wal"
-        pre_version = pre_conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0]
-        expected_track_count = pre_conn.execute(
-            "SELECT COUNT(*) FROM tracks"
-        ).fetchone()[0]
+        pre_version = pre_conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+        expected_track_count = pre_conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     finally:
         pre_conn.close()
     assert pre_version == 6
@@ -439,7 +426,9 @@ def test_current_db_boot_takes_no_write_lock_behind_a_long_writer(
 
 
 def _timed_under_peer_lock(
-    db_path: Path, hold_s: float, call: Callable[[Path], object],
+    db_path: Path,
+    hold_s: float,
+    call: Callable[[Path], object],
 ) -> float:
     holder = hold_exclusive_lock(db_path, hold_s)
     try:
@@ -462,32 +451,21 @@ def test_every_boot_open_waits_out_a_peer_lock_past_the_request_wait(
     own holder, concurrently, so the whole test costs one hold.
     """
     hold_s = state_db.DEFAULT_BUSY_TIMEOUT_S + 1.5
-    assert hold_s < state_db.BOOT_BUSY_TIMEOUT_S, (
-        "the hold must sit between the two bounds to tell them apart"
-    )
+    assert hold_s < state_db.BOOT_BUSY_TIMEOUT_S, "the hold must sit between the two bounds to tell them apart"
     sites: dict[str, Callable[[Path], object]] = {
         "make_backend": sqlite_backend.make_backend,
-        "missing-schema-meta pre-check": (
-            sqlite_backend._tracks_table_missing_schema_meta
-        ),
+        "missing-schema-meta pre-check": (sqlite_backend._tracks_table_missing_schema_meta),
         "migrate-before-serving open_rw": sqlite_backend._migrate_before_serving,
         "SqliteBackend stale-schema pre-check": sqlite_backend.SqliteBackend,
     }
-    dbs = {
-        name: current_wal_state_db(tmp_path / f"site-{index}" / "state.db")
-        for index, name in enumerate(sites)
-    }
+    dbs = {name: current_wal_state_db(tmp_path / f"site-{index}" / "state.db") for index, name in enumerate(sites)}
     with ThreadPoolExecutor(max_workers=len(sites)) as pool:
-        futures = {
-            name: pool.submit(_timed_under_peer_lock, dbs[name], hold_s, call)
-            for name, call in sites.items()
-        }
+        futures = {name: pool.submit(_timed_under_peer_lock, dbs[name], hold_s, call) for name, call in sites.items()}
         waited = {name: future.result() for name, future in futures.items()}
 
     for name, elapsed in waited.items():
         # Presence, not absence: the open really was blocked past the old
         # bound, so a pass here cannot come from a holder that never held.
         assert elapsed >= state_db.DEFAULT_BUSY_TIMEOUT_S, (
-            f"{name} returned after {elapsed:.2f}s; the peer lock was not in "
-            "force, so this run measured nothing"
+            f"{name} returned after {elapsed:.2f}s; the peer lock was not in force, so this run measured nothing"
         )

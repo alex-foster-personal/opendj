@@ -137,8 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
     if args.role != "all" and args.role not in PROFILABLE_ROLES:
         print(
-            f"[ERROR] unknown role {args.role!r}. Known roles: "
-            f"{', '.join(PROFILABLE_ROLES)}, all",
+            f"[ERROR] unknown role {args.role!r}. Known roles: {', '.join(PROFILABLE_ROLES)}, all",
             file=sys.stderr,
         )
         return 2
@@ -157,8 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     if emitted == 0:
         present = ", ".join(sorted(live)) or "none"
         print(
-            f"[ERROR] no live process fills role {args.role!r}. "
-            f"Roles present right now: {present}",
+            f"[ERROR] no live process fills role {args.role!r}. Roles present right now: {present}",
             file=sys.stderr,
         )
         return 4

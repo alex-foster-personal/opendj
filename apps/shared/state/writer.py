@@ -1,9 +1,11 @@
 """``StateWriter`` -- the single supported mutation surface.
 
-Every write is a small transaction that appends one row to ``events`` and
-publishes a matching in-process event on :class:`EventBus`. Callers MUST
-NOT ``INSERT`` into the state tables directly; this class is the chokepoint
-that guarantees the durable log + in-process fanout stay in sync.
+Every write is a small transaction that appends one row to ``events``
+inside the SQL unit and stages a matching in-process :class:`EventBus`
+event until COMMIT succeeds. Callers MUST NOT ``INSERT`` into the state
+tables directly; this class is the chokepoint that keeps the durable log
+and in-process fanout ordered (INSERT+COMMIT, then publish). A subscriber
+that raises during fanout cannot roll back a committed row.
 
 The track-level writes (tracks, locations, vendor ids, wrapped fields) and
 the playlist writes (insert, membership replace, tombstone) moved to
@@ -51,6 +53,25 @@ from .writer_tracks import _TrackWriterMixin
 _Clock = Callable[[], datetime]
 
 
+class _QueuedBus:
+    """Stand-in that stages ``publish`` until the owning write unit commits."""
+
+    def __init__(
+        self, real: EventBus | FakeEventBus, pending: list[Event]
+    ) -> None:
+        self._real = real
+        self._pending = pending
+
+    def publish(self, event: Event) -> None:
+        self._pending.append(event)
+
+    def subscribe(self, kind: str, callback: Any) -> None:
+        self._real.subscribe(kind, callback)
+
+    def close(self, timeout: float | None = None) -> None:
+        self._real.close(timeout)
+
+
 class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMixin):
     """Write-serialised facade over the state DB.
 
@@ -87,35 +108,125 @@ class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMi
         self._sp_counter = itertools.count()
         self._closed = False
         self._machine_id: str | None = None
+        self._pending_events: list[Event] = []
+        self._tx_depth = 0
+        self._abort_error: BaseException | None = None
 
     @property
     def raw_conn(self) -> sqlite3.Connection:
         """Public accessor for the underlying ``sqlite3.Connection``.
 
-        Intended for adapters that need to open an outer SAVEPOINT around a
-        batch of writer calls (e.g. a dry-run ingest that rolls the whole
-        batch back). Prefer this over poking ``_conn`` from the outside so
-        internal refactors do not break call sites.
+        Intended for adapters that need to open an outer writer-managed
+        unit around a batch of writer calls (e.g. a dry-run ingest that
+        rolls the whole batch back). Prefer this over poking ``_conn``
+        from the outside so internal refactors do not break call sites.
 
         Callers MUST NOT issue ``BEGIN``/``COMMIT``/``SAVEPOINT`` by hand on
-        this connection. Open the outer unit with
-        :func:`apps.shared.state.db.write_unit`, which composes with the
-        writer's own nested units and takes the writer lock up front when it
-        is the outermost one (STATE-15).
+        this connection. Open the outer unit with :meth:`transaction`,
+        which composes with nested :meth:`_tx` SAVEPOINTs and takes the
+        writer lock up front when it is the outermost one (STATE-15).
         """
         return self._conn
+
+    def _raise_if_aborted(self) -> None:
+        if self._tx_depth > 0 and self._abort_error is not None:
+            raise RuntimeError(
+                "StateWriter transaction was aborted by a failed nested operation"
+            ) from self._abort_error
+
+    def _guard_unit(self, *, require_idle: bool) -> None:
+        self._raise_if_aborted()
+        busy = self._conn.in_transaction or self._tx_depth != 0
+        if require_idle and busy:
+            raise RuntimeError("StateWriter transaction requires an idle connection")
+        if not require_idle and self._conn.in_transaction and self._tx_depth == 0:
+            raise RuntimeError(
+                "caller-owned transaction requires StateWriter.transaction()"
+            )
+
+    def _drop_queued_from(self, start: int) -> None:
+        del self._pending_events[start:]
+
+    def _flush_pending(self) -> None:
+        events = self._pending_events
+        self._pending_events = []
+        for event in events:
+            self.bus.publish(event)
+
+    @contextmanager
+    def _managed_write_unit(
+        self, *, keep: bool = True, require_idle: bool = False
+    ) -> Iterator[sqlite3.Connection]:
+        """Writer-owned ``write_unit``: queue bus events, flush after COMMIT."""
+        self._guard_unit(require_idle=require_idle)
+        pending_start = len(self._pending_events)
+        outermost = self._tx_depth == 0
+        real_bus = self.bus
+        if outermost:
+            self.bus = _QueuedBus(real_bus, self._pending_events)  # type: ignore[assignment]
+        self._tx_depth += 1
+        error: BaseException | None = None
+        try:
+            with _state_db.write_unit(
+                self._conn, f"sw_{next(self._sp_counter)}", keep=keep
+            ):
+                yield self._conn
+                self._raise_if_aborted()
+        except BaseException as exc:
+            error = exc
+            self._drop_queued_from(pending_start)
+            if self._abort_error is None:
+                self._abort_error = exc
+            raise
+        else:
+            if not keep:
+                self._drop_queued_from(pending_start)
+        finally:
+            self._tx_depth -= 1
+            if outermost:
+                self.bus = real_bus
+                if self._tx_depth == 0:
+                    self._abort_error = None
+        if error is None and outermost and keep:
+            self._flush_pending()
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
         """Run the enclosed block as one write unit that holds the writer lock.
 
         Outermost, the unit is ``BEGIN IMMEDIATE`` ... ``COMMIT``; nested
-        inside a caller's transaction (an ingest adapter's dry-run unit, or a
-        re-entrant call on this writer), it is a uniquely named SAVEPOINT.
-        See :func:`apps.shared.state.db.write_unit` for why a bare outermost
+        inside :meth:`transaction` (or a re-entrant call on this writer) it
+        is a uniquely named SAVEPOINT. In-process bus events are queued
+        until the outermost unit COMMITs. See
+        :func:`apps.shared.state.db.write_unit` for why a bare outermost
         SAVEPOINT is not enough (STATE-15).
         """
-        with _state_db.write_unit(self._conn, f"sw_{next(self._sp_counter)}"):
+        with self._managed_write_unit():
+            yield self._conn
+
+    @contextmanager
+    def transaction(self, *, commit: bool = True) -> Iterator[sqlite3.Connection]:
+        """Outermost writer-managed unit around a batch of mutations.
+
+        Requires an idle connection. Nested :meth:`_tx` calls become
+        SAVEPOINTs and do not flush the bus. ``commit=False`` rolls the
+        unit back and drops queued events (dry-run ingest).
+        """
+        with self._managed_write_unit(keep=commit, require_idle=True):
+            yield self._conn
+
+    @contextmanager
+    def _join_or_begin(self, *, commit: bool = True) -> Iterator[sqlite3.Connection]:
+        """Join an open writer unit, or open :meth:`transaction`.
+
+        Nested ``commit=False`` rolls back only this SAVEPOINT so a dry-run
+        ingest can sit inside a live parent unit without persisting.
+        """
+        if self._tx_depth > 0:
+            with self._managed_write_unit(keep=commit):
+                yield self._conn
+            return
+        with self.transaction(commit=commit):
             yield self._conn
 
     @contextmanager
@@ -125,9 +236,9 @@ class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMi
         Callers must load the playlist and validate its expected revision while
         this context is open. Membership replacement also validates every
         requested stable id here. That sequence is one SQLite write
-        transaction across processes.
+        transaction across processes; bus events flush after COMMIT.
         """
-        with immediate_transaction(self._conn) as conn:
+        with self.transaction() as conn:
             yield conn
 
     # --- lifecycle --------------------------------------------------

@@ -43,7 +43,8 @@ after(async () => {
 
 function binding(ch, kind, id) {
 	return pro.RELOOP_MIXTOUR_PRO_MAP.bindings.find(
-		(candidate) => candidate.source.ch === ch && candidate.source.kind === kind && candidate.source.id === id
+		(candidate) =>
+			candidate.source.ch === ch && candidate.source.kind === kind && candidate.source.id === id
 	);
 }
 
@@ -57,7 +58,10 @@ test('classic and Pro identities are mutually exclusive and resolver-safe', () =
 	webmidi.registerDeviceMap(classic.RELOOP_MIXTOUR_MAP);
 	webmidi.registerDeviceMap(pro.RELOOP_MIXTOUR_PRO_MAP);
 	assert.equal(webmidi.resolveMapForPort(proName)?.nameMatch, pro.RELOOP_MIXTOUR_PRO_MAP.nameMatch);
-	assert.equal(webmidi.resolveMapForPort('Reloop Mixtour')?.nameMatch, classic.RELOOP_MIXTOUR_MAP.nameMatch);
+	assert.equal(
+		webmidi.resolveMapForPort('Reloop Mixtour')?.nameMatch,
+		classic.RELOOP_MIXTOUR_MAP.nameMatch
+	);
 	webmidi._resetMidiForTests();
 });
 
@@ -72,8 +76,9 @@ test('map registers cleanly and every deck follows the N/P channel families', ()
 		assert.deepEqual(binding(deck, 'note', 0x40).action, { type: 'deck_auto_loop_toggle', deck });
 		assert.deepEqual(binding(4 + deck, 'note', 0x0a).action, { type: 'browse_load', deck });
 		assert.deepEqual(binding(4 + deck, 'note', 0x24).action, { type: 'deck_stem_eq_toggle', deck });
-		const neuralLed = pro.RELOOP_MIXTOUR_PRO_MAP.leds.find((rule) =>
-			rule.trigger.kind === 'stem_eq_enabled' && rule.trigger.deck === deck);
+		const neuralLed = pro.RELOOP_MIXTOUR_PRO_MAP.leds.find(
+			(rule) => rule.trigger.kind === 'stem_eq_enabled' && rule.trigger.deck === deck
+		);
 		assert.deepEqual(neuralLed.out, { ch: 4 + deck, note: 0x24, velocityOn: 127, velocityOff: 1 });
 	}
 	webmidi._resetMidiForTests();
@@ -83,8 +88,16 @@ test('known legacy-collision bytes have only their captured Pro meanings', () =>
 	for (let deck = 1; deck <= 4; deck += 1) {
 		assert.equal(binding(deck, 'note', 0x02).action.type, 'deck_sync_toggle');
 		assert.equal(binding(deck, 'note', 0x03).action.type, 'deck_manual_loop_cycle');
-		assert.equal(binding(deck, 'note', 0x0b), undefined, 'SHIFT+PLAY pitch bend stays inert until exact hold semantics land');
-		assert.equal(binding(deck, 'note', 0x0c), undefined, 'SHIFT+CUE pitch bend stays inert until exact hold semantics land');
+		assert.equal(
+			binding(deck, 'note', 0x0b),
+			undefined,
+			'SHIFT+PLAY pitch bend stays inert until exact hold semantics land'
+		);
+		assert.equal(
+			binding(deck, 'note', 0x0c),
+			undefined,
+			'SHIFT+CUE pitch bend stays inert until exact hold semantics land'
+		);
 	}
 });
 
@@ -114,10 +127,16 @@ test('all eight pad modes, pads and SHIFT pads exist on every P channel', () => 
 		for (let index = 0; index < 8; index += 1) {
 			assert.equal(binding(p, 'note', index).action.type, 'controller_pad_mode');
 			assert.deepEqual(binding(p, 'note', 0x14 + index).action, {
-				type: 'controller_pad', deck, pad: index + 1, shifted: false
+				type: 'controller_pad',
+				deck,
+				pad: index + 1,
+				shifted: false
 			});
 			assert.deepEqual(binding(p, 'note', 0x1c + index).action, {
-				type: 'controller_pad', deck, pad: index + 1, shifted: true
+				type: 'controller_pad',
+				deck,
+				pad: index + 1,
+				shifted: true
 			});
 		}
 	}
@@ -143,7 +162,9 @@ test('every documented input address is either bound or explicitly identified', 
 		)
 	);
 	const bindings = new Set(
-		pro.RELOOP_MIXTOUR_PRO_MAP.bindings.map(({ source }) => `${source.ch}:${source.kind}:${source.id}`)
+		pro.RELOOP_MIXTOUR_PRO_MAP.bindings.map(
+			({ source }) => `${source.ch}:${source.kind}:${source.id}`
+		)
 	);
 	const hints = new Set(
 		pro.RELOOP_MIXTOUR_PRO_MAP.hints.map(({ source }) => `${source.ch}:${source.kind}:${source.id}`)
@@ -192,8 +213,9 @@ test('feedback carries deck colors, RGB hot cues, mode state and discrete VU add
 			out: { ch: deck, cc: 0x1f, maxValue: 6 }
 		});
 		for (const padMode of ['auto_loop', 'bounce_loop']) {
-			const rules = pro.RELOOP_MIXTOUR_PRO_MAP.leds.filter((rule) =>
-				rule.trigger.deck === deck && rule.padMode === padMode);
+			const rules = pro.RELOOP_MIXTOUR_PRO_MAP.leds.filter(
+				(rule) => rule.trigger.deck === deck && rule.padMode === padMode
+			);
 			assert.equal(rules.length, 16, 'normal and SHIFT banks both carry feedback');
 			assert.equal(rules[0].trigger.beats, padMode === 'auto_loop' ? 0.25 : 0.03125);
 			for (const rule of rules) {

@@ -1,8 +1,8 @@
 """Policy-driven playback resolution, cache eviction, push-then-delete.
 
 Implements the READ PATH and WRITE PATH of ADR 06
-(``specs/design_decision_06.md``) over the v6 policy tables
-(``specs/design_decision_05.md``).
+(``(private path)``) over the v6 policy tables
+(``(private path)``).
 
 The READ PATH -- cache layout, policy resolution, and
 :func:`~apps.cloud.hydration_core.resolve_playback_source` -- moved to
@@ -19,8 +19,9 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from apps.shared.job_store import JobStoreLike
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 
@@ -55,9 +56,6 @@ from .hydration_core import (
 #: The one synced table this module writes. Named rather than repeated so the
 #: ``local_changelog`` entry and the ``INSERT`` can never name two tables.
 _LOCATIONS_TABLE: str = "track_locations"
-
-if TYPE_CHECKING:
-    from apps.engine_core.jobs.store import JobStore
 
 
 # --- download path (hydration fetch + transfer ledger) -----------------------
@@ -169,7 +167,7 @@ def run_hydrate_job(
 
 
 def enqueue_hydrate_asset(
-    store: JobStore | None,
+    store: JobStoreLike | None,
     *,
     stable_id: str,
     asset_kind: str,

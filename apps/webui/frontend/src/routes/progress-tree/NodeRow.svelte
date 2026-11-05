@@ -104,7 +104,10 @@
 		{/if}
 		<span class="spacer"></span>
 		{#if blocks.length > 0}
-			<span class="count blocks" title="blocks {blocks.length} node{blocks.length === 1 ? '' : 's'}">
+			<span
+				class="count blocks"
+				title="blocks {blocks.length} node{blocks.length === 1 ? '' : 's'}"
+			>
 				blocks {blocks.length}
 			</span>
 		{/if}

@@ -34,7 +34,7 @@ def test_pytest_steps_exist_and_use_runner_temp_basetemp() -> None:
     """[if] a pytest step is gone or its --basetemp leaves RUNNER_TEMP [then] broken, check is vacuous."""
     for job_id, step_id in STEP_IDS.items():
         run = _step(job_id, step_id)["run"]
-        assert "--basetemp=\"${RUNNER_TEMP:?RUNNER_TEMP must be set}/" in run, (job_id, step_id)
+        assert '--basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/' in run, (job_id, step_id)
 
 
 def test_pytest_steps_point_tmpdir_at_runner_temp() -> None:

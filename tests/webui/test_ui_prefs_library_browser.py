@@ -31,6 +31,7 @@ LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
     "wheel_sensitivity": {"mouse": 1.0, "trackpad": 1.0 / 3.0},
     "midi_enabled": False,
     "spotify_shrink_main_for_player": True,
+    "library_sidebar_art": True,
     "library_key_filter": [],
 }
 LIBRARY_BROWSER_WRITES: dict[str, Any] = {
@@ -43,6 +44,7 @@ LIBRARY_BROWSER_WRITES: dict[str, Any] = {
     "available_offline_filter": True,
     "midi_enabled": True,
     "spotify_shrink_main_for_player": False,
+    "library_sidebar_art": False,
     "library_key_filter": ["8A", "9A"],
 }
 

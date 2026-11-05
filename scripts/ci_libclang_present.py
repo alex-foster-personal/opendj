@@ -117,9 +117,7 @@ def _split_paths(value: str) -> list[Path]:
     return [Path(part or ".") for part in value.split(os.pathsep)]
 
 
-def search_directories(
-    environ: Mapping[str, str], llvm_prefix: str | None, root: Path = Path("/")
-) -> list[Path]:
+def search_directories(environ: Mapping[str, str], llvm_prefix: str | None, root: Path = Path("/")) -> list[Path]:
     """Every libclang candidate path, in clang-sys's search order."""
     if libclang_path := environ.get("LIBCLANG_PATH"):
         given = Path(libclang_path)
@@ -150,9 +148,7 @@ def elf_class_matches(path: Path, pointer_bits: int) -> bool:
 
 def pick(paths: list[Path], pointer_bits: int) -> tuple[Candidate | None, int]:
     """clang-sys's choice (highest version, earliest on a tie) and how many were valid."""
-    valid = [
-        Candidate(p, parse_version(p.name)) for p in paths if elf_class_matches(p, pointer_bits)
-    ]
+    valid = [Candidate(p, parse_version(p.name)) for p in paths if elf_class_matches(p, pointer_bits)]
     if not valid:
         return None, 0
     return max(valid, key=lambda c: c.version), len(valid)
@@ -220,8 +216,7 @@ def probe(
     if found is None:
         return 1, f"[libclang] MISSING: {chosen.path} loaded but reported no version: {reported!r}"
     return 0, (
-        f"libclang {found.group(1)} loaded from {chosen.path}"
-        f" (clang-sys's pick of {valid} candidates: {reported})"
+        f"libclang {found.group(1)} loaded from {chosen.path} (clang-sys's pick of {valid} candidates: {reported})"
     )
 
 

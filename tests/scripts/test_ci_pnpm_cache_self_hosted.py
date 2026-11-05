@@ -38,11 +38,7 @@ def _setup_node_steps() -> list[tuple[str, str, dict]]:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         for job_id, job in (doc.get("jobs") or {}).items():
             steps = job.get("steps") or []
-            out.extend(
-                (path.name, job_id, step)
-                for step in steps
-                if "actions/setup-node" in (step.get("uses") or "")
-            )
+            out.extend((path.name, job_id, step) for step in steps if "actions/setup-node" in (step.get("uses") or ""))
     return out
 
 
@@ -55,19 +51,12 @@ def test_no_workflow_restores_a_pnpm_cache_unconditionally() -> None:
         for wf, job, step in steps
         if (step.get("with") or {}).get("cache") not in (None, HOSTED_ONLY_CACHE)
     ]
-    assert not offenders, (
-        "setup-node cache must be hosted-only "
-        f"(`cache: {HOSTED_ONLY_CACHE}`), found: {offenders}"
-    )
+    assert not offenders, f"setup-node cache must be hosted-only (`cache: {HOSTED_ONLY_CACHE}`), found: {offenders}"
 
 
 def test_every_pnpm_cache_is_hosted_only_not_removed() -> None:
     """CONTROL: the fix is a condition, not a deletion; hosted runners keep the cache"""
     guarded = [
-        (wf, job)
-        for wf, job, step in _setup_node_steps()
-        if (step.get("with") or {}).get("cache") == HOSTED_ONLY_CACHE
+        (wf, job) for wf, job, step in _setup_node_steps() if (step.get("with") or {}).get("cache") == HOSTED_ONLY_CACHE
     ]
-    assert len(guarded) >= 3, (
-        f"expected the frontend, e2e and packaging caches to stay, got {guarded}"
-    )
+    assert len(guarded) >= 3, f"expected the frontend, e2e and packaging caches to stay, got {guarded}"

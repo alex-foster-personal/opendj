@@ -13,6 +13,7 @@ Acceptance criteria, one test each:
 
 - [if] push offers invalid cache_budget [then] hub 422s SYNC_POLICY_VIOLATION, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -116,9 +117,7 @@ def _hub_count(hub_dir: Path, sql: str, params: tuple[str, ...] = ()) -> int:
         conn.close()
 
 
-def test_push_negative_cache_budget_is_422_and_writes_nothing(
-    http: TestClient, hub_dir: Path
-) -> None:
+def test_push_negative_cache_budget_is_422_and_writes_nothing(http: TestClient, hub_dir: Path) -> None:
     """if push offers cache_budget_mb <= 0 then hub 422s cache_budget, else stop."""
     _hello(http)
     changelog_before = _hub_count(hub_dir, "SELECT COUNT(*) FROM hub_changelog")
@@ -127,17 +126,18 @@ def test_push_negative_cache_budget_is_422_and_writes_nothing(
     body = response.json()
     assert body["detail"]["code"] == "SYNC_POLICY_VIOLATION"
     assert any(v["rule_id"] == "cache_budget" for v in body["detail"]["violations"])
-    assert _hub_count(
-        hub_dir,
-        "SELECT COUNT(*) FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
-        (_SPOKE,),
-    ) == 0
+    assert (
+        _hub_count(
+            hub_dir,
+            "SELECT COUNT(*) FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
+            (_SPOKE,),
+        )
+        == 0
+    )
     assert _hub_count(hub_dir, "SELECT COUNT(*) FROM hub_changelog") == changelog_before
 
 
-def test_push_budget_on_non_cached_mode_is_422_and_writes_nothing(
-    http: TestClient, hub_dir: Path
-) -> None:
+def test_push_budget_on_non_cached_mode_is_422_and_writes_nothing(http: TestClient, hub_dir: Path) -> None:
     """if push offers budget while mode != cached then hub 422s cache_budget, else stop."""
     _hello(http)
     response = _push_policy(http, mode="stream", budget=512)
@@ -145,11 +145,14 @@ def test_push_budget_on_non_cached_mode_is_422_and_writes_nothing(
     body = response.json()
     assert body["detail"]["code"] == "SYNC_POLICY_VIOLATION"
     assert any(v["rule_id"] == "cache_budget" for v in body["detail"]["violations"])
-    assert _hub_count(
-        hub_dir,
-        "SELECT COUNT(*) FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
-        (_SPOKE,),
-    ) == 0
+    assert (
+        _hub_count(
+            hub_dir,
+            "SELECT COUNT(*) FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
+            (_SPOKE,),
+        )
+        == 0
+    )
 
 
 def test_push_valid_cached_budget_is_accepted(http: TestClient, hub_dir: Path) -> None:
@@ -163,8 +166,7 @@ def test_push_valid_cached_budget_is_accepted(http: TestClient, hub_dir: Path) -
     conn = sqlite3.connect(client.state_db_path(hub_dir))
     try:
         budget = conn.execute(
-            "SELECT cache_budget_mb FROM sync_policies "
-            "WHERE machine_id = ? AND asset_kind = 'audio'",
+            "SELECT cache_budget_mb FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
             (_SPOKE,),
         ).fetchone()
     finally:
@@ -182,8 +184,4 @@ def test_pull_does_not_return_rejected_policy_row(http: TestClient, hub_dir: Pat
     )
     assert pull.status_code == 200
     rows = pull.json()["rows"]
-    assert not any(
-        row.get("table") == "sync_policies"
-        and row.get("pk") == [_SPOKE, "audio"]
-        for row in rows
-    )
+    assert not any(row.get("table") == "sync_policies" and row.get("pk") == [_SPOKE, "audio"] for row in rows)

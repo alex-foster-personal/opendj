@@ -13,7 +13,8 @@ const rows = (rowHeight: number) =>
 		// The scroll container is flex:1 inside a sized parent in the app; here no
 		// parent sizes it, so give it a fixed height (a plain-props story cannot
 		// wrap the component in a frame).
-		render: () => `<div><style>.vlist-scroll{height:240px;border:1px solid var(--rb-border, #444)}</style><div></div></div>`,
+		render: () =>
+			`<div><style>.vlist-scroll{height:240px;border:1px solid var(--rb-border, #444)}</style><div></div></div>`,
 		// render() runs once, before the list has measured its viewport, and a
 		// raw snippet does not re-render when its arguments change. So the rows
 		// are filled here: once the list has measured (next frame), and on every

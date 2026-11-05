@@ -29,7 +29,10 @@ test('control: a rekordbox stick with an id is ranked', () => {
 });
 
 test('control: a rekordbox volume with no id is still refused for its own reason', () => {
-	assert.match(open.usbPlanRefusal({ id: 'mount:/Volumes/X', kind: 'rekordbox' }) ?? '', /has no id/);
+	assert.match(
+		open.usbPlanRefusal({ id: 'mount:/Volumes/X', kind: 'rekordbox' }) ?? '',
+		/has no id/
+	);
 });
 
 test('the refusal is checked before the stick library is read', () => {
@@ -37,5 +40,8 @@ test('the refusal is checked before the stick library is read', () => {
 	const body = src.slice(src.indexOf('export async function openUsbImportPlan'));
 	const refusalAt = body.indexOf('usbPlanRefusal(vol)');
 	const readAt = body.indexOf('revalidateUsbLibrary(');
-	assert.ok(refusalAt > 0 && readAt > refusalAt, 'the kind gate must run before revalidateUsbLibrary');
+	assert.ok(
+		refusalAt > 0 && readAt > refusalAt,
+		'the kind gate must run before revalidateUsbLibrary'
+	);
 });

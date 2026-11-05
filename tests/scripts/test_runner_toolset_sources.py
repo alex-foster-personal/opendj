@@ -65,12 +65,8 @@ def test_every_just_recipe_is_parsed_with_its_dependencies() -> None:
     missing = [name for name in defaulted if name not in parsed]
     assert not missing, f"{len(missing)} of {len(defaulted)} default-valued recipes dropped"
     assert sorted(parsed) == sorted(reference)
-    deps = {
-        name: [d["recipe"] for d in recipe["dependencies"]] for name, recipe in reference.items()
-    }
-    drift = {
-        name: (parsed[name].deps, want) for name, want in deps.items() if parsed[name].deps != want
-    }
+    deps = {name: [d["recipe"] for d in recipe["dependencies"]] for name, recipe in reference.items()}
+    drift = {name: (parsed[name].deps, want) for name, want in deps.items() if parsed[name].deps != want}
     assert not drift, drift
 
 
@@ -131,9 +127,7 @@ def test_a_yaml_workflow_is_scanned_and_other_yaml_under_github_is_not(tmp_path:
     workflows.mkdir(parents=True)
     (workflows / "build.yml").write_text(WORKFLOW.format(tool="unzip"), encoding="utf-8")
     (workflows / "lint.yaml").write_text(WORKFLOW.format(tool="zipinfo"), encoding="utf-8")
-    (tmp_path / ".github" / "dependabot.yaml").write_text(
-        WORKFLOW.format(tool="xmllint"), encoding="utf-8"
-    )
+    (tmp_path / ".github" / "dependabot.yaml").write_text(WORKFLOW.format(tool="xmllint"), encoding="utf-8")
     ctx = scan._Ctx(usage=scan.Usage())
     scan.scan_workflows(ctx, tmp_path)
     assert {"unzip", "zipinfo"} <= set(ctx.usage.executables), ctx.usage.executables
@@ -193,9 +187,7 @@ FRONTEND = "apps/webui/frontend"
         (FRONTEND, "../../../scripts/ci_runner_preflight.sh", "scripts/ci_runner_preflight.sh"),
     ],
 )
-def test_a_repo_path_resolves_from_the_step_working_directory(
-    cwd: str, tok: str, queued: str | None
-) -> None:
+def test_a_repo_path_resolves_from_the_step_working_directory(cwd: str, tok: str, queued: str | None) -> None:
     """Bash resolves `bash scripts/x.sh` from the working directory, so under one a
     root-relative path is a different (here absent) file: the overshoot control."""
     ctx = scan._Ctx(usage=scan.Usage(), cwd=cwd)

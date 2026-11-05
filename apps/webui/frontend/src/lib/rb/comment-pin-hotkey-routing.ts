@@ -23,7 +23,9 @@ export const OWNS_LETTER_KEYS_ATTR = 'data-owns-letter-keys';
 
 function _insideLetterKeyOwner(target: EventTarget | null): boolean {
 	const closest = (target as { closest?: (selector: string) => unknown } | null)?.closest;
-	return typeof closest === 'function' && closest.call(target, `[${OWNS_LETTER_KEYS_ATTR}]`) != null;
+	return (
+		typeof closest === 'function' && closest.call(target, `[${OWNS_LETTER_KEYS_ATTR}]`) != null
+	);
 }
 
 /** A focused `<select>` counts as text entry for the shared shortcut gate

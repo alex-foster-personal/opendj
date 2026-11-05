@@ -67,7 +67,10 @@ def _third_party_imports(module: str) -> list[str]:
     probe = _PROBE.format(module=module, first_party=sorted(FIRST_PARTY))
     done = subprocess.run(
         [sys.executable, "-c", probe],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return list(json.loads(done.stdout))
 

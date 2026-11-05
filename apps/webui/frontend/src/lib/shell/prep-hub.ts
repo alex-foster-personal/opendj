@@ -45,7 +45,6 @@ export const PREP_HUB_ENTRIES: readonly PrepHubEntry[] = [
 	{
 		href: '/analysis-backfill',
 		label: 'Analysis queue',
-		does:
-			'Plan and watch background analysis for tracks that still need it. Running the batch still uses the command line.'
+		does: 'Plan and watch background analysis for tracks that still need it. Running the batch still uses the command line.'
 	}
 ];

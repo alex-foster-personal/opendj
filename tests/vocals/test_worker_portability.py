@@ -30,12 +30,11 @@ from typing import Any
 import pytest
 
 from apps.vocals import cli as vocals_cli
+from tests.vocals._worker_script import VOCAL_REGION_WORKER_SCRIPT
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
-WORKER_SCRIPT: Path = (
-    Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
-)
+WORKER_SCRIPT: Path = VOCAL_REGION_WORKER_SCRIPT
 
 sf = pytest.importorskip("soundfile")
 np = pytest.importorskip("numpy")

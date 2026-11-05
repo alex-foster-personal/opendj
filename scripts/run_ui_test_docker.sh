@@ -17,7 +17,7 @@ IMAGE_NAME="playwright-ui-test-env"
 CONTAINER_NAME="fireworks-ui-tester"
 
 echo "Checking for Docker..."
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &>/dev/null; then
     echo "Docker is not installed. Please install Docker to use the remote UI testing box."
     exit 1
 fi
@@ -25,7 +25,7 @@ fi
 echo "Building headless testing container image..."
 # We create a simple Dockerfile inline
 mkdir -p .tmp/docker_build
-cat << 'EOF' > .tmp/docker_build/Dockerfile
+cat <<'EOF' >.tmp/docker_build/Dockerfile
 # Use the official Microsoft Playwright image which includes all browsers and dependencies
 FROM mcr.microsoft.com/playwright:v1.43.0-jammy
 

@@ -52,6 +52,7 @@ Run (the projection needs no reads and is always safe):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -168,18 +169,12 @@ def _serial_reads(paths: list[Path]) -> Iterator[tuple[Path, bytes]]:
         yield path, data
 
 
-def _prefetched_reads(
-    paths: list[Path], depth: int, workers: int, max_bytes: int
-) -> Iterator[tuple[Path, bytes]]:
-    for ready in read_ahead(
-        paths, depth=depth, workers=workers, max_bytes=max_bytes
-    ):
+def _prefetched_reads(paths: list[Path], depth: int, workers: int, max_bytes: int) -> Iterator[tuple[Path, bytes]]:
+    for ready in read_ahead(paths, depth=depth, workers=workers, max_bytes=max_bytes):
         yield ready.path, ready.data
 
 
-def _time_arm(
-    arm: str, paths: list[Path], items: Iterator[tuple[Path, bytes]]
-) -> ArmResult:
+def _time_arm(arm: str, paths: list[Path], items: Iterator[tuple[Path, bytes]]) -> ArmResult:
     """Time the gaps BETWEEN yields, which is what stalls Modal's event loop.
 
     Not the total read time: with read-ahead a read overlaps other reads, and
@@ -214,8 +209,12 @@ def _time_arm(
 
 
 def project_gap_impact(
-    cold_item_s: float, warm_item_s: float, evicted: int, resident: int,
-    gap_bytes: int, gap_audio_s: float = 0.0,
+    cold_item_s: float,
+    warm_item_s: float,
+    evicted: int,
+    resident: int,
+    gap_bytes: int,
+    gap_audio_s: float = 0.0,
 ) -> dict[str, Any]:
     """What the read-ahead is actually worth on the REAL batch, not this sample.
 
@@ -261,23 +260,17 @@ def project_gap_impact(
         "evicted": evicted,
         "evicted_pct": round(100 * evicted_fraction, 1),
         "serial_items_per_s_mixed": round(serial_items_per_s, 2),
-        "serial_implied_containers_mixed": round(
-            serial_items_per_s * CONTAINER_S_PER_TRACK, 1
-        ),
+        "serial_implied_containers_mixed": round(serial_items_per_s * CONTAINER_S_PER_TRACK, 1),
         "pipeline_freeze_s": round(freeze_s, 0),
         "pipeline_freeze_min": round(freeze_s / 60, 1),
         "gpu_floor_min": round(gpu_floor_s / 60, 1),
         "gpu_floor_basis": gpu_basis,
         "upload_floor_min": round(upload_floor_s / 60, 1),
-        "freeze_pct_of_run": round(
-            100 * freeze_s / max(gpu_floor_s, upload_floor_s), 0
-        ),
+        "freeze_pct_of_run": round(100 * freeze_s / max(gpu_floor_s, upload_floor_s), 0),
     }
 
 
-def gap_composition(
-    state_db: Path, cache_dir: Path
-) -> tuple[int, int, int, float]:
+def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int, float]:
     """(evicted, resident, bytes, audio_seconds) over the tracks still to farm.
 
     STATS ONLY, never reads. stat() on an iCloud placeholder returns local
@@ -368,10 +361,7 @@ def run_benchmark(
 ) -> dict[str, Any]:
     all_paths = _sample_paths(state_db)
     evicted, resident = _partition(all_paths)
-    print(
-        f"library: {len(all_paths)} playlist-member paths, {len(evicted)} "
-        f"iCloud-evicted, {len(resident)} resident"
-    )
+    print(f"library: {len(all_paths)} playlist-member paths, {len(evicted)} iCloud-evicted, {len(resident)} resident")
     if len(evicted) < 4:
         raise SystemExit(
             f"error: only {len(evicted)} evicted files available; this "
@@ -403,10 +393,7 @@ def run_benchmark(
         prefetch_paths,
         _prefetched_reads(prefetch_paths, depth, workers, max_bytes),
     )
-    print(
-        f"  {prefetched.arm}: {prefetched.items_per_s} items/s, "
-        f"{prefetched.mb_per_s} MB/s"
-    )
+    print(f"  {prefetched.arm}: {prefetched.items_per_s} items/s, {prefetched.mb_per_s} MB/s")
 
     # Warm control: the floor the feeder cannot beat once iCloud is out of the
     # picture. If prefetched-cold approaches this, materialisation has stopped
@@ -458,26 +445,29 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--sample", type=int, default=24,
+        "--sample",
+        type=int,
+        default=24,
         help="evicted files to draw, split across the two arms (default 24)",
     )
     parser.add_argument("--depth", type=int, default=DEFAULT_DEPTH)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
-    parser.add_argument(
-        "--seed", type=int, default=0, help="sample seed (default 0, reproducible)"
-    )
+    parser.add_argument("--seed", type=int, default=0, help="sample seed (default 0, reproducible)")
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--json", type=Path, default=None, help="write results here")
     parser.add_argument(
-        "--no-verify-eviction", dest="verify_eviction", action="store_false",
+        "--no-verify-eviction",
+        dest="verify_eviction",
+        action="store_false",
         help="skip the pre-arm residency check (only for a warm-only rerun)",
     )
     parser.add_argument(
-        "--consume-evicted-files", action="store_true",
+        "--consume-evicted-files",
+        action="store_true",
         help="REQUIRED to run the timed arms. They permanently materialise the "
-             "evicted files they sample, shrinking a non-renewable pool that "
-             "the farm's evicted-file smoke is drawn from. Off by default.",
+        "evicted files they sample, shrinking a non-renewable pool that "
+        "the farm's evicted-file smoke is drawn from. Off by default.",
     )
     parser.set_defaults(verify_eviction=True)
     return parser
@@ -544,9 +534,7 @@ def main(argv: list[str] | None = None) -> int:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
         print(f"wrote {args.json}")
-    return 0 if prefetched["implied_max_containers"] > serial[
-        "implied_max_containers"
-    ] else 1
+    return 0 if prefetched["implied_max_containers"] > serial["implied_max_containers"] else 1
 
 
 if __name__ == "__main__":

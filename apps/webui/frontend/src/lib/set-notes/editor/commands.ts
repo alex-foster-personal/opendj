@@ -14,7 +14,12 @@ export function truncateLabel(text: string, max = MENTION_CHARS): string {
 }
 
 /** Replaces `range` (the `@query`) with `@name` linked to `href`, then an unlinked space. */
-export function insertMentionLink(state: EditorState, range: Range, href: string, name: string): Transaction {
+export function insertMentionLink(
+	state: EditorState,
+	range: Range,
+	href: string,
+	name: string
+): Transaction {
 	const link = noteSchema.marks.link.create({ href });
 	const nodes = [noteSchema.text(`@${truncateLabel(name)}`, [link]), noteSchema.text(' ')];
 	return state.tr.replaceWith(range.from, range.to, nodes).scrollIntoView();
@@ -63,7 +68,10 @@ export function unlinkRange(state: EditorState, range: Range): Transaction {
 }
 
 /** The whole run of one link around `pos`, or null when `pos` is not on a link. */
-export function linkAt(state: Pick<EditorState, 'doc'>, pos: number): (Range & { href: string }) | null {
+export function linkAt(
+	state: Pick<EditorState, 'doc'>,
+	pos: number
+): (Range & { href: string }) | null {
 	const $pos = state.doc.resolve(pos);
 	const block = $pos.parent;
 	const linkType = noteSchema.marks.link;
@@ -72,7 +80,8 @@ export function linkAt(state: Pick<EditorState, 'doc'>, pos: number): (Range & {
 	if (!mark && $pos.textOffset === 0 && i > 0) mark = linkType.isInSet(block.child(--i).marks);
 	if (!mark) return null;
 	const link = mark;
-	const has = (k: number): boolean => k >= 0 && k < block.childCount && link.isInSet(block.child(k).marks);
+	const has = (k: number): boolean =>
+		k >= 0 && k < block.childCount && link.isInSet(block.child(k).marks);
 	let first = i;
 	let last = i;
 	while (has(first - 1)) first--;

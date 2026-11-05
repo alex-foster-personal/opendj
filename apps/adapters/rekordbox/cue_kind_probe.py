@@ -3,6 +3,7 @@
 Never decrypts, writes, or guesses slot letters from row order. Decrypt is a
 separate human step via ``apps.shared.rekordbox_db.decrypt_to_plain``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,10 +34,7 @@ def _live_rows(conn: sqlite3.Connection) -> list[tuple[Any, ...]]:
             "FROM djmdCue WHERE COALESCE(rb_local_deleted, 0) = 0"
         )
     else:
-        sql = (
-            "SELECT ContentID, Kind, InMsec, OutMsec, ActiveLoop, Comment "
-            "FROM djmdCue"
-        )
+        sql = "SELECT ContentID, Kind, InMsec, OutMsec, ActiveLoop, Comment FROM djmdCue"
     return conn.execute(sql).fetchall()
 
 
@@ -96,14 +94,8 @@ def _library_summary(rows: list[tuple[Any, ...]]) -> dict[str, Any]:
         if 4 in kinds and 9 in kinds:
             both_4_and_9.add(cid)
 
-    skip_4 = sum(
-        1 for kinds in kinds_by_content.values() if _is_contiguous_skipping_4(kinds)
-    )
-    include_4 = sum(
-        1
-        for kinds in kinds_by_content.values()
-        if _is_contiguous_including_4(kinds)
-    )
+    skip_4 = sum(1 for kinds in kinds_by_content.values() if _is_contiguous_skipping_4(kinds))
+    include_4 = sum(1 for kinds in kinds_by_content.values() if _is_contiguous_including_4(kinds))
 
     return {
         "live_rows_per_kind": {str(k): v for k, v in sorted(per_kind.items())},
@@ -171,15 +163,11 @@ def _track_details(
             continue
         if kind is None:
             continue
-        by_content[cid].append(
-            _row_payload(kind, in_msec, out_msec, active_loop, comment)
-        )
+        by_content[cid].append(_row_payload(kind, in_msec, out_msec, active_loop, comment))
 
     for cid in by_content:
         try:
-            row = conn.execute(
-                "SELECT Commnt FROM djmdContent WHERE ID = ?", (cid,)
-            ).fetchone()
+            row = conn.execute("SELECT Commnt FROM djmdContent WHERE ID = ?", (cid,)).fetchone()
             titles[cid] = str(row[0]) if row and row[0] is not None else None
         except sqlite3.Error:
             titles[cid] = None
@@ -216,9 +204,7 @@ def run_probe(
     try:
         rows = _live_rows(conn)
         payload = _library_summary(rows)
-        allowed = _filter_content_ids(
-            conn, rows, content_id=content_id, title_like=title_like
-        )
+        allowed = _filter_content_ids(conn, rows, content_id=content_id, title_like=title_like)
         if content_id is not None or title_like is not None:
             payload["tracks"] = _track_details(conn, rows, allowed)
         return payload
@@ -227,9 +213,7 @@ def run_probe(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Read-only djmdCue Kind survey for issue #4069"
-    )
+    parser = argparse.ArgumentParser(description="Read-only djmdCue Kind survey for issue #4069")
     parser.add_argument("--db", required=True, type=Path, help="Path to master.plain.db")
     parser.add_argument("--content-id", default=None, help="Filter to one ContentID")
     parser.add_argument("--title-like", default=None, help="Filter by djmdContent title substring")

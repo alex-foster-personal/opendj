@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 
 import { WCAG_AA_BODY_TEXT, contrastRatio, readCssVarHex } from './contrast.mjs';
 
-const read = (rel) => readFileSync(fileURLToPath(new URL(`../../src/${rel}`, import.meta.url)), 'utf8');
+const read = (rel) =>
+	readFileSync(fileURLToPath(new URL(`../../src/${rel}`, import.meta.url)), 'utf8');
 const TOPBAR = read('lib/components/rb/TopBar.svelte');
 const THEME_CSS = read('lib/rb/theme.css');
 

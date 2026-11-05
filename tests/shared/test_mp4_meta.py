@@ -15,6 +15,7 @@ Regression one-liners:
   - if an untouched ilst item is not byte-identical after a write then broken
   - if a failed write leaves the original changed or a temp file behind then broken
 """
+
 from __future__ import annotations
 
 import struct
@@ -60,7 +61,10 @@ def test_written_atoms_are_seen_by_two_independent_readers(tmp_path: Path, layou
 
     probed = ta.ffprobe_tags(m4a)  # ffmpeg does not export tmpo; the free-form atoms it does
     assert (probed["initialkey"], probed["isrc"], probed["rating"], probed["opendj_energy"]) == (
-        "8A", "USRC17607839", "4", "7"
+        "8A",
+        "USRC17607839",
+        "4",
+        "7",
     )
     assert probed["comment"] == "cue at 1:04 ☾"
     assert probed["artist"] == ta.STANDARD_TAGS["artist"]
@@ -214,9 +218,7 @@ def test_a_file_with_no_metadata_gets_an_ilst(tmp_path: Path) -> None:
     assert ta.decoded_audio_sha256(m4a) == pcm
 
 
-def test_a_failed_write_leaves_the_original_file_intact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_failed_write_leaves_the_original_file_intact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] writing fails midway [then] the original file is byte-identical, [else stop]."""
     m4a = ta.make_tagged_audio(tmp_path, "m4a-faststart")
     before = m4a.read_bytes()

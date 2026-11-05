@@ -20,8 +20,8 @@
 	<div class="panel">
 		<h2>Conflict detected</h2>
 		<p>
-			Another device changed <strong>{current.title ?? current.stable_id}</strong> while you were
-			editing. Choose how to resolve:
+			Another device changed <strong>{current.title ?? current.stable_id}</strong> while you were editing.
+			Choose how to resolve:
 		</p>
 		<table>
 			<thead>

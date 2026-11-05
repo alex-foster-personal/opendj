@@ -32,6 +32,9 @@ import type {
 export const SYSTEM_DEFAULT_OUTPUT_ID = 'default';
 export const SYSTEM_DEFAULT_OUTPUT_LABEL = 'System default output';
 
+/** macOS wired headphone jack name in CoreAudio / enumerateDevices listings. */
+export const EXTERNAL_HEADPHONES_JACK_LABEL = 'External Headphones';
+
 /** `withHeadphoneOperationTimeout` stamps this name so a timeout is told from
  * a rejection by type, never by matching message text. */
 export const IO_OPERATION_TIMEOUT_ERROR_NAME = 'HeadphoneOperationTimeoutError';

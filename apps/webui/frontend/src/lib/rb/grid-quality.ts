@@ -50,7 +50,9 @@ export const GRID_QUALITY_THRESHOLDS = {
 	steadyMinOnLine: 0.7
 } as const;
 
-export type GridQualityThresholds = { readonly [K in keyof typeof GRID_QUALITY_THRESHOLDS]: number };
+export type GridQualityThresholds = {
+	readonly [K in keyof typeof GRID_QUALITY_THRESHOLDS]: number;
+};
 
 export interface GridQuality {
 	gridClass: GridClass;
@@ -161,7 +163,12 @@ function _regionBeats(region: ConstRegion): number {
 
 /** `[t_lo, period]` of the line through the region's first and last beats,
  * when every beat in `lo..hi` is within `toleranceSec` of it. */
-function _fits(times: readonly number[], lo: number, hi: number, toleranceSec: number): [number, number] | null {
+function _fits(
+	times: readonly number[],
+	lo: number,
+	hi: number,
+	toleranceSec: number
+): [number, number] | null {
 	const start = times[lo];
 	const period = (times[hi] - times[lo]) / (hi - lo);
 	if (!(period > 0)) return null;
@@ -199,14 +206,22 @@ function _longestRegion(regions: readonly ConstRegion[], minBeats: number): numb
 	for (let index = 0; index < regions.length; index++) {
 		const region = regions[index];
 		if (_regionBeats(region) < minBeats) continue;
-		if (best === null || region.endSec - region.startSec > regions[best].endSec - regions[best].startSec) {
+		if (
+			best === null ||
+			region.endSec - region.startSec > regions[best].endSec - regions[best].startSec
+		) {
 			best = index;
 		}
 	}
 	return best;
 }
 
-function _tryMerge(span: Span, region: ConstRegion, before: boolean, toleranceSec: number): Span | null {
+function _tryMerge(
+	span: Span,
+	region: ConstRegion,
+	before: boolean,
+	toleranceSec: number
+): Span | null {
 	const period = (span.endSec - span.startSec) / span.beatCount;
 	const gapSec = before ? span.endSec - region.startSec : region.endSec - span.startSec;
 	const beatCount = _roundHalfEven(gapSec / period);
@@ -232,7 +247,12 @@ function _tryMerge(span: Span, region: ConstRegion, before: boolean, toleranceSe
 
 function _extend(regions: readonly ConstRegion[], reference: number, toleranceSec: number): Span {
 	const ref = regions[reference];
-	let span: Span = { startSec: ref.startSec, endSec: ref.endSec, beatCount: _regionBeats(ref), members: [ref] };
+	let span: Span = {
+		startSec: ref.startSec,
+		endSec: ref.endSec,
+		beatCount: _regionBeats(ref),
+		members: [ref]
+	};
 	for (let index = reference - 1; index >= 0; index--) {
 		span = _tryMerge(span, regions[index], true, toleranceSec) ?? span;
 	}
@@ -249,7 +269,8 @@ function _roundBpm(bpm: number, beatSpan: number, toleranceSec: number): number 
 	for (const step of ROUND_STEPS) {
 		const candidate = _roundHalfEven(bpm / step) * step;
 		if (candidate <= 0) continue;
-		if (Math.abs(60 / candidate - period) * half <= toleranceSec) return Number(candidate.toFixed(2));
+		if (Math.abs(60 / candidate - period) * half <= toleranceSec)
+			return Number(candidate.toFixed(2));
 	}
 	return Number(bpm.toFixed(2));
 }
@@ -265,7 +286,11 @@ function _steadyLine(
 	const reference = _longestRegion(regions, thresholds.minRegionBeats);
 	if (reference === null) return null;
 	const span = _extend(regions, reference, toleranceSec);
-	const lineBpm = _roundBpm(60 / ((span.endSec - span.startSec) / span.beatCount), span.beatCount, toleranceSec);
+	const lineBpm = _roundBpm(
+		60 / ((span.endSec - span.startSec) / span.beatCount),
+		span.beatCount,
+		toleranceSec
+	);
 	const period = 60 / lineBpm;
 	// Phase: the mean of every member beat's offset from the rounded grid.
 	const memberBeats = new Set<number>();
@@ -303,7 +328,9 @@ export function classifyGrid(
 ): GridQuality {
 	if (beatTimesSec.length < 2) return _unknown(REASON_NO_GRID_DATA);
 	if (beatBpms !== null && beatBpms.length !== beatTimesSec.length) {
-		throw new RangeError(`beatBpms has ${beatBpms.length} entries for ${beatTimesSec.length} beats`);
+		throw new RangeError(
+			`beatBpms has ${beatBpms.length} entries for ${beatTimesSec.length} beats`
+		);
 	}
 	const intervalCount = beatTimesSec.length - 1;
 	const intervals: number[] = new Array(intervalCount);
@@ -340,7 +367,13 @@ export function classifyGrid(
 		tempoMarkerCount
 	};
 	if (unevenIntervalCount === 0) {
-		return { ...base, gridClass: 'ok', steadyCoverage: null, steadyOnLine: null, steadyLineBpm: null };
+		return {
+			...base,
+			gridClass: 'ok',
+			steadyCoverage: null,
+			steadyOnLine: null,
+			steadyLineBpm: null
+		};
 	}
 	const steady = _steadyLine(beatTimesSec, thresholds);
 	const isSteady =
@@ -381,7 +414,8 @@ export function gridFlagClause(quality: GridQuality): string {
 		);
 	} else if (quality.gridClass === 'variable_tempo') {
 		const markers = quality.tempoMarkerCount;
-		const markerText = markers === null ? '' : `, ${markers} tempo marker${markers === 1 ? '' : 's'}`;
+		const markerText =
+			markers === null ? '' : `, ${markers} tempo marker${markers === 1 ? '' : 's'}`;
 		return `tempo changes through this track: ${unevenIntervalsPhrase(quality)}${markerText}`;
 	}
 	throw new Error(`not a flagged grid class: ${quality.gridClass}`);

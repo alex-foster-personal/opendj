@@ -145,3 +145,6 @@ export const EmptyReadOnly: Story = {
 
 /** Column mode: the tree hides and the column view shows. */
 export const ColumnMode: Story = { args: { mode: 'column', columnMounted: true } };
+
+/** ARTTHUMB-8728c: the playlist art view option on (variant A tiles and by-lines). */
+export const SidebarArt: Story = { args: { sidebarart: true } };

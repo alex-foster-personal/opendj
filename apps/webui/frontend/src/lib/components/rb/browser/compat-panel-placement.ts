@@ -27,7 +27,10 @@ export function compatPanelPlacement(
 	width: number,
 	viewport: { width: number; height: number }
 ): PanelPlacement {
-	const left = Math.max(PANEL_EDGE_GAP, Math.min(anchor.left, viewport.width - width - PANEL_EDGE_GAP));
+	const left = Math.max(
+		PANEL_EDGE_GAP,
+		Math.min(anchor.left, viewport.width - width - PANEL_EDGE_GAP)
+	);
 	const belowTop = anchor.bottom + ANCHOR_GAP;
 	const roomBelow = Math.max(0, viewport.height - PANEL_EDGE_GAP - belowTop);
 	const roomAbove = Math.max(0, anchor.top - ANCHOR_GAP - PANEL_EDGE_GAP);

@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.replay` (Plan 12-03)."""
+
 from __future__ import annotations
 
 import json
@@ -28,22 +29,44 @@ def _seed(sets_root: Path, session_id: str = "s1") -> Path:
         ),
     )
     transitions = [
-        {"idx": 0, "t_change_s": 100.0, "from_deck": "A", "to_deck": "B",
-         "from_track": "t1", "to_track": "t2", "predicted_class": "cut",
-         "confidence": 0.9, "model_version": "rules-v0",
-         "features": {"overlap_s": 0.1}},
-        {"idx": 1, "t_change_s": 500.0, "from_deck": "B", "to_deck": "A",
-         "from_track": "t2", "to_track": "t3", "predicted_class": "blend",
-         "confidence": 0.75, "model_version": "rules-v0",
-         "features": {"overlap_s": 12.0}},
-        {"idx": 2, "t_change_s": 900.0, "from_deck": "A", "to_deck": "B",
-         "from_track": "t3", "to_track": "t4", "predicted_class": "quick_double",
-         "confidence": 0.85, "model_version": "rules-v0",
-         "features": {"overlap_s": 1.0}},
+        {
+            "idx": 0,
+            "t_change_s": 100.0,
+            "from_deck": "A",
+            "to_deck": "B",
+            "from_track": "t1",
+            "to_track": "t2",
+            "predicted_class": "cut",
+            "confidence": 0.9,
+            "model_version": "rules-v0",
+            "features": {"overlap_s": 0.1},
+        },
+        {
+            "idx": 1,
+            "t_change_s": 500.0,
+            "from_deck": "B",
+            "to_deck": "A",
+            "from_track": "t2",
+            "to_track": "t3",
+            "predicted_class": "blend",
+            "confidence": 0.75,
+            "model_version": "rules-v0",
+            "features": {"overlap_s": 12.0},
+        },
+        {
+            "idx": 2,
+            "t_change_s": 900.0,
+            "from_deck": "A",
+            "to_deck": "B",
+            "from_track": "t3",
+            "to_track": "t4",
+            "predicted_class": "quick_double",
+            "confidence": 0.85,
+            "model_version": "rules-v0",
+            "features": {"overlap_s": 1.0},
+        },
     ]
-    (sess / "transitions.jsonl").write_text(
-        "\n".join(json.dumps(t) for t in transitions) + "\n"
-    )
+    (sess / "transitions.jsonl").write_text("\n".join(json.dumps(t) for t in transitions) + "\n")
     return sess
 
 

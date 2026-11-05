@@ -20,7 +20,10 @@ type IslandArgs = { load: () => Promise<{ default: FunctionComponent<object> }>;
 
 /** One meta types every story's args with the island's default generic; the
  *  twin and its props are checked against each other here instead. */
-function islandArgs<P extends object>(load: () => Promise<{ default: FunctionComponent<P> }>, props: P): IslandArgs {
+function islandArgs<P extends object>(
+	load: () => Promise<{ default: FunctionComponent<P> }>,
+	props: P
+): IslandArgs {
 	return { load: load as unknown as IslandArgs['load'], props };
 }
 
@@ -41,12 +44,16 @@ export const MountsTwin: Story = {
 /** Props reach the twin: a loading badge shows its phase in title and data attribute. */
 export const PassesProps: Story = {
 	args: islandArgs(() => import('$lib/components/rb/deck/SecondaryLoadBadge.tsx'), {
-		status: 'loading', error: null, phase: 'decode'
+		status: 'loading',
+		error: null,
+		phase: 'decode'
 	}),
 	play: async ({ canvasElement }: Ctx) => {
 		const island = host(canvasElement);
 		await expect(island).not.toBeNull();
-		await waitFor(() => expect(island!.querySelector('[data-testid="deck-secondary-load"]')).not.toBeNull());
+		await waitFor(() =>
+			expect(island!.querySelector('[data-testid="deck-secondary-load"]')).not.toBeNull()
+		);
 		const badge = island!.querySelector('[data-testid="deck-secondary-load"]') as HTMLElement;
 		await expect(badge).toHaveTextContent(/^STEMS$/);
 		await expect(badge).toHaveAttribute('data-stem-phase', 'decode');
@@ -59,20 +66,23 @@ let settledCommitted = false;
 
 /** Negative control: a settled badge renders nothing, so the host stays empty. */
 export const SettledRendersNothing: Story = {
-	args: islandArgs(async () => {
-		settledCommitted = false;
-		const { default: Badge } = await import('$lib/components/rb/deck/SecondaryLoadBadge.tsx');
-		type BadgeProps = Parameters<typeof Badge>[0];
-		// A wrapper with no DOM of its own: its effect runs only after React
-		// commits the real badge, which leaves the host empty when settled.
-		function Committed(props: BadgeProps) {
-			useEffect(() => {
-				settledCommitted = true;
-			}, []);
-			return createElement(Badge, props);
-		}
-		return { default: Committed };
-	}, { status: 'ready', error: null, phase: null }),
+	args: islandArgs(
+		async () => {
+			settledCommitted = false;
+			const { default: Badge } = await import('$lib/components/rb/deck/SecondaryLoadBadge.tsx');
+			type BadgeProps = Parameters<typeof Badge>[0];
+			// A wrapper with no DOM of its own: its effect runs only after React
+			// commits the real badge, which leaves the host empty when settled.
+			function Committed(props: BadgeProps) {
+				useEffect(() => {
+					settledCommitted = true;
+				}, []);
+				return createElement(Badge, props);
+			}
+			return { default: Committed };
+		},
+		{ status: 'ready', error: null, phase: null }
+	),
 	play: async ({ canvasElement }: Ctx) => {
 		const island = host(canvasElement);
 		await expect(island).not.toBeNull();
@@ -85,7 +95,9 @@ export const SettledRendersNothing: Story = {
 export const FailsLoud: Story = {
 	args: islandArgs<object>(() => Promise.reject(new Error('twin chunk missing')), {}),
 	play: async ({ canvasElement }: Ctx) => {
-		await waitFor(() => expect(canvasElement.querySelector('[data-react-island-failed]')).not.toBeNull());
+		await waitFor(() =>
+			expect(canvasElement.querySelector('[data-react-island-failed]')).not.toBeNull()
+		);
 		const failed = canvasElement.querySelector('[data-react-island-failed]') as HTMLElement;
 		await expect(failed).toHaveAttribute('role', 'alert');
 		await expect(failed).toHaveAttribute('title', 'React twin failed to load: twin chunk missing');

@@ -72,7 +72,9 @@ def tracked_tree_defect(store: Path) -> str | None:
         return None
     top = subprocess.run(
         (git, "-C", str(probe), "rev-parse", "--show-toplevel"),
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if top.returncode != 0:
         # A `.git` is there and git will not describe it (safe.directory
@@ -84,7 +86,9 @@ def tracked_tree_defect(store: Path) -> str | None:
     if relative != ".":
         ignored = subprocess.run(
             (git, "-C", str(root), "check-ignore", "-q", "--", f"{relative}/"),
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         # Index-aware on purpose (no `--no-index`): an ignore rule never
         # untracks a file already in the index, and check-ignore reports a
@@ -124,10 +128,7 @@ def store_owner_defect(store: Path, checkout: Path) -> str | None:
         return f"{owner_file} cannot be read ({exc}); repair or remove it"
     if owner == str(checkout):
         return None
-    return (
-        f"--out-dir {store} holds the ledger of checkout {owner}, not {checkout}; "
-        "use one store per main checkout"
-    )
+    return f"--out-dir {store} holds the ledger of checkout {owner}, not {checkout}; use one store per main checkout"
 
 
 class StoreOwnedElsewhere(RuntimeError):
@@ -377,15 +378,10 @@ def _source_claim_defect(wm: dict, sources_id: str, generations: dict[str, str])
     # Comparing them as equals made an open session's next turn read as a
     # replaced source. See `generation_conflict`.
     replaced = sorted(
-        name
-        for name in recorded.keys() & generations.keys()
-        if generation_conflict(recorded[name], generations[name])
+        name for name in recorded.keys() & generations.keys() if generation_conflict(recorded[name], generations[name])
     )
     if replaced:
-        return (
-            f"source(s) are not the generation this watermark covers "
-            f"({', '.join(replaced)}): full harvest"
-        )
+        return f"source(s) are not the generation this watermark covers ({', '.join(replaced)}): full harvest"
     return None
 
 
@@ -447,8 +443,7 @@ def read_watermark(store: Path, sources_id: str, generations: dict[str, str]) ->
         return 0.0, stale
     if rows < int(wm["ledger_rows"]) or digest != wm["ledger_digest"]:
         return 0.0, (
-            f"ledger moved under the watermark ({wm['ledger_rows']} rows -> {rows}): "
-            "checkout is stale, full harvest"
+            f"ledger moved under the watermark ({wm['ledger_rows']} rows -> {rows}): checkout is stale, full harvest"
         )
     return since, "incremental"
 

@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.audio (VOICE-01)."""
+
 from __future__ import annotations
 
 import pytest

@@ -3,6 +3,7 @@
 - [if] MDT_FRONTEND_BUILD_DIR is set [then] the web UI app, settings route,
   and engine SPA mount all use it, otherwise the development loop is broken.
 """
+
 from __future__ import annotations
 
 import json

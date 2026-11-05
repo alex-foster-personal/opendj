@@ -11,8 +11,8 @@ WHY THIS EXISTS
     sink, installs nothing, and calls no network.
 
     A finding is not an incident. The escalation contract is in
-    docs/perf/health-checks.md: [ERROR] and [WARN] findings get triaged into
-    docs/perf/QUEUE.md by the perf owner thread, which is where they become work.
+    (private path): [ERROR] and [WARN] findings get triaged into
+    (private path) by the perf owner thread, which is where they become work.
 
 INTERPRETER FLOOR: this file runs under ``/usr/bin/python3``, which is 3.9 on current
 macOS, and it is deliberately stdlib-only, exactly like
@@ -121,7 +121,7 @@ MINI-PRD
     R7 Remediation of what it finds .............................. out of scope
        This check DETECTS and POINTS. It does not restart probes, install launchd jobs,
        or edit the queue. Triage is a human/owner-thread decision, per
-       docs/perf/health-checks.md.
+       (private path).
 
 -Claude
 """
@@ -240,8 +240,7 @@ def _emit_text(results: list[CheckResult], days: int) -> None:
     triage = [r.check for r in results if r.severity in (SEVERITY_WARN, SEVERITY_ERROR)]
     if triage:
         print(
-            f"[WARN] triage: {', '.join(triage)} -> escalate into {QUEUE_DOC}, "
-            "contract in docs/perf/health-checks.md"
+            f"[WARN] triage: {', '.join(triage)} -> escalate into {QUEUE_DOC}, contract in (private path)"
         )
 
 
@@ -258,18 +257,14 @@ def _emit_json(results: list[CheckResult], days: int, exit_code: int, now: datet
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Read every Open DJ performance sink that exists on this machine."
-    )
+    parser = argparse.ArgumentParser(description="Read every Open DJ performance sink that exists on this machine.")
     parser.add_argument(
         "--days",
         type=int,
         default=DEFAULT_ERROR_LOG_DAYS,
         help=f"how many days of daily logs to scan (default {DEFAULT_ERROR_LOG_DAYS})",
     )
-    parser.add_argument(
-        "--json", action="store_true", help="emit machine-readable results on stdout"
-    )
+    parser.add_argument("--json", action="store_true", help="emit machine-readable results on stdout")
     args = parser.parse_args(argv)
     if args.days < 1:
         parser.error("--days must be at least 1")

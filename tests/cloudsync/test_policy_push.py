@@ -1,4 +1,5 @@
 """Unit tests for :mod:`apps.sync_hub.policy_push` row mapping."""
+
 from __future__ import annotations
 
 from apps.sync_hub import protocol

@@ -71,7 +71,9 @@
 			? null
 			: scanAutoApplyWarning(
 					// a running scan keeps the policy it started under, whatever the settings say now
-					scanRunning && scan !== null && scan.auto_apply_policy ? scan.auto_apply_policy : config.auto_apply_policy
+					scanRunning && scan !== null && scan.auto_apply_policy
+						? scan.auto_apply_policy
+						: config.auto_apply_policy
 				)
 	);
 	const selection = $derived(page === null ? [] : selectableIds(page.items, selected));
@@ -117,10 +119,14 @@
 					batches = loaded;
 				}),
 			() =>
-				applyWhileMounted(poller.isStopped, () => fetchProposals(query), (loaded) => {
-					page = loaded;
-					selected = new Set();
-				})
+				applyWhileMounted(
+					poller.isStopped,
+					() => fetchProposals(query),
+					(loaded) => {
+						page = loaded;
+						selected = new Set();
+					}
+				)
 		];
 		for (const step of steps) {
 			if (!(await step())) return; // the panel was destroyed mid-load: no more requests, no more writes
@@ -130,7 +136,8 @@
 
 	const poller = createScanPoller<TitleFixScan>({
 		pollMs: POLL_MS,
-		fetchScan: () => (scan === null ? Promise.reject(new Error('no scan to poll')) : fetchScan(scan.scan_id)),
+		fetchScan: () =>
+			scan === null ? Promise.reject(new Error('no scan to poll')) : fetchScan(scan.scan_id),
 		onScan: (next) => {
 			scan = next;
 		},
@@ -140,10 +147,14 @@
 					batches = latest;
 				});
 				if (!loaded) return; // the panel was destroyed while the batches loaded: no proposals request either
-				await applyWhileMounted(poller.isStopped, () => fetchProposals(query), (latest) => {
-					page = latest;
-					selected = new Set();
-				});
+				await applyWhileMounted(
+					poller.isStopped,
+					() => fetchProposals(query),
+					(latest) => {
+						page = latest;
+						selected = new Set();
+					}
+				);
 			}),
 		onError: (exc) => {
 			error = message(exc);
@@ -166,13 +177,16 @@
 	}
 
 	function toggleAll(on: boolean): void {
-		selected = on && page !== null
-			? new Set(page.items.filter((p) => p.state === 'pending').map((p) => p.proposal_id))
-			: new Set();
+		selected =
+			on && page !== null
+				? new Set(page.items.filter((p) => p.state === 'pending').map((p) => p.proposal_id))
+				: new Set();
 	}
 
 	function describeOutcome(verb: string, outcome: TitleFixOutcome): string {
-		const skipped = outcome.skipped.map((s) => `${s.proposal_id.slice(0, 8)}: ${s.reason}`).join('; ');
+		const skipped = outcome.skipped
+			.map((s) => `${s.proposal_id.slice(0, 8)}: ${s.reason}`)
+			.join('; ');
 		return (
 			`${verb} ${outcome.applied.length}` +
 			(skipped ? `, skipped ${outcome.skipped.length} (${skipped})` : '') +
@@ -255,10 +269,11 @@
 <section class="panel" id="title-fix">
 	<h3>Fix broken track metadata</h3>
 	<p class="sub">
-		Finds tracks whose artist, key, version or junk text is jammed into the title. With
-		auto-apply off, a scan only proposes and nothing changes until you select rows and Apply;
-		with it on, a finished scan applies its eligible rows itself. Every apply can be undone
-		below. CLI: <code>python -m apps.webui.title_fix_cli</code>.
+		Finds tracks whose artist, key, version or junk text is jammed into the title. With auto-apply
+		off, a scan only proposes and nothing changes until you select rows and Apply; with it on, a
+		finished scan applies its eligible rows itself. Every apply can be undone below. CLI: <code
+			>python -m apps.webui.title_fix_cli</code
+		>.
 	</p>
 
 	{#if error !== null}
@@ -274,7 +289,9 @@
 			<label title="When off, scans refuse to run (a scan spends OpenRouter credit)">
 				<input type="checkbox" bind:checked={draftEnabled} /> Enabled
 			</label>
-			<label title="What may be applied WITHOUT selecting it. Review, project and not-music rows are never auto-applied.">
+			<label
+				title="What may be applied WITHOUT selecting it. Review, project and not-music rows are never auto-applied."
+			>
 				Auto-apply
 				<select bind:value={draftPolicy}>
 					{#each POLICIES as policy (policy.value)}
@@ -282,7 +299,9 @@
 					{/each}
 				</select>
 			</label>
-			<label title="A scan stops once its OpenRouter spend reaches this many US dollars (checked between chunks of rows)">
+			<label
+				title="A scan stops once its OpenRouter spend reaches this many US dollars (checked between chunks of rows)"
+			>
 				Spend cap per scan (USD)
 				<input type="number" min="0.01" max="100" step="0.01" bind:value={draftCap} />
 			</label>
@@ -320,7 +339,9 @@
 				placeholder="paste an OpenRouter key"
 				bind:value={keyInput}
 			/>
-			<button type="button" disabled={busy || keyInput.trim() === ''} onclick={onSaveKey}>Save key</button>
+			<button type="button" disabled={busy || keyInput.trim() === ''} onclick={onSaveKey}
+				>Save key</button
+			>
 			<button
 				type="button"
 				disabled={busy || config.key.source !== 'user'}
@@ -341,10 +362,9 @@
 			<span class="warn" role="note">{autoApplyWarning}</span>
 		{/if}
 		{#if scan !== null}
-			<span
-				class="readout"
-				title="Rows the fixer has processed out of the rows this scan requested"
-			>{scanProgressLabel(scan)}</span>
+			<span class="readout" title="Rows the fixer has processed out of the rows this scan requested"
+				>{scanProgressLabel(scan)}</span
+			>
 			<span
 				class="readout"
 				title="OpenRouter spend so far for this scan, against its spend cap (US dollars)"
@@ -402,8 +422,12 @@
 			<button type="button" disabled={busy || selection.length === 0} onclick={onReject}>
 				Reject selected
 			</button>
-			<span class="readout" title="Proposals matching the filter, across all pages">{page.total} matching</span>
-			<button type="button" disabled={busy || query.offset === 0} onclick={() => onPage(-1)}>Prev</button>
+			<span class="readout" title="Proposals matching the filter, across all pages"
+				>{page.total} matching</span
+			>
+			<button type="button" disabled={busy || query.offset === 0} onclick={() => onPage(-1)}
+				>Prev</button
+			>
 			<button
 				type="button"
 				disabled={busy || query.offset + PAGE_SIZE >= page.total}
@@ -448,7 +472,8 @@
 						<td
 							class="readout"
 							title="JEV's probability that the regex proposal is correct (0 to 1); - when JEV was not asked"
-						>{formatConfidence(row.confidence)}</td>
+							>{formatConfidence(row.confidence)}</td
+						>
 						<td>{row.source}</td>
 						<td>{row.state}</td>
 					</tr>
@@ -467,7 +492,8 @@
 		{#each batches as batch (batch.batch_id)}
 			<li>
 				<code>{batch.batch_id.slice(0, 8)}</code>
-				{batch.kind} - <span class="readout" title="Proposals applied in this batch">{batch.proposal_count}</span>
+				{batch.kind} -
+				<span class="readout" title="Proposals applied in this batch">{batch.proposal_count}</span>
 				rows - {batch.created_at}
 				{#if batch.undone_at === null}
 					<button type="button" disabled={busy} onclick={() => onUndo(batch.batch_id)}>Undo</button>

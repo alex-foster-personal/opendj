@@ -53,8 +53,20 @@ const status = (over: Partial<CloudSyncStatus> = {}): CloudSyncStatus => ({
 	excluded_total: 4,
 	endpoint: HUB,
 	recent_results: [
-		{ finished_at: '2026-10-14T21:03:41Z', status: 'ok', message: 'pushed 12, pulled 3', pushed: 12, pulled: 3 },
-		{ finished_at: '2026-10-14T20:33:12Z', status: 'error', message: 'ConnectError: hub unreachable', pushed: 0, pulled: 0 }
+		{
+			finished_at: '2026-10-14T21:03:41Z',
+			status: 'ok',
+			message: 'pushed 12, pulled 3',
+			pushed: 12,
+			pulled: 3
+		},
+		{
+			finished_at: '2026-10-14T20:33:12Z',
+			status: 'error',
+			message: 'ConnectError: hub unreachable',
+			pushed: 0,
+			pulled: 0
+		}
 	],
 	update_required: null,
 	...over
@@ -66,7 +78,10 @@ const status = (over: Partial<CloudSyncStatus> = {}): CloudSyncStatus => ({
  * headline or decision the app would not.
  */
 const derive = (s: CloudSyncStatus | null, c: Config | null, playing = false) => {
-	const gate = { appPosture: 'prep' as const, uiMirror: playing ? { decks: { '1': { playing: true } } } : null };
+	const gate = {
+		appPosture: 'prep' as const,
+		uiMirror: playing ? { decks: { '1': { playing: true } } } : null
+	};
 	return {
 		status: s,
 		config: c,
@@ -120,7 +135,12 @@ export const DeferredWhilePlaying: Story = { args: derive(status(), config(), tr
 
 /** The last result failed: a summary plus a technical-details disclosure. */
 export const LastResultError: Story = {
-	args: derive(status({ last_result: { status: 'error', message: 'HTTP 409: another sync is already running' } }), config())
+	args: derive(
+		status({
+			last_result: { status: 'error', message: 'HTTP 409: another sync is already running' }
+		}),
+		config()
+	)
 };
 
 /** Hub URL from the environment: the form says it overrides the file. */
@@ -139,7 +159,8 @@ export const SyncedNotice: Story = {
 		notice: {
 			kind: 'ok',
 			text: 'Sync ok: pushed 12, pulled 3.',
-			title: 'Rows this Sync now pushed to the hub (12) and pulled from it (3); 1 round(s), hub sequence 4182'
+			title:
+				'Rows this Sync now pushed to the hub (12) and pulled from it (3); 1 round(s), hub sequence 4182'
 		}
 	}
 };
@@ -147,7 +168,14 @@ export const SyncedNotice: Story = {
 /** Not configured: no hub URL, so Sync now says to set one. */
 export const NotConfigured: Story = {
 	args: derive(
-		status({ enabled: false, configured: false, running: false, last_result: null, recent_results: [], endpoint: null }),
+		status({
+			enabled: false,
+			configured: false,
+			running: false,
+			last_result: null,
+			recent_results: [],
+			endpoint: null
+		}),
 		config({ configured: false, enabled: false, hub_url: null, machine_name: null })
 	)
 };

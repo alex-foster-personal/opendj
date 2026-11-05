@@ -66,6 +66,8 @@ blocked half.  ``(private path)`` iterates it, so:
   module.reconcile.apply                      live master.db rows
   module.reconcile.remove_track               live master.db row deletes
   module.reconcile.prefix_dead_playlists      live master.db playlist renames
+  module.rekordbox_ingestion.create_blank_playlists
+                                              live master.db new EMPTY playlists
   module.dedup.apply                          live master.db FolderPath rewrite
                                               plus a raw copy2 restore
   module.sync.usb.pioneer.export_workflow     USB volume exportLibrary.db
@@ -280,6 +282,16 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         entrypoint="apps.smartlists.rb_writer.RBPlaylistWriter._assert_safe_to_write",
         target="live master.db playlists (create / diff / apply)",
         guard_site="apps/smartlists/rb_writer.py",
+    ),
+    WriteSurface(
+        surface_id="module.rekordbox_ingestion.create_blank_playlists",
+        kind="module",
+        entrypoint="python -m apps.rekordbox_ingestion playlists --live",
+        target=(
+            "live master.db djmdPlaylist (creates one folder + EMPTY playlists, "
+            "never edits or deletes) plus masterPlaylists6.xml"
+        ),
+        guard_site="apps/rekordbox_ingestion/playlists.py",
     ),
     WriteSurface(
         surface_id="module.sync.rb_writer.write_cues",

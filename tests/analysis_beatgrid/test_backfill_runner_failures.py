@@ -6,6 +6,7 @@ ceiling. These tests call `run_runner` directly with a provisioned
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,11 +24,7 @@ from apps.analysis.backends.own_beatgrid import (
 def _write_runner(tmp_path: Path, body: str) -> Path:
     script = tmp_path / "fake_runner.py"
     script.write_text(
-        "#!/usr/bin/env python3\n"
-        "from __future__ import annotations\n"
-        "import sys\n"
-        "from pathlib import Path\n\n"
-        f"{body}\n",
+        f"#!/usr/bin/env python3\nfrom __future__ import annotations\nimport sys\nfrom pathlib import Path\n\n{body}\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -60,13 +57,8 @@ def test_a_nonzero_runner_exit_is_backend_unavailable_not_per_track(
     assert not isinstance(caught, TrackVanished)
 
 
-def test_invalid_runner_json_is_a_payload_error_not_unreadable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = (
-        _out_path_reader()
-        + "_out_path().write_text('{not json', encoding='utf-8')\n"
-    )
+def test_invalid_runner_json_is_a_payload_error_not_unreadable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    body = _out_path_reader() + "_out_path().write_text('{not json', encoding='utf-8')\n"
     script = _write_runner(tmp_path, body)
     monkeypatch.setenv(RUNNER_PYTHON_ENV, str(script))
     audio_path = tmp_path / "a.wav"
@@ -78,13 +70,8 @@ def test_invalid_runner_json_is_a_payload_error_not_unreadable(
     assert not isinstance(exc_info.value, TrackUnreadable)
 
 
-def test_a_non_object_runner_json_is_a_payload_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = (
-        _out_path_reader()
-        + "_out_path().write_text('[]', encoding='utf-8')\n"
-    )
+def test_a_non_object_runner_json_is_a_payload_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    body = _out_path_reader() + "_out_path().write_text('[]', encoding='utf-8')\n"
     script = _write_runner(tmp_path, body)
     monkeypatch.setenv(RUNNER_PYTHON_ENV, str(script))
     audio_path = tmp_path / "a.wav"

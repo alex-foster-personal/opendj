@@ -25,7 +25,11 @@
  *   the promise, drew a second toast, and never touched the network)
  */
 import { expect, test, type Page } from '@playwright/test';
-import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS, DECK_LOAD_YIELD_MAX_MS } from '../../src/lib/rb/boot-scheduler';
+import {
+	BOOT_IDLE_TIMEOUT_MS,
+	BOOT_QUIET_MS,
+	DECK_LOAD_YIELD_MAX_MS
+} from '../../src/lib/rb/boot-scheduler';
 import { spendBootLanding } from './support/boot-landing';
 
 /** How long the failure surface may take to appear after the shell is up.
@@ -65,8 +69,9 @@ async function gotoShellReady(page: Page, path: string): Promise<void> {
  * layout raised it and what it said. */
 async function errorToastMessages(page: Page): Promise<string[]> {
 	return page.evaluate(() => {
-		const ring = (window as unknown as { __mdtPerfLog?: () => readonly { kind: string; message: string }[] })
-			.__mdtPerfLog;
+		const ring = (
+			window as unknown as { __mdtPerfLog?: () => readonly { kind: string; message: string }[] }
+		).__mdtPerfLog;
 		if (ring === undefined) return [];
 		return ring()
 			.filter((event) => event.kind === 'toast-error')
@@ -80,7 +85,9 @@ const PIN_LAYER_CHUNK = '**/FeedbackPinLayer*';
 const SETUP_OVERLAY_CHUNK = '**/SetupOverlay*';
 
 test.describe('lazy root-layout chunks fail visibly', () => {
-	test('a pin-shell chunk that cannot be fetched raises an error toast and marks the slot', async ({ page }) => {
+	test('a pin-shell chunk that cannot be fetched raises an error toast and marks the slot', async ({
+		page
+	}) => {
 		test.setTimeout(TEST_BUDGET_MS);
 		// The marked slot lives in the APP-SHELL topbar, which the PERFMODE-11
 		// cold-open redirect replaces with the performance top bar: at e5cb23e5
@@ -102,7 +109,10 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 		// dismisses itself, so the slot is the durable thing to wait on first.
 		const slot = page.getByRole('img', { name: 'Comment pins failed to load' });
 		await expect(slot).toBeVisible({ timeout: FAILURE_SURFACE_MS });
-		await expect(slot).toHaveAttribute('title', /^Comment pins failed to load: .+Reload the page to retry\.$/);
+		await expect(slot).toHaveAttribute(
+			'title',
+			/^Comment pins failed to load: .+Reload the page to retry\.$/
+		);
 		await expect(page.locator('.toast-stack .toast.error')).toBeVisible();
 		await expect
 			.poll(() => errorToastMessages(page))
@@ -112,7 +122,9 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 		await expect(page.getByTestId('header-status-strip')).toBeVisible();
 	});
 
-	test('a setup chunk that cannot be fetched shows a retry surface, and the retry fetches it again', async ({ page }) => {
+	test('a setup chunk that cannot be fetched shows a retry surface, and the retry fetches it again', async ({
+		page
+	}) => {
 		test.setTimeout(TEST_BUDGET_MS);
 		let aborted = 0;
 		await page.route(SETUP_OVERLAY_CHUNK, (route) => {
@@ -143,7 +155,9 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 			if (/SetupOverlay/.test(request.url())) requested.push(request.url());
 		});
 		await failed.getByRole('button', { name: 'Reload and retry' }).click();
-		await expect(page.getByRole('dialog', { name: 'First-run setup' })).toBeVisible({ timeout: 20_000 });
+		await expect(page.getByRole('dialog', { name: 'First-run setup' })).toBeVisible({
+			timeout: 20_000
+		});
 		await expect(page.getByRole('alertdialog', { name: 'Setup failed to load' })).toHaveCount(0);
 		expect(requested.length, 'the retry never requested the setup chunk').toBeGreaterThan(0);
 	});

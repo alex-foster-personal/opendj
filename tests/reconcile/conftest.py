@@ -1,7 +1,7 @@
 """Shared real-library precondition for tests/reconcile.
 
 Several tests in this package assert against the actual on-disk library
-(``data/state/state.db``, or ``$MDT_DATA_DIR/state/state.db``) rather than a
+(``(private path)``, or ``$MDT_DATA_DIR/state/state.db``) rather than a
 synthetic fixture, and must skip cleanly when there is no real library to
 point at. "No real library" means the db is absent, unreadable, or present
 with a schema but zero track rows -- a bare-schema state.db (created by
@@ -55,7 +55,6 @@ def _real_track_count(state_db: Path) -> int | None:
         ) from exc
     _require_current_schema(state_db, version)
     return count
-
 
 
 def _require_current_schema(state_db: Path, version: int | None) -> None:

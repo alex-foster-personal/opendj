@@ -73,7 +73,11 @@
 			<span>Axis</span>
 			<select value={axis} onchange={applyAxis} aria-label="Wheel axis">
 				{#each data?.axes ?? [] as axisOption (axisOption.key)}
-					<option value={axisOption.key} disabled={!axisOption.enabled} title={axisOption.reason ?? undefined}>
+					<option
+						value={axisOption.key}
+						disabled={!axisOption.enabled}
+						title={axisOption.reason ?? undefined}
+					>
 						{axisOption.label}{axisOption.enabled ? '' : ' (disabled)'}
 					</option>
 				{/each}
@@ -82,11 +86,7 @@
 	</header>
 
 	{#if error}
-		<div
-			class="error"
-			role="alert"
-			title="not implemented - see PARITY-TODO (library unavailable)"
-		>
+		<div class="error" role="alert" title="not implemented - see PARITY-TODO (library unavailable)">
 			Library wheel unavailable: {error}
 		</div>
 	{/if}
@@ -95,7 +95,8 @@
 		{@const currentData = data}
 		{#if !currentData.selected_axis_enabled}
 			<p class="axis-note" title={currentData.selected_axis_reason ?? undefined}>
-				{currentData.axes.find((a) => a.key === currentData.axis)?.label ?? currentData.axis} is disabled: {currentData.selected_axis_reason}
+				{currentData.axes.find((a) => a.key === currentData.axis)?.label ?? currentData.axis} is disabled:
+				{currentData.selected_axis_reason}
 			</p>
 		{/if}
 		<div class="summary" aria-label="Library summary">
@@ -105,9 +106,7 @@
 			<div title="Genre families with at least one classified track">
 				<strong>{data.families.length}</strong><span>families</span>
 			</div>
-			<div
-				title="Tracks whose genre matches no known family, or with no rekordbox mapping at all"
-			>
+			<div title="Tracks whose genre matches no known family, or with no rekordbox mapping at all">
 				<strong>{data.unclassified_track_count}</strong><span>unclassified</span>
 			</div>
 		</div>
@@ -131,8 +130,8 @@
 							fill-opacity="0.85"
 							stroke="var(--surface)"
 							stroke-width="0.004"
-							vector-effect="non-scaling-stroke"
-						><title>{wedgeTooltip(wedge)}</title></path>
+							vector-effect="non-scaling-stroke"><title>{wedgeTooltip(wedge)}</title></path
+						>
 					{/each}
 					{#each layout.genres as wedge, i (i)}
 						<path
@@ -141,8 +140,8 @@
 							fill-opacity="0.6"
 							stroke="var(--surface)"
 							stroke-width="0.004"
-							vector-effect="non-scaling-stroke"
-						><title>{wedgeTooltip(wedge)}</title></path>
+							vector-effect="non-scaling-stroke"><title>{wedgeTooltip(wedge)}</title></path
+						>
 					{/each}
 					{#each layout.tracks as wedge (wedge.stableId)}
 						<path
@@ -151,8 +150,8 @@
 							fill-opacity="0.4"
 							stroke="var(--surface)"
 							stroke-width="0.004"
-							vector-effect="non-scaling-stroke"
-						><title>{wedgeTooltip(wedge)}</title></path>
+							vector-effect="non-scaling-stroke"><title>{wedgeTooltip(wedge)}</title></path
+						>
 					{/each}
 				</g>
 			</svg>
@@ -163,24 +162,102 @@
 </section>
 
 <style>
-	.wheel-page { max-width: 1180px; margin: 0 auto; }
-	header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.3rem; }
-	h2 { margin: 0.1rem 0 0.25rem; font-size: 1.75rem; letter-spacing: -0.03em; }
-	.eyebrow { margin: 0; color: var(--accent); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.16em; }
-	.subtitle, .empty { margin: 0; color: var(--muted); }
-	label { display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.72rem; }
-	label select { min-width: 170px; }
-	.error { padding: 0.7rem 0.9rem; margin-bottom: 1rem; background: color-mix(in srgb, var(--danger) 15%, var(--surface)); border: 1px solid var(--danger); border-radius: 7px; }
-	.axis-note { margin: 0 0 1rem; padding: 0.6rem 0.85rem; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; color: var(--muted); font-size: 0.82rem; }
-	.summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); background: var(--surface); border-radius: 9px; margin-bottom: 1rem; }
-	.summary div { display: grid; gap: 0.15rem; padding: 1rem 1.15rem; border-right: 1px solid var(--border); }
-	.summary div:last-child { border-right: 0; }
-	.summary strong { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
-	.summary span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
-	.wheel { display: block; width: 100%; max-width: 620px; margin: 0 auto; }
+	.wheel-page {
+		max-width: 1180px;
+		margin: 0 auto;
+	}
+	header {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1.3rem;
+	}
+	h2 {
+		margin: 0.1rem 0 0.25rem;
+		font-size: 1.75rem;
+		letter-spacing: -0.03em;
+	}
+	.eyebrow {
+		margin: 0;
+		color: var(--accent);
+		font-size: 0.68rem;
+		font-weight: 800;
+		letter-spacing: 0.16em;
+	}
+	.subtitle,
+	.empty {
+		margin: 0;
+		color: var(--muted);
+	}
+	label {
+		display: grid;
+		gap: 0.3rem;
+		color: var(--muted);
+		font-size: 0.72rem;
+	}
+	label select {
+		min-width: 170px;
+	}
+	.error {
+		padding: 0.7rem 0.9rem;
+		margin-bottom: 1rem;
+		background: color-mix(in srgb, var(--danger) 15%, var(--surface));
+		border: 1px solid var(--danger);
+		border-radius: 7px;
+	}
+	.axis-note {
+		margin: 0 0 1rem;
+		padding: 0.6rem 0.85rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 7px;
+		color: var(--muted);
+		font-size: 0.82rem;
+	}
+	.summary {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		border: 1px solid var(--border);
+		background: var(--surface);
+		border-radius: 9px;
+		margin-bottom: 1rem;
+	}
+	.summary div {
+		display: grid;
+		gap: 0.15rem;
+		padding: 1rem 1.15rem;
+		border-right: 1px solid var(--border);
+	}
+	.summary div:last-child {
+		border-right: 0;
+	}
+	.summary strong {
+		font-size: 1.45rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.summary span {
+		color: var(--muted);
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.wheel {
+		display: block;
+		width: 100%;
+		max-width: 620px;
+		margin: 0 auto;
+	}
 	@media (max-width: 900px) {
-		.summary { grid-template-columns: 1fr; }
-		.summary div { border-right: 0; border-bottom: 1px solid var(--border); }
-		.summary div:last-child { border-bottom: 0; }
+		.summary {
+			grid-template-columns: 1fr;
+		}
+		.summary div {
+			border-right: 0;
+			border-bottom: 1px solid var(--border);
+		}
+		.summary div:last-child {
+			border-bottom: 0;
+		}
 	}
 </style>

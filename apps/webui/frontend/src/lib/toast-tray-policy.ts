@@ -29,8 +29,6 @@ export function selectVisibleToasts<T extends { exiting?: boolean }>(
 }
 
 /** Index of the oldest non-exiting toast to evict when over capacity, or -1. */
-export function oldestNonExitingIndex<T extends { exiting?: boolean }>(
-	all: readonly T[]
-): number {
+export function oldestNonExitingIndex<T extends { exiting?: boolean }>(all: readonly T[]): number {
 	return all.findIndex((t) => t.exiting !== true);
 }

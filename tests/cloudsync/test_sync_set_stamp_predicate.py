@@ -87,9 +87,7 @@ def test_inconclusive_message_parent_held_only_omits_normalize_stamps(
         by_kind = sync_set.exclusion_counts_by_kind(conn)
         assert by_kind.get("identity_dup")
         assert by_kind.get("parent_held")
-        message = sync_set.format_inconclusive_exclusion_summary(
-            conn, held, 0, hub_quarantined=0
-        )
+        message = sync_set.format_inconclusive_exclusion_summary(conn, held, 0, hub_quarantined=0)
     finally:
         conn.close()
     assert "normalize_stamps" not in message

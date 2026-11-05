@@ -66,7 +66,7 @@ from apps.analysis.pcm_fingerprint import (
     canonical_decode_fingerprint,
     require_resampler,
 )
-from apps.analysis_key import canon, flags, profiles, segments
+from apps.analysis_key import canon, flags, key_guess, profiles, segments
 from apps.analysis_key.lane_payload import (
     REASON_NO_TONAL_CENTER,
     REASON_STALE_DEPENDENCY,
@@ -116,6 +116,7 @@ def _record(
     duration_s: float,
     sample_rate: int,
     decode_fingerprint: str,
+    features_blob: dict[str, Any] | None = None,
 ) -> AnalysisRecord:
     """One lane block into one v2 record, with the pre-v2 columns derived."""
     key_camelot = ""
@@ -142,6 +143,7 @@ def _record(
         key_confidence=key_confidence,
         energy=0,
         energy_source="inferred",
+        features_blob=dict(features_blob or {}),
         producer=PRODUCER,
         producer_version=PRODUCER_VERSION,
         # Model-free: no third-party weights and none of ours either.
@@ -215,6 +217,9 @@ def record_from_estimate(
     return _record(
         stable_id=stable_id, lane=lane, duration_s=duration_s,
         sample_rate=sample_rate, decode_fingerprint=decode_fingerprint,
+        # KEY-GUESS-01: the declined lane stays payload-free; its best
+        # candidate rides beside it so the library can show "8A?".
+        features_blob=key_guess.guess_blob(estimate, flag),
     )
 
 

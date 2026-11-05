@@ -38,7 +38,10 @@ export interface RecordedAnchor extends PositionAnchor {
 }
 
 /** The anchor if it still describes the deck's current timeline mapping, else null. */
-export function validAnchor(recorded: RecordedAnchor | null, now: AnchorNow): PositionAnchor | null {
+export function validAnchor(
+	recorded: RecordedAnchor | null,
+	now: AnchorNow
+): PositionAnchor | null {
 	if (recorded === null) return null;
 	const { basis } = recorded;
 	const same =
@@ -48,5 +51,11 @@ export function validAnchor(recorded: RecordedAnchor | null, now: AnchorNow): Po
 		now.playing &&
 		!now.loop_active &&
 		basis.master_delay_ms === now.master_delay_ms;
-	return same ? { position_ms: recorded.position_ms, context_sec: recorded.context_sec, pitch: recorded.pitch } : null;
+	return same
+		? {
+				position_ms: recorded.position_ms,
+				context_sec: recorded.context_sec,
+				pitch: recorded.pitch
+			}
+		: null;
 }

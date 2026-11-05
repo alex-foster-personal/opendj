@@ -50,9 +50,7 @@ def lyric_align_score(
         raise ValueError("reference and predicted onsets must have the same number of word rows")
 
     absolute_errors_s: list[float] = []
-    for index, (reference_s, predicted_s) in enumerate(
-        zip(reference_onsets_s, predicted_onsets_s, strict=True)
-    ):
+    for index, (reference_s, predicted_s) in enumerate(zip(reference_onsets_s, predicted_onsets_s, strict=True)):
         _validate_track_second(reference_s, "reference", index)
         if predicted_s is None:
             continue
@@ -66,12 +64,8 @@ def lyric_align_score(
 
     return LyricAlignScore(
         medae_s=float(median(absolute_errors_s)),
-        pco_300ms=sum(
-            error <= PCO_300MS_TOLERANCE_S + _FLOAT_SLACK_S for error in absolute_errors_s
-        )
-        / words_scored,
-        catastrophe_rate=sum(error > CATASTROPHE_TOLERANCE_S for error in absolute_errors_s)
-        / words_scored,
+        pco_300ms=sum(error <= PCO_300MS_TOLERANCE_S + _FLOAT_SLACK_S for error in absolute_errors_s) / words_scored,
+        catastrophe_rate=sum(error > CATASTROPHE_TOLERANCE_S for error in absolute_errors_s) / words_scored,
         words_scored=words_scored,
         words_reference=words_reference,
         words_unplaced=words_reference - words_scored,

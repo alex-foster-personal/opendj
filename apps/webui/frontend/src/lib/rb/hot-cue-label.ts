@@ -1,7 +1,4 @@
-import {
-	activeLyricLineIndex,
-	lyricLinesSpanningRange
-} from '$lib/components/rb/wave/lyrics-lane';
+import { activeLyricLineIndex, lyricLinesSpanningRange } from '$lib/components/rb/wave/lyrics-lane';
 import type { AnlzBeat } from './anlz-types';
 import type { HotCue } from './hot-cue-types';
 
@@ -26,7 +23,12 @@ function beatCoordinate(beats: readonly Pick<AnlzBeat, 't'>[], time: number): nu
 	return interval > 0 ? previous + (time - beats[previous].t) / interval : null;
 }
 
-function insertLyricChevron(text: string, startMs: number, endMs: number | null, atMs: number): string {
+function insertLyricChevron(
+	text: string,
+	startMs: number,
+	endMs: number | null,
+	atMs: number
+): string {
 	const words = text.trim().split(/\s+/).filter(Boolean);
 	if (words.length === 0) return text;
 	let fraction = 0;

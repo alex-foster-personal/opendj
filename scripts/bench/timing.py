@@ -70,9 +70,7 @@ def time_call(call: Callable[[], object]) -> Sample:
     return Sample(cpu_ms=cpu_ns / 1_000_000, wall_ms=wall_ns / 1_000_000)
 
 
-def interleaved_samples(
-    calls: Mapping[str, Callable[[], object]], iterations: int
-) -> dict[str, list[Sample]]:
+def interleaved_samples(calls: Mapping[str, Callable[[], object]], iterations: int) -> dict[str, list[Sample]]:
     """Time every arm once per iteration, alternating which arm goes first.
 
     Interleaving is what keeps a slow stretch of the machine from landing on one

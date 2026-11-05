@@ -10,8 +10,7 @@
 </script>
 
 <span class="status-chip {STATUS_CLASS[status]}">
-	{status}{#if status === 'verified' || status === 'merged'}<span class="check"
-			>&#10003;</span
+	{status}{#if status === 'verified' || status === 'merged'}<span class="check">&#10003;</span
 		>{:else if status === 'user-finalized'}<span class="check">&#10003;&#10003;</span>{/if}
 </span>
 

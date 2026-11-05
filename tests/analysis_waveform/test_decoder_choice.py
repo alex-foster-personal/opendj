@@ -10,6 +10,7 @@ suffix, and it is part of the local cache key.
   - [if] a forced decoder that is missing silently falls back to the other [then] fail, [else stop].
   - [if] an AAC file goes to the engine while ffmpeg is present [then] fail, [else stop].
   - [if] an engine build without the waveform command is chosen [then] fail, [else stop].
+  - [if] a mono full-scale 60 Hz sine through the engine reads half-scale [then] fail, [else stop].
 """
 
 from __future__ import annotations
@@ -62,6 +63,21 @@ def _write_stereo_mix(path: Path, seconds: float = 4.0) -> None:
         handle.writeframes(bytes(frames))
 
 
+def _write_mono_full_scale_sine(path: Path, hz: float = 60.0, seconds: float = 2.0) -> None:
+    frames = b"".join(
+        struct.pack(
+            "<h",
+            int(32767 * math.sin(2 * math.pi * hz * i / RATE)),
+        )
+        for i in range(int(RATE * seconds))
+    )
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(RATE)
+        handle.writeframes(frames)
+
+
 @pytest.mark.requires_ffmpeg
 def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path, engine_bin: Path) -> None:
     # The production resolver runs unmodified: an operator's ODJ_AUDIO_BIN wins,
@@ -82,6 +98,31 @@ def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path, 
     assert (ffmpeg.max(axis=0) > 30).all(), ffmpeg.max(axis=0)
     worst = np.abs(engine - ffmpeg).max(axis=0)
     assert (worst <= 1).all(), f"per-band worst |engine - ffmpeg|: {worst}"
+
+
+def test_the_engine_reads_a_mono_full_scale_sine_at_full_scale(
+    tmp_path: Path, engine_bin: Path
+) -> None:
+    """Issue #6281: a 6 dB headroom encode maps a digital full-scale sine to
+    ~128 (~41 after PWV6 scaling). The engine mono path (duplicate channel,
+    downmix_gain) must read near 255 on the low band, not half-scale."""
+    _engine_or_skip()
+    if not os.environ.get(BIN_ENV, "").strip():
+        assert decode.resolve_engine() == str(engine_bin), (
+            f"the resolver did not pick the fresh checkout build {engine_bin}; "
+            "a newer build under apps/audio-engine/target shadows it"
+        )
+    source = tmp_path / "sine-60.wav"
+    _write_mono_full_scale_sine(source)
+    peaks = decode.decode_peaks_from("engine", source).astype(int)
+    steady = peaks[len(peaks) // 4 : -len(peaks) // 4]
+    got = int(steady[:, 0].max())
+    assert got > 200, (
+        f"mono full-scale 60 Hz low band read {got}, expected near 255 not "
+        f"half-scale (~128); see issue #6281"
+    )
+    assert int(steady[:, 1].max()) < 20
+    assert int(steady[:, 2].max()) < 20
 
 
 def test_the_engine_reports_the_rate_it_filtered_at(tmp_path: Path) -> None:

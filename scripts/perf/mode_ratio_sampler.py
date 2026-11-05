@@ -124,18 +124,14 @@ class _ProcessTreeSampler:
         try:
             root = psutil.Process(self._root_pid)
         except psutil.NoSuchProcess as exc:
-            raise RuntimeError(
-                f"mode_ratio_browser process {self._root_pid} is not running"
-            ) from exc
+            raise RuntimeError(f"mode_ratio_browser process {self._root_pid} is not running") from exc
         return _track(self._tracked, [root, *root.children(recursive=True)])
 
     def _engine_family(self) -> list[psutil.Process]:
         if self._engine_root is None:
             return []
         if not self._engine_root.is_running():
-            raise RuntimeError(
-                f"engine root pid {self._engine_root.pid} exited or was reused mid-capture"
-            )
+            raise RuntimeError(f"engine root pid {self._engine_root.pid} exited or was reused mid-capture")
         family = [self._engine_root, *self._engine_root.children(recursive=True)]
         return _track(self._engine_tracked, family)
 
@@ -150,9 +146,7 @@ class _ProcessTreeSampler:
             raise RuntimeError(f"pid {proc.pid} exited mid-sample")
         raise psutil.NoSuchProcess(proc.pid)
 
-    def _sum_live(
-        self, procs: list[psutil.Process], by_pid: dict[int, _PsRow]
-    ) -> tuple[float, float, int]:
+    def _sum_live(self, procs: list[psutil.Process], by_pid: dict[int, _PsRow]) -> tuple[float, float, int]:
         """Footprint and CPU of every process in `procs`; only one that has exited is skipped.
 
         A live process that cannot be read raises (Sol P1/BLOCKING, PR #4888):

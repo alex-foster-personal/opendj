@@ -5,6 +5,7 @@ audio). Opt-in: Kokoro / Piper raise ``NotImplementedError`` with a
 clear "enabled in a follow-up" message so the hook exists without the
 dep (voice-feasibility.md 5.3, 5.2).
 """
+
 from __future__ import annotations
 
 import os
@@ -85,8 +86,7 @@ class KokoroTts:
 
     def __init__(self) -> None:  # pragma: no cover - hook only
         raise NotImplementedError(
-            "Kokoro TTS hook exists but is not wired in Phase 14 (D5 "
-            "default is `say`). Enabled in a follow-up plan."
+            "Kokoro TTS hook exists but is not wired in Phase 14 (D5 default is `say`). Enabled in a follow-up plan."
         )
 
     def speak(self, text: str) -> TtsResult:  # pragma: no cover
@@ -99,10 +99,7 @@ class PiperTts:
     backend_name = "piper"
 
     def __init__(self) -> None:  # pragma: no cover - hook only
-        raise NotImplementedError(
-            "Piper TTS hook exists but is not wired in Phase 14. "
-            "Enabled in a follow-up plan."
-        )
+        raise NotImplementedError("Piper TTS hook exists but is not wired in Phase 14. Enabled in a follow-up plan.")
 
     def speak(self, text: str) -> TtsResult:  # pragma: no cover
         raise NotImplementedError

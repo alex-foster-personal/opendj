@@ -88,6 +88,7 @@ Requirements (mini-PRD):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -104,9 +105,7 @@ from typing import Any
 DICT_PREFIX: str = "mdt-roformer-progress"
 RUN_META_KEY: str = "__run__"
 
-PHASES: frozenset[str] = frozenset(
-    {"queued", "loading", "separating", "encoding", "done", "failed"}
-)
+PHASES: frozenset[str] = frozenset({"queued", "loading", "separating", "encoding", "done", "failed"})
 ACTIVE_PHASES: frozenset[str] = frozenset({"loading", "separating", "encoding"})
 
 # H100's published per-second Modal rate, same figure scripts/bench/
@@ -204,8 +203,7 @@ def reduce_state(raw: dict[str, dict[str, Any]]) -> RunSnapshot:
     meta = raw.get(RUN_META_KEY)
     if meta is None:
         raise ValueError(
-            f"progress state has no {RUN_META_KEY!r} meta entry -- run_start "
-            "was never written for this run_id"
+            f"progress state has no {RUN_META_KEY!r} meta entry -- run_start was never written for this run_id"
         )
     tracks = {key: value for key, value in raw.items() if key != RUN_META_KEY}
     return RunSnapshot(
@@ -281,8 +279,7 @@ def eta_s(snapshot: RunSnapshot, containers_live: int) -> float:
     if remaining <= 0:
         return 0.0
     durations = [
-        (t.get("load_s") or 0.0) + (t.get("sep_s") or 0.0) + (t.get("encode_s") or 0.0)
-        for t in _done_timings(snapshot)
+        (t.get("load_s") or 0.0) + (t.get("sep_s") or 0.0) + (t.get("encode_s") or 0.0) for t in _done_timings(snapshot)
     ]
     if not durations:
         return 0.0
@@ -293,7 +290,7 @@ def eta_s(snapshot: RunSnapshot, containers_live: int) -> float:
 
 def gpu_s_spent(snapshot: RunSnapshot) -> float:
     """Container-active seconds, summed across DONE tracks (load_s + sep_s +
-    encode_s). Same lower-bound proxy scripts/bench/ROFORMER-SPIKE.md's own
+    encode_s). Same lower-bound proxy (private path)'s own
     cost table uses when the full separate_track wrapper timing (gpu_s) is
     not directly available to a reader -- see its 'Library render' cost row
     for the precedent."""
@@ -349,11 +346,7 @@ def _size_ratio_max_values(snapshot: RunSnapshot) -> list[float]:
     """size_ratio_max from every DONE track that carries one -- a flac/
     control track (size is exempt there, see apps/stems/stem_size_policy.py)
     writes None, and is excluded here rather than counted as a 1.0 "fit"."""
-    return [
-        ratio
-        for t in _done_timings(snapshot)
-        if (ratio := t.get("size_ratio_max")) is not None
-    ]
+    return [ratio for t in _done_timings(snapshot) if (ratio := t.get("size_ratio_max")) is not None]
 
 
 def stems_over_source_count(snapshot: RunSnapshot) -> int:
@@ -374,26 +367,29 @@ def worst_size_ratio(snapshot: RunSnapshot) -> float:
 
 
 def build_warnings(
-    *, load_overhead: float, containers_live: int, remaining: int, in_flight: int,
-    p50: float, p95: float, stems_over_source: int, worst_ratio: float,
+    *,
+    load_overhead: float,
+    containers_live: int,
+    remaining: int,
+    in_flight: int,
+    p50: float,
+    p95: float,
+    stems_over_source: int,
+    worst_ratio: float,
 ) -> list[str]:
     """The efficiency rules the task spec gives, plus the size-target
     warning added when the mp3 ladder's terminal rung still misses budget
     for one or more tracks. Nothing speculative."""
     warnings: list[str] = []
     if load_overhead > 30:
-        warnings.append(
-            "model load dominating, use warm containers (modal.Cls) or memory snapshots"
-        )
+        warnings.append("model load dominating, use warm containers (modal.Cls) or memory snapshots")
     if containers_live < min(H100_POOL_CAP, remaining) and in_flight > 0:
         warnings.append("under-parallelised vs 10-GPU concurrency cap")
     if p50 > 0 and (p95 / p50) > 3:
         warnings.append("straggler tracks, investigate longest audio")
     if stems_over_source > 0:
         worst_pct = (worst_ratio - 1) * 100
-        warnings.append(
-            f"{stems_over_source} stems over source size, worst +{worst_pct:.1f}%"
-        )
+        warnings.append(f"{stems_over_source} stems over source size, worst +{worst_pct:.1f}%")
     return warnings
 
 

@@ -10,7 +10,9 @@ const src = readFileSync(
 );
 
 function extractFormatter() {
-	const m = src.match(/function formatNumber\(value: number, step: number\): string \{\n([\s\S]*?)\n\t\}/);
+	const m = src.match(
+		/function formatNumber\(value: number, step: number\): string \{\n([\s\S]*?)\n\t\}/
+	);
 	assert.ok(m, 'formatNumber(value, step) must exist in SettingsOverlay.svelte');
 	return new Function('value', 'step', m[1]);
 }
@@ -28,6 +30,12 @@ test('fractional steps keep two decimals (control)', () => {
 });
 
 test('both the readout and the Reset title pass the step', () => {
-	assert.match(src, /\{formatNumber\(numberValue\(def\), def\.control\.step\)\}\{def\.control\.unit\}/);
-	assert.match(src, /\$\{formatNumber\(def\.control\.defaultValue, def\.control\.step\)\}\$\{def\.control\.unit\}/);
+	assert.match(
+		src,
+		/\{formatNumber\(numberValue\(def\), def\.control\.step\)\}\{def\.control\.unit\}/
+	);
+	assert.match(
+		src,
+		/\$\{formatNumber\(def\.control\.defaultValue, def\.control\.step\)\}\$\{def\.control\.unit\}/
+	);
 });

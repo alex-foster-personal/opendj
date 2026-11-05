@@ -238,9 +238,7 @@ def test_a_clean_window_is_ok_and_still_quotes_its_denominator(log_root: Path):
 
 
 def _metric_line(moment: datetime) -> str:
-    return json.dumps(
-        {"ts": moment.strftime("%Y-%m-%dT%H:%M:%SZ"), "step": "quality", "seconds": 12.0}
-    )
+    return json.dumps({"ts": moment.strftime("%Y-%m-%dT%H:%M:%SZ"), "step": "quality", "seconds": 12.0})
 
 
 def test_absent_iteration_store_warns_and_names_the_path(tmp_path: Path):
@@ -298,8 +296,7 @@ def test_iteration_store_malformed_row_is_reported_not_crashed(tmp_path: Path):
     """
     store = tmp_path / "metrics.jsonl"
     store.write_text(
-        "\n".join([_metric_line(NOW - timedelta(hours=1)), "{broken", '{"step": "no-ts"}'])
-        + "\n",
+        "\n".join([_metric_line(NOW - timedelta(hours=1)), "{broken", '{"step": "no-ts"}']) + "\n",
         encoding="utf-8",
     )
     _age_file(store, 1)
@@ -522,9 +519,7 @@ def test_a_directory_where_a_jsonl_belongs_is_an_error_not_a_traceback(tmp_path:
     """If a JSONL sink path is a directory then [ERROR] naming the path, or broken."""
     directory = tmp_path / "metrics.jsonl"
     directory.mkdir()
-    result = mod._guarded(
-        "iteration-metrics", lambda: mod.check_iteration_metrics(directory, NOW)
-    )
+    result = mod._guarded("iteration-metrics", lambda: mod.check_iteration_metrics(directory, NOW))
 
     assert result.severity == mod.SEVERITY_ERROR
     assert result.classification == "unreadable-sink"

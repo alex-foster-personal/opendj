@@ -34,9 +34,16 @@ test('staying elevated produces at least 3 distinct, strictly decreasing caps', 
 	const distinct = new Set(caps);
 	assert.ok(distinct.size >= 3, `expected >= 3 distinct caps, got ${caps.join(', ')}`);
 	for (let i = 1; i < caps.length; i += 1) {
-		assert.ok(caps[i] <= caps[i - 1], `cap must never increase while staying elevated: ${caps.join(', ')}`);
+		assert.ok(
+			caps[i] <= caps[i - 1],
+			`cap must never increase while staying elevated: ${caps.join(', ')}`
+		);
 	}
-	assert.equal(caps[caps.length - 1], FLOOR, 'after PRESSURE_CAP_STEPS elevated ticks the cap must reach the floor exactly');
+	assert.equal(
+		caps[caps.length - 1],
+		FLOOR,
+		'after PRESSURE_CAP_STEPS elevated ticks the cap must reach the floor exactly'
+	);
 });
 
 test('elevated pressure never shrinks the cap below the floor, no matter how long it stays elevated', () => {
@@ -56,10 +63,18 @@ test('clearing steps back up through the same increments, not straight to baseli
 	state = mod.stepPressureCapState(state, false);
 	const afterOneClear = mod.pressureScaledCap(BASELINE, FLOOR, state);
 	assert.ok(afterOneClear > FLOOR, 'one clear tick must grow the cap');
-	assert.ok(afterOneClear < BASELINE, 'one clear tick must not jump straight to baseline (not a toggle)');
+	assert.ok(
+		afterOneClear < BASELINE,
+		'one clear tick must not jump straight to baseline (not a toggle)'
+	);
 
-	for (let i = 1; i < mod.PRESSURE_CAP_STEPS; i += 1) state = mod.stepPressureCapState(state, false);
-	assert.equal(mod.pressureScaledCap(BASELINE, FLOOR, state), BASELINE, 'after enough clear ticks the cap must return exactly to baseline');
+	for (let i = 1; i < mod.PRESSURE_CAP_STEPS; i += 1)
+		state = mod.stepPressureCapState(state, false);
+	assert.equal(
+		mod.pressureScaledCap(BASELINE, FLOOR, state),
+		BASELINE,
+		'after enough clear ticks the cap must return exactly to baseline'
+	);
 });
 
 test('regrowth never overshoots baseline, no matter how long it stays clear', () => {

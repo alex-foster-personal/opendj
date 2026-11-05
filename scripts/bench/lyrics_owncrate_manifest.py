@@ -1,13 +1,13 @@
-"""Build the data manifest for scripts/bench/lyrics_owncrate_listen.html.
+"""Build the data manifest for (private path).
 
-Round 3b of the lyrics-align experiment (specs/karaoke-lyrics-alignment.md) took the maintainer's own
+Round 3b of the lyrics-align experiment ((private path)) took the maintainer's own
 27 club tracks through rekordbox pick -> LRCLIB lyrics -> Modal RoFormer vocal stems -> Modal
 MMS forced alignment. There is NO ground truth for these tracks, so unlike
 lyrics_align_manifest.py this join computes NO error metric: it carries the aligner's own
 per-word confidence scores, the round-4a ASR WITNESS verdicts, and the LRCLIB metadata flags,
 and nothing that could be mistaken for measured error.
 
-Joins four sources under data/state/lyrics-eval/own-crate/:
+Joins four sources under (private path)/:
   jobs.json          the reference word list, line breaks, LRCLIB metadata, durations
   pred-r3b/<id>.json the aligner output, 1:1 with jobs.json words
   asr-r4a/<id>.json  faster-whisper transcript of the vocal stem (the independent witness)
@@ -88,7 +88,7 @@ DEFAULT_ASR_DIR: Path = OWN_CRATE_DIR / "asr-r4a"
 DEFAULT_AUDIO_DIR: Path = OWN_CRATE_DIR / "audio"
 DEFAULT_STEM_DIR: Path = OWN_CRATE_DIR / "stems"
 DEFAULT_OUT: Path = BENCH_DIR / "lyrics_owncrate_manifest.json"
-# serve.py mounts data/state/lyrics-eval/own-crate/ here, so both the mixes and the stems below
+# serve.py mounts (private path)/ here, so both the mixes and the stems below
 # it are reachable through the one mount. --mount swaps the prefix for sibling corpora with the
 # same layout (the OLTF run uses /oltf); it is process-global state set once in main().
 AUDIO_URL_PREFIX: str = "/owncrate/audio"
@@ -111,9 +111,9 @@ DURATION_FLAG_S: float = 5.0
 WITNESS_RED: frozenset[str] = frozenset({"contradict", "lost"})
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # join
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _read_pred_words(pred_path: Path) -> list[dict[str, Any]]:
@@ -163,7 +163,7 @@ def _stem_url(stem_dir: Path, name: str) -> str:
         raise FileNotFoundError(
             f"no vocal stem for track {name} in {stem_dir} (looked for "
             f"{name}-vocals{{{','.join(STEM_EXTENSIONS)}}}) -- the MIX/VOCALS toggle needs one "
-            f"per track, see specs/karaoke-lyrics-alignment.md"
+            f"per track, see (private path)"
         )
     if len(hits) > 1:
         raise ValueError(
@@ -178,10 +178,7 @@ def _join_words(job: dict[str, Any], pred_words: list[dict[str, Any]]) -> list[d
     ref_words: list[str] = job["words"]
     line_final: list[bool] = job["line_final"]
     if len(line_final) != len(ref_words):
-        raise ValueError(
-            f"{job['name']}: jobs.json has {len(ref_words)} words but "
-            f"{len(line_final)} line_final flags"
-        )
+        raise ValueError(f"{job['name']}: jobs.json has {len(ref_words)} words but {len(line_final)} line_final flags")
     if len(pred_words) != len(ref_words):
         raise ValueError(
             f"{job['name']}: forced alignment must cover every reference word: "
@@ -190,9 +187,7 @@ def _join_words(job: dict[str, Any], pred_words: list[dict[str, Any]]) -> list[d
     joined: list[dict[str, Any]] = []
     for i, (ref, pred) in enumerate(zip(ref_words, pred_words, strict=True)):
         if pred.get("word") != ref:
-            raise ValueError(
-                f"{job['name']}: word {i} text mismatch: ref {ref!r} vs pred {pred.get('word')!r}"
-            )
+            raise ValueError(f"{job['name']}: word {i} text mismatch: ref {ref!r} vs pred {pred.get('word')!r}")
         start = pred.get("start_s")
         if not isinstance(start, (int, float)) or math.isnan(float(start)):
             raise ValueError(f"{job['name']}: word {i} ({ref!r}) has no usable start_s: {start!r}")
@@ -215,9 +210,7 @@ def _join_words(job: dict[str, Any], pred_words: list[dict[str, Any]]) -> list[d
     return joined
 
 
-def _attach_witness(
-    name: str, words: list[dict[str, Any]], asr_dir: Path
-) -> CrossCheckReport:
+def _attach_witness(name: str, words: list[dict[str, Any]], asr_dir: Path) -> CrossCheckReport:
     """Stamp apps/lyrics/crosscheck.py's witness verdict onto every word IN PLACE.
 
     The aligner's own score never influences the verdicts, which is the point -- round 3a showed
@@ -236,12 +229,9 @@ def _attach_witness(
     asr_words = json.loads(asr_path.read_text(encoding="utf-8"))["words"]
     lyric_words = [w["word"] for w in words]
     starts = [w["start_s"] for w in words]
-    for word, verdict in zip(words, witness_verdicts(lyric_words, starts, asr_words),
-                             strict=True):
+    for word, verdict in zip(words, witness_verdicts(lyric_words, starts, asr_words), strict=True):
         word["witness"] = verdict.verdict
-        word["asr_delta_s"] = (
-            None if verdict.delta_s is None else round(verdict.delta_s, TIME_DP)
-        )
+        word["asr_delta_s"] = None if verdict.delta_s is None else round(verdict.delta_s, TIME_DP)
     # version_similarity / match_ratio for the track stats still come from the global diff.
     return crosscheck(lyric_words, starts, asr_words)
 
@@ -259,15 +249,12 @@ def _duration_delta_s(job: dict[str, Any]) -> float | None:
     return round(float(lrclib) - float(track), 3)
 
 
-def _track_entry(
-    job: dict[str, Any], pred_dir: Path, asr_dir: Path, audio_dir: Path, stem_dir: Path
-) -> dict[str, Any]:
+def _track_entry(job: dict[str, Any], pred_dir: Path, asr_dir: Path, audio_dir: Path, stem_dir: Path) -> dict[str, Any]:
     name = job["name"]
     pred_path = pred_dir / f"{name}.json"
     if not pred_path.is_file():
         raise FileNotFoundError(
-            f"no prediction {pred_path} for track {name} -- re-run the aligner, "
-            f"see specs/karaoke-lyrics-alignment.md"
+            f"no prediction {pred_path} for track {name} -- re-run the aligner, see (private path)"
         )
     words = _join_words(job, _read_pred_words(pred_path))
     witness_report = _attach_witness(name, words, asr_dir)
@@ -307,9 +294,7 @@ def _track_entry(
             "median_score": round(statistics.median(scores), SCORE_DP),
             "min_score": round(min(scores), SCORE_DP),
             "pct_low_score": round(sum(1 for s in scores if s < LOW_SCORE) / len(scores), 6),
-            "pct_very_low_score": round(
-                sum(1 for s in scores if s < VERY_LOW_SCORE) / len(scores), 6
-            ),
+            "pct_very_low_score": round(sum(1 for s in scores if s < VERY_LOW_SCORE) / len(scores), 6),
             "duration_delta_s": _duration_delta_s(job),
             # 'lrclib get' era jobs carry lrclib_method; multi-source (OLTF round-2)
             # jobs carry candidate_source + candidate_method. Either present, else raise.
@@ -327,7 +312,7 @@ def _track_entry(
     }
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _stamp_file_paths(tracks: list[dict[str, Any]], file_paths: dict[str, str]) -> None:
@@ -343,22 +328,22 @@ def _stamp_file_paths(tracks: list[dict[str, Any]], file_paths: dict[str, str]) 
     by_name = {t["name"]: t for t in tracks}
     unknown = sorted(set(file_paths) - set(by_name))
     if unknown:
-        raise ValueError(
-            f"--file-paths names not in the jobs manifest: {unknown} -- "
-            f"the map must key by job 'name'"
-        )
+        raise ValueError(f"--file-paths names not in the jobs manifest: {unknown} -- the map must key by job 'name'")
     for name, file_path in file_paths.items():
         by_name[name]["file_path"] = file_path
 
 
 def build_manifest(
-    jobs_path: Path, pred_dir: Path, asr_dir: Path, audio_dir: Path, stem_dir: Path,
+    jobs_path: Path,
+    pred_dir: Path,
+    asr_dir: Path,
+    audio_dir: Path,
+    stem_dir: Path,
     file_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if not jobs_path.is_file():
         raise FileNotFoundError(
-            f"{jobs_path} missing -- run scripts/lyrics_owncrate_spike.py first, "
-            f"see specs/karaoke-lyrics-alignment.md"
+            f"{jobs_path} missing -- run scripts/lyrics_owncrate_spike.py first, see (private path)"
         )
     if not pred_dir.is_dir():
         raise FileNotFoundError(f"predictions dir {pred_dir} missing -- run the aligner first")
@@ -413,9 +398,7 @@ def build_manifest(
         "n_tracks": len(tracks),
         "n_words": len(all_scores),
         "pooled_mean_score": round(statistics.fmean(all_scores), SCORE_DP),
-        "pooled_pct_low_score": round(
-            sum(1 for s in all_scores if s < LOW_SCORE) / len(all_scores), 6
-        ),
+        "pooled_pct_low_score": round(sum(1 for s in all_scores if s < LOW_SCORE) / len(all_scores), 6),
         "pooled_pct_witness_red": round(n_red / len(all_scores), 6),
         "tracks": tracks,
     }
@@ -429,12 +412,17 @@ def main() -> int:
     parser.add_argument("--audio", type=Path, default=DEFAULT_AUDIO_DIR, help="full-mix audio dir")
     parser.add_argument("--stems", type=Path, default=DEFAULT_STEM_DIR, help="vocal stems dir")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="manifest json to write")
-    parser.add_argument("--mount", type=str, default="/owncrate",
-                        help="serve.py mount prefix for audio/stem URLs (e.g. /oltf)")
-    parser.add_argument("--file-paths", type=Path, default=None,
-                        help="JSON map {job name -> state.db tracks.file_path} stamped onto "
-                             "entries for ingest-state --match-by file-path (vendor-id-less "
-                             "corpora like oltf)")
+    parser.add_argument(
+        "--mount", type=str, default="/owncrate", help="serve.py mount prefix for audio/stem URLs (e.g. /oltf)"
+    )
+    parser.add_argument(
+        "--file-paths",
+        type=Path,
+        default=None,
+        help="JSON map {job name -> state.db tracks.file_path} stamped onto "
+        "entries for ingest-state --match-by file-path (vendor-id-less "
+        "corpora like oltf)",
+    )
     args = parser.parse_args()
 
     global AUDIO_URL_PREFIX, STEM_URL_PREFIX
@@ -446,8 +434,7 @@ def main() -> int:
     if args.file_paths is not None:
         file_paths = json.loads(args.file_paths.read_text(encoding="utf-8"))
 
-    manifest = build_manifest(args.jobs, args.pred, args.asr, args.audio, args.stems,
-                              file_paths=file_paths)
+    manifest = build_manifest(args.jobs, args.pred, args.asr, args.audio, args.stems, file_paths=file_paths)
     args.out.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
     size_mb = args.out.stat().st_size / 1e6
@@ -460,9 +447,7 @@ def main() -> int:
         f"     pooled witness-red {manifest['pooled_pct_witness_red']:.1%} of words "
         f"(matched beyond {WITNESS_RED_DELTA_S}s, or unmatched runs of {WITNESS_MIN_RUN}+)"
     )
-    worst = sorted(
-        manifest["tracks"], key=lambda t: -t["stats"]["pct_witness_red"]
-    )[:3]
+    worst = sorted(manifest["tracks"], key=lambda t: -t["stats"]["pct_witness_red"])[:3]
     for track in worst:
         print(
             f"     most suspicious: {track['artist']} - {track['title']} "
@@ -471,16 +456,16 @@ def main() -> int:
     flagged = [
         t
         for t in manifest["tracks"]
-        if t["stats"]["duration_delta_s"] is not None
-        and abs(t["stats"]["duration_delta_s"]) > DURATION_FLAG_S
+        if t["stats"]["duration_delta_s"] is not None and abs(t["stats"]["duration_delta_s"]) > DURATION_FLAG_S
     ]
     print(
         f"     {len(flagged)} track(s) whose LRCLIB duration differs from the file by more than "
         f"{DURATION_FLAG_S}s (likely a different version/edit)"
     )
     for track in flagged:
-        print(f"       {track['name']} {track['artist']} - {track['title']}: "
-              f"{track['stats']['duration_delta_s']:+.1f}s")
+        print(
+            f"       {track['name']} {track['artist']} - {track['title']}: {track['stats']['duration_delta_s']:+.1f}s"
+        )
     print("[NOTE] no ground truth exists for this corpus, so this manifest carries NO error metric")
     return 0
 

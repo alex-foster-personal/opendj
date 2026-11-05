@@ -93,7 +93,13 @@ test('placeFloating: an explainer centered on a bottom-right dock button flips a
 		width: size.width,
 		height: button.height
 	};
-	const box = clamp.placeFloating({ trigger, size, viewport: VIEWPORT, preferred: 'below', gap: 6 });
+	const box = clamp.placeFloating({
+		trigger,
+		size,
+		viewport: VIEWPORT,
+		preferred: 'below',
+		gap: 6
+	});
 	assertInsideInset(box, size);
 	assert.equal(box.y, button.top - size.height - 6, 'flipped above the button');
 	assert.ok(!overlaps(box, size, button), `${JSON.stringify(box)} covers the button`);
@@ -103,7 +109,12 @@ test('placeFloating keeps a preferred side that fits even when the cross axis ov
 	// Control for the overshoot: flipping on ANY overflow would move this tile
 	// above a trigger it already fits below.
 	const trigger = { left: 1256, top: 348, width: TRIGGER_SIZE.width, height: TRIGGER_SIZE.height };
-	const below = clamp.placeFloating({ trigger, size: FLOAT_SIZE, viewport: VIEWPORT, preferred: 'below' });
+	const below = clamp.placeFloating({
+		trigger,
+		size: FLOAT_SIZE,
+		viewport: VIEWPORT,
+		preferred: 'below'
+	});
 	assert.equal(below.y, 348 + 24 + 4, 'stays below');
 	const right = clamp.placeFloating({
 		trigger: { left: 628, top: 0, width: 24, height: 24 },

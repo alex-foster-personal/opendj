@@ -42,9 +42,15 @@ const absent = {
 describe('Broken filter uses the unavailable predicate', () => {
 	it('hides an unavailable row and keeps a present row', () => {
 		const hidden = contract.filterRows([present, absent], '', true);
-		assert.deepEqual(hidden.map((r) => r.stable_id), ['present-1']);
+		assert.deepEqual(
+			hidden.map((r) => r.stable_id),
+			['present-1']
+		);
 		const shown = contract.filterRows([present, absent], '', false);
-		assert.deepEqual(shown.map((r) => r.stable_id), ['present-1', 'absent-1']);
+		assert.deepEqual(
+			shown.map((r) => r.stable_id),
+			['present-1', 'absent-1']
+		);
 	});
 });
 

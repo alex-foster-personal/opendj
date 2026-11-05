@@ -27,10 +27,29 @@ function recordingCtx(width, height) {
 
 test('the stem row requires the main row geometry instead of drawing at a guessed scale', () => {
 	const rec = recordingCtx(100, 12);
-	const frame = { envelope: [1, 1, 1], scrollPx: 0, durationMs: 10_000, pitch: 1, width: rec.width, height: rec.height, color: '#fff' };
-	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, playheadFrac: 0.5 }), RangeError, 'windowS is required');
-	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24 }), RangeError, 'playheadFrac is required');
-	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24, playheadFrac: 2 }), RangeError);
+	const frame = {
+		envelope: [1, 1, 1],
+		scrollPx: 0,
+		durationMs: 10_000,
+		pitch: 1,
+		width: rec.width,
+		height: rec.height,
+		color: '#fff'
+	};
+	assert.throws(
+		() => render.drawStemWaveRow(rec.ctx, { ...frame, playheadFrac: 0.5 }),
+		RangeError,
+		'windowS is required'
+	);
+	assert.throws(
+		() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24 }),
+		RangeError,
+		'playheadFrac is required'
+	);
+	assert.throws(
+		() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24, playheadFrac: 2 }),
+		RangeError
+	);
 });
 
 test('drawStemWaveRow paints non-empty bars from a fixture envelope', () => {
@@ -87,12 +106,18 @@ function paintedColumns({ positionS, spikeS, pitch = 1, durationS = 180 }) {
 test('stem row still paints the envelope under the playhead a minute into the track', () => {
 	// The old read stretched all 180 points over one 240 px window, so every
 	// index was out of range once the playhead passed ~36 s: nothing painted.
-	assert.deepEqual(paintedColumns({ positionS: 60, spikeS: 60 }), [120, 121, 122, 123, 124, 125, 126, 127, 128, 129]);
+	assert.deepEqual(
+		paintedColumns({ positionS: 60, spikeS: 60 }),
+		[120, 121, 122, 123, 124, 125, 126, 127, 128, 129]
+	);
 });
 
 test('stem row places a later peak at the main row px-per-second, not the window width', () => {
 	// 10 s ahead of the playhead at 10 px/s lands 100 px right of center.
-	assert.deepEqual(paintedColumns({ positionS: 60, spikeS: 70 }), [220, 221, 222, 223, 224, 225, 226, 227, 228, 229]);
+	assert.deepEqual(
+		paintedColumns({ positionS: 60, spikeS: 70 }),
+		[220, 221, 222, 223, 224, 225, 226, 227, 228, 229]
+	);
 	// Just outside the visible window (12 s + 1 s either side): nothing painted.
 	assert.deepEqual(paintedColumns({ positionS: 60, spikeS: 73 }), []);
 	assert.deepEqual(paintedColumns({ positionS: 60, spikeS: 47 }), []);
@@ -100,7 +125,10 @@ test('stem row places a later peak at the main row px-per-second, not the window
 
 test('stem row widens its window with pitch exactly like the main row', () => {
 	// pitch 2 shows 48 s of track: 5 px/s, so 10 s ahead is 50 px right of center.
-	assert.deepEqual(paintedColumns({ positionS: 60, spikeS: 70, pitch: 2 }), [170, 171, 172, 173, 174]);
+	assert.deepEqual(
+		paintedColumns({ positionS: 60, spikeS: 70, pitch: 2 }),
+		[170, 171, 172, 173, 174]
+	);
 });
 
 test('stem row paints nothing without a positive track duration or pitch', () => {
@@ -128,7 +156,11 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 			height: rec.height,
 			color: '#4fb2ff'
 		});
-		assert.equal(rec.fills.length, 0, `durationMs=${durationMs} pitch=${pitch} must not invent a time scale`);
+		assert.equal(
+			rec.fills.length,
+			0,
+			`durationMs=${durationMs} pitch=${pitch} must not invent a time scale`
+		);
 	}
 	// Control: the same flat envelope on a real 10 s track at pitch 1 does paint.
 	const rec = recordingCtx(W, 12);

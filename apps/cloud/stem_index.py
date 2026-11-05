@@ -49,6 +49,9 @@ retry) instead of the asset tier's conditional create or a blind overwrite.
   :func:`sync_bundle_into_cached_index` / :func:`rebuild_cached_index_from_local_manifests`
   rehash the bundle through :func:`save_cached_index` so eviction and
   republish see the new names and manifest digest (STEM-61).
+* [if] a refresh fetches the R2 (or hub) index [then] it is three-way merged
+  into the local cache against the last fetched remote, so an entry recorded
+  here but not yet published survives (issue #8891, STEM-8894).
 * [if] ``rebuild --publish`` runs [then] every referenced object is HEAD-confirmed
   (and uploaded from disk when missing) before the shared pointer is replaced.
 """
@@ -442,13 +445,85 @@ def rebuild_cached_index_from_local_manifests(data_dir: Path) -> tuple[StemAsset
     return entries, upsert_cached_index_entries(data_dir, entries)
 
 
+# --- merging a fetched remote index into the local cache ----------------------
+
+#: Last remote index this host merged in: the common ancestor of the next
+#: three-way merge (issue #8891). Lives next to the cache, never published.
+REMOTE_BASE_FILENAME: str = "stem-bundle-index.remote-base.json"
+
+
+def remote_base_path(data_dir: Path) -> Path:
+    return Path(data_dir) / "state" / REMOTE_BASE_FILENAME
+
+
+def _load_remote_base(data_dir: Path) -> StemAssetIndex | None:
+    """The remote snapshot from the last refresh, or ``None`` before the first
+    merging refresh on this host. A corrupt file raises (fail fast)."""
+    path = remote_base_path(data_dir)
+    if not path.is_file():
+        return None
+    try:
+        return _decode(path.read_bytes())
+    except StemIndexError as exc:
+        raise StemIndexError(f"{path} is unreadable: {exc}") from exc
+
+
+def three_way_merge_index(
+    local: StemAssetIndex, remote: StemAssetIndex, base: StemAssetIndex | None
+) -> StemAssetIndex:
+    """Merge ``remote`` into ``local`` per stable_id, ``base`` = last merged remote.
+
+    The schema has no per-entry timestamp or tombstone, so "newer" means "the
+    side that changed since ``base``" (STEM-8894):
+
+    * local-only and remote-only ids are kept;
+    * same entry on both sides: kept;
+    * local equals base (unchanged here): remote wins, and an id remote no
+      longer holds is dropped, so remote updates and removals propagate;
+    * local differs from base (recorded here, not yet published): local wins;
+    * no base yet (first merging refresh): remote wins on a conflict, which is
+      the old replace behaviour minus the loss of local-only ids.
+    """
+    merged: StemAssetIndex = {}
+    for stable_id in local.keys() | remote.keys():
+        mine = local.get(stable_id)
+        theirs = remote.get(stable_id)
+        ancestor = base.get(stable_id) if base is not None else None
+        if mine is None and theirs is not None:
+            merged[stable_id] = theirs
+        elif mine is not None and theirs is None:
+            if mine == ancestor:
+                continue  # removed remotely, unchanged here
+            merged[stable_id] = mine
+        elif mine is None or theirs is None:
+            raise AssertionError(f"{stable_id!r} is in neither side of the merge")
+        elif mine == theirs:
+            merged[stable_id] = mine
+        elif base is None or mine == ancestor:
+            merged[stable_id] = theirs
+        elif mine != ancestor:
+            merged[stable_id] = mine
+    return merged
+
+
+def merge_remote_into_cached_index(data_dir: Path, remote: StemAssetIndex) -> StemAssetIndex:
+    """Three-way merge ``remote`` into the local cache, then record ``remote``
+    as the next merge's base. Returns the merged index now on disk."""
+    merged = three_way_merge_index(
+        load_cached_index(data_dir), remote, _load_remote_base(data_dir)
+    )
+    save_cached_index(data_dir, merged)
+    base_path = remote_base_path(data_dir)
+    base_path.write_bytes(_encode(_decode(_encode(remote))) + b"\n")
+    return merged
+
+
 def refresh_local_cache_from_r2(cfg: CloudConfig, s3: S3Client, data_dir: Path) -> StemAssetIndex:
-    """Fetch the R2 index and persist it as the local cache. Explicit,
+    """Fetch the R2 index and merge it into the local cache (never replace:
+    unpublished local entries survive, issue #8891). Explicit,
     network-touching; not called directly from request-serving code paths --
     use :func:`refresh_local_cache_from_r2_throttled` there instead."""
-    index = fetch_index(cfg, s3)
-    save_cached_index(data_dir, index)
-    return index
+    return merge_remote_into_cached_index(data_dir, fetch_index(cfg, s3))
 
 
 #: Floor between REQUEST-PATH refresh attempts for the same data_dir, so a
@@ -474,7 +549,10 @@ def refresh_local_cache_throttled(
     *,
     force: bool = False,
 ) -> bool:
-    """Backoff-guarded index refresh using ``fetch`` as the network source."""
+    """Backoff-guarded index refresh using ``fetch`` as the network source.
+
+    ``fetch`` returns the remote index only; it must not write the cache. The
+    result is merged in by :func:`merge_remote_into_cached_index`."""
     data_dir = Path(data_dir)
     now = time.monotonic()
     with _refresh_lock:
@@ -483,8 +561,7 @@ def refresh_local_cache_throttled(
             return False
         _last_refresh_attempt_mono[data_dir] = now
     try:
-        index = fetch()
-        save_cached_index(data_dir, index)
+        merge_remote_into_cached_index(data_dir, fetch())
     except Exception as exc:
         _last_refresh_error[data_dir] = str(exc)
         raise
@@ -510,7 +587,7 @@ def refresh_local_cache_from_r2_throttled(
     """
     return refresh_local_cache_throttled(
         data_dir,
-        lambda: refresh_local_cache_from_r2(cfg, s3, data_dir),
+        lambda: fetch_index(cfg, s3),
         force=force,
     )
 
@@ -523,6 +600,7 @@ __all__ = [
     "INDEX_SCHEMA_VERSION",
     "LOCAL_STEM_ROOT_NAMES",
     "MANIFEST_FILENAME",
+    "REMOTE_BASE_FILENAME",
     "STEM_MEDIA_EXTENSIONS",
     "StemAssetIndex",
     "StemFileHashes",
@@ -538,14 +616,17 @@ __all__ = [
     "local_index_cache_path",
     "local_stem_roots",
     "main",
+    "merge_remote_into_cached_index",
     "publish_index",
     "rebuild_cached_index_from_local_manifests",
     "refresh_error",
     "refresh_local_cache_from_r2",
     "refresh_local_cache_from_r2_throttled",
     "refresh_local_cache_throttled",
+    "remote_base_path",
     "save_cached_index",
     "sync_bundle_into_cached_index",
+    "three_way_merge_index",
     "upsert_cached_index_entries",
 ]
 

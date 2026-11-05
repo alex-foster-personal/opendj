@@ -44,7 +44,10 @@ const INTENSIVE_GRACE_S = 10;
 /** A harmless order the fixture page can always run: channel 1 fader to 0.5. */
 const ORDER = { single: { type: 'fader', deck: 1, value: 0.5 } };
 
-test.skip(process.platform !== 'darwin', 'AGENT-19 needs a real OS window to hide; only macOS has one here');
+test.skip(
+	process.platform !== 'darwin',
+	'AGENT-19 needs a real OS window to hide; only macOS has one here'
+);
 
 /** Every Chromium this file starts. A test that times out never reaches its
  * own `finally`, so afterEach kills whatever is left (two leaked otherwise). */
@@ -83,13 +86,19 @@ class RawPage {
 		return new RawPage(socket);
 	}
 
-	async send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+	async send(
+		method: string,
+		params: Record<string, unknown> = {}
+	): Promise<Record<string, unknown>> {
 		this.nextId += 1;
 		const id = this.nextId;
 		// Bounded, so a CDP call that never answers fails by name instead of
 		// silently eating the whole test timeout.
 		const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error(`CDP ${method} gave no reply in 30 s`)), 30_000);
+			const timer = setTimeout(
+				() => reject(new Error(`CDP ${method} gave no reply in 30 s`)),
+				30_000
+			);
 			this.pending.set(id, (message) => {
 				clearTimeout(timer);
 				resolve(message);
@@ -105,7 +114,11 @@ class RawPage {
 	}
 
 	async evaluate<T>(expression: string): Promise<T> {
-		const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+		const result = await this.send('Runtime.evaluate', {
+			expression,
+			returnByValue: true,
+			awaitPromise: true
+		});
 		return (result.result as { value: T }).value;
 	}
 
@@ -120,7 +133,11 @@ interface HiddenLeader {
 	profile: string;
 }
 
-async function launchPlainChromium(): Promise<{ browser: ChildProcess; profile: string; port: number }> {
+async function launchPlainChromium(): Promise<{
+	browser: ChildProcess;
+	profile: string;
+	port: number;
+}> {
 	const profile = mkdtempSync(join(tmpdir(), 'agent19-'));
 	const browser = spawn(
 		chromium.executablePath(),
@@ -152,7 +169,10 @@ async function launchPlainChromium(): Promise<{ browser: ChildProcess; profile: 
 	throw new Error('Chromium never wrote DevToolsActivePort');
 }
 
-async function openHiddenLeader(baseURL: string, request: APIRequestContext): Promise<HiddenLeader> {
+async function openHiddenLeader(
+	baseURL: string,
+	request: APIRequestContext
+): Promise<HiddenLeader> {
 	const { browser, profile, port } = await launchPlainChromium();
 	const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as Array<{
 		type: string;
@@ -165,10 +185,15 @@ async function openHiddenLeader(baseURL: string, request: APIRequestContext): Pr
 	// makes this page a lease-blocked follower, and a hidden, silent follower
 	// never re-claims (AGENT-18), so start only once the lease is free.
 	await expect
-		.poll(async () => ((await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as { held: boolean }).held, {
-			timeout: 20_000,
-			message: 'the previous holder lease must lapse first'
-		})
+		.poll(
+			async () =>
+				((await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as { held: boolean })
+					.held,
+			{
+				timeout: 20_000,
+				message: 'the previous holder lease must lapse first'
+			}
+		)
 		.toBe(false);
 	await page.send('Page.navigate', { url: `${baseURL}/performance` });
 	await expect
@@ -183,11 +208,16 @@ async function openHiddenLeader(baseURL: string, request: APIRequestContext): Pr
 			held: boolean;
 			holder: string | null;
 		};
-		const mirror = (await (await request.get('/api/v1/state/ui-mirror')).json()) as { client_id?: string };
+		const mirror = (await (await request.get('/api/v1/state/ui-mirror')).json()) as {
+			client_id?: string;
+		};
 		return lease.held && lease.holder === mirror.client_id;
 	};
 	await expect
-		.poll(holdsLease, { timeout: 30_000, message: 'the page must hold the mirror lease (it is the leader)' })
+		.poll(holdsLease, {
+			timeout: 30_000,
+			message: 'the page must hold the mirror lease (it is the leader)'
+		})
 		.toBe(true);
 	await sleep(3_000);
 	expect(await holdsLease(), 'leadership must be stable before hiding').toBe(true);
@@ -195,18 +225,26 @@ async function openHiddenLeader(baseURL: string, request: APIRequestContext): Pr
 }
 
 async function hide(leader: HiddenLeader): Promise<void> {
-	const { windowId } = (await leader.page.send('Browser.getWindowForTarget')) as { windowId: number };
+	const { windowId } = (await leader.page.send('Browser.getWindowForTarget')) as {
+		windowId: number;
+	};
 	// The OS occasionally ignores one minimize request (seen once in four runs on
 	// demon-llama), so it is asked twice before the capability is called absent.
 	let hidden = false;
 	for (let attempt = 0; attempt < 2 && !hidden; attempt += 1) {
-		await leader.page.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
+		await leader.page.send('Browser.setWindowBounds', {
+			windowId,
+			bounds: { windowState: 'minimized' }
+		});
 		for (let i = 0; i < 100 && !hidden; i += 1) {
 			hidden = (await leader.page.evaluate<string>('document.visibilityState')) === 'hidden';
 			if (!hidden) await sleep(100);
 		}
 	}
-	test.skip(!hidden, 'the OS did not hide the minimized window twice: capability unavailable on this host now');
+	test.skip(
+		!hidden,
+		'the OS did not hide the minimized window twice: capability unavailable on this host now'
+	);
 	// Sit hidden past Chrome's intensive-throttling grace period.
 	await sleep((INTENSIVE_GRACE_S + 3) * 1000);
 	expect(await leader.page.evaluate<string>('document.visibilityState')).toBe('hidden');
@@ -229,7 +267,10 @@ async function timedOrder(request: APIRequestContext, timeoutMs: number): Promis
 	return elapsed;
 }
 
-test('a hidden leader executes agent orders with a median under 2 s and none past 30 s', async ({ request, baseURL }) => {
+test('a hidden leader executes agent orders with a median under 2 s and none past 30 s', async ({
+	request,
+	baseURL
+}) => {
 	test.setTimeout(240_000);
 	let leader: HiddenLeader | null = null;
 	try {
@@ -242,8 +283,13 @@ test('a hidden leader executes agent orders with a median under 2 s and none pas
 			'(() => { window.__agent19Ticks = 0; window.__agent19Interval = setInterval(() => { window.__agent19Ticks += 1; }, 50); return 1; })()'
 		);
 		await sleep(3_000);
-		const ticks = await leader.page.evaluate<number>('(() => { clearInterval(window.__agent19Interval); return window.__agent19Ticks; })()');
-		expect(ticks, 'control: a 50 ms interval in the hidden page must be throttled').toBeLessThanOrEqual(10);
+		const ticks = await leader.page.evaluate<number>(
+			'(() => { clearInterval(window.__agent19Interval); return window.__agent19Ticks; })()'
+		);
+		expect(
+			ticks,
+			'control: a 50 ms interval in the hidden page must be throttled'
+		).toBeLessThanOrEqual(10);
 		const latencies: number[] = [];
 		for (let i = 0; i < ORDERS; i += 1) {
 			latencies.push(await timedOrder(request, 30_000));

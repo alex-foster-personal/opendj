@@ -43,7 +43,11 @@ test('putIngestConfig fires onIngestConfigWrite listeners with the fresh config'
 	const returned = await ingest.putIngestConfig({ analysis: true });
 
 	assert.equal(seen.length, 1, 'listener must fire exactly once per successful write');
-	assert.deepEqual(seen[0], returned, 'listener must receive the same fresh config the caller got back');
+	assert.deepEqual(
+		seen[0],
+		returned,
+		'listener must receive the same fresh config the caller got back'
+	);
 });
 
 test('putIngestConfig does not fire listeners on a failed write', async () => {

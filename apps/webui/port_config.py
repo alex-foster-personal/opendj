@@ -24,6 +24,10 @@ Requirements:
   REMEMBERED registry pair already is, so a config reload cannot evict a
   worktree from ports its own running engine is serving (issue observed on
   the Air's preview worktree, 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
+- ✔︎ A worktree's remembered or configured pair is also kept when only that
+  worktree's own Open DJ UI holds the frontend port and the backend port is
+  free or already matches this pair, so a backend restart cannot rewrite
+  ``.env`` out from under a live Vite (issue #6397).
 - ✔︎ A port holding only TIME_WAIT sockets from a stopped server counts as
   free, while any live listener (127.0.0.1 or wildcard) keeps it taken, so a
   restart keeps its pair instead of alternating (INFRA-6578).
@@ -49,6 +53,14 @@ Acceptance tests:
   claim keeps that pair rather than moving off it.
 - [if] a restart leaves only TIME_WAIT on the pair [then ⛔️] the claim moves.
 - [if] a leaked server listens on 0.0.0.0 on the pair [then ⛔️] the claim keeps it.
+- [if] only this worktree's own frontend UI holds the frontend port and the
+  backend is free [then ⛔️] the claim moves the pair or rewrites ``.env``.
+- [if] a foreign or unidentified frontend holds the frontend port [then ⛔️] the
+  claim keeps that pair.
+- [if] this worktree's frontend UI and a foreign backend both hold the pair
+  [then ⛔️] the claim keeps the pair.
+- [if] a matching backend and an unidentified frontend both hold the pair
+  [then ⛔️] the claim keeps the pair.
 """
 
 from __future__ import annotations
@@ -70,7 +82,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import psutil
+
 from apps.shared.dotenv_read import read_dotenv as _read_dotenv
+from apps.webui.server.ui_url import _dev_frontend_serves_ui
 
 BACKEND_ENV = "MUSIC_DJ_BACKEND_PORT"
 FRONTEND_ENV = "MUSIC_DJ_FRONTEND_PORT"
@@ -625,6 +640,61 @@ def _pair_is_available(ports: WebuiPorts) -> bool:
     )
 
 
+def _checkout_root(path: Path) -> Path | None:
+    """Return the nearest ancestor of ``path`` that holds a ``.git`` entry."""
+    for candidate in (path, *path.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _listener_cwds(port: int) -> list[Path] | None:
+    """Working directories of processes listening on ``port``, or None if unreadable."""
+    listen_pids: set[int] = set()
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.status != psutil.CONN_LISTEN or conn.laddr is None:
+                continue
+            if conn.laddr.port != port:
+                continue
+            if conn.pid is not None:
+                listen_pids.add(conn.pid)
+    except (psutil.AccessDenied, OSError):
+        return None
+    if not listen_pids:
+        return None
+    cwds: list[Path] = []
+    for pid in listen_pids:
+        try:
+            cwds.append(Path(psutil.Process(pid).cwd()).resolve())
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except psutil.AccessDenied:
+            return None
+    return cwds or None
+
+
+def _frontend_listener_matches_pair(ports: WebuiPorts, repo_root: Path) -> bool:
+    """Return whether the occupied frontend is this worktree's Open DJ UI."""
+    if not _dev_frontend_serves_ui(ports.frontend):
+        return False
+    cwds = _listener_cwds(ports.frontend)
+    if cwds is None:
+        return False
+    expected = repo_root.resolve()
+    return all(_checkout_root(cwd) == expected for cwd in cwds)
+
+
+def _pair_is_reusable(ports: WebuiPorts, repo_root: Path) -> bool:
+    if ports.backend == ports.frontend:
+        return False
+    backend_ok = _port_is_available(ports.backend) or _backend_listener_matches_pair(ports)
+    frontend_ok = _port_is_available(ports.frontend) or _frontend_listener_matches_pair(
+        ports, repo_root
+    )
+    return backend_ok and frontend_ok
+
+
 def _backend_listener_matches_pair(ports: WebuiPorts) -> bool:
     """Return whether the occupied backend exposes this pair's diagnostics."""
     url = f"{ports.api_proxy_target}/api/v1/settings"
@@ -829,7 +899,7 @@ def claim_ports(
         if (
             current is not None
             and (configured is None or configured == current)
-            and (_pair_is_available(current) or _backend_listener_matches_pair(current))
+            and _pair_is_reusable(current, resolved_root)
         ):
             selected = current
         elif (
@@ -839,7 +909,7 @@ def claim_ports(
                 reservations,
                 excluding_path=root_key,
             )
-            and (_pair_is_available(configured) or _backend_listener_matches_pair(configured))
+            and _pair_is_reusable(configured, resolved_root)
         ):
             selected = configured
         else:

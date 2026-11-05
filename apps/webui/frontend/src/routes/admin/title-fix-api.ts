@@ -149,10 +149,14 @@ export function formatConfidence(value: number | null): string {
 
 /** "raw -> proposed" for one field, or null when the field is unchanged. */
 export function fieldDiff(original: string, proposed: string): string | null {
-	return original === proposed ? null : `${original === '' ? '(blank)' : original} -> ${proposed === '' ? '(blank)' : proposed}`;
+	return original === proposed
+		? null
+		: `${original === '' ? '(blank)' : original} -> ${proposed === '' ? '(blank)' : proposed}`;
 }
 
 /** Selection can only hold pending rows; anything else is not actionable. */
 export function selectableIds(items: TitleFixProposal[], selected: ReadonlySet<string>): string[] {
-	return items.filter((p) => p.state === 'pending' && selected.has(p.proposal_id)).map((p) => p.proposal_id);
+	return items
+		.filter((p) => p.state === 'pending' && selected.has(p.proposal_id))
+		.map((p) => p.proposal_id);
 }

@@ -47,7 +47,7 @@ FOLDER_LABEL="Music DJ Library"
 # Edit config.xml via python (xmltodict is optional; fall back to xmllint +
 # awk-ish detection if missing). Idempotent: if the folder ID already exists,
 # do nothing.
-python3 - <<PYEOF "${CONFIG_XML}" "${FOLDER_ID}" "${FOLDER_LABEL}" "${DJ_LIBRARY}"
+python3 - "${CONFIG_XML}" "${FOLDER_ID}" "${FOLDER_LABEL}" "${DJ_LIBRARY}" <<PYEOF
 import sys
 import xml.etree.ElementTree as ET
 

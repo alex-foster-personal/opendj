@@ -38,7 +38,7 @@ describe('library-columns', () => {
 		for (const id of ['funnel', 'err', 'cloud', 'order', 'title', 'autoplay', 'lyrics']) {
 			assert.equal(cols.isHideableColumn(id), false, id);
 		}
-		assert.equal(cols.HIDEABLE_COLUMNS.length, 13);
+		assert.equal(cols.HIDEABLE_COLUMNS.length, 15);
 		for (const col of cols.HIDEABLE_COLUMNS) assert.ok(cols.HIDEABLE_COLUMN_LABELS[col], col);
 	});
 

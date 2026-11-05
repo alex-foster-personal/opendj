@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from apps.genre_infer import findings
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
@@ -111,6 +113,63 @@ def test_search_matches_genre_eav_field(fixture_db: Path) -> None:
     ids = {sid for sid, _ in hits}
     assert ids == {"s1", "s5", "s6"}
     assert total == 3
+
+
+@pytest.mark.requirement("GENRE-04")
+def test_search_indexes_and_refreshes_only_the_precedence_selected_genre(fixture_db: Path) -> None:
+    """[if] genre state changes [then] search follows precedence, [else stop]."""
+    conn = state_db.open_rw(fixture_db)
+    try:
+        findings.ensure_schema(conn)
+        findings.put_finding(
+            conn,
+            findings.Finding(
+                stable_id="s1",
+                provider="beatport",
+                status=findings.STATUS_OK,
+                genre="Nebula Breaks",
+                confidence=1.0,
+            ),
+        )
+        findings.update_config(conn, {"precedence": ["beatport", "library-tag"]})
+    finally:
+        conn.close()
+
+    hits, _ = search_index.search(fixture_db, "nebula", limit=10)
+    hidden, _ = search_index.search(fixture_db, "deep", limit=10)
+    assert [sid for sid, _ in hits] == ["s1"]
+    assert hidden == []
+
+    conn = state_db.open_rw(fixture_db)
+    try:
+        findings.put_finding(
+            conn,
+            findings.Finding(
+                stable_id="s1",
+                provider="beatport",
+                status=findings.STATUS_OK,
+                genre="Aurora Jungle",
+                confidence=1.0,
+            ),
+        )
+    finally:
+        conn.close()
+
+    old_finding, _ = search_index.search(fixture_db, "nebula", limit=10)
+    new_finding, _ = search_index.search(fixture_db, "aurora", limit=10)
+    assert old_finding == []
+    assert [sid for sid, _ in new_finding] == ["s1"]
+
+    conn = state_db.open_rw(fixture_db)
+    try:
+        findings.update_config(conn, {"precedence": ["library-tag", "beatport"]})
+    finally:
+        conn.close()
+
+    hidden_finding, _ = search_index.search(fixture_db, "aurora", limit=10)
+    restored_library_tag, _ = search_index.search(fixture_db, "deep", limit=10)
+    assert hidden_finding == []
+    assert [sid for sid, _ in restored_library_tag] == ["s1"]
 
 
 def test_search_matches_comments_eav_field(fixture_db: Path) -> None:
@@ -331,6 +390,62 @@ def test_search_works_while_the_library_is_being_written_to(
     assert commits, "the control: a real commit must have landed during the source read"
     assert total == 1
     assert [sid for sid, _ in hits] == ["s1"]
+
+
+def _commit_on_another_thread(
+    state_db_path: Path,
+) -> tuple[threading.Event, threading.Event, threading.Thread, list[int], list[Exception]]:
+    """BEGIN IMMEDIATE + UPDATE + COMMIT on a second connection until released."""
+    held, release = threading.Event(), threading.Event()
+    commits: list[int] = []
+    errors: list[Exception] = []
+
+    def _hold() -> None:
+        conn = sqlite3.connect(str(state_db_path), isolation_level=None)
+        try:
+            n = 0
+            while not release.is_set():
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "UPDATE tracks SET updated_at = ? WHERE stable_id = 's2'",
+                    (str(n),),
+                )
+                conn.execute("COMMIT")
+                n += 1
+                commits.append(n)
+                held.set()
+        except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
+            errors.append(exc)
+            held.set()
+        finally:
+            conn.close()
+
+    thread = threading.Thread(target=_hold)
+    thread.start()
+    return held, release, thread, commits, errors
+
+
+def test_search_answers_while_another_thread_writes(fixture_db: Path) -> None:
+    """Real second-thread writer commits to state.db while search rebuilds the index."""
+    held, release, thread, commits, errors = _commit_on_another_thread(fixture_db)
+    assert held.wait(10), "the writer thread never committed"
+    try:
+        before = len(commits)
+        started = time.monotonic()
+        hits, total = search_index.search(fixture_db, "levi", limit=10)
+        elapsed = time.monotonic() - started
+        assert elapsed < 2.0, f"search waited {elapsed:.2f}s on the writer"
+        assert len(commits) > before, (
+            "the control: a real commit must have landed on the other thread during search"
+        )
+        assert total == 1
+        assert [sid for sid, _ in hits] == ["s1"]
+    finally:
+        release.set()
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "writer thread leaked"
+        if errors:
+            raise errors[0]
 
 
 def test_index_source_is_read_from_one_snapshot(

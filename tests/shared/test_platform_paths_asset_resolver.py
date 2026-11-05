@@ -5,6 +5,7 @@ trim of that file's own content -- see ``ops/quality/README.md``'s 600-line
 review threshold for why this lives in its own module rather than shrinking
 any test or comment).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,9 +44,7 @@ def test_asset_resolver_dedupes_repeat_lookup_within_one_instance(
         return real_resolve(self, strict=strict)
 
     monkeypatch.setattr(Path, "resolve", counting_resolve)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="native"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="native")
     resolver = pp.AssetResolver()
 
     first = resolver.resolve_asset_sibling(mapped, target)
@@ -66,9 +65,7 @@ def test_asset_resolver_is_keyed_per_candidate(tmp_path: Path) -> None:
     first_path.parent.mkdir(parents=True)
     first_path.write_bytes(b"a")
     second_path.write_bytes(b"b")
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/x.DAT", resolved=None, mapped=True, reason="native"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/x.DAT", resolved=None, mapped=True, reason="native")
     resolver = pp.AssetResolver()
 
     first = resolver.resolve_asset_sibling(mapped, first_path)
@@ -79,9 +76,7 @@ def test_asset_resolver_is_keyed_per_candidate(tmp_path: Path) -> None:
     assert first.resolved != second.resolved
 
 
-def test_asset_resolver_does_not_survive_across_two_instances(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_asset_resolver_does_not_survive_across_two_instances(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] a symlink swap happens BETWEEN two separate AssetResolver
     instances (i.e. two separate build_track_rows calls) [then ⛔️] the
     second must not reuse the first's verdict -- this is the exact property
@@ -94,9 +89,7 @@ def test_asset_resolver_does_not_survive_across_two_instances(
     outside.mkdir()
     (outside / "ANLZ0000.DAT").write_bytes(b"outside")
     monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share")
 
     first_resolver = pp.AssetResolver()
     first = first_resolver.resolve_asset_sibling(mapped, target)
@@ -113,9 +106,7 @@ def test_asset_resolver_does_not_survive_across_two_instances(
     assert second.reason == "unsafe:share-symlink"
 
 
-def test_resolve_asset_path_without_a_resolver_is_uncached(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_resolve_asset_path_without_a_resolver_is_uncached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] no AssetResolver is passed [then ⛔️] every lookup re-walks the
     filesystem -- the default, unchanged for every call site but the
     listing hydration path."""
@@ -131,14 +122,9 @@ def test_resolve_asset_path_without_a_resolver_is_uncached(
         return real_resolve(self, strict=strict)
 
     monkeypatch.setattr(Path, "resolve", counting_resolve)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="native"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="native")
 
     pp.resolve_asset_sibling(mapped, target)
     pp.resolve_asset_sibling(mapped, target)
 
-    assert calls["n"] == 2, (
-        f"expected a real Path.resolve() call on every lookup with no "
-        f"resolver, got {calls['n']}"
-    )
+    assert calls["n"] == 2, f"expected a real Path.resolve() call on every lookup with no resolver, got {calls['n']}"

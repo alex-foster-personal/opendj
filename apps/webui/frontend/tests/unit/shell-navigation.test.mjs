@@ -186,9 +186,17 @@ test('an unreachable engine logs at most one failing-since record per outage, no
 		await flushMicrotasks();
 		teardown();
 
-		assert.equal(warnings.length, 1, 'one outage must produce exactly one warning, not one per tick');
+		assert.equal(
+			warnings.length,
+			1,
+			'one outage must produce exactly one warning, not one per tick'
+		);
 		assert.match(warnings[0][0], /shell navigation poll failing since/);
-		assert.equal(unhandled, null, 'a caught engine failure must never surface as an unhandled rejection');
+		assert.equal(
+			unhandled,
+			null,
+			'a caught engine failure must never surface as an unhandled rejection'
+		);
 	} finally {
 		mock.timers.reset();
 		console.warn = originalWarn;

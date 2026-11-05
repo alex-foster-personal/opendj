@@ -51,8 +51,16 @@ test('[PLAY-28] a gridless new master with a follower mixes without Beat Sync', 
 });
 
 test('[PLAY-28] control: a gridded new master still syncs, and a lone deck needs no notice', () => {
-	assert.equal(grid.handoverMixesWithoutBeatSync({ anlz: withGrid(REAL_PQTZ_BEATS) }, 1), false, 'a valid grid must never be ignored');
-	assert.equal(grid.handoverMixesWithoutBeatSync({ anlz: withGrid([]) }, 0), false, 'no followers, nothing to mix without');
+	assert.equal(
+		grid.handoverMixesWithoutBeatSync({ anlz: withGrid(REAL_PQTZ_BEATS) }, 1),
+		false,
+		'a valid grid must never be ignored'
+	);
+	assert.equal(
+		grid.handoverMixesWithoutBeatSync({ anlz: withGrid([]) }, 0),
+		false,
+		'no followers, nothing to mix without'
+	);
 });
 
 test('[PLAY-28] the notice is honest and names the deck', () => {
@@ -61,17 +69,25 @@ test('[PLAY-28] the notice is honest and names the deck', () => {
 });
 
 test('[PLAY-28] SHAPE GUARD: setDeckMaster and the automatic re-join ask before syncing to the new master', () => {
-	const setMaster = engineBlockAfter('	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {');
+	const setMaster = engineBlockAfter(
+		'	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {'
+	);
 	const ask = setMaster.indexOf('handoverMixesWithoutBeatSync(st, followers.length)');
 	const sync = setMaster.indexOf('await _synchronizeFollowers(deck, followers');
 	assert.ok(ask >= 0, 'if setDeckMaster stops asking then a gridless handover is refused again');
 	assert.ok(sync > ask, 'the gridless check must come BEFORE the sync it short-circuits');
-	assert.match(setMaster, /_mixWithoutBeatSync\(deck, followers, pushToast, recordPerfEvent, _clearSyncError\)/);
+	assert.match(
+		setMaster,
+		/_mixWithoutBeatSync\(deck, followers, pushToast, recordPerfEvent, _clearSyncError\)/
+	);
 	const audible = setMaster.slice(setMaster.indexOf('masterSwitchFollowers'));
 	const stop = audible.indexOf('!st.playing && !_rt[deck].desiredActive');
 	const bump = audible.indexOf('_bumpReanchorOperation(deck)');
 	const assign = audible.indexOf("_assignMaster(deck, 'manual')");
-	assert.ok(stop >= 0, 'if the audible branch lost the stopping-deck return then a MASTER click during pause-tail locks the stopping deck');
+	assert.ok(
+		stop >= 0,
+		'if the audible branch lost the stopping-deck return then a MASTER click during pause-tail locks the stopping deck'
+	);
 	assert.ok(bump > stop, 'stopping-deck return must come BEFORE reanchor');
 	assert.ok(assign > stop, 'stopping-deck return must come BEFORE assign');
 
@@ -83,8 +99,15 @@ test('[PLAY-28] SHAPE GUARD: setDeckMaster and the automatic re-join ask before 
 	);
 	const gridless = readFrontendSource('src/lib/player/grid-features.ts');
 	const helperAt = gridless.indexOf('export function mixWithoutBeatSync(');
-	assert.ok(helperAt >= 0, 'if the gridless mix notice left grid-features then the handover is silent again');
+	assert.ok(
+		helperAt >= 0,
+		'if the gridless mix notice left grid-features then the handover is silent again'
+	);
 	const helper = gridless.slice(helperAt, gridless.indexOf('\n}', helperAt));
 	assert.match(helper, /pushToast\(notice, 'warn'\)/, 'the fallback must be visible');
-	assert.match(helper, /recordPerfEvent\(GRIDLESS_MASTER_PERF_KIND/, 'the fallback must be in telemetry');
+	assert.match(
+		helper,
+		/recordPerfEvent\(GRIDLESS_MASTER_PERF_KIND/,
+		'the fallback must be in telemetry'
+	);
 });

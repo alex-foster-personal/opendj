@@ -48,12 +48,21 @@ test('an installed driver is not reported as a running app', () => {
 		detected: [item('krisp', 'Krisp', 'audio_driver')],
 		error: null
 	});
-	assert.doesNotMatch(line, /Krisp is running/,
-		'if an installed plug-in is called "running" then the advisory states a false status - broken');
-	assert.match(line, /Krisp is installed as an audio plug-in/,
-		'if the line does not say what was actually found then the reader cannot act on it - broken');
-	assert.match(line, /Disable or remove it in its own settings/,
-		'if a plug-in finding says "quit it" then the remedy cannot work - broken');
+	assert.doesNotMatch(
+		line,
+		/Krisp is running/,
+		'if an installed plug-in is called "running" then the advisory states a false status - broken'
+	);
+	assert.match(
+		line,
+		/Krisp is installed as an audio plug-in/,
+		'if the line does not say what was actually found then the reader cannot act on it - broken'
+	);
+	assert.match(
+		line,
+		/Disable or remove it in its own settings/,
+		'if a plug-in finding says "quit it" then the remedy cannot work - broken'
+	);
 });
 
 test('an app and a driver together each get their own sentence and remedy', () => {
@@ -64,8 +73,11 @@ test('an app and a driver together each get their own sentence and remedy', () =
 	});
 	assert.match(line, /Fathom is running/);
 	assert.match(line, /Krisp is installed as an audio plug-in/);
-	assert.match(line, /Quit the app, and disable or remove the plug-in/,
-		'if a mixed report collapses to one remedy then one of the two findings is left unactionable - broken');
+	assert.match(
+		line,
+		/Quit the app, and disable or remove the plug-in/,
+		'if a mixed report collapses to one remedy then one of the two findings is left unactionable - broken'
+	);
 });
 
 test('a clean machine produces no warning', () => {

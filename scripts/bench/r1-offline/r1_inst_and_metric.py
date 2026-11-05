@@ -38,6 +38,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -376,7 +377,9 @@ def main() -> None:
 
     print("[2] why SI-SDR disagrees with the ear: bandwidth vs delay vs neither ...")
     result["metric_diagnosis"] = metric_diagnosis(
-        BENCH / "ratings" / "ratings-zeno-signs-musdb18-hq-pop-rock-sung-male-lead-cheap-floor-ladder-20260724T104946Z.json"
+        BENCH
+        / "ratings"
+        / "ratings-zeno-signs-musdb18-hq-pop-rock-sung-male-lead-cheap-floor-ladder-20260724T104946Z.json"
     )
     for row in result["metric_diagnosis"]["rows"]:
         print(

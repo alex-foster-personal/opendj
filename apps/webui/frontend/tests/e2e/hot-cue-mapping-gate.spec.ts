@@ -46,7 +46,10 @@ test('an unmapped deck saves a hot cue into the own store (CUES-01)', async ({ p
 	const hotCueWrites: number[] = [];
 	page.on('response', (response) => {
 		const request = response.request();
-		if (request.method() === 'PUT' && /\/api\/v1\/tracks\/[^/]+\/hot-cues\/A$/.test(request.url())) {
+		if (
+			request.method() === 'PUT' &&
+			/\/api\/v1\/tracks\/[^/]+\/hot-cues\/A$/.test(request.url())
+		) {
 			hotCueWrites.push(response.status());
 		}
 	});
@@ -86,7 +89,9 @@ test('an unmapped deck saves a hot cue into the own store (CUES-01)', async ({ p
 	await nameInput.fill('own store');
 	await nameInput.press('Enter');
 
-	await expect.poll(() => hotCueWrites, { message: 'SAVE must reach the server and succeed' }).toEqual([200]);
+	await expect
+		.poll(() => hotCueWrites, { message: 'SAVE must reach the server and succeed' })
+		.toEqual([200]);
 	await expect(firstPad).toHaveClass(/filled/);
 	const afterSave = (await _query(page)).decks[DECK];
 	expect(afterSave.command_error, 'a save must not surface a command error').toBeNull();
@@ -105,7 +110,10 @@ test('a never-loaded deck renders its empty hot-cue pads inert-with-tooltip and 
 
 	const hotCueWrites: string[] = [];
 	page.on('request', (request) => {
-		if (request.method() === 'PUT' && /\/api\/v1\/tracks\/[^/]+\/hot-cues\/[A-H]$/.test(request.url())) {
+		if (
+			request.method() === 'PUT' &&
+			/\/api\/v1\/tracks\/[^/]+\/hot-cues\/[A-H]$/.test(request.url())
+		) {
 			hotCueWrites.push(`${request.method()} ${request.url()}`);
 		}
 	});
@@ -118,7 +126,10 @@ test('a never-loaded deck renders its empty hot-cue pads inert-with-tooltip and 
 	// No load on this deck at all - the exact repro from the issue body:
 	// goto('/performance'), load nothing, click the deck's first pad.
 	const deck = (await _query(page)).decks[NEVER_LOADED_DECK];
-	expect(deck.stable_id, 'deck 2 must start with nothing loaded for this repro to be valid').toBeNull();
+	expect(
+		deck.stable_id,
+		'deck 2 must start with nothing loaded for this repro to be valid'
+	).toBeNull();
 	expect(
 		deck.has_rb_mapping,
 		'an empty deck defaults has_rb_mapping true (state.svelte.ts _emptyDeckState) - that is the ' +
@@ -141,7 +152,9 @@ test('a never-loaded deck renders its empty hot-cue pads inert-with-tooltip and 
 	await page.waitForTimeout(500);
 
 	expect(hotCueWrites, 'an inert pad must never reach the hot-cue write path').toEqual([]);
-	expect(pageErrors, 'clicking an inert empty-deck pad must not throw unhandled (#804)').toEqual([]);
+	expect(pageErrors, 'clicking an inert empty-deck pad must not throw unhandled (#804)').toEqual(
+		[]
+	);
 	const afterClick = (await _query(page)).decks[NEVER_LOADED_DECK];
 	expect(afterClick.command_error, 'an inert click must not surface a command error').toBeNull();
 });

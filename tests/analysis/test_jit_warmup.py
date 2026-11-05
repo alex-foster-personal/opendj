@@ -38,6 +38,7 @@ Regression lines:
   - if purge stops removing the stamp then the next warm-up skips against a
     fingerprint of a cache that no longer exists
 """
+
 from __future__ import annotations
 
 import json
@@ -87,9 +88,7 @@ def test_fingerprint_is_empty_when_there_is_nothing_to_vouch_for(
     assert cache_fingerprint(()) == ""
     assert cache_fingerprint((tmp_path,)) == ""
     _artifact(tmp_path, "notes.txt")
-    assert cache_fingerprint((tmp_path,)) == "", (
-        "a non-artifact file must not count as a warmed cache"
-    )
+    assert cache_fingerprint((tmp_path,)) == "", "a non-artifact file must not count as a warmed cache"
 
 
 @pytest.mark.requirement("JIT-02")
@@ -116,9 +115,7 @@ def test_fingerprint_moves_when_any_artifact_changes(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("JIT-05")
-def test_purge_removes_artifacts_and_the_stamp(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_purge_removes_artifacts_and_the_stamp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a purge leaves artifacts or the stamp behind [then] fail, [else stop].
 
     if purge left the stamp behind then the next warm-up would skip against
@@ -274,17 +271,13 @@ def test_the_compile_lock_excludes_concurrent_processes(tmp_path: Path) -> None:
     assert len(intervals) == 4, intervals
     overlap = _max_overlap_s(intervals)
     assert overlap <= 0.0, (
-        f"two processes were inside the compile together for {overlap:.3f}s; "
-        "the cross-process lock is not excluding"
+        f"two processes were inside the compile together for {overlap:.3f}s; the cross-process lock is not excluding"
     )
     # Four 0.6s holds serialized end to end, so the run spans >= 2.4s. Without
     # this the assertion above would also pass if every process had crashed
     # before entering, or if the holds had been zero-length.
     span = intervals[-1][1] - intervals[0][0]
-    assert span >= 4 * 0.6, (
-        f"four serialized 0.6s holds spanned only {span:.3f}s, so they cannot "
-        "all have been held"
-    )
+    assert span >= 4 * 0.6, f"four serialized 0.6s holds spanned only {span:.3f}s, so they cannot all have been held"
 
 
 @pytest.mark.requirement("JIT-03")
@@ -315,9 +308,7 @@ def test_negative_control_the_same_probe_overlaps_without_the_lock(
 
 
 @pytest.mark.requirement("JIT-03")
-def test_lock_path_is_shared_by_processes_that_share_a_cache(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_lock_path_is_shared_by_processes_that_share_a_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] the lock path stops tracking the cache location [then] fail, [else stop].
 
     if the lock key stopped tracking the cache location then processes
@@ -331,9 +322,7 @@ def test_lock_path_is_shared_by_processes_that_share_a_cache(
     assert a != default
     assert warmup_stamp_path().parent == a.parent
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path / "b"))
-    assert warmup_lock_path() != a, (
-        "two different cache dirs must not share one lock"
-    )
+    assert warmup_lock_path() != a, "two different cache dirs must not share one lock"
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path / "a"))
     assert warmup_lock_path() == a, "the key must be a function of the cache dir"
 
@@ -383,9 +372,7 @@ def test_the_warmup_completes_in_the_parent_before_any_worker_runs(
     assert summary.failed == 0, summary.errors
     reports = [json.loads(p.read_text()) for p in probe_dir.glob("*.json")]
     assert len(reports) == 4, reports
-    assert all(r["warm_seen"] for r in reports), (
-        f"a worker ran before the warm-up finished: {reports}"
-    )
+    assert all(r["warm_seen"] for r in reports), f"a worker ran before the warm-up finished: {reports}"
     driver_pid = os.getpid()
     assert {r["warm_pid"] for r in reports} == {driver_pid}, (
         f"the warm-up ran in a process that is not the driver ({driver_pid}); "
@@ -398,9 +385,7 @@ def test_the_warmup_completes_in_the_parent_before_any_worker_runs(
 
 
 @pytest.mark.requirement("JIT-01")
-def test_a_single_worker_run_still_warms(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_single_worker_run_still_warms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] --workers 1 skips the warm-up [then] fail, [else stop].
 
     if --workers 1 skipped the warm-up then the drain's per-chunk
@@ -484,10 +469,7 @@ def test_the_warmup_is_skipped_only_while_the_cache_is_what_it_left(
     # A racing writer moves the fingerprint, so the next run must NOT trust it.
     (_CountingBackend.root / "__pycache__" / "obj.nbc").write_bytes(b"raced")
     third = warm_backend_jit(_CountingBackend, backend_name="counting")
-    assert not third.skipped, (
-        "the cache was written to by something other than a serial warm-up and "
-        "was trusted anyway"
-    )
+    assert not third.skipped, "the cache was written to by something other than a serial warm-up and was trusted anyway"
     assert _CountingBackend.compiles == 2
 
     # And a purge is not a skip either.
@@ -498,9 +480,7 @@ def test_the_warmup_is_skipped_only_while_the_cache_is_what_it_left(
 
 
 @pytest.mark.requirement("JIT-02")
-def test_a_backend_with_no_cache_roots_never_skips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_backend_with_no_cache_roots_never_skips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a backend that cannot vouch for a cache takes the fast path [then] fail, [else stop].
 
     if an unvouchable backend took the fast path then "I cannot measure this
@@ -526,9 +506,7 @@ def test_a_backend_with_no_cache_roots_never_skips(
 
 
 @pytest.mark.requirement("JIT-01")
-def test_a_backend_that_never_declared_its_jit_cache_is_named(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_backend_that_never_declared_its_jit_cache_is_named(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] an undeclared backend is defaulted or dies unnamed [then] fail, [else stop].
 
     if an undeclared backend defaulted to "no cache" then it would silently
@@ -603,8 +581,7 @@ def test_a_real_cache_is_vouched_for_by_its_toolchain_and_stamp_only(
     warmup_stamp_path().unlink()
     assert not stamp_vouches_for(roots)
     repaired = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge-if-stale"],
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
         cwd=REPO_ROOT,
         env=os.environ.copy(),
         capture_output=True,

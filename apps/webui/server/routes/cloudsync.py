@@ -61,6 +61,7 @@ a second machine. Deriving from the DB the writes land in is what makes this
 router's ``origin_device_id`` the same id ``StateWriter``, ``provenance`` and
 ``locations`` stamp with.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -104,10 +105,9 @@ SyncMode = Literal["pinned", "cached", "stream", "excluded"]
 
 # ----- connection + identity plumbing --------------------------------------
 
+
 def _db_path(request: Request) -> Path:
-    return Path(
-        getattr(request.app.state, "state_db_path", "(private path)")
-    )
+    return Path(getattr(request.app.state, "state_db_path", "(private path)"))
 
 
 def _data_dir(conn: sqlite3.Connection) -> Path:
@@ -119,19 +119,23 @@ def _data_dir(conn: sqlite3.Connection) -> Path:
     try:
         return sync_stamp.data_dir_for_connection(conn)
     except sync_stamp.SyncStampError as exc:
-        raise HTTPException(status_code=500, detail={
-            "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
-        }) from exc
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CLOUDSYNC_IDENTITY_ERROR",
+                "message": str(exc),
+            },
+        ) from exc
 
 
 def _unavailable(db_path: Path) -> HTTPException:
-    return HTTPException(status_code=503, detail={
-        "code": "CLOUDSYNC_DB_UNAVAILABLE",
-        "message": (
-            f"state DB not found at {db_path}; run "
-            "`python -m apps.shared.state.cli init` first."
-        ),
-    })
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "CLOUDSYNC_DB_UNAVAILABLE",
+            "message": (f"state DB not found at {db_path}; run `python -m apps.shared.state.cli init` first."),
+        },
+    )
 
 
 def get_cloudsync_conn(request: Request) -> Iterator[sqlite3.Connection]:
@@ -145,7 +149,9 @@ def get_cloudsync_conn(request: Request) -> Iterator[sqlite3.Connection]:
     if not db_path.exists():
         raise _unavailable(db_path)
     conn = sqlite3.connect(
-        f"file:{db_path}?mode=ro", uri=True, isolation_level=None,
+        f"file:{db_path}?mode=ro",
+        uri=True,
+        isolation_level=None,
         check_same_thread=False,
     )
     conn.execute("PRAGMA query_only = ON")
@@ -177,12 +183,14 @@ def get_cloudsync_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
     ).fetchone()
     return row is not None
 
 
 # ----------------------------------------------------------- schemas
+
 
 class MachineOut(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -256,25 +264,38 @@ class OverviewOut(BaseModel):
 
 # ----------------------------------------------------------- helpers
 
+
 def _row_to_machine(row: tuple) -> MachineOut:
     return MachineOut(
-        machine_id=row[0], name=row[1], platform=row[2],
-        is_hub=bool(row[3]), data_root=row[4],
-        first_seen=row[5], last_seen=row[6],
+        machine_id=row[0],
+        name=row[1],
+        platform=row[2],
+        is_hub=bool(row[3]),
+        data_root=row[4],
+        first_seen=row[5],
+        last_seen=row[6],
     )
 
 
 def _row_to_policy(row: tuple) -> SyncPolicyOut:
     return SyncPolicyOut(
-        machine_id=row[0], asset_kind=row[1], mode=row[2],
-        cache_budget_mb=row[3], updated_at=row[4], origin_device_id=row[5],
+        machine_id=row[0],
+        asset_kind=row[1],
+        mode=row[2],
+        cache_budget_mb=row[3],
+        updated_at=row[4],
+        origin_device_id=row[5],
     )
 
 
 def _row_to_pin(row: tuple) -> PlaylistPinOut:
     return PlaylistPinOut(
-        machine_id=row[0], playlist_id=row[1], playlist_name=row[2],
-        mode=row[3], updated_at=row[4], origin_device_id=row[5],
+        machine_id=row[0],
+        playlist_id=row[1],
+        playlist_name=row[2],
+        mode=row[3],
+        updated_at=row[4],
+        origin_device_id=row[5],
     )
 
 
@@ -289,16 +310,21 @@ def _row_to_pin(row: tuple) -> PlaylistPinOut:
 # output), so a config change belongs to whichever lane owns pyproject.toml's
 # ruff block, not this one.
 
-@router.get("/machines", response_model=list[MachineOut], responses={
-    409: {
-        "description": "CLOUDSYNC_MACHINE_NAME_CONFLICT (the configured name "
-        "belongs to another machine id; nothing was changed)",
+
+@router.get(
+    "/machines",
+    response_model=list[MachineOut],
+    responses={
+        409: {
+            "description": "CLOUDSYNC_MACHINE_NAME_CONFLICT (the configured name "
+            "belongs to another machine id; nothing was changed)",
+        },
+        500: {
+            "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
+            "(cloudsync-config.json is malformed, so the configured name is unknown)",
+        },
     },
-    500: {
-        "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
-        "(cloudsync-config.json is malformed, so the configured name is unknown)",
-    },
-})
+)
 def list_machines(
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
@@ -307,9 +333,7 @@ def list_machines(
     # with a same-host hub's row on UNIQUE machines.name).
     data_dir = _data_dir(conn)
     try:
-        register_machine(
-            conn, data_dir=data_dir, name=sync_config.configured_machine_name(data_dir)
-        )
+        register_machine(conn, data_dir=data_dir, name=sync_config.configured_machine_name(data_dir))
         try:
             effective = sync_config.resolve_config(data_dir)
         except sync_config.CloudSyncConfigError:
@@ -317,25 +341,37 @@ def list_machines(
         if effective is not None and effective.configured:
             policy_bootstrap.ensure_self_class_seeded(conn)
     except sync_config.CloudSyncConfigError as exc:
-        raise HTTPException(status_code=500, detail={
-            "code": "CLOUDSYNC_CONFIG_INVALID", "message": str(exc),
-        }) from exc
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CLOUDSYNC_CONFIG_INVALID",
+                "message": str(exc),
+            },
+        ) from exc
     except MachineNameConflictError as exc:
-        raise HTTPException(status_code=409, detail={
-            "code": "CLOUDSYNC_MACHINE_NAME_CONFLICT", "message": str(exc),
-        }) from exc
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CLOUDSYNC_MACHINE_NAME_CONFLICT",
+                "message": str(exc),
+            },
+        ) from exc
     except MachineIdentityError as exc:
-        raise HTTPException(status_code=500, detail={
-            "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
-        }) from exc
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CLOUDSYNC_IDENTITY_ERROR",
+                "message": str(exc),
+            },
+        ) from exc
     rows = conn.execute(
-        "SELECT machine_id, name, platform, is_hub, data_root, "
-        "first_seen, last_seen FROM machines ORDER BY name"
+        "SELECT machine_id, name, platform, is_hub, data_root, first_seen, last_seen FROM machines ORDER BY name"
     ).fetchall()
     return [_row_to_machine(r) for r in rows]
 
 
 # ----------------------------------------------------------- policies
+
 
 @router.get("/policies", response_model=list[SyncPolicyOut])
 def list_policies(
@@ -387,6 +423,7 @@ def put_policy(
 
 # ----------------------------------------------------------- playlist pins
 
+
 @router.get("/playlist-pins", response_model=list[PlaylistPinOut])
 def list_playlist_pins(
     machine_id: str | None = Query(None),
@@ -436,6 +473,7 @@ def put_playlist_pin(
 
 # ----------------------------------------------------------- overview
 
+
 def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) -> MachineOverview:
     def _pin_count(mode: str) -> int:
         row = conn.execute(
@@ -470,7 +508,8 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
     last_sync_row = None
     if _table_exists(conn, "sync_state"):
         last_sync_row = conn.execute(
-            "SELECT last_sync_at FROM sync_state WHERE peer = ?", (machine_id,),
+            "SELECT last_sync_at FROM sync_state WHERE peer = ?",
+            (machine_id,),
         ).fetchone()
 
     return MachineOverview(
@@ -488,21 +527,14 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
 def get_overview(
     conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> OverviewOut:
-    total_row = conn.execute(
-        "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
-    ).fetchone()
+    total_row = conn.execute("SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL").fetchone()
     total_tracks = int(total_row[0]) if total_row else 0
 
     if not _table_exists(conn, "machines") or not _table_exists(conn, "playlist_pins"):
         return OverviewOut(total_tracks=total_tracks, machines=[])
 
-    machine_rows = conn.execute(
-        "SELECT machine_id, name FROM machines ORDER BY name"
-    ).fetchall()
-    machines = [
-        _machine_overview_row(conn, machine_id, name)
-        for machine_id, name in machine_rows
-    ]
+    machine_rows = conn.execute("SELECT machine_id, name FROM machines ORDER BY name").fetchall()
+    machines = [_machine_overview_row(conn, machine_id, name) for machine_id, name in machine_rows]
     return OverviewOut(total_tracks=total_tracks, machines=machines)
 
 

@@ -36,7 +36,15 @@ export interface PadUi {
 }
 type Geometry = Partial<Pick<PadUi, 'x' | 'y' | 'w' | 'h'>>;
 
-const DEFAULT_UI: PadUi = { open: false, scope: SCRATCH_SCOPE, x: 96, y: 96, w: 340, h: 380, dark: false };
+const DEFAULT_UI: PadUi = {
+	open: false,
+	scope: SCRATCH_SCOPE,
+	x: 96,
+	y: 96,
+	w: 340,
+	h: 380,
+	dark: false
+};
 
 // ----- pad state (localStorage) ---------------------------------------------
 

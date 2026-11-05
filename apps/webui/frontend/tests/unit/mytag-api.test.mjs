@@ -31,51 +31,33 @@ after(() => {
 	globalThis.fetch = originalFetch;
 });
 
-test('MyTag client reads the catalog revision and sends destructive scope acknowledgements', async () => {
-	const requests = [];
-	globalThis.fetch = async (request) => {
-		requests.push(request);
-		if (new URL(request.url).pathname.endsWith('/mytags')) {
-			return jsonResponse({
-				tags: [{ name: 'warmup', track_count: 3 }],
-				catalog_revision: REVISION
-			});
-		}
-		return jsonResponse({ tracks_updated: 3 });
-	};
-
+test('MyTag client reads the catalog', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse({ tags: [{ name: 'warmup', track_count: 3 }], catalog_revision: REVISION });
 	assert.deepEqual(await api.listMyTags(), {
 		tags: [{ name: 'warmup', track_count: 3 }],
 		catalog_revision: REVISION
 	});
-	await api.renameMyTag({
-		old_name: 'warmup',
-		new_name: 'opening',
-		expected_catalog_revision: REVISION,
-		expected_track_count: 3,
-		confirm_merge: true
-	});
-	await api.deleteMyTag({
-		name: 'opening',
-		expected_catalog_revision: REVISION,
-		expected_track_count: 3
-	});
+});
 
-	assert.equal(requests[1].url, `${API_BASE}/api/v1/mytags/rename`);
-	assert.equal(requests[1].method, 'POST');
-	assert.deepEqual(await requests[1].clone().json(), {
-		old_name: 'warmup',
-		new_name: 'opening',
-		expected_catalog_revision: REVISION,
-		expected_track_count: 3,
-		confirm_merge: true
-	});
-	assert.equal(requests[2].url, `${API_BASE}/api/v1/mytags/delete`);
-	assert.equal(requests[2].method, 'POST');
-	assert.deepEqual(await requests[2].clone().json(), {
-		name: 'opening',
-		expected_catalog_revision: REVISION,
-		expected_track_count: 3
+test('every tag write names one undo session and encodes the tag in the path', async () => {
+	const requests = [];
+	globalThis.fetch = async (request) => {
+		requests.push(request);
+		return jsonResponse({ row: {}, undo_id: 'u' });
+	};
+	await api.assignTags({ stable_ids: ['t1'], remove: ['Mozart'] });
+	await api.renameTag('drum/bass', 'dnb', true);
+	await api.deleteTag('dnb');
+	const sessions = new Set(requests.map((r) => r.headers.get('x-undo-session')));
+	assert.equal(sessions.size, 1);
+	assert.ok([...sessions][0]);
+	assert.equal(new URL(requests[1].url).pathname, '/api/v1/mytags/drum%2Fbass');
+	assert.equal(requests[1].method, 'PATCH');
+	assert.deepEqual(await requests[0].clone().json(), {
+		add: [],
+		remove: ['Mozart'],
+		stable_ids: ['t1']
 	});
 });
 

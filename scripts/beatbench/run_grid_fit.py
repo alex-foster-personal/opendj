@@ -46,8 +46,8 @@ than dropping the row, so no variant shrinks its own denominator.
 
 Usage:
   python -m scripts.beatbench.run_grid_fit \\
-      --candidate ops/beatbench/round-0/candidate-beat_this.json \\
-      --out-dir ops/beatbench/round-4
+      --candidate (private path) \\
+      --out-dir (private path)
 """
 
 from __future__ import annotations
@@ -150,9 +150,7 @@ def _fit(
     """The grid for one row by `method`: `line`, `const` or `piecewise`.
     `const_options` go to `fit_const_regions` and are ignored for `line`."""
     if method == "line":
-        return fit_grid(
-            beats, downbeats, rounding=rounding, offset_s=offset_s, octave_multiple=octave_multiple
-        )
+        return fit_grid(beats, downbeats, rounding=rounding, offset_s=offset_s, octave_multiple=octave_multiple)
     return fit_const_regions(
         beats,
         downbeats,
@@ -229,9 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = {
             "schema": 1,
             "candidate": name,
-            "candidate_version": (
-                f"grid_fit over {source['candidate']} ({source['candidate_version']})"
-            ),
+            "candidate_version": (f"grid_fit over {source['candidate']} ({source['candidate_version']})"),
             "source_candidate": os.path.relpath(args.candidate),
             "license": source["license"],
             "shippable": True,

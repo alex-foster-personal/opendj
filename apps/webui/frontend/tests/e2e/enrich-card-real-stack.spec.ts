@@ -22,7 +22,7 @@
  * Regression lines:
  * - if the pill shows when the summary says show=false, or is absent when it says show=true, then broken
  * - if the card expands without a click, or the pill's flag disagrees with needsAttention, then broken
- * - if the card's lane lines or stems line differ from the policy functions over the summary it fetched, then broken
+ * - if the card's lane lines (capability warnings included) or stems line differ from the policy functions over the summary it fetched, then broken
  * - if Esc, a click outside or Less leaves the expanded card open, or a click inside closes it, then broken
  * - if the collapsed pill hides any control (elementFromPoint) at 1280x720, 1440x900 or 1920x1080, in Default or Gothic, then broken
  */
@@ -36,7 +36,8 @@ import {
 	dudLines,
 	lyricsLine,
 	needsAttention,
-	stemsText
+	stemsText,
+	warningLines
 } from '../../src/lib/enrich/enrich-card';
 
 const SUMMARY_PATH = '/api/v1/enrich/summary';
@@ -70,12 +71,20 @@ async function fetchSummary(page: Page): Promise<EnrichSummary> {
 	}, SUMMARY_PATH);
 }
 
-/** The lane lines the card draws for this summary, in order (EnrichCardView.svelte). */
+/**
+ * The lane lines the card draws for this summary, in order (EnrichCardView.svelte),
+ * including the ENRICH-08 capability warnings (a lane that cannot run here, the
+ * opt-in AI genre keys): exactly the summary's warnings, no more, no fewer.
+ */
 function expectedLaneLines(summary: EnrichSummary): string[] {
 	const lyrics = lyricsLine(summary);
-	return [...analysisLines(summary), ...(lyrics ? [lyrics] : []), ...dudLines(summary), ...absentLines(summary)].map(
-		(line) => line.text
-	);
+	return [
+		...analysisLines(summary),
+		...(lyrics ? [lyrics] : []),
+		...dudLines(summary),
+		...absentLines(summary),
+		...warningLines(summary)
+	].map((line) => line.text);
 }
 
 /**

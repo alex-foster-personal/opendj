@@ -115,9 +115,7 @@ class WalkResult:
     identities_by_sha: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
-def _named_failures(
-    job: Job, identities_of: Callable[[int], frozenset[str]]
-) -> frozenset[str] | None:
+def _named_failures(job: Job, identities_of: Callable[[int], frozenset[str]]) -> frozenset[str] | None:
     """What a FAILED job's log says failed, or None when the walk cannot use it.
 
     None covers two cases that are different facts about the log and the same fact about
@@ -305,9 +303,7 @@ def _main_sha() -> str:
 
 def _failed_check_run_names(sha: str) -> frozenset[str]:
     payload = _json(f"repos/{REPO}/commits/{sha}/check-runs?per_page=100")
-    return frozenset(
-        run["name"] for run in payload["check_runs"] if run.get("conclusion") == "failure"
-    )
+    return frozenset(run["name"] for run in payload["check_runs"] if run.get("conclusion") == "failure")
 
 
 def unmeasured_baseline_names(
@@ -356,9 +352,7 @@ def stale_red_identities(
 
 
 def _runs_of(workflow: str) -> list[dict]:
-    return _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")[
-        "workflow_runs"
-    ]
+    return _json(f"repos/{REPO}/actions/workflows/{workflow}/runs?branch=main&per_page=50")["workflow_runs"]
 
 
 def _walk_every_workflow(
@@ -447,9 +441,7 @@ def fetch_main_red(
             result.identities,
             measured,
             pinned,
-            unmeasured_baseline_names(
-                result.unreadable_job_names, failed_check_runs(pinned), measured
-            ),
+            unmeasured_baseline_names(result.unreadable_job_names, failed_check_runs(pinned), measured),
             result.measured_sha,
             result.measured_shas,
             result.identities_by_sha,
@@ -513,9 +505,7 @@ def cached_main_red(
                 "unreadable_job_names": sorted(fresh.unreadable_job_names),
                 "measured_sha": fresh.measured_sha,
                 "measured_shas": sorted(fresh.measured_shas),
-                "identities_by_sha": {
-                    sha: sorted(ids) for sha, ids in fresh.identities_by_sha.items()
-                },
+                "identities_by_sha": {sha: sorted(ids) for sha, ids in fresh.identities_by_sha.items()},
             }
         ),
         encoding="utf-8",

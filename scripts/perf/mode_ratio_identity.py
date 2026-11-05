@@ -16,9 +16,7 @@ from scripts.perf.mode_ratio_engine import EngineTarget, reverify_engine_target
 from scripts.perf.trackify_leak_series import LeakSeries
 
 
-def _capture_identity_reason(
-    frontend: str, expected_sha: str, repo_root: Path = _REPO
-) -> str | None:
+def _capture_identity_reason(frontend: str, expected_sha: str, repo_root: Path = _REPO) -> str | None:
     """None when the checkout at `repo_root` is clean at `expected_sha` and
     `frontend` serves that same static build; otherwise why not.
 

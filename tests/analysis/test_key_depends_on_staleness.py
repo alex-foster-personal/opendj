@@ -66,9 +66,7 @@ def _beatgrid_record(
     decode_fingerprint: str,
     n_beats: int = 16,
 ) -> AnalysisRecord:
-    beats = [
-        {"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": 120.0} for index in range(n_beats)
-    ]
+    beats = [{"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": 120.0} for index in range(n_beats)]
     payload = {
         "beats": beats,
         "bpm": 120.0,
@@ -140,16 +138,12 @@ def _depends_on_for(record: AnalysisRecord) -> dict[str, object]:
 
 def test_a_newer_beatgrid_version_makes_the_key_lane_stale_on_anlz(state_db: Path) -> None:
     stable_id = "t-stale-version"
-    grid_v1 = _beatgrid_record(
-        stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v1 = _beatgrid_record(stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v1, db_path=state_db)
     key = _key_record(stable_id, depends_on_beatgrid=_depends_on_for(grid_v1))
     upsert_record(key, db_path=state_db)
 
-    grid_v2 = _beatgrid_record(
-        stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v2 = _beatgrid_record(stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v2, db_path=state_db)
 
     selection.set_toggle("key", "own")
@@ -160,16 +154,12 @@ def test_a_newer_beatgrid_version_makes_the_key_lane_stale_on_anlz(state_db: Pat
 
 def test_the_same_version_with_a_different_fingerprint_is_stale_too(state_db: Path) -> None:
     stable_id = "t-stale-fingerprint"
-    grid_v1 = _beatgrid_record(
-        stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v1 = _beatgrid_record(stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v1, db_path=state_db)
     key = _key_record(stable_id, depends_on_beatgrid=_depends_on_for(grid_v1))
     upsert_record(key, db_path=state_db)
 
-    grid_v2 = _beatgrid_record(
-        stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V2
-    )
+    grid_v2 = _beatgrid_record(stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V2)
     upsert_record(grid_v2, db_path=state_db)
 
     selection.set_toggle("key", "own")
@@ -180,9 +170,7 @@ def test_the_same_version_with_a_different_fingerprint_is_stale_too(state_db: Pa
 
 def test_a_beatgrid_upsert_refreshes_the_key_projection(state_db: Path) -> None:
     stable_id = "t-projection-refresh"
-    grid_v1 = _beatgrid_record(
-        stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v1 = _beatgrid_record(stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v1, db_path=state_db)
     key = _key_record(stable_id, depends_on_beatgrid=_depends_on_for(grid_v1))
     upsert_record(key, db_path=state_db)
@@ -190,23 +178,17 @@ def test_a_beatgrid_upsert_refreshes_the_key_projection(state_db: Path) -> None:
     selection.set_toggle("key", "own")
     conn = open_conn(state_db)
     try:
-        fields_before = selection.effective_fields(
-            conn, [stable_id], selection.Selection.resolve(conn)
-        )
+        fields_before = selection.effective_fields(conn, [stable_id], selection.Selection.resolve(conn))
         assert fields_before[stable_id]["key"].value == "8B"
     finally:
         conn.close()
 
-    grid_v2 = _beatgrid_record(
-        stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v2 = _beatgrid_record(stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v2, db_path=state_db)
 
     conn = open_conn(state_db)
     try:
-        fields_after = selection.effective_fields(
-            conn, [stable_id], selection.Selection.resolve(conn)
-        )
+        fields_after = selection.effective_fields(conn, [stable_id], selection.Selection.resolve(conn))
         assert fields_after[stable_id]["key"].status == "missing"
         assert canonical_pointer(conn, stable_id, "key") is None
     finally:
@@ -215,16 +197,12 @@ def test_a_beatgrid_upsert_refreshes_the_key_projection(state_db: Path) -> None:
 
 def test_canonical_rebuild_excludes_a_stale_key_row(state_db: Path) -> None:
     stable_id = "t-stale-canonical"
-    grid_v1 = _beatgrid_record(
-        stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v1 = _beatgrid_record(stable_id, backend_version="1.0.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v1, db_path=state_db)
     key = _key_record(stable_id, depends_on_beatgrid=_depends_on_for(grid_v1))
     upsert_record(key, db_path=state_db)
 
-    grid_v2 = _beatgrid_record(
-        stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1
-    )
+    grid_v2 = _beatgrid_record(stable_id, backend_version="1.1.0", decode_fingerprint=FINGERPRINT_V1)
     upsert_record(grid_v2, db_path=state_db)
 
     conn = open_conn(state_db)

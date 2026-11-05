@@ -139,9 +139,7 @@ def test_install_sets_icon_name_without_disturbing_other_keys(tmp_path: Path) ->
 
     install_into_app_bundle(app, fake_assets_car)
 
-    assert (
-        app / "Contents" / "Resources" / "Assets.car"
-    ).read_bytes() == b"fake-compiled-asset-catalog"
+    assert (app / "Contents" / "Resources" / "Assets.car").read_bytes() == b"fake-compiled-asset-catalog"
     with info_plist.open("rb") as fh:
         updated = plistlib.load(fh)
     assert updated["CFBundleIconName"] == ICON_SET_NAME

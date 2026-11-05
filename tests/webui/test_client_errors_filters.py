@@ -9,6 +9,7 @@
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -38,18 +39,25 @@ def _seed(log_dir: Path) -> None:
     for event_id, received_at, sha, kind, message in _RECORDS:
         day = received_at[:10]
         with (log_dir / f"webui-client-errors-{day}.log").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "event_id": event_id, "received_at": received_at, "kind": kind,
-                "message": message, "build_sha": sha, "url": "http://127.0.0.1/",
-            }) + "\n")
+            fh.write(
+                json.dumps(
+                    {
+                        "event_id": event_id,
+                        "received_at": received_at,
+                        "kind": kind,
+                        "message": message,
+                        "build_sha": sha,
+                        "url": "http://127.0.0.1/",
+                    }
+                )
+                + "\n"
+            )
 
 
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
     _seed(tmp_path)
-    app = create_app(
-        backend=InMemoryBackend(), mount_frontend=False, enable_cors=False, client_error_log_dir=tmp_path
-    )
+    app = create_app(backend=InMemoryBackend(), mount_frontend=False, enable_cors=False, client_error_log_dir=tmp_path)
     with TestClient(app, base_url=_LOOPBACK) as test_client:
         yield test_client
 

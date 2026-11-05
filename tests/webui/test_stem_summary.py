@@ -5,6 +5,8 @@ Regression one-liners:
   - if a cached summary outlives STEM_SUMMARY_TTL_S then broken
   - if two stem roots share one cache entry for the same stable_id then broken
   - if mutating a returned summary poisons the next caller then broken
+  - if every listed stem file is missing then summary is invalid naming those files
+  - if one listed stem file is present then summary stays ready with that part's bytes
 """
 
 from __future__ import annotations
@@ -28,9 +30,7 @@ def _clear_stem_summary_cache() -> None:
 
 
 def test_summarize_none_when_missing(tmp_path: Path) -> None:
-    assert summarize_stem_bundle("no-such-track", stems_dir=tmp_path) == {
-        "status": "none"
-    }
+    assert summarize_stem_bundle("no-such-track", stems_dir=tmp_path) == {"status": "none"}
 
 
 def _write_bundle(root: Path, sid: str, *, model: str = "hdemucs_mmi") -> Path:
@@ -89,6 +89,32 @@ def test_summarize_ready_groups_vid(tmp_path: Path) -> None:
     assert summary["total_bytes"] == 4000
 
 
+def test_summarize_invalid_when_every_listed_file_missing(tmp_path: Path) -> None:
+    sid = "track-all-missing"
+    bundle = _write_bundle(tmp_path, sid)
+    for name in ("vocals", "drums", "bass", "other"):
+        (bundle / f"{name}.opus").unlink()
+    summary = summarize_stem_bundle(sid, stems_dir=tmp_path)
+    assert summary == {
+        "status": "invalid",
+        "error": ("every stem file listed in manifest.json is missing: bass.opus, drums.opus, other.opus, vocals.opus"),
+    }
+
+
+def test_summarize_ready_when_one_listed_file_present(tmp_path: Path) -> None:
+    sid = "track-one-present"
+    bundle = _write_bundle(tmp_path, sid)
+    for name in ("drums", "bass", "other"):
+        (bundle / f"{name}.opus").unlink()
+    summary = summarize_stem_bundle(sid, stems_dir=tmp_path)
+    assert summary["status"] == "ready"
+    assert summary["groups"]["V"]["bytes"] == 1000
+    assert summary["groups"]["V"]["parts"] == ["vocals"]
+    assert summary["groups"]["D"]["bytes"] == 0
+    assert summary["groups"]["D"]["parts"] == []
+    assert summary["total_bytes"] == 1000
+
+
 # ----- listing cache -------------------------------------------------------
 #
 # build_track_rows summarizes every row of every listing page, and the All
@@ -96,9 +122,7 @@ def test_summarize_ready_groups_vid(tmp_path: Path) -> None:
 # that is one manifest read plus up to four stats per row per poll.
 
 
-def _count_manifest_reads(
-    monkeypatch: pytest.MonkeyPatch, manifest: Path
-) -> list[int]:
+def _count_manifest_reads(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> list[int]:
     """Count ``read_text`` calls against ``manifest`` in a one-slot list."""
     calls = [0]
     real_read_text = Path.read_text
@@ -112,9 +136,7 @@ def _count_manifest_reads(
     return calls
 
 
-def test_bulk_summaries_read_each_manifest_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bulk_summaries_read_each_manifest_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sid = "track-cached"
     bundle = _write_bundle(tmp_path, sid)
     reads = _count_manifest_reads(monkeypatch, bundle / "manifest.json")
@@ -128,9 +150,7 @@ def test_bulk_summaries_read_each_manifest_once(
     assert reads[0] == 1, "a re-polled page must serve from cache, not re-read"
 
 
-def test_stem_summary_cache_expires_after_ttl(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_stem_summary_cache_expires_after_ttl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Staleness is bounded by STEM_SUMMARY_TTL_S and nothing longer."""
     sid = "track-ttl"
     bundle = _write_bundle(tmp_path, sid)
@@ -161,10 +181,7 @@ def test_stem_summary_cache_keys_on_root(tmp_path: Path) -> None:
     _write_bundle(roformer, sid, model="mel_band_roformer")
 
     assert summarize_stem_bundle(sid, stems_dir=demucs)["model"] == "htdemucs_ft"
-    assert (
-        summarize_stem_bundle(sid, stems_dir=roformer)["model"]
-        == "mel_band_roformer"
-    )
+    assert summarize_stem_bundle(sid, stems_dir=roformer)["model"] == "mel_band_roformer"
 
 
 def test_stem_summary_cache_hands_out_isolated_summaries(tmp_path: Path) -> None:
@@ -178,5 +195,6 @@ def test_stem_summary_cache_hands_out_isolated_summaries(tmp_path: Path) -> None
     second = summarize_stem_bundle(sid, stems_dir=tmp_path)
     assert second["status"] == "ready"
     assert second["groups"]["V"]["bytes"] == 1000
+
 
 pytestmark = pytest.mark.rb_parity

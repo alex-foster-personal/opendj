@@ -52,7 +52,11 @@ def test_a_style_at_the_cap_sits_out_within_the_window_only() -> None:
     pool = [_c("a", "long_blend", 0.4), _c("b", "crossfade", 0.4)]
     capped = choose_for_set(pool, "smooth", ["long_blend", "wave", "long_blend", "melt"])
     assert capped is not None and capped.cid == "b"
-    aged = ["long_blend", "long_blend", *["wave", "melt", "rise", "wave", "melt", "rise", "cut", "drop_swap", "cut", "melt"]]
+    aged = [
+        "long_blend",
+        "long_blend",
+        *["wave", "melt", "rise", "wave", "melt", "rise", "cut", "drop_swap", "cut", "melt"],
+    ]
     assert len(aged) - VARIETY_WINDOW == STYLE_CAP
     fresh = choose_for_set(pool, "smooth", aged)
     assert fresh is not None and fresh.cid == "a"

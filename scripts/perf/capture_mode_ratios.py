@@ -14,9 +14,9 @@ macOS reference capture only. Refuses Linux hosts with an explicit message.
 
 Usage (reference Mac, engine + frontend already running):
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --gig-baseline \\
-    --frontend http://127.0.0.1:8791 --engine http://127.0.0.1:8791 --duration-s 60 --ledger docs/perf/kpi-ledger.json
+    --frontend http://127.0.0.1:8791 --engine http://127.0.0.1:8791 --duration-s 60 --ledger (private path)
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --leak-duration-s 3600 \\
-    --frontend http://127.0.0.1:5273 --ledger docs/perf/kpi-ledger.json --leak-series-out series.tsv
+    --frontend http://127.0.0.1:5273 --ledger (private path) --leak-series-out series.tsv
 """
 
 from __future__ import annotations
@@ -102,12 +102,8 @@ def _sample_steady(root_pid: int, duration_s: int, engine_root_pid: int | None) 
         raise RuntimeError("probe returned no footprint or cpu samples")
     footprint_series = [s["physical_footprint_mb"] for s in samples]
     cpu_series = [s["cpu_percent"] for s in samples]
-    perfmode14_medians_from_lists(
-        footprint_series, cpu_series, mode=f"steady pid={root_pid}"
-    )
-    steady = {
-        key: perfmode14_median([s[field] for s in samples]) for key, field in _STEADY_MEANS
-    }
+    perfmode14_medians_from_lists(footprint_series, cpu_series, mode=f"steady pid={root_pid}")
+    steady = {key: perfmode14_median([s[field] for s in samples]) for key, field in _STEADY_MEANS}
     steady["sample_count"] = float(len(samples))
     if engine_root_pid is None:
         return {key: value for key, value in steady.items() if not key.startswith("engine_")}
@@ -202,8 +198,7 @@ def _read_browser_line(proc: subprocess.Popen[str], expected: str) -> None:
     line = proc.stdout.readline().strip()
     if line != expected:
         raise RuntimeError(
-            f"mode_ratio_browser expected {expected!r}, got {line!r}; "
-            f"helper stderr: {_browser_stderr_tail(proc)}"
+            f"mode_ratio_browser expected {expected!r}, got {line!r}; helper stderr: {_browser_stderr_tail(proc)}"
         )
 
 
@@ -231,8 +226,7 @@ def _read_phase_ready(proc: subprocess.Popen[str], ready: str) -> float | None:
         line = proc.stdout.readline().strip()
     if line != ready:
         raise RuntimeError(
-            f"mode_ratio_browser expected {ready!r}, got {line!r}; "
-            f"helper stderr: {_browser_stderr_tail(proc)}"
+            f"mode_ratio_browser expected {ready!r}, got {line!r}; helper stderr: {_browser_stderr_tail(proc)}"
         )
     return settle_s
 
@@ -268,9 +262,7 @@ def _signal_browser(proc: subprocess.Popen[str]) -> None:
     _send_browser_line(proc, "NEXT")
 
 
-def _finish_browser_session(
-    proc: subprocess.Popen[str], timeout_s: float = _BROWSER_EXIT_TIMEOUT_S
-) -> None:
+def _finish_browser_session(proc: subprocess.Popen[str], timeout_s: float = _BROWSER_EXIT_TIMEOUT_S) -> None:
     """Read DONE, EOF the helper's stdin, and require a clean exit.
 
     Closing stdin comes before reading stderr: a helper that lives until stdin
@@ -294,9 +286,7 @@ def _finish_browser_session(
         proc.wait(timeout=timeout_s)
         stderr = proc.stderr.read() if proc.stderr is not None else ""
         detail = stderr.strip() or "<empty stderr>"
-        raise RuntimeError(
-            f"mode_ratio_browser did not exit within {timeout_s}s after stdin EOF: {detail}"
-        ) from None
+        raise RuntimeError(f"mode_ratio_browser did not exit within {timeout_s}s after stdin EOF: {detail}") from None
     stderr = proc.stderr.read() if proc.stderr is not None else ""
     if code != 0:
         raise RuntimeError(f"mode_ratio_browser exited {code}: {stderr.strip()}")
@@ -400,9 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     leak_series_out: tuple[LeakSeries, Path] | None = None
 
     if engine is not None:
-        gig, trackify, gig_stable_ids = _capture_gig_then_trackify(
-            args.frontend, args.duration_s, engine.pid
-        )
+        gig, trackify, gig_stable_ids = _capture_gig_then_trackify(args.frontend, args.duration_s, engine.pid)
         print(f"gig {json.dumps(gig)}\ntrackify {json.dumps(trackify)}", file=sys.stderr)
         rows.extend(_gig_baseline_rows(gig, trackify, gig_stable_ids, meta))
 
@@ -414,7 +402,9 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha, engine=engine, leak_series_out=leak_series_out)
+    _append_rows_after_reverification(
+        args.ledger, rows, args.frontend, sha, engine=engine, leak_series_out=leak_series_out
+    )
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0
 

@@ -6,12 +6,7 @@
  * `phase` so "busy" cannot drift between the bauble and the blocker.
  */
 
-export type SignInPhase =
-	| 'idle'
-	| 'starting'
-	| 'opening-browser'
-	| 'waiting'
-	| 'redirecting';
+export type SignInPhase = 'idle' | 'starting' | 'opening-browser' | 'waiting' | 'redirecting';
 
 let phase = $state<SignInPhase>('idle');
 let activeCancel: (() => void) | null = null;

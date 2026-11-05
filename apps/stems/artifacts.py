@@ -1449,6 +1449,13 @@ def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
             groups[label] = {"bytes": group_bytes, "parts": present}
             total += group_bytes
 
+        if not any(group["parts"] for group in groups.values()):
+            listed = ", ".join(sorted({n for n in files.values() if isinstance(n, str)}))
+            return {
+                "status": "invalid",
+                "error": f"every stem file listed in manifest.json is missing: {listed}",
+            }
+
         model = raw.get("model") if isinstance(raw.get("model"), dict) else {}
         preset = raw.get("preset") if isinstance(raw.get("preset"), dict) else {}
         return {

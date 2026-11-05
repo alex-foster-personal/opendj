@@ -3,6 +3,7 @@
 [if] the UI can enqueue, list, reorder, or cancel a library job [then] HTTP and
 CLI expose the same verbs, else stop.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,16 +18,9 @@ from apps.webui.server.routes import library_jobs
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 OPENAPI: Path = REPO_ROOT / "apps" / "webui" / "openapi.json"
-PANEL: Path = (
-    REPO_ROOT
-    / "apps/webui/frontend/src/lib/components/rb/library-jobs/LibraryJobQueuePanel.svelte"
-)
-BROWSER: Path = (
-    REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/BrowserPanel.svelte"
-)
-API_CLIENT: Path = (
-    REPO_ROOT / "apps/webui/frontend/src/lib/rb/api-library-jobs.ts"
-)
+PANEL: Path = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/library-jobs/LibraryJobQueuePanel.svelte"
+BROWSER: Path = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/BrowserPanel.svelte"
+API_CLIENT: Path = REPO_ROOT / "apps/webui/frontend/src/lib/rb/api-library-jobs.ts"
 
 CONTROLS: tuple[tuple[str, str], ...] = (
     ("enqueue", "user-enqueue"),
@@ -42,11 +36,7 @@ def _router_paths() -> set[str]:
 
 def _cli_subcommands() -> set[str]:
     parser = queue_cli.build_parser()
-    subparser_actions = [
-        action
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
+    subparser_actions = [action for action in parser._actions if isinstance(action, argparse._SubParsersAction)]
     assert subparser_actions
     return set(subparser_actions[0]._name_parser_map)
 
@@ -159,9 +149,7 @@ def test_get_order_matches_selection_order(client: TestClient, tmp_path: Path) -
     assert listed["counts"]["pending"] == 3
 
 
-def test_lyrics_and_stems_are_separate_lanes(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_lyrics_and_stems_are_separate_lanes(client: TestClient, tmp_path: Path) -> None:
     _seed_library(tmp_path / "state.db", ["a", "b"])
     stems = client.post(
         "/api/v1/library-jobs/enqueue",

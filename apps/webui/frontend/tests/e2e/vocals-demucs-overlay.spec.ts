@@ -37,9 +37,7 @@ test('@vocals-demucs-overlay hydrated listing paints demucs vocal pixels', async
 		throw new Error('fixture manifest missing stable_id or playlist_id');
 	}
 
-	const tracksResponse = await request.get(
-		`/api/v1/playlists/${playlistId}/tracks?hydrate=1`
-	);
+	const tracksResponse = await request.get(`/api/v1/playlists/${playlistId}/tracks?hydrate=1`);
 	expect(tracksResponse.ok()).toBe(true);
 	const tracksBody = (await tracksResponse.json()) as {
 		tracks?: {

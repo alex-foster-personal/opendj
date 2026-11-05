@@ -1,7 +1,7 @@
 """Round 2/3/4 hardening: readers proven, behaviorally, against a tombstone.
 
 Split out of ``test_soft_delete.py`` (round 4 quality-gate ratchet: that
-file crossed 600 lines). Same contract (``specs/design_decision_08.md``
+file crossed 600 lines). Same contract (``(private path)``
 point 5); the write-side ("4a" -- the delete itself, and the grep-based
 guard against a hard ``DELETE`` on a synced table) stayed there. The
 STRUCTURAL read-side guard (finding R5's
@@ -11,7 +11,7 @@ further, into ``test_soft_delete_read_guard.py`` (this file was still over
 BEHAVIORALLY: nine named readers, each seeded with a live and a tombstoned
 row, each asserted to surface only the live one.
 
-Round 3 (.planning/cloudsync-round2-adversarial.md Part 3 item 8): round 2
+Round 3 ((private path) Part 3 item 8): round 2
 fixed 12 of 19 files that read ``tracks``/``playlists`` without a
 ``deleted_at`` filter and left five outstanding --
 ``apps/smartlists/evaluator.py``, ``apps/stems/cli.py``,
@@ -39,6 +39,7 @@ Acceptance criteria, one test each:
   reacquire worklist surfaces a tombstoned track/playlist, R5's four named
   readers have regressed -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -71,7 +72,7 @@ def state_db_path(tmp_path: Path) -> Path:
 
 # ----- round 3: 4b's five remaining readers -------------------------------
 #
-# .planning/cloudsync-round2-adversarial.md Part 3 item 8. Nothing currently
+# (private path) Part 3 item 8. Nothing currently
 # tombstones a live ``tracks`` row (see the module docstring's round 3
 # addendum), so each test below stamps ``deleted_at`` directly with raw SQL
 # to simulate the future track-delete path these readers must already be
@@ -80,14 +81,17 @@ def state_db_path(tmp_path: Path) -> Path:
 _EPOCH_LATER = "2026-08-31T12:00:00.000000+00:00"
 
 
-def _seed_track_with_file(
-    conn: sqlite3.Connection, stable_id: str, *, file_path: str | None
-) -> None:
+def _seed_track_with_file(conn: sqlite3.Connection, stable_id: str, *, file_path: str | None) -> None:
     writer = StateWriter(conn, FakeEventBus(), actor="test")
     try:
         writer.upsert_track(
-            stable_id=stable_id, stable_id_tier="inferred", title="T",
-            artists=["A"], album=None, isrc=None, duration_ms=222_000,
+            stable_id=stable_id,
+            stable_id_tier="inferred",
+            title="T",
+            artists=["A"],
+            album=None,
+            isrc=None,
+            duration_ms=222_000,
             file_path=file_path,
         )
     finally:
@@ -116,16 +120,13 @@ def test_deleted_track_hidden_from_smartlist_evaluator(
         rule = {"field": "added_date", "op": ">=", "value": "2000-01-01T00:00:00+00:00"}
         result = evaluate(rule, conn)
         assert result == ["live-1"], (
-            f"evaluate() returned {result!r} -- a tombstoned track is still "
-            "visible to the smartlist compiler"
+            f"evaluate() returned {result!r} -- a tombstoned track is still visible to the smartlist compiler"
         )
     finally:
         conn.close()
 
 
-def test_deleted_track_hidden_from_stems_cli_lookups(
-    state_db_path: Path, tmp_path: Path
-) -> None:
+def test_deleted_track_hidden_from_stems_cli_lookups(state_db_path: Path, tmp_path: Path) -> None:
     """``apps/stems/cli.py``'s ``resolve_audio_path``/``_duration_from_state``
     must refuse a tombstoned stable_id the same way they refuse an unknown
     one -- round 2 left both unfiltered.
@@ -189,10 +190,7 @@ def test_deleted_track_hidden_from_vocals_load_tracks(
 
     tracks = vocals_load_tracks(VocalsCtx(data_dir=data_dir), None)
     ids = {t.stable_id for t in tracks}
-    assert ids == {"live-1"}, (
-        f"load_tracks returned {ids!r} -- a tombstoned track is still "
-        "queued for vocal extraction"
-    )
+    assert ids == {"live-1"}, f"load_tracks returned {ids!r} -- a tombstoned track is still queued for vocal extraction"
 
 
 def test_deleted_track_hidden_from_crate_sync_collect_plan(
@@ -228,8 +226,7 @@ def test_deleted_track_hidden_from_crate_sync_collect_plan(
     )
     synced_ids = {sid for f in plan.files for sid in f.stable_ids}
     assert synced_ids == {"live-1"}, (
-        f"collect_plan staged {synced_ids!r} -- a tombstoned track is still "
-        "planned for the replica crate"
+        f"collect_plan staged {synced_ids!r} -- a tombstoned track is still planned for the replica crate"
     )
 
 
@@ -254,8 +251,13 @@ def test_upsert_track_never_rewrites_a_tombstoned_row(
         writer = StateWriter(conn, FakeEventBus(), actor="test")
         try:
             writer.upsert_track(
-                stable_id="trk-1", stable_id_tier="inferred", title="Loft",
-                artists=["A"], album=None, isrc=None, duration_ms=222_000,
+                stable_id="trk-1",
+                stable_id_tier="inferred",
+                title="Loft",
+                artists=["A"],
+                album=None,
+                isrc=None,
+                duration_ms=222_000,
                 file_path="/music/loft.mp3",
             )
         finally:
@@ -274,8 +276,13 @@ def test_upsert_track_never_rewrites_a_tombstoned_row(
             for title in ("Loft", "Loft (retagged)"):
                 with pytest.raises(TrackRemovedError):
                     writer.upsert_track(
-                        stable_id="trk-1", stable_id_tier="inferred", title=title,
-                        artists=["A"], album=None, isrc=None, duration_ms=222_000,
+                        stable_id="trk-1",
+                        stable_id_tier="inferred",
+                        title=title,
+                        artists=["A"],
+                        album=None,
+                        isrc=None,
+                        duration_ms=222_000,
                         file_path="/music/loft.mp3",
                     )
         finally:
@@ -288,8 +295,7 @@ def test_upsert_track_never_rewrites_a_tombstoned_row(
             (encode_row_pk(("trk-1",)),),
         ).fetchone()[0]
         assert changelog_after == changelog_before, (
-            "a refused write still logged a change, which would sync a no-op "
-            "stamp over the tombstone"
+            "a refused write still logged a change, which would sync a no-op stamp over the tombstone"
         )
     finally:
         conn.close()
@@ -304,14 +310,17 @@ def test_upsert_track_never_rewrites_a_tombstoned_row(
 # reader no longer surfaces it.
 
 
-def _seed_titled_track(
-    conn: sqlite3.Connection, stable_id: str, title: str, *, isrc: str | None = None
-) -> None:
+def _seed_titled_track(conn: sqlite3.Connection, stable_id: str, title: str, *, isrc: str | None = None) -> None:
     writer = StateWriter(conn, FakeEventBus(), actor="test")
     try:
         writer.upsert_track(
-            stable_id=stable_id, stable_id_tier="inferred", title=title,
-            artists=["A"], album=None, isrc=isrc, duration_ms=222_000,
+            stable_id=stable_id,
+            stable_id_tier="inferred",
+            title=title,
+            artists=["A"],
+            album=None,
+            isrc=isrc,
+            duration_ms=222_000,
             file_path=None,
         )
     finally:
@@ -334,8 +343,7 @@ def test_deleted_track_hidden_from_webui_search(state_db_path: Path) -> None:
     hits, total = search_index.search(state_db_path, "anthem", limit=10)
     ids = {stable_id for stable_id, _ctx in hits}
     assert ids == {"trk-live"}, (
-        f"search returned {ids!r} -- a tombstoned track is still searchable "
-        "(finding R5's exact reproduction)"
+        f"search returned {ids!r} -- a tombstoned track is still searchable (finding R5's exact reproduction)"
     )
     assert total == 1
 
@@ -356,8 +364,7 @@ def test_deleted_track_hidden_from_spotify_matcher_targets(
         conn.close()
     ids = {t.stable_id for t in targets}
     assert ids == {"trk-live"}, (
-        f"load_local_tracks returned {ids!r} -- a tombstoned track is still a "
-        "match target for the Spotify importer"
+        f"load_local_tracks returned {ids!r} -- a tombstoned track is still a match target for the Spotify importer"
     )
 
 
@@ -380,8 +387,7 @@ def test_deleted_track_hidden_from_reconcile_load_track_rows(
     rows = load_track_rows(db_path, rb_db=None)
     ids = {row.stable_id for row in rows}
     assert ids == {"trk-live"}, (
-        f"load_track_rows returned {ids!r} -- a tombstoned track is still "
-        "classified for link repair"
+        f"load_track_rows returned {ids!r} -- a tombstoned track is still classified for link repair"
     )
 
 
@@ -399,13 +405,17 @@ def test_deleted_playlist_hidden_from_reacquire_memberships(
         writer = StateWriter(conn, FakeEventBus(), actor="test")
         try:
             writer.insert_playlist(
-                playlist_id="pl-live", name="Live List",
-                vendor="webui", vendor_pl_id="pl-live",
+                playlist_id="pl-live",
+                name="Live List",
+                vendor="webui",
+                vendor_pl_id="pl-live",
             )
             writer.set_playlist_memberships("pl-live", ["trk-1"])
             writer.insert_playlist(
-                playlist_id="pl-dead", name="Dead List",
-                vendor="webui", vendor_pl_id="pl-dead",
+                playlist_id="pl-dead",
+                name="Dead List",
+                vendor="webui",
+                vendor_pl_id="pl-dead",
             )
             writer.set_playlist_memberships("pl-dead", ["trk-1"])
             assert writer.delete_playlist("pl-dead") is True
@@ -416,6 +426,5 @@ def test_deleted_playlist_hidden_from_reacquire_memberships(
 
     memberships = load_playlist_memberships(db_path)
     assert memberships.get("trk-1") == ["Live List"], (
-        f"reacquire saw {memberships.get('trk-1')!r} -- a tombstoned playlist "
-        "still inflates the want-count"
+        f"reacquire saw {memberships.get('trk-1')!r} -- a tombstoned playlist still inflates the want-count"
     )

@@ -48,7 +48,13 @@
  * bookkeeping beside the scheduled revisions and re-anchor ramps).
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
-import { beatTimeAt, PHASE_LOCK_MAX_TRIM, type TempoNormalization } from '$lib/rb/beat-sync-math';
+import {
+	beatTimeAt,
+	computeFollowerSyncPlan,
+	followerAnchorReachableNear,
+	PHASE_LOCK_MAX_TRIM,
+	type TempoNormalization
+} from '$lib/rb/beat-sync-math';
 import { classifyGrid, FLAGGED_GRID_CLASSES } from '$lib/rb/grid-quality';
 
 /**
@@ -167,6 +173,14 @@ export const PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC = 8;
  */
 export const PHASE_LOCK_REJOIN_CONFIRM_TICKS = 3;
 
+/**
+ * A lock-initiated re-join OUT OF REACH (the follower's smoothed local tempo
+ * past its pitch range by more than a trim can bend) is taken only when the
+ * join would move the follower at most this many of its own beats. That near,
+ * it lands on the stretch the follower is playing; further, somewhere else.
+ */
+export const PHASE_LOCK_REJOIN_MAX_JUMP_BEATS = 2;
+
 export interface PhaseLockInput {
 	masterBeats: readonly AnlzBeat[];
 	masterPositionSec: number;
@@ -198,6 +212,12 @@ export interface PhaseLockInput {
 	 * master's beat itself.
 	 */
 	userOffsetMs?: number;
+	/**
+	 * The mode the lock's re-join runs in. An out-of-reach re-join is checked
+	 * against the anchor THIS mode picks (BAR prefers an exact anchor anywhere
+	 * in the track over a folded one nearby). Unknown: both are checked.
+	 */
+	syncMode?: 'beat' | 'bar';
 }
 
 /** Carried by every decision: what the caller stores on its lock. */
@@ -402,6 +422,58 @@ function _measure(input: PhaseLockInput): PhaseMeasure | null {
 	};
 }
 
+/** Whether the join a re-seek runs keeps the follower within
+ * `PHASE_LOCK_REJOIN_MAX_JUMP_BEATS` of its own beats: a cheap neighborhood
+ * check first (`followerAnchorReachableNear`, 17 us), then the join's own plan
+ * in the lock's mode (both modes when unknown), which is what decides where
+ * it seeks (Codex P1 on #8872: BAR jumped 22 s back past a near folded beat).
+ * A join that cannot plan is not near. A folded phase point sits up to 2
+ * intervals past its anchor, so the plan may land that much further. */
+function _rejoinStaysNear(input: PhaseLockInput): boolean {
+	const range = input.pitchRangePct / 100;
+	const minRatio = Math.max(0.01, 1 - range);
+	const maxRatio = 1 + range;
+	if (
+		!followerAnchorReachableNear({
+			masterGrid: input.masterBeats,
+			masterPositionSec: input.masterPositionSec,
+			masterTempoRatio: input.masterTempo,
+			followerGrid: input.followerBeats,
+			followerPositionSec: input.followerPositionSec,
+			minFollowerTempoRatio: minRatio,
+			maxFollowerTempoRatio: maxRatio,
+			radiusBeats: PHASE_LOCK_REJOIN_MAX_JUMP_BEATS
+		})
+	) {
+		return false;
+	}
+	const from = gridBeatPosition(input.followerBeats, input.followerPositionSec);
+	if (from === null) return false;
+	const modes: readonly ('beat' | 'bar')[] = input.syncMode === undefined ? ['beat', 'bar'] : [input.syncMode];
+	for (const mode of modes) {
+		let plannedSec: number;
+		try {
+			plannedSec = computeFollowerSyncPlan({
+				masterGrid: input.masterBeats,
+				followerGrid: input.followerBeats,
+				masterPositionAtSyncSec: input.masterPositionSec,
+				masterTempoRatio: input.masterTempo,
+				followerPositionSec: input.followerPositionSec,
+				currentContextTimeSec: 0,
+				syncAtContextTimeSec: 1,
+				minFollowerTempoRatio: minRatio,
+				maxFollowerTempoRatio: maxRatio,
+				mode
+			}).followerPositionSec;
+		} catch {
+			return false;
+		}
+		const to = gridBeatPosition(input.followerBeats, plannedSec);
+		if (to === null || Math.abs(to - from) > PHASE_LOCK_REJOIN_MAX_JUMP_BEATS + 2) return false;
+	}
+	return true;
+}
+
 /**
  * The follower's signed phase error in wall-clock ms against the phase the
  * lock holds (the nearest master beat phase, plus `userOffsetMs`): positive
@@ -437,11 +509,18 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 	const inRange = (tempo: number): number => Math.max(Math.max(0.01, 1 - range), Math.min(1 + range, tempo));
 	// A real tempo change on a smoothed grid is followed by MOVING the base,
 	// never by letting the phase error grow until the trim cap or a seek.
+	// Past the pitch range (a free intro, a rubato verse) the base stops at the
+	// range edge, and the lock is OUT OF REACH: no tempo can hold that phase.
+	const keyLocked = input.keyLocked === true;
+	const cap = keyLocked ? PHASE_LOCK_KEYLOCK_MAX_TRIM : PHASE_LOCK_MAX_TRIM;
+	let outOfReach = false;
 	if (measure.smoothed) {
 		const local = inRange(measure.localTempo);
+		// Past the edge at all: a trim cannot bend past the range either (Sentry on
+		// #8872), so any overshoot beyond tempo-follow noise is out of reach.
+		outOfReach = Math.abs(measure.localTempo / local - 1) > PHASE_LOCK_TEMPO_FOLLOW_RATIO;
 		if (Math.abs(local / base - 1) > PHASE_LOCK_TEMPO_FOLLOW_RATIO) base = local;
 	}
-	const keyLocked = input.keyLocked === true;
 	// A key-locked bend fixes a quarter beat in about two seconds at its cap,
 	// inaudibly; only past that is a seek the better trade.
 	const reseekMs = keyLocked
@@ -454,7 +533,16 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 			overLineTicks >= PHASE_LOCK_REJOIN_CONFIRM_TICKS &&
 			input.sinceJoinSec >= PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC
 		) {
-			return { action: 'reseek', tempo: base, errorMs, base, overLineTicks };
+			// Out of reach, the join seeks the NEAREST beat whose tempo the range
+			// can reach, which can be far away: a real dynamic grid's free intro
+			// was jumped back 9 s to its last reachable stretch every 8 s, looping
+			// it and never reaching its bass. A re-join that would move the
+			// follower further than PHASE_LOCK_REJOIN_MAX_JUMP_BEATS is not taken:
+			// it plays on at the range edge and is asked again later.
+			if (!outOfReach || _rejoinStaysNear(input)) {
+				return { action: 'reseek', tempo: base, errorMs, base, overLineTicks };
+			}
+			overLineTicks = 0;
 		}
 		// Not yet a re-join: the capped trim below works on it meanwhile.
 	}
@@ -467,7 +555,6 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 	const correction =
 		-Math.sign(errorMs) *
 		(near / (PHASE_LOCK_CORRECTION_BEATS * beatWallMs) + far / (PHASE_LOCK_KEYLOCK_CORRECTION_BEATS * beatWallMs));
-	const cap = keyLocked ? PHASE_LOCK_KEYLOCK_MAX_TRIM : PHASE_LOCK_MAX_TRIM;
 	const trim = Math.max(-cap, Math.min(cap, correction));
 	return { action: 'trim', tempo: inRange(base * (1 + trim)), errorMs, base, overLineTicks };
 }

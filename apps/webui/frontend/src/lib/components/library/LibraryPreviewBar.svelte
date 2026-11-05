@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { shownKey } from '$lib/rb/key-notation';
+	import { artworkUrl } from '$lib/rb/artwork-url';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	// LIBWS-04: the Crate Desk preview bar. Shows the focused track with its
 	// real overview strip and readouts, and plays it through the Library's own
 	// preview player (library-preview.svelte.ts): never the Gig engine, which
@@ -67,6 +69,12 @@
 			: null
 	);
 	const keyLabel = $derived(row === null ? '' : (shownKey(row.key) ?? ''));
+	/** LIBM-185: the shared cover retry decides whether the cover shows and with which URL. */
+	const artworkSrc = $derived(
+		row !== null && row.artwork_available === true && coverVisible(row.stable_id)
+			? coverSrc(artworkUrl(row.stable_id, 's'), row.stable_id)
+			: null
+	);
 </script>
 
 <LibraryPreviewBarView
@@ -79,6 +87,13 @@
 	previewStatus={live ? libraryPreview.status : 'idle'}
 	otherPreviewStatus={libraryPreview.status}
 	{keyLabel}
+	{artworkSrc}
+	onArtworkLoad={() => {
+		if (row !== null) coverLoaded(row.stable_id);
+	}}
+	onArtworkError={() => {
+		if (row !== null) coverFailed(row.stable_id);
+	}}
 	onPlay={() => {
 		if (row !== null) toggleLibraryPreview(row);
 	}}

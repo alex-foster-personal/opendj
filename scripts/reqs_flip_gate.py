@@ -44,6 +44,7 @@ _REQS_PR_VIEW_FIELDS = "number,title,body"
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
     return _shared_pr_view(pr, repo, fields=_REQS_PR_VIEW_FIELDS)
 
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_JSON = REPO_ROOT / "reqs.json"
 

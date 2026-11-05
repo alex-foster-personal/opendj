@@ -25,13 +25,13 @@ Requirements
 
 Usage:
   uv run --with modal python scripts/modal_asr_spike.py transcribe \
-      --audio-dir data/datasets/jamendolyrics-vocals \
+      --audio-dir (private path) \
       --audio-template "{name}-vocals.mp3,{name}-vocals.flac" \
-      --out-dir data/state/lyrics-eval/asr-r4a-jamendo
+      --out-dir (private path)
   uv run --with modal python scripts/modal_asr_spike.py transcribe-files \
-      --jobs data/state/lyrics-eval/own-crate/jobs.json \
+      --jobs (private path) \
       --stem-key stem_audio_template \
-      --out-dir data/state/lyrics-eval/own-crate/asr-r4a
+      --out-dir (private path)
 
 -Claude
 """
@@ -55,24 +55,40 @@ DATASET_DIR: Path = REPO_ROOT / "data" / "datasets" / "jamendolyrics"
 
 GPU_KIND: str = "T4"
 TASK_TIMEOUT_S: int = 900
-# R6 wall target (specs/karaoke-lyrics-operational-plan.md section 12): ~100
+# R6 wall target ((private path) section 12): ~100
 # stem-ready tracks in <= 5 min end-to-end, so the starmap fan-out below must
 # be allowed enough containers that ASR is never a serial job loop.
 MAX_CONTAINERS: int = 20
 WHISPER_MODEL: str = "large-v3"
 LANG_TO_WHISPER: dict[str, str] = {
-    "English": "en", "German": "de", "Spanish": "es", "French": "fr",
+    "English": "en",
+    "German": "de",
+    "Spanish": "es",
+    "French": "fr",
 }
 # ISO 639-3 (own-crate jobs, round 4c detection) -> whisper language code.
 # Deliberately partial: a code absent here (e.g. kik, which whisper does not
 # model) falls back to whisper AUTO-DETECT, loudly per track, never silently.
 ISO3_TO_WHISPER: dict[str, str] = {
-    "eng": "en", "deu": "de", "spa": "es", "fra": "fr", "ita": "it", "por": "pt",
-    "nld": "nl", "swe": "sv", "nob": "no", "pol": "pl", "eus": "eu", "cat": "ca",
+    "eng": "en",
+    "deu": "de",
+    "spa": "es",
+    "fra": "fr",
+    "ita": "it",
+    "por": "pt",
+    "nld": "nl",
+    "swe": "sv",
+    "nob": "no",
+    "pol": "pl",
+    "eus": "eu",
+    "cat": "ca",
     # batch-2 (Tue 1 Sep 2026): languages lingua decided on that round's texts,
     # all modeled by whisper large-v3. The un-pinned ukr track reproduced the
     # oltf hallucination class (Croatian 'thanks for following the channel').
-    "ukr": "uk", "est": "et", "tgl": "tl", "swa": "sw",
+    "ukr": "uk",
+    "est": "et",
+    "tgl": "tl",
+    "swa": "sw",
 }
 
 
@@ -90,12 +106,14 @@ image = (
     # CTranslate2 does not bundle CUDA runtime libs (torch would); the nvidia
     # wheels + LD_LIBRARY_PATH is the standard fix for libcublas.so.12 errors.
     .pip_install("faster-whisper>=1.1", "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*")
-    .env({
-        "LD_LIBRARY_PATH": (
-            "/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:"
-            "/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib"
-        )
-    })
+    .env(
+        {
+            "LD_LIBRARY_PATH": (
+                "/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:"
+                "/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib"
+            )
+        }
+    )
     .run_function(_bake_model)
 )
 
@@ -114,9 +132,7 @@ class AsrWorker:
         self.model = WhisperModel(WHISPER_MODEL, device="cuda", compute_type="float16")
 
     @modal.method()
-    def transcribe(
-        self, name: str, audio_bytes: bytes, language: str | None
-    ) -> dict[str, Any]:
+    def transcribe(self, name: str, audio_bytes: bytes, language: str | None) -> dict[str, Any]:
         """One track. Returns {name, ...contract} or {name, error}; never raises."""
         import tempfile
 
@@ -140,15 +156,16 @@ class AsrWorker:
                 for seg in segments:
                     text_parts.append(seg.text)
                     for w in seg.words or []:
-                        words.append({
-                            "word": w.word.strip(),
-                            "start_s": w.start,
-                            "end_s": w.end,
-                            "prob": w.probability,
-                        })
+                        words.append(
+                            {
+                                "word": w.word.strip(),
+                                "start_s": w.start,
+                                "end_s": w.end,
+                                "prob": w.probability,
+                            }
+                        )
         except Exception as exc:
-            return {"name": name, "error": f"{type(exc).__name__}: {exc}",
-                    "gpu_s": time.perf_counter() - t0}
+            return {"name": name, "error": f"{type(exc).__name__}: {exc}", "gpu_s": time.perf_counter() - t0}
         return {
             "name": name,
             "error": None,
@@ -175,9 +192,7 @@ def _resolve_audio(audio_dir: Path, template: str, name: str) -> Path:
     return existing[0]
 
 
-def _run_jobs(
-    jobs: list[tuple[str, bytes, str | None]], out_dir: Path, suffix_names: dict[str, str]
-) -> int:
+def _run_jobs(jobs: list[tuple[str, bytes, str | None]], out_dir: Path, suffix_names: dict[str, str]) -> int:
     done = failed = 0
     t_run = time.monotonic()
     with app.run():
@@ -189,17 +204,15 @@ def _run_jobs(
                 failed += 1
                 print(f"[ERROR] {out_name}: {result['error']}", file=sys.stderr)
                 continue
-            payload = {k: result[k] for k in
-                       ("language", "language_probability", "duration_s", "text", "words")}
-            (out_dir / f"{out_name}.json").write_text(
-                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-            )
+            payload = {k: result[k] for k in ("language", "language_probability", "duration_s", "text", "words")}
+            (out_dir / f"{out_name}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             done += 1
-            print(f"[OK] {done + failed}/{len(jobs)} {out_name}: {len(result['words'])} "
-                  f"asr words ({result['language']} p={result['language_probability']:.2f}) "
-                  f"in {result['gpu_s']:.1f}s gpu")
-    print(f"[DONE] transcribed {done}, failed {failed}, "
-          f"wall {time.monotonic() - t_run:.0f}s -> {out_dir}")
+            print(
+                f"[OK] {done + failed}/{len(jobs)} {out_name}: {len(result['words'])} "
+                f"asr words ({result['language']} p={result['language_probability']:.2f}) "
+                f"in {result['gpu_s']:.1f}s gpu"
+            )
+    print(f"[DONE] transcribed {done}, failed {failed}, wall {time.monotonic() - t_run:.0f}s -> {out_dir}")
     return 1 if failed else 0
 
 
@@ -261,8 +274,10 @@ def cmd_transcribe_files(args: argparse.Namespace) -> int:
         # the cross-check verdict stays unverifiable either way.
         whisper_lang = ISO3_TO_WHISPER.get(entry["language_iso"])
         if whisper_lang is None:
-            print(f"[AUTO] {name}: language_iso {entry['language_iso']!r} not in "
-                  "ISO3_TO_WHISPER -- whisper will auto-detect")
+            print(
+                f"[AUTO] {name}: language_iso {entry['language_iso']!r} not in "
+                "ISO3_TO_WHISPER -- whisper will auto-detect"
+            )
         jobs.append((job_name, existing[0].read_bytes(), whisper_lang))
         suffix_names[job_name] = name
     if not jobs:

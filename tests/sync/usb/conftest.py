@@ -9,6 +9,7 @@ No real USB is ever required. We fabricate:
   directly (no Rekordbox DB needed; callers that want to exercise the
   RB shim use a custom fake DB).
 """
+
 from __future__ import annotations
 
 import hashlib

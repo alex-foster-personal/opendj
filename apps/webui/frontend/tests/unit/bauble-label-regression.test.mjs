@@ -13,7 +13,12 @@ const TOPBAR = readFileSync(
 // UserBauble is a container plus a props-only view (UserBaubleView.svelte);
 // the pair is the component, so source pins read both.
 const BAUBLE = ['UserBauble.svelte', 'UserBaubleView.svelte']
-	.map((name) => readFileSync(fileURLToPath(new URL(`../../src/lib/components/${name}`, import.meta.url)), 'utf8'))
+	.map((name) =>
+		readFileSync(
+			fileURLToPath(new URL(`../../src/lib/components/${name}`, import.meta.url)),
+			'utf8'
+		)
+	)
 	.join('\n');
 
 test('TopBar still passes showLabel to UserBauble on performance', () => {

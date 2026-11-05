@@ -27,15 +27,19 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
+import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
 import type { CloudTransferWire, OffloadWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
+import { worksSortValue } from '$lib/rb/library-works';
+import { viaWorkHits, worksView } from '$lib/rb/works-overlay.svelte';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { listingGenre } from '$lib/rb/genre-source';
 import { keyForms } from '$lib/rb/key-notation';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
+import type { TempoCurveData } from '$lib/components/rb/wave/tempo-marks';
 import { rowRendersUnavailable } from './browser-row-wire';
 import type { PlayFacts } from './last-played';
 import { lyricsSortValue } from './lyric-column';
@@ -55,6 +59,9 @@ export interface BrowserRow extends Pick<
 	TrackRow,
 	| 'key_status'
 	| 'key_reason'
+	| 'key_guess'
+	| 'key_guess_confidence'
+	| 'key_source'
 	| 'bpm_status'
 	| 'bpm_reason'
 	| 'loudness_status'
@@ -65,6 +72,10 @@ export interface BrowserRow extends Pick<
 	bpm_method?: string | null;
 	bpm_confidence?: number | null;
 	bpm_confidence_error?: string | null;
+	/** GRID-OCTAVE-02 (see api-rb.ts). */
+	bpm_disputed?: boolean;
+	bpm_alternatives?: BpmAlternative[];
+	bpm_pick?: BpmAlternativeSource | null;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
 	/** 1-based membership position within the pane playlist (# column). */
@@ -129,6 +140,9 @@ export interface BrowserRow extends Pick<
 	/** Inline vocals from listing hydrate (PVDI or demucs cache); drives
 	 * PreviewStrip blue bars without a per-row /anlz fetch. */
 	vocals: Vocals;
+	/** Row strip tempo curve from POST /library/row-assets (issue #7879); null or
+	 * absent when steady, never judged, or not fetched yet: the strip paints nothing. */
+	tempo_curve?: TempoCurveData | null;
 	/** Inline demucs stem summary (V/I/D); null only for synthetic rows. */
 	stems: StemSummary | null;
 	/** Whether this track has a live rekordbox mapping (inline on every
@@ -551,7 +565,9 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 	// The Broken checkbox is the inverse of hideBroken: unticked hides these rows.
 	const base = hideBroken ? rows.filter((r) => !rowRendersUnavailable(r)) : rows;
 	if (query.trim() === '') return base;
+	const viaWork = viaWorkHits(query);
 	return base.filter((r) =>
+		viaWork.has(r.stable_id) ||
 		matchesSearchQuery(
 			{
 				title: r.title,
@@ -572,11 +588,14 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 
 /** Comparable cell value for a sort key (null = missing, sorts last). */
 export function sortValue(row: BrowserRow, key: SortKey): string | number | null {
+	const works = worksSortValue(worksView.overlay, worksView.classicalLayout, row, key);
+	if (works !== undefined) return works;
 	if (key === 'order') return row.order;
 	else if (key === 'plays') return row.play_count;
 	else if (key === 'title') return row.title;
 	else if (key === 'artist') return row.artist;
-	else if (key === 'key') return row.key;
+	// KEY-GUESS-01: an ambiguous key sorts with its best guess, not with the blanks.
+	else if (key === 'key') return row.key ?? row.key_guess ?? null;
 	else if (key === 'bpm') return row.bpm;
 	else if (key === 'rating') return row.rating;
 	else if (key === 'comments') return row.comments;

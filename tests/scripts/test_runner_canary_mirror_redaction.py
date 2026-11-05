@@ -142,9 +142,7 @@ def test_a_refusal_is_redacted_when_raised_whatever_its_text() -> None:
     assert "https://github.com/a/b@v1" in str(refusal)  # an @ in a path is not userinfo
 
 
-def test_a_timed_out_git_call_raises_a_redacted_refusal_not_its_argv(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_a_timed_out_git_call_raises_a_redacted_refusal_not_its_argv(monkeypatch, tmp_path: Path) -> None:
     """subprocess.TimeoutExpired's text is the whole argv, URL userinfo included.
 
     The hang is a `git` on PATH that sleeps, so the timeout is real and certain; an
@@ -159,7 +157,5 @@ def test_a_timed_out_git_call_raises_a_redacted_refusal_not_its_argv(
     with pytest.raises(mirror_script.MirrorRefused) as refused:
         mirror_script._git(["ls-remote", f"https://x-access-token:{TOKEN}@10.255.255.1/x.git"])
     _assert_no_secret(str(refused.value))
-    assert "timed out" in str(refused.value) and "<redacted>@10.255.255.1/x.git" in str(
-        refused.value
-    )
+    assert "timed out" in str(refused.value) and "<redacted>@10.255.255.1/x.git" in str(refused.value)
     assert refused.value.__cause__ is None and refused.value.__suppress_context__

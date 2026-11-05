@@ -1,7 +1,7 @@
 """Library organization API (Library Organization PRD s7, foundation slice).
 
-Sections, tag types, tag metadata, works and undo, plus the playlist hierarchy
-fields. Every write returns the row and ``undo_id``, which is null only when
+Sections, tags, tag types, tag metadata, works and undo, plus the playlist
+hierarchy fields. Every write returns the row and ``undo_id``, which is null only when
 nothing changed. Errors are typed: ``NOT_FOUND`` 404, ``CONFLICT`` 409,
 ``INVARIANT`` and ``VALIDATION`` 422. Agents drive these same routes with
 ``opendj api METHOD PATH``.
@@ -13,20 +13,25 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
+from apps.shared.state import library_entries
 from apps.shared.state import library_org as org
+from apps.shared.state import library_tags as tags
+from apps.shared.state.library_sections import ordered_sections
 from apps.shared.state.writer import StateWriter
 
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
+from ..playlist_store import PlaylistStore
+from .playlist_write import get_playlist_store
 
 router = APIRouter(tags=["library-organization"])
 
@@ -82,6 +87,30 @@ class SectionUpdateIn(_Strict):
     before_position: int | None = Field(None, ge=0)
 
 
+class SectionOut(BaseModel):
+    id: str
+    title: str
+    before_position: int
+    color: str | None
+
+
+class ListSectionsOut(BaseModel):
+    """A list's sections top to bottom, and how they are owned, which a caller needs
+    to add one: a set's are ``set``."""
+
+    owner_kind: Literal["playlist", "set"]
+    rows: list[SectionOut]
+
+
+class EntriesMoveIn(_Strict):
+    """Lines to lift out as one block, and the line to land above (none: the end)."""
+
+    item_ids: list[str] = Field(default_factory=list)
+    section_ids: list[str] = Field(default_factory=list)
+    before_item_id: str | None = None
+    before_section_id: str | None = None
+
+
 class TagTypeCreateIn(_Strict):
     id: str = Field(min_length=1)
     label: str = Field(min_length=1)
@@ -110,6 +139,62 @@ class TagMetaIn(_Strict):
 class TagSynonymIn(_Strict):
     term: str = Field(min_length=1)
     tag: str = Field(min_length=1)
+
+
+class TagCreateIn(_Strict):
+    name: str = Field(min_length=1)
+    type: str = org.GENERAL_TYPE
+
+
+class TagAssignIn(_Strict):
+    stable_ids: list[str] = Field(min_length=1, max_length=tags.MAX_TAG_TRACKS)
+    add: list[str] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list)
+    type: str | None = None
+
+
+class TagPatchIn(_Strict):
+    name: str | None = Field(None, min_length=1)
+    merge: bool = False
+    type: str | None = None
+
+
+class TagSummaryOut(BaseModel):
+    name: str
+    name_norm: str
+    type: str
+    color: str | None
+    track_count: int
+
+
+class TagSuggestionOut(TagSummaryOut):
+    similar: bool
+
+
+class TagTypeOut(BaseModel):
+    id: str
+    label: str
+    singular: str
+    show_as_column: int
+    show_in_tags: int
+    column_width: int | None
+    sort_index: int
+
+
+class TagTypesOut(BaseModel):
+    rows: list[TagTypeOut]
+
+
+class TagCatalogOut(BaseModel):
+    tags: list[TagSummaryOut]
+
+
+class TagSuggestionsOut(BaseModel):
+    suggestions: list[TagSuggestionOut]
+
+
+class TagAssignmentsOut(BaseModel):
+    tracks: dict[str, list[str]]
 
 
 class WorkCreateIn(_Strict):
@@ -168,7 +253,8 @@ class _Session:
 
 def _http(exc: org.OrgError) -> HTTPException:
     return HTTPException(
-        status_code=_STATUS[exc.code], detail={"error": exc.code, "message": exc.message}
+        status_code=_STATUS[exc.code],
+        detail={"error": exc.code, "message": exc.message, **exc.details},
     )
 
 
@@ -242,9 +328,21 @@ def list_sections(
     owner_kind: Annotated[Literal["playlist", "set"], Query()],
     owner_id: Annotated[str, Query(min_length=1)],
 ) -> RowsOut:
-    return RowsOut(rows=org.list_rows(
+    rows = org.list_rows(
         reader, "playlist_section", {"owner_kind": owner_kind, "owner_id": owner_id}
-    ))
+    )
+    return RowsOut(rows=[dict(row) for row in ordered_sections(rows)])
+
+
+@router.get("/playlists/{playlist_id}/sections", response_model=ListSectionsOut)
+def list_sections_of_list(playlist_id: str, reader: Reader) -> ListSectionsOut:
+    rows = library_entries.list_sections(reader, playlist_id)
+    return ListSectionsOut(
+        owner_kind=cast(
+            Literal["playlist", "set"], library_entries.section_owner_kind(reader, playlist_id)
+        ),
+        rows=[SectionOut.model_validate(row) for row in rows],
+    )
 
 
 @router.post("/sections", response_model=WriteOut, status_code=status.HTTP_201_CREATED)
@@ -262,9 +360,27 @@ def delete_section(section_id: str, session: Session) -> DeleteOut:
     return _deleted(session.run(org.delete_section, section_id), "sections")
 
 
-@router.get("/tag-types", response_model=RowsOut)
-def list_tag_types(reader: Reader) -> RowsOut:
-    return RowsOut(rows=org.list_rows(reader, "tag_type"))
+@router.post(
+    "/playlists/{playlist_id}/entries:move",
+    response_model=WriteOut,
+    operation_id="move_playlist_entries",
+)
+def move_entries(
+    playlist_id: str,
+    body: EntriesMoveIn,
+    session: Session,
+    store: Annotated[PlaylistStore, Depends(get_playlist_store)],
+) -> WriteOut:
+    with store.recording_membership_edit(playlist_id):
+        result = session.run(library_entries.move_entries, playlist_id, **body.model_dump())
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return WriteOut(row=result.row, undo_id=result.undo_id)
+
+
+@router.get("/tag-types", response_model=TagTypesOut)
+def list_tag_types(reader: Reader) -> TagTypesOut:
+    rows = org.list_rows(reader, "tag_type")
+    return TagTypesOut(rows=[TagTypeOut(**row) for row in rows])
 
 
 @router.post("/tag-types", response_model=WriteOut, status_code=status.HTTP_201_CREATED)
@@ -272,13 +388,18 @@ def create_tag_type(body: TagTypeCreateIn, session: Session) -> WriteOut:
     fields = body.model_dump(exclude={"id"})
     fields["show_as_column"] = int(fields["show_as_column"])
     fields["show_in_tags"] = int(fields["show_in_tags"])
-    return _written(session.run(org.create_tag_type, body.id, fields), "tags")
+    return _written(session.run(org.create_tag_type, body.id, fields), "mytags")
 
 
 @router.patch("/tag-types/{type_id}", response_model=WriteOut)
 def update_tag_type(type_id: str, body: TagTypeUpdateIn, session: Session) -> WriteOut:
     changes = {k: int(v) if isinstance(v, bool) else v for k, v in _set(body).items()}
-    return _written(session.run(org.update_tag_type, type_id, changes), "tags")
+    return _written(session.run(org.update_tag_type, type_id, changes), "mytags")
+
+
+@router.delete("/tag-types/{type_id}", response_model=DeleteOut)
+def delete_tag_type(type_id: str, session: Session) -> DeleteOut:
+    return _deleted(session.run(org.delete_tag_type, type_id), "mytags")
 
 
 @router.get("/tag-meta", response_model=RowsOut)
@@ -291,7 +412,7 @@ def put_tag_meta(name: str, body: TagMetaIn, session: Session) -> WriteOut:
     return _written(session.run(
         org.put_tag_meta, name, tag_type=body.type, color=body.color,
         source_category=body.source_category,
-    ), "tags")
+    ), "mytags")
 
 
 @router.get("/tag-synonyms", response_model=RowsOut)
@@ -301,7 +422,62 @@ def list_tag_synonyms(reader: Reader) -> RowsOut:
 
 @router.post("/tag-synonyms", response_model=WriteOut)
 def put_tag_synonym(body: TagSynonymIn, session: Session) -> WriteOut:
-    return _written(session.run(org.put_tag_synonym, body.term, body.tag), "tags")
+    return _written(session.run(org.put_tag_synonym, body.term, body.tag), "mytags")
+
+
+@router.get("/mytags/catalog", response_model=TagCatalogOut)
+def tag_catalog(reader: Reader) -> TagCatalogOut:
+    return TagCatalogOut(tags=[TagSummaryOut(**asdict(tag)) for tag in tags.tag_catalog(reader)])
+
+
+@router.get("/mytags/suggest", response_model=TagSuggestionsOut)
+def suggest_tags(
+    reader: Reader,
+    q: Annotated[str, Query()] = "",
+    tag_type: Annotated[str | None, Query(alias="type")] = None,
+    track_id: Annotated[list[str] | None, Query()] = None,
+) -> TagSuggestionsOut:
+    try:
+        rows = tags.suggest_tags(reader, q, tag_type=tag_type, track_ids=track_id or ())
+    except org.OrgError as exc:
+        raise _http(exc) from exc
+    return TagSuggestionsOut(suggestions=[TagSuggestionOut(**row) for row in rows])
+
+
+@router.get("/mytags/assignments", response_model=TagAssignmentsOut)
+def tag_assignments(reader: Reader) -> TagAssignmentsOut:
+    return TagAssignmentsOut(tracks=tags.track_tag_map(reader))
+
+
+@router.post("/mytags/assignments", response_model=WriteOut)
+def assign_tags(body: TagAssignIn, session: Session) -> WriteOut:
+    """The undoable assign. ``POST /mytags/assign`` stays for ETag-checked callers."""
+    return _written(session.run(
+        tags.assign_tags, body.stable_ids, add=body.add, remove=body.remove, tag_type=body.type,
+    ), "mytags")
+
+
+@router.post("/mytags", response_model=WriteOut, status_code=status.HTTP_201_CREATED)
+def create_tag(body: TagCreateIn, session: Session) -> WriteOut:
+    return _written(session.run(tags.create_tag, body.name, body.type), "mytags")
+
+
+@router.patch("/mytags/{name:path}", response_model=WriteOut)
+def patch_tag(name: str, body: TagPatchIn, session: Session) -> WriteOut:
+    """Rename (``merge`` to combine with an existing tag), retype, or both."""
+    if body.name is None and body.type is None:
+        raise _http(org.OrgError("VALIDATION", "send a name or a type"))
+    result = None
+    if body.type is not None:
+        result = session.run(tags.set_tag_type, name, body.type)
+    if body.name is not None:
+        result = session.run(tags.rename_tag, name, body.name, merge=body.merge)
+    return _written(result, "mytags")
+
+
+@router.delete("/mytags/{name:path}", response_model=WriteOut)
+def delete_tag(name: str, session: Session) -> WriteOut:
+    return _written(session.run(tags.delete_tag, name), "mytags")
 
 
 @router.get("/works", response_model=RowsOut)
@@ -358,4 +534,6 @@ def undo(session: Session) -> UndoOut:
     except org.OrgError as exc:
         raise _http(exc) from exc
     publish("library.changed", {"kind": "undo", "ids": [result.undo_id]})
+    if result.op.startswith("tag"):
+        publish("library.changed", {"kind": "mytags", "ids": []})
     return UndoOut(undo_id=result.undo_id, op=result.op)

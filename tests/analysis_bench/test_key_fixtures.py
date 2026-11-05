@@ -58,7 +58,7 @@ def _write_rekordbox(path: Path, *, n_contents: int = 1, folder: str, length_s: 
         conn.execute(
             "INSERT INTO djmdContent(ID, FolderPath, FileNameL, Title, BPM, Length, "
             "Rating, KeyID, ArtistID) VALUES (?, ?, 'tone.wav', 'Tone', 12000, ?, 5, 'k1', 'a1')",
-            (f"rb-{i+1}", folder_path, length_s),
+            (f"rb-{i + 1}", folder_path, length_s),
         )
     conn.commit()
     conn.close()
@@ -124,20 +124,31 @@ def _tiny_inputs(tmp_path: Path, *, n_contents: int = 1) -> dict[str, Path]:
 def test_builder_stages_seal_and_controls_round_trip(tmp_path: Path) -> None:
     paths = _tiny_inputs(tmp_path)
     staged = tmp_path / "key" / "v1"
-    assert build_key_bundle.main(
-        [
-            "build",
-            "--version", "v1",
-            "--rekordbox", str(paths["rekordbox"]),
-            "--mik-windows", str(paths["mik"]),
-            "--audio-root", str(paths["audio_root"]),
-            "--copy-manifest", str(paths["copy_manifest"]),
-            "--out", str(staged),
-            "--allow-tiny",
-            "--seed", "20260910",
-            "--sample-size", "200",
-        ]
-    ) == 0
+    assert (
+        build_key_bundle.main(
+            [
+                "build",
+                "--version",
+                "v1",
+                "--rekordbox",
+                str(paths["rekordbox"]),
+                "--mik-windows",
+                str(paths["mik"]),
+                "--audio-root",
+                str(paths["audio_root"]),
+                "--copy-manifest",
+                str(paths["copy_manifest"]),
+                "--out",
+                str(staged),
+                "--allow-tiny",
+                "--seed",
+                "20260910",
+                "--sample-size",
+                "200",
+            ]
+        )
+        == 0
+    )
     assert (staged / "key-truth.json").is_file()
     assert (staged / "wav" / "rb-1.wav").is_file()
     sealed = bundles.seal_bundle(staged, lane="key", version="v1")
@@ -148,14 +159,26 @@ def test_builder_stages_seal_and_controls_round_trip(tmp_path: Path) -> None:
     assert mik["rb-1"] == canon_am()
 
     report_path = tmp_path / "report.json"
-    assert cli.main(
-        [
-            "run", "--lane", "key", "--candidate", "constant_key",
-            "--bundle-dir", str(staged), "--version", "v1",
-            "--workdir", str(tmp_path / "arms"),
-            "--out", str(report_path),
-        ]
-    ) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "key",
+                "--candidate",
+                "constant_key",
+                "--bundle-dir",
+                str(staged),
+                "--version",
+                "v1",
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--out",
+                str(report_path),
+            ]
+        )
+        == 0
+    )
     report = json.loads(report_path.read_text())
     assert report["scorer_version"] == "1.0.0"
     ceiling = report["arms"]["truth_echo"]["vs_rekordbox"]["mirex_mean_pct"]
@@ -168,17 +191,30 @@ def test_builder_stages_seal_and_controls_round_trip(tmp_path: Path) -> None:
 def test_fixtures_build_via_cli_allow_tiny(tmp_path: Path) -> None:
     paths = _tiny_inputs(tmp_path)
     staged = tmp_path / "staged"
-    assert cli.main(
-        [
-            "fixtures", "build", "--lane", "key", "--version", "v1",
-            "--dir", str(staged),
-            "--rekordbox", str(paths["rekordbox"]),
-            "--mik-windows", str(paths["mik"]),
-            "--audio-root", str(paths["audio_root"]),
-            "--copy-manifest", str(paths["copy_manifest"]),
-            "--allow-tiny",
-        ]
-    ) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "build",
+                "--lane",
+                "key",
+                "--version",
+                "v1",
+                "--dir",
+                str(staged),
+                "--rekordbox",
+                str(paths["rekordbox"]),
+                "--mik-windows",
+                str(paths["mik"]),
+                "--audio-root",
+                str(paths["audio_root"]),
+                "--copy-manifest",
+                str(paths["copy_manifest"]),
+                "--allow-tiny",
+            ]
+        )
+        == 0
+    )
     assert (staged / "key-truth.json").is_file()
 
 
@@ -188,11 +224,16 @@ def test_builder_refuses_tiny_rekordbox_without_allow_tiny(tmp_path: Path) -> No
         build_key_bundle.main(
             [
                 "build",
-                "--rekordbox", str(paths["rekordbox"]),
-                "--mik-windows", str(paths["mik"]),
-                "--audio-root", str(paths["audio_root"]),
-                "--copy-manifest", str(paths["copy_manifest"]),
-                "--out", str(tmp_path / "out"),
+                "--rekordbox",
+                str(paths["rekordbox"]),
+                "--mik-windows",
+                str(paths["mik"]),
+                "--audio-root",
+                str(paths["audio_root"]),
+                "--copy-manifest",
+                str(paths["copy_manifest"]),
+                "--out",
+                str(tmp_path / "out"),
             ]
         )
 
@@ -206,11 +247,16 @@ def test_builder_refuses_zero_resolvable_audio_even_when_large(tmp_path: Path) -
         build_key_bundle.main(
             [
                 "build",
-                "--rekordbox", str(paths["rekordbox"]),
-                "--mik-windows", str(paths["mik"]),
-                "--audio-root", str(empty_audio),
-                "--copy-manifest", str(paths["copy_manifest"]),
-                "--out", str(tmp_path / "out"),
+                "--rekordbox",
+                str(paths["rekordbox"]),
+                "--mik-windows",
+                str(paths["mik"]),
+                "--audio-root",
+                str(empty_audio),
+                "--copy-manifest",
+                str(paths["copy_manifest"]),
+                "--out",
+                str(tmp_path / "out"),
             ]
         )
 
@@ -222,11 +268,16 @@ def test_builder_refuses_zero_byte_rekordbox(tmp_path: Path) -> None:
         build_key_bundle.main(
             [
                 "build",
-                "--rekordbox", str(empty),
-                "--mik-windows", str(tmp_path / "mik.db"),
-                "--audio-root", str(tmp_path / "audio"),
-                "--copy-manifest", str(tmp_path / "m.jsonl"),
-                "--out", str(tmp_path / "out"),
+                "--rekordbox",
+                str(empty),
+                "--mik-windows",
+                str(tmp_path / "mik.db"),
+                "--audio-root",
+                str(tmp_path / "audio"),
+                "--copy-manifest",
+                str(tmp_path / "m.jsonl"),
+                "--out",
+                str(tmp_path / "out"),
                 "--allow-tiny",
             ]
         )
@@ -242,12 +293,7 @@ def test_windows_mik_file_joins_via_audio_rel(tmp_path: Path) -> None:
         _rel_from_windows_mik_file,
     )
 
-    assert (
-        _rel_from_windows_mik_file(
-            r"C:\mik-run-20260908\audio\abc123\track.mp3"
-        )
-        == "abc123/track.mp3"
-    )
+    assert _rel_from_windows_mik_file(r"C:\mik-run-20260908\audio\abc123\track.mp3") == "abc123/track.mp3"
     rows = [
         CopyRow("/Users/dev/Music/track.mp3", "abc123/track.mp3", "track.mp3", 1),
         CopyRow("/Users/dev/Other/track.mp3", "def456/track.mp3", "track.mp3", 1),

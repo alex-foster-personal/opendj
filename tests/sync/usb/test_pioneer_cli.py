@@ -14,6 +14,7 @@ Covers:
 All tests are read-only against ``tests/fixtures/``. Output is written
 to ``tmp_path`` only.
 """
+
 from __future__ import annotations
 
 import json
@@ -218,9 +219,7 @@ class TestRead:
 
 
 class TestWriteDryRun:
-    def test_dry_run_plan_json(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dry_run_plan_json(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         template = tmp_path / "template" / "exportLibrary.db"
         template.parent.mkdir(parents=True)
         template.write_bytes(b"not really a sqlcipher file")
@@ -244,13 +243,9 @@ class TestWriteDryRun:
         assert Path(plan["template"]) == template.resolve()
         assert Path(plan["output"]) == output.resolve()
         assert plan["playlists"] == [{"name": "Warmup", "track_ids": [1, 2, 3]}]
-        assert plan["track_updates"] == [
-            {"id": 1, "overlay": {"title": "New", "rating": 5}}
-        ]
+        assert plan["track_updates"] == [{"id": 1, "overlay": {"title": "New", "rating": 5}}]
 
-    def test_dry_run_empty_overlays(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dry_run_empty_overlays(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         template = tmp_path / "template.db"
         template.write_bytes(b"x")
         output = tmp_path / "out.db"
@@ -268,9 +263,7 @@ class TestWriteDryRun:
         assert plan["playlists"] == []
         assert plan["track_updates"] == []
 
-    def test_dry_run_bad_playlist_spec_rc2(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dry_run_bad_playlist_spec_rc2(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         rc = main(
             [
                 "write",
@@ -286,9 +279,7 @@ class TestWriteDryRun:
         err = capsys.readouterr().err
         assert "must contain ':'" in err
 
-    def test_dry_run_bad_track_spec_rc2(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dry_run_bad_track_spec_rc2(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         rc = main(
             [
                 "write",
@@ -349,9 +340,7 @@ class TestWriteApply:
         # present with the right name.
         from apps.sync.usb.pioneer.writer_onelibrary import read_playlist_roundtrip
 
-        payload = read_playlist_roundtrip(
-            onelibrary_path=output, playlist_id=summary["playlist_ids"][0]
-        )
+        payload = read_playlist_roundtrip(onelibrary_path=output, playlist_id=summary["playlist_ids"][0])
         assert payload["name"] == "CLI Smoke"
         assert [t["id"] for t in payload["tracks"]] == [1, 2, 3]
 
@@ -397,9 +386,7 @@ def test_apply_writer_import_failure_rc4(
     import importlib
 
     # Evict any cached copy so the fresh import inside _cmd_write fails.
-    monkeypatch.delitem(
-        sys.modules, "apps.sync.usb.pioneer.writer_onelibrary", raising=False
-    )
+    monkeypatch.delitem(sys.modules, "apps.sync.usb.pioneer.writer_onelibrary", raising=False)
 
     real_import_module = importlib.import_module
 
@@ -415,7 +402,9 @@ def test_apply_writer_import_failure_rc4(
             raise ImportError("writer_onelibrary blocked for test")
 
     monkeypatch.setitem(
-        sys.modules, "apps.sync.usb.pioneer.writer_onelibrary", _RaisingModule()  # type: ignore[arg-type]
+        sys.modules,
+        "apps.sync.usb.pioneer.writer_onelibrary",
+        _RaisingModule(),  # type: ignore[arg-type]
     )
 
     rc = main(

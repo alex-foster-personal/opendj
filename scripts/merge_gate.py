@@ -142,9 +142,7 @@ def check_test_accompanies_source(rev_range: str, floor: int) -> Result:
     #   (b) the sequence is CLOSED by a test(...) commit     -> settings-panel/01..04
     # perf-sync-ux/00..03 satisfied neither, and that is the regression.
     closing_test = [
-        f"{sha} {subject[:62]}"
-        for sha, subject in _subjects(rev_range)
-        if re.match(r"^test(\([^)]+\))?: ", subject)
+        f"{sha} {subject[:62]}" for sha, subject in _subjects(rev_range) if re.match(r"^test(\([^)]+\))?: ", subject)
     ]
     if closing_test:
         return Result(
@@ -163,11 +161,7 @@ def check_test_accompanies_source(rev_range: str, floor: int) -> Result:
 
 def check_architecture_tracks_code(rev_range: str) -> Result:
     changed = _changed_files(rev_range)
-    new_modules = {
-        f.split("/")[1]
-        for f in changed
-        if f.startswith("apps/") and len(f.split("/")) > 2
-    }
+    new_modules = {f.split("/")[1] for f in changed if f.startswith("apps/") and len(f.split("/")) > 2}
     known = {
         d.split("/")[1]
         for d in _git("ls-tree", "-d", "--name-only", "-r", f"{rev_range.split('..')[0]}", "apps").splitlines()

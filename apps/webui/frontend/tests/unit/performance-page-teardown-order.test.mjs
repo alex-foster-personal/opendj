@@ -12,10 +12,16 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-const source = await readFile(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8');
+const source = await readFile(
+	new URL('../../src/routes/performance/+page.svelte', import.meta.url),
+	'utf8'
+);
 
 test('performance unmount tears the engine down only after the mirror has closed', () => {
-	assert.match(source, /if \(disposeOnUnmount\)\s+void mirrorClosed\.finally\(\(\) => \{\s+if \(currentPerformanceMount\(\) === mountGeneration\) void beginTeardown\(\);\s+\}\);/);
+	assert.match(
+		source,
+		/if \(disposeOnUnmount\)\s+void mirrorClosed\.finally\(\(\) => \{\s+if \(currentPerformanceMount\(\) === mountGeneration\) void beginTeardown\(\);\s+\}\);/
+	);
 	assert.doesNotMatch(source, /if \(disposeOnUnmount\) void beginTeardown\(\);/);
 });
 

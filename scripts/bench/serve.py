@@ -8,6 +8,7 @@ python -m http.server cannot serve HTTP Range requests, so audio players
 refuse to seek. StaticFiles supports Range, which makes clips scrubbable.
 Usage: uv run scripts/bench/serve.py [port]
 """
+
 import sys
 from pathlib import Path
 

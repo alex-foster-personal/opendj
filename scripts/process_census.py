@@ -97,9 +97,7 @@ class CFG:
     RUNNER_ENV_KEYS = ("GITHUB_RUN_ID", "RUNNER_NAME")
     AGENT_ENV_KEYS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     # A cwd in one of these is an agent's (or a human's) checkout of the repo.
-    WORKTREE_CWD_RE = re.compile(
-        r"/music-dj-tools(-[\w.-]+)?(/|$)|/\(private path)/|/lanes/|/_idd/"
-    )
+    WORKTREE_CWD_RE = re.compile(r"/music-dj-tools(-[\w.-]+)?(/|$)|/\(private path)/|/lanes/|/_idd/")
     RUNNER_WORK_RE = re.compile(r"/_work(/|$)")
     # Roots that legitimately outlive their parent and host other people's
     # live sessions. A tree hanging under one of these is attached, not
@@ -139,9 +137,7 @@ class Proc:
     # False when the env could not be read at all: another user's process, a SIP
     # binary, or (macOS) a process that rewrote its title over its env area.
     env_readable: bool = False
-    supervisor: str = (
-        ""  # "job" (launchd job / systemd unit MainPID) | "app" (a GUI app launchd tracks) | ""
-    )
+    supervisor: str = ""  # "job" (launchd job / systemd unit MainPID) | "app" (a GUI app launchd tracks) | ""
 
 
 @dataclass
@@ -277,12 +273,7 @@ def _snapshot_linux() -> dict[int, Proc]:
         text = stat.decode(errors="replace")
         fields = text[text.rfind(")") + 2 :].split()
         state, ppid, pgid, start_ticks = fields[0], int(fields[1]), int(fields[2]), int(fields[19])
-        cmd = (
-            (_read(f"/proc/{entry}/cmdline") or b"")
-            .replace(b"\0", b" ")
-            .decode(errors="replace")
-            .strip()
-        )
+        cmd = (_read(f"/proc/{entry}/cmdline") or b"").replace(b"\0", b" ").decode(errors="replace").strip()
         status = (_read(f"/proc/{entry}/status") or b"").decode(errors="replace")
         uid = re.search(r"^Uid:\s+(\d+)", status, re.M)
         procs[int(entry)] = Proc(
@@ -311,9 +302,7 @@ def _mark_supervised(procs: dict[int, Proc], line: str) -> None:
 def _read_envs_linux(procs: dict[int, Proc]) -> None:
     for pid, proc in procs.items():
         raw = _read(f"/proc/{pid}/environ") or b""
-        pairs = [
-            tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv
-        ]
+        pairs = [tuple(kv.split("=", 1)) for kv in raw.decode(errors="replace").split("\0") if "=" in kv]
         proc.env, proc.env_markers = _filter_env(pairs)  # type: ignore[arg-type]
         proc.env_readable = bool(pairs)
 
@@ -335,9 +324,7 @@ def snapshot() -> dict[int, Proc]:
     else:
         raise SystemExit(f"[ERROR] unsupported platform {sys.platform}")
     if not procs:
-        raise SystemExit(
-            "[ERROR] process snapshot is empty: the instrument failed, not a clean host"
-        )
+        raise SystemExit("[ERROR] process snapshot is empty: the instrument failed, not a clean host")
     # Env for EVERY process first: a `.test.` AF_SERVICE_ID must bring a
     # process into scope whatever its command is. cwd (one lsof call) only for
     # candidates and their ancestors, which attribution reads.
@@ -354,9 +341,7 @@ def snapshot() -> dict[int, Proc]:
 
 
 def _looks_test_spawned(proc: Proc) -> bool:
-    return bool(CFG.TEST_COMMAND_RE.search(proc.command)) and not CFG.EXCLUDED_COMMAND_RE.search(
-        proc.command
-    )
+    return bool(CFG.TEST_COMMAND_RE.search(proc.command)) and not CFG.EXCLUDED_COMMAND_RE.search(proc.command)
 
 
 def _in_scope(proc: Proc) -> bool:

@@ -50,6 +50,8 @@ GUARD_NAME = "The Trunk uploads must have run"
 
 # A matrix expression has to appear in the filenames, or the five shards collide.
 SHARD_EXPR = "matrix.shard"
+# Run blocks read the shard through `env: SHARD:` (zizmor template-injection), never `${{ }}`.
+SHARD_REF = "$SHARD"
 
 # The ci-insights job has no strategy.matrix of its own (ADR-NEW-ci-insights-cost-gate):
 # its per-shard steps carry an explicit `-N` suffix instead.
@@ -132,7 +134,7 @@ def _stage_step() -> dict:
 def test_junit_report_path_is_per_shard() -> None:
     """if the path stops varying then five shards race on one file."""
     written = _junitxml_path()
-    assert SHARD_EXPR in written, (
+    assert SHARD_REF in written, (
         f"The JUnit report path {written!r} does not vary per shard, so all "
         "five shards write the same file on their own runners and only one "
         "shard's results can ever be attributed correctly."
@@ -260,7 +262,7 @@ def test_the_prune_cannot_delete_another_shards_staging_directory() -> None:
     start = run.find("find .")
     assert start != -1, "No find-based prune in the staging step."
     invocation = run[start : run.find("\n", run.find("-exec", start))]
-    assert SHARD_EXPR in invocation, (
+    assert SHARD_REF in invocation, (
         f"The prune {invocation!r} is not scoped to this shard, so it matches "
         "directories belonging to OTHER shards in a shared workspace. "
         "Deleting a directory another job has written but not yet uploaded "
@@ -331,15 +333,15 @@ def _guard_step() -> dict:
 def test_the_junit_filename_is_what_the_upload_glob_sends() -> None:
     """if the two disagree then the upload finds nothing, and looks fine."""
     written_name_template = PurePosixPath(_junitxml_path()).name
-    assert SHARD_EXPR in written_name_template, (
+    assert SHARD_REF in written_name_template, (
         f"pytest's JUnit filename {written_name_template!r} no longer varies "
-        f"by {SHARD_EXPR}; re-derive the per-shard comparison below."
+        f"by {SHARD_REF}; re-derive the per-shard comparison below."
     )
     for shard in INSIGHTS_SHARDS:
         glob = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["with"]["junit-paths"]
         pattern = re.compile("^" + re.escape(glob).replace(r"\*", "[^/]*") + "$")
         path = _step_by_id(_insights_id(DOWNLOAD_STEP_ID, shard))["env"]["DEST"]
-        name = written_name_template.replace("${{ matrix.shard }}", str(shard))
+        name = written_name_template.replace(SHARD_REF, str(shard))
         assert pattern.match(f"{path}/{name}"), (
             f"pytest writes {name!r} for shard {shard} and it is downloaded into "
             f"{path!r}, but the upload sends {glob!r}, which does not match. Both "

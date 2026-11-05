@@ -111,10 +111,7 @@ def evaluate(repo: Path) -> list[dict[str, object]]:
         detail = "LATENCY-03 wiring failed: " + "; ".join(failures)
         value = WIRING_FAIL_VALUE
     else:
-        detail = (
-            f"declared ceiling {floor}ms (input-to-applied, echoed not live-measured; "
-            "see LATENCY-03)"
-        )
+        detail = f"declared ceiling {floor}ms (input-to-applied, echoed not live-measured; see LATENCY-03)"
         value = floor
     return [
         {

@@ -9,6 +9,7 @@ already exposes to every write method. It is not usable on its own.
 Imports its constants from :mod:`apps.shared.state.writer_common`, never
 from ``writer`` itself -- see that module's docstring for why.
 """
+
 from __future__ import annotations
 
 import json
@@ -139,9 +140,7 @@ class _TrackWriterMixin:
         tombstone was waiting for. That lift stamps ``restored_at`` like an
         explicit restore, so it outranks the tombstone on every machine.
         """
-        artists_json = json.dumps(
-            list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
-        )
+        artists_json = json.dumps(list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False)
         now = self._now_iso()
         with self._tx() as conn:
             existing = conn.execute(
@@ -315,9 +314,7 @@ class _TrackWriterMixin:
 
     # --- vendor ids -----------------------------------------------------
 
-    def set_vendor_id(
-        self: _WriterHost, stable_id: str, vendor: str, vendor_id: str
-    ) -> None:
+    def set_vendor_id(self: _WriterHost, stable_id: str, vendor: str, vendor_id: str) -> None:
         now = self._now_iso()
         with self._tx() as conn:
             stamp = self._stamp(VENDOR_IDS_TABLE, (stable_id, vendor), now)
@@ -361,11 +358,8 @@ class _TrackWriterMixin:
     ) -> bool:
         """Set a provenance-wrapped field. Returns True on change.
 
-        The DB mutation and the bus publish are ordered inside one outer
-        SAVEPOINT: if ``bus.publish`` raises, the mutation is rolled back so
-        subscribers and the ``track_fields`` row can never drift. This keeps
-        the durable log + in-process fanout invariant the module docstring
-        promises -- addresses Codex P05 finding on mutation/publish ordering.
+        The public event is staged until the owning write unit commits; a
+        fanout failure cannot roll back a committed ``track_fields`` row.
         """
         with self._tx():
             changed = _prov.write_field(
@@ -389,9 +383,6 @@ class _TrackWriterMixin:
                 }
                 if confidence is not None:
                     payload["confidence"] = confidence
-                # Publish inside the SAVEPOINT: a raising bus propagates out
-                # of ``_tx`` and triggers ROLLBACK TO, reverting write_field's
-                # already-RELEASEd inner SAVEPOINT.
                 self.bus.publish(
                     Event(
                         ts=self._now_iso(),
@@ -430,15 +421,16 @@ class _TrackWriterMixin:
             track_stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             tombstone_ts = track_stamp.updated_at
             live_memberships = conn.execute(
-                "SELECT playlist_id, position FROM playlist_memberships "
-                "WHERE stable_id = ? AND deleted_at IS NULL",
+                "SELECT playlist_id, position FROM playlist_memberships WHERE stable_id = ? AND deleted_at IS NULL",
                 (stable_id,),
             ).fetchall()
             memberships: list[TrackMembershipRef] = []
             playlist_ids: set[str] = set()
             for playlist_id, position in live_memberships:
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
@@ -457,13 +449,11 @@ class _TrackWriterMixin:
                 revision = next_playlist_revision(conn, playlist_id, now)
                 stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
                 conn.execute(
-                    "UPDATE playlists SET updated_at=?, origin_device_id=? "
-                    "WHERE playlist_id=?",
+                    "UPDATE playlists SET updated_at=?, origin_device_id=? WHERE playlist_id=?",
                     (stamp.updated_at, stamp.origin_device_id, playlist_id),
                 )
             conn.execute(
-                "UPDATE tracks SET deleted_at=?, deleted_reason=?, updated_at=?, "
-                "origin_device_id=? WHERE stable_id=?",
+                "UPDATE tracks SET deleted_at=?, deleted_reason=?, updated_at=?, origin_device_id=? WHERE stable_id=?",
                 (
                     tombstone_ts,
                     reason,
@@ -476,10 +466,7 @@ class _TrackWriterMixin:
                 kind="track.delete",
                 stable_id=stable_id,
                 payload={
-                    "memberships": [
-                        {"playlist_id": m.playlist_id, "position": m.position}
-                        for m in memberships
-                    ],
+                    "memberships": [{"playlist_id": m.playlist_id, "position": m.position} for m in memberships],
                 },
                 ts=now,
             )
@@ -517,15 +504,16 @@ class _TrackWriterMixin:
                 ),
             )
             restored_rows = conn.execute(
-                "SELECT playlist_id, position FROM playlist_memberships "
-                "WHERE stable_id = ? AND deleted_at = ?",
+                "SELECT playlist_id, position FROM playlist_memberships WHERE stable_id = ? AND deleted_at = ?",
                 (stable_id, tombstone_ts),
             ).fetchall()
             memberships: list[TrackMembershipRef] = []
             playlist_ids: set[str] = set()
             for playlist_id, position in restored_rows:
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=NULL, updated_at=?, "
@@ -546,18 +534,14 @@ class _TrackWriterMixin:
                 revision = next_playlist_revision(conn, playlist_id, now)
                 stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
                 conn.execute(
-                    "UPDATE playlists SET updated_at=?, origin_device_id=? "
-                    "WHERE playlist_id=?",
+                    "UPDATE playlists SET updated_at=?, origin_device_id=? WHERE playlist_id=?",
                     (stamp.updated_at, stamp.origin_device_id, playlist_id),
                 )
             ev = self._append_event(
                 kind="track.undelete",
                 stable_id=stable_id,
                 payload={
-                    "memberships": [
-                        {"playlist_id": m.playlist_id, "position": m.position}
-                        for m in memberships
-                    ],
+                    "memberships": [{"playlist_id": m.playlist_id, "position": m.position} for m in memberships],
                 },
                 ts=now,
             )
@@ -590,9 +574,7 @@ class _TrackWriterMixin:
                 "UPDATE tracks SET updated_at=?, origin_device_id=? WHERE stable_id=?",
                 (stamp.updated_at, stamp.origin_device_id, stable_id),
             )
-            ev = self._append_event(
-                kind="track.claim", stable_id=stable_id, payload={}, ts=now
-            )
+            ev = self._append_event(kind="track.claim", stable_id=stable_id, payload={}, ts=now)
             self.bus.publish(ev)
         return stamp.updated_at
 

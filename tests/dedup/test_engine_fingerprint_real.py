@@ -8,6 +8,7 @@ Builds odj-audio from this checkout and pins it with ``ODJ_AUDIO_BIN`` (see
 The audio is synthesized here, long enough (20 s) for a real fingerprint,
 so every claim below is about chromaprint's actual output, not a fake.
 """
+
 from __future__ import annotations
 
 import math
@@ -140,8 +141,17 @@ def _state_db(path: Path, rows: list[tuple[str, Path | str, str | None]]) -> Pat
             "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
             "duration_ms, file_path, created_at, updated_at, deleted_at) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
-            (sid, "inferred", sid, "[]", 20_000, str(file_path),
-             "2026-10-01T00:00:00+00:00", "2026-10-01T00:00:00+00:00", deleted_at),
+            (
+                sid,
+                "inferred",
+                sid,
+                "[]",
+                20_000,
+                str(file_path),
+                "2026-10-01T00:00:00+00:00",
+                "2026-10-01T00:00:00+00:00",
+                deleted_at,
+            ),
         )
     conn.commit()
     conn.close()
@@ -218,8 +228,15 @@ def test_a_moved_track_is_confirmed_by_its_recorded_audio(
 
     ev = FingerprintEvidence.open(db)
     assert ev is not None
-    row = {"original_path": str(original), "basename": "song.wav", "stable_id": "sid-song",
-           "title": "", "artist": "", "duration_s": "", "file_size": ""}
+    row = {
+        "original_path": str(original),
+        "basename": "song.wav",
+        "stable_id": "sid-song",
+        "title": "",
+        "artist": "",
+        "duration_s": "",
+        "file_size": "",
+    }
     idx = locate.FsIndex.build([audio_files.AudioFile(p, 1, 0.0, ".wav") for p in (moved, impostor)])
     cands = {c.path: c for c in locate.find_candidates(row, idx, {moved: None, impostor: None}, fingerprints=ev)}
 
@@ -246,8 +263,15 @@ def _named_candidate(
     meta: dict[Path, audio_files.AudioMetadata | None] = {
         same_name: audio_files.AudioMetadata(title="Song", artist="Artist", duration_s=20.0)
     }
-    row = {"id": "1", "title": "Song", "artist": "Artist", "original_path": str(original),
-           "basename": original.name, "duration_s": "20", "file_size": str(size)}
+    row = {
+        "id": "1",
+        "title": "Song",
+        "artist": "Artist",
+        "original_path": str(original),
+        "basename": original.name,
+        "duration_s": "20",
+        "file_size": str(size),
+    }
     return original, same_name, idx, meta, row
 
 

@@ -37,7 +37,7 @@ def _job(state_dir: Path, job_id: str) -> jobs_mod.LyricJob:
     return next(j for j in jobs_mod.list_jobs(state_dir) if j.id == job_id)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_empty_queue_is_a_clean_idle_exit(state_dir: Path) -> None:

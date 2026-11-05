@@ -1,4 +1,5 @@
 """Tests for apps.cloud.config (CAT-04)."""
+
 from __future__ import annotations
 
 import pytest

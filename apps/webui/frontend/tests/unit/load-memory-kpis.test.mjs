@@ -203,14 +203,29 @@ test('decoded-memory accounting charges a stems-ready deck for its four stem buf
 			'deck is never charged the 4x term'
 	);
 	assert.match(
+		wrapperBody,
+		/mixWorkletCopy:[\s\S]*playback !== 'stems'/,
+		'if the wrapper stops reading mix playback then the mix worklet copy is never charged'
+	);
+	assert.match(
+		wrapperBody,
+		/pendingStemUpgrade: _rt\[deck\]\.pendingStemUpgrade !== null/,
+		'if the wrapper stops reading pendingStemUpgrade then loading stems are under-counted'
+	);
+	assert.match(
 		body,
 		/const mixBytes = buffer\.length \* buffer\.numberOfChannels \* 4;/,
 		'if the per-sample width stops being 4 bytes then the Float32 estimate is wrong'
 	);
 	assert.match(
 		body,
-		/if \(deck\.stemsReady\) total \+= mixBytes \* 4;/,
-		'if the stems term is dropped or the multiplier changes then a stems-ready ' +
+		/if \(deck\.mixWorkletCopy\) total \+= mixBytes;/,
+		'if the mix worklet copy term is dropped then a live mix processor under-reports PCM'
+	);
+	assert.match(
+		body,
+		/if \(deck\.stemsReady \|\| deck\.pendingStemUpgrade\) total \+= mixBytes \* 4;/,
+		'if the stems term is dropped or pending stems are excluded then a stems-ready ' +
 			'deck under-reports its decoded footprint'
 	);
 });

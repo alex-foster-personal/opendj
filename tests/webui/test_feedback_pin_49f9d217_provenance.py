@@ -99,9 +99,7 @@ def test_pin_49f9d217_signed_out_pin_has_no_user(fb: TestClient) -> None:
 
 
 @pytest.mark.requirement("FB-22")
-def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(
-    fb: TestClient, state_db_path: Path
-) -> None:
+def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(fb: TestClient, state_db_path: Path) -> None:
     """[if] a signed-in pin carries no user [then] broken, [else stop]."""
     _sign_in(fb, state_db_path)
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))

@@ -93,9 +93,7 @@ def _restamp(root: Path, lock: Lock) -> None:
     path = root / lock.output
     text = path.read_text(encoding="utf-8")
     fresh = source_fingerprint(root / lock.source)
-    path.write_text(
-        re.sub(r'source-sha256 = "[0-9a-f]+"', f'source-sha256 = "{fresh}"', text), encoding="utf-8"
-    )
+    path.write_text(re.sub(r'source-sha256 = "[0-9a-f]+"', f'source-sha256 = "{fresh}"', text), encoding="utf-8")
 
 
 # -----------------------------------------------------------------------------
@@ -152,9 +150,7 @@ def test_requirements_edit_without_recompile_is_drift(tmp_path: Path, old: str, 
 def test_comment_only_edit_is_not_drift(tmp_path: Path) -> None:
     """Overshoot control: requirements.txt is mostly comments, which do not resolve."""
     root = _copy_lock_tree(tmp_path, CI_LOCK)
-    _edit(
-        root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19  # trailing note\n# new line\n\n"
-    )
+    _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19  # trailing note\n# new line\n\n")
     assert not lock_problems(CI_LOCK, root)
 
 
@@ -178,9 +174,7 @@ def test_requirement_absent_from_the_lock_is_drift_even_when_restamped(tmp_path:
     root = _copy_lock_tree(tmp_path, CI_LOCK)
     _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19\nnot-a-locked-package>=1\n")
     _restamp(root, CI_LOCK)
-    assert lock_problems(CI_LOCK, root) == [
-        "pylock.ci.toml: not-a-locked-package>=1: not in the lock"
-    ]
+    assert lock_problems(CI_LOCK, root) == ["pylock.ci.toml: not-a-locked-package>=1: not in the lock"]
 
 
 # -----------------------------------------------------------------------------
@@ -233,9 +227,7 @@ def test_a_new_package_without_a_wheel_is_drift(tmp_path: Path) -> None:
     (root / CI_LOCK.output).write_text(lock_text.replace("\n[tool.", f"{extra}\n[tool.", 1))
     assert "sdist-only" in (root / CI_LOCK.output).read_text(encoding="utf-8"), "control"
 
-    assert lock_problems(CI_LOCK, root) == [
-        "pylock.ci.toml: sdist-only has no wheel and is not in SOURCE_BUILDS"
-    ]
+    assert lock_problems(CI_LOCK, root) == ["pylock.ci.toml: sdist-only has no wheel and is not in SOURCE_BUILDS"]
 
 
 def test_an_artifact_without_a_sha256_is_drift(tmp_path: Path) -> None:
@@ -247,9 +239,7 @@ def test_an_artifact_without_a_sha256_is_drift(tmp_path: Path) -> None:
     assert hashed, "control: the fixture wheel line must exist"
     path.write_text(text.replace(hashed.group(0), hashed.group(1) + " }]", 1), encoding="utf-8")
 
-    assert lock_problems(CI_LOCK, root) == [
-        f"pylock.ci.toml: aiohappyeyeballs wheel {hashed.group(2)} has no sha256"
-    ]
+    assert lock_problems(CI_LOCK, root) == [f"pylock.ci.toml: aiohappyeyeballs wheel {hashed.group(2)} has no sha256"]
 
 
 def test_a_vcs_entry_without_a_commit_is_drift(tmp_path: Path) -> None:

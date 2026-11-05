@@ -33,7 +33,9 @@ test('an @ mention becomes linked @name text that round-trips as a markdown link
 	const at = typed.doc.textContent.indexOf('@') + 1;
 	const range = { from: at, to: typed.doc.content.size - 1 };
 	const state = typed.apply(typed.tr.setSelection(TextSelection.create(typed.doc, range.to)));
-	const next = state.apply(ed.insertMentionLink(state, range, 'track:a1', 'webkit-fixture-a-128bpm'));
+	const next = state.apply(
+		ed.insertMentionLink(state, range, 'track:a1', 'webkit-fixture-a-128bpm')
+	);
 	const md = ed.serializeNoteMarkdown(next.doc);
 	assert.equal(md, 'open with [@webkit-fixture-\u2026](track:a1) ');
 	assert.equal(ed.serializeNoteMarkdown(ed.parseNoteMarkdown(md)), md);
@@ -42,9 +44,13 @@ test('an @ mention becomes linked @name text that round-trips as a markdown link
 });
 
 test('trackIdsInSelection lists distinct linked songs in the selection only', () => {
-	const state = stateOf('[@A](track:a1) then [[stem:b2:vocals|B]] and [@A again](track:a1) [site](https://x.example)');
+	const state = stateOf(
+		'[@A](track:a1) then [[stem:b2:vocals|B]] and [@A again](track:a1) [site](https://x.example)'
+	);
 	assert.deepEqual(ed.trackIdsInSelection(state), []);
-	const all = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1, state.doc.content.size - 1)));
+	const all = state.apply(
+		state.tr.setSelection(TextSelection.create(state.doc, 1, state.doc.content.size - 1))
+	);
 	assert.deepEqual(ed.trackIdsInSelection(all), ['a1', 'b2']);
 	const first = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1, 3)));
 	assert.deepEqual(ed.trackIdsInSelection(first), ['a1']);

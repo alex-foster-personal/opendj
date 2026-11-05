@@ -1,4 +1,5 @@
 """SET-06a: metadata-only SoundCloud tracklist from the SET-01 timeline."""
+
 from __future__ import annotations
 
 import json
@@ -141,9 +142,7 @@ def test_three_track_loaded_rows_become_timestamped_comment(sets_root: Path) -> 
         "Artist Three - Third Tune",
     ]
     assert export.comment == (
-        "0:00 Artist One - First Tune\n"
-        "3:05 Artist Two - Second Tune\n"
-        "1:02:05 Artist Three - Third Tune\n"
+        "0:00 Artist One - First Tune\n3:05 Artist Two - Second Tune\n1:02:05 Artist Three - Third Tune\n"
     )
     assert "First Tune" in export.comment
     assert "Second Tune" in export.comment

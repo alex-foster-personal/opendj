@@ -85,6 +85,10 @@ export async function announceBeatSyncMaxChange(previous: boolean, next: boolean
 export async function enableBeatSyncAfterLoad(deck: DeckId): Promise<void> {
 	const enabler = _enabler;
 	if (enabler === null) return;
-	const command = beatSyncMaxLoadCommand(enabler.readBeatSyncMax(), deck, enabler.readDecks()[deck]);
+	const command = beatSyncMaxLoadCommand(
+		enabler.readBeatSyncMax(),
+		deck,
+		enabler.readDecks()[deck]
+	);
 	if (command !== null) await enabler.dispatch(command);
 }

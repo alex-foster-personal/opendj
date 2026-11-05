@@ -50,7 +50,8 @@ try {
 		stores.toasts.filter((t) => t.message === 'MIDI could not load, so it stays off').length;
 
 	const snapshot = () => ({
-		navigatorHasWebMidi: typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined,
+		navigatorHasWebMidi:
+			typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined,
 		permission: webmidi.midiState.permission,
 		devices: webmidi.midiState.devices.length,
 		lastError: uiState.midiUi.lastError,
@@ -92,7 +93,10 @@ try {
 	localStorage.clear();
 	apply.applySettingChange('rb.midi_enabled', true);
 	const settingRightAfterEnable = apply.readSettingValue('rb.midi_enabled');
-	await until(() => uiState.midiUi.lastError !== null && !uiState.midiUi.requestPending, 'the request to settle');
+	await until(
+		() => uiState.midiUi.lastError !== null && !uiState.midiUi.requestPending,
+		'the request to settle'
+	);
 	// Control for the failed-load path in 7: here the runtime chunk loads for
 	// real, so the choice is cleared by the runtime's own unsupported branch
 	// (lastError), never by apply.ts's load-failure catch.
@@ -114,7 +118,12 @@ try {
 	const labelPendingOff = liveLabel();
 	await disabling;
 	await enabling;
-	results.disableWhilePending = { ...snapshot(), pendingAtDisable, labelPendingOn, labelPendingOff };
+	results.disableWhilePending = {
+		...snapshot(),
+		pendingAtDisable,
+		labelPendingOn,
+		labelPendingOff
+	};
 
 	// 4. Off and on again while the first request is still pending.
 	localStorage.clear();
@@ -161,7 +170,11 @@ try {
 	apply.applySettingChange('rb.midi_enabled', false);
 	await until(() => !choice.midiEnabledPersisted(), 'the off choice to persist');
 	await new Promise((r) => setTimeout(r, 50));
-	results.labelAfterOff = { optedIn, turnedOff: label(), devices: webmidi.midiState.devices.length };
+	results.labelAfterOff = {
+		optedIn,
+		turnedOff: label(),
+		devices: webmidi.midiState.devices.length
+	};
 } finally {
 	await vite.close();
 }
@@ -212,7 +225,11 @@ rune.hydrateMidiEnabledFromDisk({ midi_enabled: true }); // disk choice arriving
 await settle();
 watch.stop();
 results.displayReactivity = { seen: watch.seen };
-results.failedRuntimeLoad = { persistedRightAfterToggle, persistedAfterFailedLoad, toastsAfterFailedLoad };
+results.failedRuntimeLoad = {
+	persistedRightAfterToggle,
+	persistedAfterFailedLoad,
+	toastsAfterFailedLoad
+};
 
 // 8. Control: with the reporter unwired (app-init's teardown), the same real
 // failure still restores off but raises no toast, so the toast above came

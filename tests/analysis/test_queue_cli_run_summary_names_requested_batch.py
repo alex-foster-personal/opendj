@@ -35,9 +35,7 @@ CASCADE = "qb_15bf"
 
 
 def _requested(**counts: int) -> RunSummary:
-    return RunSummary(
-        batch_id=REQUESTED, runner_id="r1", workers=1, cascade_batch_id=CASCADE, **counts
-    )
+    return RunSummary(batch_id=REQUESTED, runner_id="r1", workers=1, cascade_batch_id=CASCADE, **counts)
 
 
 def _cascade(**counts: int) -> RunSummary:

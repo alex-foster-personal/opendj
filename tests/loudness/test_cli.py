@@ -33,9 +33,7 @@ def test_render_human_notes_peak_clamp() -> None:
     assert "     1.0 dB" in text
 
 
-def test_run_scan_command_missing_file_exits_nonzero(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_run_scan_command_missing_file_exits_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     missing = tmp_path / "nope.wav"
     parser = build_parser()
     args = parser.parse_args(["scan", str(missing)])

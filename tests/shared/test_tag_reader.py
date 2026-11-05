@@ -14,6 +14,7 @@ Regression one-liners:
   - if a non-audio or missing file reads as an empty record instead of raising then broken
   - if embedded artwork in mp3/flac/m4a/wav is not found then broken
 """
+
 from __future__ import annotations
 
 from io import BytesIO
@@ -60,9 +61,7 @@ def test_standard_tags_are_read_from_every_container(fixture_dir: Path, fmt: str
 
 
 @pytest.mark.parametrize("fmt", ta.FORMATS)
-def test_bpm_key_and_isrc_are_read_where_the_container_carries_them(
-    fixture_dir: Path, fmt: str
-) -> None:
+def test_bpm_key_and_isrc_are_read_where_the_container_carries_them(fixture_dir: Path, fmt: str) -> None:
     """[if] a file carries BPM / key / ISRC tags [then] each is read, [else stop]."""
     bpm, key, isrc = _EXPECTED_EXTRAS[fmt]
     tags = tag_reader.read_tags(ta.make_tagged_audio(fixture_dir, fmt))

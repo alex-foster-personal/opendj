@@ -20,7 +20,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
-import { installFakeAudioGraphGlobals, lastCreatedFakeAudioContext } from './fixtures/fake-audio-context.mjs';
+import {
+	installFakeAudioGraphGlobals,
+	lastCreatedFakeAudioContext
+} from './fixtures/fake-audio-context.mjs';
 
 const runtime = await loadTypeScriptModule('src/lib/rb/library-mode-runtime.ts');
 const teardown = await loadTypeScriptModule('src/lib/rb/performance-route-teardown.ts');
@@ -28,9 +31,8 @@ const teardown = await loadTypeScriptModule('src/lib/rb/performance-route-teardo
 // `mixerState`/`readMasterWriteRevision` must come from the SAME bundle, or
 // `engine.setMaster`'s recordMasterWrite() bumps a revision counter this
 // test can never observe.
-const { engine, ensureAudioGraphForCue, mixerState, readMasterWriteRevision } = await loadTypeScriptModule(
-	'tests/unit/fixtures/gig-teardown-master-entry.ts'
-);
+const { engine, ensureAudioGraphForCue, mixerState, readMasterWriteRevision } =
+	await loadTypeScriptModule('tests/unit/fixtures/gig-teardown-master-entry.ts');
 
 function realMixer(initialMaster) {
 	mixerState.master = initialMaster;
@@ -89,7 +91,11 @@ test('a teardown superseded by a remount before disposal restores the master it 
 	await pending;
 
 	assert.deepEqual(disposeCalls, [], 'the remounted engine is not disposed');
-	assert.equal(mixerState.master, 0.8, 'the remount inherits the pre-teardown master, not the mute');
+	assert.equal(
+		mixerState.master,
+		0.8,
+		'the remount inherits the pre-teardown master, not the mute'
+	);
 	assert.notEqual(globalThis.window.__mdtLibraryModeIdle, true);
 	delete globalThis.window;
 	runtime.resetLibraryModeRuntimeForTest();
@@ -125,7 +131,11 @@ test('control: a remount that lands after disposal does not reapply the old mast
 	})();
 
 	assert.deepEqual(disposeCalls, ['dispose']);
-	assert.equal(mixerState.master, 0, 'a disposed release owes the remount nothing, so a deliberate 0 stands');
+	assert.equal(
+		mixerState.master,
+		0,
+		'a disposed release owes the remount nothing, so a deliberate 0 stands'
+	);
 	delete globalThis.window;
 	runtime.resetLibraryModeRuntimeForTest();
 });
@@ -182,7 +192,11 @@ test('a remount that lands WHILE disposal is still in flight still gets its mast
 	})();
 	await pending;
 
-	assert.deepEqual(disposeCalls, ['dispose'], 'disposal still runs: the remount lands too late to skip it');
+	assert.deepEqual(
+		disposeCalls,
+		['dispose'],
+		'disposal still runs: the remount lands too late to skip it'
+	);
 	assert.equal(
 		mixerState.master,
 		0.8,
@@ -192,7 +206,7 @@ test('a remount that lands WHILE disposal is still in flight still gets its mast
 	runtime.resetLibraryModeRuntimeForTest();
 });
 
-test('a second overlapping teardown does not treat the first teardown\'s temporary mute as the original', async () => {
+test("a second overlapping teardown does not treat the first teardown's temporary mute as the original", async () => {
 	// Sol review, PR #4034, library-mode-runtime.ts:210: a rapid Gig ->
 	// Library navigation during the documented double-mount transition can
 	// unmount a SECOND Gig instance (its own createGigTeardownActions
@@ -235,7 +249,7 @@ test('a second overlapping teardown does not treat the first teardown\'s tempora
 	});
 	const pendingA = teardownA(); // hardMute() runs synchronously here: master 0.8 -> 0
 
-	assert.equal(fake.readMaster(), 0, 'A\'s mute takes effect');
+	assert.equal(fake.readMaster(), 0, "A's mute takes effect");
 
 	// A second Gig instance mounts (bumping the ownership generation, exactly
 	// as a real double-mount does) and then unmounts before A's disposal
@@ -252,7 +266,11 @@ test('a second overlapping teardown does not treat the first teardown\'s tempora
 
 	releaseA();
 	await pendingA;
-	assert.equal(fake.readMaster(), 0.8, 'A finishing afterward must not clobber the already-correct restore');
+	assert.equal(
+		fake.readMaster(),
+		0.8,
+		'A finishing afterward must not clobber the already-correct restore'
+	);
 
 	delete globalThis.window;
 	runtime.resetLibraryModeRuntimeForTest();
@@ -318,7 +336,11 @@ test('a stale capture invalidated by an external write does not poison the next 
 	await pendingA;
 
 	assert.deepEqual(disposeCallsA, [], 'A is superseded before its disposeEngine() is ever called');
-	assert.equal(fake.readMaster(), 0.3, 'the correct decline: 0.3 must survive A\'s superseded teardown');
+	assert.equal(
+		fake.readMaster(),
+		0.3,
+		"the correct decline: 0.3 must survive A's superseded teardown"
+	);
 
 	// The newer Gig's OWN, later teardown: its hardMute() must capture the
 	// CURRENT 0.3, not inherit A's abandoned 0.8.
@@ -329,7 +351,7 @@ test('a stale capture invalidated by an external write does not poison the next 
 	assert.equal(
 		fake.readMaster(),
 		0.3,
-		'B must restore its OWN true original (0.3), not A\'s stale, already-invalidated capture (0.8)'
+		"B must restore its OWN true original (0.3), not A's stale, already-invalidated capture (0.8)"
 	);
 	delete globalThis.window;
 	runtime.resetLibraryModeRuntimeForTest();
@@ -373,7 +395,11 @@ test('a disposal that rejects still restores the pre-mute master, and still prop
 		await assert.rejects(() => actions.dispose(), /AudioContext.close\(\) failed/);
 
 		assert.deepEqual(disposeCalls, ['dispose']);
-		assert.equal(fake.readMaster(), 0.8, 'the pre-mute master is restored even though disposal rejected');
+		assert.equal(
+			fake.readMaster(),
+			0.8,
+			'the pre-mute master is restored even though disposal rejected'
+		);
 	} finally {
 		uninstall();
 		runtime.resetLibraryModeRuntimeForTest();
@@ -415,7 +441,7 @@ test('hardMute recaptures the current master when the pending capture has gone s
 	assert.equal(
 		fake.readMaster(),
 		0.3,
-		'the second instance must restore the value live right before IT muted (0.3), not A\'s stale capture (0.8)'
+		"the second instance must restore the value live right before IT muted (0.3), not A's stale capture (0.8)"
 	);
 	delete globalThis.window;
 	runtime.resetLibraryModeRuntimeForTest();

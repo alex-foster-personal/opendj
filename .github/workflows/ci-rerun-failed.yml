@@ -1,0 +1,298 @@
+name: ci-rerun-failed
+
+# Rerun only the failed tests (CI-RERUN-8758, -8758b and -8758c, scripts/ci_rerun_failed.py). pytest's
+# `--last-failed` at CI level, author-triggered and pinned to one head: a PR whose head went red
+# on a few pytest ids gets exactly those ids run again on the pytest pool, instead of five shards
+# and every side workflow re-running to prove a one-line fix. Trigger: the `ci:rerun-failed` label,
+# or a dispatch with the PR number. The verdict is re-posted as `ci gate` on the pinned head (same
+# check name, newer start time), which is the check the lander and branch protection read, plus a
+# `ci gate (rerun-failed)` check whose title is the one-line verdict. ci.yml is not touched.
+#
+# Guard rails, all in the script: the head must be the one the failing run measured; at most two
+# reruns per head; never for ids main's tip run also failed (inherited, fix main first); never for
+# `ci:trunk-repair`; only `FAIL test: failure` gate lines are rerunnable; a shard with no pytest
+# id, a non-1 pytest exit, a timeout or a runner kill refuses. A refusal leaves `ci gate` as it was.
+run-name: rerun-failed PR ${{ github.event.pull_request.number || inputs.pr }}
+
+on:
+  pull_request:
+    # Label-only: this workflow never runs on a push to the PR, so ci-wait treats its job as
+    # on demand (scripts/ci_wait_workflows.py ON_DEMAND_PULL_REQUEST_TYPES).
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number; the rerun pins that PR's current head"
+        type: string
+        required: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  MDT_ALLOW_MISSING_USB_STICK: "1"
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
+
+# actions: read lists the head's ci.yml jobs and reads their logs; checks: write posts the two
+# verdict checks; pull-requests and issues: write comment the outcome and remove the label.
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
+  issues: write
+
+# One rerun per PR at a time; a second label add queues behind it and then meets the cap.
+concurrency:
+  group: ci-rerun-failed-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  rerun:
+    name: pytest rerun-failed
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'ci:rerun-failed' }}
+    # ci.yml's pytest fast lane pool, minus the main and queue reserves this never serves.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 45
+    env:
+      # Same as ci.yml's pytest fast lane: child `uv run` must not re-sync .venv, and one
+      # native thread per process on a shared host.
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      # The label event's head is pinned at trigger time; a dispatch pins the PR's head when the plan reads it.
+      PINNED_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # The rerun's own wall budget; the rest of the job is provisioning, the verdict and the comment.
+      RERUN_BUDGET_S: "1500"
+    steps:
+      # Copied from ci.yml's pytest fast lane (#1338).
+      - name: Reclaim workspace ownership before checkout
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # The PR's merge ref, the tree ci.yml's shards test, merged with today's base.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 2
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number || inputs.pr }}/merge
+          persist-credentials: false
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Stale-install guard - the runner's python3 imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      # Stdlib only, on the runner's python3: a refusal costs this checkout and nothing more.
+      - name: Plan the rerun (failed ids of the head's latest ci.yml run, caps and guards)
+        id: plan
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_rerun_failed plan --pr "$PR" --head "$PINNED_HEAD" \
+            --out "$RUNNER_TEMP/rerun-failed/plan.json"
+
+      - name: The merge ref must be a merge of the pinned head
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        env:
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          parent="$(git rev-parse HEAD^2)"
+          [ "$parent" = "$HEAD_SHA" ] || {
+            echo "::error::refs/pull/$PR/merge merges $parent, not the pinned head $HEAD_SHA; the head moved"
+            exit 1
+          }
+          echo "[OK] testing $(git rev-parse HEAD), the merge of head $HEAD_SHA"
+
+      - name: Derive the worktree-port lane from the runner identity
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Setup Python
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Provision isolated Python test environment
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 2
+        run: scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
+
+      - name: System deps for pyrekordbox (SQLCipher) and Mach-O classification
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 4
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
+        run: |
+          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 1
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Build the oss audit kernel and route the suite's audits through it
+        if: steps.plan.outputs.run == 'true'
+        timeout-minutes: 3
+        run: .venv/bin/python scripts/ci_oss_audit_kernel.py
+
+      # Exactly the planned ids, one argv element each (a parametrized id may hold spaces), with
+      # the lane's per-test --timeout=900 inside this job's own wall budget.
+      - name: Run exactly the failed ids
+        id: pytest
+        if: steps.plan.outputs.run == 'true'
+        continue-on-error: true
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -uo pipefail
+          mapfile -t IDS < "$RUNNER_TEMP/rerun-failed/ids.txt"
+          echo "[rerun-failed] running ${#IDS[@]} id(s)"
+          set +e
+          timeout --kill-after=60 "$RERUN_BUDGET_S" \
+            .venv/bin/pytest \
+              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-rerun-failed-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
+              --junitxml="$RUNNER_TEMP/rerun-failed/junit.xml" \
+              --timeout=900 \
+              -p no:cacheprovider \
+              "${IDS[@]}"
+          rc=$?
+          set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Re-decide ci gate at the head and post the verdict checks
+        id: verdict
+        if: always() && steps.plan.outputs.run == 'true'
+        timeout-minutes: 2
+        env:
+          PYTEST_RC: ${{ steps.pytest.outputs.rc || '255' }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_rerun_failed verdict --pr "$PR" \
+            --plan "$RUNNER_TEMP/rerun-failed/plan.json" \
+            --junit "$RUNNER_TEMP/rerun-failed/junit.xml" \
+            --pytest-rc "$PYTEST_RC" \
+            --record "$RUNNER_TEMP/rerun-failed/record/selection.json" \
+            --rerun-run "$GITHUB_RUN_ID" --run-url "$RUN_URL"
+
+      # DEVOPS-20: keyed under the SOURCE ci.yml run, beside that run's own selection records, so
+      # scripts/ci_selection_escapes.py counts a rerun-failed landing apart from a normal one.
+      - name: Upload the rerun-failed selection record (DEVOPS-20 escape measurement)
+        if: always() && steps.verdict.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          read -r source_run rerun_index < <(python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["source_run"], p["rerun_index"])' "$RUNNER_TEMP/rerun-failed/plan.json")
+          head_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["head_sha"])' "$RUNNER_TEMP/rerun-failed/plan.json")"
+          cd "$RUNNER_TEMP/rerun-failed/record"
+          python3 "$GITHUB_WORKSPACE/scripts/r2_artifact.py" upload \
+            --name "pr-test-selection-${head_sha}-rerun-failed-${rerun_index}" \
+            --run-id "$source_run" --path selection.json --if-no-files-found error
+
+      - name: Comment the outcome and remove the label
+        if: always() && steps.plan.outcome != 'skipped'
+        timeout-minutes: 2
+        env:
+          OUTCOME: plan=${{ steps.plan.outcome }} pytest=${{ steps.pytest.outcome }} verdict=${{ steps.verdict.outcome }}
+          VERDICT_LINE: ${{ steps.verdict.outputs.verdict_line }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_rerun_failed finish --pr "$PR" \
+            --plan "$RUNNER_TEMP/rerun-failed/plan.json" \
+            --outcome "$OUTCOME" --verdict-line "$VERDICT_LINE" --run-url "$RUN_URL"

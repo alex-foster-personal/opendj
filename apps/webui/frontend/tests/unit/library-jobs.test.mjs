@@ -34,9 +34,14 @@ test('menu builder passes the selection of N ids to run', async () => {
 	assert.match(registry, /Lyrics: do next/);
 	assert.match(src, /targetIds: menuTargetIds\(row, selectedOrders, selectedIds\)/);
 	// ...and targetIds IS the selection of N ids when the clicked row is in it.
-	const { menuTargetIds } = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');
+	const { menuTargetIds } = await loadTypeScriptModule(
+		'src/lib/components/rb/browser/track-context-menu.ts'
+	);
 	const selectedIds = ['t0', 't1', 't2'];
-	assert.deepEqual(menuTargetIds({ stable_id: 't1', order: 1 }, [0, 1, 2], selectedIds), selectedIds);
+	assert.deepEqual(
+		menuTargetIds({ stable_id: 't1', order: 1 }, [0, 1, 2], selectedIds),
+		selectedIds
+	);
 	assert.deepEqual(menuTargetIds({ stable_id: 't9', order: 9 }, [0, 1, 2], selectedIds), ['t9']);
 });
 
@@ -45,20 +50,32 @@ test('LHS dots replace other with lyrics', async () => {
 	assert.equal(jobs.ANALYSIS_DOT_SLOTS.includes('lyrics'), true);
 	assert.equal(jobs.ANALYSIS_DOT_SLOTS.includes('other'), false);
 	assert.equal(jobs.ANALYSIS_LABELS.lyrics, 'Lyrics');
-	assert.equal(jobs.isJobStuck({ kind: 'stems', phase: 'running', started_at: 0 }, Date.now()), false);
+	assert.equal(
+		jobs.isJobStuck({ kind: 'stems', phase: 'running', started_at: 0 }, Date.now()),
+		false
+	);
 });
 
 test('panel and client name every HTTP verb', () => {
 	const panel = readFileSync(
-		new URL('../../src/lib/components/rb/library-jobs/LibraryJobQueuePanel.svelte', import.meta.url),
+		new URL(
+			'../../src/lib/components/rb/library-jobs/LibraryJobQueuePanel.svelte',
+			import.meta.url
+		),
 		'utf8'
 	);
-	const client = readFileSync(new URL('../../src/lib/rb/api-library-jobs.ts', import.meta.url), 'utf8');
-	for (const fn of ['enqueueLibraryJobs', 'listLibraryJobs', 'reorderLibraryJob', 'cancelLibraryJob']) {
+	const client = readFileSync(
+		new URL('../../src/lib/rb/api-library-jobs.ts', import.meta.url),
+		'utf8'
+	);
+	for (const fn of [
+		'enqueueLibraryJobs',
+		'listLibraryJobs',
+		'reorderLibraryJob',
+		'cancelLibraryJob'
+	]) {
 		assert.equal(client.includes(fn), true, fn);
 		assert.equal(panel.includes(fn) || fn === 'enqueueLibraryJobs', true, fn);
 	}
 	assert.match(client, /library-jobs\/enqueue/);
 });
-
-

@@ -12,7 +12,7 @@ Builds a real, production-migrated state.db (apps.analysis.store.upsert_record,
 same fixture shape as tests/test_analysis_route.py) with deliberately UNMAPPED
 tracks, rebinds it onto apps.adapters.rekordbox.config.STATE_DB, and drives the
 real GET /api/v1/tracks/{stable_id}/anlz route end to end -- so it needs no
-real rekordbox data (data/master.plain.db / data/state/state.db, both
+real rekordbox data ((private path) / (private path), both
 gitignored and absent in CI) while still exercising production code, not a
 fabricated request (AGENTS.md:L55-L63).
 
@@ -129,7 +129,7 @@ def _clean_toggles() -> Iterator[None]:
 # Every track here is deliberately UNMAPPED (no track_vendor_ids row), so
 # `resolve_content` takes its real VENDOR_MAPPING_NOT_FOUND branch and the
 # route serves `rb_vendor.local_anlz_payload` as its base payload -- this
-# needs no data/master.plain.db (gitignored, absent in CI), matching this
+# needs no (private path) (gitignored, absent in CI), matching this
 # module's existing no-real-rekordbox-data contract. `file_path` points at a
 # location that genuinely does not exist, so the waveform decode fails
 # closed (AUDIO_FILE_MISSING -> LocalDecodeUnavailable -> `not_decoded`)
@@ -275,7 +275,8 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
     # the REQUIRED wire discriminator every beatgrid block now carries
     # (own_beatgrid_overlay.py's `_beatgrid_payload`/PR #1587), not something
     # this route's own source swap adds.
-    assert body["beatgrid"] == {"source": "rekordbox", "beat_count": 0, "beats": []}
+    # GRID-MIK-01: the block names what was served (none: no lines to serve).
+    assert body["beatgrid"] == {"source": "rekordbox", "beat_count": 0, "beats": [], "grid_source": "none"}
 
 
 @pytest.mark.requirement("PARITY-02")
@@ -348,6 +349,7 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
         "reason": "no own beatgrid record for this track yet",
         "beat_count": 0,
         "beats": [],
+        "grid_source": "none",
     }
     assert body["beatgrid_own_unavailable_reason"] == "no own beatgrid record for this track yet"
 
@@ -370,6 +372,7 @@ def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
         "reason": "no_trackable_pulse",
         "beat_count": 0,
         "beats": [],
+        "grid_source": "none",
     }
     # The LANE's own reason travels through verbatim, not a reason this route
     # invents: the same string analysis_projection carries for the failed

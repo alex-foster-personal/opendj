@@ -28,8 +28,12 @@ const OVERLAY = '[data-testid="track-info-overlay"]';
 async function expectLoadedRecord(page: Page): Promise<void> {
 	const title = await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].title);
 	expect(title, 'the fixture track loaded on deck 1 has a title').toBeTruthy();
-	await expect(page.locator(`${OVERLAY} [data-testid="track-info-title"]`)).toHaveText(title!, { timeout: 30_000 });
-	await expect(page.locator(`${OVERLAY} [data-testid="track-info-rows"] dt`).first()).toHaveText('Title');
+	await expect(page.locator(`${OVERLAY} [data-testid="track-info-title"]`)).toHaveText(title!, {
+		timeout: 30_000
+	});
+	await expect(page.locator(`${OVERLAY} [data-testid="track-info-rows"] dt`).first()).toHaveText(
+		'Title'
+	);
 	await expect(page.locator(`${OVERLAY} [data-testid="track-info-grid"]`)).toBeVisible();
 	await expect(page.locator(`${OVERLAY} [data-testid="track-info-error"]`)).toHaveCount(0);
 }
@@ -38,11 +42,20 @@ async function loadDeckOne(page: Page, viewport = { width: 1920, height: 1080 })
 	await page.setViewportSize(viewport);
 	await page.goto('/performance?muted=1');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-	await expect.poll(async () => page.locator('[data-testid="track-row"]').count(), { timeout: 30_000 }).toBeGreaterThan(0);
-	const sid = await page.locator('[data-testid="track-row"]').first().getAttribute('data-stable-id');
+	await expect
+		.poll(async () => page.locator('[data-testid="track-row"]').count(), { timeout: 30_000 })
+		.toBeGreaterThan(0);
+	const sid = await page
+		.locator('[data-testid="track-row"]')
+		.first()
+		.getAttribute('data-stable-id');
 	expect(sid, 'the fixture library exposes a track row').toBeTruthy();
 	await page.evaluate(async (stable_id) => {
-		await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id: stable_id! });
+		await window.musicDjToolsPerformance!.dispatch({
+			type: 'load',
+			deck: 1,
+			stable_id: stable_id!
+		});
 	}, sid);
 	await expect(page.locator(BUTTON)).toBeEnabled({ timeout: 45_000 });
 }
@@ -68,7 +81,7 @@ test('TOPVIEW-05: a second click while the overlay chunk loads closes it', async
 	await expect(page.locator(BUTTON)).toHaveAttribute('aria-expanded', 'false');
 	await expect(
 		page.locator(OVERLAY),
-		'if a second click during the first open\'s import leaves the overlay open then broken'
+		"if a second click during the first open's import leaves the overlay open then broken"
 	).toHaveCount(0);
 
 	// Control: one click opens it, and a second click (chunk now cached) closes it.
@@ -79,11 +92,15 @@ test('TOPVIEW-05: a second click while the overlay chunk loads closes it', async
 	await expect(page.locator(OVERLAY)).toHaveCount(0);
 });
 
-test('TOPVIEW-05: an agent opens and closes the same overlay through the dispatcher (Codex P1 4300879440)', async ({ page }) => {
+test('TOPVIEW-05: an agent opens and closes the same overlay through the dispatcher (Codex P1 4300879440)', async ({
+	page
+}) => {
 	test.setTimeout(120_000);
 	await loadDeckOne(page);
 
-	await page.evaluate(() => window.musicDjToolsPerformance!.dispatch({ type: 'track_info_toggle' }));
+	await page.evaluate(() =>
+		window.musicDjToolsPerformance!.dispatch({ type: 'track_info_toggle' })
+	);
 	await expect(page.locator(OVERLAY)).toBeVisible();
 	await expectLoadedRecord(page);
 	await expect(page.locator(BUTTON)).toHaveAttribute('aria-expanded', 'true');
@@ -96,14 +113,18 @@ test('TOPVIEW-05: an agent opens and closes the same overlay through the dispatc
 	expect(closed).toEqual({ open: false, deck: null, stable_id: null });
 });
 
-test('TOPVIEW-05: where the width tier hides the (i) button, track_info_toggle still shows the record (Sol P1 4350988015)', async ({ page }) => {
+test('TOPVIEW-05: where the width tier hides the (i) button, track_info_toggle still shows the record (Sol P1 4350988015)', async ({
+	page
+}) => {
 	test.setTimeout(120_000);
 	// 1366 px is in the 1530 px tier that hides the utility slot.
 	await loadDeckOne(page, { width: 1366, height: 768 });
 	// Control: the tier really hides the button here.
 	await expect(page.locator(BUTTON)).toBeHidden();
 
-	await page.evaluate(() => window.musicDjToolsPerformance!.dispatch({ type: 'track_info_toggle' }));
+	await page.evaluate(() =>
+		window.musicDjToolsPerformance!.dispatch({ type: 'track_info_toggle' })
+	);
 	await expect(
 		page.locator(OVERLAY),
 		'if track_info_toggle opens an overlay that is not visible where the width tier hides the (i) button then broken'

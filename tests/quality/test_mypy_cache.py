@@ -21,11 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _mypy_error_total(metrics: list[qg.Metric]) -> int:
     return int(
-        sum(
-            m.value
-            for m in metrics
-            if m.key in ("mypy.errors_apps", "mypy.errors_tests", "mypy.errors_scripts")
-        )
+        sum(m.value for m in metrics if m.key in ("mypy.errors_apps", "mypy.errors_tests", "mypy.errors_scripts"))
     )
 
 
@@ -72,9 +68,15 @@ def _copy_source(destination: Path) -> None:
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("UNAVAILABLE: git is required to copy the real mypy source")
-    tracked = subprocess.check_output(
-        [git, "ls-files", "-z"], cwd=REPO_ROOT, timeout=30,
-    ).decode("utf-8").split("\0")
+    tracked = (
+        subprocess.check_output(
+            [git, "ls-files", "-z"],
+            cwd=REPO_ROOT,
+            timeout=30,
+        )
+        .decode("utf-8")
+        .split("\0")
+    )
     for relative in filter(None, tracked):
         source = REPO_ROOT / relative
         # Sparse media and operator-only directory links are not mypy inputs.
@@ -82,7 +84,11 @@ def _copy_source(destination: Path) -> None:
         if source.suffix in {".py", ".pyi"} and not source.is_file():
             raise RuntimeError(f"UNAVAILABLE: tracked mypy input is absent: {relative}")
         if source.is_symlink() and Path(relative).parts[0] in {
-            "apps", "tests", "scripts", "ops", "stubs",
+            "apps",
+            "tests",
+            "scripts",
+            "ops",
+            "stubs",
         }:
             raise RuntimeError(f"UNAVAILABLE: tracked mypy source is linked: {relative}")
         if source.is_file():
@@ -100,8 +106,13 @@ def _eval_owned_source(repo: Path) -> list[qg.Metric]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "-c", command], cwd=repo, env=env,
-        capture_output=True, text=True, check=True, timeout=300,
+        [sys.executable, "-c", command],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=300,
     )
     return [qg.Metric(**row) for row in json.loads(result.stdout)]
 

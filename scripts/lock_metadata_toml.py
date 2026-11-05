@@ -119,9 +119,7 @@ def source_table(source: object, name: object) -> None:
     while an extra key beside a valid one is read (measured uv 0.8.17, Codex P2 on
     #3763, round 34). Whether a git or url source RESOLVES is not this check's
     question; a requirement on one is UNKNOWN in lock_requirement anyway."""
-    if not isinstance(source, dict) or not any(
-        isinstance(source.get(key), str) for key in _SOURCE_KEYS
-    ):
+    if not isinstance(source, dict) or not any(isinstance(source.get(key), str) for key in _SOURCE_KEYS):
         raise Unknown(f"uv.lock [[package]] {name!r} source = {source!r} is not a source table")
 
 
@@ -236,10 +234,7 @@ def package_records(lock: dict) -> list[dict]:
         # not anything depends on them, while a second version or source of the same
         # name is read (round 41); a name set had collapsed the duplicate.
         twins = by_name.setdefault(norm_name(name), [])
-        if any(
-            p.get("version") == entry.get("version") and p["source"] == entry["source"]
-            for p in twins
-        ):
+        if any(p.get("version") == entry.get("version") and p["source"] == entry["source"] for p in twins):
             raise Unknown(
                 f"uv.lock [[package]] {name!r} {entry.get('version')!r} {entry['source']!r} "
                 "is recorded twice; uv rejects the file"
@@ -268,9 +263,7 @@ def _artifact_fields(record: dict, where: str) -> None:
         if size > _I64_MAX:
             # uv 0.8.17 reads a size up to 2**64-1; uv 0.7.22 stops at 2**63-1 ("number
             # too large to fit in target type", Codex, round 55). Not certified either way.
-            raise Unknown(
-                f"{where} size = {size} exceeds a signed 64-bit integer; uv 0.7.22 rejects it"
-            )
+            raise Unknown(f"{where} size = {size} exceeds a signed 64-bit integer; uv 0.7.22 rejects it")
     if "upload-time" in record:
         upload_time(toml_string(record["upload-time"], f"{where} upload-time"), where)
 
@@ -336,10 +329,7 @@ def _wheel_record(wheel: object, name: str, where: str) -> None:
     filename = location.rsplit("/", 1)[-1]
     match = _WHEEL_RE.match(filename)
     if match is None or norm_name(match.group("name")) != name:
-        raise Unknown(
-            f"{where} {located[0]} = {location!r} does not end in a wheel of {name!r}; "
-            "uv rejects the file"
-        )
+        raise Unknown(f"{where} {located[0]} = {location!r} does not end in a wheel of {name!r}; uv rejects the file")
     _artifact_fields(wheel, f"{where} {filename}")
 
 
@@ -548,9 +538,7 @@ def _source_entry_conflicts(where: str, source: dict) -> None:
     if sum(k in source for k in ("rev", "tag", "branch")) > 1:
         raise Unknown(f"{where} = {source!r}: expected at most one of rev, tag, or branch")
     if source.get("editable") is True and source.get("package") is False:
-        raise Unknown(
-            f"{where} = {source!r}: cannot specify both editable = true and package = false"
-        )
+        raise Unknown(f"{where} = {source!r}: cannot specify both editable = true and package = false")
     if "extra" in source and "group" in source:
         raise Unknown(f"{where} = {source!r}: cannot specify both extra and group")
     if "marker" in source:
@@ -580,8 +568,7 @@ def managed_sources(uv_tool: dict | None) -> dict:
             # "Failed to parse: `pyproject.toml`", exit 2 (round 39); the normalized
             # lookup downstream had kept one of them quietly.
             raise Unknown(
-                f"[tool.uv.sources] {name} and {seen[normalized]} are both {normalized!r}; "
-                "uv rejects the file"
+                f"[tool.uv.sources] {name} and {seen[normalized]} are both {normalized!r}; uv rejects the file"
             )
         seen[normalized] = name
         pyproject_source_shape(normalized, source)

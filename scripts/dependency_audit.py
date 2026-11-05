@@ -36,6 +36,18 @@ from scripts.dependency_audit_core import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+#: (crate dir, label): every shipped Rust tree with its own Cargo.lock, the
+#: same trees scripts/third_party_licenses.py RUST_CRATES attributes. The
+#: CoreAudio helper is audited on its own lockfile (the one the Electron payload
+#: builds), not only through the Tauri crate that links it, so it stays covered
+#: once apps/desktop/src-tauri is deleted.
+CARGO_AUDIT_CRATES: tuple[tuple[str, str], ...] = (
+    ("apps/desktop/src-tauri", "rust-desktop-tauri"),
+    ("apps/desktop/native/odj-output-probe", "rust-output-probe"),
+    ("apps/audio-engine", "rust-audio-engine"),
+    ("apps/webui/server/native/waveform", "rust-waveform-native"),
+)
+
 PIP_AUDIT = [
     "uv",
     "run",
@@ -170,8 +182,7 @@ def run_all(
         results = [
             scan_pip_pyproject_all(),
             scan_pip_requirements_txt(),
-            scan_cargo(REPO_ROOT / "apps/desktop/src-tauri", "rust-desktop-tauri"),
-            scan_cargo(REPO_ROOT / "apps/webui/server/native/waveform", "rust-waveform-native"),
+            *(scan_cargo(REPO_ROOT / crate, label) for crate, label in CARGO_AUDIT_CRATES),
             scan_pnpm(REPO_ROOT / "apps/desktop", "js-desktop", audit_level=None),
             scan_pnpm(
                 REPO_ROOT / "apps/webui/frontend",

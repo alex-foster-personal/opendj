@@ -74,7 +74,8 @@ export async function renderExport() {
 		// One binding, LED rule or hint per line, so a map change reads as a
 		// one-line diff here.
 		const lines = ['{'];
-		for (const [k, v] of Object.entries(head)) lines.push(` ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
+		for (const [k, v] of Object.entries(head))
+			lines.push(` ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
 		lines.push(' "maps": [');
 		DEVICE_MAP_REGISTRY.forEach((map, i) => {
 			lines.push('  {');

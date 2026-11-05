@@ -30,12 +30,8 @@ def _gh_pr_view_reply(args: list[str]) -> subprocess.CompletedProcess[str]:
     """Model gh's real `gh pr view [<branch>] --repo R` replies: no branch rejected, else no PR."""
     branch_given = len(args) > 3 and not args[3].startswith("-")
     if branch_given:
-        return subprocess.CompletedProcess(
-            args, 1, "", f'no pull requests found for branch "{args[3]}"\n'
-        )
-    return subprocess.CompletedProcess(
-        args, 1, "", "argument required when using the --repo flag\n"
-    )
+        return subprocess.CompletedProcess(args, 1, "", f'no pull requests found for branch "{args[3]}"\n')
+    return subprocess.CompletedProcess(args, 1, "", "argument required when using the --repo flag\n")
 
 
 def _recording_runner() -> tuple[list[list[str]], Runner]:

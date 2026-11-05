@@ -34,9 +34,9 @@ from pathlib import Path
 from typing import Any
 
 from apps.autodj.plan import (
-    BEATMATCH_LIMIT_PCT,
     PlanEvent,
     TransitionPlan,
+    beat_sync_reach_pct,
     hoistable,
     pair_beat_sync_fold,
     play_start_bar,
@@ -119,7 +119,7 @@ def layout_of(
         )
     if plan.tempo_mode == "sync_to_out":
         out_bpm, in_bpm = _bpm(out_profile), _bpm(in_profile)
-        fold = pair_beat_sync_fold(out_bpm, in_bpm, BEATMATCH_LIMIT_PCT)
+        fold = pair_beat_sync_fold(out_bpm, in_bpm, beat_sync_reach_pct(in_profile))
         ratio = out_bpm / in_bpm * fold
     elif plan.tempo_mode == "none":
         # Each deck runs at its own tempo, so an incoming bar is not an outgoing bar; the end is counted in

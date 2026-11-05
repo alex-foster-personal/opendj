@@ -15,18 +15,21 @@ CANDIDATE="${2:?usage: bench_run.sh <lane> <candidate> [version] [--no-post]}"
 VERSION="${3:-v1}"
 POST="${4:---post}"
 case "$POST" in
-  --post|--no-post) ;;
-  *) echo "[bench] fourth argument is --post or --no-post, got '$POST'" >&2; exit 2 ;;
+    --post | --no-post) ;;
+    *)
+        echo "[bench] fourth argument is --post or --no-post, got '$POST'" >&2
+        exit 2
+        ;;
 esac
 cd "$(dirname "$0")/.."
 
-BUNDLE="data/bench/${LANE}/${VERSION}"
+BUNDLE="(private path)/${LANE}/${VERSION}"
 if [ ! -f "${BUNDLE}/BUNDLE_ID" ]; then
-  echo "[bench] ${BUNDLE} is not in this clone; pulling it by checksum first"
-  ./scripts/bench_pull.sh "$LANE" "$VERSION"
+    echo "[bench] ${BUNDLE} is not in this clone; pulling it by checksum first"
+    ./scripts/bench_pull.sh "$LANE" "$VERSION"
 fi
 
 ARGS=(run --lane "$LANE" --candidate "$CANDIDATE" --version "$VERSION"
-      --out ".tmp/analysis_bench/${LANE}-${CANDIDATE}-report.json")
+    --out ".tmp/analysis_bench/${LANE}-${CANDIDATE}-report.json")
 [ "$POST" = "--post" ] && ARGS+=(--post)
 exec uv run --no-sync python -m apps.analysis_bench "${ARGS[@]}"

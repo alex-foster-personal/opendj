@@ -1,0 +1,56 @@
+{
+  "_source": "gh api repos/<repo>/actions/runs/37620689059 and .../jobs?filter=latest, read Wed 7 Oct 2026 ~14:41Z (issue #5831); fields trimmed to what the watchdog reads, runner names dropped",
+  "run": {
+    "conclusion": null,
+    "created_at": "2026-10-07T12:23:52Z",
+    "event": "push",
+    "head_branch": "main",
+    "head_sha": "2411a8f23190c3d03a8e91ced8ecccf7c5744442",
+    "html_url": "https://github.com/private_owner/music-dj-tools/actions/runs/37620689059",
+    "id": 37620689059,
+    "name": "E2E",
+    "run_attempt": 1,
+    "status": "queued"
+  },
+  "jobs": {
+    "jobs": [
+      {
+        "completed_at": "2026-10-07T12:24:31Z",
+        "conclusion": "success",
+        "created_at": "2026-10-07T12:23:53Z",
+        "html_url": "https://github.com/private_owner/music-dj-tools/actions/runs/37620689059/job/112789900749",
+        "id": 112789900749,
+        "labels": [
+          "self-hosted",
+          "linux",
+          "linux-light"
+        ],
+        "name": "e2e scope (docs-only skip decision)",
+        "run_attempt": 1,
+        "run_id": 37620689059,
+        "runner_id": 65,
+        "started_at": "2026-10-07T12:23:56Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": null,
+        "conclusion": null,
+        "created_at": "2026-10-07T12:24:31Z",
+        "html_url": "https://github.com/private_owner/music-dj-tools/actions/runs/37620689059/job/112790157519",
+        "id": 112790157519,
+        "labels": [
+          "self-hosted",
+          "linux",
+          "e2e"
+        ],
+        "name": "e2e gate (webkit artifact + hermetic chromium)",
+        "run_attempt": 1,
+        "run_id": 37620689059,
+        "runner_id": 0,
+        "started_at": "2026-10-07T12:24:31Z",
+        "status": "queued"
+      }
+    ],
+    "total_count": 2
+  }
+}

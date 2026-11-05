@@ -30,6 +30,7 @@ Regression lines:
   - if a healthy single-user warm-up is refused, or still fchmods the lock file
     to 0o666, then the fix over-corrected or missed its own primitive
 """
+
 from __future__ import annotations
 
 import os
@@ -91,21 +92,17 @@ def test_a_symlink_at_the_lock_path_is_refused_and_its_target_is_left_alone(
     result = warm_backend_jit(_CompileCounter, backend_name="counter")
 
     assert _CompileCounter.compiles == 0, (
-        "a warm-up ran after the lock path turned out to be a symlink; it must "
-        "be refused, not run unlocked"
+        "a warm-up ran after the lock path turned out to be a symlink; it must be refused, not run unlocked"
     )
     assert result.refused, "a symlinked lock must refuse the warm-up, not run it"
     assert (target.stat().st_mode & 0o777) == 0o600, (
-        "the symlink was followed and the target fchmod'ed to 0o666 - the "
-        "#1401 arbitrary-file chmod primitive"
+        "the symlink was followed and the target fchmod'ed to 0o666 - the #1401 arbitrary-file chmod primitive"
     )
     assert target.read_text(encoding="utf-8") == "do not touch"
 
 
 @pytest.mark.requirement("JIT-06")
-def test_a_non_regular_file_at_the_lock_path_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_non_regular_file_at_the_lock_path_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a FIFO or device at the lock path is flocked and used [then] fail, [else stop].
 
     if a non-regular file passed the open then the fstat check the issue calls
@@ -142,16 +139,12 @@ def test_a_planted_unopenable_lock_file_refuses_instead_of_warming_unlocked(
 
     result = warm_backend_jit(_CompileCounter, backend_name="counter")
 
-    assert _CompileCounter.compiles == 0, (
-        "an unopenable lock file made the warm-up run UNLOCKED; it must be refused"
-    )
+    assert _CompileCounter.compiles == 0, "an unopenable lock file made the warm-up run UNLOCKED; it must be refused"
     assert result.refused, "an unopenable lock file must refuse the warm-up"
 
 
 @pytest.mark.requirement("JIT-06")
-def test_a_lock_directory_that_is_a_symlink_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_lock_directory_that_is_a_symlink_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a symlink planted as the private lock directory is adopted [then] fail, [else stop].
 
     the private 0700 directory is the new security boundary; a symlink there
@@ -196,15 +189,12 @@ def test_a_healthy_private_lock_directory_still_warms_and_never_chmods(
     assert result.lock_held, "a healthy warm-up must hold the lock"
     assert _CompileCounter.compiles == 1, "a healthy warm-up must still compile"
     assert (lock.stat().st_mode & 0o777) == 0o600, (
-        "the lock file was fchmod'ed (to 0o666); the unconditional fchmod is "
-        "the #1401 primitive and must be gone"
+        "the lock file was fchmod'ed (to 0o666); the unconditional fchmod is the #1401 primitive and must be gone"
     )
 
 
 @pytest.mark.requirement("JIT-06")
-def test_the_operator_lock_directory_opt_in_is_used(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_operator_lock_directory_opt_in_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] MDT_NUMBA_WARMUP_DIR is ignored, or auto-created when absent [then] fail, [else stop].
 
     cross-user sharing is the module's original reason for a shared lock, and
@@ -220,9 +210,7 @@ def test_the_operator_lock_directory_opt_in_is_used(
 
     assert not result.refused
     assert _CompileCounter.compiles == 1
-    assert warmup_lock_path().parent == shared, (
-        "the lock was not placed in the operator-named directory"
-    )
+    assert warmup_lock_path().parent == shared, "the lock was not placed in the operator-named directory"
     assert warmup_lock_path().exists()
 
 
@@ -273,12 +261,8 @@ def test_an_empty_operator_lock_directory_env_var_is_treated_as_unset(
     assert _CompileCounter.compiles == 1, "the private-mode warm-up must still compile"
     lock_dir = warmup_lock_path().parent
     dir_mode = lock_dir.stat().st_mode & 0o777
-    assert dir_mode == 0o700, (
-        f"the private lock directory must be created 0700, got {oct(dir_mode)}"
-    )
-    assert lock_dir.stat().st_uid == os.getuid(), (
-        "private mode must check st_uid; shared mode never would have"
-    )
+    assert dir_mode == 0o700, f"the private lock directory must be created 0700, got {oct(dir_mode)}"
+    assert lock_dir.stat().st_uid == os.getuid(), "private mode must check st_uid; shared mode never would have"
 
 
 @pytest.mark.requirement("JIT-06")
@@ -302,8 +286,12 @@ def test_the_warmup_cli_exits_nonzero_when_the_warmup_is_refused(
     }
     proc = subprocess.run(
         [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa"],
-        cwd=str(Path(__file__).resolve().parents[2]), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=120,
         check=False,
     )
 

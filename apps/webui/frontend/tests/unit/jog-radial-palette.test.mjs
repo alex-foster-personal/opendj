@@ -107,18 +107,32 @@ test('[if] radial tri bands differ from main row fills [then] fail, [else stop].
 	for (const { label, palette } of cases) {
 		const main = mainFills(palette, 'tri-band');
 		assert.equal(main.length, 3, `${label}: main row paints exactly low, mid and high`);
-		assert.deepEqual(radialFills(palette, 'tri'), main, `${label}: radial tri bands must match the deck rows`);
+		assert.deepEqual(
+			radialFills(palette, 'tri'),
+			main,
+			`${label}: radial tri bands must match the deck rows`
+		);
 	}
 });
 
 test('[if] radial mono fill differs from main mono design [then] fail, [else stop].', () => {
 	for (const { label, palette } of everyPalette()) {
-		assert.deepEqual(radialFills(palette, 'mono'), mainFills(palette, 'mono'), `${label}: mono colour`);
+		assert.deepEqual(
+			radialFills(palette, 'mono'),
+			mainFills(palette, 'mono'),
+			`${label}: mono colour`
+		);
 	}
 });
 
 test('[if] radial vocal arcs ignore palette.vocal [then] fail, [else stop].', () => {
-	const palette = { low: '#101010', mid: '#202020', high: '#303030', mono: '#404040', vocal: '#abcdef' };
+	const palette = {
+		low: '#101010',
+		mid: '#202020',
+		high: '#303030',
+		mono: '#404040',
+		vocal: '#abcdef'
+	};
 	const ctx = recordingCtx();
 	radial.paintJogRadial(ctx, {
 		widthPx: 104,
@@ -129,7 +143,10 @@ test('[if] radial vocal arcs ignore palette.vocal [then] fail, [else stop].', ()
 		vocals: { status: 'rekordbox', regions: [{ start_s: 0, end_s: 30, intensity: 3 }] },
 		durationSec: 120
 	});
-	assert.ok([...ctx.fills].some((f) => f.startsWith('#abcdef@')), 'vocal arcs paint palette.vocal');
+	assert.ok(
+		[...ctx.fills].some((f) => f.startsWith('#abcdef@')),
+		'vocal arcs paint palette.vocal'
+	);
 });
 
 test('[if] radial painter holds a colour literal [then] fail, [else stop].', () => {

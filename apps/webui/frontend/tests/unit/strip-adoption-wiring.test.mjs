@@ -26,13 +26,19 @@ function stripAdoptionEffectBody() {
 	const anchorAt = source.indexOf(anchor);
 	assert.ok(anchorAt >= 0, `${anchor} not found in BrowserPanel.svelte`);
 	const effectStart = source.lastIndexOf('$effect(() => {', anchorAt);
-	assert.ok(effectStart >= 0, 'enclosing $effect not found before the applyDecodedStripAcrossPanes call');
+	assert.ok(
+		effectStart >= 0,
+		'enclosing $effect not found before the applyDecodedStripAcrossPanes call'
+	);
 	const effectEnd = source.indexOf('\n\t});', anchorAt);
-	assert.ok(effectEnd > anchorAt, 'enclosing $effect close not found after the applyDecodedStripAcrossPanes call');
+	assert.ok(
+		effectEnd > anchorAt,
+		'enclosing $effect close not found after the applyDecodedStripAcrossPanes call'
+	);
 	return source.slice(effectStart, effectEnd);
 }
 
-test('the strip-adoption effect unions each pane\'s full selected_ids, not only selected_id', () => {
+test("the strip-adoption effect unions each pane's full selected_ids, not only selected_id", () => {
 	const body = stripAdoptionEffectBody();
 	assert.match(
 		body,

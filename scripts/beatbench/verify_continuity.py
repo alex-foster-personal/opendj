@@ -14,7 +14,7 @@ thing that passes its own synthetic tests and is still subtly wrong, so it
 needs a control that can FAIL against the reference implementation.
 
 WHY IT RUNS ON REAL BEAT TIMES AND NOT ON SYNTHETIC ONES. The synthetic cases
-are already pinned in `tests/beatbench/test_scorer_v11.py`, and they were
+are already pinned in `(private path)`, and they were
 written by the same person as the implementation, so they can share its blind
 spots. Real candidate output is the population the metric will actually be
 quoted over: sparse grids, dropped beats, half-tempo stretches, ties. If the
@@ -103,9 +103,7 @@ def main() -> int:
     for stable_id, result in candidate["results"].items():
         if args.limit and checked >= args.limit:
             break
-        compared = _compare_one(
-            stable_id, fixtures.get(stable_id), result, score_continuity
-        )
+        compared = _compare_one(stable_id, fixtures.get(stable_id), result, score_continuity)
         if compared is None:
             skipped += 1
             continue
@@ -119,8 +117,7 @@ def main() -> int:
     print(f"[verify-continuity] mir_eval {mir_eval.__version__}", flush=True)
     print(f"[verify-continuity] compared {checked} tracks, skipped {skipped}", flush=True)
     print(
-        f"[verify-continuity] worst absolute difference: "
-        f"CMLt {worst_cmlt:.3e}, AMLt {worst_amlt:.3e}",
+        f"[verify-continuity] worst absolute difference: CMLt {worst_cmlt:.3e}, AMLt {worst_amlt:.3e}",
         flush=True,
     )
 

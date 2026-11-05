@@ -16,12 +16,16 @@ before(async () => {
 
 test('a tempo-range lock failure reads as the plain-language warning, detail kept', () => {
 	// if the DJ sees "no phase-capable bar anchor with tempo ratio within [0.84, 1.16]", the cause is unreadable -- broken.
-	const detail = 'follower grid has no phase-capable bar anchor with tempo ratio within [0.84, 1.16] for beat n=2';
+	const detail =
+		'follower grid has no phase-capable bar anchor with tempo ratio within [0.84, 1.16] for beat n=2';
 	const error = new math.TempoOutOfSyncRangeError(detail);
 	assert.ok(error instanceof RangeError, 'still a RangeError for callers that only know that');
 	assert.equal(math.TEMPO_TOO_FAR_TO_SYNC, 'tempo is too far from master to beat sync');
 	assert.equal(math.describeUnsyncedStart(error), `${math.TEMPO_TOO_FAR_TO_SYNC} (${detail})`);
-	assert.equal(math.unsyncedPlayWarning(math.describeUnsyncedStart(error)), math.TEMPO_TOO_FAR_TO_SYNC);
+	assert.equal(
+		math.unsyncedPlayWarning(math.describeUnsyncedStart(error)),
+		math.TEMPO_TOO_FAR_TO_SYNC
+	);
 });
 
 test('any other lock failure keeps its own words', () => {
@@ -34,7 +38,10 @@ test('any other lock failure keeps its own words', () => {
 
 test('the planner names a tempo out of range with the typed error', () => {
 	const source = read('lib/rb/beat-sync-math.ts');
-	assert.match(source, /throw new TempoOutOfSyncRangeError\(\n\t\t`follower grid has no phase-capable/);
+	assert.match(
+		source,
+		/throw new TempoOutOfSyncRangeError\(\n\t\t`follower grid has no phase-capable/
+	);
 });
 
 test('the Play button glows and explains while the deck is not locked', () => {

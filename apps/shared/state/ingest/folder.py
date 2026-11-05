@@ -22,11 +22,10 @@ Three things it refuses to be vague about:
 * Corrupt or non-audio payloads with an allowlisted extension are counted in
   ``files_rejected_unplayable`` and never become track rows.
 
-Safety mirrors the rekordbox adapter exactly: dry-run by default via an
-outer write unit (:func:`apps.shared.state.db.write_unit`) that is
-discarded, and the event bus swapped for a neutral silent drop-in from
-:mod:`apps.shared.state.events` while it is, so a rolled-back run publishes
-no phantom events. This module must not import any Rekordbox code; the
+Safety mirrors the rekordbox adapter exactly: dry-run by default via
+:meth:`StateWriter.transaction` with ``commit=False``, which rolls the
+unit back and drops queued bus events so a discarded run publishes
+nothing. This module must not import any Rekordbox code; the
 no-rekordbox onboarding path depends on it.
 """
 
@@ -50,7 +49,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state import provenance as state_provenance
-from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
@@ -191,12 +189,8 @@ def ingest_folder(
     assert_no_path_collisions(str(entry.path) for entry in files)
     if limit is not None:
         files = files[:limit]
-    original_bus = writer.bus
-    if dry_run:
-        writer.bus = _DryRunSilentBus()
-
     try:
-        with state_db.write_unit(conn, "setup_ingest_folder", keep=not dry_run):
+        with writer._join_or_begin(commit=not dry_run):
             drop_budget = AnalysisDropBudget(limit=MAX_ANALYSIS_DROPS_PER_CYCLE)
             _write_tracks(writer, files, report, on_progress, drop_budget, restore_removed=restore_removed)
             report.analysis_drops_withheld = drop_budget.withheld
@@ -212,7 +206,6 @@ def ingest_folder(
                 ),
             )
     finally:
-        writer.bus = original_bus
         report.duration_s = round(time.perf_counter() - start, 3)
 
     return report

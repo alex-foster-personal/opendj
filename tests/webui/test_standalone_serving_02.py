@@ -2,6 +2,7 @@
 
 [if] unmapped own backfill ok and no promotion [then] own_beatgrid bpm, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -31,10 +32,7 @@ FINGERPRINT = "sha256:" + "ab" * 32
 
 
 def _beatgrid_record(stable_id: str) -> AnalysisRecord:
-    beats = [
-        {"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": BPM}
-        for index in range(16)
-    ]
+    beats = [{"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": BPM} for index in range(16)]
     payload = {
         "beats": beats,
         "bpm": BPM,

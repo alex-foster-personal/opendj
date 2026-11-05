@@ -161,20 +161,15 @@ def test_committed_openapi_covers_the_legacy_surface(client):
     committed contract, except the surfaces the engine drops on purpose
     (the progress ledger, and /health which the engine re-owns).
     """
-    committed_path = (
-        Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
-    )
+    committed_path = Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
     committed = json.loads(committed_path.read_text(encoding="utf-8"))
 
     legacy_paths = set(client.get("/openapi.json").json()["paths"])
     dropped_on_purpose = {
-        path
-        for path in legacy_paths
-        if path.startswith("/api/v1/progress") or path == "/api/v1/health"
+        path for path in legacy_paths if path.startswith("/api/v1/progress") or path == "/api/v1/health"
     }
     missing = legacy_paths - dropped_on_purpose - set(committed["paths"])
-    assert not missing, (
-        f"legacy routes absent from the committed engine contract: {sorted(missing)}"
-    )
+    assert not missing, f"legacy routes absent from the committed engine contract: {sorted(missing)}"
+
 
 pytestmark = pytest.mark.rb_parity

@@ -62,9 +62,7 @@ def _git(*args: str) -> str:
 
 
 def _is_ancestor(ancestor: str, descendant: str) -> bool:
-    result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor, descendant], check=False
-    )
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], check=False)
     return result.returncode == 0
 
 
@@ -113,9 +111,7 @@ def _shipped_sha(app: Path) -> str | None:
         return None
     manifest = app / MANIFEST_REL
     if not manifest.is_file():
-        raise SystemExit(
-            f"[dev-loop] installed app at {app} lacks payload/manifest.json: refusing to guess"
-        )
+        raise SystemExit(f"[dev-loop] installed app at {app} lacks payload/manifest.json: refusing to guess")
     data = json.loads(manifest.read_text())
     identity = data.get("identity", data)
     sha = identity.get("git_sha_full") or identity.get("git_sha")
@@ -175,9 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         parts.append(f"shipped {shipped[:8]} is from a rewritten history")
         verdict = "REFUSED: pass --commit-map (odj-private/rewrite/) or rebuild the app"
         code = 4
-    elif args.commit_map is not None and (
-        mapped := _first_mapped_ancestor(shipped, _load_commit_map(args.commit_map))
-    ):
+    elif args.commit_map is not None and (mapped := _first_mapped_ancestor(shipped, _load_commit_map(args.commit_map))):
         # A pre-rewrite shipped sha is judged through the map even when the OLD history is
         # still reachable locally (a stale pre-rewrite branch): the rewrite kept the commits
         # before its cut point, so `git merge-base` finds shared history and the diverged
@@ -194,29 +188,24 @@ def main(argv: list[str] | None = None) -> int:
             verdict, code = "REFUSED: loop lacks the shipped app's base commit", 2
         elif missing_runtime:
             parts.append(
-                f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) "
-                f"e.g. {missing_runtime[0]}"
+                f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) e.g. {missing_runtime[0]}"
             )
             verdict, code = "REFUSED: loop lacks fixes the shipped app has", 2
         else:
             parts.append(
-                f"shipped {shipped[:8]} rewritten, base {new_base[:8]} in loop, "
-                f"tooling-only tail ({tail} commit(s))"
+                f"shipped {shipped[:8]} rewritten, base {new_base[:8]} in loop, tooling-only tail ({tail} commit(s))"
             )
     elif not _shares_history(shipped, head):
-        raise SystemExit(
-            f"[dev-loop] no rewritten commit on {shipped[:8]}'s first-parent chain is in the commit-map"
-        )
+        raise SystemExit(f"[dev-loop] no rewritten commit on {shipped[:8]}'s first-parent chain is in the commit-map")
     else:
         # The shipped commit is not in this loop. That only matters if the commits the
         # loop lacks change what the app DOES: a ship-script or docs-only lane (e.g. the
-        # 4158f361 build of Wed 2 Sep 2026, one file under .agents/skills/ship-dmg) runs
+        # 4158f361 build of Wed 2 Sep 2026, one file under (private path)) runs
         # the same app code as main.
         missing_runtime = _runtime_paths_missing(head, shipped)
         if missing_runtime:
             parts.append(
-                f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) "
-                f"e.g. {missing_runtime[0]}"
+                f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) e.g. {missing_runtime[0]}"
             )
             verdict, code = "REFUSED: loop lacks fixes the shipped app has", 2
         else:

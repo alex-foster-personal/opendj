@@ -558,3 +558,70 @@ export function collectBlankPlaylistDeletes(
 	}
 	return ids;
 }
+
+// ---------------------------------------------------------------- sections
+// Library organization writes (PRD s7). Each needs X-Undo-Session, the stack
+// the write is journaled on; the caller owns that id.
+
+/** GET /playlists/{id}/sections - a list's dividers and how they are owned. */
+export async function getListSections(listId: string) {
+	return unwrap(
+		api.GET('/api/v1/playlists/{playlist_id}/sections', {
+			params: { path: { playlist_id: listId } }
+		})
+	);
+}
+
+/** POST /sections. */
+export async function postSection(
+	undoSession: string,
+	body: { owner_kind: 'playlist' | 'set'; owner_id: string; before_position: number }
+) {
+	return unwrap(
+		api.POST('/api/v1/sections', { params: { header: { 'X-Undo-Session': undoSession } }, body })
+	);
+}
+
+/** PATCH /sections/{id} - rename. */
+export async function patchSectionTitle(undoSession: string, sectionId: string, title: string) {
+	return unwrap(
+		api.PATCH('/api/v1/sections/{section_id}', {
+			params: { path: { section_id: sectionId }, header: { 'X-Undo-Session': undoSession } },
+			body: { title }
+		})
+	);
+}
+
+/** DELETE /sections/{id} - the divider goes, its tracks stay. */
+export async function deleteSection(undoSession: string, sectionId: string) {
+	return unwrap(
+		api.DELETE('/api/v1/sections/{section_id}', {
+			params: { path: { section_id: sectionId }, header: { 'X-Undo-Session': undoSession } }
+		})
+	);
+}
+
+/** POST /playlists/{id}/entries:move - tracks and dividers as one block. */
+export async function postEntriesMove(
+	undoSession: string,
+	listId: string,
+	body: {
+		item_ids: string[];
+		section_ids: string[];
+		before_item_id?: string;
+		before_section_id?: string;
+	}
+) {
+	return unwrap(
+		api.POST('/api/v1/playlists/{playlist_id}/entries:move', {
+			params: { path: { playlist_id: listId }, header: { 'X-Undo-Session': undoSession } },
+			body
+		})
+	);
+}
+
+/** What a refused library write says, or the raw error when it is not one. */
+export function libraryWriteMessage(error: unknown): string {
+	const body = error instanceof ApiError ? (error.body as { detail?: { message?: string } }) : null;
+	return body?.detail?.message ?? String(error);
+}

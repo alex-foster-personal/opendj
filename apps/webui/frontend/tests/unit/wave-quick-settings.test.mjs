@@ -72,7 +72,7 @@ test('WAVEQS-8348b inert rows carry exactly the PARITY-TODO title and every grou
 	for (const group of qs.WAVE_QS_GROUPS) assert.ok(group.rows.length > 0, `${group.id} is empty`);
 	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
 	assert.match(popover, /title=\{WAVE_QS_INERT_TITLE\}/);
-	assert.match(popover, /disabled aria-label=\{row\.label\}/);
+	assert.match(popover, /\sdisabled\s+aria-label=\{row\.label\}/);
 });
 
 test('WAVEQS-8348c Settings and the popover both render previews through the one SettingPreview component', () => {
@@ -126,5 +126,5 @@ test('WAVEQS-8348/8348d the glyph title is the requirement text verbatim and ope
 	assert.match(button, /title=\{TITLE\}/);
 	assert.doesNotMatch(button, /loadError/, 'a load error must not replace the title');
 	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
-	assert.match(popover, /querySelector<HTMLElement>\('\.wqs-group select, \.wqs-group input:not\(:disabled\)'\)/);
+	assert.match(popover, /querySelector<HTMLElement>\(\s*'\.wqs-group select, \.wqs-group input:not\(:disabled\)'\s*\)/);
 });

@@ -1,4 +1,5 @@
 """PLAY IT solver tests (PLAY-02)."""
+
 from __future__ import annotations
 
 import os
@@ -132,10 +133,7 @@ def test_artist_repeat_avoidance() -> None:
             )
         )
     result = suggest_order(tracks=tracks, goal=SetGoal(duration_min=30))
-    first3_artists = [
-        next(t.artist for t in tracks if t.stable_id == sid)
-        for sid in result.order[:3]
-    ]
+    first3_artists = [next(t.artist for t in tracks if t.stable_id == sid) for sid in result.order[:3]]
     assert "Alpha" in first3_artists or "Beta" in first3_artists
 
 

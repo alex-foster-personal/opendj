@@ -67,7 +67,8 @@ def test_every_pytest_job_runs_the_binary_preflight_before_the_suite() -> None:
         assert not missing, f"{workflow}:{job_id} preflight does not name {missing}"
         runs = [s.get("run") or "" for s in job["steps"]]
         first_real = next(
-            i for i, r in enumerate(runs)
+            i
+            for i, r in enumerate(runs)
             if ".venv/bin/pytest" in r or "cargo test" in r or "cargo nextest" in r or "make waveform" in r
         )
         assert runs.index(run) < first_real, f"{workflow}:{job_id}: preflight after the suite"

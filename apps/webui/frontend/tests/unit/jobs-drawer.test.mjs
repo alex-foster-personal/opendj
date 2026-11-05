@@ -108,7 +108,10 @@ test('the drawer never imports the fake-progress store', () => {
 
 test('TopBar mounts the drawer behind exactly one toggle', () => {
 	assert.match(topbar, /import JobsDrawer from '\$lib\/components\/rb\/JobsDrawer\.svelte'/);
-	assert.match(topbar, /import \{ jobsStore, toggleJobsDrawer \} from '\$lib\/rb\/jobs-store\.svelte'/);
+	assert.match(
+		topbar,
+		/import \{ jobsStore, toggleJobsDrawer \} from '\$lib\/rb\/jobs-store\.svelte'/
+	);
 	assert.match(topbar, /onclick=\{toggleJobsDrawer\}/);
 	assert.match(topbar, /aria-expanded=\{jobsStore\.drawerOpen\}/);
 	assert.equal(topbar.match(/<JobsDrawer \/>/g)?.length, 1, 'mounted exactly once');

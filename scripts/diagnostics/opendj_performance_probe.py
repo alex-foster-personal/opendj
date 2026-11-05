@@ -39,13 +39,12 @@ So: no 3.10+/3.11+ runtime syntax, whatever ruff's ``target-version`` says.
 proposing; both carry a ``noqa`` and a reason. Annotations are exempt, because
 ``from __future__ import annotations`` defers them.
 
-Install and uninstall are documented in ``docs/perf/diagnostics-probe.md``.
+Install and uninstall are documented in ``(private path)``.
 """
 
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import sys
@@ -156,7 +155,13 @@ class OpenDJProbe:
             except ProcessLookupError:
                 continue
             record = process_metric_record(
-                row, role, usage, monotonic_now, self.prior_cpu, self.prior_io
+                row=row,
+                role=role,
+                usage=usage,
+                nanoseconds_per_tick=self.native.nanoseconds_per_tick,
+                monotonic_now=monotonic_now,
+                prior_cpu=self.prior_cpu,
+                prior_io=self.prior_io,
             )
             record["name"] = opendj_process_name(row.command)
             processes.append(record)
@@ -369,6 +374,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def _lock_probe(output_dir: Path):
+    # Function-local: this package is deployed stdlib-only (justfile copies
+    # scripts/diagnostics/*.py with no repo), and fcntl is macOS/POSIX only.
+    import fcntl
+
     output_dir.mkdir(parents=True, exist_ok=True)
     lock_path = output_dir / "opendj-performance-probe.lock"
     handle = lock_path.open("a+")
@@ -516,7 +525,13 @@ def _run_sampling_loop(probe: OpenDJProbe, args: argparse.Namespace) -> int:
 
 
 def _set_probe_process_identity() -> None:
-    """Best-effort opendj-* title when setproctitle is available on the host."""
+    """Best-effort title for virtualenv runs that have setproctitle.
+
+    Launchers (launchd and ``just probe-once``) set argv[0] with ``exec -a``.
+    This function remains for virtualenv runs that already depend on
+    setproctitle. ImportError is swallowed because the installed copy runs
+    under ``/usr/bin/python3``, which does not ship that module.
+    """
     try:
         import setproctitle
     except ImportError:

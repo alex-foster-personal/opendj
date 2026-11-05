@@ -196,9 +196,7 @@ def _materialize_bundle(root: Path, audio_dir: Path, source_mp3s: dict[str, Path
 # ----- --audio-root hydration ----------------------------------------------
 
 
-def test_scoring_works_after_the_audio_root_moves(
-    tmp_path: Path, source_mp3s: dict[str, Path]
-) -> None:
+def test_scoring_works_after_the_audio_root_moves(tmp_path: Path, source_mp3s: dict[str, Path]) -> None:
     bundle = _materialize_bundle(tmp_path / "bundle", tmp_path / "build-root", source_mp3s)
 
     moved_root = tmp_path / "moved-root"
@@ -220,9 +218,7 @@ def test_default_audio_root_comes_from_the_manifest_when_the_flag_is_omitted(
     assert report["denominators"]["scored"] == 2, report["unmeasured_reasons"]
 
 
-def test_the_cli_scores_after_the_audio_root_moves(
-    tmp_path: Path, source_mp3s: dict[str, Path]
-) -> None:
+def test_the_cli_scores_after_the_audio_root_moves(tmp_path: Path, source_mp3s: dict[str, Path]) -> None:
     bundle = _materialize_bundle(tmp_path / "bundle", tmp_path / "build-root", source_mp3s)
     moved_root = tmp_path / "moved-root"
     moved_root.mkdir()
@@ -232,9 +228,7 @@ def test_the_cli_scores_after_the_audio_root_moves(
     assert score.main(["--bundle", str(bundle), "--audio-root", str(moved_root)]) == 0
 
 
-def test_a_missing_file_under_an_explicit_audio_root_fails_loud(
-    tmp_path: Path, source_mp3s: dict[str, Path]
-) -> None:
+def test_a_missing_file_under_an_explicit_audio_root_fails_loud(tmp_path: Path, source_mp3s: dict[str, Path]) -> None:
     bundle = _materialize_bundle(tmp_path / "bundle", tmp_path / "build-root", source_mp3s)
 
     incomplete_root = tmp_path / "incomplete-root"

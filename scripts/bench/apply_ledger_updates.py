@@ -27,6 +27,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,14 +86,16 @@ def apply_updates(ledger: dict, updates: list[dict], source: str) -> list[str]:
         j[field] = j[field] + 1
         j["confidence"] = _confidence(j["n_confirmed"], j["n_contradicted"])
         j["status"] = _status(j, j["n_confirmed"], j["n_contradicted"])
-        j.setdefault("evidence", []).append({
-            "verdict": "confirmed" if verdict == "confirms" else "contradicted",
-            "source": source,
-            "question": upd.get("question", ""),
-            "our_view": upd.get("our_view", ""),
-            "his_answer": upd.get("his_answer", ""),
-            "his_note": upd.get("his_note", ""),
-        })
+        j.setdefault("evidence", []).append(
+            {
+                "verdict": "confirmed" if verdict == "confirms" else "contradicted",
+                "source": source,
+                "question": upd.get("question", ""),
+                "our_view": upd.get("our_view", ""),
+                "his_answer": upd.get("his_answer", ""),
+                "his_note": upd.get("his_note", ""),
+            }
+        )
         lines.append(
             f"{jid}: {verdict:12s}  {before_status} -> {j['status']}   "
             f"confidence {before_conf:.3f} -> {j['confidence']:.3f}   "
@@ -107,10 +110,17 @@ def apply_updates(ledger: dict, updates: list[dict], source: str) -> list[str]:
 def _refresh_summary(ledger: dict) -> None:
     """Keep the summary buckets truthful after a move."""
     buckets: dict[str, list[str]] = {
-        "unverified_n_zero": [], "falsified_by_his_labels": [], "verified": [], "partial": []
+        "unverified_n_zero": [],
+        "falsified_by_his_labels": [],
+        "verified": [],
+        "partial": [],
     }
-    key = {"UNVERIFIED": "unverified_n_zero", "FALSIFIED": "falsified_by_his_labels",
-           "VERIFIED": "verified", "PARTIAL": "partial"}
+    key = {
+        "UNVERIFIED": "unverified_n_zero",
+        "FALSIFIED": "falsified_by_his_labels",
+        "VERIFIED": "verified",
+        "PARTIAL": "partial",
+    }
     for j in ledger["judgements"]:
         buckets[key[j["status"]]].append(j["id"])
     summary = ledger.setdefault("summary", {})

@@ -22,12 +22,8 @@ PRED = [1.0, 2.03, 3.26, 4.51]
 def test_score_onsets_hand_checked_stats() -> None:
     report = score_onsets(REF, PRED)
     assert report.n_words == 4, "if n_words != 4 for 4 words then broken"
-    assert report.mean_abs_error_s == pytest.approx(0.2), (
-        "if AAE != mean(0,.03,.26,.51) then broken"
-    )
-    assert report.median_abs_error_s == pytest.approx(0.145), (
-        "if median != (0.03+0.26)/2 then broken"
-    )
+    assert report.mean_abs_error_s == pytest.approx(0.2), "if AAE != mean(0,.03,.26,.51) then broken"
+    assert report.median_abs_error_s == pytest.approx(0.145), "if median != (0.03+0.26)/2 then broken"
     assert report.p95_abs_error_s == pytest.approx(0.51), "if p95 != max for n=4 then broken"
     assert report.within[0.05] == pytest.approx(2 / 4), "if within@50ms != 2/4 then broken"
     assert report.within[0.2] == pytest.approx(2 / 4), "if within@200ms != 2/4 then broken"
@@ -74,8 +70,6 @@ def test_aggregate_word_pools_the_mean() -> None:
     b = score_onsets([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])  # n=3, AAE 0.0
     pooled = aggregate([a, b])
     assert pooled.n_words == 4, "if pooled n != 1+3 then broken"
-    assert pooled.mean_abs_error_s == pytest.approx(0.1 / 4), (
-        "if pooled AAE != (0.1*1+0*3)/4 then broken"
-    )
+    assert pooled.mean_abs_error_s == pytest.approx(0.1 / 4), "if pooled AAE != (0.1*1+0*3)/4 then broken"
     with pytest.raises(ValueError, match="no reports"):
         aggregate([])

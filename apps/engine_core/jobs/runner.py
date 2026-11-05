@@ -27,8 +27,8 @@ from typing import Any
 
 from apps.engine_core.jobs.reap import (
     WorkerIdentity,
-    group_has_live_member,
     reap,
+    worker_tree_has_live_member,
 )
 from apps.engine_core.jobs.store import (
     DuplicateRule,
@@ -507,14 +507,14 @@ class JobRunner:
         # Reaps OUR zombie: the pgid a dead leader still holds is released
         # only once somebody waits on it, and this is that somebody.
         await worker.proc.wait()
-        # group_has_live_member, NOT process_group_exists. The latter answers
+        # A live-member check, NOT process_group_exists. The latter answers
         # yes for a group whose every member is a zombie, because the pgid
         # stays allocated until each corpse is waited on -- and a corpse this
         # engine did not fork is not one it can wait on. Reading that as
         # "still alive" ended an ordinary cancel of a just-finished worker as
         # 'unknown', which then refused its own re-enqueue.
         still_running = await asyncio.to_thread(
-            group_has_live_member, worker.identity.pgid
+            worker_tree_has_live_member, worker.identity
         )
         if still_running:
             return self.store.finish(

@@ -6,6 +6,7 @@ Regression one-liners:
   - if intensity_of doesn't map confidence 0..1 onto the 1..4 PVDI ramp then broken
   - if anlz_vocals_of doesn't emit status 'demucs' with PVDI-shaped regions then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -60,11 +61,14 @@ def test_write_then_load_roundtrip(tmp_path: Path, audio: Path) -> None:
     assert loaded["confidence"] == 0.84  # scalar = max region confidence
     assert loaded["regions"][0]["intensity"] == 3  # round(0.84 * 4)
     assert loaded["regions"][1]["intensity"] == 1  # floor at 1
+    fp = loaded["audio_signature"]["content_fp"]
+    assert isinstance(fp, str)
+    assert len(fp) == 32
+    assert fp == fp.lower()
+    bytes.fromhex(fp)
 
 
-def test_stem_upload_mapping_is_persisted_when_present(
-    tmp_path: Path, audio: Path
-) -> None:
+def test_stem_upload_mapping_is_persisted_when_present(tmp_path: Path, audio: Path) -> None:
     # The R2 destination's returned content-addressed keys are the only link
     # from this stable_id to its opaque objects; they must survive the cache
     # write or the bundle cannot be rediscovered after the run exits.
@@ -78,9 +82,7 @@ def test_stem_upload_mapping_is_persisted_when_present(
     assert written["worker"]["stem_upload"] == upload
 
 
-def test_stem_upload_is_absent_for_non_r2_destinations(
-    tmp_path: Path, audio: Path
-) -> None:
+def test_stem_upload_is_absent_for_non_r2_destinations(tmp_path: Path, audio: Path) -> None:
     # local/none runs never produce stem_upload; the entry must not carry an
     # empty placeholder that a reader could mistake for a published bundle.
     path = vcache.cache_path(tmp_path, "abc123")
@@ -162,9 +164,7 @@ def test_schema_bump_self_heals_as_none(tmp_path: Path, audio: Path) -> None:
     assert vcache.load_valid_entry(path, audio) is None
 
 
-def test_source_replacement_with_preserved_mtime_invalidates(
-    tmp_path: Path, audio: Path
-) -> None:
+def test_source_replacement_with_preserved_mtime_invalidates(tmp_path: Path, audio: Path) -> None:
     """[if] source is swapped but keeps its timestamp [then] cache misses."""
     path = vcache.cache_path(tmp_path, "abc123")
     vcache.write_entry(path, _worker_result(), audio)
@@ -175,6 +175,45 @@ def test_source_replacement_with_preserved_mtime_invalidates(
     os.replace(replacement, audio)
     assert audio.stat().st_mtime_ns == original_mtime_ns
     assert vcache.load_valid_entry(path, audio) is None
+
+
+def test_in_place_overwrite_with_restored_mtime_invalidates(tmp_path: Path, audio: Path) -> None:
+    """Same inode, size, and restored mtime - content_fp still moves (issue #6500)."""
+    path = vcache.cache_path(tmp_path, "abc123")
+    vcache.write_entry(path, _worker_result(), audio)
+    original = audio.stat()
+    with open(audio, "r+b") as fh:
+        fh.write(b"\x00")
+    os.utime(audio, ns=(original.st_atime_ns, original.st_mtime_ns))
+    new_stat = audio.stat()
+    assert new_stat.st_ino == original.st_ino
+    assert new_stat.st_size == original.st_size
+    assert new_stat.st_mtime_ns == original.st_mtime_ns
+    assert vcache.load_valid_entry(path, audio) is None
+
+
+def test_schema_2_entry_self_heals_as_none(tmp_path: Path, audio: Path) -> None:
+    path = vcache.cache_path(tmp_path, "abc123")
+    entry = vcache.write_entry(path, _worker_result(), audio)
+    entry["schema"] = 2
+    del entry["audio_signature"]["content_fp"]
+    path.write_text(json.dumps(entry), encoding="utf-8")
+    assert vcache.load_valid_entry(path, audio) is None
+
+
+def test_schema_2_prior_entry_does_not_crash_refarm(tmp_path: Path, audio: Path) -> None:
+    path = vcache.cache_path(tmp_path, "abc123")
+    upload = {
+        "manifest_key": "assets/ab/" + "ab" * 32,
+        "keys": ["assets/cd/" + "cd" * 32],
+        "bytes": 1,
+    }
+    entry = vcache.write_entry(path, _worker_result(stem_upload=upload), audio)
+    entry["schema"] = 2
+    del entry["audio_signature"]["content_fp"]
+    path.write_text(json.dumps(entry), encoding="utf-8")
+    refarmed = vcache.write_entry(path, _worker_result(), audio)
+    assert "stem_upload" not in refarmed["worker"]
 
 
 def test_malformed_region_raises_instead_of_serving(tmp_path: Path, audio: Path) -> None:
@@ -223,7 +262,9 @@ def test_write_rejects_wrong_source(tmp_path: Path, audio: Path) -> None:
     ],
 )
 def test_write_semantic_validation_never_publishes_poison_entry(
-    tmp_path: Path, audio: Path, overrides: dict[str, Any],
+    tmp_path: Path,
+    audio: Path,
+    overrides: dict[str, Any],
 ) -> None:
     path = vcache.cache_path(tmp_path, "poison")
     with pytest.raises(ValueError):
@@ -252,7 +293,10 @@ def test_anlz_vocals_of_shape(tmp_path: Path, audio: Path) -> None:
     assert vocals["status"] == "demucs"
     assert vocals["fps"] == 2.0
     assert vocals["regions"][0] == {
-        "start_s": 10.0, "end_s": 60.0, "intensity": 3, "confidence": 0.84,
+        "start_s": 10.0,
+        "end_s": 60.0,
+        "intensity": 3,
+        "confidence": 0.84,
     }
 
 
@@ -262,8 +306,11 @@ def test_anlz_vocals_of_shape(tmp_path: Path, audio: Path) -> None:
 #   - if an empty/non-mapping preset is accepted then broken
 
 _PRESET: dict[str, Any] = {
-    "tag": "htdemucs-ov0.1", "model": "htdemucs",
-    "overlap": 0.1, "shifts": 0, "rung": 3,
+    "tag": "htdemucs-ov0.1",
+    "model": "htdemucs",
+    "overlap": 0.1,
+    "shifts": 0,
+    "rung": 3,
 }
 
 

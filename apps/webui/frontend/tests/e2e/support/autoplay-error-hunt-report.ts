@@ -140,7 +140,11 @@ export function groupBySignature(events: readonly HuntEvent[]): GroupedFinding[]
 
 export function loadAllowlist(path: string): AllowlistEntry[] {
 	const raw: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-	if (typeof raw !== 'object' || raw === null || !Array.isArray((raw as { entries?: unknown }).entries)) {
+	if (
+		typeof raw !== 'object' ||
+		raw === null ||
+		!Array.isArray((raw as { entries?: unknown }).entries)
+	) {
 		throw new Error(`allowlist at ${path} must be { "entries": [...] }`);
 	}
 	const entries: AllowlistEntry[] = [];

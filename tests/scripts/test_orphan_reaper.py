@@ -182,9 +182,7 @@ def test_a_retitled_service_survives_reap(cleanup_pids: list[int]) -> None:
     wait_for(lambda: alive(service), 10, "retitled control to start")
     wait_for(lambda: "retitled-control" in _census_row(service)["command"], 10, "the title rewrite")
     verdict = _census_row(service)["verdict"]
-    expected = (
-        {"unreadable-orphan"} if sys.platform == "darwin" else {"unreadable-orphan", "service"}
-    )
+    expected = {"unreadable-orphan"} if sys.platform == "darwin" else {"unreadable-orphan", "service"}
     assert verdict in expected, verdict
     result = subprocess.run(
         [sys.executable, "-m", REAPER_MODULE, "reap", "--min-age-s", "0", f"--only-pid={service}"],
@@ -290,9 +288,7 @@ def _linux_ppid(pid: int) -> int | None:
     reason="UNAVAILABLE: PR_SET_CHILD_SUBREAPER is Linux-only; macOS reparents every orphan "
     "to launchd, which the real double-fork test covers",
 )
-def test_the_census_orphans_a_real_subreaper_adoptee(
-    tmp_path: Path, cleanup_pids: list[int]
-) -> None:
+def test_the_census_orphans_a_real_subreaper_adoptee(tmp_path: Path, cleanup_pids: list[int]) -> None:
     pid_file = tmp_path / "adoptee.pid"
     adoptee_argv = [sys.executable, "-c", SLEEP_600, "uvicorn-real-adoptee"]
     adoptee_env = {
@@ -366,9 +362,7 @@ RUNUSER_ROOT_CODE = textwrap.dedent(
 )
 
 
-def test_the_census_spares_a_live_child_under_a_real_runuser_root(
-    tmp_path: Path, cleanup_pids: list[int]
-) -> None:
+def test_the_census_spares_a_live_child_under_a_real_runuser_root(tmp_path: Path, cleanup_pids: list[int]) -> None:
     """Real processes: a ppid-1 `runuser` root with a live child under it. The
     child is attached and must never be reapable; the reaper pointed at it must
     kill nothing."""

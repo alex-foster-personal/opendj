@@ -25,7 +25,8 @@ function softwareScalar(action: MidiAction): number | null {
 			if (action.target === 'fader') return mixerState.channels[action.deck].fader;
 			if (action.target === 'filter') return mixerState.channels[action.deck].filter;
 			if (action.target === 'eq') {
-				if (action.band === undefined) throw new Error('mixer_channel eq action requires band (device map bug)');
+				if (action.band === undefined)
+					throw new Error('mixer_channel eq action requires band (device map bug)');
 				return mixerState.channels[action.deck][`eq_${action.band}`];
 			}
 			return null;

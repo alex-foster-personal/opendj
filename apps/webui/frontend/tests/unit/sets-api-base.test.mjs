@@ -18,10 +18,19 @@ before(async () => {
 	globalThis.fetch = async (request) => {
 		const body = request.body === null ? null : await request.clone().text();
 		requests.push({ url: request.url, method: request.method, body });
-		return new Response(JSON.stringify({ active: false, session_id: null, pid: null, owned: false, recoverable: false }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		return new Response(
+			JSON.stringify({
+				active: false,
+				session_id: null,
+				pid: null,
+				owned: false,
+				recoverable: false
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 	};
 });
 
@@ -57,8 +66,10 @@ test('all REC controls use the configured HTTP API contract', async () => {
 });
 
 test('session, timeline, and replay URLs are HTTP-addressable', () => {
-	assert.equal(api.sessionAudioUrl('session / one', 'audio one.mp3'),
-		`${API_BASE}/api/sets/session%20%2F%20one/audio/audio%20one.mp3`);
+	assert.equal(
+		api.sessionAudioUrl('session / one', 'audio one.mp3'),
+		`${API_BASE}/api/sets/session%20%2F%20one/audio/audio%20one.mp3`
+	);
 });
 
 test('metadata-only set shares use the agent-addressable HTTP contract', async () => {

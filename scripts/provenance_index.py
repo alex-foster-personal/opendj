@@ -96,8 +96,7 @@ def render_index(allrecs: list[dict]) -> str:
     # older, looser filter stay there forever - 98 wrapped agent-to-agent
     # messages among them. Filtering the VIEW instead keeps the history intact
     # and still stops that traffic crowding real prompts out of the table.
-    originals = [r for r in allrecs
-                 if not r.get("fork") and _clean(r.get("text")) is not None]
+    originals = [r for r in allrecs if not r.get("fork") and _clean(r.get("text")) is not None]
     # Counted from the flag, not as the leftover of the subtraction: `originals`
     # drops noise AND forks, so a difference labels every filtered agent-to-agent
     # message a fork replay. With 98 such rows in the archive that is not a
@@ -137,4 +136,3 @@ def render_index(allrecs: list[dict]) -> str:
             link = f"`{r['branches'][0]}`"
         lines.append(f"| {when} | {tool} | {text} | {link} |")
     return "\n".join(lines) + "\n"
-

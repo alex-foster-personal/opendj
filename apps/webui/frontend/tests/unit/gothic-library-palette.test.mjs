@@ -83,7 +83,7 @@ test('if the components hard-code these colours then the skin tokens cannot reac
 		assert.match(table, new RegExp(`\\.c-bpm\\.bpm-${sev} \\{ box-shadow: inset 0 0 0 \\dpx var\\(--rb-bpm-mismatch-ring, #[0-9a-f]{6}\\); \\}`));
 	}
 	assert.match(src('deck/StemRow.svelte'), /--chip-color:\$\{stemCssColor\(stem\.id\)\}/);
-	assert.match(src('mixer/ChannelStrip.svelte'), /accentColor: stemCssColor\(stem\)/);
+	assert.match(src('mixer/ChannelStrip.svelte'), /accentColor=\{stemCssColor\(stem\)\}/);
 	assert.match(src('browser/StemTags.svelte'), /--stem-instrumental: \$\{stemCssColor\('instrumental'\)\}/);
 	assert.match(src('wave/StemWaveRow.svelte'), /getPropertyValue\(`--rb-stem-\$\{stem\}`\)/);
 });

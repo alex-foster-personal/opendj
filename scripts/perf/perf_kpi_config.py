@@ -128,9 +128,7 @@ def load_config() -> PerfKpiConfig:
         history_log=state_dir / "history.jsonl",
         health_state=state_dir / "health-state.json",
         preview_health_url=(_env("MDT_PERF_KPI_PREVIEW_HEALTH_URL") or DEFAULT_PREVIEW_HEALTH_URL),
-        preview_engine_label=(
-            _env("MDT_PERF_KPI_PREVIEW_ENGINE_LABEL") or DEFAULT_PREVIEW_ENGINE_LABEL
-        ),
+        preview_engine_label=(_env("MDT_PERF_KPI_PREVIEW_ENGINE_LABEL") or DEFAULT_PREVIEW_ENGINE_LABEL),
         scratch_port=int(_env("MDT_PERF_KPI_SCRATCH_PORT") or DEFAULT_SCRATCH_PORT),
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
         machine=_env("MDT_PERF_KPI_MACHINE") or "",

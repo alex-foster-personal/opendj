@@ -66,15 +66,25 @@ test('each tooltip literal lives in exactly one module, vocals-title.ts', () => 
 		const hits = files
 			.filter((f) => readFileSync(f, 'utf8').includes(`'${literal}'`))
 			.map((f) => f.slice(SRC.length + 1));
-		const allowed = literal.includes('rekordbox') || literal === 'no vocals detected' ? [] : ['lib/components/rb/wave/vocals-title.ts'];
+		const allowed =
+			literal.includes('rekordbox') || literal === 'no vocals detected'
+				? []
+				: ['lib/components/rb/wave/vocals-title.ts'];
 		assert.deepEqual(hits, allowed, `'${literal}'`);
 	}
 });
 
 test('the deck strip and the preview strip import the one source', () => {
-	for (const rel of ['lib/components/rb/deck/StripWaveform.svelte', 'lib/components/rb/browser/PreviewStrip.svelte']) {
+	for (const rel of [
+		'lib/components/rb/deck/StripWaveform.svelte',
+		'lib/components/rb/browser/PreviewStrip.svelte'
+	]) {
 		const src = readFileSync(join(SRC, rel), 'utf8');
-		assert.match(src, /import \{ vocalsStatusTitle \} from '\$lib\/components\/rb\/wave\/vocals-title'/, rel);
+		assert.match(
+			src,
+			/import \{ vocalsStatusTitle \} from '\$lib\/components\/rb\/wave\/vocals-title'/,
+			rel
+		);
 		assert.match(src, /\$derived\(vocalsStatusTitle\(vocals\)\)/, rel);
 	}
 });

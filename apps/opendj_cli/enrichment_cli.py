@@ -45,8 +45,9 @@ def request_for(verb: str, batch: str | None, playlist: str | None) -> tuple[str
 def _text(payload: dict[str, Any]) -> str:
     lines = [f"[WARN] {w['lane']}: {w['message']} Fix: {w['fix']}" for w in payload.get("warnings", [])]
     for batch in payload.get("batches", []):
-        lines.append(f"{batch['batch_id']} ({batch['source']}, {batch['tracks']} tracks, "
-                     f"artwork {batch['artwork_stage']})")
+        lines.append(
+            f"{batch['batch_id']} ({batch['source']}, {batch['tracks']} tracks, artwork {batch['artwork_stage']})"
+        )
         for lane in payload.get("lane_priority", []):
             counts = ", ".join(f"{state} {n}" for state, n in sorted(batch["lanes"][lane].items()))
             lines.append(f"  {lane}: {counts}")
@@ -64,8 +65,12 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
         args = parser.parse_args(list(rest))
         method, path, body = request_for(args.verb, args.batch, args.playlist)
     except SystemExit:
-        return _fail(as_json, "usage", "usage: opendj enrichment status [--batch B] | "
-                                       "rerun --batch B | --playlist P", EXIT_FAILED)
+        return _fail(
+            as_json,
+            "usage",
+            "usage: opendj enrichment status [--batch B] | rerun --batch B | --playlist P",
+            EXIT_FAILED,
+        )
     except ValueError as error:
         return _fail(as_json, "usage", str(error), EXIT_FAILED)
     try:
@@ -77,8 +82,9 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
     except httpx.HTTPError as error:
         return _fail(as_json, "request_failed", str(error), EXIT_FAILED)
     if not response.is_success:
-        return _fail(as_json, "request_failed",
-                     f"{method} {path} returned {response.status_code}: {response.text}", EXIT_FAILED)
+        return _fail(
+            as_json, "request_failed", f"{method} {path} returned {response.status_code}: {response.text}", EXIT_FAILED
+        )
     payload = response.json()
     print(json.dumps(payload, indent=2, sort_keys=True) if as_json else _text(payload))
     return EXIT_CONFIRMED

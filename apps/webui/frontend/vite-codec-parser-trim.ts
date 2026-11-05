@@ -33,7 +33,10 @@ const CODEC_PARSER_ENTRY = /\/node_modules\/codec-parser\/src\/CodecParser\.js$/
 const STUB_PREFIX = '\0codec-parser-unused:';
 
 /** The stub's virtual id for an import codec-parser's entry makes, or null to leave it alone. */
-export function unusedCodecParserStubId(source: string, importer: string | undefined): string | null {
+export function unusedCodecParserStubId(
+	source: string,
+	importer: string | undefined
+): string | null {
 	if (importer === undefined || !CODEC_PARSER_ENTRY.test(importer.replace(/\\/g, '/'))) return null;
 	if (!UNUSED_PARSER.test(source)) return null;
 	return `${STUB_PREFIX}${source.slice(source.lastIndexOf('/') + 1, -'.js'.length)}`;

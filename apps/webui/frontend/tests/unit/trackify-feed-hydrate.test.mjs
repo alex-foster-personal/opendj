@@ -165,7 +165,10 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 
 		// That fresh fetch resolves and DOES publish under the new scope.
 		await settle();
-		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['p1-row']);
+		assert.deepEqual(
+			mod.getTrackifyFeedRows().map((row) => row.stable_id),
+			['p1-row']
+		);
 
 		// Guard against the exact anomaly a prior attempt at this fix hit
 		// (a mysterious unexplained THIRD fetch call): settle further and
@@ -180,7 +183,7 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		// Branches on the URL rather than call order: an unrelated background
 		// fetch (settings/machine-name -- the same pre-existing, documented
 		// third-fetch noise a prior attempt at a sibling fix hit, see
-		// .planning/debt/3676.md) can land at any point in this module's
+		// (private path)) can land at any point in this module's
 		// lifecycle and must not desynchronize which response this test's
 		// two REAL trackify requests receive.
 		globalThis.fetch = async (url) => {
@@ -236,10 +239,17 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		);
 
 		await settle();
-		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['p1-row']);
+		assert.deepEqual(
+			mod.getTrackifyFeedRows().map((row) => row.stable_id),
+			['p1-row']
+		);
 
 		for (let i = 0; i < 5; i += 1) await settle();
-		assert.equal(trackifyFetches().length, 2, 'no further fetch should fire beyond the rescheduled one');
+		assert.equal(
+			trackifyFetches().length,
+			2,
+			'no further fetch should fire beyond the rescheduled one'
+		);
 	});
 
 	it('control: a rejected fetch for a scope that has NOT changed does not reschedule early (waits for the 60 s interval)', async () => {
@@ -307,7 +317,10 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		// Control for the overshoot direction: a fix that discards every
 		// result (not just a stale one) would fail this, since nothing
 		// changed the selection here.
-		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['steady-row']);
+		assert.deepEqual(
+			mod.getTrackifyFeedRows().map((row) => row.stable_id),
+			['steady-row']
+		);
 	});
 
 	it('a hydration in flight at teardown does not publish into the controller a remount resets (Sol review round 6)', async () => {
@@ -405,7 +418,10 @@ describe('trackify feed hydrate: playlist switch mid-fetch (PERFMODE-15)', () =>
 		gate2.release();
 		await settle();
 		await settle();
-		assert.deepEqual(mod.getTrackifyFeedRows().map((row) => row.stable_id), ['fresh-row']);
+		assert.deepEqual(
+			mod.getTrackifyFeedRows().map((row) => row.stable_id),
+			['fresh-row']
+		);
 	});
 
 	it('does not re-walk the library on the timer when the revision and scope are unchanged', async () => {

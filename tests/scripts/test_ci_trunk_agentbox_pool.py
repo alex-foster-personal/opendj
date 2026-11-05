@@ -113,9 +113,7 @@ class Event:
         return {"github": github, "vars": self.variables, "needs": needs}
 
 
-_TOKEN = re.compile(
-    r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<op>==|&&|\|\||[(),])|(?P<path>[A-Za-z_][\w.*-]*))"
-)
+_TOKEN = re.compile(r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<op>==|&&|\|\||[(),])|(?P<path>[A-Za-z_][\w.*-]*))")
 
 
 def _tokens(expr: str) -> list[str]:
@@ -205,9 +203,7 @@ class _Parser:
             self._take(")")
             if token == "contains":
                 haystack, needle = args
-                return isinstance(haystack, list) and any(
-                    str(item).lower() == str(needle).lower() for item in haystack
-                )
+                return isinstance(haystack, list) and any(str(item).lower() == str(needle).lower() for item in haystack)
             if token == "startsWith":
                 haystack, needle = args
                 return str(haystack or "").lower().startswith(str(needle).lower())
@@ -263,9 +259,7 @@ def test_main_push_shards_resolve_to_the_trunk_pool() -> None:
 def test_trunk_repair_shards_keep_the_reserve_then_fall_to_the_trunk_pool() -> None:
     """if a trunk-repair PR's shards leave a set main-fix reserve then it loses its pair"""
     assert resolve(_runs_on("test"), REPAIR_PR) == json.loads(MAIN_FIX)
-    no_reserve = Event(
-        REPAIR_PR.name, REPAIR_PR.ref, REPAIR_PR.labels, _without("CI_RUNS_ON_MAIN_FIX")
-    )
+    no_reserve = Event(REPAIR_PR.name, REPAIR_PR.ref, REPAIR_PR.labels, _without("CI_RUNS_ON_MAIN_FIX"))
     assert resolve(_runs_on("test"), no_reserve) == json.loads(TRUNK)
 
 
@@ -276,9 +270,7 @@ def test_trunk_repair_fast_legs_resolve_to_the_main_fix_seats_then_the_trunk_poo
     win on every job of a repair PR; CI_RUNS_ON_TRUNK is the fast legs' fallback.
     """
     assert resolve(_runs_on("fast"), REPAIR_PR) == json.loads(MAIN_FIX)
-    no_reserve = Event(
-        REPAIR_PR.name, REPAIR_PR.ref, REPAIR_PR.labels, _without("CI_RUNS_ON_MAIN_FIX")
-    )
+    no_reserve = Event(REPAIR_PR.name, REPAIR_PR.ref, REPAIR_PR.labels, _without("CI_RUNS_ON_MAIN_FIX"))
     assert resolve(_runs_on("fast"), no_reserve) == json.loads(TRUNK)
 
 
@@ -308,4 +300,3 @@ def test_unset_trunk_variable_is_exactly_todays_routing(event: Event) -> None:
     bare = Event(event.name, event.ref, event.labels, {})
     assert resolve(_runs_on("test"), bare) == "ubuntu-latest"
     assert resolve(_runs_on("fast"), bare) == "ubuntu-latest"
-

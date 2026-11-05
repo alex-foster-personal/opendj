@@ -65,7 +65,9 @@ import {
 	pioneerNote,
 	pioneerPadChannel,
 	pioneerCc,
-	pioneerDeckChannel
+	pioneerDeckChannel,
+	pioneerPadLedRules,
+	pioneerTransportLedRules
 } from './pioneer-deck-bindings';
 
 // -------------------------------------------------------------- constants
@@ -205,38 +207,14 @@ function _deckHints(deck: DeckId): ControlHint[] {
 }
 
 function _ledRules(deck: DeckId): LedRule[] {
-	const ch = pioneerDeckChannel(deck);
-	const padCh = pioneerPadChannel(deck);
-	const rules: LedRule[] = [
-		// [PDF] p.2 D1 PLAY/PAUSE MIDI-OUT: 9n note 11 (0x0B), OFF=0x00
-		// ON=0x7F. Lit while the deck plays (spike: play-button feedback).
-		{
-			trigger: { kind: 'deck_playing', deck },
-			out: { ch, note: 0x0b, velocityOn: 0x7f, velocityOff: 0x00 }
-		},
-		// [PDF] p.2 D2 CUE MIDI-OUT: 9n note 12 (0x0C). Software choice
-		// (ours): lit when a track is loaded (cue point exists to return to).
-		{
-			trigger: { kind: 'deck_loaded', deck },
-			out: { ch, note: 0x0c, velocityOn: 0x7f, velocityOff: 0x00 }
-		},
-		// [PDF] p.2 D16 4 BEAT/EXIT MIDI-OUT: 9n note 20 (0x14). Lit while
-		// a loop is engaged.
-		{
-			trigger: { kind: 'loop_engaged', deck },
-			out: { ch, note: 0x14, velocityOn: 0x7f, velocityOff: 0x00 }
-		}
+	// [PDF] p.2 D1 PLAY/PAUSE MIDI-OUT: 9n note 11 (0x0B), OFF=0x00 ON=0x7F.
+	// [PDF] p.2 D2 CUE MIDI-OUT: 9n note 12 (0x0C). Lit when a track is loaded.
+	// [PDF] p.2 D16 4 BEAT/EXIT MIDI-OUT: 9n note 20 (0x14). Lit while a loop is engaged.
+	// [PDF] p.4-7 pad MIDI-OUT: 9p note = pad note, velocity = colour 1-127 (OFF=0x00).
+	return [
+		...pioneerTransportLedRules(deck, 0x14),
+		...pioneerPadLedRules(deck, FLX10_PAD_COLOR_ON, FLX10_PAD_COLOR_OFF)
 	];
-	for (let pad = 0; pad < 8; pad++) {
-		// [PDF] p.4-7 pad MIDI-OUT: 9p note = pad note, velocity = colour
-		// number 1-127 (OFF=0x00 dimmer). Lit when the hot-cue slot is
-		// populated; per-cue colour resolution is P1 (flx10PadColorVelocity).
-		rules.push({
-			trigger: { kind: 'hot_cue_present', deck, slot: HOT_CUE_SLOTS[pad] },
-			out: { ch: padCh, note: pad, velocityOn: FLX10_PAD_COLOR_ON, velocityOff: FLX10_PAD_COLOR_OFF }
-		});
-	}
-	return rules;
 }
 
 // ------------------------------------------------------------- device map

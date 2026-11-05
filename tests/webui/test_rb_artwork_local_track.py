@@ -1,6 +1,6 @@
 """GET /artwork for a locally imported track (no rekordbox vendor mapping).
 
-Cloud-buildable: synthetic state.db in tmp_path, no data/master.plain.db
+Cloud-buildable: synthetic state.db in tmp_path, no (private path)
 needed -- same pattern as ``tests/webui/test_rb_meta_local_track.py``. Before
 this (PARITY-TODO.md line 137), ``/artwork`` 404'd VENDOR_MAPPING_NOT_FOUND
 for every unmapped row even when the file itself carries a real embedded
@@ -23,6 +23,7 @@ Regression one-liners:
 
 The reader-unavailable path lives in ``test_rb_artwork_reader_unavailable.py``.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -119,18 +120,14 @@ def client(
         yield test_client
 
 
-def test_serves_real_embedded_jpeg_bytes(
-    client: TestClient, jpeg_bytes: bytes
-) -> None:
+def test_serves_real_embedded_jpeg_bytes(client: TestClient, jpeg_bytes: bytes) -> None:
     resp = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"] == "image/jpeg"
     assert resp.content == jpeg_bytes
 
 
-def test_embedded_artwork_is_revalidatable(
-    client: TestClient, jpeg_bytes: bytes
-) -> None:
+def test_embedded_artwork_is_revalidatable(client: TestClient, jpeg_bytes: bytes) -> None:
     first = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
     assert first.status_code == 200, first.text
     etag = first.headers["etag"]
@@ -161,12 +158,8 @@ def test_embedded_artwork_is_revalidatable(
 
 
 @pytest.mark.parametrize("size", ["s", "m", "orig"])
-def test_size_param_still_accepted_for_embedded_path(
-    client: TestClient, jpeg_bytes: bytes, size: str
-) -> None:
-    resp = client.get(
-        f"/api/v1/tracks/{WITH_ART_SID}/artwork", params={"size": size}
-    )
+def test_size_param_still_accepted_for_embedded_path(client: TestClient, jpeg_bytes: bytes, size: str) -> None:
+    resp = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork", params={"size": size})
     assert resp.status_code == 200
     assert resp.content == jpeg_bytes
 

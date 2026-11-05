@@ -8,7 +8,7 @@ Two backends, chosen by :func:`capture_backend`:
   * ``odj-audio`` (the Rust engine, built with feature ``device``): records
     16-bit PCM WAV segments through CoreAudio/WASAPI/ALSA. The installed app
     bundles it and no ffmpeg (decision #4766), so this is how REC records
-    there (``docs/decisions/*-set-recording-without-ffmpeg.md``).
+    there (``(private path)/*-set-recording-without-ffmpeg.md``).
   * ``ffmpeg`` (AVFoundation, macOS only): MP3 segments. Used only when no
     capture-capable odj-audio is found, i.e. a checkout without a
     ``--features device`` build.
@@ -33,6 +33,7 @@ Public API:
 
 No ffprobe; duration is recovered later from filenames + manifest.
 """
+
 from __future__ import annotations
 
 import os
@@ -154,9 +155,7 @@ def _ffmpeg_input_devices(
 ) -> list[InputDevice]:
     host = platform if platform is not None else sys.platform
     if host != "darwin":
-        raise CaptureUnavailable(
-            f"set audio capture through ffmpeg uses macOS AVFoundation; this host is {host!r}"
-        )
+        raise CaptureUnavailable(f"set audio capture through ffmpeg uses macOS AVFoundation; this host is {host!r}")
     argv = _list_devices_argv(exe)
     try:
         result = runner(
@@ -174,8 +173,7 @@ def _ffmpeg_input_devices(
         tail = " | ".join(stderr.strip().splitlines()[-3:]) or "no output"
         raise CaptureUnavailable(f"{exe} did not list any AVFoundation audio devices: {tail}")
     return [
-        InputDevice(index=idx, name=name, loopback=is_loopback_name(name))
-        for idx, name in parse_audio_devices(stderr)
+        InputDevice(index=idx, name=name, loopback=is_loopback_name(name)) for idx, name in parse_audio_devices(stderr)
     ]
 
 
@@ -339,7 +337,9 @@ def start_capture(
     chosen = (
         CaptureBackend("ffmpeg", ffmpeg)
         if ffmpeg is not None
-        else backend if backend is not None else capture_backend()
+        else backend
+        if backend is not None
+        else capture_backend()
     )
     popen_cls = popen if popen is not None else subprocess.Popen
     if chosen.kind == "odj-audio":
@@ -393,9 +393,7 @@ def _start_odj_audio(
         log_fh.close()
         raise
     state = CaptureState("starting")
-    handle = CaptureHandle(
-        proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh, backend="odj-audio", state=state
-    )
+    handle = CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh, backend="odj-audio", state=state)
     if proc.stdout is not None:
         follow_record_output(proc.stdout, log_fh, state)
     if startup_check_s > 0:

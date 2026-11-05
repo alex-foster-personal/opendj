@@ -13,6 +13,8 @@ import {
 	type PerformanceCommand
 } from './performance-ipc.svelte';
 import { durationProgress, resolveDuration, type Duration } from './agent-duration';
+import { animationKeyOf } from './animate-expr';
+import { beginAnimation, endAnimation } from './dial-animations.svelte';
 // The plan runner itself loads on the first plan order (see `_plans`), so its code
 // stays out of /performance's first load; only its types are imported here.
 import type { AgentPlanMirror, PlanRunner, PlanStateView } from './agent-plan';
@@ -315,7 +317,29 @@ function _tempoStepRefusal(deck: ClockDeck, to: number): void {
 	if (to < min || to > max) throw new RangeError(`tempo ramp to must be inside deck ${deck}'s pitch range, ${min} to ${max}`);
 }
 
+/** ANIM-02: a live value further than this from what the ramp last sent means a hand (or MIDI) moved it. */
+export const RAMP_TAKEOVER_TOLERANCE = 1e-3;
+
+export interface RampRunOptions {
+	/** `user-ui` for the right-click Animate box; agent orders keep `agent-command`. */
+	source?: 'agent-command' | 'user-ui';
+	/** The running indicator's tooltip. */
+	label?: string;
+	/** Called once the ramp passed validation and is registered as running. */
+	onStarted?: () => void;
+}
+
 async function _ramp(payload: unknown): Promise<AgentStepResult> {
+	return runRamp(payload);
+}
+
+/**
+ * The AGENT-03 ramp executor, shared by agent `ramp` orders and the dial
+ * Animate box (ANIM-02). It registers the control as animating for the
+ * indicator, and stops when the control is moved by anything else (take-over)
+ * or a newer animation on the same control replaces it.
+ */
+export async function runRamp(payload: unknown, options: RampRunOptions = {}): Promise<AgentStepResult> {
 	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('ramp must be an object');
 	const ramp = payload as Record<string, unknown>;
 	const command = _command(ramp.command);
@@ -356,18 +380,36 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 	});
 	if (over.unit !== 'ms' && !clock.playing) throw new Error('clock_not_playing');
 	const start = _rampStart(before, command);
+	const to = ramp.to;
+	const key = animationKeyOf(command as unknown as Record<string, unknown>);
+	let stopped: string | null = null;
+	const token = key === null
+		? null
+		: beginAnimation(key, options.label ?? `${command.type} to ${to} over ${over.n} ${over.unit}`, (reason) => {
+				stopped = reason;
+			});
+	options.onStarted?.();
 	const startedAt = performance.now();
-	while (true) {
-		const progress = over.unit === 'ms'
-			? Math.min(1, (performance.now() - startedAt) / over.n)
-			: durationProgress(plan, queryPerformanceState().decks[clockDeck].position_ms);
-		const value = start + (ramp.to - start) * progress;
-		// The operator may narrow the pitch range mid-ramp, so each tempo step is checked against the live range, not the one read at order time.
-		if (command.type === 'tempo') _tempoStepRefusal(command.deck, value);
-		const step = (command.type === 'tempo' ? { ...command, ratio: value } : { ...command, value }) as PerformanceCommand;
-		await dispatchPerformanceCommand(step, undefined, 'agent-command');
-		if (progress === 1) break;
-		await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
+	try {
+		let sent: number | null = null;
+		while (true) {
+			if (stopped !== null) return { status: 'failed', error: `animation stopped: ${stopped}` };
+			if (sent !== null && Math.abs(_rampStart(queryPerformanceState(), command) - sent) > RAMP_TAKEOVER_TOLERANCE) {
+				return { status: 'failed', error: `animation stopped: ${command.type} was moved by hand (take-over)` };
+			}
+			const progress = over.unit === 'ms'
+				? Math.min(1, (performance.now() - startedAt) / over.n)
+				: durationProgress(plan, queryPerformanceState().decks[clockDeck].position_ms);
+			const value = start + (to - start) * progress;
+			// The operator may narrow the pitch range mid-ramp, so each tempo step is checked against the live range, not the one read at order time.
+			if (command.type === 'tempo') _tempoStepRefusal(command.deck, value);
+			const step = (command.type === 'tempo' ? { ...command, ratio: value } : { ...command, value }) as PerformanceCommand;
+			sent = _rampStart(await dispatchPerformanceCommand(step, undefined, options.source ?? 'agent-command'), command);
+			if (progress === 1) break;
+			await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
+		}
+	} finally {
+		if (key !== null && token !== null) endAnimation(key, token);
 	}
 	return { status: 'succeeded' };
 }

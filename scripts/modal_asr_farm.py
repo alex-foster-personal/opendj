@@ -18,7 +18,7 @@ Requirements
     [if] --force is passed [then] existing outputs count as todo
 - run subcommand fans out todo tracks via .starmap fed by a generator; each
   container verifies sha256, transcribes, uploads JSON, and returns per-track
-  errors without raising. Driver journals to data/state/lyrics-asr-journals/ and
+  errors without raising. Driver journals to (private path)/ and
   exits 1 if any track failed.
     [if] cuda is unavailable in the container [then ⛔️] that track returns error
     [if] whisper returns zero words [then] that is a valid success, not an error
@@ -80,9 +80,7 @@ SCHEMA_VERSION: int = 1
 MODEL_LABEL: str = "faster-whisper-large-v3"
 
 VERIFY_SAMPLE_SIZE: int = 20
-VERIFY_NEGATIVE_CONTROL: str = (
-    f"{LYRICS_ASR_PREFIX}/__verify-negative-control-does-not-exist__.json"
-)
+VERIFY_NEGATIVE_CONTROL: str = f"{LYRICS_ASR_PREFIX}/__verify-negative-control-does-not-exist__.json"
 
 JOURNAL_DIR: Path = REPO_ROOT / "data" / "state" / "lyrics-asr-journals"
 
@@ -107,12 +105,14 @@ image = (
         "nvidia-cudnn-cu12==9.*",
         "boto3>=1.34",
     )
-    .env({
-        "LD_LIBRARY_PATH": (
-            "/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:"
-            "/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib"
-        )
-    })
+    .env(
+        {
+            "LD_LIBRARY_PATH": (
+                "/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:"
+                "/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib"
+            )
+        }
+    )
     .run_function(_bake_model)
 )
 
@@ -147,8 +147,7 @@ def _r2_client() -> Any:
     missing = [key for key in R2_ENV_KEYS if not os.environ.get(key)]
     if missing:
         raise RuntimeError(
-            f"R2 credentials absent: {missing}. Start under `doppler run --` so "
-            "_r2_secrets() can forward them."
+            f"R2 credentials absent: {missing}. Start under `doppler run --` so _r2_secrets() can forward them."
         )
     return boto3.client(
         "s3",
@@ -202,11 +201,7 @@ class VocalsTrack:
 
 
 def _resolve_vocals(files: dict[str, str]) -> tuple[str, str] | None:
-    matches = [
-        (filename, digest)
-        for filename, digest in files.items()
-        if filename in ("vocals.mp3", "vocals.flac")
-    ]
+    matches = [(filename, digest) for filename, digest in files.items() if filename in ("vocals.mp3", "vocals.flac")]
     if len(matches) != 1:
         return None
     return matches[0]
@@ -273,9 +268,7 @@ class AsrWorker:
         self.model = WhisperModel(WHISPER_MODEL, device="cuda", compute_type="float16")
 
     @modal.method()
-    def transcribe_track(
-        self, stable_id: str, vocals_key: str, vocals_sha256: str, bucket: str
-    ) -> dict[str, Any]:
+    def transcribe_track(self, stable_id: str, vocals_key: str, vocals_sha256: str, bucket: str) -> dict[str, Any]:
         """One track. Returns success fields or {stable_id, error}; never raises."""
         import tempfile
 
@@ -286,9 +279,7 @@ class AsrWorker:
             audio_bytes = resp["Body"].read()
             digest = hashlib.sha256(audio_bytes).hexdigest()
             if digest != vocals_sha256:
-                raise ValueError(
-                    f"index digest {vocals_sha256} != object digest {digest}"
-                )
+                raise ValueError(f"index digest {vocals_sha256} != object digest {digest}")
 
             suffix = Path(vocals_key).suffix or ".audio"
             with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
@@ -307,12 +298,14 @@ class AsrWorker:
                 for seg in segments:
                     text_parts.append(seg.text)
                     for word in seg.words or []:
-                        words.append({
-                            "word": word.word.strip(),
-                            "start_s": word.start,
-                            "end_s": word.end,
-                            "prob": word.probability,
-                        })
+                        words.append(
+                            {
+                                "word": word.word.strip(),
+                                "start_s": word.start,
+                                "end_s": word.end,
+                                "prob": word.probability,
+                            }
+                        )
 
             payload = {
                 "schema_version": SCHEMA_VERSION,
@@ -331,9 +324,7 @@ class AsrWorker:
             client.put_object(Bucket=bucket, Key=out_key, Body=body)
             remote = client.head_object(Bucket=bucket, Key=out_key)["ContentLength"]
             if remote != len(body):
-                raise RuntimeError(
-                    f"r2 short write: {bucket}/{out_key} is {remote} bytes, sent {len(body)}"
-                )
+                raise RuntimeError(f"r2 short write: {bucket}/{out_key} is {remote} bytes, sent {len(body)}")
         except Exception as exc:
             return {
                 "stable_id": stable_id,
@@ -353,10 +344,7 @@ class AsrWorker:
 
 def _print_data_errors(data_errors: list[str]) -> None:
     for stable_id in data_errors:
-        print(
-            f"[WARN] data error: {stable_id} "
-            "(expected exactly one vocals.mp3 or vocals.flac)"
-        )
+        print(f"[WARN] data error: {stable_id} (expected exactly one vocals.mp3 or vocals.flac)")
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -366,10 +354,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     index = _load_index(client, bucket)
     todo, data_errors, done, total = _classify_index(client, bucket, index, args.force)
     _print_data_errors(data_errors)
-    print(
-        f"[PLAN] total={total} done={done} todo={len(todo)} "
-        f"data_errors={len(data_errors)}"
-    )
+    print(f"[PLAN] total={total} done={done} todo={len(todo)} data_errors={len(data_errors)}")
     return 0
 
 
@@ -392,10 +377,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_data_errors(data_errors)
     if args.limit is not None:
         todo = todo[: args.limit]
-    print(
-        f"[RUN] total={total} done={done} todo={len(todo)} "
-        f"data_errors={len(data_errors)} bucket={bucket}"
-    )
+    print(f"[RUN] total={total} done={done} todo={len(todo)} data_errors={len(data_errors)} bucket={bucket}")
     if not todo:
         print("[DONE] transcribed=0 failed=0 wall=0s")
         return 0
@@ -407,9 +389,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     with app.run():
         worker = AsrWorker.with_options(max_containers=args.max_containers)()
-        for result in worker.transcribe_track.starmap(
-            _todo_generator(todo, bucket), order_outputs=False
-        ):
+        for result in worker.transcribe_track.starmap(_todo_generator(todo, bucket), order_outputs=False):
             stable_id = result["stable_id"]
             if "error" in result:
                 failed += 1
@@ -518,9 +498,7 @@ def main() -> int:
     )
     run.set_defaults(func=cmd_run)
 
-    verify = sub.add_parser(
-        "verify", help="HEAD-sample outputs plus a negative control"
-    )
+    verify = sub.add_parser("verify", help="HEAD-sample outputs plus a negative control")
     verify.set_defaults(func=cmd_verify)
 
     args = parser.parse_args()

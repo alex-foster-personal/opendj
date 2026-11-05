@@ -83,7 +83,12 @@ test('only a null availability reads as unknown; a missing one is passed on as m
 // REQ: HEALTH-15
 test('a failed rescan keeps the counts but says they are unchecked', async () => {
 	// [if] refresh_error is set [then] the error names it beside the counts, [else stop].
-	answer({ ...SUMMARY, age_s: 400, refreshing: false, refresh_error: 'OperationalError: disk I/O error' });
+	answer({
+		...SUMMARY,
+		age_s: 400,
+		refreshing: false,
+		refresh_error: 'OperationalError: disk I/O error'
+	});
 	const { applied, outcome } = await readOnce();
 	assert.equal(applied.length, 1);
 	assert.match(applied[0].error, /last library scan failed \(OperationalError: disk I\/O error\)/);

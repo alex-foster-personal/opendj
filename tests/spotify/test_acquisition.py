@@ -1,4 +1,5 @@
 """Tests for apps.spotify.acquisition."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,9 +98,7 @@ def test_render_markdown_file(tmp_path: Path) -> None:
 def test_render_markdown_links_track_uri() -> None:
     """[if] a track URI has an id [then] the sheet links the web track URL, [else stop]."""
     playlist = make_playlist()
-    entries = build_acquisition_entries(
-        [make_matched_pair(spotify_uri="spotify:track:abc", spotify_id="abc")]
-    )
+    entries = build_acquisition_entries([make_matched_pair(spotify_uri="spotify:track:abc", spotify_id="abc")])
     md = render_markdown(playlist, entries, include_timestamp=False)
     assert "[spotify:track:abc](https://open.spotify.com/track/abc)" in md
 
@@ -117,8 +116,6 @@ def test_render_markdown_keeps_uri_without_track_id() -> None:
 def test_render_markdown_keeps_non_track_uri() -> None:
     """[if] the Spotify URI is not a track URI [then] the sheet keeps it raw, [else stop]."""
     playlist = make_playlist()
-    entries = build_acquisition_entries(
-        [make_matched_pair(spotify_uri="spotify:local:a:b:c:123")]
-    )
+    entries = build_acquisition_entries([make_matched_pair(spotify_uri="spotify:local:a:b:c:123")])
     md = render_markdown(playlist, entries, include_timestamp=False)
     assert "[spotify:local:a:b:c:123](spotify:local:a:b:c:123)" in md

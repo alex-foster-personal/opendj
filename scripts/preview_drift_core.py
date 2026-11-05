@@ -10,6 +10,7 @@ file-size ratchet. The CLI module owns argument parsing, rendering, and
 ``python -m scripts.preview_drift_check`` and
 ``import scripts.preview_drift_check`` are unaffected by this split.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -59,9 +60,7 @@ def _apply_never_coexisted_check(
     """
     if report.serves_main_tree or not landed_shas:
         return
-    reason = _patch_equivalent_never_coexisted(
-        cwd, main_ref, preview_ref, landed_shas, report.max_age_hours
-    )
+    reason = _patch_equivalent_never_coexisted(cwd, main_ref, preview_ref, landed_shas, report.max_age_hours)
     if reason:
         report.verdict = "DRIFT"
         report.reasons.append(reason)
@@ -86,14 +85,10 @@ def _apply_cross_class_never_coexisted_check(
     """
     if report.serves_main_tree:
         return
-    landed_paths = _union_diff_paths(
-        cwd, [c.sha for c in report.preview_only if c.landed and not c.superseded]
-    )
+    landed_paths = _union_diff_paths(cwd, [c.sha for c in report.preview_only if c.landed and not c.superseded])
     patch_equivalent_paths = _union_diff_paths(cwd, landed_shas)
     combined = landed_paths | patch_equivalent_paths | merge_trusted_paths
-    reason = _cross_class_never_coexisted(
-        cwd, main_ref, preview_ref, combined, report.max_age_hours
-    )
+    reason = _cross_class_never_coexisted(cwd, main_ref, preview_ref, combined, report.max_age_hours)
     if reason:
         report.verdict = "DRIFT"
         report.reasons.append(reason)
@@ -227,25 +222,14 @@ def evaluate(
     # rebase is reported with '-' (equivalent found) and is NOT drift. Only '+'
     # lines are genuinely preview-only.
     cherry = _git(cwd, "cherry", main_ref, preview_ref)
-    only_shas = [
-        line.strip().split(maxsplit=1)[1]
-        for line in cherry.splitlines()
-        if line.strip().startswith("+")
-    ]
-    landed_shas = [
-        line.strip().split(maxsplit=1)[1]
-        for line in cherry.splitlines()
-        if line.strip().startswith("-")
-    ]
+    only_shas = [line.strip().split(maxsplit=1)[1] for line in cherry.splitlines() if line.strip().startswith("+")]
+    landed_shas = [line.strip().split(maxsplit=1)[1] for line in cherry.splitlines() if line.strip().startswith("-")]
     described = _describe(cwd, only_shas)
     report.preview_only = [
-        PreviewOnlyCommit(sha=sha, committed_at=described[sha][0], subject=described[sha][1])
-        for sha in only_shas
+        PreviewOnlyCommit(sha=sha, committed_at=described[sha][0], subject=described[sha][1]) for sha in only_shas
     ]
 
-    report.behind = int(
-        _git(cwd, "rev-list", "--count", f"{preview_ref}..{main_ref}").strip()
-    )
+    report.behind = int(_git(cwd, "rev-list", "--count", f"{preview_ref}..{main_ref}").strip())
 
     # The TREE is the arbiter of what is actually being served. Both of the
     # blind spots below are blind spots of per-commit patch-id comparison, and
@@ -291,9 +275,7 @@ def evaluate(
                 f"live with no PR gate having seen it"
             )
 
-    if _maybe_finish_remote_fossil_early(
-        cwd, main_ref, preview_ref, report, fossil_threshold
-    ):
+    if _maybe_finish_remote_fossil_early(cwd, main_ref, preview_ref, report, fossil_threshold):
         return report
 
     if not report.serves_main_tree:
@@ -373,15 +355,12 @@ def evaluate(
     # neither class's check ever seeing the other's path, so the combination
     # can pass every class-level check while no single main commit ever held
     # it together. This is the one check that unions ACROSS all three.
-    _apply_cross_class_never_coexisted_check(
-        cwd, main_ref, preview_ref, report, landed_shas, merge_trusted_paths
-    )
+    _apply_cross_class_never_coexisted_check(cwd, main_ref, preview_ref, report, landed_shas, merge_trusted_paths)
 
     if stale:
         report.verdict = "DRIFT"
         report.reasons.append(
-            f"{len(stale)} preview-only commit(s) older than {max_age_hours}h "
-            f"with no patch-equivalent on {main_ref}"
+            f"{len(stale)} preview-only commit(s) older than {max_age_hours}h with no patch-equivalent on {main_ref}"
         )
     if report.behind > max_behind:
         report.verdict = "DRIFT"

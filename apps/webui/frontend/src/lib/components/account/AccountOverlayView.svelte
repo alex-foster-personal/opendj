@@ -83,9 +83,7 @@
 
 	const avatarUrl = $derived(user?.avatar_url ?? sessionAvatarUrl ?? null);
 	const showAvatar = $derived(Boolean(avatarUrl) && !avatarBroken);
-	const initial = $derived(
-		(user?.name?.trim()?.[0] ?? user?.email?.[0] ?? '?').toUpperCase()
-	);
+	const initial = $derived((user?.name?.trim()?.[0] ?? user?.email?.[0] ?? '?').toUpperCase());
 	const firstSeenLabel = $derived.by(() => {
 		if (user?.created_at === undefined || user.created_at === '') return null;
 		const parsed = new Date(user.created_at);
@@ -135,8 +133,8 @@
 					<section class="ac-section ac-primary" aria-label="Identity">
 						{#if user === null}
 							<p class="ac-muted">
-								Not signed in. openDJ works exactly the same either way; signing in only
-								tells it who you are.
+								Not signed in. openDJ works exactly the same either way; signing in only tells it
+								who you are.
 							</p>
 						{:else}
 							<div class="ac-identity">
@@ -187,7 +185,9 @@
 							<dl class="ac-rows ac-rows-primary">
 								<dt>Plan</dt>
 								<dd>{plan.label}</dd>
-								<dt title="The payment provider this plan came from. Empty means none is configured, so the plan gates nothing.">
+								<dt
+									title="The payment provider this plan came from. Empty means none is configured, so the plan gates nothing."
+								>
 									Payment provider
 								</dt>
 								<dd>{plan.provider ?? 'none configured'}</dd>
@@ -214,7 +214,9 @@
 											<li>
 												<span class="ac-store-label">{row.feature_id}</span>
 												<span class="ac-muted"
-													>{row.state === null ? 'No subscription' : row.state.replaceAll('_', ' ')}</span
+													>{row.state === null
+														? 'No subscription'
+														: row.state.replaceAll('_', ' ')}</span
 												>
 											</li>
 										{/each}
@@ -245,8 +247,8 @@
 
 						{#if features.length === 0}
 							<p class="ac-muted">
-								No feature in this build is gated by a plan, so there is nothing here to
-								include or leave out.
+								No feature in this build is gated by a plan, so there is nothing here to include or
+								leave out.
 							</p>
 						{:else}
 							<ul class="ac-features">
@@ -298,9 +300,9 @@
 							{:else}
 								{#if absentInThisBuild.length > 0}
 									<p class="ac-muted">
-										This build does not include the following. They are not missing from
-										openDJ and they are not withheld from your account; this particular
-										build cannot offer them.
+										This build does not include the following. They are not missing from openDJ and
+										they are not withheld from your account; this particular build cannot offer
+										them.
 									</p>
 									<ul class="ac-features">
 										{#each absentInThisBuild as row (row.flag.flag_id)}
@@ -329,9 +331,8 @@
 										 overrides. One sentence true of both states beats two
 										 sentences where one is unreachable. -->
 									<p class="ac-muted">
-										Off in the flag configuration this daemon resolved: a declared
-										default, or a local override. Neither the App Store build nor
-										your plan is involved.
+										Off in the flag configuration this daemon resolved: a declared default, or a
+										local override. Neither the App Store build nor your plan is involved.
 									</p>
 									<ul class="ac-features">
 										<!-- NO `flag.note` here, unlike the store group above, and that
@@ -392,9 +393,8 @@
 							<h3>Danger zone</h3>
 							{#if confirmingDelete}
 								<p class="ac-error" role="alert">
-									This deletes your account row and every sign-in session on this machine.
-									It cannot be undone. Your music library, playlists and analysis are not
-									touched.
+									This deletes your account row and every sign-in session on this machine. It cannot
+									be undone. Your music library, playlists and analysis are not touched.
 								</p>
 								<div class="ac-actions">
 									<button
@@ -418,8 +418,8 @@
 								</div>
 							{:else}
 								<p class="ac-muted">
-									Permanently remove your account row and sign-in sessions from this machine.
-									Your music library is not affected.
+									Permanently remove your account row and sign-in sessions from this machine. Your
+									music library is not affected.
 								</p>
 								<button
 									type="button"

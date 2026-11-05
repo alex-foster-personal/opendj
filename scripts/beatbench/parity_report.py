@@ -81,7 +81,10 @@ ANALYZER_IDENTITY_KEYS = (
 #: run. Requiring them PRESENT is what makes a decode divergence attributable
 #: instead of mysterious.
 ENVIRONMENT_KEYS = (
-    "producer", "producer_version", "torch_version", "device",
+    "producer",
+    "producer_version",
+    "torch_version",
+    "device",
     # `torchaudio_version` belongs here rather than in the identity keys for
     # the same reason `torch_version` does, and it matters more: it is the
     # DECODER. `beat_this.inference.load_audio` calls `torchaudio.load` first
@@ -92,7 +95,9 @@ ENVIRONMENT_KEYS = (
     # fingerprints match ACROSS a decoder version difference part of the
     # result instead of an unrecorded coincidence (Codex P1 BLOCKING, PR #1660,
     # discussion_r3977265421).
-    "numpy_version", "torchaudio_version", "soundfile_version",
+    "numpy_version",
+    "torchaudio_version",
+    "soundfile_version",
 )
 
 #: The one required field whose null is MEANINGFUL: a CPU producer has no
@@ -158,19 +163,13 @@ def _role_refusal(gpu: dict[str, Any], cpu: dict[str, Any]) -> str | None:
     """
     problems = []
     if not gpu.get(ROLE_KEY):
-        problems.append(
-            f"the --gpu side names no accelerator ({ROLE_KEY}={gpu.get(ROLE_KEY)!r})"
-        )
+        problems.append(f"the --gpu side names no accelerator ({ROLE_KEY}={gpu.get(ROLE_KEY)!r})")
     if str(gpu.get("device", "")).lower() == "cpu":
         problems.append("the --gpu side reports device 'cpu'")
     if cpu.get(ROLE_KEY) is not None:
-        problems.append(
-            f"the --cpu side names an accelerator ({ROLE_KEY}={cpu.get(ROLE_KEY)!r})"
-        )
+        problems.append(f"the --cpu side names an accelerator ({ROLE_KEY}={cpu.get(ROLE_KEY)!r})")
     if str(cpu.get("device", "")).lower() != "cpu":
-        problems.append(
-            f"the --cpu side reports device {cpu.get('device')!r}, not 'cpu'"
-        )
+        problems.append(f"the --cpu side reports device {cpu.get('device')!r}, not 'cpu'")
     if not problems:
         return None
     return (
@@ -182,12 +181,7 @@ def _role_refusal(gpu: dict[str, Any], cpu: dict[str, Any]) -> str | None:
 def _identity_refusal(gpu: dict[str, Any], cpu: dict[str, Any]) -> str | None:
     """Why these two artifacts may not be compared, or None if they may be."""
     required = (*ANALYZER_IDENTITY_KEYS, *ENVIRONMENT_KEYS, ROLE_KEY)
-    absent = [
-        f"{side}:{key}"
-        for side, header in (("gpu", gpu), ("cpu", cpu))
-        for key in required
-        if key not in header
-    ]
+    absent = [f"{side}:{key}" for side, header in (("gpu", gpu), ("cpu", cpu)) for key in required if key not in header]
     if absent:
         return (
             "an artifact that does not say what produced it cannot be shown to "
@@ -215,16 +209,11 @@ def _identity_refusal(gpu: dict[str, Any], cpu: dict[str, Any]) -> str | None:
     role = _role_refusal(gpu, cpu)
     if role is not None:
         return role
-    differing = {
-        key: {"gpu": gpu[key], "cpu": cpu[key]}
-        for key in ANALYZER_IDENTITY_KEYS
-        if gpu[key] != cpu[key]
-    }
+    differing = {key: {"gpu": gpu[key], "cpu": cpu[key]} for key in ANALYZER_IDENTITY_KEYS if gpu[key] != cpu[key]}
     if differing:
         return (
             "the two sides ran DIFFERENT analyzer configurations, so equal beats "
-            "would not show that the accelerator is irrelevant:\n"
-            + json.dumps(differing, indent=2)
+            "would not show that the accelerator is irrelevant:\n" + json.dumps(differing, indent=2)
         )
     return None
 
@@ -324,9 +313,7 @@ def _positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
-def _report_downbeats(
-    measured: PairMeasurements, tolerance_ms: float
-) -> list[tuple[float, str]]:
+def _report_downbeats(measured: PairMeasurements, tolerance_ms: float) -> list[tuple[float, str]]:
     """Print the downbeat verdict, return the clips over tolerance.
 
     Same tolerance as the beats: a downbeat IS a beat, marked. Reported on its
@@ -469,10 +456,7 @@ def compare(gpu_path: str, cpu_path: str, tolerance_ms: float) -> int:
     gaps.sort(reverse=True)
     over = [(g, n) for g, n in gaps if g > tolerance_ms]
     values = [g for g, _ in gaps]
-    print(
-        f"[compare] beat times: median worst-gap {st.median(values):.2f} ms, "
-        f"max {values[0]:.2f} ms on {gaps[0][1]}"
-    )
+    print(f"[compare] beat times: median worst-gap {st.median(values):.2f} ms, max {values[0]:.2f} ms on {gaps[0][1]}")
     print(
         f"[compare] {len(over)} of {len(gaps)} clips exceed {tolerance_ms:.0f} ms"
         + (f", worst {over[:3]}" if over else "")
@@ -481,8 +465,13 @@ def compare(gpu_path: str, cpu_path: str, tolerance_ms: float) -> int:
     down_over = _report_downbeats(measured, tolerance_ms)
 
     failed = (
-        fingerprint_mismatch or fingerprint_absent or over or unmeasurable
-        or down_over or measured.downbeat_presence or measured.decode_field_mismatch
+        fingerprint_mismatch
+        or fingerprint_absent
+        or over
+        or unmeasurable
+        or down_over
+        or measured.downbeat_presence
+        or measured.decode_field_mismatch
     )
     if failed:
         return 1
@@ -491,7 +480,7 @@ def compare(gpu_path: str, cpu_path: str, tolerance_ms: float) -> int:
         # compared. That is a legitimate analyzer answer and it is NOT a passed
         # control, so it exits 2 (UNMEASURED, never read as a pass) rather than
         # 0. This branch printed the warning and returned 0 when first written,
-        # which is precisely the defect .claude/rules/verification.md names:
+        # which is precisely the defect (private path) names:
         # a failed measurement rendered as a result.
         print(
             "[compare] UNMEASURED downbeats: no clip carried downbeats on either "
@@ -507,8 +496,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="compare a GPU run against a CPU run")
     ap.add_argument("--gpu", required=True, help="the accelerator side's artifact")
     ap.add_argument("--cpu", required=True, help="the CPU side's artifact")
-    ap.add_argument("--tolerance-ms", type=finite_tolerance_ms,
-                    default=DEFAULT_TOLERANCE_MS)
+    ap.add_argument("--tolerance-ms", type=finite_tolerance_ms, default=DEFAULT_TOLERANCE_MS)
     args = ap.parse_args(argv)
     return compare(args.gpu, args.cpu, args.tolerance_ms)
 

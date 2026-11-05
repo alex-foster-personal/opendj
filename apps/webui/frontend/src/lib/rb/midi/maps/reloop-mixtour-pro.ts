@@ -43,32 +43,92 @@ function _deckHints(deck: DeckId): ControlHint[] {
 	const p = 4 + deck;
 	const e = 8 + deck;
 	return [
-		{ source: { ch: n, kind: 'note', id: 0x08 }, label: `MODE + LOAD deck-layer report (deck ${deck}; hardware-routed)` },
-		{ source: { ch: p, kind: 'note', id: 0x08 }, label: `MODE hold (deck ${deck}; hardware modifier)` },
-		{ source: { ch: p, kind: 'note', id: 0x10 }, label: `SHIFT + LOAD library section (deck ${deck}; not available)` },
-		{ source: { ch: p, kind: 'note', id: 0x25 }, label: `SHIFT + Neural Mix view (deck ${deck}; not available)` },
-		{ source: { ch: p, kind: 'note', id: 0x26 }, label: `SHIFT + MODE (deck ${deck}; no documented function)` },
-		{ source: { ch: n, kind: 'note', id: 0x0b }, label: `PITCH BEND + hold (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x0c }, label: `PITCH BEND - hold (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x12 }, label: `Crossfader FX cue layer (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x2c }, label: `LOOP IN move mode (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x2e }, label: `LOOP OUT move mode (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x2d }, label: `crossfader-start report (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'note', id: 0x31 }, label: `line-fader start report (deck ${deck}; not available)` },
-		{ source: { ch: n, kind: 'cc', id: 0x06 }, label: `MODE + browse seek/loop-out adjust (deck ${deck}; not available)` },
-		{ source: { ch: e, kind: 'note', id: 0x00 }, label: `SHIFT + FX paddle backspin (deck ${deck}; not available)` },
-		{ source: { ch: e, kind: 'cc', id: 0x03 }, label: `MODE + FX parameter (deck ${deck}; not available)` },
+		{
+			source: { ch: n, kind: 'note', id: 0x08 },
+			label: `MODE + LOAD deck-layer report (deck ${deck}; hardware-routed)`
+		},
+		{
+			source: { ch: p, kind: 'note', id: 0x08 },
+			label: `MODE hold (deck ${deck}; hardware modifier)`
+		},
+		{
+			source: { ch: p, kind: 'note', id: 0x10 },
+			label: `SHIFT + LOAD library section (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: p, kind: 'note', id: 0x25 },
+			label: `SHIFT + Neural Mix view (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: p, kind: 'note', id: 0x26 },
+			label: `SHIFT + MODE (deck ${deck}; no documented function)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x0b },
+			label: `PITCH BEND + hold (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x0c },
+			label: `PITCH BEND - hold (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x12 },
+			label: `Crossfader FX cue layer (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x2c },
+			label: `LOOP IN move mode (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x2e },
+			label: `LOOP OUT move mode (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x2d },
+			label: `crossfader-start report (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x31 },
+			label: `line-fader start report (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x06 },
+			label: `MODE + browse seek/loop-out adjust (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: e, kind: 'note', id: 0x00 },
+			label: `SHIFT + FX paddle backspin (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: e, kind: 'cc', id: 0x03 },
+			label: `MODE + FX parameter (deck ${deck}; not available)`
+		},
 		{ source: { ch: e, kind: 'note', id: 0x05 }, label: `FX paddle (deck ${deck}; not available)` },
-		{ source: { ch: e, kind: 'note', id: 0x0a }, label: `SHIFT + FX PARAM previous (deck ${deck}; undocumented)` },
-		{ source: { ch: e, kind: 'note', id: 0x0b }, label: `MODE + FX SELECT previous (deck ${deck}; not available)` },
-		{ source: { ch: e, kind: 'note', id: 0x0c }, label: `MODE + FX SELECT next (deck ${deck}; not available)` },
-		{ source: { ch: e, kind: 'note', id: 0x0d }, label: `SHIFT + FX PARAM next (deck ${deck}; undocumented)` }
+		{
+			source: { ch: e, kind: 'note', id: 0x0a },
+			label: `SHIFT + FX PARAM previous (deck ${deck}; undocumented)`
+		},
+		{
+			source: { ch: e, kind: 'note', id: 0x0b },
+			label: `MODE + FX SELECT previous (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: e, kind: 'note', id: 0x0c },
+			label: `MODE + FX SELECT next (deck ${deck}; not available)`
+		},
+		{
+			source: { ch: e, kind: 'note', id: 0x0d },
+			label: `SHIFT + FX PARAM next (deck ${deck}; undocumented)`
+		}
 	];
 }
 
 const GLOBAL_HINTS: ControlHint[] = [
 	{ source: { ch: 16, kind: 'note', id: 0x00 }, label: 'SHIFT hold (hardware modifier)' },
-	{ source: { ch: 16, kind: 'cc', id: 0x01 }, label: 'SHIFT + browse section scroll (not available)' },
+	{
+		source: { ch: 16, kind: 'cc', id: 0x01 },
+		label: 'SHIFT + browse section scroll (not available)'
+	},
 	{ source: { ch: 16, kind: 'cc', id: 0x02 }, label: 'FX DRY/WET (not available)' },
 	{ source: { ch: 16, kind: 'note', id: 0x03 }, label: 'FX PARAM previous (not available)' },
 	{ source: { ch: 16, kind: 'note', id: 0x04 }, label: 'FX PARAM next (not available)' },
@@ -88,22 +148,58 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		{ source: { ch: n, kind: 'note', id: 0x02 }, action: { type: 'deck_sync_toggle', deck } },
 		{ source: { ch: n, kind: 'note', id: 0x03 }, action: { type: 'deck_manual_loop_cycle', deck } },
 		{ source: { ch: n, kind: 'note', id: 0x40 }, action: { type: 'deck_auto_loop_toggle', deck } },
-		{ source: { ch: n, kind: 'note', id: 0x2a }, action: { type: 'deck_loop_scale', deck, factor: 0.5 } },
-		{ source: { ch: n, kind: 'note', id: 0x2b }, action: { type: 'deck_loop_scale', deck, factor: 2 } },
+		{
+			source: { ch: n, kind: 'note', id: 0x2a },
+			action: { type: 'deck_loop_scale', deck, factor: 0.5 }
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x2b },
+			action: { type: 'deck_loop_scale', deck, factor: 2 }
+		},
 		{ source: { ch: n, kind: 'note', id: 0x29 }, action: { type: 'deck_key_sync_toggle', deck } },
-		{ source: { ch: n, kind: 'note', id: 0x27 }, action: { type: 'deck_key_nudge', deck, semitones: -1 } },
-		{ source: { ch: n, kind: 'note', id: 0x28 }, action: { type: 'deck_key_nudge', deck, semitones: 1 } },
-		{ source: { ch: n, kind: 'note', id: 0x2f }, action: { type: 'deck_tempo_nudge', deck, direction: -1 } },
-		{ source: { ch: n, kind: 'note', id: 0x30 }, action: { type: 'deck_tempo_nudge', deck, direction: 1 } },
+		{
+			source: { ch: n, kind: 'note', id: 0x27 },
+			action: { type: 'deck_key_nudge', deck, semitones: -1 }
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x28 },
+			action: { type: 'deck_key_nudge', deck, semitones: 1 }
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x2f },
+			action: { type: 'deck_tempo_nudge', deck, direction: -1 }
+		},
+		{
+			source: { ch: n, kind: 'note', id: 0x30 },
+			action: { type: 'deck_tempo_nudge', deck, direction: 1 }
+		},
 		{ source: { ch: n, kind: 'note', id: 0x1b }, action: { type: 'channel_cue', deck } },
 		{ source: { ch: p, kind: 'note', id: 0x0a }, action: { type: 'browse_load', deck } },
 		{ source: { ch: p, kind: 'note', id: 0x24 }, action: { type: 'deck_stem_eq_toggle', deck } },
-		{ source: { ch: n, kind: 'cc', id: 0x16 }, action: { type: 'mixer_channel', deck, target: 'trim' } },
-		{ source: { ch: n, kind: 'cc', id: 0x17 }, action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
-		{ source: { ch: n, kind: 'cc', id: 0x18 }, action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
-		{ source: { ch: n, kind: 'cc', id: 0x19 }, action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
-		{ source: { ch: n, kind: 'cc', id: 0x1a }, action: { type: 'mixer_channel', deck, target: 'filter' } },
-		{ source: { ch: n, kind: 'cc', id: 0x1c }, action: { type: 'mixer_channel', deck, target: 'fader' } },
+		{
+			source: { ch: n, kind: 'cc', id: 0x16 },
+			action: { type: 'mixer_channel', deck, target: 'trim' }
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x17 },
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' }
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x18 },
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' }
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x19 },
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' }
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x1a },
+			action: { type: 'mixer_channel', deck, target: 'filter' }
+		},
+		{
+			source: { ch: n, kind: 'cc', id: 0x1c },
+			action: { type: 'mixer_channel', deck, target: 'fader' }
+		},
 		...PAD_MODES.map((mode, index): MidiBinding => ({
 			source: { ch: p, kind: 'note', id: index },
 			action: { type: 'controller_pad_mode', deck, mode }
@@ -111,11 +207,21 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		...HOT_CUE_SLOTS.flatMap((_slot, index): MidiBinding[] => [
 			{
 				source: { ch: p, kind: 'note', id: 0x14 + index },
-				action: { type: 'controller_pad', deck, pad: (index + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8, shifted: false }
+				action: {
+					type: 'controller_pad',
+					deck,
+					pad: (index + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+					shifted: false
+				}
 			},
 			{
 				source: { ch: p, kind: 'note', id: 0x1c + index },
-				action: { type: 'controller_pad', deck, pad: (index + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8, shifted: true }
+				action: {
+					type: 'controller_pad',
+					deck,
+					pad: (index + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+					shifted: true
+				}
 			}
 		])
 	];
@@ -129,7 +235,10 @@ const GLOBAL_BINDINGS: MidiBinding[] = [
 		relativeUnit: true,
 		invert: true
 	},
-	{ source: { ch: 16, kind: 'cc', id: 0x08 }, action: { type: 'mixer_global', target: 'crossfader' } },
+	{
+		source: { ch: 16, kind: 'cc', id: 0x08 },
+		action: { type: 'mixer_global', target: 'crossfader' }
+	},
 	{ source: { ch: 16, kind: 'cc', id: 0x0a }, action: { type: 'mixer_global', target: 'master' } },
 	{ source: { ch: 16, kind: 'cc', id: 0x0c }, action: { type: 'headphone_level' } },
 	{ source: { ch: 16, kind: 'cc', id: 0x0d }, action: { type: 'headphone_mix' } }
@@ -141,14 +250,32 @@ function _deckLeds(deck: DeckId): LedRule[] {
 	const dim = deck <= 2 ? 0x02 : 0x01;
 	const full = deck <= 2 ? 0x7e : 0x7d;
 	const rules: LedRule[] = [
-		{ trigger: { kind: 'stem_eq_enabled', deck }, out: { ch: p, note: 0x24, velocityOn: 0x7f, velocityOff: 0x01 } },
-		{ trigger: { kind: 'deck_playing', deck }, out: { ch: n, note: 0x00, velocityOn: full, velocityOff: dim } },
+		{
+			trigger: { kind: 'stem_eq_enabled', deck },
+			out: { ch: p, note: 0x24, velocityOn: 0x7f, velocityOff: 0x01 }
+		},
+		{
+			trigger: { kind: 'deck_playing', deck },
+			out: { ch: n, note: 0x00, velocityOn: full, velocityOff: dim }
+		},
 		// The engine has no separate cue-indicator bit; keep the proved idle
 		// colour rather than pretending loaded means cue-active.
-		{ trigger: { kind: 'deck_loaded', deck }, out: { ch: n, note: 0x01, velocityOn: dim, velocityOff: dim } },
-		{ trigger: { kind: 'beat_sync_enabled', deck }, out: { ch: n, note: 0x02, velocityOn: full, velocityOff: dim } },
-		{ trigger: { kind: 'loop_engaged', deck }, out: { ch: n, note: 0x03, velocityOn: full, velocityOff: dim } },
-		{ trigger: { kind: 'channel_cue_enabled', deck }, out: { ch: n, note: 0x1b, velocityOn: 0x7f, velocityOff: 0x01 } }
+		{
+			trigger: { kind: 'deck_loaded', deck },
+			out: { ch: n, note: 0x01, velocityOn: dim, velocityOff: dim }
+		},
+		{
+			trigger: { kind: 'beat_sync_enabled', deck },
+			out: { ch: n, note: 0x02, velocityOn: full, velocityOff: dim }
+		},
+		{
+			trigger: { kind: 'loop_engaged', deck },
+			out: { ch: n, note: 0x03, velocityOn: full, velocityOff: dim }
+		},
+		{
+			trigger: { kind: 'channel_cue_enabled', deck },
+			out: { ch: n, note: 0x1b, velocityOn: 0x7f, velocityOff: 0x01 }
+		}
 	];
 	for (const [index, mode] of PAD_MODES.entries()) {
 		rules.push({
@@ -178,10 +305,16 @@ function _deckLeds(deck: DeckId): LedRule[] {
 	}
 	for (const [index, stem] of CONTROLLER_NEURAL_STEMS.entries()) {
 		for (const offset of [0, 8]) {
-			rules.push({ trigger: { kind: 'stem_active', deck, stem }, padMode: 'neural_mix',
-				out: { ch: p, note: 0x14 + index + offset, velocityOn: 120, velocityOff: 56 } });
-			rules.push({ trigger: { kind: 'stem_solo', deck, stem }, padMode: 'neural_mix',
-				out: { ch: p, note: 0x18 + index + offset, velocityOn: 127, velocityOff: 63 } });
+			rules.push({
+				trigger: { kind: 'stem_active', deck, stem },
+				padMode: 'neural_mix',
+				out: { ch: p, note: 0x14 + index + offset, velocityOn: 120, velocityOff: 56 }
+			});
+			rules.push({
+				trigger: { kind: 'stem_solo', deck, stem },
+				padMode: 'neural_mix',
+				out: { ch: p, note: 0x18 + index + offset, velocityOn: 127, velocityOff: 63 }
+			});
 		}
 	}
 	// Firmware reveals these separate banks only while MODE / SHIFT+MODE is
@@ -212,11 +345,5 @@ export const RELOOP_MIXTOUR_PRO_MAP: DeviceMap = {
 	],
 	leds: [..._deckLeds(1), ..._deckLeds(2), ..._deckLeds(3), ..._deckLeds(4)],
 	meters: [...MIXTOUR_PRO_METERS],
-	hints: [
-		..._deckHints(1),
-		..._deckHints(2),
-		..._deckHints(3),
-		..._deckHints(4),
-		...GLOBAL_HINTS
-	]
+	hints: [..._deckHints(1), ..._deckHints(2), ..._deckHints(3), ..._deckHints(4), ...GLOBAL_HINTS]
 };

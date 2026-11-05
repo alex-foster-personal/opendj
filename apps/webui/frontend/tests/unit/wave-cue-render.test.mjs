@@ -285,18 +285,14 @@ describe('library preview marker parity (LIBUX-12)', () => {
 			miniBandHeight < previewHeight / 2,
 			`the ${miniBandHeight}px mini loop band obscures too much of a ${previewHeight}px preview`
 		);
-		assert.equal(cues.markerBandHeightForSurface(60), 10, 'large surfaces clamp at the main-wave cap');
+		assert.equal(
+			cues.markerBandHeightForSurface(60),
+			10,
+			'large surfaces clamp at the main-wave cap'
+		);
 
 		const rec = recordingCtx();
-		cues.drawLoopCueBands(
-			rec.ctx,
-			[LOOP_HOT_CUE_B],
-			0,
-			10,
-			240,
-			PALETTE,
-			miniBandHeight
-		);
+		cues.drawLoopCueBands(rec.ctx, [LOOP_HOT_CUE_B], 0, 10, 240, PALETTE, miniBandHeight);
 		assert.equal(rec.fillRects[0].h, miniBandHeight);
 		assert.equal(rec.strokeRects[0].h, miniBandHeight - 1);
 	});
@@ -329,6 +325,10 @@ describe('library preview marker parity (LIBUX-12)', () => {
 		assert.match(helper, /resolveRowMarkerAnlz\(/, 'markers bypass the pure resolver');
 		assert.match(helper, /resolveDisplayedAnlz\(/, 'loaded deck ANLZ is not reused');
 		assert.match(helper, /getAnlzEntry\(/, 'shared real ANLZ cache is not reused');
-		assert.doesNotMatch(helper, /ensureAnlz|fetchAnlz/, 'virtual rows must not fan out /anlz fetches');
+		assert.doesNotMatch(
+			helper,
+			/ensureAnlz|fetchAnlz/,
+			'virtual rows must not fan out /anlz fetches'
+		);
 	});
 });

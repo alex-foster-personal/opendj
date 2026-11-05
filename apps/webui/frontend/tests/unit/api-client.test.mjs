@@ -164,9 +164,7 @@ test('requireBody hands back both halves so a caller can read a header', async (
 			headers: { 'content-type': 'application/json', etag: '"rev-7"' }
 		});
 
-	const { data, response } = clientModule.requireBody(
-		await clientModule.api.GET('/api/v1/health')
-	);
+	const { data, response } = clientModule.requireBody(await clientModule.api.GET('/api/v1/health'));
 
 	assert.equal(data.status, 'ok');
 	assert.equal(response.headers.get('etag'), '"rev-7"');

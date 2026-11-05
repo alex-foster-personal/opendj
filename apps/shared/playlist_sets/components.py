@@ -8,6 +8,7 @@ component per slot, in slot order; a SET-05 set may name a route as its parts.
 Component tags are not MyTag: MyTag labels a track and syncs to rekordbox,
 while a component tag labels a run inside one playlist and stays here.
 """
+
 from __future__ import annotations
 
 import math
@@ -32,10 +33,7 @@ class ComponentInUseError(Exception):
     def __init__(self, component_id: int, set_ids: list[int]) -> None:
         self.component_id = component_id
         self.set_ids = set_ids
-        super().__init__(
-            f"component {component_id} is used by sets {set_ids}; "
-            "remove it from those sets first"
-        )
+        super().__init__(f"component {component_id} is used by sets {set_ids}; remove it from those sets first")
 
 
 @dataclass(slots=True)
@@ -105,14 +103,12 @@ def _ensure_slot(conn: sqlite3.Connection, playlist_id: str, slot: str) -> None:
         position = DEFAULT_SLOTS.index(slot) * 100
     else:
         row = conn.execute(
-            "SELECT COALESCE(MAX(position), -1) FROM playlist_component_slots "
-            "WHERE playlist_id=?",
+            "SELECT COALESCE(MAX(position), -1) FROM playlist_component_slots WHERE playlist_id=?",
             (playlist_id,),
         ).fetchone()
         position = max(int(row[0]) + 1, len(DEFAULT_SLOTS) * 100)
     conn.execute(
-        "INSERT INTO playlist_component_slots(playlist_id, slot, position) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_component_slots(playlist_id, slot, position) VALUES (?, ?, ?)",
         (playlist_id, slot, position),
     )
 
@@ -120,8 +116,7 @@ def _ensure_slot(conn: sqlite3.Connection, playlist_id: str, slot: str) -> None:
 def _write_tracks(conn: sqlite3.Connection, cid: int, tracks: list[str]) -> None:
     conn.execute("DELETE FROM playlist_component_entries WHERE component_id=?", (cid,))
     conn.executemany(
-        "INSERT INTO playlist_component_entries(component_id, position, stable_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_component_entries(component_id, position, stable_id) VALUES (?, ?, ?)",
         [(cid, i, sid) for i, sid in enumerate(tracks)],
     )
 
@@ -155,8 +150,7 @@ def create_component(
     with write_unit(conn):
         _ensure_slot(conn, playlist_id, slot)
         cur = conn.execute(
-            "INSERT INTO playlist_components(playlist_id, name, slot, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO playlist_components(playlist_id, name, slot, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             (playlist_id, name, slot, now, now),
         )
         if cur.lastrowid is None:
@@ -164,17 +158,14 @@ def create_component(
         cid = cur.lastrowid
         _write_tracks(conn, cid, tracks)
         _write_tags(conn, cid, clean_tags)
-        emit_playlist_component_changed(
-            conn, playlist_id=playlist_id, component_id=cid, action="component_created"
-        )
+        emit_playlist_component_changed(conn, playlist_id=playlist_id, component_id=cid, action="component_created")
     return cid
 
 
 def load_component(conn: sqlite3.Connection, component_id: int) -> Component:
     apply_playlist_set_migrations(conn)
     row = conn.execute(
-        "SELECT id, playlist_id, name, slot, created_at, updated_at "
-        "FROM playlist_components WHERE id=?",
+        "SELECT id, playlist_id, name, slot, created_at, updated_at FROM playlist_components WHERE id=?",
         (component_id,),
     ).fetchone()
     if row is None:
@@ -187,8 +178,7 @@ def _hydrate(conn: sqlite3.Connection, row: tuple) -> Component:
     tracks = [
         str(r[0])
         for r in conn.execute(
-            "SELECT stable_id FROM playlist_component_entries "
-            "WHERE component_id=? ORDER BY position ASC",
+            "SELECT stable_id FROM playlist_component_entries WHERE component_id=? ORDER BY position ASC",
             (cid,),
         )
     ]
@@ -217,8 +207,7 @@ def list_slots(conn: sqlite3.Connection, playlist_id: str) -> list[str]:
     return [
         str(r[0])
         for r in conn.execute(
-            "SELECT slot FROM playlist_component_slots WHERE playlist_id=? "
-            "ORDER BY position ASC, slot ASC",
+            "SELECT slot FROM playlist_component_slots WHERE playlist_id=? ORDER BY position ASC, slot ASC",
             (playlist_id,),
         )
     ]
@@ -309,16 +298,13 @@ def delete_component(conn: sqlite3.Connection, component_id: int) -> None:
         users = [
             int(r[0])
             for r in conn.execute(
-                "SELECT DISTINCT set_id FROM playlist_set_parts WHERE component_id=? "
-                "ORDER BY set_id",
+                "SELECT DISTINCT set_id FROM playlist_set_parts WHERE component_id=? ORDER BY set_id",
                 (component_id,),
             )
         ]
         if users:
             raise ComponentInUseError(component_id, users)
-        conn.execute(
-            "DELETE FROM playlist_component_entries WHERE component_id=?", (component_id,)
-        )
+        conn.execute("DELETE FROM playlist_component_entries WHERE component_id=?", (component_id,))
         conn.execute("DELETE FROM playlist_component_tags WHERE component_id=?", (component_id,))
         conn.execute("DELETE FROM playlist_components WHERE id=?", (component_id,))
         emit_playlist_component_changed(
@@ -329,9 +315,7 @@ def delete_component(conn: sqlite3.Connection, component_id: int) -> None:
         )
 
 
-def resolve_parts(
-    conn: sqlite3.Connection, parts: Sequence[int]
-) -> list[tuple[str, int]]:
+def resolve_parts(conn: sqlite3.Connection, parts: Sequence[int]) -> list[tuple[str, int]]:
     """The tracks a route plays, as (stable_id, component_id) in order."""
     out: list[tuple[str, int]] = []
     for cid in parts:
@@ -356,14 +340,11 @@ def slot_rank(conn: sqlite3.Connection, playlist_id: str, slot: str) -> int:
     if slot in DEFAULT_SLOTS:
         return DEFAULT_SLOTS.index(slot) * 100
     raise ValueError(
-        f"slot {slot!r} is not in playlist {playlist_id!r}'s slot order; "
-        "add a component in that slot there first"
+        f"slot {slot!r} is not in playlist {playlist_id!r}'s slot order; add a component in that slot there first"
     )
 
 
-def validate_parts(
-    conn: sqlite3.Connection, playlist_id: str, parts: Sequence[int]
-) -> list[int]:
+def validate_parts(conn: sqlite3.Connection, playlist_id: str, parts: Sequence[int]) -> list[int]:
     """Check a route for ``playlist_id``'s set.
 
     Non-empty, every component exists, and at most one component per slot,
@@ -381,16 +362,12 @@ def validate_parts(
         comp = load_component(conn, cid)
         if comp.slot in seen:
             raise ValueError(
-                f"a route takes one component per slot; components {seen[comp.slot]} "
-                f"and {cid} are both {comp.slot!r}"
+                f"a route takes one component per slot; components {seen[comp.slot]} and {cid} are both {comp.slot!r}"
             )
         seen[comp.slot] = cid
         rank = slot_rank(conn, playlist_id, comp.slot)
         if rank < last_rank:
-            raise ValueError(
-                f"a route follows the slot order; {comp.slot!r} (component {cid}) "
-                "comes too late"
-            )
+            raise ValueError(f"a route follows the slot order; {comp.slot!r} (component {cid}) comes too late")
         last_rank = rank
     return clean
 
@@ -429,16 +406,13 @@ def set_parts(conn: sqlite3.Connection, set_id: int) -> list[int]:
     return [
         int(r[0])
         for r in conn.execute(
-            "SELECT component_id FROM playlist_set_parts WHERE set_id=? "
-            "ORDER BY position ASC",
+            "SELECT component_id FROM playlist_set_parts WHERE set_id=? ORDER BY position ASC",
             (set_id,),
         )
     ]
 
 
-def find_set_for_route(
-    conn: sqlite3.Connection, playlist_id: str, parts: Sequence[int]
-) -> int | None:
+def find_set_for_route(conn: sqlite3.Connection, playlist_id: str, parts: Sequence[int]) -> int | None:
     """The set on this playlist whose route is exactly ``parts``, if any."""
     wanted = [int(p) for p in parts]
     for (sid,) in conn.execute(
@@ -486,9 +460,7 @@ def list_routes(
     return RouteListing(routes=routes, total=total, truncated=offset + len(routes) < total)
 
 
-def _slot_groups(
-    conn: sqlite3.Connection, playlist_id: str, comps: list[Component]
-) -> list[list[Component]]:
+def _slot_groups(conn: sqlite3.Connection, playlist_id: str, comps: list[Component]) -> list[list[Component]]:
     """The playlist's components grouped by slot, in slot order, empty slots dropped."""
     by_slot: dict[str, list[Component]] = {}
     for comp in comps:
@@ -520,11 +492,7 @@ def _split_saved(
     route_to_set: dict[tuple[int, ...], int] = {}
     for sid, cids in saved.items():
         route_to_set.setdefault(tuple(cids), sid)
-    extra = [
-        (sid, cids)
-        for sid, cids in saved.items()
-        if len(cids) != slot_count or not set(cids) <= local_ids
-    ]
+    extra = [(sid, cids) for sid, cids in saved.items() if len(cids) != slot_count or not set(cids) <= local_ids]
     return route_to_set, extra
 
 

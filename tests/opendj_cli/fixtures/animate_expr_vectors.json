@@ -1,0 +1,28 @@
+{
+  "_doc": "ANIM-01/ANIM-03: one table both parsers are held to. Python: (private path). Page: apps/webui/frontend/tests/unit/animate-expr.test.mjs. An accept row gives the ramp `to` and AGENT-04 Duration; a refuse row gives the failing token (null when none) and the message.",
+  "accept": [
+    {"expr": "0 --over 8bars --anchor next_downbeat", "to": 0, "over": {"unit": "bars", "n": 8, "anchor": "next_downbeat"}},
+    {"expr": "0 --over 8bars", "to": 0, "over": {"unit": "bars", "n": 8}},
+    {"expr": "  0.5   --over 1bar  ", "to": 0.5, "over": {"unit": "bars", "n": 1}},
+    {"expr": "1 --over 16beats --clock 2", "to": 1, "over": {"unit": "beats", "n": 16, "clock": 2}},
+    {"expr": "0.25 --anchor next_phrase --over 1phrase --clock master", "to": 0.25, "over": {"unit": "phrases", "n": 1, "anchor": "next_phrase", "clock": "master"}},
+    {"expr": ".2 --over 750ms", "to": 0.2, "over": {"unit": "ms", "n": 750}},
+    {"expr": "1 --over 2.5ms", "to": 1, "over": {"unit": "ms", "n": 2.5}},
+    {"expr": "0 --over 4BEATS", "to": 0, "over": {"unit": "beats", "n": 4}}
+  ],
+  "refuse": [
+    {"expr": "", "token": null, "message": "empty: type a target then --over, e.g. 0 --over 8bars"},
+    {"expr": "@8 0", "token": "@8", "message": "expected a target value 0..1 first, e.g. 0 --over 8bars"},
+    {"expr": "-0.1 --over 8bars", "token": "-0.1", "message": "expected a target value 0..1 first, e.g. 0 --over 8bars"},
+    {"expr": "1.5 --over 8bars", "token": "1.5", "message": "target must be within 0..1 (0.5 is flat for EQ, TRIM and FILTER)"},
+    {"expr": "0", "token": null, "message": "missing --over <duration>, e.g. 0 --over 8bars"},
+    {"expr": "0 --over", "token": "--over", "message": "missing its value"},
+    {"expr": "0 --over 8", "token": "8", "message": "--over needs a duration like 4beats, 2bars, 1phrase or 500ms"},
+    {"expr": "0 --over 8bars --over 4bars", "token": "--over", "message": "given twice"},
+    {"expr": "0 --over 8.5bars", "token": "8.5bars", "message": "bars must be a whole number"},
+    {"expr": "0 --over 0bars", "token": "0bars", "message": "a duration must be greater than zero"},
+    {"expr": "0 over 8bars", "token": "over", "message": "unknown option; expected --over, --anchor or --clock"},
+    {"expr": "0 --over 8bars --anchor next_bar", "token": "next_bar", "message": "--anchor must be next_beat, next_downbeat or next_phrase"},
+    {"expr": "0 --over 8bars --clock 5", "token": "5", "message": "--clock must be master or 1..4"}
+  ]
+}

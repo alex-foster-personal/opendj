@@ -22,16 +22,12 @@ TREND_RED_SLOPE_MB_PER_HOUR = 100.0
 UNLOAD_TOLERANCE_MB = 256.0
 
 
-def append_bounded_jsonl(
-    output_dir: Path, record: dict[str, Any], cap_bytes: int
-) -> tuple[Path, bool]:
+def append_bounded_jsonl(output_dir: Path, record: dict[str, Any], cap_bytes: int) -> tuple[Path, bool]:
     output_dir.mkdir(parents=True, exist_ok=True)
     # UTC names and UTC record timestamps keep one cross-machine timeline.
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # noqa: UP017
     path = output_dir / f"opendj-performance-{stamp}.jsonl"
-    payload = (
-        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    payload = (json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     try:
         current_size = path.stat().st_size
     except FileNotFoundError:
@@ -79,9 +75,7 @@ def _series_summary(values: list[float]) -> dict[str, float] | None:
     }
 
 
-def _load_timed_records(
-    output_dir: Path, cutoff: float
-) -> tuple[list[tuple[datetime, dict[str, Any]]], int]:
+def _load_timed_records(output_dir: Path, cutoff: float) -> tuple[list[tuple[datetime, dict[str, Any]]], int]:
     """Read every in-window record, counting the lines that would not parse."""
 
     rows: list[tuple[datetime, dict[str, Any]]] = []
@@ -200,9 +194,7 @@ def _aggregate_samples(
     return aggregate
 
 
-def _linear_slope_mb_per_hour(
-    elapsed_seconds: list[float], footprints: list[float]
-) -> float | None:
+def _linear_slope_mb_per_hour(elapsed_seconds: list[float], footprints: list[float]) -> float | None:
     """Least-squares growth rate: the leak signal the point-in-time MB cannot show."""
 
     if len(footprints) < 2 or len(elapsed_seconds) != len(footprints):
@@ -276,17 +268,13 @@ def summarize_logs(output_dir: Path, hours: float) -> dict[str, Any]:
         "hours_requested": hours,
         "window": _window_summary(samples, len(rows), malformed_lines),
         "physical_footprint_mb": _series_summary(aggregate.footprints),
-        "linear_slope_mb_per_hour": _linear_slope_mb_per_hour(
-            aggregate.elapsed_seconds, aggregate.footprints
-        ),
+        "linear_slope_mb_per_hour": _linear_slope_mb_per_hour(aggregate.elapsed_seconds, aggregate.footprints),
         "cpu_percent": {
             "mean": round(statistics.mean(cpu_values), 2) if cpu_values else None,
             "p95": _percentile(cpu_values, 0.95),
             "max": round(max(cpu_values), 2) if cpu_values else None,
         },
-        "by_role_mb": {
-            role: _series_summary(values) for role, values in sorted(aggregate.role_values.items())
-        },
+        "by_role_mb": {role: _series_summary(values) for role, values in sorted(aggregate.role_values.items())},
         "unique_process_families": len(aggregate.process_families),
         "max_active_engine_jobs": aggregate.max_active_jobs,
         "max_suspected_orphans": aggregate.max_suspected_orphans,
@@ -373,9 +361,7 @@ def _deck_normalized_footprints(
         if decks is None:
             continue
         totals = record.get("totals")
-        if not isinstance(totals, dict) or not isinstance(
-            totals.get("physical_footprint_mb"), (int, float)
-        ):
+        if not isinstance(totals, dict) or not isinstance(totals.get("physical_footprint_mb"), (int, float)):
             continue
         if decks == 0:
             excluded_zero_deck += 1
@@ -470,8 +456,7 @@ def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
             "verdict": "AMBER",
             "exit_code": 2,
             "reason": (
-                f"refusing trend verdict: {malformed_lines} malformed JSONL "
-                "record(s) in the selected log window"
+                f"refusing trend verdict: {malformed_lines} malformed JSONL record(s) in the selected log window"
             ),
         }
     samples = [(timestamp, record) for timestamp, record in rows if record.get("kind") == "sample"]
@@ -484,11 +469,7 @@ def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
         }
     duration_minutes = (samples[-1][0] - samples[0][0]).total_seconds() / 60
     processes = _process_series(samples)
-    slopes = [
-        item["slope_mb_per_hour"]
-        for item in processes.values()
-        if isinstance(item["slope_mb_per_hour"], float)
-    ]
+    slopes = [item["slope_mb_per_hour"] for item in processes.values() if isinstance(item["slope_mb_per_hour"], float)]
     max_slope = max(slopes, default=None)
     orphan_count = max(
         (
@@ -507,9 +488,7 @@ def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
         and isinstance(process.get("resident_mb"), (int, float))
     ]
     history, _ = _load_timed_records(output_dir, float("-inf"))
-    history_samples = [
-        (timestamp, record) for timestamp, record in history if record.get("kind") == "sample"
-    ]
+    history_samples = [(timestamp, record) for timestamp, record in history if record.get("kind") == "sample"]
     unload = _unload_check(samples, history_samples)
     normalized = _deck_normalized_footprints(samples)
     reasons: list[str] = []
@@ -568,8 +547,7 @@ def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
             (
                 engine["port"]
                 for _, record in reversed(samples)
-                if isinstance(record.get("engine"), dict)
-                and isinstance((engine := record["engine"]).get("port"), int)
+                if isinstance(record.get("engine"), dict) and isinstance((engine := record["engine"]).get("port"), int)
             ),
             None,
         ),

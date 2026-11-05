@@ -14,6 +14,7 @@
  */
 
 import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
+import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
@@ -116,6 +117,22 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+/** GRID-OCTAVE-02: store which tempo a disputed track is served at (the hover card's one click).
+ * Throws `RbApiError` on refusal so the caller shows it. */
+export async function putBpmPick(
+	stableId: string,
+	source: BpmAlternativeSource
+): Promise<{ stable_id: string; source: BpmAlternativeSource | null }> {
+	refuseStickWrite(stableId, 'pick the BPM');
+	const r = await fetch(`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/bpm-pick`, {
+		method: 'PUT',
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ source })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return (await r.json()) as { stable_id: string; source: BpmAlternativeSource | null };
 }
 
 export async function fetchTrackifyLibraryRevision(): Promise<string> {
@@ -355,12 +372,20 @@ export interface PlaylistTrackRowWire {
 	energy_reason: string;
 	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
+	key_guess?: string | null;
+	key_guess_confidence?: number | null;
+	key_source?: string | null;
 	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected' | 'too_short' | 'no_pulse';
 	bpm_reason?: string | null;
 	bpm_source?: string | null;
 	bpm_method?: string | null;
 	bpm_confidence?: number | null;
 	bpm_confidence_error?: string | null;
+	/** GRID-OCTAVE-02: our tempo and Mixed In Key's disagree and no pick is stored. */
+	bpm_disputed?: boolean;
+	/** Both tempos, ours first, whenever they disagree. */
+	bpm_alternatives?: BpmAlternative[];
+	bpm_pick?: BpmAlternativeSource | null;
 	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
@@ -647,12 +672,20 @@ export type TrackListItemWire = Track & {
 	/** STANDALONE-03: same status/reason fields playlist rows carry. */
 	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
+	key_guess?: string | null;
+	key_guess_confidence?: number | null;
+	key_source?: string | null;
 	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	bpm_reason?: string | null;
 	bpm_source?: string | null;
 	bpm_method?: string | null;
 	bpm_confidence?: number | null;
 	bpm_confidence_error?: string | null;
+	/** GRID-OCTAVE-02: our tempo and Mixed In Key's disagree and no pick is stored. */
+	bpm_disputed?: boolean;
+	/** Both tempos, ours first, whenever they disagree. */
+	bpm_alternatives?: BpmAlternative[];
+	bpm_pick?: BpmAlternativeSource | null;
 	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	energy: number | null;
@@ -951,15 +984,17 @@ export async function saveHotCue(
 	slot: HotCueSlot,
 	in_ms: number,
 	revision: string,
-	comment?: string | null
+	comment?: string | null,
+	out_ms: number | null = null
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
 	if (isUsbTrackId(stable_id)) {
-		return (await loadStickSessionEdits()).saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
+		return (await loadStickSessionEdits()).saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null, out_ms);
 	}
+	// out_ms set = a loop hot cue (HOTCUE-LOOP-01); null = a point cue.
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
-		{ in_ms, comment: comment ?? null },
+		{ in_ms, out_ms, comment: comment ?? null },
 		revision
 	);
 }

@@ -97,7 +97,10 @@ test('a refused follower is still an error, and is a SEPARATE notice from a fold
 	);
 	const [, refusal] = notices;
 	// PLAY-27: same words as a single refused follower; that deck plays on unsynced.
-	assert.equal(refusal.message, 'Beat Sync cannot lock deck 3: no phase-capable anchor; playing unsynced');
+	assert.equal(
+		refusal.message,
+		'Beat Sync cannot lock deck 3: no phase-capable anchor; playing unsynced'
+	);
 	assert.equal(refusal.groupKey, 'beat-sync-unlocked:1:3');
 	assert.deepEqual(refusal.events, [
 		{ kind: 'beat-sync-skip', detail: 'no phase-capable anchor', deck: 3 }
@@ -124,13 +127,20 @@ test('[PLAY-27] a partial failure names each unlocked deck with its own red noti
 	const notices = beatSyncOutcomeNotices(
 		[],
 		[
-			{ deck: 3, message: 'no phase-capable anchor', notice: 'Beat Sync cannot lock deck 3: tempo 27% away; playing unsynced' },
+			{
+				deck: 3,
+				message: 'no phase-capable anchor',
+				notice: 'Beat Sync cannot lock deck 3: tempo 27% away; playing unsynced'
+			},
 			{ deck: 4, message: 'master position past the grid' }
 		],
 		1
 	);
-	assert.deepEqual(notices.map((n) => [n.kind, n.message]), [
-		['error', 'Beat Sync cannot lock deck 3: tempo 27% away; playing unsynced'],
-		['error', 'Beat Sync cannot lock deck 4: master position past the grid; playing unsynced']
-	]);
+	assert.deepEqual(
+		notices.map((n) => [n.kind, n.message]),
+		[
+			['error', 'Beat Sync cannot lock deck 3: tempo 27% away; playing unsynced'],
+			['error', 'Beat Sync cannot lock deck 4: master position past the grid; playing unsynced']
+		]
+	);
 });

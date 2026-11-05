@@ -1,11 +1,12 @@
 """Destructive-path integration tests for SAVE_CUE + RATE_TRACK (VOICE-01)."""
+
 from __future__ import annotations
 
 import time
 
 import pytest
 
-from apps.voice import actions, confirm
+from apps.voice import actions, confirm, grammar
 from apps.voice import tts as tts_mod
 
 from tests.voice.helpers import make_intent
@@ -44,9 +45,7 @@ class TestSaveCueDestructiveOn:
         )
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
-        resp = actions.handle_save_cue(
-            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
-        )
+        resp = actions.handle_save_cue(make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn)
         assert resp.published is True
         assert resp.dry_run is False
         events = [e for e in voice_context.event_bus.events if e["kind"] == "SAVE_CUE"]
@@ -65,19 +64,11 @@ class TestSaveCueDestructiveOn:
         )
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["no"], tmp_path)
-        resp = actions.handle_save_cue(
-            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
-        )
+        resp = actions.handle_save_cue(make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn)
         assert resp.reply == "save_cue_cancelled"
-        cancelled = [
-            e for e in voice_context.event_bus.events if e["kind"] == "SAVE_CUE_CANCELLED"
-        ]
+        cancelled = [e for e in voice_context.event_bus.events if e["kind"] == "SAVE_CUE_CANCELLED"]
         assert cancelled
-        live = [
-            e
-            for e in voice_context.event_bus.events
-            if e["kind"] == "SAVE_CUE" and not e["dry_run"]
-        ]
+        live = [e for e in voice_context.event_bus.events if e["kind"] == "SAVE_CUE" and not e["dry_run"]]
         assert not live
         assert "cancelled" in voice_context.tts_engine.spoken[-1]
 
@@ -92,9 +83,7 @@ class TestSaveCueDestructiveOn:
         )
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
-        resp = actions.handle_save_cue(
-            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
-        )
+        resp = actions.handle_save_cue(make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn)
         assert resp.published is False
         assert "no recent transition" in voice_context.tts_engine.spoken[-1]
 
@@ -105,9 +94,7 @@ class TestSaveCueDestructiveOn:
 class TestRateTrackDestructiveOn:
     def test_confirm_yes_publishes_live(self, voice_context, tmp_path):
         voice_context.destructive = True
-        voice_context.event_bus.publish(
-            {"kind": "deck_state", "stable_id": "xyz", "bpm": 128}
-        )
+        voice_context.event_bus.publish({"kind": "deck_state", "stable_id": "xyz", "bpm": 128})
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
         resp = actions.handle_rate_track(
@@ -125,9 +112,7 @@ class TestRateTrackDestructiveOn:
 
     def test_confirm_no_publishes_cancelled(self, voice_context, tmp_path):
         voice_context.destructive = True
-        voice_context.event_bus.publish(
-            {"kind": "deck_state", "stable_id": "xyz"}
-        )
+        voice_context.event_bus.publish({"kind": "deck_state", "stable_id": "xyz"})
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["nope"], tmp_path)
         resp = actions.handle_rate_track(
@@ -136,13 +121,21 @@ class TestRateTrackDestructiveOn:
             confirm_fn=confirm_fn,
         )
         assert resp.reply == "rate_track_cancelled"
-        cancelled = [
-            e for e in voice_context.event_bus.events if e["kind"] == "RATE_TRACK_CANCELLED"
-        ]
+        cancelled = [e for e in voice_context.event_bus.events if e["kind"] == "RATE_TRACK_CANCELLED"]
         assert cancelled
 
 
 class TestDestructiveDefaultOff:
+    def test_save_cue_phrase_reaches_handler_without_live_publish(self, voice_context):
+        intent = grammar.parse("save cue")
+        assert intent is not None
+        assert intent.kind == "SAVE_CUE"
+        resp = actions.handle_save_cue(intent, voice_context)
+        assert resp.published is False
+        assert resp.reply == "no_transition"
+        save_events = [e for e in voice_context.event_bus.events if e["kind"] == "SAVE_CUE"]
+        assert not save_events
+
     def test_cli_flag_must_be_explicit(self):
         """Guard against regressions: --enable-destructive default must be off."""
         from apps.voice import __main__ as cli

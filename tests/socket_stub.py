@@ -14,6 +14,7 @@ return on the OSError accept raises. Joining with a timeout and asserting the
 thread exited turns any future leak into a loud teardown failure instead of a
 flaky stranger.
 """
+
 from __future__ import annotations
 
 import contextlib

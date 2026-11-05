@@ -37,11 +37,17 @@ describe('foldDeviceDelivery', () => {
 	});
 
 	it('gate D: muted => idle', () => {
-		assert.equal(fold({ ...active(), masterMuted: true, browserLiveness: 'ok', probe: probe(true) }), 'idle');
+		assert.equal(
+			fold({ ...active(), masterMuted: true, browserLiveness: 'ok', probe: probe(true) }),
+			'idle'
+		);
 	});
 
 	it('gate D: not playing => idle', () => {
-		assert.equal(fold({ ...active(), playing: false, browserLiveness: 'ok', probe: probe(false) }), 'idle');
+		assert.equal(
+			fold({ ...active(), playing: false, browserLiveness: 'ok', probe: probe(false) }),
+			'idle'
+		);
 	});
 
 	it('gate C: dead + delivering => idle', () => {
@@ -49,19 +55,31 @@ describe('foldDeviceDelivery', () => {
 	});
 
 	it('gate C: dead-escalated + delivering => idle', () => {
-		assert.equal(fold({ ...active(), browserLiveness: 'dead-escalated', probe: probe(true) }), 'idle');
+		assert.equal(
+			fold({ ...active(), browserLiveness: 'dead-escalated', probe: probe(true) }),
+			'idle'
+		);
 	});
 
 	it('dead + not delivering => not_delivering', () => {
-		assert.equal(fold({ ...active(), browserLiveness: 'dead', probe: probe(false) }), 'not_delivering');
+		assert.equal(
+			fold({ ...active(), browserLiveness: 'dead', probe: probe(false) }),
+			'not_delivering'
+		);
 	});
 
 	it('ok + not delivering => not_delivering', () => {
-		assert.equal(fold({ ...active(), browserLiveness: 'ok', probe: probe(false) }), 'not_delivering');
+		assert.equal(
+			fold({ ...active(), browserLiveness: 'ok', probe: probe(false) }),
+			'not_delivering'
+		);
 	});
 
 	it('stalled + not delivering => not_delivering', () => {
-		assert.equal(fold({ ...active(), browserLiveness: 'stalled', probe: probe(false) }), 'not_delivering');
+		assert.equal(
+			fold({ ...active(), browserLiveness: 'stalled', probe: probe(false) }),
+			'not_delivering'
+		);
 	});
 
 	it('ok + delivering => ok', () => {

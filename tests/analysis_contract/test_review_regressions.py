@@ -10,6 +10,7 @@ Each therefore goes red against the pre-fix source.
 """
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
 import time
@@ -481,19 +482,59 @@ def test_a_combined_write_compensation_bumps_toggle_revision(tmp_path) -> None:
         selection.reset_toggles()
 
 
-def _await_request_toggle(lane: str, state: str, *, timeout_s: float = 10.0) -> None:
-    """Block until the in-flight request's own toggle write is live.
+_AGENT_JOIN_TIMEOUT_S = 15.0
 
-    A concurrent agent's write must land AFTER that write and inside the window
-    the held lock opens, so the agent thread waits on the write itself. A fixed
-    sleep raced it: on a loaded runner the request had not yet written when the
-    sleep ended, and the agent's write landed first (shard 5, run 38991385254).
+
+@contextlib.contextmanager
+def _request_toggle_barrier(lane: str, expected: str, *, timeout_s: float = 10.0):
+    """Observe the in-flight PUT's own ``write_toggle`` and signal an Event.
+
+    A value poll of ``get_toggle`` raced on loaded runners (issue #4500); the
+    agent thread must wait until this request's write completes, not until the
+    live toggle happens to match.
     """
-    deadline = time.monotonic() + timeout_s
-    while selection.get_toggle(lane) != state:
-        if time.monotonic() > deadline:
-            raise AssertionError(f"the request never wrote {lane} toggle {state!r}")
-        time.sleep(0.005)
+    original = selection.write_toggle
+    wrote = threading.Event()
+
+    def _observe(observed_lane: str, new: str, **kwargs):
+        result = original(observed_lane, new, **kwargs)
+        if observed_lane == lane and new == expected and result is not None:
+            wrote.set()
+        return result
+
+    selection.write_toggle = _observe  # type: ignore[method-assign]
+    try:
+        yield wrote, timeout_s
+    finally:
+        selection.write_toggle = original
+
+
+@contextlib.contextmanager
+def _run_agent(target, *, join_timeout_s: float = _AGENT_JOIN_TIMEOUT_S):
+    errors: list[BaseException] = []
+
+    def _body() -> None:
+        try:
+            target()
+        except BaseException as exc:
+            errors.append(exc)
+            raise
+
+    agent = threading.Thread(target=_body)
+    agent.start()
+    try:
+        yield agent
+    finally:
+        agent.join(timeout=join_timeout_s)
+        assert not agent.is_alive(), "concurrent agent thread hung"
+        if errors:
+            raise errors[0]
+
+
+def _wait_for_request_toggle(wrote: threading.Event, lane: str, expected: str, *, timeout_s: float) -> None:
+    if wrote.wait(timeout=timeout_s):
+        return
+    raise AssertionError(f"the request never wrote {lane} toggle {expected!r}")
 
 
 def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
@@ -529,21 +570,19 @@ def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
                 "VALUES ('key', 'own', 'x')"
             )
 
-            def _concurrent_agent() -> None:
-                _await_request_toggle("beatgrid", "own")
-                selection.write_toggle("beatgrid", "rbx")
+            with _request_toggle_barrier("beatgrid", "own") as (wrote, barrier_timeout_s):
 
-            agent = threading.Thread(target=_concurrent_agent)
-            agent.start()
-            try:
-                resp = client.put(
-                    "/api/v1/analysis/source",
-                    json={"lane": "beatgrid", "toggle": "own", "default": "own"},
-                )
-            finally:
-                agent.join()
-                locker.rollback()
-                locker.close()
+                def _concurrent_agent() -> None:
+                    _wait_for_request_toggle(wrote, "beatgrid", "own", timeout_s=barrier_timeout_s)
+                    selection.write_toggle("beatgrid", "rbx")
+
+                with _run_agent(_concurrent_agent):
+                    resp = client.put(
+                        "/api/v1/analysis/source",
+                        json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+                    )
+            locker.rollback()
+            locker.close()
             assert resp.status_code == 503, resp.text[:300]  # busy is 503 since 0a0d095fb
 
             after = client.get("/api/v1/analysis/source").json()
@@ -589,23 +628,23 @@ def test_a_put_response_reports_its_own_write_not_a_concurrent_agents_later_one(
             locker.execute("BEGIN EXCLUSIVE")
             agent_writes: list[selection.ToggleWrite | None] = []
 
-            def _concurrent_agent_then_release() -> None:
-                try:
-                    _await_request_toggle("beatgrid", "own")
-                    agent_writes.append(selection.write_toggle("beatgrid", "unset"))
-                finally:
-                    locker.rollback()
-                    locker.close()
+            with _request_toggle_barrier("beatgrid", "own") as (wrote, barrier_timeout_s):
 
-            agent = threading.Thread(target=_concurrent_agent_then_release)
-            agent.start()
-            try:
-                resp = client.put(
-                    "/api/v1/analysis/source",
-                    json={"lane": "beatgrid", "toggle": "own", "default": "own"},
-                )
-            finally:
-                agent.join()
+                def _concurrent_agent_then_release() -> None:
+                    try:
+                        _wait_for_request_toggle(
+                            wrote, "beatgrid", "own", timeout_s=barrier_timeout_s
+                        )
+                        agent_writes.append(selection.write_toggle("beatgrid", "unset"))
+                    finally:
+                        locker.rollback()
+                        locker.close()
+
+                with _run_agent(_concurrent_agent_then_release):
+                    resp = client.put(
+                        "/api/v1/analysis/source",
+                        json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+                    )
             assert resp.status_code == 200, resp.text[:300]
 
             # Precondition, not decoration: the agent's write must have

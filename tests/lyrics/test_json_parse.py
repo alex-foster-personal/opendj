@@ -11,10 +11,7 @@ from apps.lyrics.json_parse import non_empty_string
 
 def test_non_empty_string_returns_value() -> None:
     path = Path("(private path)")
-    assert (
-        non_empty_string({"stable_id": "abc"}, "stable_id", path, entry_label="lyrics-cache entry")
-        == "abc"
-    )
+    assert non_empty_string({"stable_id": "abc"}, "stable_id", path, entry_label="lyrics-cache entry") == "abc"
 
 
 def test_non_empty_string_rejects_missing_or_blank() -> None:

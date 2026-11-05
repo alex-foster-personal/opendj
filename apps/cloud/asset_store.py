@@ -28,6 +28,7 @@ Credentials always come from Doppler. Every entry point calls
 :class:`apps.cloud.config.MissingEnvError` naming the exact variable rather
 than surfacing as an opaque 403 from Cloudflare later.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -101,9 +102,7 @@ class AssetS3Client(Protocol):
     def get_object(self, bucket: str, key: str) -> tuple[bytes, str] | None:
         """Return ``(body, etag)`` or ``None`` if the object does not exist."""
 
-    def put_object_if_none_match(
-        self, bucket: str, key: str, body: AssetBody
-    ) -> tuple[bool, str | None]:
+    def put_object_if_none_match(self, bucket: str, key: str, body: AssetBody) -> tuple[bool, str | None]:
         """Create if absent. Returns ``(created, new_etag)``.
 
         ``created=False`` means the key already existed. For a
@@ -125,12 +124,9 @@ def validate_content_hash(content_hash: str) -> str:
     value.
     """
     candidate = content_hash.strip()
-    if len(candidate) != SHA256_HEX_LEN or any(
-        c not in "0123456789abcdef" for c in candidate
-    ):
+    if len(candidate) != SHA256_HEX_LEN or any(c not in "0123456789abcdef" for c in candidate):
         raise AssetStoreError(
-            f"content_hash must be {SHA256_HEX_LEN} lowercase hex chars "
-            f"(a SHA-256 digest); got {content_hash!r}"
+            f"content_hash must be {SHA256_HEX_LEN} lowercase hex chars (a SHA-256 digest); got {content_hash!r}"
         )
     return candidate
 
@@ -268,28 +264,22 @@ def push_asset(
         )
 
     if on_progress is None:
-        created, _etag = s3.put_object_if_none_match(
-            cfg.audio_bucket, key, source.read_bytes()
-        )
+        created, _etag = s3.put_object_if_none_match(cfg.audio_bucket, key, source.read_bytes())
     else:
         on_progress(0, size_bytes)
         with source.open("rb") as handle:
             progress_body = _ProgressReader(handle, size_bytes, on_progress)
-            created, _etag = s3.put_object_if_none_match(
-                cfg.audio_bucket, key, progress_body
-            )
+            created, _etag = s3.put_object_if_none_match(cfg.audio_bucket, key, progress_body)
         if created and progress_body.bytes_transferred != size_bytes:
             raise AssetStoreError(
-                f"upload client accepted {key} after consuming "
-                f"{progress_body.bytes_transferred}/{size_bytes} bytes"
+                f"upload client accepted {key} after consuming {progress_body.bytes_transferred}/{size_bytes} bytes"
             )
     if not created and s3.head_object(cfg.audio_bucket, key) is None:
         # The conditional create was rejected AND the key is still absent.
         # Something other than a benign concurrent upload went wrong; do not
         # pretend the asset is durable.
         raise AssetStoreError(
-            f"upload of {source} to {cfg.audio_bucket}/{key} was rejected and "
-            "the key is still absent"
+            f"upload of {source} to {cfg.audio_bucket}/{key} was rejected and the key is still absent"
         )
     return PushResult(
         content_hash=content_hash,
@@ -300,9 +290,7 @@ def push_asset(
     )
 
 
-def _fetch_asset_impl(
-    cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path
-) -> Path:
+def _fetch_asset_impl(cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path) -> Path:
     require_credentials(cfg)
     digest = validate_content_hash(content_hash)
     key = asset_object_key(digest)
@@ -313,24 +301,18 @@ def _fetch_asset_impl(
     except Exception as exc:
         raise AssetStoreError(f"failed to fetch {key} from {cfg.audio_bucket}: {exc}") from exc
     if got is None:
-        raise AssetStoreError(
-            f"asset {digest} is not in {cfg.audio_bucket} (key {key})"
-        )
+        raise AssetStoreError(f"asset {digest} is not in {cfg.audio_bucket} (key {key})")
     body, _etag = got
     actual = hashlib.sha256(body).hexdigest()
     if actual != digest:
-        raise AssetStoreError(
-            f"content mismatch fetching {key}: body hashes to {actual}"
-        )
+        raise AssetStoreError(f"content mismatch fetching {key}: body hashes to {actual}")
     target = Path(dest)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
     return target
 
 
-def fetch_asset(
-    cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path
-) -> Path:
+def fetch_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path) -> Path:
     """Download the object for ``content_hash`` to ``dest`` and verify it.
 
     The digest of the retrieved bytes is re-checked against the key before
@@ -373,14 +355,10 @@ def _read_presigned_body(
     try:
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             if response.status >= 400:
-                raise AssetStoreError(
-                    f"presigned GET failed with HTTP {response.status} for {digest}"
-                )
+                raise AssetStoreError(f"presigned GET failed with HTTP {response.status} for {digest}")
             body = response.read()
     except urllib.error.HTTPError as exc:
-        raise AssetStoreError(
-            f"presigned GET failed with HTTP {exc.code} for {digest}"
-        ) from exc
+        raise AssetStoreError(f"presigned GET failed with HTTP {exc.code} for {digest}") from exc
     except urllib.error.URLError as exc:
         raise AssetStoreError(f"presigned GET unreachable for {digest}: {exc.reason}") from exc
     except OSError as exc:
@@ -388,9 +366,7 @@ def _read_presigned_body(
         raise AssetStoreError(f"presigned GET unreachable for {digest}: {exc}") from exc
     actual = hashlib.sha256(body).hexdigest()
     if actual != digest:
-        raise AssetStoreError(
-            f"presigned body for {digest} hashes to {actual}, not the requested digest"
-        )
+        raise AssetStoreError(f"presigned body for {digest} hashes to {actual}, not the requested digest")
     return body
 
 
@@ -423,11 +399,7 @@ def fetch_presigned_asset(
     """
     from apps.cloud.hydration_pool import run_download
 
-    return run_download(
-        lambda: _fetch_presigned_asset_impl(
-            url, content_hash, dest, timeout_s=timeout_s
-        )
-    )
+    return run_download(lambda: _fetch_presigned_asset_impl(url, content_hash, dest, timeout_s=timeout_s))
 
 
 # --- presigning (SigV4 query auth, stdlib only) --------------------------
@@ -475,10 +447,7 @@ def sigv4_presigned_url(
         "X-Amz-Expires": str(expiry_seconds),
         "X-Amz-SignedHeaders": "host",
     }
-    canonical_query = "&".join(
-        f"{quote(name, safe='')}={quote(params[name], safe='')}"
-        for name in sorted(params)
-    )
+    canonical_query = "&".join(f"{quote(name, safe='')}={quote(params[name], safe='')}" for name in sorted(params))
     canonical_request = "\n".join(
         [
             method,
@@ -502,10 +471,7 @@ def sigv4_presigned_url(
         string_to_sign.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-    return (
-        f"https://{host}{canonical_uri}?{canonical_query}"
-        f"&X-Amz-Signature={signature}"
-    )
+    return f"https://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
 
 
 def presign_url(
@@ -548,18 +514,13 @@ def presign_object_key(
     if not object_key or object_key.startswith("/"):
         raise AssetStoreError(f"object_key must be a non-empty relative path; got {object_key!r}")
     if not 0 < expiry_seconds <= MAX_PRESIGN_EXPIRY_SECONDS:
-        raise AssetStoreError(
-            f"expiry_seconds must be in 1..{MAX_PRESIGN_EXPIRY_SECONDS}; "
-            f"got {expiry_seconds}"
-        )
+        raise AssetStoreError(f"expiry_seconds must be in 1..{MAX_PRESIGN_EXPIRY_SECONDS}; got {expiry_seconds}")
     stamp = (now or datetime.now(UTC)).astimezone(UTC)
     host_override = os.environ.get(PRESIGN_HOST_ENV, "").strip()
     presign_host = host_override or f"{cfg.r2_account_id}.r2.cloudflarestorage.com"
     scheme = os.environ.get(PRESIGN_SCHEME_ENV, "https").strip() or "https"
     if scheme not in ("http", "https"):
-        raise AssetStoreError(
-            f"{PRESIGN_SCHEME_ENV} must be http or https; got {scheme!r}"
-        )
+        raise AssetStoreError(f"{PRESIGN_SCHEME_ENV} must be http or https; got {scheme!r}")
     signed = sigv4_presigned_url(
         method=method,
         host=presign_host,
@@ -583,9 +544,7 @@ def fetch_presigned_bytes(
     """Download ``url`` and verify the body matches ``content_hash``."""
     from apps.cloud.hydration_pool import run_download
 
-    return run_download(
-        lambda: _read_presigned_body(url, content_hash, timeout_s=timeout_s)
-    )
+    return run_download(lambda: _read_presigned_body(url, content_hash, timeout_s=timeout_s))
 
 
 # --- production adapter --------------------------------------------------
@@ -606,8 +565,7 @@ def boto3_asset_client(cfg: CloudConfig) -> AssetS3Client:  # pragma: no cover
         from botocore.exceptions import ClientError  # type: ignore[import-not-found]
     except ImportError as exc:
         raise AssetStoreError(
-            "boto3 is required for the R2 asset tier; install the cloud "
-            "extra (`uv sync --extra cloud`)."
+            "boto3 is required for the R2 asset tier; install the cloud extra (`uv sync --extra cloud`)."
         ) from exc
 
     client = boto3.client(
@@ -639,13 +597,9 @@ def boto3_asset_client(cfg: CloudConfig) -> AssetS3Client:  # pragma: no cover
                 raise
             return resp["Body"].read(), resp["ETag"]
 
-        def put_object_if_none_match(
-            self, bucket: str, key: str, body: AssetBody
-        ) -> tuple[bool, str | None]:
+        def put_object_if_none_match(self, bucket: str, key: str, body: AssetBody) -> tuple[bool, str | None]:
             try:
-                resp = client.put_object(
-                    Bucket=bucket, Key=key, Body=body, IfNoneMatch="*"
-                )
+                resp = client.put_object(Bucket=bucket, Key=key, Body=body, IfNoneMatch="*")
                 return True, resp["ETag"]
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code", "")

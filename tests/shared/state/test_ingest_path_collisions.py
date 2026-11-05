@@ -8,6 +8,7 @@ v1, so it now has its own v1 id rather than moving out with NATIVE-13.
 [if] ingest would create colliding paths [then] the guard refuses first, [else stop].
 [if] ingest sees colliding paths for different recordings [then] import refuses, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -26,6 +27,7 @@ from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.ingest import rekordbox as rb_ingest
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
+    _file_identity,
     assert_no_path_collisions,
     is_streaming_path,
 )
@@ -86,9 +88,7 @@ def writer(state_conn):
         writer.close()
 
 
-def test_nfc_nfd_collision_refuses_with_both_raw_paths(
-    writer: StateWriter, state_conn, tmp_path: Path
-) -> None:
+def test_nfc_nfd_collision_refuses_with_both_raw_paths(writer: StateWriter, state_conn, tmp_path: Path) -> None:
     root = tmp_path / "library"
     nfc_name = unicodedata.normalize("NFC", "caf\u00e9.wav")
     nfd_name = unicodedata.normalize("NFD", "caf\u00e9.wav")
@@ -104,9 +104,7 @@ def test_nfc_nfd_collision_refuses_with_both_raw_paths(
     assert _event_count(state_conn) == 0
 
 
-def test_case_only_collision_refuses_with_both_raw_paths(
-    writer: StateWriter, state_conn, tmp_path: Path
-) -> None:
+def test_case_only_collision_refuses_with_both_raw_paths(writer: StateWriter, state_conn, tmp_path: Path) -> None:
     root = tmp_path / "library"
     upper, lower = _write_colliding_spellings(root, "Song.wav", "song.wav")
 
@@ -120,9 +118,7 @@ def test_case_only_collision_refuses_with_both_raw_paths(
     assert _event_count(state_conn) == 0
 
 
-def test_distinct_normalized_paths_import_both_tracks(
-    writer: StateWriter, state_conn, tmp_path: Path
-) -> None:
+def test_distinct_normalized_paths_import_both_tracks(writer: StateWriter, state_conn, tmp_path: Path) -> None:
     root = tmp_path / "library"
     _write_wav(root / "alpha.wav")
     _write_wav(root / "beta.wav")
@@ -134,9 +130,7 @@ def test_distinct_normalized_paths_import_both_tracks(
     assert _track_count(state_conn) == 2
 
 
-def test_dry_run_collision_refuses_without_writing_state(
-    writer: StateWriter, state_conn, tmp_path: Path
-) -> None:
+def test_dry_run_collision_refuses_without_writing_state(writer: StateWriter, state_conn, tmp_path: Path) -> None:
     root = tmp_path / "library"
     _write_colliding_spellings(root, "Song.wav", "song.wav")
 
@@ -147,9 +141,7 @@ def test_dry_run_collision_refuses_without_writing_state(
     assert _event_count(state_conn) == 0
 
 
-def test_collision_checked_before_limit_slice(
-    writer: StateWriter, tmp_path: Path
-) -> None:
+def test_collision_checked_before_limit_slice(writer: StateWriter, tmp_path: Path) -> None:
     root = tmp_path / "library"
     _write_colliding_spellings(root, "Song.wav", "song.wav")
     _write_wav(root / "other.wav")
@@ -178,9 +170,7 @@ def test_same_physical_file_two_spellings_allowed(
     assert_no_path_collisions([str(path), str(alias)])
 
 
-def test_setup_folder_import_surfaces_collision(
-    data_dir: Path, tmp_path: Path
-) -> None:
+def test_setup_folder_import_surfaces_collision(data_dir: Path, tmp_path: Path) -> None:
     root = tmp_path / "library"
     _write_colliding_spellings(root, "Song.wav", "song.wav")
     (data_dir / "state").mkdir(parents=True, exist_ok=True)
@@ -202,6 +192,26 @@ def data_dir(tmp_path: Path) -> Path:
     target = tmp_path / "data"
     (target / "state").mkdir(parents=True)
     return target
+
+
+def test_file_identity_missing_path_returns_none(tmp_path: Path) -> None:
+    assert _file_identity(str(tmp_path / "missing.wav")) is None
+
+
+def test_file_identity_hard_links_share_identity(tmp_path: Path) -> None:
+    path = _write_wav(tmp_path / "one.wav")
+    link = tmp_path / "link.wav"
+    os.link(path, link)
+    assert _file_identity(str(path)) == _file_identity(str(link))
+
+
+def test_file_identity_distinct_files_differ(tmp_path: Path) -> None:
+    path_a = _write_wav(tmp_path / "a.wav")
+    path_b = _write_wav(tmp_path / "b.wav")
+    id_a = _file_identity(str(path_a))
+    id_b = _file_identity(str(path_b))
+    assert id_a is not None and id_b is not None
+    assert id_a != id_b
 
 
 def test_streaming_paths_skip_collision_check() -> None:
@@ -231,9 +241,7 @@ def _set_case_only_collision_paths(rb_db: Path, path_a: str, path_b: str) -> Non
         ids = [
             row[0]
             for row in conn.execute(
-                "SELECT ID FROM djmdContent "
-                "WHERE COALESCE(rb_local_deleted, 0) = 0 "
-                "LIMIT 2"
+                "SELECT ID FROM djmdContent WHERE COALESCE(rb_local_deleted, 0) = 0 LIMIT 2"
             ).fetchall()
         ]
         if len(ids) < 2:
@@ -251,9 +259,7 @@ def _set_case_only_collision_paths(rb_db: Path, path_a: str, path_b: str) -> Non
         conn.close()
 
 
-def test_rekordbox_collision_refuses_without_partial_state(
-    tmp_rb_db: Path, tmp_path: Path
-) -> None:
+def test_rekordbox_collision_refuses_without_partial_state(tmp_rb_db: Path, tmp_path: Path) -> None:
     """Production Rekordbox6Database reader refuses before mutating seeded state."""
     from pyrekordbox import Rekordbox6Database
 
@@ -291,12 +297,9 @@ def test_rekordbox_collision_refuses_without_partial_state(
         assert path_b in message
         after_counts = _counts(conn)
         assert after_counts == before_counts, (
-            f"collision refusal must not mutate state; "
-            f"before={before_counts} after={after_counts}"
+            f"collision refusal must not mutate state; before={before_counts} after={after_counts}"
         )
-        assert bus.events == before_events, (
-            "collision refusal must not publish new bus events"
-        )
+        assert bus.events == before_events, "collision refusal must not publish new bus events"
     finally:
         writer.close()
         conn.close()

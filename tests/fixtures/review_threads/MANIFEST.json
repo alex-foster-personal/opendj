@@ -93,6 +93,20 @@
    "source_pr": 4489,
    "threads": 2,
    "note": "Captured Tue 20 Oct 2026 06:13Z at head aecb4c615e with scripts/review_thread_triage.py's own _THREADS_QUERY via `gh api graphql`; the only edits were selecting these two threads and dropping both pageInfo blocks (every hasNextPage was false). The two P1 BLOCKING threads the nucbox orphan sweeper wrote off on Wed 30 Sep 2026 22:02Z: reply 2 of each is `logged as tech debt:  (deferred ...)` with an EMPTY anchor, authored by the GitHub App whose GraphQL login is `opendj-gate-fast` (no [bot] suffix). Reply 3 is the human remediation (REBUTTED on discussion_r4142754960, FIXED on discussion_r4142754981). Tests slice to the first two comments to reproduce the Wed 30 Sep 22:02Z state; the payload itself is untouched."
+  },
+  "pr-4270.json": {
+   "sha256": "6f0f6255d14ce31eed85b7048033b23efd4c633f5ec789d2a5b32b46a828ebbc",
+   "bytes": 17631,
+   "source_pr": 4270,
+   "threads": 5,
+   "note": "Captured Thu 05 Nov 2026 14:53:14-14:53:15Z with scripts/review_thread_triage.py's own _THREADS_QUERY via `gh api graphql`; the only edits were selecting all 5 Devin threads and dropping both pageInfo blocks (every hasNextPage was false), at head 04bb312b8ae39e0636bb85302ed932ede82f96e6. Pins discussion_r4121190032, discussion_r4121190179, discussion_r4121190321, discussion_r4121190468, discussion_r4121190659."
+  },
+  "pr-4154.json": {
+   "sha256": "168683ad7a878bf243e2e38c3eac9c42cd2bfa7000d632e92c220332120482b6",
+   "bytes": 6889,
+   "source_pr": 4154,
+   "threads": 3,
+   "note": "Captured Thu 05 Nov 2026 14:53:15-14:53:16Z with scripts/review_thread_triage.py's own _THREADS_QUERY via `gh api graphql`; the only edits were selecting all 3 Devin threads and dropping both pageInfo blocks (every hasNextPage was false), at head 4d310135374558e8d5e191501466276d2fbc01d9. Pins discussion_r4116485408, discussion_r4116485446, discussion_r4116485488."
   }
  }
 }

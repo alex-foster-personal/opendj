@@ -11,7 +11,7 @@ TASK_FILE="${1:-.tmp/FIREWORKS_TASK.md}"
 # Create a sample task if none provided
 if [ ! -f "$TASK_FILE" ]; then
     mkdir -p .tmp
-    cat <<EOF > "$TASK_FILE"
+    cat <<EOF >"$TASK_FILE"
 # Fireworks Harness Test Task
 Please add a comment to the top of scripts/test_fireworks_harness.sh saying "# Harness verified working"
 and then save it. Do not change any other logic.
@@ -39,11 +39,11 @@ echo "Orchestrator (Claude Code) will now wait until completion..."
 # Run aider and redirect all output to the log to save Claude Code tokens
 # --yes-always ensures Aider auto-commits and doesn't wait for human confirmation
 aider --openai-api-base "https://api.fireworks.ai/inference/v1" \
-      --model "$MODEL" \
-      --message-file "$TASK_FILE" \
-      --yes-always \
-      --auto-commits \
-      > "$LOG_FILE" 2>&1 || {
+    --model "$MODEL" \
+    --message-file "$TASK_FILE" \
+    --yes-always \
+    --auto-commits \
+    >"$LOG_FILE" 2>&1 || {
     EXIT_CODE=$?
     echo "Fireworks worker exited with code $EXIT_CODE. See $LOG_FILE for details."
     exit $EXIT_CODE

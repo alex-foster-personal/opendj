@@ -34,10 +34,30 @@ from typing import Literal
 #   ...
 # We publish the Camelot (B for major, A for minor) code directly.
 _CAMELOT_LOOKUP: tuple[str, ...] = (
-    "8B",  "3B",  "10B", "5B",  "12B", "7B",
-    "2B",  "9B",  "4B",  "11B", "6B",  "1B",
-    "5A",  "12A", "7A",  "2A",  "9A",  "4A",
-    "11A", "6A",  "1A",  "8A",  "3A",  "10A",
+    "8B",
+    "3B",
+    "10B",
+    "5B",
+    "12B",
+    "7B",
+    "2B",
+    "9B",
+    "4B",
+    "11B",
+    "6B",
+    "1B",
+    "5A",
+    "12A",
+    "7A",
+    "2A",
+    "9A",
+    "4A",
+    "11A",
+    "6A",
+    "1A",
+    "8A",
+    "3A",
+    "10A",
 )
 
 _CAMELOT_REVERSE: dict[str, int] = {v: i for i, v in enumerate(_CAMELOT_LOOKUP)}
@@ -128,11 +148,11 @@ def opendj_cue_type_to_traktor(cue_type: str) -> int:
 # ``color_rgb`` from the type enum. When we WRITE open-dj -> Traktor, user
 # colours are dropped with a warning (adapter.py handles that).
 _CUE_TYPE_COLOUR: dict[str, int] = {
-    "hot": 0x2C6FB3,       # blue
-    "loop": 0x33B25F,      # green
-    "grid": 0xFFFFFF,      # white
-    "load": 0xF2C94C,      # yellow
-    "fade_in": 0xEB8C3A,   # orange
+    "hot": 0x2C6FB3,  # blue
+    "loop": 0x33B25F,  # green
+    "grid": 0xFFFFFF,  # white
+    "load": 0xF2C94C,  # yellow
+    "fade_in": 0xEB8C3A,  # orange
     "fade_out": 0xEB8C3A,
 }
 

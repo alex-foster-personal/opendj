@@ -31,7 +31,6 @@ from __future__ import annotations
 import itertools
 import json
 import sqlite3
-import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
@@ -39,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.events import publish as publish_engine_event
+from apps.shared.lazy_event_bus import LazyModuleEventBus
 from apps.shared.state import db as state_db
 from apps.shared.state.analysis_stale import STALE_AUDIO_REPLACED, WHOLE_RECORD
 from apps.shared.state.events import EventBus
@@ -49,7 +49,7 @@ from .bpm_status import bpm_status_for
 from .canonical import canonical_pointer, refresh_for_record
 from .lane_enums import LANE_STATUSES
 from .lane_payloads_shared import bar_phase_untrusted
-from .record import AnalysisRecord, RecordContractError, validate_record_contract
+from .record import AnalysisRecord, StoredRecordError, validate_record_contract
 from .time_iso import datetime_to_utc_iso, utc_now_iso
 
 # --- additive schema ----------------------------------------------------
@@ -165,8 +165,7 @@ def _ensure_analysis_tables(conn: sqlite3.Connection) -> None:
 
 # --- shared in-process bus ---------------------------------------------
 
-_BUS_LOCK = threading.Lock()
-_SHARED_BUS: EventBus | None = None
+_MODULE_BUS = LazyModuleEventBus()
 
 
 def _get_shared_bus() -> EventBus:
@@ -176,18 +175,12 @@ def _get_shared_bus() -> EventBus:
     thread on its own. Tests that need to observe events should inject
     their own bus via :func:`set_event_bus`.
     """
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        if _SHARED_BUS is None:
-            _SHARED_BUS = EventBus()
-        return _SHARED_BUS
+    return _MODULE_BUS.get()
 
 
 def set_event_bus(bus: EventBus | None) -> None:
     """Override the module-scoped bus (primarily for tests)."""
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        _SHARED_BUS = bus
+    _MODULE_BUS.set(bus)
 
 
 # --- connection -------------------------------------------------------
@@ -229,25 +222,17 @@ def _record_to_json(record: Any) -> str:
 _IDEMPOTENCY_VOLATILE_KEYS: tuple[str, ...] = ("analyzed_at",)
 
 
-class StoredRecordError(RecordContractError):
-    """A record's JSON does not have the shape the store writes."""
-
-
-def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
-    """The ``ok`` beatgrid payload in one record JSON, or None when there is none.
-
-    None means absent and nothing else: no ``lanes`` (a row from before
-    lanes), no ``beatgrid`` lane, or a lane whose status is not ``ok``. Any
-    wrong shape raises. Reading it as "no trusted grid" would let the upsert
-    that follows overwrite the corrupt row and hide the drift. The queue
-    runner fails that one track on this error and carries on with the batch.
-    """
+def _json_record_object(raw: str, label: str) -> dict[str, Any]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise StoredRecordError(f"{label} is not JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise StoredRecordError(f"{label} is a {type(data).__name__}, not an object")
+    return data
+
+
+def _lanes_object_from_record(data: dict[str, Any], label: str) -> dict[str, Any] | None:
     if "lanes" not in data:
         return None
     lanes = data["lanes"]
@@ -255,6 +240,10 @@ def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
         raise StoredRecordError(f"{label} has explicit null lanes")
     if not isinstance(lanes, dict):
         raise StoredRecordError(f"{label} has lanes of type {type(lanes).__name__}, not an object")
+    return lanes
+
+
+def _ok_beatgrid_payload_from_lanes(lanes: dict[str, Any], label: str) -> dict[str, Any] | None:
     if "beatgrid" not in lanes:
         return None
     lane = lanes["beatgrid"]
@@ -270,10 +259,29 @@ def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
         raise StoredRecordError(
             f"{label} has an ok beatgrid lane with a payload of type {type(payload).__name__}"
         )
-    beats = payload.get("beats")
-    if beats is not None and not isinstance(beats, list):
+    if "beats" not in payload:
+        raise StoredRecordError(f"{label} ok beatgrid has no beats")
+    beats = payload["beats"]
+    if not isinstance(beats, list):
         raise StoredRecordError(f"{label} has beatgrid beats of type {type(beats).__name__}")
+    bar_phase_untrusted(payload)
     return payload
+
+
+def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
+    """The ``ok`` beatgrid payload in one record JSON, or None when there is none.
+
+    None means absent and nothing else: no ``lanes`` (a row from before
+    lanes), no ``beatgrid`` lane, or a lane whose status is not ``ok``. Any
+    wrong shape raises. Reading it as "no trusted grid" would let the upsert
+    that follows overwrite the corrupt row and hide the drift. The queue
+    runner fails that one track on this error and carries on with the batch.
+    """
+    data = _json_record_object(raw, label)
+    lanes = _lanes_object_from_record(data, label)
+    if lanes is None:
+        return None
+    return _ok_beatgrid_payload_from_lanes(lanes, label)
 
 
 def _untrusted_bar_phase_would_replace_trusted(
@@ -385,6 +393,7 @@ def upsert(
             (record.stable_id, record.backend, record.backend_version),
         ).fetchone()
         new_json = _record_to_json(record)
+        _beatgrid_payload(new_json, f"new analysis record for {record.stable_id!r}")
         # Rows of bytes the file no longer holds (folder ingest's whole-record
         # marker): their grid describes other audio, so it is never kept.
         retired = queue_store.stale_rows(conn, record.stable_id, WHOLE_RECORD)

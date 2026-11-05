@@ -59,12 +59,14 @@ describe('installDeviceOutputProbe SLA', () => {
 			{
 				fetchHealth: async () => {
 					fetchCount += 1;
-					return fetchCount >= 2 ? notDelivering : {
-						...notDelivering,
-						device_delivering: true,
-						verdict: 'ok',
-						reason: null
-					};
+					return fetchCount >= 2
+						? notDelivering
+						: {
+								...notDelivering,
+								device_delivering: true,
+								verdict: 'ok',
+								reason: null
+							};
 				},
 				switchOutput: async () => ({ cycled: true }),
 				setInterval: (fn, ms) => {
@@ -112,8 +114,15 @@ describe('installDeviceOutputProbe SLA', () => {
 		await advance(DEVICE_PROBE_POLL_MS);
 
 		const faultAt = updates.find((entry) => entry.combined === 'not_delivering')?.at;
-		assert.equal(typeof faultAt, 'number', updates.map((entry) => `${entry.at}:${entry.combined}`).join(', '));
-		assert.ok(faultAt <= DEVICE_PROBE_SLA_MS, `fault at ${faultAt}ms exceeds ${DEVICE_PROBE_SLA_MS}ms SLA`);
+		assert.equal(
+			typeof faultAt,
+			'number',
+			updates.map((entry) => `${entry.at}:${entry.combined}`).join(', ')
+		);
+		assert.ok(
+			faultAt <= DEVICE_PROBE_SLA_MS,
+			`fault at ${faultAt}ms exceeds ${DEVICE_PROBE_SLA_MS}ms SLA`
+		);
 
 		handle.uninstall();
 	});
@@ -158,16 +167,32 @@ describe('installDeviceOutputProbe browser dead-verdict edge', () => {
 	it('requests an OS probe once when the browser verdict turns dead, not on every publish', () => {
 		const { state, handle } = harness('ok');
 		handle.republish();
-		assert.equal(state.requests, 0, 'if an ok browser verdict requests an OS probe then every tick probes - broken');
+		assert.equal(
+			state.requests,
+			0,
+			'if an ok browser verdict requests an OS probe then every tick probes - broken'
+		);
 		state.verdict = 'dead';
 		handle.republish();
-		assert.equal(state.requests, 1, 'if a dead browser verdict does not ask the OS then gate C cannot tell device from browser - broken');
+		assert.equal(
+			state.requests,
+			1,
+			'if a dead browser verdict does not ask the OS then gate C cannot tell device from browser - broken'
+		);
 		handle.republish();
 		handle.republish();
-		assert.equal(state.requests, 1, 'if every publish of a still-dead verdict re-requests then the probe hammers CoreAudio - broken');
+		assert.equal(
+			state.requests,
+			1,
+			'if every publish of a still-dead verdict re-requests then the probe hammers CoreAudio - broken'
+		);
 		state.verdict = 'dead-escalated';
 		handle.republish();
-		assert.equal(state.requests, 2, 'if the escalation edge does not re-probe then a stuck device is never re-checked - broken');
+		assert.equal(
+			state.requests,
+			2,
+			'if the escalation edge does not re-probe then a stuck device is never re-checked - broken'
+		);
 		handle.uninstall();
 	});
 

@@ -190,7 +190,8 @@ export async function runReanalyze(
 			stableIds: [...targetIds],
 			lane: REANALYZE_LANE,
 			backend: REANALYZE_BACKEND,
-			note: 'track context menu'
+			note: 'track context menu',
+			drain: true
 		});
 		let progress = null;
 		try {

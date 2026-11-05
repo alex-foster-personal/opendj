@@ -24,10 +24,9 @@ test.describe('reload countdown, wired to the real page', () => {
 		// observing a tick, and a 1 s interval starved past 1.5 s on a loaded CI
 		// host left nothing observable before the reload cleared the overlay.
 		await page.evaluate(() => {
-			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
-				'e2e test',
-				4
-			);
+			(
+				window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }
+			).__mdtScheduleReload('e2e test', 4);
 		});
 
 		const overlay = page.locator('#mdt-reload-countdown');
@@ -58,10 +57,9 @@ test.describe('reload countdown, wired to the real page', () => {
 			const mod = await import(new URL('/src/lib/rb/reload-countdown.ts', location.href).href);
 			const teardown = mod.installReloadCountdown();
 			(window as unknown as { __mdtTeardown?: () => void }).__mdtTeardown = teardown;
-			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
-				'should never fire',
-				1
-			);
+			(
+				window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }
+			).__mdtScheduleReload('should never fire', 1);
 		});
 		await expect(page.locator('#mdt-reload-countdown')).toBeVisible();
 
@@ -89,10 +87,9 @@ test.describe('reload countdown, wired to the real page', () => {
 			mod.installReloadCountdown();
 		});
 		await page.evaluate(() => {
-			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
-				'first',
-				2
-			);
+			(
+				window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }
+			).__mdtScheduleReload('first', 2);
 		});
 
 		const overlay = page.locator('#mdt-reload-countdown');
@@ -101,10 +98,9 @@ test.describe('reload countdown, wired to the real page', () => {
 		// A second, real production call while the first is still counting down.
 		// It must not restart the deadline or the reason under a reader's eyes.
 		await page.evaluate(() => {
-			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
-				'second',
-				5
-			);
+			(
+				window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }
+			).__mdtScheduleReload('second', 5);
 		});
 		await expect(overlay).toContainText('reloading: first');
 
@@ -125,10 +121,9 @@ test.describe('reload countdown, wired to the real page', () => {
 		// a round trip and could pass merely because a LATER `clear()` tidied up
 		// an overlay that briefly existed. This proves it never existed at all.
 		const overlayExistedImmediately = await page.evaluate(() => {
-			(window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }).__mdtScheduleReload(
-				'no wait',
-				0
-			);
+			(
+				window as unknown as { __mdtScheduleReload: (r: string, s?: number) => void }
+			).__mdtScheduleReload('no wait', 0);
 			return document.getElementById('mdt-reload-countdown') !== null;
 		});
 		expect(overlayExistedImmediately).toBe(false);

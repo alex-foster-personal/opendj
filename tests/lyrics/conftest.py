@@ -8,6 +8,7 @@ write. The canonical layout ``<data-dir>/state/state.db`` is what makes
 ``data_dir_for_connection`` return the same ``data_dir`` the karaoke cache is
 written under.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -75,9 +76,7 @@ def seed_track(
     )
 
 
-def seed_stamped_policy(
-    conn: sqlite3.Connection, *, asset_kind: str, mode: str
-) -> str:
+def seed_stamped_policy(conn: sqlite3.Connection, *, asset_kind: str, mode: str) -> str:
     """One ``sync_policies`` cell for THIS machine, stamped like a real write.
 
     ``tests/cloudsync/test_asset_tier._seed_policy`` writes ``updated_at='t0'``
@@ -87,9 +86,7 @@ def seed_stamped_policy(
     """
     machine_id = sync_stamp.ensure_local_machine(conn)
     with sync_stamp.stamped_transaction(conn):
-        stamp = sync_stamp.stamp_and_log(
-            conn, "sync_policies", (machine_id, asset_kind), machine_id
-        )
+        stamp = sync_stamp.stamp_and_log(conn, "sync_policies", (machine_id, asset_kind), machine_id)
         conn.execute(
             "INSERT INTO sync_policies(machine_id, asset_kind, mode, "
             "cache_budget_mb, updated_at, origin_device_id) "

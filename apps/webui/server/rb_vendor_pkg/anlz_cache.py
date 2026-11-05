@@ -1,16 +1,16 @@
 """ANLZ JSON file cache: schema-versioned, mtime-keyed, atomic tempfile writes.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C7 (lines 1341-1414 on
-``af--t4-design``), per ``.planning/t3b-decomposition-map.md`` target #13
+``af--t4-design``), per ``(private path)`` target #13
 (``store/caches/anlz_cache.py``, budget 100 lines). ``rb_vendor.py``
 re-exports these five names, so the pinning test suite
-(``tests/webui/test_rb_vendor_units.py`` interrupted-write /
+(``(private path)`` interrupted-write /
 concurrent-writer / concurrent-reader cases,
-``tests/webui/test_rb_vendor_cache.py``) sees no behavior change.
+``(private path)``) sees no behavior change.
 
 ``ANLZ_CACHE_DIR`` and ``ANLZ_CACHE_SCHEMA`` are read off the ``config``
 module at call time, never imported by value: they are rebindable overrides
-that ``.planning/e2e-gating/run_daemon.py`` and ``test_rb_vendor_units.py``
+that ``(private path)`` and ``test_rb_vendor_units.py``
 assign to. Wave 4 moved them (and ``not_found``) out of ``rb_vendor`` into
 ``apps/adapters/rekordbox/``, so those assignments now target ``config``;
 a by-value import here would freeze whichever value was current at import.
@@ -19,16 +19,14 @@ This module cannot follow them out of ``apps.webui`` yet -- not because of
 anything it imports, but because its only caller that still lives here,
 ``anlz.py``, reaches ``beatgrid_diagnostics``. See ``rb_vendor.py``.
 
-The per-path write lock (``_ANLZ_CACHE_LOCKS_GUARD`` / ``_ANLZ_CACHE_LOCKS``)
-is duplicated here rather than shared with ``beatgrid_issue_cache.py``,
-which used the SAME dict in rb_vendor.py before the split (rb_vendor.py:1352
-``_cache_lock`` was called from both C7 and C8). This is safe: the dict is
-keyed by full absolute ``Path``, and ``ANLZ_CACHE_DIR`` and
-``BEATGRID_ISSUE_CACHE_DIR`` never produce overlapping paths, so two
-independent lock dicts serialize the exact same set of concurrent writers
-per path as the one shared dict did. Not called out as a shared dependency
-in the decomposition map's cluster inventory (C7/C8 responsibility table) --
-flagged here as map drift for whoever lands S8.
+Each cache holds its own ``KeyedLocks`` instance from ``apps.shared.keyed_lock``;
+isolation is the instance, not a copied body. Locks are keyed by full absolute
+``Path``, and ``ANLZ_CACHE_DIR`` and ``BEATGRID_ISSUE_CACHE_DIR`` never
+produce overlapping paths, so the two caches still cannot collide even though
+they no longer share one dict (rb_vendor.py once used one dict for both C7 and
+C8). Not called out as a shared dependency in the decomposition map's cluster
+inventory (C7/C8 responsibility table) -- flagged here as map drift for whoever
+lands S8.
 """
 from __future__ import annotations
 
@@ -42,14 +40,14 @@ from typing import Any
 
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import not_found
+from apps.shared.keyed_lock import KeyedLocks
 
 log = logging.getLogger(__name__)
 
 # Windows does not allow os.replace() while another thread has the destination
 # open. Stage writes concurrently, then serialize reads and atomic publication
 # per cache entry so unrelated tracks remain independent.
-_ANLZ_CACHE_LOCKS_GUARD = threading.Lock()
-_ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
+_ANLZ_CACHE_LOCKS = KeyedLocks()
 
 
 def _anlz_mtime(directory: Path) -> float:
@@ -66,12 +64,7 @@ def _cache_path(stable_id: str) -> Path:
 
 
 def _cache_lock(path: Path) -> threading.Lock:
-    with _ANLZ_CACHE_LOCKS_GUARD:
-        lock = _ANLZ_CACHE_LOCKS.get(path)
-        if lock is None:
-            lock = threading.Lock()
-            _ANLZ_CACHE_LOCKS[path] = lock
-        return lock
+    return _ANLZ_CACHE_LOCKS.lock_for(path)
 
 
 def _load_cached_payload(

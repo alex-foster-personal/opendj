@@ -17,12 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = (
-    ROOT
-    / ".planning"
-    / "releases"
-    / "v2-2026-10-19-testing"
-    / "real-input-contracts"
-    / "preload1-folded-bar-v1.json"
+    ROOT / ".planning" / "releases" / "v2-2026-10-19-testing" / "real-input-contracts" / "preload1-folded-bar-v1.json"
 )
 DEFAULT_REPO = os.environ.get("ODJ_FIXTURE_REPO", "private_owner/odj-private")
 

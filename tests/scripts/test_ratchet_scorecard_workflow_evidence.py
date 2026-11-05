@@ -70,8 +70,10 @@ def _api(
     runs = {"ci.yml": [run(1, "ci.yml", "failure")], "e2e.yml": [run(2, "e2e.yml", "success")]}
     jobs = {
         1: [
-            {**_job(JOB, "failure", 11), "steps": [{"name": BUNDLES, "conclusion": "failure"},
-                                                  {"name": DRIFT, "conclusion": "skipped"}]},
+            {
+                **_job(JOB, "failure", 11),
+                "steps": [{"name": BUNDLES, "conclusion": "failure"}, {"name": DRIFT, "conclusion": "skipped"}],
+            },
             _job("ci gate", "failure", 12),
         ],
         2: [_job("e2e gate", "success", 21)],
@@ -96,9 +98,7 @@ def _api(
     return api
 
 
-def _collect(
-    declarations: dict[str, str | None], calls: list[str], pulls: list[dict] | None = None
-) -> rs.Collected:
+def _collect(declarations: dict[str, str | None], calls: list[str], pulls: list[dict] | None = None) -> rs.Collected:
     return rs.collect(_api(declarations, calls, pulls), T0, T0 + dt.timedelta(hours=1), workers=1)
 
 
@@ -133,8 +133,9 @@ def test_an_aggregate_verdict_is_tri_state_and_only_success_clears_a_skip() -> N
     # The sole-red consequence: a skip no explicit success clears holds the PR back too.
     for aggregate, sole in ((rs.AGGREGATE_SUCCESS, True), (rs.AGGREGATE_UNKNOWN, False)):
         runs = {
-            "ci.yml": rs.Head("ci.yml", "b", "s1", T0, frozenset({DRIFT_KEY}), True,
-                              skipped=skipped, aggregate=aggregate),
+            "ci.yml": rs.Head(
+                "ci.yml", "b", "s1", T0, frozenset({DRIFT_KEY}), True, skipped=skipped, aggregate=aggregate
+            ),
             "e2e.yml": rs.Head("e2e.yml", "b", "s1", T0, frozenset()),
         }
         assert rs._sole_red(runs, frozenset({DRIFT_KEY})) is sole, aggregate
@@ -145,8 +146,17 @@ def test_a_superseded_incomplete_sha_withholds_no_family() -> None:
     evidence contributes nothing; the measured-head withholding pass must exclude it too, or a
     gate reads UNKNOWN on the very evidence the superseded rule discards."""
     old = [
-        rs.Head("ci.yml", "b", "old", T0, frozenset(), False, cancelled=True,
-                skipped=frozenset({rs.QUALITY_JOB}), created=T0),
+        rs.Head(
+            "ci.yml",
+            "b",
+            "old",
+            T0,
+            frozenset(),
+            False,
+            cancelled=True,
+            skipped=frozenset({rs.QUALITY_JOB}),
+            created=T0,
+        ),
         rs.Head("e2e.yml", "b", "old", T0, frozenset(), True, created=T0),
     ]
     newer = [
@@ -203,8 +213,10 @@ def test_only_a_skip_that_withholds_a_gate_costs_a_guard_read() -> None:
     run unmeasured when that read would have failed."""
     ancillary = {
         **_job(JOB, "failure", 11),
-        "steps": [{"name": BUNDLES, "conclusion": "failure"},
-                  {"name": "Upload frontend unit test report", "conclusion": "skipped"}],
+        "steps": [
+            {"name": BUNDLES, "conclusion": "failure"},
+            {"name": "Upload frontend unit test report", "conclusion": "skipped"},
+        ],
     }
     ungated = {
         **_job("Trunk e2e root report", "failure", 13),
@@ -233,15 +245,14 @@ def test_a_closed_run_proves_nothing_rather_than_guessing_its_base() -> None:
     assert (data.guard_reads_unread, _sole_red(data)) == (0, False)
     # The same run's own array naming two PRs: no single base, so the proof is unproven.
     two = _collect(
-        {"f0": _manifest(""), "b0": _manifest("")}, [],
+        {"f0": _manifest(""), "b0": _manifest("")},
+        [],
         pulls=[{"number": 7348, "base": {"sha": "b0"}}, {"number": 9, "base": {"sha": "b9"}}],
     )
     assert (two.guard_reads_unread, _sole_red(two)) == (1, False)
 
 
-def _shadow_api(
-    base_declaration: str | None, calls: list[str], head_declaration: str | None = None
-) -> rs.Api:
+def _shadow_api(base_declaration: str | None, calls: list[str], head_declaration: str | None = None) -> rs.Api:
     """The collector's own shape for the merge-parent proof: one PR head `f0` whose base is
     `b0`, its frontend job failing the bundle budget and skipping the drift step after it, with
     a failed `ci gate` as the aggregate and a green e2e run. `base_declaration` is ci.yml at
@@ -265,8 +276,10 @@ def _shadow_api(
     runs = {"ci.yml": [run(1, "ci.yml", "failure")], "e2e.yml": [run(2, "e2e.yml", "success")]}
     jobs = {
         1: [
-            {**_job(JOB, "failure", 11), "steps": [{"name": BUNDLES, "conclusion": "failure"},
-                                                  {"name": DRIFT, "conclusion": "skipped"}]},
+            {
+                **_job(JOB, "failure", 11),
+                "steps": [{"name": BUNDLES, "conclusion": "failure"}, {"name": DRIFT, "conclusion": "skipped"}],
+            },
             _job("ci gate", "failure", 12),
         ],
         2: [_job("e2e gate", "success", 21)],

@@ -37,7 +37,14 @@ const BEATS = grid(64);
 const at = (bar, beat = 0) => (0.5 + ((bar - 1) * 4 + beat) * 0.48) * 1000;
 
 function plan(anchorMs, direction, { playing = false, stepBars = 4, sections = [] } = {}) {
-	return gj.planGridJump({ beats: BEATS, sectionStartsSec: sections, anchorMs, direction, stepBars, playing });
+	return gj.planGridJump({
+		beats: BEATS,
+		sectionStartsSec: sections,
+		anchorMs,
+		direction,
+		stepBars,
+		playing
+	});
 }
 
 /** Where the engine's beat jump lands for a plan (the same math it runs). */
@@ -62,7 +69,7 @@ test('Left inside a block replays that block from its start', () => {
 	assert.equal(p.targetBar, 5);
 });
 
-test('control: today\'s beat jump from the same spot does NOT return (it drifts with the playhead)', () => {
+test("control: today's beat jump from the same spot does NOT return (it drifts with the playhead)", () => {
 	// +16 then -16 beats after 3 beats of play lands 3 beats later than it started.
 	const start = at(6, 1);
 	const out = math.beatJumpTargetMs(BEATS, start, 16, true);
@@ -103,11 +110,25 @@ test('section starts snap to their nearest downbeat', () => {
 
 test('before bar 1, both directions go to bar 1', () => {
 	const beats = grid(16, 2.0);
-	const right = gj.planGridJump({ beats, sectionStartsSec: [], anchorMs: 2000 - 0, direction: 1, stepBars: 4, playing: false });
+	const right = gj.planGridJump({
+		beats,
+		sectionStartsSec: [],
+		anchorMs: 2000 - 0,
+		direction: 1,
+		stepBars: 4,
+		playing: false
+	});
 	// At the first downbeat already: Right goes on to bar 5.
 	assert.equal(right.targetBar, 5);
 	const shifted = beats.map((b, i) => ({ ...b, n: ((i + 2) % 4) + 1 })); // two pickup beats
-	const left = gj.planGridJump({ beats: shifted, sectionStartsSec: [], anchorMs: 2100, direction: -1, stepBars: 4, playing: false });
+	const left = gj.planGridJump({
+		beats: shifted,
+		sectionStartsSec: [],
+		anchorMs: 2100,
+		direction: -1,
+		stepBars: 4,
+		playing: false
+	});
 	assert.equal(left.kind, 'jump');
 	assert.equal(left.targetBar, 1);
 });
@@ -123,7 +144,14 @@ test('edges refuse with a reason instead of moving', () => {
 });
 
 test('AC-13: a grid with fewer than two bars refuses, distinct from an empty deck', () => {
-	const p = gj.planGridJump({ beats: grid(1), sectionStartsSec: [], anchorMs: at(1, 1), direction: 1, stepBars: 4, playing: false });
+	const p = gj.planGridJump({
+		beats: grid(1),
+		sectionStartsSec: [],
+		anchorMs: at(1, 1),
+		direction: 1,
+		stepBars: 4,
+		playing: false
+	});
 	assert.equal(p.kind, 'refused');
 	assert.match(p.reason, /no bar grid/);
 });
@@ -141,9 +169,23 @@ test('gridJumpPoints matches the Cmd K grid() rule', () => {
 });
 
 test('a lead-in before the first beat: Right seeks to bar 1, Left refuses', () => {
-	const pre = gj.planGridJump({ beats: BEATS, sectionStartsSec: [], anchorMs: 0, direction: 1, stepBars: 4, playing: false });
+	const pre = gj.planGridJump({
+		beats: BEATS,
+		sectionStartsSec: [],
+		anchorMs: 0,
+		direction: 1,
+		stepBars: 4,
+		playing: false
+	});
 	assert.deepEqual(pre, { kind: 'seek', targetMs: 500, targetBar: 1 });
-	const back = gj.planGridJump({ beats: BEATS, sectionStartsSec: [], anchorMs: 0, direction: -1, stepBars: 4, playing: false });
+	const back = gj.planGridJump({
+		beats: BEATS,
+		sectionStartsSec: [],
+		anchorMs: 0,
+		direction: -1,
+		stepBars: 4,
+		playing: false
+	});
 	assert.equal(back.kind, 'refused');
 	assert.match(back.reason, /outside the beatgrid/);
 });

@@ -135,7 +135,7 @@ def bulk_cue_presence(stable_ids: Sequence[str]) -> dict[str, CuePresence]:
             if table is not None:
                 for chunk in _chunked(ids):
                     placeholders = ",".join("?" * len(chunk))
-                    for sid, in state.execute(
+                    for (sid,) in state.execute(
                         "SELECT DISTINCT stable_id FROM analysis_canonical "
                         "WHERE lane = 'beatgrid' "
                         f"AND stable_id IN ({placeholders})",

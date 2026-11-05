@@ -7,7 +7,13 @@
  * One module so master-silence-report and app-init share a single reader registration.
  */
 import { startAppInstruments } from '$lib/rb/app-init';
-import { deckMixBuffer, deckStates, engine, peekMasterMeterReading, upgradeDeckStemsForTest } from '$lib/rb/audio-engine.svelte';
+import {
+	deckMixBuffer,
+	deckStates,
+	engine,
+	peekMasterMeterReading,
+	upgradeDeckStemsForTest
+} from '$lib/rb/audio-engine.svelte';
 import {
 	disconnectDeckProcessorForTest,
 	sampleMasterSilenceForSilenceE2e
@@ -107,7 +113,9 @@ export async function runScenario(scenario: Scenario): Promise<Outcome> {
 			if (mix === null) throw new Error('mix buffer missing after load');
 			await upgradeDeckStemsForTest(TEST_DECK, stableId, mix);
 			if (deckStates[TEST_DECK].stems.status !== 'ready') {
-				throw new Error(`stems not ready: ${deckStates[TEST_DECK].stems.status} ${deckStates[TEST_DECK].stems.error ?? ''}`);
+				throw new Error(
+					`stems not ready: ${deckStates[TEST_DECK].stems.status} ${deckStates[TEST_DECK].stems.error ?? ''}`
+				);
 			}
 		}
 		await engine.quantizedSeek(TEST_DECK, scenario.position_sec * 1000, true);
@@ -146,10 +154,24 @@ export async function runScenario(scenario: Scenario): Promise<Outcome> {
 			await sleep(100);
 		}
 		await Promise.all(executions);
-		return { open_rms, held_rms_max, samples, plans, deck_playing_after: deckStates[TEST_DECK].playing, errors };
+		return {
+			open_rms,
+			held_rms_max,
+			samples,
+			plans,
+			deck_playing_after: deckStates[TEST_DECK].playing,
+			errors
+		};
 	} catch (error) {
 		errors.push(String(error));
-		return { open_rms: 0, held_rms_max: 0, samples: 0, plans, deck_playing_after: deckStates[TEST_DECK].playing, errors };
+		return {
+			open_rms: 0,
+			held_rms_max: 0,
+			samples: 0,
+			plans,
+			deck_playing_after: deckStates[TEST_DECK].playing,
+			errors
+		};
 	} finally {
 		resetMasterSilenceWatch();
 		setSilenceDropoutHandler(null);

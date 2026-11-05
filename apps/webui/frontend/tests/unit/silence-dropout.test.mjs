@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const STUB_IPC = fileURLToPath(
-	new URL('./fixtures/silence-dropout-stub-ipc.ts', import.meta.url)
-);
+const STUB_IPC = fileURLToPath(new URL('./fixtures/silence-dropout-stub-ipc.ts', import.meta.url));
 
 let dropout;
 

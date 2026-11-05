@@ -10,6 +10,7 @@ Sentry-captured the ERROR.
 
 [if] remap drops a twin location [then] its changelog entries go too, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -48,9 +49,7 @@ def _changelog_pks(conn: sqlite3.Connection, table: str, changelog: str) -> set[
     }
 
 
-def test_twin_location_conflict_prunes_dangling_changelog(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_twin_location_conflict_prunes_dangling_changelog(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Two tracks, same path: the loser's location row is vacuumed, not offered."""
     data_dir = tmp_path / "spoke"
     conn = _open(data_dir)
@@ -97,9 +96,7 @@ def test_twin_location_conflict_prunes_dangling_changelog(
             (_LOSER_LOCATION,),
         ).fetchone()
         assert leftover is None
-        kept = conn.execute(
-            "SELECT location_id, stable_id FROM track_locations"
-        ).fetchall()
+        kept = conn.execute("SELECT location_id, stable_id FROM track_locations").fetchall()
         assert kept == [(_SURVIVOR_LOCATION, _STORED_PK)]
 
         encoded = protocol.encode_row_pk((_LOSER_LOCATION,))
@@ -109,15 +106,10 @@ def test_twin_location_conflict_prunes_dangling_changelog(
         fence = Watermark(peer="hub", last_sync_at=_T1)
         with caplog.at_level("ERROR", logger="apps.sync_hub.engine"):
             offered = engine.spoke_push(conn, watermark=fence)
-        assert not any(
-            "which no longer exists" in record.getMessage()
-            for record in caplog.records
-        ), "fenced offer still saw a ghost track_locations changelog entry"
-        offered_location_ids = {
-            change.pk[0]
-            for change in offered.rows
-            if change.table == "track_locations"
-        }
+        assert not any("which no longer exists" in record.getMessage() for record in caplog.records), (
+            "fenced offer still saw a ghost track_locations changelog entry"
+        )
+        offered_location_ids = {change.pk[0] for change in offered.rows if change.table == "track_locations"}
         assert _LOSER_LOCATION not in offered_location_ids
     finally:
         conn.close()

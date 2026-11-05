@@ -60,3 +60,6 @@ export const MINIMIZE_PATH = 'M5 12h14';
 export const RESTORE_PATH = 'M5 5h14v14H5z';
 
 export const CLOSE_PATH = 'M6 6l12 12 M18 6 6 18';
+
+/** GRID-OCTAVE-02 tempo-dispute marker: a small outlined warning triangle, 12x12 viewBox, stroked. */
+export const BPM_DISPUTE_PATH = 'M6 1.5 11 10.5H1z M6 5v2.4 M6 8.8v.2';

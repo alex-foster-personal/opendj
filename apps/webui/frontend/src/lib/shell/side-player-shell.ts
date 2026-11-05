@@ -4,7 +4,13 @@
  * loaded Spotify panel pays for it, not the library first paint.
  */
 
-import { type Scope, type SideLoginImportOutcome, electronBridge, nativeShellKind, openExternal } from './native-shell';
+import {
+	type Scope,
+	type SideLoginImportOutcome,
+	electronBridge,
+	nativeShellKind,
+	openExternal
+} from './native-shell';
 
 export type { SideLoginImportOutcome };
 
@@ -26,7 +32,11 @@ export function isSpotifyPlayerTarget(url: string): boolean {
 	} catch {
 		return false;
 	}
-	return parsed.protocol === 'https:' && parsed.hostname === 'open.spotify.com' && PLAYER_TARGET_PATH.test(parsed.pathname);
+	return (
+		parsed.protocol === 'https:' &&
+		parsed.hostname === 'open.spotify.com' &&
+		PLAYER_TARGET_PATH.test(parsed.pathname)
+	);
 }
 
 /** True when this shell can dock the Spotify side player (Electron 2+). */
@@ -48,7 +58,9 @@ export async function openSpotifySidePlayer(
 	external: (url: string, scope: Scope) => Promise<void> = openExternal
 ): Promise<void> {
 	if (!isSpotifyPlayerTarget(url)) {
-		throw new Error(`side player only opens ${SPOTIFY_PLAYER_ORIGIN} playlist, album, track or artist pages`);
+		throw new Error(
+			`side player only opens ${SPOTIFY_PLAYER_ORIGIN} playlist, album, track or artist pages`
+		);
 	}
 	const sidePlayer = electronBridge(scope)?.sidePlayer;
 	if (sidePlayer !== undefined) return sidePlayer.open(url, options);
@@ -56,7 +68,9 @@ export async function openSpotifySidePlayer(
 	// player) refuses or swallows window.open, so it opens the page in the
 	// system browser through its own opener.
 	if (nativeShellKind(scope) !== null) return external(url, scope);
-	const opener = (scope as { open?: (u: string, name: string, features: string) => PlayerWindow | null }).open;
+	const opener = (
+		scope as { open?: (u: string, name: string, features: string) => PlayerWindow | null }
+	).open;
 	if (typeof opener !== 'function') throw new Error('no window.open in this scope');
 	// Open the window blank, still under the click, and cut its opener before
 	// pointing it at Spotify: a player page that navigated window.opener could
@@ -70,7 +84,9 @@ export async function openSpotifySidePlayer(
 	const player = opener.call(scope, '', '_blank', 'popup,width=420,height=860');
 	// A blocked pop-up returns null; say so instead of pretending it opened.
 	if (player == null) {
-		throw new Error('the browser blocked the player window; allow pop-ups for Open DJ and try again');
+		throw new Error(
+			'the browser blocked the player window; allow pop-ups for Open DJ and try again'
+		);
 	}
 	player.opener = null;
 	player.location.href = url;
@@ -83,7 +99,9 @@ interface PlayerWindow {
 }
 
 /** Copy Spotify/store sign-ins from the user's Chrome profile into the side player. */
-export async function importBrowserLogins(scope: Scope = globalThis): Promise<SideLoginImportOutcome> {
+export async function importBrowserLogins(
+	scope: Scope = globalThis
+): Promise<SideLoginImportOutcome> {
 	const sidePlayer = electronBridge(scope)?.sidePlayer;
 	if (sidePlayer === undefined) {
 		return { kind: 'refused', reason: 'Only the Open DJ desktop app can import browser sign-ins.' };

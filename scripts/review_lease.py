@@ -71,8 +71,7 @@ def active_reviewer(labels: Sequence[str]) -> str | None:
             found.append(fleet)
     if len(found) > 1:
         raise TriageError(
-            f"ambiguous reviewer lease: multiple reviewer labels {found!r}; "
-            "only one fleet may hold the lease at a time"
+            f"ambiguous reviewer lease: multiple reviewer labels {found!r}; only one fleet may hold the lease at a time"
         )
     return found[0] if found else None
 
@@ -119,9 +118,7 @@ def fetch_lease_for_branch(branch: str) -> ReviewerLease | None:
     if not rows:
         return None
     if len(rows) > 1:
-        raise TriageError(
-            f"ambiguous branch lease: {len(rows)} open PRs for head branch {branch!r}"
-        )
+        raise TriageError(f"ambiguous branch lease: {len(rows)} open PRs for head branch {branch!r}")
     row = rows[0]
     pr = str(row["number"])
     head = pinned_head(pr)
@@ -156,9 +153,7 @@ def _commit_slices(base_sha: str, head_sha: str) -> list[str]:
         check=False,
     )
     if proc.returncode != 0:
-        raise TriageError(
-            f"git rev-list {base_sha}..{head_sha} failed: {proc.stderr.strip() or '<empty>'}"
-        )
+        raise TriageError(f"git rev-list {base_sha}..{head_sha} failed: {proc.stderr.strip() or '<empty>'}")
     shas = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
     lines: list[str] = []
     for sha in shas:
@@ -200,9 +195,7 @@ def handoff(pr: str, fleet: str, comment_file: str | None) -> None:
     pr_edit_labels(pr, remove=(label,), add=(HANDOFF_LABEL,))
     after = fetch_lease(pr)
     if after is not None:
-        raise TriageError(
-            f"handoff left reviewer lease {after.label!r} on PR #{pr}; expected none"
-        )
+        raise TriageError(f"handoff left reviewer lease {after.label!r} on PR #{pr}; expected none")
     if comment_file:
         body = open(comment_file, encoding="utf-8").read()
         pr_post_comment(pr, body)
@@ -303,9 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check":
             check_pr(args.pr, args.fleet, args.emergency)
         elif args.command == "check-branch":
-            branch = args.branch or subprocess.check_output(
-                ["git", "branch", "--show-current"], text=True
-            ).strip()
+            branch = args.branch or subprocess.check_output(["git", "branch", "--show-current"], text=True).strip()
             if not branch:
                 raise TriageError("could not determine current branch")
             check_branch(branch, args.fleet, args.emergency)

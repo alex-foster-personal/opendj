@@ -20,7 +20,11 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 function trackWithLines(n) {
-	const lines = Array.from({ length: n }, (_, i) => ({ text: `line ${i}`, first_word: i, last_word: i }));
+	const lines = Array.from({ length: n }, (_, i) => ({
+		text: `line ${i}`,
+		first_word: i,
+		last_word: i
+	}));
 	return { lines, words: lines.map((l, i) => ({ word: l.text, start_s: i, end_s: i + 0.5 })) };
 }
 
@@ -47,7 +51,12 @@ test('DeckLyricLine reads every line through lineAtOrNull and resets its cursor 
 	}
 	const reset = src.slice(src.indexOf('$effect.pre(() => {'), src.indexOf('const currentLine'));
 	assert.match(reset, /void track;/, 'the reset is keyed on the track');
-	for (const field of ['lineIndex = null', 'wordIndex = null', 'nextLineIndex = null', 'hint = 0']) {
+	for (const field of [
+		'lineIndex = null',
+		'wordIndex = null',
+		'nextLineIndex = null',
+		'hint = 0'
+	]) {
 		assert.ok(reset.includes(field), `track change resets ${field}`);
 	}
 });

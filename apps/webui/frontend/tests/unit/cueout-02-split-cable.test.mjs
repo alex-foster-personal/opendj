@@ -89,7 +89,10 @@ test('split-cable graph uses ChannelMerger L/R assignment and mono downmix', asy
 	assert.match(hpSrc, /cueLeftHalf\.connect\(nodes\.cueMono\)/);
 	assert.match(hpSrc, /cueRightHalf\.connect\(nodes\.cueMono\)/);
 	assert.match(hpSrc, /splitMerger\.connect\(muteGain\)/);
-	assert.match(engineSrc, /wireSplitCableIntoMasterPath\(_masterGain, _masterMuteGain, headphones\)/);
+	assert.match(
+		engineSrc,
+		/wireSplitCableIntoMasterPath\(_masterGain, _masterMuteGain, headphones\)/
+	);
 	const wireStart = hpSrc.indexOf('export function wireSplitCableIntoMasterPath');
 	const wireEnd = hpSrc.indexOf('\nfunction _headphoneError', wireStart);
 	const wireBody = hpSrc.slice(wireStart, wireEnd === -1 ? undefined : wireEnd);

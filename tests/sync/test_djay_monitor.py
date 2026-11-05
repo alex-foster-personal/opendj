@@ -1,4 +1,5 @@
 """Tests for the ported djay now-playing monitor."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

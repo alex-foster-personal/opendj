@@ -95,9 +95,9 @@ test('deck unload control stays reachable when artwork is missing or fails to lo
 
 	const trackGateIdx = deckHeader.indexOf('{#if deck.stable_id !== null}');
 	const artBtnIdx = deckHeader.indexOf('class="art-btn"');
-	const artworkGateIdx = deckHeader.indexOf('{#if artSrc !== null && !artworkFailed}');
+	const artworkGateIdx = deckHeader.indexOf('{#if artSrc !== null && deck.stable_id !== null && coverVisible(deck.stable_id)}');
 	const unloadClickIdx = deckHeader.indexOf('onclick={() => void onUnload()}');
-	const imgSrcIdx = deckHeader.indexOf('src={artSrc}');
+	const imgSrcIdx = deckHeader.indexOf('src={coverSrc(artSrc, sid)}');
 
 	assert.ok(
 		trackGateIdx !== -1 && artBtnIdx !== -1 && artworkGateIdx !== -1,

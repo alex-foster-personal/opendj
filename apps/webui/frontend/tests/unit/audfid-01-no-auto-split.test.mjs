@@ -24,7 +24,12 @@ const OUTPUTS = [
 ];
 
 test('if a same-device MAIN/CUE pair is assigned a split then the master goes mono, left only', () => {
-	const shared = hp.dualSinkAssignment({ outputs: OUTPUTS, selectedCueId: 'native:sony', selectedMasterId: 'native:sony', currentRoomId: 'native:sony' });
+	const shared = hp.dualSinkAssignment({
+		outputs: OUTPUTS,
+		selectedCueId: 'native:sony',
+		selectedMasterId: 'native:sony',
+		currentRoomId: 'native:sony'
+	});
 	assert.deepEqual(shared, {
 		masterId: 'native:sony',
 		cueId: null,
@@ -35,10 +40,20 @@ test('if a same-device MAIN/CUE pair is assigned a split then the master goes mo
 
 test('if the Mac app auto-pins MAIN to the macOS default then the room follows whatever grabbed the default', () => {
 	// 13:37Z shape: MAIN unpinned, the Bluetooth headphones are the macOS default.
-	const onDefault = hp.dualSinkAssignment({ outputs: OUTPUTS, selectedCueId: 'native:sony', selectedMasterId: null, currentRoomId: 'native:sony' });
+	const onDefault = hp.dualSinkAssignment({
+		outputs: OUTPUTS,
+		selectedCueId: 'native:sony',
+		selectedMasterId: null,
+		currentRoomId: 'native:sony'
+	});
 	assert.equal(onDefault.masterId, null, 'no hidden MAIN pin');
 	assert.equal(onDefault.cueId, null, 'the CUE on the room output is refused');
-	const elsewhere = hp.dualSinkAssignment({ outputs: OUTPUTS, selectedCueId: 'native:sony', selectedMasterId: null, currentRoomId: 'native:hyperboom' });
+	const elsewhere = hp.dualSinkAssignment({
+		outputs: OUTPUTS,
+		selectedCueId: 'native:sony',
+		selectedMasterId: null,
+		currentRoomId: 'native:hyperboom'
+	});
 	assert.deepEqual(elsewhere, { masterId: null, cueId: 'native:sony', autoPinnedMaster: false });
 });
 
@@ -54,8 +69,14 @@ test('if any writer but the operator can set split_cable then an automatic split
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const writes = [...source.matchAll(/output_mode = /g)].length;
 	assert.equal(writes, 1, 'every output_mode write goes through _setOutputMode');
-	assert.match(source, /if \(mode === 'split_cable' && !_operatorChoseSplit\) \{\n\t\tthrow new Error/);
-	assert.match(source, /recordPerfEvent\('output-mode-change', `output_mode \$\{from\} -> \$\{mode\} \(reason \$\{reason\}\)`/);
+	assert.match(
+		source,
+		/if \(mode === 'split_cable' && !_operatorChoseSplit\) \{\n\t\tthrow new Error/
+	);
+	assert.match(
+		source,
+		/recordPerfEvent\('output-mode-change', `output_mode \$\{from\} -> \$\{mode\} \(reason \$\{reason\}\)`/
+	);
 	assert.ok(!source.includes('_enterSameDeviceSplit'), 'no automatic split path is left');
 	assert.ok(!source.includes("split_reason = 'same_device'"), 'nothing marks an automatic split');
 });
@@ -72,7 +93,13 @@ test('if a same-device CUE pick is not refused before its try then a refused pic
 test('if a device change that puts CUE on MAIN keeps the CUE live or restores it then the room plays the cue mix', () => {
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const refresh = source.slice(source.indexOf('export async function refreshHeadphoneOutputs('));
-	assert.match(refresh, /if \(assignment\.cueRefusal !== undefined\) \{\n\t\tmixerState\.headphones\.selected_output_device_id = null;/);
-	assert.match(refresh, /rememberedCueId: assignment\.cueRefusal === undefined \? _rememberedCueId : null,/);
+	assert.match(
+		refresh,
+		/if \(assignment\.cueRefusal !== undefined\) \{\n\t\tmixerState\.headphones\.selected_output_device_id = null;/
+	);
+	assert.match(
+		refresh,
+		/rememberedCueId: assignment\.cueRefusal === undefined \? _rememberedCueId : null,/
+	);
 	assert.match(refresh, /access\.notices\.push\(assignment\.cueRefusal\);/);
 });

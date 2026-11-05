@@ -7,6 +7,7 @@
  * analysis contract only. Nothing here is a client read model.
  */
 
+import type { BpmAlternative } from '$lib/rb/bpm-dispute';
 import type { HotCueSlot } from './hot-cue-types';
 
 /** Cue taxonomy from the /anlz endpoint. Kind 9-11 rows are excluded server-side v1. */
@@ -87,6 +88,8 @@ export interface AnlzBeatgrid {
 	 * this grid's beats project from, so the deck's public BPM cannot disagree
 	 * with the grid it plays against. */
 	bpm?: number;
+	/** Own payloads: the fit's confidence (0..1), the GRID-OCTAVE-02 hover line's "(confidence 0.0)". */
+	bpm_confidence?: number | null;
 	/** Own payloads with `status: ok` only. One-anchor grids set `false`.
 	 * Multi-anchor maps omit this field (the beats already carry local bpm;
 	 * the grid is trusted). Rekordbox omits it. `true` means a static grid
@@ -314,7 +317,29 @@ export interface AnlzData {
 	 * for payloads the client builds itself, and absence reads as the stricter
 	 * 'selection' (see beatgrid-source-basis.ts). */
 	beatgrid_source_basis?: AnlzBeatgridSourceBasis;
+	/** GRID-MIK-01 / GRID-PHASE-01 (grid_phase_overlay.py): whose beats
+	 * `beatgrid` actually carries. `beatgrid_source` keeps naming the lane
+	 * (grid edits key on it); 'mik' is Mixed In Key's grid standing in for a
+	 * missing or low-confidence own grid. */
+	grid_source?: AnlzGridSource;
+	/** Where the lines' phase came from: the fit, MIK's grid, or the kick. */
+	grid_phase?: AnlzGridPhase;
+	/** How far that phase source moved the lines, ms (+ = later). */
+	grid_phase_shift_ms?: number;
+	/** Why the grid is what it is, in words. */
+	grid_source_reason?: string;
+	/** GRID-OCTAVE-02: our tempo and Mixed In Key's disagree and no pick is
+	 * stored; the deck readout shows the dispute marker. */
+	bpm_disputed?: boolean;
+	/** Both tempos, ours first, whenever they disagree. */
+	bpm_alternatives?: BpmAlternative[];
 }
+
+/** See `AnlzData.grid_phase`. */
+export type AnlzGridPhase = 'fitted' | 'mik' | 'kick';
+
+/** See `AnlzData.grid_source`. */
+export type AnlzGridSource = 'own' | 'own_disputed' | 'rekordbox' | 'mik' | 'none';
 
 /** See `AnlzData.beatgrid_source_basis`. */
 export type AnlzBeatgridSourceBasis = 'selection' | 'unmapped-default';

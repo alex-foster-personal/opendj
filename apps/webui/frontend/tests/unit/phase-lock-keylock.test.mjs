@@ -76,15 +76,22 @@ test('a key-locked follower between the ms line and a quarter beat is bent, not 
 
 test('past a quarter beat even a key-locked follower re-seeks', () => {
 	const ms = 0.26 * MASTER_BEAT_MS;
-	assert.equal(pl.phaseLockDecision(input(60, ahead(ms), { ...confirming, keyLocked: true })).action, 'reseek');
+	assert.equal(
+		pl.phaseLockDecision(input(60, ahead(ms), { ...confirming, keyLocked: true })).action,
+		'reseek'
+	);
 	// Control: just inside the quarter beat it is bent.
 	const inside = 0.24 * MASTER_BEAT_MS;
-	assert.equal(pl.phaseLockDecision(input(60, ahead(inside), { ...confirming, keyLocked: true })).action, 'trim');
+	assert.equal(
+		pl.phaseLockDecision(input(60, ahead(inside), { ...confirming, keyLocked: true })).action,
+		'trim'
+	);
 	// The re-join gates still hold: an unconfirmed tick, or one too soon after
 	// the join, bends meanwhile.
 	assert.equal(pl.phaseLockDecision(input(60, ahead(ms), { keyLocked: true })).action, 'trim');
 	assert.equal(
-		pl.phaseLockDecision(input(60, ahead(ms), { ...confirming, keyLocked: true, sinceJoinSec: 1 })).action,
+		pl.phaseLockDecision(input(60, ahead(ms), { ...confirming, keyLocked: true, sinceJoinSec: 1 }))
+			.action,
 		'trim'
 	);
 });
@@ -106,13 +113,24 @@ test('the key-locked bend adds a two-beat gain past the near line, capped at 5%;
 	assert.ok(Math.abs(small.tempo - want) < 1e-9, `40 ms: ${small.tempo} want ${want}`);
 	// 100 ms asks for more than 5%: capped.
 	const big = pl.phaseLockDecision(input(60, ahead(100), { keyLocked: true }));
-	assert.ok(Math.abs(big.tempo - BASE * (1 - pl.PHASE_LOCK_KEYLOCK_MAX_TRIM)) < 1e-9, `100 ms: ${big.tempo}`);
+	assert.ok(
+		Math.abs(big.tempo - BASE * (1 - pl.PHASE_LOCK_KEYLOCK_MAX_TRIM)) < 1e-9,
+		`100 ms: ${big.tempo}`
+	);
 	// Control: the same 40 ms on a varispeed deck is the 0.3% cap's business.
 	const vs = pl.phaseLockDecision(input(60, ahead(40)));
-	assert.ok(Math.abs(vs.tempo / BASE - 1) <= pl.PHASE_LOCK_MAX_TRIM + 1e-12, `varispeed trim ${vs.tempo / BASE - 1}`);
-	assert.ok(Math.abs(small.tempo / BASE - 1) > pl.PHASE_LOCK_MAX_TRIM, 'the key-locked bend is the larger one');
+	assert.ok(
+		Math.abs(vs.tempo / BASE - 1) <= pl.PHASE_LOCK_MAX_TRIM + 1e-12,
+		`varispeed trim ${vs.tempo / BASE - 1}`
+	);
+	assert.ok(
+		Math.abs(small.tempo / BASE - 1) > pl.PHASE_LOCK_MAX_TRIM,
+		'the key-locked bend is the larger one'
+	);
 	// The pitch range still bounds it: a 2% fader keeps a 5% ask inside 2%.
-	const narrow = pl.phaseLockDecision(input(60, ahead(-100), { keyLocked: true, pitchRangePct: 2 }));
+	const narrow = pl.phaseLockDecision(
+		input(60, ahead(-100), { keyLocked: true, pitchRangePct: 2 })
+	);
 	assert.ok(narrow.tempo <= 1.02 + 1e-12, `2% range: ${narrow.tempo}`);
 });
 
@@ -156,7 +174,11 @@ function simulate({ keyLocked, startMs = 0, rateError = 0, seconds = 10, settleS
 		if (under10At === null && Math.abs(err) < 10) under10At = t;
 		if (t > settleSec) maxAfterSettle = Math.max(maxAfterSettle, Math.abs(err));
 		const d = pl.phaseLockDecision(
-			input(mSec, fSec + (jitterMs() / 1000) * BASE, { trimming: commanded !== BASE, overLineTicks, keyLocked })
+			input(mSec, fSec + (jitterMs() / 1000) * BASE, {
+				trimming: commanded !== BASE,
+				overLineTicks,
+				keyLocked
+			})
 		);
 		overLineTicks = d.overLineTicks;
 		if (d.action === 'reseek') {
@@ -173,12 +195,24 @@ function simulate({ keyLocked, startMs = 0, rateError = 0, seconds = 10, settleS
 
 test('simulation: 60 ms off, key-locked, is bent under 10 ms within 2 s (100 ms within 3) and never seeks', () => {
 	// 100 ms needs 2 s at the 5% cap alone (50 ms a second), so it gets 3.
-	for (const [startMs, within] of [[60, 2], [-60, 2], [100, 3]]) {
+	for (const [startMs, within] of [
+		[60, 2],
+		[-60, 2],
+		[100, 3]
+	]) {
 		const r = simulate({ keyLocked: true, startMs, settleSec: within + 1 });
 		assert.equal(r.reseeks, 0, `${startMs} ms: re-seeked`);
-		assert.ok(r.under10At !== null && r.under10At < within, `${startMs} ms: under 10 ms at ${r.under10At} s`);
-		assert.ok(r.maxAfterSettle < 5, `${startMs} ms: ${r.maxAfterSettle.toFixed(2)} ms after settling`);
-		console.log(`# key-locked ${startMs} ms: under 10 ms at ${r.under10At.toFixed(2)} s, ${r.sends} commands`);
+		assert.ok(
+			r.under10At !== null && r.under10At < within,
+			`${startMs} ms: under 10 ms at ${r.under10At} s`
+		);
+		assert.ok(
+			r.maxAfterSettle < 5,
+			`${startMs} ms: ${r.maxAfterSettle.toFixed(2)} ms after settling`
+		);
+		console.log(
+			`# key-locked ${startMs} ms: under 10 ms at ${r.under10At.toFixed(2)} s, ${r.sends} commands`
+		);
 	}
 	// Control: key lock off, the same 60 ms is past the 15 ms line and seeks.
 	const varispeed = simulate({ keyLocked: false, startMs: 60 });

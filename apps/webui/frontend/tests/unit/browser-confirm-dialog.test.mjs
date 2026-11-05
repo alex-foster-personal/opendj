@@ -21,10 +21,7 @@ describe('browser-confirm-dialog', () => {
 			join(root, 'src/lib/components/rb/browser/BrowserConfirmDialog.svelte'),
 			'utf8'
 		);
-		const panelSrc = readFileSync(
-			join(root, 'src/lib/components/rb/BrowserPanel.svelte'),
-			'utf8'
-		);
+		const panelSrc = readFileSync(join(root, 'src/lib/components/rb/BrowserPanel.svelte'), 'utf8');
 		assert.match(dialogSrc, /onSecondary\?\.\(\{ remember, setDefault \}\)/);
 		assert.match(panelSrc, /onSecondary=\{\(opts\) =>/);
 		assert.match(panelSrc, /resolve\(\{ ok: false, \.\.\.opts \}\)/);
@@ -36,10 +33,7 @@ describe('browser-confirm-dialog', () => {
 	// request by keying it on the pending request object. Structural, because
 	// node tests cannot mount Svelte components (load-typescript.mjs stubs them).
 	it('remounts the dialog for each confirmation request', () => {
-		const panelSrc = readFileSync(
-			join(root, 'src/lib/components/rb/BrowserPanel.svelte'),
-			'utf8'
-		);
+		const panelSrc = readFileSync(join(root, 'src/lib/components/rb/BrowserPanel.svelte'), 'utf8');
 		assert.match(
 			panelSrc,
 			/\{#key browserConfirmPending\}\s*<BrowserConfirmDialog[\s\S]*?\/>\s*\{\/key\}/

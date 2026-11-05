@@ -13,7 +13,10 @@
 	import { assistantSidebarEnabled } from '$lib/assistant/sidebar-flag';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import { assistantChordApplies, settleFocusOnClose } from '$lib/assistant/sidebar-toggle';
-	import { ASSISTANT_CHORD_ARIA, ASSISTANT_CHORD_LABEL } from '$lib/components/rb/hotkeys/hotkeys-registry';
+	import {
+		ASSISTANT_CHORD_ARIA,
+		ASSISTANT_CHORD_LABEL
+	} from '$lib/components/rb/hotkeys/hotkeys-registry';
 
 	type SidebarModule = typeof import('./AgentSidebar.svelte');
 
@@ -41,11 +44,14 @@
 
 	function setOpen(next: boolean): void {
 		if (next === open) return;
-		if (next) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (next)
+			opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		open = next;
 		if (next && sidebar === null) load();
 		if (!next) {
-			settleFocusOnClose(opener, () => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+			settleFocusOnClose(opener, () =>
+				document.activeElement instanceof HTMLElement ? document.activeElement : null
+			);
 			opener = null;
 		}
 	}
@@ -57,7 +63,12 @@
 			if (sidebar === attempt) sidebar = null;
 			open = false;
 			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Assistant failed to load: ${message}. Reload the page to retry.`, 'error', TOAST_DEFAULT_MS, error);
+			pushToast(
+				`Assistant failed to load: ${message}. Reload the page to retry.`,
+				'error',
+				TOAST_DEFAULT_MS,
+				error
+			);
 		});
 	}
 

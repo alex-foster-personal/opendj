@@ -4,6 +4,7 @@ Two distinct files whose paths normalize to the same collision key must not
 share one inferred ``stable_id``. Duplicate spellings of one physical file
 (same device plus inode) are allowed.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,10 +20,7 @@ class PathCollisionError(ValueError):
     def __init__(self, paths: Sequence[str]) -> None:
         self.paths = sorted(dict.fromkeys(paths))
         joined = "; ".join(self.paths)
-        super().__init__(
-            "path collision: distinct files share the same normalized path "
-            f"key: {joined}"
-        )
+        super().__init__(f"path collision: distinct files share the same normalized path key: {joined}")
 
 
 def path_collision_key(raw_path: str) -> str:

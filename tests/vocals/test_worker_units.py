@@ -15,28 +15,15 @@ Regression one-liners:
 
 from __future__ import annotations
 
-import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 
+from tests.vocals._worker_script import load_vocal_region_worker
+
 pytestmark = pytest.mark.requirement("CAT-05")
 
-_WORKER_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
-)
-
-
-def _import_worker():
-    spec = importlib.util.spec_from_file_location("vocal_region_worker", _WORKER_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-worker = _import_worker()
+worker = load_vocal_region_worker()
 
 
 def test_import_is_torch_free() -> None:
@@ -58,46 +45,33 @@ def test_hysteresis_enters_at_on_and_exits_below_off() -> None:
     # 0.09 < on(0.10) never enters; 0.10 enters; stays in at 0.06 (>= off
     # 0.05 keeps the region open); exits at 0.04.
     values = [0.09, 0.10, 0.06, 0.06, 0.06, 0.04, 0.0, 0.0]
-    regions = worker.envelope_to_regions(
-        _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-    )
+    regions = worker.envelope_to_regions(_env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO)
     assert regions == [(0.5, 2.5)], regions
 
 
 def test_sub_merge_gap_runs_fuse() -> None:
     # two runs separated by 1.0 s (< 1.5 s merge gap) fuse into one
     values = [0.2] * 4 + [0.0] * 2 + [0.2] * 4
-    regions = worker.envelope_to_regions(
-        _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-    )
+    regions = worker.envelope_to_regions(_env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO)
     assert len(regions) == 1
     assert regions[0] == (0.0, 4.5)
 
 
 def test_super_merge_gap_runs_stay_apart() -> None:
     values = [0.2] * 4 + [0.0] * 4 + [0.2] * 4
-    regions = worker.envelope_to_regions(
-        _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-    )
+    regions = worker.envelope_to_regions(_env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO)
     assert len(regions) == 2
 
 
 def test_short_regions_dropped() -> None:
     # a single 0.5 s hop above threshold is < 1.0 s min region
     values = [0.0, 0.2, 0.0, 0.0, 0.0, 0.0]
-    assert (
-        worker.envelope_to_regions(
-            _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-        )
-        == []
-    )
+    assert worker.envelope_to_regions(_env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO) == []
 
 
 def test_open_region_closes_at_envelope_end() -> None:
     values = [0.0, 0.2, 0.2, 0.2, 0.2]
-    regions = worker.envelope_to_regions(
-        _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-    )
+    regions = worker.envelope_to_regions(_env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO)
     assert regions == [(0.5, 2.0)]
 
 
@@ -128,9 +102,7 @@ def test_confidence_is_gain_times_max_ratio_clipped() -> None:
 def test_cpu_fallback_only_allows_known_accelerator_errors() -> None:
     """[if] a non-device error occurs on GPU [then] it must not retry CPU."""
     assert worker._is_accelerator_failure("cuda", RuntimeError("CUDA out of memory"))
-    assert worker._is_accelerator_failure(
-        "mps", RuntimeError("output channels > 65536")
-    )
+    assert worker._is_accelerator_failure("mps", RuntimeError("output channels > 65536"))
     assert not worker._is_accelerator_failure("cuda", ValueError("bad audio header"))
 
 

@@ -150,9 +150,7 @@ def test_post_sync_wire_version_409_is_refused_not_unreachable(
 
     for mismatch_url in serve_wire_mismatch_hub():
         with ops_client(enroll_spoke_dir) as http:
-            response = http.post(
-                "/api/v1/cloudsync/sync", json={"hub_url": mismatch_url}
-            )
+            response = http.post("/api/v1/cloudsync/sync", json={"hub_url": mismatch_url})
             status = http.get("/api/v1/cloudsync/status").json()
 
     assert response.status_code == 409, response.text
@@ -177,9 +175,7 @@ def test_post_sync_to_an_unreachable_hub_is_502_and_journaled_as_error(
     assert status["last_result"]["status"] == "error"
 
 
-def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """if run_sync's declared refusal (a real digest mismatch) is not a journaled 409 then broken"""
     conn = _open(enroll_spoke_dir)
     try:
@@ -207,9 +203,7 @@ def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(
     assert [entry["status"] for entry in status["recent_results"]] == ["error", "ok"]
 
 
-def test_post_sync_returns_409_when_gig_posture(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_post_sync_returns_409_when_gig_posture(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] app_posture is gig [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
     prefs_dir = enroll_spoke_dir / "state"
     prefs_dir.mkdir(parents=True, exist_ok=True)
@@ -229,9 +223,7 @@ def test_post_sync_returns_409_when_gig_posture(
     assert status["recent_results"] == []
 
 
-def test_post_sync_force_true_completes_under_gig_posture(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_post_sync_force_true_completes_under_gig_posture(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] force=true under gig posture [then] POST /sync completes and journals."""
     prefs_dir = enroll_spoke_dir / "state"
     prefs_dir.mkdir(parents=True, exist_ok=True)
@@ -298,9 +290,7 @@ def test_post_sync_is_409_not_500_when_a_standalone_cli_holds_the_flock(
     assert status["recent_results"] == []
 
 
-def test_post_sync_returns_409_when_deck_playing(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_post_sync_returns_409_when_deck_playing(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
     with ops_client(enroll_spoke_dir) as http:
         http.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
@@ -315,9 +305,7 @@ def test_post_sync_returns_409_when_deck_playing(
     assert status["recent_results"] == []
 
 
-def test_post_sync_does_not_refuse_when_mirror_absent_and_prep(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_post_sync_does_not_refuse_when_mirror_absent_and_prep(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] prep posture and no mirror [then] POST /sync still runs."""
     with ops_client(enroll_spoke_dir) as http:
         assert getattr(http.app.state, "ui_mirror", None) is None
@@ -345,9 +333,7 @@ def test_post_sync_refuses_a_second_run_in_the_same_process(enroll_spoke_dir: Pa
     assert status["recent_results"] == [], "refused before syncing, so nothing is journaled"
 
 
-def test_sync_now_is_refused_while_a_scheduler_round_is_in_flight(
-    enroll_live_hub: str, enroll_spoke_dir: Path
-) -> None:
+def test_sync_now_is_refused_while_a_scheduler_round_is_in_flight(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """if Sync now can run alongside a scheduler round on one state.db then broken"""
     round_entered, release_round = threading.Event(), threading.Event()
 
@@ -358,9 +344,7 @@ def test_sync_now_is_refused_while_a_scheduler_round_is_in_flight(
 
     scheduler = CloudSyncScheduler(enroll_spoke_dir, sync_fn=gated_sync, env={})
     outcome: dict[str, str] = {}
-    worker = threading.Thread(
-        target=lambda: outcome.update(round=scheduler.run_round(enroll_live_hub, "spoke-a"))
-    )
+    worker = threading.Thread(target=lambda: outcome.update(round=scheduler.run_round(enroll_live_hub, "spoke-a")))
     worker.start()
     try:
         assert round_entered.wait(timeout=30.0), "control: the scheduler round started"
@@ -424,9 +408,7 @@ def test_a_scheduler_round_is_busy_when_a_standalone_cli_holds_the_flock(
 
     assert outcome == "busy"
     assert scheduler.busy_refusals == 1
-    assert scheduler.consecutive_failures == 0, (
-        "an expected flock busy-skip must not grow the failure backoff"
-    )
+    assert scheduler.consecutive_failures == 0, "an expected flock busy-skip must not grow the failure backoff"
 
 
 def test_a_refused_config_put_writes_nothing(enroll_spoke_dir: Path) -> None:
@@ -491,9 +473,7 @@ def test_a_spoke_refuses_to_mint_a_grant(enroll_hub_dir: Path) -> None:
     assert read_hub(enroll_hub_dir, "enrollment_grants") == []
 
 
-def test_an_unreadable_hub_flag_is_a_declared_500(
-    enroll_hub_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_unreadable_hub_flag_is_a_declared_500(enroll_hub_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """if MDT_IS_HUB=yes is read as hub or spoke instead of a declared 500 then broken"""
     monkeypatch.setenv("MDT_IS_HUB", "yes")
     response = _mint_over_http(enroll_hub_dir)
@@ -503,9 +483,7 @@ def test_an_unreadable_hub_flag_is_a_declared_500(
     assert read_hub(enroll_hub_dir, "enrollment_grants") == []
 
 
-def test_an_unknown_owner_gets_no_grant(
-    enroll_hub_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_unknown_owner_gets_no_grant(enroll_hub_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """if a grant can be minted for an email with no users row on the hub then broken"""
     monkeypatch.setenv("MDT_IS_HUB", "1")
     response = _mint_over_http(enroll_hub_dir, "nobody@example.com")
@@ -530,9 +508,9 @@ def test_a_grant_minted_over_http_redeems_through_the_enroll_cli(
     assert response.headers["cache-control"] == "no-store"
     token = response.json()["token"]
     stored = read_hub(enroll_hub_dir, "enrollment_grants")
-    assert [row["grant_token_sha256"] for row in stored] == [
-        enrollment_credentials.hash_grant_token(token)
-    ], "only the hash is stored, and it is this token's"
+    assert [row["grant_token_sha256"] for row in stored] == [enrollment_credentials.hash_grant_token(token)], (
+        "only the hash is stored, and it is this token's"
+    )
 
     monkeypatch.delenv("MDT_IS_HUB")  # the joining machine is a spoke
     grant_file = tmp_path / "grant.txt"
@@ -555,9 +533,7 @@ def test_a_grant_minted_over_http_redeems_through_the_enroll_cli(
     assert code == 0
     assert capsys.readouterr().out.startswith("enrolled nucbox-wsl")
     owners = owner_rows(enroll_hub_dir)
-    assert [(row["google_sub"], row["enrolled_via"]) for row in owners] == [
-        (ENROLL_OWNER_SUB, "grant")
-    ]
+    assert [(row["google_sub"], row["enrolled_via"]) for row in owners] == [(ENROLL_OWNER_SUB, "grant")]
 
 
 def test_the_grant_token_is_never_logged(

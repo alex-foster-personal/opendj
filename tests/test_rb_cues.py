@@ -1,4 +1,5 @@
 """Phase 4 SYNC-04: RB cue reader + colour palette tests."""
+
 from __future__ import annotations
 
 import pytest

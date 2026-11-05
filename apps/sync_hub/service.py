@@ -65,6 +65,7 @@ from apps.sync_hub import (
     entitlement_gate,
     generation,
     hub_wal_keeper,
+    identity_remap_precondition,
     policy_push,
     policy_store,
     protocol,
@@ -92,6 +93,7 @@ from apps.sync_hub.service_models import (
     HelloRequest,
     HelloResponse,
     IdentityRejectModel,
+    IdentityRemapPairModel,
     MachineModel,
     PullResponse,
     PushRequest,
@@ -530,7 +532,13 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                 stale_copy.refuse_orphans(
                     conn, changes, payload.machine_id, reseed=payload.reseed
                 )
-                result = engine.hub_apply(conn, changes)
+                contradicted = identity_remap_precondition.contradicted_pairs(
+                    conn, [(pair.loser_pk, pair.survivor_pk) for pair in payload.identity_remap_pairs or ()]
+                )
+                kept, rejected = identity_remap_precondition.split_offer(changes, contradicted)
+                result = identity_remap_precondition.merge_apply_result(
+                    engine.hub_apply(conn, kept), rejected
+                )
                 # INSIDE the transaction: a refusal must roll the whole batch
                 # back, which is what main's mid-apply raise did and what the
                 # refused caller's retry is entitled to assume.
@@ -559,6 +567,10 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         except sqlite3.OperationalError as exc:
             service_storage.raise_for_operational_error(exc)
         return PushResponse(
+            identity_remaps_contradicted=[
+                IdentityRemapPairModel(loser_pk=loser, survivor_pk=survivor)
+                for loser, survivor in contradicted
+            ],
             accepted=result.accepted,
             rejected=result.rejected,
             seq=result.seq,

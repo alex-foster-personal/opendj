@@ -61,7 +61,8 @@ export function buildWheelLayout(data: LibraryWheelResponse): WheelLayout {
 
 		let genreCursor = familyStart;
 		for (const genre of family.genres) {
-			const genreSpan = family.track_count > 0 ? (genre.track_count / family.track_count) * familySpan : 0;
+			const genreSpan =
+				family.track_count > 0 ? (genre.track_count / family.track_count) * familySpan : 0;
 			const genreStart = genreCursor;
 			const genreEnd = genreCursor + genreSpan;
 			genres.push({
@@ -105,7 +106,10 @@ export function wedgePath(wedge: WheelWedge): string {
 	const { startAngle, endAngle, innerRadius, outerRadius } = wedge;
 	if (endAngle <= startAngle) return '';
 	const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-	const point = (radius: number, angle: number) => [radius * Math.cos(angle), radius * Math.sin(angle)];
+	const point = (radius: number, angle: number) => [
+		radius * Math.cos(angle),
+		radius * Math.sin(angle)
+	];
 	const [x1, y1] = point(outerRadius, startAngle);
 	const [x2, y2] = point(outerRadius, endAngle);
 	const [x3, y3] = point(innerRadius, endAngle);

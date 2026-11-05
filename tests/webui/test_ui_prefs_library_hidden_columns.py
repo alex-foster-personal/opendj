@@ -51,9 +51,7 @@ def test_hidden_columns_default_to_none(prefs_client: TestClient) -> None:
     assert body["library_hidden_columns"] == []
 
 
-def test_hidden_columns_round_trip_to_disk_in_table_order(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_hidden_columns_round_trip_to_disk_in_table_order(prefs_client: TestClient, tmp_path: Path) -> None:
     put = prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": ["stems", "key"]})
     assert put.status_code == 200, put.text
     assert put.json()["library_hidden_columns"] == ["key", "stems"]

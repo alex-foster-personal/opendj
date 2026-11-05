@@ -68,7 +68,12 @@ export const Typical: Story = {
 					enrolled_at: null,
 					enrolled_via: null
 				}),
-				machine({ machine_id: 'm-0003', name: 'club-booth', state: 'foreign', row_hub_machine_id: 'm-other' })
+				machine({
+					machine_id: 'm-0003',
+					name: 'club-booth',
+					state: 'foreign',
+					row_hub_machine_id: 'm-other'
+				})
 			]
 		}
 	}

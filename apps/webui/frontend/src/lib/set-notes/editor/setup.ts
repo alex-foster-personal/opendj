@@ -21,7 +21,9 @@ import { noteSchema } from './schema';
 const { nodes, marks } = noteSchema;
 
 const boldRule = new InputRule(/\*\*([^*\s](?:[^*]*[^*\s])?)\*\*$/, (state, match, start, end) =>
-	state.tr.replaceWith(start, end, noteSchema.text(match[1], [marks.strong.create()])).removeStoredMark(marks.strong)
+	state.tr
+		.replaceWith(start, end, noteSchema.text(match[1], [marks.strong.create()]))
+		.removeStoredMark(marks.strong)
 );
 
 const liftAtItemStart: Command = (state, dispatch) => {

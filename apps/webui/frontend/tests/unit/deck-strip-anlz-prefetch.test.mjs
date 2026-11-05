@@ -168,7 +168,10 @@ test('loading a different track re-runs the warm-up exactly once more', () => {
 			2,
 			'if a track change does not re-run the warm-up then a newly loaded track is never warmed - broken'
 		);
-		assert.ok(mod.getAnlzEntry('second-track').touched > secondBefore, 'and it warmed the NEW track');
+		assert.ok(
+			mod.getAnlzEntry('second-track').touched > secondBefore,
+			'and it warmed the NEW track'
+		);
 	} finally {
 		mounted.stop();
 	}

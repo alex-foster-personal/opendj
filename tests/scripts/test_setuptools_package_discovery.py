@@ -6,7 +6,7 @@ packages, because setuptools-rust can rewrite them during an editable install.
 
 Discovery runs in an isolated build-tool environment on purpose. setuptools is a
 requirements.txt-only entry (see ``INTENTIONAL_TXT_ONLY`` in
-tests/test_dependency_contract.py), so importing it here would either fail in a
+(private path)), so importing it here would either fail in a
 uv-synced venv or force a pyproject declaration that breaks that contract.
 """
 
@@ -64,9 +64,7 @@ print(json.dumps(PEP420PackageFinder.find(
 def _build_waveform_tree(root: Path) -> None:
     """A miniature of the real tree: the shipped package beside Cargo's target dir."""
     waveform = root / "apps/webui/server/native/waveform"
-    incremental = (
-        waveform / "target/debug/incremental" / "_rb_waveform_native-abc" / "s-build-artifact"
-    )
+    incremental = waveform / "target/debug/incremental" / "_rb_waveform_native-abc" / "s-build-artifact"
     incremental.mkdir(parents=True)
     (waveform / "__init__.py").write_text("", encoding="utf-8")
 

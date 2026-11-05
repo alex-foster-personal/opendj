@@ -31,7 +31,9 @@ export function vocalsStatusTitle(vocals: Vocals | null): string | null {
 			return vocals.regions.length > 0 ? null : VOCALS_NONE_FOUND_TITLE;
 		default: {
 			const _exhaustive: never = vocals;
-			throw new Error(`vocalsStatusTitle: unknown status ${String((_exhaustive as { status?: unknown }).status)}`);
+			throw new Error(
+				`vocalsStatusTitle: unknown status ${String((_exhaustive as { status?: unknown }).status)}`
+			);
 		}
 	}
 }

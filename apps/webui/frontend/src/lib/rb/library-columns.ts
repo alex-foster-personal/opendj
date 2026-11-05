@@ -23,6 +23,7 @@ export const HIDEABLE_COLUMNS = [
 	'artist',
 	'key',
 	'bpm',
+	'tempostab',
 	'plays',
 	'rating',
 	'comments',
@@ -30,7 +31,8 @@ export const HIDEABLE_COLUMNS = [
 	'quality',
 	'energy',
 	'genre',
-	'stems'
+	'stems',
+	'tags'
 ] as const satisfies readonly ColId[];
 
 export type HideableColumn = (typeof HIDEABLE_COLUMNS)[number];
@@ -41,6 +43,7 @@ export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = 
 	artist: 'Artist',
 	key: 'Key',
 	bpm: 'BPM',
+	tempostab: 'Beat stability',
 	plays: 'Plays',
 	rating: 'Rating',
 	comments: 'Comments',
@@ -48,7 +51,8 @@ export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = 
 	quality: 'Quality',
 	energy: 'Energy',
 	genre: 'Genre',
-	stems: 'Stems'
+	stems: 'Stems',
+	tags: 'Tags'
 };
 
 export function isHideableColumn(value: unknown): value is HideableColumn {

@@ -17,10 +17,10 @@ from apps.webui.server.cloudsync_scheduler import (
 )
 
 _SILVER_MESSAGE = (
-    'POST https://agentbox.<tailnet>:8870/api/v1/sync/hello -> HTTP 409: '
+    "POST https://agentbox.<tailnet>:8870/api/v1/sync/hello -> HTTP 409: "
     '{"detail":{"code":"SYNC_WIRE_VERSION","message":"peer speaks sync wire v4, '
-    'this machine speaks v3 (schema v14 vs v13). The synced row shapes differ, '
-    'so no row may cross; upgrade whichever machine is on the lower wire version, '
+    "this machine speaks v3 (schema v14 vs v13). The synced row shapes differ, "
+    "so no row may cross; upgrade whichever machine is on the lower wire version, "
     'then sync again."}}'
 )
 

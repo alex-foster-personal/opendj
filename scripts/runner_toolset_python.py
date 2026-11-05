@@ -5,6 +5,7 @@ Wrapper names carry no meaning. A literal command is reported only when its
 arguments reach an imported subprocess sink through local parameters/aliases.
 Unknown values remain placeholders; recursion and alternative expansion are bounded.
 """
+
 from __future__ import annotations
 
 import ast
@@ -83,8 +84,9 @@ def _arguments(call: ast.Call, env: dict[str, Value]) -> list[Value]:
     return args
 
 
-def _bind(function: ast.FunctionDef | ast.AsyncFunctionDef, call: ast.Call,
-          env: dict[str, Value], globals_: dict[str, Value]) -> dict[str, Value] | None:
+def _bind(
+    function: ast.FunctionDef | ast.AsyncFunctionDef, call: ast.Call, env: dict[str, Value], globals_: dict[str, Value]
+) -> dict[str, Value] | None:
     args = _arguments(call, env)
     names = [*function.args.posonlyargs, *function.args.args]
     if not function.args.vararg and len(args) > len(names):
@@ -93,10 +95,13 @@ def _bind(function: ast.FunctionDef | ast.AsyncFunctionDef, call: ast.Call,
     defaults = [None] * (len(names) - len(function.args.defaults)) + function.args.defaults
     keywords = {kw.arg: _value(kw.value, env) for kw in call.keywords if kw.arg}
     for index, (parameter, default) in enumerate(zip(names, defaults, strict=True)):
-        bound[parameter.arg] = args[index] if index < len(args) else keywords.get(
-            parameter.arg, _value(default, env) if default else UNKNOWN)
+        bound[parameter.arg] = (
+            args[index]
+            if index < len(args)
+            else keywords.get(parameter.arg, _value(default, env) if default else UNKNOWN)
+        )
     if function.args.vararg:
-        bound[function.args.vararg.arg] = _combine(args[len(names):])
+        bound[function.args.vararg.arg] = _combine(args[len(names) :])
     for parameter, default in zip(function.args.kwonlyargs, function.args.kw_defaults, strict=True):
         bound[parameter.arg] = keywords.get(parameter.arg, _value(default, env) if default else UNKNOWN)
     return bound
@@ -107,12 +112,10 @@ def _imports(tree: ast.Module) -> tuple[dict[str, str], dict[str, tuple[str, str
     functions: dict[str, tuple[str, str]] = {}
     for node in tree.body:
         if isinstance(node, ast.Import):
-            modules.update((a.asname or a.name, a.name) for a in node.names
-                           if a.name in {"subprocess", "asyncio"})
+            modules.update((a.asname or a.name, a.name) for a in node.names if a.name in {"subprocess", "asyncio"})
         elif isinstance(node, ast.ImportFrom) and node.module in {"subprocess", "asyncio"}:
             allowed = PROCESS if node.module == "subprocess" else ASYNC_PROCESS
-            functions.update((a.asname or a.name, (node.module, a.name)) for a in node.names
-                             if a.name in allowed)
+            functions.update((a.asname or a.name, (node.module, a.name)) for a in node.names if a.name in allowed)
     return modules, functions
 
 
@@ -129,8 +132,14 @@ class _Flow:
                         self.globals[name.id] = _value(node.value, self.globals)
         self.results: list[Command] = []
 
-    def trace(self, call: ast.Call, env: dict[str, Value], origin: int,
-              chain: tuple[str, ...] = (), active: frozenset[str] = frozenset()) -> None:
+    def trace(
+        self,
+        call: ast.Call,
+        env: dict[str, Value],
+        origin: int,
+        chain: tuple[str, ...] = (),
+        active: frozenset[str] = frozenset(),
+    ) -> None:
         owner, name = target(call)
         module, underlying = (self.modules.get(owner, ""), name) if owner else self.sinks.get(name, ("", ""))
         allowed = PROCESS if module == "subprocess" else ASYNC_PROCESS if module == "asyncio" else set()
@@ -138,34 +147,50 @@ class _Flow:
             if not call.args:
                 return
             executable = next((kw.value for kw in call.keywords if kw.arg == "executable"), None)
-            values = (_combine([_value(n.value if isinstance(n, ast.Starred) else n, env)
-                                for n in call.args]) if module == "asyncio"
-                      else _value(call.args[0], env))
+            values = (
+                _combine([_value(n.value if isinstance(n, ast.Starred) else n, env) for n in call.args])
+                if module == "asyncio"
+                else _value(call.args[0], env)
+            )
             sink = f"{module}.{underlying}@{call.lineno}(alias:{owner or name})"
             provenance = (*chain, sink) if chain else ()
             overrides = _value(executable, env) if executable is not None else ((),)
             for argv, override in itertools.product(values, overrides):
                 if executable is not None:
                     if not override or PLACEHOLDER in override:
-                        self.results.append(Command("unresolved-executable",
-                                                    ast.unparse(executable), origin, (*chain, sink)))
+                        self.results.append(
+                            Command("unresolved-executable", ast.unparse(executable), origin, (*chain, sink))
+                        )
                         continue
                     argv = (*override, *argv[1:])
                 if argv and argv[0] != PLACEHOLDER:
                     shell = shlex.join(argv)
-                    if len(argv) == 1 and any(k.arg == "shell" and isinstance(k.value, ast.Constant)
-                                              and k.value.value is True for k in call.keywords):
+                    if len(argv) == 1 and any(
+                        k.arg == "shell" and isinstance(k.value, ast.Constant) and k.value.value is True
+                        for k in call.keywords
+                    ):
                         shell = argv[0]
                     self.results.append(Command("shell", shell, origin, provenance))
         elif not owner and name in self.functions and name not in active and len(active) < 12:
             function = self.functions[name]
             bound = _bind(function, call, env, self.globals)
             if bound is not None:
-                self.walk(function.body, bound, origin, (*chain, f"{name}@{call.lineno}(definition:{function.lineno})"),
-                          active | {name})
+                self.walk(
+                    function.body,
+                    bound,
+                    origin,
+                    (*chain, f"{name}@{call.lineno}(definition:{function.lineno})"),
+                    active | {name},
+                )
 
-    def walk(self, statements: list[ast.stmt], env: dict[str, Value], origin: int,
-             chain: tuple[str, ...], active: frozenset[str]) -> None:
+    def walk(
+        self,
+        statements: list[ast.stmt],
+        env: dict[str, Value],
+        origin: int,
+        chain: tuple[str, ...],
+        active: frozenset[str],
+    ) -> None:
         for statement in statements:
             # Nested definitions are separate scopes, not executed forwarding.
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -185,7 +210,14 @@ class _Flow:
                 if isinstance(node, ast.Call):
                     self.trace(node, env, origin, chain, active)
                     if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-                        if node.func.value.id in env and node.func.attr in {"append", "extend", "insert", "clear", "pop", "remove"}:
+                        if node.func.value.id in env and node.func.attr in {
+                            "append",
+                            "extend",
+                            "insert",
+                            "clear",
+                            "pop",
+                            "remove",
+                        }:
                             env[node.func.value.id] = UNKNOWN
             if isinstance(statement, (ast.Assign, ast.AnnAssign)):
                 targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
@@ -205,8 +237,7 @@ def commands(text: str) -> list[Command]:
         word = constant(node.args[0])
         if name == "which" and owner in {"shutil", ""} and word:
             direct.append(Command("name", word, node.lineno))
-        elif ((name in PROCESS and owner in {"subprocess", "sp", ""})
-              or (name in ASYNC_PROCESS and owner == "asyncio")):
+        elif (name in PROCESS and owner in {"subprocess", "sp", ""}) or (name in ASYNC_PROCESS and owner == "asyncio"):
             if not any(kw.arg == "executable" for kw in node.keywords) and (shell := literal_shell(node)):
                 direct.append(Command("shell", shell, node.lineno))
         flow.trace(node, flow.globals, node.lineno)

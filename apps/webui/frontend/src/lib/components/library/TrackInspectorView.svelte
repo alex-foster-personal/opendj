@@ -7,7 +7,6 @@
 	// pref popover and the conflict dialog stay in the container.
 	import type { components } from '$lib/api-types';
 	import RatingStars from '$lib/components/rb/browser/RatingStars.svelte';
-	import { artworkUrl } from '$lib/rb/artwork-url';
 	import { CLOSE_PATH } from '$lib/ui/icon-glyphs';
 	import type { TrackPlaylistHit } from '$lib/rb/track-playlists';
 	import {
@@ -28,16 +27,17 @@
 		summary,
 		single,
 		keyShown = null,
+		artworkSrc,
+		onArtworkLoad,
+		onArtworkError,
 		track,
 		loadError,
 		saveError,
 		playlists,
 		playlistsError,
-		artFailed,
 		newTag = $bindable(),
 		applyPatch,
 		addTag,
-		onArtError,
 		onTempoPref
 	}: {
 		rowCount: number;
@@ -48,17 +48,19 @@
 		single: (InspectorRow & { artwork_available: boolean | null }) | null;
 		/** The single row's key in the user's key_notation; the container resolves it. */
 		keyShown?: string | null;
+		/** The cover URL to draw, or null while there is no cover or a retry is pending; the container resolves the shared cover retry (LIBM-185). */
+		artworkSrc: string | null;
+		onArtworkLoad: () => void;
+		onArtworkError: () => void;
 		/** The loaded track and its provenance; null until it arrives. */
 		track: Track | null;
 		loadError: string | null;
 		saveError: string | null;
 		playlists: TrackPlaylistHit[] | null;
 		playlistsError: string | null;
-		artFailed: boolean;
 		newTag: string;
 		applyPatch: (patch: Patch) => Promise<void>;
 		addTag: () => void;
-		onArtError: () => void;
 		/** Open the Tempo pref editor anchored at the click. */
 		onTempoPref: (x: number, y: number) => void;
 	} = $props();
@@ -122,11 +124,13 @@
 	{:else if single !== null}
 		<header class="ident">
 			<div class="art">
-				{#if single.artwork_available === true && !artFailed}
+				{#if artworkSrc !== null}
 					<img
-						src={artworkUrl(single.stable_id, 'm')}
+						src={artworkSrc}
 						alt=""
-						onerror={() => onArtError()}
+						data-expected-resource-error
+						onload={onArtworkLoad}
+						onerror={onArtworkError}
 					/>
 				{/if}
 			</div>

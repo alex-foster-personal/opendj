@@ -74,9 +74,7 @@ ACCOUNT_PATHS: tuple[str, ...] = (
     "/api/v1/flags",
 )
 
-COMMITTED_OPENAPI: Path = (
-    Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
-)
+COMMITTED_OPENAPI: Path = Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
 
 IDENTITY = GoogleIdentity(
     google_sub="115551234567890",
@@ -144,8 +142,7 @@ def test_every_account_path_is_in_the_committed_openapi() -> None:
     schema = json.loads(COMMITTED_OPENAPI.read_text(encoding="utf-8"))
     missing = [path for path in ACCOUNT_PATHS if path not in schema["paths"]]
     assert missing == [], (
-        f"{missing} are served but absent from the committed contract; run "
-        "`just openapi-dump` and `pnpm run api:gen`"
+        f"{missing} are served but absent from the committed contract; run `just openapi-dump` and `pnpm run api:gen`"
     )
 
 
@@ -177,9 +174,7 @@ def test_account_states_that_sign_in_is_identity_not_authorisation(
     assert "no paid features" in body["plan"]["note"]
 
 
-def test_account_reports_the_signed_in_identity(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_account_reports_the_signed_in_identity(client: TestClient, state_db_path: Path) -> None:
     _sign_in(client, state_db_path)
     body = client.get("/api/v1/account").json()
     assert body["signed_in"] is True
@@ -189,9 +184,7 @@ def test_account_reports_the_signed_in_identity(
 
 
 # ----- ACCT-03: the disclosure ---------------------------------------------
-def test_every_disclosure_row_names_a_real_path_and_a_way_to_delete_it(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_every_disclosure_row_names_a_real_path_and_a_way_to_delete_it(client: TestClient, state_db_path: Path) -> None:
     body = client.get("/api/v1/account").json()
     for row in body["local_data"]:
         assert str(state_db_path) in row["location"], row
@@ -205,17 +198,13 @@ def test_every_disclosure_row_names_a_real_path_and_a_way_to_delete_it(
 def test_the_disclosure_covers_both_tables_that_hold_the_user(
     client: TestClient,
 ) -> None:
-    locations = " ".join(
-        row["location"] for row in client.get("/api/v1/account").json()["local_data"]
-    )
+    locations = " ".join(row["location"] for row in client.get("/api/v1/account").json()["local_data"])
     assert "users" in locations
     assert "auth_sessions" in locations
 
 
 # ----- the destructive route ----------------------------------------------
-def test_delete_without_the_confirm_token_changes_nothing(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_delete_without_the_confirm_token_changes_nothing(client: TestClient, state_db_path: Path) -> None:
     _sign_in(client, state_db_path)
     response = client.delete("/api/v1/account")
     assert response.status_code == 422
@@ -226,9 +215,7 @@ def test_delete_without_the_confirm_token_changes_nothing(
     assert _rows(state_db_path, "users") == 1
 
 
-def test_delete_with_a_wrong_confirm_token_changes_nothing(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_delete_with_a_wrong_confirm_token_changes_nothing(client: TestClient, state_db_path: Path) -> None:
     _sign_in(client, state_db_path)
     response = client.delete("/api/v1/account?confirm=yes")
     assert response.status_code == 422
@@ -238,23 +225,17 @@ def test_delete_with_a_wrong_confirm_token_changes_nothing(
 def test_delete_when_signed_out_is_a_401_not_a_silent_no_op(
     client: TestClient,
 ) -> None:
-    response = client.delete(
-        f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}"
-    )
+    response = client.delete(f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}")
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "AUTH_REQUIRED"
 
 
-def test_a_confirmed_delete_erases_the_user_and_every_session(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_a_confirmed_delete_erases_the_user_and_every_session(client: TestClient, state_db_path: Path) -> None:
     _sign_in(client, state_db_path)
     assert _rows(state_db_path, "users") == 1
     assert _rows(state_db_path, "auth_sessions") == 1
 
-    response = client.delete(
-        f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}"
-    )
+    response = client.delete(f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}")
     assert response.status_code == 200
     assert response.json()["deleted"] is True
     # The FK cascade is the point: the Google refresh and access tokens live
@@ -263,9 +244,7 @@ def test_a_confirmed_delete_erases_the_user_and_every_session(
     assert _rows(state_db_path, "auth_sessions") == 0
 
 
-def test_the_deleted_session_no_longer_resolves(
-    client: TestClient, state_db_path: Path
-) -> None:
+def test_the_deleted_session_no_longer_resolves(client: TestClient, state_db_path: Path) -> None:
     _sign_in(client, state_db_path)
     client.delete(f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}")
     assert client.get("/api/v1/account").json()["signed_in"] is False
@@ -289,12 +268,8 @@ def test_the_feature_list_is_the_catalog_and_every_entry_is_entitled_while_inert
     assert all(f["entitled"] and f["server_side"] for f in features)
 
 
-@pytest.mark.parametrize(
-    "feature_id", ["cloudsync.hosted-storage", "anything.at.all", "pro"]
-)
-def test_an_unknown_feature_is_entitled_and_unlimited(
-    client: TestClient, feature_id: str
-) -> None:
+@pytest.mark.parametrize("feature_id", ["cloudsync.hosted-storage", "anything.at.all", "pro"])
+def test_an_unknown_feature_is_entitled_and_unlimited(client: TestClient, feature_id: str) -> None:
     body = client.get(f"/api/v1/entitlements/{feature_id}").json()
     assert body["feature_id"] == feature_id
     assert body["entitled"] is True
@@ -303,9 +278,7 @@ def test_an_unknown_feature_is_entitled_and_unlimited(
     assert body["quota"] is None
 
 
-def test_a_configured_provider_fails_the_request_loudly(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_configured_provider_fails_the_request_loudly(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """No provider is implemented, so naming one must stop, not degrade."""
     monkeypatch.setenv(PROVIDER_ENV, "polar")
     with pytest.raises(Exception) as excinfo:
@@ -314,9 +287,7 @@ def test_a_configured_provider_fails_the_request_loudly(
 
 
 # ----- FLAG-01 / FLAG-03: flags are their own surface ----------------------
-def test_flags_report_the_file_and_the_source_of_each_value(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_flags_report_the_file_and_the_source_of_each_value(client: TestClient, data_dir: Path) -> None:
     body = client.get("/api/v1/flags").json()
     assert body["path"].endswith(FLAGS_FILENAME)
     assert body["file_present"] is False
@@ -329,9 +300,7 @@ def test_flags_report_the_file_and_the_source_of_each_value(
     assert off["overridden"] is False
 
 
-def test_flags_are_read_at_startup_not_per_request(
-    client: TestClient, data_dir: Path
-) -> None:
+def test_flags_are_read_at_startup_not_per_request(client: TestClient, data_dir: Path) -> None:
     """Writing the file behind a running app must not change the answer.
 
     A flag is a deploy-time decision. Re-reading per request would make it a
@@ -343,9 +312,7 @@ def test_flags_are_read_at_startup_not_per_request(
 
 
 # ----- SAND-01: the fourth refusal, on the wire ---------------------------
-def _store_build_client(
-    monkeypatch: pytest.MonkeyPatch, data_dir: Path, state_db_path: Path
-) -> Iterator[TestClient]:
+def _store_build_client(monkeypatch: pytest.MonkeyPatch, data_dir: Path, state_db_path: Path) -> Iterator[TestClient]:
     """A client booted the way a packaged App Store build boots.
 
     The REAL flag registry and the REAL shipped profile, not a fixture pair:
@@ -362,15 +329,11 @@ def _store_build_client(
 
 
 @pytest.fixture
-def store_build_client(
-    monkeypatch: pytest.MonkeyPatch, data_dir: Path, state_db_path: Path
-) -> Iterator[TestClient]:
+def store_build_client(monkeypatch: pytest.MonkeyPatch, data_dir: Path, state_db_path: Path) -> Iterator[TestClient]:
     yield from _store_build_client(monkeypatch, data_dir, state_db_path)
 
 
-def _full_build_client(
-    data_dir: Path, state_db_path: Path
-) -> Iterator[TestClient]:
+def _full_build_client(data_dir: Path, state_db_path: Path) -> Iterator[TestClient]:
     """The ordinary (non-store) build, with the REAL flag registry.
 
     Thread-2/SAND-04 is about the real ``usb.export`` flag under a
@@ -387,9 +350,7 @@ def _full_build_client(
 
 
 @pytest.fixture
-def full_build_client(
-    data_dir: Path, state_db_path: Path
-) -> Iterator[TestClient]:
+def full_build_client(data_dir: Path, state_db_path: Path) -> Iterator[TestClient]:
     yield from _full_build_client(data_dir, state_db_path)
 
 
@@ -467,8 +428,7 @@ def test_an_explicit_flag_file_is_not_a_store_build(
     usb = next(f for f in body["flags"] if f["flag_id"] == "usb.export")
     assert usb["enabled"] is False
     assert usb["refusal"] is None, (
-        "flag values came from an explicit lane file, not the shipped store "
-        "profile, so nothing here is Apple's doing"
+        "flag values came from an explicit lane file, not the shipped store profile, so nothing here is Apple's doing"
     )
 
 
@@ -491,8 +451,7 @@ def test_a_mispackaged_full_build_still_refuses_when_actually_sandboxed(
     usb = next(f for f in body["flags"] if f["flag_id"] == "usb.export")
     assert usb["enabled"] is True, "the full profile put no override on this flag"
     assert usb["refusal"] is not None, (
-        "the process is genuinely sandboxed right now, so the capability "
-        "cannot work regardless of what the flag says"
+        "the process is genuinely sandboxed right now, so the capability cannot work regardless of what the flag says"
     )
     assert usb["refusal"]["code"] == STORE_BUILD_REFUSAL_CODE
     assert usb["refusal"]["ui_title"] == STORE_BUILD_REFUSAL_TITLE

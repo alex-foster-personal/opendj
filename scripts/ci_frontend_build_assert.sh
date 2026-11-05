@@ -4,7 +4,7 @@
 # Consumers must call this after restoring an artifact. There is no local-build
 # fallback: a missing or mismatched stamp is a hard error.
 #
-# Pinned by tests/scripts/test_ci_frontend_build_artifact.py.
+# Pinned by (private path).
 set -euo pipefail
 
 SHA="${1:?full git sha required}"
@@ -13,17 +13,17 @@ STAMP="${BUILD_DIR}/.ci-production-frontend-sha"
 INDEX="${BUILD_DIR}/index.html"
 
 if [ ! -f "$INDEX" ]; then
-  echo "::error::production frontend build is missing ${INDEX}"
-  exit 1
+    echo "::error::production frontend build is missing ${INDEX}"
+    exit 1
 fi
 
 if [ ! -f "$STAMP" ]; then
-  echo "::error::production frontend artifact stamp is missing ${STAMP}"
-  exit 1
+    echo "::error::production frontend artifact stamp is missing ${STAMP}"
+    exit 1
 fi
 
-got="$(tr -d '[:space:]' < "$STAMP")"
+got="$(tr -d '[:space:]' <"$STAMP")"
 if [ "$got" != "$SHA" ]; then
-  echo "::error::production frontend artifact stamp ${got} does not match expected ${SHA}"
-  exit 1
+    echo "::error::production frontend artifact stamp ${got} does not match expected ${SHA}"
+    exit 1
 fi

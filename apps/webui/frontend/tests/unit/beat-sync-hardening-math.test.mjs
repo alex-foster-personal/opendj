@@ -102,7 +102,10 @@ test('non-finite, zero and negative numbers are refused by name', () => {
 		/syncAtContextTimeSec must be after currentContextTimeSec/
 	);
 	assert.throws(
-		() => bsm.computeFollowerSyncPlan(request({ minFollowerTempoRatio: 1.1, maxFollowerTempoRatio: 0.9 })),
+		() =>
+			bsm.computeFollowerSyncPlan(
+				request({ minFollowerTempoRatio: 1.1, maxFollowerTempoRatio: 0.9 })
+			),
 		/inverted/
 	);
 	assert.throws(() => bsm.computeFollowerSyncPlan(request({ mode: 'phase' })), TypeError);
@@ -113,14 +116,30 @@ test('malformed grids are refused, never guessed', () => {
 		empty: [],
 		single: [{ n: 1, bpm: 128, t: 0.1 }],
 		negativeFirst: [{ n: 1, bpm: 128, t: -0.2 }, ...grid(128, 0.27, 20, 2)],
-		duplicateTime: [{ n: 1, bpm: 128, t: 0.1 }, { n: 2, bpm: 128, t: 0.1 }, ...grid(128, 0.6, 20, 3)],
-		threeFour: Array.from({ length: 30 }, (_, i) => ({ n: (i % 3) + 1, bpm: 128, t: 0.1 + i * 0.46875 })),
+		duplicateTime: [
+			{ n: 1, bpm: 128, t: 0.1 },
+			{ n: 2, bpm: 128, t: 0.1 },
+			...grid(128, 0.6, 20, 3)
+		],
+		threeFour: Array.from({ length: 30 }, (_, i) => ({
+			n: (i % 3) + 1,
+			bpm: 128,
+			t: 0.1 + i * 0.46875
+		})),
 		zeroBpmField: grid(128, 0.1, 20).map((b, i) => (i === 5 ? { ...b, bpm: 0 } : b))
 	};
 	for (const [name, beats] of Object.entries(bad)) {
 		assert.throws(() => bsm.validateBeatGrid(beats), RangeError, name);
-		assert.throws(() => bsm.computeFollowerSyncPlan(request({ followerGrid: beats, followerPositionSec: 1 })), RangeError, name);
-		assert.throws(() => bsm.computeFollowerSyncPlan(request({ masterGrid: beats, masterPositionAtSyncSec: 1 })), RangeError, name);
+		assert.throws(
+			() => bsm.computeFollowerSyncPlan(request({ followerGrid: beats, followerPositionSec: 1 })),
+			RangeError,
+			name
+		);
+		assert.throws(
+			() => bsm.computeFollowerSyncPlan(request({ masterGrid: beats, masterPositionAtSyncSec: 1 })),
+			RangeError,
+			name
+		);
 	}
 });
 
@@ -135,17 +154,24 @@ test('a grid that starts on beat 3 still bar-locks on the master beat number', (
 
 test('const_regions: joins land phase-exact before, on and after a segment boundary', () => {
 	// Master 128 for 200 beats, then 132 - a real multi-region rekordbox grid.
-	const master = segmented(0.1, [[128, 200], [132, 600]]);
+	const master = segmented(0.1, [
+		[128, 200],
+		[132, 600]
+	]);
 	const boundary = master[200].t;
 	for (const at of [boundary - 0.3, boundary, boundary + 0.01, boundary + 20]) {
-		const p = bsm.computeFollowerSyncPlan(request({ masterGrid: master, masterPositionAtSyncSec: at }));
+		const p = bsm.computeFollowerSyncPlan(
+			request({ masterGrid: master, masterPositionAtSyncSec: at })
+		);
 		const m = phaseOf(master, at);
 		const f = phaseOf(F126, p.followerPositionSec);
 		assert.equal(f.n, m.n, `at ${at}`);
 		assert.ok(Math.abs(f.frac - m.frac) < 1e-9, `at ${at}: ${f.frac} vs ${m.frac}`);
 	}
 	// 40 beats past the boundary the window holds only 132 BPM intervals.
-	const deep = bsm.computeFollowerSyncPlan(request({ masterGrid: master, masterPositionAtSyncSec: master[240].t + 0.1 }));
+	const deep = bsm.computeFollowerSyncPlan(
+		request({ masterGrid: master, masterPositionAtSyncSec: master[240].t + 0.1 })
+	);
 	assert.ok(Math.abs(deep.followerTempoRatio - 132 / 126) < 1e-9, `${deep.followerTempoRatio}`);
 });
 
@@ -163,7 +189,9 @@ test('four decks joined to one master share its phase, pairwise', () => {
 	const followers = [grid(126, 0.05, 1200), grid(124, 0.3, 1200, 2), grid(130, 0.11, 1200, 4)];
 	const m = phaseOf(M128, 61.234);
 	for (const [k, followerGrid] of followers.entries()) {
-		const p = bsm.computeFollowerSyncPlan(request({ followerGrid, followerPositionSec: 20 + k * 7 }));
+		const p = bsm.computeFollowerSyncPlan(
+			request({ followerGrid, followerPositionSec: 20 + k * 7 })
+		);
 		const f = phaseOf(followerGrid, p.followerPositionSec);
 		assert.equal(f.n, m.n, `follower ${k}`);
 		assert.ok(Math.abs(f.frac - m.frac) < 1e-9, `follower ${k}`);
@@ -171,7 +199,15 @@ test('four decks joined to one master share its phase, pairwise', () => {
 });
 
 /** Closed loop at 30 Hz; returns the worst |error| after the first 8 s. */
-function simulate({ masterGrid, followerGrid, seconds, lock, jitterMs = 0, seed = 1, audioRateError = 0 }) {
+function simulate({
+	masterGrid,
+	followerGrid,
+	seconds,
+	lock,
+	jitterMs = 0,
+	seed = 1,
+	audioRateError = 0
+}) {
 	let rnd = seed;
 	const noise = () => {
 		rnd = (rnd * 16807) % 2147483647;
@@ -232,15 +268,33 @@ function simulate({ masterGrid, followerGrid, seconds, lock, jitterMs = 0, seed 
 }
 
 test('a constant 0.15% grid-vs-audio error (worst real PQTZ rounding) is held for ten minutes', () => {
-	const locked = simulate({ masterGrid: M128, followerGrid: F126, seconds: 600, lock: true, audioRateError: 0.0015 });
-	const free = simulate({ masterGrid: M128, followerGrid: F126, seconds: 600, lock: false, audioRateError: 0.0015 });
+	const locked = simulate({
+		masterGrid: M128,
+		followerGrid: F126,
+		seconds: 600,
+		lock: true,
+		audioRateError: 0.0015
+	});
+	const free = simulate({
+		masterGrid: M128,
+		followerGrid: F126,
+		seconds: 600,
+		lock: false,
+		audioRateError: 0.0015
+	});
 	assert.ok(free.worst > 100, `control must drift: ${free.worst} ms`);
 	assert.equal(locked.reseeks, 0);
 	assert.ok(locked.worst < 8, `locked worst ${locked.worst} ms`);
 });
 
 test('+-1 ms of playhead jitter: no re-seek, a handful of commands per second', () => {
-	const r = simulate({ masterGrid: M128, followerGrid: F126, seconds: 120, lock: true, jitterMs: 1 });
+	const r = simulate({
+		masterGrid: M128,
+		followerGrid: F126,
+		seconds: 120,
+		lock: true,
+		jitterMs: 1
+	});
 	assert.equal(r.reseeks, 0);
 	assert.ok(r.sendsPerSec < 3, `${r.sendsPerSec} commands/s`);
 	assert.ok(r.worst < 4, `${r.worst} ms`);

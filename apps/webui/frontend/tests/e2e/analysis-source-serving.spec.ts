@@ -3,6 +3,18 @@
  */
 import { expect, test } from '@playwright/test';
 
+test('loudness OWN is enabled when the lane is served', async ({ page }) => {
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await page.setViewportSize({ width: 1864, height: 947 });
+	await page.locator('.src-toggle').hover();
+	await expect(page.locator('.src-menu')).toBeVisible();
+	const beatgridOwn = page.locator('.src-row', { hasText: 'Beatgrid' }).locator('button', { hasText: 'OWN' });
+	await expect(beatgridOwn).toBeEnabled();
+	const loudnessOwn = page.locator('.src-row', { hasText: 'Loudness' }).locator('button', { hasText: 'OWN' });
+	await expect(loudnessOwn).toBeEnabled();
+});
+
 test('vocal OWN is disabled until the lane is served', async ({ page }) => {
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);

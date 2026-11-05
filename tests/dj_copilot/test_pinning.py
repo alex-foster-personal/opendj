@@ -2,6 +2,7 @@
 
 [if] a set goal carries pin roles [then] peak opener and closer pins land in their windows, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

@@ -50,19 +50,13 @@ def _find_step(job: dict, *, name_pattern: str) -> dict:
     for step in job.get("steps", []):
         if re.search(name_pattern, step.get("name", ""), re.IGNORECASE):
             return step
-    raise AssertionError(
-        f"no step in `window` job matches {name_pattern!r}; "
-        f"steps present: {_step_names(job)}"
-    )
+    raise AssertionError(f"no step in `window` job matches {name_pattern!r}; steps present: {_step_names(job)}")
 
 
 def _pinned_gh_version(step: dict) -> tuple[int, int, int]:
     env = step.get("env") or {}
     raw = env.get("GH_CLI_VERSION")
-    assert raw, (
-        "the gh-install step must pin its version via env.GH_CLI_VERSION, "
-        f"got env={env!r}"
-    )
+    assert raw, f"the gh-install step must pin its version via env.GH_CLI_VERSION, got env={env!r}"
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str(raw))
     assert match, f"GH_CLI_VERSION {raw!r} is not a plain major.minor.patch pin"
     return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
@@ -79,9 +73,7 @@ def test_window_job_installs_gh_before_computing_the_window() -> None:
         (i for i, n in enumerate(names) if re.search(r"compute the window", n, re.IGNORECASE)),
         None,
     )
-    assert install_idx is not None, (
-        f"`window` job has no gh-install step; steps present: {names}"
-    )
+    assert install_idx is not None, f"`window` job has no gh-install step; steps present: {names}"
     assert compute_idx is not None, f"`window` job has no 'Compute the window' step: {names}"
     assert install_idx < compute_idx, (
         "the gh-install step must run BEFORE 'Compute the window', which is "

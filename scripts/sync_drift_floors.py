@@ -6,7 +6,7 @@ WRONG; this module answers WAS THERE ANYTHING TO BE WRONG ABOUT. That second
 question is the one a green run cannot answer for itself: zero violations is
 what a clean tree returns, and it is equally what an unbuilt subject, an
 unwired check and a scan pointed at the wrong database return
-(.claude/rules/verification.md).
+((private path)).
 
 Every floor here derives from a DECLARATION rather than a remembered number,
 and each names the SET it expected rather than a count. A count with slack
@@ -46,9 +46,7 @@ def assert_checks_wired(module: ModuleType) -> None:
     defined = {
         name
         for name, value in vars(module).items()
-        if name.startswith("check_")
-        and callable(value)
-        and getattr(value, "__module__", None) == module.__name__
+        if name.startswith("check_") and callable(value) and getattr(value, "__module__", None) == module.__name__
     }
     dispatched = {check.__name__ for _, check in module.CHECKS}
     unwired = sorted(defined - dispatched)
@@ -99,11 +97,7 @@ def assert_measurable(scan: Scan) -> None:
     # full-text index (an ordinary change here) put its five shadows in
     # `unseen` and aborted all eight checks, accusing the scan of being
     # broken when the scan was right and the floor was stale.
-    shadows = {
-        name
-        for name in scan.state
-        if generate_agents_md._is_fts5_shadow_table(name, set(scan.virtual_tables))
-    }
+    shadows = {name for name in scan.state if generate_agents_md._is_fts5_shadow_table(name, set(scan.virtual_tables))}
     unseen = sorted(set(scan.state) - shadows - {t.name for t in scan.documented})
     if unseen:
         raise SystemExit(

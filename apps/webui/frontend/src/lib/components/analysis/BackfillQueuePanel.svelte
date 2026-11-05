@@ -124,7 +124,8 @@
 				stableIds: parsedIds,
 				lane,
 				backend,
-				note: note.trim() || undefined
+				note: note.trim() || undefined,
+				drain: false
 			});
 			fault = null;
 			watch(lastPlan.batch_id);

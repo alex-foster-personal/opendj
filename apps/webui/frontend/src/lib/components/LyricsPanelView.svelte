@@ -92,13 +92,15 @@
 	};
 
 	function witnessTitle(w: KaraokeWord): string {
-		const at = w.start_s === null || w.start_s === undefined ? 'no timing' : `${w.start_s.toFixed(2)}s`;
+		const at =
+			w.start_s === null || w.start_s === undefined ? 'no timing' : `${w.start_s.toFixed(2)}s`;
 		if (w.witness === null || w.witness === undefined) return `${at} - no witness verdict recorded`;
 		return `${at} - ${WITNESS_MEANINGS[w.witness] ?? w.witness}`;
 	}
 
 	function seekTo(w: KaraokeWord): void {
-		if (w.start_s === null || w.start_s === undefined || audioEl === null || audioOk !== true) return;
+		if (w.start_s === null || w.start_s === undefined || audioEl === null || audioOk !== true)
+			return;
 		audioEl.currentTime = w.start_s;
 		void audioEl.play();
 	}
@@ -112,41 +114,54 @@
 	<p class="muted">Lyrics could not be read for this track: {failure}</p>
 {:else if data === null}
 	<p class="muted">
-		No karaoke lyric data for this track yet. Words arrive from the alignment
-		pipeline, loaded into state.db with <code>python -m apps.lyrics ingest-state</code>;
-		tracks without separated stems are not yet processed. Words produced by the
-		branch-era schema need <code>python -m apps.lyrics migrate-legacy-words</code>
+		No karaoke lyric data for this track yet. Words arrive from the alignment pipeline, loaded into
+		state.db with <code>python -m apps.lyrics ingest-state</code>; tracks without separated stems
+		are not yet processed. Words produced by the branch-era schema need
+		<code>python -m apps.lyrics migrate-legacy-words</code>
 		before this panel can see them.
 	</p>
 {:else}
 	{@const v = data.verdict!}
 	<div class="qc qc-{v.effective_verdict}">
 		<b>{verdictLabel(v.effective_verdict)}</b>
-		{#if v.override}<span class="badge" title="A human verdict is set and overrides the computed one">your call</span>{/if}
+		{#if v.override}<span
+				class="badge"
+				title="A human verdict is set and overrides the computed one">your call</span
+			>{/if}
 		<span class="sep">·</span>
-		<span title="Share of the track's duration where the separated vocal stem carries energy. At or below the calibrated band this track is auto-stamped no-lyrics.">
+		<span
+			title="Share of the track's duration where the separated vocal stem carries energy. At or below the calibrated band this track is auto-stamped no-lyrics."
+		>
 			{v.coverage_pct === null || v.coverage_pct === undefined
 				? 'coverage n/a'
 				: `${v.coverage_pct.toFixed(1)}% vocal coverage`}
 		</span>
 		<span class="sep">·</span>
-		<span title="Size of the aligned artifact: words in the flat timeline, and the lines apps/lyrics/lines.py derives from them.">
+		<span
+			title="Size of the aligned artifact: words in the flat timeline, and the lines apps/lyrics/lines.py derives from them."
+		>
 			{v.n_words ?? data.words.length} words{#if v.n_lines !== null && v.n_lines !== undefined}
 				/ {v.n_lines} lines{/if}
 		</span>
 		<span class="sep">·</span>
-		<span title="Where the lyric text came from and how it was matched. An exact get or a licensed matcher get is a strong claim; search and relaxed-title methods are weaker.">
+		<span
+			title="Where the lyric text came from and how it was matched. An exact get or a licensed matcher get is a strong claim; search and relaxed-title methods are weaker."
+		>
 			{v.source ?? 'source unknown'}
 		</span>
 		{#if v.language_iso3}
-			<span class="sep">·</span><span title="Detected language of the lyric text (ISO 639-3)">{v.language_iso3}</span>
+			<span class="sep">·</span><span title="Detected language of the lyric text (ISO 639-3)"
+				>{v.language_iso3}</span
+			>
 		{/if}
 	</div>
 
 	<p class="muted small">
-		<span title="Words the independent ASR witness contradicts or never heard. Calibrated on ground truth: these carry about 4.5x the base error rate.">
-			{suspectCount} of {data.words.length} words suspect
-			({v.pct_witness_red === null || v.pct_witness_red === undefined
+		<span
+			title="Words the independent ASR witness contradicts or never heard. Calibrated on ground truth: these carry about 4.5x the base error rate."
+		>
+			{suspectCount} of {data.words.length} words suspect ({v.pct_witness_red === null ||
+			v.pct_witness_red === undefined
 				? 'n/a'
 				: `${(v.pct_witness_red * 100).toFixed(0)}%`})
 		</span>
@@ -163,9 +178,9 @@
 		></audio>
 	{:else if audioOk === false}
 		<p class="muted small">
-			Audio for this track could not be played ({audioReason ?? 'reason not recorded'}), so
-			the words cannot be followed. The timings below are still the aligner's output.
-			This is the library relink problem, not a lyrics one - see (private path).
+			Audio for this track could not be played ({audioReason ?? 'reason not recorded'}), so the
+			words cannot be followed. The timings below are still the aligner's output. This is the
+			library relink problem, not a lyrics one - see (private path).
 		</p>
 	{/if}
 
@@ -176,8 +191,8 @@
 				class="w {witnessClass(w)}"
 				class:active={w.idx === activeIdx}
 				title={witnessTitle(w)}
-				onclick={() => seekTo(w)}
-			>{w.word}</button>{#if w.line_final}<br />{/if}
+				onclick={() => seekTo(w)}>{w.word}</button
+			>{#if w.line_final}<br />{/if}
 		{/each}
 	</p>
 
@@ -198,10 +213,18 @@
 		background: rgba(127, 127, 127, 0.08);
 		margin-bottom: 6px;
 	}
-	.qc-vocal { border-left-color: #39c07c; }
-	.qc-sparse { border-left-color: #d9a441; }
-	.qc-no-lyrics { border-left-color: #8b90a0; }
-	.qc-unknown { border-left-color: #8b90a0; }
+	.qc-vocal {
+		border-left-color: #39c07c;
+	}
+	.qc-sparse {
+		border-left-color: #d9a441;
+	}
+	.qc-no-lyrics {
+		border-left-color: #8b90a0;
+	}
+	.qc-unknown {
+		border-left-color: #8b90a0;
+	}
 	.badge {
 		font-size: 0.75rem;
 		border: 1px solid currentColor;
@@ -209,9 +232,16 @@
 		padding: 0 6px;
 		margin-left: 6px;
 	}
-	.sep { opacity: 0.4; margin: 0 6px; }
-	.muted { color: var(--muted); }
-	.small { font-size: 0.85rem; }
+	.sep {
+		opacity: 0.4;
+		margin: 0 6px;
+	}
+	.muted {
+		color: var(--muted);
+	}
+	.small {
+		font-size: 0.85rem;
+	}
 	.words {
 		line-height: 2;
 		max-height: 340px;
@@ -229,10 +259,29 @@
 		cursor: pointer;
 		color: inherit;
 	}
-	.w-good { opacity: 0.95; }
-	.w-mid { color: #d9a441; }
-	.w-bad { color: #e05252; text-decoration: underline wavy currentColor; }
-	.w.active { background: #5b8def; color: #fff; }
-	.override { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-	audio { width: 100%; margin: 6px 0; }
+	.w-good {
+		opacity: 0.95;
+	}
+	.w-mid {
+		color: #d9a441;
+	}
+	.w-bad {
+		color: #e05252;
+		text-decoration: underline wavy currentColor;
+	}
+	.w.active {
+		background: #5b8def;
+		color: #fff;
+	}
+	.override {
+		margin-top: 8px;
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	audio {
+		width: 100%;
+		margin: 6px 0;
+	}
 </style>

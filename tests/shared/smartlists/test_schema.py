@@ -1,4 +1,5 @@
 """SMART-01 -- rule schema + validator tests."""
+
 from __future__ import annotations
 
 import json
@@ -38,13 +39,15 @@ def test_not_requires_single_child() -> None:
     with pytest.raises(SmartlistRuleError):
         validate_rule({"op": "not", "children": []})
     with pytest.raises(SmartlistRuleError):
-        validate_rule({
-            "op": "not",
-            "children": [
-                {"field": "bpm", "op": ">", "value": 120},
-                {"field": "bpm", "op": "<", "value": 130},
-            ],
-        })
+        validate_rule(
+            {
+                "op": "not",
+                "children": [
+                    {"field": "bpm", "op": ">", "value": 120},
+                    {"field": "bpm", "op": "<", "value": 130},
+                ],
+            }
+        )
 
 
 def test_and_requires_children() -> None:
@@ -78,10 +81,13 @@ def test_in_expects_list() -> None:
 
 
 def test_relative_date_accepted() -> None:
-    validate_rule({
-        "field": "added_date", "op": ">",
-        "value": {"$relative": "-90d"},
-    })
+    validate_rule(
+        {
+            "field": "added_date",
+            "op": ">",
+            "value": {"$relative": "-90d"},
+        }
+    )
 
 
 def test_number_field_rejects_string_value() -> None:

@@ -21,7 +21,11 @@ import type { RefreshStatus } from './api-ingest';
 type Stamps = Pick<RefreshStatus, 'started_at' | 'finished_at'>;
 
 // The `!` are deliberate: `<` reads a null stamp as 0, and nothing is older.
-export function refreshSnapshotApplies(shown: Stamps | null, next: Stamps, askedAfterShown: boolean): boolean {
+export function refreshSnapshotApplies(
+	shown: Stamps | null,
+	next: Stamps,
+	askedAfterShown: boolean
+): boolean {
 	const at = (x: Stamps | null) => x && (x.finished_at ?? x.started_at);
 	return (at(next) === null && askedAfterShown) || !(at(next)! < at(shown)!);
 }

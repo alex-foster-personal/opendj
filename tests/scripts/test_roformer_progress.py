@@ -4,7 +4,7 @@ Everything here is pure arithmetic over hand-built Dict snapshots -- no Modal
 import, no network, no GPU. The two functions that DO touch Modal
 (read_state, containers_live_from_modal_cli) are thin I/O wrappers around
 this math and are exercised by the live smoke test instead (see
-scripts/bench/ROFORMER-SPIKE.md / the task's own live-smoke requirement).
+(private path) / the task's own live-smoke requirement).
 
 Single-line intent, in the repo's regression style:
   - if reduce_state loses the run-meta entry then every downstream stat is meaningless
@@ -19,6 +19,7 @@ Single-line intent, in the repo's regression style:
   - if containers_live_from_apps attributes another run's tasks to this app_id then the ETA
     and the under-parallelised warning are both borrowing someone else's concurrency
 """
+
 from __future__ import annotations
 
 import pytest
@@ -28,9 +29,7 @@ from scripts import roformer_progress as prog
 RUN_ID = "20260731T000000-1"
 
 
-def _snapshot(
-    tracks: dict[str, dict], *, total: int | None = None, max_containers: int = 6
-) -> prog.RunSnapshot:
+def _snapshot(tracks: dict[str, dict], *, total: int | None = None, max_containers: int = 6) -> prog.RunSnapshot:
     if total is None:
         total = len(tracks)
     raw = {
@@ -50,8 +49,13 @@ def _snapshot(
 
 def _done(load_s: float, sep_s: float, encode_s: float, duration_s: float, gpu_id: str = "t-1") -> dict:
     return {
-        "phase": "done", "ts": 1010.0, "gpu_id": gpu_id,
-        "load_s": load_s, "sep_s": sep_s, "encode_s": encode_s, "duration_s": duration_s,
+        "phase": "done",
+        "ts": 1010.0,
+        "gpu_id": gpu_id,
+        "load_s": load_s,
+        "sep_s": sep_s,
+        "encode_s": encode_s,
+        "duration_s": duration_s,
     }
 
 
@@ -217,16 +221,28 @@ def test_sep_s_per_audio_min_zero_with_no_done_tracks() -> None:
 
 def test_warning_fires_on_high_load_overhead() -> None:
     warnings = prog.build_warnings(
-        load_overhead=31.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=31.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == ["model load dominating, use warm containers (modal.Cls) or memory snapshots"]
 
 
 def test_warning_does_not_fire_at_exactly_30_pct() -> None:
     warnings = prog.build_warnings(
-        load_overhead=30.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=30.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == []
 
@@ -234,8 +250,14 @@ def test_warning_does_not_fire_at_exactly_30_pct() -> None:
 def test_warning_fires_on_underparallelised_pool() -> None:
     # remaining=20, containers_live=3 < min(10, 20)=10, in_flight>0.
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=3, remaining=20, in_flight=3, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=3,
+        remaining=20,
+        in_flight=3,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == ["under-parallelised vs 10-GPU concurrency cap"]
 
@@ -244,8 +266,14 @@ def test_warning_skips_underparallelised_when_nothing_in_flight() -> None:
     # Even with containers_live < pool cap, no warning if nothing is running
     # (e.g. between polls, or the run just hasn't dispatched yet).
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=0, remaining=20, in_flight=0, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=0,
+        remaining=20,
+        in_flight=0,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == []
 
@@ -253,48 +281,84 @@ def test_warning_skips_underparallelised_when_nothing_in_flight() -> None:
 def test_warning_uses_remaining_not_pool_cap_when_remaining_is_smaller() -> None:
     # remaining=2 < H100_POOL_CAP=10: min(10, 2) = 2. containers_live=1 < 2.
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=1, remaining=2, in_flight=1, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=1,
+        remaining=2,
+        in_flight=1,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == ["under-parallelised vs 10-GPU concurrency cap"]
 
 
 def test_warning_fires_on_straggler_ratio() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=10.0, p95=31.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=10.0,
+        p95=31.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == ["straggler tracks, investigate longest audio"]
 
 
 def test_warning_skips_straggler_ratio_when_p50_is_zero() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=0.0, p95=0.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=0.0,
+        p95=0.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == []
 
 
 def test_warning_fires_on_stems_over_source_size() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
-        stems_over_source=2, worst_ratio=1.034,
+        load_overhead=0.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=2,
+        worst_ratio=1.034,
     )
     assert warnings == ["2 stems over source size, worst +3.4%"]
 
 
 def test_warning_skips_stems_over_source_size_when_zero() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
-        stems_over_source=0, worst_ratio=1.0,
+        load_overhead=0.0,
+        containers_live=10,
+        remaining=0,
+        in_flight=0,
+        p50=1.0,
+        p95=1.0,
+        stems_over_source=0,
+        worst_ratio=1.0,
     )
     assert warnings == []
 
 
 def test_all_four_warnings_can_fire_together() -> None:
     warnings = prog.build_warnings(
-        load_overhead=50.0, containers_live=1, remaining=5, in_flight=1, p50=10.0, p95=40.0,
-        stems_over_source=1, worst_ratio=1.05,
+        load_overhead=50.0,
+        containers_live=1,
+        remaining=5,
+        in_flight=1,
+        p50=10.0,
+        p95=40.0,
+        stems_over_source=1,
+        worst_ratio=1.05,
     )
     assert len(warnings) == 4
 
@@ -324,9 +388,7 @@ def test_worst_size_ratio_defaults_to_one_with_no_data() -> None:
 
 
 def test_build_status_surfaces_stems_over_source_fields() -> None:
-    snap = _snapshot(
-        {"a": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": 1.1}}, total=1
-    )
+    snap = _snapshot({"a": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": 1.1}}, total=1)
     status = prog.build_status(snap, containers_live=1)
     assert status["stems_over_source_size"] == 1
     assert status["worst_size_ratio_pct"] == pytest.approx(10.0)
@@ -374,9 +436,19 @@ def test_build_status_shape_has_all_required_keys() -> None:
     )
     status = prog.build_status(snap, containers_live=1)
     required = {
-        "done", "total", "pct", "in_flight", "failed", "eta_s", "gpu_s_spent",
-        "usd_spent", "containers_live", "load_overhead_pct",
-        "p50_sep_s_per_audio_min", "p95_sep_s_per_audio_min", "warnings",
+        "done",
+        "total",
+        "pct",
+        "in_flight",
+        "failed",
+        "eta_s",
+        "gpu_s_spent",
+        "usd_spent",
+        "containers_live",
+        "load_overhead_pct",
+        "p50_sep_s_per_audio_min",
+        "p95_sep_s_per_audio_min",
+        "warnings",
     }
     assert required <= status.keys()
     assert status["done"] == 1

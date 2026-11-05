@@ -8,7 +8,7 @@
  * capability is absent it records UNAVAILABLE naming the capability.
  *
  * Injection and full procedure: README.md in this directory, and
- * docs/quality/desk-005-wkwebview-spike-runbook.md.
+ * (private path).
  *
  * Scope limits, stated so no reader over-reads a green run:
  * - `ipc.capture(deck)` reads the real analyser inside the real graph. That is
@@ -345,7 +345,8 @@ export function installSpikeHarness(host, options = {}) {
 			return {
 				verdict: 'UNAVAILABLE',
 				missing_capability: `a second selectable output device (engine enumerated ${outputs.length}); host APIs: enumerateDevices=${String(capabilities.has_enumerate_devices)}, setSinkId=${String(capabilities.has_set_sink_id)}`,
-				detail: 'device selection not exercised; see the runbook fallback for the built-in plus loopback pair',
+				detail:
+					'device selection not exercised; see the runbook fallback for the built-in plus loopback pair',
 				observations: { outputs, capabilities }
 			};
 		}
@@ -479,7 +480,8 @@ export function installSpikeHarness(host, options = {}) {
 		}
 		return {
 			verdict: 'PASS',
-			detail: 'a deck presented audible with no user gesture in this window under activation mode auto',
+			detail:
+				'a deck presented audible with no user gesture in this window under activation mode auto',
 			observations: null
 		};
 	}

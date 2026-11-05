@@ -34,7 +34,9 @@ export const Transcribed: Story = { args: { lyrics: { source: 'asr', lines: line
 export const Loading: Story = { args: { loading: true } };
 
 /** The fetch failed: its message in the error color. */
-export const LoadError: Story = { args: { error: 'lyrics request failed: 503 Service Unavailable' } };
+export const LoadError: Story = {
+	args: { error: 'lyrics request failed: 503 Service Unavailable' }
+};
 
 /** A lyrics record with no lines renders nothing. */
 export const NoLines: Story = {

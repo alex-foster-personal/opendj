@@ -2,6 +2,7 @@
 
 [if] a hello exceeds the machine name or id wire limit [then] the hub rejects it, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -73,9 +74,7 @@ def _machine(
     }
 
 
-def _hello_body(
-    machine: dict[str, Any], *, machines: list[dict[str, Any]] | None = None
-) -> dict[str, Any]:
+def _hello_body(machine: dict[str, Any], *, machines: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
         "machine": machine,
         "schema_version": state_schema.SCHEMA_VERSION,
@@ -91,9 +90,7 @@ def _machine_ids(conn: sqlite3.Connection) -> list[str]:
     return [str(row[0]) for row in conn.execute("SELECT machine_id FROM machines")]
 
 
-def test_hello_refuses_oversize_name_and_stores_nothing(
-    hub_client: TestClient, hub_dir: Path
-) -> None:
+def test_hello_refuses_oversize_name_and_stores_nothing(hub_client: TestClient, hub_dir: Path) -> None:
     """[if] hello name exceeds 256 chars [then] hub 422s and stores nothing, [else stop]."""
     response = hub_client.post(
         _HELLO,
@@ -122,9 +119,7 @@ def test_hello_refuses_oversize_machine_id(hub_client: TestClient, hub_dir: Path
         conn.close()
 
 
-def test_hello_refuses_oversize_peer_in_machines_array(
-    hub_client: TestClient, hub_dir: Path
-) -> None:
+def test_hello_refuses_oversize_peer_in_machines_array(hub_client: TestClient, hub_dir: Path) -> None:
     """[if] machines[] carries oversize peer name [then] hub 422s before merge, [else stop]."""
     caller = _machine(machine_id=_SPOKE_A, name="caller")
     peer = _machine(machine_id=_SPOKE_B, name="p" * 300)
@@ -158,9 +153,7 @@ def test_push_refuses_oversize_fleet_snapshot(hub_client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_legacy_oversized_name_clamped_in_hello_pull_status(
-    hub_client: TestClient, hub_dir: Path
-) -> None:
+def test_legacy_oversized_name_clamped_in_hello_pull_status(hub_client: TestClient, hub_dir: Path) -> None:
     """[if] sqlite holds legacy oversize name [then] responses clamp it, [else stop]."""
     conn = _hub_conn(hub_dir)
     try:

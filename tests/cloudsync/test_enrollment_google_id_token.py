@@ -250,9 +250,7 @@ def test_expiry_inside_the_skew_allowance_still_enrolls(
     assert len(owner_rows(enroll_hub_dir)) == 1
 
 
-@pytest.mark.parametrize(
-    "email", [ENROLL_OWNER_EMAIL, ENROLL_OWNER_EMAIL.upper()], ids=["same_case", "upper_case"]
-)
+@pytest.mark.parametrize("email", [ENROLL_OWNER_EMAIL, ENROLL_OWNER_EMAIL.upper()], ids=["same_case", "upper_case"])
 def test_a_verified_token_whose_email_belongs_to_another_sub_is_refused(
     email: str,
     google_env: JwksServer,
@@ -379,9 +377,7 @@ def test_a_slow_jwks_fetch_does_not_hold_the_hub_write_lock(
     google_env.delay_s = 2.0
     token = sign_id_token(google_key, google_claims())
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(
-            http_enroll, enroll_hub, enroll_spoke_dir, name="spoke", token=token, kind=KIND
-        )
+        pending = pool.submit(http_enroll, enroll_hub, enroll_spoke_dir, name="spoke", token=token, kind=KIND)
         assert google_env.fetch_started.wait(10.0), "the enroll never reached the JWKS server"
         free_during_fetch = _write_lock_is_free(db_path)
         body = pending.result(timeout=30.0)
@@ -422,9 +418,7 @@ def test_the_jwks_cache_honors_max_age_less_age(google_key: SigningKey) -> None:
         ("max-age=100", "soon", 0.0),
     ],
 )
-def test_jwks_ttl_follows_cache_control(
-    cache_control: str | None, age: str | None, expected: float
-) -> None:
+def test_jwks_ttl_follows_cache_control(cache_control: str | None, age: str | None, expected: float) -> None:
     """if an absent or uncacheable Cache-Control yields a positive TTL then broken"""
     assert google_id_token.jwks_ttl_s(cache_control, age) == expected
 
@@ -469,9 +463,7 @@ def test_an_unreachable_jwks_answers_503(
     assert_nothing_written(enroll_hub_dir)
 
 
-@pytest.mark.parametrize(
-    "url", ["http://jwks.example.com/certs", "ftp://127.0.0.1/certs", "file:///etc/certs"]
-)
+@pytest.mark.parametrize("url", ["http://jwks.example.com/certs", "ftp://127.0.0.1/certs", "file:///etc/certs"])
 def test_a_jwks_url_an_attacker_could_answer_for_is_refused(url: str) -> None:
     """if signing keys may be fetched over plaintext from a remote host then broken"""
     env = {
@@ -481,20 +473,14 @@ def test_a_jwks_url_an_attacker_could_answer_for_is_refused(url: str) -> None:
     with pytest.raises(google_id_token.GoogleIdTokenVerifierUnavailable):
         google_id_token.GoogleIdTokenConfig.from_env(env)
     # Control: the production URL and a loopback URL both configure.
-    ok = google_id_token.GoogleIdTokenConfig.from_env(
-        {"OPENDJ_GOOGLE_OAUTH_CLIENT_ID": GOOGLE_TEST_CLIENT_ID}
-    )
+    ok = google_id_token.GoogleIdTokenConfig.from_env({"OPENDJ_GOOGLE_OAUTH_CLIENT_ID": GOOGLE_TEST_CLIENT_ID})
     assert ok.jwks_url == google_id_token.GOOGLE_JWKS_URL
     local = {**env, google_id_token.JWKS_URL_ENV_NAME: "http://127.0.0.1:9/certs"}
-    assert google_id_token.GoogleIdTokenConfig.from_env(local).jwks_url.startswith(
-        "http://127.0.0.1"
-    )
+    assert google_id_token.GoogleIdTokenConfig.from_env(local).jwks_url.startswith("http://127.0.0.1")
 
 
 def test_the_hub_and_sign_in_read_the_same_client_id_names() -> None:
     """if the hub pins aud to a different env var than sign-in reads then broken"""
     assert auth.CLIENT_ID_ENV_NAMES is google_oauth_client.CLIENT_ID_ENV_NAMES
-    config = google_id_token.GoogleIdTokenConfig.from_env(
-        {auth.CLIENT_ID_ENV_NAMES[0]: GOOGLE_TEST_CLIENT_ID}
-    )
+    config = google_id_token.GoogleIdTokenConfig.from_env({auth.CLIENT_ID_ENV_NAMES[0]: GOOGLE_TEST_CLIENT_ID})
     assert config.client_id == GOOGLE_TEST_CLIENT_ID

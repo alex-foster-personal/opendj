@@ -50,6 +50,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -237,9 +238,7 @@ def main() -> None:
                 f"sample-rate mismatch: truth @ {truth_sr} Hz vs instrumental of "
                 f"{estimate_path} @ {inst_sr} Hz (refusing to resample)"
             )
-        out[str(estimate_path)] = score_estimate(
-            truth, accompaniment, mixture, est_vocals, est_accomp
-        )
+        out[str(estimate_path)] = score_estimate(truth, accompaniment, mixture, est_vocals, est_accomp)
 
     json.dump(out, sys.stdout)
     sys.stdout.write("\n")

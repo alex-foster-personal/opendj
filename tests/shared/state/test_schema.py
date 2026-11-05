@@ -1,4 +1,5 @@
 """INFRA-01 schema + migrations tests."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -13,18 +14,14 @@ pytestmark = pytest.mark.requirement("INFRA-01")
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     return {r[0] for r in rows}
 
 
 def test_fresh_init_creates_all_tables(state_conn: sqlite3.Connection) -> None:
     names = _tables(state_conn)
     for expected in state_schema.TABLES:
-        assert expected in names, (
-            f"expected table {expected!r} after fresh init; got {sorted(names)}"
-        )
+        assert expected in names, f"expected table {expected!r} after fresh init; got {sorted(names)}"
     assert "schema_meta" in names
 
 
@@ -84,22 +81,19 @@ def test_schema_meta_records_version(state_conn: sqlite3.Connection) -> None:
 def test_tracks_tier_check_constraint(state_conn: sqlite3.Connection) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, ?, ?, ?)",
             ("x" * 40, "BAD", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
         )
 
 
 def test_track_fields_source_check_constraint(state_conn: sqlite3.Connection) -> None:
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, ?, ?, ?)",
         ("a" * 40, "isrc", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO track_fields(stable_id, field_name, value_json, source, "
-            "modified_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO track_fields(stable_id, field_name, value_json, source, modified_at) VALUES (?, ?, ?, ?, ?)",
             ("a" * 40, "bpm", "128", "NOPE", "2026-01-01T00:00:00Z"),
         )
 
@@ -113,25 +107,16 @@ def test_v4_backfills_primary_from_tracks_file_path(tmp_path: Path) -> None:
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute("BEGIN")
-        for stmt in (
-            state_schema.MIGRATIONS[0]
-            + state_schema.MIGRATIONS[1]
-            + state_schema.MIGRATIONS[2]
-        ):
+        for stmt in state_schema.MIGRATIONS[0] + state_schema.MIGRATIONS[1] + state_schema.MIGRATIONS[2]:
             conn.execute(stmt)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_meta ("
-            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
         conn.execute(
             "INSERT INTO schema_meta(version, applied_at) VALUES (3, ?)",
             ("2026-01-01T00:00:00+00:00",),
         )
         conn.execute(
-            "INSERT INTO tracks(stable_id, stable_id_tier, file_path, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            ("c" * 40, "isrc", "/tmp/demo.flac",
-             "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+            "INSERT INTO tracks(stable_id, stable_id_tier, file_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            ("c" * 40, "isrc", "/tmp/demo.flac", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
         )
         conn.execute("COMMIT")
         assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
@@ -145,9 +130,7 @@ def test_v4_backfills_primary_from_tracks_file_path(tmp_path: Path) -> None:
 
 
 def _views(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='view'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='view'").fetchall()
     return {r[0] for r in rows}
 
 
@@ -167,8 +150,7 @@ def test_v8_is_idempotent_over_a_populated_db(state_db_path: Path) -> None:
     conn = state_db.open_rw(state_db_path)
     try:
         conn.execute(
-            "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-            "VALUES (?, 'isrc', ?, ?)",
+            "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
             ("c" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
         )
         conn.execute(
@@ -178,27 +160,20 @@ def test_v8_is_idempotent_over_a_populated_db(state_db_path: Path) -> None:
         )
         assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
         assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
-        assert (
-            conn.execute("SELECT COUNT(*) FROM track_availability").fetchone()[0] == 1
-        )
-        assert (
-            conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
-            == state_schema.SCHEMA_VERSION
-        )
+        assert conn.execute("SELECT COUNT(*) FROM track_availability").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
     finally:
         conn.close()
 
 
 def test_availability_state_check_constraint(state_conn: sqlite3.Connection) -> None:
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
         ("d" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO track_availability(stable_id, state, checked_at) "
-            "VALUES (?, 'lost', ?)",
+            "INSERT INTO track_availability(stable_id, state, checked_at) VALUES (?, 'lost', ?)",
             ("d" * 40, "2026-01-01T00:00:00Z"),
         )
 
@@ -207,8 +182,7 @@ def test_availability_states_mirror_the_check_constraint(
     state_conn: sqlite3.Connection,
 ) -> None:
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
         ("e" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     for state in state_schema.AVAILABILITY_STATES:
@@ -224,8 +198,7 @@ def test_energy_segments_reject_an_out_of_scale_value(
     state_conn: sqlite3.Connection,
 ) -> None:
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
         ("f" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     with pytest.raises(sqlite3.IntegrityError):
@@ -248,8 +221,7 @@ def test_unmatched_reason_is_constrained(state_conn: sqlite3.Connection) -> None
 
 def test_track_fields_confidence_bounds(state_conn: sqlite3.Connection) -> None:
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, ?, ?, ?)",
         ("b" * 40, "isrc", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     with pytest.raises(sqlite3.IntegrityError):

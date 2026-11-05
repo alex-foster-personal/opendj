@@ -25,6 +25,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from apps.feature_flags import FlagStore, load_flags
+from apps.feature_flags.http import flags_router
 from apps.play_analytics.http import router as play_analytics_router
 from apps.set_notes.http import create_router as create_set_notes_router
 from apps.sets.api import router as sets_router
@@ -43,11 +44,13 @@ from apps.webui.port_config import (
 
 from . import (
     analysis_autostart,
+    backfill_drain,
     boot_grace,
     coverage_drain,
     library_jobs_autostart,
     lyric_index_autostart,
 )
+from .app_watchers import build_auto_analyze_watcher, build_lyric_index_watcher
 from .backend import (
     BackendError,
     ConflictError,
@@ -85,6 +88,7 @@ from .routes import auth as auth_routes
 from .routes import auto_gain as auto_gain_routes
 from .routes import autolists as autolists_routes
 from .routes import beatgrid_flags as beatgrid_flags_routes
+from .routes import source_flags as source_flags_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -103,6 +107,7 @@ from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import dj_transition as dj_transition_routes
+from .routes import dj_transitions_record as dj_transitions_record_routes
 from .routes import dj_try as dj_try_routes
 from .routes import energy as energy_routes
 from .routes import enrich as enrich_routes
@@ -132,6 +137,7 @@ from .routes import lifecycle as lifecycle_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import midi_maps as midi_maps_routes
+from .routes import practice as practice_routes
 from .routes import mytag as mytag_routes
 from .routes import pair_transition as pair_transition_routes
 from .routes import pairing_capture as pairing_capture_routes
@@ -143,7 +149,9 @@ from .routes import play_it as play_it_routes
 from .routes import playlist_components as playlist_components_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import library_org as library_org_routes
+from .routes import library_works as library_works_routes
 from .routes import playlist_sets as playlist_sets_routes
+from .routes import set_target as set_target_routes
 from .routes import playlist_tree as playlist_tree_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
@@ -180,6 +188,7 @@ from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import title_fix as title_fix_routes
 from .routes import track_handoff as track_handoff_routes
 from .routes import track_plays as track_plays_routes
+from .routes import played_length as played_length_routes
 from .routes import tracks as tracks_routes
 from .routes import transition_in_cue as transition_in_cue_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -317,6 +326,27 @@ def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
     app.state.ahead_analysis.start()
 
 
+def _settle_orphaned_drains(app: FastAPI) -> None:
+    """Settle the drained batches an earlier engine left open (backfill_drain).
+
+    Only an app wired to a queue database (``analysis_db_path``) has any. A
+    failure is logged rather than raised: an unreadable queue must not stop
+    the engine from starting, and the batches stay as they were.
+    """
+    db = getattr(app.state, "analysis_db_path", None)
+    if db is None:
+        return
+    try:
+        settled = backfill_drain.settle_orphaned_drains(Path(db))
+    except Exception:
+        log.exception("could not settle Re-analyze batches an earlier engine left open")
+        return
+    if settled:
+        log.warning(
+            "settled %d Re-analyze batch(es) an earlier engine left unfinished: %s",
+            len(settled),
+            ", ".join(settled),
+        )
 def _start_ingest_enrichment_if_armed(app: FastAPI) -> None:
     # ENRICH-06: the post-import coordinator runs where the analysis drain is armed.
     if not getattr(app.state, "ahead_analysis_armed", False):
@@ -328,11 +358,12 @@ def _start_ingest_enrichment_if_armed(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
-    from .app import build_auto_analyze_watcher, build_lyric_index_watcher
-
     # A previous lifespan's stop_all closed the CLI registry; this app runs
     # refresh steps again.
     ingest_cli_procs.reopen()
+    # Before anything can start a drain: a Re-analyze batch an earlier engine
+    # never finished would otherwise stay queued with no runner forever.
+    _settle_orphaned_drains(app)
     # Kept ON THE APP, not rebuilt per lifespan. stop() joins with a
     # timeout, so a shutdown that gives up on a slow scan leaves a live
     # thread whose only handle is the watcher that owns it. A fresh
@@ -646,9 +677,11 @@ def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
 def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
     prefixed = (
+        played_length_routes.router,
         tracks_routes.router,
         track_handoff_routes.router,
         beatgrid_flags_routes.router,
+        source_flags_routes.router,
         audio_quality_routes.router,
         auto_gain_routes.router,
         client_errors_routes.router,
@@ -668,7 +701,9 @@ def _mount_api_routers(app: FastAPI) -> None:
         playlist_write_routes.router,
         playlist_tree_routes.router,
         library_org_routes.router,
+        library_works_routes.router,
         playlist_sets_routes.router,
+        set_target_routes.router,
         playlist_components_routes.router,
         create_set_notes_router(get_write_state),
         playlist_history_routes.router,
@@ -740,10 +775,12 @@ def _mount_api_routers(app: FastAPI) -> None:
         settings_routes.router,
         settings_ai_routes.router,
         midi_maps_routes.router,
+        practice_routes.router,
         state_routes.router,
         commands_routes.router,
         dj_try_routes.router,
         dj_transition_routes.router,
+        dj_transitions_record_routes.router,
         pair_transition_routes.router,
         shell_routes.router,
         ui_prefs_routes.router,
@@ -760,6 +797,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         usb_volumes_routes.router,
         usb_tracks_routes.router,
         system_audio_routes.router,
+        flags_router,
     )
     for router in prefixed:
         app.include_router(router, prefix=api_prefix)

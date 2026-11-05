@@ -96,9 +96,7 @@ def _rows_for_ids(
     return rows
 
 
-def _playlist_rows(
-    conn: sqlite3.Connection, *, playlist_name: str | None
-) -> list[sqlite3.Row]:
+def _playlist_rows(conn: sqlite3.Connection, *, playlist_name: str | None) -> list[sqlite3.Row]:
     if playlist_name is None:
         return conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id FROM playlists "
@@ -114,9 +112,7 @@ def _playlist_rows(
     return rows
 
 
-def _memberships(
-    conn: sqlite3.Connection, playlist_ids: Sequence[str]
-) -> dict[str, list[str]]:
+def _memberships(conn: sqlite3.Connection, playlist_ids: Sequence[str]) -> dict[str, list[str]]:
     result = {playlist_id: [] for playlist_id in playlist_ids}
     for row in _rows_for_ids(
         conn,
@@ -160,9 +156,7 @@ def _vendor_ids_by_track(
     return vendors
 
 
-def _expected_field_names(
-    expected_tracks: dict[str, dict[str, object]], stable_id: str
-) -> set[str]:
+def _expected_field_names(expected_tracks: dict[str, dict[str, object]], stable_id: str) -> set[str]:
     return {
         str(field["field_name"])
         for field in expected_tracks.get(stable_id, {}).get("fields", [])
@@ -190,9 +184,7 @@ def _fields_by_track(
         }
         if row["confidence"] is not None:
             item["confidence"] = float(row["confidence"])
-        if filtered and item["field_name"] not in _expected_field_names(
-            expected_tracks, sid
-        ):
+        if filtered and item["field_name"] not in _expected_field_names(expected_tracks, sid):
             continue
         fields[sid].append(item)
     return fields
@@ -207,9 +199,7 @@ def _track_records(
     for row in track_rows:
         sid = str(row["stable_id"])
         artists = json.loads(str(row["artists_json"] or "[]"))
-        if not isinstance(artists, list) or not all(
-            isinstance(artist, str) for artist in artists
-        ):
+        if not isinstance(artists, list) or not all(isinstance(artist, str) for artist in artists):
             raise RuntimeError(f"track {sid} has malformed artists_json")
         tracks.append(
             {
@@ -259,20 +249,14 @@ def _snapshot_from_connection(
         table="track_fields",
         id_column="stable_id",
         ids=ordered_ids,
-        columns=(
-            "stable_id, field_name, value_json, source, confidence, modified_at"
-        ),
+        columns=("stable_id, field_name, value_json, source, confidence, modified_at"),
         order_by="stable_id, field_name",
     )
 
     filtered = expected is not None
     expected_tracks = _expected_track_index(expected)
-    vendors = _vendor_ids_by_track(
-        vendor_rows, ordered_ids, expected_tracks, filtered=filtered
-    )
-    fields = _fields_by_track(
-        field_rows, ordered_ids, expected_tracks, filtered=filtered
-    )
+    vendors = _vendor_ids_by_track(vendor_rows, ordered_ids, expected_tracks, filtered=filtered)
+    fields = _fields_by_track(field_rows, ordered_ids, expected_tracks, filtered=filtered)
     tracks = _track_records(track_rows, vendors, fields)
 
     playlist_ids = [str(row["playlist_id"]) for row in playlist_rows]
@@ -309,9 +293,7 @@ def build_snapshot(
             ids = sorted(
                 {
                     sid
-                    for members in _memberships(
-                        conn, [str(row["playlist_id"]) for row in playlists]
-                    ).values()
+                    for members in _memberships(conn, [str(row["playlist_id"]) for row in playlists]).values()
                     for sid in members
                 }
             )
@@ -319,14 +301,8 @@ def build_snapshot(
             playlists = []
             ids = sorted(set(stable_ids))
         else:
-            ids = [
-                str(row[0]) for row in conn.execute(
-                    "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
-                )
-            ]
-        snapshot = _snapshot_from_connection(
-            conn, track_ids=ids, playlist_rows=playlists
-        )
+            ids = [str(row[0]) for row in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL")]
+        snapshot = _snapshot_from_connection(conn, track_ids=ids, playlist_rows=playlists)
     found = {str(item["stable_id"]) for item in snapshot["tracks"]}  # type: ignore[index]
     missing = sorted(set(ids) - found)
     if missing:
@@ -342,18 +318,14 @@ def _validate_track(track: object, seen: set[str]) -> str:
     if not isinstance(sid, str) or not sid or sid in seen:
         raise RuntimeError("crate library stable_ids must be unique strings")
     artists = track.get("artists")
-    if not isinstance(artists, list) or not all(
-        isinstance(artist, str) for artist in artists
-    ):
+    if not isinstance(artists, list) or not all(isinstance(artist, str) for artist in artists):
         raise RuntimeError(f"crate library track {sid} has invalid artists")
     return sid
 
 
 def _validate_playlist(playlist: object, ids: set[str]) -> None:
     """Check one ledger playlist against the track ids the ledger declares."""
-    if not isinstance(playlist, dict) or not isinstance(
-        playlist.get("stable_ids"), list
-    ):
+    if not isinstance(playlist, dict) or not isinstance(playlist.get("stable_ids"), list):
         raise TypeError("crate library playlist must include stable_ids")
     missing = set(playlist["stable_ids"]) - ids
     if missing:
@@ -377,12 +349,11 @@ def _validate_snapshot(snapshot: dict[str, object]) -> None:
         _validate_playlist(playlist, ids)
 
 
-def _expected_rows(
-    conn: sqlite3.Connection, snapshot: dict[str, object]
-) -> dict[str, object]:
+def _expected_rows(conn: sqlite3.Connection, snapshot: dict[str, object]) -> dict[str, object]:
     track_ids = [str(item["stable_id"]) for item in snapshot["tracks"]]  # type: ignore[index]
     playlist_ids = [
-        str(item["playlist_id"]) for item in snapshot["playlists"]  # type: ignore[index]
+        str(item["playlist_id"])
+        for item in snapshot["playlists"]  # type: ignore[index]
     ]
     playlists = _rows_for_ids(
         conn,
@@ -431,9 +402,7 @@ def _backup_state_db(state_db: Path, backup_dir: Path, digest: str) -> Path:
     return backup
 
 
-def _apply_track(
-    conn: sqlite3.Connection, writer: StateWriter, track: dict[str, object]
-) -> int:
+def _apply_track(conn: sqlite3.Connection, writer: StateWriter, track: dict[str, object]) -> int:
     """Write one owner track record and return how many rows it changed."""
     changed = int(
         writer.upsert_track(
@@ -471,9 +440,7 @@ def _apply_track(
     return changed
 
 
-def _apply_playlist(
-    conn: sqlite3.Connection, writer: StateWriter, playlist: dict[str, object]
-) -> int:
+def _apply_playlist(conn: sqlite3.Connection, writer: StateWriter, playlist: dict[str, object]) -> int:
     """Write one owner playlist and its ordering, returning rows changed."""
     playlist_id = str(playlist["playlist_id"])
     existing = conn.execute(
@@ -497,8 +464,7 @@ def _apply_playlist(
     current = [
         str(row[0])
         for row in conn.execute(
-            "SELECT stable_id FROM playlist_memberships "
-            "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
             (playlist_id,),
         )
     ]
@@ -526,28 +492,23 @@ def reconcile_snapshot(
     conn.row_factory = sqlite3.Row
     writer = StateWriter(conn, actor="agentbox.crate-sync")
     changed = 0
-    conn.execute("SAVEPOINT agentbox_crate_state")
     try:
-        for track in snapshot["tracks"]:  # type: ignore[union-attr]
-            assert isinstance(track, dict)
-            changed += _apply_track(conn, writer, track)
+        with writer.transaction():
+            for track in snapshot["tracks"]:  # type: ignore[union-attr]
+                assert isinstance(track, dict)
+                changed += _apply_track(conn, writer, track)
 
-        for playlist in snapshot["playlists"]:  # type: ignore[union-attr]
-            assert isinstance(playlist, dict)
-            changed += _apply_playlist(conn, writer, playlist)
+            for playlist in snapshot["playlists"]:  # type: ignore[union-attr]
+                assert isinstance(playlist, dict)
+                changed += _apply_playlist(conn, writer, playlist)
 
-        actual = _expected_rows(conn, snapshot)
-        actual_digest = snapshot_digest(actual)
-        if actual_digest != expected_digest:
-            raise RuntimeError(  # noqa: TRY301 - rollback boundary is here
-                "replica library ledger mismatch after state reconciliation: "
-                f"expected {expected_digest}, got {actual_digest}"
-            )
-        conn.execute("RELEASE SAVEPOINT agentbox_crate_state")
-    except Exception:
-        conn.execute("ROLLBACK TO SAVEPOINT agentbox_crate_state")
-        conn.execute("RELEASE SAVEPOINT agentbox_crate_state")
-        raise
+            actual = _expected_rows(conn, snapshot)
+            actual_digest = snapshot_digest(actual)
+            if actual_digest != expected_digest:
+                raise RuntimeError(
+                    "replica library ledger mismatch after state reconciliation: "
+                    f"expected {expected_digest}, got {actual_digest}"
+                )
     finally:
         writer.close()
         conn.close()
@@ -563,9 +524,7 @@ def snapshot_from_manifest(manifest: dict[str, object]) -> dict[str, object]:
     expected = manifest.get("library_digest")
     actual = snapshot_digest(snapshot)
     if expected != actual:
-        raise RuntimeError(
-            f"crate library ledger digest mismatch: expected {expected}, got {actual}"
-        )
+        raise RuntimeError(f"crate library ledger digest mismatch: expected {expected}, got {actual}")
     _validate_snapshot(snapshot)
     return snapshot
 
@@ -581,11 +540,7 @@ def normalise_manifest(manifest: dict[str, object]) -> dict[str, object]:
     snapshot = snapshot_from_manifest(manifest)
     normalised = json.loads(json.dumps(snapshot, ensure_ascii=False))
     for track in normalised["tracks"]:
-        track["fields"] = [
-            field
-            for field in track.get("fields", [])
-            if field.get("field_name") in WRAPPED_FIELDS
-        ]
+        track["fields"] = [field for field in track.get("fields", []) if field.get("field_name") in WRAPPED_FIELDS]
     digest = snapshot_digest(normalised)
     if digest != manifest.get("library_digest"):
         manifest["source_library_digest"] = manifest["library_digest"]

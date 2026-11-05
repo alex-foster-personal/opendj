@@ -5,7 +5,7 @@
   Entitlements for the Developer ID signed Electron app and its helper apps
   (scripts/electron_local_sign.py, ship_electron.py local-fast). The engine
   payload's executables carry their own, in
-  apps/desktop/src-tauri/Entitlements.engine.plist.
+  apps/desktop/shared/Entitlements.engine.plist.
 
   allow-jit: V8 in the main process and the renderers.
   allow-unsigned-executable-memory: Chromium helpers still map writable and

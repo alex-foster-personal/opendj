@@ -1,4 +1,4 @@
-"""What adr-check.yml runs on a Trunk queue draft versus an ordinary PR (PR #4227).
+"""What pr-body-gates.yml's `adr` job runs on a Trunk queue draft versus an ordinary PR (PR #4227).
 
 A Trunk `trunk-merge/*` draft runs both ADR checks. `--pr` recognizes a Trunk batch
 and judges every member PR on its own files and ADR declaration (scripts.adr_check,
@@ -36,7 +36,7 @@ from tests.quality.gha_conditions import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GATE = REPO_ROOT / ".github" / "workflows" / "adr-check.yml"
+GATE = REPO_ROOT / ".github" / "workflows" / "pr-body-gates.yml"
 GATE_MODULE = "scripts.adr_check"
 PR_NUMBER_EXPR = "${{ github.event.pull_request.number }}"
 BASE_REF_EXPR = "${{ github.base_ref }}"
@@ -47,7 +47,7 @@ GATED_PATH = "apps/cloud/service.py"
 # -----------------------------------------------------------------------------
 def _gate_argvs_for(event: PrEvent, base_ref: str = "main") -> list[list[str]]:
     """The scripts.adr_check argument lists the workflow would run for this PR event."""
-    job = yaml.safe_load(GATE.read_text())["jobs"]["gate"]
+    job = yaml.safe_load(GATE.read_text())["jobs"]["adr"]
     if not condition_holds(job.get("if"), event):
         return []
     argvs: list[list[str]] = []

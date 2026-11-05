@@ -174,7 +174,10 @@ export async function fetchRecentPlays(limit: number): Promise<SpotifyRecentPlay
 				obj.duration_ms === null ? null : _asNumber(obj.duration_ms, `play ${index}.duration_ms`),
 			ownership: _asOwnership(obj.ownership, `play ${index}.ownership`),
 			confidence: _asNumber(obj.confidence, `play ${index}.confidence`),
-			matched_stable_id: _asNullableString(obj.matched_stable_id, `play ${index}.matched_stable_id`),
+			matched_stable_id: _asNullableString(
+				obj.matched_stable_id,
+				`play ${index}.matched_stable_id`
+			),
 			suggested_sources: _asPurchaseLinks(obj.suggested_sources, `play ${index}.suggested_sources`)
 		};
 	});

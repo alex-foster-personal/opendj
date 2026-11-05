@@ -2,6 +2,7 @@
 
 [if] the hub becomes reachable after a transient unarmed state [then] hydration re-arms without restart, [else stop].
 """
+
 from __future__ import annotations
 
 import time

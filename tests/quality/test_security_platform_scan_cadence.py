@@ -31,16 +31,13 @@ DAILY_CRON = "17 6 * * *"
 WEEKLY_CRON = "37 6 * * 1"
 WEEKLY_ONLY = f"github.event.schedule == '{WEEKLY_CRON}'"
 WEEKLY_DISPATCH = (
-    "(github.event_name == 'workflow_dispatch' && inputs.cadence == 'weekly' "
-    "&& github.ref == 'refs/heads/main')"
+    "(github.event_name == 'workflow_dispatch' && inputs.cadence == 'weekly' && github.ref == 'refs/heads/main')"
 )
 # The job is wrapped in the private-source guard so the public mirror (no Semgrep app,
 # no SEMGREP_APP_TOKEN) skips it: `<guard> && ( <disjuncts> )`. The cadence policy below
 # is about the disjuncts inside the parentheses.
 PRIVATE_SOURCE_GUARD = "endsWith(github.repository, '/music-dj-tools')"
-PR_CONJUNCTION_PREFIX = (
-    "(vars.CI_HOSTED_SECURITY_JOBS == 'true' && github.event_name == 'pull_request' &&"
-)
+PR_CONJUNCTION_PREFIX = "(vars.CI_HOSTED_SECURITY_JOBS == 'true' && github.event_name == 'pull_request' &&"
 
 
 def _workflow() -> dict:
@@ -105,9 +102,7 @@ def test_daily_cron_does_not_reach_the_platform_full_scan() -> None:
 
 def test_weekly_cron_reaches_the_platform_full_scan() -> None:
     disjuncts = _semgrep_disjuncts(_workflow())
-    assert WEEKLY_ONLY in disjuncts, (
-        f"no disjunct admits the weekly cron on its own; got {disjuncts}"
-    )
+    assert WEEKLY_ONLY in disjuncts, f"no disjunct admits the weekly cron on its own; got {disjuncts}"
 
 
 def test_manual_weekly_dispatch_reaches_the_platform_full_scan() -> None:

@@ -6,6 +6,7 @@ already current, so no key was ever computed through that path.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from apps.analysis.backends import get_backend

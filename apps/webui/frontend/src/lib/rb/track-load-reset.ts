@@ -13,6 +13,7 @@
 
 import type { EqBand } from './mixer-types';
 import type { StemControls } from './stem-graph';
+import { STEM_CONTROL_IDS, type StemControl } from './stem-types';
 
 export const TRACK_LOAD_RESET_IDS = ['level', 'stems', 'eq', 'trim', 'filter'] as const;
 
@@ -228,8 +229,13 @@ export interface TrackLoadResetWriters {
 	setEq(band: EqBand, value: number): void;
 }
 
-/** Apply the saved level / EQ / trim / filter reset to one channel after a load that won. */
-export function applyTrackLoadChannelReset(channel: TrackLoadChannelState, write: TrackLoadResetWriters): void {
+/** Apply the level / EQ / trim / filter reset to one channel: after a load that won (the saved
+ * choice), or on a Reset now press (DECKGAP-7691h, the press's own choice). */
+export function applyTrackLoadChannelReset(
+	channel: TrackLoadChannelState,
+	write: TrackLoadResetWriters,
+	enabled: TrackLoadResetPrefs = readTrackLoadReset()
+): void {
 	const now: TrackLoadChannelNow = {
 		fader: channel.fader,
 		trim: channel.trim,
@@ -238,7 +244,7 @@ export function applyTrackLoadChannelReset(channel: TrackLoadChannelState, write
 		eqLow: channel.eq_low,
 		filter: channel.filter
 	};
-	for (const action of channelResetActions(readTrackLoadReset(), now)) {
+	for (const action of channelResetActions(enabled, now)) {
 		if (action.kind === 'fader') write.setFader(action.value);
 		else if (action.kind === 'trim') write.setTrim(action.value);
 		else if (action.kind === 'filter') write.setFilter(action.value);
@@ -259,4 +265,45 @@ export function applyStemCarry(
 	stemCarry.delete(deck);
 	state.controls = carried;
 	processor.setControls(carried);
+}
+
+/**
+ * DECKGAP-7691h: the items a Reset now press applies. `parts` names them for
+ * an agent; omitted, the press takes the ticked ones, as the next load would.
+ */
+export function resetNowPrefs(parts: readonly TrackLoadResetId[] | undefined): TrackLoadResetPrefs {
+	if (parts === undefined) return { ...readTrackLoadReset() };
+	const out: TrackLoadResetPrefs = { level: false, stems: false, eq: false, trim: false, filter: false };
+	for (const id of parts) out[id] = true;
+	return out;
+}
+
+export type StemResetAction =
+	| { kind: 'stem_mute'; stem: StemControl; muted: false }
+	| { kind: 'stem_solo'; stem: StemControl; solo: false }
+	| { kind: 'stem_gain'; stem: StemControl; value: number };
+
+/** Unity, as a fresh track publishes it (`createDefaultStemControls`): open, not solo, 0.5. */
+const STEM_UNITY_GAIN = 0.5;
+
+/**
+ * DECKGAP-7691h: the stem writes that return a live stem mix to the state a
+ * new track publishes. Only controls the bundle offers; already-neutral ones
+ * are skipped, like `channelResetActions`.
+ */
+export function stemResetActions(
+	enabled: TrackLoadResetPrefs,
+	controls: StemControls,
+	available: readonly StemControl[]
+): StemResetAction[] {
+	if (!enabled.stems) return [];
+	const actions: StemResetAction[] = [];
+	for (const stem of STEM_CONTROL_IDS) {
+		if (!available.includes(stem)) continue;
+		const now = controls[stem];
+		if (now.solo) actions.push({ kind: 'stem_solo', stem, solo: false });
+		if (now.muted) actions.push({ kind: 'stem_mute', stem, muted: false });
+		if (differs(now.gain, STEM_UNITY_GAIN)) actions.push({ kind: 'stem_gain', stem, value: STEM_UNITY_GAIN });
+	}
+	return actions;
 }

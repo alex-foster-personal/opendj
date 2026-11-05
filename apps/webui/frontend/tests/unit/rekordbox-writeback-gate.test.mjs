@@ -42,7 +42,10 @@ function read(relative) {
 }
 
 function readRepo(relative) {
-	return readFileSync(fileURLToPath(new URL(`../../../../../${relative}`, import.meta.url)), 'utf8');
+	return readFileSync(
+		fileURLToPath(new URL(`../../../../../${relative}`, import.meta.url)),
+		'utf8'
+	);
 }
 
 let mod;
@@ -225,7 +228,10 @@ test('the gate is scoped to rekordbox, so djay writeback is untouched', () => {
 });
 
 test('the relocate control is disabled by the refusal and titled with it', () => {
-	assert.match(reconcilePage, /disabled=\{applying === track\.stable_id \|\| writebackRefusal !== null\}/);
+	assert.match(
+		reconcilePage,
+		/disabled=\{applying === track\.stable_id \|\| writebackRefusal !== null\}/
+	);
 	assert.match(reconcilePage, /title=\{writebackRefusal \?\?/);
 	assert.match(
 		reconcilePage,

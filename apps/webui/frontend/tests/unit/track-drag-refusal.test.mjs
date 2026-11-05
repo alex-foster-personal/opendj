@@ -193,7 +193,10 @@ describe('trackDragRefusal is wired end to end, TrackTable to BrowserPanel', () 
 		assert.match(fn, /beginTrackDrag\(ids,\s*draggedDeckRows\(ids,\s*rows,/);
 		const helper = readFileSync(DROP_HELPER_PATH, 'utf8');
 		assert.match(helper, /file_exists:\s*row\.file_exists/);
-		assert.match(helper, /is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/);
+		assert.match(
+			helper,
+			/is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/
+		);
 	});
 });
 

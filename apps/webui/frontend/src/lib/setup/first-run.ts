@@ -60,10 +60,7 @@ function sleep(ms: number): Promise<void> {
  * failed -- and the answer to "should I interrupt this user" with no
  * evidence is no.
  */
-export function shouldShowFirstRun(
-	refusal: string | null,
-	status: SetupStatus | null
-): boolean {
+export function shouldShowFirstRun(refusal: string | null, status: SetupStatus | null): boolean {
 	if (refusal !== null) return false;
 	if (status === null) return false;
 	return status.should_show_wizard;
@@ -118,9 +115,7 @@ export async function resolveFirstRunWithMeta(
  * treating "daemon not identified yet" as a final refusal -- that was the
  * race that skipped GET /api/v1/setup/status entirely on fresh installs.
  */
-export async function resolveFirstRun(
-	options: { timeoutMs?: number } = {}
-): Promise<boolean> {
+export async function resolveFirstRun(options: { timeoutMs?: number } = {}): Promise<boolean> {
 	const timeoutMs = options.timeoutMs ?? FIRST_RUN_TIMEOUT_MS;
 	const deadline = Date.now() + timeoutMs;
 

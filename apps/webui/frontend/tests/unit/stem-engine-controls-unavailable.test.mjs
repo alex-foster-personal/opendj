@@ -67,9 +67,7 @@ test('applyStemControl no-ops for an unavailable deck instead of throwing', () =
 
 test('applyStemControl no-ops on solo and gain fields too for an unavailable deck', () => {
 	const st = deckWithStemStatus('unavailable');
-	assert.doesNotThrow(() =>
-		controlsModule.applyStemControl(2, 'drums', 'solo', true, depsFor(st))
-	);
+	assert.doesNotThrow(() => controlsModule.applyStemControl(2, 'drums', 'solo', true, depsFor(st)));
 	assert.doesNotThrow(() =>
 		controlsModule.applyStemControl(2, 'instrumental', 'gain', 0.9, depsFor(st))
 	);

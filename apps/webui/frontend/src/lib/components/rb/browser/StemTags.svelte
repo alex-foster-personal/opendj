@@ -91,17 +91,21 @@
 
 {#if ready === null}
 	<ControlExplainer title={_heading(stems)} bullets={_bullets(stems)}>
-		<span class="stem-tags empty" tabindex="0" title={_title(stems)} aria-label={_title(stems)}>-</span>
+		<span class="stem-tags empty" tabindex="0" title={_title(stems)} aria-label={_title(stems)}
+			>-</span
+		>
 	</ControlExplainer>
 {:else}
 	<ControlExplainer title={_heading(ready)} bullets={_bullets(ready)}>
-		<span class="stem-tags" style={colorStyle} tabindex="0" title={_title(ready)} aria-label={_title(ready)}>
+		<span
+			class="stem-tags"
+			style={colorStyle}
+			tabindex="0"
+			title={_title(ready)}
+			aria-label={_title(ready)}
+		>
 			{#each GROUPS as g (g)}
-				<span
-					class="tag"
-					class:on={(ready.groups[g]?.bytes ?? 0) > 0}
-					data-g={g}
-				>{g}</span>
+				<span class="tag" class:on={(ready.groups[g]?.bytes ?? 0) > 0} data-g={g}>{g}</span>
 			{/each}
 			<span class="meta">{meta}</span>
 		</span>

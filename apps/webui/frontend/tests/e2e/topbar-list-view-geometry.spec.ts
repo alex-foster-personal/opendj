@@ -64,7 +64,9 @@ test.afterEach(async ({ request }) => {
 type Tracks = { topbar: number; wave: number; decks: number; library: number };
 
 async function tracks(page: Page): Promise<Tracks> {
-	const raw = await page.locator('.perf-root').evaluate((el) => getComputedStyle(el).gridTemplateRows);
+	const raw = await page
+		.locator('.perf-root')
+		.evaluate((el) => getComputedStyle(el).gridTemplateRows);
 	const px = raw.split(' ').map((v) => Number.parseFloat(v));
 	expect(px.length, `four resolved tracks, got "${raw}"`).toBe(4);
 	for (const v of px) expect(Number.isFinite(v), `"${raw}" resolves to pixels`).toBe(true);
@@ -83,7 +85,10 @@ async function setView(page: Page, view: 'waveform' | 'list'): Promise<void> {
 }
 
 async function setLayout(page: Page, mode: 'MORE' | 'LESS'): Promise<void> {
-	await page.locator('.deck-layout-toggle').getByRole('button', { name: mode, exact: true }).click();
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: mode, exact: true })
+		.click();
 	if (mode === 'LESS') await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
 	else await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
 }
@@ -94,7 +99,9 @@ async function setLayout(page: Page, mode: 'MORE' | 'LESS'): Promise<void> {
 // 720 and 1080 pin the floor and the ceiling.
 for (const height of [720, 970, 1080]) {
 	for (const layout of ['MORE', 'LESS'] as const) {
-		test(`TOPVIEW-01: List view changes only the waveform and library rows (${layout}, 1280x${height})`, async ({ page }) => {
+		test(`TOPVIEW-01: List view changes only the waveform and library rows (${layout}, 1280x${height})`, async ({
+			page
+		}) => {
 			test.setTimeout(90_000);
 			await page.setViewportSize({ width: 1280, height });
 			await page.goto('/performance');
@@ -114,10 +121,10 @@ for (const height of [720, 970, 1080]) {
 				list.decks,
 				'if switching to List view changes the deck/mixer track height then broken'
 			).toBeCloseTo(wave.decks, 1);
-			expect(
-				list.library,
-				'the library row gains exactly the waveform row height'
-			).toBeCloseTo(wave.library + wave.wave, 1);
+			expect(list.library, 'the library row gains exactly the waveform row height').toBeCloseTo(
+				wave.library + wave.wave,
+				1
+			);
 
 			await setView(page, 'waveform');
 			expect(await tracks(page), 'switching back restores every track').toEqual(wave);

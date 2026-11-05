@@ -101,6 +101,8 @@
 	import { startUsbWatch, stopUsbWatch, usbTracker } from '$lib/rb/usb-tracker.svelte';
 	import { uiPrefs, setPlaylistTreeView } from '$lib/rb/prefs.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
+	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
+	import { filterTreeByName, libraryLayoutFor } from '$lib/rb/skin-layout';
 
 	let {
 		onautolistchange,
@@ -123,6 +125,16 @@
 	});
 
 	const playlistTreeView = $derived(uiPrefs.playlist_tree_view);
+
+	// SKINLAYOUT-8869e: in a three-panel skin's Library workspace this nav is
+	// the "Your Library" panel: a heading, the source tabs as pill chips
+	// (CSS in CrateDeskView) and a name search over the playlist tree.
+	// Gig's browser never shows it.
+	const yourLibrary = $derived(libraryWorkspace.active && libraryLayoutFor(uiPrefs.ui_skin) === 'three-panel');
+	let treeQuery = $state('');
+	// The search filters the tree view only; column view keeps its own drill-down (Codex P2, PR #8869).
+	const treeSearch = $derived(yourLibrary && playlistTreeView === 'tree');
+	const shownNodes = $derived(treeSearch ? filterTreeByName(playlistTreeProps.nodes, treeQuery) : playlistTreeProps.nodes);
 
 	onMount(() => {
 		startUsbWatch();
@@ -150,7 +162,10 @@
 	}
 </script>
 
-<div class="library-nav-root">
+<div class="library-nav-root" class:your-library={yourLibrary}>
+	{#if yourLibrary}
+		<h2 class="your-library-title">Your Library</h2>
+	{/if}
 	<PlaylistHistoryPanel />
 	<LibrarySourceTabs
 		active={activeTab}
@@ -193,9 +208,20 @@
 			{/if}
 		</div>
 	{/if}
+	{#if treeSearch && activeTab === 'playlists'}
+		<input
+			class="your-library-search"
+			type="search"
+			placeholder="Search in Your Library"
+			aria-label="Search playlists by name"
+			data-testid="your-library-search"
+			bind:value={treeQuery}
+		/>
+	{/if}
 	{#if activeTab === 'playlists'}
 		<PlaylistTree
 			{...playlistTreeProps}
+			nodes={shownNodes}
 			mode={playlistTreeView}
 			oncreatesmartlist={() => void handleNewSmartlist()}
 		/>
@@ -224,6 +250,23 @@
 		flex-direction: column;
 		min-height: 0;
 		height: 100%;
+	}
+	.your-library-title {
+		margin: 0;
+		padding: 12px 12px 8px;
+		font-size: 16px;
+		font-weight: 700;
+		color: var(--rb-text);
+	}
+	.your-library-search {
+		margin: 4px 8px 8px;
+		padding: 6px 10px;
+		border: none;
+		border-radius: 4px;
+		background: var(--rb-bg);
+		color: var(--rb-text);
+		font: inherit;
+		font-size: 13px;
 	}
 	.autolists-body.hidden {
 		display: none;

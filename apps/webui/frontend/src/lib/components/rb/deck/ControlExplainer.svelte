@@ -96,7 +96,9 @@
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const hasRich: boolean = $derived(!disabled && (bullets.length > 0 || warning !== null || action !== null || demo !== null));
+	const hasRich: boolean = $derived(
+		!disabled && (bullets.length > 0 || warning !== null || action !== null || demo !== null)
+	);
 	$effect(() => {
 		if (disabled) _close();
 	});
@@ -328,7 +330,12 @@
 					<rect x="6" y="16" width="44" height="2" class="split-row" />
 					<rect x="6" y="22" width="44" height="2" class="split-row" />
 					<path d="M66 28 L74 20 L82 32 L90 18" class="split-wave" fill="none" stroke-width="1.2" />
-					<path d="M66 34 L78 26 L90 36" class="split-wave split-wave-2" fill="none" stroke-width="1.2" />
+					<path
+						d="M66 34 L78 26 L90 36"
+						class="split-wave split-wave-2"
+						fill="none"
+						stroke-width="1.2"
+					/>
 				</svg>
 			{:else if demo === 'link'}
 				<svg class="demo" viewBox="0 0 120 36" aria-hidden="true">
@@ -350,8 +357,22 @@
 				<svg class="demo demo-tall" viewBox="0 0 120 48" aria-hidden="true">
 					<rect x="4" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-grow" />
 					<rect x="32" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-grow" />
-					<rect x="64" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-hide two-deck-hide-l" />
-					<rect x="92" y="10" width="24" height="28" rx="1" class="two-deck-slot two-deck-hide two-deck-hide-r" />
+					<rect
+						x="64"
+						y="10"
+						width="24"
+						height="28"
+						rx="1"
+						class="two-deck-slot two-deck-hide two-deck-hide-l"
+					/>
+					<rect
+						x="92"
+						y="10"
+						width="24"
+						height="28"
+						rx="1"
+						class="two-deck-slot two-deck-hide two-deck-hide-r"
+					/>
 				</svg>
 			{:else if demo === 'headphone-mix'}
 				<svg class="demo demo-tall" viewBox="0 0 120 48" aria-hidden="true">

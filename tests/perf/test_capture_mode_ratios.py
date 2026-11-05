@@ -5,7 +5,7 @@ sampler probed the packaged desktop app's `/api/v1/performance/telemetry/process
 endpoint, which describes an unrelated process family (desktop-shell /
 python-engine / webkit-webcontent) rather than the Playwright/Chromium
 process that `mode_ratio_browser.mjs` actually drives. These tests exercise
-the real `psutil` process tree (per .claude/rules/verification.md: a mocked
+the real `psutil` process tree (per (private path): a mocked
 psutil would share the defect under test, not catch it) plus the call-shape
 regression that pins sampling to the browser subprocess's own pid.
 """
@@ -158,7 +158,10 @@ def _isolated_native_tree() -> Iterator[tuple[subprocess.Popen[str], psutil.Proc
     python = str(Path(sys.executable).resolve())
     root = subprocess.Popen(
         [python, "-c", _NATIVE_LAUNCHER, python, _NATIVE_CHILD],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     lines: list[str] = []
     assert root.stdout is not None
@@ -224,8 +227,7 @@ def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
         value, before, after = _native_sample_bracket(root.pid, child)
         rss_after = child.memory_info().rss
         # Independent actual counters must discriminate the RSS regression.
-        assert (max(before, after) < min(rss_before, rss_after)
-                or max(rss_before, rss_after) < min(before, after))
+        assert max(before, after) < min(rss_before, rss_after) or max(rss_before, rss_after) < min(before, after)
         assert not min(rss_before, rss_after) <= value <= max(rss_before, rss_after)
 
 
@@ -293,7 +295,10 @@ def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
     `trackify_mode_footprint_slope_mb_per_10min` with a note implying a 1h
     leak slope.
     """
-    with subprocess.Popen([sys.executable, "-c", "pass"], text=True) as proc, pytest.raises(ValueError, match="1 h unattended"):
+    with (
+        subprocess.Popen([sys.executable, "-c", "pass"], text=True) as proc,
+        pytest.raises(ValueError, match="1 h unattended"),
+    ):
         cmr._sample_leak(proc, cmr._MIN_LEAK_DURATION_S - 1)
 
 
@@ -357,8 +362,7 @@ def test_finishing_a_session_names_a_nonzero_helper_exit() -> None:
         [
             sys.executable,
             "-c",
-            "import sys; print('DONE', flush=True); "
-            "sys.stderr.write('stem decode failed'); sys.exit(3)",
+            "import sys; print('DONE', flush=True); sys.stderr.write('stem decode failed'); sys.exit(3)",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

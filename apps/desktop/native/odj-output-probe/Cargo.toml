@@ -1,0 +1,32 @@
+[package]
+name = "odj-output-probe"
+version = "0.1.0"
+description = "Open DJ macOS CoreAudio output-health probe and cue sink, shared by the Tauri and Electron desktop shells"
+edition = "2021"
+# Matches apps/desktop/src-tauri, which links this crate: cargo's MSRV-aware
+# resolver picks dependency versions against this number.
+rust-version = "1.82"
+publish = false
+
+[lib]
+name = "odj_output_probe"
+path = "src/lib.rs"
+
+# What the Electron shell runs as payload/bin/odj-output-probe
+# (scripts/payload_output_probe.py stages it; ELECTRON-6272).
+[[bin]]
+name = "odj-output-probe"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+# CUEOUT-22: the loopback socket the page relays headphone cue PCM over to
+# the native CoreAudio output (src/cue_sink.rs). Blocking std I/O on its own
+# threads, so no async runtime and no TLS.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

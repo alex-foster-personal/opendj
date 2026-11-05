@@ -90,9 +90,7 @@ def test_get_with_no_file_reports_default_off(http: TestClient) -> None:
     assert body["effective"]["enabled_source"] == "default"
 
 
-def test_env_override_wins_and_the_payload_says_so(
-    http: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_env_override_wins_and_the_payload_says_so(http: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] env loses to the file, or the winner is unnamed [then] broken, [else stop]."""
     assert http.put(_PATH, json=_body(False, _HUB, None)).status_code == 200
     monkeypatch.setenv(sync_config.SCHEDULER_ENV, "1")
@@ -109,9 +107,7 @@ def test_env_override_wins_and_the_payload_says_so(
     assert status["endpoint"] == _OTHER_HUB
 
 
-def test_env_zero_disables_a_file_enabled_machine(
-    http: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_env_zero_disables_a_file_enabled_machine(http: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] SCHEDULER=0 cannot switch off a file-enabled machine [then] broken, [else stop]."""
     assert http.put(_PATH, json=_body(True, _HUB, None)).status_code == 200
     monkeypatch.setenv(sync_config.SCHEDULER_ENV, "0")
@@ -154,9 +150,7 @@ def test_invalid_scheduler_env_value_raises(tmp_path: Path) -> None:
         {"enabled": "yes", "hub_url": None, "machine_name": None},
     ],
 )
-def test_put_refuses_an_invalid_body(
-    http: TestClient, tmp_path: Path, body: dict[str, Any]
-) -> None:
+def test_put_refuses_an_invalid_body(http: TestClient, tmp_path: Path, body: dict[str, Any]) -> None:
     """[if] PUT persists an unusable config [then] broken, [else stop]."""
     response = http.put(_PATH, json=body)
     assert response.status_code == 422, response.text
@@ -204,7 +198,5 @@ def test_write_refuses_a_missing_data_dir(tmp_path: Path) -> None:
     """[if] a typo'd data dir is silently created by a config write [then] broken, [else stop]."""
     missing = tmp_path / "no-such-dir"
     with pytest.raises(sync_config.CloudSyncConfigError, match="not a directory"):
-        sync_config.write_config(
-            missing, sync_config.CloudSyncConfig(enabled=False, hub_url=None, machine_name=None)
-        )
+        sync_config.write_config(missing, sync_config.CloudSyncConfig(enabled=False, hub_url=None, machine_name=None))
     assert not missing.exists()

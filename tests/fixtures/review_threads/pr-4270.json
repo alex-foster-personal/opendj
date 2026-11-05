@@ -1,0 +1,154 @@
+{
+ "data": {
+  "repository": {
+   "pullRequest": {
+    "number": 4270,
+    "title": "fix(test): test-spawned servers die with their owner run (DEVOPS-17)",
+    "state": "MERGED",
+    "merged": true,
+    "url": "https://github.com/private_owner/music-dj-tools/pull/4270",
+    "headRefOid": "04bb312b8ae39e0636bb85302ed932ede82f96e6",
+    "baseRefName": "main",
+    "reviewThreads": {
+     "nodes": [
+      {
+       "id": "PRRT_kwDOSEvNd86mo0NA",
+       "isResolved": true,
+       "isOutdated": false,
+       "path": "scripts/process_census.py",
+       "line": 461,
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "devin-ai-integration"
+          },
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-9313a68022de4afd81bd60dc90d2934d_0001\", \"file_path\": \"scripts/process_census.py\", \"start_line\": 410, \"end_line\": 419, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udd34 **P1 BLOCKING Long-lived services get reaped**\n\nWhen a service runs from a checkout, `_attribution` labels it an agent despite its non-test `AF_SERVICE_ID`. An orphaned service then becomes reapable, so `reap` kills a legitimate service.\n\n<details>\n<summary>Learn more</summary>\n\nThe census assigns one attribution per process, and `reap` signals processes classified `reapable`. A non-test `AF_SERVICE_ID` currently loses to runner environment, agent environment, or checkout cwd in `_attribution`. The [verdict](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/scripts/process_census.py#L422-L434 \"scripts/process_census.py:422-434\") consequently marks an orphaned service reapable, and [reap](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/scripts/orphan_reaper.py#L69-L89 \"scripts/orphan_reaper.py:69-89\") signals it. This matters for daemonized services launched from this repository or inheriting agent variables.\n\n**Example:** A `python -m apps.engine_core serve` process with `AF_SERVICE_ID=com.opendj.preview-engine`, cwd `/home/dev/music-dj-tools`, and parent pid 1 receives attribution `agent` and verdict `reapable`. Running `orphan_reaper reap --min-age-s 0` kills it instead of preserving it.\n\n**Recommended fix:** Give the process's own non-test `AF_SERVICE_ID` precedence over agent and runner heuristics, and exclude such services explicitly from `reapable` verdicts. Add a test with both a non-test ID and checkout cwd or inherited `CLAUDECODE`.\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/4270\" target=\"_blank\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=4\"><img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=4\" alt=\"Devin Review\"></picture></a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4121190032",
+          "createdAt": "2026-09-28T10:39:44Z"
+         },
+         {
+          "author": {
+           "login": "maintainer"
+          },
+          "body": "FIXED in 8ed4d86349. `_attribution` now reads the process's OWN `AF_SERVICE_ID` first: a `.test.` id is test-harness, and any other own id is `service` before the runner, agent and checkout-cwd heuristics run. An agent session's own profile id (claude|codex|cursor|grok) still counts as agent provenance, not a service. `test_reaper_kills_orphaned_test_servers_and_spares_a_real_service` (now in tests/scripts/test_orphan_reaper.py, moved in 48dea51e36) orphans a control service carrying its own id AND `CLAUDECODE=1`, `GITHUB_RUN_ID` and a checkout cwd, and asserts it is `service` and survives `reap`. Mutations, both directions: dropping the own-id rule turns it RED, and so does the overshoot of protecting any own id (an agent server with a Claude profile id is also in that test and must be reaped).\n\n---\n~ [claude-code-opus-5.5-orphan-cleanup-agent](https://claude.ai/code)",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4125063029",
+          "createdAt": "2026-09-28T17:19:51Z"
+         }
+        ]
+       }
+      },
+      {
+       "id": "PRRT_kwDOSEvNd86mo0On",
+       "isResolved": true,
+       "isOutdated": true,
+       "path": "scripts/process_census.py",
+       "line": null,
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "devin-ai-integration"
+          },
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-9313a68022de4afd81bd60dc90d2934d_0002\", \"file_path\": \"scripts/process_census.py\", \"start_line\": 318, \"end_line\": 321, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udd34 **P1 BLOCKING Static test servers evade cleanup**\n\nFor `python -m http.server`, `snapshot` never reads `AF_SERVICE_ID` because `_looks_test_spawned` misses that command. The census omits orphaned static servers, so `reap` leaves their ports occupied.\n\n<details>\n<summary>Learn more</summary>\n\nThe census only reads process environments for command-matched processes and their ancestors. [Static artifact suites](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/apps/webui/frontend/tests/e2e/playwright.meter-artifact.config.ts#L62 \"apps/webui/frontend/tests/e2e/playwright.meter-artifact.config.ts:62\") use `python3 -m http.server`; that command does not match [TEST_COMMAND_RE](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/scripts/process_census.py#L62-L75 \"scripts/process_census.py:62-75\"). Its stamped test ID remains unread, so [classify](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/scripts/process_census.py#L348-L355 \"scripts/process_census.py:348-355\") omits the process altogether.\n\n**Example:** After a guarded meter-artifact static server loses its guard, a surviving `python3 -m http.server 5322 --directory build` has `AF_SERVICE_ID=com.opendj.test.meter-artifact-static`, but `census --json` has no row for it. `reap` cannot free port 5322.\n\n**Recommended fix:** Include the actual static-server command forms in the candidate regex, or inspect environment for additional candidates so a test marker can bring them into scope. Add a detached http.server positive control.\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/4270\" target=\"_blank\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=4\"><img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=4\" alt=\"Devin Review\"></picture></a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4121190179",
+          "createdAt": "2026-09-28T10:39:45Z"
+         },
+         {
+          "author": {
+           "login": "maintainer"
+          },
+          "body": "FIXED in 8ed4d86349. The census now reads the environment of EVERY process before selecting candidates, so a `.test.` `AF_SERVICE_ID` brings a process into scope whatever its command is; cwd (one lsof call) is still read only for candidates and their ancestors. `-m http.server` also joined the command pattern, for static servers that lost their marker. The reaper test now orphans a marker-only process with an unrecognized command and a detached `python -m http.server`, and asserts both are reapable and killed. Mutations: env read only for command matches -> RED; scope by command only -> RED; http.server pattern removed -> RED.\n\n---\n~ [claude-code-opus-5.5-orphan-cleanup-agent](https://claude.ai/code)",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4125064095",
+          "createdAt": "2026-09-28T17:19:58Z"
+         }
+        ]
+       }
+      },
+      {
+       "id": "PRRT_kwDOSEvNd86mo0P6",
+       "isResolved": true,
+       "isOutdated": true,
+       "path": "scripts/orphan_reaper.py",
+       "line": null,
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "devin-ai-integration"
+          },
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-9313a68022de4afd81bd60dc90d2934d_0003\", \"file_path\": \"scripts/orphan_reaper.py\", \"start_line\": 95, \"end_line\": 108, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **P2 BLOCKING Reaper overstates successful kills**\n\nIf a target exits after the census, `_same_process` skips every signal but `reap` still reports it as killed. The JSON kill count then records cleanup that never happened.\n\n<details>\n<summary>Learn more</summary>\n\nThe reaper identifies targets from a snapshot, then checks each pid again before signalling. A target can exit or be recycled between those steps. When that happens, [the signal loop](https://github.com/private_owner/music-dj-tools/blob/283708388a2d270ba18b68d1511cacfaf288db5d/scripts/orphan_reaper.py#L79-L94 \"scripts/orphan_reaper.py:79-94\") skips it, but the final result treats anything not still alive as `killed` and includes it in the kill count.\n\n**Example:** The census selects process 420, which exits before the first `_same_process` check. No `os.kill(420, ...)` occurs, but the report lists `{\"pid\": 420, \"outcome\": \"killed\"}` and increments `killed`.\n\n**Recommended fix:** Track whether each pid was actually signalled and give vanished or recycled targets a distinct outcome; reserve `killed` for targets whose termination followed a successful signal.\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/4270\" target=\"_blank\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=4\"><img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=4\" alt=\"Devin Review\"></picture></a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4121190321",
+          "createdAt": "2026-09-28T10:39:46Z"
+         },
+         {
+          "author": {
+           "login": "maintainer"
+          },
+          "body": "FIXED in 8ed4d86349. `reap` records which pids it actually signalled; a target that exited or was recycled before any signal now reports `gone-before-signal` and is not counted in `killed`. `killed` is reserved for a target this run signalled and then saw gone. New test `test_reap_reports_a_target_that_vanished_before_its_signal_as_not_killed`; mutating the outcome to ignore the signalled set turns it RED.\n\n---\n~ [claude-code-opus-5.5-orphan-cleanup-agent](https://claude.ai/code)",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4125066796",
+          "createdAt": "2026-09-28T17:20:17Z"
+         }
+        ]
+       }
+      },
+      {
+       "id": "PRRT_kwDOSEvNd86mo0Rl",
+       "isResolved": true,
+       "isOutdated": false,
+       "path": "scripts/server_owner_guard.py",
+       "line": 248,
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "devin-ai-integration"
+          },
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-9313a68022de4afd81bd60dc90d2934d_0004\", \"file_path\": \"scripts/server_owner_guard.py\", \"start_line\": 166, \"end_line\": 168, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **P2 BLOCKING Background servers survive guard exit**\n\nIf a guarded command backgrounds a server and exits, `child.poll()` returns and the guard leaves that process running. The owner watchdog vanishes, so the background server can outlive the test.\n\n<details>\n<summary>Learn more</summary>\n\nThe guard monitors its direct child, which can be a shell or process launcher rather than the final server. On the child's exit, the guard returns without checking or terminating remaining members of its group. Its other cleanup paths signal the whole group, so they cannot recover once the guard has exited.\n\n**Example:** A command such as `/bin/sh -c 'python3 -m http.server 5000 & exit 0'` leaves the HTTP server in the group. The guard sees its shell exit zero and terminates normally while the HTTP server keeps port 5000 bound.\n\n**Recommended fix:** Before returning a direct child's status, terminate and reap remaining members of the owned group. Preserve the child's exit code and avoid signalling an unrelated group if the guard is not the group leader.\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/4270\" target=\"_blank\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=4\"><img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=4\" alt=\"Devin Review\"></picture></a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4121190468",
+          "createdAt": "2026-09-28T10:39:48Z"
+         },
+         {
+          "author": {
+           "login": "maintainer"
+          },
+          "body": "FIXED in 8ed4d86349. When the guarded child exits, the guard now kills every other live member of its own group (TERM, wait, then KILL, sparing itself) and returns the child's status. It fails loud if a member survives SIGKILL. To make \"its own group\" safe, the guard now refuses to start unless it LEADS its process group: the Playwright helper `exec`s it from the detached webServer shell, and pytest starts it with `start_new_session`. New tests: `test_a_server_the_child_backgrounded_dies_when_the_child_exits` (sh backgrounds a sleeper and exits 3; the sleeper must die and the guard must exit 3) and `test_the_guard_refuses_to_start_unless_it_leads_its_group`. Mutations: sweep removed -> RED; the overshoot of losing the child status -> RED; leader check removed -> RED. A real config (library-jobs) passes 4/4 under the exec form with no guard left behind.\n\n---\n~ [claude-code-opus-5.5-orphan-cleanup-agent](https://claude.ai/code)",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4125066378",
+          "createdAt": "2026-09-28T17:20:14Z"
+         }
+        ]
+       }
+      },
+      {
+       "id": "PRRT_kwDOSEvNd86mo0Ts",
+       "isResolved": true,
+       "isOutdated": false,
+       "path": "scripts/orphan_reaper.py",
+       "line": 16,
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "devin-ai-integration"
+          },
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-9313a68022de4afd81bd60dc90d2934d_0001\", \"file_path\": \"scripts/orphan_reaper.py\", \"start_line\": 1, \"end_line\": 16, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **New tooling lacks supersession records**\n\nThe new guard, census, reaper, and hook report introduce commands and state without `Supersedes:` records. The repository convention requires naming replaced surfaces and retiring them; review how it applies to each new surface.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/4270\" target=\"_blank\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=4\"><img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=4\" alt=\"Devin Review\"></picture></a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4121190659",
+          "createdAt": "2026-09-28T10:39:49Z"
+         },
+         {
+          "author": {
+           "login": "maintainer"
+          },
+          "body": "REBUTTED in part, recorded in the ADR (commit 9c26890039, section Supersedes). No existing repository surface is replaced outright: the only prior cleanup was a manual reap with no repo surface. `scripts/ci_reap_port_holders.sh` overlaps and is deliberately NOT retired yet, because it frees fixed e2e ports from any holder and is the fallback that proves the new guard. The ADR sets its retirement condition: tombstone it once its job-log kill lines read zero for two consecutive weeks after this merges.\n\n---\n~ [claude-code-opus-5.5-orphan-cleanup-agent](https://claude.ai/code)",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4270#discussion_r4125067240",
+          "createdAt": "2026-09-28T17:20:20Z"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

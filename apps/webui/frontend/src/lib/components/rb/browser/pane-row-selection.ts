@@ -70,8 +70,7 @@ export function applySelect(
 
 	if (range) {
 		const anchorId = pane.selected_id;
-		const from =
-			anchorId === null ? -1 : findInOrdered(ordered, anchorId, pane.selected_order);
+		const from = anchorId === null ? -1 : findInOrdered(ordered, anchorId, pane.selected_order);
 		const to = findInOrdered(ordered, stable_id, resolvedOrder);
 		if (from !== -1 && to !== -1) {
 			const lo = Math.min(from, to);

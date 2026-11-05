@@ -22,21 +22,13 @@ def test_resolve_audio_path_uses_the_data_dirs_real_path_map(tmp_path: Path) -> 
     audio.write_bytes(b"real-audio-bytes")
 
     with sqlite3.connect(state_dir / "state.db") as conn:
-        conn.execute(
-            "CREATE TABLE tracks (stable_id TEXT, file_path TEXT, deleted_at TEXT)"
-        )
+        conn.execute("CREATE TABLE tracks (stable_id TEXT, file_path TEXT, deleted_at TEXT)")
         conn.execute(
             "INSERT INTO tracks (stable_id, file_path) VALUES (?, ?)",
             ("track-remote", str(source_root / "Track.mp3")),
         )
     (data_dir / "path-map.json").write_text(
-        json.dumps(
-            {
-                "entries": [
-                    {"from": str(source_root), "to": str(crate_root)}
-                ]
-            }
-        ),
+        json.dumps({"entries": [{"from": str(source_root), "to": str(crate_root)}]}),
         encoding="utf-8",
     )
 

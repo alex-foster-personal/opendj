@@ -164,8 +164,7 @@ def test_undelete_restores_only_matching_memberships(
     for playlist_id, position in ((pid_a, 0), (pid_b, 1)):
         assert (
             state_conn.execute(
-                "SELECT deleted_at FROM playlist_memberships "
-                "WHERE playlist_id = ? AND position = ?",
+                "SELECT deleted_at FROM playlist_memberships WHERE playlist_id = ? AND position = ?",
                 (playlist_id, position),
             ).fetchone()[0]
             is None

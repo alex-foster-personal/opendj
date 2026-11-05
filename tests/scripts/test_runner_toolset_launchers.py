@@ -1,6 +1,6 @@
 """The launcher table's value-taking options against the PINNED uv and pnpm.
 
-Split out of tests/scripts/test_runner_toolset_complete.py. The reference is the
+Split out of (private path). The reference is the
 tool the toolset pins, never whatever a host happens to carry: pnpm runs at the
 packageManager pin through corepack with the network off, and a host uv is
 compared only inside the version range the table was verified against. A host
@@ -56,9 +56,7 @@ def _version(text: str) -> tuple[int, ...]:
 
 
 def _run(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
-    proc = subprocess.run(
-        argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=60, check=False
-    )
+    proc = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=60, check=False)
     assert proc.returncode == 0, f"{argv} exited {proc.returncode}: {proc.stderr[-400:]}"
     return proc.stdout
 
@@ -119,6 +117,4 @@ def test_launcher_value_options_match_the_pinned_tools_own_help(
     value, boolean = _help_options(read_help(tmp_path))
     assert value and boolean, "parsed nothing from the help: the parser, not the tool, broke"
     assert not value - declared, f"missing value-taking options: {sorted(value - declared)}"
-    assert not declared & boolean, (
-        f"boolean options listed as value-taking: {sorted(declared & boolean)}"
-    )
+    assert not declared & boolean, f"boolean options listed as value-taking: {sorted(declared & boolean)}"

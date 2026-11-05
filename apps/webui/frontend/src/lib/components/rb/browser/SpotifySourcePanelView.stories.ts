@@ -26,7 +26,12 @@ const playlist = (playlist_id: string, name: string, track_count: number): Playl
 	vendor: 'spotify'
 });
 
-const pending = (pending_id: number, title: string, artist: string, album: string | null): Pending => ({
+const pending = (
+	pending_id: number,
+	title: string,
+	artist: string,
+	album: string | null
+): Pending => ({
 	pending_id,
 	playlist_id: 'sp-1',
 	position: pending_id,
@@ -73,7 +78,10 @@ const signedIn = {
 	user_id: 'invented-dj',
 	display_name: 'Invented DJ',
 	total_reported: 2,
-	playlists: [accountPlaylist('0InventedPlaylistA', 'Sunrise Set Ideas', 21), accountPlaylist('0InventedPlaylistB', 'Warehouse Openers', 40)]
+	playlists: [
+		accountPlaylist('0InventedPlaylistA', 'Sunrise Set Ideas', 21),
+		accountPlaylist('0InventedPlaylistB', 'Warehouse Openers', 40)
+	]
 };
 
 const meta = {
@@ -139,7 +147,9 @@ export const BuyListEmpty: Story = { args: { selectedId: 'sp-1', pendingTracks: 
 export const BuyListLoading: Story = { args: { selectedId: 'sp-1', loading: true } };
 
 /** The buy list failed. */
-export const BuyListError: Story = { args: { selectedId: 'sp-1', error: 'spotify_pending_unavailable' } };
+export const BuyListError: Story = {
+	args: { selectedId: 'sp-1', error: 'spotify_pending_unavailable' }
+};
 
 /** The imported playlists are loading (no filter shown). */
 export const PlaylistsLoading: Story = { args: { playlists: [], playlistsLoading: true } };
@@ -148,20 +158,38 @@ export const PlaylistsLoading: Story = { args: { playlists: [], playlistsLoading
 export const NoPlaylists: Story = { args: { playlists: [] } };
 
 /** The playlist load failed. */
-export const PlaylistsError: Story = { args: { playlists: [], playlistsError: 'spotify_not_connected' } };
+export const PlaylistsError: Story = {
+	args: { playlists: [], playlistsError: 'spotify_not_connected' }
+};
 
 /** SPOT-6555: a signed-in account lists its own playlists beside the imported ones. */
 export const AccountSignedIn: Story = { args: { account: signedIn, sidePlayerDocked: true } };
 
 /** SPOT-6555: the account's rows stay listed while the imported list is still loading. */
-export const AccountWhileImportsLoad: Story = { args: { account: signedIn, playlistsLoading: true } };
+export const AccountWhileImportsLoad: Story = {
+	args: { account: signedIn, playlistsLoading: true }
+};
 
 /** SPOT-6555: signed out, the panel says why and offers Connect Spotify. */
 export const AccountSignedOut: Story = {
-	args: { account: { connected: false, reason: 'not_signed_in', message: 'Sign in to Spotify.', playlists: [] } }
+	args: {
+		account: {
+			connected: false,
+			reason: 'not_signed_in',
+			message: 'Sign in to Spotify.',
+			playlists: []
+		}
+	}
 };
 
 /** SPOT-6555: a fresh install asks for the user's own Spotify app Client ID first. */
 export const AccountNoClientId: Story = {
-	args: { account: { connected: false, reason: 'no_client_id', message: 'No Spotify Client ID.', playlists: [] } }
+	args: {
+		account: {
+			connected: false,
+			reason: 'no_client_id',
+			message: 'No Spotify Client ID.',
+			playlists: []
+		}
+	}
 };

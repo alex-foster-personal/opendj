@@ -90,9 +90,7 @@ export async function refreshHostedBilling(): Promise<void> {
 	if (
 		!isPolarProvider(payload.provider) ||
 		!Array.isArray(rows) ||
-		!rows.every(
-			(row: Json) => typeof row?.feature_id === 'string' && isLifecycleState(row.state)
-		)
+		!rows.every((row: Json) => typeof row?.feature_id === 'string' && isLifecycleState(row.state))
 	) {
 		fail('bad refresh answer');
 	}

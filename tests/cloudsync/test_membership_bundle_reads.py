@@ -27,6 +27,7 @@ and both cutover cases are real bundle sizes. That the growth guards bite is
 proved by hand mutation (recorded in the commit that introduced this form),
 not by swapping production code inside the suite.
 """
+
 from __future__ import annotations
 
 import logging
@@ -72,10 +73,7 @@ def _add_playlist(conn: sqlite3.Connection, stable_ids: list[str]) -> None:
     conn.executemany(
         "INSERT INTO playlist_memberships(playlist_id, stable_id, position, updated_at,"
         " origin_device_id) VALUES (?, ?, ?, ?, ?)",
-        [
-            (PLAYLIST, stable_id, position, _T1, _DEV_A)
-            for position, stable_id in enumerate(stable_ids)
-        ],
+        [(PLAYLIST, stable_id, position, _T1, _DEV_A) for position, stable_id in enumerate(stable_ids)],
     )
     conn.commit()
 
@@ -150,8 +148,7 @@ def test_probe_counts_a_read_per_member_on_the_per_member_path(tmp_path: Path) -
         held = sync_set.HeldKeys(conn)
         with _traced(conn) as statements:
             blocked = [
-                held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": f"stored-{i}"})
-                for i in range(LARGE_BUNDLE)
+                held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": f"stored-{i}"}) for i in range(LARGE_BUNDLE)
             ]
     finally:
         conn.close()
@@ -189,18 +186,14 @@ def test_a_replace_checks_its_tracks_exist_in_one_statement(tmp_path: Path) -> N
 # ----- equivalence --------------------------------------------------------------
 
 
-def _per_member_verdicts(
-    conn: sqlite3.Connection, pks: list[str], decided: dict[str, bool]
-) -> dict[str, bool]:
+def _per_member_verdicts(conn: sqlite3.Connection, pks: list[str], decided: dict[str, bool]) -> dict[str, bool]:
     """Each track's verdict (True: held) from the per-member read production
     takes for a parent the walk has not decided, one member at a time, on one
     walk that has already decided ``decided``."""
     held = sync_set.HeldKeys(conn)
     for pk, is_held in decided.items():
         (held.hold if is_held else held.release)("tracks", (pk,))
-    return {
-        pk: held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": pk}) is not None for pk in pks
-    }
+    return {pk: held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": pk}) is not None for pk in pks}
 
 
 #: Bundle sizes, in distinct member tracks, on each side of the cutover.
@@ -228,9 +221,7 @@ def _random_bundle(
     return distinct
 
 
-def _walk(
-    conn: sqlite3.Connection, walk: str, decided: dict[str, bool]
-) -> tuple[Any, frozenset[str], frozenset[str]]:
+def _walk(conn: sqlite3.Connection, walk: str, decided: dict[str, bool]) -> tuple[Any, frozenset[str], frozenset[str]]:
     """Walk the bundle after the walk has already decided ``decided`` tracks
     (True: held); returns the result and every track the walk then holds or frees."""
     held = sync_set.HeldKeys(conn)
@@ -247,9 +238,7 @@ def _walk(
 @pytest.mark.parametrize("seed", range(10))
 @pytest.mark.parametrize("walk", sorted(_BUNDLE_WALKS))
 @pytest.mark.parametrize("size", sorted(_BUNDLE_SIZES))
-def test_batched_verdicts_equal_per_member_verdicts(
-    tmp_path: Path, seed: int, walk: str, size: str
-) -> None:
+def test_batched_verdicts_equal_per_member_verdicts(tmp_path: Path, seed: int, walk: str, size: str) -> None:
     """Overshoot control: a batch that freed or held the wrong tracks would pass
     the read count and send, or hold back, the wrong bundle.
 
@@ -263,8 +252,7 @@ def test_batched_verdicts_equal_per_member_verdicts(
         rng = random.Random(seed)
         pks = _random_library(conn, rng, rows=_LIBRARY_ROWS[size])
         conn.execute(
-            "UPDATE tracks SET stable_id_tier = 'inferred', content_hash = NULL, isrc = NULL"
-            " WHERE rowid % 7 = 0"
+            "UPDATE tracks SET stable_id_tier = 'inferred', content_hash = NULL, isrc = NULL WHERE rowid % 7 = 0"
         )
         conn.commit()
         members = _random_bundle(conn, rng, pks, size=size, travels=seed % 2 == 0)
@@ -272,9 +260,7 @@ def test_batched_verdicts_equal_per_member_verdicts(
         # travelling case below must stay travelling.
         predecided = {pk: False for pk in rng.sample(pks, 20)}
         undecided = [pk for pk in members if pk not in predecided]
-        assert (len(undecided) >= CUTOVER) == (size == "expect-crosses"), (
-            "the fixture missed its side of the cutover"
-        )
+        assert (len(undecided) >= CUTOVER) == (size == "expect-crosses"), "the fixture missed its side of the cutover"
         with _traced(conn) as statements:
             result, held, free = _walk(conn, walk, predecided)
         elections = _library_elections(conn, statements)
@@ -282,9 +268,7 @@ def test_batched_verdicts_equal_per_member_verdicts(
         expected_result = _walk(conn, walk, expected)[0]
     finally:
         conn.close()
-    assert elections == (1 if size == "expect-crosses" else 0), (
-        "the fixture missed its identity path"
-    )
+    assert elections == (1 if size == "expect-crosses" else 0), "the fixture missed its identity path"
     assert _BUNDLE_HELD[walk](expected_result) == (seed % 2 == 1), "the fixture missed its case"
     assert result == expected_result
     decided = {**expected, **predecided}
@@ -318,9 +302,7 @@ def test_a_bundle_under_the_cutover_still_decides_per_row(tmp_path: Path) -> Non
     assert _identity_work(tmp_path, SMALL_BUNDLE) == (SMALL_BUNDLE, 0)
 
 
-def test_replace_still_skips_a_member_whose_track_is_not_here(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_replace_still_skips_a_member_whose_track_is_not_here(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
     try:
         bundle = engine_changes._members_for_playlist(conn, PLAYLIST, sync_set.HeldKeys(conn))
@@ -333,8 +315,7 @@ def test_replace_still_skips_a_member_whose_track_is_not_here(
         stored = [
             (row[0], row[1])
             for row in conn.execute(
-                "SELECT position, stable_id FROM playlist_memberships WHERE playlist_id = ?"
-                " ORDER BY position",
+                "SELECT position, stable_id FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
                 (PLAYLIST,),
             )
         ]

@@ -277,6 +277,39 @@ fn spawn_zombie_child() -> (u32, libc::pid_t) {
     }
 }
 
+// ----- adopting across builds (INSTALL-8338) -----------------------
+
+/// Whether a healthy engine already holding the lock may be adopted.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AdoptVerdict {
+    Adopt,
+    /// The engine runs another build than this bundle's payload: stop it and
+    /// spawn this payload's engine. An update swaps the bundle under a running
+    /// engine, and a relaunched shell used to adopt the old one, serving the
+    /// new frontend files from disk with the old backend in memory.
+    Replace { engine_sha: String, payload_sha: String },
+}
+
+/// Replace only when both builds are known and differ. An unknown side (a
+/// checkout without a payload manifest, an engine without the route) keeps
+/// the old adopt behaviour rather than killing a set on a guess.
+pub fn judge_adoption(engine_sha: Option<&str>, payload_sha: Option<&str>) -> AdoptVerdict {
+    match (engine_sha, payload_sha) {
+        (Some(engine), Some(payload)) if engine != payload => AdoptVerdict::Replace {
+            engine_sha: engine.to_string(),
+            payload_sha: payload.to_string(),
+        },
+        _ => AdoptVerdict::Adopt,
+    }
+}
+
+/// `identity.git_sha_full` of a payload's `manifest.json`, when it has one.
+pub fn payload_git_sha(payload: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(payload.join("manifest.json")).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+    manifest["identity"]["git_sha_full"].as_str().map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +517,35 @@ mod tests {
     #[test]
     fn pid_can_act_rejects_zero() {
         assert!(!pid_can_act(0));
+    }
+
+    #[test]
+    fn an_engine_of_another_build_is_replaced() {
+        assert_eq!(
+            judge_adoption(Some("435b7f0d"), Some("143a5b17")),
+            AdoptVerdict::Replace { engine_sha: "435b7f0d".into(), payload_sha: "143a5b17".into() }
+        );
+    }
+
+    #[test]
+    fn an_engine_of_the_same_build_is_adopted() {
+        assert_eq!(judge_adoption(Some("143a5b17"), Some("143a5b17")), AdoptVerdict::Adopt);
+    }
+
+    #[test]
+    fn an_unknown_build_on_either_side_is_adopted() {
+        assert_eq!(judge_adoption(None, Some("143a5b17")), AdoptVerdict::Adopt);
+        assert_eq!(judge_adoption(Some("435b7f0d"), None), AdoptVerdict::Adopt);
+    }
+
+    #[test]
+    fn payload_git_sha_reads_the_manifest_identity() {
+        let dir = std::env::temp_dir().join(format!("opendj-adopt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("manifest.json"), r#"{"identity":{"git_sha_full":"143a5b17"}}"#).unwrap();
+        assert_eq!(payload_git_sha(&dir).as_deref(), Some("143a5b17"));
+        std::fs::remove_file(dir.join("manifest.json")).unwrap();
+        assert_eq!(payload_git_sha(&dir), None);
     }
 
     #[test]

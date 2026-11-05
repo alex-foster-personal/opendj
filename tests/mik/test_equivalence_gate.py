@@ -2,6 +2,7 @@
 
 [if] a verdict is absent, untested, or bound elsewhere [then] gate refuses/degrades, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -34,9 +35,7 @@ def test_passed_unlocks_only_that_field(data_dir: Path, write_verdicts) -> None:
     assert gate.may_write("loudness") is False  # no entry at all
 
 
-def test_override_allows_and_names_the_field(
-    data_dir: Path, write_verdicts, caplog
-) -> None:
+def test_override_allows_and_names_the_field(data_dir: Path, write_verdicts, caplog) -> None:
     write_verdicts({"bpm": "failed"})
     gate = EquivalenceGate.load(data_dir, allow_unverified=True)
     with caplog.at_level("WARNING"):
@@ -54,17 +53,13 @@ def test_unparseable_file_raises_never_degrades_to_allow(data_dir: Path) -> None
 
 
 def test_entry_without_status_raises(data_dir: Path) -> None:
-    verdict_path(data_dir).write_text(
-        json.dumps({"energy": {"normaliser": "x"}}), encoding="utf-8"
-    )
+    verdict_path(data_dir).write_text(json.dumps({"energy": {"normaliser": "x"}}), encoding="utf-8")
     with pytest.raises(EquivalenceGateError, match="no 'status' key"):
         EquivalenceGate.load(data_dir)
 
 
 def test_unknown_status_raises(data_dir: Path) -> None:
-    verdict_path(data_dir).write_text(
-        json.dumps({"energy": {"status": "probably-fine"}}), encoding="utf-8"
-    )
+    verdict_path(data_dir).write_text(json.dumps({"energy": {"status": "probably-fine"}}), encoding="utf-8")
     with pytest.raises(EquivalenceGateError, match="expected one of"):
         EquivalenceGate.load(data_dir)
 
@@ -84,9 +79,7 @@ def test_wrapped_fields_key_is_accepted(data_dir: Path) -> None:
         json.dumps(
             {
                 "meta": {"tool": "unit-b"},
-                "fields": {
-                    "energy": {"status": "passed", "normaliser": "mik_1_10"}
-                },
+                "fields": {"energy": {"status": "passed", "normaliser": "mik_1_10"}},
             }
         ),
         encoding="utf-8",
@@ -112,13 +105,9 @@ class TestSingleSourceBasis:
     """
 
     def _write(self, data_dir: Path, entry: dict) -> None:
-        verdict_path(data_dir).write_text(
-            json.dumps({"fields": {"energy_segments": entry}}), encoding="utf-8"
-        )
+        verdict_path(data_dir).write_text(json.dumps({"fields": {"energy_segments": entry}}), encoding="utf-8")
 
-    def test_producer_form_is_writable_and_recorded_as_single_source(
-        self, data_dir: Path
-    ) -> None:
+    def test_producer_form_is_writable_and_recorded_as_single_source(self, data_dir: Path) -> None:
         self._write(
             data_dir,
             {
@@ -163,9 +152,7 @@ class TestSingleSourceBasis:
         gate = EquivalenceGate.load(data_dir)
         assert gate.verdict("energy_segments").basis == "single_source"
 
-    def test_cross_source_pass_is_recorded_as_cross_source(
-        self, data_dir: Path
-    ) -> None:
+    def test_cross_source_pass_is_recorded_as_cross_source(self, data_dir: Path) -> None:
         self._write(
             data_dir,
             {
@@ -191,9 +178,7 @@ class TestSingleSourceBasis:
         with pytest.raises(EquivalenceGateError, match="contradictory"):
             EquivalenceGate.load(data_dir)
 
-    def test_basis_contradicting_the_suite_status_is_rejected(
-        self, data_dir: Path
-    ) -> None:
+    def test_basis_contradicting_the_suite_status_is_rejected(self, data_dir: Path) -> None:
         self._write(
             data_dir,
             {
@@ -206,9 +191,7 @@ class TestSingleSourceBasis:
         with pytest.raises(EquivalenceGateError, match="contradictory"):
             EquivalenceGate.load(data_dir)
 
-    def test_non_passing_verdict_keeps_its_pairing_but_verifies_nothing(
-        self, data_dir: Path
-    ) -> None:
+    def test_non_passing_verdict_keeps_its_pairing_but_verifies_nothing(self, data_dir: Path) -> None:
         """The producer sends basis on untested entries too: it is the PAIRING
         kind, not the outcome. Evidence basis must still read 'unverified'."""
         self._write(
@@ -234,9 +217,7 @@ class TestSingleSourceBasis:
             EquivalenceGate.load(data_dir)
 
     def test_unknown_basis_is_rejected(self, data_dir: Path) -> None:
-        self._write(
-            data_dir, {"status": "passed", "basis": "vibes", "normaliser": "x"}
-        )
+        self._write(data_dir, {"status": "passed", "basis": "vibes", "normaliser": "x"})
         with pytest.raises(EquivalenceGateError, match="expected one of"):
             EquivalenceGate.load(data_dir)
 
@@ -252,9 +233,7 @@ class TestSingleSourceBasis:
                 "verified_by": "apps.equivalence",
             },
         )
-        rows = EquivalenceGate.load(data_dir).provenance_rows(
-            ["energy_segments", "bpm"]
-        )
+        rows = EquivalenceGate.load(data_dir).provenance_rows(["energy_segments", "bpm"])
         by_field = {row["field_name"]: row for row in rows}
         assert by_field["energy_segments"]["basis"] == "single_source"
         assert by_field["energy_segments"]["verified_by"] == "apps.equivalence"
@@ -262,9 +241,7 @@ class TestSingleSourceBasis:
         assert by_field["bpm"]["status"] == "untested"
 
 
-def test_blocked_reason_explains_which_gate_fired(
-    data_dir: Path, write_verdicts
-) -> None:
+def test_blocked_reason_explains_which_gate_fired(data_dir: Path, write_verdicts) -> None:
     write_verdicts({"bpm": "failed"})
     gate = EquivalenceGate.load(data_dir)
     assert "FAILED" in gate.blocked_reason("bpm")
@@ -277,9 +254,7 @@ def test_blocked_reason_explains_which_gate_fired(
 # --------------------------------------------- source-bound verdicts (P1)
 
 
-def _write_verdict_with_sources(
-    data_dir: Path, *, mik_fingerprint: dict
-) -> None:
+def _write_verdict_with_sources(data_dir: Path, *, mik_fingerprint: dict) -> None:
     payload = {
         "meta": {"sources": {"mik": mik_fingerprint}},
         "fields": {
@@ -293,9 +268,7 @@ def _write_verdict_with_sources(
     verdict_path(data_dir).write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_load_with_no_sources_arg_skips_the_binding_check(
-    data_dir: Path, tmp_path: Path
-) -> None:
+def test_load_with_no_sources_arg_skips_the_binding_check(data_dir: Path, tmp_path: Path) -> None:
     """Omitting ``sources=`` (the default) must not require meta.sources at
     all -- callers that read no external source themselves have nothing to
     bind, and existing hand-written verdict fixtures never carry it."""
@@ -315,9 +288,7 @@ def test_load_with_no_sources_arg_skips_the_binding_check(
     assert gate.may_write("energy") is True
 
 
-def test_load_rejects_a_verdict_bound_to_a_different_store(
-    data_dir: Path, tmp_path: Path
-) -> None:
+def test_load_rejects_a_verdict_bound_to_a_different_store(data_dir: Path, tmp_path: Path) -> None:
     """P1 regression (PR #383 review, apps/shared/equivalence.py): a verdict
     computed against one MIK store must not authorize values read from a
     DIFFERENT store at load time, even if apps.equivalence was run at some
@@ -342,9 +313,7 @@ def test_load_rejects_a_verdict_bound_to_a_different_store(
         EquivalenceGate.load(data_dir, sources={"mik": different_store})
 
 
-def test_load_rejects_an_upgraded_store_at_the_same_path(
-    data_dir: Path, tmp_path: Path
-) -> None:
+def test_load_rejects_an_upgraded_store_at_the_same_path(data_dir: Path, tmp_path: Path) -> None:
     """Same requirement, the OTHER way it was described in review: 'the MIK
     store is upgraded' at the SAME path. Path equality must not be enough."""
     store = tmp_path / "same_path.mikdb"
@@ -367,9 +336,7 @@ def test_load_rejects_an_upgraded_store_at_the_same_path(
         EquivalenceGate.load(data_dir, sources={"mik": store})
 
 
-def test_load_allows_a_verdict_bound_to_the_same_unchanged_store(
-    data_dir: Path, tmp_path: Path
-) -> None:
+def test_load_allows_a_verdict_bound_to_the_same_unchanged_store(data_dir: Path, tmp_path: Path) -> None:
     store = tmp_path / "same.mikdb"
     store.write_bytes(b"unchanged content")
     stat = store.stat()
@@ -386,9 +353,7 @@ def test_load_allows_a_verdict_bound_to_the_same_unchanged_store(
     assert gate.may_write("energy") is True
 
 
-def test_load_source_mismatch_is_overridable_and_fails_closed(
-    data_dir: Path, tmp_path: Path, caplog
-) -> None:
+def test_load_source_mismatch_is_overridable_and_fails_closed(data_dir: Path, tmp_path: Path, caplog) -> None:
     """``allow_unverified`` degrades a source mismatch the same way it
     degrades an absent verdict file: every field becomes untested (writable
     only through the explicit override), never silently trusted."""
@@ -408,9 +373,7 @@ def test_load_source_mismatch_is_overridable_and_fails_closed(
     different_store.write_bytes(b"unprobed content")
 
     with caplog.at_level("WARNING"):
-        gate = EquivalenceGate.load(
-            data_dir, allow_unverified=True, sources={"mik": different_store}
-        )
+        gate = EquivalenceGate.load(data_dir, allow_unverified=True, sources={"mik": different_store})
     assert gate.verdict("energy").status == "untested"
     assert gate.may_write("energy") is True  # only via the override
     assert any("different" in r.message for r in caplog.records)

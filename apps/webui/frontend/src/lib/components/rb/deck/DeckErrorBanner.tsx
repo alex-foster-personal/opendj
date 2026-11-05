@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { classifyToastError } from '$lib/toast-error-classification';
 import { formatToastPresentation } from '$lib/toast-presentation';
 import { buildToastReport, writeToastReport } from '$lib/toast-report';
+import type { DeckBannerTone } from '$lib/rb/deck-banner-policy';
 
 import './DeckErrorBanner.react.css';
 
@@ -15,10 +16,11 @@ export type DeckErrorBannerProps = {
 	deckId: number;
 	error: string;
 	errorId: string | null;
+	tone: DeckBannerTone;
 	onDismiss: () => void;
 };
 
-export default function DeckErrorBanner({ deckId, error, errorId, onDismiss }: DeckErrorBannerProps) {
+export default function DeckErrorBanner({ deckId, error, errorId, tone, onDismiss }: DeckErrorBannerProps) {
 	const diagnostic = classifyToastError({
 		kind: 'error',
 		message: error,
@@ -70,8 +72,9 @@ export default function DeckErrorBanner({ deckId, error, errorId, onDismiss }: D
 
 	return (
 		<div
-			className="deck-error"
-			role="alert"
+			className={tone === 'expected' ? 'deck-error expected' : 'deck-error'}
+			role={tone === 'expected' ? 'status' : 'alert'}
+			data-deck-banner-tone={tone}
 			data-performance-error={deckId}
 			data-performance-error-id={errorId ?? undefined}
 			title={errorId === null ? shownHeadline : `${shownHeadline}\n\nError id ${errorId} - click to copy full report.`}

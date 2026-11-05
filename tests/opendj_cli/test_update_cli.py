@@ -269,7 +269,7 @@ def test_an_unknown_update_verb_is_a_usage_error(updater: Updater, capsys: Any) 
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
     )
-    assert main(["update", "install"]) == EXIT_USAGE
+    assert main(["update", "upgrade"]) == EXIT_USAGE
     captured = capsys.readouterr()
     assert "check" in captured.out + captured.err
     assert "apply" in captured.out + captured.err

@@ -55,6 +55,11 @@
  *     [if] a picked folder shows no verdict until the button is pressed [then ⛔️] broken
  *     [if] a stale answer for folder A lands on a row now holding B [then ⛔️] broken
  *     [if] committing an already-checked path issues a second scan [then ⛔️] broken
+ *   ✔︎ 🎯 concurrent folder checks keep their own errors (SETUP-8760):
+ *     a success on row A must not clear a still-failed row B.
+ *     [if] row B fails while row A is scanning, then A succeeds [then ⛔️] broken
+ *     if B's error is cleared
+ *     [if] both rows failed and B is rechecked ok [then ⛔️] broken if A's error clears
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -113,9 +118,13 @@ class SetupWizard {
 	 * jobsStore; duplicating it here would give the UI two truths. */
 	jobId = $state<string | null>(null);
 	busy = $state(false);
-	error = $state<string | null>(null);
+	private _error = $state<string | null>(null);
 	/** Raw diagnostic for agents when `error` was sanitized for display. */
-	errorDiagnostic = $state<string | null>(null);
+	private _errorDiagnostic = $state<string | null>(null);
+	/** Per-row folder-check errors keyed by row id. Cleared only when that row lands ok. */
+	private _folderCheckErrors = $state<
+		Record<string, { error: string; errorDiagnostic: string }>
+	>({});
 	/**
 	 * Whether detection has ever answered, tracked separately from the answer
 	 * itself.
@@ -145,10 +154,58 @@ class SetupWizard {
 	 * identified yet: the one failure ensureLoaded() may retry on its own. */
 	private awaitingEngine = false;
 
+	get error(): string | null {
+		if (this._error !== null) return this._error;
+		for (const row of this.folderRows) {
+			const entry = this._folderCheckErrors[row.id];
+			if (entry !== undefined) return entry.error;
+		}
+		return null;
+	}
+
+	set error(value: string | null) {
+		this._error = value;
+	}
+
+	get errorDiagnostic(): string | null {
+		if (this._errorDiagnostic !== null) return this._errorDiagnostic;
+		for (const row of this.folderRows) {
+			const entry = this._folderCheckErrors[row.id];
+			if (entry !== undefined) return entry.errorDiagnostic;
+		}
+		return null;
+	}
+
+	set errorDiagnostic(value: string | null) {
+		this._errorDiagnostic = value;
+	}
+
+	private _setFolderCheckError(id: string, message: string): void {
+		this._folderCheckErrors = {
+			...this._folderCheckErrors,
+			[id]: {
+				error: humanApiError(message),
+				errorDiagnostic: agentApiError(message)
+			}
+		};
+	}
+
+	private _clearFolderCheckError(id: string): void {
+		if (this._folderCheckErrors[id] === undefined) return;
+		const next = { ...this._folderCheckErrors };
+		delete next[id];
+		this._folderCheckErrors = next;
+	}
+
+	private _clearAllFolderCheckErrors(): void {
+		this._folderCheckErrors = {};
+	}
+
 	goTo(step: WizardStep): void {
 		this.step = step;
 		this.error = null;
 		this.errorDiagnostic = null;
+		this._clearAllFolderCheckErrors();
 	}
 
 	private _fail(message: string): void {
@@ -298,6 +355,7 @@ class SetupWizard {
 		this.source = source;
 		this.error = null;
 		this.errorDiagnostic = null;
+		this._clearAllFolderCheckErrors();
 		if (source === 'rekordbox') this.resetFolderRows();
 		if (source === 'folder') {
 			this.resetFolderRows();
@@ -307,6 +365,7 @@ class SetupWizard {
 
 	resetFolderRows(): void {
 		this.folderRows = [newFolderRow()];
+		this._clearAllFolderCheckErrors();
 	}
 
 	addFolderRow(): void {
@@ -316,6 +375,7 @@ class SetupWizard {
 	removeFolderRow(id: string): void {
 		if (this.folderRows.length <= 1) return;
 		this.folderRows = this.folderRows.filter((row) => row.id !== id);
+		this._clearFolderCheckError(id);
 	}
 
 	importableFolderPaths(): string[] {
@@ -360,7 +420,7 @@ class SetupWizard {
 		if (row === undefined) return;
 		const trimmed = row.path.trim();
 		if (trimmed === '') {
-			this._fail('type a folder path first');
+			this._setFolderCheckError(id, 'type a folder path first');
 			return;
 		}
 		const normalized = normalizeSetupFolderPath(trimmed);
@@ -386,11 +446,10 @@ class SetupWizard {
 			this.folderRows = this.folderRows.map((entry) =>
 				entry.id === id ? { ...entry, path: normalized, scan } : entry
 			);
-			this.error = null;
-			this.errorDiagnostic = null;
+			this._clearFolderCheckError(id);
 		} catch (exc) {
 			if (!mayLand()) return;
-			this._fail(errorMessage(exc));
+			this._setFolderCheckError(id, errorMessage(exc));
 		} finally {
 			if (isNewest()) this._folderChecksInFlight.delete(id);
 			this.busy = this._folderChecksInFlight.size > 0;
@@ -637,6 +696,7 @@ class SetupWizard {
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
 		this._folderChecksInFlight.clear();
+		this._clearAllFolderCheckErrors();
 		this._clearStatusRefresh();
 	}
 }

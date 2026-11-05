@@ -22,7 +22,7 @@ before(async () => {
 			JSON.stringify({
 				status: 'ok',
 				state_db: {
-					path: 'data/state/state.db',
+					path: '(private path)',
 					tracks: 1,
 					playlists: 1,
 					pairings: 0,
@@ -66,10 +66,7 @@ test('fetchProgress uses the shared configured API base', async () => {
 
 test('non-2xx and unreachable map onto the route error contract', async () => {
 	globalThis.fetch = async () => new Response('boom', { status: 500 });
-	await assert.rejects(
-		progressApi.fetchProgress(),
-		/GET \/api\/v1\/progress failed: 500 boom/
-	);
+	await assert.rejects(progressApi.fetchProgress(), /GET \/api\/v1\/progress failed: 500 boom/);
 
 	globalThis.fetch = async () => {
 		throw new TypeError('fetch failed');

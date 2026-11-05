@@ -17,10 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { PerformanceBrowserIpc } from '../../src/lib/rb/performance-ipc.svelte';
-import {
-	FIXTURE_MANIFEST,
-	STEM_DECODE_BENCH_ORIGIN
-} from './playwright.stem-decode-bench.config';
+import { FIXTURE_MANIFEST, STEM_DECODE_BENCH_ORIGIN } from './playwright.stem-decode-bench.config';
 
 interface PerfRingWindow extends Window {
 	__mdtPerfLog?: () => readonly {
@@ -113,9 +110,7 @@ async function _measureOneLoad(page: Page, stableId: string): Promise<Sample> {
 		const stemRow = [...rows]
 			.reverse()
 			.find(
-				(row) =>
-					row.kind.startsWith('deck-stems') &&
-					typeof row.stages?.decodeStems === 'number'
+				(row) => row.kind.startsWith('deck-stems') && typeof row.stages?.decodeStems === 'number'
 			);
 		if (stemRow?.stages === undefined) {
 			throw new Error('harness broke: deck-stems row missing decodeStems');

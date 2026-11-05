@@ -25,9 +25,11 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
+from apps.open_dj.provenance import utc_mtime
 from apps.shared import djay_db
 from apps.shared.normalised import NormalisedAnalysis, NormalisedCue
 
@@ -54,8 +56,13 @@ def read_djay_library(db_path: Path, *, unverified_fields: bool = False) -> Djay
     db_path = Path(db_path)
     if not db_path.is_file():
         raise FileNotFoundError(f"djay library not found at {db_path}")
+    # Stat the live library before snapshotting: the temp copy's mtime is
+    # not the source time.
+    stamp = utc_mtime(db_path)
     with _snapshot(db_path) as snapshot:
-        return _read_snapshot(snapshot, unverified_fields=unverified_fields)
+        return _read_snapshot(
+            snapshot, unverified_fields=unverified_fields, source_modified_at=stamp
+        )
 
 
 @contextmanager
@@ -82,7 +89,9 @@ def _snapshot(db_path: Path) -> Iterator[Path]:
         yield copy
 
 
-def _read_snapshot(db_path: Path, *, unverified_fields: bool) -> DjayLibrary:
+def _read_snapshot(
+    db_path: Path, *, unverified_fields: bool, source_modified_at: datetime
+) -> DjayLibrary:
     analysis = {a.uuid_or_id: a for a in djay_db.iter_analysis(db_path)} if unverified_fields else {}
     cues_by_uuid, cue_arrays_unreadable = _cues_by_uuid(db_path) if unverified_fields else ({}, 0)
     tracks: list[Track] = []
@@ -92,7 +101,13 @@ def _read_snapshot(db_path: Path, *, unverified_fields: bool) -> DjayLibrary:
             streaming += 1
             continue
         tracks.append(
-            _track(item, analysis.get(item.uuid), cues_by_uuid.get(item.uuid, ()), unverified_fields=unverified_fields)
+            _track(
+                item,
+                analysis.get(item.uuid),
+                cues_by_uuid.get(item.uuid, ()),
+                unverified_fields=unverified_fields,
+                source_modified_at=source_modified_at,
+            )
         )
     return DjayLibrary(
         library=OpenDjLibrary(
@@ -111,6 +126,7 @@ def _track(
     cues: Iterable[NormalisedCue],
     *,
     unverified_fields: bool,
+    source_modified_at: datetime,
 ) -> Track:
     bpm = None
     key = None
@@ -131,6 +147,7 @@ def _track(
         play_count=item.play_count if unverified_fields else 0,
         isrc=(item.isrc or None) if unverified_fields else None,
         cues=tuple(to_cue_points(cues)),
+        source_modified_at=source_modified_at,
     )
 
 

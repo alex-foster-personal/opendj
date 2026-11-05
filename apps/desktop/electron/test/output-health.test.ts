@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { OUTPUT_PROBE_HELPER, coreAudioOutputDevices, outputHealthJson } from '../src/output-health';
+import { OUTPUT_PROBE_HELPER, coreAudioOutputDevices, outputHealthJson, reconnectSpeakerJson } from '../src/output-health';
 import { POSIX_ONLY, scratchDir } from './helpers';
 
 function payloadWithHelper(script: string): string {
@@ -33,6 +33,11 @@ test('on macOS the helper answers, with the action passed through', { skip: POSI
 	const payload = payloadWithHelper('printf \'{"verdict":"ok","action":"%s"}\' "$1"');
 	assert.deepEqual(JSON.parse(outputHealthJson('probe', payload, 'darwin')), { verdict: 'ok', action: 'probe' });
 	assert.deepEqual(JSON.parse(outputHealthJson('switch', payload, 'darwin')), { verdict: 'ok', action: 'switch' });
+	assert.deepEqual(JSON.parse(outputHealthJson('inputs', payload, 'darwin')), { verdict: 'ok', action: 'inputs' });
+	assert.deepEqual(JSON.parse(outputHealthJson('inputs', null, 'linux')), {
+		inputs: [],
+		error: 'installed macOS shell required to list CoreAudio inputs'
+	});
 });
 
 test('coreAudioOutputDevices is null off macOS', () => {
@@ -73,4 +78,16 @@ test('a failing or non-JSON helper is unknown, never a verdict', { skip: POSIX_O
 	const body = JSON.parse(outputHealthJson('probe', garbage, 'darwin')) as Record<string, unknown>;
 	assert.equal(body.verdict, 'unknown');
 	assert.match(String(body.reason), /not JSON/);
+});
+
+test('reconnect runs the helper with reconnect, asynchronously, and refuses honestly (AUDIO-DEVICE-05)', async () => {
+	const payload = payloadWithHelper('printf \'{"reconnected":true,"action":"%s"}\' "$1"');
+	assert.deepEqual(JSON.parse(await reconnectSpeakerJson(payload, 'darwin')), { reconnected: true, action: 'reconnect' });
+	const off = JSON.parse(await reconnectSpeakerJson(payload, 'linux')) as Record<string, unknown>;
+	assert.equal(off.reconnected, false, 'if reconnect claims success off macOS then it is broken');
+	const missing = JSON.parse(await reconnectSpeakerJson(scratchDir('no-reconnect-helper'), 'darwin')) as Record<string, unknown>;
+	assert.match(String(missing.error), /helper not bundled/);
+	const failing = JSON.parse(await reconnectSpeakerJson(payloadWithHelper('echo no-blueutil >&2; exit 4'), 'darwin')) as Record<string, unknown>;
+	assert.equal(failing.reconnected, false);
+	assert.match(String(failing.error), /no-blueutil/);
 });

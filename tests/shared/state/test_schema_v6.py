@@ -15,6 +15,7 @@ Acceptance criteria, one assertion block each:
 - if machine identity is not stable across calls, a restored DB can
   impersonate another machine in hub_changelog -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -82,10 +83,7 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
         for step in state_schema.MIGRATIONS[:5]:
             for stmt in step:
                 conn.execute(stmt)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_meta ("
-            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
         for version in range(1, 6):
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
@@ -98,8 +96,7 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
             stable_id = f"{index:040d}"
             file_path = f"/Volumes/DJ/{index}.flac"
             conn.execute(
-                "INSERT INTO tracks(stable_id, stable_id_tier, created_at, "
-                "updated_at) VALUES (?, 'isrc', ?, ?)",
+                "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
                 (stable_id, _TS, _TS),
             )
             conn.execute(
@@ -109,9 +106,7 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
                 (stable_id, file_path, _TS, _TS),
             )
             seeded.append(file_path)
-        assert conn.execute(
-            "SELECT COUNT(*) FROM track_locations"
-        ).fetchone()[0] == locations
+        assert conn.execute("SELECT COUNT(*) FROM track_locations").fetchone()[0] == locations
         return seeded
     finally:
         conn.close()
@@ -162,9 +157,7 @@ def test_hub_changelog_and_sync_state_shape(state_conn: sqlite3.Connection) -> N
     seq = state_conn.execute("SELECT seq FROM hub_changelog").fetchone()[0]
     assert seq == 1
     state_conn.execute("INSERT INTO sync_state(peer) VALUES ('hub')")
-    row = state_conn.execute(
-        "SELECT last_push_seq, last_pull_seq, last_sync_at FROM sync_state"
-    ).fetchone()
+    row = state_conn.execute("SELECT last_push_seq, last_pull_seq, last_sync_at FROM sync_state").fetchone()
     assert row == (0, 0, None)
 
 
@@ -176,13 +169,11 @@ def test_sync_policies_reject_unknown_mode(state_conn: sqlite3.Connection) -> No
     )
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO sync_policies(machine_id, asset_kind, mode) "
-            "VALUES ('m1', 'stem_bundle', 'sometimes')"
+            "INSERT INTO sync_policies(machine_id, asset_kind, mode) VALUES ('m1', 'stem_bundle', 'sometimes')"
         )
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO sync_policies(machine_id, asset_kind, mode) "
-            "VALUES ('nope', 'stem_bundle', 'pinned')"
+            "INSERT INTO sync_policies(machine_id, asset_kind, mode) VALUES ('nope', 'stem_bundle', 'pinned')"
         )
 
 
@@ -199,10 +190,7 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
         # fixture seeds a v5 DB and opens it through open_rw, which migrates
         # all the way to the top of the ladder. The literal here was 7, then
         # 8, and each bump made a routine migration look like a regression.
-        assert (
-            conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-            == state_schema.SCHEMA_VERSION
-        )
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
 
         rows = conn.execute(
             "SELECT location_id, stable_id, file_path, kind, role, available, "
@@ -290,8 +278,7 @@ def test_two_machines_hold_the_same_path_without_colliding(
     push rolled back, and the second spoke could never sync again.
     """
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES ('trk-1', 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES ('trk-1', 'isrc', ?, ?)",
         (_TS, _TS),
     )
     for machine_id, name in (("m-air", "air"), ("m-silver", "silver")):
@@ -307,8 +294,7 @@ def test_two_machines_hold_the_same_path_without_colliding(
             (uuid.uuid4().hex, machine_id, _TS, _TS),
         )
     rows = state_conn.execute(
-        "SELECT machine_id FROM track_locations WHERE stable_id = 'trk-1' "
-        "ORDER BY machine_id"
+        "SELECT machine_id FROM track_locations WHERE stable_id = 'trk-1' ORDER BY machine_id"
     ).fetchall()
     assert [row[0] for row in rows] == ["m-air", "m-silver"]
 
@@ -327,19 +313,14 @@ def test_local_changelog_mirrors_hub_changelog(
 ) -> None:
     """ADR 08 point 3: the spoke-side fence needs its own monotonic seq."""
     assert "local_changelog" in state_schema.TABLES
-    assert _columns(state_conn, "local_changelog") == _columns(
-        state_conn, "hub_changelog"
-    )
+    assert _columns(state_conn, "local_changelog") == _columns(state_conn, "hub_changelog")
     for row_pk in ('["a"]', '["b"]'):
         state_conn.execute(
             "INSERT INTO local_changelog(table_name, row_pk, updated_at, "
             "origin_device_id, received_at) VALUES ('tracks', ?, ?, 'dev', ?)",
             (row_pk, _TS, _TS),
         )
-    seqs = [
-        row[0]
-        for row in state_conn.execute("SELECT seq FROM local_changelog ORDER BY seq")
-    ]
+    seqs = [row[0] for row in state_conn.execute("SELECT seq FROM local_changelog ORDER BY seq")]
     assert seqs == [1, 2], "local_changelog seq must be monotonic"
 
 
@@ -351,18 +332,12 @@ def test_v5_locations_are_claimed_by_this_machine_on_open(tmp_path: Path) -> Non
     conn = state_db.open_rw(db_path)
     try:
         expected = mid.get_or_create_machine_id(tmp_path)
-        rows = conn.execute(
-            "SELECT machine_id, origin_device_id FROM track_locations"
-        ).fetchall()
+        rows = conn.execute("SELECT machine_id, origin_device_id FROM track_locations").fetchall()
         assert len(rows) == len(seeded)
         assert {row[0] for row in rows} == {expected}
-        assert {row[1] for row in rows} == {expected}, (
-            "a claimed row with no origin loses every LWW tiebreak"
-        )
+        assert {row[1] for row in rows} == {expected}, "a claimed row with no origin loses every LWW tiebreak"
         # The machines row the FK points at exists, and the claim is offerable.
-        assert conn.execute(
-            "SELECT COUNT(*) FROM machines WHERE machine_id = ?", (expected,)
-        ).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM machines WHERE machine_id = ?", (expected,)).fetchone()[0] == 1
         logged = conn.execute(
             "SELECT COUNT(*) FROM local_changelog WHERE table_name = ?",
             ("track_locations",),
@@ -374,9 +349,7 @@ def test_v5_locations_are_claimed_by_this_machine_on_open(tmp_path: Path) -> Non
     # Re-opening claims nothing further: the hook is idempotent.
     conn = state_db.open_rw(db_path)
     try:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM local_changelog"
-        ).fetchone()[0] == len(seeded)
+        assert conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0] == len(seeded)
     finally:
         conn.close()
 
@@ -401,8 +374,7 @@ def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) ->
     """A writer that predates the sync migration must not create NULL-keyed,
     unsyncable rows."""
     state_conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES ('t1', 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES ('t1', 'isrc', ?, ?)",
         (_TS, _TS),
     )
     state_conn.execute(
@@ -422,10 +394,7 @@ def test_v5_to_the_top_of_the_ladder_is_idempotent(tmp_path: Path) -> None:
     try:
         assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
         assert conn.execute("SELECT COUNT(*) FROM track_locations").fetchone()[0] == 3
-        assert (
-            conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
-            == state_schema.SCHEMA_VERSION
-        )
+        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
     finally:
         conn.close()
 
@@ -472,9 +441,7 @@ def test_tripwire_fails_loudly_on_an_undeclared_table(state_db_path: Path) -> No
     conn = _provision_every_authority(state_db_path)
     try:
         conn.execute("CREATE TABLE rogue_authority_table (x TEXT)")
-        assert _user_tables(conn) - lint.declared_state_tables() == {
-            "rogue_authority_table"
-        }
+        assert _user_tables(conn) - lint.declared_state_tables() == {"rogue_authority_table"}
     finally:
         conn.close()
 
@@ -530,9 +497,7 @@ def test_register_machine_round_trips_and_is_idempotent(
     monkeypatch.setenv(mid.IS_HUB_ENV, "1")
     data_dir = tmp_path / "state"
 
-    written = mid.register_machine(
-        state_conn, data_dir=data_dir, name="agentbox", now=_TS
-    )
+    written = mid.register_machine(state_conn, data_dir=data_dir, name="agentbox", now=_TS)
     assert written.is_hub is True
     assert written.platform in ("macos", "windows", "linux")
     assert written.data_root == str(data_dir)
@@ -541,27 +506,17 @@ def test_register_machine_round_trips_and_is_idempotent(
     assert loaded == written
 
     later = "2026-08-29T12:00:00+00:00"
-    again = mid.register_machine(
-        state_conn, data_dir=data_dir, name="agentbox", now=later
-    )
+    again = mid.register_machine(state_conn, data_dir=data_dir, name="agentbox", now=later)
     assert again.machine_id == written.machine_id
-    rows = state_conn.execute(
-        "SELECT COUNT(*), MIN(first_seen), MAX(last_seen) FROM machines"
-    ).fetchone()
+    rows = state_conn.execute("SELECT COUNT(*), MIN(first_seen), MAX(last_seen) FROM machines").fetchone()
     assert rows == (1, _TS, later), "re-registering must upsert, not duplicate"
 
     assert mid.load_machine(state_conn, "never-registered") is None
 
 
-def test_duplicate_machine_name_reuses_existing_machine_row(
-    state_conn: sqlite3.Connection, tmp_path: Path
-) -> None:
-    first = mid.register_machine(
-        state_conn, data_dir=tmp_path / "a", name="silver", now=_TS
-    )
-    second = mid.register_machine(
-        state_conn, data_dir=tmp_path / "b", name="silver", now="2026-08-29T12:00:00+00:00"
-    )
+def test_duplicate_machine_name_reuses_existing_machine_row(state_conn: sqlite3.Connection, tmp_path: Path) -> None:
+    first = mid.register_machine(state_conn, data_dir=tmp_path / "a", name="silver", now=_TS)
+    second = mid.register_machine(state_conn, data_dir=tmp_path / "b", name="silver", now="2026-08-29T12:00:00+00:00")
 
     assert second == first
     assert state_conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0] == 1

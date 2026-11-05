@@ -156,15 +156,13 @@ def _snapshot(hub_dir: Path) -> dict[str, list[tuple[Any, ...]]]:
         tables = [
             r[0]
             for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             )
         ]
         out: dict[str, list[tuple[Any, ...]]] = {}
         for table in tables:
             query = (
-                "SELECT machine_id, name, platform, is_hub, data_root, first_seen "
-                "FROM machines ORDER BY machine_id"
+                "SELECT machine_id, name, platform, is_hub, data_root, first_seen FROM machines ORDER BY machine_id"
                 if table == "machines"
                 else f"SELECT * FROM {table} ORDER BY 1"
             )
@@ -202,9 +200,7 @@ def _read(hub: Hub, path: str, machine_id: str) -> Any:
 # ----- self-hosted: unchanged, never consults ------------------------------
 
 
-def test_a_self_hosted_hub_syncs_and_never_consults_the_source(
-    self_hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_a_self_hosted_hub_syncs_and_never_consults_the_source(self_hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If a self-hosted hub asks a source anything (even one saying archived) then broken."""
     _enroll(self_hosted_hub, enroll_spoke_dir)
     _add_track(enroll_spoke_dir, "t-self", _T0)
@@ -213,9 +209,7 @@ def test_a_self_hosted_hub_syncs_and_never_consults_the_source(
     assert self_hosted_hub.app.state.entitlement_source.asked == []
 
 
-def test_an_explicit_false_flag_is_self_hosted(
-    enroll_hub_dir: Path, enroll_spoke_dir: Path
-) -> None:
+def test_an_explicit_false_flag_is_self_hosted(enroll_hub_dir: Path, enroll_spoke_dir: Path) -> None:
     """If hosted=False is treated differently from an absent flag then broken."""
     app = _hub_app(enroll_hub_dir, hosted=False)
     app.state.entitlement_source = RecordingSource("archived")
@@ -238,18 +232,14 @@ def test_a_non_bool_hosted_flag_fails_fast(enroll_hub_dir: Path, enroll_spoke_di
     assert response.json()["detail"]["code"] == entitlement_gate.FLAG_INVALID_CODE
 
 
-def test_status_reports_a_hosted_hub_and_its_provider(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_status_reports_a_hosted_hub_and_its_provider(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If /sync/status cannot tell an agent the hub is hosted, and by which source, then broken."""
     machine_id = _enroll(hosted_hub, enroll_spoke_dir)
     body = hosted_hub.http.get(STATUS_PATH, params={"machine_id": machine_id}).json()
     assert (body["hosted"], body["entitlement_provider"]) == (True, "recording-static")
 
 
-def test_status_reports_a_self_hosted_hub_with_no_provider(
-    self_hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_status_reports_a_self_hosted_hub_with_no_provider(self_hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If a self-hosted hub's status names its attached source then it reads as gated."""
     machine_id = _enroll(self_hosted_hub, enroll_spoke_dir)
     body = self_hosted_hub.http.get(STATUS_PATH, params={"machine_id": machine_id}).json()
@@ -290,9 +280,7 @@ def test_a_hosted_hub_asks_about_the_enrolled_owner_and_serves_an_active_one(
     assert set(asked) == {ENROLL_OWNER_SUB}
 
 
-def test_a_read_only_owner_cannot_push_but_can_still_pull(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_a_read_only_owner_cannot_push_but_can_still_pull(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If read_only accepts a push, or refuses a pull, then a lapse strands a library."""
     machine_id = _enroll(hosted_hub, enroll_spoke_dir)
     _add_track(enroll_spoke_dir, "t-before", _T0)
@@ -313,9 +301,7 @@ def test_a_read_only_owner_cannot_push_but_can_still_pull(
 
     pulled = _read(hosted_hub, PULL_PATH, machine_id)
     assert pulled.status_code == 200, pulled.text
-    assert [row["pk"] for row in pulled.json()["rows"] if row["table"] == "tracks"] == [
-        ["t-before"]
-    ]
+    assert [row["pk"] for row in pulled.json()["rows"] if row["table"] == "tracks"] == [["t-before"]]
     assert _read(hosted_hub, DIGEST_PATH, machine_id).status_code == 200
 
 
@@ -333,9 +319,7 @@ def test_the_real_client_still_pulls_under_read_only_with_a_pending_edit(
 
     hosted_hub.set_source(RecordingSource("read_only"))
     _add_track(enroll_spoke_dir, "t-pending", _T1)
-    result = maintenance.sync(
-        enroll_spoke_dir, "http://hub.invalid", name=SPOKE_NAME, transport=hosted_hub.transport
-    )
+    result = maintenance.sync(enroll_spoke_dir, "http://hub.invalid", name=SPOKE_NAME, transport=hosted_hub.transport)
     assert result.push_refused is True and result.pulled >= 1
     assert result.digest_inconclusive is False  # the refusal owns the verdict
     assert "t-other" in _local_track_ids(enroll_spoke_dir)  # pulled through the real client
@@ -351,9 +335,7 @@ def test_the_real_client_still_pulls_under_read_only_with_a_pending_edit(
     assert _hub_track_ids(hosted_hub.hub_dir) == ["t-before", "t-other", "t-pending"]
 
 
-def test_any_other_refusal_still_raises_through_the_real_client(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_any_other_refusal_still_raises_through_the_real_client(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If the client swallows any refusal but the read_only push then archived reads as success."""
     _enroll(hosted_hub, enroll_spoke_dir)
     hosted_hub.set_source(RecordingSource("archived"))
@@ -374,9 +356,7 @@ def test_only_the_declared_plan_refusal_is_survivable() -> None:
     assert not client_refusal.is_plan_refusal(refused("POST /push", 403, "not json"))
 
 
-def test_an_archived_owner_is_refused_everything_but_status(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_an_archived_owner_is_refused_everything_but_status(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If archived still moves rows, or stops reporting status and digest, then broken."""
     machine_id = _enroll(hosted_hub, enroll_spoke_dir)
     hosted_hub.set_source(RecordingSource("archived"))
@@ -399,9 +379,7 @@ def test_an_owner_with_no_record_is_refused(hosted_hub: Hub, enroll_spoke_dir: P
     assert "no plan on record" in response.json()["detail"]["message"]
 
 
-def test_an_unowned_machine_is_refused_without_consulting_the_source(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_an_unowned_machine_is_refused_without_consulting_the_source(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If an unenrolled caller makes the hub consult the source with no subject then broken."""
     hosted_hub.transport.post(
         HELLO_PATH,
@@ -429,9 +407,7 @@ def test_a_hosted_hub_with_no_source_fails_fast(hosted_hub: Hub, enroll_spoke_di
 # ----- never destroy data ---------------------------------------------------
 
 
-def test_no_lifecycle_transition_deletes_or_changes_a_row(
-    hosted_hub: Hub, enroll_spoke_dir: Path
-) -> None:
+def test_no_lifecycle_transition_deletes_or_changes_a_row(hosted_hub: Hub, enroll_spoke_dir: Path) -> None:
     """If any lifecycle transition removes or rewrites a stored row then a lapse destroys data."""
     machine_id = _enroll(hosted_hub, enroll_spoke_dir)
     _add_track(enroll_spoke_dir, "t-keep", _T0)
@@ -466,10 +442,7 @@ def test_snapshot_covers_every_table(hosted_hub: Hub) -> None:
     conn = sqlite3.connect(client.state_db_path(hosted_hub.hub_dir))
     try:
         tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            )
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         }
     finally:
         conn.close()

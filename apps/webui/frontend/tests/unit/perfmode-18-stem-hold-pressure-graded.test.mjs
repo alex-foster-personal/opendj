@@ -78,12 +78,22 @@ async function measureHold({ playing, churn, kernel, xrunsDuringWindow }) {
 }
 
 test('no pressure: the decode starts at once, with no hold and no waiting state', async () => {
-	const hold = await measureHold({ playing: true, churn: false, kernel: false, xrunsDuringWindow: 0 });
+	const hold = await measureHold({
+		playing: true,
+		churn: false,
+		kernel: false,
+		xrunsDuringWindow: 0
+	});
 	assert.deepEqual(hold, { start: 'immediate', heldMs: 0, deferred: 0 });
 });
 
 test('churn early warning only: the hold is 500 ms, down from the flat 6,000 ms', async () => {
-	const hold = await measureHold({ playing: true, churn: true, kernel: false, xrunsDuringWindow: 0 });
+	const hold = await measureHold({
+		playing: true,
+		churn: true,
+		kernel: false,
+		xrunsDuringWindow: 0
+	});
 	assert.equal(hold.start, 'timed_out', 'the decode is started at the bound, never dropped');
 	assert.equal(hold.deferred, 1);
 	assert.equal(hold.heldMs, 500);
@@ -92,7 +102,12 @@ test('churn early warning only: the hold is 500 ms, down from the flat 6,000 ms'
 });
 
 test('kernel memory pressure: the hold is 2,000 ms, down from the flat 6,000 ms', async () => {
-	const hold = await measureHold({ playing: true, churn: true, kernel: true, xrunsDuringWindow: 0 });
+	const hold = await measureHold({
+		playing: true,
+		churn: true,
+		kernel: true,
+		xrunsDuringWindow: 0
+	});
 	assert.equal(hold.start, 'timed_out');
 	assert.equal(hold.heldMs, 2000);
 	assert.equal(hold.heldMs, shedModule.EAGER_STEM_DECODE_MAX_DEFER_MS);
@@ -103,7 +118,11 @@ test('an xrun alone is the early warning: 500 ms, with the kernel below level 2'
 	for (const churn of [false, true]) {
 		const hold = await measureHold({ playing: true, churn, kernel: false, xrunsDuringWindow: 3 });
 		assert.equal(hold.start, 'timed_out');
-		assert.equal(hold.heldMs, shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS, `churn=${churn}`);
+		assert.equal(
+			hold.heldMs,
+			shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS,
+			`churn=${churn}`
+		);
 	}
 });
 
@@ -113,12 +132,20 @@ test('overshoot control: real pressure never gets the short early-warning hold',
 		{ churn: true, kernel: true, xrunsDuringWindow: 3 }
 	]) {
 		const hold = await measureHold({ playing: true, ...signals });
-		assert.ok(hold.heldMs > shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS, JSON.stringify(signals));
+		assert.ok(
+			hold.heldMs > shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS,
+			JSON.stringify(signals)
+		);
 	}
 });
 
 test('control: with nothing playing even severe pressure holds nothing', async () => {
-	const hold = await measureHold({ playing: false, churn: true, kernel: true, xrunsDuringWindow: 2 });
+	const hold = await measureHold({
+		playing: false,
+		churn: true,
+		kernel: true,
+		xrunsDuringWindow: 2
+	});
 	assert.deepEqual(hold, { start: 'immediate', heldMs: 0, deferred: 0 });
 });
 

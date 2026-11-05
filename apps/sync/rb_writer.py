@@ -138,10 +138,11 @@ def write_cues(
             target.Color = color_idx
             if cue.name:
                 target.Comment = cue.name
-            if cue.kind == "loop" and cue.loop_length_msec:
+            # HOTCUE-LOOP-01: a hot loop keeps its End too; only a memory loop is ActiveLoop.
+            if cue.kind in ("loop", "hot") and cue.loop_length_msec:
                 target.OutMsec = cue.position_msec + cue.loop_length_msec
                 target.OutFrame = _msec_to_frame(target.OutMsec)
-                target.ActiveLoop = True
+                target.ActiveLoop = cue.kind == "loop"
             if content_uuid:
                 target.ContentUUID = content_uuid
             unmatched_existing.remove(target_j)
@@ -158,10 +159,11 @@ def write_cues(
                     Color=color_idx,
                     Comment=cue.name or "",
                 )
-                if cue.kind == "loop" and cue.loop_length_msec:
+                # HOTCUE-LOOP-01: a hot loop keeps its End too; only a memory loop is ActiveLoop.
+                if cue.kind in ("loop", "hot") and cue.loop_length_msec:
                     new.OutMsec = cue.position_msec + cue.loop_length_msec
                     new.OutFrame = _msec_to_frame(new.OutMsec)
-                    new.ActiveLoop = True
+                    new.ActiveLoop = cue.kind == "loop"
                 if content_uuid:
                     new.ContentUUID = content_uuid
                 report.inserted += 1

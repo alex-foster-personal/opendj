@@ -47,10 +47,7 @@ def build(staged: Path, bpms: tuple[float, ...] = (120.0, 128.0, 174.0)) -> list
         wav = staged / "wav" / f"{stable_id}.wav"
         _click_wav(wav, bpm)
         period = 60.0 / bpm
-        beats = [
-            [(n % 4) + 1, round(n * period, 5), bpm]
-            for n in range(int(WINDOW_S / period))
-        ]
+        beats = [[(n % 4) + 1, round(n * period, 5), bpm] for n in range(int(WINDOW_S / period))]
         truth[stable_id] = beats
         fixtures.append(
             {
@@ -64,9 +61,7 @@ def build(staged: Path, bpms: tuple[float, ...] = (120.0, 128.0, 174.0)) -> list
                 "is_dynamic": False,
             }
         )
-    (staged / "rekordbox-truth.json").write_text(
-        json.dumps({"schema": 2, "beats": truth}, indent=1), encoding="utf-8"
-    )
+    (staged / "rekordbox-truth.json").write_text(json.dumps({"schema": 2, "beats": truth}, indent=1), encoding="utf-8")
     return fixtures
 
 

@@ -104,7 +104,9 @@ def test_gate_prefers_the_e2e_reserve_for_trunk_repair_prs_only() -> None:
     raw = _runs_on(GATE_JOB)
     assert raw == E2E_GATE_RUNS_ON, f"e2e gate runs-on changed shape, got: {raw}"
     assert raw.count(E2E_MAIN_FIX_DISJUNCT) == 1, raw
-    assert raw.replace(f"{E2E_MERGE_QUEUE_DISJUNCT} || ", "", 1).endswith(f" || {E2E_MAIN_FIX_DISJUNCT} || {E2E_POOL_TAIL}"), raw
+    assert raw.replace(f"{E2E_MERGE_QUEUE_DISJUNCT} || ", "", 1).endswith(
+        f" || {E2E_MAIN_FIX_DISJUNCT} || {E2E_POOL_TAIL}"
+    ), raw
     assert raw.count(f"vars.{VARIABLE}") == 1, raw
     guard = E2E_MAIN_FIX_DISJUNCT
     assert "refs/heads/main" not in guard and "'push'" not in guard, guard
@@ -127,7 +129,9 @@ def test_guard_reads_the_scope_jobs_repair_output_not_the_event_payload() -> Non
 
 def test_the_pytest_reserve_still_reads_the_label_from_its_pull_request_event() -> None:
     """if ci.yml's reserve guard stops reading the pull_request labels then its repair PR loses the pair"""
-    pytest_guard = "(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
+    pytest_guard = (
+        "(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
+    )
     assert SHARD_RUNS_ON.startswith(f"${{{{ fromJSON({pytest_guard} && vars.CI_RUNS_ON_MAIN_FIX || ")
 
 

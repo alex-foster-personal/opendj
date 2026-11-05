@@ -99,13 +99,9 @@ def _live_client(captured: list[dict]) -> None:  # type: ignore[type-arg]
 
     class CapturingTransport(Transport):
         def capture_envelope(self, envelope) -> None:  # type: ignore[no-untyped-def]
-            captured.extend(
-                item.payload.json for item in envelope.items if item.payload.json is not None
-            )
+            captured.extend(item.payload.json for item in envelope.items if item.payload.json is not None)
 
-    decision = TelemetryDecision(
-        enabled=True, environment="dev", reason="test", dsn=FRONTEND_DSN, explicit=True
-    )
+    decision = TelemetryDecision(enabled=True, environment="dev", reason="test", dsn=FRONTEND_DSN, explicit=True)
     assert init_telemetry(decision, transport=CapturingTransport()) is True
 
 

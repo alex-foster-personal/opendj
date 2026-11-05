@@ -1,4 +1,5 @@
 """Production application wiring contract for the existing Sets router."""
+
 from __future__ import annotations
 
 import pytest
@@ -21,5 +22,6 @@ def test_create_app_registers_session_rec_http_contract() -> None:
     assert export_path in schema["paths"]
     assert "get" in schema["paths"][export_path]
     assert "post" in schema["paths"][export_path]
+
 
 pytestmark = pytest.mark.rb_parity

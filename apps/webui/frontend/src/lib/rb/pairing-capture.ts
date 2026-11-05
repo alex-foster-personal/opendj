@@ -4,7 +4,13 @@
  * in the unit-test harness, so the fetch-bearing logic lives here where it can
  * be loaded and tested directly (see load-typescript.mjs).
  */
-import { createAlignment, createPairing, createSyncSnapshot, listSyncSnapshots, type SyncSnapshot } from '$lib/api';
+import {
+	createAlignment,
+	createPairing,
+	createSyncSnapshot,
+	listSyncSnapshots,
+	type SyncSnapshot
+} from '$lib/api';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 
 export { listPairingsFor } from '$lib/api';
@@ -91,9 +97,14 @@ export function syncSnapshotBody(
 	a_position_ms: number;
 	b_position_ms: number;
 } {
-	for (const [side, deck] of [['a', a], ['b', b]] as const) {
+	for (const [side, deck] of [
+		['a', a],
+		['b', b]
+	] as const) {
 		if (!Number.isFinite(deck.position_ms) || deck.position_ms < 0) {
-			throw new RangeError(`deck ${side} position_ms must be finite and >= 0, got ${deck.position_ms}`);
+			throw new RangeError(
+				`deck ${side} position_ms must be finite and >= 0, got ${deck.position_ms}`
+			);
 		}
 	}
 	return {

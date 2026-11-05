@@ -251,14 +251,16 @@ test('keyboard-opened load confirm focuses Yes so a second Enter confirms', asyn
 
 test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving tabindex', async () => {
 	const src = await readFile(TABLE, 'utf8');
-	const table = src.match(/<table\s+data-testid="track-table"[\s\S]*?>/)[0];
+	// The open tag ends where <colgroup> starts: attribute expressions such as
+	// class:rb-multi-selected={selectedOrderSet.size > 1} contain a bare ">".
+	const table = src.match(/<table\s+data-testid="track-table"[\s\S]*?>\s*<colgroup>/)[0];
 	assert.match(table, /role="grid"/);
 	assert.match(table, /aria-multiselectable="true"/);
-	assert.match(table, /aria-rowcount=\{rows\.length \+ 1\}/);
+	assert.match(table, /aria-rowcount=\{slotCount \+ 1\}/);
 	assert.match(src, /<thead bind:clientHeight=\{theadHeightPx\}(?: oncontextmenu=\{[^}]*\})?>\s*<tr aria-rowindex=\{1\}>/);
 	const row = src.match(/data-testid="track-row"[\s\S]*?draggable="true"/)[0];
 	assert.match(row, /data-row-index=\{rowIndex\}/);
-	assert.match(row, /aria-rowindex=\{rowIndex \+ 2\}/);
+	assert.match(row, /aria-rowindex=\{rowSlot \+ 2\}/);
 	assert.match(row, /aria-selected=\{selectedOrderSet\.has\(row\.order\)\}/);
 	assert.match(row, /tabindex=\{rowIndex === activeRowIndex/);
 	assert.doesNotMatch(row, /tabindex="0"/, 'every row a Tab stop defeats roving tabindex');

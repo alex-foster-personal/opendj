@@ -1,4 +1,5 @@
 """UTC ISO-8601 timestamps for webui server responses."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

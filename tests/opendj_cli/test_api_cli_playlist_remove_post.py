@@ -1,4 +1,5 @@
 """``opendj api POST .../items:remove`` agent-native parity (LIBM-21)."""
+
 from __future__ import annotations
 
 import json
@@ -29,9 +30,14 @@ def seeded_db(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -82,7 +88,9 @@ def test_api_post_items_remove_and_missing_second_call(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Remove Post"}, timeout=30,
+        f"{base_url}/api/v1/playlists",
+        json={"name": "CLI Remove Post"},
+        timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]
@@ -97,18 +105,28 @@ def test_api_post_items_remove_and_missing_second_call(
     detail = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30)
     item_id = detail.json()["tracks"][0]["item_id"]
 
-    code = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:remove",
-        "--json", json.dumps({"item_ids": [item_id]}),
-    ])
+    code = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:remove",
+            "--json",
+            json.dumps({"item_ids": [item_id]}),
+        ]
+    )
     assert code == api_cli.EXIT_OK
     out = json.loads(capsys.readouterr().out)
     assert item_id not in [t for t in out.get("items", [])]
 
-    code2 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:remove",
-        "--json", json.dumps({"item_ids": [item_id]}),
-    ])
+    code2 = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:remove",
+            "--json",
+            json.dumps({"item_ids": [item_id]}),
+        ]
+    )
     assert code2 == api_cli.EXIT_FAILED
     err = json.loads(capsys.readouterr().err)
     assert err["error"] == "not_found"

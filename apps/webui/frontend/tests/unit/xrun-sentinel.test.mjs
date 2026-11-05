@@ -354,3 +354,17 @@ test('the session counter is reachable without a UI', () => {
 		'a flush before cadence warmup must reject rather than claim an authoritative zero'
 	);
 });
+
+// XRUNHOLD-01: if a 6 ms worst gap read off a 1 ms Date clock against a 5.5 ms threshold
+// pauses background analysis then broken; if a 7 ms one does not then broken; xruns is unchanged.
+test('foldXrunReport: only windows beyond the clock resolution count toward the analysis hold', () => {
+	const base = { parked: 0, callbacks: 690, window_ms: 2000, threshold_ms: 5.5, clock: 'date' };
+	const rounding = xrun.foldXrunReport(xrun.EMPTY_XRUN_SESSION, { ...base, xruns: 19, worst_gap_ms: 6 });
+	assert.equal(rounding.xruns, 19);
+	assert.equal(rounding.hold_xruns, 0);
+	const late = xrun.foldXrunReport(rounding, { ...base, xruns: 3, worst_gap_ms: 7 });
+	assert.equal(late.xruns, 22);
+	assert.equal(late.hold_xruns, 3);
+	const exactClock = xrun.foldXrunReport(xrun.EMPTY_XRUN_SESSION, { ...base, clock: 'currentTime', xruns: 2, worst_gap_ms: 6 });
+	assert.equal(exactClock.hold_xruns, 2);
+});

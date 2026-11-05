@@ -28,6 +28,6 @@ test('browser header keeps its edit actions behind the one pencil menu', () => {
 
 // REQ: LIBUX-19
 test('browser boots with one pane slot and Blank List (+) affordance', () => {
-	assert.match(BROWSER_PANEL, /const panes: PaneStore\[\] = \[createPaneStore\(\)\]/);
+	assert.match(BROWSER_PANEL, /const panes: PaneStore\[\] = \$state\(\[createPaneStore\(\)\]\)/);
 	assert.match(PANE_TABS, /Blank List \(\+\)/);
 });

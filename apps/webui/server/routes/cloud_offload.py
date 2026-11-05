@@ -17,6 +17,7 @@ permanently"). Missing R2 credentials answer 503 naming the variables.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from typing import Any

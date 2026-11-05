@@ -21,6 +21,7 @@ def _make_track(**overrides: str) -> CrateTrack:
     defaults.update(overrides)
     return CrateTrack(**defaults)
 
+
 pytestmark = pytest.mark.requirement("OPEN-02")
 
 
@@ -122,7 +123,10 @@ def test_database_v2_as_serato_writes_it_gives_bpm_type_and_cjk_title() -> None:
     db = DatabaseV2.read(_tlv("vrsn", _u16("2.0/Serato Scratch LIVE Database")) + track)
     (row,) = db.tracks
     assert (row.file_path, row.title, row.bpm, row.file_type) == (
-        "Music/Invented/a.mp3", "日本", "128.00", "mp3",
+        "Music/Invented/a.mp3",
+        "日本",
+        "128.00",
+        "mp3",
     )
     # The legacy ASCII spelling this codec used to write still reads.
     legacy = DatabaseV2.read(_tlv("otrk", _tlv("pfil", _u16("a.mp3")) + _tlv("tbpm", b"90.5")))

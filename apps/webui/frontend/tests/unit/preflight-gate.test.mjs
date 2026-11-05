@@ -114,8 +114,7 @@ test('re-check and re-request permissions both re-issue the same real GET', asyn
 });
 
 test('consecutive fail polls escalate needsActionCopy after the threshold', async () => {
-	globalThis.fetch = async () =>
-		jsonResponse({ status: 'fail', checks: [failCheckRow()] });
+	globalThis.fetch = async () => jsonResponse({ status: 'fail', checks: [failCheckRow()] });
 
 	for (let i = 0; i < 2; i += 1) {
 		await preflightStore.checkPreflight();
@@ -125,8 +124,7 @@ test('consecutive fail polls escalate needsActionCopy after the threshold', asyn
 	assert.equal(preflightStore.preflightGate.consecutiveFailPolls, 3);
 	assert.equal(preflightStore.preflightGate.needsActionCopy, true);
 
-	globalThis.fetch = async () =>
-		jsonResponse({ status: 'pass', checks: [passCheckRow()] });
+	globalThis.fetch = async () => jsonResponse({ status: 'pass', checks: [passCheckRow()] });
 	await preflightStore.checkPreflight();
 	assert.equal(preflightStore.preflightGate.consecutiveFailPolls, 0);
 	assert.equal(preflightStore.preflightGate.needsActionCopy, false);

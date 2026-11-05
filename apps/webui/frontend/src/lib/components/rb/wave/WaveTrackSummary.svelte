@@ -3,10 +3,11 @@
 	// row height, then the title over the live key and BPM. Missing or loading
 	// artwork is empty space with a hover reason, never a labelled slate.
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import { playbackBpm } from '$lib/rb/beat-sync-math';
 	import { camelotKeyColor } from '$lib/rb/camelot-color';
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
+	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { gutterTrackTitle } from './track-title-display';
 
 	const { deck }: { deck: DeckState } = $props();
@@ -17,7 +18,6 @@
 	});
 	const trackName = $derived(gutterTrackTitle(fullTitle));
 	const artworkSrc = $derived(deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 's'));
-	let artworkFailed = $state(false);
 	let artworkLoaded = $state(false);
 	let trackNameEl = $state<HTMLSpanElement | null>(null);
 	let trackNameScrubPx = $state(0);
@@ -35,15 +35,13 @@
 			tagBpm: deck.bpm
 		})
 	);
-	const liveKey = $derived(
-		keyAtPlayheadNow(deck.anlz, positionBucketSec * 1000, deck.key_shift_semitones, deck.key)
-			.display
-	);
+	// DECK-KEY-01: the deck's resolved key (else its "?" guess), as the deck header reads it.
+	const liveKeyAt = $derived(deckKeyAtPlayheadNow({ anlz: deck.anlz, position_ms: positionBucketSec * 1000, key_shift_semitones: deck.key_shift_semitones, key: deck.key, key_guess: deck.key_guess ?? null }));
+	const liveKey = $derived(liveKeyAt.display);
 	const keyColor = $derived(camelotKeyColor(liveKey));
 
 	$effect(() => {
 		void artworkSrc;
-		artworkFailed = false;
 		artworkLoaded = false;
 	});
 
@@ -59,18 +57,21 @@
 </script>
 
 <div class="wave-track-summary">
-	{#if artworkSrc !== null && !artworkFailed}
+	{#if artworkSrc !== null && deck.stable_id !== null && coverVisible(deck.stable_id)}
+		{@const sid = deck.stable_id}
 		<span class="wave-art" title={artworkLoaded ? 'Track artwork' : 'Loading artwork'}>
 			<img
 				class:loaded={artworkLoaded}
-				src={artworkSrc}
+				src={coverSrc(artworkSrc, sid)}
 				alt=""
 				data-expected-resource-error
 				onload={() => {
 					artworkLoaded = true;
+					coverLoaded(sid);
 				}}
 				onerror={() => {
-					artworkFailed = true;
+					artworkLoaded = false;
+					coverFailed(sid);
 				}}
 			/>
 		</span>
@@ -98,7 +99,7 @@
 			{#if liveKey !== null}<span
 					class="key"
 					style:--wave-key-color={keyColor}
-					title="Key now, in Camelot notation, after any key shift">{liveKey}</span
+					title="Key now, in Camelot notation, after any key shift">{liveKeyAt.isGuess && liveKey !== '--' ? `${liveKey}?` : liveKey}</span
 				>{/if}
 			{#if liveBpm !== null}<span
 					class="bpm"

@@ -8,6 +8,7 @@ a candidate: every check below is answered from recorded fingerprints alone.
 Checks that decode a candidate file (match, veto, unmeasurable) run on the
 real engine with real audio in ``tests/dedup/test_engine_fingerprint_real.py``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,8 +51,13 @@ def _af(path: Path) -> audio_files.AudioFile:
 
 def _row(original: Path, **extra: str) -> dict[str, str]:
     row = {
-        "id": "1", "title": "Song", "artist": "Artist", "original_path": str(original),
-        "basename": original.name, "duration_s": "200", "file_size": "1000",
+        "id": "1",
+        "title": "Song",
+        "artist": "Artist",
+        "original_path": str(original),
+        "basename": original.name,
+        "duration_s": "200",
+        "file_size": "1000",
     }
     row.update(extra)
     return row
@@ -62,11 +68,14 @@ def test_a_renamed_move_is_found_by_its_audio(tmp_path: Path) -> None:
     original = tmp_path / "old" / "track.mp3"  # gone
     moved = _file(tmp_path / "new" / "Artist - Song (renamed).mp3")
     unrelated = _file(tmp_path / "new" / "something else.mp3")
-    db = _db(tmp_path, [
-        (original, SONG, "sid-1"),
-        (moved, fake_fingerprint(b"song", b"re-encode"), None),
-        (unrelated, OTHER_SONG, None),
-    ])
+    db = _db(
+        tmp_path,
+        [
+            (original, SONG, "sid-1"),
+            (moved, fake_fingerprint(b"song", b"re-encode"), None),
+            (unrelated, OTHER_SONG, None),
+        ],
+    )
     ev = fe.FingerprintEvidence.open(db)
     assert ev is not None
     idx = locate.FsIndex.build([_af(moved), _af(unrelated)])
@@ -83,10 +92,13 @@ def test_a_renamed_move_is_found_by_its_audio(tmp_path: Path) -> None:
 def test_the_recorded_fingerprint_is_found_by_stable_id(tmp_path: Path) -> None:
     """[if] the row names the track's stable_id [then] its recording is used whatever the path, [else stop]."""
     moved = _file(tmp_path / "new" / "renamed.mp3")
-    db = _db(tmp_path, [
-        (tmp_path / "somewhere" / "else.mp3", SONG, "sid-1"),
-        (moved, SONG, None),
-    ])
+    db = _db(
+        tmp_path,
+        [
+            (tmp_path / "somewhere" / "else.mp3", SONG, "sid-1"),
+            (moved, SONG, None),
+        ],
+    )
     ev = fe.FingerprintEvidence.open(db)
     assert ev is not None
     row = _row(tmp_path / "old" / "track.mp3", stable_id="sid-1")

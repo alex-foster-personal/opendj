@@ -77,9 +77,7 @@ def read_pcm(path: Path) -> tuple[np.ndarray, PcmMeta]:
     )
     actual = sha256_bytes(payload)
     if actual != meta.sha256:
-        raise HarnessIntegrityError(
-            f"PCM sha256 mismatch for {path}: pinned {meta.sha256}, read {actual}"
-        )
+        raise HarnessIntegrityError(f"PCM sha256 mismatch for {path}: pinned {meta.sha256}, read {actual}")
     samples = np.frombuffer(payload, dtype="<f4").reshape(meta.frames, meta.channels).T
     return np.ascontiguousarray(samples, dtype=np.float64), meta
 
@@ -126,9 +124,7 @@ def channels_are_bit_identical(samples: np.ndarray) -> bool:
     return all(np.array_equal(first, samples[channel]) for channel in range(1, samples.shape[0]))
 
 
-def assert_channel_distinctness_preserved(
-    reference: np.ndarray, rendered: np.ndarray, label: str
-) -> bool:
+def assert_channel_distinctness_preserved(reference: np.ndarray, rendered: np.ndarray, label: str) -> bool:
     """Raise if a distinct-channel source came back with duplicated channels.
 
     Checking channel COUNT is what lets a mono-collapsed render through: a

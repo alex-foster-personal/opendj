@@ -7,6 +7,7 @@ xattrs). The writer promises to change tag blocks only.
 * [if] a file carrying an xattr is rewritten [then] the new file carries the
   same xattr and the new bytes, [else stop].
 """
+
 from __future__ import annotations
 
 import errno
@@ -116,5 +117,7 @@ def test_macos_copyfile_branch_carries_an_xattr_across(tmp_path: Path):
     dst.write_bytes(b"b")
     subprocess.run(["/usr/bin/xattr", "-w", "com.opendj.test", "keep-me", str(src)], check=True)
     copy_extended_metadata(src, dst)
-    read = subprocess.run(["/usr/bin/xattr", "-p", "com.opendj.test", str(dst)], capture_output=True, text=True, check=False)
+    read = subprocess.run(
+        ["/usr/bin/xattr", "-p", "com.opendj.test", str(dst)], capture_output=True, text=True, check=False
+    )
     assert read.returncode == 0 and read.stdout.strip() == "keep-me", read.stderr

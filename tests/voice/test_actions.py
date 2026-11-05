@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.actions (VOICE-01)."""
+
 from __future__ import annotations
 
 import time
@@ -113,33 +114,23 @@ class TestHandleSaveCueDestructiveOff:
 
 class TestHandleRateTrackDestructiveOff:
     def test_out_of_range(self, voice_context):
-        resp = actions.handle_rate_track(
-            make_intent("RATE_TRACK", {"stars": 7}), voice_context
-        )
+        resp = actions.handle_rate_track(make_intent("RATE_TRACK", {"stars": 7}), voice_context)
         assert resp.published is False
         assert "1 to 5" in voice_context.tts_engine.spoken[-1]
 
     def test_invalid_stars(self, voice_context):
-        resp = actions.handle_rate_track(
-            make_intent("RATE_TRACK", {"stars": "many"}), voice_context
-        )
+        resp = actions.handle_rate_track(make_intent("RATE_TRACK", {"stars": "many"}), voice_context)
         assert resp.published is False
         assert "didn't catch" in voice_context.tts_engine.spoken[-1]
 
     def test_no_deck_state(self, voice_context):
-        resp = actions.handle_rate_track(
-            make_intent("RATE_TRACK", {"stars": 5}), voice_context
-        )
+        resp = actions.handle_rate_track(make_intent("RATE_TRACK", {"stars": 5}), voice_context)
         assert resp.published is False
 
     def test_dry_run_when_destructive_off(self, voice_context):
-        voice_context.event_bus.publish(
-            {"kind": "deck_state", "stable_id": "stable_xyz", "bpm": 128}
-        )
+        voice_context.event_bus.publish({"kind": "deck_state", "stable_id": "stable_xyz", "bpm": 128})
         voice_context.tts_engine.spoken.clear()
-        resp = actions.handle_rate_track(
-            make_intent("RATE_TRACK", {"stars": 5}), voice_context
-        )
+        resp = actions.handle_rate_track(make_intent("RATE_TRACK", {"stars": 5}), voice_context)
         assert resp.published is True
         assert resp.dry_run is True
         evts = events_of_kind(voice_context.event_bus, "RATE_TRACK")
@@ -207,9 +198,7 @@ class TestEndToEnd:
         assert intent is not None
         resp = registry.dispatch(intent, voice_context)
         assert resp.published is True
-        assert any(
-            e.get("kind") == expected_kind for e in voice_context.event_bus.events
-        )
+        assert any(e.get("kind") == expected_kind for e in voice_context.event_bus.events)
         # Reset mute if we just muted, so the next iteration is not blocked.
         voice_context.unmute()
         voice_context.last_dispatch_at = None

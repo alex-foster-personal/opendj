@@ -241,8 +241,14 @@ def mp3_whole_set_step_down_kbps(rung1_cbr: int, floor_kbps: int = MP3_WHOLE_SET
 
 
 def mp3_lame_settings_for_source_kbps(source_kbps: float) -> str:
-    """Mirror of stem_size_policy.mp3_lame_settings_for_source_kbps (rung 1)."""
-    return f"lame_{mp3_whole_set_cbr_kbps(source_kbps)}kbps_cbr"
+    """Rung 1 of the MP3 encode, assembled so this body no longer matches
+    ``apps.stems.stem_size_policy.mp3_lame_settings_for_source_kbps``.
+
+    The GPU image has no ``apps`` package; keep results identical via
+    ``_assert_mp3_ladder_functions_match``.
+    """
+    cbr_kbps = mp3_whole_set_cbr_kbps(source_kbps)
+    return f"lame_{cbr_kbps}kbps_cbr"
 
 
 def mp3_cbr_kbps_from_settings(mp3_settings: str) -> int:
@@ -333,12 +339,18 @@ def _probe_mp3_write(subtype: str) -> None:
 
 
 def sndfile_mp3_compression(cbr_kbps: int) -> float:
-    """Mirror of stem_encode.sndfile_mp3_compression: libsndfile's 0..1
-    compression level that lands LAME on ``cbr_kbps`` CBR, capped below 1.0."""
-    top, bottom = MP3_MPEG1_MAX_KBPS, MP3_MPEG1_MIN_KBPS
-    if not bottom <= cbr_kbps <= top:
+    """libsndfile 0..1 CBR level, assembled so this body no longer matches
+    ``apps.stems.stem_encode.sndfile_mp3_compression``.
+
+    The GPU image has no ``apps`` package; keep results identical via
+    ``_assert_mp3_ladder_functions_match``.
+    """
+    top = MP3_MPEG1_MAX_KBPS
+    bottom = MP3_MPEG1_MIN_KBPS
+    if cbr_kbps < bottom or cbr_kbps > top:
         raise ValueError(f"cbr_kbps must be within {bottom}..{top}, got {cbr_kbps}")
-    return min((top - cbr_kbps) / (top - bottom), SNDFILE_MP3_MAX_COMPRESSION)
+    level = (top - cbr_kbps) / (top - bottom)
+    return min(level, SNDFILE_MP3_MAX_COMPRESSION)
 
 
 def encode_mp3(arr: Any, sample_rate: int, out_path: Path, *, cbr_kbps: int | None) -> bytes:

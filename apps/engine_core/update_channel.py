@@ -128,12 +128,12 @@ UPDATE_FEED_URL: str = (
 ELECTRON_FEED_FILE: str = "latest-mac.yml"
 TAURI_FEED_FILE: str = "latest.json"
 
-#: The file this check reads. ``latest.json`` until the first Electron release
-#: has published ``latest-mac.yml`` (it is a 404 before that, and the e2e gate
-#: fetches whatever this names); then it flips to ``ELECTRON_FEED_FILE``, the
-#: feed that survives deleting the Tauri shell.
+#: The file this check reads: ``latest-mac.yml``, the feed that survives
+#: deleting the Tauri shell. It was ``latest.json`` until the first Electron
+#: release (1.0.0-alpha.2, Thu 5 Nov 2026) published ``latest-mac.yml``; it was
+#: a 404 before that, and the e2e gate fetches whatever this names.
 #: (private path) section (d).
-CHECKED_FEED_FILE: str = TAURI_FEED_FILE
+CHECKED_FEED_FILE: str = ELECTRON_FEED_FILE
 UPDATE_ENDPOINT: str = f"{UPDATE_FEED_URL}/{CHECKED_FEED_FILE}"
 
 #: Replaces ``UPDATE_FEED_URL`` for this engine and the Electron shell alike,
@@ -242,11 +242,17 @@ class UpdateApplyRefused(BaseModel):
 class UpdateApplyStatusOut(BaseModel):
     command_id: str
     state: Literal["pending", "claimed", "succeeded", "failed"]
-    outcome: Literal["installed", "no-update", "refused"] | None = None
+    #: ``cancelled`` is an install withdrawn during its countdown (INSTALL-43);
+    #: only the engine writes it, never the shell.
+    outcome: Literal["installed", "no-update", "refused", "cancelled"] | None = None
     error: str | None = None
     enqueued_at_utc: str
     claimed_at_utc: str | None = None
     completed_at_utc: str | None = None
+    #: INSTALL-43: when the held-back install becomes claimable, and how long
+    #: is left (null once claimed, or for an order with no countdown).
+    countdown_ends_at_utc: str | None = None
+    countdown_remaining_s: float | None = None
 
 
 class UpdateCheckOut(BaseModel):
@@ -954,15 +960,22 @@ class _InstallWait:
 
 
 def _await_install(
-    client: httpx.Client, base: str, command_id: str, deadline: float, timeout_s: float
+    client: httpx.Client,
+    base: str,
+    command_id: str,
+    deadline: float,
+    timeout_s: float,
+    status_path_template: str = UPDATE_APPLY_STATUS_PATH,
 ) -> _InstallWait | ApplyOutcome:
     """Wait for the shell to report the order done, bounded by the deadline.
 
     Returns what the shell said, or the outcome that says why the wait ended.
     The shell is the only component that may install an update, so this is the
-    only evidence that an install was even attempted.
+    only evidence that an install was even attempted. ``status_path_template``
+    names the route that reports the order: the release channel's apply, or a
+    local build's install (INSTALL-40); both read the one shell broker.
     """
-    status_url = f"{base}{UPDATE_APPLY_STATUS_PATH.format(command_id=command_id)}"
+    status_url = f"{base}{status_path_template.format(command_id=command_id)}"
     seen_claimed = False
     while True:
         if time.monotonic() >= deadline:
@@ -1025,12 +1038,17 @@ def _await_relaunch(
     before: dict[str, str | None],
     lock_path: Path | None,
     deadline: float,
+    arrived: Callable[[dict[str, str | None], dict[str, str | None]], bool] | None = None,
 ) -> dict[str, str | None]:
     """Poll build-info until the running identity moves, or the deadline passes.
 
     The origin is re-resolved every pass: the relaunched app writes its own
     lock, and it may well bind a different port than the one it replaced.
+    ``arrived`` decides when the identity has moved far enough: by default a
+    strictly higher semver (the release channel); a local build that keeps
+    its semver passes its own predicate on ``git_sha_full`` (INSTALL-40).
     """
+    has_arrived = _version_higher if arrived is None else arrived
     after = before
     backoff = 1.0
     while time.monotonic() < deadline:
@@ -1047,7 +1065,7 @@ def _await_relaunch(
             response = None
         if response is not None and response.status_code == 200:
             after = _build_identity_slice(response.json())
-            if _version_higher(before, after):
+            if has_arrived(before, after):
                 return after
         time.sleep(backoff)
         backoff = min(backoff * 1.5, 10.0)

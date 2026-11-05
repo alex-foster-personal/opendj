@@ -15,7 +15,11 @@ const beats = [
 const payload = {
 	stable_id: 'deadlock-track',
 	points: 38400,
-	waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: 0, low: [], mid: [], high: [] } },
+	waveform: {
+		kind: 'mono',
+		preview: { length: 0, low: [], mid: [], high: [] },
+		detail: { length: 0, low: [], mid: [], high: [] }
+	},
 	beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: beats.length, beats },
 	cues: [],
 	phrases: [],
@@ -24,13 +28,18 @@ const payload = {
 };
 
 const within = (promise, ms, what) =>
-	Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${what} never settled`)), ms))]);
+	Promise.race([
+		promise,
+		new Promise((_, reject) => setTimeout(() => reject(new Error(`${what} never settled`)), ms))
+	]);
 
 test('a preset queued behind an in-flight grid edit does not deadlock with the grid adoption', async () => {
 	const cache = await loadTypeScriptModule('src/lib/components/rb/wave/anlz-cache.svelte.ts', {
 		viteApiBase: 'https://grid-edit-deadlock.example.test'
 	});
-	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const { ScopedCommandScheduler } = await loadTypeScriptModule(
+		'src/lib/rb/performance-command-scheduler.ts'
+	);
 	const scheduler = new ScopedCommandScheduler();
 	const order = [];
 	cache.installAuthoritativeAnlzGridSink((stable_id) =>
@@ -43,7 +52,10 @@ test('a preset queued behind an in-flight grid edit does not deadlock with the g
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = async () => {
 		await answered;
-		return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+		return new Response(JSON.stringify(payload), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
 	};
 	try {
 		const edit = scheduler.run(['persistence-1'], async () => {
@@ -56,9 +68,17 @@ test('a preset queued behind an in-flight grid edit does not deadlock with the g
 		});
 		answer();
 		await within(Promise.all([edit, preset]), 2000, 'the grid edit and the preset');
-		await within(scheduler.run([1], async () => {}), 2000, 'the adoption');
+		await within(
+			scheduler.run([1], async () => {}),
+			2000,
+			'the adoption'
+		);
 		assert.deepEqual(order, ['edit', 'preset', 'adopt deadlock-track']);
-		assert.deepEqual(cache.getAnlzEntry('deadlock-track').data.beatgrid.beats, beats, 'the edited grid is published');
+		assert.deepEqual(
+			cache.getAnlzEntry('deadlock-track').data.beatgrid.beats,
+			beats,
+			'the edited grid is published'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

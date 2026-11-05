@@ -93,9 +93,7 @@ SIX_DEP = 'dependencies = [\n    { name = "six" },\n]'
         "provides-extras-invalid",
     ],
 )
-def test_a_non_root_package_metadata_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, appended: str, named: str
-) -> None:
+def test_a_non_root_package_metadata_that_uv_cannot_read_is_unknown(tmp_path: Path, appended: str, named: str) -> None:
     """Each shape, appended to the non-root package `six`, is "Failed to parse
     `uv.lock`", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763, round
     40), while the validators had read only the root's metadata."""
@@ -110,8 +108,7 @@ def test_a_non_root_package_metadata_that_uv_cannot_read_is_unknown(
     [
         "[package.metadata]\nrequires-dist = []\n",
         '[package.metadata]\nrequires-dist = [{ name = "seven" }]\n',
-        '[package.metadata]\nrequires-dist = [{ name = "seven", specifier = ">=1", '
-        "marker = \"os_name == 'x'\" }]\n",
+        '[package.metadata]\nrequires-dist = [{ name = "seven", specifier = ">=1", marker = "os_name == \'x\'" }]\n',
         '[package.metadata]\nrequires-dist = [{ name = "seven", git = "https://example.com/x" }]\n',
         '[package.metadata]\nrequires-dist = [{ name = "seven", bogus = 1 }]\n',
         '[package.metadata]\nrequires-dist = [{ name = "d", directory = "x", specifier = "," }]\n',
@@ -133,9 +130,7 @@ def test_a_non_root_package_metadata_that_uv_cannot_read_is_unknown(
         "unknown-metadata-key",
     ],
 )
-def test_a_non_root_package_metadata_uv_reads_keeps_the_verdict(
-    tmp_path: Path, appended: str
-) -> None:
+def test_a_non_root_package_metadata_uv_reads_keeps_the_verdict(tmp_path: Path, appended: str) -> None:
     """CONTROLS for the guard above, each read by uv (`uv lock --check` exit 0,
     measured 0.8.17, round 40)."""
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + appended)
@@ -152,9 +147,7 @@ def test_a_non_root_package_metadata_uv_reads_keeps_the_verdict(
     ],
     ids=["name-space", "name-leading-dash", "name-unknown-package", "extra-invalid"],
 )
-def test_a_dependency_record_name_that_uv_refuses_is_unknown(
-    tmp_path: Path, record: str, named: str
-) -> None:
+def test_a_dependency_record_name_that_uv_refuses_is_unknown(tmp_path: Path, record: str, named: str) -> None:
     """`name = "bad space"` or `"-lead"` in a dependency record is "Not a valid package
     or extra name", a valid name no `[[package]]` carries is "has missing `source` field
     but has more than one matching package", and `extra = ["bad space"]` is refused too,
@@ -179,15 +172,11 @@ def test_a_lock_revision_that_is_not_a_u32_is_unknown(tmp_path: Path, value: str
     while `lock_schema` had read only `version`. Controls: absent, 0, 3 and 2**32 - 1
     are read (exit 0)."""
     assert UNMARKED_LOCK.count("revision = 3\n") == 1
-    code, message = _run(
-        tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3", f"revision = {value}")
-    )
+    code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3", f"revision = {value}"))
     assert code == EXIT_UNKNOWN, message
     assert "uv.lock revision" in message and "is not a u32" in message
     for control in ("", "revision = 0\n", "revision = 3\n", f"revision = {2**32 - 1}\n"):
-        code, message = _run(
-            tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3\n", control)
-        )
+        code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK.replace("revision = 3\n", control))
         assert code == EXIT_OK, (control, message)
 
 
@@ -246,9 +235,7 @@ def test_a_dependency_record_that_matches_no_single_package_is_unknown(
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
     assert code == EXIT_UNKNOWN, message
     assert named in message, message
-    picked = (
-        '{ name = "six", version = "1.17.0", source = { registry = "https://pypi.org/simple" } }'
-    )
+    picked = '{ name = "six", version = "1.17.0", source = { registry = "https://pypi.org/simple" } }'
     for control, extra in (
         (picked, SIX_16),
         ('{ name = "six", version = "1.17.0" }', ""),
@@ -335,9 +322,7 @@ def test_a_package_optional_or_dev_dependency_map_that_uv_cannot_read_is_unknown
     ],
     ids=["optional-empty", "optional-record", "optional-unnormalized", "dev-empty", "dev-record"],
 )
-def test_a_package_optional_or_dev_dependency_map_uv_reads_keeps_the_verdict(
-    tmp_path: Path, appended: str
-) -> None:
+def test_a_package_optional_or_dev_dependency_map_uv_reads_keeps_the_verdict(tmp_path: Path, appended: str) -> None:
     """CONTROLS for the guard above, each `uv lock --check` exit 0 (measured 0.8.17)."""
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, UNMARKED_LOCK + appended)
     assert code == EXIT_OK, message

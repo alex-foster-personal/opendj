@@ -1,11 +1,13 @@
 """AnalysisRecord schema + JSON round-trip (META-01)."""
+
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
 
-from apps.analysis.record import AnalysisRecord
+from apps.analysis.record import AnalysisRecord, StoredRecordError
 
 
 def _sample() -> AnalysisRecord:
@@ -46,11 +48,17 @@ def test_json_is_sorted_keys() -> None:
 @pytest.mark.requirement("META-01")
 def test_naive_datetime_coerced_to_utc() -> None:
     rec = AnalysisRecord(
-        stable_id="x", backend="b", backend_version="v",
+        stable_id="x",
+        backend="b",
+        backend_version="v",
         analyzed_at=datetime(2026, 1, 1, 0, 0, 0),
-        duration_s=1.0, sample_rate=44100,
-        bpm=120.0, bpm_confidence=1.0,
-        key_camelot="1A", key_openkey="6m", key_confidence=1.0,
+        duration_s=1.0,
+        sample_rate=44100,
+        bpm=120.0,
+        bpm_confidence=1.0,
+        key_camelot="1A",
+        key_openkey="6m",
+        key_confidence=1.0,
         energy=5,
     )
     rec2 = AnalysisRecord.from_json(rec.to_json())
@@ -69,3 +77,30 @@ def test_accepts_Z_and_plus00() -> None:
     r1 = AnalysisRecord.from_json(body.replace("$DT", '"2026-04-17T01:23:45Z"'))
     r2 = AnalysisRecord.from_json(body.replace("$DT", '"2026-04-17T01:23:45+00:00"'))
     assert r1.analyzed_at == r2.analyzed_at
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_from_json_explicit_null_lanes_raises() -> None:
+    """[if] a stored record has explicit null lanes [then] StoredRecordError, [else stop]."""
+    data = json.loads(_sample().to_json())
+    data["lanes"] = None
+    with pytest.raises(StoredRecordError, match="explicit null lanes"):
+        AnalysisRecord.from_json(json.dumps(data))
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_from_json_missing_lanes_key_is_legacy_empty() -> None:
+    """[if] a stored record has no lanes key [then] it reads as no beatgrid, [else stop]."""
+    data = json.loads(_sample().to_json())
+    del data["lanes"]
+    record = AnalysisRecord.from_json(json.dumps(data))
+    assert record.lanes == {}
+
+
+@pytest.mark.requirement("NATIVE-34")
+def test_from_json_non_object_lanes_raises() -> None:
+    """[if] lanes is not an object [then] StoredRecordError, [else stop]."""
+    data = json.loads(_sample().to_json())
+    data["lanes"] = []
+    with pytest.raises(StoredRecordError, match="not an object"):
+        AnalysisRecord.from_json(json.dumps(data))

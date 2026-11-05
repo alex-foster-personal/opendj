@@ -36,6 +36,7 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 	'playlists-root': {},
 	playlist: { forbidDuplicates: [false, true] },
 	'playlist-folder': {},
+	'playlist-section': { editable: [false, true] },
 	smartlist: {},
 	'tree-readonly': { stick: [false, true] },
 	'library-source': {},
@@ -60,6 +61,7 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		cue: [false, true],
 		assign: ['A', 'B', 'THRU']
 	},
+	'mixer-control': { animating: [false, true] },
 	'perf-empty': {}
 };
 
@@ -83,6 +85,7 @@ export function sampleTarget<K extends MenuTargetKind>(
 		'playlists-root': () => ({ kind: 'playlists-root' }),
 		playlist: () => ({ kind: 'playlist' }),
 		'playlist-folder': () => ({ kind: 'playlist-folder' }),
+		'playlist-section': () => ({ kind: 'playlist-section' }),
 		smartlist: () => ({ kind: 'smartlist' }),
 		'tree-readonly': () => ({ kind: 'tree-readonly' }),
 		'library-source': () => ({ kind: 'library-source' }),
@@ -90,6 +93,7 @@ export function sampleTarget<K extends MenuTargetKind>(
 		'hot-cue': () => ({ kind: 'hot-cue', deck: 1, slot: 'A' }),
 		waveform: () => ({ kind: 'waveform', deck: 1 }),
 		'mixer-channel': () => ({ kind: 'mixer-channel', deck: 1 }),
+		'mixer-control': () => ({ kind: 'mixer-control', label: 'EQ LOW' }),
 		'perf-empty': () => ({ kind: 'perf-empty' })
 	};
 	return (targets[kind] as (c: MenuContextByKind[K]) => Extract<MenuTarget, { kind: K }>)(ctx);

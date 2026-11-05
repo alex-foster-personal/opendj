@@ -161,7 +161,7 @@ export function collectInspectorSnapshot(): InspectorSnapshot {
 
 	return {
 		daemonFlavor: capabilities.flavor,
-		planLabel: entitlements.loaded ? entitlements.plan?.label ?? null : null,
+		planLabel: entitlements.loaded ? (entitlements.plan?.label ?? null) : null,
 		buildProfile: buildFlags.profile,
 		sandboxed: buildFlags.sandboxed,
 		entitlementsLoaded: entitlements.loaded,

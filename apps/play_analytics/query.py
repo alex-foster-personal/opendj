@@ -31,9 +31,7 @@ from .contract import (
 
 _SHARE_STATES: frozenset[str] = frozenset({"private", "shared_local", "shared_cloud"})
 _SESSION_COLUMNS = frozenset({"session_id", "started_at", "ended_at", "share_state"})
-_EVENT_COLUMNS = frozenset(
-    {"id", "session_id", "wall_clock", "track_stable_id", "action", "value_json"}
-)
+_EVENT_COLUMNS = frozenset({"id", "session_id", "wall_clock", "track_stable_id", "action", "value_json"})
 
 
 def _open_readonly(db_path: Path) -> sqlite3.Connection:
@@ -63,15 +61,10 @@ def _require_schema(connection: sqlite3.Connection, events_table: EventsTable) -
         ).fetchone()
         if row is None:
             raise AnalyticsSchemaError(f"required table {table!r} is missing")
-        columns = {
-            str(column["name"])
-            for column in connection.execute(f"PRAGMA table_info({table})")
-        }
+        columns = {str(column["name"]) for column in connection.execute(f"PRAGMA table_info({table})")}
         missing = sorted(required_columns - columns)
         if missing:
-            raise AnalyticsSchemaError(
-                f"required columns missing from {table!r}: {', '.join(missing)}"
-            )
+            raise AnalyticsSchemaError(f"required columns missing from {table!r}: {', '.join(missing)}")
 
 
 def _duration_seconds(started_at: str, ended_at: str | None) -> float | None:
@@ -118,9 +111,7 @@ def _event_audible_s(value_json: str | None) -> float | None:
     if audible is None:
         return None
     if isinstance(audible, bool) or not isinstance(audible, (int, float)):
-        raise AnalyticsSchemaError(
-            f"set_events audible_s must be a number or null, got {audible!r}"
-        )
+        raise AnalyticsSchemaError(f"set_events audible_s must be a number or null, got {audible!r}")
     return float(audible)
 
 
@@ -187,9 +178,7 @@ def query_play_analytics(
         )
         session_ids = [str(row["session_id"]) for row in session_rows]
         plays_by_session: Counter[str] = Counter()
-        unique_by_session: dict[str, set[str]] = {
-            session_id: set() for session_id in session_ids
-        }
+        unique_by_session: dict[str, set[str]] = {session_id: set() for session_id in session_ids}
         track_counts: Counter[str] = Counter()
         # Surfaced in the payload so a thin tracklist is visibly the filter's
         # doing and not a lost recording.

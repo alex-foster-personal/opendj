@@ -6,6 +6,7 @@
 	import '$lib/rb/theme.css';
 	import PositionBar from '$lib/components/rb/PositionBar.svelte';
 	import { artworkUrl } from '$lib/rb/artwork-url';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import { deckAudioClockPositionMs, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { requestTrackifySkipNext } from '$lib/rb/trackify-autoplay.svelte';
@@ -20,15 +21,7 @@
 	);
 
 	// The artwork route 404s when a track has none; the slate stays, never a
-	// fabricated cover. Reset per track so one miss does not hide the next.
-	let artFailed = $state(false);
-	let artFor: string | null = $state(null);
-	$effect(() => {
-		if (deck.stable_id !== artFor) {
-			artFor = deck.stable_id;
-			artFailed = false;
-		}
-	});
+	// fabricated cover; the shared cover retry (LIBM-185) tries again later.
 
 	async function togglePlay(): Promise<void> {
 		await runPerformanceCommandFromUi({
@@ -45,11 +38,14 @@
 
 <section class="perf-root trackify-player" data-testid="trackify-player">
 	<div class="cover" aria-hidden="true">
-		{#if deck.stable_id !== null && !artFailed}
+		{#if deck.stable_id !== null && coverVisible(deck.stable_id)}
+			{@const sid = deck.stable_id}
 			<img
-				src={artworkUrl(deck.stable_id, 'm')}
+				src={coverSrc(artworkUrl(sid, 'm'), sid)}
 				alt=""
-				onerror={() => (artFailed = true)}
+				data-expected-resource-error
+				onload={() => coverLoaded(sid)}
+				onerror={() => coverFailed(sid)}
 				data-testid="trackify-artwork"
 			/>
 		{:else}

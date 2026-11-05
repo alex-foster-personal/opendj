@@ -425,7 +425,12 @@ def iter_cues(db: Rekordbox6Database, content_id: str) -> list:
         if active_loop and out_msec and out_msec > in_msec:
             kind_str = "loop"
             index = None
-        loop_length = (out_msec - in_msec) if (kind_str == "loop" and out_msec) else None
+        # HOTCUE-LOOP-01: a hot cue with an OutMsec is a hot loop and keeps its length.
+        loop_length = (
+            (out_msec - in_msec)
+            if (kind_str in ("loop", "hot") and out_msec and out_msec > in_msec)
+            else None
+        )
         cue = NormalisedCue(
             position_msec=int(in_msec),
             kind=kind_str,  # type: ignore[arg-type]

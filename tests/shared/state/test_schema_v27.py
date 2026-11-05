@@ -3,6 +3,7 @@
 [if] a v26 db is opened [then] it gains mtime_ns and keeps existing rows, [else stop].
 [if] open_rw runs twice [then] the ALTER is idempotent, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -46,7 +47,7 @@ def test_v26_db_gains_mtime_ns_on_open(tmp_path: Path) -> None:
 
     opened = state_db.open_rw(path)
     try:
-        assert state_schema.apply_migrations(opened) == 27
+        assert state_schema.apply_migrations(opened) == state_schema.SCHEMA_VERSION
         assert "mtime_ns" in _path_avail_columns(opened)
         row = opened.execute(
             "SELECT materialised_size, mtime_ns FROM path_availability WHERE logical_path = '/a.mp3'"
@@ -61,7 +62,7 @@ def test_second_open_is_idempotent(tmp_path: Path) -> None:
     state_db.open_rw(path, apply_schema=True).close()
     again = state_db.open_rw(path)
     try:
-        assert state_schema.apply_migrations(again) == 27
+        assert state_schema.apply_migrations(again) == state_schema.SCHEMA_VERSION
         assert "mtime_ns" in _path_avail_columns(again)
     finally:
         again.close()

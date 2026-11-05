@@ -61,12 +61,14 @@ export const QUALITY_METRIC_DEFS: Record<string, QualityMetricDef> = {
 	'complexity.worst_block': {
 		label: 'Worst function complexity',
 		unit: 'cyclomatic',
-		title: 'The single most complex function or method in the Python tree, by cyclomatic complexity (radon).'
+		title:
+			'The single most complex function or method in the Python tree, by cyclomatic complexity (radon).'
 	},
 	'complexity.blocks_over_limit': {
 		label: 'Functions over the complexity limit',
 		unit: 'functions',
-		title: 'Count of Python functions/methods over the mccabe complexity threshold this repo gates on.'
+		title:
+			'Count of Python functions/methods over the mccabe complexity threshold this repo gates on.'
 	},
 	'complexity.low_maintainability_files': {
 		label: 'Low-maintainability files',
@@ -91,7 +93,8 @@ export const QUALITY_METRIC_DEFS: Record<string, QualityMetricDef> = {
 	'frontend.import_cycles': {
 		label: 'Frontend import cycles',
 		unit: 'cycles',
-		title: 'Import cycles across both .ts and .svelte files (madge parses zero imports out of .svelte and reports a false clean, so this repo runs its own graph instead).'
+		title:
+			'Import cycles across both .ts and .svelte files (madge parses zero imports out of .svelte and reports a false clean, so this repo runs its own graph instead).'
 	},
 	'frontend.max_fan_in': {
 		label: 'Worst frontend fan-in',
@@ -101,7 +104,8 @@ export const QUALITY_METRIC_DEFS: Record<string, QualityMetricDef> = {
 	'frontend.max_fan_out': {
 		label: 'Worst frontend fan-out',
 		unit: 'imports',
-		title: 'The frontend file with the most imports of its own: real coupling when every import is used, a refactor target when it is not.'
+		title:
+			'The frontend file with the most imports of its own: real coupling when every import is used, a refactor target when it is not.'
 	},
 	'frontend.unused_files': {
 		label: 'Orphaned frontend files',
@@ -143,6 +147,7 @@ export const QUALITY_METRIC_DEFS: Record<string, QualityMetricDef> = {
 	'duplication.percent': {
 		label: 'Duplicated code',
 		unit: '%',
-		title: 'Percentage of duplicated lines across the tree (jscpd): copy-pasted blocks, not shared code.'
+		title:
+			'Percentage of duplicated lines across the tree (jscpd): copy-pasted blocks, not shared code.'
 	}
 };

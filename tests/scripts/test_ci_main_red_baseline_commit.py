@@ -66,20 +66,17 @@ def _two_workflow_runs(first_sha: str, second_sha: str):
     """One completed run per workflow file, each measuring at its own commit."""
     per_workflow = {
         "ci.yml": [
-            {"id": 1, "status": "completed", "conclusion": "failure", "run_attempt": 1,
-             "head_sha": first_sha},
+            {"id": 1, "status": "completed", "conclusion": "failure", "run_attempt": 1, "head_sha": first_sha},
         ],
         "e2e.yml": [
-            {"id": 2, "status": "completed", "conclusion": "failure", "run_attempt": 1,
-             "head_sha": second_sha},
+            {"id": 2, "status": "completed", "conclusion": "failure", "run_attempt": 1, "head_sha": second_sha},
         ],
     }
     jobs = {
         1: [Job(11, "pytest fast lane (shard 1 of 5)", "failure")],
         2: [Job(21, "e2e gate", "failure")],
     }
-    ids = {11: frozenset({"FAILED tests/a/test_a.py::test_one"}),
-           21: frozenset({"FAILED tests/e/test_e.py::test_two"})}
+    ids = {11: frozenset({"FAILED tests/a/test_a.py::test_one"}), 21: frozenset({"FAILED tests/e/test_e.py::test_two"})}
     return (
         lambda workflow: per_workflow[workflow],
         lambda run_id, _attempt: jobs[run_id],
@@ -112,9 +109,7 @@ def test_the_walk_collects_identities_from_both_workflows() -> None:
     second workflow were skipped entirely and contributed neither sha nor failure."""
     runs_of, jobs_of, identities_of = _two_workflow_runs("a" * 40, "b" * 40)
     walk = _walk_every_workflow(jobs_of, identities_of, runs_of)
-    assert walk.identities == frozenset(
-        {"FAILED tests/a/test_a.py::test_one", "FAILED tests/e/test_e.py::test_two"}
-    )
+    assert walk.identities == frozenset({"FAILED tests/a/test_a.py::test_one", "FAILED tests/e/test_e.py::test_two"})
 
 
 def test_an_older_verdict_that_supplies_a_failure_makes_the_baseline_stale():
@@ -154,9 +149,7 @@ def test_a_verdict_that_only_re_measures_a_decided_name_does_not_make_it_stale()
         lambda run_id, _attempt: jobs[run_id],
         lambda _job_id: frozenset({"FAILED tests/t.py::a"}),
     )
-    assert walk.measured_shas == frozenset({"n" * 40}), (
-        "the older verdict decided nothing the result rests on"
-    )
+    assert walk.measured_shas == frozenset({"n" * 40}), "the older verdict decided nothing the result rests on"
 
 
 def test_a_walk_that_measured_nothing_reports_no_contributing_commit():

@@ -1,4 +1,5 @@
 """Fixtures for tests/sync/*. Re-exports djay fixtures from tests.sets.conftest."""
+
 from __future__ import annotations
 
 # Re-export the djay fixture so tests/sync tests can use it without

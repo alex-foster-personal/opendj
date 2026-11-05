@@ -45,9 +45,18 @@ LEDGER = REPO_ROOT / "scripts" / "bench" / "roformer_ledger.json"
 #: (a Path join, a modal.Image chain, a call) is skipped rather than run, so
 #: reading the file can never execute the runner's Modal setup.
 _SAFE_NODES = (
-    ast.Constant, ast.Tuple, ast.List, ast.Dict, ast.Set,
-    ast.Name, ast.JoinedStr, ast.FormattedValue, ast.Load,
-    ast.BinOp, ast.Add, ast.Mult,
+    ast.Constant,
+    ast.Tuple,
+    ast.List,
+    ast.Dict,
+    ast.Set,
+    ast.Name,
+    ast.JoinedStr,
+    ast.FormattedValue,
+    ast.Load,
+    ast.BinOp,
+    ast.Add,
+    ast.Mult,
 )
 
 
@@ -57,8 +66,11 @@ def _module_constants(path: Path) -> dict[str, object]:
     out: dict[str, object] = {}
     for node in tree.body:
         targets = (
-            [node.target] if isinstance(node, ast.AnnAssign) else
-            list(node.targets) if isinstance(node, ast.Assign) else []
+            [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else list(node.targets)
+            if isinstance(node, ast.Assign)
+            else []
         )
         value = getattr(node, "value", None)
         if value is None:
@@ -108,13 +120,14 @@ def test_ab_renderer_writes_only_to_its_own_directory(ab) -> None:
 def test_ab_renderer_never_targets_the_live_stems_library() -> None:
     """The comparison render is append-only into its own dir (house rule)."""
     writes = [
-        line for line in DEMUCS_AB.read_text().splitlines()
+        line
+        for line in DEMUCS_AB.read_text().splitlines()
         if "write_bytes(" in line or "write_text(" in line or "mkdir(" in line
     ]
     assert writes, "expected the renderer to write something"
     for line in writes:
         assert '"data"' not in line or "stems-demucs-ab" in line, line
-    assert 'ROFORMER_SPIKE_DIR' not in "".join(writes)
+    assert "ROFORMER_SPIKE_DIR" not in "".join(writes)
 
 
 def test_ab_renderer_config_matches_tiers_tier_l(ab) -> None:
@@ -145,9 +158,7 @@ def test_a_failed_track_is_isolated_not_raised() -> None:
     fn = _function_def(DEMUCS_AB, "separate_track")
     handlers = [n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)]
     assert handlers, "separate_track must catch per-track failures"
-    returns_in_handler = [
-        n for handler in handlers for n in ast.walk(handler) if isinstance(n, ast.Return)
-    ]
+    returns_in_handler = [n for handler in handlers for n in ast.walk(handler) if isinstance(n, ast.Return)]
     assert returns_in_handler, "the handler must return an {error} payload, not re-raise"
     keys = {
         k.value
@@ -189,10 +200,7 @@ def test_every_ledger_run_names_a_baked_checkpoint_family(spike) -> None:
     """Mirrors the runner's own checkpoint -> tag rule (modal_roformer_spike
     line ``checkpoint.split("_ep_")[0]...``): a ledger entry whose family is
     not baked any more is a run nobody can reproduce."""
-    families = {
-        name.split("_ep_")[0].replace("model_", "").replace("_", "-")
-        for name in spike["BAKED_CHECKPOINTS"]
-    }
+    families = {name.split("_ep_")[0].replace("model_", "").replace("_", "-") for name in spike["BAKED_CHECKPOINTS"]}
     runs = json.loads(LEDGER.read_text())["runs"]
     assert runs
     for run in runs:

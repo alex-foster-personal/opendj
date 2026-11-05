@@ -98,9 +98,7 @@ def test_collect_dry_run_then_live_then_delete(lib: Lib, ingest_cfg: Path, make_
         assert client.get(f"{API}/status").json()["with_mik_energy"] == 1
 
 
-def test_collect_reports_the_gate_and_offers_no_override(
-    lib: Lib, ingest_cfg: Path, make_mik_store
-) -> None:
+def test_collect_reports_the_gate_and_offers_no_override(lib: Lib, ingest_cfg: Path, make_mik_store) -> None:
     """No verdict file: nothing is written, and the body cannot say otherwise."""
     lib.track("a", "Music/a.mp3")
     with _client(lib) as client:

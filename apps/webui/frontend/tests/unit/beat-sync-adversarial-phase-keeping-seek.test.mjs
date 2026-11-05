@@ -36,7 +36,8 @@ const B = grid(200, 120); // 0.5 s per beat, so beat index i sits at i / 2 s
 const END = 1e9; // no decoded-duration bound unless a test sets one
 const close = (actual, expected, label) =>
 	assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} != ${expected}`);
-const click = (current, target, end = END) => phaseKeepingLandingSec(B, current * 0.5, null, target * 0.5, end);
+const click = (current, target, end = END) =>
+	phaseKeepingLandingSec(B, current * 0.5, null, target * 0.5, end);
 
 test('a quantized click lands on the clicked beat at the phase the deck plays when it lands', () => {
 	// The DJ clicks beat 20 (already snapped) while the deck plays beat 5.3;
@@ -68,18 +69,27 @@ test('a beat jump moves EXACTLY the beats asked from wherever the playhead is wh
 test('the landing follows a variable-tempo grid, not a constant beat length', () => {
 	// 8 beats at 0.5 s, then 8 beats at 0.4 s.
 	const varying = [...grid(8, 120)];
-	for (let i = 0; i < 8; i++) varying.push({ n: ((8 + i) % 4) + 1, bpm: 150, t: 3.5 + (i + 1) * 0.4 });
+	for (let i = 0; i < 8; i++)
+		varying.push({ n: ((8 + i) % 4) + 1, bpm: 150, t: 3.5 + (i + 1) * 0.4 });
 	const landing = phaseKeepingLandingSec(varying, 1.25, 8, 0, END); // beat 2.5 + 8 = beat 10.5
 	close(landing, 3.5 + 3.5 * 0.4, 'variable-tempo landing'); // beat 7 at 3.5 s, then 3.5 short beats
 });
 
 test('off the grid there is no phase to keep: the fixed target lands', () => {
 	const late = grid(40, 120, 2); // first beat at 2 s, last at 21.5 s
-	assert.equal(phaseKeepingLandingSec(late, 1.0, null, 10, END), 10, 'playhead before the first beat');
+	assert.equal(
+		phaseKeepingLandingSec(late, 1.0, null, 10, END),
+		10,
+		'playhead before the first beat'
+	);
 	assert.equal(phaseKeepingLandingSec(late, 5.0, null, 30, END), 30, 'target past the last beat');
 	assert.equal(phaseKeepingLandingSec(late, 1.0, 4, 7.25, END), 7.25, 'jump from before the grid');
 	assert.equal(phaseKeepingLandingSec(late, 20.0, 4, 7.25, END), 7.25, 'jump past the last beat');
-	assert.equal(phaseKeepingLandingSec(late, 3.0, -4, 7.25, END), 7.25, 'jump before the first beat');
+	assert.equal(
+		phaseKeepingLandingSec(late, 3.0, -4, 7.25, END),
+		7.25,
+		'jump before the first beat'
+	);
 	// Control: the same call inside the grid does NOT fall back.
 	close(phaseKeepingLandingSec(late, 3.0, 4, 7.25, END), 5.0, 'in-grid landing');
 });
@@ -115,7 +125,10 @@ test('source pin: quantizedSeek lands at the effective instant on both schedule 
 	assert.match(source, /masterSchedule: \{[^}]*positionSec: landing\s*\}/);
 	assert.match(source, /_scheduleDeck\(\s*deck,\s*when,\s*landing,/);
 	// _synchronizeFollowers evaluates it at syncAt, not at decision time.
-	assert.match(source, /options\.masterSchedule\?\.positionSec\?\.\(syncAt\) \?\? projectedMasterSec/);
+	assert.match(
+		source,
+		/options\.masterSchedule\?\.positionSec\?\.\(syncAt\) \?\? projectedMasterSec/
+	);
 	// A beat jump hands its beat count through on both its paths (loop and plain).
 	const start = source.indexOf('private async _beatJumpFrom(');
 	const body = source.slice(start, source.indexOf('\n\t}\n', start));

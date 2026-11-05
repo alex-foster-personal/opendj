@@ -21,8 +21,8 @@ instrumental stem, because the separation is additive.
 
 Usage (repo root):
     uv run --script scripts/lyrics_stem_coverage.py \
-        --stems data/state/lyrics-eval/own-crate/stems \
-        --out data/state/lyrics-eval/own-crate/vocal-presence.json --envelopes
+        --stems (private path) \
+        --out (private path) --envelopes
 
 -Claude
 """
@@ -97,8 +97,7 @@ def _pairs(stems_dir: Path) -> list[tuple[str, Path, Path]]:
             instr[p.stem[: -len("-instrumental")]] = p
     orphans = set(vocals) ^ set(instr)
     if orphans:
-        raise SystemExit(f"[ERROR] {len(orphans)} half stem bundle(s) in {stems_dir}: "
-                         f"{sorted(orphans)[:5]}")
+        raise SystemExit(f"[ERROR] {len(orphans)} half stem bundle(s) in {stems_dir}: {sorted(orphans)[:5]}")
     return [(tid, vocals[tid], instr[tid]) for tid in sorted(vocals)]
 
 
@@ -106,8 +105,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--stems", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--envelopes", action="store_true",
-                    help="also emit display columns + region spans for the bench widget")
+    ap.add_argument(
+        "--envelopes", action="store_true", help="also emit display columns + region spans for the bench widget"
+    )
     args = ap.parse_args()
     if not args.stems.is_dir():
         raise SystemExit(f"[ERROR] stems dir {args.stems} does not exist")
@@ -149,8 +149,10 @@ def main() -> int:
             row["regions"] = [[round(r["start_s"], 1), round(r["end_s"], 1)] for r in regions]
             if regions:
                 peak_s = int(np.argmax(v_env)) * hop_s
-                holder = next((r for r in regions if r["start_s"] <= peak_s <= r["end_s"]),
-                              max(regions, key=lambda r: r["end_s"] - r["start_s"]))
+                holder = next(
+                    (r for r in regions if r["start_s"] <= peak_s <= r["end_s"]),
+                    max(regions, key=lambda r: r["end_s"] - r["start_s"]),
+                )
                 row["peak_vox_s"] = round((holder["start_s"] + holder["end_s"]) / 2, 1)
             else:
                 row["peak_vox_s"] = None
@@ -159,8 +161,7 @@ def main() -> int:
             print(f"[..] {i}/{len(pairs)} {args.stems.name}", flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(rows, indent=1), encoding="utf-8")
-    print(f"[OK] {args.out} -- {len(rows)} tracks (denominator: {len(pairs)} stem bundles "
-          f"in {args.stems})")
+    print(f"[OK] {args.out} -- {len(rows)} tracks (denominator: {len(pairs)} stem bundles in {args.stems})")
     return 0
 
 

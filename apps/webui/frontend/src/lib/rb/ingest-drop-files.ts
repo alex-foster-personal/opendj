@@ -44,16 +44,13 @@ async function readAllEntries(reader: {
 
 function fileFromEntry(entry: DropFsEntry): Promise<File> {
 	return new Promise((resolve, reject) => {
-		entry.file(
-			(f) => {
-				const rel = entry.fullPath.replace(/^\//, '');
-				if (rel && rel !== f.name) {
-					Object.defineProperty(f, 'name', { value: rel, configurable: true });
-				}
-				resolve(f);
-			},
-			reject
-		);
+		entry.file((f) => {
+			const rel = entry.fullPath.replace(/^\//, '');
+			if (rel && rel !== f.name) {
+				Object.defineProperty(f, 'name', { value: rel, configurable: true });
+			}
+			resolve(f);
+		}, reject);
 	});
 }
 

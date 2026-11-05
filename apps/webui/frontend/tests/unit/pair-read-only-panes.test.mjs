@@ -10,7 +10,10 @@ import { describe, it } from 'node:test';
 
 const PANEL = new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url);
 const TABLE = new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url);
-const MENU = new URL('../../src/lib/components/rb/browser/TrackContextMenu.svelte', import.meta.url);
+const MENU = new URL(
+	'../../src/lib/components/rb/browser/TrackContextMenu.svelte',
+	import.meta.url
+);
 
 describe('read-only panes hide the pair command', () => {
 	it('BrowserPanel derives the read-only pane for Spotify, autolists, and taglists', () => {

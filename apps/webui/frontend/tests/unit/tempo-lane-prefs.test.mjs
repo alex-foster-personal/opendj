@@ -29,14 +29,21 @@ before(async () => {
 
 describe('tempo lane prefs', () => {
 	it('default ON at fixed_10', () => {
-		assert.deepEqual(prefsMod.TEMPO_LANE_PREF_DEFAULTS, { show_tempo_lane: true, tempo_lane_scale: 'fixed_10' });
+		assert.deepEqual(prefsMod.TEMPO_LANE_PREF_DEFAULTS, {
+			show_tempo_lane: true,
+			tempo_lane_scale: 'fixed_10'
+		});
 	});
 
 	it('the setters write state, persist and PUT the same key', () => {
 		const state = { ...prefsMod.TEMPO_LANE_PREF_DEFAULTS };
 		let persisted = 0;
 		const patches = [];
-		const s = prefsMod.makeTempoLaneSetters(state, () => (persisted += 1), (p) => patches.push(p));
+		const s = prefsMod.makeTempoLaneSetters(
+			state,
+			() => (persisted += 1),
+			(p) => patches.push(p)
+		);
 		s.setShowTempoLane(false);
 		s.setTempoLaneScale('relative');
 		assert.deepEqual(state, { show_tempo_lane: false, tempo_lane_scale: 'relative' });
@@ -47,7 +54,11 @@ describe('tempo lane prefs', () => {
 	it('an unknown scale is refused by the setter, writing nothing', () => {
 		const state = { ...prefsMod.TEMPO_LANE_PREF_DEFAULTS };
 		const patches = [];
-		const s = prefsMod.makeTempoLaneSetters(state, () => {}, (p) => patches.push(p));
+		const s = prefsMod.makeTempoLaneSetters(
+			state,
+			() => {},
+			(p) => patches.push(p)
+		);
 		assert.throws(() => s.setTempoLaneScale('fixed_5'), /tempo_lane_scale/);
 		assert.equal(state.tempo_lane_scale, 'fixed_10');
 		assert.deepEqual(patches, []);
@@ -56,7 +67,10 @@ describe('tempo lane prefs', () => {
 	it('absent keys keep the defaults; malformed ones throw naming the storage key', () => {
 		assert.deepEqual(prefsMod.validateTempoLanePrefFields({}, 'k'), {});
 		assert.deepEqual(
-			prefsMod.validateTempoLanePrefFields({ show_tempo_lane: false, tempo_lane_scale: 'relative' }, 'k'),
+			prefsMod.validateTempoLanePrefFields(
+				{ show_tempo_lane: false, tempo_lane_scale: 'relative' },
+				'k'
+			),
 			{ show_tempo_lane: false, tempo_lane_scale: 'relative' }
 		);
 		assert.throws(

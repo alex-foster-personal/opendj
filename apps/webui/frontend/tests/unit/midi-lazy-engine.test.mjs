@@ -47,12 +47,24 @@ test('a controller reconnect through webmidi rearms takeover pickup', async () =
 	const control = 'cc:1:13';
 
 	// Picked up at 0.5, then the hardware moves freely: not armed, so it applies.
-	assert.equal(takeover.observeAbsoluteMidi(trim(3), 0.5, 1 / 127, deviceId, control, 0.5)?.apply, true);
-	assert.equal(takeover.observeAbsoluteMidi(trim(3), 0.3, 1 / 127, deviceId, control, 0.5)?.apply, true);
+	assert.equal(
+		takeover.observeAbsoluteMidi(trim(3), 0.5, 1 / 127, deviceId, control, 0.5)?.apply,
+		true
+	);
+	assert.equal(
+		takeover.observeAbsoluteMidi(trim(3), 0.3, 1 / 127, deviceId, control, 0.5)?.apply,
+		true
+	);
 
 	// The same port (re)appears: webmidi's rescan must rearm that device.
 	m.webmidi._resetMidiForTests();
-	const input = { id: deviceId, name: 'Unmapped Pad', manufacturer: 'x', state: 'connected', onmidimessage: null };
+	const input = {
+		id: deviceId,
+		name: 'Unmapped Pad',
+		manufacturer: 'x',
+		state: 'connected',
+		onmidimessage: null
+	};
 	Object.defineProperty(globalThis, 'navigator', {
 		configurable: true,
 		writable: true,
@@ -61,7 +73,14 @@ test('a controller reconnect through webmidi rearms takeover pickup', async () =
 	await m.webmidi.initMidi();
 	assert.equal(m.webmidi.midiState.devices.length, 1);
 
-	const afterReconnect = takeover.observeAbsoluteMidi(trim(3), 0.1, 1 / 127, deviceId, control, 0.5);
+	const afterReconnect = takeover.observeAbsoluteMidi(
+		trim(3),
+		0.1,
+		1 / 127,
+		deviceId,
+		control,
+		0.5
+	);
 	assert.equal(afterReconnect?.apply, false, 'the reconnect did not rearm pickup for that device');
 	m.webmidi._resetMidiForTests();
 });
@@ -72,26 +91,63 @@ test('first-paint modules reach the MIDI engine only through dynamic imports', (
 		new RegExp(String.raw`^\s*import\s[^;]*from\s+'[^']*${target}'`, 'm').test(text);
 
 	const uiState = src('components/rb/midi/midi-ui-state.svelte.ts');
-	for (const engine of ['midi/midi-engine', 'midi/webmidi.svelte', 'midi/maps', 'midi/action-glue.svelte', 'midi/installed-maps']) {
-		assert.equal(staticImportOf(uiState, engine), false, `midi-ui-state statically imports ${engine}`);
+	for (const engine of [
+		'midi/midi-engine',
+		'midi/webmidi.svelte',
+		'midi/maps',
+		'midi/action-glue.svelte',
+		'midi/installed-maps'
+	]) {
+		assert.equal(
+			staticImportOf(uiState, engine),
+			false,
+			`midi-ui-state statically imports ${engine}`
+		);
 	}
-	assert.match(uiState, /import\('\$lib\/rb\/midi\/midi-engine'\)/, 'requestMidiAccess no longer loads the engine entry');
+	assert.match(
+		uiState,
+		/import\('\$lib\/rb\/midi\/midi-engine'\)/,
+		'requestMidiAccess no longer loads the engine entry'
+	);
 	assert.equal(staticImportOf(src('rb/midi/webmidi.svelte.ts'), 'takeover-state.svelte'), false);
 	assert.equal(staticImportOf(src('rb/performance-ipc.svelte.ts'), 'takeover-state.svelte'), false);
-	assert.equal(staticImportOf(src('components/rb/mixer/HeadphoneCluster.svelte'), 'webmidi.svelte'), false);
+	assert.equal(
+		staticImportOf(src('components/rb/mixer/HeadphoneCluster.svelte'), 'webmidi.svelte'),
+		false
+	);
 	const topBar = src('components/rb/TopBar.svelte');
-	assert.equal(staticImportOf(topBar, 'MidiPanel.svelte'), false, 'TopBar mounts MidiPanel statically');
+	assert.equal(
+		staticImportOf(topBar, 'MidiPanel.svelte'),
+		false,
+		'TopBar mounts MidiPanel statically'
+	);
 	assert.equal(staticImportOf(topBar, 'MidiLearnLogPopout.svelte'), false);
 	for (const path of ['api.ts', 'rb/api-rb.ts', 'rb/audio-engine.svelte.ts']) {
-		assert.equal(staticImportOf(src(path), 'stick-session-edits'), false, `${path} statically imports stick-session-edits`);
+		assert.equal(
+			staticImportOf(src(path), 'stick-session-edits'),
+			false,
+			`${path} statically imports stick-session-edits`
+		);
 	}
 });
 
 test('the MIDI drawer is fetched by MidiPanelLoader on open and a failed load offers Reload', () => {
 	const src = (path) => readFileSync(new URL(`../../src/lib/${path}`, import.meta.url), 'utf8');
 	const loader = src('components/rb/midi/MidiPanelLoader.svelte');
-	assert.doesNotMatch(loader, /^\s*import\s[^;]*from\s+'[^']*MidiPanel\.svelte'/m, 'MidiPanelLoader imports the drawer statically');
-	assert.match(loader, /import\('\$lib\/components\/rb\/MidiPanel\.svelte'\)/, 'the drawer is no longer fetched on open');
+	assert.doesNotMatch(
+		loader,
+		/^\s*import\s[^;]*from\s+'[^']*MidiPanel\.svelte'/m,
+		'MidiPanelLoader imports the drawer statically'
+	);
+	assert.match(
+		loader,
+		/import\('\$lib\/components\/rb\/MidiPanel\.svelte'\)/,
+		'the drawer is no longer fetched on open'
+	);
 	assert.match(loader, /location\.reload\(\)/, 'a failed drawer load no longer offers Reload');
-	assert.match(src('components/rb/TopBar.svelte'), /<MidiPanelLoader \/>/, 'TopBar no longer mounts MidiPanelLoader');
+	assert.match(
+		src('components/rb/TopBar.svelte'),
+		/<MidiPanelLoader \/>/,
+		'TopBar no longer mounts MidiPanelLoader'
+	);
 });

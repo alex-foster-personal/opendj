@@ -9,8 +9,8 @@ gate). Same contract, same fixtures (``tests/cloudsync/conftest.py``), same
 helpers -- imported from ``test_asset_tier`` rather than duplicated so the two
 files cannot drift on what a seeded track/policy/pin looks like.
 
-Contract under test: ``specs/design_decision_06.md`` over the v6 policy
-tables of ``specs/design_decision_05.md``. Acceptance criteria, one
+Contract under test: ``(private path)`` over the v6 policy
+tables of ``(private path)``. Acceptance criteria, one
 assertion block each:
 
 - if push-then-delete removes a local file whose upload did not land, the
@@ -18,6 +18,7 @@ assertion block each:
 - if a hydrated remote row is invisible to the machine that hydrated it, or
   never reaches ``local_changelog``, round 2 finding N1b is back -- broken.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -275,10 +276,7 @@ def test_push_then_delete_moves_a_cached_file_into_the_cache(
     assert outcome.local_path == hydration.cache_path(cache_dir, _sha(body))
     assert outcome.local_path is not None
     assert outcome.local_path.read_bytes() == body
-    available = conn.execute(
-        "SELECT available FROM track_locations WHERE stable_id='t1' "
-        "AND kind='local'"
-    ).fetchone()
+    available = conn.execute("SELECT available FROM track_locations WHERE stable_id='t1' AND kind='local'").fetchone()
     assert available == (0,)
 
 
@@ -357,9 +355,7 @@ def test_a_failed_upload_never_deletes_or_leaves_active_transfer_state(
             asset_kind="stem_bundle",
         )
     assert produced.exists()
-    assert conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE kind='remote'"
-    ).fetchone() == (0,)
+    assert conn.execute("SELECT COUNT(*) FROM track_locations WHERE kind='remote'").fetchone() == (0,)
     assert transfer_status.transfer_for("t1") is None
 
 
@@ -375,23 +371,27 @@ def test_push_then_delete_is_idempotent_for_a_second_producer_run(
     _seed_policy(conn, "m1", "pinned", asset_kind="stem_bundle")
 
     first = hydration.apply_policy_after_produce(
-        conn, fake_s3, cfg,
-        stable_id="t1", machine_id="m1",
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
         local_path=_write(tmp_path / "a" / "bundle.zip", body),
         asset_kind="stem_bundle",
     )
     second = hydration.apply_policy_after_produce(
-        conn, fake_s3, cfg,
-        stable_id="t1", machine_id="m1",
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
         local_path=_write(tmp_path / "b" / "bundle.zip", body),
         asset_kind="stem_bundle",
     )
     assert first.object_key == second.object_key
     assert first.uploaded is True
     assert second.uploaded is False
-    assert conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE kind='remote'"
-    ).fetchone() == (1,)
+    assert conn.execute("SELECT COUNT(*) FROM track_locations WHERE kind='remote'").fetchone() == (1,)
 
 
 def test_push_then_delete_fails_loudly_on_a_missing_produced_file(
@@ -469,9 +469,7 @@ def test_produced_asset_becomes_a_cache_hit_on_the_next_read(
         asset_kind="audio",
         cache_dir=cache_dir,
     )
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg)
     assert source.origin == "cache"
     assert source.content_hash == _sha(body)
     assert source.path is not None and source.path.read_bytes() == body
@@ -483,10 +481,7 @@ def test_produced_asset_becomes_a_cache_hit_on_the_next_read(
 def _changelog(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
     return [
         (str(r[0]), str(r[1]), str(r[2]))
-        for r in conn.execute(
-            "SELECT table_name, row_pk, origin_device_id FROM local_changelog "
-            "ORDER BY seq"
-        )
+        for r in conn.execute("SELECT table_name, row_pk, origin_device_id FROM local_changelog ORDER BY seq")
     ]
 
 
@@ -563,12 +558,9 @@ def test_hydration_writes_reach_the_push_fence(
 
     logged_pks = {pk for _t, pk, _o in entries}
     stored_pks = {
-        sync_stamp.encode_row_pk((str(row[0]),))
-        for row in conn.execute("SELECT location_id FROM track_locations")
+        sync_stamp.encode_row_pk((str(row[0]),)) for row in conn.execute("SELECT location_id FROM track_locations")
     }
-    assert stored_pks - logged_pks == set(), (
-        "every location row hydration touched must be named by the changelog"
-    )
+    assert stored_pks - logged_pks == set(), "every location row hydration touched must be named by the changelog"
 
 
 def test_marking_a_local_copy_gone_does_not_touch_another_machines_row(
@@ -603,13 +595,10 @@ def test_marking_a_local_copy_gone_does_not_touch_another_machines_row(
 
     availability = dict(
         conn.execute(
-            "SELECT machine_id, available FROM track_locations "
-            "WHERE kind = 'local' AND stable_id = 't1'"
+            "SELECT machine_id, available FROM track_locations WHERE kind = 'local' AND stable_id = 't1'"
         ).fetchall()
     )
-    assert availability == {"m1": 0, "m2": 1}, (
-        "deleting a file here says nothing about another machine's disk"
-    )
+    assert availability == {"m1": 0, "m2": 1}, "deleting a file here says nothing about another machine's disk"
 
 
 def test_re_pushing_the_same_object_reuses_its_location_row(
@@ -633,6 +622,4 @@ def test_re_pushing_the_same_object_reuses_its_location_row(
             local_path=_write(tmp_path / "out" / "bundle.zip", b"produced stems"),
             asset_kind="stem_bundle",
         )
-    assert conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE kind = 'remote'"
-    ).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM track_locations WHERE kind = 'remote'").fetchone()[0] == 1

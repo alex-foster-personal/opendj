@@ -36,9 +36,7 @@ function _settingNumber(items: SettingItem[], key: string): number {
 	}
 	const n = typeof item.value === 'number' ? item.value : Number(item.value);
 	if (!Number.isFinite(n)) {
-		throw new Error(
-			`runtime policy: ${key} is not a finite number (${String(item.value)})`
-		);
+		throw new Error(`runtime policy: ${key} is not a finite number (${String(item.value)})`);
 	}
 	return n;
 }

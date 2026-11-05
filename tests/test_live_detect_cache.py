@@ -10,6 +10,7 @@
 - if status is not a string then raises with path:line before cache rewrite
 - if compaction rewrites cache then file uses LF-only JSONL bytes
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -123,9 +124,7 @@ def test_malformed_json_final_newline_terminated_raises(tmp_path, live_detect_mo
         ('{"path":"/x","status":[]}', "missing string status"),
     ],
 )
-def test_invalid_row_shape_raises_and_preserves(
-    tmp_path, live_detect_mod, bad_line: str, pattern: str
-):
+def test_invalid_row_shape_raises_and_preserves(tmp_path, live_detect_mod, bad_line: str, pattern: str):
     cache = tmp_path / "cache.jsonl"
     before = _ok_line("/a.mp3") + "\n" + bad_line + "\n"
     cache.write_bytes(before.encode("utf-8"))

@@ -1,6 +1,6 @@
 """Merge per-process traces from `scripts.impact_trace_plugin` into one impact map, and select.
 
-SMARTEST-CI (specs/ci-fail-fast.md, part 3). Pure except for the CLI at the bottom.
+SMARTEST-CI ((private path), part 3). Pure except for the CLI at the bottom.
 
 The map is keyed by test module. `select_modules` answers "which test modules could a change
 to these paths affect" from what the modules were OBSERVED to touch:
@@ -49,9 +49,7 @@ def _test_roots(pyproject: Path = PYPROJECT) -> tuple[str, ...]:
     the assumption this function exists to remove.
     """
     with pyproject.open("rb") as handle:
-        roots = tomllib.load(handle).get("tool", {}).get("pytest", {}).get(
-            "ini_options", {}
-        ).get("testpaths")
+        roots = tomllib.load(handle).get("tool", {}).get("pytest", {}).get("ini_options", {}).get("testpaths")
     if not roots:
         raise SystemExit(f"UNKNOWN: {pyproject} sets no [tool.pytest.ini_options] testpaths")
     return tuple(str(PurePosixPath(root)) for root in roots)
@@ -112,19 +110,14 @@ def merge_traces(payloads: list[dict]) -> dict:
             for field in ("files", "dirs", "globs", "fixtures", "spawns"):
                 target[field].update(record[field])
     return {
-        key: {
-            field: sorted(value[field])
-            for field in ("files", "dirs", "globs", "fixtures", "spawns")
-        }
+        key: {field: sorted(value[field]) for field in ("files", "dirs", "globs", "fixtures", "spawns")}
         for key, value in sorted(merged.items())
     }
 
 
 def load_map(records: dict) -> ImpactMap:
     def touches(record: dict) -> Touches:
-        return Touches(
-            frozenset(record["files"]), frozenset(record["dirs"]), frozenset(record["globs"])
-        )
+        return Touches(frozenset(record["files"]), frozenset(record["dirs"]), frozenset(record["globs"]))
 
     modules, fixtures, directories = {}, {}, {}
     for key, record in records.items():
@@ -161,17 +154,9 @@ def select_modules(
     so a module deleted since is still in `impact.modules` and would be emitted even when the
     diff never mentions it. `exists` is a seam so the rule can be tested without a filesystem.
     """
-    selected: set[str] = {
-        path for path in changed if _is_test_module(path) and path not in impact.modules
-    }
-    fixtures_hit = {
-        name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))
-    }
-    hit_dirs = [
-        directory
-        for directory, touches in impact.directories.items()
-        if any(map(touches.reaches, changed))
-    ]
+    selected: set[str] = {path for path in changed if _is_test_module(path) and path not in impact.modules}
+    fixtures_hit = {name for name, touches in impact.fixtures.items() if any(map(touches.reaches, changed))}
+    hit_dirs = [directory for directory, touches in impact.directories.items() if any(map(touches.reaches, changed))]
     for module, entry in impact.modules.items():
         if (
             entry.spawns
@@ -188,7 +173,7 @@ def _is_test_module(path: str) -> bool:
     """A file pytest would actually collect: inside a configured test root AND named the way
     pytest names tests.
 
-    The naming half alone is not enough. `scripts/bench/q0-offline/q0_leak_test.py` matches
+    The naming half alone is not enough. `(private path)` matches
     the pattern and is NOT collected, because `pyproject.toml` sets `testpaths = ["tests"]`.
     Emitted as a test to run, pytest imports its top-level benchmark code and the job fails
     rather than running a test, so a selector that widened to be safe would break the build.
@@ -227,12 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         merged = merge_traces([json.loads(path.read_text(encoding="utf-8")) for path in traces])
         args.out.write_text(json.dumps(merged, indent=1), encoding="utf-8")
         modules = sum(key.startswith(MODULE) for key in merged)
-        spawning = sum(
-            bool(key.startswith(MODULE) and value["spawns"]) for key, value in merged.items()
-        )
-        print(
-            f"merged {len(traces)} trace(s): {modules} test modules, {spawning} spawn subprocesses"
-        )
+        spawning = sum(bool(key.startswith(MODULE) and value["spawns"]) for key, value in merged.items())
+        print(f"merged {len(traces)} trace(s): {modules} test modules, {spawning} spawn subprocesses")
         return 0
     impact = load_map(json.loads(args.map.read_text(encoding="utf-8")))
     for module in sorted(select_modules(impact, args.paths)):

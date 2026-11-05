@@ -9,11 +9,11 @@ Every call performs only cheap file metadata reads; a full re-ingest happens
 only when that source state changed (or the index does not exist yet, or its
 schema version is stale).
 
-Indexed columns: title, artist (joined from ``tracks.artists_json``), plus
-genre / comments / notes / tags pulled from the ``track_fields`` EAV table
-(apps/shared/state/schema.py) -- whichever of those field names a given
-track actually carries; EAV is sparse by design, so absent fields simply
-contribute empty text. Query tokenisation mirrors the launcher's Tauri
+Indexed columns: title, artist (joined from ``tracks.artists_json``), the
+precedence-selected genre shown by the Library, plus comments / notes / tags
+pulled from the ``track_fields`` EAV table (apps/shared/state/schema.py).
+EAV is sparse by design, so absent fields simply contribute empty text. Query
+tokenisation mirrors the launcher's Tauri
 search command (apps/launcher/src-tauri/src/commands/search.rs
 build_fts_query): strip double quotes, then prefix-match every
 whitespace-split term. Terms are wrapped in a quoted FTS5 phrase before the
@@ -27,11 +27,13 @@ import json
 import sqlite3
 from pathlib import Path
 
+from apps.genre_infer import display as genre_display
+from apps.genre_infer import library_tags
 from apps.shared.state.db import is_sqlite_busy
 from apps.webui.soft_deletes import has_soft_deletes
 
-_SCHEMA_VERSION = 2
-_EAV_FIELDS: tuple[str, ...] = ("genre", "comments", "notes", "tags")
+_SCHEMA_VERSION = 3
+_EAV_FIELDS: tuple[str, ...] = ("comments", "notes", "tags")
 _SOURCE_READ_ATTEMPTS = 3
 
 
@@ -143,7 +145,8 @@ def _read_source(
     try:
         # One snapshot for both reads: tracks and their fields must agree.
         state.execute("BEGIN")
-        if has_soft_deletes(state, "tracks"):
+        modern_schema = has_soft_deletes(state, "tracks")
+        if modern_schema:
             tracks_sql = (
                 "SELECT stable_id, title, artists_json FROM tracks "
                 "WHERE deleted_at IS NULL"
@@ -151,6 +154,7 @@ def _read_source(
         else:
             tracks_sql = "SELECT stable_id, title, artists_json FROM tracks"
         tracks = state.execute(tracks_sql).fetchall()
+        stable_ids = [str(row["stable_id"]) for row in tracks]
         eav: dict[str, dict[str, str]] = {}
         placeholders = ",".join("?" * len(_EAV_FIELDS))
         for row in state.execute(
@@ -159,6 +163,22 @@ def _read_source(
             _EAV_FIELDS,
         ):
             eav.setdefault(row["stable_id"], {})[row["field_name"]] = row["value_json"]
+        if modern_schema:
+            row_genres = genre_display.read_for_rows(state, stable_ids)
+            genre_fields = library_tags.field_genres(state, stable_ids)
+            for stable_id in stable_ids:
+                user_genre, library_genre = genre_fields.get(stable_id, (None, None))
+                chosen = row_genres.chosen(
+                    stable_id,
+                    user_genre=user_genre,
+                    library_genre=library_genre,
+                )
+                eav.setdefault(stable_id, {})["genre"] = chosen.genre if chosen is not None else ""
+        else:
+            for row in state.execute(
+                "SELECT stable_id, value_json FROM track_fields WHERE field_name = 'genre'"
+            ):
+                eav.setdefault(row["stable_id"], {})["genre"] = row["value_json"]
     finally:
         state.close()
     return tracks, eav

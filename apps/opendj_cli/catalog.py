@@ -27,6 +27,7 @@ from apps.opendj_cli.kinds import (
     arg,
     auto_gain_offset_value,
     bool_value,
+    deck_or_master_value,
     deck_value,
     dial_value,
     enum_value,
@@ -43,11 +44,12 @@ from apps.opendj_cli.kinds import (
     positive_number_value,
     quantize_grid_value,
     rescue_decks_value,
+    reset_parts_value,
     text_value,
     unit_value,
 )
 
-STEM_VALUES: tuple[str, ...] = ("vocal", "instrumental", "drums")
+STEM_VALUES: tuple[str, ...] = ("vocal", "instrumental", "drums", "bass")
 BAND_VALUES: tuple[str, ...] = ("low", "mid", "high")
 SLOT_VALUES: tuple[str, ...] = tuple("ABCDEFGH")
 ASSIGN_VALUES: tuple[str, ...] = ("A", "B", "THRU")
@@ -55,13 +57,22 @@ EDGE_VALUES: tuple[str, ...] = ("top", "left", "right", "bottom")
 PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
+DECK_MOVE_MODE_VALUES: tuple[str, ...] = ("move", "copy")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
 MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
+KEY_SYNC_MODE_VALUES: tuple[str, ...] = ("exact", "relative", "compatible")
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
-ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
+ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = (
+    "beatgrid",
+    "key",
+    "waveform",
+    "loudness",
+    "vocal",
+    "phrase",
+)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
@@ -72,10 +83,11 @@ WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub"
 WAVE_ZOOM_VALUES: tuple[str, ...] = ("4", "8", "16", "32", "64", "whole")
 WAVE_ZOOM_DIRECTION_VALUES: tuple[str, ...] = ("in", "out")
 WAVE_ZOOM_PLAYHEAD_VALUES: tuple[str, ...] = ("elastic", "center")
+AUTOPLAY_VERDICT_VALUES: tuple[str, ...] = ("good", "meh", "bad")  # keep in sync with VERDICTS in lib/rb/autoplay-why.ts
 # TOPVIEW-01..03: mirrors PERF_VIEWS in apps/webui/frontend/src/lib/rb/topbar-view-prefs.ts.
 TRANSITION_INTENT_VALUES: tuple[str, ...] = ("smooth", "energy_up", "wind_down", "showy", "vocals_clean")
 PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
-UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light")
+UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light", "green-room", "practice-ddj-flx4")
 WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 
@@ -91,7 +103,7 @@ _DECK = arg("deck", "deck", deck_value, "1-4")
 _ENABLED = arg("enabled", "bool", bool_value, "true|false")
 _SLOT = arg("slot", "enum", enum_value(SLOT_VALUES), "A-H")
 _BAND = arg("band", "enum", enum_value(BAND_VALUES), "low|mid|high")
-_STEM = arg("stem", "enum", enum_value(STEM_VALUES), "vocal|instrumental|drums")
+_STEM = arg("stem", "enum", enum_value(STEM_VALUES), "vocal|instrumental|drums|bass")
 _UNIT = arg("value", "unit", unit_value, "0..1")
 # DIALCLOCK-8341: a bipolar dial also takes a clock time (3pm, 3 o'clock, 15:00; 12 = centre).
 _DIAL = arg("value", "dial", dial_value, "0..1|clock")
@@ -221,6 +233,14 @@ _VERBS: tuple[Verb, ...] = (
     Verb("beat_jump", "beat_jump", (_DECK, arg("beats", "int", int_value))),
     Verb("grid_jump", "grid_jump", (_DECK, arg("bars", "int", int_value)),
          note="DECKUX-6794: snapped jump on the fixed bar grid; -4 back, 4 forward, 8 with Shift."),
+    Verb("deck_move", "deck_move", (
+        arg("from", "deck", deck_value, "1-4"),
+        arg("to", "deck", deck_value, "1-4"),
+        arg("crossfade_beats", "number", number_value, "beats, default 8; 0 cuts", optional=True),
+        arg("mode", "enum", enum_value(DECK_MOVE_MODE_VALUES), "move|copy", optional=True),
+        arg("force", "bool", bool_value, "true|false: move onto a playing deck anyway", optional=True),
+    ), note="DECKMOVE-01: clone deck <from> (track, playhead on the audio clock, live loop, tempo, key, "
+            "EQ, stems, colour FX) onto <to>; move crossfades then unloads <from>, copy leaves it playing."),
     Verb("loop_interval_mode", "loop_interval_mode", (_DECK, _ENABLED)),
     Verb("loop_interval_base", "loop_interval_base", (_DECK, arg("base", "number", number_value))),
     Verb("tempo", "tempo", (_DECK, arg("ratio", "number", number_value)),
@@ -260,7 +280,17 @@ _VERBS: tuple[Verb, ...] = (
     Verb("stem_gain", "stem_gain", (_DECK, _STEM, _UNIT),
          observes=(Observe(("decks", "{deck}", "stems", "controls", "{stem}", "gain"), "value", 1e-6),)),
     Verb("slip", "slip", (_DECK, _ENABLED), quick_draws=("slip.toggle",)),
-    Verb("key_sync", "key_sync", (_DECK, _ENABLED), quick_draws=("key_sync.toggle",)),
+    Verb("key_sync", "key_sync", (
+        _DECK, _ENABLED,
+        arg("mode", "enum", enum_value(KEY_SYNC_MODE_VALUES), "exact|relative|compatible", optional=True),
+        arg("target", "deck_or_master", deck_or_master_value, "1-4|master", optional=True),
+    ), quick_draws=("key_sync.toggle",),
+         note="KEYSYNC-01: exact (default) transposes onto the target key, shortest path -6..+6; "
+              "relative lands on its Camelot number; target defaults to MASTER. Turns key lock on."),
+    Verb("key_shift", "key_shift", (
+        _DECK, arg("semitones", "int", int_value, "-12..12"),
+    ), note="KEYSYNC-01 ladder: absolute key shift (0 = original key); key lock on, KEY SYNC off. "
+            "decks.<n>.key_options lists each shift with its landed key and Mixed In Key pattern."),
     Verb("key_nudge", "key_nudge", (
         _DECK, arg("semitones", "int", int_enum_value(KEY_NUDGE_VALUES), "-1|1"),
     ), quick_draws=("key_nudge.up", "key_nudge.down")),
@@ -302,8 +332,10 @@ _VERBS: tuple[Verb, ...] = (
     Verb("headphone_calibrate_abort", "headphone_calibrate_abort", (),
          note="CUEOUT-14: stop an in-flight calibration; decks resume, nothing is applied."),
     # ----- browser, library and headphone outputs -----------------------
-    Verb("browser_select_playlist", "browser_select_playlist",
-         (arg("playlist_id", "text", text_value),)),
+    Verb("browser_select_playlist", "browser_select_playlist", (
+        arg("playlist_id", "text", text_value),
+        arg("stable_id", "text", text_value, "also select and scroll to this track", optional=True),
+    )),
     Verb("headphone_outputs_refresh", "headphone_outputs_refresh", ()),
     # CUEOUT-15: the mini-waveform click, without a pointer. It loads no deck
     # and moves no transport, so it is issuable while all four decks are busy
@@ -333,7 +365,12 @@ _VERBS: tuple[Verb, ...] = (
         arg("mode", "enum", enum_value(MIDI_TAKEOVER_MODE_VALUES), "pickup|jump"),
     ), note="IOPIN-06: pickup holds a MIDI dial until the hardware crosses the software value."),
     Verb("analysis_source", "analysis_source", (
-        arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
+        arg(
+            "feature",
+            "enum",
+            enum_value(ANALYSIS_SOURCE_FEATURES),
+            "beatgrid|key|waveform|loudness|vocal|phrase",
+        ),
         arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
     ), note="PARITY-02: rbx-vs-own analysis source A/B per feature."),
     Verb("auto_play_two_track", "auto_play_two_track", (_ENABLED,),
@@ -349,6 +386,10 @@ _VERBS: tuple[Verb, ...] = (
     Verb("track_load_reset", "track_load_reset", tuple(
         arg(item, "bool", bool_value, "true|false") for item in ("level", "stems", "eq", "trim", "filter")
     ), note="DECKGAP-7691: which mixer values return to neutral when a track loads (all five, every deck)."),
+    Verb("reset_deck_now", "reset_deck_now", (
+        _DECK,
+        arg("parts", "reset_parts", reset_parts_value, "level,stems,eq,trim,filter", optional=True),
+    ), note="DECKGAP-7691h: the reset panel's Reset now; apply the ticked resets (or the named parts) to this deck at once."),
     Verb("auto_play_next_arm", "auto_play_next_arm", (
         arg("intent", "enum", enum_value(TRANSITION_INTENT_VALUES), "smooth|energy_up|wind_down|showy|vocals_clean", optional=True),
         arg("out_deck", "deck", deck_value, "1-4", optional=True),
@@ -362,6 +403,12 @@ _VERBS: tuple[Verb, ...] = (
     Verb("auto_play_next_intent", "auto_play_next_intent", (
         arg("intent", "enum", enum_value(TRANSITION_INTENT_VALUES), "smooth|energy_up|wind_down|showy|vocals_clean"),
     ), note="The AutoPlay menu Intent selector: set the next planned transition's intent without arming."),
+    Verb("autoplay_verdict", "autoplay_verdict", (
+        arg("out", "text", text_value, "outgoing stable_id"),
+        arg("in", "text", text_value, "incoming stable_id"),
+        arg("verdict", "enum", enum_value(AUTOPLAY_VERDICT_VALUES), "good|meh|bad"),
+    ), note="ADR-0139: the AutoPlay menu's one-tap verdict on how the out -> in transition sounded. "
+            "Pure logging, the planner never reads it; opendj dj verdict is the HTTP twin."),
     Verb("auto_play_early", "auto_play_early", (
         arg("enabled", "bool", bool_value, "true|false", optional=True),
         arg("decide_after_s", "number", number_value, "seconds on the master", optional=True),
@@ -391,6 +438,9 @@ _VERBS: tuple[Verb, ...] = (
             "the dial runs 7:30 to 4:30)."),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
+    Verb("mixer_stems", "mixer_stems", (_ENABLED,),
+         note="The mixer's S button: VOCAL/INST/BASS dials beside HI/MID/LOW and DRUMS beside FILTER "
+              "on every channel with stems; read back as ui.mixer_stems."),
     Verb("autoplay", "autoplay", (
         _ENABLED, arg("by_user", "bool", bool_value, "true|false", optional=True),
     ),
@@ -418,7 +468,7 @@ _VERBS: tuple[Verb, ...] = (
         arg("linked", "bool", bool_value, "true|false"),
     ), note="WAVEZOOM-6802c/06: playhead glide when zoomed out; one zoom for all decks or one each."),
     Verb("set_skin", "set_skin", (
-        arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light"),
+        arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light|green-room|practice-ddj-flx4"),
         arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono"),
         arg("wave_split_master", "enum", enum_value(WAVE_SPLIT_MASTER_VALUES), "auto|on|off"),
     ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call. "
@@ -437,6 +487,9 @@ _VERBS: tuple[Verb, ...] = (
     #   opendj audio_switch_output --confirm
     #   opendj api GET /api/v1/audio/output-health
     #   opendj api POST /api/v1/audio/switch-output
+    # AUDIO-DEVICE-05 HTTP parity (Reconnect speaker, not a command-bus verb):
+    #   opendj audio_reconnect_speaker --confirm
+    #   opendj api POST /api/v1/audio/reconnect-speaker
     # FB-20 HTTP parity (issue #4085, not command-bus verbs):
     #   opendj feedback comments summary
     #   opendj api GET /api/v1/feedback/comments/summary
@@ -451,6 +504,8 @@ _VERBS: tuple[Verb, ...] = (
         arg("in_ms", "number", number_value),
         arg("revision", "text", text_value),
         arg("comment", "text", text_value, optional=True),
+        # HOTCUE-LOOP-01: a loop hot cue's end, named: `... out_ms=31875`.
+        arg("out_ms", "number", number_value, optional=True),
     )),
     Verb("hot_cue_clear", "hot_cue_clear", (_DECK, _SLOT, arg("revision", "text", text_value))),
     Verb("hot_cue_restore", "hot_cue_restore", (
@@ -506,6 +561,11 @@ _VERBS: tuple[Verb, ...] = (
          note="Requires a mounted playlist history panel."),
     Verb("playlist_redo", "playlist_redo", (),
          note="Requires a mounted playlist history panel."),
+    Verb("playlist_history_jump", "playlist_history_jump", (
+        arg("command_id", "text", text_value, "entry id from GET /api/v1/playlist-history"),
+    ), note="LIBUX-8626: undo that entry and every newer one, or redo a pending entry and every "
+            "older one, as clicking it in the undo popover does. Requires a mounted playlist "
+            "history panel."),
     Verb("rescue_resume", "rescue_resume", (
         arg("decks", "rescue_decks", rescue_decks_value, "1:5000[,3:12000]"),
         arg("master_deck", "deck", deck_value, "1-4"),

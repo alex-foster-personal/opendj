@@ -97,10 +97,7 @@ test('encode/parse keep stable_id, bounds, and status', () => {
 		timeS: 20
 	});
 	const encodedRegion = vocal.encodeVocalAnchor(regionHit);
-	assert.equal(
-		encodedRegion,
-		`vocal-area:${STABLE_ID}:12.30-45.60:demucs`
-	);
+	assert.equal(encodedRegion, `vocal-area:${STABLE_ID}:12.30-45.60:demucs`);
 	const parsedRegion = vocal.parseVocalAnchor(encodedRegion);
 	assert.equal(parsedRegion.stable_id, STABLE_ID);
 	assert.equal(parsedRegion.kind, 'region');
@@ -128,7 +125,13 @@ test("parseVocalAnchor('#foo') is null so FB-03 CSS anchors stay CSS anchors", (
 });
 
 test('the wavestack mapping refuses a row whose zoom geometry was not published', () => {
-	const base = { pointerX: 200, widthPx: 400, centerPositionMs: 60_000, durationMs: 180_000, pitch: 1 };
+	const base = {
+		pointerX: 200,
+		widthPx: 400,
+		centerPositionMs: 60_000,
+		durationMs: 180_000,
+		pitch: 1
+	};
 	assert.throws(() => vocal.waveRowTimeS({ ...base, playheadFrac: 0.5 }), 'windowS is required');
 	assert.throws(() => vocal.waveRowTimeS({ ...base, windowS: 24 }), 'playheadFrac is required');
 });
@@ -157,14 +160,8 @@ test('wavestack mapping agrees with waveClickTargetMs at the window center', () 
 });
 
 test('strip mapping at x=0 / x=width is 0 / duration', () => {
-	assert.equal(
-		vocal.stripTimeS({ pointerX: 0, widthPx: 400, durationMs: 180_000 }),
-		0
-	);
-	assert.equal(
-		vocal.stripTimeS({ pointerX: 400, widthPx: 400, durationMs: 180_000 }),
-		180
-	);
+	assert.equal(vocal.stripTimeS({ pointerX: 0, widthPx: 400, durationMs: 180_000 }), 0);
+	assert.equal(vocal.stripTimeS({ pointerX: 400, widthPx: 400, durationMs: 180_000 }), 180);
 });
 
 test('default text names stable_id and never uses a disallowed dash character', () => {
@@ -174,10 +171,7 @@ test('default text names stable_id and never uses a disallowed dash character', 
 		timeS: 20
 	});
 	const regionText = vocal.formatVocalComment(regionHit);
-	assert.equal(
-		regionText,
-		`Incorrect vocal area 12.30s-45.60s (demucs) on ${STABLE_ID}`
-	);
+	assert.equal(regionText, `Incorrect vocal area 12.30s-45.60s (demucs) on ${STABLE_ID}`);
 	assert.ok(!regionText.includes('\u2014') && !regionText.includes('\u2013'));
 	assert.ok(regionText.includes(STABLE_ID));
 
@@ -187,10 +181,7 @@ test('default text names stable_id and never uses a disallowed dash character', 
 		timeS: 67.2
 	});
 	const atText = vocal.formatVocalComment(atHit);
-	assert.equal(
-		atText,
-		`Incorrect vocal area at 67.20s (not_analyzed) on ${STABLE_ID}`
-	);
+	assert.equal(atText, `Incorrect vocal area at 67.20s (not_analyzed) on ${STABLE_ID}`);
 	assert.ok(!atText.includes('\u2014') && !atText.includes('\u2013'));
 	assert.ok(atText.includes(STABLE_ID));
 });

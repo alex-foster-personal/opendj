@@ -21,7 +21,10 @@ export interface BoundMenuItem {
 
 export const NOT_WIRED_HERE = 'not available in this view';
 
-export function bindMenuItems(items: readonly ResolvedMenuItem[], runners: MenuRunners): BoundMenuItem[] {
+export function bindMenuItems(
+	items: readonly ResolvedMenuItem[],
+	runners: MenuRunners
+): BoundMenuItem[] {
 	return items.map((item) => {
 		const runner = item.enabled ? runners[item.id] : undefined;
 		const bound: BoundMenuItem = {

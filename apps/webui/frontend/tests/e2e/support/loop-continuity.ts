@@ -24,7 +24,7 @@
  * openly - the cursor must move at least once per slice. A cursor frozen for a
  * whole second is the frozen-playhead defect itself, which is why the engine
  * substitutes the sample clock when the output timestamp stalls
- * (.planning/hardening-ledger/decisions/presentation-clock-fallback.md).
+ * ((private path)).
  *
  * Requirements (mini-PRD):
  *   ✔︎ ✅ 🎯 A stall or a clamp ANYWHERE in the observation fails, including
@@ -90,10 +90,7 @@ export function wrapAwareAdvanceMs(fromMs: number, toMs: number, loopLengthMs: n
 	return 0;
 }
 
-function _validate(
-	samples: readonly PresentedLoopSample[],
-	options: LoopContinuityOptions
-): void {
+function _validate(samples: readonly PresentedLoopSample[], options: LoopContinuityOptions): void {
 	if (samples.length < 2) {
 		throw new RangeError(`loop continuity needs at least 2 samples, got ${samples.length}`);
 	}
@@ -185,9 +182,7 @@ export function sliceLoopContinuity(
 		endedAtMs - options.sliceMs >= firstAtMs;
 		endedAtMs -= options.sliceMs
 	) {
-		slices.push(
-			_sliceOf(samples, endedAtMs - options.sliceMs, endedAtMs, options.loopLengthMs)
-		);
+		slices.push(_sliceOf(samples, endedAtMs - options.sliceMs, endedAtMs, options.loopLengthMs));
 	}
 	if (slices.length === 0) {
 		throw new RangeError(

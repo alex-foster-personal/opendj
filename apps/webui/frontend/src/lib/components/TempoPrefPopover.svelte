@@ -9,12 +9,8 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import TempoPrefPopoverView from './TempoPrefPopoverView.svelte';
 
-	let {
-		stableId,
-		x,
-		y,
-		onclose
-	}: { stableId: string; x: number; y: number; onclose: () => void } = $props();
+	let { stableId, x, y, onclose }: { stableId: string; x: number; y: number; onclose: () => void } =
+		$props();
 
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
@@ -89,9 +85,7 @@
 			// tempo_pref: null, not an object of nulls (a non-null object with
 			// no values still shows as a set preference + provenance on reread).
 			const tempoPref =
-				regular === null && min === null && max === null
-					? null
-					: { regular, min, max };
+				regular === null && min === null && max === null ? null : { regular, min, max };
 			const { etag: fresh } = await patchTrack(stableId, etag, {
 				tempo_pref: tempoPref
 			});

@@ -26,7 +26,15 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { API_BASE, dispatch, ownGridTrack, query, waitAudible, waitForGrid, waitForIpc } from './support/beat-sync-e2e';
+import {
+	API_BASE,
+	dispatch,
+	ownGridTrack,
+	query,
+	waitAudible,
+	waitForGrid,
+	waitForIpc
+} from './support/beat-sync-e2e';
 
 const GRIDDED_128 = 'webkit-fixture-a-128bpm';
 const GRIDDED_124 = 'webkit-fixture-b-124bpm';
@@ -36,7 +44,8 @@ const NOTICE = 'Deck 1 has no beat grid: mixed without Beat Sync';
 async function stableIdByTitle(request: APIRequestContext, title: string): Promise<string> {
 	const listing = await request.get(`${API_BASE}/api/v1/tracks?limit=1000&available=true`);
 	expect(listing.ok(), 'track listing').toBeTruthy();
-	const items = ((await listing.json()) as { items: { stable_id: string; title: string | null }[] }).items;
+	const items = ((await listing.json()) as { items: { stable_id: string; title: string | null }[] })
+		.items;
 	const row = items.find((item) => item.title === title);
 	test.skip(row === undefined, `fixture track ${title} is not in this library`);
 	return row!.stable_id;
@@ -51,7 +60,12 @@ async function emptyAllDecks(page: Page): Promise<void> {
 }
 
 /** Deck 2 plays a gridded 128 BPM track as the synced master; deck 1 is loaded with `incoming` and playing. */
-async function setUpHandover(page: Page, outgoing: string, incoming: string, incomingGridded: boolean): Promise<void> {
+async function setUpHandover(
+	page: Page,
+	outgoing: string,
+	incoming: string,
+	incomingGridded: boolean
+): Promise<void> {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/performance');
 	await waitForIpc(page);
@@ -80,13 +94,18 @@ async function setUpHandover(page: Page, outgoing: string, incoming: string, inc
 		await dispatch(page, { type: 'beat_sync', deck: 1, enabled: false });
 	} else {
 		// Presence of the precondition, not absence of a failure: the deck really is gridless.
-		expect((await query(page)).decks[1].beatgrid_ms.length, `${GRIDLESS} must load with no beat grid`).toBe(0);
+		expect(
+			(await query(page)).decks[1].beatgrid_ms.length,
+			`${GRIDLESS} must load with no beat grid`
+		).toBe(0);
 	}
 	await dispatch(page, { type: 'play', deck: 1, playing: true });
 	await waitAudible(page, 1);
 	const before = await query(page);
 	expect(before.master_deck, 'deck 2 is still master before the handover').toBe(2);
-	expect(before.decks[2].beat_sync_enabled, 'deck 2 is synced, so it becomes a follower').toBe(true);
+	expect(before.decks[2].beat_sync_enabled, 'deck 2 is synced, so it becomes a follower').toBe(
+		true
+	);
 }
 
 test('PLAY-28: master handover to a playing gridless deck stands, both decks keep playing, with a notice', async ({
@@ -110,18 +129,31 @@ test('PLAY-28: master handover to a playing gridless deck stands, both decks kee
 	expect(later.decks[2].playing && later.decks[2].audible, 'deck 2 still playing').toBe(true);
 	expect(later.decks[1].position_ms - p1, 'deck 1 playhead advances').toBeGreaterThan(1_000);
 	expect(later.decks[2].position_ms - p2, 'deck 2 playhead advances').toBeGreaterThan(1_000);
-	expect(later.decks[2].beat_sync_enabled, 'Beat Sync stays lit (Max is never switched off)').toBe(true);
-	await expect(page.locator('.toast-stack .toast', { hasText: NOTICE }), 'the notice is visible').toBeVisible();
-	await expect(page.locator('.toast-stack .toast', { hasText: 'master handover refused' })).toHaveCount(0);
+	expect(later.decks[2].beat_sync_enabled, 'Beat Sync stays lit (Max is never switched off)').toBe(
+		true
+	);
+	await expect(
+		page.locator('.toast-stack .toast', { hasText: NOTICE }),
+		'the notice is visible'
+	).toBeVisible();
+	await expect(
+		page.locator('.toast-stack .toast', { hasText: 'master handover refused' })
+	).toHaveCount(0);
 });
 
-test('PLAY-28 control: master handover to a gridded deck still runs Beat Sync against it', async ({ page, request }) => {
+test('PLAY-28 control: master handover to a gridded deck still runs Beat Sync against it', async ({
+	page,
+	request
+}) => {
 	const outgoing = await ownGridTrack(request, GRIDDED_128);
 	const incoming = await ownGridTrack(request, GRIDDED_124);
 	await setUpHandover(page, outgoing.stable_id, incoming.stable_id, true);
 	{
 		const before = await query(page);
-		expect(before.decks[2].pitch, 'deck 2 plays at its own tempo before the handover').toBeCloseTo(1, 3);
+		expect(before.decks[2].pitch, 'deck 2 plays at its own tempo before the handover').toBeCloseTo(
+			1,
+			3
+		);
 		expect(before.decks[1].pitch, 'deck 1 plays at its own 124 BPM, unsynced').toBeCloseTo(1, 3);
 	}
 
@@ -140,5 +172,7 @@ test('PLAY-28 control: master handover to a gridded deck still runs Beat Sync ag
 			message: 'deck 2 re-locked to the gridded master, or the planner refused it by name'
 		})
 		.toBe(true);
-	await expect(page.locator('.toast-stack .toast', { hasText: 'mixed without Beat Sync' })).toHaveCount(0);
+	await expect(
+		page.locator('.toast-stack .toast', { hasText: 'mixed without Beat Sync' })
+	).toHaveCount(0);
 });

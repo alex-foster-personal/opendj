@@ -25,7 +25,8 @@ export class BoundedLru<K, V> {
 	readonly #map = new Map<K, V>();
 
 	constructor(max: number) {
-		if (!Number.isInteger(max) || max < 1) throw new RangeError(`max must be a positive integer, got ${max}`);
+		if (!Number.isInteger(max) || max < 1)
+			throw new RangeError(`max must be a positive integer, got ${max}`);
 		this.#max = max;
 	}
 

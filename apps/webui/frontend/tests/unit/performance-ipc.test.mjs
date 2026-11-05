@@ -638,6 +638,40 @@ test('key controls validate through IPC and round-trip serializable shift state'
 	}
 });
 
+// requirement: KEYSYNC-01
+test('key_sync takes an optional mode and target deck, validated on the wire, and the snapshot shows them', async () => {
+	const parse = ipc.parsePerformanceCommandForTest;
+	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true }), { type: 'key_sync', deck: 2, enabled: true });
+	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'relative', target: 3 }), {
+		type: 'key_sync', deck: 2, enabled: true, mode: 'relative', target: 3
+	});
+	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true, target: 'master' }), {
+		type: 'key_sync', deck: 2, enabled: true, target: 'master'
+	});
+	assert.throws(() => parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'loose' }), /mode must be exact, relative or compatible/);
+	assert.throws(() => parse({ type: 'key_sync', deck: 2, enabled: true, target: 5 }), /target/);
+	assert.deepEqual(parse({ type: 'key_shift', deck: 1, semitones: 0 }), { type: 'key_shift', deck: 1, semitones: 0 });
+	assert.throws(() => parse({ type: 'key_shift', deck: 1, semitones: 13 }), /-12 to 12/);
+	assert.throws(() => parse({ type: 'key_shift', deck: 1, semitones: 1.5 }), /-12 to 12/);
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const initial = ipc.queryPerformanceState().decks[1];
+		assert.equal(initial.key_sync_mode, 'exact', 'exact is the default (the maintainer)');
+		assert.equal(initial.key_sync_target, 'master');
+		assert.deepEqual(initial.key_options, {}, 'no loaded keyed decks, no ladder');
+		const mirrorSource = await readFile(new URL('../../src/lib/rb/ui-mirror.ts', import.meta.url), 'utf8');
+		assert.match(
+			mirrorSource,
+			/key_sync: \{ mode: deck\.key_sync_mode, target: deck\.key_sync_target, status: deck\.key_sync_status, shift_semitones: deck\.key_shift_semitones, options: deck\.key_options \}/,
+			'if the agent mirror drops key_sync then deck_key_options cannot read the ladder'
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 // requirement: PREF-02
 test('the feedback thumbs use thumb glyphs and routes every mark through the typed dispatcher', async () => {
 	const source = await readFile(new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url), 'utf8');
@@ -699,7 +733,7 @@ test('hot-cue controls are strict IPC commands with serializable slot state', as
 	assert.match(deckSource, /type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/);
 	assert.match(
 		ipcSource,
-		/await saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment\s*\)/
+		/await saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment, command\.out_ms \?\? null\s*\)/
 	);
 	assert.match(ipcSource, /await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/);
 });
@@ -1443,9 +1477,10 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/);
 	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
 	assert.match(source, /generation must be a positive safe integer/);
-	// Any number of sibling types may share the load_play_intent early-return group; a fixed
+	// Any number of sibling types (line comments between them allowed) may share the
+	// load_play_intent early-return group; a fixed
 	// character window broke when PREF-02 appended feedback_mark to it (main red, Fri 11 Sep 2026).
-	assert.match(source, /command\.type === 'load_play_intent'(?:\s*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/);
+	assert.match(source, /command\.type === 'load_play_intent'(?:\s*(?:\/\/[^\n]*\n\s*)*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/);
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
 

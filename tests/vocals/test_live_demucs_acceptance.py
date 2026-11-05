@@ -7,7 +7,7 @@ Regression one-liners:
   - if a CUDA or CPU cache entry fails vcache._validate_entry or duration drifts then broken
   - if timeout cleanup leaves any uv/python/demucs/ffmpeg descendant then broken
   - manual_recovery_required is NOT a live leg (UNAVAILABLE: no unprivileged SIGKILL-survivor worker);
-    unit coverage in tests/vocals/test_cli_queue.py
+    unit coverage in (private path)
 """
 
 from __future__ import annotations
@@ -95,9 +95,7 @@ def _run_one_live(fixture: SpikeB2Fixture, track: SpikeB2Track) -> dict[str, Any
 
 
 def _regions_for_iou(entry: dict[str, Any]) -> list[tuple[float, float]]:
-    return _region_endpoints(
-        [{"start_s": r["start_s"], "end_s": r["end_s"]} for r in entry["regions"]]
-    )
+    return _region_endpoints([{"start_s": r["start_s"], "end_s": r["end_s"]} for r in entry["regions"]])
 
 
 @pytest.fixture(scope="module")
@@ -227,9 +225,7 @@ def _cuda_available(tmp_path: Path) -> bool:
     metadata_end = worker_text.index("\n# ///\n") + len("\n# ///\n")
     probe = tmp_path / "cuda_probe.py"
     probe.write_text(
-        worker_text[:metadata_end]
-        + "import torch\n"
-        + "raise SystemExit(0 if torch.cuda.is_available() else 3)\n",
+        worker_text[:metadata_end] + "import torch\n" + "raise SystemExit(0 if torch.cuda.is_available() else 3)\n",
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -242,9 +238,7 @@ def _cuda_available(tmp_path: Path) -> bool:
         return True
     if result.returncode == 3:
         return False
-    raise RuntimeError(
-        f"UNKNOWN: CUDA probe could not run (rc={result.returncode}): {result.stderr[-2000:]}"
-    )
+    raise RuntimeError(f"UNKNOWN: CUDA probe could not run (rc={result.returncode}): {result.stderr[-2000:]}")
 
 
 # Short enough to fire while the real uv -> python -> demucs worker is still running.
@@ -253,9 +247,7 @@ TIMEOUT_LEG_S = 8.0
 
 @live_demucs
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descendant-leak regression")
-def test_worker_timeout_leaves_no_worker_descendants(
-    spike_b2_fixture: SpikeB2Fixture, tmp_path: Path
-) -> None:
+def test_worker_timeout_leaves_no_worker_descendants(spike_b2_fixture: SpikeB2Fixture, tmp_path: Path) -> None:
     """[if] the production worker times out [then] no uv/python/demucs/ffmpeg descendant remains.
 
     Runs the shipped command (``vcli._worker_command``: uv + the PEP 723 worker) on real
@@ -312,8 +304,7 @@ def test_worker_timeout_leaves_no_worker_descendants(
         # out, and a check made only afterwards would pass on a leak.
         deadline_s = TIMEOUT_LEG_S + vcli.WORKER_TERMINATE_GRACE_S + 2.0
         assert last_alive_s[0] <= deadline_s, (
-            f"worker descendants outlived the timeout: last seen at {last_alive_s[0]:.1f}s, "
-            f"deadline {deadline_s:.1f}s"
+            f"worker descendants outlived the timeout: last seen at {last_alive_s[0]:.1f}s, deadline {deadline_s:.1f}s"
         )
         alive = [pid for pid in list(born) if _still_alive(pid)]
         leaked = worker_like_pids(set(alive) | (descendants_of(os.getpid()) - baseline))

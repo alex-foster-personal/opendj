@@ -117,9 +117,7 @@ class LedgerEditedDuringRun(RuntimeError):
     run's own appends, so it is neither published nor restored."""
 
 
-def _replay_appends(
-    pre_run_content: str | None, append_batches: Sequence[list[dict[str, Any]]]
-) -> str | None:
+def _replay_appends(pre_run_content: str | None, append_batches: Sequence[list[dict[str, Any]]]) -> str | None:
     """The ledger text this run's own `append_entries` calls produce when
     replayed onto ``pre_run_content`` in a scratch directory, or None when
     that leaves no file.
@@ -187,9 +185,7 @@ def refuse_ledger_edits_made_during_run(
             "or restore it, so that edit and tonight's rows both stay in the file"
         )
     if actual is None:
-        raise RuntimeError(
-            f"{ledger_path} does not exist after the nightly run; nothing to publish"
-        )
+        raise RuntimeError(f"{ledger_path} does not exist after the nightly run; nothing to publish")
     return actual
 
 
@@ -214,9 +210,7 @@ def park_run_rows_in_outbox(
         _entries_of(pre_run_content), _entries_of(_replay_appends(pre_run_content, append_batches))
     )
     pending = _load_outbox_entries(outbox_dir)
-    _archive_unpublished_ledger(
-        pending + _new_entries_since(pending, tonight), outbox_dir=outbox_dir
-    )
+    _archive_unpublished_ledger(pending + _new_entries_since(pending, tonight), outbox_dir=outbox_dir)
 
 
 def _restore_tracked_ledger(
@@ -231,7 +225,7 @@ def _restore_tracked_ledger(
 
     BLOCKING, found by review on PR #3827 (Codex): with the default
     ``MDT_PERF_KPI_LEDGER``, `run_nightly` appends this run's rows straight
-    into the CHECKED-OUT, git-tracked ``docs/perf/kpi-ledger.json`` -- the
+    into the CHECKED-OUT, git-tracked ``(private path)`` -- the
     same file autoreposync (fleet-af ``repos--autoreposync/scripts/autoreposync.sh``)
     inspects before pulling.
     Leaving that local modification in place afterward serves no purpose

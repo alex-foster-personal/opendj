@@ -113,9 +113,7 @@ def test_partial_minute_rounds_up_the_way_github_bills_it():
 
 def test_unpriced_runner_is_reported_not_silently_dropped():
     run = _run(5, "CI", "main", "success", "2026-08-31T00:00:00Z")
-    row = price_run(
-        run, [_job(["gpu-96-core"], "2026-08-31T00:00:00Z", "2026-08-31T00:01:00Z", "gpu")]
-    )
+    row = price_run(run, [_job(["gpu-96-core"], "2026-08-31T00:00:00Z", "2026-08-31T00:01:00Z", "gpu")])
 
     assert row.unpriced_jobs == ["gpu"]
 
@@ -223,9 +221,7 @@ def test_incomplete_coverage_is_flagged_so_a_floor_is_not_read_as_a_total():
         allowance_limit=3000,
         warn_pct=70,
         stop_pct=90,
-        coverage=Coverage(
-            priced=1000, listed=1000, server_total=1855, api_calls=1000, api_budget_hit=False
-        ),
+        coverage=Coverage(priced=1000, listed=1000, server_total=1855, api_calls=1000, api_budget_hit=False),
     )
 
     assert summary["complete"] is False
@@ -264,9 +260,7 @@ def test_api_call_budget_stops_before_the_token_ceiling(monkeypatch):
         lambda *a, **k: [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:01:00Z")],
     )
 
-    _, cov = ci_cost_ledger.build_ledger(
-        "o/r", "2026-08-01", "token", 20, cache=None, max_api_calls=10
-    )
+    _, cov = ci_cost_ledger.build_ledger("o/r", "2026-08-01", "token", 20, cache=None, max_api_calls=10)
 
     assert cov.api_calls == 10
     assert cov.api_budget_hit is True
@@ -471,9 +465,7 @@ def test_cached_row_that_was_still_running_is_repriced(monkeypatch):
         lambda *a, **k: [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:09:00Z")],
     )
 
-    rows, cov = ci_cost_ledger.build_ledger(
-        "o/r", "2026-08-01", "token", 20, cache={1: _row(1, conclusion=None)}
-    )
+    rows, cov = ci_cost_ledger.build_ledger("o/r", "2026-08-01", "token", 20, cache={1: _row(1, conclusion=None)})
     fetched = cov.api_calls
 
     assert fetched == 1
@@ -506,10 +498,7 @@ def test_api_budget_stops_pricing_but_keeps_cached_rows(monkeypatch):
     from scripts import ci_cost_ledger
 
     # Newest first: ids 10..1. Cache holds the OLD half (1..5).
-    runs = [
-        _run(i, "CI", "main", "success", f"2026-09-0{1 + (i > 5)}T00:00:00Z")
-        for i in range(10, 0, -1)
-    ]
+    runs = [_run(i, "CI", "main", "success", f"2026-09-0{1 + (i > 5)}T00:00:00Z") for i in range(10, 0, -1)]
     cache = {i: _row(i) for i in range(1, 6)}
     # Patch only the HTTP boundary (`_get`), as in
     # `test_empty_overflow_page_does_not_clobber_the_total` above, so
@@ -519,16 +508,11 @@ def test_api_budget_stops_pricing_but_keeps_cached_rows(monkeypatch):
     # uncached run actually priced before the budget trips (ids 10, 9, 8).
     responses = [
         {"total_count": 10, "workflow_runs": runs},
-        *(
-            {"jobs": [_job(["ubuntu-latest"], "2026-09-02T00:00:00Z", "2026-09-02T00:01:00Z")]}
-            for _ in range(3)
-        ),
+        *({"jobs": [_job(["ubuntu-latest"], "2026-09-02T00:00:00Z", "2026-09-02T00:01:00Z")]} for _ in range(3)),
     ]
     monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: responses.pop(0))
 
-    rows, cov = ci_cost_ledger.build_ledger(
-        "o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=3
-    )
+    rows, cov = ci_cost_ledger.build_ledger("o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=3)
 
     assert cov.api_calls == 3, "budget honoured"
     assert cov.api_budget_hit is True

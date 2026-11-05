@@ -33,7 +33,9 @@ def scratch_service(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     if not keystore.available():
         return
     for key in providers.KEY_NAMES:
-        subprocess.run([keystore.SECURITY_BIN, "delete-generic-password", "-s", name, "-a", key], capture_output=True, check=False)
+        subprocess.run(
+            [keystore.SECURITY_BIN, "delete-generic-password", "-s", name, "-a", key], capture_output=True, check=False
+        )
 
 
 @needs_keychain

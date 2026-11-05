@@ -303,6 +303,20 @@ def _validate_position(in_ms: int, duration_ms: int | None) -> None:
         )
 
 
+def _validate_loop_end(in_ms: int, out_ms: int | None, duration_ms: int | None) -> None:
+    """A loop hot cue's end must come after its start and inside the track."""
+    if out_ms is None:
+        return
+    if isinstance(out_ms, bool) or not isinstance(out_ms, int) or out_ms <= in_ms:
+        raise CueStoreError(
+            422, "INVALID_LOOP_END", f"out_ms must be an integer after in_ms {in_ms}, got {out_ms!r}"
+        )
+    if duration_ms is not None and out_ms > duration_ms:
+        raise CueStoreError(
+            422, "INVALID_LOOP_END", f"out_ms must satisfy out_ms <= {duration_ms}, got {out_ms}"
+        )
+
+
 def _reversal_id(stable_id: str, slot: str) -> str:
     scope = hashlib.sha256(stable_id.encode("utf-8")).hexdigest()[:12]
     return f"{scope}.{slot}.{secrets.token_hex(12)}"
@@ -350,7 +364,7 @@ def _mutate_slot(
 WriteBlob = Callable[[dict[str, Any]], None]
 
 
-def save_hot_cue(
+def save_hot_cue(  # noqa: PLR0913  # the CAS write takes the whole cue: span, label, colour, bound, sink
     state: StoredCues,
     slot: str,
     in_ms: int,
@@ -360,16 +374,24 @@ def save_hot_cue(
     color_table_index: int | None,
     duration_ms: int | None,
     write: WriteBlob,
+    out_ms: int | None = None,
 ) -> dict[str, Any]:
-    """CAS-save a hot cue. ``write`` persists the new blob inside the caller's tx."""
+    """CAS-save a hot cue. ``write`` persists the new blob inside the caller's tx.
+
+    ``out_ms`` makes it a loop hot cue (HOTCUE-LOOP-01): rekordbox stores a
+    hot cue set during an active loop as that loop, start and end, and a
+    press re-engages it. ``None`` saves a point cue.
+    """
     _slot_to_index(slot)
     _validate_position(in_ms, duration_ms)
+    _validate_loop_end(in_ms, out_ms, duration_ms)
     _require_revision(expected_revision, _slot_revision(state, slot))
     cue = normalize_cue(
         {
             "kind": "hot_cue",
             "slot": slot,
             "in_ms": in_ms,
+            "out_ms": out_ms,
             "color_table_index": color_table_index,
             "comment": comment,
         }

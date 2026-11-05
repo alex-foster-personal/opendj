@@ -13,7 +13,7 @@ const strip = createRawSnippet(() => ({
 /**
  * The Crate Desk preview bar (LIBWS-04): the focused track's identity, its
  * overview strip and four readouts. Tracks are invented, and artwork_available
- * is false so no artwork request is made.
+ * is false and artworkSrc is null so no artwork request is made.
  */
 const meta = {
 	title: 'Components/Library/LibraryPreviewBarView',
@@ -40,6 +40,9 @@ const meta = {
 		previewStatus: 'idle' as const,
 		otherPreviewStatus: 'idle' as const,
 		keyLabel: '8A',
+		artworkSrc: null,
+		onArtworkLoad: fn(),
+		onArtworkError: fn(),
 		onPlay: fn(),
 		onStop: fn()
 	}

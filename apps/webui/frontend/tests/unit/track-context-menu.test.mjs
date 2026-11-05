@@ -1,3 +1,4 @@
+/** NATIVE-5054: Re-analyze enqueue uses drain=true; reanalyze-real-daemon.test.mjs runs it end to end. */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -134,7 +135,8 @@ test('runReanalyze enqueues beatgrid backfill once and toasts batch summary', as
 			stableIds: ['a', 'b'],
 			lane: 'beatgrid',
 			backend: 'own_beatgrid.backfill',
-			note: 'track context menu'
+			note: 'track context menu',
+			drain: true
 		}
 	]);
 	assert.ok(toasts.some((t) => t.message.includes('beatgrid')));

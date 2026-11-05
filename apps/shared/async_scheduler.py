@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 
 
-async def sleep_until_stop(stopping: asyncio.Event, seconds: float) -> None:
+async def sleep_until_stop(stopping: asyncio.Event | None, seconds: float) -> None:
     """Sleep up to ``seconds``, or return early when ``stopping`` is set."""
     assert stopping is not None
     try:

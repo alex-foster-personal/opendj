@@ -1,4 +1,5 @@
 """``apps.analysis_key.serving_lane`` registers the key lane at import time."""
+
 from __future__ import annotations
 
 import importlib

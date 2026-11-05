@@ -1,14 +1,14 @@
 {
   "name": "opendj-desktop-electron",
   "productName": "Open DJ",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "private": true,
   "description": "Open DJ desktop shell on Electron: boots the bundled engine and opens a Chromium window onto it. Phase 21, beside the Tauri shell until cutover.",
   "main": "dist/main.js",
   "opendj": {
     "identifier": "com.opendj.desktop"
   },
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
     "node": ">=22.12"
   },
@@ -21,7 +21,7 @@
     "live-proof": "node scripts/live-proof.mjs",
     "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64 && node scripts/verify-pack.mjs && node scripts/read-fuses.mjs \"out/mac-arm64/Open DJ.app/Contents/Frameworks/Electron Framework.framework/Electron Framework\"",
     "pack:dir:linux": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --linux --publish never",
-    "pack:dir:win": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --win --x64 -c.win.signExecutable=false"
+    "pack:dir:win": "tsc -p tsconfig.json && node scripts/require-payload.mjs && node scripts/stamp-build.mjs && electron-builder --dir --win --x64 -c.win.signExecutable=false"
   },
   "build": {
     "appId": "com.opendj.desktop",

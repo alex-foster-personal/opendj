@@ -110,9 +110,7 @@ def test_fleet_routes_refuse_on_an_install_that_is_not_a_hub(
     _sign_in(admin, enroll_hub_dir, sub=ENROLL_OWNER_SUB, email=ENROLL_OWNER_EMAIL)
     monkeypatch.delenv(machine_identity.IS_HUB_ENV)
     response = admin.post(f"{FLEET}/adopt", json={"machine_id": machine_id})
-    assert (
-        response.status_code == 409 and response.json()["detail"]["code"] == "CLOUDSYNC_NOT_A_HUB"
-    )
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "CLOUDSYNC_NOT_A_HUB"
     assert owner_rows(enroll_hub_dir) == []
 
 
@@ -182,9 +180,7 @@ def test_http_revoke_only_revokes_the_callers_own_machines(
     revoked = admin.post(f"{FLEET}/revoke", json={"machine_id": machine_id})
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["changed"] is True and revoked.json()["credential_deleted"] is True
-    assert [row["revoked_at"] for row in owner_rows(enroll_hub_dir)] == [
-        revoked.json()["revoked_at"]
-    ]
+    assert [row["revoked_at"] for row in owner_rows(enroll_hub_dir)] == [revoked.json()["revoked_at"]]
 
     again = admin.post(f"{FLEET}/revoke", json={"machine_id": machine_id})
     assert again.status_code == 200 and again.json()["changed"] is False

@@ -75,8 +75,7 @@ test('a real column resize handle is hittable at its own center point', async ({
 				resolvedTag: resolved?.tagName ?? null,
 				rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
 				center: { x, y },
-				centerInsideViewport:
-					x >= 0 && y >= 0 && x < viewport.width && y < viewport.height
+				centerInsideViewport: x >= 0 && y >= 0 && x < viewport.width && y < viewport.height
 			});
 		}
 		return samples;

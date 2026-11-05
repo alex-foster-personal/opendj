@@ -37,7 +37,11 @@ def test_a_failed_row_keeps_its_own_status_and_reason(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("status", "valid", "invalid"),
     [
-        ("ok", (-9.0, None), [("loud", None), (None, None), (b"\x00", None), (-9.0, "why")]),  # sqlite has no bool or NaN
+        (
+            "ok",
+            (-9.0, None),
+            [("loud", None), (None, None), (b"\x00", None), (-9.0, "why")],
+        ),  # sqlite has no bool or NaN
         ("failed", (None, "decode error"), [(-9.0, "decode error"), (None, None), (None, "")]),
         ("missing", (None, "not analyzed"), [(-9.0, "not analyzed"), (None, None), (None, "")]),
     ],
@@ -65,7 +69,9 @@ def test_a_missing_store_or_schema_is_an_error_not_unmeasured(tmp_path: Path) ->
     sqlite3.connect(bare).execute("CREATE TABLE other (x)").connection.commit()
     with pytest.raises(RuntimeError, match="has no analysis_projection"):
         track_loudness(bare, "t1")
-    assert track_loudness(_db(tmp_path, -9.5, "ok"), "t2").reason == NO_ANALYSIS  # control: the store is there, the row is not
+    assert (
+        track_loudness(_db(tmp_path, -9.5, "ok"), "t2").reason == NO_ANALYSIS
+    )  # control: the store is there, the row is not
 
 
 def test_a_broken_store_or_row_is_served_as_a_loudness_error_block(tmp_path: Path) -> None:

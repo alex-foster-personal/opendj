@@ -6,9 +6,15 @@ on:
     # Repeated verbatim under pull_request below. GitHub Actions does not
     # support YAML anchors/aliases, so the duplication is forced, not sloppy;
     # keep the two lists in sync.
+    #
+    # The list is mkdocs' real inputs: mkdocs.yml builds `docs_dir: open-dj` and
+    # nothing else (no snippets, no custom_dir; links out of open-dj/ are `info`).
+    # It was `**.md` + `docs/**` until Thu 5 Nov 2026, and the requirements delta
+    # (.planning/REQUIREMENTS.md) every behaviour PR carries matched `**.md`, so 9
+    # of 11 PR heads at 04:00Z built an unchanged site on a linux-light seat.
+    # tests/docs/test_mkdocs_config.py pins docs_dir to this list.
     paths:
-      - "**.md"
-      - "docs/**"
+      - "open-dj/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - "pylock.docs.toml"
@@ -19,8 +25,7 @@ on:
     # here, every code-only PR still paid for a full mkdocs build. That was
     # 396 jobs in Aug 2026 for a site that had not changed.
     paths:
-      - "**.md"
-      - "docs/**"
+      - "open-dj/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - "pylock.docs.toml"

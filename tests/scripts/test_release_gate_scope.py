@@ -59,9 +59,7 @@ def test_test_target_uses_release_gate_ignores_and_floor() -> None:
     for path in RELEASE_GATE_IGNORES:
         assert f"--ignore={path}" in text, f"missing --ignore={path} in Makefile"
     assert "RELEASE_GATE_COLLECT_FLOOR" in recipe, recipe
-    assert "PYTEST_COLLECT_FLOOR" not in recipe, (
-        "test must use RELEASE_GATE_COLLECT_FLOOR, not the full-tree floor"
-    )
+    assert "PYTEST_COLLECT_FLOOR" not in recipe, "test must use RELEASE_GATE_COLLECT_FLOOR, not the full-tree floor"
 
 
 def test_test_optional_native_runs_the_ignored_paths() -> None:
@@ -72,9 +70,7 @@ def test_test_optional_native_runs_the_ignored_paths() -> None:
     body = recipe.group(1)
     for path in RELEASE_GATE_IGNORES:
         assert path in body, f"missing {path} in test-optional-native recipe"
-    assert "--collect-floor" not in body, (
-        "optional-native must not carry a collect floor"
-    )
+    assert "--collect-floor" not in body, "optional-native must not carry a collect floor"
 
 
 def test_test_full_keeps_the_historical_floor() -> None:
@@ -84,9 +80,7 @@ def test_test_full_keeps_the_historical_floor() -> None:
     assert recipe, "test-full target missing from Makefile"
     body = recipe.group(1)
     assert "PYTEST_COLLECT_FLOOR" in body, body
-    assert "RELEASE_GATE_PYTEST_IGNORES" not in body, (
-        "test-full must run the entire tree"
-    )
+    assert "RELEASE_GATE_PYTEST_IGNORES" not in body, "test-full must run the entire tree"
 
 
 def test_rb_parity_check_unchanged_scope() -> None:
@@ -97,9 +91,7 @@ def test_rb_parity_check_unchanged_scope() -> None:
     body = recipe.group(1)
     assert "$(PYTEST) -q -m rb_parity" in body.replace("\n\t", " "), body
     for path in RELEASE_GATE_IGNORES:
-        assert f"--ignore={path}" not in body, (
-            f"rb-parity-check must not ignore {path}"
-        )
+        assert f"--ignore={path}" not in body, f"rb-parity-check must not ignore {path}"
 
 
 def test_release_gate_ignores_match_ci_fast_lane() -> None:

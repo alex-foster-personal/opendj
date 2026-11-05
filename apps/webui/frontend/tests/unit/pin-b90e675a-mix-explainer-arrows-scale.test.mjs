@@ -23,13 +23,17 @@ import { EXPLAINER_DEMO_ANIMATIONS } from '../../src/lib/rb/explainer-demo-keyfr
 import { extractStyleBlock } from './explainer-keyframes-parse.mjs';
 
 const EXPLAINER = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/deck/ControlExplainer.svelte', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/deck/ControlExplainer.svelte', import.meta.url)
+	),
 	'utf8'
 );
 const STYLE = extractStyleBlock(EXPLAINER);
 
 function rule(selector) {
-	const match = new RegExp(`\\n\\t${selector.replace('.', '\\.')} \\{([\\s\\S]*?)\\n\\t\\}`).exec(STYLE);
+	const match = new RegExp(`\\n\\t${selector.replace('.', '\\.')} \\{([\\s\\S]*?)\\n\\t\\}`).exec(
+		STYLE
+	);
 	assert.ok(match, `expected a ${selector} rule`);
 	return match[1];
 }
@@ -57,20 +61,29 @@ test('the two arrows scale in opposite directions across the knob turn', () => {
 	assert.ok(master.mid > master.ends, 'the master arrow is biggest at the MASTER end of the turn');
 	assert.equal(cue.ends, master.mid, 'both arrows share one full size');
 	assert.equal(cue.mid, master.ends, 'both arrows share one small size');
-	assert.ok(cue.mid > 0, 'a small arrow stays visible: the blend never hides a signal entirely here');
+	assert.ok(
+		cue.mid > 0,
+		'a small arrow stays visible: the blend never hides a signal entirely here'
+	);
 });
 
 test('the arrows are locked to the knob turn they illustrate', () => {
 	const knob = animation('.mix-knob-cap');
 	assert.equal(knob.name, 'mix-knob-turn');
-	for (const [selector, name] of [['.cue-arrow', 'hp-arrow-cue'], ['.master-arrow', 'hp-arrow-master']]) {
+	for (const [selector, name] of [
+		['.cue-arrow', 'hp-arrow-cue'],
+		['.master-arrow', 'hp-arrow-master']
+	]) {
 		const arrow = animation(selector);
 		assert.equal(arrow.name, name);
 		assert.equal(arrow.duration, knob.duration, `${selector} must run as long as the knob turn`);
 		assert.equal(arrow.easing, knob.easing, `${selector} must ease like the knob turn`);
 	}
 	// The knob is at its CUE end at 0/100% and its MASTER end at 50%.
-	assert.match(STYLE, /@keyframes mix-knob-turn \{\s*0%,\s*100% \{\s*transform: rotate\(-45deg\);[\s\S]*?50% \{\s*transform: rotate\(45deg\);/);
+	assert.match(
+		STYLE,
+		/@keyframes mix-knob-turn \{\s*0%,\s*100% \{\s*transform: rotate\(-45deg\);[\s\S]*?50% \{\s*transform: rotate\(45deg\);/
+	);
 });
 
 test('each arrow scales from its tail, at the knob side', () => {
@@ -84,7 +97,9 @@ test('each route is an arrow: a shaft and a head inside one scaled group', () =>
 	for (const bus of ['cue', 'master']) {
 		assert.match(
 			markup,
-			new RegExp(`<g class="hp-arrow ${bus}-arrow">\\s*<path d="[^"]+" class="hp-path ${bus}-path" />\\s*<path d="[^"]+Z" class="hp-head ${bus}-head" />\\s*</g>`),
+			new RegExp(
+				`<g class="hp-arrow ${bus}-arrow">\\s*<path d="[^"]+" class="hp-path ${bus}-path" />\\s*<path d="[^"]+Z" class="hp-head ${bus}-head" />\\s*</g>`
+			),
 			`the ${bus} route must be a shaft plus a closed head in one group`
 		);
 	}

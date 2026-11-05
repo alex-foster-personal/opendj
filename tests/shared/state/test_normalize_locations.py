@@ -1,7 +1,7 @@
 """The one-shot NFC repair for ``track_locations`` paths already stored.
 
 Contract under test: ``apps/shared/state/normalize_locations.py``, answering
-round 3 finding R3 (``.planning/cloudsync-round3-adversarial.md``).
+round 3 finding R3 (``(private path)``).
 ``locations.normalize_stored_text`` stops a NEW write minting an NFD/NFC
 duplicate; it does nothing for the rows a pre-round-3 macOS filesystem walk
 already stored in NFD. One such row plus one NFC upsert reproduces round 2's
@@ -29,6 +29,7 @@ Acceptance criteria, one assertion block each:
 - if an already-NFC lone row is "repaired", the pass churns rows the wire
   already handles -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -94,8 +95,7 @@ def _seed_location(
 
 def _changelog_rows(conn: sqlite3.Connection, location_id: str) -> list[tuple]:
     return conn.execute(
-        "SELECT updated_at, origin_device_id FROM local_changelog "
-        "WHERE table_name = 'track_locations' AND row_pk = ?",
+        "SELECT updated_at, origin_device_id FROM local_changelog WHERE table_name = 'track_locations' AND row_pk = ?",
         (encode_row_pk((location_id,)),),
     ).fetchall()
 
@@ -205,25 +205,31 @@ def test_twins_with_different_urls_collapse_on_their_shared_path(
     print("if an NFD row and its NFC twin with different URLs are not collapsed as one then broken")
     _seed_machine_and_track(state_conn)
     _seed_location(
-        state_conn, location_id="loc-nfd", file_path=_NFD_PATH, updated_at=_EARLY,
+        state_conn,
+        location_id="loc-nfd",
+        file_path=_NFD_PATH,
+        updated_at=_EARLY,
         remote_url="https://a.example/cafe.mp3",
     )
     _seed_location(
-        state_conn, location_id="loc-nfc", file_path=_NFC_PATH, updated_at=_LATE,
+        state_conn,
+        location_id="loc-nfc",
+        file_path=_NFC_PATH,
+        updated_at=_LATE,
         remote_url="https://b.example/cafe.mp3",
     )
 
     collapses = normalize_locations.collapse_all(state_conn)
 
-    assert [(c.winner.location_id, [loser.location_id for loser in c.losers])
-            for c in collapses] == [("loc-nfc", ["loc-nfd"])]
+    assert [(c.winner.location_id, [loser.location_id for loser in c.losers]) for c in collapses] == [
+        ("loc-nfc", ["loc-nfd"])
+    ]
     rows = state_conn.execute(
         "SELECT location_id, file_path, remote_url FROM track_locations WHERE stable_id = ?",
         (SID,),
     ).fetchall()
     assert rows == [("loc-nfc", _NFC_PATH, "https://b.example/cafe.mp3")], rows
     assert _changelog_rows(state_conn, "loc-nfd") == [], "loser changelog not pruned"
-
 
 
 def _seed_a_collision_chain(conn: sqlite3.Connection) -> None:
@@ -236,15 +242,24 @@ def _seed_a_collision_chain(conn: sqlite3.Connection) -> None:
     """
     _seed_machine_and_track(conn)
     _seed_location(
-        conn, location_id="newest", file_path=_NFC_PATH, updated_at=_LATE,
+        conn,
+        location_id="newest",
+        file_path=_NFC_PATH,
+        updated_at=_LATE,
         remote_url="https://a.example/x.mp3",
     )
     _seed_location(
-        conn, location_id="middle", file_path=_NFD_PATH, updated_at=_EARLY,
+        conn,
+        location_id="middle",
+        file_path=_NFD_PATH,
+        updated_at=_EARLY,
         remote_url=unicodedata.normalize("NFD", "https://b.example/café.mp3"),
     )
     _seed_location(
-        conn, location_id="oldest", file_path="/music/other.mp3", updated_at=_OLDEST,
+        conn,
+        location_id="oldest",
+        file_path="/music/other.mp3",
+        updated_at=_OLDEST,
         remote_url="https://b.example/café.mp3",
     )
 
@@ -272,9 +287,9 @@ def test_a_collision_chain_is_left_alone_and_reported(
     ).fetchall()
     assert after == before, "a chain row was deleted or rewritten"
     chains = normalize_locations.collision_chains(state_conn)
-    assert [sorted(row.location_id for row in chain) for chain in chains] == [
-        ["middle", "newest", "oldest"]
-    ], "the chain was not reported"
+    assert [sorted(row.location_id for row in chain) for chain in chains] == [["middle", "newest", "oldest"]], (
+        "the chain was not reported"
+    )
 
 
 def test_the_cli_reports_a_collision_chain_and_exits_nonzero(
@@ -353,9 +368,7 @@ def test_dry_run_writes_nothing(tmp_path: Path) -> None:
 
     conn = state_db.open_ro(db_path)
     try:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM track_locations WHERE stable_id = ?", (SID,)
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM track_locations WHERE stable_id = ?", (SID,)).fetchone()[0]
     finally:
         conn.close()
     assert count == 2, "--dry-run collapsed rows; it must write nothing"
@@ -375,9 +388,7 @@ def test_live_collapses_via_the_cli(tmp_path: Path) -> None:
 
     conn = state_db.open_ro(db_path)
     try:
-        rows = conn.execute(
-            "SELECT file_path FROM track_locations WHERE stable_id = ?", (SID,)
-        ).fetchall()
+        rows = conn.execute("SELECT file_path FROM track_locations WHERE stable_id = ?", (SID,)).fetchall()
     finally:
         conn.close()
     assert len(rows) == 1 and rows[0][0] == _NFC_PATH
@@ -388,6 +399,4 @@ def test_cli_requires_exactly_one_mode(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         normalize_locations.main(["--data-dir", str(data_dir)])
     with pytest.raises(SystemExit):
-        normalize_locations.main(
-            ["--data-dir", str(data_dir), "--dry-run", "--live"]
-        )
+        normalize_locations.main(["--data-dir", str(data_dir), "--dry-run", "--live"])

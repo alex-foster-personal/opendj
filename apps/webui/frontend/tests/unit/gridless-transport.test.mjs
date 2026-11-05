@@ -183,7 +183,7 @@ test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () =
 	const deckSrc = readFileSync(`${SRC}/lib/rb/deck-hot-cue-actions.ts`, 'utf8');
 	const at = deckSrc.indexOf('async function saveHotCueAt(');
 	assert.notEqual(at, -1, 'if saveHotCueAt moved then this guard is pointed at nothing');
-	const body = deckSrc.slice(at, at + 900);
+	const body = deckSrc.slice(at, deckSrc.indexOf('\n\t}\n', at));
 	assert.ok(
 		body.includes('effectiveQuantize('),
 		'if the hot-cue snap only checks beats.length then a one-beat or malformed grid ' +

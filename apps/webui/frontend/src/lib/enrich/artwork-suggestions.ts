@@ -21,7 +21,12 @@ export type ArtworkSuggestion = {
 
 export type SuggestionsDoc = { note: string; pending: ArtworkSuggestion[] };
 
-export type DecideBody = { accept: string[]; skip: string[]; accept_all: boolean; skip_all: boolean };
+export type DecideBody = {
+	accept: string[];
+	skip: string[];
+	accept_all: boolean;
+	skip_all: boolean;
+};
 
 /** The enrich card line, or null when nothing waits. */
 export function suggestionsLine(count: number): string | null {
@@ -38,7 +43,11 @@ export function suggestionsLine(count: number): string | null {
  *   [if] a deck plays [then] it waits
  *   [if] it already opened this session [then] only the card's Review button opens it
  */
-export function shouldAutoOpen(count: number, playing: boolean, shownThisSession: boolean): boolean {
+export function shouldAutoOpen(
+	count: number,
+	playing: boolean,
+	shownThisSession: boolean
+): boolean {
 	return count > 0 && !playing && !shownThisSession;
 }
 
@@ -46,7 +55,10 @@ export function shouldAutoOpen(count: number, playing: boolean, shownThisSession
  * The request each button sends. Save selected and Skip act on the ticked
  * covers only; the unticked ones stay pending. Save all takes every pending one.
  */
-export function decideBody(action: 'save-selected' | 'save-all' | 'skip', selected: ReadonlySet<string>): DecideBody {
+export function decideBody(
+	action: 'save-selected' | 'save-all' | 'skip',
+	selected: ReadonlySet<string>
+): DecideBody {
 	const none: DecideBody = { accept: [], skip: [], accept_all: false, skip_all: false };
 	if (action === 'save-all') return { ...none, accept_all: true };
 	if (action === 'save-selected') return { ...none, accept: [...selected] };

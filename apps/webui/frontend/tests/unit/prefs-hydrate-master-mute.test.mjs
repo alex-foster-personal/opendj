@@ -12,17 +12,28 @@ let originalFetch;
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body }), {
-		status: 200,
-		...init,
-		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
-	});
+	return new Response(
+		JSON.stringify({
+			key_notation: 'camelot',
+			library_hidden_columns: [],
+			library_key_filter: [],
+			...body
+		}),
+		{
+			status: 200,
+			...init,
+			headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
+		}
+	);
 }
 
 before(async () => {
-	({ mute, prefsHydrate } = await loadTypeScriptModule('tests/unit/fixtures/master-mute-hydrate-entry.ts', {
-		viteApiBase: API_BASE
-	}));
+	({ mute, prefsHydrate } = await loadTypeScriptModule(
+		'tests/unit/fixtures/master-mute-hydrate-entry.ts',
+		{
+			viteApiBase: API_BASE
+		}
+	));
 	originalFetch = globalThis.fetch;
 	globalThis.window = {
 		localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
@@ -115,7 +126,11 @@ test('makePrefsHydrator refuses to build without both disk-supersession hooks', 
 	for (const missing of ['isDiskValueSuperseded', 'onSupersededDiskValue']) {
 		const args = hydratorArgs();
 		delete args[missing];
-		assert.throws(() => prefsHydrate.makePrefsHydrator(args), TypeError, `built without ${missing}`);
+		assert.throws(
+			() => prefsHydrate.makePrefsHydrator(args),
+			TypeError,
+			`built without ${missing}`
+		);
 	}
 	// Control: the full pair builds.
 	assert.equal(typeof prefsHydrate.makePrefsHydrator(hydratorArgs()), 'function');
@@ -154,8 +169,16 @@ test('hydrate with master_muted=false clears a stale stored mute', async () => {
 
 	await prefsHydrate.makePrefsHydrator(hydratorArgs())();
 
-	assert.equal(mute.isMasterMuted(), false, 'if disk false does not unmute then a stale stored mute silences the maintainer');
-	assert.equal(storage.store.has(mute.MASTER_MUTE_STORAGE_KEY), false, 'stale odj.master-muted.v1 must be removed');
+	assert.equal(
+		mute.isMasterMuted(),
+		false,
+		'if disk false does not unmute then a stale stored mute silences the maintainer'
+	);
+	assert.equal(
+		storage.store.has(mute.MASTER_MUTE_STORAGE_KEY),
+		false,
+		'stale odj.master-muted.v1 must be removed'
+	);
 	assert.deepEqual(puts, [], 'hydrate must not write back the value it just read');
 });
 
@@ -167,7 +190,11 @@ test('hydrate with master_muted=true on an audible page mutes with a visible rea
 	await prefsHydrate.makePrefsHydrator(hydratorArgs())();
 
 	assert.equal(mute.isMasterMuted(), true);
-	assert.equal(mute.masterMuteReason(), mute.MASTER_MUTE_DISK_REASON, 'if a disk mute has no reason then the headed client is silenced without a word');
+	assert.equal(
+		mute.masterMuteReason(),
+		mute.MASTER_MUTE_DISK_REASON,
+		'if a disk mute has no reason then the headed client is silenced without a word'
+	);
 });
 
 test('setMasterMuted with persist:false writes neither localStorage nor disk', async () => {

@@ -5,6 +5,7 @@ Complements ``test_schema.py`` with a second file covering the
 ``apps.shared.smartlists.ast`` and a handful of deep-nesting cases
 that exercise error-path reporting.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -85,10 +86,15 @@ def test_referenced_fields_from_deeply_nested_not_tree() -> None:
 
 def test_validate_rule_rejects_unknown_logical_op() -> None:
     with pytest.raises(SmartlistRuleError):
-        validate_rule({"op": "xor", "children": [
-            {"field": "bpm", "op": "=", "value": 120},
-            {"field": "bpm", "op": "=", "value": 130},
-        ]})
+        validate_rule(
+            {
+                "op": "xor",
+                "children": [
+                    {"field": "bpm", "op": "=", "value": 120},
+                    {"field": "bpm", "op": "=", "value": 130},
+                ],
+            }
+        )
 
 
 def test_validate_rule_reports_path_through_nested_or() -> None:

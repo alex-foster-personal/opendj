@@ -97,7 +97,11 @@ for (const mode of ['beat', 'bar']) {
 	test(`${mode}: an ODD-anchored double-tempo join is in phase and the lock must leave it alone`, () => {
 		const p = plan(30, mode);
 		assert.equal(p.tempoNormalization, 2, 'precondition: the fold is double tempo');
-		assert.equal(p.followerBeatIndex % 2, 1, 'precondition: the join anchored on an odd follower beat');
+		assert.equal(
+			p.followerBeatIndex % 2,
+			1,
+			'precondition: the join anchored on an odd follower beat'
+		);
 		assertMusicallyInPhase(p);
 		const d = lockDecision(p);
 		// Observed on the unfixed code: action 'reseek', errorMs ~ -344.8

@@ -1,4 +1,5 @@
 """Containment regressions for set-session filesystem paths."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,9 +25,7 @@ from apps.sets import paths as sets_paths
         "bad\x00id",
     ],
 )
-def test_session_dir_rejects_uncontained_session_ids(
-    sets_root: Path, session_id: str
-) -> None:
+def test_session_dir_rejects_uncontained_session_ids(sets_root: Path, session_id: str) -> None:
     """An API-decoded Windows backslash must not escape the sets root."""
     with pytest.raises(sets_paths.SessionPathError):
         sets_paths.session_dir(session_id, root=sets_root)
@@ -56,6 +55,4 @@ def test_resolve_sets_root_uses_default_or_injected_root(sets_root: Path) -> Non
 
 @pytest.mark.requirement("SET-03")
 def test_session_dir_returns_resolved_direct_child(sets_root: Path) -> None:
-    assert sets_paths.session_dir("session-1", root=sets_root) == (
-        sets_root / "session-1"
-    ).resolve()
+    assert sets_paths.session_dir("session-1", root=sets_root) == (sets_root / "session-1").resolve()

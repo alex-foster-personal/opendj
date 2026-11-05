@@ -156,7 +156,10 @@ test('SEARCH_QUERY_HELP documents the grammar with runnable examples', () => {
 		// silently degrade to substring - the explainer must never teach a
 		// syntax the parser does not accept.
 		assert.equal(
-			mod.matchesSearchQuery(track({ bpm: 124, rating: 5, key: '8A', genre: 'House' }), entry.example),
+			mod.matchesSearchQuery(
+				track({ bpm: 124, rating: 5, key: '8A', genre: 'House' }),
+				entry.example
+			),
 			true,
 			`documented example "${entry.example}" should match a fully-populated track`
 		);
@@ -165,7 +168,8 @@ test('SEARCH_QUERY_HELP documents the grammar with runnable examples', () => {
 
 test('key: finds a key written in any notation (PR #7483)', () => {
 	const t = track({ key: 'Am', key_forms: ['8A', '1m', 'Am'] });
-	for (const q of ['key:8a', 'key:1m', 'key:am']) assert.equal(mod.matchesSearchQuery(t, q), true, q);
+	for (const q of ['key:8a', 'key:1m', 'key:am'])
+		assert.equal(mod.matchesSearchQuery(t, q), true, q);
 	assert.equal(mod.matchesSearchQuery(t, 'key:9a'), false);
 });
 

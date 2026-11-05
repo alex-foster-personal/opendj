@@ -18,8 +18,20 @@
 	onclick={toggleSetNotes}
 >
 	<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-		<path d="M2 1.5h10v7.5L9 12.5H2Z" fill="var(--sn-fill)" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-		<path d="M12 9H9v3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+		<path
+			d="M2 1.5h10v7.5L9 12.5H2Z"
+			fill="var(--sn-fill)"
+			stroke="currentColor"
+			stroke-width="1.1"
+			stroke-linejoin="round"
+		/>
+		<path
+			d="M12 9H9v3.5"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.1"
+			stroke-linejoin="round"
+		/>
 		<path d="M4 4.5h5M4 6.8h3.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
 	</svg>
 </button>

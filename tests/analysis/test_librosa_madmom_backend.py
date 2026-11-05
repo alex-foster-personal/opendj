@@ -9,6 +9,7 @@ pure helper tests below need neither and always run.
 We tolerate madmom's +/- few-BPM noise on short synthetic clicks + the
 half / double tempo ambiguity it sometimes falls into.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,7 +47,12 @@ def _resolve_madmom_backend_in_subprocess(env: dict[str, str]) -> dict[str, obje
     genuine subprocess environment variable, never an in-process patch."""
     proc = subprocess.run(
         [sys.executable, "-c", _GET_MADMOM_BACKEND_PROBE],
-        capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=60, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+        timeout=60,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout.strip().splitlines()[-1])
@@ -102,14 +108,17 @@ def test_click_90_bpm(click_90_path: Path) -> None:
 
 @pytest.mark.requirement("META-01")
 @pytest.mark.requires_madmom
-def test_too_long_track_raises(
-    click_120_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_too_long_track_raises(click_120_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from apps.analysis import config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda _=None: {
-        "analyzer": {"sample_rate_hz": 44100, "mono": True, "max_track_minutes": 0.01},
-        "energy": {"rms_dbfs_bins": [[0.0, 10]]},
-    })
+
+    monkeypatch.setattr(
+        cfg,
+        "load_config",
+        lambda _=None: {
+            "analyzer": {"sample_rate_hz": 44100, "mono": True, "max_track_minutes": 0.01},
+            "energy": {"rms_dbfs_bins": [[0.0, 10]]},
+        },
+    )
     with pytest.raises(TrackTooLong):
         LibrosaMadmomBackend.analyze(click_120_path, "sidlong")
 

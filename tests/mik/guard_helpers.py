@@ -105,7 +105,7 @@ DEFINITION_SITES: dict[str, str] = {
         "reads the corpus location out of the registry so both suites build the same "
         "throwaway registry; it opens no corpus file"
     ),
-    "tests/mik/test_reference_import_guard_sweep.py": (
+    "(private path)": (
         "the scan and its synthetic control sources; every corpus path here is text "
         "fed to the scanner, not a location this module reads"
     ),
@@ -140,9 +140,6 @@ TEXT_FILENAMES: frozenset[str] = frozenset({"justfile", "Justfile", "Makefile", 
 TEXT_TOKEN_SEPARATORS = re.compile(r"[^A-Za-z0-9_.\-]+")
 
 
-
-
-
 def split_segments(text: str) -> list[str]:
     """Split a path-ish string into its segments, either separator, case-folded."""
     return [part.strip().lower() for part in text.replace("\\", "/").split("/")]
@@ -168,11 +165,7 @@ def docstring_constants(tree: ast.Module) -> set[int]:
         if not node.body:
             continue
         first = node.body[0]
-        if (
-            isinstance(first, ast.Expr)
-            and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)
-        ):
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
             found.add(id(first.value))
     return found
 
@@ -181,7 +174,7 @@ def literal_string(node: ast.AST, bindings: dict[str, list[str]] | None = None) 
     """Raw string value of a ``+``-concatenation or f-string of literals, or None.
 
     Kept separate from :func:`literal_parts`: concatenation joins characters,
-    not path segments, so ``"data/reference/" + "mik"`` must be glued into one
+    not path segments, so ``"(private path)/" + "mik"`` must be glued into one
     string BEFORE it is split on ``/`` -- splitting each side first and
     rejoining the segment lists would lose the seam between "reference/" and
     "mik" and never produce the adjacent pair the tail check looks for. An
@@ -262,17 +255,9 @@ def string_bindings(tree: ast.Module) -> dict[str, list[str]]:
     for node in ast.walk(tree):
         target: str | None = None
         value: ast.expr | None = None
-        if (
-            isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance(node.targets[0], ast.Name)
-        ):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             target, value = node.targets[0].id, node.value
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.value is not None
-        ):
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
             target, value = node.target.id, node.value
         if target is None or value is None:
             continue
@@ -296,9 +281,7 @@ def corpus_sites(tree: ast.Module) -> list[str]:
             sites.setdefault(line, f"line {line}: attribute {node.attr}")
         elif isinstance(node, ast.ImportFrom) and node.module == GUARD_MODULE:
             sites.setdefault(line, f"line {line}: from {GUARD_MODULE} import ...")
-        elif isinstance(node, ast.Import) and any(
-            alias.name == GUARD_MODULE for alias in node.names
-        ):
+        elif isinstance(node, ast.Import) and any(alias.name == GUARD_MODULE for alias in node.names):
             sites.setdefault(line, f"line {line}: import {GUARD_MODULE}")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if id(node) in docstrings:
@@ -339,9 +322,7 @@ def text_sites(path: Path) -> list[str]:
     if "reference" not in text.lower():
         return []
     tokens: list[tuple[int, str]] = [
-        (number, token)
-        for number, line in enumerate(text.splitlines(), 1)
-        for token in text_tokens(line)
+        (number, token) for number, line in enumerate(text.splitlines(), 1) for token in text_tokens(line)
     ]
     tail = corpus_tail()
     sites: dict[int, str] = {}

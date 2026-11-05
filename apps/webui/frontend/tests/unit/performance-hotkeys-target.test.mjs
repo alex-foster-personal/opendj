@@ -59,7 +59,11 @@ function svgElement({ role = null, tabindex = false, pointerOnly = false } = {})
 	const target = new FakeElement();
 	target.getAttribute = (name) => (name === 'role' ? role : name === 'tabindex' ? tabindex : null);
 	target.hasAttribute = (name) =>
-		name === 'tabindex' ? tabindex !== false : name === 'data-hotkey-pointer-only' ? pointerOnly : false;
+		name === 'tabindex'
+			? tabindex !== false
+			: name === 'data-hotkey-pointer-only'
+				? pointerOnly
+				: false;
 	return target;
 }
 
@@ -135,7 +139,9 @@ test('only the explicit pointer-only marker opts a control out of the Tab guard'
 	// what tells the guard this specific element owns no keyboard behavior
 	// despite its role, NOT the bare fact that its tabindex is negative.
 	assert.equal(
-		mod.isNativeInteractiveTarget(element('CANVAS', { role: 'slider', tabindex: '-1', pointerOnly: true })),
+		mod.isNativeInteractiveTarget(
+			element('CANVAS', { role: 'slider', tabindex: '-1', pointerOnly: true })
+		),
 		false,
 		'the marked pointer-only canvas must remain eligible for performance hotkeys'
 	);

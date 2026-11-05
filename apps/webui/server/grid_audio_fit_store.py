@@ -23,15 +23,15 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator, Sequence
-from dataclasses import astuple, dataclass, fields
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
 from apps.adapters.rekordbox import config
 from apps.analysis_beatgrid.grid_audio_fit import DECK_WARNING_VERDICTS
 from apps.webui.server.grid_quality_store import STORE_FILENAME
-from apps.webui.server.sqlite_sidecar_store import upsert_many_sidecar
+from apps.webui.server.sqlite_sidecar_store import bind_upsert_many
 
 NOT_SCANNED = "not_scanned"
 _SQL_CHUNK = 500
@@ -137,17 +137,9 @@ def read_by_verdict(verdicts: Sequence[str]) -> list[StoredGridAudioFit]:
         conn.close()
 
 
-def upsert_many(rows: Sequence[StoredGridAudioFit]) -> None:
-    """Replace the stored verdict for each row's track, in one transaction."""
-    if not rows:
-        return
-    upsert_many_sidecar(
-        store_path(),
-        _SCHEMA,
-        "grid_audio_fit",
-        _COLUMNS,
-        [astuple(row) for row in rows],
-    )
+upsert_many: Callable[[Sequence[StoredGridAudioFit]], None] = bind_upsert_many(
+    store_path, _SCHEMA, "grid_audio_fit", _COLUMNS
+)
 
 
 def message(stored: StoredGridAudioFit) -> str | None:

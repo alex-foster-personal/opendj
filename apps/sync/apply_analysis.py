@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from apps.sync.analysis_writeback_diff import (
     WRITEBACK_LANES,
     UnpromotedLaneError,
 )
+from apps.sync.diff_csv import load_diff_rows
 from apps.sync.safety import SafetyAbort
 
 # See ``_write_rb_field`` and ``live_run`` below: unsupported RB fields
@@ -57,13 +57,6 @@ def _live_djay_db_path(live: bool) -> Path:
     open the working copy under ``data/``.
     """
     return paths.DJAY_LIVE_DB if live else paths.DJAY_WORKING_DB
-
-
-def _load_diff(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open("r", newline="", encoding="utf-8") as fp:
-        return list(csv.DictReader(fp))
 
 
 def _csv_resolution_summary(rows: list[dict]) -> int:
@@ -356,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.live:
         if args.diff_csv is not None:
-            return _csv_resolution_summary(_load_diff(args.diff_csv))
+            return _csv_resolution_summary(load_diff_rows(args.diff_csv))
         try:
             return dry_run(
                 state_db=args.state_db,
@@ -404,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
             return 4
 
     csv_path = args.diff_csv
-    rows = _load_diff(csv_path)
+    rows = load_diff_rows(csv_path)
     if args.bulk and not args.i_understand_the_risks:
         print("[apply_analysis] --bulk requires --i-understand-the-risks", file=sys.stderr)
         return 2

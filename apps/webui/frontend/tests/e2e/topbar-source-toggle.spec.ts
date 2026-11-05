@@ -105,7 +105,10 @@ test('a pointer can travel from the SOURCE button into the menu without it closi
 	// mid-travel.
 	const STEPS = 16;
 	for (let step = 1; step <= STEPS; step++) {
-		await page.mouse.move(fromX + ((toX - fromX) * step) / STEPS, fromY + ((toY - fromY) * step) / STEPS);
+		await page.mouse.move(
+			fromX + ((toX - fromX) * step) / STEPS,
+			fromY + ((toY - fromY) * step) / STEPS
+		);
 	}
 
 	await expect(page.locator('.src-menu')).toBeVisible();

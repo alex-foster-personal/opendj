@@ -60,6 +60,10 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+def _wrangler_argv(node: str) -> list[str]:
+    return [node, str(WRANGLER_JS)]
+
+
 def _upstream_app(seen: list[dict[str, Any]]) -> FastAPI:
     app = FastAPI()
 
@@ -105,7 +109,7 @@ def gateway(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Gateway]:
 
     scratch = tmp_path_factory.mktemp("ai_gateway")
     env = {**os.environ, "CI": "1", "WRANGLER_SEND_METRICS": "false"}
-    wrangler = [str(node), str(WRANGLER_JS)]
+    wrangler = _wrangler_argv(str(node))
     persist = ["--persist-to", str(scratch / "state")]
     subprocess.run(
         [*wrangler, "d1", "migrations", "apply", "DB", "--local", *persist],
@@ -182,6 +186,10 @@ def _engine_chat(base_url: str, token: str, monkeypatch: pytest.MonkeyPatch) -> 
     return response
 
 
+def _without_token(minted: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in minted.items() if k != "token"} | {"revoked_at": None}
+
+
 # ----- tests ---------------------------------------------------------------
 def test_minted_token_streams_and_usage_reports_the_metered_cost(
     admin_env: Gateway, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
@@ -232,10 +240,6 @@ def test_set_plan_moves_the_install_and_refuses_an_unknown_plan(
     code, refused = _cli(capsys, "set-plan", minted["install_id"], "gold")
     assert code == EXIT_REFUSED
     assert (refused["status"], refused["detail"]["code"]) == (400, "gateway_unknown_plan")
-
-
-def _without_token(minted: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in minted.items() if k != "token"} | {"revoked_at": None}
 
 
 def test_wrong_admin_token_is_refused(

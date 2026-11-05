@@ -44,9 +44,7 @@ def compiler_options() -> dict[str, object]:
 
 
 @pytest.mark.parametrize("flag", RATCHETED_FLAGS)
-def test_tsconfig_keeps_the_ratcheted_strictness_flag(
-    compiler_options: dict[str, object], flag: str
-) -> None:
+def test_tsconfig_keeps_the_ratcheted_strictness_flag(compiler_options: dict[str, object], flag: str) -> None:
     """If a strictness flag is dropped then a whole error class goes unasked."""
     assert compiler_options.get(flag) is True, (
         f"if apps/webui/frontend/tsconfig.json stops setting {flag}: true then "

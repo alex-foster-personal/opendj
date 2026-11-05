@@ -22,6 +22,10 @@ def run_with_the_plugin(targets: list[str], env: dict[str, str]) -> subprocess.C
                 f"--basetemp={basetemp}",
                 "-p",
                 "scripts.pytest_tree_read_census",
+                # The probe sessions leave children running on purpose (the census measures
+                # what they list after the run), so #8630's leak gate stays out of them.
+                "-p",
+                "no:tests.support.process_leaks",
                 *targets,
             ],
             cwd=REPO,

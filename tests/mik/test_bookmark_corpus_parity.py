@@ -2,6 +2,7 @@
 
 [if] legacy and canonical decoders disagree on a real blob [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -25,9 +26,7 @@ _EXPECTED_BLOB_COUNT = 7006
 def test_all_zbookmarkdata_blobs_agree_between_legacy_and_canonical() -> None:
     conn = sqlite3.connect(f"file:{CFG.mik_db}?mode=ro", uri=True)
     try:
-        rows = conn.execute(
-            "SELECT Z_PK, ZBOOKMARKDATA FROM ZSONG WHERE ZBOOKMARKDATA IS NOT NULL"
-        ).fetchall()
+        rows = conn.execute("SELECT Z_PK, ZBOOKMARKDATA FROM ZSONG WHERE ZBOOKMARKDATA IS NOT NULL").fetchall()
     finally:
         conn.close()
 
@@ -39,7 +38,4 @@ def test_all_zbookmarkdata_blobs_agree_between_legacy_and_canonical() -> None:
         legacy = legacy_decode_bookmark_path(blob)
         canonical = decode_bookmark_path(blob)
         if legacy != canonical:
-            pytest.fail(
-                f"Z_PK={pk} blob_len={len(blob)} "
-                f"legacy={legacy!r} canonical={canonical!r}"
-            )
+            pytest.fail(f"Z_PK={pk} blob_len={len(blob)} legacy={legacy!r} canonical={canonical!r}")

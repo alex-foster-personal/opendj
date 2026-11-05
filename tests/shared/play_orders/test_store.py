@@ -1,4 +1,5 @@
 """Store-layer tests for play-orders (PLAY-01)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -19,9 +20,7 @@ pytestmark = pytest.mark.requirement("PLAY-01")
 
 def test_round_trip(po_conn: sqlite3.Connection) -> None:
     """create + two entries (one with overrides) + load -> identical shape."""
-    po_id = create_play_order(
-        po_conn, playlist_id="pl1", name="warmup", generated_by="manual"
-    )
+    po_id = create_play_order(po_conn, playlist_id="pl1", name="warmup", generated_by="manual")
     add_entry(
         po_conn,
         po_id,
@@ -71,8 +70,7 @@ def test_default_virtual_read_through(
     """load_play_order(playlist_id, "default") reads playlist_memberships."""
     conn = po_conn_with_memberships
     conn.executemany(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) VALUES (?, ?, ?)",
         [("pl42", "t-a", 0), ("pl42", "t-b", 1), ("pl42", "t-c", 2)],
     )
     po = load_play_order(conn, "pl42", DEFAULT_ORDER_NAME)
@@ -140,9 +138,7 @@ def test_event_emitted_on_create(
 ) -> None:
     conn = po_conn_with_events
     create_play_order(conn, "pl1", "x", generated_by="manual")
-    rows = conn.execute(
-        "SELECT kind, payload_json FROM events WHERE kind='play_order_changed'"
-    ).fetchall()
+    rows = conn.execute("SELECT kind, payload_json FROM events WHERE kind='play_order_changed'").fetchall()
     assert len(rows) == 1
     assert '"action":"created"' in rows[0][1]
 
@@ -156,8 +152,7 @@ def test_event_emitted_on_update(
     actions = [
         row[0]
         for row in conn.execute(
-            "SELECT json_extract(payload_json, '$.action') FROM events "
-            "WHERE kind='play_order_changed' ORDER BY id ASC"
+            "SELECT json_extract(payload_json, '$.action') FROM events WHERE kind='play_order_changed' ORDER BY id ASC"
         ).fetchall()
     ]
     assert actions == ["created", "updated"]

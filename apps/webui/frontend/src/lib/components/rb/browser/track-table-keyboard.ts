@@ -96,19 +96,17 @@ export function nextTrackTableIndex(params: {
 	if (current === -1) {
 		return nav === 'down' || nav === 'pagedown' ? 0 : last;
 	}
-	const delta =
-		nav === 'down' ? 1 : nav === 'up' ? -1 : nav === 'pagedown' ? page : -page;
+	const delta = nav === 'down' ? 1 : nav === 'up' ? -1 : nav === 'pagedown' ? page : -page;
 	return Math.min(last, Math.max(0, current + delta));
 }
 
 /** Inclusive index span a Shift-extended move selects: from the fixed
  * anchor to the new active row, in on-screen order. With no usable anchor
  * the span is just the target row (a plain move). */
-export function trackTableRangeSpan(params: {
-	anchor: number;
-	target: number;
-	rowCount: number;
-}): { from: number; to: number } {
+export function trackTableRangeSpan(params: { anchor: number; target: number; rowCount: number }): {
+	from: number;
+	to: number;
+} {
 	const { anchor, target, rowCount } = params;
 	if (anchor < 0 || anchor >= rowCount) return { from: target, to: target };
 	return { from: Math.min(anchor, target), to: Math.max(anchor, target) };

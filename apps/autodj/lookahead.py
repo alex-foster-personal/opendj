@@ -63,6 +63,37 @@ class Decision:
     windows: tuple[MixWindow, ...] = ()
     #: Shortlisted tracks with no plan, and why: {"track": ..., "reason": ...}.
     rejected: tuple[Mapping[str, str], ...] = field(default_factory=tuple)
+    #: AUTOPLAY-8881: what was offered: the shortlist asked, and every candidate's track, style, bars, rule score,
+    #: rationale and validator warnings, so a post-mortem can say why the winner won.
+    shortlist: tuple[str, ...] = ()
+    candidates: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
+    chosen: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        """The decision as stored beside the pair's plan and served by ``GET /dj/transitions/last``."""
+
+        def window(item: MixWindow | None) -> dict[str, Any] | None:
+            if item is None:
+                return None
+            return {
+                "start_bar": item.start_bar,
+                "label": item.label,
+                "score": round(item.score, 3),
+                "reason": item.reason,
+            }
+
+        return {
+            "reason": self.reason,
+            "track": self.track,
+            "style": self.style,
+            "bars": self.bars,
+            "window": window(self.window),
+            "windows": [window(item) for item in self.windows],
+            "shortlist": list(self.shortlist),
+            "rejected": [dict(item) for item in self.rejected],
+            "candidates": [dict(item) for item in self.candidates],
+            "chosen": self.chosen,
+        }
 
 
 def _peak_within(profile: TrackProfile, bar: int) -> bool:
@@ -160,9 +191,14 @@ def decide(
     """The window and the shortlisted track to plan for, from everything the shortlist can do from the master's windows."""
     windows = windows_ahead(out_profile, earliest_bar=earliest_bar, target_bar=target_bar)
     if not windows:
-        return Decision(reason=f"no phrase start left in the master past bar {earliest_bar:.0f}")
+        return Decision(
+            reason=f"no phrase start left in the master past bar {earliest_bar:.0f}",
+            shortlist=tuple(profile.stable_id for profile in shortlist),
+        )
     shown = tuple(windows[:WINDOWS_SHOWN])
     pool: list[Candidate] = []
+    offered: list[dict[str, Any]] = []
+    asked = tuple(profile.stable_id for profile in shortlist)
     chosen: dict[str, tuple[TrackProfile, MixWindow, dict[str, Any]]] = {}
     rejected: list[Mapping[str, str]] = []
     for in_profile in shortlist:
@@ -174,12 +210,25 @@ def decide(
             cid = f"{in_profile.stable_id}#{index}"
             chosen[cid] = (in_profile, window, row)
             pool.append(Candidate(cid, str(row["style"]), float(row["score"]), False))
+            offered.append(
+                {
+                    "cid": cid,
+                    "track": in_profile.stable_id,
+                    "style": str(row["style"]),
+                    "bars": int(row["bars"]),
+                    "score": float(row["score"]),
+                    "rationale": row.get("rationale"),
+                    "warnings": list((row.get("validation") or {}).get("warnings") or []),
+                }
+            )
     pick = choose_for_set(pool, intent, recent_styles)
     if pick is None:
         return Decision(
             reason=f"no shortlisted track has a valid plan ({len(shortlist)} tried)",
             windows=shown,
             rejected=tuple(rejected),
+            shortlist=asked,
+            candidates=tuple(offered),
         )
     in_profile, window, row = chosen[pick.cid]
     reason = f"{row['style']} over {row['bars']} bars at bar {window.start_bar} ({window.label}); M not measured until it renders"
@@ -191,4 +240,7 @@ def decide(
         bars=int(row["bars"]),
         windows=shown,
         rejected=tuple(rejected),
+        shortlist=asked,
+        candidates=tuple(offered),
+        chosen=pick.cid,
     )

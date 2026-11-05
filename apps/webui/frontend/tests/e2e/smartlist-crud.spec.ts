@@ -8,7 +8,9 @@ const ROW = '[data-testid="smartlist-row"]';
 const MENU = '[data-testid="context-menu"]';
 const FOLDER = '[data-testid="playlist-folder"]';
 
-async function _smartlists(page: Page): Promise<Array<{ id: string; name: string; rule: unknown }>> {
+async function _smartlists(
+	page: Page
+): Promise<Array<{ id: string; name: string; rule: unknown }>> {
 	const response = await page.request.get('/api/v1/smartlists');
 	expect(response.ok()).toBeTruthy();
 	return (await response.json()) as Array<{ id: string; name: string; rule: unknown }>;

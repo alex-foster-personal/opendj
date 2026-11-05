@@ -51,6 +51,12 @@ test('a live install still refuses a second install without retirement', () => {
 });
 
 test('the performance page retires its install on unmount before the deferred cleanup', async () => {
-	const source = await readFile(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8');
-	assert.match(source, /retirePerformanceBrowserIpc\(\);\s*void mirrorClosed\.finally\(\(\) => ipcUninstall\?\.\(\)\);/);
+	const source = await readFile(
+		new URL('../../src/routes/performance/+page.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		source,
+		/retirePerformanceBrowserIpc\(\);\s*void mirrorClosed\.finally\(\(\) => ipcUninstall\?\.\(\)\);/
+	);
 });

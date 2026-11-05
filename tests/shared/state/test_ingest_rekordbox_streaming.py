@@ -1,7 +1,7 @@
 """Regression test for the streaming-track stable_id collision fix.
 
 Fan-out v2 triage finding (2/3 consensus, see
-``.planning/FAN-OUT-V2-TRIAGE-2026-04-17.md``):
+``(private path)``):
 
 Before the fix, ``apps/shared/state/ingest/rekordbox.py`` set
 ``path_str = ""`` for every streaming row, so the tier-3 stable_id
@@ -14,6 +14,7 @@ into tier-3 even for streaming rows, while still suppressing
 ``os.path.exists`` / ``os.path.getmtime`` calls on non-filesystem
 schemes.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -59,13 +60,13 @@ def _patch_rb_ingest(monkeypatch, rows, playlists=()):
     import pyrekordbox
 
     monkeypatch.setattr(
-        pyrekordbox, "Rekordbox6Database", lambda *a, **k: _FakeRbDb(),
+        pyrekordbox,
+        "Rekordbox6Database",
+        lambda *a, **k: _FakeRbDb(),
         raising=False,
     )
     monkeypatch.setattr(rb_ingest, "_rb_rows", lambda _rb: iter(rows))
-    monkeypatch.setattr(
-        rb_ingest, "_rb_playlists", lambda _rb: iter(playlists)
-    )
+    monkeypatch.setattr(rb_ingest, "_rb_playlists", lambda _rb: iter(playlists))
 
 
 def _make_streaming_row(rb_id: str, uri: str) -> dict:
@@ -86,9 +87,7 @@ def _make_streaming_row(rb_id: str, uri: str) -> dict:
     }
 
 
-def test_streaming_rows_with_distinct_uris_do_not_collide(
-    monkeypatch, writer_and_conn
-):
+def test_streaming_rows_with_distinct_uris_do_not_collide(monkeypatch, writer_and_conn):
     """Two ISRC-less streaming rows with distinct ``folder_path`` URIs
     must produce distinct ``stable_id`` values and both land in the
     ``tracks`` table.
@@ -100,32 +99,21 @@ def test_streaming_rows_with_distinct_uris_do_not_collide(
     ]
     _patch_rb_ingest(monkeypatch, rows)
 
-    report = rb_ingest.ingest_rb(
-        writer, Path("/unused/rb.db"), dry_run=False
-    )
+    report = rb_ingest.ingest_rb(writer, Path("/unused/rb.db"), dry_run=False)
 
     assert report.tracks_inserted == 2, (
-        "expected both streaming rows to insert; before the fix the "
-        "seen_sids guard silently dropped the second row."
+        "expected both streaming rows to insert; before the fix the seen_sids guard silently dropped the second row."
     )
     assert report.tracks_skipped == 0
 
-    sids = [
-        r[0]
-        for r in conn.execute(
-            "SELECT stable_id FROM tracks ORDER BY stable_id"
-        ).fetchall()
-    ]
+    sids = [r[0] for r in conn.execute("SELECT stable_id FROM tracks ORDER BY stable_id").fetchall()]
     assert len(sids) == 2
     assert len(set(sids)) == 2, (
-        "streaming rows collided on the same stable_id; tier-3 hash "
-        "must include the streaming URI."
+        "streaming rows collided on the same stable_id; tier-3 hash must include the streaming URI."
     )
 
 
-def test_streaming_rows_with_same_uri_still_dedupe(
-    monkeypatch, writer_and_conn
-):
+def test_streaming_rows_with_same_uri_still_dedupe(monkeypatch, writer_and_conn):
     """Two streaming rows that legitimately share the same ``folder_path``
     URI must still collapse to one track (idempotency guarantee).
     """
@@ -137,13 +125,9 @@ def test_streaming_rows_with_same_uri_still_dedupe(
     ]
     _patch_rb_ingest(monkeypatch, rows)
 
-    report = rb_ingest.ingest_rb(
-        writer, Path("/unused/rb.db"), dry_run=False
-    )
+    report = rb_ingest.ingest_rb(writer, Path("/unused/rb.db"), dry_run=False)
 
     assert report.tracks_inserted == 1
     assert report.tracks_skipped == 1
-    tracks_count = conn.execute(
-        "SELECT COUNT(*) FROM tracks"
-    ).fetchone()[0]
+    tracks_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     assert tracks_count == 1

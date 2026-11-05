@@ -63,59 +63,59 @@
  *       text exactly [then ⛔️] broken
  */
 
-import { clampToViewport } from "$lib/ui/clamp-to-viewport";
-import type { AnchorishElement } from "./feedback-anchorish";
-import type { PinPlacement } from "./feedback-pin-position";
+import { clampToViewport } from '$lib/ui/clamp-to-viewport';
+import type { AnchorishElement } from './feedback-anchorish';
+import type { PinPlacement } from './feedback-pin-position';
 
 export interface PanelPos {
-  x: number;
-  y: number;
+	x: number;
+	y: number;
 }
 
-export const PANEL_POS_KEY = "odj-feedback-panel-pos";
+export const PANEL_POS_KEY = 'odj-feedback-panel-pos';
 
 /** Where an UNSENT pin draft is parked so a refresh cannot eat it. */
-export const PIN_DRAFT_KEY = "odj-feedback-pin-draft";
+export const PIN_DRAFT_KEY = 'odj-feedback-pin-draft';
 
 /** Keep at least this many px of the panel header reachable on both axes. */
 // ----- panel position ----------------------------------------------------
 /** Keep the whole panel on-viewport with the shared 8 px margin. */
 export function clampPanelPos(
-  pos: PanelPos,
-  panel: { w: number; h: number },
-  viewport: { w: number; h: number },
+	pos: PanelPos,
+	panel: { w: number; h: number },
+	viewport: { w: number; h: number }
 ): PanelPos {
-  const box = clampToViewport(
-    pos.x,
-    pos.y,
-    { width: panel.w, height: panel.h },
-    { width: viewport.w, height: viewport.h },
-  );
-  return { x: box.x, y: box.y };
+	const box = clampToViewport(
+		pos.x,
+		pos.y,
+		{ width: panel.w, height: panel.h },
+		{ width: viewport.w, height: viewport.h }
+	);
+	return { x: box.x, y: box.y };
 }
 
 export function parsePanelPos(raw: string | null): PanelPos | null {
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const { x, y } = parsed as Record<string, unknown>;
-  if (typeof x !== "number" || typeof y !== "number") return null;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
+	if (raw === null) return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== 'object' || parsed === null) return null;
+	const { x, y } = parsed as Record<string, unknown>;
+	if (typeof x !== 'number' || typeof y !== 'number') return null;
+	if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+	return { x, y };
 }
 
 export function serializePanelPos(pos: PanelPos): string {
-  return JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) });
+	return JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) });
 }
 
 // ----- panel drag suppression --------------------------------------------
 /** Tags inside the drag handle that own their own click and must keep it. */
-const DRAG_BLOCKING_TAGS = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
+const DRAG_BLOCKING_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']);
 
 /** Defensive bound on the ancestor walk. The handle is a handful of nodes up,
  * so this only exists so a malformed chain cannot spin forever. */
@@ -124,8 +124,8 @@ const DRAG_WALK_LIMIT = 16;
 /** The shape startsPanelDrag needs off a pointer event: DOM-free so node:test
  * can drive it with plain objects. */
 export interface DragNode {
-  tagName?: string;
-  parentElement?: DragNode | null;
+	tagName?: string;
+	parentElement?: DragNode | null;
 }
 
 /**
@@ -143,27 +143,24 @@ export interface DragNode {
  * topbar full of buttons, and walking past it would let an unrelated ancestor
  * control kill dragging entirely.
  */
-export function startsPanelDrag(
-  target: DragNode | null,
-  handle: DragNode | null,
-): boolean {
-  let node: DragNode | null | undefined = target;
-  for (let hops = 0; node && hops < DRAG_WALK_LIMIT; hops += 1) {
-    if (node === handle) return true;
-    if (DRAG_BLOCKING_TAGS.has((node.tagName ?? "").toUpperCase())) return false;
-    node = node.parentElement;
-  }
-  return true;
+export function startsPanelDrag(target: DragNode | null, handle: DragNode | null): boolean {
+	let node: DragNode | null | undefined = target;
+	for (let hops = 0; node && hops < DRAG_WALK_LIMIT; hops += 1) {
+		if (node === handle) return true;
+		if (DRAG_BLOCKING_TAGS.has((node.tagName ?? '').toUpperCase())) return false;
+		node = node.parentElement;
+	}
+	return true;
 }
 
 // ----- debounced auto-save ------------------------------------------------
 export interface Debounced<T> {
-  /** Record the latest value; (re)starts the trailing timer. */
-  set(value: T): void;
-  /** Fire the pending save NOW (blur, unmount). No-op when nothing pends. */
-  flush(): void;
-  /** True while a save is scheduled but not yet fired. */
-  pending(): boolean;
+	/** Record the latest value; (re)starts the trailing timer. */
+	set(value: T): void;
+	/** Fire the pending save NOW (blur, unmount). No-op when nothing pends. */
+	flush(): void;
+	/** True while a save is scheduled but not yet fired. */
+	pending(): boolean;
 }
 
 type Schedule = (fn: () => void, ms: number) => unknown;
@@ -174,58 +171,56 @@ type Cancel = (handle: unknown) => void;
  * tests drive time by hand instead of sleeping.
  */
 export function makeDebounce<T>(
-  delayMs: number,
-  run: (value: T) => void,
-  schedule: Schedule = (fn, ms) => setTimeout(fn, ms),
-  cancel: Cancel = (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+	delayMs: number,
+	run: (value: T) => void,
+	schedule: Schedule = (fn, ms) => setTimeout(fn, ms),
+	cancel: Cancel = (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
 ): Debounced<T> {
-  let handle: unknown = null;
-  let latest: T;
-  const fire = (): void => {
-    handle = null;
-    run(latest);
-  };
-  return {
-    set(value: T): void {
-      latest = value;
-      if (handle !== null) cancel(handle);
-      handle = schedule(fire, delayMs);
-    },
-    flush(): void {
-      if (handle === null) return;
-      cancel(handle);
-      fire();
-    },
-    pending(): boolean {
-      return handle !== null;
-    },
-  };
+	let handle: unknown = null;
+	let latest: T;
+	const fire = (): void => {
+		handle = null;
+		run(latest);
+	};
+	return {
+		set(value: T): void {
+			latest = value;
+			if (handle !== null) cancel(handle);
+			handle = schedule(fire, delayMs);
+		},
+		flush(): void {
+			if (handle === null) return;
+			cancel(handle);
+			fire();
+		},
+		pending(): boolean {
+			return handle !== null;
+		}
+	};
 }
 
 // ----- pin placement math -------------------------------------------------
 export interface PinPoint {
-  x_pct: number;
-  y_pct: number;
+	x_pct: number;
+	y_pct: number;
 }
 
 export function pinFromClient(
-  clientX: number,
-  clientY: number,
-  viewportW: number,
-  viewportH: number,
+	clientX: number,
+	clientY: number,
+	viewportW: number,
+	viewportH: number
 ): PinPoint {
-  if (viewportW <= 0 || viewportH <= 0) {
-    throw new Error(
-      `pinFromClient needs a real viewport, got ${viewportW}x${viewportH}`,
-    );
-  }
-  const pct = (value: number, span: number): number =>
-    Math.min(100, Math.max(0, Math.round((value / span) * 10000) / 100));
-  return { x_pct: pct(clientX, viewportW), y_pct: pct(clientY, viewportH) };
+	if (viewportW <= 0 || viewportH <= 0) {
+		throw new Error(`pinFromClient needs a real viewport, got ${viewportW}x${viewportH}`);
+	}
+	const pct = (value: number, span: number): number =>
+		Math.min(100, Math.max(0, Math.round((value / span) * 10000) / 100));
+	return { x_pct: pct(clientX, viewportW), y_pct: pct(clientY, viewportH) };
 }
 
 export function pinStyle(pin: PinPoint): string {
-  return `left:${pin.x_pct}%;top:${pin.y_pct}%`;
+	return `left:${pin.x_pct}%;top:${pin.y_pct}%`;
 }
 
 /**
@@ -247,10 +242,10 @@ export function pinStyle(pin: PinPoint): string {
  * the body off-screen instead of just against the edge.
  */
 export function pinBodyStyle(pin: PinPoint): string {
-  return (
-    `left:min(${pin.x_pct}%, max(0px, calc(100vw - 252px)));` +
-    `top:min(${pin.y_pct}%, max(0px, calc(100vh - 320px)))`
-  );
+	return (
+		`left:min(${pin.x_pct}%, max(0px, calc(100vw - 252px)));` +
+		`top:min(${pin.y_pct}%, max(0px, calc(100vh - 320px)))`
+	);
 }
 
 /**
@@ -269,15 +264,15 @@ export function pinBodyStyle(pin: PinPoint): string {
  * MEASURED panel size (`FeedbackPinCard`'s own `getBoundingClientRect()`).
  */
 export function pinBodyPos(
-  pin: PinPoint,
-  panel: { w: number; h: number },
-  viewport: { w: number; h: number },
+	pin: PinPoint,
+	panel: { w: number; h: number },
+	viewport: { w: number; h: number }
 ): PanelPos {
-  const pos = {
-    x: (pin.x_pct / 100) * viewport.w,
-    y: (pin.y_pct / 100) * viewport.h,
-  };
-  return clampPanelPos(pos, panel, viewport);
+	const pos = {
+		x: (pin.x_pct / 100) * viewport.w,
+		y: (pin.y_pct / 100) * viewport.h
+	};
+	return clampPanelPos(pos, panel, viewport);
 }
 
 // ----- pin lifecycle (issue #858) ----------------------------------------
@@ -290,27 +285,35 @@ export function pinBodyPos(
  * because the maintainer pressed Archive on a pin whose work is done. Pixel position
  * (x_pct/y_pct) is the durable reference; anchor labels are diagnostic only.
  */
-const PIN_STATUSES = ["open", "issued", "blocked", "fixed", "merged", "harvested", "archived"] as const;
+const PIN_STATUSES = [
+	'open',
+	'issued',
+	'blocked',
+	'fixed',
+	'merged',
+	'harvested',
+	'archived'
+] as const;
 export type PinStatus = (typeof PIN_STATUSES)[number];
 
 /** The one localStorage key this feature owns: {pin id: updated_at seen}. */
-export const PIN_SEEN_KEY = "mdt.feedback.pinSeen.v1";
+export const PIN_SEEN_KEY = 'mdt.feedback.pinSeen.v1';
 
 /** What the lifecycle reads off a pin. A subset of CommentOut so node:test
  * can drive these with plain objects and no generated client types. */
 export interface LifecyclePin {
-  id: string;
-  x_pct?: number;
-  y_pct?: number;
-  anchor?: string | null;
-  page?: string;
-  status?: string | null;
-  issue_url?: string | null;
-  updated_at?: string | null;
-  agent_note?: string | null;
-  fixed_in_sha?: string | null;
-  fixed_at?: string | null;
-  environment?: { viewport_width?: number; viewport_height?: number } | null;
+	id: string;
+	x_pct?: number;
+	y_pct?: number;
+	anchor?: string | null;
+	page?: string;
+	status?: string | null;
+	issue_url?: string | null;
+	updated_at?: string | null;
+	agent_note?: string | null;
+	fixed_in_sha?: string | null;
+	fixed_at?: string | null;
+	environment?: { viewport_width?: number; viewport_height?: number } | null;
 }
 
 /**
@@ -322,12 +325,12 @@ export interface LifecyclePin {
  * it is the state that hides nothing.
  */
 function _isPinStatus(raw: string): raw is PinStatus {
-  return (PIN_STATUSES as readonly string[]).includes(raw);
+	return (PIN_STATUSES as readonly string[]).includes(raw);
 }
 
 export function pinStatus(pin: LifecyclePin): PinStatus {
-  const raw = pin.status ?? "open";
-  return _isPinStatus(raw) ? raw : "open";
+	const raw = pin.status ?? 'open';
+	return _isPinStatus(raw) ? raw : 'open';
 }
 
 // Partial state (pin 58a16ac781db, follow-on to #907) lives in
@@ -367,39 +370,41 @@ export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSu
 		const status = pinStatus(pin);
 		if (status === 'archived') continue;
 		summary.total += 1;
-    if (pin.status === null || pin.status === undefined) {
-      summary.untriaged += 1;
-    } else {
-      summary[status] += 1;
-    }
-  }
-  return summary;
+		if (pin.status === null || pin.status === undefined) {
+			summary.untriaged += 1;
+		} else {
+			summary[status] += 1;
+		}
+	}
+	return summary;
 }
 
 export function describePinStatusSummary(pins: readonly LifecyclePin[]): string {
 	const summary = summarizePinStatuses(pins);
-	return `Active comment pins: ${summary.total} total - ` +
+	return (
+		`Active comment pins: ${summary.total} total - ` +
 		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ${summary.blocked} blocked, ` +
-		`${summary.fixed} fixed, ${summary.merged} merged, ${summary.harvested} harvested`;
+		`${summary.fixed} fixed, ${summary.merged} merged, ${summary.harvested} harvested`
+	);
 }
 
 export { blockedPinDetail, blockedPinRequest } from './feedback-blocked-note';
 
 /** Archived pins leave the canvas; harvested and everything else stay on it. */
 export function isPinDrawn(pin: LifecyclePin): boolean {
-  return pinStatus(pin) !== "archived";
+	return pinStatus(pin) !== 'archived';
 }
 
 /** True once the work behind a pin is done, which is what unlocks Archive and
  * Follow-on. Offering them earlier invites archiving work still in flight. */
 export function pinIsDone(pin: LifecyclePin): boolean {
-  const status = pinStatus(pin);
-  return status === "fixed" || status === "merged";
+	const status = pinStatus(pin);
+	return status === 'fixed' || status === 'merged';
 }
 
 /** The prefix a follow-on pin opens with, naming the parent it came from. */
 export function followOnText(pin: LifecyclePin): string {
-  return `Follow-on to ${pin.issue_url ?? pin.id}: `;
+	return `Follow-on to ${pin.issue_url ?? pin.id}: `;
 }
 
 // ----- the unread marker (the maintainer, Wed 2 Sep 2026 17:12) --------------------
@@ -416,37 +421,36 @@ export type PinSeen = Record<string, string>;
  * the same second still compare unequal.
  */
 export function isPinUnread(pin: LifecyclePin, seen: PinSeen): boolean {
-  const updated = pin.updated_at;
-  if (!updated) return false; // no agent has ever written to it
-  const at = seen[pin.id];
-  return at === undefined || at < updated;
+	const updated = pin.updated_at;
+	if (!updated) return false; // no agent has ever written to it
+	const at = seen[pin.id];
+	return at === undefined || at < updated;
 }
 
 /** Record that this viewer has read the pin AS IT STANDS NOW. */
 export function markPinSeen(seen: PinSeen, pin: LifecyclePin): PinSeen {
-  if (!pin.updated_at) return seen;
-  return { ...seen, [pin.id]: pin.updated_at };
+	if (!pin.updated_at) return seen;
+	return { ...seen, [pin.id]: pin.updated_at };
 }
 
 export function parsePinSeen(raw: string | null): PinSeen {
-  if (!raw) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-    return {};
-  const seen: PinSeen = {};
-  for (const [id, at] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof at === "string") seen[id] = at;
-  }
-  return seen;
+	if (!raw) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return {};
+	}
+	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+	const seen: PinSeen = {};
+	for (const [id, at] of Object.entries(parsed as Record<string, unknown>)) {
+		if (typeof at === 'string') seen[id] = at;
+	}
+	return seen;
 }
 
 export function serializePinSeen(seen: PinSeen): string {
-  return JSON.stringify(seen);
+	return JSON.stringify(seen);
 }
 
 // ----- pin visibility preference (pin 88e3abec02a0) ----------------------
@@ -457,29 +461,29 @@ export function serializePinSeen(seen: PinSeen): string {
  * Fail-fast: only null (no stored value yet), "0" and "1" are valid: every
  * other value is corrupted or future-version state, and hiding that behind
  * a silent OFF would mask exactly the failure this file exists to surface. */
-export const PINS_VISIBLE_KEY = "mdt.feedback.pinsVisible.v1";
+export const PINS_VISIBLE_KEY = 'mdt.feedback.pinsVisible.v1';
 
 export function parsePinsVisible(raw: string | null): boolean {
-  if (raw === null) return false;
-  if (raw === "0") return false;
-  if (raw === "1") return true;
-  throw new Error(`pinsVisible: unrecognised stored value ${JSON.stringify(raw)}`);
+	if (raw === null) return false;
+	if (raw === '0') return false;
+	if (raw === '1') return true;
+	throw new Error(`pinsVisible: unrecognised stored value ${JSON.stringify(raw)}`);
 }
 
 export function serializePinsVisible(visible: boolean): string {
-  return visible ? "1" : "0";
+	return visible ? '1' : '0';
 }
 
 // ----- linkifying an agent's plain-text note (pin 27fe1e3e61b5) ----------
 // Moved to feedback-note.ts (Thu 3 Sep 2026, pin review v2) to bring this
 // file back under the 600-line file-size gate; re-exported here so nothing
 // importing it from feedback.ts needs to change.
-export { linkifyAgentNote } from "./feedback-note";
+export { linkifyAgentNote } from './feedback-note';
 
 // ----- nearest stable anchor ---------------------------------------------
 // AnchorishElement lives in feedback-anchorish.ts so feedback-pin-placement
 // can name it without importing this module (that edge closed an import cycle).
-export type { AnchorishElement } from "./feedback-anchorish";
+export type { AnchorishElement } from './feedback-anchorish';
 
 const ANCHOR_WALK_LIMIT = 8;
 
@@ -490,56 +494,53 @@ const ANCHOR_WALK_LIMIT = 8;
  * describe layout, not the thing clicked). Null when nothing stable exists.
  */
 export function describeAnchor(start: AnchorishElement | null): string | null {
-  let el: AnchorishElement | null | undefined = start;
-  let hops = 0;
-  while (el && hops < ANCHOR_WALK_LIMIT) {
-    if (el.id) return `#${el.id}`;
-    const testId = el.getAttribute?.("data-testid");
-    if (testId) return `[data-testid="${testId}"]`;
-    const label = el.getAttribute?.("aria-label");
-    if (label) {
-      const tag = (el.tagName ?? "element").toLowerCase();
-      return `${tag}[aria-label="${label}"]`;
-    }
-    if (hops === 0) {
-      const cls =
-        el.classList && el.classList.length > 0 ? el.classList.item(0) : null;
-      if (cls) return `.${cls}`;
-    }
-    el = el.parentElement;
-    hops += 1;
-  }
-  return null;
+	let el: AnchorishElement | null | undefined = start;
+	let hops = 0;
+	while (el && hops < ANCHOR_WALK_LIMIT) {
+		if (el.id) return `#${el.id}`;
+		const testId = el.getAttribute?.('data-testid');
+		if (testId) return `[data-testid="${testId}"]`;
+		const label = el.getAttribute?.('aria-label');
+		if (label) {
+			const tag = (el.tagName ?? 'element').toLowerCase();
+			return `${tag}[aria-label="${label}"]`;
+		}
+		if (hops === 0) {
+			const cls = el.classList && el.classList.length > 0 ? el.classList.item(0) : null;
+			if (cls) return `.${cls}`;
+		}
+		el = el.parentElement;
+		hops += 1;
+	}
+	return null;
 }
-
 
 // ----- unsent pin draft ---------------------------------------------------
 export interface PinDraft {
-  point: PinPoint;
-  anchor: string | null;
-  text: string;
-  /** The pathname the draft's point/anchor were computed against, captured
-   * at creation time (r3919185341). A draft is only ever meaningful on the
-   * page it was placed on - restoring it under a different pathname and
-   * saving with the CURRENT page would silently attach the comment to the
-   * wrong page and reinterpret stale coordinates against a different UI. */
-  page: string;
-  /** Viewport captured at creation time. Optional only because an
-   * older-shaped stored draft (pre this field) must still parse. */
-  viewport?: { width: number; height: number };
-  /** Follow-on parent link, if this draft is a reply-in-progress. Persisted
-   * across a refresh (pin b0f-followon, FeedbackWidget.svelte:138 review):
-   * dropping it on restore silently downgraded a follow-on draft to a
-   * plain top-level draft, which is the bug this field exists to close. */
-  followOn?: { parentId: string; label: string } | null;
-  /** Where the click sits relative to the UI (feedback-pin-position.ts). */
-  placement?: PinPlacement | null;
+	point: PinPoint;
+	anchor: string | null;
+	text: string;
+	/** The pathname the draft's point/anchor were computed against, captured
+	 * at creation time (r3919185341). A draft is only ever meaningful on the
+	 * page it was placed on - restoring it under a different pathname and
+	 * saving with the CURRENT page would silently attach the comment to the
+	 * wrong page and reinterpret stale coordinates against a different UI. */
+	page: string;
+	/** Viewport captured at creation time. Optional only because an
+	 * older-shaped stored draft (pre this field) must still parse. */
+	viewport?: { width: number; height: number };
+	/** Follow-on parent link, if this draft is a reply-in-progress. Persisted
+	 * across a refresh (pin b0f-followon, FeedbackWidget.svelte:138 review):
+	 * dropping it on restore silently downgraded a follow-on draft to a
+	 * plain top-level draft, which is the bug this field exists to close. */
+	followOn?: { parentId: string; label: string } | null;
+	/** Where the click sits relative to the UI (feedback-pin-position.ts). */
+	placement?: PinPlacement | null;
 }
 
 export function serializePinDraft(draft: PinDraft): string {
-  return JSON.stringify(draft);
+	return JSON.stringify(draft);
 }
-
 
 /**
  * Restore a parked draft, or null. Strict on purpose, the same way
@@ -549,61 +550,61 @@ export function serializePinDraft(draft: PinDraft): string {
  * on every load.
  */
 export function parsePinDraft(raw: string | null): PinDraft | null {
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const d = parsed as Record<string, unknown>;
-  const point = d.point as Record<string, unknown> | undefined;
-  if (
-    typeof point !== "object" ||
-    point === null ||
-    !Number.isFinite(point.x_pct as number) ||
-    !Number.isFinite(point.y_pct as number)
-  ) {
-    return null;
-  }
-  if (typeof d.text !== "string" || d.text.trim() === "") return null;
-  if (d.anchor !== null && typeof d.anchor !== "string") return null;
-  if (typeof d.page !== "string" || d.page === "") return null;
-  // followOn is optional and, when present, must be a well-formed
-  // { parentId, label } record - a half-shaped one is worse than none,
-  // since saving against a bad parentId would fail server-side.
-  let followOn: { parentId: string; label: string } | null | undefined;
-  if (d.followOn === null || d.followOn === undefined) {
-    followOn = d.followOn === null ? null : undefined;
-  } else if (
-    typeof d.followOn === "object" &&
-    typeof (d.followOn as Record<string, unknown>).parentId === "string" &&
-    typeof (d.followOn as Record<string, unknown>).label === "string"
-  ) {
-    const fo = d.followOn as Record<string, unknown>;
-    followOn = { parentId: fo.parentId as string, label: fo.label as string };
-  } else {
-    return null; // corrupt follow-on link - do not restore a broken draft
-  }
-  const vp = d.viewport as Record<string, unknown> | undefined;
-  const viewport =
-    typeof vp === "object" &&
-    vp !== null &&
-    Number.isFinite(vp.width as number) &&
-    Number.isFinite(vp.height as number)
-      ? { width: vp.width as number, height: vp.height as number }
-      : undefined;
-  // exactOptionalPropertyTypes forbids `viewport: undefined` / `followOn:
-  // undefined` against PinDraft's optional (not `| undefined`) properties -
-  // the key must be ABSENT, not present-with-undefined, when there is no
-  // value to restore.
-  return {
-    point: { x_pct: point.x_pct as number, y_pct: point.y_pct as number },
-    page: d.page,
-    anchor: d.anchor,
-    text: d.text,
-    ...(viewport !== undefined ? { viewport } : {}),
-    ...(followOn !== undefined ? { followOn } : {}),
-  };
+	if (raw === null) return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== 'object' || parsed === null) return null;
+	const d = parsed as Record<string, unknown>;
+	const point = d.point as Record<string, unknown> | undefined;
+	if (
+		typeof point !== 'object' ||
+		point === null ||
+		!Number.isFinite(point.x_pct as number) ||
+		!Number.isFinite(point.y_pct as number)
+	) {
+		return null;
+	}
+	if (typeof d.text !== 'string' || d.text.trim() === '') return null;
+	if (d.anchor !== null && typeof d.anchor !== 'string') return null;
+	if (typeof d.page !== 'string' || d.page === '') return null;
+	// followOn is optional and, when present, must be a well-formed
+	// { parentId, label } record - a half-shaped one is worse than none,
+	// since saving against a bad parentId would fail server-side.
+	let followOn: { parentId: string; label: string } | null | undefined;
+	if (d.followOn === null || d.followOn === undefined) {
+		followOn = d.followOn === null ? null : undefined;
+	} else if (
+		typeof d.followOn === 'object' &&
+		typeof (d.followOn as Record<string, unknown>).parentId === 'string' &&
+		typeof (d.followOn as Record<string, unknown>).label === 'string'
+	) {
+		const fo = d.followOn as Record<string, unknown>;
+		followOn = { parentId: fo.parentId as string, label: fo.label as string };
+	} else {
+		return null; // corrupt follow-on link - do not restore a broken draft
+	}
+	const vp = d.viewport as Record<string, unknown> | undefined;
+	const viewport =
+		typeof vp === 'object' &&
+		vp !== null &&
+		Number.isFinite(vp.width as number) &&
+		Number.isFinite(vp.height as number)
+			? { width: vp.width as number, height: vp.height as number }
+			: undefined;
+	// exactOptionalPropertyTypes forbids `viewport: undefined` / `followOn:
+	// undefined` against PinDraft's optional (not `| undefined`) properties -
+	// the key must be ABSENT, not present-with-undefined, when there is no
+	// value to restore.
+	return {
+		point: { x_pct: point.x_pct as number, y_pct: point.y_pct as number },
+		page: d.page,
+		anchor: d.anchor,
+		text: d.text,
+		...(viewport !== undefined ? { viewport } : {}),
+		...(followOn !== undefined ? { followOn } : {})
+	};
 }

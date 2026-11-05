@@ -121,9 +121,9 @@ def test_the_guard_bites_on_the_shape_that_shipped() -> None:
 def test_a_colon_inside_a_quoted_default_does_not_end_the_header() -> None:
     """control: a required parameter AFTER a quoted URL default is still seen and refused"""
     line = 'recipe base="http://127.0.0.1:8685" REQUIRED:'
-    assert _params(header_params(line) or "") == ['base=http://127.0.0.1:8685', "REQUIRED"]
+    assert _params(header_params(line) or "") == ["base=http://127.0.0.1:8685", "REQUIRED"]
     assert defaulted_before_required(_params(header_params(line) or ""))
-    assert header_params("pytest_scope := \"tests/webui tests/x\"") is None, "an assignment"
+    assert header_params('pytest_scope := "tests/webui tests/x"') is None, "an assignment"
     assert header_params("    indented body: not a header") is None
 
 

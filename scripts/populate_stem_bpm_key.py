@@ -5,7 +5,7 @@
 """Populate BPM + key (camelot) track_fields for the 100 vocal stems.
 
 The stems are acapellas of tracks whose BPM/key we already resolved into
-data/clubsauna_acapella_techno_100.jsonl (rank == the NNN prefix on each
+(private path) (rank == the NNN prefix on each
 vocal file). Write those into track_fields so the Library/browser BPM + Key
 columns render and key-matching works. Source 'inferred' (derived from the
 source track, not measured on the stem). Fail-fast on any rank/title mismatch.
@@ -15,6 +15,7 @@ directory (#910: no personal path is hardcoded in tracked code). Required,
 and the directory must exist -- an unset or missing value fails fast rather
 than globbing zero files and silently doing nothing.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -78,14 +79,16 @@ def main() -> None:
                     """INSERT OR REPLACE INTO track_fields
                        (stable_id, field_name, value_json, source, confidence, modified_at)
                        VALUES (?, 'bpm', ?, 'inferred', 0.9, ?)""",
-                    (sid, json.dumps(float(bpm)), now))
+                    (sid, json.dumps(float(bpm)), now),
+                )
                 n_bpm += 1
             if camelot:
                 con.execute(
                     """INSERT OR REPLACE INTO track_fields
                        (stable_id, field_name, value_json, source, confidence, modified_at)
                        VALUES (?, 'key', ?, 'inferred', 0.9, ?)""",
-                    (sid, json.dumps(camelot), now))
+                    (sid, json.dumps(camelot), now),
+                )
                 n_key += 1
     con.close()
     print(f"wrote bpm for {n_bpm}/100, key for {n_key}/100 stems")

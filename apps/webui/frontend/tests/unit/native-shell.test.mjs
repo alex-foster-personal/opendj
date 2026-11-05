@@ -103,8 +103,14 @@ test('every native call outside a shell fails loud instead of doing nothing', as
 });
 
 test('electronApplyUpdate is null outside Electron so callers keep their own path', () => {
-	assert.equal(mod.electronApplyUpdate(() => {}, {}), null);
-	assert.equal(mod.electronApplyUpdate(() => {}, { __TAURI_INTERNALS__: {} }), null);
+	assert.equal(
+		mod.electronApplyUpdate(() => {}, {}),
+		null
+	);
+	assert.equal(
+		mod.electronApplyUpdate(() => {}, { __TAURI_INTERNALS__: {} }),
+		null
+	);
 });
 
 test('electronApplyUpdate forwards progress and the outcome', async () => {
@@ -128,13 +134,24 @@ test('SPOT-6555b: Electron v2 docks the player; options pass through', async () 
 				open: async (url, options) => calls.push(['open', url, options]),
 				setCollapsed: async () => {},
 				close: async () => {},
-				importBrowserLogins: async () => ({ kind: 'imported', browser: 'Google Chrome', cookies: 3, sites: ['spotify.com'] })
+				importBrowserLogins: async () => ({
+					kind: 'imported',
+					browser: 'Google Chrome',
+					cookies: 3,
+					sites: ['spotify.com']
+				})
 			}
 		}
 	};
 	assert.equal(side.hasSidePlayer(scope), true);
-	await side.openSpotifySidePlayer('https://open.spotify.com/playlist/abc', { shrinkMain: false }, scope);
-	assert.deepEqual(calls, [['open', 'https://open.spotify.com/playlist/abc', { shrinkMain: false }]]);
+	await side.openSpotifySidePlayer(
+		'https://open.spotify.com/playlist/abc',
+		{ shrinkMain: false },
+		scope
+	);
+	assert.deepEqual(calls, [
+		['open', 'https://open.spotify.com/playlist/abc', { shrinkMain: false }]
+	]);
 	assert.equal((await side.importBrowserLogins(scope)).cookies, 3);
 });
 
@@ -183,22 +200,35 @@ test('SPOT-6555b: Tauri opens the player in the system browser, not a swallowed 
 	const external = [];
 	const popups = [];
 	const scope = { __TAURI_INTERNALS__: {}, open: (...args) => (popups.push(args), null) };
-	await side.openSpotifySidePlayer('https://open.spotify.com/playlist/abc', {}, scope, async (url, s) =>
-		external.push([url, s])
+	await side.openSpotifySidePlayer(
+		'https://open.spotify.com/playlist/abc',
+		{},
+		scope,
+		async (url, s) => external.push([url, s])
 	);
 	assert.deepEqual(external, [['https://open.spotify.com/playlist/abc', scope]]);
 	assert.deepEqual(popups, []);
 	// The target contract still applies before the opener is reached.
 	await assert.rejects(
-		side.openSpotifySidePlayer('https://open.spotify.com/account/overview', {}, scope, async (url) => external.push([url])),
+		side.openSpotifySidePlayer(
+			'https://open.spotify.com/account/overview',
+			{},
+			scope,
+			async (url) => external.push([url])
+		),
 		/only opens/
 	);
 	assert.equal(external.length, 1);
 	// Control: a browser tab never reaches the system-browser opener.
 	const player = { opener: {}, location: { href: '' } };
-	await side.openSpotifySidePlayer('https://open.spotify.com/playlist/abc', {}, { open: () => player }, async () => {
-		throw new Error('a browser tab must not use the system opener');
-	});
+	await side.openSpotifySidePlayer(
+		'https://open.spotify.com/playlist/abc',
+		{},
+		{ open: () => player },
+		async () => {
+			throw new Error('a browser tab must not use the system opener');
+		}
+	);
 	assert.equal(player.location.href, 'https://open.spotify.com/playlist/abc');
 });
 
@@ -216,7 +246,10 @@ test('SPOT-6555b: only open.spotify.com URLs reach the player', async () => {
 		side.openSpotifySidePlayer('https://open.spotify.com.evil.example/x', {}, { open: () => {} }),
 		/only opens/
 	);
-	await assert.rejects(side.openSpotifySidePlayer('javascript:alert(1)', {}, { open: () => {} }), /only opens/);
+	await assert.rejects(
+		side.openSpotifySidePlayer('javascript:alert(1)', {}, { open: () => {} }),
+		/only opens/
+	);
 });
 
 test('SPOT-6555b: the fallback opens only the content pages Electron opens', async () => {
@@ -232,7 +265,11 @@ test('SPOT-6555b: the fallback opens only the content pages Electron opens', asy
 	]) {
 		let opened = false;
 		await assert.rejects(
-			side.openSpotifySidePlayer(bad, {}, { open: () => ((opened = true), { opener: {}, location: { href: '' } }) }),
+			side.openSpotifySidePlayer(
+				bad,
+				{},
+				{ open: () => ((opened = true), { opener: {}, location: { href: '' } }) }
+			),
 			/only opens/,
 			bad
 		);

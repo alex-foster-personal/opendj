@@ -351,7 +351,8 @@ export function phaseLockTick(): void {
 				keyLocked: st.master_tempo_enabled,
 				sinceJoinSec: _nowSec() - lock.joinedAtSec,
 				overLineTicks: lock.overLineTicks,
-				userOffsetMs: lock.userOffsetMs
+				userOffsetMs: lock.userOffsetMs,
+				syncMode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode)
 			};
 			// Feed-forward may rewrite the base this tick. `trimming` is whether a
 			// trim is already on the wire (sent !== the base the last tick settled),
@@ -745,7 +746,8 @@ export function cancelArmedJump(deck: DeckId): void {
  * downbeat on the page clock, then seeks as far past the cue as the music
  * already went, so it lands on the beat even when the timer fires late.
  */
-export const rustHotCueDriver: PerformanceHotCueDriver = {
+/** engageLoop is added where the mode installs it (rust-engine.ts), which owns executeRustCommand. */
+export const rustHotCueDriver: Omit<PerformanceHotCueDriver, 'engageLoop'> = {
 	stableId: (deck) => deckStates[deck].stable_id,
 	refresh: async (deck) => {
 		const st = loadedDeck(deck, 'hot cue refresh');

@@ -87,12 +87,8 @@ class _SlowDiskJobStore(JobStore):
         super().__init__(db_path, boot_id="boot-coalesce", owner_pid=os.getpid())
         self.progress_writes: list[_Write] = []
 
-    def set_progress(
-        self, job_id: str, progress: float, message: str | None
-    ) -> dict[str, Any]:
-        self.progress_writes.append(
-            _Write(progress, message, threading.get_ident(), time.monotonic())
-        )
+    def set_progress(self, job_id: str, progress: float, message: str | None) -> dict[str, Any]:
+        self.progress_writes.append(_Write(progress, message, threading.get_ident(), time.monotonic()))
         time.sleep(WRITE_COST_S)
         return super().set_progress(job_id, progress, message)
 
@@ -104,9 +100,7 @@ class _Run:
     loop_thread: int
     started: float
     ended: float
-    observed: list[tuple[dict[str, Any], dict[str, Any]]] = field(
-        default_factory=list
-    )
+    observed: list[tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=list)
 
 
 @pytest.fixture(scope="module")
@@ -152,9 +146,7 @@ def _drive(store: _SlowDiskJobStore, sink: list[Any]) -> _Run:
 
 
 @pytest.fixture(scope="module")
-def run(
-    tmp_path_factory: pytest.TempPathFactory, observed: list[Any]
-) -> Iterator[tuple[_Run, _SlowDiskJobStore]]:
+def run(tmp_path_factory: pytest.TempPathFactory, observed: list[Any]) -> Iterator[tuple[_Run, _SlowDiskJobStore]]:
     """One run shared by every assertion below: each costs seconds."""
     store = _SlowDiskJobStore(tmp_path_factory.mktemp("coalesce") / "jobs.db")
     store.recover()
@@ -182,10 +174,7 @@ def test_no_progress_line_is_written_on_the_loop_thread(
     line_writes = [w for w in store.progress_writes if w.message != "done"]
     assert line_writes, "no progress line was ever written"
     on_loop = [w for w in line_writes if w.thread == result.loop_thread]
-    assert not on_loop, (
-        f"{len(on_loop)} of {len(line_writes)} progress writes ran on the "
-        "event loop thread"
-    )
+    assert not on_loop, f"{len(on_loop)} of {len(line_writes)} progress writes ran on the event loop thread"
 
 
 def test_progress_writes_are_rate_bounded_but_still_reported_mid_run(
@@ -196,8 +185,7 @@ def test_progress_writes_are_rate_bounded_but_still_reported_mid_run(
     elapsed = result.ended - result.started
     ceiling = int(elapsed / PROGRESS_WRITE_INTERVAL_S) + 2
     assert len(line_writes) <= ceiling, (
-        f"{len(line_writes)} progress writes for {LINES} lines in "
-        f"{elapsed:.2f}s; the rate bound allows {ceiling}"
+        f"{len(line_writes)} progress writes for {LINES} lines in {elapsed:.2f}s; the rate bound allows {ceiling}"
     )
     # Overshoot control: writing only at EOF would pass the bound above.
     mid_run = [w for w in line_writes if w.progress < 1.0]
@@ -224,11 +212,6 @@ def test_the_observer_still_sees_every_line_after_a_covering_write(
         f"{[s for a, s in zip(range(1, LINES + 1), seqs, strict=False) if a != s][:5]}"
     )
     uncovered = [
-        (job["progress"], line["progress"])
-        for job, line in result.observed
-        if job["progress"] < line["progress"]
+        (job["progress"], line["progress"]) for job, line in result.observed if job["progress"] < line["progress"]
     ]
-    assert not uncovered, (
-        f"{len(uncovered)} lines were observed before the store recorded "
-        f"them, e.g. {uncovered[:3]}"
-    )
+    assert not uncovered, f"{len(uncovered)} lines were observed before the store recorded them, e.g. {uncovered[:3]}"

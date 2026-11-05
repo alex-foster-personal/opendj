@@ -1078,6 +1078,49 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn a_same_length_mtime_restored_rewrite_is_a_new_file_key() {
+        // A same-length rewrite that puts mtime back (`cp -p`, `rsync -t`)
+        // is a new FileKey once this file's change time moves; the session
+        // cache must miss while a deck still holds the old Arc.
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-mtime-").tempdir().unwrap();
+        let path = tmp.path().join("a.wav");
+        let write = |v: f32| {
+            let mut f = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+            crate::wav::write_f32(&mut f, 48000, &[v; 1920]).unwrap();
+        };
+        write(0.25);
+        let key = FileKey::of(&path);
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+        let cache = TrackCache::default();
+        let first = cache.load(&path, &spec).unwrap();
+        let kept = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let next = loop {
+            write(0.5);
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(kept).unwrap();
+            let next = FileKey::of(&path);
+            if next != key {
+                break next;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a.wav's FileKey stayed equal to the cached key for 5 s"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert_ne!(next, key);
+        assert_eq!(next.id, key.id, "the rewrite is not the same inode");
+        assert_eq!(next.len, key.len, "the rewrite is not the case under test");
+        assert_eq!(next.modified, key.modified, "mtime was not restored");
+        assert_ne!(next.changed, key.changed, "the miss is not the change-time field");
+        let second = cache.load(&path, &spec).unwrap();
+        assert!(second.pcm[..] != first.pcm[..], "the cache handed out the old samples");
+        // `first` still lives, so this is a Weak-upgrade miss, not a prune.
+        assert!(Arc::strong_count(&first.pcm) > 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn samples_are_cached_under_the_file_they_were_decoded_from() {
         // Codex on b1f97c9d: the key was read from the path before the
         // decoder opened it again, so a path repointed in between stored the

@@ -74,9 +74,7 @@ test.describe('refresh analysis button', () => {
 			// place it reaches the CI log (apps.analysis.run exited -11, #1574).
 			const status = await page.request.get('/api/v1/ingest/refresh/status');
 			const body = (await status.json()) as { log_tail?: string[] };
-			console.log(
-				['[ingest-refresh] job log at failure:', ...(body.log_tail ?? [])].join('\n')
-			);
+			console.log(['[ingest-refresh] job log at failure:', ...(body.log_tail ?? [])].join('\n'));
 		}
 		await expect(pop).toContainText('done');
 		await expect(pop).not.toContainText('error', { timeout: 1_000 });

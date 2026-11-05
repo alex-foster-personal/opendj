@@ -4,6 +4,7 @@
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import ast
@@ -34,10 +35,7 @@ def _state_db_path(db: sqlite3.Connection, tmp_path: Path) -> Path:
 def _rekordbox_payload(stable_id: str = STABLE_ID) -> dict[str, Any]:
     bpm = 100.0
     interval = 60.0 / bpm
-    beats = [
-        {"n": i, "bpm": bpm, "t": round(1.0 + (i - 1) * interval, 3)}
-        for i in range(1, 5)
-    ]
+    beats = [{"n": i, "bpm": bpm, "t": round(1.0 + (i - 1) * interval, 3)} for i in range(1, 5)]
     return {
         "stable_id": stable_id,
         "beatgrid": {

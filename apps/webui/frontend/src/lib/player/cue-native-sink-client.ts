@@ -14,7 +14,10 @@ import {
 	type NativeOutputDevice
 } from './cue-native-sink';
 
-type _Pending = { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void };
+type _Pending = {
+	resolve: (value: Record<string, unknown>) => void;
+	reject: (error: Error) => void;
+};
 
 /** The page side of the native sink: a request/response client over the worker. */
 export class NativeCueSinkClient {
@@ -29,7 +32,8 @@ export class NativeCueSinkClient {
 
 	constructor(config: NativeCueSinkConfig, worker?: Worker) {
 		this.worker =
-			worker ?? new Worker(new URL('./cue-native-sink.worker.ts', import.meta.url), { type: 'module' });
+			worker ??
+			new Worker(new URL('./cue-native-sink.worker.ts', import.meta.url), { type: 'module' });
 		let markReady: () => void = () => {};
 		let markFailed: (error: Error) => void = () => {};
 		this.ready = new Promise<void>((resolve, reject) => {
@@ -110,7 +114,8 @@ export class NativeCueSinkClient {
 
 	private async request(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
 		await this.ready;
-		if (this.closedReason !== null) throw new Error(`native cue sink disconnected: ${this.closedReason}`);
+		if (this.closedReason !== null)
+			throw new Error(`native cue sink disconnected: ${this.closedReason}`);
 		const id = this.nextId++;
 		const reply = new Promise<Record<string, unknown>>((resolve, reject) => {
 			this.pending.set(id, { resolve, reject });
@@ -121,12 +126,17 @@ export class NativeCueSinkClient {
 
 	async list(): Promise<NativeOutputDevice[]> {
 		const reply = await this.request({ type: 'list' });
-		if (!Array.isArray(reply.devices)) throw new Error('native cue sink listing has no devices array');
+		if (!Array.isArray(reply.devices))
+			throw new Error('native cue sink listing has no devices array');
 		return reply.devices as NativeOutputDevice[];
 	}
 
 	async open(deviceId: string, sampleRate: number): Promise<NativeOpenedDevice> {
-		const reply = await this.request({ type: 'open', uid: nativeDeviceUid(deviceId), sample_rate: sampleRate });
+		const reply = await this.request({
+			type: 'open',
+			uid: nativeDeviceUid(deviceId),
+			sample_rate: sampleRate
+		});
 		this.opened = reply.device as NativeOpenedDevice;
 		return this.opened;
 	}
@@ -154,7 +164,8 @@ export class NativeCueSinkClient {
 	dispose(): void {
 		this.worker.terminate();
 		this.closedReason ??= 'disposed';
-		for (const waiter of this.pending.values()) waiter.reject(new Error('native cue sink disposed'));
+		for (const waiter of this.pending.values())
+			waiter.reject(new Error('native cue sink disposed'));
 		this.pending.clear();
 		this.listeners.clear();
 	}

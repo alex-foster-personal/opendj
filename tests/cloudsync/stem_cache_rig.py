@@ -3,6 +3,7 @@
 Builds strict-loadable stem bundles on disk and injects the disk measurement,
 so no test asserts on whatever the machine happened to have free that day.
 """
+
 from __future__ import annotations
 
 import hashlib

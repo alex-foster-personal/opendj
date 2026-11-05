@@ -8,6 +8,7 @@ unknown, pending a human ear) still reported ``ok=True``. That let
 its own CLI contract requires every known-answer check to pass and this one
 explicitly never ran to a verdict.
 """
+
 from __future__ import annotations
 
 from apps.equivalence.known import CheckResult, KnownAnswerReport

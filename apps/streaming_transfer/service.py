@@ -16,6 +16,7 @@ from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, score_spotify_candidate
 
 from .llm import LlmDecision, OpenRouterBatchMatcher
+from .params import confidence_threshold_error, duration_tolerance_ms_error
 from .soundcloud import SoundCloudClient, SoundCloudTrack
 
 
@@ -213,14 +214,10 @@ def plan_transfer(
     """Score every source and explicitly queue every below-threshold candidate."""
     if target_service != "soundcloud":
         raise TransferContractError(f"unsupported transfer target: {target_service!r}")
-    if not math.isfinite(confidence_threshold) or not 0 < confidence_threshold <= 1:
-        raise TransferContractError("confidence threshold must be finite and within (0, 1]")
-    if (
-        not isinstance(duration_tolerance_ms, int)
-        or isinstance(duration_tolerance_ms, bool)
-        or duration_tolerance_ms <= 0
-    ):
-        raise TransferContractError("duration tolerance must be a positive integer")
+    if error := confidence_threshold_error(confidence_threshold):
+        raise TransferContractError(error)
+    if error := duration_tolerance_ms_error(duration_tolerance_ms):
+        raise TransferContractError(error)
     expected = {track.spotify_uri for track in source.tracks}
     missing = expected - set(candidates)
     extras = set(candidates) - expected

@@ -26,9 +26,7 @@ function twoTempoBeats(firstBpm, firstCount, secondBpm, secondCount) {
 }
 
 const MULTI_ANCHOR_BEATS = twoTempoBeats(120, 80, 140, 80);
-const MULTI_ANCHOR_TEMPO_CHANGES = [
-	{ at_s: 40, bpm_before: 120, bpm_after: 140, confidence: 0.9 }
-];
+const MULTI_ANCHOR_TEMPO_CHANGES = [{ at_s: 40, bpm_before: 120, bpm_after: 140, confidence: 0.9 }];
 
 function assertMultiAnchorTrusted(grid, payload) {
 	assert.equal(grid.hasTrustedBeatGrid(payload), true);
@@ -116,7 +114,10 @@ test('missing or unknown beatgrid.source fails closed', () => {
 		grid.hasTrustedBeatGrid(anlz({ beatgrid: { source: undefined, beats: REAL_BEATS } })),
 		false
 	);
-	assert.equal(grid.hasTrustedBeatGrid(anlz({ beatgrid: { source: 'legacy', beats: REAL_BEATS } })), false);
+	assert.equal(
+		grid.hasTrustedBeatGrid(anlz({ beatgrid: { source: 'legacy', beats: REAL_BEATS } })),
+		false
+	);
 });
 
 test('effectiveQuantize requires trusted grid not merely real beats', () => {

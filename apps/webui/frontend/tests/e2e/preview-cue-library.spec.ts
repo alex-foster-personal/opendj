@@ -68,7 +68,10 @@ async function _dispatch(page: Page, command: PerformanceCommand): Promise<void>
  * deck; `?muted=1` mutes after the watchdog's tap, so the deck keeps playing
  * and nothing is audible.
  */
-async function _openPerformance(page: Page, opts: { muted: boolean } = { muted: false }): Promise<void> {
+async function _openPerformance(
+	page: Page,
+	opts: { muted: boolean } = { muted: false }
+): Promise<void> {
 	await page.goto(opts.muted ? '/performance?muted=1' : '/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	if (!opts.muted) {
@@ -100,9 +103,9 @@ test('previewing a library track plays it without moving the deck that holds it'
 	await expect.poll(async () => (await _query(page)).decks[1].duration_ms).not.toBeNull();
 
 	await _dispatch(page, { type: 'preview_cue', stable_id: previewed, ratio: PREVIEW_RATIO });
-	await expect.poll(async () => (await _query(page)).preview.stable_id, { timeout: 30_000 }).toBe(
-		previewed
-	);
+	await expect
+		.poll(async () => (await _query(page)).preview.stable_id, { timeout: 30_000 })
+		.toBe(previewed);
 
 	const after = await _query(page);
 	expect(after.preview.playing).toBe(true);
@@ -123,9 +126,9 @@ test('previewing a library track plays it without moving the deck that holds it'
 	// A second preview MOVES the voice rather than adding one.
 	const second = await _stableIdOfRow(page, 1);
 	await _dispatch(page, { type: 'preview_cue', stable_id: second, ratio: 0.2 });
-	await expect.poll(async () => (await _query(page)).preview.stable_id, { timeout: 30_000 }).toBe(
-		second
-	);
+	await expect
+		.poll(async () => (await _query(page)).preview.stable_id, { timeout: 30_000 })
+		.toBe(second);
 
 	await _dispatch(page, { type: 'preview_stop' });
 	await expect.poll(async () => (await _query(page)).preview.stable_id).toBeNull();

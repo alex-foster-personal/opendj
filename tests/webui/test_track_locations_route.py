@@ -109,7 +109,9 @@ def _playable(db_path: Path, stable_id: str) -> Path | None:
 
 
 def test_attach_makes_dead_track_playable_and_delete_undoes_it(
-    client: TestClient, db_path: Path, new_file: Path,
+    client: TestClient,
+    db_path: Path,
+    new_file: Path,
 ) -> None:
     """[if] attach then delete [then] playable then not, file untouched, re-add revives, [else stop]."""
     assert _playable(db_path, TRACK) is None, "fixture track must start unplayable"
@@ -142,7 +144,9 @@ def test_attach_makes_dead_track_playable_and_delete_undoes_it(
 
 
 def test_attach_refuses_unconfirmed_unconditional_and_stale_writes(
-    client: TestClient, db_path: Path, new_file: Path,
+    client: TestClient,
+    db_path: Path,
+    new_file: Path,
 ) -> None:
     """[if] confirm false, no If-Match, or stale If-Match [then] 422/428/409 and no row, [else stop]."""
     assert _attach(client, TRACK, new_file, confirm=False).status_code == 422
@@ -161,7 +165,10 @@ def test_attach_refuses_unconfirmed_unconditional_and_stale_writes(
 
 
 def test_attach_refuses_missing_symlink_and_outside_root_files(
-    client: TestClient, db_path: Path, new_file: Path, tmp_path: Path,
+    client: TestClient,
+    db_path: Path,
+    new_file: Path,
+    tmp_path: Path,
 ) -> None:
     """[if] the file is missing, a symlink, or outside the music roots [then] 422, [else stop]."""
     outside = tmp_path / "outside.mp3"
@@ -175,7 +182,8 @@ def test_attach_refuses_missing_symlink_and_outside_root_files(
 
 
 def test_delete_refuses_other_tracks_and_unknown_locations(
-    client: TestClient, new_file: Path,
+    client: TestClient,
+    new_file: Path,
 ) -> None:
     """[if] DELETE names another track's row or an unknown id [then] 404, [else stop]."""
     loc = _attach(client, TRACK, new_file).json()

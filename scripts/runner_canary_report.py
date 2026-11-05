@@ -23,7 +23,7 @@ it reports:
 - outcome agreement: the share of shard pairs that agree, over paired commits only, as is
   the push-to-verdict ratio.
 
-Verdicts, per vendor (decision record: docs/decisions/ADR-NEW-runner-canary.md):
+Verdicts, per vendor (decision record: (private path)):
 - FAIL when a known-red SHA comes back green on the vendor (the canary cannot go red), or
   when at least `min_paired_commits` pairs exist, a known-red SHA came back red on the
   vendor, and a bar in ci/runner-canary.json is missed;
@@ -164,9 +164,7 @@ class VendorReport:
     reasons: list[str] = field(default_factory=list)
 
 
-def _control_state(
-    sha: str, vendor_runs: dict, baseline_runs: dict, shard_count: int
-) -> tuple[str, str]:
+def _control_state(sha: str, vendor_runs: dict, baseline_runs: dict, shard_count: int) -> tuple[str, str]:
     """(state, reason) for one known-red SHA: ok / green / not-run / invalid. Its self-hosted
     run must be complete and red (Sol P2 on b6303e8f0)."""
     baseline = baseline_runs.get(sha)
@@ -209,14 +207,10 @@ def _measure_operations(report: VendorReport, rows: list[ShardRow]) -> None:
     report.p95_queue_wait_s = _p95([_start_latency_s(r) for r in finished])
     report.shard_jobs = len(finished)
     if finished:
-        report.infra_failures_per_100 = (
-            100 * sum(r.outcome == "infra" for r in finished) / len(finished)
-        )
+        report.infra_failures_per_100 = 100 * sum(r.outcome == "infra" for r in finished) / len(finished)
 
 
-def _measure_against_baseline(
-    report: VendorReport, vendor_runs: dict, baseline_runs: dict, paired: list[str]
-) -> None:
+def _measure_against_baseline(report: VendorReport, vendor_runs: dict, baseline_runs: dict, paired: list[str]) -> None:
     """Push-to-verdict ratio and outcome agreement, which need the self-hosted pair."""
     vendor_median = statistics.median(_verdict_latency_s(vendor_runs[s]) for s in paired)
     baseline_median = statistics.median(_verdict_latency_s(baseline_runs[s]) for s in paired)
@@ -239,15 +233,12 @@ def _bar_findings(report: VendorReport, bars: dict[str, float]) -> tuple[list[st
     unknown: list[str] = []
     if report.paired_commits < bars["min_paired_commits"]:
         unknown.append(
-            f"{report.paired_commits} paired commits, "
-            f"fewer than the {bars['min_paired_commits']:g} required"
+            f"{report.paired_commits} paired commits, fewer than the {bars['min_paired_commits']:g} required"
         )
     if report.outcome_agreement is None:
         unknown.append("no shard pair has a test verdict on both sides, so agreement is unmeasured")
     elif report.outcome_agreement < bars["min_outcome_agreement"]:
-        failed.append(
-            f"outcome agreement {report.outcome_agreement:.3f} < {bars['min_outcome_agreement']:g}"
-        )
+        failed.append(f"outcome agreement {report.outcome_agreement:.3f} < {bars['min_outcome_agreement']:g}")
     for metric, bar, label in CEILING_BARS:
         value = getattr(report, metric)
         if value is not None and value > bars[bar]:
@@ -259,9 +250,7 @@ def _control_findings(controls: list[tuple[str, str]]) -> tuple[list[str], list[
     """(controls that came back green, unmeasured reasons) for the known-red SHAs."""
     green = [reason for state, reason in controls if state == "green"]
     if not controls:
-        return green, [
-            "no known-red SHA configured: a canary never shown to go red is not measuring"
-        ]
+        return green, ["no known-red SHA configured: a canary never shown to go red is not measuring"]
     if any(state == "ok" for state, _ in controls):
         return green, []
     return green, [reason for state, reason in controls if state in ("not-run", "invalid")]
@@ -342,41 +331,29 @@ def _gh_lines(path: str, jq: str) -> list[dict[str, Any]]:
 Reader = Callable[[str, str], list[dict[str, Any]]]
 
 
-def _with_jobs(
-    repo: str, runs: list[dict[str, Any]], read: Reader = _gh_lines
-) -> list[dict[str, Any]]:
+def _with_jobs(repo: str, runs: list[dict[str, Any]], read: Reader = _gh_lines) -> list[dict[str, Any]]:
     """Each run's jobs, each FAILED shard job's check-run annotations (the only mark that
     separates a wall-budget TIMEOUT from a test red), and each PASSED gate's annotations
     (the vendors whose shards the run owes). `read` is `gh api`; the tests replay captured
     responses through it by request path."""
     for run in runs:
-        run["jobs"] = read(
-            f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100", ".jobs[]"
-        )
+        run["jobs"] = read(f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100", ".jobs[]")
         for job in run["jobs"]:
-            is_shard = VENDOR_JOB.fullmatch(job.get("name", "")) or BASELINE_JOB.fullmatch(
-                job.get("name", "")
-            )
+            is_shard = VENDOR_JOB.fullmatch(job.get("name", "")) or BASELINE_JOB.fullmatch(job.get("name", ""))
             # A passing gate's annotation names the vendor shards the run owes.
             is_passed_gate = job.get("name") == GATE_JOB and job.get("conclusion") == "success"
             if (is_shard and job.get("conclusion") == "failure") or is_passed_gate:
-                job["annotations"] = read(
-                    f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=100", ".[]"
-                )
+                job["annotations"] = read(f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=100", ".[]")
     return runs
 
 
 def fetch_canary_runs(repo: str) -> list[dict[str, Any]]:
     workflow = Path(CANARY_WORKFLOW).name
-    runs = _gh_lines(
-        f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=100", ".workflow_runs[]"
-    )
+    runs = _gh_lines(f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=100", ".workflow_runs[]")
     return _with_jobs(repo, runs)
 
 
-def vendor_rows_from_targets(
-    runs_by_repo: dict[str, list[dict[str, Any]]], config: dict[str, Any]
-) -> list[ShardRow]:
+def vendor_rows_from_targets(runs_by_repo: dict[str, list[dict[str, Any]]], config: dict[str, Any]) -> list[ShardRow]:
     """Each vendor's shard rows from its OWN target repository, and from nowhere else."""
     rows = []
     for repo, runs in runs_by_repo.items():
@@ -389,15 +366,12 @@ def vendor_rows_from_targets(
                 timeout_minutes=config["shard_timeout_minutes"],
                 shard_count=config["shard_count"],
             )
-            if row.vendor in config["vendors"]
-            and config["vendors"][row.vendor]["target_repo"] == repo
+            if row.vendor in config["vendors"] and config["vendors"][row.vendor]["target_repo"] == repo
         ]
     return rows
 
 
-def fetch_baseline_runs(
-    source: str, baseline: dict[str, str], shas: Iterable[str]
-) -> list[dict[str, Any]]:
+def fetch_baseline_runs(source: str, baseline: dict[str, str], shas: Iterable[str]) -> list[dict[str, Any]]:
     workflow = Path(baseline["workflow_path"]).name
     runs = []
     for sha in sorted(set(shas)):
@@ -424,8 +398,7 @@ def _format(report: VendorReport) -> str:
         "|:--|--:|",
         f"| paired commits | {report.paired_commits} |",
         f"| vendor shard jobs (every finished one) | {report.shard_jobs} |",
-        "| push-to-verdict ratio (vendor / self-hosted medians) | "
-        f"{num(report.verdict_latency_ratio, '.3f')} |",
+        f"| push-to-verdict ratio (vendor / self-hosted medians) | {num(report.verdict_latency_ratio, '.3f')} |",
         f"| p95 start latency (s) | {num(report.p95_queue_wait_s, 'g')} |",
         f"| infra failures per 100 jobs | {num(report.infra_failures_per_100, '.2f')} |",
         f"| outcome agreement | {num(report.outcome_agreement, '.3f')} |",
@@ -438,9 +411,7 @@ def _format(report: VendorReport) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument(
-        "--vendor", action="append", default=[], help="limit to a vendor (repeatable)"
-    )
+    parser.add_argument("--vendor", action="append", default=[], help="limit to a vendor (repeatable)")
     parser.add_argument("--known-red-sha", action="append", default=[], help="add a known-red SHA")
     parser.add_argument("--json", type=Path, help="also write the reports as JSON here")
     args = parser.parse_args(argv)

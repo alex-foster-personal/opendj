@@ -1,4 +1,5 @@
 """Shared fixtures for playlist-set tests."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -76,8 +77,7 @@ def seed_playlist_and_tracks(
         (playlist_id, playlist_id, playlist_id, stamp, stamp),
     )
     conn.executemany(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, 'inferred', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'inferred', ?, ?)",
         [(stable_id, stamp, stamp) for stable_id in stable_ids],
     )
 
@@ -92,7 +92,6 @@ def seed_playlist_membership(
 ) -> None:
     """Insert one ``playlist_memberships`` row (``deleted_at`` set = soft-deleted)."""
     conn.execute(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
-        "deleted_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO playlist_memberships(playlist_id, stable_id, position, deleted_at) VALUES (?, ?, ?, ?)",
         (playlist_id, stable_id, position, deleted_at),
     )

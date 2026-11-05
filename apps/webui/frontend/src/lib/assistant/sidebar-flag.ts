@@ -6,7 +6,9 @@ import { buildFlags } from '$lib/api/store-build.svelte';
 
 export const ASSISTANT_SIDEBAR_FLAG_ID = 'assistant.sidebar';
 
-export function assistantSidebarEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
+export function assistantSidebarEnabledIn(
+	flags: readonly { flag_id: string; enabled: boolean }[]
+): boolean {
 	return flags.find((flag) => flag.flag_id === ASSISTANT_SIDEBAR_FLAG_ID)?.enabled === true;
 }
 

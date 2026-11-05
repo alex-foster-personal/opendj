@@ -9,6 +9,9 @@ the SQLite writer serialising all writes.
 from __future__ import annotations
 
 import hashlib
+from typing import Protocol
+
+from fastapi import HTTPException
 
 
 def compute_etag(stable_id: str, modified_at: str, variant: str = "") -> str:
@@ -41,4 +44,32 @@ def strip_quotes(etag: str) -> str:
     return e.strip('"')
 
 
-__all__ = ["compute_etag", "strip_quotes"]
+class _TrackETagFields(Protocol):
+    stable_id: str
+    updated_at: str
+    selection_tag: str
+
+
+def require_current_etag(
+    track: _TrackETagFields,
+    if_match: str | None,
+    *,
+    precondition_message: str,
+    conflict_code: str,
+    conflict_message: str,
+) -> None:
+    """Reject a write based on a stale track view before mutating state."""
+    if not if_match:
+        raise HTTPException(status_code=428, detail={
+            "code": "PRECONDITION_REQUIRED",
+            "message": precondition_message,
+        })
+    current = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
+    if strip_quotes(current) != strip_quotes(if_match):
+        raise HTTPException(status_code=409, detail={
+            "code": conflict_code,
+            "message": conflict_message,
+        })
+
+
+__all__ = ["compute_etag", "require_current_etag", "strip_quotes"]

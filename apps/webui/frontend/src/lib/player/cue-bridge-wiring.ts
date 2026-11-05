@@ -30,7 +30,10 @@ export async function wireCueBridgeNodes(
 	cueContext: AudioContext,
 	handlers: CueBridgeHandlers
 ): Promise<CueBridgeWireResult> {
-	if (typeof AudioWorkletNode === 'undefined' || typeof mainContext.audioWorklet?.addModule !== 'function') {
+	if (
+		typeof AudioWorkletNode === 'undefined' ||
+		typeof mainContext.audioWorklet?.addModule !== 'function'
+	) {
 		throw new Error('AudioWorkletNode is unavailable');
 	}
 	await mainContext.audioWorklet.addModule(cueBridgeProcessorUrl);
@@ -72,8 +75,12 @@ export async function wireCueBridgeNodes(
 	bridgeSender.onprocessorerror = () => handlers.onProcessorError('sender');
 	bridgeReceiver.onprocessorerror = () => handlers.onProcessorError('receiver');
 	if (connectChannel !== null) {
-		bridgeSender.port.postMessage({ type: 'connect', port: connectChannel.port1 }, [connectChannel.port1]);
-		bridgeReceiver.port.postMessage({ type: 'connect', port: connectChannel.port2 }, [connectChannel.port2]);
+		bridgeSender.port.postMessage({ type: 'connect', port: connectChannel.port1 }, [
+			connectChannel.port1
+		]);
+		bridgeReceiver.port.postMessage({ type: 'connect', port: connectChannel.port2 }, [
+			connectChannel.port2
+		]);
 		bridgeReceiver.port.onmessage = (event: MessageEvent<{ type?: string }>) => {
 			if (event.data?.type === 'underrun') handlers.onUnderrun();
 		};
@@ -88,7 +95,10 @@ export async function wireNativeCueSender(
 	mainContext: AudioContext,
 	onProcessorError: () => void
 ): Promise<{ bridgeSender: AudioWorkletNode; relayPort: MessagePort }> {
-	if (typeof AudioWorkletNode === 'undefined' || typeof mainContext.audioWorklet?.addModule !== 'function') {
+	if (
+		typeof AudioWorkletNode === 'undefined' ||
+		typeof mainContext.audioWorklet?.addModule !== 'function'
+	) {
 		throw new Error('AudioWorkletNode is unavailable');
 	}
 	await mainContext.audioWorklet.addModule(cueBridgeProcessorUrl);

@@ -85,6 +85,4 @@ def test_listing_error_names_the_configured_store_when_set() -> None:
         "    print(exc)\n"
     )
     host = "asset-store-test-host"
-    assert _run_fresh(code, host).splitlines()[-1] == (
-        f"unparseable find output from {host}: 'not a size row'"
-    )
+    assert _run_fresh(code, host).splitlines()[-1] == (f"unparseable find output from {host}: 'not a size row'")

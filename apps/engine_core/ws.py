@@ -73,7 +73,9 @@ LIBRARY_CHANGED_KINDS: tuple[str, ...] = (
     "cloudsync_playlist_pin",
     "tags",
     "works",
+    "set_target",
     "undo",
+    "source_flags",
 )
 
 

@@ -45,12 +45,8 @@ def test_audio_extra_chorus_inserted_as_sourceless_copy() -> None:
     r = repair_sheet(sheet, SONG, v)
     assert len(r.words) == len(SONG), "if the missing repeat is not inserted then broken"
     inserted = [i for i, s in enumerate(r.source_idx) if s is None]
-    assert [r.words[i] for i in inserted] == CHORUS, (
-        "if the insert is not the chorus copy then broken"
-    )
-    assert classify(r.words, SONG).verdict == "matched", (
-        "if repair does not come back green then broken"
-    )
+    assert [r.words[i] for i in inserted] == CHORUS, "if the insert is not the chorus copy then broken"
+    assert classify(r.words, SONG).verdict == "matched", "if repair does not come back green then broken"
 
 
 def test_dropped_verse_reinserted_from_asr() -> None:
@@ -59,9 +55,7 @@ def test_dropped_verse_reinserted_from_asr() -> None:
     assert any(f.kind == "extra_in_audio" for f in v.findings)
     r = repair_sheet(sheet, SONG, v)
     assert r.asr_sourced_spans == 1, "if the ASR-sourced insert is not flagged then broken"
-    assert classify(r.words, SONG).verdict == "matched", (
-        "if repair does not come back green then broken"
-    )
+    assert classify(r.words, SONG).verdict == "matched", "if repair does not come back green then broken"
 
 
 def test_refuses_unverifiable_and_wrong_song() -> None:

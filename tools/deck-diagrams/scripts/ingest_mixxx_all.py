@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Ingest all Mixxx *.midi.xml into devices/ + extend catalog to reach ~100 hover-AC devices."""
+
 from __future__ import annotations
 
 import json
@@ -126,11 +127,7 @@ def main() -> int:
             existing_ids.add(cid)
         existing_devices.add(cid)
         # stop when total devices with deck.html >= need + buffer
-        decks = sum(
-            1
-            for p in (DIAG / "devices").iterdir()
-            if p.is_dir() and (p / "deck.html").exists()
-        )
+        decks = sum(1 for p in (DIAG / "devices").iterdir() if p.is_dir() and (p / "deck.html").exists())
         print(f"OK {cid} n={n} decks_total={decks}")
         if decks >= need + 5:
             break

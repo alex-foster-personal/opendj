@@ -1,4 +1,9 @@
-"""Verify and regenerate the Open DJ desktop Tauri icon set.
+"""Verify and regenerate the Open DJ desktop icon set.
+
+The set lives in ``apps/desktop/shared/icons/``, a shell-neutral home: the
+Tauri bundle names it from ``tauri.conf.json`` and the engine payload build,
+which both shells run, verifies it, so deleting ``apps/desktop/src-tauri``
+does not take the icons with it.
 
 The Dock fallback the maintainer reported (issue #2307) is what macOS draws when
 ``icon.icns`` lacks the size/scale slots ``iconutil`` expects. This module
@@ -8,7 +13,7 @@ is missing, so a dmg cannot ship with a partial set.
 Requirements:
 
 - ✔︎ ✅ 🎯 Every Tauri desktop PNG, ``icon.icns``, ``icon.ico`` and AppX logo
-  exists under ``apps/desktop/src-tauri/icons/`` -> :func:`verify_desktop_icons`
+  exists under ``apps/desktop/shared/icons/`` -> :func:`verify_desktop_icons`
 - ✔︎ ✅ 🎯 ``icon.icns`` embeds every pixel size ``iconutil`` needs (16 through
   1024 at 1x and 2x) -> :func:`icns_embedded_pixel_sizes`
 - ✔︎ ✅ 🎯 Regeneration from one master PNG produces the same file set Tauri
@@ -71,9 +76,8 @@ ICO_LAYER_SIZES: tuple[int, ...] = (32, 16, 24, 48, 64, 256)
 
 APPX_SQUARE_SIZES: tuple[int, ...] = (30, 44, 71, 89, 107, 142, 150, 284, 310)
 
-DEFAULT_ICONS_DIR: Path = (
-    Path(__file__).resolve().parents[1] / "apps/desktop/src-tauri/icons"
-)
+ICONS_RELATIVE: str = "apps/desktop/shared/icons"
+DEFAULT_ICONS_DIR: Path = Path(__file__).resolve().parents[1] / ICONS_RELATIVE
 DEFAULT_MASTER: Path = DEFAULT_ICONS_DIR / "app-icon.png"
 MASTER_EDGE_PX: int = 1024
 # Apple's macOS app icon grid: on a 1024 canvas the artwork is an 824px rounded
@@ -97,15 +101,13 @@ class PngSpec:
 
 
 def _repo_icons_dir(repo_root: Path) -> Path:
-    return repo_root / "apps/desktop/src-tauri/icons"
+    return repo_root / ICONS_RELATIVE
 
 
 def _png_specs() -> list[PngSpec]:
     specs = [PngSpec(name, size) for name, size in TAURI_PNG_FILES.items()]
     specs.append(PngSpec("StoreLogo.png", 50))
-    specs.extend(
-        PngSpec(f"Square{size}x{size}Logo.png", size) for size in APPX_SQUARE_SIZES
-    )
+    specs.extend(PngSpec(f"Square{size}x{size}Logo.png", size) for size in APPX_SQUARE_SIZES)
     return specs
 
 
@@ -158,9 +160,7 @@ def icns_embedded_pixel_sizes(icns_path: Path) -> set[int]:
             raise PayloadBuildError(f"{icns_path} has an invalid {edge}px alpha mask")
         try:
             # Decode a bounded real chunk: Pillow must not read into the next record.
-            channels = IcnsImagePlugin.read_32(
-                io.BytesIO(rgb_data), (0, len(rgb_data)), (edge, edge, 1)
-            )
+            channels = IcnsImagePlugin.read_32(io.BytesIO(rgb_data), (0, len(rgb_data)), (edge, edge, 1))
             if channels["RGB"].size != (edge, edge):
                 raise ValueError("legacy RGB dimensions differ")
         except (OSError, SyntaxError, ValueError, KeyError) as exc:
@@ -199,9 +199,7 @@ def _write_icns(png_by_size: dict[int, bytes], icns_path: Path) -> None:
 def _write_ico(png_by_size: dict[int, bytes], ico_path: Path) -> None:
     # Tauri puts 32px first; Pillow preserves the sizes= order.
     order = ICO_LAYER_SIZES
-    images = [
-        Image.open(io.BytesIO(png_by_size[size])).convert("RGBA") for size in order
-    ]
+    images = [Image.open(io.BytesIO(png_by_size[size])).convert("RGBA") for size in order]
     images[0].save(
         ico_path,
         format="ICO",
@@ -238,10 +236,7 @@ def _iconutil_round_trip(icns_path: Path) -> None:
         present = {path.name for path in iconset.iterdir() if path.suffix == ".png"}
         missing = sorted(expected - present)
         if missing:
-            msg = (
-                f"{icns_path} did not round-trip through iconutil; "
-                f"missing iconset slots: {', '.join(missing)}"
-            )
+            msg = f"{icns_path} did not round-trip through iconutil; missing iconset slots: {', '.join(missing)}"
             raise PayloadBuildError(msg)
 
 
@@ -264,11 +259,7 @@ def verify_desktop_icons(icons_dir: Path) -> None:
         msg = f"desktop icons directory missing: {icons_dir}"
         raise PayloadBuildError(msg)
 
-    missing_files: list[str] = [
-        spec.filename
-        for spec in _png_specs()
-        if not (icons_dir / spec.filename).is_file()
-    ]
+    missing_files: list[str] = [spec.filename for spec in _png_specs() if not (icons_dir / spec.filename).is_file()]
     for spec in _png_specs():
         path = icons_dir / spec.filename
         if not path.is_file():
@@ -276,33 +267,20 @@ def verify_desktop_icons(icons_dir: Path) -> None:
         with Image.open(path) as image:
             width, height = image.size
         if width != spec.edge_px or height != spec.edge_px:
-            msg = (
-                f"{spec.filename} must be {spec.edge_px}x{spec.edge_px}px, "
-                f"found {width}x{height}px"
-            )
+            msg = f"{spec.filename} must be {spec.edge_px}x{spec.edge_px}px, found {width}x{height}px"
             raise PayloadBuildError(msg)
 
-    missing_files.extend(
-        filename
-        for filename in ("icon.icns", "icon.ico")
-        if not (icons_dir / filename).is_file()
-    )
+    missing_files.extend(filename for filename in ("icon.icns", "icon.ico") if not (icons_dir / filename).is_file())
 
     if missing_files:
-        msg = (
-            "desktop icon set is incomplete; missing: "
-            + ", ".join(sorted(missing_files))
-        )
+        msg = "desktop icon set is incomplete; missing: " + ", ".join(sorted(missing_files))
         raise PayloadBuildError(msg)
 
     icns_path = icons_dir / "icon.icns"
     embedded = icns_embedded_pixel_sizes(icns_path)
     missing_sizes = sorted(ICNS_REQUIRED_PIXEL_SIZES - embedded)
     if missing_sizes:
-        msg = (
-            f"{icns_path} lacks icns slots for pixel sizes: "
-            + ", ".join(str(size) for size in missing_sizes)
-        )
+        msg = f"{icns_path} lacks icns slots for pixel sizes: " + ", ".join(str(size) for size in missing_sizes)
         raise PayloadBuildError(msg)
 
     _iconutil_round_trip(icns_path)
@@ -330,11 +308,7 @@ def _load_master(master_path: Path) -> Image.Image:
 def _verify_master_on_apple_grid(rgba: Image.Image, master_path: Path) -> None:
     """Refuse a full-bleed master: the margin outside Apple's 824px tile must be transparent."""
     scale = rgba.width / MASTER_EDGE_PX
-    opaque = [
-        (x, y)
-        for x, y in MASTER_GRID_PROBE_PX
-        if rgba.getpixel((int(x * scale), int(y * scale)))[3] != 0
-    ]
+    opaque = [(x, y) for x, y in MASTER_GRID_PROBE_PX if rgba.getpixel((int(x * scale), int(y * scale)))[3] != 0]
     if opaque:
         msg = (
             f"icon master {master_path} is not on Apple's icon grid: expected a transparent "
@@ -353,11 +327,7 @@ def generate_desktop_icons(
     icons_dir.mkdir(parents=True, exist_ok=True)
 
     png_by_size: dict[int, bytes] = {}
-    all_sizes = (
-        {spec.edge_px for spec in _png_specs()}
-        | ICNS_REQUIRED_PIXEL_SIZES
-        | set(ICO_LAYER_SIZES)
-    )
+    all_sizes = {spec.edge_px for spec in _png_specs()} | ICNS_REQUIRED_PIXEL_SIZES | set(ICO_LAYER_SIZES)
     for edge_px in sorted(all_sizes):
         png_by_size[edge_px] = _png_bytes(_resize_rgba(master, edge_px))
 

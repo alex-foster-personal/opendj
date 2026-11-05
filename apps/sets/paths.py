@@ -17,6 +17,7 @@ local and derivative; delete-safe. If Phase 5's ``apps.shared.state``
 grows a ``sets`` table compatible with ours, a follow-up migration moves
 the rows over (see Plan 12-01 Open Question 2).
 """
+
 from __future__ import annotations
 
 from pathlib import Path, PureWindowsPath
@@ -88,13 +89,9 @@ def session_dir(session_id: str, root: Path | None = None) -> Path:
     try:
         candidate.relative_to(base)
     except ValueError as exc:
-        raise SessionPathError(
-            f"session_id {session_id!r} resolves outside sets root {base}"
-        ) from exc
+        raise SessionPathError(f"session_id {session_id!r} resolves outside sets root {base}") from exc
     if candidate.parent != base:
-        raise SessionPathError(
-            f"session_id {session_id!r} must resolve to a direct child of {base}"
-        )
+        raise SessionPathError(f"session_id {session_id!r} must resolve to a direct child of {base}")
     return candidate
 
 

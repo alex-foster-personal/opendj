@@ -21,7 +21,6 @@ Regression lines:
 from __future__ import annotations
 
 import ast
-import itertools
 import json
 import os
 import re
@@ -35,6 +34,7 @@ import yaml
 
 from scripts import trunk_queue
 from scripts.ci_wait_core import DROPPED_APP_CHECKS
+from scripts.ci_wait_workflows import job_check_names
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -130,18 +130,8 @@ def _evaluate_condition(node: ast.expr) -> object:
 
 
 def _expanded_job_names(job_id: str, job: dict[str, Any]) -> set[str]:
-    name = str(job.get("name", job_id))
-    matrix = (job.get("strategy") or {}).get("matrix") or {}
-    axes = {key: values for key, values in matrix.items() if isinstance(values, list)}
-    if not axes:
-        return {name}
-    expanded = set()
-    for combo in itertools.product(*axes.values()):
-        rendered = name
-        for key, value in zip(axes, combo, strict=True):
-            rendered = re.sub(r"\$\{\{\s*matrix\." + key + r"\s*\}\}", str(value), rendered)
-        expanded.add(rendered)
-    return expanded
+    """Every check-run name the job reports, run-time (`fromJSON`) matrix legs included."""
+    return set(job_check_names(job_id, job))
 
 
 # -----------------------------------------------------------------------------

@@ -99,6 +99,8 @@ import {
 import { autoPlayYieldsNow, registerAutoPlayHandoffInFlight } from '$lib/rb/auto-play-plan-gate';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autoplay-status';
+import { autoPlayKeyShift } from '$lib/rb/auto-play-chain';
+import { effectiveCamelotKey } from '$lib/player/key/camelot';
 
 const POLL_MS = 250;
 /** Failed load/play attempts per source track before stopping. */
@@ -248,7 +250,11 @@ async function _handoff(
 		followerStableId: () => deckStates[follower].stable_id,
 		unload: () => dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff'),
 		load: () =>
-			dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId }, undefined, 'autoplay-handoff'),
+			dispatchPerformanceCommand(
+				_loadCommand(follower, nextId, _loadKeyShift(source.id, nextId)),
+				undefined,
+				'autoplay-handoff'
+			),
 		beatSync: () => applyAutoPlayBeatSyncDecision(source, follower),
 		play: () =>
 			dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff'),
@@ -350,15 +356,38 @@ function _noteNoPlayingMaster(noSource: boolean, snaps: readonly AutoPlayDeckSna
 	}
 }
 
-/** The next track for this master by AutoPlay's rules: key and tempo, played set, order, reach. */
+/** A follower load, shifted when the pick fits the master's heard key only after a shift. */
+function _loadCommand(deck: DeckId, stable_id: string, keyShift: number) {
+	return { type: 'load' as const, deck, stable_id, ...(keyShift !== 0 ? { key_shift: keyShift } : {}) };
+}
+
+/** AUTOPLAY-HEARD: the key and tempo the master is heard at: its own key plus the applied shift, its BPM times its pitch. */
+function _heardMaster(deck: DeckId): { key: string | null; bpm: number | null } {
+	const state = deckStates[deck];
+	const pitch = state.pitch > 0 ? state.pitch : 1;
+	return {
+		key: effectiveCamelotKey(state.key, state.key_shift_semitones),
+		bpm: state.bpm === null ? null : state.bpm * pitch
+	};
+}
+
+/** AUTOPLAY-HEARD: the shift a follower load applies so `track` fits the master's heard key, within the user's max (0 when none fits or a key is unknown). */
+function _loadKeyShift(sourceDeck: DeckId, track: string): number {
+	const row = getAutoPlayPlaylist().find((r) => r.stable_id === track);
+	if (row === undefined) return 0;
+	return autoPlayKeyShift(row.key, _heardMaster(sourceDeck).key, uiPrefs.compatible_filter.key_shift_max) ?? 0;
+}
+
+/** The next track for this master by AutoPlay's rules: key and tempo AS HEARD, played set, order, reach. */
 function _pickNext(source: AutoPlayDeckSnap, follower: DeckId, excludeIds: ReadonlySet<string>): string | null {
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-	const sourceDeck = deckStates[source.id];
+	const heard = _heardMaster(source.id);
 	return pickNextStableId({
 		playlist: getAutoPlayPlaylist(),
 		current_stable_id: source.stable_id!,
-		current_key: sourceDeck.key,
-		current_bpm: sourceDeck.bpm,
+		current_key: heard.key,
+		current_bpm: heard.bpm,
+		key_shift_max: uiPrefs.compatible_filter.key_shift_max,
 		exclude_ids: excludeIds,
 		played_ids: _playedIds,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
@@ -389,6 +418,7 @@ function _pollEarlyDecision(
 		follower,
 		pick: (taken) =>
 			follower === null ? null : _pickNext(source, follower, new Set([...excludeIds, ...taken])),
+		keyShiftFor: (track) => _loadKeyShift(source.id, track),
 		claim: (sourceId, track) => {
 			_claimedIds.add(track);
 			_playedIds.add(sourceId);

@@ -68,20 +68,14 @@ class TestMakeBackend:
 
     def test_porcupine_requires_access_key(self):
         with pytest.raises(RuntimeError, match="PICOVOICE_ACCESS_KEY"):
-            wake.make_backend(
-                env={"WAKE_BACKEND": "porcupine", "PICOVOICE_ACCESS_KEY": ""}
-            )
+            wake.make_backend(env={"WAKE_BACKEND": "porcupine", "PICOVOICE_ACCESS_KEY": ""})
 
     def test_sensitivity_env_is_applied(self):
-        b = wake.make_backend(
-            env={"WAKE_BACKEND": "stub", "VOICE_WAKE_SENSITIVITY": "0.75"}
-        )
+        b = wake.make_backend(env={"WAKE_BACKEND": "stub", "VOICE_WAKE_SENSITIVITY": "0.75"})
         assert b.threshold == 0.75
 
     def test_bad_sensitivity_falls_back_to_default(self):
-        b = wake.make_backend(
-            env={"WAKE_BACKEND": "stub", "VOICE_WAKE_SENSITIVITY": "not-a-number"}
-        )
+        b = wake.make_backend(env={"WAKE_BACKEND": "stub", "VOICE_WAKE_SENSITIVITY": "not-a-number"})
         assert b.threshold == wake.DEFAULT_WAKE_THRESHOLD
 
 

@@ -110,7 +110,10 @@ export const NotLoaded: Story = { args: { batches: null } };
 
 /** Ids typed in, ready to enqueue. */
 export const ReadyToEnqueue: Story = {
-	args: { stableIdsText: 'aaaa1111\nbbbb2222, cccc3333', parsedIds: ['aaaa1111', 'bbbb2222', 'cccc3333'] }
+	args: {
+		stableIdsText: 'aaaa1111\nbbbb2222, cccc3333',
+		parsedIds: ['aaaa1111', 'bbbb2222', 'cccc3333']
+	}
 };
 
 /** A batch planned and watched: the plan, the drain command, progress and items. */

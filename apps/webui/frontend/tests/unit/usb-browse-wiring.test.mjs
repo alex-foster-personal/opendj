@@ -145,10 +145,16 @@ test('a grayed stick row is refused as "Stick removed" before the broken-link re
 		const broken = guard.indexOf('libraryAudioLoadRefusal(row)');
 		assert.ok(removed >= 0, `${start} has no removed-stick refusal`);
 		assert.ok(broken > removed, `${start}: the removed-stick refusal must run before the broken-link one`);
-		assert.match(
-			guard.slice(removed, broken),
-			new RegExp(`pushToast\\('${refusal}Stick removed', 'error'\\);\\s*return;`)
-		);
+		const removedBlock = guard.slice(removed, broken);
+		if (start.startsWith('async function _loadOntoDeck')) {
+			assert.match(removedBlock, /stickMsg = 'cannot load: Stick removed'/);
+			assert.match(
+				removedBlock,
+				/recordDeckLoadRefusal\(deck, stickMsg\)|pushToast\(stickMsg, 'error', DECK_LOAD_ERROR_TOAST_MS\)/
+			);
+		} else {
+			assert.match(removedBlock, new RegExp(`pushToast\\('${refusal}Stick removed', 'error'\\);\\s*return;`));
+		}
 	}
 });
 

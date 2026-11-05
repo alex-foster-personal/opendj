@@ -47,6 +47,8 @@ from typing import Any, Protocol
 
 from scripts import r2_artifact
 from scripts.ci_failure_ids import failed_identities
+from scripts.ci_rerun_failed import CFG as RERUN_CFG
+from scripts.ci_rerun_failed import record_name as rerun_record_name
 from scripts.ci_test_selection import RECORD_NAME
 
 DEFAULT_REPO = "private_owner/music-dj-tools"
@@ -133,6 +135,15 @@ def selection_keys(repo: str, run: dict) -> list[str]:
     ]
 
 
+def rerun_failed_keys(repo: str, run: dict) -> list[str]:
+    """R2 keys of the rerun-failed records (CI-RERUN-8758c) filed under a ci.yml run: a head whose
+    `ci gate` was re-decided by `ci-rerun-failed.yml` carries one per rerun that reached a verdict."""
+    return [
+        r2_artifact.object_key(repo, rerun_record_name(run["head_sha"], n), str(run["id"]))
+        for n in range(1, RERUN_CFG.MAX_RERUNS_PER_HEAD + 1)
+    ]
+
+
 def member_status(record: dict | None, module: str) -> str:
     if record is None:
         return "unknown"
@@ -170,6 +181,8 @@ class Failure:
     module: str
     verdict: str
     members: dict[int, str]
+    #: members whose head's `ci gate` was re-decided by rerun-failed (CI-RERUN-8758c), counted apart
+    rerun_failed: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -229,7 +242,14 @@ def _member_record(api: Api, store: ArtifactStore, repo: str, member: int, befor
     run = last_pr_head_run(runs, before)
     if run is None:
         return None
-    return _read_record(store, selection_keys(repo, run))
+    record = _read_record(store, selection_keys(repo, run))
+    if record is None:
+        return None
+    try:
+        rerun = any(store.exists(key) for key in rerun_failed_keys(repo, run))
+    except r2_artifact.R2Error as error:
+        raise Unknown(f"R2 read failed: {error}") from error
+    return {**record, "rerun_failed": rerun}
 
 
 def _assess_draft(api: Api, store: ArtifactStore, repo: str, run: dict, report: Report) -> None:
@@ -252,8 +272,9 @@ def _assess_draft(api: Api, store: ArtifactStore, repo: str, run: dict, report: 
             report.unattributed.append(f"run {run['id']} {job['name']}: no failing test named")
         for module in sorted(modules):
             statuses = {m: member_status(r, module) for m, r in records.items()}
+            rerun = sorted(m for m, r in records.items() if r is not None and r.get("rerun_failed"))
             report.failures.append(
-                Failure(run["id"], run["head_branch"], job["name"], module, verdict(statuses), statuses)
+                Failure(run["id"], run["head_branch"], job["name"], module, verdict(statuses), statuses, rerun)
             )
 
 
@@ -321,6 +342,8 @@ def render(report: Report) -> str:
         f"  of which a weak-link demotion caused: {report.count('escape: weak')}",
         f"  covered: {report.count('covered')}; unknown: {report.count('unknown')}; "
         f"unattributed jobs: {len(report.unattributed)}",
+        f"  of the failing modules, a member landed by rerun-failed: "
+        f"{sum(1 for f in report.failures if f.rerun_failed)}",
     ]
     lines += [f"  [{f.verdict}] run {f.draft_run} {f.job}: {f.module} {f.members}" for f in report.failures]
     lines += [f"  [unattributed] {line}" for line in report.unattributed]

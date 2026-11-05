@@ -45,8 +45,7 @@ def track_f0(
     buffer_samples = frame_samples + tau_max
     if len(mono) < buffer_samples:
         raise UnpitchedMaterialError(
-            f"signal of {len(mono)} samples is shorter than the {buffer_samples}-sample "
-            "pitch analysis buffer"
+            f"signal of {len(mono)} samples is shorter than the {buffer_samples}-sample pitch analysis buffer"
         )
     starts = np.arange(0, len(mono) - buffer_samples + 1, hop_samples)
     buffers = np.stack([mono[start : start + buffer_samples] for start in starts])
@@ -76,10 +75,7 @@ def track_f0(
     interior = search[:, 1:-1]
     is_local_min = (interior < search[:, :-2]) & (interior <= search[:, 2:])
     candidate = is_local_min & (interior < PITCH_YIN_THRESHOLD)
-    tau = (
-        np.where(candidate.any(axis=1), candidate.argmax(axis=1) + 1, search.argmin(axis=1))
-        + tau_min
-    )
+    tau = np.where(candidate.any(axis=1), candidate.argmax(axis=1) + 1, search.argmin(axis=1)) + tau_min
 
     rows = np.arange(len(buffers))
     left = normalised[rows, np.maximum(tau - 1, 0)]

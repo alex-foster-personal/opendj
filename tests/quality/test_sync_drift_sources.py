@@ -119,20 +119,15 @@ def _tracked_files_where(predicate: Callable[[str], bool], *roots: str) -> set[s
     """
     listing = subprocess.run(
         ["git", "ls-files", "-z", *roots],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     excluded = (*GATE.VENDORED, *GATE.DERIVED)
-    names = [
-        name
-        for name in listing.split("\0")
-        if name and not name.startswith(excluded)
-    ]
+    names = [name for name in listing.split("\0") if name and not name.startswith(excluded)]
     assert names, f"git ls-files returned nothing for {roots}; the scan root is wrong"
-    return {
-        name
-        for name in names
-        if predicate((REPO_ROOT / name).read_text(encoding="utf-8", errors="replace"))
-    }
+    return {name for name in names if predicate((REPO_ROOT / name).read_text(encoding="utf-8", errors="replace"))}
 
 
 def _tracked_files_matching(pattern: re.Pattern[str], *roots: str) -> set[str]:
@@ -217,8 +212,8 @@ def test_the_ddl_scope_fires_on_a_column_definition_and_not_on_a_comment() -> No
     nested = "CREATE TABLE t (a NUMERIC(10, 2), b TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
     comment = "# DEFAULT CURRENT_TIMESTAMP makes SQLite write a NAIVE stamp"
     prose_near_ddl = (
-        'The ladder runs 25 CREATE TABLE statements, and not one of them may '
-        'say DEFAULT CURRENT_TIMESTAMP. See table_docs.py for the wording.'
+        "The ladder runs 25 CREATE TABLE statements, and not one of them may "
+        "say DEFAULT CURRENT_TIMESTAMP. See table_docs.py for the wording."
     )
     after_the_block = "CREATE TABLE t (a TEXT)\n# never DEFAULT CURRENT_TIMESTAMP here"
 

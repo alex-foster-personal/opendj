@@ -46,9 +46,7 @@ def _make_executable(path: Path) -> Path:
     return path
 
 
-def test_override_wins_and_path_is_never_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_override_wins_and_path_is_never_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     override = _make_executable(tmp_path / "custom-ffmpeg")
     monkeypatch.setenv("MDT_FFMPEG", str(override))
     monkeypatch.setattr(
@@ -59,9 +57,7 @@ def test_override_wins_and_path_is_never_read(
     assert shared_ffmpeg.resolve_ffmpeg() == str(override)
 
 
-def test_broken_override_raises_rather_than_falling_back(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_broken_override_raises_rather_than_falling_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     broken = tmp_path / "not-executable"
     broken.write_text("not a binary")
     monkeypatch.setenv("MDT_FFMPEG", str(broken))
@@ -81,9 +77,7 @@ def test_unset_override_falls_back_to_path(tmp_path: Path, monkeypatch: pytest.M
     assert shared_ffmpeg.resolve_ffmpeg() == str(on_path)
 
 
-def test_neither_available_names_the_override_in_the_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_neither_available_names_the_override_in_the_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     with pytest.raises(shared_ffmpeg.FfmpegUnavailable, match="MDT_FFMPEG"):
@@ -191,9 +185,7 @@ def test_override_beats_bundled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert shared_ffmpeg.resolve_ffmpeg() == str(override)
 
 
-def test_broken_bundled_raises_rather_than_using_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_broken_bundled_raises_rather_than_using_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the payload's ffmpeg is missing [then] raise naming ODJ_FFMPEG_BIN, PATH unread."""
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(tmp_path / "gone"))
@@ -220,15 +212,14 @@ def test_consumers_see_the_bundled_binary(tmp_path: Path, monkeypatch: pytest.Mo
     sys.platform == "win32",
     reason="POSIX-only: the PATH fake is an extensionless shell script that Windows which() skips via PATHEXT",
 )
-def test_mutation_control_path_first_order_is_caught(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mutation_control_path_first_order_is_caught(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the resolver consulted PATH before the bundled path [then] test_bundled_beats_path fails.
 
     Re-runs that test against a mutated resolver (PATH first) and requires it
     to fail, so the ordering test is known to bite rather than passing under
     any order.
     """
+
     def path_first() -> str:
         found = shared_ffmpeg.shutil.which(shared_ffmpeg.FFMPEG_BINARY)
         if found:

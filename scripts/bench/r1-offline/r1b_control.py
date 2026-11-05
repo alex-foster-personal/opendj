@@ -30,6 +30,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -63,9 +64,7 @@ def _decode_mono(path: Path) -> tuple[np.ndarray, int]:
         raise RuntimeError(f"missing: {path}")
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         wav = Path(tmp.name)
-    subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-i", str(path), "-c:a", "pcm_f32le", str(wav)], check=True
-    )
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(path), "-c:a", "pcm_f32le", str(wav)], check=True)
     try:
         data, sr = sf.read(str(wav), dtype="float64", always_2d=True)
         return data.mean(axis=1), int(sr)
@@ -75,9 +74,21 @@ def _decode_mono(path: Path) -> tuple[np.ndarray, int]:
 
 def _bitrate(path: Path) -> str:
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
-         "stream=bit_rate", "-of", "default=nw=1:nk=1", str(path)],
-        check=True, capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=bit_rate",
+            "-of",
+            "default=nw=1:nk=1",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     if not out.isdigit():
         raise RuntimeError(f"ffprobe gave no bitrate for {path}")
@@ -155,10 +166,16 @@ def main() -> None:
                 "gap_db": round(control - measured, 2),
             }
         )
-        print(f"  {arm:>22}  measured {measured:6.2f} dB   control {control:6.2f} dB   gap {control-measured:+6.2f} dB")
+        print(
+            f"  {arm:>22}  measured {measured:6.2f} dB   control {control:6.2f} dB   gap {control - measured:+6.2f} dB"
+        )
 
     ratings = json.loads(
-        (BENCH / "ratings" / "ratings-zeno-signs-musdb18-hq-pop-rock-sung-male-lead-cheap-floor-ladder-20260724T104946Z.json").read_text()
+        (
+            BENCH
+            / "ratings"
+            / "ratings-zeno-signs-musdb18-hq-pop-rock-sung-male-lead-cheap-floor-ladder-20260724T104946Z.json"
+        ).read_text()
     )
     scored = [r for r in ratings["ratings"] if r["human_score"] is not None]
     kept = [r for r in scored if r["id"] != FAILED_ARM]

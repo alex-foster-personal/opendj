@@ -9,10 +9,14 @@ import { waitForPerformanceIpc } from './performance-ready';
 export type Skin = 'default' | 'mono-dev' | 'light' | 'theme-light';
 export const SKINS: Skin[] = ['default', 'mono-dev', 'light', 'theme-light'];
 
-const NO_MOTION = '*, *::before, *::after { transition: none !important; animation: none !important; }';
+const NO_MOTION =
+	'*, *::before, *::after { transition: none !important; animation: none !important; }';
 
 /** What each labeled pass means in the app's own preferences. */
-function _prefsFor(skin: Skin): { ui_skin: 'default' | 'mono-dev' | 'light'; theme: 'dark' | 'light' } {
+function _prefsFor(skin: Skin): {
+	ui_skin: 'default' | 'mono-dev' | 'light';
+	theme: 'dark' | 'light';
+} {
 	if (skin === 'theme-light') return { ui_skin: 'default', theme: 'light' };
 	return { ui_skin: skin, theme: 'dark' };
 }
@@ -64,7 +68,10 @@ async function _waitForMirrorLeadership(page: Page, skin: Skin): Promise<void> {
 			{ message: `${skin}: the engine names this page as the mirror lease holder` }
 		)
 		.toBe(clientId);
-	await expect(page.getByTestId('tab-leader-banner'), `${skin}: follower banner after leading`).toHaveCount(0);
+	await expect(
+		page.getByTestId('tab-leader-banner'),
+		`${skin}: follower banner after leading`
+	).toHaveCount(0);
 }
 
 /**
@@ -79,10 +86,12 @@ export async function applySkin(page: Page, skin: Skin): Promise<void> {
 	const want = _prefsFor(skin);
 	await _putTheme(page, want.theme);
 	const ui = await _ipcUi(page);
-	await page.evaluate(
-		(cmd) => window.musicDjToolsPerformance!.dispatch(cmd as never),
-		{ type: 'set_skin', ui_skin: want.ui_skin, wave_palette: ui.wave_palette, wave_split_master: ui.wave_split_master }
-	);
+	await page.evaluate((cmd) => window.musicDjToolsPerformance!.dispatch(cmd as never), {
+		type: 'set_skin',
+		ui_skin: want.ui_skin,
+		wave_palette: ui.wave_palette,
+		wave_split_master: ui.wave_split_master
+	});
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);
 	await _waitForMirrorLeadership(page, skin);
@@ -97,7 +106,9 @@ export async function applySkin(page: Page, skin: Skin): Promise<void> {
 export async function expectSkin(page: Page, skin: Skin): Promise<void> {
 	const want = _prefsFor(skin);
 	await expect
-		.poll(() => page.evaluate(() => document.documentElement.dataset.theme ?? null), { message: `${skin}: html[data-theme]` })
+		.poll(() => page.evaluate(() => document.documentElement.dataset.theme ?? null), {
+			message: `${skin}: html[data-theme]`
+		})
 		.toBe(want.theme);
 	const dom = await page.evaluate(() => ({
 		skin: document.documentElement.dataset.skin ?? 'default',

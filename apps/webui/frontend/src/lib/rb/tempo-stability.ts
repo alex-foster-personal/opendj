@@ -57,7 +57,8 @@ export function tempoStabilityNeedsFetch(
 	nowMs: number
 ): boolean {
 	if (entry === undefined) return true;
-	if (entry.state === 'error') return entry.at === undefined || nowMs - entry.at >= TEMPO_STABILITY_RETRY_MS;
+	if (entry.state === 'error')
+		return entry.at === undefined || nowMs - entry.at >= TEMPO_STABILITY_RETRY_MS;
 	return false;
 }
 
@@ -97,7 +98,9 @@ export function tempoCurveData(view: TempoStabilityView | null): TempoCurveData 
 	if (view === null || view.state !== 'ready' || view.value.status !== 'ok') return null;
 	const { nominal_bpm, largest_change_pct, segments } = view.value;
 	if (nominal_bpm === null || largest_change_pct === null) {
-		throw new Error('tempo stability: an ok answer always carries nominal_bpm and largest_change_pct');
+		throw new Error(
+			'tempo stability: an ok answer always carries nominal_bpm and largest_change_pct'
+		);
 	}
 	return { nominal_bpm, largest_change_pct, segments };
 }
@@ -128,6 +131,7 @@ export function tempoStabilityTitle(view: TempoStabilityView): string | null {
 		`${value.change_count} tempo change(s) detected`;
 	const moving = value.segments.filter((segment) => segment.kind !== 'steady');
 	const lines = moving.slice(0, TEMPO_TITLE_MAX_LINES).map(_segmentLine);
-	if (moving.length > TEMPO_TITLE_MAX_LINES) lines.push(`and ${moving.length - TEMPO_TITLE_MAX_LINES} more`);
+	if (moving.length > TEMPO_TITLE_MAX_LINES)
+		lines.push(`and ${moving.length - TEMPO_TITLE_MAX_LINES} more`);
 	return [head, ...lines].join('\n');
 }

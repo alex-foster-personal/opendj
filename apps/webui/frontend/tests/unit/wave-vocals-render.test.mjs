@@ -138,10 +138,7 @@ test('demucs regions paint bars at exactly their own start_s and end_s', () => {
 	assert.equal(rects.length, 2, `expected one bar per region, got ${rects.length}`);
 	assert.deepEqual(
 		rects.map((r) => [r.x, r.w]),
-		regions.map((r) => [
-			(r.start_s - WINDOW_LEFT_S) * PX_PER_S,
-			(r.end_s - r.start_s) * PX_PER_S
-		]),
+		regions.map((r) => [(r.start_s - WINDOW_LEFT_S) * PX_PER_S, (r.end_s - r.start_s) * PX_PER_S]),
 		'bars must land on the regions relative to the visible window, not offset from them'
 	);
 	for (const rect of rects) {
@@ -154,7 +151,11 @@ test('scrolling the window moves the bar by exactly the elapsed distance', () =>
 	// The bar is anchored to track time, so advancing the playhead by 1s must
 	// slide it left by exactly PX_PER_S. A painter that forgets the window's
 	// left edge leaves the bar pinned in place.
-	const vocals = { status: 'demucs', fps: 150, regions: [{ start_s: 14, end_s: 16, intensity: 2 }] };
+	const vocals = {
+		status: 'demucs',
+		fps: 150,
+		regions: [{ start_s: 14, end_s: 16, intensity: 2 }]
+	};
 	const before = paint(vocals, POSITION_MS);
 	const after = paint(vocals, POSITION_MS + 1000);
 	assert.equal(before.length, 1);
@@ -218,7 +219,11 @@ test('the vocal layer restores globalAlpha so later painters are not tinted', ()
 		heightCss: HEIGHT,
 		positionMs: POSITION_MS,
 		durationMs: 300_000,
-		anlz: anlzWith({ status: 'demucs', fps: 150, regions: [{ start_s: 10, end_s: 13, intensity: 1 }] }),
+		anlz: anlzWith({
+			status: 'demucs',
+			fps: 150,
+			regions: [{ start_s: 10, end_s: 13, intensity: 1 }]
+		}),
 		palette: PALETTE,
 		pitch: 1,
 		loop: null

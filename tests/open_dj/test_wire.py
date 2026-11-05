@@ -2,6 +2,7 @@
 
 [if] a cue color is present [then] invalid RGB is rejected, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

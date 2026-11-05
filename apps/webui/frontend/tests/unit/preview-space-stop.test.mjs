@@ -57,7 +57,11 @@ test('Space while a preview sounds stops it and is consumed before the deck togg
 	const { state, handler } = world();
 	const down = key();
 	handler.onKeyDown(down);
-	assert.equal(state.stops, 1, 'if Space does not stop the preview then the shortcut is dead - broken');
+	assert.equal(
+		state.stops,
+		1,
+		'if Space does not stop the preview then the shortcut is dead - broken'
+	);
 	assert.ok(
 		consumed(down),
 		'if Space toggles a deck while a preview sounds then stopping a preview in the booth starts or stops the room - broken'

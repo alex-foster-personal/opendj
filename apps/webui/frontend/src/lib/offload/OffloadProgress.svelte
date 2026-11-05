@@ -22,10 +22,19 @@
 					aria-valuemax="100"
 					aria-valuenow={percent ?? undefined}
 				>
-					<span class="offload-fill" class:indeterminate={percent === null} style={percent === null ? undefined : `width:${percent}%`}></span>
+					<span
+						class="offload-fill"
+						class:indeterminate={percent === null}
+						style={percent === null ? undefined : `width:${percent}%`}
+					></span>
 				</span>
 				{#if isFinished(op)}
-					<button type="button" class="offload-btn" title="Hide this line" onclick={() => offloadOps.dismiss(op.op_id)}>Dismiss</button>
+					<button
+						type="button"
+						class="offload-btn"
+						title="Hide this line"
+						onclick={() => offloadOps.dismiss(op.op_id)}>Dismiss</button
+					>
 				{:else}
 					<button
 						type="button"

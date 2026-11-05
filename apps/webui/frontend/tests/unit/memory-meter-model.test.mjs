@@ -16,7 +16,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if the PCM-only readout drops its marker then the meter looks identical to a
 //   measured one and nobody can tell the number is half a number
 // - if the PCM-only thresholds revert to 512/1024 then a single stemmed deck
-//   (~404 MiB of 5x mix PCM) is nearly enough to trip warn on its own
+//   (~485 MiB of 6x mix PCM) is nearly enough to trip warn on its own
 // - if the hover stops saying the heap is unavailable then the honest-state rule
 //   is broken silently
 // - if the heap-measured path stops summing heap + PCM then the meter
@@ -32,7 +32,7 @@ before(async () => {
 
 const PCM_ONLY = {
 	jsHeapMB: null,
-	pcmMB: 404,
+	pcmMB: 485,
 	anlzMB: 12,
 	anlzCount: 10,
 	prefetchMB: 30,
@@ -62,7 +62,7 @@ test('hasJsHeapApi feature-detects the Chromium-only API', () => {
 test('a PCM-only readout is marked and says so in the hover', () => {
 	const out = model.memoryReadout(PCM_ONLY);
 	assert.equal(out.heapMeasured, false);
-	assert.equal(out.totalMB, 404, 'with no heap reading the total IS the decoded PCM');
+	assert.equal(out.totalMB, 485, 'with no heap reading the total IS the decoded PCM');
 	assert.ok(
 		out.text.endsWith('*'),
 		`a PCM-only figure must render a distinct marker, got ${out.text}`
@@ -89,26 +89,26 @@ test('a PCM-only readout is marked and says so in the hover', () => {
 test('a heap-measured readout sums heap + PCM and carries no marker', () => {
 	const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268 });
 	assert.equal(out.heapMeasured, true);
-	assert.equal(out.totalMB, 268 + 404);
-	assert.equal(out.text, '672M', 'a fully measured figure must not wear the PCM-only marker');
+	assert.equal(out.totalMB, 268 + 485);
+	assert.equal(out.text, '753M', 'a fully measured figure must not wear the PCM-only marker');
 	assert.match(out.hover, /JS heap: 268 MB/);
 	assert.match(out.hover, /JS heap \+ decoded PCM/);
 });
 
 test('the PCM-only thresholds are re-derived from 4-stemmed-deck arithmetic', () => {
 	// A 4-min stereo 44.1 kHz Float32 mix is ~81 MiB; a stems-ready deck holds
-	// the mix plus 4 stems, so ~404 MiB. 4 decks stemmed - the engine's
-	// designed ceiling - is ~1616 MiB.
-	assert.equal(model.PCM_MB_PER_STEMMED_DECK, 404);
+	// the mix plus 4 stems plus worklet copy, so ~485 MiB. 4 decks stemmed - the engine's
+	// designed ceiling - is ~1940 MiB.
+	assert.equal(model.PCM_MB_PER_STEMMED_DECK, 485);
 	assert.equal(
 		model.PCM_ONLY_WARN_MB,
-		800,
-		'warn sits just under 2 of 4 decks stemmed (2 x 404 = 808 MiB)'
+		960,
+		'warn sits just under 2 of 4 decks stemmed (2 x 485 = 970 MiB)'
 	);
 	assert.equal(
 		model.PCM_ONLY_CRIT_MB,
-		1600,
-		'crit sits just under all 4 decks stemmed (4 x 404 = 1616 MiB)'
+		1920,
+		'crit sits just under all 4 decks stemmed (4 x 485 = 1940 MiB)'
 	);
 	assert.ok(
 		model.PCM_ONLY_WARN_MB > model.HEAP_PLUS_PCM_WARN_MB,
@@ -121,10 +121,10 @@ test('threshold selection switches with the measurement, not with the number', (
 	const at = (pcmMB, jsHeapMB) => model.memoryReadout({ ...PCM_ONLY, pcmMB, jsHeapMB }).level;
 
 	// PCM-only: one stemmed deck is normal, two is a warning, four is critical.
-	assert.equal(at(404, null), 'ok', 'one stemmed deck alone must not warn on WKWebView');
-	assert.equal(at(808, null), 'warn');
-	assert.equal(at(1616, null), 'crit');
-	assert.equal(at(800, null), 'ok', 'the threshold is exclusive - exactly at warn is still ok');
+	assert.equal(at(485, null), 'ok', 'one stemmed deck alone must not warn on WKWebView');
+	assert.equal(at(970, null), 'warn');
+	assert.equal(at(1940, null), 'crit');
+	assert.equal(at(960, null), 'ok', 'the threshold is exclusive - exactly at warn is still ok');
 
 	// Heap + PCM keeps the calibrated 512/1024 pair.
 	assert.equal(at(200, 268), 'ok');
@@ -133,7 +133,7 @@ test('threshold selection switches with the measurement, not with the number', (
 });
 
 test('the hover states which threshold pair is in force', () => {
-	assert.match(model.memoryReadout(PCM_ONLY).hover, /Thresholds \(this page, PCM only\): warn > 800 MB, crit > 1600 MB/);
+	assert.match(model.memoryReadout(PCM_ONLY).hover, /Thresholds \(this page, PCM only\): warn > 960 MB, crit > 1920 MB/);
 	assert.match(
 		model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268 }).hover,
 		/Thresholds \(this page, heap \+ PCM\): warn > 512 MB, crit > 1024 MB/
@@ -182,11 +182,11 @@ const ENGINE_SIDE = [
 
 test('the figure adds the engine and sidecar processes to the page', () => {
 	const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes: ENGINE_SIDE });
-	assert.equal(out.pageMB, 268 + 404);
+	assert.equal(out.pageMB, 268 + 485);
 	assert.equal(out.processesMB, 652);
-	assert.equal(out.totalMB, 268 + 404 + 652, 'page + every measured app process');
-	assert.equal(out.text, `${268 + 404 + 652}M`);
-	assert.match(out.hover, /Approx resident: 1324 MB \(this page ~672 MB \(JS heap \+ decoded PCM\) \+ 652 MB in 2 engine and sidecar processes\)/);
+	assert.equal(out.totalMB, 268 + 485 + 652, 'page + every measured app process');
+	assert.equal(out.text, `${268 + 485 + 652}M`);
+	assert.match(out.hover, /Approx resident: 1405 MB \(this page ~753 MB \(JS heap \+ decoded PCM\) \+ 652 MB in 2 engine and sidecar processes\)/);
 	assert.match(out.hover, /• opendj-engine: 610 MB/);
 	assert.match(out.hover, /• unnamed: 42 MB/);
 	assert.match(out.hover, /Task Manager/, 'a browser page names what it cannot read about its own tab');
@@ -219,7 +219,7 @@ test('a measured page process replaces the page estimate instead of adding to it
 	// then the heap really is outside the figure and the hover says so
 	const browser = desktop.map((p) => ({ ...p, role: null }));
 	const notInProcesses = model.memoryReadout({ ...PCM_ONLY, processes: browser });
-	assert.equal(notInProcesses.totalMB, 1500 + 404);
+	assert.equal(notInProcesses.totalMB, 1500 + 485);
 	assert.match(notInProcesses.hover, /the figure above is decoded PCM only/);
 	assert.match(notInProcesses.hover, /in heap - NOT in the figure above/);
 });
@@ -243,8 +243,8 @@ test('under Electron the renderer in the family holds the page, so the page term
 	// control: plain Chrome, where no renderer is in the family; the page term is added
 	const chrome = electron.filter((p) => p.role === null);
 	const tab = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes: chrome });
-	assert.equal(tab.totalMB, 900 + 268 + 404);
-	assert.match(tab.hover, /this page ~672 MB \(JS heap \+ decoded PCM\)/);
+	assert.equal(tab.totalMB, 900 + 268 + 485);
+	assert.match(tab.hover, /this page ~753 MB \(JS heap \+ decoded PCM\)/);
 	assert.match(tab.hover, /• JS heap: 268 MB\n/);
 	assert.match(tab.hover, /Task Manager/);
 	assert.equal(out.level, tab.level, 'the level is judged on the page term either way');
@@ -265,7 +265,7 @@ test('an unreadable process is named and left out, never summed as 0', () => {
 test('with no process report the figure is the page alone and says so', () => {
 	for (const processes of [null, undefined]) {
 		const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes });
-		assert.equal(out.totalMB, 672);
+		assert.equal(out.totalMB, 753);
 		assert.equal(out.processesMB, null);
 		assert.match(out.hover, /Engine and sidecar processes: unavailable \(the engine did not report them\) - NOT in the figure above/);
 	}
@@ -285,7 +285,7 @@ test('a stale probe sample is named in the hover as left out of the figure', () 
 		processes: ENGINE_SIDE,
 		probeStale: { ageSeconds: 312.4 }
 	});
-	assert.equal(out.totalMB, 268 + 404 + 652, 'the stale sample adds nothing');
+	assert.equal(out.totalMB, 268 + 485 + 652, 'the stale sample adds nothing');
 	assert.match(out.hover, /Native probe sample is stale \(312 s old\) - its process footprints are left out of the figure above/);
 	const unknown = model.memoryReadout({ ...PCM_ONLY, processes: ENGINE_SIDE, probeStale: { ageSeconds: null } });
 	assert.match(unknown.hover, /stale \(age unknown\)/);
@@ -298,7 +298,7 @@ test('a stale probe sample is named in the hover as left out of the figure', () 
 
 test('with no process report the hover still says a stale probe sample was left out', () => {
 	const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes: null, probeStale: { ageSeconds: 312.4 } });
-	assert.equal(out.totalMB, 672, 'the stale sample adds nothing');
+	assert.equal(out.totalMB, 753, 'the stale sample adds nothing');
 	assert.match(out.hover, /Engine and sidecar processes: unavailable/);
 	assert.match(out.hover, /Native probe sample is stale \(312 s old\) - its process footprints are left out of the figure above/);
 	// control: no stale sample, no such line

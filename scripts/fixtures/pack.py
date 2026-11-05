@@ -114,7 +114,11 @@ def _importer(explicit: str | None = None) -> Path:
 
 def _releases() -> list[dict]:
     # One release object per line across every page, so old tags stay resolvable.
-    out = [json.loads(line) for line in _gh(f"repos/{REPO}/releases?per_page=100", "--paginate", "--jq", ".[]").splitlines() if line]
+    out = [
+        json.loads(line)
+        for line in _gh(f"repos/{REPO}/releases?per_page=100", "--paginate", "--jq", ".[]").splitlines()
+        if line
+    ]
     required = {ZIP_ASSET, IMPORTER_ASSET, META_ASSET}
     packs = [
         r
@@ -170,10 +174,19 @@ def _library(z: zipfile.ZipFile, tracks: dict) -> tuple[set[str], set[str]]:
         _extract_to(z, "state/state.db", db)
         con = sqlite3.connect(db)
         try:
-            listed = {r[0] for r in con.execute(f"SELECT stable_id FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})", sids)}
-            vendor = dict(con.execute(
-                f"SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor='rekordbox' AND deleted_at IS NULL"
-                f" AND stable_id IN ({marks})", sids).fetchall())
+            listed = {
+                r[0]
+                for r in con.execute(
+                    f"SELECT stable_id FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})", sids
+                )
+            }
+            vendor = dict(
+                con.execute(
+                    f"SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor='rekordbox' AND deleted_at IS NULL"
+                    f" AND stable_id IN ({marks})",
+                    sids,
+                ).fetchall()
+            )
         except sqlite3.DatabaseError as e:
             raise ValueError(f"{z.filename}: state/state.db is not a readable library ({e})") from e
         finally:
@@ -186,8 +199,9 @@ def _library(z: zipfile.ZipFile, tracks: dict) -> tuple[set[str], set[str]]:
         pcon = sqlite3.connect(plain)
         try:
             for sid, vid in vendor.items():
-                row = pcon.execute("SELECT AnalysisDataPath FROM djmdContent WHERE ID=? AND rb_local_deleted=0",
-                                   (str(vid),)).fetchone()
+                row = pcon.execute(
+                    "SELECT AnalysisDataPath FROM djmdContent WHERE ID=? AND rb_local_deleted=0", (str(vid),)
+                ).fetchone()
                 if not row or not isinstance(row[0], str) or not row[0].startswith("/PIONEER/"):
                     continue
                 dat = SHARE_PREFIX + row[0].lstrip("/")
@@ -210,7 +224,7 @@ def _tag_ok(tag: str) -> bool:
     if not TAG_RE.fullmatch(tag):
         return False
     try:
-        when = datetime.strptime(tag[len(PREFIX):], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+        when = datetime.strptime(tag[len(PREFIX) :], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return False
     return when <= datetime.now(UTC) + timedelta(days=1)
@@ -218,8 +232,10 @@ def _tag_ok(tag: str) -> bool:
 
 def _check_tag(tag: str) -> None:
     if not _tag_ok(tag):
-        raise ValueError(f"tag {tag!r} must be {PREFIX}YYYYMMDD-HHMMSS for a real UTC time no later than "
-                         "tomorrow, or newest-wins resolution would misorder it")
+        raise ValueError(
+            f"tag {tag!r} must be {PREFIX}YYYYMMDD-HHMMSS for a real UTC time no later than "
+            "tomorrow, or newest-wins resolution would misorder it"
+        )
 
 
 def _unplayable_audio(zpath: Path, tracks: dict) -> dict[str, str]:
@@ -248,8 +264,11 @@ def _unreachable_analysis(manifest: dict, names: set[str], linked: set[str]) -> 
     under pioneer-share; any other member (state/state.db, say) proves nothing.
     """
     bundled = {n for n in manifest.get("anlz_files", {}) if n.startswith(SHARE_PREFIX) and n in names}
-    return sorted(sid for sid, row in manifest["tracks"].items()
-                  if not row.get("anlz") or not set(row["anlz"]) <= bundled or sid not in linked)
+    return sorted(
+        sid
+        for sid, row in manifest["tracks"].items()
+        if not row.get("anlz") or not set(row["anlz"]) <= bundled or sid not in linked
+    )
 
 
 def _meta(zpath: Path, importer: Path, tag: str, note: str, allow_unanalyzed: bool = False) -> dict:
@@ -270,8 +289,10 @@ def _meta(zpath: Path, importer: Path, tag: str, note: str, allow_unanalyzed: bo
     # The importer refuses any other manifest version, so a pack it cannot read must never be registered.
     m = re.search(r"^MANIFEST_VERSION = (\d+)$", importer.read_text(encoding="utf-8"), re.M)
     if m is None or manifest.get("version") != int(m.group(1)):
-        raise ValueError(f"{zpath.name} has manifest version {manifest.get('version')!r}; "
-                         f"{importer.name} reads {m.group(1) if m else 'no declared version'}")
+        raise ValueError(
+            f"{zpath.name} has manifest version {manifest.get('version')!r}; "
+            f"{importer.name} reads {m.group(1) if m else 'no declared version'}"
+        )
     if not manifest.get("tracks"):
         raise ValueError(f"{zpath.name} bundles no tracks")
     # The importer points each manifest id's tracks row at its bundled audio, so an
@@ -289,12 +310,19 @@ def _meta(zpath: Path, importer: Path, tag: str, note: str, allow_unanalyzed: bo
         raise ValueError(f"{zpath.name}: state/state.db has no live tracks row for {absent}")
     bare = _unreachable_analysis(manifest, names, linked)
     if bare and not allow_unanalyzed:
-        raise ValueError(f"{len(bare)} track(s) in {zpath.name} carry no rekordbox ANLZ files their "
-                         f"master.plain.db row points at: {bare}; re-export them")
+        raise ValueError(
+            f"{len(bare)} track(s) in {zpath.name} carry no rekordbox ANLZ files their "
+            f"master.plain.db row points at: {bare}; re-export them"
+        )
     # Last, the pack's own importer judges the bundle exactly as ensure will run it,
     # so a zip it would refuse (or wipe a library for, then fail) is never registered.
-    r = subprocess.run([sys.executable, "-I", str(importer), "check", "--zip", str(zpath)],
-                       capture_output=True, encoding="utf-8", errors="replace", check=False)
+    r = subprocess.run(
+        [sys.executable, "-I", str(importer), "check", "--zip", str(zpath)],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if r.returncode != 0:
         raise ValueError(f"{importer.name} would not import {zpath.name}: {(r.stderr or r.stdout).strip()[:500]}")
     # Only once the importer has passed the bundle (CRCs included): each track's
@@ -347,8 +375,19 @@ def cmd_publish(a: argparse.Namespace) -> int:
         if a.zip:
             shutil.copyfile(a.zip, zpath)
         else:
-            cmd = [sys.executable, str(importer), "export", "--data-dir", a.data_dir, "--out", str(zpath),
-                   "--pick", str(a.pick), "--max-audio-mb", str(a.max_audio_mb)]
+            cmd = [
+                sys.executable,
+                str(importer),
+                "export",
+                "--data-dir",
+                a.data_dir,
+                "--out",
+                str(zpath),
+                "--pick",
+                str(a.pick),
+                "--max-audio-mb",
+                str(a.max_audio_mb),
+            ]
             if a.ids:
                 cmd += ["--ids", a.ids]
             if a.with_stems:
@@ -357,7 +396,9 @@ def cmd_publish(a: argparse.Namespace) -> int:
                 return 2
         size = zpath.stat().st_size
         if size >= 2 * 1024**3:
-            _log(f"zip is {size / 1024**3:.2f} GiB; GitHub assets max out at 2 GiB. Use fewer tracks or drop --with-stems.")
+            _log(
+                f"zip is {size / 1024**3:.2f} GiB; GitHub assets max out at 2 GiB. Use fewer tracks or drop --with-stems."
+            )
             return 2
         try:
             meta = _meta(zpath, importer, tag, a.note)  # publish has no override
@@ -365,9 +406,7 @@ def cmd_publish(a: argparse.Namespace) -> int:
             _log(str(e))
             return 2
         (Path(tmp) / META_ASSET).write_text(json.dumps(meta, indent=1), encoding="utf-8", newline="\n")
-        body = (
-            f"{a.note}\n\n" if a.note else ""
-        ) + (
+        body = (f"{a.note}\n\n" if a.note else "") + (
             f"{len(meta['stable_ids'])} tracks, {meta['state_files']} state files, {meta['bytes'] / 1048576:.0f} MB.\n"
             "PRIVATE: real audio plus the whole library's metadata. Fetch with "
             "`python scripts/fixtures/pack.py ensure` in music-dj-tools.\n\n"
@@ -375,9 +414,23 @@ def cmd_publish(a: argparse.Namespace) -> int:
         )
         # Drafts are invisible to `ensure`, so a publish that dies mid-upload never
         # becomes the newest pack; it goes public only once all three assets are up.
-        rel = json.loads(_gh("--method", "POST", f"repos/{REPO}/releases", "-f", f"tag_name={tag}",
-                             "-f", f"name={tag}", "-f", f"body={body}", "-f", "make_latest=false",
-                             "-F", "draft=true"))
+        rel = json.loads(
+            _gh(
+                "--method",
+                "POST",
+                f"repos/{REPO}/releases",
+                "-f",
+                f"tag_name={tag}",
+                "-f",
+                f"name={tag}",
+                "-f",
+                f"body={body}",
+                "-f",
+                "make_latest=false",
+                "-F",
+                "draft=true",
+            )
+        )
         _upload(rel, zpath, ZIP_ASSET)
         _upload(rel, importer, IMPORTER_ASSET)
         _upload(rel, Path(tmp) / META_ASSET, META_ASSET)
@@ -416,7 +469,9 @@ def cmd_adopt(a: argparse.Namespace) -> int:
         shutil.rmtree(dest)  # never leave a half-adopted pack holding the tag
         raise
     _write_atomic(dest / META_ASSET, json.dumps(meta, indent=1))
-    print(f"[OK] {tag}: {len(meta['stable_ids'])} tracks in {dest} (shared folder only; publish from Silver for a durable copy)")
+    print(
+        f"[OK] {tag}: {len(meta['stable_ids'])} tracks in {dest} (shared folder only; publish from Silver for a durable copy)"
+    )
     return 0
 
 
@@ -485,7 +540,13 @@ def _whole_zip(d: Path, meta: dict) -> bool:
 
 
 def _cached_tags() -> set[str]:
-    return {p.name for base in (CACHE, SHARED) if base.is_dir() for p in base.glob(PREFIX + "*") if _tag_ok(p.name) and _complete(p)}
+    return {
+        p.name
+        for base in (CACHE, SHARED)
+        if base.is_dir()
+        for p in base.glob(PREFIX + "*")
+        if _tag_ok(p.name) and _complete(p)
+    }
 
 
 def _resolve(tag: str | None) -> tuple[str, Path]:
@@ -504,7 +565,9 @@ def _resolve(tag: str | None) -> tuple[str, Path]:
         raise RuntimeError(f"no pack {tag} on GitHub ({REPO}) or in {CACHE} / {SHARED}")
     if not tag:
         if not known:
-            raise RuntimeError(f"no {PREFIX}* pack on GitHub ({REPO}) or in {CACHE} / {SHARED}; publish one from Silver")
+            raise RuntimeError(
+                f"no {PREFIX}* pack on GitHub ({REPO}) or in {CACHE} / {SHARED}; publish one from Silver"
+            )
         tag = max(known)
     local = CACHE / tag
     for src in (local, SHARED / tag):
@@ -529,7 +592,9 @@ def _resolve(tag: str | None) -> tuple[str, Path]:
     got = _sha256(local / ZIP_ASSET)
     if got != want:
         (local / ZIP_ASSET).unlink()
-        raise RuntimeError(f"downloaded {tag} zip fails its sha256 ({got[:12]} != {want[:12]}); removed, rerun to refetch")
+        raise RuntimeError(
+            f"downloaded {tag} zip fails its sha256 ({got[:12]} != {want[:12]}); removed, rerun to refetch"
+        )
     # The project mount is the signal, not fixtures/ under it: the first fetch in
     # a fresh project creates fixtures/packs so later sessions skip the download.
     if SHARED.parent.is_dir() or (SHARED.is_relative_to(PROJECT_FILES) and PROJECT_FILES.is_dir()):
@@ -592,7 +657,9 @@ class _Lock:
                     self._take_over()
                     continue
                 if time.monotonic() > deadline:
-                    raise RuntimeError(f"another ensure has held {self.path} too long; remove it if no ensure is running") from None
+                    raise RuntimeError(
+                        f"another ensure has held {self.path} too long; remove it if no ensure is running"
+                    ) from None
                 time.sleep(2)
             else:
                 (self.path / "owner").write_text(self.token, encoding="utf-8", newline="\n")
@@ -656,8 +723,12 @@ def _pack_id(meta: dict) -> tuple:
     The ids are checked against the zip's own manifest before a marker records
     them, so a pack.json edited afterwards no longer matches and is re-checked.
     """
-    return (meta["sha256"], meta["importer_sha256"], tuple(meta["stable_ids"]),
-            tuple(sorted(meta.get("unanalyzed") or ())))
+    return (
+        meta["sha256"],
+        meta["importer_sha256"],
+        tuple(meta["stable_ids"]),
+        tuple(sorted(meta.get("unanalyzed") or ())),
+    )
 
 
 def _done_id(done: Path) -> tuple | None:
@@ -723,7 +794,9 @@ def _describes_zip(meta: dict, zpath: Path) -> bool:
     try:
         with zipfile.ZipFile(zpath) as z:
             manifest = json.loads(z.read("manifest.json"))
-            if sorted(manifest["tracks"]) != list(meta["stable_ids"]) or manifest.get("version") != meta.get("manifest_version"):
+            if sorted(manifest["tracks"]) != list(meta["stable_ids"]) or manifest.get("version") != meta.get(
+                "manifest_version"
+            ):
                 return False
             _listed, linked = _library(z, manifest["tracks"])
             return list(meta.get("unanalyzed") or []) == _unreachable_analysis(manifest, set(z.namelist()), linked)
@@ -761,8 +834,13 @@ def _drop_mismatched(tag: str, d: Path) -> None:
             f.unlink()
 
 
-def _hydration_gaps(zpath: Path, data: Path, recorded: list[list[str | None]] | None,
-                    unanalyzed: set[str], locations: list[list[str | None]] | None) -> list[str]:
+def _hydration_gaps(
+    zpath: Path,
+    data: Path,
+    recorded: list[list[str | None]] | None,
+    unanalyzed: set[str],
+    locations: list[list[str | None]] | None,
+) -> list[str]:
     """Files the pack put in data that are now gone or no longer the bytes it unpacked.
 
     The done marker records what was unpacked, not what is still there, so a
@@ -807,8 +885,14 @@ def _hydration_gaps(zpath: Path, data: Path, recorded: list[list[str | None]] | 
     return gaps
 
 
-def _library_gaps(data: Path, bundled: dict[str, str], analyzed: set[str], present: list[str],
-                  recorded: list[list[str | None]] | None, locations: list[list[str | None]] | None) -> list[str]:
+def _library_gaps(
+    data: Path,
+    bundled: dict[str, str],
+    analyzed: set[str],
+    present: list[str],
+    recorded: list[list[str | None]] | None,
+    locations: list[list[str | None]] | None,
+) -> list[str]:
     """The databases that no longer serve every pack track where it was unpacked.
 
     Every pack track must be a live row in state.db whose file_path is its file
@@ -837,8 +921,11 @@ def _library_gaps(data: Path, bundled: dict[str, str], analyzed: set[str], prese
             return []
         con = sqlite3.connect(f"{(data / state).resolve().as_uri()}?mode=ro", uri=True)
         try:
-            paths = dict(con.execute(f"SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
-                                     f" AND stable_id IN ({marks})", ids).fetchall())
+            paths = dict(
+                con.execute(
+                    f"SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})", ids
+                ).fetchall()
+            )
             tables = {r for (r,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
             # As the importer reads it: no vendor table means no rekordbox links.
             linked = _rekordbox_links(con, ids) if "track_vendor_ids" in tables else {}
@@ -864,15 +951,29 @@ def _library_gaps(data: Path, bundled: dict[str, str], analyzed: set[str], prese
 def _rekordbox_links(con: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
     """Live rekordbox id of each of these tracks that has one, as the importer reads state.db."""
     marks = ",".join("?" * len(ids)) or "NULL"
-    return dict(con.execute("SELECT stable_id, CAST(vendor_id AS TEXT) FROM track_vendor_ids WHERE vendor = 'rekordbox'"
-                            f" AND deleted_at IS NULL AND stable_id IN ({marks})", ids).fetchall())
+    return dict(
+        con.execute(
+            "SELECT stable_id, CAST(vendor_id AS TEXT) FROM track_vendor_ids WHERE vendor = 'rekordbox'"
+            f" AND deleted_at IS NULL AND stable_id IN ({marks})",
+            ids,
+        ).fetchall()
+    )
 
 
 # The track_locations columns apps/shared/state/locations.py selects and orders
 # candidates by: whose row it is, whether it is live, local or remote, which
 # file or URL, and the order (available, role, created_at, location_id).
-_PICKER_COLUMNS = ("location_id", "machine_id", "deleted_at", "kind", "role", "available", "created_at",
-                   "file_path", "remote_url")
+_PICKER_COLUMNS = (
+    "location_id",
+    "machine_id",
+    "deleted_at",
+    "kind",
+    "role",
+    "available",
+    "created_at",
+    "file_path",
+    "remote_url",
+)
 
 
 def _location_rows(state_db: Path, bundled: dict[str, str], data: Path) -> list[list[str | None]] | None:
@@ -897,8 +998,9 @@ def _location_rows(state_db: Path, bundled: dict[str, str], data: Path) -> list[
                 return []
             have = {r[1] for r in con.execute("PRAGMA table_info(track_locations)")}
             fields = ", ".join(c if c in have else "NULL" for c in _PICKER_COLUMNS)
-            rows = con.execute(f"SELECT stable_id, {fields} FROM track_locations WHERE stable_id IN ({marks})",
-                               ids).fetchall()
+            rows = con.execute(
+                f"SELECT stable_id, {fields} FROM track_locations WHERE stable_id IN ({marks})", ids
+            ).fetchall()
         finally:
             con.close()
     except (OSError, sqlite3.Error):
@@ -944,14 +1046,17 @@ def _master_folder_paths(master: Path, wanted: set[str]) -> list[list[str | None
             cols = {r[1] for r in con.execute("PRAGMA table_info(djmdContent)")}
             live = " AND rb_local_deleted = 0" if "rb_local_deleted" in cols else ""
             fields = ", ".join(c if c in cols else "NULL" for c in ("FolderPath", "AnalysisDataPath"))
-            rows = con.execute(f"SELECT CAST(ID AS TEXT), {fields} FROM djmdContent"
-                               f" WHERE CAST(ID AS TEXT) IN ({rb}){live}", ids).fetchall()
+            rows = con.execute(
+                f"SELECT CAST(ID AS TEXT), {fields} FROM djmdContent WHERE CAST(ID AS TEXT) IN ({rb}){live}", ids
+            ).fetchall()
         finally:
             con.close()
     except (OSError, sqlite3.Error):
         return None
-    return sorted(([str(v) if v is not None else None for v in r] for r in rows),
-                  key=lambda r: [(v is not None, v or "") for v in r])
+    return sorted(
+        ([str(v) if v is not None else None for v in r] for r in rows),
+        key=lambda r: [(v is not None, v or "") for v in r],
+    )
 
 
 def _put_back(aside: Path, data: Path, importing: Path) -> bool:
@@ -1026,9 +1131,15 @@ def _ensure(a: argparse.Namespace) -> int:
         # as good as the zip: a replaced one would vouch for replaced files.
         _log(f"{d / ZIP_ASSET} is not the zip pack.json describes; importing it again")
         stale = True
-    if not stale and (missing := _hydration_gaps(d / ZIP_ASSET, data, _done_record(done),
-                                                  set(meta.get("unanalyzed") or ()),
-                                                  _done_record(done, LOCATION_RECORD))):
+    if not stale and (
+        missing := _hydration_gaps(
+            d / ZIP_ASSET,
+            data,
+            _done_record(done),
+            set(meta.get("unanalyzed") or ()),
+            _done_record(done, LOCATION_RECORD),
+        )
+    ):
         _log(f"{data} is missing or altered {missing[:5]} since {tag} was unpacked; importing it again")
         stale = True
     if stale:
@@ -1042,16 +1153,24 @@ def _ensure(a: argparse.Namespace) -> int:
         for left in sorted(data.glob(".fixture-pack.old-*")):
             # An unowned library: that run's --force was its consent, not this one's.
             if not _put_back(left, data, importing):
-                _log(f"{left} holds a library an interrupted run moved aside, and {data} has another in its"
-                     " place; refusing to choose between them (move one away and rerun)")
+                _log(
+                    f"{left} holds a library an interrupted run moved aside, and {data} has another in its"
+                    " place; refusing to choose between them (move one away and rerun)"
+                )
                 return 2
             _log(f"put back the library an interrupted run had moved aside in {data}")
         ours = done.exists() or importing.exists()
         held = [n for n in ("state", "audio", SHARE_PREFIX.rstrip("/"), "master.plain.db") if os.path.lexists(data / n)]
         # The path map is checked here too, before anything is moved aside: the
         # entry is added after the import, which by then has replaced the library.
-        refusal = (f"{data} holds {held} that no fixture pack wrote; refusing to overwrite them (pass --force if they"
-                   " are disposable)") if held and not ours and not a.force else _merged_map(data)[3]
+        refusal = (
+            (
+                f"{data} holds {held} that no fixture pack wrote; refusing to overwrite them (pass --force if they"
+                " are disposable)"
+            )
+            if held and not ours and not a.force
+            else _merged_map(data)[3]
+        )
         if refusal:
             _log(refusal)
             return 2
@@ -1070,7 +1189,9 @@ def _ensure(a: argparse.Namespace) -> int:
         # pack.json's ids are what ensure advertises; they must be the zip's own.
         if not _describes_zip(meta, d / ZIP_ASSET):
             _drop_mismatched(tag, d)
-            _log(f"{tag}/pack.json describes different tracks, version or unanalyzed tracks than its zip; removed it, rerun to refetch")
+            _log(
+                f"{tag}/pack.json describes different tracks, version or unanalyzed tracks than its zip; removed it, rerun to refetch"
+            )
             return 4
         data.mkdir(parents=True, exist_ok=True)
         if ours:  # still the script's whatever happens below, even if the import dies midway
@@ -1097,8 +1218,21 @@ def _ensure(a: argparse.Namespace) -> int:
             # does not take a user's library for the script's (its aside, if any,
             # lacks OWNED and goes back as the user's).
             importing.write_text(tag, encoding="utf-8", newline="\n")
-        r = subprocess.run([sys.executable, "-I", str(importer), "import", "--zip", str(d / ZIP_ASSET),
-                            "--data-dir", str(data), "--force"], stdout=sys.stderr, check=False)
+        r = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(importer),
+                "import",
+                "--zip",
+                str(d / ZIP_ASSET),
+                "--data-dir",
+                str(data),
+                "--force",
+            ],
+            stdout=sys.stderr,
+            check=False,
+        )
         if r.returncode != 0:
             if aside.exists():
                 # An unowned library is the user's again: --force consented once.
@@ -1115,10 +1249,13 @@ def _ensure(a: argparse.Namespace) -> int:
             _remove_tree(discard)
         record = _master_record(d / ZIP_ASSET, data, set(meta.get("unanalyzed") or ()))
         with zipfile.ZipFile(d / ZIP_ASSET) as z:
-            bundled = {str(sid): str(r["bundle_path"]) for sid, r in json.loads(z.read("manifest.json"))["tracks"].items()}
+            bundled = {
+                str(sid): str(r["bundle_path"]) for sid, r in json.loads(z.read("manifest.json"))["tracks"].items()
+            }
         locations = _location_rows(data / "state" / "state.db", bundled, data)
-        _write_atomic(done, json.dumps({**meta, MASTER_RECORD: record, LOCATION_RECORD: locations,
-                                        ZIP_STAMP: verified}, indent=1))
+        _write_atomic(
+            done, json.dumps({**meta, MASTER_RECORD: record, LOCATION_RECORD: locations, ZIP_STAMP: verified}, indent=1)
+        )
         importing.unlink()
     return _serve(a, tag, data, meta)
 
@@ -1190,7 +1327,9 @@ def _serve(a: argparse.Namespace, tag: str, data: Path, meta: dict) -> int:
             print(f"{k}={shlex.quote(v)}")
     else:
         env = " ".join(f"{k}={shlex.quote(v)}" for k, v in _serve_env(tag, data, meta).items() if k.startswith("MDT_"))
-        _log(f"{tag}: {len(meta['stable_ids'])} tracks ready; start with {env} python -m apps.engine_core serve --data-dir {shlex.quote(str(data))}")
+        _log(
+            f"{tag}: {len(meta['stable_ids'])} tracks ready; start with {env} python -m apps.engine_core serve --data-dir {shlex.quote(str(data))}"
+        )
         print(data)
     return 0
 
@@ -1245,11 +1384,19 @@ def _merged_map(data: Path) -> tuple[Path, dict, bool, str | None]:
     # Any entry for data itself or a path inside it would win over the identity
     # (production takes the longest prefix, then file order), so it is dropped.
     inside = (root + "/", root + "\\")
-    keep = [e for e in raw.get("entries", []) if not (isinstance(e, dict) and isinstance(e.get("from"), str)
-                                                       and (e["from"].rstrip("/\\") == root or e["from"].startswith(inside)))]
+    keep = [
+        e
+        for e in raw.get("entries", [])
+        if not (
+            isinstance(e, dict)
+            and isinstance(e.get("from"), str)
+            and (e["from"].rstrip("/\\") == root or e["from"].startswith(inside))
+        )
+    ]
     merged = {**raw, "entries": [{"from": root, "to": root}, *keep]}
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from apps.shared.platform_paths import load_path_map
+
     saved = os.environ.get("MDT_PATH_MAP")
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / PATH_MAP
@@ -1302,8 +1449,11 @@ def main() -> int:
     d.add_argument("--tag")
     d.add_argument("--note", default="", type=_arg_text)
     d.add_argument("--fixture-py")
-    d.add_argument("--allow-unanalyzed", action="store_true",
-                   help="adopt a zip whose tracks lack ANLZ files (tests, one-off drops); pack.json lists them")
+    d.add_argument(
+        "--allow-unanalyzed",
+        action="store_true",
+        help="adopt a zip whose tracks lack ANLZ files (tests, one-off drops); pack.json lists them",
+    )
     e = sub.add_parser("ensure")
     e.add_argument("--tag")
     e.add_argument("--data-dir")

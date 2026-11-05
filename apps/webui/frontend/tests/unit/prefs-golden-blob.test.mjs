@@ -90,7 +90,14 @@ function loadThroughRealStorage(storageKey, blob, bundlePath) {
 	const store = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-')), 'localstorage.db');
 	const proc = spawnSync(
 		process.execPath,
-		['--experimental-webstorage', `--localstorage-file=${store}`, PROBE, storageKey, blob, bundlePath],
+		[
+			'--experimental-webstorage',
+			`--localstorage-file=${store}`,
+			PROBE,
+			storageKey,
+			blob,
+			bundlePath
+		],
 		{ encoding: 'utf8', timeout: 120000 }
 	);
 	assert.equal(proc.status, 0, `probe failed:\n${proc.stderr}`);
@@ -141,11 +148,7 @@ describe('captured prefs blobs load in the current build', () => {
 			const got = loaded.get(name);
 			const want = CAPTURES.find((c) => c.name === name).parsed;
 			for (const [key, value] of Object.entries(want)) {
-				assert.deepEqual(
-					got[key],
-					value,
-					`${key} did not survive the load from ${name}`
-				);
+				assert.deepEqual(got[key], value, `${key} did not survive the load from ${name}`);
 			}
 		});
 	}

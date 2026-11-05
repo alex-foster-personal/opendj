@@ -151,7 +151,7 @@ test('fetchAnlzUntilSourceConfirmed (anlz-cache.svelte.ts) retries until the sta
 		body,
 		/for\s*\(;;\)\s*\{/,
 		'fetchAnlzUntilSourceConfirmed must loop until it settles on a source-confirmed answer, or a ' +
-			"direct-publication caller can install a payload from a since-reverted source that an EXTERNAL " +
+			'direct-publication caller can install a payload from a since-reverted source that an EXTERNAL ' +
 			"client's own toggle never bumped this client's generation counter for (discussion_r3978049099 P1 BLOCKING)"
 	);
 	assert.match(

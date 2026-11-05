@@ -8,14 +8,7 @@ import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 import { folderAdvanceRefusal, type FolderRow } from './folder-rows';
 import { humanAdvanceRefusal } from './present';
 
-export const WIZARD_STEPS = [
-	'welcome',
-	'detect',
-	'confirm',
-	'progress',
-	'stems',
-	'done'
-] as const;
+export const WIZARD_STEPS = ['welcome', 'detect', 'confirm', 'progress', 'stems', 'done'] as const;
 
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 

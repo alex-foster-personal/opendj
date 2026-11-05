@@ -23,7 +23,11 @@ import { readXrunSessionCounter } from './xrun-sentinel';
 export const FRAME_PROBE_CAPACITY = 2048;
 /** A frame longer than this is a visible stall (three 60 Hz frames). */
 export const LONG_FRAME_MS = 50;
-export { FRAME_PROBE_QUERY, FRAME_PROBE_STORAGE_KEY, frameProbeRequested } from './frame-probe-flag';
+export {
+	FRAME_PROBE_QUERY,
+	FRAME_PROBE_STORAGE_KEY,
+	frameProbeRequested
+} from './frame-probe-flag';
 
 export type ProbeShell = 'electron' | 'tauri' | 'browser';
 
@@ -49,9 +53,7 @@ export interface FrameProbe {
 	stop(): void;
 }
 
-export function probeShell(
-	scope: Parameters<typeof nativeShellKind>[0] = globalThis
-): ProbeShell {
+export function probeShell(scope: Parameters<typeof nativeShellKind>[0] = globalThis): ProbeShell {
 	return nativeShellKind(scope) ?? 'browser';
 }
 

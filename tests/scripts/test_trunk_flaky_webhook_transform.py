@@ -194,3 +194,10 @@ def test_present_values_render_verbatim() -> None:
     body = _run(_event(file_path="tests/test_x.py", codeowners=["@a", "@b"]))["payload"]["body"]
     assert "- File: `tests/test_x.py`" in body
     assert "- Code owners: @a, @b" in body
+
+
+def test_the_filed_issue_cites_the_landing_adr() -> None:
+    body = _run(_event())["payload"]["body"]
+    assert EXAMPLE["test_case"]["html_url"] in body
+    assert "ADR-NEW-trunk-is-the-only-merge-queue" in body
+    assert "ADR-NEW-trunk-merge-queue-replaces-mergify" not in body

@@ -17,9 +17,7 @@ from scripts.license_model import Component, LicenseInventoryError, _read_text
 
 _FRONTEND_RELATIVE = Path("apps/webui/frontend")
 
-_UPSTREAM_LICENSE_HEADER = re.compile(
-    r"Upstream license:\s+.*?\((?P<spdx>[A-Za-z0-9.+-]+)\)"
-)
+_UPSTREAM_LICENSE_HEADER = re.compile(r"Upstream license:\s+.*?\((?P<spdx>[A-Za-z0-9.+-]+)\)")
 _GITHUB_REPO_URL = re.compile(r"https://github.com/(?P<org>[^/\s]+)/(?P<repo>[^/\s]+)/")
 
 
@@ -49,8 +47,7 @@ def vendored_source_components(repo_root: Path) -> list[Component]:
             license_match = _UPSTREAM_LICENSE_HEADER.search(header)
             if license_match is None:
                 raise LicenseInventoryError(
-                    f"{source.relative_to(repo_root)} has no parseable "
-                    "'Upstream license: ... (<SPDX-id>)' header"
+                    f"{source.relative_to(repo_root)} has no parseable 'Upstream license: ... (<SPDX-id>)' header"
                 )
             github_match = _GITHUB_REPO_URL.search(header)
             if github_match is None:
@@ -107,41 +104,56 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
         )
     return [
         Component(
-            "bundled", "CPython (python-build-standalone)", runtime_licenses[0].parent.name, "PSF-2.0",
+            "bundled",
+            "CPython (python-build-standalone)",
+            runtime_licenses[0].parent.name,
+            "PSF-2.0",
             "https://github.com/astral-sh/python-build-standalone",
             [("LICENSE.txt", _read_text(runtime_licenses[0]))]
             + [(path.name, _read_text(path)) for path in native_lib_licenses],
             note="The relocatable interpreter statically links third-party C libraries; their "
-                 f"license texts are mirrored from {PBS_NATIVE_LICENSES_RELATIVE}/ (see its README "
-                 "for provenance) rather than merely referenced.",
+            f"license texts are mirrored from {PBS_NATIVE_LICENSES_RELATIVE}/ (see its README "
+            "for provenance) rather than merely referenced.",
         ),
         Component(
-            "bundled", "Beat This! final0 checkpoint", "final0", "MIT",
+            "bundled",
+            "Beat This! final0 checkpoint",
+            "final0",
+            "MIT",
             "https://github.com/CPJKU/beat_this",
             [("LICENSE-beat_this.txt", _read_text(beat_this_notice))],
             note="Weights; upstream states they are MIT. Training-data terms are upstream's to assess.",
         ),
         Component(
-            "bundled", "Anybody (variable font, wordmark subset)", "", "OFL-1.1",
+            "bundled",
+            "Anybody (variable font, wordmark subset)",
+            "",
+            "OFL-1.1",
             "https://github.com/etunni/anybody",
             [("Anybody-OFL.txt", _read_text(font_license))],
         ),
         Component(
-            "bundled", "mpg123 (compiled to WebAssembly inside mpg123-decoder)", "", "LGPL-2.1-only",
+            "bundled",
+            "mpg123 (compiled to WebAssembly inside mpg123-decoder)",
+            "",
+            "LGPL-2.1-only",
             "https://www.mpg123.de/",
             [("mpg123-COPYING.txt", _read_text(mpg123_copying))],
             note="The npm wrapper declares MIT but is a WebAssembly build of mpg123 itself, which is "
-                 "LGPL-2.1; the wrapper package ships no license text, so mpg123's own COPYING is "
-                 "mirrored from libsdl-org/mpg123 (an upstream mirror) instead. A human must still "
-                 "confirm the compiled .wasm's relinking and source-offer obligations under LGPL-2.1.",
+            "LGPL-2.1; the wrapper package ships no license text, so mpg123's own COPYING is "
+            "mirrored from libsdl-org/mpg123 (an upstream mirror) instead. A human must still "
+            "confirm the compiled .wasm's relinking and source-offer obligations under LGPL-2.1.",
         ),
         Component(
-            "bundled", "libFLAC (compiled to WebAssembly inside @wasm-audio-decoders/flac)", "", "BSD-3-Clause",
+            "bundled",
+            "libFLAC (compiled to WebAssembly inside @wasm-audio-decoders/flac)",
+            "",
+            "BSD-3-Clause",
             "https://xiph.org/flac/",
             [("libFLAC-COPYING.Xiph.txt", _read_text(flac_copying))],
             note="The npm wrapper ships no license text but compiles libFLAC into its WebAssembly (Codex P1, "
-                 "PR #4853); COPYING.Xiph is mirrored from xiph/flac at 1507800de4b, the wasm-audio-decoders "
-                 "modules/flac submodule pin at 3c74930e67, fetched Sat 3 Oct 2026.",
+            "PR #4853); COPYING.Xiph is mirrored from xiph/flac at 1507800de4b, the wasm-audio-decoders "
+            "modules/flac submodule pin at 3c74930e67, fetched Sat 3 Oct 2026.",
         ),
         *vendored_source_components(repo_root),
     ]

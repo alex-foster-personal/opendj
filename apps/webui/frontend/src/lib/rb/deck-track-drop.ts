@@ -72,7 +72,9 @@ export function draggedDeckRows<R extends DragSourceRow>(
 			file_exists: row.file_exists,
 			...(row.file_availability === undefined ? {} : { file_availability: row.file_availability }),
 			is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
-			...(row.offload === undefined || row.offload === null ? {} : { offload: { state: row.offload.state } }),
+			...(row.offload === undefined || row.offload === null
+				? {}
+				: { offload: { state: row.offload.state } }),
 			key_shift: shiftFor(row)
 		};
 	}

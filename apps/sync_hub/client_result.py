@@ -7,6 +7,7 @@ rest of this package, so the client imports it and never the other way round.
 ``apps.sync_hub.client`` re-exports :class:`SyncResult`, so every existing
 ``client.SyncResult`` reference keeps working.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

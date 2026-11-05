@@ -5,7 +5,12 @@ export type Point = readonly number[];
 export type Span = readonly number[];
 
 /** Knob lines drawn over each deck's waveform: name, color and dash, in drawing order. */
-export const LANE_KNOBS: readonly { name: 'fader' | 'eq_low' | 'filter'; label: string; color: string; dash: number[] }[] = [
+export const LANE_KNOBS: readonly {
+	name: 'fader' | 'eq_low' | 'filter';
+	label: string;
+	color: string;
+	dash: number[];
+}[] = [
 	{ name: 'fader', label: 'volume (fader)', color: '#ffffff', dash: [] },
 	{ name: 'eq_low', label: 'bass (low EQ)', color: '#ffc04d', dash: [6, 3] },
 	{ name: 'filter', label: 'filter (center = off)', color: '#4dd8ff', dash: [2, 3] }
@@ -17,14 +22,21 @@ export function laneY(value: number, top: number, rowPx: number): number {
 }
 
 /** Peak columns resampled to the canvas width: the max of the source columns each pixel covers. */
-export function peakColumns(peaks: readonly number[], width: number): { x: number; w: number; peak: number }[] {
+export function peakColumns(
+	peaks: readonly number[],
+	width: number
+): { x: number; w: number; peak: number }[] {
 	if (peaks.length === 0 || width <= 0) return [];
 	const columns = Math.min(peaks.length, Math.floor(width));
 	const out: { x: number; w: number; peak: number }[] = [];
 	for (let c = 0; c < columns; c++) {
 		const from = Math.floor((c * peaks.length) / columns);
 		const to = Math.max(from + 1, Math.floor(((c + 1) * peaks.length) / columns));
-		out.push({ x: (c * width) / columns, w: width / columns, peak: Math.max(...peaks.slice(from, to)) });
+		out.push({
+			x: (c * width) / columns,
+			w: width / columns,
+			peak: Math.max(...peaks.slice(from, to))
+		});
 	}
 	return out;
 }

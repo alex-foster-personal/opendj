@@ -30,6 +30,13 @@ from typing import Any
 
 from apps.analysis.lane_payloads_shared import bar_phase_untrusted
 
+from .own_lane_store import (
+    canonical_lane_result,
+    effective_lane_source,
+    state_conn_ro,
+    table_present,
+)
+
 SOURCE_OWN = "own"
 SOURCE_REKORDBOX = "rekordbox"
 
@@ -84,55 +91,6 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
     return grid, times
 
 
-def _state_conn_ro(state_db_path: Path | None = None) -> Any:
-    """A read-only state connection, or None when there is no state DB at all.
-
-    No state DB means no own record can exist, which has a correct answer
-    (`status: missing`) rather than being a failure to paper over. Mirrors the
-    guard `track_rows.py` already uses on the same file.
-
-    `state_db_path` defaults to the process-global `config.STATE_DB` so
-    existing callers and tests (which monkeypatch that constant) are
-    unaffected; a caller with access to `request.app.state.analysis_db_path`
-    passes it through explicitly instead (Codex P2 BLOCKING, PR #1587): the
-    `/analysis/source` route already honors that override when reading and
-    writing the toggle, so this overlay reading the process-global default
-    instead could report `effective: own` from one database while serving the
-    beatgrid from another.
-    """
-    from apps.adapters.rekordbox import config
-
-    db_path = state_db_path if state_db_path is not None else config.STATE_DB
-    if not db_path.exists():
-        return None
-    from apps.adapters.rekordbox.errors import _open_ro
-
-    return _open_ro(db_path, "STATE_DB")
-
-
-def _table_present(conn: Any, name: str) -> bool:
-    return conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone() is not None
-
-
-def _effective_beatgrid_source(conn: Any) -> str:
-    """`rbx` or `own` for the beatgrid lane, with or without a state DB.
-
-    With a connection this is `apps.analysis.selection.effective_source`
-    verbatim. Without one there is no `analysis_source_default` table to read,
-    which is the same state `get_default` answers `DEFAULT_SOURCE` for, so the
-    in-memory toggle is the only input left. Spelled out rather than routed
-    through a fabricated connection so the no-database case is visible.
-    """
-    from apps.analysis import selection
-
-    if conn is not None:
-        return selection.effective_source(conn, OWN_BEATGRID_LANE)
-    toggle = selection.get_toggle(OWN_BEATGRID_LANE)
-    return selection.DEFAULT_SOURCE if toggle == "unset" else toggle
-
-
 def _own_beatgrid_lane_result(conn: Any, stable_id: str) -> Any:
     """The canonical own `beatgrid` lane block for this track, or None.
 
@@ -152,10 +110,9 @@ def _own_beatgrid_lane_result(conn: Any, stable_id: str) -> Any:
     tables are always present or always absent together. An absent table means
     no lane was ever promoted, which is a state with a correct answer.
     """
-    if conn is None or not _table_present(conn, "analysis_canonical"):
+    if conn is None or not table_present(conn, "analysis_canonical"):
         return None
     from apps.analysis.byte_siblings import canonical_result_or_same_bytes_sibling
-    from apps.webui.server.rb_vendor_pkg.own_lane_store import canonical_lane_result
 
     return canonical_result_or_same_bytes_sibling(
         conn, stable_id, OWN_BEATGRID_LANE, canonical_lane_result
@@ -207,6 +164,10 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
             for b in beats
         ],
         "bpm": float(payload["bpm"]),
+        # GRID-MIK-01: how sure the fit was, so `/anlz` can decide whether
+        # Mixed In Key's grid should stand in for it. The lane contract
+        # requires it on every stored record; None reads as "unknown" there.
+        "bpm_confidence": None if payload.get("bpm_confidence") is None else float(payload["bpm_confidence"]),
     }
     tempo_changes = list(payload["tempo_changes"])
     if not tempo_changes:
@@ -232,11 +193,9 @@ def apply_own_beatgrid(
     rekordbox, which is the launch state for every lane until a promotion
     (D1). Mutates and returns ``payload``.
 
-    ``state_db_path`` is forwarded to `_state_conn_ro`; see its docstring.
+    ``state_db_path`` is forwarded to ``state_conn_ro``; see its docstring.
     """
-    from .own_lane_store import effective_lane_source
-
-    conn = _state_conn_ro(state_db_path)
+    conn = state_conn_ro(state_db_path)
     try:
         if effective_lane_source(conn, OWN_BEATGRID_LANE, has_rb_mapping=has_rb_mapping) != SOURCE_OWN:
             return payload

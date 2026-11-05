@@ -15,13 +15,13 @@ WHISPER_LOG="${ROOT}/data/voice/whisper-server.log"
 mkdir -p "$(dirname "${WHISPER_LOG}")"
 
 echo "[voice] starting whisper.cpp daemon in background -> ${WHISPER_LOG}"
-"${ROOT}/scripts/voice/start-whisper.sh" > "${WHISPER_LOG}" 2>&1 &
+"${ROOT}/scripts/voice/start-whisper.sh" >"${WHISPER_LOG}" 2>&1 &
 WHISPER_PID=$!
 
 cleanup() {
-  echo "[voice] shutting down (whisper pid=${WHISPER_PID})"
-  kill "${WHISPER_PID}" 2>/dev/null || true
-  wait "${WHISPER_PID}" 2>/dev/null || true
+    echo "[voice] shutting down (whisper pid=${WHISPER_PID})"
+    kill "${WHISPER_PID}" 2>/dev/null || true
+    wait "${WHISPER_PID}" 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 

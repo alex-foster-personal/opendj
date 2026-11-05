@@ -5,7 +5,7 @@
  *   [S4] Community-verified Mixxx mapping built from Reloop's official MIDI
  *        map: JackMcCrack, "mixxx---reloop-mixtour-settings",
  *        MIXTOUR_MIDI_1.midi.xml - spike source [4] in
- *        .planning/rekordbox-parity/spikes/SPIKE-CONTROLLERS.md.
+ *        (private path).
  *        Wire convention there: status 0x90/0xB0/0xE0 = Note/CC/PitchBend on
  *        MIDI channel 1 (deck 1), status 0x91/0xB1/0xE1 = channel 2 (deck 2).
  *        This file uses the 1-based `ch` convention from midi-types.
@@ -100,8 +100,14 @@ const _GLOBAL_BINDINGS: MidiBinding[] = [
 	// [S4] 0xB0 0x08 -> [Master] crossfader; [S4] also lists 0xB0 0x12 ->
 	// [Master] crossfader as a second row (both bound - same action, so
 	// whichever the firmware layer emits works)
-	{ source: { ch: 1, kind: 'cc', id: 0x08 }, action: { type: 'mixer_global', target: 'crossfader' } },
-	{ source: { ch: 1, kind: 'cc', id: 0x12 }, action: { type: 'mixer_global', target: 'crossfader' } },
+	{
+		source: { ch: 1, kind: 'cc', id: 0x08 },
+		action: { type: 'mixer_global', target: 'crossfader' }
+	},
+	{
+		source: { ch: 1, kind: 'cc', id: 0x12 },
+		action: { type: 'mixer_global', target: 'crossfader' }
+	},
 	// [S4] 0xB0 0x0F -> [Master] volume
 	{ source: { ch: 1, kind: 'cc', id: 0x0f }, action: { type: 'mixer_global', target: 'master' } },
 	// [S4] 0xB0 0x07 -> [Playlist] SelectTrackKnob (selectknob = relative
@@ -118,8 +124,14 @@ const _GLOBAL_BINDINGS: MidiBinding[] = [
 	// channel-1 alternate layer as the load buttons above). The 4-beat
 	// length is OUR software default for the Transport-mode Auto-Loop pad
 	// (spike 1b names the pad, the wire carries no length)
-	{ source: { ch: 1, kind: 'note', id: 0x11 }, action: { type: 'deck_beat_loop', deck: 1, beats: 4 } },
-	{ source: { ch: 1, kind: 'note', id: 0x4d }, action: { type: 'deck_beat_loop', deck: 2, beats: 4 } }
+	{
+		source: { ch: 1, kind: 'note', id: 0x11 },
+		action: { type: 'deck_beat_loop', deck: 1, beats: 4 }
+	},
+	{
+		source: { ch: 1, kind: 'note', id: 0x4d },
+		action: { type: 'deck_beat_loop', deck: 2, beats: 4 }
+	}
 ];
 
 // -------------------------------------------------------- best-guess hints
@@ -191,7 +203,8 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
  * page and is refused by the engine. The alternation spells out every way the
  * text after `Mixtour` can fail to be `\s+Pro\b`, so both engines agree and
  * the exclusion holds whatever order the maps are registered in. */
-const _CLASSIC_NAME_MATCH = '\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))';
+const _CLASSIC_NAME_MATCH =
+	'\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))';
 
 /** Reloop Mixtour classic P0 map. Excluding the Pro is a safety boundary:
  * broad `Mixtour` matching used to route Pro SYNC as classic LOAD. */

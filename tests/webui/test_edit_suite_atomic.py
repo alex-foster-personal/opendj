@@ -10,13 +10,8 @@ from .conftest import current_etag
 
 
 @pytest.mark.requirement("CAT-05")
-def test_bulk_edit_stale_member_leaves_the_entire_selection_unchanged(
-    client, seed_backend
-) -> None:
-    before = [
-        seed_backend.get_track(stable_id).rating
-        for stable_id in ("track-001", "track-002")
-    ]
+def test_bulk_edit_stale_member_leaves_the_entire_selection_unchanged(client, seed_backend) -> None:
+    before = [seed_backend.get_track(stable_id).rating for stable_id in ("track-001", "track-002")]
     response = client.patch(
         "/api/v1/bulk-edit",
         json={
@@ -29,16 +24,11 @@ def test_bulk_edit_stale_member_leaves_the_entire_selection_unchanged(
         },
     )
     assert response.status_code == 409
-    assert [
-        seed_backend.get_track(stable_id).rating
-        for stable_id in ("track-001", "track-002")
-    ] == before
+    assert [seed_backend.get_track(stable_id).rating for stable_id in ("track-001", "track-002")] == before
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_rejects_nested_quantifiers_without_writing(
-    client, seed_backend
-) -> None:
+def test_find_replace_rejects_nested_quantifiers_without_writing(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "a" * 100
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -50,9 +40,7 @@ def test_find_replace_rejects_nested_quantifiers_without_writing(
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_rejects_ambiguous_repeated_alternation_without_writing(
-    client, seed_backend
-) -> None:
+def test_find_replace_rejects_ambiguous_repeated_alternation_without_writing(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "a" * 100 + "b"
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -60,16 +48,12 @@ def test_find_replace_rejects_ambiguous_repeated_alternation_without_writing(
     )
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "unsafe_regex"
-    assert (
-        response.json()["detail"]["message"] == "regex exceeded the safety time limit"
-    )
+    assert response.json()["detail"]["message"] == "regex exceeded the safety time limit"
     assert seed_backend.get_track("track-001").notes == "a" * 100 + "b"
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_allows_safe_quantified_alternation_without_writing(
-    client, seed_backend
-) -> None:
+def test_find_replace_allows_safe_quantified_alternation_without_writing(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "foobarfoo"
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -86,9 +70,7 @@ def test_find_replace_allows_safe_quantified_alternation_without_writing(
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_rejects_duplicate_stable_ids_without_writing(
-    client, seed_backend
-) -> None:
+def test_find_replace_rejects_duplicate_stable_ids_without_writing(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "before"
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -120,9 +102,7 @@ def test_find_replace_applies_valid_regex_without_writing(client, seed_backend) 
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_preserves_literal_metacharacters_without_writing(
-    client, seed_backend
-) -> None:
+def test_find_replace_preserves_literal_metacharacters_without_writing(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "A.B"
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -140,9 +120,7 @@ def test_find_replace_preserves_literal_metacharacters_without_writing(
 
 
 @pytest.mark.requirement("CAT-05")
-def test_find_replace_converts_a_real_regex_timeout_to_an_explicit_client_error(
-    client, seed_backend
-) -> None:
+def test_find_replace_converts_a_real_regex_timeout_to_an_explicit_client_error(client, seed_backend) -> None:
     seed_backend.get_track("track-001").notes = "a" * 100 + "b"
     response = client.post(
         "/api/v1/find-replace/preview",
@@ -170,10 +148,7 @@ def test_mytag_assign_uses_one_batch_cas(client, seed_backend) -> None:
         },
     )
     assert response.status_code == 200
-    assert all(
-        "opener" in seed_backend.get_track(stable_id).tags
-        for stable_id in ("track-001", "track-002")
-    )
+    assert all("opener" in seed_backend.get_track(stable_id).tags for stable_id in ("track-001", "track-002"))
 
 
 def _mytag_scope(client) -> tuple[str, dict[str, int]]:
@@ -316,16 +291,11 @@ def test_mytag_openapi_documents_stale_scope_and_merge_confirmation_conflicts(cl
         {"$ref": "#/components/schemas/MyTagMergeConflictDetail"},
     ]
 
+
 @pytest.mark.requirement("LIBM-62")
 def test_bulk_edit_sets_genre_on_every_selected_row(client, seed_backend) -> None:
-    before_notes = [
-        seed_backend.get_track(stable_id).notes
-        for stable_id in ("track-001", "track-002")
-    ]
-    before_rating = [
-        seed_backend.get_track(stable_id).rating
-        for stable_id in ("track-001", "track-002")
-    ]
+    before_notes = [seed_backend.get_track(stable_id).notes for stable_id in ("track-001", "track-002")]
+    before_rating = [seed_backend.get_track(stable_id).rating for stable_id in ("track-001", "track-002")]
     response = client.patch(
         "/api/v1/bulk-edit",
         json={
@@ -341,22 +311,15 @@ def test_bulk_edit_sets_genre_on_every_selected_row(client, seed_backend) -> Non
     assert response.json()["applied_count"] == 2
     assert seed_backend.get_track("track-001").genre == "Deep House"
     assert seed_backend.get_track("track-002").genre == "Deep House"
-    assert [
-        seed_backend.get_track(stable_id).notes for stable_id in ("track-001", "track-002")
-    ] == before_notes
-    assert [
-        seed_backend.get_track(stable_id).rating for stable_id in ("track-001", "track-002")
-    ] == before_rating
+    assert [seed_backend.get_track(stable_id).notes for stable_id in ("track-001", "track-002")] == before_notes
+    assert [seed_backend.get_track(stable_id).rating for stable_id in ("track-001", "track-002")] == before_rating
 
 
 @pytest.mark.requirement("LIBM-62")
 def test_bulk_edit_stale_member_leaves_genre_unchanged(client, seed_backend) -> None:
     seed_backend.get_track("track-001").genre = "House"
     seed_backend.get_track("track-002").genre = "House"
-    before = [
-        seed_backend.get_track(stable_id).genre
-        for stable_id in ("track-001", "track-002")
-    ]
+    before = [seed_backend.get_track(stable_id).genre for stable_id in ("track-001", "track-002")]
     response = client.patch(
         "/api/v1/bulk-edit",
         json={
@@ -369,10 +332,7 @@ def test_bulk_edit_stale_member_leaves_genre_unchanged(client, seed_backend) -> 
         },
     )
     assert response.status_code == 409
-    assert [
-        seed_backend.get_track(stable_id).genre
-        for stable_id in ("track-001", "track-002")
-    ] == before
+    assert [seed_backend.get_track(stable_id).genre for stable_id in ("track-001", "track-002")] == before
 
 
 @pytest.mark.requirement("LIBM-66")
@@ -464,9 +424,7 @@ def test_find_replace_rejects_unknown_field(client, seed_backend) -> None:
 @pytest.mark.requirement("LIBM-66")
 def test_find_replace_openapi_documents_genre_and_comments_fields(client) -> None:
     schema = client.get("/openapi.json").json()
-    field_enum = schema["components"]["schemas"]["FindReplacePreviewIn"]["properties"]["field"][
-        "enum"
-    ]
+    field_enum = schema["components"]["schemas"]["FindReplacePreviewIn"]["properties"]["field"]["enum"]
     assert field_enum == ["notes", "genre", "comments"]
     bulk_props = schema["components"]["schemas"]["BulkEditIn"]["properties"]
     assert "genre" in bulk_props

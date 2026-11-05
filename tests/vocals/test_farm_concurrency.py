@@ -13,10 +13,12 @@ Single-line intent, in the repo's regression style:
   - if a missing wall_span is tolerated then a stale container silently flatters the number
   - if a backwards span is accepted then a clock fault is reported as a measurement
 """
+
 from __future__ import annotations
 
 import pytest
 
+from apps.vocals import cache as vcache
 from scripts.farm_concurrency import (
     concurrency_profile,
     implied_max_containers,
@@ -122,7 +124,7 @@ def test_summary_names_the_cap_as_configured() -> None:
     assert "cap configured at 10" in line
 
 
-#----- producer/consumer contract ---------------------------------------------
+# ----- producer/consumer contract ---------------------------------------------
 # The farm STAMPS wall_span in the container; apps.vocals.cache PERSISTS it;
 # scripts/bench/kpi_derive READS it to fill observed_peak_concurrency. Three
 # files, three owners, one contract -- and it is that contract which makes the
@@ -132,7 +134,7 @@ def test_summary_names_the_cap_as_configured() -> None:
 def _worker_result(span: list[float]) -> dict:
     """A separate_track return value, shaped as _write_result hands it on."""
     return {
-        "schema": 2,
+        "schema": vcache.VOCAL_CACHE_SCHEMA,
         "source": "demucs-htdemucs",
         "fps": 2.0,
         "duration_s": 180.0,

@@ -95,7 +95,11 @@ test('control: a real 1 BPM mismatch is still reported off tempo', () => {
 		const folded = 128 * fold;
 		const edge = 0.1 + pl.PHASE_LOCK_MAX_TRIM * folded;
 		assert.equal(bsm.isTempoLockedToMaster(folded + edge * 0.99, 128), true, `fold ${fold} inside`);
-		assert.equal(bsm.isTempoLockedToMaster(folded + edge * 1.01, 128), false, `fold ${fold} outside`);
+		assert.equal(
+			bsm.isTempoLockedToMaster(folded + edge * 1.01, 128),
+			false,
+			`fold ${fold} outside`
+		);
 	}
 });
 

@@ -48,8 +48,8 @@ function shellArgument(value: string): string {
 
 const FIXTURE_COMMAND = [
 	'uv', 'run', '--no-sync', 'python', '-m',
-	'apps.webui.frontend.tests.e2e.support.deckload_fixture',
-	'--data-dir', FIXTURE_DATA_DIR, '--seed-playlists'
+	'apps.webui.frontend.tests.e2e.support.bpm_provenance_fixture',
+	'--data-dir', FIXTURE_DATA_DIR
 ].map(shellArgument).join(' ');
 const ENGINE_COMMAND = [
 	'uv', 'run', '--no-sync', 'python', '-m', 'apps.engine_core', 'serve',

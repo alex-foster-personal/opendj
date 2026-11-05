@@ -43,9 +43,7 @@ def test_hub_only_inconclusive_remedy_points_at_hub_engine_warn_log(
 ) -> None:
     conn = state_db.open_ro(real_library_db.path)
     try:
-        remedy = sync_set.inconclusive_remedy(
-            conn, held_here=0, hub_quarantined=3
-        )
+        remedy = sync_set.inconclusive_remedy(conn, held_here=0, hub_quarantined=3)
     finally:
         conn.close()
     assert "on this machine" not in remedy

@@ -2,13 +2,15 @@
 
 Spec: ``(private path)`` (parity matrix rows 59, 60,
 62). This builds and verifies; it NEVER publishes. Publishing to the public
-updater host is a separate, later step gated on the owner's decisions in that
-spec.
+updater host is a separate step, ``scripts/electron_publish.py`` (spec
+"Delivery plan" step 5), run on a finished ``--out``.
 
 What a run produces in ``--out`` (no artifact name carries a space, because
 GitHub rewrites spaces in asset names and a feed URL would 404):
 
-- ``OpenDJ-<v>-arm64.dmg``: signed, notarized, stapled disk image of the app.
+- ``OpenDJ-<v>-arm64.dmg``: signed, notarized, stapled disk image of the app,
+  with an ``Applications`` link beside it so the DJ drags the app onto it
+  (:func:`dmg_layout`, :func:`stage_dmg_root`, ELECTRON-8819).
 - ``OpenDJ-<v>-arm64-mac.zip``: the stapled app, the Squirrel.Mac payload.
 - ``latest-mac.yml``: the electron-updater generic feed naming that zip by
   sha512 and size, with ``releaseNotes: built from <sha>``.
@@ -24,9 +26,11 @@ excluded, now with a secure timestamp) and ``scripts/sign_macos_developer_id.sh`
 (payload, notarize-app, dmg, notarize). electron-builder only packs; its own
 signer would re-sign the payload with the shell entitlements.
 
-Versions: a release's version must equal ``package.json`` ``version`` and
-``tauri.conf.json`` ``version`` (the payload's ``app_version`` source), so the
-shell's updater and the engine's ``/build-info`` agree. ``--proof`` lifts that
+Versions: a release's version must equal ``package.json`` ``version`` (the
+one app version source, ``scripts/app_identity.py``: the payload's
+``app_version`` and the engine's ``/build-info`` read it) and, while the Tauri
+shell still ships, its copy in ``tauri.conf.json``, so a Tauri install bridged
+to this release and the Electron updater agree. ``--proof`` lifts that
 for a private update-install test: the shell gets the version through
 ``-c.extraMetadata.version`` and the staged payload manifest's ``app_version``
 is rewritten to match, and the evidence says ``proof: true``.
@@ -52,10 +56,17 @@ Acceptance:
   [else stop].
 - [if] --proof-env is given without --proof, or not as KEY=VALUE [then] the
   run refuses before building [else stop].
+- [if] a non-proof release has no --notes [then] the run refuses before
+  building [else stop].
+- [if] the dmg volume root has no ``Applications`` symlink to
+  ``/Applications`` beside the app [then] staging raises and no dmg is built
+  [else stop].
 
 Usage::
 
-    uv run --no-sync python -m scripts.electron_release --out <dir> [--version V --proof] [--channel nightly]
+    uv run --no-sync python -m scripts.electron_release --out <dir> --notes "<line>" [--version V --proof] [--channel nightly]
+
+Publishing is ``scripts/electron_publish.py``, run on the finished ``--out``.
 
 -Claude
 """
@@ -146,6 +157,34 @@ class Artifacts:
         return self.out / "app" / ship_electron.APP_NAME
 
 
+# ----- dmg layout --------------------------------------------------------------
+
+#: The drag-to-install target every Mac dmg carries: a symlink named Applications.
+APPLICATIONS_LINK_NAME = "Applications"
+APPLICATIONS_LINK_TARGET = "/Applications"
+
+
+def dmg_layout(app_name: str) -> dict[str, str | None]:
+    """The dmg volume root: entry name -> symlink target, None for the app bundle itself."""
+    return {app_name: None, APPLICATIONS_LINK_NAME: APPLICATIONS_LINK_TARGET}
+
+
+def stage_dmg_root(root: Path, app_name: str) -> None:
+    """Lay ``root`` out as :func:`dmg_layout` says: the app must be there, each link is made."""
+    for name, target in dmg_layout(app_name).items():
+        entry = root / name
+        if target is None:
+            if not entry.is_dir():
+                raise ReleaseError(f"dmg root {root} has no {name}; package() runs after the app is notarized")
+        elif not entry.is_symlink():
+            entry.symlink_to(target)
+        elif os.readlink(entry) != target:
+            raise ReleaseError(f"{entry} links to {os.readlink(entry)}, not {target}")
+    extra = sorted(p.name for p in root.iterdir() if p.name not in dmg_layout(app_name))
+    if extra:
+        raise ReleaseError(f"dmg root {root} carries entries the layout does not name: {', '.join(extra)}")
+
+
 # ----- versions ----------------------------------------------------------------
 
 
@@ -159,8 +198,8 @@ def resolve_release_version(requested: str | None, package_version: str, tauri_v
         return version
     if not version == package_version == tauri_version:
         raise ReleaseError(
-            f"release version {version} must equal apps/desktop/electron/package.json ({package_version}) and "
-            f"tauri.conf.json ({tauri_version}), the payload's app_version source; bump them together, or pass "
+            f"release version {version} must equal apps/desktop/electron/package.json ({package_version}), the app "
+            f"version source, and its Tauri copy tauri.conf.json ({tauri_version}); bump them together, or pass "
             "--proof for a private update-install build"
         )
     return version
@@ -214,7 +253,14 @@ def sha512_b64(path: Path) -> str:
     return base64.b64encode(digest.digest()).decode("ascii")
 
 
-def latest_mac_yml(version: str, zip_path: Path, git_sha: str, release_date: datetime) -> str:
+def release_notes(notes: str, git_sha: str) -> str:
+    """Feed notes: the user-facing line, then ``built from <sha>``, which the engine's
+    same-version check and release.sh's retry validation read."""
+    build_line = f"built from {git_sha}"
+    return f"{notes.strip()}\n\n{build_line}" if notes.strip() else build_line
+
+
+def latest_mac_yml(version: str, zip_path: Path, git_sha: str, release_date: datetime, notes: str = "") -> str:
     """electron-updater generic feed. The url is relative: it resolves against the feed directory."""
     digest = sha512_b64(zip_path)
     feed = {
@@ -223,7 +269,7 @@ def latest_mac_yml(version: str, zip_path: Path, git_sha: str, release_date: dat
         "path": zip_path.name,
         "sha512": digest,
         "releaseDate": release_date.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "releaseNotes": f"built from {git_sha}",
+        "releaseNotes": release_notes(notes, git_sha),
     }
     return yaml.safe_dump(feed, sort_keys=False)
 
@@ -244,14 +290,14 @@ def check_feed_matches(feed_text: str, zip_path: Path, version: str) -> None:
 
 
 def bridge_manifest(
-    version: str, git_sha: str, archive_name: str, signature: str, channel: str, pub_date: datetime
+    version: str, git_sha: str, archive_name: str, signature: str, channel: str, pub_date: datetime, notes: str = ""
 ) -> dict:
     """The Tauri ``latest.json`` whose archive is the Electron app (spec section c)."""
     if not signature.strip():
         raise ReleaseError("the bridge archive's minisign signature is empty")
     return {
         "version": version,
-        "notes": f"built from {git_sha}",
+        "notes": release_notes(notes, git_sha),
         "pub_date": pub_date.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "channel": channel,
         "platforms": {
@@ -303,6 +349,7 @@ class Options:
     proof: bool
     channel: str
     proof_env: tuple[str, ...] = ()
+    notes: str = ""
 
 
 class Release:
@@ -322,6 +369,7 @@ class Release:
             "proof": opts.proof,
             "channel": opts.channel,
             "proof_env": list(opts.proof_env),
+            "notes": opts.notes,
         }
 
     def preflight(self) -> None:
@@ -427,6 +475,9 @@ class Release:
     def package(self) -> None:
         app = self.art.app
         run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(self.art.zip)])
+        # The app's own folder is the volume root, so the image carries the app
+        # and the Applications link and nothing else (no second copy of the app).
+        stage_dmg_root(app.parent, app.name)
         run(
             [
                 "hdiutil",
@@ -434,7 +485,7 @@ class Release:
                 "-volname",
                 "Open DJ",
                 "-srcfolder",
-                str(app),
+                str(app.parent),
                 "-ov",
                 "-format",
                 "UDZO",
@@ -459,12 +510,14 @@ class Release:
 
     def write_feeds(self) -> None:
         now = datetime.now(UTC)
-        self.art.feed.write_text(latest_mac_yml(self.opts.version, self.art.zip, self.git_sha, now), encoding="utf-8")
+        self.art.feed.write_text(
+            latest_mac_yml(self.opts.version, self.art.zip, self.git_sha, now, self.opts.notes), encoding="utf-8"
+        )
         if not self.art.signature.is_file():
             raise ReleaseError(f"cargo tauri signer sign wrote no {self.art.signature.name}")
         signature = self.art.signature.read_text(encoding="utf-8")
         manifest = bridge_manifest(
-            self.opts.version, self.git_sha, self.art.archive.name, signature, self.opts.channel, now
+            self.opts.version, self.git_sha, self.art.archive.name, signature, self.opts.channel, now, self.opts.notes
         )
         self.art.bridge.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
@@ -509,7 +562,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         metavar="KEY=VALUE",
         help="proof builds only: bake LSEnvironment KEY=VALUE into Info.plist (repeatable)",
     )
+    parser.add_argument(
+        "--notes",
+        default="",
+        help="user-facing release notes line for both feeds; required for a public (non-proof) release",
+    )
     return parser.parse_args(argv)
+
+
+def require_release_notes(notes: str, proof: bool) -> None:
+    """A public release always tells users what changed; a proof build may stay silent."""
+    if not proof and not notes.strip():
+        raise ReleaseError("a public (non-proof) release needs --notes, the line users see in the update prompt")
 
 
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None) -> int:
@@ -520,12 +584,14 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         tauri_version = json.loads(TAURI_CONF.read_text(encoding="utf-8"))["version"]
         version = resolve_release_version(args.version, package_version, tauri_version, args.proof)
         proof_environment_args(args.proof_env, args.proof)
+        require_release_notes(args.notes, args.proof)
         opts = Options(
             out=args.out.resolve(),
             version=version,
             proof=args.proof,
             channel=args.channel,
             proof_env=tuple(args.proof_env),
+            notes=args.notes,
         )
         release = Release(opts, environ, _git("rev-parse", "HEAD"))
         for step in (

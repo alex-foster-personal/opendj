@@ -88,16 +88,12 @@ def rewrite_record_json(raw: str, expected_openkey: str) -> str | None:
 def _require_analysis_table(conn: sqlite3.Connection, db: Path) -> None:
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "analysis" not in names:
-        raise SystemExit(
-            f"[migrate-key-openkey] no analysis table in {db}; this is not a "
-            "production analysis store"
-        )
+        raise SystemExit(f"[migrate-key-openkey] no analysis table in {db}; this is not a production analysis store")
 
 
 def _scan(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, dict[str, int]]]:
     rows = conn.execute(
-        "SELECT stable_id, backend, backend_version, key_camelot, key_openkey, record_json "
-        "FROM analysis"
+        "SELECT stable_id, backend, backend_version, key_camelot, key_openkey, record_json FROM analysis"
     ).fetchall()
     by_backend: dict[str, dict[str, int]] = defaultdict(
         lambda: {"n_total": 0, "n_ok": 0, "n_affected": 0, "n_unparseable": 0}
@@ -174,8 +170,7 @@ def apply(db: Path) -> dict[str, dict[str, int]]:
             new_json = rewrite_record_json(row["record_json"], row["expected"])
             if new_json is None:
                 conn.execute(
-                    "UPDATE analysis SET key_openkey = ? "
-                    "WHERE stable_id=? AND backend=? AND backend_version=?",
+                    "UPDATE analysis SET key_openkey = ? WHERE stable_id=? AND backend=? AND backend_version=?",
                     (row["expected"], row["stable_id"], row["backend"], row["backend_version"]),
                 )
             else:

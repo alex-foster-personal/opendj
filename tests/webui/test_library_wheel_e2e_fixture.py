@@ -26,6 +26,7 @@ from pathlib import Path
 
 from pyrekordbox.db6 import tables as rekordbox_tables
 
+from apps.webui.server.inbox_playlist import INBOX_PLAYLIST_NAME
 from tests.webui.listing_boot_probe import child_home_env
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,7 +57,7 @@ print(json.dumps(out))
 """
 
 
-#----- helpers ----------------------------------------------------------------
+# ----- helpers ----------------------------------------------------------------
 
 
 def _free_port() -> int:
@@ -90,13 +91,17 @@ def _engine_environment(data_dir: Path, home: Path) -> dict[str, str]:
 def _build_fixture(data_dir: Path) -> None:
     result = subprocess.run(
         [sys.executable, "-m", FIXTURE_MODULE, "--data-dir", str(data_dir)],
-        capture_output=True, text=True, cwd=REPO_ROOT, timeout=120, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+        check=False,
     )
     assert result.returncode == 0, f"fixture build failed:\n{result.stderr}"
     assert (data_dir / "master.plain.db").is_file()
 
 
-#----- tests ------------------------------------------------------------------
+# ----- tests ------------------------------------------------------------------
 
 
 def test_library_wheel_e2e_fixture_serves_every_page_route(tmp_path: Path) -> None:
@@ -105,7 +110,11 @@ def test_library_wheel_e2e_fixture_serves_every_page_route(tmp_path: Path) -> No
     _build_fixture(data_dir)
     result = subprocess.run(
         [sys.executable, "-c", _ROUTE_PROBE, json.dumps(_PAGE_ROUTES)],
-        capture_output=True, text=True, cwd=tmp_path, timeout=120, check=False,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        timeout=120,
+        check=False,
         env=_engine_environment(data_dir, tmp_path / "home"),
     )
     assert result.returncode == 0, f"probe crashed:\n{result.stderr}"
@@ -119,10 +128,15 @@ def test_library_wheel_e2e_fixture_serves_every_page_route(tmp_path: Path) -> No
     )
     tracks = probe["/api/v1/tracks?limit=500"][1]
     assert sorted(row["stable_id"] for row in tracks["items"]) == [
-        "t-house-1", "t-no-rb-1", "t-techno-1", "t-techno-2", "t-unmatched-1",
+        "t-house-1",
+        "t-no-rb-1",
+        "t-techno-1",
+        "t-techno-2",
+        "t-unmatched-1",
     ]
     playlists = probe["/api/v1/playlists?availability=skip"][1]
-    assert [row["name"] for row in playlists] == ["Warmup"]
+    # t-no-rb-1 has no membership, so LIBM-D1 prepends the derived Inbox row.
+    assert [row["name"] for row in playlists] == [INBOX_PLAYLIST_NAME, "Warmup"]
     wheel = probe["/api/v1/library/wheel"][1]
     assert wheel["total_tracks"] == 5
     assert len(wheel["families"]) == 2
@@ -135,13 +149,9 @@ def test_library_wheel_e2e_master_db_is_rekordbox_shaped(tmp_path: Path) -> None
     models = rekordbox_tables.Base.metadata.tables
     conn = sqlite3.connect(str(data_dir / "master.plain.db"))
     try:
-        fixture_tables = {
-            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        }
+        fixture_tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"djmdContent", "djmdGenre", "djmdPlaylist"} <= fixture_tables
-        content_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(djmdContent)")
-        }
+        content_columns = {row[1] for row in conn.execute("PRAGMA table_info(djmdContent)")}
         assert "ImagePath" in content_columns, (
             "[if] djmdContent lacks ImagePath then bulk_rb_meta 500s on the wheel fixture "
             "(issue #7032, run 36510204674)"

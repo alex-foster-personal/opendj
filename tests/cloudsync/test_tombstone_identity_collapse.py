@@ -1,6 +1,6 @@
 """CLOUDSYNC-31: a removed track never takes part in a content-identity collapse.
 
-Contract: ``docs/decisions/ADR-NEW-deletes-stay-deleted.md``, "Removed and
+Contract: ``(private path)``, "Removed and
 re-added copies". Every scenario runs real folder ingest of a real WAV, the
 real writer's remove, the real hub router and the real ``run_sync``; a sync
 that leaves the two sides different raises ``SyncDigestMismatch``.
@@ -56,9 +56,7 @@ def _ingest(data_dir: Path, root: Path, *, picked_by_user: bool) -> None:
     conn = _open(data_dir)
     writer = StateWriter(conn, bus=FakeEventBus(), actor="webui")
     try:
-        folder.ingest_folder(
-            writer, [root], dry_run=False, allow_mass_missing=True, restore_removed=picked_by_user
-        )
+        folder.ingest_folder(writer, [root], dry_run=False, allow_mass_missing=True, restore_removed=picked_by_user)
     finally:
         writer.close()
         conn.close()
@@ -149,9 +147,7 @@ class _Library:
         _ingest(data_dir, self.inbox, picked_by_user=True)
 
 
-def _shared_library(
-    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path, tmp_path: Path
-) -> tuple[_Library, str]:
+def _shared_library(hub: _TestClientTransport, spoke_a: Path, spoke_b: Path, tmp_path: Path) -> tuple[_Library, str]:
     library = _Library(tmp_path)
     _ingest(spoke_a, library.music, picked_by_user=False)
     _sync(spoke_a, hub, "spoke-a")

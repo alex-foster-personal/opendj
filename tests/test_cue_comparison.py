@@ -1,4 +1,5 @@
 """Phase 4 SYNC-04 read-side: cue comparison audit tests."""
+
 from __future__ import annotations
 
 import csv

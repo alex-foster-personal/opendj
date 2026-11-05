@@ -94,9 +94,7 @@ async function waitForQuitCalls(readCount, expected, timeoutMs = 15_000) {
 		if (readCount() >= expected) return;
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
-	throw new Error(
-		`expected ${expected} quit call(s) within ${timeoutMs}ms, got ${readCount()}`
-	);
+	throw new Error(`expected ${expected} quit call(s) within ${timeoutMs}ms, got ${readCount()}`);
 }
 
 function deck(overrides = {}) {
@@ -224,54 +222,54 @@ test('lifecycle/quit before the events socket opens still force-quits (issue #62
 			viteApiBase: apiOrigin
 		});
 
-	const priorWindow = globalThis.window;
-	const priorDocument = globalThis.document;
-	const shellWindow = {
-		OPENDJ_ENGINE_ORIGIN: apiOrigin,
-		location: { origin: 'http://127.0.0.1:5273' }
-	};
-	globalThis.window = shellWindow;
-	globalThis.document = {
-		addEventListener: () => undefined,
-		removeEventListener: () => undefined,
-		activeElement: null,
-		querySelector: () => null
-	};
+		const priorWindow = globalThis.window;
+		const priorDocument = globalThis.document;
+		const shellWindow = {
+			OPENDJ_ENGINE_ORIGIN: apiOrigin,
+			location: { origin: 'http://127.0.0.1:5273' }
+		};
+		globalThis.window = shellWindow;
+		globalThis.document = {
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+			activeElement: null,
+			querySelector: () => null
+		};
 
-	try {
-		mod.resetShellQuitGateForTests();
-		mod.eventsBus._resetForTests();
+		try {
+			mod.resetShellQuitGateForTests();
+			mod.eventsBus._resetForTests();
 
-		let quitCalls = 0;
-		mod.ensureEarlyShellQuitGate({
-			window: shellWindow,
-			detect: () => 'desktop-shell',
-			query: () => state(),
-			flushSnapshot: () => {},
-			exitShell: async () => {
-				quitCalls += 1;
-			}
-		});
-		assert.equal(mod.eventsBus.getConnectionState(), 'closed');
+			let quitCalls = 0;
+			mod.ensureEarlyShellQuitGate({
+				window: shellWindow,
+				detect: () => 'desktop-shell',
+				query: () => state(),
+				flushSnapshot: () => {},
+				exitShell: async () => {
+					quitCalls += 1;
+				}
+			});
+			assert.equal(mod.eventsBus.getConnectionState(), 'closed');
 
-		const quitResponse = await fetch(`${apiOrigin}/api/v1/lifecycle/quit`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ force: true })
-		});
-		assert.equal(quitResponse.status, 200);
-		assert.equal(quitCalls, 0, 'quit must not run until the bus delivers shell.quit');
+			const quitResponse = await fetch(`${apiOrigin}/api/v1/lifecycle/quit`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ force: true })
+			});
+			assert.equal(quitResponse.status, 200);
+			assert.equal(quitCalls, 0, 'quit must not run until the bus delivers shell.quit');
 
-		mod.eventsBus.connect();
-		await waitForEventsBusOpen(mod.eventsBus);
-		await waitForQuitCalls(() => quitCalls, 1);
-	} finally {
-		mod.resetShellQuitGateForTests();
-		mod.eventsBus._resetForTests();
-		mod.eventsBus.disconnect();
-		globalThis.window = priorWindow;
-		globalThis.document = priorDocument;
-	}
+			mod.eventsBus.connect();
+			await waitForEventsBusOpen(mod.eventsBus);
+			await waitForQuitCalls(() => quitCalls, 1);
+		} finally {
+			mod.resetShellQuitGateForTests();
+			mod.eventsBus._resetForTests();
+			mod.eventsBus.disconnect();
+			globalThis.window = priorWindow;
+			globalThis.document = priorDocument;
+		}
 	} finally {
 		proc?.kill();
 	}
@@ -287,54 +285,58 @@ test('ensureEarlyShellQuitGate uses the real engine WS bus and lifecycle/quit (i
 			viteApiBase: apiOrigin
 		});
 
-	const priorWindow = globalThis.window;
-	const priorDocument = globalThis.document;
-	const shellWindow = {
-		OPENDJ_ENGINE_ORIGIN: apiOrigin,
-		location: { origin: 'http://127.0.0.1:5273' }
-	};
-	globalThis.window = shellWindow;
-	globalThis.document = {
-		addEventListener: () => undefined,
-		removeEventListener: () => undefined,
-		activeElement: null,
-		querySelector: () => null
-	};
+		const priorWindow = globalThis.window;
+		const priorDocument = globalThis.document;
+		const shellWindow = {
+			OPENDJ_ENGINE_ORIGIN: apiOrigin,
+			location: { origin: 'http://127.0.0.1:5273' }
+		};
+		globalThis.window = shellWindow;
+		globalThis.document = {
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+			activeElement: null,
+			querySelector: () => null
+		};
 
-	try {
-		mod.resetShellQuitGateForTests();
-		mod.eventsBus._resetForTests();
+		try {
+			mod.resetShellQuitGateForTests();
+			mod.eventsBus._resetForTests();
 
-		let quitCalls = 0;
-		mod.ensureEarlyShellQuitGate({
-			query: () => state(),
-			flushSnapshot: () => {},
-			exitShell: async () => {
-				quitCalls += 1;
-			}
-		});
+			let quitCalls = 0;
+			mod.ensureEarlyShellQuitGate({
+				query: () => state(),
+				flushSnapshot: () => {},
+				exitShell: async () => {
+					quitCalls += 1;
+				}
+			});
 
-		await waitForEventsBusOpen(mod.eventsBus);
-		assert.equal(typeof shellWindow.__OPENDJ_requestQuit, 'function');
+			await waitForEventsBusOpen(mod.eventsBus);
+			assert.equal(typeof shellWindow.__OPENDJ_requestQuit, 'function');
 
-		const quitResponse = await fetch(`${apiOrigin}/api/v1/lifecycle/quit`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ force: true })
-		});
-		assert.equal(quitResponse.status, 200, 'lifecycle/quit must publish shell.quit on the live hub');
-		await waitForQuitCalls(() => quitCalls, 1);
+			const quitResponse = await fetch(`${apiOrigin}/api/v1/lifecycle/quit`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ force: true })
+			});
+			assert.equal(
+				quitResponse.status,
+				200,
+				'lifecycle/quit must publish shell.quit on the live hub'
+			);
+			await waitForQuitCalls(() => quitCalls, 1);
 
-		quitCalls = 0;
-		shellWindow.__OPENDJ_requestQuit();
-		await waitForQuitCalls(() => quitCalls, 1);
-	} finally {
-		mod.resetShellQuitGateForTests();
-		mod.eventsBus._resetForTests();
-		mod.eventsBus.disconnect();
-		globalThis.window = priorWindow;
-		globalThis.document = priorDocument;
-	}
+			quitCalls = 0;
+			shellWindow.__OPENDJ_requestQuit();
+			await waitForQuitCalls(() => quitCalls, 1);
+		} finally {
+			mod.resetShellQuitGateForTests();
+			mod.eventsBus._resetForTests();
+			mod.eventsBus.disconnect();
+			globalThis.window = priorWindow;
+			globalThis.document = priorDocument;
+		}
 	} finally {
 		proc?.kill();
 	}

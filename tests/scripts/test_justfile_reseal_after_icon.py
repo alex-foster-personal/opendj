@@ -19,8 +19,7 @@ JUSTFILE = Path(__file__).resolve().parents[2] / "justfile"
 
 ICON_INSTALLED = 'echo "[TIMING] icon_composer_asset_installed'
 RESIGN = (
-    'codesign --force --timestamp --options runtime --preserve-metadata=entitlements '
-    '--sign "$identity" "$source_app"'
+    'codesign --force --timestamp --options runtime --preserve-metadata=entitlements --sign "$identity" "$source_app"'
 )
 ENTITLEMENT_CHECK = "grep -q 'com.apple.security.device.audio-input'"
 VERIFY = 'codesign --verify --deep --strict "$source_app"'

@@ -59,10 +59,7 @@ describe('isBlankPlaylistName / isBlankPlaylist', () => {
 			}),
 			false
 		);
-		assert.equal(
-			isBlankPlaylist({ playlist_id: 'a', name: 'Warmup', track_count: 0 }),
-			false
-		);
+		assert.equal(isBlankPlaylist({ playlist_id: 'a', name: 'Warmup', track_count: 0 }), false);
 	});
 });
 

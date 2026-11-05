@@ -5,7 +5,9 @@ import { buildFlags } from '$lib/api/store-build.svelte';
 
 export const SET_RECORDING_FLAG_ID = 'sets.recording';
 
-export function recordingEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
+export function recordingEnabledIn(
+	flags: readonly { flag_id: string; enabled: boolean }[]
+): boolean {
 	return flags.find((flag) => flag.flag_id === SET_RECORDING_FLAG_ID)?.enabled !== false;
 }
 

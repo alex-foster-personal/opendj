@@ -69,7 +69,10 @@ test('a chirp heard below the comfortable peak is reported as too quiet, with th
 	const result = unstable.diagnoseUnstableMeasurement(runs([200, 200, 200]), cue, LIMITS);
 	assert.equal(result.reason, 'signal_too_quiet');
 	assert.equal(result.bus, 'cue');
-	assert.match(result.message, /the headphones chirp was only just heard \(weakest peak 0\.37, comfortable is 0\.5\)/);
+	assert.match(
+		result.message,
+		/the headphones chirp was only just heard \(weakest peak 0\.37, comfortable is 0\.5\)/
+	);
 });
 
 test('a clipped capture outranks every other reason and names the bus', () => {
@@ -80,7 +83,10 @@ test('a clipped capture outranks every other reason and names the bus', () => {
 	const result = unstable.diagnoseUnstableMeasurement(master, cue, LIMITS);
 	assert.equal(result.reason, 'input_clipped');
 	assert.equal(result.bus, 'master');
-	assert.match(result.message, /the microphone clipped while recording the speakers \(2\.0% of samples at full scale\)/);
+	assert.match(
+		result.message,
+		/the microphone clipped while recording the speakers \(2\.0% of samples at full scale\)/
+	);
 });
 
 test('clippedFraction counts full-scale samples and nothing else', () => {

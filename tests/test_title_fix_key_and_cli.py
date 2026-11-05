@@ -14,7 +14,9 @@ from apps.webui import title_fix_cli
 
 
 @pytest.mark.requirement("TFIX-04")
-@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits; the Windows ACL path is covered by apps.shared.private_files")
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX mode bits; the Windows ACL path is covered by apps.shared.private_files"
+)
 def test_a_key_file_other_accounts_can_read_is_refused_with_remediation(tmp_path: Path) -> None:
     """[if] the saved key file is group or world readable [then] resolving the key raises ConfigError, [else stop]."""
     state_db = tmp_path / "data" / "state" / "state.db"
@@ -43,7 +45,9 @@ def test_an_empty_saved_key_file_is_refused_not_replaced_by_the_environment_key(
     with pytest.raises(title_fix_store.ConfigError, match="is empty"):
         title_fix_store.resolve_key(paths)
     paths.key.unlink()
-    assert title_fix_store.resolve_key(paths)[1].source == "env", "control: with no saved key the environment key is used"
+    assert title_fix_store.resolve_key(paths)[1].source == "env", (
+        "control: with no saved key the environment key is used"
+    )
 
 
 @pytest.mark.requirement("TFIX-06")
@@ -67,7 +71,9 @@ def test_every_cli_request_carries_a_finite_timeout(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(title_fix_cli, "urlopen", fake_urlopen)
     title_fix_cli._request("http://127.0.0.1:1", "GET", "/title-fix/config")
-    assert seen == [title_fix_cli.CFG.REQUEST_TIMEOUT_S] and seen[0] is not None, "if no timeout is passed a stalled daemon hangs the CLI"
+    assert seen == [title_fix_cli.CFG.REQUEST_TIMEOUT_S] and seen[0] is not None, (
+        "if no timeout is passed a stalled daemon hangs the CLI"
+    )
 
 
 @pytest.mark.requirement("TFIX-06")
@@ -78,50 +84,81 @@ def test_a_wait_poll_never_outlasts_the_remaining_wait_budget(monkeypatch: pytes
     monkeypatch.setattr(time, "sleep", lambda _s: None)
     timeouts: list[float] = []
 
-    def poll(_url: str, _method: str, _path: str, body: Any = None, *, timeout_s: float | None = None) -> dict[str, Any]:
+    def poll(
+        _url: str, _method: str, _path: str, body: Any = None, *, timeout_s: float | None = None
+    ) -> dict[str, Any]:
         assert timeout_s is not None
         timeouts.append(timeout_s)
         return {"scan_id": "s", "state": "done", "processed": 1, "requested": 1, "cost_usd": 0.0, "spend_cap_usd": 1.0}
 
     monkeypatch.setattr(title_fix_cli, "_request", poll)
-    running = {"scan_id": "s", "state": "running", "processed": 0, "requested": 1, "cost_usd": 0.0, "spend_cap_usd": 1.0}
+    running = {
+        "scan_id": "s",
+        "state": "running",
+        "processed": 0,
+        "requested": 1,
+        "cost_usd": 0.0,
+        "spend_cap_usd": 1.0,
+    }
     assert title_fix_cli._wait_for_scan("http://127.0.0.1:1", running)["state"] == "done"
     assert timeouts and timeouts[0] <= 5.0 < title_fix_cli.CFG.REQUEST_TIMEOUT_S, (
-        f"if the poll timeout ignores the remaining budget then --wait can outlast its limit: {timeouts}")
+        f"if the poll timeout ignores the remaining budget then --wait can outlast its limit: {timeouts}"
+    )
 
 
 @pytest.mark.requirement("TFIX-06")
 def test_a_waited_scan_that_ends_failed_is_a_failed_command(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] scan --wait ends in the failed state [then] the CLI raises with the recorded reason, [else stop]."""
     monkeypatch.setattr(time, "sleep", lambda _s: None)
-    failed = {"scan_id": "s1", "state": "failed", "error": "scan process exited before finishing",
-              "processed": 0, "requested": 1, "cost_usd": 0.0, "spend_cap_usd": 1.0}
+    failed = {
+        "scan_id": "s1",
+        "state": "failed",
+        "error": "scan process exited before finishing",
+        "processed": 0,
+        "requested": 1,
+        "cost_usd": 0.0,
+        "spend_cap_usd": 1.0,
+    }
     monkeypatch.setattr(title_fix_cli, "_request", lambda *_a, **_k: failed)
     running = {**failed, "state": "running"}
     with pytest.raises(RuntimeError, match="scan s1 failed: scan process exited before finishing"):
         title_fix_cli._wait_for_scan("http://127.0.0.1:1", running)
     done = {**failed, "state": "done"}
     monkeypatch.setattr(title_fix_cli, "_request", lambda *_a, **_k: done)
-    assert title_fix_cli._wait_for_scan("http://127.0.0.1:1", running)["state"] == "done", "control: a done scan still returns"
+    assert title_fix_cli._wait_for_scan("http://127.0.0.1:1", running)["state"] == "done", (
+        "control: a done scan still returns"
+    )
 
 
 @pytest.mark.requirement("TFIX-06")
-def test_a_wait_that_is_past_its_deadline_after_sleeping_makes_no_further_request(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_wait_that_is_past_its_deadline_after_sleeping_makes_no_further_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """[if] the wait is already past its deadline after the sleep [then] no request is sent, [else stop]."""
     monkeypatch.setattr(title_fix_cli.CFG, "WAIT_MAX_S", 1)
     clock = iter([0.0, 0.5, 5.0, 5.0])  # start, loop check, after the sleep, spare
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(time, "sleep", lambda _s: None)
     requests: list[str] = []
+
     def record_request(*_a: Any, **_k: Any) -> dict[str, Any]:
         requests.append("sent")
         return {}
 
     monkeypatch.setattr(title_fix_cli, "_request", record_request)
-    running = {"scan_id": "s", "state": "running", "processed": 0, "requested": 1, "cost_usd": 0.0, "spend_cap_usd": 1.0}
+    running = {
+        "scan_id": "s",
+        "state": "running",
+        "processed": 0,
+        "requested": 1,
+        "cost_usd": 0.0,
+        "spend_cap_usd": 1.0,
+    }
     with pytest.raises(RuntimeError, match="still running after"):
         title_fix_cli._wait_for_scan("http://127.0.0.1:1", running)
-    assert requests == [], "if an expired budget is floored to one second then --wait outlasts its limit by another request"
+    assert requests == [], (
+        "if an expired budget is floored to one second then --wait outlasts its limit by another request"
+    )
 
 
 @pytest.mark.requirement("TFIX-06")

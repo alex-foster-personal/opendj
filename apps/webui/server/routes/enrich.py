@@ -9,6 +9,7 @@ Starting stems is the existing ``POST /jobs`` (kind stems, scope pending);
 retrying failed analysis is ``POST /ahead-analysis/retry``.
 CLI twin: ``python -m apps.webui.enrich_cli``.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -34,9 +35,7 @@ def get_summary(request: Request) -> dict[str, Any]:
     analysis = drain.coverage() if drain is not None else None
     analysis_error = None if drain is not None else "the ahead-of-time analysis drain is not running here"
     try:
-        coverage: dict[str, Any] | None = read_coverage(
-            request.app, True, ingest_routes.build_snapshot
-        ).model_dump()
+        coverage: dict[str, Any] | None = read_coverage(request.app, True, ingest_routes.build_snapshot).model_dump()
         coverage_error = None
     except Exception as exc:  # noqa: BLE001 - surfaced on the card, never a silent empty
         coverage, coverage_error = None, f"{type(exc).__name__}: {exc}"

@@ -20,9 +20,28 @@
 		previewLibraryRow,
 		stopLibraryPreview
 	} from '$lib/library/library-preview.svelte';
-	import { createLibraryPreviewIpc, installLibraryPreviewIpc } from '$lib/library/library-preview-ipc';
+	import {
+		createLibraryPreviewIpc,
+		installLibraryPreviewIpc
+	} from '$lib/library/library-preview-ipc';
 	import { setAppMode } from '$lib/rb/prefs.svelte';
 	import { gigRuntimeReleaseSettled, markLibraryModeExit } from '$lib/rb/library-mode-runtime';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { libraryLayoutFor } from '$lib/rb/skin-layout';
+
+	// SKINLAYOUT-8869: the skin's library preset. The three-panel extras are
+	// their own lazy chunk (bundle surface three-panel-layout), fetched only
+	// when a skin selects that preset.
+	const layout = $derived(libraryLayoutFor(uiPrefs.ui_skin));
+	let threePanel = $state<typeof import('./three-panel') | null>(null);
+	let threePanelError = $state<string | null>(null);
+	$effect(() => {
+		if (layout !== 'three-panel' || threePanel !== null) return;
+		import('./three-panel').then(
+			(mod) => (threePanel = mod),
+			(exc: unknown) => (threePanelError = exc instanceof Error ? exc.message : String(exc))
+		);
+	});
 
 	// LIBWS-01/04/06: the browser learns it is in Library mode from this prop,
 	// from its first render: it publishes its selection here, plays previews
@@ -63,9 +82,26 @@
 	onDestroy(stopLibraryPreview);
 </script>
 
-<CrateDeskView>
+{#if threePanelError !== null}
+	<p class="three-panel-error" role="alert">Three-panel layout failed to load: {threePanelError}</p>
+{/if}
+<CrateDeskView layout={threePanel === null ? 'crate-desk' : layout}>
 	{#snippet topbar()}<LibraryTopBar />{/snippet}
 	{#snippet preview()}<LibraryPreviewBar />{/snippet}
 	{#snippet browser()}<BrowserPanel {library} />{/snippet}
 	{#snippet inspector()}<TrackInspector />{/snippet}
+	{#snippet nowplaying()}{#if threePanel}<threePanel.NowPlayingPanel />{/if}{/snippet}
+	{#snippet playingon()}{#if threePanel}<threePanel.PlayingOnStrip />{/if}{/snippet}
 </CrateDeskView>
+
+<style>
+	.three-panel-error {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		z-index: 10;
+		margin: 0;
+		padding: 4px 8px;
+		color: var(--rb-red, #ff6b6b);
+	}
+</style>

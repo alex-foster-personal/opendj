@@ -47,9 +47,7 @@ def test_a_source_path_that_is_not_a_string_is_unknown(tmp_path: Path) -> None:
         '[project]\nname = "localdep"\nversion = "0.1.0"\n', encoding="utf-8"
     )
     pyproject = PYPROJECT.replace('"numpy>=1.26"', '"localdep"')
-    lock = LOCK.replace(
-        '{ name = "numpy", specifier = ">=1.26" }', '{ name = "localdep", directory = "1" }'
-    )
+    lock = LOCK.replace('{ name = "numpy", specifier = ">=1.26" }', '{ name = "localdep", directory = "1" }')
     assert pyproject != PYPROJECT and lock != LOCK
     sources = "\n[tool.uv.sources]\nlocaldep = { path = %s }\n"
     code, message = _run(tmp_path, pyproject + sources % '"1"', lock)
@@ -90,16 +88,15 @@ def test_a_source_path_that_is_not_a_string_is_unknown(tmp_path: Path) -> None:
             "[project.optional-dependencies] all = [1] is not a list of strings",
         ),
         (
-            lambda p: re.sub(r"\[project\.optional-dependencies\].*", "", p, flags=re.S)
-            + 'optional-dependencies = ["dev"]\n',
+            lambda p: (
+                re.sub(r"\[project\.optional-dependencies\].*", "", p, flags=re.S) + 'optional-dependencies = ["dev"]\n'
+            ),
             "[project] optional-dependencies = ['dev'] is not a table",
         ),
     ],
     ids=["deps-table", "dep-integer", "extra-string", "extra-integer", "extras-list"],
 )
-def test_a_requirement_container_of_the_wrong_type_is_unknown(
-    tmp_path: Path, edit, named: str
-) -> None:
+def test_a_requirement_container_of_the_wrong_type_is_unknown(tmp_path: Path, edit, named: str) -> None:
     edited = edit(PYPROJECT)
     assert edited != PYPROJECT
     code, message = _run(tmp_path, edited, LOCK)
@@ -211,9 +208,7 @@ source = { directory = "dep" }
 """
 
 
-def _run_mini(
-    tmp_path: Path, lock: str = MINI_LOCK, dep: str = MINI_DEP_PYPROJECT
-) -> tuple[int, str]:
+def _run_mini(tmp_path: Path, lock: str = MINI_LOCK, dep: str = MINI_DEP_PYPROJECT) -> tuple[int, str]:
     (tmp_path / "dep").mkdir(exist_ok=True)
     (tmp_path / "dep" / "pyproject.toml").write_text(dep, encoding="utf-8")
     return _run(tmp_path, MINI_PYPROJECT, lock)
@@ -338,9 +333,7 @@ source = { registry = "https://pypi.org/simple" }
         "extra-leading-dash",
     ],
 )
-def test_an_invalid_marker_or_name_shared_by_both_files_is_unknown(
-    tmp_path: Path, edit, named: str
-) -> None:
+def test_an_invalid_marker_or_name_shared_by_both_files_is_unknown(tmp_path: Path, edit, named: str) -> None:
     """uv 0.8.17 on the pair: `made_up == 'x'` in both files is "Expected a quoted
     string or a valid marker name, found `made_up`"; `name = "bad space"` in both,
     the extra `"bad space"` in both and the extra `"-lead"` in both are "Not a valid
@@ -425,9 +418,7 @@ UNMARKED_LOCK = MARKED_LOCK.replace(", marker = \"os_name == 'x'\"", "")
         ("six[a,,b]", EXIT_UNKNOWN),
     ],
 )
-def test_an_empty_extra_slot_is_unknown_and_empty_brackets_are_not(
-    tmp_path: Path, text: str, code: int
-) -> None:
+def test_an_empty_extra_slot_is_unknown_and_empty_brackets_are_not(tmp_path: Path, text: str, code: int) -> None:
     """Measured uv 0.8.17 (Codex P2 on #3763, round 33): `six[]` and `six[ ]` lock
     clean as `six` (exit 0), while `six[,]`, `six[a,]`, `six[,a]` and `six[a,,b]` are
     "`project.dependencies[0]` must be pep508" (exit 2). Filtering empty slots had

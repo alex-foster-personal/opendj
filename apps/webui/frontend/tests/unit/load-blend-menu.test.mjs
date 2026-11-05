@@ -70,8 +70,5 @@ test('click path does not write intro EQ on pointerdown (a tap must not leave Lo
 	assert.match(gesture, /phase = 'morph'/);
 	assert.match(dispatch, /result\.entered/);
 	assert.match(dispatch, /LOAD_BLEND_INCOMING_START/);
-	assert.doesNotMatch(
-		dispatch,
-		/pointerDown[\s\S]{0,400}LOAD_BLEND_INCOMING_START/
-	);
+	assert.doesNotMatch(dispatch, /pointerDown[\s\S]{0,400}LOAD_BLEND_INCOMING_START/);
 });

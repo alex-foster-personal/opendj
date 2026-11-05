@@ -1,4 +1,5 @@
 """Energy curve behaviour (PLAY-02 / AI-02)."""
+
 from __future__ import annotations
 
 import pytest

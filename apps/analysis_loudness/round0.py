@@ -23,7 +23,6 @@ It is not a truth source and it cannot affect this command's exit status.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sqlite3
 import subprocess
@@ -37,6 +36,7 @@ import pyloudnorm  # type: ignore[import-not-found]
 from scipy import signal
 
 from apps.analysis_loudness.adapter import analyze_file
+from apps.shared.hashing import sha256_file_hex
 
 LUFS_TOLERANCE_LU = 0.1
 TRUE_PEAK_TOLERANCE_DB = 0.1
@@ -64,14 +64,6 @@ def _escape_like(value: str) -> str:
     )
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _verify_fixture_bytes(path: Path, manifest: dict[str, str]) -> str:
     """Fail fast unless ``path``'s sha256 matches its pinned manifest entry.
 
@@ -82,7 +74,7 @@ def _verify_fixture_bytes(path: Path, manifest: dict[str, str]) -> str:
     today.
     """
     key = str(path)
-    digest = _sha256_file(path)
+    digest = sha256_file_hex(path)
     expected = manifest.get(key)
     if expected is None:
         raise RuntimeError(

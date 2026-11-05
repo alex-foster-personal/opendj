@@ -48,6 +48,7 @@ move a pure relocation: the module never named a path, so leaving ``apps.webui``
 took no rewiring and the ``rb_vendor`` test seams still bite. The body is
 unchanged.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -91,9 +92,7 @@ def _open_rw(path: Path, label: str) -> sqlite3.Connection:
     return sqlite3.connect(str(path))
 
 
-def _lead_in_s(
-    conn: sqlite3.Connection, vendor_id: str, *, for_write: bool = False
-) -> float:
+def _lead_in_s(conn: sqlite3.Connection, vendor_id: str, *, for_write: bool = False) -> float:
     """The track's MP3 lead-in in seconds: rekordbox time minus ours.
 
     Same rule as ``rb_vendor_pkg.db.fetch_cues`` for a read: a track with no
@@ -101,9 +100,7 @@ def _lead_in_s(
     instead, since the cue would land early in rekordbox once the file is back;
     other formats have no lead-in, so 0 is their measured value.
     """
-    row = conn.execute(
-        "SELECT FolderPath FROM djmdContent WHERE ID = ?", (vendor_id,)
-    ).fetchone()
+    row = conn.execute("SELECT FolderPath FROM djmdContent WHERE ID = ?", (vendor_id,)).fetchone()
     folder = row[0] if row else None
     lead_in_s = rekordbox_lead_in_s(folder)
     if lead_in_s is None and for_write and str(folder or "").lower().endswith(".mp3"):
@@ -111,8 +108,7 @@ def _lead_in_s(
             status_code=409,
             detail={
                 "code": "HOT_CUE_LEAD_IN_UNKNOWN",
-                "message": "the MP3 is not on this machine, so its rekordbox "
-                "time base cannot be read",
+                "message": "the MP3 is not on this machine, so its rekordbox time base cannot be read",
             },
         )
     return lead_in_s or 0.0
@@ -130,9 +126,7 @@ def _on_our_timeline(view: dict[str, Any], lead_in_s: float) -> dict[str, Any]:
     }
 
 
-def _stored_in_ms(
-    in_ms: int, preimage: Mapping[str, Any] | None, lead_in_s: float
-) -> int:
+def _stored_in_ms(in_ms: int, preimage: Mapping[str, Any] | None, lead_in_s: float) -> int:
     """Our ``in_ms`` in rekordbox's time, keeping the stored value when it reads as ``in_ms``.
 
     A cue rekordbox put inside the lead-in reads as 0, the earliest point we
@@ -160,9 +154,7 @@ def fetch_hot_cue_slots(
     """
     master = open_ro()
     try:
-        snapshots = {
-            kind: _live_slot_snapshot(master, vendor_id, kind) for kind in _KINDS
-        }
+        snapshots = {kind: _live_slot_snapshot(master, vendor_id, kind) for kind in _KINDS}
         generations = _read_slot_generations(master, vendor_id, _KINDS)
         lead_in_s = _lead_in_s(master, vendor_id)
     finally:
@@ -180,9 +172,7 @@ def fetch_hot_cue_slots(
             )
             if snapshots[kind]
             else None,
-            "revision": _cue_revision(
-                vendor_id, kind, generations[kind], snapshots[kind]
-            ),
+            "revision": _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
         }
         for slot in HOT_CUE_SLOTS
         for kind in (slot_to_kind(slot),)
@@ -342,8 +332,7 @@ def clear_hot_cue(
         )
         if preimage is not None:
             update = master.execute(
-                "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
-                "WHERE ID = ? AND ContentID = ? AND Kind = ?",
+                "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? WHERE ID = ? AND ContentID = ? AND Kind = ?",
                 (_rb_timestamp(), preimage["id"], vendor_id, kind),
             )
             if update.rowcount != 1:
@@ -424,9 +413,7 @@ def restore_hot_cue(
     finally:
         master.close()
     return {
-        "cue": _on_our_timeline(_cue_view(slot, restored, revision), lead_in_s)
-        if restored
-        else None,
+        "cue": _on_our_timeline(_cue_view(slot, restored, revision), lead_in_s) if restored else None,
         "revision": revision,
     }
 
@@ -434,9 +421,7 @@ def restore_hot_cue(
 _SCALAR_TABLE = "odjAnalysisScalar"
 
 
-def snapshot_content_field(
-    conn: sqlite3.Connection, content_id: str, field: str
-) -> dict[str, Any]:
+def snapshot_content_field(conn: sqlite3.Connection, content_id: str, field: str) -> dict[str, Any]:
     """Preimage for one analysis field on one djmdContent row."""
     snap: dict[str, Any] = {
         "content_id": content_id,
@@ -448,22 +433,17 @@ def snapshot_content_field(
         "created_key_id": None,
     }
     if field == "key":
-        row = conn.execute(
-            "SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)
-        ).fetchone()
+        row = conn.execute("SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
         if row is not None:
             snap["key_id"] = row[0]
     elif field == "bpm":
-        row = conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)
-        ).fetchone()
+        row = conn.execute("SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
         if row is not None:
             snap["bpm"] = row[0]
     elif field in ("loudness_lufs", "loudness_dbtp"):
         try:
             row = conn.execute(
-                f"SELECT value FROM {_SCALAR_TABLE} "
-                "WHERE ContentID = ? AND field = ?",
+                f"SELECT value FROM {_SCALAR_TABLE} WHERE ContentID = ? AND field = ?",
                 (content_id, field),
             ).fetchone()
         except sqlite3.OperationalError:
@@ -474,9 +454,7 @@ def snapshot_content_field(
     return snap
 
 
-def restore_content_field(
-    conn: sqlite3.Connection, snapshot: Mapping[str, Any]
-) -> None:
+def restore_content_field(conn: sqlite3.Connection, snapshot: Mapping[str, Any]) -> None:
     """Restore one preimage. rowcount != 1 is a hard failure."""
     field = str(snapshot["field"])
     content_id = str(snapshot["content_id"])
@@ -486,9 +464,7 @@ def restore_content_field(
             (snapshot.get("key_id"), content_id),
         )
         if result.rowcount != 1:
-            raise RuntimeError(
-                f"restore_content_field: KeyID restore failed for {content_id}"
-            )
+            raise RuntimeError(f"restore_content_field: KeyID restore failed for {content_id}")
         return
     if field == "bpm":
         result = conn.execute(
@@ -496,21 +472,16 @@ def restore_content_field(
             (snapshot.get("bpm"), content_id),
         )
         if result.rowcount != 1:
-            raise RuntimeError(
-                f"restore_content_field: BPM restore failed for {content_id}"
-            )
+            raise RuntimeError(f"restore_content_field: BPM restore failed for {content_id}")
         return
     if field in ("loudness_lufs", "loudness_dbtp"):
         if snapshot.get("scalar_existed"):
             result = conn.execute(
-                f"UPDATE {_SCALAR_TABLE} SET value = ? "
-                "WHERE ContentID = ? AND field = ?",
+                f"UPDATE {_SCALAR_TABLE} SET value = ? WHERE ContentID = ? AND field = ?",
                 (snapshot.get("scalar_value"), content_id, field),
             )
             if result.rowcount != 1:
-                raise RuntimeError(
-                    f"restore_content_field: sidecar restore failed for {content_id}"
-                )
+                raise RuntimeError(f"restore_content_field: sidecar restore failed for {content_id}")
         else:
             conn.execute(
                 f"DELETE FROM {_SCALAR_TABLE} WHERE ContentID = ? AND field = ?",

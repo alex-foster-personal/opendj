@@ -54,7 +54,9 @@ const CARD_HOSTS = new Set([
 	'lib/components/rb/browser/TrackTable.svelte#c-key',
 	'lib/components/rb/browser/LibrarySourceTabs.svelte#icon-btn',
 	// LIBPG-7694b: the Last Played cell's "Where it played" card.
-	'lib/components/rb/browser/LastPlayedCell.svelte#cell'
+	'lib/components/rb/browser/LastPlayedCell.svelte#cell',
+	// GRID-OCTAVE-02: a disputed BPM's marker opens BpmDisputeCard (the cell drops its title= then).
+	'lib/components/rb/browser/TrackTable.svelte#bpm-dispute'
 ]);
 
 /** Card bodies that keep the card open while hovered: not hosts themselves. */
@@ -65,7 +67,8 @@ const CARD_BODIES = new Set([
 	'lib/components/rb/browser/AutoPlayExplainer.svelte#ap-explain-panel',
 	'lib/components/rb/browser/CompatibleFilterPanel.svelte#compat-filter-panel',
 	'lib/components/rb/browser/LyricColumn.svelte#onpointerenter={_cancelClose}',
-	'lib/components/rb/browser/LyricTip.svelte#lyric-tip'
+	'lib/components/rb/browser/LyricTip.svelte#lyric-tip',
+	'lib/components/rb/BpmDisputeCard.svelte#bpm-dispute-card'
 ]);
 
 /**
@@ -285,7 +288,11 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		// Hover peeks the comment pins on the page; it opens no card of its own.
 		'lib/components/rb/FeedbackWidget.svelte#fb-pin-peek',
 		'lib/components/rb/mixer/ChannelStrip.svelte#strip',
-		'lib/components/rb/browser/AutoPlayRankCell.svelte#ap-rank'
+		'lib/components/rb/browser/AutoPlayRankCell.svelte#ap-rank',
+		// LIBUX-8626: keeps the undo history open while the pointer is on it,
+		// and a row hover shows the edit's playlist/track; neither opens a card.
+		'lib/components/rb/browser/LibrarySourceTabs.svelte#history-popover',
+		'lib/components/rb/browser/LibrarySourceTabs.svelte#history-item'
 	]);
 	const missing = scan.unclassified.filter((k) => !HOVER_STATE.has(k));
 	assert.deepEqual(missing, [], 'classify each as a CARD_HOSTS entry or as plain hover state');

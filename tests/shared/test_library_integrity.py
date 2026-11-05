@@ -7,6 +7,7 @@ the real Rekordbox working copy; it is the fool-proof regression guard the
 DJ runs locally / before a sync. It is skipped unless MDT_LIVE_LIBRARY=1
 so CI on a machine without the library stays green.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,34 +41,24 @@ def _exists_from(paths: set[str]):
 
 
 def test_rehome_swaps_user_prefix():
-    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == (
-        "/Users/user/Music/x.mp3"
-    )
+    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == ("/Users/user/Music/x.mp3")
 
 
 def test_rehome_tolerates_rekordbox_double_slash():
-    assert rehome_path("//Users/old/Music/x.mp3", home="/Users/user") == (
-        "/Users/user/Music/x.mp3"
-    )
+    assert rehome_path("//Users/old/Music/x.mp3", home="/Users/user") == ("/Users/user/Music/x.mp3")
 
 
 def test_rehome_preserves_posix_home_flavor_on_windows_hosts():
     """A migrated Mac library keeps POSIX paths even when checked on Windows."""
-    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == (
-        "/Users/user/Music/x.mp3"
-    )
+    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == ("/Users/user/Music/x.mp3")
 
 
 def test_rehome_uses_windows_home_flavor_for_windows_library():
-    assert rehome_path("/Users/old/Music/x.mp3", home=r"C:\Users\user") == (
-        r"C:\Users\user\Music\x.mp3"
-    )
+    assert rehome_path("/Users/old/Music/x.mp3", home=r"C:\Users\user") == (r"C:\Users\user\Music\x.mp3")
 
 
 def test_rehome_accepts_absolute_windows_unc_home():
-    assert rehome_path(
-        "/Users/old/Music/x.mp3", home=r"\\server\share\dev"
-    ) == r"\\server\share\dev\Music\x.mp3"
+    assert rehome_path("/Users/old/Music/x.mp3", home=r"\\server\share\dev") == r"\\server\share\dev\Music\x.mp3"
 
 
 @pytest.mark.parametrize(
@@ -152,10 +143,10 @@ def test_streaming_and_empty_paths_skipped():
 def test_ratios_use_with_path_denominator():
     rep = check_integrity(
         [
-            FakeTrack("/Users/user/Music/a.mp3"),       # present
-            FakeTrack("//Users/old/Music/b.mp3"),       # rehomable
-            FakeTrack("//Users/old/Music/c.mp3"),       # missing
-            FakeTrack("//Users/old/Music/d.mp3"),       # missing
+            FakeTrack("/Users/user/Music/a.mp3"),  # present
+            FakeTrack("//Users/old/Music/b.mp3"),  # rehomable
+            FakeTrack("//Users/old/Music/c.mp3"),  # missing
+            FakeTrack("//Users/old/Music/d.mp3"),  # missing
         ],
         exists=_exists_from({"/Users/user/Music/a.mp3", "/Users/user/Music/b.mp3"}),
         home="/Users/user",
@@ -226,6 +217,7 @@ def test_live_report_rejects_stale_working_copy_when_live_db_is_missing(
     monkeypatch.setattr(paths, "DATA_DIR", working_db.parent)
     monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", tmp_path / "missing-master.db")
     monkeypatch.setattr(paths, "REKORDBOX_WORKING_DB", working_db)
+
     class _FakeRekordboxDb:
         @staticmethod
         def open_db(*_args: object, **_kwargs: object) -> None:

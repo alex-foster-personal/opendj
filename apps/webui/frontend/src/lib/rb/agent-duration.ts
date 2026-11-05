@@ -34,7 +34,12 @@ function _duration(value: unknown): Duration {
 		throw new TypeError('ramp over must be a Duration object');
 	}
 	const duration = value as Record<string, unknown>;
-	if (duration.unit !== 'beats' && duration.unit !== 'bars' && duration.unit !== 'phrases' && duration.unit !== 'ms') {
+	if (
+		duration.unit !== 'beats' &&
+		duration.unit !== 'bars' &&
+		duration.unit !== 'phrases' &&
+		duration.unit !== 'ms'
+	) {
 		throw new TypeError('Duration unit must be beats, bars, phrases, or ms');
 	}
 	if (typeof duration.n !== 'number' || !Number.isFinite(duration.n) || duration.n <= 0) {
@@ -43,10 +48,19 @@ function _duration(value: unknown): Duration {
 	if (!Number.isInteger(duration.n) && duration.unit !== 'ms') {
 		throw new RangeError(`Duration ${duration.unit} n must be an integer`);
 	}
-	if (duration.anchor !== undefined && duration.anchor !== 'next_beat' && duration.anchor !== 'next_downbeat' && duration.anchor !== 'next_phrase') {
+	if (
+		duration.anchor !== undefined &&
+		duration.anchor !== 'next_beat' &&
+		duration.anchor !== 'next_downbeat' &&
+		duration.anchor !== 'next_phrase'
+	) {
 		throw new TypeError('Duration anchor must be next_beat, next_downbeat, or next_phrase');
 	}
-	if (duration.clock !== undefined && duration.clock !== 'master' && ![1, 2, 3, 4].includes(duration.clock as number)) {
+	if (
+		duration.clock !== undefined &&
+		duration.clock !== 'master' &&
+		![1, 2, 3, 4].includes(duration.clock as number)
+	) {
 		throw new RangeError('Duration clock must be master or deck 1..4');
 	}
 	return {
@@ -64,7 +78,8 @@ function _firstAtOrAfter(rows: readonly { time_ms: number }[], positionMs: numbe
 function _requireGrid(clock: DurationClock): void {
 	if (clock.beatgrid.length === 0) throw new Error('no_grid');
 	for (let index = 1; index < clock.beatgrid.length; index += 1) {
-		if (clock.beatgrid[index].time_ms <= clock.beatgrid[index - 1].time_ms) throw new Error('no_grid');
+		if (clock.beatgrid[index].time_ms <= clock.beatgrid[index - 1].time_ms)
+			throw new Error('no_grid');
 	}
 }
 
@@ -99,22 +114,32 @@ export function resolveDuration(value: unknown, clock: DurationClock): ResolvedD
 		return { start_ms: startMs, target_ms: startMs + duration.n };
 	}
 	if (duration.unit === 'phrases') {
-		const startIndex = clock.phrases.findIndex((phrase) => phrase.start_ms >= _anchorPosition(duration, clock));
-		if (startIndex < 0 || startIndex + duration.n >= clock.phrases.length) throw new Error('no_phrase');
-		return { start_ms: clock.phrases[startIndex].start_ms, target_ms: clock.phrases[startIndex + duration.n].start_ms };
+		const startIndex = clock.phrases.findIndex(
+			(phrase) => phrase.start_ms >= _anchorPosition(duration, clock)
+		);
+		if (startIndex < 0 || startIndex + duration.n >= clock.phrases.length)
+			throw new Error('no_phrase');
+		return {
+			start_ms: clock.phrases[startIndex].start_ms,
+			target_ms: clock.phrases[startIndex + duration.n].start_ms
+		};
 	}
 	_requireGrid(clock);
 	if (duration.unit === 'bars') {
 		const downbeats = _downbeats(clock);
 		const startIndex = _firstAtOrAfter(downbeats, _anchorPosition(duration, clock));
 		if (startIndex < 0 || startIndex + duration.n >= downbeats.length) throw new Error('no_grid');
-		return { start_ms: downbeats[startIndex].time_ms, target_ms: downbeats[startIndex + duration.n].time_ms };
+		return {
+			start_ms: downbeats[startIndex].time_ms,
+			target_ms: downbeats[startIndex + duration.n].time_ms
+		};
 	}
 	const startRows = clock.beatgrid;
 	const startIndex = _firstAtOrAfter(startRows, _anchorPosition(duration, clock));
 	if (startIndex < 0) throw new Error('no_grid');
 	const startMs = startRows[startIndex].time_ms;
 	const gridStartIndex = clock.beatgrid.findIndex((beat) => beat.time_ms === startMs);
-	if (gridStartIndex < 0 || gridStartIndex + duration.n >= clock.beatgrid.length) throw new Error('no_grid');
+	if (gridStartIndex < 0 || gridStartIndex + duration.n >= clock.beatgrid.length)
+		throw new Error('no_grid');
 	return { start_ms: startMs, target_ms: clock.beatgrid[gridStartIndex + duration.n].time_ms };
 }

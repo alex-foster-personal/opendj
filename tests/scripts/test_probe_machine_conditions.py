@@ -1,6 +1,6 @@
 """Load average and free physical memory, added to the machine sampler.
 
-These two are the conditions ``docs/perf/performance-register.md`` blames most
+These two are the conditions ``(private path)`` blames most
 often for a number the program cannot trust (a waveform decode measured 0.73 s
 and 7.53 s in one evening on load alone; a beatgrid lane taken at load average
 554 with roughly 71 MB free). They now live in the one existing sampler rather
@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from apps.diagnostics import probe_native_metrics as native
+from apps.shared import machine_metrics as native
 
 # Trimmed from real `vm_stat` output on this Mac, Wed 9 Sep 2026.
 VM_STAT_SAMPLE = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -47,9 +47,7 @@ def test_a_missing_page_size_header_yields_no_key(monkeypatch: pytest.MonkeyPatc
 
 
 def test_a_missing_free_line_yields_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        native, "run_text", lambda *_a, **_k: "Statistics: (page size of 16384 bytes)\n"
-    )
+    monkeypatch.setattr(native, "run_text", lambda *_a, **_k: "Statistics: (page size of 16384 bytes)\n")
 
     assert native._vm_stat_free_mb() == {}
 
@@ -101,10 +99,10 @@ def test_machine_metrics_carries_the_new_conditions_on_this_machine() -> None:
 
 # --------------------------------------------------------------------------
 # REAL PATH. Everything above feeds CAPTURED real `vm_stat` output through the
-# PRODUCTION parser: the fixtures are trimmed from this Mac's actual output and
-# `_vm_stat_free_mb` is the shipped function, so substituting `run_text` is how
-# a captured payload is delivered deterministically, not a stand-in for the
-# parser. What it does not cover is the command itself, and this does: no
+# PRODUCTION parser in `apps.shared.machine_metrics`: the fixtures are trimmed
+# from this Mac's actual output and `_vm_stat_free_mb` is the shipped function,
+# so substituting `run_text` on that module is how a captured payload is
+# delivered deterministically, not a stand-in for the parser. What it does not cover is the command itself, and this does: no
 # substitution, the real `vm_stat` and the real `sysctl` on whatever machine
 # runs the suite.
 #
@@ -135,6 +133,4 @@ def test_the_real_vm_stat_parse_is_a_positive_free_memory_or_no_key() -> None:
 
     if "free_memory_mb" not in fields:
         pytest.skip("vm_stat is not available on this machine")
-    assert fields["free_memory_mb"] > 0.0, (
-        "free memory of exactly zero is the parser failing, not the machine"
-    )
+    assert fields["free_memory_mb"] > 0.0, "free memory of exactly zero is the parser failing, not the machine"

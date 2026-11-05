@@ -6,7 +6,7 @@
  * React component libraries (its runtime renders `window.<ns>.*` React elements).
  * This script is the sanctioned "off-script layout" instead: it assembles the
  * exact upload layout the Claude Design app self-checks, from the CSS the app
- * actually ships, with zero reimplementation. See docs/decisions/ADR-NEW-design-system-export.md.
+ * actually ships, with zero reimplementation. See (private path).
  *
  * Requirements (mini-PRD, statuses per file-docstring convention):
  *   ☑️✅🧪 DS-01 deterministic assembly from shipped sources into `ds-bundle/`
@@ -79,7 +79,11 @@ function writeOut(outDir, rel, content) {
 	writeFileSync(abs, content);
 }
 function escapeHtml(s) {
-	return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	return String(s)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
 }
 
 // Extract the `{ ... }` body that follows `selector` (first occurrence), brace-balanced.
@@ -134,7 +138,9 @@ function mdxToMd(mdx) {
 		if (/^<Meta\b/.test(line)) continue;
 		const canvas = /^<Canvas\s+of=\{([\w.]+)\}\s*\/>/.exec(line);
 		if (canvas) {
-			out.push(`> Storybook canvas: \`${canvas[1]}\` (the story lives in the Open DJ repo; it is not bundled here).`);
+			out.push(
+				`> Storybook canvas: \`${canvas[1]}\` (the story lives in the Open DJ repo; it is not bundled here).`
+			);
 			continue;
 		}
 		out.push(line);
@@ -208,7 +214,10 @@ function typographyCard(app, perfDark) {
 }
 
 function layoutCard(app, perfDark) {
-	const metrics = [...perfDark.filter((p) => inferType(p.name, p.value) === 'dimension'), ...app.filter((p) => inferType(p.name, p.value) === 'dimension')];
+	const metrics = [
+		...perfDark.filter((p) => inferType(p.name, p.value) === 'dimension'),
+		...app.filter((p) => inferType(p.name, p.value) === 'dimension')
+	];
 	const rows = metrics
 		.map(
 			(p) =>
@@ -245,27 +254,42 @@ const CARD_HEAD_RX = /^<!--\s*@dsCard\s+group="([^"]+)"[^>]*-->/;
 
 function collectHandAuthoredCards(frontendDir) {
 	const root = resolve(frontendDir, INPUTS.cardsDir);
-	if (!existsSync(root)) throw new Error(`[DS_INPUT_MISSING] ${INPUTS.cardsDir} not found at ${root}`);
+	if (!existsSync(root))
+		throw new Error(`[DS_INPUT_MISSING] ${INPUTS.cardsDir} not found at ${root}`);
 	const cards = [];
-	for (const groupDir of readdirSync(root, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+	for (const groupDir of readdirSync(root, { withFileTypes: true }).sort((a, b) =>
+		a.name < b.name ? -1 : 1
+	)) {
 		if (!groupDir.isDirectory() || groupDir.name.startsWith('_')) continue; // _generated/ holds prompts for generated cards
-		if (!GROUPS[groupDir.name]) throw new Error(`[DS_CARD_GROUP] unknown group dir ${groupDir.name}; known: ${Object.keys(GROUPS).join(', ')}`);
+		if (!GROUPS[groupDir.name])
+			throw new Error(
+				`[DS_CARD_GROUP] unknown group dir ${groupDir.name}; known: ${Object.keys(GROUPS).join(', ')}`
+			);
 		const groupPath = join(root, groupDir.name);
-		for (const cardDir of readdirSync(groupPath, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+		for (const cardDir of readdirSync(groupPath, { withFileTypes: true }).sort((a, b) =>
+			a.name < b.name ? -1 : 1
+		)) {
 			if (!cardDir.isDirectory()) continue;
 			const name = cardDir.name;
 			const html = join(groupPath, name, `${name}.html`);
 			const prompt = join(groupPath, name, `${name}.prompt.md`);
 			if (!existsSync(html)) throw new Error(`[DS_CARD_MISSING] ${relative(frontendDir, html)}`);
-			if (!existsSync(prompt)) throw new Error(`[DS_CARD_MISSING] ${relative(frontendDir, prompt)}`);
+			if (!existsSync(prompt))
+				throw new Error(`[DS_CARD_MISSING] ${relative(frontendDir, prompt)}`);
 			const txt = readFileSync(html, 'utf8');
 			const head = CARD_HEAD_RX.exec(txt.split('\n', 1)[0]);
-			if (!head) throw new Error(`[DS_CARD_HEAD] ${relative(frontendDir, html)}: first line must be <!-- @dsCard group="..." -->`);
+			if (!head)
+				throw new Error(
+					`[DS_CARD_HEAD] ${relative(frontendDir, html)}: first line must be <!-- @dsCard group="..." -->`
+				);
 			if (head[1] !== GROUPS[groupDir.name]) {
-				throw new Error(`[DS_CARD_GROUP] ${relative(frontendDir, html)}: group "${head[1]}" but dir says "${GROUPS[groupDir.name]}"`);
+				throw new Error(
+					`[DS_CARD_GROUP] ${relative(frontendDir, html)}: group "${head[1]}" but dir says "${GROUPS[groupDir.name]}"`
+				);
 			}
 			const promptTxt = readFileSync(prompt, 'utf8');
-			if (!promptTxt.split('\n', 1)[0].trim()) throw new Error(`[DS_PROMPT_EMPTY] ${relative(frontendDir, prompt)}: first line blank`);
+			if (!promptTxt.split('\n', 1)[0].trim())
+				throw new Error(`[DS_PROMPT_EMPTY] ${relative(frontendDir, prompt)}: first line blank`);
 			cards.push({ groupSlug: groupDir.name, name, html: txt, prompt: promptTxt });
 		}
 	}
@@ -276,7 +300,9 @@ function collectHandAuthoredCards(frontendDir) {
 
 function tokenTable(title, props) {
 	const rows = props
-		.map((p) => `| \`${p.name}\` | \`${p.value}\` | ${(p.description ?? '').replace(/\|/g, '\\|')} |`)
+		.map(
+			(p) => `| \`${p.name}\` | \`${p.value}\` | ${(p.description ?? '').replace(/\|/g, '\\|')} |`
+		)
 		.join('\n');
 	return `### ${title}\n\n| Token | Value | Role |\n|---|---|---|\n${rows}\n`;
 }
@@ -317,7 +343,10 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 	const decisions = readdirSync(uiDecisionsDir)
 		.filter((f) => f.endsWith('.mdx') && !f.startsWith('_'))
 		.sort()
-		.map((f) => ({ name: f.replace(/\.mdx$/, '.md'), md: mdxToMd(readFileSync(join(uiDecisionsDir, f), 'utf8')) }));
+		.map((f) => ({
+			name: f.replace(/\.mdx$/, '.md'),
+			md: mdxToMd(readFileSync(join(uiDecisionsDir, f), 'utf8'))
+		}));
 
 	const app = parseCustomProps(appCss, ':root');
 	const perfDark = parseCustomProps(themeCss, '.perf-root');
@@ -325,19 +354,55 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 	const handCards = collectHandAuthoredCards(frontendDir);
 
 	const generated = [
-		{ groupSlug: 'foundations', name: 'Colors', html: colorsCard(app, perfDark, perfLight), prompt: readFileSync(join(frontendDir, INPUTS.cardsDir, '_generated', 'Colors.prompt.md'), 'utf8') },
-		{ groupSlug: 'foundations', name: 'Typography', html: typographyCard(app, perfDark), prompt: readFileSync(join(frontendDir, INPUTS.cardsDir, '_generated', 'Typography.prompt.md'), 'utf8') },
-		{ groupSlug: 'foundations', name: 'LayoutMetrics', html: layoutCard(app, perfDark), prompt: readFileSync(join(frontendDir, INPUTS.cardsDir, '_generated', 'LayoutMetrics.prompt.md'), 'utf8') },
-		{ groupSlug: 'foundations', name: 'Brand', html: brandCard(favicon), prompt: readFileSync(join(frontendDir, INPUTS.cardsDir, '_generated', 'Brand.prompt.md'), 'utf8') }
+		{
+			groupSlug: 'foundations',
+			name: 'Colors',
+			html: colorsCard(app, perfDark, perfLight),
+			prompt: readFileSync(
+				join(frontendDir, INPUTS.cardsDir, '_generated', 'Colors.prompt.md'),
+				'utf8'
+			)
+		},
+		{
+			groupSlug: 'foundations',
+			name: 'Typography',
+			html: typographyCard(app, perfDark),
+			prompt: readFileSync(
+				join(frontendDir, INPUTS.cardsDir, '_generated', 'Typography.prompt.md'),
+				'utf8'
+			)
+		},
+		{
+			groupSlug: 'foundations',
+			name: 'LayoutMetrics',
+			html: layoutCard(app, perfDark),
+			prompt: readFileSync(
+				join(frontendDir, INPUTS.cardsDir, '_generated', 'LayoutMetrics.prompt.md'),
+				'utf8'
+			)
+		},
+		{
+			groupSlug: 'foundations',
+			name: 'Brand',
+			html: brandCard(favicon),
+			prompt: readFileSync(
+				join(frontendDir, INPUTS.cardsDir, '_generated', 'Brand.prompt.md'),
+				'utf8'
+			)
+		}
 	];
 	const cards = [...generated, ...handCards];
 
 	const tokens = {
-		$description: 'Open DJ design tokens, parsed verbatim from the shipped CSS. Names keep their -- prefix so they match the stylesheets one to one.',
+		$description:
+			'Open DJ design tokens, parsed verbatim from the shipped CSS. Names keep their -- prefix so they match the stylesheets one to one.',
 		app: tokenGroup(app, { selector: ':root', source: INPUTS.appCss }),
 		perf: {
 			dark: tokenGroup(perfDark, { selector: '.perf-root', source: INPUTS.themeCss }),
-			light: tokenGroup(perfLight, { selector: "html[data-theme='light'] .perf-root", source: INPUTS.themeCss })
+			light: tokenGroup(perfLight, {
+				selector: "html[data-theme='light'] .perf-root",
+				source: INPUTS.themeCss
+			})
 		}
 	};
 
@@ -352,7 +417,9 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 		'\n## Card index\n\n' +
 		cardIndex(cards);
 	if (readme.length >= README_BUDGET_CHARS) {
-		throw new Error(`[DS_README_BUDGET] README.md is ${readme.length} chars; the app inlines only ${README_BUDGET_CHARS}`);
+		throw new Error(
+			`[DS_README_BUDGET] README.md is ${readme.length} chars; the app inlines only ${README_BUDGET_CHARS}`
+		);
 	}
 
 	const sourceHashes = {
@@ -361,7 +428,12 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 		[INPUTS.wordmarkWoff2]: sha12(woff2),
 		[INPUTS.favicon]: sha12(favicon)
 	};
-	const header = JSON.stringify({ namespace: NAMESPACE, components: [], sourceHashes, inlinedExternals: [] }).replace(/\*\//g, '*\\/');
+	const header = JSON.stringify({
+		namespace: NAMESPACE,
+		components: [],
+		sourceHashes,
+		inlinedExternals: []
+	}).replace(/\*\//g, '*\\/');
 	const bundleJs =
 		`/* @ds-bundle: ${header} */\n` +
 		`// Open DJ ships no React components: the design system is CSS custom properties plus shared\n` +
@@ -395,7 +467,11 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 	writeOut(outDir, 'guidelines/DESIGN.md', designMd);
 	writeOut(outDir, 'guidelines/brand/wordmark-font.md', wordmarkDoc);
 	for (const d of decisions) writeOut(outDir, `guidelines/ui-decisions/${d.name}`, d.md);
-	const guidelineList = ['DESIGN.md', 'brand/wordmark-font.md', ...decisions.map((d) => `ui-decisions/${d.name}`)];
+	const guidelineList = [
+		'DESIGN.md',
+		'brand/wordmark-font.md',
+		...decisions.map((d) => `ui-decisions/${d.name}`)
+	];
 	writeOut(
 		outDir,
 		'guidelines/index.md',
@@ -424,7 +500,12 @@ export function buildDesignSystem({ frontendDir = DEFAULT_FRONTEND, outDir = DEF
 			2
 		) + '\n'
 	);
-	return { outDir, cards: cards.length, tokens: app.length + perfDark.length + perfLight.length, readmeChars: readme.length };
+	return {
+		outDir,
+		cards: cards.length,
+		tokens: app.length + perfDark.length + perfLight.length,
+		readmeChars: readme.length
+	};
 }
 
 // ---------------------------------------------------------------- CLI
@@ -435,5 +516,7 @@ if (isMain) {
 	const outIdx = args.indexOf('--out');
 	const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]) : DEFAULT_OUT;
 	const result = buildDesignSystem({ outDir });
-	console.error(`[OK] design-system bundle -> ${result.outDir}: ${result.cards} cards, ${result.tokens} tokens, README ${result.readmeChars} chars`);
+	console.error(
+		`[OK] design-system bundle -> ${result.outDir}: ${result.cards} cards, ${result.tokens} tokens, README ${result.readmeChars} chars`
+	);
 }

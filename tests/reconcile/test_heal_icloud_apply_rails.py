@@ -18,11 +18,12 @@ Acceptance criteria (UNCAPTURED-REQUIREMENTS.md H17):
   [if] a Rekordbox process is running [then] abort before opening the DB for
        write ⛔️ a live write races the app
   [if] a verify readback mismatches after write [then] the failure message
-       names the backup file under data/reconcile/backups/ ⛔️ a silent partial
+       names the backup file under (private path)/ ⛔️ a silent partial
        rewrite with no recovery pointer
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -99,9 +100,7 @@ def rails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
 
 
 @pytest.mark.requirement("GUARD-02")
-def test_refuses_without_the_risk_flag_and_writes_nothing(
-    rows: list[heal.HealRow], rails: list[str]
-) -> None:
+def test_refuses_without_the_risk_flag_and_writes_nothing(rows: list[heal.HealRow], rails: list[str]) -> None:
     rc = heal.apply_unique(rows, i_understand=False)
     assert rc != 0, "a missing --i-understand-the-risks returned success"
     assert rails == [], f"rails fired without the risk flag: {rails}"
@@ -121,9 +120,7 @@ def test_running_rekordbox_aborts_before_backup_or_write(
     monkeypatch.setattr(reconcile_apply, "_rekordbox_running", _running)
     rc = heal.apply_unique(rows, i_understand=True)
     assert rc != 0
-    assert rails == ["rekordbox_running"], (
-        f"a live write raced Rekordbox: {rails}"
-    )
+    assert rails == ["rekordbox_running"], f"a live write raced Rekordbox: {rails}"
 
 
 @pytest.mark.requirement("GUARD-02")
@@ -140,9 +137,7 @@ def test_failed_confirmation_aborts_before_backup_or_write(
 
 
 @pytest.mark.requirement("GUARD-02")
-def test_happy_path_fires_every_rail_in_order(
-    rows: list[heal.HealRow], rails: list[str]
-) -> None:
+def test_happy_path_fires_every_rail_in_order(rows: list[heal.HealRow], rails: list[str]) -> None:
     rc = heal.apply_unique(rows, i_understand=True)
     assert rc == 0
     assert rails == [
@@ -172,9 +167,7 @@ def test_verify_failure_names_the_backup_file(
     rc = heal.apply_unique(rows, i_understand=True)
     assert rc != 0, "a verify mismatch reported success"
     out = capsys.readouterr().out
-    assert "master.20260817T090000.db" in out.replace("\n", ""), (
-        f"the failure did not name the backup file: {out}"
-    )
+    assert "master.20260817T090000.db" in out.replace("\n", ""), f"the failure did not name the backup file: {out}"
     assert "verify failure" in out
 
 
@@ -216,9 +209,7 @@ def test_a_non_materialised_candidate_is_refused_before_any_write(
 
 
 @pytest.mark.requirement("GUARD-02")
-def test_rows_that_are_not_ready_unique_are_never_written(
-    rows: list[heal.HealRow], rails: list[str]
-) -> None:
+def test_rows_that_are_not_ready_unique_are_never_written(rows: list[heal.HealRow], rails: list[str]) -> None:
     for r in rows:
         r.status = "needs_confirm"
     assert heal.apply_unique(rows, i_understand=True) == 0

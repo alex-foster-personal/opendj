@@ -71,7 +71,10 @@ test('monitor graph wires DelayNode after level with hard delayTime set', async 
 test('setHeadDelayMs rejects invalid values and leaves the previous value', () => {
 	headphones.setHeadDelayMs(40);
 	for (const bad of [501, -1, Number.NaN, Infinity, '40', null]) {
-		assert.throws(() => headphones.setHeadDelayMs(bad), /head delay must be a finite number within 0\.\.500/i);
+		assert.throws(
+			() => headphones.setHeadDelayMs(bad),
+			/head delay must be a finite number within 0\.\.500/i
+		);
 		assert.equal(ipc.queryPerformanceState().mixer.headphones.head_delay_ms, 40);
 	}
 	headphones.setHeadDelayMs(0);
@@ -124,7 +127,10 @@ test('Bluetooth warning helpers and HeadphoneCluster wiring', async () => {
 	assert.match(bt, /Bluetooth/i);
 
 	const clusterSrc = await readFile('src/lib/components/rb/mixer/HeadphoneCluster.svelte', 'utf8');
-	assert.match(clusterSrc, /title="HEAD DELAY" bullets=\{warningText === null \? delayBullets : \[\.\.\.delayBullets, warningText\]\}/);
+	assert.match(
+		clusterSrc,
+		/title="HEAD DELAY" bullets=\{warningText === null \? delayBullets : \[\.\.\.delayBullets, warningText\]\}/
+	);
 	assert.match(clusterSrc, /aria-label="head delay milliseconds"/);
 	assert.match(clusterSrc, /data-performance-control="head-delay"/);
 	assert.match(clusterSrc, /aria-label="increase head delay"/);

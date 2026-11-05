@@ -28,10 +28,7 @@ export function setLabs(optIn: boolean): Promise<PluginsOut> {
 	return unwrap(api.POST('/api/v1/plugins/labs', { body: { opt_in: optIn } }));
 }
 
-export function installPlugin(
-	row: PluginRow,
-	acknowledgeNotice: boolean
-): Promise<ChangeOut> {
+export function installPlugin(row: PluginRow, acknowledgeNotice: boolean): Promise<ChangeOut> {
 	return unwrap(
 		api.POST('/api/v1/plugins/{plugin_id}/install', {
 			params: { path: { plugin_id: row.plugin_id } },

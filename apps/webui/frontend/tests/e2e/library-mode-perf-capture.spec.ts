@@ -7,7 +7,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kpiCaptureTimeoutS } from './kpi-capture-timeouts.mjs';
 import { fixtureManifestExists, readFixtureManifest } from './support/fixture-manifest';
-import { EnginePidMismatchError, sampleProcessFamilyFootprint } from './support/renderer-process-sample';
+import {
+	EnginePidMismatchError,
+	sampleProcessFamilyFootprint
+} from './support/renderer-process-sample';
 
 const RESULT_PATH = process.env.KPI_CAPTURE_RESULT;
 const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
@@ -24,7 +27,7 @@ const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
 const MANIFEST_PATH = join(DATA_DIR, 'fixture-manifest.json');
 const SAMPLE_INTERVAL_S = Number(process.env.KPI_CAPTURE_SAMPLE_INTERVAL_S ?? '5');
 const SAMPLING_METHOD =
-	'phys_footprint (footprint -p) and ps %cpu of this capture\'s own process family, attributed by pid tree: ' +
+	"phys_footprint (footprint -p) and ps %cpu of this capture's own process family, attributed by pid tree: " +
 	'every Chromium process CDP SystemInfo.getProcessInfo (browser target) lists, plus the engine listening on ' +
 	`the API port and every descendant (stem workers); settle ${SETTLE_SECONDS}s per mode, then a sample every ${SAMPLE_INTERVAL_S}s. ` +
 	'RSS of the same pids is recorded alongside for continuity.';
@@ -176,7 +179,10 @@ async function dwellSample(
 	};
 }
 
-async function resolveDeckStableIds(request: APIRequestContext, apiBase: string): Promise<string[]> {
+async function resolveDeckStableIds(
+	request: APIRequestContext,
+	apiBase: string
+): Promise<string[]> {
 	if (FIXTURE_MODE && fixtureManifestExists(MANIFEST_PATH)) {
 		const manifest = readFixtureManifest(MANIFEST_PATH);
 		if (manifest.tracks.length === 0) {
@@ -198,7 +204,10 @@ async function resolveDeckStableIds(request: APIRequestContext, apiBase: string)
 	for (let page = 0; page < MAX_LISTING_PAGES && ids.length < 4; page += 1) {
 		const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
 		const response = await request.get(`${apiBase}/api/v1/tracks?limit=50&available=true${query}`);
-		expect(response.ok(), 'available track listing must succeed for library-mode capture').toBeTruthy();
+		expect(
+			response.ok(),
+			'available track listing must succeed for library-mode capture'
+		).toBeTruthy();
 		const payload = (await response.json()) as {
 			items: { stable_id: string; file_exists: boolean }[];
 			next_cursor: string | null;
@@ -263,7 +272,11 @@ async function selectLibraryMode(page: import('@playwright/test').Page): Promise
 	await page.waitForURL((url) => url.pathname === '/');
 }
 
-test('captures Gig vs Library steady-state footprint and CPU medians', async ({ browser, page, request }) => {
+test('captures Gig vs Library steady-state footprint and CPU medians', async ({
+	browser,
+	page,
+	request
+}) => {
 	const captureBudgetS = kpiCaptureTimeoutS(process.env.KPI_CAPTURE_TIMEOUT_S);
 	test.setTimeout(captureBudgetS * 1000 + 30_000);
 	const captureId =

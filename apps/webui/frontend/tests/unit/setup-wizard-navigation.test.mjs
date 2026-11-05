@@ -53,7 +53,10 @@ test('Back is allowed on every step that has one behind it', () => {
 });
 
 test('Back is refused while the import is actually running', () => {
-	const why = mod.backRefusal('progress', ctx({ job: { id: 'j1', status: 'running', progress: 0.4 } }));
+	const why = mod.backRefusal(
+		'progress',
+		ctx({ job: { id: 'j1', status: 'running', progress: 0.4 } })
+	);
 	assert.equal(typeof why, 'string');
 	assert.match(why, /running/i);
 });
@@ -112,7 +115,11 @@ test('every step is reachable walking forward, and back again', () => {
 			cursor = mod.previousStepFor(cursor, source);
 		}
 		back.push(cursor);
-		assert.deepEqual(back.reverse(), seen, `${source} does not walk back the way it walked forward`);
+		assert.deepEqual(
+			back.reverse(),
+			seen,
+			`${source} does not walk back the way it walked forward`
+		);
 	}
 });
 

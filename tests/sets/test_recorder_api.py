@@ -4,6 +4,7 @@
 [if] REC stops [then ⛔️] the PID survives or manifest/session_end is absent.
 [if] the router shuts down [then ⛔️] its owned recorder remains live.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,10 +63,7 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
     assert not (session_dir / "recorder.pid").exists()
     assert (session_dir / "manifest.json").exists()
     actions = [
-        json.loads(line)["action"]
-        for line in (session_dir / "timeline.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        json.loads(line)["action"] for line in (session_dir / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert actions[0] == "session_start"
     assert "session_end" in actions
@@ -95,9 +93,7 @@ def test_recover_finalizes_only_a_proven_stale_pid(recorder_client):
     assert recovered.json()["active"] is False
     assert not (session_dir / "recorder.pid").exists()
     assert (session_dir / "manifest.json").exists()
-    assert "session_end" in (session_dir / "timeline.jsonl").read_text(
-        encoding="utf-8"
-    )
+    assert "session_end" in (session_dir / "timeline.jsonl").read_text(encoding="utf-8")
 
 
 def test_recover_rejects_a_live_external_pid(recorder_client):

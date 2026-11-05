@@ -117,7 +117,6 @@ def test_out_of_range_user_offset_raises(bad: float) -> None:
 def test_spread_shrinks_to_one_lu_on_a_wide_set() -> None:
     """If tracks 10 LU apart are not within 1 LU after auto gain then broken."""
     tracks = [(-5.5, 2.0), (-8.0, 1.0), (-11.0, -0.5), (-13.0, -3.5), (-15.5, -5.0)]
-    after = [lufs + _resolve(integrated_lufs=lufs, true_peak_dbtp=tp).effective_offset_db
-             for lufs, tp in tracks]
+    after = [lufs + _resolve(integrated_lufs=lufs, true_peak_dbtp=tp).effective_offset_db for lufs, tp in tracks]
     assert max(lufs for lufs, _ in tracks) - min(lufs for lufs, _ in tracks) == pytest.approx(10.0)
     assert max(after) - min(after) <= 1.0

@@ -13,6 +13,7 @@ seconds per stem-minute of inference (model load excluded, as in the shootout).
 Reduced-rate arms resample down, separate, and resample back up. That is the
 honest accounting: the resample cost is part of the arm's cost.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,8 +41,7 @@ def _resample(x: torch.Tensor, src: int, dst: int) -> torch.Tensor:
     if src == dst:
         return x
     g = np.gcd(src, dst)
-    return torch.from_numpy(
-        resample_poly(x.numpy(), dst // g, src // g, axis=-1).astype(np.float32))
+    return torch.from_numpy(resample_poly(x.numpy(), dst // g, src // g, axis=-1).astype(np.float32))
 
 
 @dataclass(frozen=True)
@@ -73,13 +73,18 @@ def run_arm(
     # Casting the whole model to half fails: demucs runs torch.stft internally and
     # that has no half kernel. autocast is the working form of the precision lever,
     # keeping the transforms in fp32 and the convolutions in low precision.
-    autocast_dtype = {"fp32": None, "fp16": torch.float16,
-                      "bf16": torch.bfloat16}[opts.dtype]
+    autocast_dtype = {"fp32": None, "fp16": torch.float16, "bf16": torch.bfloat16}[opts.dtype]
     model.to(device=opts.device)
     batch = work.unsqueeze(0).to(device=opts.device)
 
-    kwargs = {"overlap": opts.overlap, "shifts": 0, "split": True,
-              "progress": False, "device": opts.device, "num_workers": opts.jobs}
+    kwargs = {
+        "overlap": opts.overlap,
+        "shifts": 0,
+        "split": True,
+        "progress": False,
+        "device": opts.device,
+        "num_workers": opts.jobs,
+    }
     if opts.segment is not None:
         kwargs["segment"] = opts.segment
 
@@ -140,13 +145,23 @@ def main() -> None:
     sf.write(str(args.out_dir / "instrumental.wav"), inst.T.numpy(), sr)
 
     dur = mix.shape[-1] / sr
-    print(json.dumps({
-        "label": args.label, "model": args.model, "overlap": args.overlap,
-        "segment": args.segment, "sep_rate": args.sep_rate, "mono": args.mono,
-        "dtype": args.dtype, "device": args.device,
-        "audio_s": round(dur, 2), "infer_s": round(infer_s, 2),
-        "s_per_stem_minute": round(infer_s / (dur / 60), 2),
-    }))
+    print(
+        json.dumps(
+            {
+                "label": args.label,
+                "model": args.model,
+                "overlap": args.overlap,
+                "segment": args.segment,
+                "sep_rate": args.sep_rate,
+                "mono": args.mono,
+                "dtype": args.dtype,
+                "device": args.device,
+                "audio_s": round(dur, 2),
+                "infer_s": round(infer_s, 2),
+                "s_per_stem_minute": round(infer_s / (dur / 60), 2),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

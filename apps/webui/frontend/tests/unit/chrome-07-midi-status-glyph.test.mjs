@@ -56,7 +56,9 @@ test('the shared glyph draws the cross for red and the tick for green, as an SVG
 
 test('control: gray and amber draw no mark at all', async () => {
 	for (const status of ['grey', 'amber']) {
-		const html = await renderToHtml(bundle.MidiStatusGlyph, { glyph: bundle.midiLabelGlyph(status) });
+		const html = await renderToHtml(bundle.MidiStatusGlyph, {
+			glyph: bundle.midiLabelGlyph(status)
+		});
 		assert.doesNotMatch(html, /<svg/, `${status}: ${html}`);
 	}
 });
@@ -64,11 +66,17 @@ test('control: gray and amber draw no mark at all', async () => {
 test('both mixer MIDI entries render the shared glyph from the one derived value', () => {
 	const buttons = midiButtons(cluster);
 	assert.equal(buttons.length, 2, 'expected the headphone-cluster and the I/O-menu MIDI entries');
-	assert.ok(buttons.some((b) => b.includes('class="hp-btn midi-btn io-midi')), 'the I/O-menu entry is one of them');
+	assert.ok(
+		buttons.some((b) => b.includes('class="hp-btn midi-btn io-midi')),
+		'the I/O-menu entry is one of them'
+	);
 	for (const button of buttons) {
 		assert.match(button, /<MidiStatusGlyph glyph=\{midiGlyph\} \/>/, button);
 	}
-	assert.equal((cluster.match(/const midiGlyph = \$derived\(midiLabelGlyph\(midiStatus\)\)/g) ?? []).length, 1);
+	assert.equal(
+		(cluster.match(/const midiGlyph = \$derived\(midiLabelGlyph\(midiStatus\)\)/g) ?? []).length,
+		1
+	);
 });
 
 test('the glyph is drawn in one place, not copied into the cluster', () => {

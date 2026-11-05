@@ -61,11 +61,19 @@ def _trimmed_manifest(manifest: dict, fixtures: list, raw_out: str) -> str:
 
 def _producer_command(args: argparse.Namespace, manifest_path: str) -> list[str]:
     cmd = [
-        "uv", "run", "--no-project", "--script", RUNNER,
-        "--manifest", manifest_path,
-        "--out", args.raw_out,
-        "--device", args.device,
-        "--threshold", str(args.threshold),
+        "uv",
+        "run",
+        "--no-project",
+        "--script",
+        RUNNER,
+        "--manifest",
+        manifest_path,
+        "--out",
+        args.raw_out,
+        "--device",
+        args.device,
+        "--threshold",
+        str(args.threshold),
         "--measure-rss",
     ]
     if args.activations_dir:
@@ -98,9 +106,7 @@ def _reshape(raw: dict, fixtures: list, label: str) -> dict[str, Any]:
             served_downbeats = row.get("downbeats")
         else:
             served_numbers = lock.beat_numbers
-            served_downbeats = [
-                beats[i] for i, n in enumerate(served_numbers) if n == 1
-            ]
+            served_downbeats = [beats[i] for i, n in enumerate(served_numbers) if n == 1]
         results[fixture["stable_id"]] = {
             # Both sides are excerpt-relative, because the producer reads the
             # excerpt WAV, so no offset is applied here. window_start_s rides
@@ -207,9 +213,7 @@ def main() -> int:
         fixtures = fixtures[: args.limit]
 
     # The producer takes a manifest, so a limited run needs a trimmed one.
-    manifest_path = (
-        _trimmed_manifest(manifest, fixtures, args.raw_out) if args.limit else args.fixtures
-    )
+    manifest_path = _trimmed_manifest(manifest, fixtures, args.raw_out) if args.limit else args.fixtures
     cmd = _producer_command(args, manifest_path)
     print(f"[{args.label}] {' '.join(cmd)}", flush=True)
 

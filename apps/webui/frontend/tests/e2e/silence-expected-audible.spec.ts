@@ -115,7 +115,9 @@ test.setTimeout(120_000);
 
 async function openHarness(page: Page): Promise<void> {
 	await page.goto('/src/lib/rb/silence-watchdog.ts');
-	const harnessReady = await page.evaluate(() => window.__silenceExpectedAudibleHarness !== undefined);
+	const harnessReady = await page.evaluate(
+		() => window.__silenceExpectedAudibleHarness !== undefined
+	);
 	if (!harnessReady) {
 		await page.addScriptTag({ type: 'module', url: HARNESS_MODULE });
 		await page.waitForFunction(() => window.__silenceExpectedAudibleHarness !== undefined);
@@ -133,19 +135,33 @@ async function play(page: Page, scenario: Scenario): Promise<Outcome> {
 function expectSilentMaster(outcome: Outcome): void {
 	expect(outcome.errors).toEqual([]);
 	expect(outcome.samples).toBeGreaterThan(20);
-	expect(outcome.held_rms_max, 'the master tap was not silent while the watchdog sampled').toBeLessThan(0.001);
+	expect(
+		outcome.held_rms_max,
+		'the master tap was not silent while the watchdog sampled'
+	).toBeLessThan(0.001);
 }
 
 function expectOpenAudible(outcome: Outcome): void {
 	expect(outcome.errors, `harness errors: ${outcome.errors.join('; ')}`).toEqual([]);
-	expect(outcome.open_rms, 'the open graph never carried the track to the master tap').toBeGreaterThan(0.01);
+	expect(
+		outcome.open_rms,
+		'the open graph never carried the track to the master tap'
+	).toBeGreaterThan(0.01);
 }
 
 test.describe('the silence watchdog stops a deck only when sound was expected (real audio path)', () => {
 	test.beforeEach(async ({ page }) => openHarness(page));
 
-	test('if a channel fader at 0 (CUE on, pre-listening) stops the deck then broken', async ({ page }) => {
-		const o = await play(page, { path: 'mix', track: 'mixture', position_sec: 10, fader: 0, cue: true });
+	test('if a channel fader at 0 (CUE on, pre-listening) stops the deck then broken', async ({
+		page
+	}) => {
+		const o = await play(page, {
+			path: 'mix',
+			track: 'mixture',
+			position_sec: 10,
+			fader: 0,
+			cue: true
+		});
 		expectOpenAudible(o);
 		expectSilentMaster(o);
 		expect(o.plans).toEqual([]);
@@ -153,15 +169,27 @@ test.describe('the silence watchdog stops a deck only when sound was expected (r
 	});
 
 	test('if muting every stem stops the deck then broken', async ({ page }) => {
-		const o = await play(page, { path: 'stems', track: 'mixture', position_sec: 10, mute: ['vocal', 'instrumental'] });
+		const o = await play(page, {
+			path: 'stems',
+			track: 'mixture',
+			position_sec: 10,
+			mute: ['vocal', 'instrumental']
+		});
 		expectOpenAudible(o);
 		expectSilentMaster(o);
 		expect(o.plans).toEqual([]);
 	});
 
-	test('if soloing a stem that is silent in this passage stops the deck then broken', async ({ page }) => {
+	test('if soloing a stem that is silent in this passage stops the deck then broken', async ({
+		page
+	}) => {
 		// The real vocal stem is silent from 25.9 s to 29.9 s while the instrumental plays on.
-		const o = await play(page, { path: 'stems', track: 'mixture', position_sec: 25.95, solo: 'vocal' });
+		const o = await play(page, {
+			path: 'stems',
+			track: 'mixture',
+			position_sec: 25.95,
+			solo: 'vocal'
+		});
 		expectOpenAudible(o);
 		expectSilentMaster(o);
 		expect(o.plans).toEqual([]);
@@ -169,12 +197,19 @@ test.describe('the silence watchdog stops a deck only when sound was expected (r
 
 	test("if a track's own silent passage stops the deck then broken", async ({ page }) => {
 		// The fixture opens with 3 s of digital silence; the watchdog's 2 s window fits inside it.
-		const o = await play(page, { path: 'mix', track: 'silentIntro', position_sec: 0, expectOpenSilent: true });
+		const o = await play(page, {
+			path: 'mix',
+			track: 'silentIntro',
+			position_sec: 0,
+			expectOpenSilent: true
+		});
 		expectSilentMaster(o);
 		expect(o.plans).toEqual([]);
 	});
 
-	test('if a real dropout (signal expected, none delivered) does NOT stop the deck then broken', async ({ page }) => {
+	test('if a real dropout (signal expected, none delivered) does NOT stop the deck then broken', async ({
+		page
+	}) => {
 		const o = await play(page, { path: 'mix', track: 'mixture', position_sec: 10, dropout: true });
 		expectOpenAudible(o);
 		expectSilentMaster(o);
@@ -186,7 +221,13 @@ test.describe('the silence watchdog stops a deck only when sound was expected (r
 
 	test('if soloing a LOUD stem hides a real dropout then broken', async ({ page }) => {
 		// 5 s in, the real vocal stem is singing.
-		const o = await play(page, { path: 'stems', track: 'mixture', position_sec: 5, solo: 'vocal', dropout: true });
+		const o = await play(page, {
+			path: 'stems',
+			track: 'mixture',
+			position_sec: 5,
+			solo: 'vocal',
+			dropout: true
+		});
 		expectOpenAudible(o);
 		expectSilentMaster(o);
 		expect(o.plans.length).toBe(1);
@@ -194,7 +235,9 @@ test.describe('the silence watchdog stops a deck only when sound was expected (r
 		expect(o.deck_playing_after, 'the production dropout handler stopped the deck').toBe(false);
 	});
 
-	test('if the live-upgrade envelope scan holds the main thread for a whole part then broken', async ({ page }) => {
+	test('if the live-upgrade envelope scan holds the main thread for a whole part then broken', async ({
+		page
+	}) => {
 		// P1 thread r4279728753: AlignedStemDeckProcessor.create scans every part
 		// before the PCM moves to the worklet. On a real decoded stem the scan must
 		// hand the main thread back between slices and still equal the one-pass scan.
@@ -217,13 +260,17 @@ test.describe('the silence watchdog stops a deck only when sound was expected (r
 				ticks,
 				elapsed,
 				blocks: whole.peaks.length,
-				same: whole.block_sec === sliced.block_sec &&
+				same:
+					whole.block_sec === sliced.block_sec &&
 					whole.duration_sec === sliced.duration_sec &&
 					whole.peaks.every((v: number, i: number) => Object.is(v, sliced.peaks[i]))
 			};
 		}, MIXTURE_STABLE_ID);
 		expect(r.blocks).toBe(600);
 		expect(r.same, 'the sliced scan disagrees with the one-pass scan').toBe(true);
-		expect(r.ticks, `no task ran during a ${r.elapsed.toFixed(1)} ms scan: it never yielded`).toBeGreaterThan(0);
+		expect(
+			r.ticks,
+			`no task ran during a ${r.elapsed.toFixed(1)} ms scan: it never yielded`
+		).toBeGreaterThan(0);
 	});
 });

@@ -507,7 +507,10 @@ def required_keys(environ: Mapping[str, str] | None = None) -> dict[str, str]:
 def _fused_digests(conn: sqlite3.Connection, contexts: Mapping[str, _Context]) -> dict[str, str | None]:
     stored = findings.findings_for(conn, contexts)
     return {
-        sid: next((f.request_digest for f in rows if f.provider == findings.PROVIDER_FUSED and f.status == "ok"), None)
+        sid: next(
+            (f.request_digest for f in rows if f.provider == findings.PROVIDER_FUSED and f.request_digest is not None),
+            None,
+        )
         for sid, rows in stored.items()
     }
 

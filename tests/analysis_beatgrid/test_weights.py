@@ -8,6 +8,7 @@ by a version that did not produce it.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import re
@@ -18,10 +19,7 @@ import pytest
 from apps.analysis_beatgrid import weights
 from apps.analysis_beatgrid.version import PRODUCER_VERSION
 
-RUNNER = (
-    Path(__file__).resolve().parents[2]
-    / "apps" / "analysis_beatgrid" / "beat_this_runner.py"
-)
+RUNNER = Path(__file__).resolve().parents[2] / "apps" / "analysis_beatgrid" / "beat_this_runner.py"
 
 
 def _runner_literal(name: str) -> str:
@@ -50,9 +48,10 @@ def test_version_literal_control_can_fail() -> None:
         _runner_literal("NOT_A_CONSTANT_IN_THAT_FILE")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # weights
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def _fixture_checkpoint(tmp_path: Path, body: bytes = b"beat-this weights") -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -72,9 +71,7 @@ def test_env_override_is_searched_first_and_its_digest_is_returned(
     assert reported == digest
 
 
-def test_absent_checkpoint_names_every_location_it_looked_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_absent_checkpoint_names_every_location_it_looked_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(weights.WEIGHTS_PATH_ENV, str(tmp_path / "nowhere.ckpt"))
     with pytest.raises(weights.WeightsUnavailable) as exc:
         weights.resolve_checkpoint(app_dir=tmp_path / "app")
@@ -83,18 +80,14 @@ def test_absent_checkpoint_names_every_location_it_looked_in(
     assert str(tmp_path / "app") in message
 
 
-def test_a_wrong_checkpoint_is_refused_rather_than_loaded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_wrong_checkpoint_is_refused_rather_than_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = _fixture_checkpoint(tmp_path, b"some other model entirely")
     monkeypatch.setenv(weights.WEIGHTS_PATH_ENV, str(source))
     with pytest.raises(weights.WeightsMismatch, match="pinned to"):
         weights.resolve_checkpoint(expected_sha256="0" * 64)
 
 
-def test_an_unusable_override_never_falls_back_to_the_app_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_unusable_override_never_falls_back_to_the_app_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The bug this guard exists for (Sol P1, PR #1587): an explicit,
     unusable `MDT_BEATGRID_WEIGHTS` must not resolve to whatever the app
     weights directory happens to hold. That would run a DIFFERENT checkpoint
@@ -106,23 +99,17 @@ def test_an_unusable_override_never_falls_back_to_the_app_dir(
         weights.resolve_checkpoint(expected_sha256=weights.sha256_of(real), app_dir=app_dir)
 
 
-def test_an_unset_override_still_resolves_from_the_app_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_unset_override_still_resolves_from_the_app_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Both-directions control: the ordinary case (no override at all) must
     still resolve location 2, unaffected by the override-specific guard."""
     app_dir = tmp_path / "app"
     real = _fixture_checkpoint(app_dir)
     monkeypatch.delenv(weights.WEIGHTS_PATH_ENV, raising=False)
-    resolved, _reported = weights.resolve_checkpoint(
-        expected_sha256=weights.sha256_of(real), app_dir=app_dir
-    )
+    resolved, _reported = weights.resolve_checkpoint(expected_sha256=weights.sha256_of(real), app_dir=app_dir)
     assert resolved == real
 
 
-def test_no_torch_hub_fallback_exists(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_torch_hub_fallback_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The one behavior this module exists to remove.
 
     A negative control: with both named locations empty, resolution must fail
@@ -151,9 +138,7 @@ def test_install_verifies_before_it_writes(tmp_path: Path) -> None:
     assert not dest.exists() or not list(dest.iterdir())
 
 
-def test_install_then_resolve_round_trips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_install_then_resolve_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = _fixture_checkpoint(tmp_path / "src")
     digest = weights.sha256_of(source)
     dest = tmp_path / "dest"

@@ -46,7 +46,9 @@ export function applyAllCaps(): void {
 		try {
 			apply();
 		} catch (error) {
-			failures.push(new Error(`caps consumer "${name}" failed: ${String(error)}`, { cause: error }));
+			failures.push(
+				new Error(`caps consumer "${name}" failed: ${String(error)}`, { cause: error })
+			);
 		}
 	}
 	if (failures.length > 0) {

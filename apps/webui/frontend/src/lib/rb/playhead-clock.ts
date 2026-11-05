@@ -64,7 +64,8 @@ export interface PlayheadSample {
 }
 
 /** What `notePlayheadSample` did with a sample. Every reason but `slew`/`catch-up` lands exactly on the sample. */
-export type PlayheadReconcile = 'first' | 'frozen' | 'slew' | 'catch-up' | 'snap-error' | 'snap-discontinuity';
+export type PlayheadReconcile =
+	'first' | 'frozen' | 'slew' | 'catch-up' | 'snap-error' | 'snap-discontinuity';
 
 export interface PlayheadClockState {
 	anchor: PlayheadSample | null;
@@ -81,15 +82,28 @@ export function initPlayheadClock(): PlayheadClockState {
 }
 
 /** Where the anchor says the deck is at `nowMs`, before any slew. */
-function _projectedTruthMs(anchor: PlayheadSample, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): number {
+function _projectedTruthMs(
+	anchor: PlayheadSample,
+	nowMs: number,
+	cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG
+): number {
 	if (!anchor.playing || !anchor.trusted) return anchor.positionMs;
-	const elapsed = Math.min(cfg.maxProjectionMs, Math.max(-cfg.maxProjectionMs, nowMs - anchor.sampledAtMs));
+	const elapsed = Math.min(
+		cfg.maxProjectionMs,
+		Math.max(-cfg.maxProjectionMs, nowMs - anchor.sampledAtMs)
+	);
 	return anchor.positionMs + elapsed * anchor.rate;
 }
 
 /** Whether projecting to `nowMs` hit the `maxProjectionMs` cap (the clock stopped feeding samples). */
-export function projectionCapped(anchor: PlayheadSample, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): boolean {
-	return anchor.playing && anchor.trusted && Math.abs(nowMs - anchor.sampledAtMs) > cfg.maxProjectionMs;
+export function projectionCapped(
+	anchor: PlayheadSample,
+	nowMs: number,
+	cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG
+): boolean {
+	return (
+		anchor.playing && anchor.trusted && Math.abs(nowMs - anchor.sampledAtMs) > cfg.maxProjectionMs
+	);
 }
 
 function _remainingOffsetMs(state: PlayheadClockState, nowMs: number): number {
@@ -99,14 +113,22 @@ function _remainingOffsetMs(state: PlayheadClockState, nowMs: number): number {
 }
 
 /** The position to draw at `nowMs`; null before the first sample. */
-export function playheadDisplayMs(state: PlayheadClockState, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): number | null {
+export function playheadDisplayMs(
+	state: PlayheadClockState,
+	nowMs: number,
+	cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG
+): number | null {
 	if (state.anchor === null) return null;
 	const truth = _projectedTruthMs(state.anchor, nowMs, cfg);
 	if (!state.anchor.playing || !state.anchor.trusted) return truth;
 	return truth + _remainingOffsetMs(state, nowMs);
 }
 
-function _isDiscontinuity(previous: PlayheadSample, next: PlayheadSample, cfg: PlayheadClockConfig): boolean {
+function _isDiscontinuity(
+	previous: PlayheadSample,
+	next: PlayheadSample,
+	cfg: PlayheadClockConfig
+): boolean {
 	if (previous.trackKey !== next.trackKey) return true;
 	if (!previous.playing || !previous.trusted) return true;
 	const base = Math.max(Math.abs(previous.rate), 1e-9);

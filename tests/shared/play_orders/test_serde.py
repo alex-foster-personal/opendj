@@ -1,4 +1,5 @@
 """open-dj v0 PlayOrder serde round-trip."""
+
 from __future__ import annotations
 
 import json
@@ -18,12 +19,7 @@ pytestmark = [
 ]
 
 
-FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / "fixtures"
-    / "opendj"
-    / "play_order_sample.json"
-)
+FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "opendj" / "play_order_sample.json"
 
 
 def test_fixture_exists() -> None:

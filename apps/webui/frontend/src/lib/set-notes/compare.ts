@@ -5,7 +5,11 @@
 import { camelotKeysAreCompatible, parseCamelotKey } from '$lib/player/key/camelot';
 
 export type TrackFacts = { bpm?: number | null; key?: string | null };
-export type Comparison = { deltaBpm: number | null; deltaPct: number | null; keysMix: boolean | null };
+export type Comparison = {
+	deltaBpm: number | null;
+	deltaPct: number | null;
+	keysMix: boolean | null;
+};
 
 export function compareTracks(a: TrackFacts, b: TrackFacts): Comparison {
 	const [ab, bb] = [a.bpm ?? null, b.bpm ?? null];

@@ -337,6 +337,10 @@ def test_cancel_takes_the_whole_tree_not_just_the_worker(
 
 
 @pytest.mark.requirement("NATIVE-31")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-specific: a recorded Windows worker has no console group, so its reap has no polite rung to keep a grace for",
+)
 def test_a_normal_job_cancel_keeps_the_ten_second_grace(tmp_path: Path) -> None:
     """[if] a running job is cancelled [then] its reap keeps the 10s grace, [else stop]."""
     from apps.engine_core.jobs.reap import (

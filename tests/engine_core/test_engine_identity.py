@@ -186,9 +186,7 @@ def test_resolve_origin_retries_an_unparsable_lock_then_succeeds(
 
 
 @pytest.mark.requirement("ENGLOCK-6443")
-def test_resolve_origin_gives_up_after_the_retry_bound(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_resolve_origin_gives_up_after_the_retry_bound(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     [if] every read is unparsable [then] EngineNotRunning names invalid JSON, [else stop].
     """

@@ -108,7 +108,15 @@ export const FallbackPosition: Story = {
 		positions: new Map<string, ResolvedPinPosition>([
 			[
 				'f1',
-				{ tier: 'viewport', fallback: true, via: 'saved screen position', x: 400, y: 260, x_pct: 30, y_pct: 35 }
+				{
+					tier: 'viewport',
+					fallback: true,
+					via: 'saved screen position',
+					x: 400,
+					y: 260,
+					x_pct: 30,
+					y_pct: 35
+				}
 			]
 		])
 	}
@@ -116,4 +124,6 @@ export const FallbackPosition: Story = {
 
 /** No pins: renders nothing. */
 export const NoPins: Story = {
-	tags: ['renders-nothing'], args: { pins: [] } };
+	tags: ['renders-nothing'],
+	args: { pins: [] }
+};

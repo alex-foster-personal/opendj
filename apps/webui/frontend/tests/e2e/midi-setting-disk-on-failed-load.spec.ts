@@ -94,7 +94,10 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		for (const result of settled) if (result.status === 'rejected') throw result.reason;
 	});
 
-	test('a failed-load disable writes off to disk, so a reload keeps it off', async ({ page, request }) => {
+	test('a failed-load disable writes off to disk, so a reload keeps it off', async ({
+		page,
+		request
+	}) => {
 		await setDiskMidi(request, true);
 		const failed = await failRuntime(page);
 		const watch = watchMidiPuts(page);
@@ -134,7 +137,10 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		await expect(toggle).not.toBeChecked();
 	});
 
-	test('control: an enable whose chunk loads writes on to disk the normal way', async ({ page, request }) => {
+	test('control: an enable whose chunk loads writes on to disk the normal way', async ({
+		page,
+		request
+	}) => {
 		// Makes the failed-load tests able to say no: with nothing blocked, the
 		// same click, observed through the same PUT watcher, does put "on" on the
 		// wire through midi-ui-state's own writer. Without this, "never writes on"
@@ -157,6 +163,8 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		// On the wire is not on disk: the title's claim holds only once the
 		// engine has answered that PUT.
 		await expect.poll(() => midiValues(watch.landed)[0], { timeout: 15_000 }).toBe(true);
-		expect(loaded.length, 'the runtime chunk loaded, so this is the normal path').toBeGreaterThan(0);
+		expect(loaded.length, 'the runtime chunk loaded, so this is the normal path').toBeGreaterThan(
+			0
+		);
 	});
 });

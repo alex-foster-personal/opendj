@@ -34,8 +34,15 @@ export const HEADSET_MODE_FIX =
 /** The banner copy, or null when there is nothing to say. Pure, so the copy
  * is testable without a server. An unsupported report says nothing: a probe
  * that could not run is neither a warning nor an all-clear. */
-export function headsetModeWarning(report: AudioHeadsetModeReport | null): HeadsetModeWarning | null {
-	if (report === null || !report.supported || report.output === null || report.output === undefined) {
+export function headsetModeWarning(
+	report: AudioHeadsetModeReport | null
+): HeadsetModeWarning | null {
+	if (
+		report === null ||
+		!report.supported ||
+		report.output === null ||
+		report.output === undefined
+	) {
 		return null;
 	}
 	const output = report.output;
@@ -80,8 +87,14 @@ export function logHeadsetVerdictChange(
 ): boolean {
 	if (previous !== null && previous.verdict === next.verdict) return false;
 	const from = previous === null ? 'none' : previous.verdict;
-	const level = next.verdict === 'headset_mode' || next.verdict === 'mic_selected' ? 'warn' : 'info';
-	record('audio-headset-mode-change', `audio-headset-mode ${from} -> ${next.verdict} (output ${JSON.stringify(next.output)}, input ${JSON.stringify(next.input)})`, null, level);
+	const level =
+		next.verdict === 'headset_mode' || next.verdict === 'mic_selected' ? 'warn' : 'info';
+	record(
+		'audio-headset-mode-change',
+		`audio-headset-mode ${from} -> ${next.verdict} (output ${JSON.stringify(next.output)}, input ${JSON.stringify(next.input)})`,
+		null,
+		level
+	);
 	return true;
 }
 
@@ -102,7 +115,13 @@ export async function refreshBluetoothHeadsetMode(fetcher: typeof fetch = fetch)
 		const res = await fetcher(AUDIO_HEADSET_MODE_PATH);
 		const report: AudioHeadsetModeReport = res.ok
 			? ((await res.json()) as AudioHeadsetModeReport)
-			: { supported: false, verdict: 'unsupported', output: null, input: null, error: `HTTP ${res.status}` };
+			: {
+					supported: false,
+					verdict: 'unsupported',
+					output: null,
+					input: null,
+					error: `HTTP ${res.status}`
+				};
 		logHeadsetVerdictChange(bluetoothHeadsetMode.report, report, recordPerfEvent);
 		bluetoothHeadsetMode.report = report;
 		// A dismissal covers one episode: once a real reading shows that state has
@@ -124,7 +143,9 @@ export async function refreshBluetoothHeadsetMode(fetcher: typeof fetch = fetch)
 }
 
 /** Poll while the page is visible; returns the stop function. */
-export function startBluetoothHeadsetModePolling(intervalMs: number = HEADSET_MODE_POLL_MS): () => void {
+export function startBluetoothHeadsetModePolling(
+	intervalMs: number = HEADSET_MODE_POLL_MS
+): () => void {
 	const tick = (): void => {
 		if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 		void refreshBluetoothHeadsetMode();

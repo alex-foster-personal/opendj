@@ -8,6 +8,7 @@ cannot silently become the library.
 Remote mode requires ``MDT_CRATE_ROOT`` (absolute). Missing crate root is
 a process-start failure, not a per-request fallback.
 """
+
 from __future__ import annotations
 
 import os
@@ -59,8 +60,7 @@ def library_mode(*, environ: Mapping[str, str] | None = None) -> LibraryMode:
         if sys.platform == "darwin":
             return "local"
         raise RuntimeError(
-            f"{MODE_ENV} is required on this platform (set local or remote). "
-            "Unset is treated as local only on darwin."
+            f"{MODE_ENV} is required on this platform (set local or remote). Unset is treated as local only on darwin."
         )
     mode = str(raw).strip().lower()
     if mode == "local":
@@ -75,9 +75,7 @@ def crate_root(*, environ: Mapping[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
     raw = env.get(CRATE_ROOT_ENV)
     if raw is None or str(raw).strip() == "":
-        raise RuntimeError(
-            f"{CRATE_ROOT_ENV} is required when {MODE_ENV}=remote"
-        )
+        raise RuntimeError(f"{CRATE_ROOT_ENV} is required when {MODE_ENV}=remote")
     path = Path(str(raw).strip()).expanduser()
     if not path.is_absolute():
         raise RuntimeError(f"{CRATE_ROOT_ENV} must be an absolute path, got {raw!r}")
@@ -90,9 +88,7 @@ def assert_ready(*, environ: Mapping[str, str] | None = None) -> None:
         return
     root = crate_root(environ=environ)
     if not root.is_dir():
-        raise RuntimeError(
-            f"{MODE_ENV}=remote but {CRATE_ROOT_ENV} {root} is not a directory"
-        )
+        raise RuntimeError(f"{MODE_ENV}=remote but {CRATE_ROOT_ENV} {root} is not a directory")
 
 
 def is_mac_users_path(path: str) -> bool:

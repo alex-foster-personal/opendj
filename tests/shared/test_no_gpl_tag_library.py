@@ -14,6 +14,7 @@ Regression one-liners:
   - if a mutagen line in the locked export does not fail the payload build then broken
   - if tags / artwork / Serato GEOB need mutagen importable to be read then broken
 """
+
 from __future__ import annotations
 
 import ast

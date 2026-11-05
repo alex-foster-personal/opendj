@@ -31,16 +31,14 @@ an absence inferred from silence.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from apps.sync_hub import client
 
 FaultMode = Literal["fail_before_send", "drop_response_after_commit", "tamper_response"]
-CallOutcome = Literal[
-    "delivered", "failed_before_send", "dropped_after_commit", "tampered", "hub_error"
-]
+CallOutcome = Literal["delivered", "failed_before_send", "dropped_after_commit", "tampered", "hub_error"]
 ResponseTamper = Callable[[dict[str, Any]], dict[str, Any]]
 
 FAULT_MODES: tuple[FaultMode, ...] = (
@@ -216,7 +214,7 @@ class FaultTransport:
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         return self._call("POST", path, lambda: self._inner.post(path, payload))
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         return self._call("GET", path, lambda: self._inner.get(path, params))
 
 

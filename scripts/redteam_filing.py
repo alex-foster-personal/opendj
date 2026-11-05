@@ -58,22 +58,16 @@ class GhGitHub:
         page = 1
         while True:
             issues = json.loads(
-                self._api(
-                    f"repos/{self._repository}/issues?state=open&labels=bug&per_page=100&page={page}"
-                )
+                self._api(f"repos/{self._repository}/issues?state=open&labels=bug&per_page=100&page={page}")
             )
             if not issues:
                 break
             matches.extend(
-                issue["number"]
-                for issue in issues
-                if "pull_request" not in issue and footer in issue["body"]
+                issue["number"] for issue in issues if "pull_request" not in issue and footer in issue["body"]
             )
             page += 1
         if len(matches) > 1:
-            raise RuntimeError(
-                f"multiple open bug issues carry fingerprint {fingerprint!r}: {matches}"
-            )
+            raise RuntimeError(f"multiple open bug issues carry fingerprint {fingerprint!r}: {matches}")
         return matches[0] if matches else None
 
     def ensure_label(self, name: str, description: str) -> None:
@@ -106,9 +100,7 @@ class GhGitHub:
         return completed.stdout
 
     def _api(self, endpoint: str) -> str:
-        completed = subprocess.run(
-            ["gh", "api", endpoint], check=True, capture_output=True, text=True
-        )
+        completed = subprocess.run(["gh", "api", endpoint], check=True, capture_output=True, text=True)
         return completed.stdout
 
 
@@ -215,9 +207,7 @@ def _issue_title(finding: Finding) -> str:
 
 def _issue_body(finding: Finding) -> str:
     screenshot = finding.evidence.screenshot or "Not captured"
-    actions = "\n".join(
-        f"{index}. {action}" for index, action in enumerate(finding.repro.act_sequence, 1)
-    )
+    actions = "\n".join(f"{index}. {action}" for index, action in enumerate(finding.repro.act_sequence, 1))
     return "\n".join(
         (
             "## Reproduction plan",

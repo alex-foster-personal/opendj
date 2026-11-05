@@ -50,7 +50,10 @@ DURATION=20
 SHELL_PID=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --top) MODE=top; shift ;;
+        --top)
+            MODE=top
+            shift
+            ;;
         --shell-pid)
             SHELL_PID="${2:-}"
             if [[ -z "$SHELL_PID" ]]; then

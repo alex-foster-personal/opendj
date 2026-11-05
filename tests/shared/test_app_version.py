@@ -14,11 +14,11 @@ import pytest
 from apps.shared import app_version as av
 
 REPO = Path(__file__).resolve().parents[2]
-TAURI_VERSION = json.loads((REPO / av.TAURI_CONF_REL).read_text(encoding="utf-8"))["version"]
+APP_VERSION_IN_TREE = json.loads((REPO / av.APP_PACKAGE_REL).read_text(encoding="utf-8"))["version"]
 
 
 def _repo_with(tmp_path: Path, conf: object) -> Path:
-    path = tmp_path / av.TAURI_CONF_REL
+    path = tmp_path / av.APP_PACKAGE_REL
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(conf), encoding="utf-8")
     return tmp_path
@@ -30,9 +30,9 @@ def _manifest(tmp_path: Path, identity: object) -> Path:
     return path
 
 
-def test_a_checkout_reports_tauri_conf_version() -> None:
-    assert av.resolve_app_version({}, REPO) == TAURI_VERSION
-    assert av.APP_VERSION == TAURI_VERSION
+def test_a_checkout_reports_the_app_package_version() -> None:
+    assert av.resolve_app_version({}, REPO) == APP_VERSION_IN_TREE
+    assert av.APP_VERSION == APP_VERSION_IN_TREE
 
 
 def test_control_another_conf_version_is_what_is_reported(tmp_path: Path) -> None:
@@ -65,7 +65,7 @@ def test_a_checkout_without_a_version_is_unknown(tmp_path: Path, conf: object) -
 
 def test_version_files_that_are_not_utf8_are_unknown(tmp_path: Path) -> None:
     root = _repo_with(tmp_path, {"version": "1.0.0"})
-    (root / av.TAURI_CONF_REL).write_bytes(b'{"version": "1.0.0\xff"}')
+    (root / av.APP_PACKAGE_REL).write_bytes(b'{"version": "1.0.0\xff"}')
     assert av.resolve_app_version({}, root) == av.UNKNOWN_VERSION
     manifest = tmp_path / "payload-manifest.json"
     manifest.write_bytes(b'{"identity": {"app_version": "\xff"}}')
@@ -77,10 +77,10 @@ def test_engine_and_backend_report_the_app_version() -> None:
     from apps.engine_core.config import ENGINE_VERSION
     from apps.webui.server.app import OPENAPI_DOCUMENT_VERSION, create_app
 
-    assert ENGINE_VERSION == TAURI_VERSION
-    assert webui.__version__ == TAURI_VERSION
+    assert ENGINE_VERSION == APP_VERSION_IN_TREE
+    assert webui.__version__ == APP_VERSION_IN_TREE
     app = create_app(mount_frontend=False)
-    assert app.state.version == TAURI_VERSION
+    assert app.state.version == APP_VERSION_IN_TREE
     # The OpenAPI document keeps its own contract version, so a release bump
     # never rewrites the committed apps/webui/openapi.json.
     assert app.openapi()["info"]["version"] == OPENAPI_DOCUMENT_VERSION

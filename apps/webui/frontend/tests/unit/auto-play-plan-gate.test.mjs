@@ -9,7 +9,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const gate = await loadTypeScriptModule('src/lib/rb/auto-play-plan-gate.ts');
 
-
 test('AutoPlay yields to a scheduled or running agent plan (AGENT-29)', () => {
 	assert.equal(gate.autoPlayYieldsToPlan('scheduled'), true);
 	assert.equal(gate.autoPlayYieldsToPlan('running'), true);
@@ -31,7 +30,11 @@ test('AutoPlay stands aside only while the registered plan runner has a plan sch
 });
 
 test('AutoPlay reports a handoff in flight only through the reader it registered', () => {
-	assert.equal(gate.autoPlayHandoffInFlight(), false, 'nothing registered: no handoff can be in flight');
+	assert.equal(
+		gate.autoPlayHandoffInFlight(),
+		false,
+		'nothing registered: no handoff can be in flight'
+	);
 	gate.registerAutoPlayHandoffInFlight(() => true);
 	assert.equal(gate.autoPlayHandoffInFlight(), true);
 	gate.registerAutoPlayHandoffInFlight(() => false);

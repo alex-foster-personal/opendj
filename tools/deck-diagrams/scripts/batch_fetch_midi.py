@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fetch official MIDI PDFs for catalog tier-1 devices into docs/controller/reference/."""
+
 from __future__ import annotations
 
 import json
@@ -34,9 +35,7 @@ def candidates(model: str) -> list[str]:
 
 
 KNOWN_EXTRA = {
-    "reloop-mixtour": [
-        "https://www.reloop.com/media/custom/upload/Reloop-Mixtour_MIDI-Map.pdf"
-    ],
+    "reloop-mixtour": ["https://www.reloop.com/media/custom/upload/Reloop-Mixtour_MIDI-Map.pdf"],
     "denon-lc6000": [
         # commonly mirrored; may 404 - leave for agent
     ],
@@ -82,10 +81,12 @@ def main() -> int:
         model = model.replace("Traktor-Kontrol-", "Traktor-Kontrol-")
         out = REF / f"{model.replace('/', '-')}_MIDI_Message_List_E1.pdf"
         # special filenames already in repo
-        alts = list(REF.glob(f"*{c['model'].split()[-1]}*MIDI*.pdf")) + list(
-            REF.glob(f"*{model}*MIDI*.pdf")
-        )
-        if any(p.stat().st_size > 1000 for p in REF.glob("*.pdf") if model.lower() in p.name.lower() or c["model"].replace(" ", "-").lower() in p.name.lower()):
+        alts = list(REF.glob(f"*{c['model'].split()[-1]}*MIDI*.pdf")) + list(REF.glob(f"*{model}*MIDI*.pdf"))
+        if any(
+            p.stat().st_size > 1000
+            for p in REF.glob("*.pdf")
+            if model.lower() in p.name.lower() or c["model"].replace(" ", "-").lower() in p.name.lower()
+        ):
             print(f"SKIP exists-ish {cid}")
             skip += 1
             continue

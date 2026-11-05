@@ -20,7 +20,8 @@ test('Trackify loads a track without any stem request, and its deck reads stems 
 
 	await page.goto('/music-player?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(
-		() => window.musicDjToolsTrackify?.version === 1 && window.musicDjToolsPerformance?.version === 1
+		() =>
+			window.musicDjToolsTrackify?.version === 1 && window.musicDjToolsPerformance?.version === 1
 	);
 	const trackId = await page.evaluate(async () => {
 		const response = await fetch('/api/v1/tracks?limit=1');

@@ -212,7 +212,7 @@ test('BrowserPanel computes and passes hiddenBrokenPlaylistCount for the playlis
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(
 		src,
-		/const hiddenBrokenPlaylistCount = \$derived\(\s*uiPrefs\.hide_broken_links\s*\?\s*playlists\.filter\(\s*\(p\) => !isWithinCreateGrace\(p\.playlist_id\) && playlistMostlyBroken\(p\)\s*\)\.length\s*:\s*0\s*\);/
+		/const hiddenBrokenPlaylistCount = \$derived\(\s*uiPrefs\.hide_broken_links\s*\?\s*playlists\.filter\(\s*\(p\) =>\s*!isWithinCreateGrace\(p\.playlist_id\) &&\s*!isInboxPlaylistId\(p\.playlist_id\) &&\s*playlistMostlyBroken\(p\)\s*\)\.length\s*:\s*0\s*\);/
 	);
 	assert.match(src, /hiddenBrokenPlaylistCount=\{hiddenBrokenPlaylistCount\}/);
 });
@@ -223,9 +223,10 @@ test('BrowserPanel keeps a playlist inside its create grace visible while broken
 	// rename, so creation appeared to do nothing.
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /isWithinCreateGrace,/);
+	assert.match(src, /isInboxPlaylistId,/);
 	assert.match(
 		src,
-		/!uiPrefs\.hide_broken_links \|\|\s*isWithinCreateGrace\(p\.playlist_id\) \|\|\s*!playlistMostlyBroken\(p\)/,
+		/!uiPrefs\.hide_broken_links \|\|\s*isWithinCreateGrace\(p\.playlist_id\) \|\|\s*isInboxPlaylistId\(p\.playlist_id\) \|\|\s*!playlistMostlyBroken\(p\)/,
 		'the tree filter must exempt playlists still inside their create grace'
 	);
 });

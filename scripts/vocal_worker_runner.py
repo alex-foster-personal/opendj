@@ -40,6 +40,7 @@ Run standalone:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,8 +65,8 @@ from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.vocals.cli import WORKER_SCRIPT, run_worker
 
 # ----- CFG -------------------------------------------------------------------
-GPU_UTIL_BUSY_THRESHOLD: int = 10       # percent (HANDOFF 4.2.b)
-GPU_MEM_BUSY_THRESHOLD_MB: int = 500    # MB (HANDOFF 4.2.b)
+GPU_UTIL_BUSY_THRESHOLD: int = 10  # percent (HANDOFF 4.2.b)
+GPU_MEM_BUSY_THRESHOLD_MB: int = 500  # MB (HANDOFF 4.2.b)
 DEFAULT_POLL_SECONDS: float = 60.0
 STOP_SENTINEL_NAME: str = "STOP"
 FAILED_SUBDIR_NAME: str = "failed"
@@ -80,18 +81,18 @@ class GpuReading:
 
 # ----- GPU gate ----------------------------------------------------------------
 
+
 def read_gpu_state(nvidia_smi: str = "nvidia-smi") -> GpuReading:
     """One nvidia-smi sample. Fails fast (raises) if the binary is
     unusable -- never guess GPU state when --gpu-gate was requested."""
     proc = subprocess.run(
-        [nvidia_smi, "--query-gpu=utilization.gpu,memory.used",
-         "--format=csv,noheader,nounits"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        [nvidia_smi, "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"nvidia-smi failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
+        raise RuntimeError(f"nvidia-smi failed (exit {proc.returncode}): {proc.stderr.strip()}")
     lines = [ln for ln in proc.stdout.strip().splitlines() if ln.strip()]
     if not lines:
         raise RuntimeError("nvidia-smi returned no GPU rows")
@@ -105,13 +106,11 @@ def gpu_is_busy(
     utilization_threshold: int = GPU_UTIL_BUSY_THRESHOLD,
     memory_threshold_mb: int = GPU_MEM_BUSY_THRESHOLD_MB,
 ) -> bool:
-    return (
-        reading.utilization_pct >= utilization_threshold
-        or reading.memory_used_mb >= memory_threshold_mb
-    )
+    return reading.utilization_pct >= utilization_threshold or reading.memory_used_mb >= memory_threshold_mb
 
 
 # ----- logging -----------------------------------------------------------------
+
 
 def _log(logs_dir: Path, line: str) -> None:
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -126,10 +125,7 @@ def _worker_script_sha256() -> str:
 
 
 def _pending_files(inbox: Path) -> list[Path]:
-    return sorted(
-        p for p in inbox.iterdir()
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
-    )
+    return sorted(p for p in inbox.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS)
 
 
 def _stop_path(inbox: Path) -> Path:
@@ -141,13 +137,9 @@ def _read_resource_percent(resource_percent_file: Path) -> int:
     try:
         value = int(resource_percent_file.read_text(encoding="utf-8").strip())
     except (OSError, ValueError) as exc:
-        raise ValueError(
-            f"resource percent file must contain an integer 1..100: {resource_percent_file}"
-        ) from exc
+        raise ValueError(f"resource percent file must contain an integer 1..100: {resource_percent_file}") from exc
     if not 1 <= value <= 100:
-        raise ValueError(
-            f"resource percent must be in 1..100: {resource_percent_file}"
-        )
+        raise ValueError(f"resource percent must be in 1..100: {resource_percent_file}")
     return value
 
 
@@ -181,13 +173,9 @@ def _positive_finite_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            f"expected a positive finite number: {value}"
-        ) from exc
+        raise argparse.ArgumentTypeError(f"expected a positive finite number: {value}") from exc
     if not math.isfinite(parsed) or parsed <= 0:
-        raise argparse.ArgumentTypeError(
-            f"expected a positive finite number: {value}"
-        )
+        raise argparse.ArgumentTypeError(f"expected a positive finite number: {value}")
     return parsed
 
 
@@ -210,11 +198,13 @@ def _apply_windows_resource_controls(
     kernel32.SetProcessAffinityMask.restype = wintypes.BOOL
     process_handle = kernel32.GetCurrentProcess()
     if below_normal and not kernel32.SetPriorityClass(
-        process_handle, BELOW_NORMAL_PRIORITY_CLASS,
+        process_handle,
+        BELOW_NORMAL_PRIORITY_CLASS,
     ):
         raise ctypes.WinError(ctypes.get_last_error())
     if cpu_affinity_mask is not None and not kernel32.SetProcessAffinityMask(
-        process_handle, cpu_affinity_mask,
+        process_handle,
+        cpu_affinity_mask,
     ):
         raise ctypes.WinError(ctypes.get_last_error())
 
@@ -250,9 +240,7 @@ def _write_json_atomic(result_path: Path, payload: dict[str, Any]) -> None:
     os.close(lock_fd)
     try:
         if result_path.exists():
-            raise FileExistsError(
-                f"result already exists and will not be overwritten: {result_path}"
-            )
+            raise FileExistsError(f"result already exists and will not be overwritten: {result_path}")
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -266,9 +254,7 @@ def _write_json_atomic(result_path: Path, payload: dict[str, Any]) -> None:
             result_file.flush()
             os.fsync(result_file.fileno())
         if result_path.exists():
-            raise FileExistsError(
-                f"result already exists and will not be overwritten: {result_path}"
-            )
+            raise FileExistsError(f"result already exists and will not be overwritten: {result_path}")
         os.replace(temporary_path, result_path)
     finally:
         if temporary_path is not None:
@@ -277,6 +263,7 @@ def _write_json_atomic(result_path: Path, payload: dict[str, Any]) -> None:
 
 
 # ----- per-file processing -------------------------------------------------------
+
 
 def process_one(
     audio_path: Path,
@@ -331,6 +318,7 @@ def process_one(
 
 # ----- pass / loop driver -------------------------------------------------------
 
+
 def run_once(
     inbox: Path,
     outbox: Path,
@@ -379,7 +367,9 @@ def run_once(
             elapsed_seconds = clock_fn() - started_at
             duty_sleep_seconds = elapsed_seconds * (100 / resource_percent - 1)
             if duty_sleep_seconds > 0 and not _sleep_duty_cycle(
-                stop_path, duty_sleep_seconds, sleep_fn,
+                stop_path,
+                duty_sleep_seconds,
+                sleep_fn,
             ):
                 _log(logs_dir, "stop: STOP sentinel present during duty-cycle sleep")
                 break
@@ -405,21 +395,23 @@ def run_loop(
     poll_seconds between passes (this IS the "GPU busy -> sleep 60s,
     re-check" retry HANDOFF describes, at the default poll interval)."""
     if not math.isfinite(poll_seconds) or poll_seconds <= 0:
-        raise ValueError(
-            f"poll seconds must be positive and finite: {poll_seconds}"
-        )
+        raise ValueError(f"poll seconds must be positive and finite: {poll_seconds}")
     stop_path = _stop_path(inbox)
     while True:
         if stop_path.exists():
             _log(logs_dir, "stop: STOP sentinel present, exiting loop")
             return
         run_once(
-            inbox, outbox, logs_dir, device,
+            inbox,
+            outbox,
+            logs_dir,
+            device,
             gpu_gate=gpu_gate,
             gpu_utilization_threshold=gpu_utilization_threshold,
             gpu_memory_threshold_mb=gpu_memory_threshold_mb,
             resource_percent_file=resource_percent_file,
-            gpu_reader=gpu_reader, run_worker_fn=run_worker_fn,
+            gpu_reader=gpu_reader,
+            run_worker_fn=run_worker_fn,
         )
         if not _sleep_duty_cycle(stop_path, poll_seconds, sleep_fn):
             _log(logs_dir, "stop: STOP sentinel present during poll sleep")
@@ -428,46 +420,63 @@ def run_loop(
 
 # ----- CLI -----------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python scripts/vocal_worker_runner.py",
         description="Cross-platform demucs vocal-worker farm-out loop "
-                    "(inbox scan -> worker -> outbox, HANDOFF section 4.2).",
+        "(inbox scan -> worker -> outbox, HANDOFF section 4.2).",
     )
-    parser.add_argument("--inbox", type=Path, required=True,
-                        help="dir scanned for audio files to process")
-    parser.add_argument("--outbox", type=Path, required=True,
-                        help="dir results are written to as <stem>.json")
-    parser.add_argument("--logs", type=Path, required=True,
-                        help="dir holding worker.log")
-    parser.add_argument("--device", default="auto",
-                        choices=("auto", "cpu", "mps", "cuda"),
-                        help="torch device preference passed to the worker")
-    parser.add_argument("--gpu-gate", action="store_true",
-                        help="hold while nvidia-smi reports util>=10%% or "
-                             "mem>=500MB (never contend with a running game)")
-    parser.add_argument("--gpu-utilization-threshold", type=int,
-                        default=GPU_UTIL_BUSY_THRESHOLD,
-                        help=f"GPU gate utilization threshold (default {GPU_UTIL_BUSY_THRESHOLD})")
-    parser.add_argument("--gpu-memory-threshold-mb", type=int,
-                        default=GPU_MEM_BUSY_THRESHOLD_MB,
-                        help=f"GPU gate memory threshold MB (default {GPU_MEM_BUSY_THRESHOLD_MB})")
-    parser.add_argument("--resource-percent-file", type=Path,
-                        help="required 1..100 duty-cycle limit file, reread between tracks")
-    parser.add_argument("--windows-below-normal", action="store_true",
-                        help="set this runner and its children to BelowNormal priority")
-    parser.add_argument("--cpu-affinity-mask", type=_positive_integer,
-                        help="positive Windows CPU affinity bitmask, for example 0x07")
+    parser.add_argument("--inbox", type=Path, required=True, help="dir scanned for audio files to process")
+    parser.add_argument("--outbox", type=Path, required=True, help="dir results are written to as <stem>.json")
+    parser.add_argument("--logs", type=Path, required=True, help="dir holding worker.log")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        choices=("auto", "cpu", "mps", "cuda"),
+        help="torch device preference passed to the worker",
+    )
+    parser.add_argument(
+        "--gpu-gate",
+        action="store_true",
+        help="hold while nvidia-smi reports util>=10%% or mem>=500MB (never contend with a running game)",
+    )
+    parser.add_argument(
+        "--gpu-utilization-threshold",
+        type=int,
+        default=GPU_UTIL_BUSY_THRESHOLD,
+        help=f"GPU gate utilization threshold (default {GPU_UTIL_BUSY_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--gpu-memory-threshold-mb",
+        type=int,
+        default=GPU_MEM_BUSY_THRESHOLD_MB,
+        help=f"GPU gate memory threshold MB (default {GPU_MEM_BUSY_THRESHOLD_MB})",
+    )
+    parser.add_argument(
+        "--resource-percent-file", type=Path, help="required 1..100 duty-cycle limit file, reread between tracks"
+    )
+    parser.add_argument(
+        "--windows-below-normal", action="store_true", help="set this runner and its children to BelowNormal priority"
+    )
+    parser.add_argument(
+        "--cpu-affinity-mask", type=_positive_integer, help="positive Windows CPU affinity bitmask, for example 0x07"
+    )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--once", action="store_true",
-                      help="process the current inbox contents once and "
-                           "exit (the default)")
-    mode.add_argument("--loop", action="store_true",
-                      help="poll --inbox every --poll-seconds until the "
-                           "STOP sentinel (--inbox's parent / STOP) appears")
-    parser.add_argument("--poll-seconds", type=_positive_finite_float,
-                        default=DEFAULT_POLL_SECONDS,
-                        help=f"loop poll interval (default {DEFAULT_POLL_SECONDS}s)")
+    mode.add_argument(
+        "--once", action="store_true", help="process the current inbox contents once and exit (the default)"
+    )
+    mode.add_argument(
+        "--loop",
+        action="store_true",
+        help="poll --inbox every --poll-seconds until the STOP sentinel (--inbox's parent / STOP) appears",
+    )
+    parser.add_argument(
+        "--poll-seconds",
+        type=_positive_finite_float,
+        default=DEFAULT_POLL_SECONDS,
+        help=f"loop poll interval (default {DEFAULT_POLL_SECONDS}s)",
+    )
     return parser
 
 
@@ -482,15 +491,22 @@ def main(argv: list[str] | None = None) -> int:
         _read_resource_percent(args.resource_percent_file)
     if args.loop:
         run_loop(
-            args.inbox, args.outbox, args.logs, args.device,
-            gpu_gate=args.gpu_gate, poll_seconds=args.poll_seconds,
+            args.inbox,
+            args.outbox,
+            args.logs,
+            args.device,
+            gpu_gate=args.gpu_gate,
+            poll_seconds=args.poll_seconds,
             gpu_utilization_threshold=args.gpu_utilization_threshold,
             gpu_memory_threshold_mb=args.gpu_memory_threshold_mb,
             resource_percent_file=args.resource_percent_file,
         )
     else:
         run_once(
-            args.inbox, args.outbox, args.logs, args.device,
+            args.inbox,
+            args.outbox,
+            args.logs,
+            args.device,
             gpu_gate=args.gpu_gate,
             gpu_utilization_threshold=args.gpu_utilization_threshold,
             gpu_memory_threshold_mb=args.gpu_memory_threshold_mb,

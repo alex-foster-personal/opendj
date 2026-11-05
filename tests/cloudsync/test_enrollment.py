@@ -18,9 +18,11 @@ Acceptance criteria, one test each:
 - if the owner comes from the REQUEST rather than from the grant then broken
 - if the raw grant token reaches the database then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -66,9 +68,7 @@ def test_enrolling_a_new_machine_writes_exactly_one_owned_row(
     rows = owner_rows(enroll_hub_dir)
     assert len(rows) == 1, "one enrollment is one row, not zero and not two"
     row = rows[0]
-    assert row["machine_id"] == machine_identity.get_or_create_machine_id(
-        enroll_spoke_dir
-    )
+    assert row["machine_id"] == machine_identity.get_or_create_machine_id(enroll_spoke_dir)
     assert row["google_sub"] == ENROLL_OWNER_SUB
     assert row["hub_machine_id"] == hub_machine_id(enroll_hub_dir)
     assert row["enrolled_via"] == "grant"
@@ -81,9 +81,7 @@ def test_the_enrolled_machine_is_registered_in_the_fleet(
     enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path
 ):
     """Enrollment REGISTERS as well as owns: one call, one transaction."""
-    http_enroll(
-        enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     names = {row["name"] for row in read_hub(enroll_hub_dir, "machines")}
     assert "nucbox-wsl" in names, "enroll must leave a machines row behind"
 
@@ -91,9 +89,7 @@ def test_the_enrolled_machine_is_registered_in_the_fleet(
 # ----- idempotency ---------------------------------------------------------
 
 
-def test_enrolling_twice_is_a_no_op(
-    enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path
-):
+def test_enrolling_twice_is_a_no_op(enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path):
     """The dev path is re-runnable: the second run changes nothing at all."""
     token = mint_grant(enroll_hub_dir)
     first = http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=token)
@@ -103,9 +99,7 @@ def test_enrolling_twice_is_a_no_op(
     after_second = owner_rows(enroll_hub_dir)
 
     assert first["created"] is True
-    assert second["created"] is False, (
-        "a re-run must report that it changed nothing, not claim a fresh enrollment"
-    )
+    assert second["created"] is False, "a re-run must report that it changed nothing, not claim a fresh enrollment"
     assert after_second == after_first, (
         "re-enrolling rewrote the row; enrolled_at and enrolled_via are the "
         "audit trail of WHEN the machine actually joined"
@@ -117,13 +111,9 @@ def test_enrolling_twice_with_two_grants_is_still_one_row(
     enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path
 ):
     """Idempotency is keyed on the machine, not on the credential."""
-    http_enroll(
-        enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     before = owner_rows(enroll_hub_dir)
-    http_enroll(
-        enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     assert owner_rows(enroll_hub_dir) == before
 
 
@@ -135,9 +125,7 @@ def test_an_unknown_grant_is_refused_and_writes_nothing(
 ):
     machines_before = read_hub(enroll_hub_dir, "machines")
     with pytest.raises(client.SyncTransportError) as excinfo:
-        http_enroll(
-            enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token="not-a-real-grant"
-        )
+        http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token="not-a-real-grant")
     assert "401" in str(excinfo.value)
     assert owner_rows(enroll_hub_dir) == []
     assert read_hub(enroll_hub_dir, "machines") == machines_before, (
@@ -158,9 +146,7 @@ def test_a_grant_redeemed_by_one_machine_cannot_enroll_another(
     assert "401" in str(excinfo.value)
     rows = owner_rows(enroll_hub_dir)
     assert len(rows) == 1, "single use means a second MACHINE, never a second row"
-    assert rows[0]["machine_id"] == machine_identity.get_or_create_machine_id(
-        enroll_spoke_dir
-    )
+    assert rows[0]["machine_id"] == machine_identity.get_or_create_machine_id(enroll_spoke_dir)
 
 
 def test_an_expired_grant_enrolls_nothing(
@@ -206,8 +192,7 @@ def test_the_owner_comes_from_the_grant_not_the_request(
     assert body["owner_google_sub"] == ENROLL_OWNER_SUB
     assert owner_rows(enroll_hub_dir)[0]["google_sub"] == ENROLL_OWNER_SUB
     assert "google_sub" not in service.EnrollRequest.model_fields, (
-        "the request model must have no owner field at all, so there is "
-        "nothing for a caller to set"
+        "the request model must have no owner field at all, so there is nothing for a caller to set"
     )
 
 
@@ -219,9 +204,7 @@ def test_re_enrolling_under_a_different_user_is_refused(
         sub=ENROLL_OTHER_SUB,
         email=ENROLL_OTHER_EMAIL,
     )
-    http_enroll(
-        enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     with pytest.raises(client.SyncTransportError) as excinfo:
         http_enroll(
             enroll_hub,
@@ -240,9 +223,7 @@ def test_re_enrolling_under_a_different_user_is_refused(
 
 def test_the_raw_grant_token_never_reaches_the_database(enroll_hub_dir: Path):
     token = mint_grant(enroll_hub_dir)
-    stored = [
-        row["grant_token_sha256"] for row in read_hub(enroll_hub_dir, "enrollment_grants")
-    ]
+    stored = [row["grant_token_sha256"] for row in read_hub(enroll_hub_dir, "enrollment_grants")]
     assert len(stored) == 1
     assert token not in stored
     assert stored[0] == enrollment_credentials.hash_grant_token(token), (
@@ -267,9 +248,7 @@ def test_minting_a_grant_for_an_unknown_email_fails_loudly(enroll_hub_dir: Path)
 
 
 @pytest.mark.parametrize("ttl_s", [0, -1, enrollment_credentials.GRANT_TTL_MAX_S + 1])
-def test_a_grant_cannot_be_minted_outside_its_bounded_lifetime(
-    enroll_hub_dir: Path, ttl_s: int
-) -> None:
+def test_a_grant_cannot_be_minted_outside_its_bounded_lifetime(enroll_hub_dir: Path, ttl_s: int) -> None:
     """[if] a grant can be minted with an unbounded lifetime then a leaked
     token is a standing key, [else stop].
 
@@ -284,17 +263,11 @@ def test_a_grant_cannot_be_minted_outside_its_bounded_lifetime(
     conn = state_db.open_rw(client.state_db_path(enroll_hub_dir))
     try:
         owner = enrollment_credentials.owner_by_email(conn, ENROLL_OWNER_EMAIL)
-        with pytest.raises(
-            enrollment_credentials.EnrollmentCredentialError, match=str(ttl_s)
-        ):
+        with pytest.raises(enrollment_credentials.EnrollmentCredentialError, match=str(ttl_s)):
             enrollment_credentials.mint_grant(conn, owner=owner, ttl_s=ttl_s)
-        assert not read_hub(enroll_hub_dir, "enrollment_grants"), (
-            "a refused mint must leave no row behind"
-        )
+        assert not read_hub(enroll_hub_dir, "enrollment_grants"), "a refused mint must leave no row behind"
 
-        minted = enrollment_credentials.mint_grant(
-            conn, owner=owner, ttl_s=enrollment_credentials.GRANT_TTL_MAX_S
-        )
+        minted = enrollment_credentials.mint_grant(conn, owner=owner, ttl_s=enrollment_credentials.GRANT_TTL_MAX_S)
         assert minted.token, (
             "control: the boundary value itself is ACCEPTED, so the refusals "
             "above are about the bound and not about minting being broken"
@@ -341,14 +314,11 @@ def test_a_repeat_enrollment_does_not_quietly_rename_the_fleet_row(
 
     after = {row["machine_id"]: row for row in read_hub(enroll_hub_dir, "machines")}
     assert after[machine_id] == before[machine_id], (
-        "a re-run reported as created=False changed the fleet row: "
-        f"{before[machine_id]} -> {after[machine_id]}"
+        f"a re-run reported as created=False changed the fleet row: {before[machine_id]} -> {after[machine_id]}"
     )
 
 
-def test_a_non_canonical_enrolled_at_is_refused_at_the_writer(
-    enroll_hub_dir: Path, enroll_spoke_dir: Path
-) -> None:
+def test_a_non_canonical_enrolled_at_is_refused_at_the_writer(enroll_hub_dir: Path, enroll_spoke_dir: Path) -> None:
     """[if] the ownership ledger accepts a naive or offset stamp then it holds
     a timestamp nothing can order, [else stop].
 
@@ -360,9 +330,8 @@ def test_a_non_canonical_enrolled_at_is_refused_at_the_writer(
     conn = state_db.open_rw(client.state_db_path(enroll_hub_dir))
     try:
         owner = enrollment_credentials.owner_by_email(conn, ENROLL_OWNER_EMAIL)
-        machine = protocol.MachineRow.from_wire(
-            machine_payload(enroll_spoke_dir, name="nucbox-wsl")
-        )
+        machine = protocol.MachineRow.from_wire(machine_payload(enroll_spoke_dir, name="nucbox-wsl"))
+
         def enroll_at(stamp: str) -> enrollment.EnrollmentResult:
             """The same call twice, with only the stamp differing."""
             return enrollment.enroll_machine(
@@ -392,9 +361,7 @@ def test_a_non_canonical_enrolled_at_is_refused_at_the_writer(
         conn.close()
 
 
-def test_the_cli_refuses_a_hub_answering_off_contract(
-    enroll_hub_dir: Path, enroll_spoke_dir: Path
-) -> None:
+def test_the_cli_refuses_a_hub_answering_off_contract(enroll_hub_dir: Path, enroll_spoke_dir: Path) -> None:
     """[if] the CLI coerces whatever the hub returns then it can print
     "enrolled" for a machine nobody enrolled, [else stop].
 
@@ -409,7 +376,7 @@ def test_the_cli_refuses_a_hub_answering_off_contract(
     import pydantic
 
     class _OffContractHub:
-        def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             return {
                 "machine_id": None,
                 "owner_google_sub": "sub",
@@ -420,7 +387,7 @@ def test_the_cli_refuses_a_hub_answering_off_contract(
                 "created": "false",
             }
 
-        def get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
+        def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
             raise AssertionError("enroll never GETs")
 
     with pytest.raises(pydantic.ValidationError):
@@ -430,5 +397,5 @@ def test_the_cli_refuses_a_hub_answering_off_contract(
             credential_kind="grant",
             credential_value=mint_grant(enroll_hub_dir),
             name="nucbox-wsl",
-            transport=_OffContractHub(),  # type: ignore[arg-type]
+            transport=_OffContractHub(),
         )

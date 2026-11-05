@@ -37,7 +37,11 @@ async function collect(stream) {
 const EVENTS = [
 	{ type: 'tier', tier: 'fast', model: 'google/gemini-3.7-flash', reason: 'library question' },
 	{ type: 'text', delta: 'Deck 2 \u266a caf\u00e9 ' },
-	{ type: 'tool_call', call: { id: 'c1', name: 'library_read', arguments: { path: '/api/v1/tracks' } }, gate: 'read' },
+	{
+		type: 'tool_call',
+		call: { id: 'c1', name: 'library_read', arguments: { path: '/api/v1/tracks' } },
+		gate: 'read'
+	},
 	{ type: 'tool_result', call_id: 'c1', ok: true, result: { tracks: [] }, error: null },
 	{ type: 'done', reason: 'stop' }
 ];
@@ -58,7 +62,10 @@ test('one byte per chunk parses the same', async () => {
 });
 
 test('an unknown event type is contract drift and throws', async () => {
-	const stream = bytesStream('{"type":"tier","tier":"fast","model":null,"reason":"x"}\n{"type":"thought"}\n', [10]);
+	const stream = bytesStream(
+		'{"type":"tier","tier":"fast","model":null,"reason":"x"}\n{"type":"thought"}\n',
+		[10]
+	);
 	await assert.rejects(collect(stream), (error) => {
 		assert.equal(error.code, 'assistant_contract_drift');
 		assert.match(error.message, /thought/);
@@ -99,9 +106,18 @@ const VALID = [
 	{ type: 'text', delta: '' },
 	{ type: 'tool_call', call: CALL, gate: 'confirm' },
 	{ type: 'confirm', call: CALL, reason: 'r' },
-	{ type: 'tool_result', call_id: 'c1', ok: false, result: null, error: { code: 'x', message: 'y' } },
+	{
+		type: 'tool_result',
+		call_id: 'c1',
+		ok: false,
+		result: null,
+		error: { code: 'x', message: 'y' }
+	},
 	{ type: 'message', message: { role: 'tool', content: '{}', tool_call_id: 'c1' } },
-	{ type: 'message', message: { role: 'assistant', content: null, tool_calls: [CALL], tool_call_id: null } },
+	{
+		type: 'message',
+		message: { role: 'assistant', content: null, tool_calls: [CALL], tool_call_id: null }
+	},
 	{ type: 'message', message: { role: 'assistant', content: 'hi', tool_calls: null } },
 	{ type: 'done', reason: 'turn_cap' },
 	{ type: 'error', code: 'c', message: 'm' }
@@ -146,7 +162,8 @@ test('a known type with fields that break the contract is drift', () => {
 });
 
 test('a value that is not an event object is drift, not a crash', () => {
-	for (const line of ['null', '[]', '7', '"done"']) assert.throws(() => api.parseAgentLine(line), drift, line);
+	for (const line of ['null', '[]', '7', '"done"'])
+		assert.throws(() => api.parseAgentLine(line), drift, line);
 });
 
 test('a consumer that stops early cancels the body', async () => {

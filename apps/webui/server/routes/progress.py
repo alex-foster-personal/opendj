@@ -37,6 +37,7 @@ Acceptance:
        [then ⛔️] PATCH is 503 dev_only_in_packaged_app, no lock sidecar and
        no ledger write (INSTALL-30)
 """
+
 from __future__ import annotations
 
 import errno
@@ -77,12 +78,24 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 PROGRESS_FILE: Path = REPO_ROOT / "data" / "progress-tree.yaml"
 
 STATUSES: tuple[str, ...] = (
-    "missing", "spiked", "building", "partial", "built", "verified",
-    "merged", "user-finalized",
+    "missing",
+    "spiked",
+    "building",
+    "partial",
+    "built",
+    "verified",
+    "merged",
+    "user-finalized",
 )
 StatusLiteral = Literal[
-    "missing", "spiked", "building", "partial", "built", "verified",
-    "merged", "user-finalized",
+    "missing",
+    "spiked",
+    "building",
+    "partial",
+    "built",
+    "verified",
+    "merged",
+    "user-finalized",
     "working",  # deprecated alias for 'built'; coerced server-side
 ]
 # missing/spiked are exempt from the commits_append rule: they represent
@@ -161,8 +174,7 @@ NODE_SCHEMA: dict[str, str] = {
 }
 PATCH_RULES: list[str] = [
     "PATCH requires If-Match with the current ETag returned by GET /progress",
-    "status changes MUST include commits_append unless the new status is "
-    "missing or spiked",
+    "status changes MUST include commits_append unless the new status is missing or spiked",
     "status 'user-finalized' additionally requires verified {by, method} in "
     "the same PATCH (422 without) -- the maintainer's personal QA blessing",
     "status 'working' is a deprecated alias for 'built': accepted, coerced "
@@ -171,15 +183,13 @@ PATCH_RULES: list[str] = [
     "PATCHing status to 'building' without branch/pr in build (existing or "
     "supplied) appends a 'building without branch/pr recorded' note, not "
     "a 422 -- friction nag, not a block",
-    "'build' partial merges into the existing build object; server stamps "
-    "build.updated on any build PATCH",
+    "'build' partial merges into the existing build object; server stamps build.updated on any build PATCH",
     "'links' partial merges into the existing links object, per key",
     "'buildable' {tier, reason} replaces the node's buildable classification "
     "wholesale; tier is one of cloud|hybrid|local",
     "every sha must match ^[0-9a-f]{7,40}$ and resolve via git cat-file -e",
     f"commits_append accepts at most {MAX_COMMITS_APPEND} commits per PATCH",
-    "the API bumps meta.updated but never git-commits; agents own their "
-    "commits",
+    "the API bumps meta.updated but never git-commits; agents own their commits",
 ]
 
 _ETAG_RESPONSE_HEADER: dict[str, dict[str, Any]] = {
@@ -201,6 +211,7 @@ _PATCH_RESPONSES: dict[int, dict[str, Any]] = {
 
 # ----- pydantic models (inline per router convention) -------------------------
 
+
 class CommitIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sha: str
@@ -219,6 +230,7 @@ class BuildPatchIn(BaseModel):
     'updated' is never accepted from the client -- the server always stamps
     it on any build PATCH, so there is no ambiguity about who wrote it.
     """
+
     model_config = ConfigDict(extra="forbid")
     branch: str | None = None
     pr: str | None = None
@@ -231,14 +243,14 @@ class BuildPatchIn(BaseModel):
     def _reject_client_updated(cls, data: Any) -> Any:
         if isinstance(data, dict) and "updated" in data:
             raise ValueError(
-                "'updated' is server-stamped on any build PATCH and must not "
-                "be supplied by the client",
+                "'updated' is server-stamped on any build PATCH and must not be supplied by the client",
             )
         return data
 
 
 class LinksPatchIn(BaseModel):
     """Partial 'links' object; each supplied key REPLACES that key's list."""
+
     model_config = ConfigDict(extra="forbid")
     issues: list[str] | None = None
     specs: list[str] | None = None
@@ -252,6 +264,7 @@ class BuildableIn(BaseModel):
     local); reason is a one-line justification grounded in what the node
     touches. See (private path).
     """
+
     model_config = ConfigDict(extra="forbid")
     tier: TierLiteral
     reason: str
@@ -262,7 +275,8 @@ class NodePatch(BaseModel):
     status: StatusLiteral | None = None
     note: str | None = None
     commits_append: list[CommitIn] | None = Field(
-        default=None, max_length=MAX_COMMITS_APPEND,
+        default=None,
+        max_length=MAX_COMMITS_APPEND,
     )
     tests_append: list[str] | None = None
     verified: VerifiedIn | None = None
@@ -277,6 +291,7 @@ class NodePatchOut(BaseModel):
 
 
 # ----- helpers ----------------------------------------------------------------
+
 
 def _http_error(code: int, error: str, message: str) -> HTTPException:
     """Match the repo-wide {detail: {error, message}} error body shape."""
@@ -297,7 +312,8 @@ def _load_tree_payload(payload: bytes) -> dict[str, Any]:
     tree = yaml.safe_load(payload.decode("utf-8"))
     if not isinstance(tree, dict) or "meta" not in tree or "areas" not in tree:
         raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "progress_file_invalid",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "progress_file_invalid",
             "progress-tree.yaml must have top-level meta + areas",
         )
     seen: set[str] = set()
@@ -332,7 +348,8 @@ def _read_tree_snapshot(progress_file: Path) -> tuple[dict[str, Any], str, str]:
     """Read, parse, and hash one immutable ledger payload."""
     if not progress_file.is_file():
         raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "progress_file_missing",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "progress_file_missing",
             f"canonical ledger not found at {progress_file}",
         )
     payload = progress_file.read_bytes()
@@ -366,12 +383,17 @@ def _dump_tree_atomic(
     """
     header = _header_comment_lines(current_text)
     body = yaml.safe_dump(
-        tree, sort_keys=False, allow_unicode=True, default_flow_style=False,
+        tree,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
     )
     rendered = ("\n".join(header) + "\n" if header else "") + body
     payload = rendered.encode("utf-8")
     fd, tmp_path = tempfile.mkstemp(
-        dir=str(progress_file.parent), prefix=".progress-tree.", suffix=".tmp",
+        dir=str(progress_file.parent),
+        prefix=".progress-tree.",
+        suffix=".tmp",
     )
     try:
         with os.fdopen(fd, "wb") as handle:
@@ -412,10 +434,7 @@ def _acquire_progress_lock_bounded(lock_handle: Any, lock_path: Path) -> None:
     via a blocking flock, Windows via an uncapped `while True` around the
     already-blocking LK_LOCK.
     """
-    contended_errnos = (
-        _PROGRESS_LOCK_CONTENDED_ERRNOS_NT if os.name == "nt"
-        else _PROGRESS_LOCK_CONTENDED_ERRNOS_POSIX
-    )
+    contended_errnos = _PROGRESS_LOCK_CONTENDED_ERRNOS_NT if os.name == "nt" else _PROGRESS_LOCK_CONTENDED_ERRNOS_POSIX
     started = time.monotonic()
     deadline = started + PROGRESS_LOCK_TIMEOUT_S
     backoff = _PROGRESS_LOCK_BACKOFF_INITIAL_S
@@ -474,8 +493,12 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     git_env = os.environ.copy()
     git_env["GIT_NO_LAZY_FETCH"] = "1"
     return subprocess.run(
-        ["git", *args], cwd=str(REPO_ROOT),
-        capture_output=True, text=True, check=False, env=git_env,
+        ["git", *args],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=git_env,
     )
 
 
@@ -508,12 +531,14 @@ def _file_git_provenance(progress_file: Path) -> dict[str, str | None]:
 def _require_resolvable_sha(sha: str) -> None:
     if not _SHA_RE.match(sha):
         raise _http_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid_sha",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "invalid_sha",
             f"sha {sha!r} does not match ^[0-9a-f]{{7,40}}$",
         )
     if _git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
         raise _http_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown_sha",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "unknown_sha",
             f"sha {sha!r} does not resolve to a commit in this repo",
         )
 
@@ -524,7 +549,8 @@ def _find_node(tree: dict[str, Any], node_id: str) -> dict[str, Any]:
             if node["id"] == node_id:
                 return node
     raise _http_error(
-        status.HTTP_404_NOT_FOUND, "not_found",
+        status.HTTP_404_NOT_FOUND,
+        "not_found",
         f"unknown progress node id: {node_id}",
     )
 
@@ -537,8 +563,12 @@ def _rollup(nodes: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).astimezone().isoformat(
-        timespec="seconds",
+    return (
+        datetime.now(UTC)
+        .astimezone()
+        .isoformat(
+            timespec="seconds",
+        )
     )
 
 
@@ -551,9 +581,9 @@ def _patch_progress_file(
     """Apply one complete interprocess compare-and-swap transaction."""
     if not patch.model_dump(exclude_none=True):
         raise _http_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
-            "provide at least one of status/note/commits_append/"
-            "tests_append/verified/build/links/buildable",
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "empty_patch",
+            "provide at least one of status/note/commits_append/tests_append/verified/build/links/buildable",
         )
     alias_used = patch.status in _DEPRECATED_STATUS_ALIASES
     effective_status = _DEPRECATED_STATUS_ALIASES.get(patch.status, patch.status)
@@ -574,14 +604,9 @@ def _patch_progress_file(
             _require_resolvable_sha(commit.sha)
 
         node = _find_node(tree, node_id)
-        status_changing = (
-            effective_status is not None and effective_status != node["status"]
-        )
+        status_changing = effective_status is not None and effective_status != node["status"]
         if status_changing:
-            if (
-                effective_status not in _STATUSES_WITHOUT_COMMITS
-                and not patch.commits_append
-            ):
+            if effective_status not in _STATUSES_WITHOUT_COMMITS and not patch.commits_append:
                 raise _http_error(
                     status.HTTP_422_UNPROCESSABLE_ENTITY,
                     "status_change_needs_commits",
@@ -603,9 +628,7 @@ def _patch_progress_file(
             node["notes"] = patch.note
         if patch.commits_append:
             node.setdefault("commits", [])
-            node["commits"].extend(
-                commit.model_dump() for commit in patch.commits_append
-            )
+            node["commits"].extend(commit.model_dump() for commit in patch.commits_append)
         if patch.tests_append:
             node.setdefault("tests", [])
             node["tests"].extend(patch.tests_append)
@@ -633,8 +656,8 @@ def _patch_progress_file(
                 "(alias sunset tracked in (private path))",
             )
             logger.warning(
-                "progress PATCH %s: deprecated status alias 'working' "
-                "coerced to 'built'", node_id,
+                "progress PATCH %s: deprecated status alias 'working' coerced to 'built'",
+                node_id,
             )
 
         # Building without a branch/PR is a visible nag, not a write block.
@@ -651,14 +674,13 @@ def _patch_progress_file(
 
 # ----- routes -----------------------------------------------------------------
 
+
 @router.get("", responses={200: {"headers": _ETAG_RESPONSE_HEADER}})
 def get_progress(response: Response) -> dict[str, Any]:
     """Full parsed tree + ledger-file git provenance + per-area rollups."""
     tree, etag, _text = _read_tree_snapshot(PROGRESS_FILE)
     response.headers["ETag"] = etag
-    rollups = {
-        area["id"]: _rollup(area["nodes"]) for area in tree["areas"]
-    }
+    rollups = {area["id"]: _rollup(area["nodes"]) for area in tree["areas"]}
     return {
         **tree,
         "file_git": _file_git_provenance(PROGRESS_FILE),
@@ -675,11 +697,9 @@ def get_progress_schema() -> dict[str, Any]:
         "node": NODE_SCHEMA,
         "patch_rules": PATCH_RULES,
         "patch_body": {
-            "status": "optional, one of statuses (plus deprecated alias "
-            "'working' -> coerced to 'built')",
+            "status": "optional, one of statuses (plus deprecated alias 'working' -> coerced to 'built')",
             "note": "optional string, replaces node.notes",
-            "commits_append": "optional list of up to "
-            f"{MAX_COMMITS_APPEND} {{sha, note}} entries",
+            "commits_append": f"optional list of up to {MAX_COMMITS_APPEND} {{sha, note}} entries",
             "tests_append": "optional list of strings",
             "verified": "optional {by, method}; date is stamped server-side; "
             "required in the same PATCH when status becomes user-finalized",
@@ -714,7 +734,9 @@ def patch_progress_node(
     if not is_repo_checkout(REPO_ROOT):
         refusal = dev_only_refusal("The progress-tree ledger", PROGRESS_FILE)
         raise _http_error(
-            status.HTTP_503_SERVICE_UNAVAILABLE, refusal["code"], refusal["message"],
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            refusal["code"],
+            refusal["message"],
         )
     if if_match is None:
         raise _http_error(

@@ -94,7 +94,7 @@ class Envelope:
     stable_id: str
     hop_s: float
     frames: int
-    audio_signature: dict[str, int]
+    audio_signature: dict[str, int | str]
     vocals_rms: Any  # numpy float32 array, widened from the stored float16
     mix_rms: Any
 
@@ -115,7 +115,7 @@ def write_envelope(
     frames: int,
     vocals_rms_bytes: bytes,
     mix_rms_bytes: bytes,
-    audio_signature: dict[str, int],
+    audio_signature: dict[str, int | str],
 ) -> Path:
     """Write one sidecar atomically.
 
@@ -147,7 +147,7 @@ def write_envelope(
     return path
 
 
-def read_envelope(path: Path, expect_signature: dict[str, int] | None = None) -> Envelope | None:
+def read_envelope(path: Path, expect_signature: dict[str, int | str] | None = None) -> Envelope | None:
     """Read one sidecar, or None if it was never written.
 
     None means "entry predates envelope persistence", which is the normal state

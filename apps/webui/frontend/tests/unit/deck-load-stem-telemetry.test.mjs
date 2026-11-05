@@ -100,7 +100,11 @@ test('a load that failed before the probe answered withholds the flag', async ()
 
 test('a broken stem bundle records mix-only playback and says why', async () => {
 	const { mod, log } = await _load();
-	const row = _writeAndRead(mod, log, { ...MIX_ONLY, status: 'error', error: 'alignment mismatch' });
+	const row = _writeAndRead(mod, log, {
+		...MIX_ONLY,
+		status: 'error',
+		error: 'alignment mismatch'
+	});
 	assert.equal(row.stages.stemmed, 0);
 	assert.deepEqual(row.labels, { stemLayout: 'error' });
 });

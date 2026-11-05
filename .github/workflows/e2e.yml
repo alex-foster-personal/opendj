@@ -771,6 +771,11 @@ jobs:
     # steps below (`vars.CI_RUNS_ON_E2E == ''`) still mean exactly "hosted runner".
     # Unset, the chain is exactly the two disjuncts above and the pool.
     # Pinned by (private path).
+    #
+    # Starvation backstop (issue #5831, W46, e2e-main-starvation.yml): when the trunk
+    # lane is off or the dispatcher orphans a main gate anyway, the watchdog alarms at
+    # 30 min queued with no runner and re-runs once. Preflight the trunk variable:
+    # `python -m scripts.ci_merge_queue_pool --variable CI_RUNS_ON_E2E_TRUNK`.
     runs-on: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && vars.CI_RUNS_ON_E2E_TRUNK || (needs.scope.outputs.repair == 'true') && vars.CI_RUNS_ON_E2E_MAIN_FIX || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE || vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     # 30 -> 40 min (Fri 9 Oct 2026): the gate now runs right at 30 minutes on a
     # clean pass. PR #6123's run at 9d70c0f6a passed every suite (288 passed,
@@ -948,7 +953,7 @@ jobs:
         # ordering constraint ci.yml documents.
         run: |
           corepack enable
-          corepack prepare pnpm@11.9.0 --activate
+          corepack prepare pnpm@11.11.0 --activate
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -1106,8 +1111,10 @@ jobs:
         id: pw-cache
         # Hosted-only: this uploads to GitHub's cache storage, which still
         # costs and buys nothing on agentbox, whose ~/.cache/ms-playwright
-        # already persists locally between runs. Empty var means hosted.
-        if: vars.CI_RUNS_ON_E2E == ''
+        # already persists locally between runs. Asked of the runner itself, not of
+        # CI_RUNS_ON_E2E, because a main push can resolve to CI_RUNS_ON_E2E_TRUNK
+        # while CI_RUNS_ON_E2E says something else.
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -1833,7 +1840,7 @@ jobs:
         # ordering constraint ci.yml documents.
         run: |
           corepack enable
-          corepack prepare pnpm@11.9.0 --activate
+          corepack prepare pnpm@11.11.0 --activate
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -2130,7 +2137,7 @@ jobs:
       - name: Enable pinned pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@11.9.0 --activate
+          corepack prepare pnpm@11.11.0 --activate
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -2201,7 +2208,7 @@ jobs:
 
       - name: Cache Playwright browsers
         # Hosted-only; see the `gate` job's identical step above.
-        if: vars.CI_RUNS_ON_E2E == ''
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright

@@ -109,6 +109,8 @@ export const ENGINE_COMMANDS: ReadonlySet<string> = new Set(['load', ...FORWARDE
 /** Page features whose implementation reaches into the Web Audio engine's
  * own clock, buffers or devices. Refused by name in this mode. */
 export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
+	// DECKMOVE-01: the audio-clock start and fader handover are Web Audio automation (native follow-up).
+	'deck_move',
 	'loop_interval_mode',
 	'loop_interval_base',
 	'safety_loop_save',

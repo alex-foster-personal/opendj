@@ -29,6 +29,8 @@ Requirements ((private path), ADR-NEW-hard-cap-per-run.md):
       [if] planned > budget with cap hard [then ⛔️]
   ✔︎ ✅ 🎯 Under the hard cap a nearer module is never dropped while a farther one is kept.
       [if] a distance-1 module is dropped and a distance-3 module kept [then ⛔️]
+  ✔︎ ✅ 🎯 A module the ledger never timed costs the ledger's p90 module, not the selection's median.
+      [if] an untimed module is priced below the ledger's UNPRICED_PERCENTILE module [then ⛔️]
 
 Usage: python -m scripts.ci_test_budget show [--config ci/test-budget.yml]
 """
@@ -38,7 +40,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import statistics
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -51,6 +52,15 @@ CAPS = ("weak-links", "hard")
 #: A module declared in the PR body (`CI-Tests:`) sits with the changed modules themselves: the
 #: author asked for it by name.
 DECLARED_DISTANCE = 0
+#: CI-UNPRICED: the price of a module the durations ledger has never timed, as a nearest-rank
+#: percentile of EVERY timed module in the ledger (pytest-split prices an untimed test from the
+#: whole ledger too; a high percentile keeps the guess on the safe side). Before Thu 5 Nov 2026 an
+#: untimed module weighed the median of the selection's timed ones, about 0.1 s since most ledger
+#: modules are near-instant. Main hourly run 42094046369 then planned 10 runner-min and ran about
+#: 70: 372 of its 803 kept modules were untimed, priced near zero and packed first. The untimed
+#: modules it reached ran a mean 9.2 wall-s against 4.6 for timed ones (2.2x their ledger), so
+#: about 4.2 ledger-s each; the ledger's p75 is 1.5 s (under by 3x) and its p90 6.4 s.
+UNPRICED_PERCENTILE = 90
 
 
 class BudgetError(Exception):
@@ -171,17 +181,23 @@ def planned_minutes(ledger_seconds: float, config: BudgetConfig) -> float:
     return config.shards * config.overhead_min_per_shard + (ledger_seconds / 60.0) * config.min_per_ledger_minute
 
 
-def _weights(modules: list[str], durations: dict[str, float]) -> dict[str, float]:
-    """Ledger seconds per module; an untimed module weighs the median of the selected timed ones.
+def unpriced_module_seconds(durations: dict[str, float]) -> float:
+    """The ledger seconds an untimed module costs: the UNPRICED_PERCENTILE timed module (nearest rank).
 
-    A selection with no timed module (every test new or renamed) weighs the median of the whole
-    ledger instead, and an empty ledger is a BudgetError: pricing from no evidence at all would let
-    a large selection pass as cheap.
+    An empty ledger is a BudgetError: pricing from no evidence at all would let a large selection
+    pass as cheap.
     """
-    known = [durations[m] for m in modules if m in durations] or list(durations.values())
-    if modules and not known:
+    if not durations:
         raise BudgetError("the durations ledger holds no timing at all, so a selection cannot be priced")
-    default = statistics.median(known) if known else 0.0
+    timed = sorted(durations.values())
+    return timed[max(0, math.ceil(UNPRICED_PERCENTILE / 100 * len(timed)) - 1)]
+
+
+def _weights(modules: list[str], durations: dict[str, float]) -> dict[str, float]:
+    """Ledger seconds per module; an untimed module costs `unpriced_module_seconds` of the whole ledger."""
+    if not modules:
+        return {}
+    default = unpriced_module_seconds(durations) if any(m not in durations for m in modules) else 0.0
     return {m: durations.get(m, default) for m in modules}
 
 

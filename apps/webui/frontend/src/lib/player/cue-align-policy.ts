@@ -12,7 +12,11 @@ import {
 	assertHeadphoneAlignmentMode,
 	assertHeadphoneOutputMode
 } from '$lib/player/constants';
-import { CUE_LATENCY_GAIN_STEPS, CUE_LATENCY_PREROLL_MS, cueLatencyCaptureMs } from '$lib/player/cue-latency';
+import {
+	CUE_LATENCY_GAIN_STEPS,
+	CUE_LATENCY_PREROLL_MS,
+	cueLatencyCaptureMs
+} from '$lib/player/cue-latency';
 
 /** Three back-to-back master/cue pairs in stage two; the ramps only find the level. */
 export const CUE_ALIGN_RUNS = 3;
@@ -90,7 +94,10 @@ export function calibrateButtonEnabled(args: {
 	selected_output_device_id: string | null;
 }): boolean {
 	assertHeadphoneOutputMode(args.output_mode);
-	if (args.selected_output_device_id !== null && typeof args.selected_output_device_id !== 'string') {
+	if (
+		args.selected_output_device_id !== null &&
+		typeof args.selected_output_device_id !== 'string'
+	) {
 		throw new TypeError('selected headphone output device id must be a string or null');
 	}
 	return args.output_mode === 'two_outputs' && args.selected_output_device_id !== null;

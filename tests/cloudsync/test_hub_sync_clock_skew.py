@@ -109,9 +109,7 @@ def _title(data_dir: Path) -> str | None:
 def _stored_stamp(data_dir: Path) -> str:
     conn = _open(data_dir)
     try:
-        return str(
-            conn.execute("SELECT updated_at FROM tracks WHERE stable_id = 'trk-1'").fetchone()[0]
-        )
+        return str(conn.execute("SELECT updated_at FROM tracks WHERE stable_id = 'trk-1'").fetchone()[0])
     finally:
         conn.close()
 
@@ -153,9 +151,7 @@ def test_a_far_future_stamp_wins_and_wedges_the_next_real_clock_editor(
     assert _title(spoke_b) == FUTURE_TITLE
 
 
-def test_a_stamp_past_the_calendar_is_refused_with_422(
-    hub: TestClientTransport, hub_dir: Path, spoke_a: Path
-) -> None:
+def test_a_stamp_past_the_calendar_is_refused_with_422(hub: TestClientTransport, hub_dir: Path, spoke_a: Path) -> None:
     """if a stamp past year 9999 lands on the hub instead of a 422 then broken"""
     print("if a stamp past year 9999 lands on the hub instead of a 422 then broken")
     _seed_common_track((spoke_a,), "trk-1")
@@ -192,9 +188,7 @@ def test_a_stamp_past_the_calendar_is_refused_with_422(
         "replace this with the real contract."
     ),
 )
-def test_a_push_stamped_decades_ahead_is_held_or_refused(
-    hub: TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_push_stamped_decades_ahead_is_held_or_refused(hub: TestClientTransport, spoke_a: Path) -> None:
     """if a push stamped decades ahead is accepted as-is then broken (owner decision pending)"""
     print("if a push stamped decades ahead is accepted as-is then broken (owner decision pending)")
     _seed_common_track((spoke_a,), "trk-1")

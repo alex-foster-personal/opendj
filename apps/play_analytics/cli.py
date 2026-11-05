@@ -17,9 +17,7 @@ from .query import query_play_analytics
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.play_analytics")
     parser.add_argument("--db", type=Path, default=SETS_DB)
-    parser.add_argument(
-        "--events-table", choices=("events", "set_events"), default="events"
-    )
+    parser.add_argument("--events-table", choices=("events", "set_events"), default="events")
     parser.add_argument(
         "--share-state",
         choices=("private", "shared_local", "shared_cloud"),

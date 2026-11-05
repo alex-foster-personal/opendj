@@ -9,6 +9,7 @@ Regression one-liners:
   - if the flag reads the whole cache directory then broken
   - if the flag and the lyrics read disagree about letter case on this volume then broken
 """
+
 from __future__ import annotations
 
 import os
@@ -69,7 +70,9 @@ def test_a_symlinked_entry_is_no_lyrics(cache: Path, tmp_path: Path) -> None:
     outside.write_text("{}", encoding="utf-8")
     os.symlink(outside, cache / "escapes.json")
     assert flags(tmp_path, "linked", "escapes", "has-lyrics") == {
-        "linked": False, "escapes": False, "has-lyrics": True,
+        "linked": False,
+        "escapes": False,
+        "has-lyrics": True,
     }
 
 
@@ -79,9 +82,7 @@ def test_a_directory_named_like_an_entry_is_no_lyrics(cache: Path, tmp_path: Pat
 
 
 @pytest.mark.parametrize("stable_id", ["../has-lyrics", "sub/has-lyrics", "a\x00b", "\ud800", ""])
-def test_an_id_that_is_not_one_file_name_is_no_lyrics(
-    cache: Path, tmp_path: Path, stable_id: str
-) -> None:
+def test_an_id_that_is_not_one_file_name_is_no_lyrics(cache: Path, tmp_path: Path, stable_id: str) -> None:
     (cache.parent / "has-lyrics.json").write_text("{}", encoding="utf-8")
     (cache / "sub").mkdir()
     (cache / "sub" / "has-lyrics.json").write_text("{}", encoding="utf-8")
@@ -89,9 +90,7 @@ def test_an_id_that_is_not_one_file_name_is_no_lyrics(
     assert flags(tmp_path, stable_id) == {stable_id: False}
 
 
-def test_the_flag_never_reads_the_directory(
-    cache: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_flag_never_reads_the_directory(cache: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("the lyrics flag listed the cache directory")
 

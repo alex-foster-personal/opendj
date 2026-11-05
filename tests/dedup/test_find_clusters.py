@@ -1,4 +1,5 @@
 """Tests for ``apps.dedup.find_clusters``."""
+
 from __future__ import annotations
 
 import csv
@@ -48,12 +49,8 @@ def test_pick_canonical_highest_bitrate_wins(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("META-03")
 def test_pick_canonical_size_breaks_bitrate_tie(tmp_path: Path) -> None:
-    a = Fingerprint(
-        path=tmp_path / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320
-    )
-    b = Fingerprint(
-        path=tmp_path / "b.mp3", duration=3.0, fp_str="x", size=2000, mtime=100.0, bitrate=320
-    )
+    a = Fingerprint(path=tmp_path / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320)
+    b = Fingerprint(path=tmp_path / "b.mp3", duration=3.0, fp_str="x", size=2000, mtime=100.0, bitrate=320)
     winner, rationale = fc_mod._pick_canonical(
         [
             fc_mod._MemberRow(fp=a, on_canonical_root=True),
@@ -66,12 +63,8 @@ def test_pick_canonical_size_breaks_bitrate_tie(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("META-03")
 def test_pick_canonical_on_root_wins_over_offroot(tmp_path: Path) -> None:
-    a = Fingerprint(
-        path=tmp_path / "off" / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320
-    )
-    b = Fingerprint(
-        path=tmp_path / "on" / "b.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320
-    )
+    a = Fingerprint(path=tmp_path / "off" / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320)
+    b = Fingerprint(path=tmp_path / "on" / "b.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320)
     winner, rationale = fc_mod._pick_canonical(
         [
             fc_mod._MemberRow(fp=a, on_canonical_root=False),
@@ -84,12 +77,8 @@ def test_pick_canonical_on_root_wins_over_offroot(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("META-03")
 def test_pick_canonical_oldest_mtime_last_resort(tmp_path: Path) -> None:
-    a = Fingerprint(
-        path=tmp_path / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320
-    )
-    b = Fingerprint(
-        path=tmp_path / "b.mp3", duration=3.0, fp_str="x", size=1000, mtime=200.0, bitrate=320
-    )
+    a = Fingerprint(path=tmp_path / "a.mp3", duration=3.0, fp_str="x", size=1000, mtime=100.0, bitrate=320)
+    b = Fingerprint(path=tmp_path / "b.mp3", duration=3.0, fp_str="x", size=1000, mtime=200.0, bitrate=320)
     winner, rationale = fc_mod._pick_canonical(
         [
             fc_mod._MemberRow(fp=a, on_canonical_root=True),
@@ -104,13 +93,11 @@ def test_pick_canonical_oldest_mtime_last_resort(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-03")
-def test_fixtures_cluster_src_family(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid
-) -> None:
+def test_fixtures_cluster_src_family(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     outcomes = fc_mod.run_find_clusters(
         db_path=db,
-        threshold=0.8,   # fake-fp cross-bitrate ~0.5-0.7; lower to hit
+        threshold=0.8,  # fake-fp cross-bitrate ~0.5-0.7; lower to hit
         roots=[tmp_fixture_tree],
         clusters_csv=tmp_path / "clusters.csv",
         manual_review_csv=tmp_path / "manual.csv",
@@ -119,21 +106,15 @@ def test_fixtures_cluster_src_family(
     # other-silent-intro.mp3 file must stay out.
     assert len(outcomes) >= 1
     big = max(outcomes, key=lambda c: len(c.alias_paths))
-    involved = {Path(big.canonical_path).name} | {
-        Path(p).name for p in big.alias_paths
-    }
-    assert "other-silent-intro.mp3" not in involved, (
-        f"silent-intro should not cluster with src; got {involved}"
-    )
+    involved = {Path(big.canonical_path).name} | {Path(p).name for p in big.alias_paths}
+    assert "other-silent-intro.mp3" not in involved, f"silent-intro should not cluster with src; got {involved}"
     # All six src files should be present.
     src_files = {f for f in involved if f.startswith("src")}
     assert len(src_files) >= 4, f"expected >=4 src family members; got {involved}"
 
 
 @pytest.mark.requirement("META-03")
-def test_csv_has_expected_columns(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid
-) -> None:
+def test_csv_has_expected_columns(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     clusters_csv = tmp_path / "clusters.csv"
     fc_mod.run_find_clusters(
@@ -158,9 +139,7 @@ def test_csv_has_expected_columns(
 
 
 @pytest.mark.requirement("META-03")
-def test_idempotent_outcomes(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid
-) -> None:
+def test_idempotent_outcomes(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     first = fc_mod.run_find_clusters(
         db_path=db,
@@ -176,6 +155,7 @@ def test_idempotent_outcomes(
         clusters_csv=tmp_path / "c2.csv",
         manual_review_csv=tmp_path / "m2.csv",
     )
+
     # Same cluster shape (path sets).
     def shape(cs):
         return sorted(
@@ -190,12 +170,8 @@ def test_idempotent_outcomes(
 
     assert shape(first) == shape(second)
     with sqlite3.connect(db) as conn:
-        first_clusters = conn.execute(
-            "SELECT COUNT(*) FROM duplicate_clusters"
-        ).fetchone()[0]
-        first_aliases = conn.execute(
-            "SELECT COUNT(*) FROM track_aliases"
-        ).fetchone()[0]
+        first_clusters = conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone()[0]
+        first_aliases = conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone()[0]
     # Re-read after the second run already completed: counts must match the
     # first run's outcomes, not double them (replace, do not append).
     assert first_clusters == len(first)
@@ -243,12 +219,8 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
     assert len(first) == 1
     assert len(second) == 1
     with sqlite3.connect(db) as conn:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM duplicate_clusters"
-        ).fetchone() == (1,)
-        assert conn.execute(
-            "SELECT COUNT(*) FROM track_aliases"
-        ).fetchone() == (1,)
+        assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
+        assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (1,)
     assert first[0].cluster_id == second[0].cluster_id
 
 
@@ -258,18 +230,26 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     db = tmp_path / "phase7.sqlite"
     members = [
         Fingerprint(
-            path=tmp_path / name, duration=180.0, fp_str=SAME_FP,
-            size=size, mtime=100.0, bitrate=bitrate,
+            path=tmp_path / name,
+            duration=180.0,
+            fp_str=SAME_FP,
+            size=size,
+            mtime=100.0,
+            bitrate=bitrate,
         )
         for name, size, bitrate in (("a.flac", 2_000, 320), ("b.mp3", 1_000, 128))
     ]
     cache = FingerprintCache(db)
     for i, fp in enumerate(members):
         cache.put(fp, stable_id=f"sid-{i}")
+
     def run(fingerprints: list[Fingerprint]) -> list[fc_mod.ClusterOutcome]:
         return fc_mod.run_find_clusters(
-            db_path=db, threshold=0.9, roots=[tmp_path],
-            clusters_csv=tmp_path / "c.csv", manual_review_csv=tmp_path / "m.csv",
+            db_path=db,
+            threshold=0.9,
+            roots=[tmp_path],
+            clusters_csv=tmp_path / "c.csv",
+            manual_review_csv=tmp_path / "m.csv",
             fingerprints=fingerprints,
         )
 
@@ -288,9 +268,7 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
         assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)
     # Both artifacts are rewritten header only, with the same schema a run
     # that found clusters writes.
-    assert (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines() == [
-        found_header
-    ]
+    assert (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines() == [found_header]
     assert found_header.split(",") == list(fc_mod.CLUSTERS_CSV_HEADER)
     assert (tmp_path / "m.csv").read_text(encoding="utf-8").splitlines() == [
         "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s"
@@ -333,9 +311,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     assert len(outcomes) == 1
     assert outcomes[0].flagged_manual_review is True
     with sqlite3.connect(db) as conn:
-        stored = conn.execute(
-            "SELECT flagged_manual_review FROM duplicate_clusters"
-        ).fetchone()
+        stored = conn.execute("SELECT flagged_manual_review FROM duplicate_clusters").fetchone()
     assert stored == (1,)
 
 
@@ -343,9 +319,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-03")
-def test_cli_smoke(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid, capsys
-) -> None:
+def test_cli_smoke(tmp_path: Path, tmp_fixture_tree, fake_acoustid, capsys) -> None:
     db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     rc = fc_mod.main(
         [

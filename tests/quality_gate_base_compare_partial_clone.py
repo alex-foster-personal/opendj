@@ -14,8 +14,8 @@ This runs a REAL local partial clone against a REAL (if tiny) authenticated
 git-over-HTTP server -- no mocked git output anywhere -- so a passing test
 proves the fix actually authenticates a real lazy fetch, not merely that some
 code path was exercised. The body lives here rather than in
-tests/test_quality_gate.py (already 1245 lines, over the 600-line split
-gate); imported there so both `pytest tests/test_quality_gate.py` and a
+(private path) (already 1245 lines, over the 600-line split
+gate); imported there so both `pytest (private path)` and a
 bare `pytest tests/quality_gate_base_compare_partial_clone.py` collect it.
 """
 
@@ -74,8 +74,11 @@ class _GatedGitHTTPHandler(http.server.BaseHTTPRequestHandler):
             "GATEWAY_INTERFACE": "CGI/1.1",
         }
         proc = subprocess.run(
-            ["git", "http-backend"], input=request_body, env=env,
-            capture_output=True, check=False,
+            ["git", "http-backend"],
+            input=request_body,
+            env=env,
+            capture_output=True,
+            check=False,
         )
         header_blob, _, resp_body = proc.stdout.partition(b"\r\n\r\n")
         status = 200
@@ -151,9 +154,7 @@ def _build_partial_clone(tmp_path: Path) -> tuple[Path, str, str]:
     _git(seed, "commit", "-q", "-am", "c2")
 
     bare = srv_root / "origin.git"
-    subprocess.run(
-        ["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True
-    )
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True)
     _git(bare, "config", "uploadpack.allowfilter", "true")
     _git(bare, "config", "uploadpack.allowReachableSHA1InWant", "true")
     _git(bare, "symbolic-ref", "HEAD", "refs/heads/main")
@@ -186,7 +187,10 @@ def test_unauthenticated_worktree_add_reproduces_the_promisor_failure(
 
         result = subprocess.run(
             ["git", "worktree", "add", "--detach", str(tmp_path / "unauthed-base"), c1],
-            cwd=clone_dir, capture_output=True, text=True, check=False,
+            cwd=clone_dir,
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
         assert result.returncode != 0, (
@@ -194,8 +198,7 @@ def test_unauthenticated_worktree_add_reproduces_the_promisor_failure(
             "whole reproduction is testing nothing"
         )
         assert "could not fetch" in result.stderr and "promisor" in result.stderr, (
-            f"expected the exact promisor-fetch failure shape from job 110140841841: "
-            f"{result.stderr}"
+            f"expected the exact promisor-fetch failure shape from job 110140841841: {result.stderr}"
         )
 
 
@@ -219,9 +222,7 @@ def test_measure_owners_at_base_survives_partial_clone_with_gh_token(
         # No token: exactly today's pre-fix shape (a sanity check the real
         # failure survives the refactor that made `repo` injectable).
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        no_token_metrics, no_token_reason = qg._measure_owners_at_base(
-            c1, [], repo=clone_dir
-        )
+        no_token_metrics, no_token_reason = qg._measure_owners_at_base(c1, [], repo=clone_dir)
         assert no_token_metrics is None
         assert "could not fetch" in no_token_reason or "promisor" in no_token_reason
 
@@ -231,16 +232,12 @@ def test_measure_owners_at_base_survives_partial_clone_with_gh_token(
         monkeypatch.setenv("GH_TOKEN", _TOKEN)
         captured: dict[str, object] = {}
 
-        def _fake_run_in_base(
-            cmd: list[str], base_dir: Path, ambient
-        ) -> subprocess.CompletedProcess[str]:
+        def _fake_run_in_base(cmd: list[str], base_dir: Path, ambient) -> subprocess.CompletedProcess[str]:
             """Stand in for the nested gate run: this test is about the checkout
             succeeding with real content, not about running ruff/mypy/etc. on a
             two-file synthetic repo."""
             captured["track_txt"] = (base_dir / "track.txt").read_text()
-            captured["token_leaked_to_base_run"] = (
-                "GH_TOKEN" in ambient or "GITHUB_TOKEN" in ambient
-            )
+            captured["token_leaked_to_base_run"] = "GH_TOKEN" in ambient or "GITHUB_TOKEN" in ambient
             (base_dir / "metrics.json").write_text(json.dumps({"fake": "owner"}))
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
@@ -248,9 +245,7 @@ def test_measure_owners_at_base_survives_partial_clone_with_gh_token(
 
         metrics, reason = qg._measure_owners_at_base(c1, [], repo=clone_dir)
 
-        assert metrics == {"fake": "owner"}, (
-            f"the merge-base worktree add must succeed with GH_TOKEN present: {reason}"
-        )
+        assert metrics == {"fake": "owner"}, f"the merge-base worktree add must succeed with GH_TOKEN present: {reason}"
         assert captured["track_txt"] == "v1\n", (
             "the checked-out merge-base tree must hold the MERGE BASE's own content, "
             "not HEAD's -- proof the blob actually fetched rather than reusing "

@@ -6,6 +6,7 @@ being scored, causing djay tracks to be mis-routed to an inferior RB match.
 The regression guard below feeds three candidates where the first is the
 worst and the third is the best, and asserts the matcher picks the third.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -138,9 +139,7 @@ def test_match_tracks_scores_all_key_candidates_and_picks_best(
 
     # There must be exactly one pair and it must point to rb-best.
     pairs = list(result.matched) + list(result.review)
-    assert len(pairs) == 1, (
-        f"expected exactly one scored pair, got {len(pairs)}: {pairs!r}"
-    )
+    assert len(pairs) == 1, f"expected exactly one scored pair, got {len(pairs)}: {pairs!r}"
     assert pairs[0].rb_id == "rb-best", (
         "matcher picked an inferior RB candidate -- it is only scoring "
         "rb_candidates[0] instead of all key-colliding candidates "

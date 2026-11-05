@@ -89,11 +89,16 @@
 		const own = (controller = new AbortController());
 		const options = { tier: tierChoice === 'auto' ? null : tierChoice, context: contexts };
 		try {
-			for await (const event of streamAgent(requestFor(next, approved, options), own.signal)) enqueue(event);
+			for await (const event of streamAgent(requestFor(next, approved, options), own.signal))
+				enqueue(event);
 		} catch (error: unknown) {
 			if (!own.signal.aborted) {
 				flush();
-				session = applyEvent(session, { type: 'error', code: codeOf(error), message: messageOf(error) });
+				session = applyEvent(session, {
+					type: 'error',
+					code: codeOf(error),
+					message: messageOf(error)
+				});
 			}
 		} finally {
 			if (controller === own) {

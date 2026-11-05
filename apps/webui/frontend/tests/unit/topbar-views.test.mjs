@@ -562,7 +562,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 		assert.match(failure[1], /closeTrackInfo\(\);/);
 		assert.match(failure[1], /loadFailure = `Track information failed to load: .*\. Reload the page to retry\.`;/);
 		assert.doesNotMatch(failure[1], /throw/);
-		assert.match(button, /\{#if loadFailure !== null\}\s*<span class="tb-load-failure" role="alert"[^>]*>\{loadFailure\}<\/span>/);
+		assert.match(button, /\{#if loadFailure !== null\}\s*<span class="tb-load-failure" role="alert"[^>]*>\{loadFailure\}<\/span\s*>/);
 		assert.match(button, /if \(shown === null \|\| Overlay !== null\) return;\s*loadFailure = null;/);
 	});
 
@@ -646,6 +646,9 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 			album: 'al',
 			bpm: 120,
 			key: '1A',
+			key_source: 'own',
+			key_guess: '8A',
+			key_guess_confidence: 0.42,
 			duration_ms: 1000,
 			rating: 3,
 			tags: ['x'],

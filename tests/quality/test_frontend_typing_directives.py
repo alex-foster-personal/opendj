@@ -24,13 +24,7 @@ pytestmark = pytest.mark.requirement("GUARD-10")
 def test_scanner_catches_directive_inside_svelte_script_block() -> None:
     """If directive detection moved to comment-token lexing loses .svelte
     coverage then a @ts-nocheck inside a real <script> block goes uncounted."""
-    source = (
-        '<script lang="ts">\n'
-        "  // @ts-nocheck\n"
-        "  const x = 1;\n"
-        "</script>\n"
-        "<div>{x}</div>\n"
-    )
+    source = '<script lang="ts">\n  // @ts-nocheck\n  const x = 1;\n</script>\n<div>{x}</div>\n'
     assert qg._ts_escape_hatch_hits(source, suffix=".svelte") == [(2, "ts-nocheck")], (
         "if a .svelte <script> block's directive is not reported then moving "
         "directive detection off raw-line regex silently dropped .svelte "
@@ -223,9 +217,7 @@ def test_scanner_ignores_ts_nocheck_followed_by_punctuation(source: str) -> None
         ("// @ts-nocheck some text after space\nconst bad1: string = 1;\n", [(1, "ts-nocheck")]),
     ],
 )
-def test_scanner_catches_ts_nocheck_followed_by_a_valid_delimiter(
-    source: str, expected: list
-) -> None:
+def test_scanner_catches_ts_nocheck_followed_by_a_valid_delimiter(source: str, expected: list) -> None:
     """The mirror positive case: whitespace and `:` ARE valid delimiters
     after the pragma name -- verified against pinned tsc 5.9.3, both probes
     report no error at all."""

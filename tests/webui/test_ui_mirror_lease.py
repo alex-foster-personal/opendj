@@ -175,7 +175,12 @@ def test_a_lease_header_that_disagrees_with_the_body_is_refused(monkeypatch: pyt
 
 
 async def _put_at(client: AsyncClient, tab: str, published_at: str, *, playing: bool) -> Response:
-    payload = {"client_open": True, "client_id": tab, "published_at": published_at, "decks": {"1": {"playing": playing}}}
+    payload = {
+        "client_open": True,
+        "client_id": tab,
+        "published_at": published_at,
+        "decks": {"1": {"playing": playing}},
+    }
     return await client.put("/api/v1/state/ui-mirror", json=payload)
 
 

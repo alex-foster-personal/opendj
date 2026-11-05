@@ -41,9 +41,7 @@ from apps.engine_core.jobs.store import JobConflict, JobStore
 # Prints one progress line, then lingers just long enough that the runner is
 # genuinely mid-run when the injected store error fires.
 _CHATTY_WORKER = (
-    "import json, sys, time\n"
-    "print(json.dumps({'progress': 0.5, 'message': 'half'}), flush=True)\n"
-    "time.sleep(0.3)\n"
+    "import json, sys, time\nprint(json.dumps({'progress': 0.5, 'message': 'half'}), flush=True)\ntime.sleep(0.3)\n"
 )
 _SLEEPER = "import time; time.sleep(600)"
 
@@ -63,25 +61,18 @@ def kinds() -> Iterator[None]:
     unregister_worker("sleeper")
 
 
-async def _await_status(
-    store: JobStore, job_id: str, wanted: set[str], timeout_s: float = 20.0
-) -> dict[str, Any]:
+async def _await_status(store: JobStore, job_id: str, wanted: set[str], timeout_s: float = 20.0) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
         row = store.get(job_id)
         if row["status"] in wanted:
             return row
         if asyncio.get_running_loop().time() >= deadline:
-            raise AssertionError(
-                f"job {job_id} stuck at {row['status']!r} (wanted {wanted}); "
-                f"error={row['error']!r}"
-            )
+            raise AssertionError(f"job {job_id} stuck at {row['status']!r} (wanted {wanted}); error={row['error']!r}")
         await asyncio.sleep(0.02)
 
 
-async def _await_pgid(
-    store: JobStore, job_id: str, timeout_s: float = 20.0
-) -> int:
+async def _await_pgid(store: JobStore, job_id: str, timeout_s: float = 20.0) -> int:
     """The recorded worker pgid, once the spawn has persisted it."""
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
@@ -151,9 +142,7 @@ def test_the_supervisor_survives_a_failed_drain(tmp_path: Path, kinds: None) -> 
     store.close()
 
 
-def test_shutdown_completes_when_a_cancel_conflicts(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_shutdown_completes_when_a_cancel_conflicts(tmp_path: Path, kinds: None) -> None:
     """A row that goes terminal mid-shutdown is skipped, not fatal.
 
     stop() used to let JobConflict out, which abandoned every remaining job
@@ -185,15 +174,11 @@ def test_shutdown_completes_when_a_cancel_conflicts(
     assert final["error"] == "raced to a terminal status", final
     # ...but the worker behind it is NOT left running. Tolerating the status
     # conflict must never mean tolerating an orphan.
-    assert not group_has_live_member(pgid), (
-        f"shutdown left process group {pgid} alive after skipping the row"
-    )
+    assert not group_has_live_member(pgid), f"shutdown left process group {pgid} alive after skipping the row"
     store.close()
 
 
-def test_shutdown_cancels_a_live_worker_and_proves_it_dead(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_shutdown_cancels_a_live_worker_and_proves_it_dead(tmp_path: Path, kinds: None) -> None:
     """The happy path stop() must still take the whole tree with it."""
     store = _store(tmp_path)
 

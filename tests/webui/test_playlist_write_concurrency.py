@@ -5,6 +5,7 @@ Regression one-liners:
   - if cross-connection lock contention cannot wait out busy_timeout then broken
   - if lock exhaustion returns 500 instead of 503 STATE_STORE_BUSY then broken
 """
+
 from __future__ import annotations
 
 import threading
@@ -46,9 +47,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -59,9 +65,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -72,7 +81,8 @@ def client(db_path: Path) -> Iterator[TestClient]:
 def test_concurrent_create_playlist_all_201_no_500(client: TestClient) -> None:
     def _create():
         return client.post(
-            "/api/v1/playlists", json={"name": "advtest-concurrency"},
+            "/api/v1/playlists",
+            json={"name": "advtest-concurrency"},
         )
 
     responses = _fire_together([_create for _ in range(10)])
@@ -84,7 +94,8 @@ def test_concurrent_create_playlist_all_201_no_500(client: TestClient) -> None:
 
 
 def test_concurrent_create_under_cross_connection_contention_eventually_201(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     holder = state_db.open_rw(db_path, check_same_thread=False)
     holder.execute("BEGIN IMMEDIATE")
@@ -101,7 +112,8 @@ def test_concurrent_create_under_cross_connection_contention_eventually_201(
 
     def _create():
         return client.post(
-            "/api/v1/playlists", json={"name": "contended-create"},
+            "/api/v1/playlists",
+            json={"name": "contended-create"},
         )
 
     responses = _fire_together([_create for _ in range(5)])
@@ -115,7 +127,8 @@ def test_concurrent_create_under_cross_connection_contention_eventually_201(
 
 # REQ: STATE-14
 def test_create_returns_503_when_store_busy_timeout_exhausted(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     warmup = client.post("/api/v1/playlists", json={"name": "warmup"})
     assert warmup.status_code == 201
@@ -127,7 +140,8 @@ def test_create_returns_503_when_store_busy_timeout_exhausted(
     holder.execute("BEGIN IMMEDIATE")
     try:
         response = client.post(
-            "/api/v1/playlists", json={"name": "blocked-create"},
+            "/api/v1/playlists",
+            json={"name": "blocked-create"},
         )
     finally:
         holder.execute("ROLLBACK")

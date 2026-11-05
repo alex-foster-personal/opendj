@@ -36,11 +36,13 @@ def _round_trip(expected_backend: str) -> None:
     assert restored.volume == original.volume
 
 
+@pytest.mark.host_mutation
 @pytest.mark.skipif(sys.platform != "win32", reason="Core Audio via %SystemRoot% powershell.exe is Windows-only")
 def test_windows_core_audio_round_trip_restores_original() -> None:
     _round_trip("core_audio")
 
 
+@pytest.mark.host_mutation
 @pytest.mark.skipif(
     sys.platform != "darwin" or not OSASCRIPT_PATH.is_file(),
     reason="needs macOS /usr/bin/osascript ('get volume settings')",
@@ -49,6 +51,7 @@ def test_macos_osascript_round_trip_restores_original() -> None:
     _round_trip("osascript")
 
 
+@pytest.mark.host_mutation
 @pytest.mark.skipif(
     not sys.platform.startswith("linux") or not (shutil.which("wpctl") or shutil.which("pactl")),
     reason="needs Linux wpctl (PipeWire) or pactl (PulseAudio) with a default sink",

@@ -51,11 +51,7 @@ def _merged_spans_us(events: list[dict[str, Any]]) -> list[tuple[int, int]]:
     on #705.
     """
 
-    spans = sorted(
-        (event["ts"], event["ts"] + event.get("dur", 0))
-        for event in events
-        if "ts" in event
-    )
+    spans = sorted((event["ts"], event["ts"] + event.get("dur", 0)) for event in events if "ts" in event)
     if not spans:
         return []
     merged: list[list[int]] = [list(spans[0])]
@@ -113,12 +109,9 @@ def _sampled_spans_us(events: list[dict[str, Any]]) -> list[tuple[int, int]]:
     samples = [event for event in events if event.get("ph") == "C" and "ts" in event]
     stamps = sorted({event["ts"] for event in samples})
     earliest = stamps[0] if stamps else None
-    cpu_measured_stamps = {
-        event["ts"] for event in samples if event.get("name") == "cpu_percent"
-    }
+    cpu_measured_stamps = {event["ts"] for event in samples if event.get("name") == "cpu_percent"}
     run_starts = sorted(
-        ({earliest} if earliest is not None else set())
-        | {ts for ts in stamps if ts not in cpu_measured_stamps}
+        ({earliest} if earliest is not None else set()) | {ts for ts in stamps if ts not in cpu_measured_stamps}
     )
     cadence_by_ts = _cadence_by_run(stamps, run_starts)
     # A run's own median can still overshoot its FIRST interval: a deep probe
@@ -137,14 +130,11 @@ def _sampled_spans_us(events: list[dict[str, Any]]) -> list[tuple[int, int]]:
         else {
             **event,
             "ts": event["ts"] - min(cadence_by_ts[event["ts"]], gap_before_ts[event["ts"]]),
-            "dur": event.get("dur", 0)
-            + min(cadence_by_ts[event["ts"]], gap_before_ts[event["ts"]]),
+            "dur": event.get("dur", 0) + min(cadence_by_ts[event["ts"]], gap_before_ts[event["ts"]]),
         }
         for event in samples
     ]
-    instants = [
-        event for event in events if event.get("ph") != "C" and "ts" in event
-    ]
+    instants = [event for event in events if event.get("ph") != "C" and "ts" in event]
     return _merged_spans_us(widened + instants)
 
 
@@ -192,7 +182,7 @@ def _agreeing_cadence(gaps: list[int]) -> int:
     real capture: `OpenDJProbe`'s sampling loop stamps each record AFTER a
     variable amount of collection work and sleeps against a monotonic
     deadline, so consecutive gaps always differ a little. The one real
-    capture in this tree, `tests/fixtures/perf/probe-samples.jsonl`, is
+    capture in this tree, `(private path)`, is
     14.882s apart where 15s was asked for. Cadence 0 leaves every counter
     zero-width, which is precisely the false different-session warning this
     module exists to remove -- and no test caught it, because every fixture
@@ -242,9 +232,7 @@ def _load_path_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _closest_approach_us(
-    left: list[tuple[int, int]], right: list[tuple[int, int]]
-) -> int | None:
+def _closest_approach_us(left: list[tuple[int, int]], right: list[tuple[int, int]]) -> int | None:
     """Smallest distance between any interval on one side and any on the other.
 
     Zero or negative means the layers genuinely meet; positive is the real gap.
@@ -269,9 +257,7 @@ def _closest_approach_us(
     return closest
 
 
-def source_overlap(
-    frontend: list[dict[str, Any]], native: list[dict[str, Any]]
-) -> dict[str, Any]:
+def source_overlap(frontend: list[dict[str, Any]], native: list[dict[str, Any]]) -> dict[str, Any]:
     """Do the two layers actually describe the same session?
 
     The ring is a 40-row window that can be WEEKS old while the probe log is

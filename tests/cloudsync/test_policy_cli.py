@@ -57,19 +57,11 @@ def _write(tmp_path: Path, changes: dict[str, Any]) -> str:
 
 
 def _all_pinned(me: str) -> dict[str, Any]:
-    return {
-        "policies": [
-            {"machine_id": me, "asset_kind": k, "mode": "pinned"} for k in ASSET_KIND_CHECK_VALUES
-        ]
-    }
+    return {"policies": [{"machine_id": me, "asset_kind": k, "mode": "pinned"} for k in ASSET_KIND_CHECK_VALUES]}
 
 
 def _budget_on_stream(me: str) -> dict[str, Any]:
-    return {
-        "policies": [
-            {"machine_id": me, "asset_kind": "audio", "mode": "stream", "cache_budget_mb": 512}
-        ]
-    }
+    return {"policies": [{"machine_id": me, "asset_kind": "audio", "mode": "stream", "cache_budget_mb": 512}]}
 
 
 def _unknown_kind(me: str) -> dict[str, Any]:
@@ -146,9 +138,7 @@ def test_live_apply_writes_the_same_rows_through_either_twin(
         "--live",
     )
     with http_client(twin) as http:
-        response = http.post(
-            "/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False}
-        )
+        response = http.post("/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False})
     assert code == 0 and response.status_code == 200, response.text
     assert response.json() == cli_outcome
     assert cli_outcome["written"] is True
@@ -178,15 +168,11 @@ def test_blocking_apply_is_refused_and_writes_nothing(
     changes = _budget_on_stream(local_id(fleet_dir))
     rows, logged = count(fleet_dir, POLICY_ROWS), count(fleet_dir, CHANGELOG_ROWS)
     with http_client(fleet_dir) as http:
-        refused = http.post(
-            "/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False}
-        )
+        refused = http.post("/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False})
     assert refused.status_code == 409, refused.text
     detail = refused.json()["detail"]
     assert detail["code"] == "POLICY_VIOLATION"
-    assert [v["rule_id"] for v in detail["outcome"]["violations"] if v["blocking"]] == [
-        "cache_budget"
-    ]
+    assert [v["rule_id"] for v in detail["outcome"]["violations"] if v["blocking"]] == ["cache_budget"]
     code, outcome = _cli(
         capsys,
         "apply",
@@ -205,9 +191,7 @@ def test_blocking_apply_is_refused_and_writes_nothing(
 # ----- verbs and exit codes ---------------------------------------------------------
 
 
-def test_seed_then_validate_is_the_enrollment_flow(
-    fleet_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_seed_then_validate_is_the_enrollment_flow(fleet_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """if seed --class skips the class defaults, or validate fails after it, then broken"""
     data = str(fleet_dir)
     code, _ = _cli(capsys, "validate", "--data-dir", data)
@@ -215,9 +199,7 @@ def test_seed_then_validate_is_the_enrollment_flow(
     code, dry = _cli(capsys, "seed", "--data-dir", data, "--machine", "self", "--class", "portable")
     assert (code, dry["written"]) == (0, False)
     assert count(fleet_dir, LIVE_POLICY_ROWS) == 6, "a dry run writes nothing"
-    code, live = _cli(
-        capsys, "seed", "--data-dir", data, "--machine", "self", "--class", "portable", "--live"
-    )
+    code, live = _cli(capsys, "seed", "--data-dir", data, "--machine", "self", "--class", "portable", "--live")
     assert (code, live["written"]) == (0, True)
     code, _ = _cli(capsys, "validate", "--data-dir", data)
     assert code == 0
@@ -225,20 +207,14 @@ def test_seed_then_validate_is_the_enrollment_flow(
     expected = {
         kind: (
             artifact.default_mode_by_machine_class["portable"],
-            artifact.cache_budget_mb
-            if artifact.default_mode_by_machine_class["portable"] == "cached"
-            else None,
+            artifact.cache_budget_mb if artifact.default_mode_by_machine_class["portable"] == "cached" else None,
         )
         for kind, artifact in FILE_POLICY.artifacts.items()
     }
-    assert {p["asset_kind"]: (p["mode"], p["cache_budget_mb"]) for p in shown["policies"]} == (
-        expected
-    )
+    assert {p["asset_kind"]: (p["mode"], p["cache_budget_mb"]) for p in shown["policies"]} == (expected)
 
 
-def test_a_repeated_seed_writes_nothing(
-    fleet_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_repeated_seed_writes_nothing(fleet_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """if re-running an identical seed adds changelog entries then broken"""
     argv = (
         "seed",
@@ -259,18 +235,11 @@ def test_a_repeated_seed_writes_nothing(
     assert count(fleet_dir, CHANGELOG_ROWS) == logged
 
 
-def test_set_unset_pin_unpin_round_trip(
-    fleet_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_set_unset_pin_unpin_round_trip(fleet_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """if set, unset, pin or unpin fail to write (or to tombstone) their one row then broken"""
     data = str(fleet_dir)
     me = ("--data-dir", data, "--machine", "self")
-    assert (
-        _cli(capsys, "set", *me, "--kind", "audio", "--mode", "cached", "--budget", "64", "--live")[
-            0
-        ]
-        == 0
-    )
+    assert _cli(capsys, "set", *me, "--kind", "audio", "--mode", "cached", "--budget", "64", "--live")[0] == 0
     assert _cli(capsys, "pin", *me, "--playlist", PLAYLIST_ID, "--mode", "pinned", "--live")[0] == 0
     _, shown = _cli(capsys, "show", *me)
     assert shown["policies"] == [
@@ -291,18 +260,12 @@ def test_set_unset_pin_unpin_round_trip(
     assert count(fleet_dir, tombstones) == 1, "unset is a synced tombstone, not a DELETE"
 
 
-def test_plan_exits_3_only_when_blocking(
-    fleet_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_plan_exits_3_only_when_blocking(fleet_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """if plan exits nonzero for a clean change or zero for a blocking one then broken"""
     me = local_id(fleet_dir)
     data = str(fleet_dir)
-    ok, _ = _cli(
-        capsys, "plan", "--data-dir", data, "--proposal", _write(tmp_path, _all_pinned(me))
-    )
-    bad, _ = _cli(
-        capsys, "plan", "--data-dir", data, "--proposal", _write(tmp_path, _budget_on_stream(me))
-    )
+    ok, _ = _cli(capsys, "plan", "--data-dir", data, "--proposal", _write(tmp_path, _all_pinned(me)))
+    bad, _ = _cli(capsys, "plan", "--data-dir", data, "--proposal", _write(tmp_path, _budget_on_stream(me)))
     assert (ok, bad) == (0, maintenance_policy.EXIT_VIOLATIONS)
 
 
@@ -326,15 +289,11 @@ def test_apply_with_no_machines_is_inconclusive_and_writes_nothing(
     data_dir = tmp_path / "empty"
     state_db.open_rw(sync_client.state_db_path(data_dir)).close()
     proposal = _write(tmp_path, {})
-    code, outcome = _cli(
-        capsys, "apply", "--data-dir", str(data_dir), "--proposal", proposal, "--live"
-    )
+    code, outcome = _cli(capsys, "apply", "--data-dir", str(data_dir), "--proposal", proposal, "--live")
     assert code == maintenance_policy.EXIT_INCONCLUSIVE
     assert (outcome["measurable"], outcome["written"]) == (False, False)
     with http_client(data_dir) as http:
-        refused = http.post(
-            "/api/v1/cloudsync/policies/apply", json={"changes": {}, "dry_run": False}
-        )
+        refused = http.post("/api/v1/cloudsync/policies/apply", json={"changes": {}, "dry_run": False})
     assert refused.status_code == 409, refused.text
     assert refused.json()["detail"]["code"] == "POLICY_INCONCLUSIVE"
     assert refused.json()["detail"]["outcome"] == outcome
@@ -372,9 +331,7 @@ def test_a_proposal_naming_a_cell_twice_is_refused_on_both_twins(
         "--live",
     )
     with http_client(fleet_dir) as http:
-        applied = http.post(
-            "/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False}
-        )
+        applied = http.post("/api/v1/cloudsync/policies/apply", json={"changes": changes, "dry_run": False})
         validated = http.post("/api/v1/cloudsync/policies/validate", json=changes)
     assert code == maintenance_policy.EXIT_USAGE
     assert cli_error["code"] == "PROPOSAL_INVALID"
@@ -384,9 +341,7 @@ def test_a_proposal_naming_a_cell_twice_is_refused_on_both_twins(
     assert rows == 6, "the control: the hub's cells, including audio, are live"
 
 
-def test_unknown_machine_is_refused_with_exit_1(
-    fleet_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_unknown_machine_is_refused_with_exit_1(fleet_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """if set on an unregistered machine exits other than 1 or names no error code then broken"""
     code, error = _cli(
         capsys,

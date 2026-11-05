@@ -9,7 +9,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * The defect this rung fixes is not a bug, it is a ceiling: WebKit decodes on
  * ONE thread, so `Promise.all` over four `decodeAudioData` calls buys 1.0x to
  * 1.3x and the operator waits ~1.4-1.9s for a decode that four workers finish
- * in ~0.7-1.1s (docs/perf/research/stems-decode-rung-bench.md).
+ * in ~0.7-1.1s ((private path)).
  *
  * The dangerous part is not the speed-up, it is the three refusals. A WASM
  * decoder does NOT resample and `decodeAudioData` does, so a 48kHz bundle in a
@@ -103,7 +103,12 @@ function fakeContext(sampleRate = 44100) {
 }
 
 /** A decoder whose lifecycle and concurrency are both observable. */
-function fakeDecoderFactory({ sampleRate = 44100, samples = 128, fail = false, concurrent = PARTS.length } = {}) {
+function fakeDecoderFactory({
+	sampleRate = 44100,
+	samples = 128,
+	fail = false,
+	concurrent = PARTS.length
+} = {}) {
 	const state = { made: 0, freed: 0, resets: 0, live: 0, peakLive: 0, releases: [] };
 	const factory = () => {
 		state.made += 1;
@@ -173,7 +178,7 @@ function laneClock({ mainThreadMs, workerWallMs }) {
 	const starts = [0, 0, 0, 0];
 	return () => {
 		const i = calls % 4;
-        const isStart = calls < 4;
+		const isStart = calls < 4;
 		calls += 1;
 		return isStart ? starts[i] : perPart[i];
 	};
@@ -479,7 +484,11 @@ test('the first two stemmed loads measure one lane each, whole and uncontended',
 	// main-thread decode running beside them, so the main lane measured slow
 	// for a reason unrelated to the question.
 	decode.stemDecodeSession.resetLane();
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'nothing may be assumed before a load');
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		null,
+		'nothing may be assumed before a load'
+	);
 
 	const ctx = fakeContext();
 	// Load 1: main thread. What ships today, so a session with one stemmed
@@ -554,8 +563,16 @@ test('each stem layout calibrates on its own, so a four-part verdict never pins 
 		decodeFallback: countingFallback().fn,
 		now: twoPartClock(110)
 	});
-	assert.equal(decode.stemDecodeSession.lane(TWO.length), 'main-thread', 'slower workers lose at width 2');
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'and width 4 keeps its own verdict');
+	assert.equal(
+		decode.stemDecodeSession.lane(TWO.length),
+		'main-thread',
+		'slower workers lose at width 2'
+	);
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		'workers',
+		'and width 4 keeps its own verdict'
+	);
 });
 
 test('an engine where the main thread wins never gets the workers again', async () => {
@@ -633,7 +650,11 @@ test('a load that refused the worker path does not count as a trial of it', asyn
 		decodeFallback: countingFallback().fn,
 		now: stepClock(50)
 	});
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'a failed lane is unmeasured, not fast');
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		null,
+		'a failed lane is unmeasured, not fast'
+	);
 });
 
 //------------------------------------------------- lane trials under overlap
@@ -649,9 +670,7 @@ function lifecycleDecoderFactory({ readyRejects = false, resetRejects = false } 
 	const factory = () => {
 		state.made += 1;
 		return {
-			ready: readyRejects
-				? Promise.reject(new Error('wasm compile blocked'))
-				: Promise.resolve(),
+			ready: readyRejects ? Promise.reject(new Error('wasm compile blocked')) : Promise.resolve(),
 			async decodeFile() {
 				return {
 					channelData: [new Float32Array(64), new Float32Array(64)],
@@ -721,7 +740,11 @@ test('a pooled decoder that cannot reset is freed, not returned to the pool', as
 
 	assert.equal(primed.state.resets, 4, 'each pooled decoder was asked to reset');
 	assert.equal(primed.state.freed, 4, 'and each one that could not is destroyed');
-	assert.equal(decode.stemDecodeSession.pooled(), 0, 'a decoder that cannot reset is not a decoder');
+	assert.equal(
+		decode.stemDecodeSession.pooled(),
+		0,
+		'a decoder that cannot reset is not a decoder'
+	);
 	assert.equal(fallback.calls.length, 4);
 	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
 });
@@ -822,7 +845,11 @@ test('an overlapping load neither becomes a trial nor contaminates the one runni
 	});
 	assert.equal(after.state.made, 0, 'the main-thread lane is still unmeasured, so it runs again');
 	assert.equal(afterFallback.calls.length, 4);
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'one lane is still not a comparison');
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		null,
+		'one lane is still not a comparison'
+	);
 });
 
 test('a non-FLAC bundle is never recorded as the main-thread trial', async () => {
@@ -971,7 +998,11 @@ test('a calibration load still settles the lane when the fallback detaches its i
 		now: stepClock(100)
 	});
 	assert.equal(second.state.made, 4, 'the second trial must run the OTHER lane');
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'and the session settles a lane');
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		'workers',
+		'and the session settles a lane'
+	);
 
 	// NEGATIVE CONTROL: a genuinely non-FLAC bundle must still be caught, so
 	// the fix is not "stop sniffing on this lane".
@@ -983,7 +1014,10 @@ test('a calibration load still settles the lane when the fallback detaches its i
 		PARTS,
 		{ makeDecoder: fakeDecoderFactory().factory, decodeFallback: detachingFallback().fn }
 	);
-	assert.ok(ogg.reports.every((r) => r.refusal === 'not-flac'), 'real non-FLAC is still named');
+	assert.ok(
+		ogg.reports.every((r) => r.refusal === 'not-flac'),
+		'real non-FLAC is still named'
+	);
 });
 
 test('a rejecting part does not release the lane while its siblings are still decoding', async () => {
@@ -1115,7 +1149,11 @@ test('a bundle at a rate this context cannot run never spends a worker on it', a
 	// And it is not a lane trial: a load that could never run the worker lane
 	// cannot settle a comparison between the lanes.
 	assert.equal(decode.stemDecodeSession.trialing(), false);
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'no verdict from an ineligible bundle');
+	assert.equal(
+		decode.stemDecodeSession.lane(PARTS.length),
+		null,
+		'no verdict from an ineligible bundle'
+	);
 
 	// CONTROL ON THE OVERSHOOT: "bar anything whose header mentions a rate"
 	// would satisfy the report above and delete the rung. A bundle disclosing
@@ -1278,88 +1316,109 @@ test('MPEG bytes are not-flac when the mpeg rung is not shipped (default ship ga
 	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
 });
 
-test('MPEG bytes take the worker path when the mpeg lane is forced', withMpegRung(async () => {
-	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
-	const ctx = fakeContext(22050);
-	const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
-	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
-	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
-		makeDecoder: factory,
-		decodeFallback: countingFallback().fn
-	});
-	assert.equal(state.made, 4);
-	assert.ok(result.reports.every((r) => r.viaWorker && r.refusal === null));
-	assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_codec, 'mpeg');
-}));
+test(
+	'MPEG bytes take the worker path when the mpeg lane is forced',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		const ctx = fakeContext(22050);
+		const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+		const allMpeg = () =>
+			Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+		const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+			makeDecoder: factory,
+			decodeFallback: countingFallback().fn
+		});
+		assert.equal(state.made, 4);
+		assert.ok(result.reports.every((r) => r.viaWorker && r.refusal === null));
+		assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_codec, 'mpeg');
+	})
+);
 
-test('MPEG on the worker lane with no injected decoder falls back (no bundled MPEG decoder)', withMpegRung(async () => {
-	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
-	decode.stemDecodeSession.forceLane('workers');
-	decode.stemDecodeSession.resetPool();
-	const ctx = fakeContext(22050);
-	const fallback = countingFallback();
-	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
-	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, { decodeFallback: fallback.fn });
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), 'workers');
-	assert.equal(fallback.calls.length, PARTS.length);
-	assert.ok(result.reports.every((r) => !r.viaWorker && r.refusal === 'decoder-unavailable'));
-	decode.stemDecodeSession.resetLane();
-}));
+test(
+	'MPEG on the worker lane with no injected decoder falls back (no bundled MPEG decoder)',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		decode.stemDecodeSession.forceLane('workers');
+		decode.stemDecodeSession.resetPool();
+		const ctx = fakeContext(22050);
+		const fallback = countingFallback();
+		const allMpeg = () =>
+			Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+		const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+			decodeFallback: fallback.fn
+		});
+		assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), 'workers');
+		assert.equal(fallback.calls.length, PARTS.length);
+		assert.ok(result.reports.every((r) => !r.viaWorker && r.refusal === 'decoder-unavailable'));
+		decode.stemDecodeSession.resetLane();
+	})
+);
 
-test('OGG is still not-flac and never claims an MPEG trial', withMpegRung(async () => {
-	decode.stemDecodeSession.resetLane();
-	const ctx = fakeContext();
-	const oggBundle = Object.fromEntries(PARTS.map((part) => [part, OGG()]));
-	const result = await decode.decodeStemParts(ctx, oggBundle, PARTS, {
-		makeDecoder: fakeDecoderFactory().factory,
-		decodeFallback: countingFallback().fn,
-		now: stepClock(9999)
-	});
-	assert.ok(result.reports.every((r) => r.refusal === 'not-flac'));
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
-}));
+test(
+	'OGG is still not-flac and never claims an MPEG trial',
+	withMpegRung(async () => {
+		decode.stemDecodeSession.resetLane();
+		const ctx = fakeContext();
+		const oggBundle = Object.fromEntries(PARTS.map((part) => [part, OGG()]));
+		const result = await decode.decodeStemParts(ctx, oggBundle, PARTS, {
+			makeDecoder: fakeDecoderFactory().factory,
+			decodeFallback: countingFallback().fn,
+			now: stepClock(9999)
+		});
+		assert.ok(result.reports.every((r) => r.refusal === 'not-flac'));
+		assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+	})
+);
 
-test('a FLAC 4-part verdict does not pin an MPEG 4-part load', withMpegRung(async () => {
-	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
-	decode.stemDecodeSession.resetLane();
-	const ctx = fakeContext();
-	const first = fakeDecoderFactory();
-	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
-		makeDecoder: first.factory,
-		decodeFallback: countingFallback().fn,
-		now: stepClock(400)
-	});
-	decode.stemDecodeSession.resetPool();
-	const second = fakeDecoderFactory();
-	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
-		makeDecoder: second.factory,
-		decodeFallback: countingFallback().fn,
-		now: stepClock(100)
-	});
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'flac'), 'workers');
-	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+test(
+	'a FLAC 4-part verdict does not pin an MPEG 4-part load',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		decode.stemDecodeSession.resetLane();
+		const ctx = fakeContext();
+		const first = fakeDecoderFactory();
+		await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+			makeDecoder: first.factory,
+			decodeFallback: countingFallback().fn,
+			now: stepClock(400)
+		});
+		decode.stemDecodeSession.resetPool();
+		const second = fakeDecoderFactory();
+		await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+			makeDecoder: second.factory,
+			decodeFallback: countingFallback().fn,
+			now: stepClock(100)
+		});
+		assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'flac'), 'workers');
+		assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
 
-	decode.stemDecodeSession.resetPool();
-	const mpegCtx = fakeContext(22050);
-	const mpegRun = fakeDecoderFactory({ sampleRate: 22050 });
-	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
-	await decode.decodeStemParts(mpegCtx, allMpeg(), PARTS, {
-		makeDecoder: mpegRun.factory,
-		decodeFallback: countingFallback().fn,
-		now: stepClock(400)
-	});
-	assert.equal(mpegRun.state.made, 0, 'MPEG main-thread trial is independent of FLAC verdict');
-}));
+		decode.stemDecodeSession.resetPool();
+		const mpegCtx = fakeContext(22050);
+		const mpegRun = fakeDecoderFactory({ sampleRate: 22050 });
+		const allMpeg = () =>
+			Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+		await decode.decodeStemParts(mpegCtx, allMpeg(), PARTS, {
+			makeDecoder: mpegRun.factory,
+			decodeFallback: countingFallback().fn,
+			now: stepClock(400)
+		});
+		assert.equal(mpegRun.state.made, 0, 'MPEG main-thread trial is independent of FLAC verdict');
+	})
+);
 
-test('MPEG at the wrong rate is sample-rate-mismatch without taking a decoder', withMpegRung(async () => {
-	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
-	const ctx = fakeContext(44100);
-	const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
-	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
-	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
-		makeDecoder: factory,
-		decodeFallback: countingFallback().fn
-	});
-	assert.equal(state.made, 0);
-	assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
-}));
+test(
+	'MPEG at the wrong rate is sample-rate-mismatch without taking a decoder',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		const ctx = fakeContext(44100);
+		const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+		const allMpeg = () =>
+			Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+		const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+			makeDecoder: factory,
+			decodeFallback: countingFallback().fn
+		});
+		assert.equal(state.made, 0);
+		assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
+	})
+);

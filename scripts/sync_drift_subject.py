@@ -73,6 +73,7 @@ from apps.shared import fingerprints
 from apps.shared.pairings import schema_sql as pairings_sql
 from apps.shared.play_orders import schema as play_orders_schema
 from apps.shared.playlist_sets import schema as playlist_sets_schema
+from apps.shared.set_target import store as set_target_store
 from apps.shared.state import analysis_stale, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.spotify import state_aux as spotify_aux
@@ -339,6 +340,12 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
     Authority("apps/autodj/try_picks.py", _apply_try_picks),
     Authority("apps/shared/playlist_sets/schema.py", _apply_playlist_sets),
+    # Set target length and skip-in-set flags (LIBUX-8679): the set_target
+    # routes call ensure_schema on the live state.db before each read or write.
+    Authority(
+        "apps/shared/set_target/store.py",
+        lambda conn, _path: set_target_store.ensure_schema(conn),
+    ),
     Authority(
         "apps/spotify/state_aux.py",
         lambda conn, _path: spotify_aux.ensure_aux_tables(conn),

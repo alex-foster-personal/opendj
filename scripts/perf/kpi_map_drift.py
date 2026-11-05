@@ -98,10 +98,7 @@ def class_drift(kpi_map: dict, spec_text: str) -> list[str]:
             continue
         recorded = str(cfg.get("class", ""))
         if recorded != current["class"]:
-            problems.append(
-                f"{sid} class: spec now reads {current['class']!r}, "
-                f"the map records {recorded!r}"
-            )
+            problems.append(f"{sid} class: spec now reads {current['class']!r}, the map records {recorded!r}")
     return problems
 
 
@@ -119,17 +116,14 @@ def budget_drift(kpi_map: dict, spec_text: str) -> list[str]:
     for sid, cfg in kpi_map["scenarios"].items():
         recorded = cfg.get("spec_cells")
         if not recorded:
-            problems.append(
-                f"{sid}: the map records no spec_cells, so budget drift cannot be detected for it"
-            )
+            problems.append(f"{sid}: the map records no spec_cells, so budget drift cannot be detected for it")
             continue
         current = found.get(sid)
         if current is None:
             problems.append(f"{sid}: no parseable budget row found in the spec")
             continue
         problems.extend(
-            f"{sid} {column}: spec now reads {current[column]!r}, "
-            f"the map was built against {recorded.get(column)!r}"
+            f"{sid} {column}: spec now reads {current[column]!r}, the map was built against {recorded.get(column)!r}"
             for column in ("target", "acceptable", "breaking")
             if str(recorded.get(column, "")) != current[column]
         )
@@ -286,11 +280,7 @@ def _strict_family_candidates(cell: str, family: str) -> list[float]:
     stripped = _PERCENTILE_LABEL.sub("", cell)
     wants_tag = _FAMILY_TAG[family]
     scale = _FAMILY_SCALE.get(family, 1.0)
-    return [
-        float(raw) * scale
-        for raw, cell_unit in _CELL_NUMBER.findall(stripped)
-        if (cell_unit or None) == wants_tag
-    ]
+    return [float(raw) * scale for raw, cell_unit in _CELL_NUMBER.findall(stripped) if (cell_unit or None) == wants_tag]
 
 
 _CELL_NUMBER_OP = re.compile(r"(<=|>=|<|>)?\s*(-?\d+(?:\.\d+)?)\s*(ms|s|%)?")
@@ -309,9 +299,7 @@ def _strict_family_operators(cell: str, family: str) -> list[str | None]:
     stripped = _PERCENTILE_LABEL.sub("", cell)
     wants_tag = _FAMILY_TAG[family]
     return [
-        (op or None)
-        for op, raw, cell_unit in _CELL_NUMBER_OP.findall(stripped)
-        if (cell_unit or None) == wants_tag
+        (op or None) for op, raw, cell_unit in _CELL_NUMBER_OP.findall(stripped) if (cell_unit or None) == wants_tag
     ]
 
 
@@ -386,10 +374,7 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
                 )
                 continue
             if not math.isclose(candidates[rank - 1], float(value), rel_tol=1e-9, abs_tol=1e-9):
-                problems.append(
-                    f"{sid} {req['kpi']} {column}: map records {value!r}, "
-                    f"not found in spec cell {cell!r}"
-                )
+                problems.append(f"{sid} {req['kpi']} {column}: map records {value!r}, not found in spec cell {cell!r}")
                 continue
             operator = _strict_family_operators(cell, family)[rank - 1]
             problem = _per_kpi_operator_problem(sid, cfg, req, column, operator, cell)
@@ -495,9 +480,7 @@ def threshold_drift(kpi_map: dict) -> list[str]:
             cell = str(cells.get(column, ""))
             matches = _threshold_matches_cell(float(value), unit, cell)
             if matches is False:
-                problems.append(
-                    f"{sid} {column}: map records {value!r}, not found in spec cell {cell!r}"
-                )
+                problems.append(f"{sid} {column}: map records {value!r}, not found in spec cell {cell!r}")
             elif matches is None and column not in unverifiable:
                 problems.append(
                     f"{sid} {column}: map records {value!r}, but spec cell {cell!r} "

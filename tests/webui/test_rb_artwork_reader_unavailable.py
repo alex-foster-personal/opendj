@@ -14,6 +14,7 @@ Regression one-liners:
   - if a track with a real embedded cover 503s or 404s without mutagen then broken
   - if a missing file reports artwork_available True then broken (residency first)
 """
+
 from __future__ import annotations
 
 import shutil

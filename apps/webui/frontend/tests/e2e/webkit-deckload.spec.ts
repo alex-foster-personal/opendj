@@ -104,10 +104,7 @@
  */
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
-import type {
-	PerformanceCommand,
-	PerformanceState
-} from '../../src/lib/rb/performance-ipc.svelte';
+import type { PerformanceCommand, PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
 import type { DeckId } from '../../src/lib/rb/deck-slots';
 import { describeStalledLoopSlices, findStalledLoopSlices } from './support/loop-continuity';
 
@@ -507,9 +504,7 @@ async function _seek(page: Page, deck: DeckId, positionMs: number): Promise<void
 				const ipc = window.musicDjToolsPerformance;
 				if (ipc === undefined) return false;
 				const state = ipc.query().decks[deckId];
-				return (
-					!state.transport_pending && Math.abs(state.position_ms - target) < tolerance
-				);
+				return !state.transport_pending && Math.abs(state.position_ms - target) < tolerance;
 			},
 			{ deckId: deck, target: positionMs, tolerance: SEEK_LANDING_TOLERANCE_MS },
 			{ timeout: 15_000, polling: TRANSPORT_POLL_MS }
@@ -1074,12 +1069,7 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		expect(stages, 'deck 1 reported no load stages').not.toBeNull();
 		// Each of these is a stage a DJ used to wait through before the deck
 		// could play. Any one reappearing is the regression.
-		for (const deferred of [
-			'probeStem',
-			'fetchStems',
-			'decodeStems',
-			'stemProcessorCreate'
-		]) {
+		for (const deferred of ['probeStem', 'fetchStems', 'decodeStems', 'stemProcessorCreate']) {
 			expect(
 				stages?.[deferred],
 				`${deferred} is back in the deck-load critical path`
@@ -1422,7 +1412,7 @@ test.describe('webkit performance controls on the engine-served build', () => {
 	});
 
 	test('a gridless deck plays and pauses, with BEAT SYNC and Q inert', async () => {
-		// THE GRIDLESS TRANSPORT CONTRACT, specs/design_decision_09.md. The
+		// THE GRIDLESS TRANSPORT CONTRACT, (private path). The
 		// engine genuinely refuses beat sync, quantized cue and beat loops
 		// without a grid. The defect was that the refusal leaked into TRANSPORT,
 		// so an unanalysed track could not be played at all - and an unanalysed

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from apps.shared.state import db as state_db
 from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 
+from .. import playlist_thumbnail as thumbs
 from .. import playlist_tree_order as tree_order
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -186,8 +187,8 @@ def list_deleted_playlists(
 def list_playlist_tracks(
     playlist_id: str,
     response: Response,
-    limit: int = Query(100, ge=1, le=500),  # noqa: B008  # FastAPI DI
-    offset: int = Query(0, ge=0),  # noqa: B008  # FastAPI DI
+    limit: int = Query(100, ge=1, le=500),  # FastAPI DI
+    offset: int = Query(0, ge=0),  # FastAPI DI
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
     state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
@@ -226,6 +227,43 @@ def list_playlist_tracks(
     if next_offset >= total:
         next_offset = None
     return PlaylistTracksPage(tracks=tracks, total=total, next_offset=next_offset)
+
+
+@router.get(
+    "/{playlist_id}/thumbnail",
+    response_class=Response,
+    responses={200: {"content": {"image/jpeg": {}, "image/svg+xml": {}}}},
+)
+def get_playlist_thumbnail(
+    playlist_id: str,
+    request: Request,
+    size: int = Query(64, description="64 = sidebar rows, 232 = playlist cards"),  # FastAPI DI
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> Response:
+    """Square playlist thumbnail (ARTTHUMB-8728): mosaic, single cover, or placeholder.
+
+    Agent parity: ``opendj playlist thumbnail <id> [--size 64|232] [--out FILE]``.
+    The path deliberately lacks ``/artwork``, so a skin's artwork grayscale
+    rule applies only if that skin opts in.
+    """
+    if size not in thumbs.THUMBNAIL_SIZES:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "THUMBNAIL_SIZE", "message": f"size must be one of {thumbs.THUMBNAIL_SIZES}"},
+        )
+    pl = backend.get_playlist(playlist_id)
+    data, key = thumbs.cached_thumbnail(
+        data_dir / "state" / thumbs.CACHE_DIR_NAME, size, pl.items, thumbs.track_cover_bytes
+    )
+    kind = "cover" if data is not None else "placeholder"
+    etag = f'"{key[:32]}-{kind}"'
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag, "X-Thumbnail-Kind": kind}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    if data is None:
+        return Response(content=thumbs.PLACEHOLDER_SVG, media_type="image/svg+xml", headers=headers)
+    return Response(content=data, media_type="image/jpeg", headers=headers)
 
 
 @router.get("/{playlist_id}", response_model=PlaylistDetail)

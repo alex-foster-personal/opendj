@@ -5,6 +5,7 @@ Only audio segments (``audio_*.wav`` / ``audio_*.mp3``) are candidates; ``timeli
 ``manifest.json`` are NEVER pruned (those are tiny and the whole
 point of the recorder).
 """
+
 from __future__ import annotations
 
 import time

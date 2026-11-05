@@ -49,14 +49,7 @@ const SETTLE_POLL_MS = 200;
 const RETRY_MS = 5_000;
 
 export type AutoPlayDecisionPhase =
-	| 'idle'
-	| 'deciding'
-	| 'cueing'
-	| 'preparing'
-	| 'scheduled'
-	| 'running'
-	| 'done'
-	| 'fallback';
+	'idle' | 'deciding' | 'cueing' | 'preparing' | 'scheduled' | 'running' | 'done' | 'fallback';
 
 export interface AutoPlayDecision {
 	phase: AutoPlayDecisionPhase;
@@ -118,6 +111,8 @@ export interface EarlyPoll {
 	pick: (taken: ReadonlySet<string>) => string | null;
 	/** A decided track is spoken for: it goes in AutoPlay's claimed and played sets. */
 	claim: (source: string, track: string) => void;
+	/** AUTOPLAY-HEARD: the key shift `track` loads with to fit the master's heard key (0: none). */
+	keyShiftFor: (track: string) => number;
 	stillArmed: () => boolean;
 }
 
@@ -137,7 +132,9 @@ function _replace(next: Partial<AutoPlayDecision>): void {
 }
 
 function _endWithFallback(reason: string): void {
-	console.info(`[autoplay] no planned handoff for ${autoPlayDecision.source?.slice(0, 12)}: ${reason}`);
+	console.info(
+		`[autoplay] no planned handoff for ${autoPlayDecision.source?.slice(0, 12)}: ${reason}`
+	);
 	_replace({ phase: 'fallback', reason });
 	_running = null;
 }
@@ -145,7 +142,8 @@ function _endWithFallback(reason: string): void {
 function _stale(token: number, poll: EarlyPoll): string | null {
 	if (token !== _token) return 'superseded';
 	if (!poll.stillArmed()) return 'AutoPlay was switched off';
-	if (deckStates[poll.source.deck].stable_id !== poll.source.stable_id) return 'the master changed track';
+	if (deckStates[poll.source.deck].stable_id !== poll.source.stable_id)
+		return 'the master changed track';
 	if (autoPlayYieldsNow()) return 'another plan took the mix';
 	return null;
 }
@@ -155,11 +153,16 @@ async function _pause(ms: number): Promise<void> {
 }
 
 /** Put the track on the follower, unless it is there already. Throws what the deck refused. */
-async function _cue(deck: DeckId, track: string): Promise<void> {
+async function _cue(deck: DeckId, track: string, keyShift: number): Promise<void> {
 	const held = deckStates[deck].stable_id;
 	if (held === track) return;
-	if (held !== null) await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
-	await dispatchPerformanceCommand({ type: 'load', deck, stable_id: track }, undefined, 'autoplay-handoff');
+	if (held !== null)
+		await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
+	await dispatchPerformanceCommand(
+		{ type: 'load', deck, stable_id: track, ...(keyShift !== 0 ? { key_shift: keyShift } : {}) },
+		undefined,
+		'autoplay-handoff'
+	);
 }
 
 async function _deckReady(deck: DeckId, track: string, deadlineMs: number): Promise<boolean> {
@@ -182,24 +185,34 @@ async function _awaitPrepare(
 ): Promise<void> {
 	const deadline = performance.now() + waitMs;
 	while (performance.now() < deadline && !abandoned()) {
-		const request = { out_deck: source.deck, in_deck: deck, intent: autoPlayNextState.intent, from_ms: fromMs };
-		const status = await requestPrepareStatus(request).catch(
-			(error: unknown) => {
-				console.warn('auto-play: prepare status failed', error);
-				return null;
-			}
-		);
+		const request = {
+			out_deck: source.deck,
+			in_deck: deck,
+			intent: autoPlayNextState.intent,
+			from_ms: fromMs
+		};
+		const status = await requestPrepareStatus(request).catch((error: unknown) => {
+			console.warn('auto-play: prepare status failed', error);
+			return null;
+		});
 		if (status !== null && status.in_track === track && status.state !== 'warming') return;
 		await _pause(1000);
 	}
 }
 
-async function _run(poll: EarlyPoll, shortlist: string[], follower: DeckId, targetMs: number, token: number): Promise<void> {
+async function _run(
+	poll: EarlyPoll,
+	shortlist: string[],
+	follower: DeckId,
+	targetMs: number,
+	token: number
+): Promise<void> {
 	const { source } = poll;
 	const answer = await requestDecision({
 		out_deck: source.deck,
 		in_deck: follower,
 		shortlist,
+		in_key_shifts: Object.fromEntries(shortlist.map((track) => [track, poll.keyShiftFor(track)])),
 		intent: autoPlayNextState.intent,
 		recent_styles: recentAutoPlayStyles(),
 		earliest_ms: earliestWindowMs(source.position_ms, targetMs),
@@ -221,10 +234,12 @@ async function _run(poll: EarlyPoll, shortlist: string[], follower: DeckId, targ
 	_loading = true;
 	holdAutoPlayNextPrepare(true);
 	try {
-		await _cue(follower, answer.track);
+		await _cue(follower, answer.track, poll.keyShiftFor(answer.track));
 	} catch (error) {
 		_replace({ track: null });
-		return _endWithFallback(`could not load the next track: ${error instanceof Error ? error.message : String(error)}`);
+		return _endWithFallback(
+			`could not load the next track: ${error instanceof Error ? error.message : String(error)}`
+		);
 	} finally {
 		_loading = false;
 	}
@@ -232,13 +247,25 @@ async function _run(poll: EarlyPoll, shortlist: string[], follower: DeckId, targ
 		return _endWithFallback(`deck ${follower} did not settle on the next track`);
 	}
 	_replace({ phase: 'preparing' });
-	const taken = (): boolean => deckStates[follower].stable_id !== answer.track || deckStates[follower].playing;
+	const taken = (): boolean =>
+		deckStates[follower].stable_id !== answer.track || deckStates[follower].playing;
 	const waitMs = prepareWaitMs(answer.window.start_ms - deckStates[source.deck].position_ms);
-	await _awaitPrepare(follower, source, answer.track, answer.window.start_ms, waitMs, () => taken() || _stale(token, poll) !== null);
+	await _awaitPrepare(
+		follower,
+		source,
+		answer.track,
+		answer.window.start_ms,
+		waitMs,
+		() => taken() || _stale(token, poll) !== null
+	);
 	const stale = _stale(token, poll);
 	if (stale !== null) return _endWithFallback(stale);
 	if (taken()) return _endWithFallback(`deck ${follower} was taken while the transition prepared`);
-	const armed = await armAutoPlayNext({ outDeck: source.deck, inDeck: follower, fromMs: answer.window.start_ms });
+	const armed = await armAutoPlayNext({
+		outDeck: source.deck,
+		inDeck: follower,
+		fromMs: answer.window.start_ms
+	});
 	if (token !== _token) return;
 	if (!armed) return _endWithFallback(autoPlayNextState.run?.reason ?? 'the plan was not armed');
 	// The planner has the last word, over rendered audio: the readout says what will play, not what was provisional.
@@ -281,10 +308,18 @@ function _start(poll: EarlyPoll, dueMs: number): void {
 	_token += 1;
 	const token = _token;
 	_running = { deck: follower, source: source.stable_id };
-	_replace({ ..._idle(), phase: 'deciding', source: source.stable_id, due_ms: Math.round(dueMs), decided_at_ms: Math.round(source.position_ms), in_deck: follower });
+	_replace({
+		..._idle(),
+		phase: 'deciding',
+		source: source.stable_id,
+		due_ms: Math.round(dueMs),
+		decided_at_ms: Math.round(source.position_ms),
+		in_deck: follower
+	});
 	void _run(poll, shortlist, follower, targetMs, token)
 		.catch((error: unknown) => {
-			if (token === _token) _endWithFallback(error instanceof Error ? error.message : String(error));
+			if (token === _token)
+				_endWithFallback(error instanceof Error ? error.message : String(error));
 		})
 		.finally(() => holdAutoPlayNextPrepare(false));
 }
@@ -306,7 +341,11 @@ export function syncAutoPlayDecision(): void {
 		_running = null;
 		return;
 	}
-	_endWithFallback(ended === 'cancelled' ? 'the planned transition was cancelled' : `the planned transition ended ${ended ?? 'without a result'}`);
+	_endWithFallback(
+		ended === 'cancelled'
+			? 'the planned transition was cancelled'
+			: `the planned transition ended ${ended ?? 'without a result'}`
+	);
 }
 
 /** One AutoPlay poll. True while a decision holds the follower, so the old handoff must wait. */
@@ -317,7 +356,13 @@ export function pollAutoPlayDecision(poll: EarlyPoll): boolean {
 		_retryAtMs = 0;
 	}
 	const { phase } = autoPlayDecision;
-	if (phase === 'deciding' || phase === 'cueing' || phase === 'preparing' || phase === 'scheduled' || phase === 'running') {
+	if (
+		phase === 'deciding' ||
+		phase === 'cueing' ||
+		phase === 'preparing' ||
+		phase === 'scheduled' ||
+		phase === 'running'
+	) {
 		return true;
 	}
 	const dueMs = _due(source);
@@ -337,7 +382,12 @@ export function pollAutoPlayDecision(poll: EarlyPoll): boolean {
 /** The track a failed decision left cued on this deck: the fallback plays it rather than picking again. */
 export function autoPlayDecisionCuedTrack(deck: DeckId): string | null {
 	const { phase, track, in_deck } = autoPlayDecision;
-	return phase === 'fallback' && in_deck === deck && track !== null && deckStates[deck].stable_id === track ? track : null;
+	return phase === 'fallback' &&
+		in_deck === deck &&
+		track !== null &&
+		deckStates[deck].stable_id === track
+		? track
+		: null;
 }
 
 /** Why the old handoff is running now, for its log line. */
@@ -349,7 +399,8 @@ export function autoPlayFallbackReason(): string {
 /** The Decide now button: take the decision on the next poll, replacing one that has not started playing. */
 export async function decideAutoPlayNow(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) throw new Error('auto_play_decide_now: AutoPlay is off');
-	if (autoPlayDecision.phase === 'running') throw new Error('auto_play_decide_now: a planned transition is running');
+	if (autoPlayDecision.phase === 'running')
+		throw new Error('auto_play_decide_now: a planned transition is running');
 	await cancelAutoPlayDecision();
 	_force = true;
 	_retryAtMs = 0;

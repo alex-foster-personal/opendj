@@ -234,10 +234,7 @@ def _index_is_stale(dest: Path) -> bool:
 
 def _snapshot(dest: Path) -> dict[str, bytes | None]:
     """The bytes of every file a publish may replace (None when absent)."""
-    return {
-        name: (dest / name).read_bytes() if (dest / name).is_file() else None
-        for name in (LEDGER, INDEX, PINS)
-    }
+    return {name: (dest / name).read_bytes() if (dest / name).is_file() else None for name in (LEDGER, INDEX, PINS)}
 
 
 def _restore(dest: Path, before: dict[str, bytes | None]) -> None:
@@ -299,9 +296,7 @@ def publish(dest: Path, sources: list[Path]) -> Published:
         # wrong here, where a lagging host would roll published branch and PR
         # links back (Codex, #7403). `_fill` keeps every field the published
         # row already set.
-        arriving = [
-            _fill(prior[key], rec) if key in prior else rec for key, rec in incoming.items()
-        ]
+        arriving = [_fill(prior[key], rec) if key in prior else rec for key, rec in incoming.items()]
         try:
             fresh, total, pins = _write_and_verify(dest, arriving, prior, set(prior) | set(incoming), merged_pins)
         except BaseException:
@@ -314,12 +309,15 @@ def publish(dest: Path, sources: list[Path]) -> Published:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dest", type=Path, required=True, help="destination ledger directory")
     ap.add_argument(
-        "--from", dest="sources", type=Path, action="extend", nargs="+", required=True,
+        "--from",
+        dest="sources",
+        type=Path,
+        action="extend",
+        nargs="+",
+        required=True,
         help="one or more prompts.jsonl files to union into --dest (repeatable)",
     )
     args = ap.parse_args(argv)

@@ -152,15 +152,13 @@ export function createTabLeadership(deps: {
 		if (locks === null || disposed) return;
 		const controller = new AbortController();
 		queued = controller;
-		locks
-			.request(lockName, { signal: controller.signal }, hold)
-			.then(
-				() => onHeldSettled(undefined),
-				(error: unknown) => {
-					if (controller.signal.aborted) return;
-					onHeldSettled(error);
-				}
-			);
+		locks.request(lockName, { signal: controller.signal }, hold).then(
+			() => onHeldSettled(undefined),
+			(error: unknown) => {
+				if (controller.signal.aborted) return;
+				onHeldSettled(error);
+			}
+		);
 	};
 
 	if (locks !== null) {
@@ -281,5 +279,8 @@ export function whileLeader(
 export function confirmedLeadership(
 	leadership: Pick<TabLeadership, 'isConfirmedLeader' | 'subscribe'>
 ): Pick<TabLeadership, 'isLeader' | 'subscribe'> {
-	return { isLeader: () => leadership.isConfirmedLeader(), subscribe: (listener) => leadership.subscribe(listener) };
+	return {
+		isLeader: () => leadership.isConfirmedLeader(),
+		subscribe: (listener) => leadership.subscribe(listener)
+	};
 }

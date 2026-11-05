@@ -66,9 +66,7 @@ def _minimal_payload_for_cli_launcher(tmp_path: Path) -> Path:
     payload = tmp_path / "payload"
     payload.mkdir()
     (payload / "manifest.json").write_text(
-        '{"schema":1,"kind":"'
-        + MANIFEST_KIND
-        + '","identity":{"version":"test","build_id":"test"}}',
+        '{"schema":1,"kind":"' + MANIFEST_KIND + '","identity":{"version":"test","build_id":"test"}}',
         encoding="utf-8",
     )
     (payload / "pylib").mkdir()
@@ -97,9 +95,7 @@ def _minimal_payload_for_cli_launcher(tmp_path: Path) -> Path:
     return payload
 
 
-def _run_cli_launcher(
-    payload: Path, tmp_path: Path, *args: str
-) -> subprocess.CompletedProcess[str]:
+def _run_cli_launcher(payload: Path, tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run ``bin/opendj`` outside the repo with an env that carries nothing."""
     outside = tmp_path / "outside"
     outside.mkdir(exist_ok=True)

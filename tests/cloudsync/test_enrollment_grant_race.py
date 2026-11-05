@@ -64,11 +64,7 @@ _GRANT_UPDATE_PREFIX: str = f"UPDATE {enrollment_credentials.GRANT_TABLE}".upper
 
 def _grant_row(hub_dir: Path, token: str) -> dict[str, object]:
     digest = enrollment_credentials.hash_grant_token(token)
-    rows = [
-        row
-        for row in read_hub(hub_dir, enrollment_credentials.GRANT_TABLE)
-        if row["grant_token_sha256"] == digest
-    ]
+    rows = [row for row in read_hub(hub_dir, enrollment_credentials.GRANT_TABLE) if row["grant_token_sha256"] == digest]
     assert len(rows) == 1, f"expected one grant row for the minted token, found {len(rows)}"
     return rows[0]
 
@@ -124,8 +120,7 @@ def test_two_machines_racing_one_grant_resolve_exactly_one_owner(
     token = mint_grant(enroll_hub_dir)
     hub_db = client.state_db_path(enroll_hub_dir)
     machine_ids = [
-        machine_identity.get_or_create_machine_id(path)
-        for path in (enroll_spoke_dir, enroll_other_spoke_dir)
+        machine_identity.get_or_create_machine_id(path) for path in (enroll_spoke_dir, enroll_other_spoke_dir)
     ]
     barrier = threading.Barrier(2, timeout=BARRIER_TIMEOUT_S)
     arrivals: list[str] = []
@@ -152,13 +147,9 @@ def test_two_machines_racing_one_grant_resolve_exactly_one_owner(
     )
     assert not barrier_errors, f"the barrier broke, so no race was staged: {barrier_errors}"
 
-    winners = {
-        mid: out for mid, out in outcomes.items() if isinstance(out, enrollment.OwnerIdentity)
-    }
+    winners = {mid: out for mid, out in outcomes.items() if isinstance(out, enrollment.OwnerIdentity)}
     losers = {
-        mid: out
-        for mid, out in outcomes.items()
-        if isinstance(out, enrollment_credentials.EnrollmentCredentialError)
+        mid: out for mid, out in outcomes.items() if isinstance(out, enrollment_credentials.EnrollmentCredentialError)
     }
     assert len(outcomes) == 2, f"each thread must report an outcome, got {outcomes}"
     assert len(winners) == 1, (
@@ -171,10 +162,9 @@ def test_two_machines_racing_one_grant_resolve_exactly_one_owner(
     assert "already redeemed by another machine" in str(refusal), str(refusal)
     # The refusal reaches whoever holds the token, so the winner's id stays in
     # the hub log. Presence first: the log names the winner, then the wire does not.
-    assert any(
-        winner_id in record.getMessage() and loser_id in record.getMessage()
-        for record in caplog.records
-    ), f"the hub log must name the winning machine; records: {caplog.records}"
+    assert any(winner_id in record.getMessage() and loser_id in record.getMessage() for record in caplog.records), (
+        f"the hub log must name the winning machine; records: {caplog.records}"
+    )
     assert winner_id not in str(refusal), "a spent grant must not disclose who spent it"
 
     row = _grant_row(enroll_hub_dir, token)
@@ -245,8 +235,7 @@ def test_two_live_enrollments_racing_one_grant_admit_exactly_one(
         refused = [out for out in results.values() if isinstance(out, client.SyncTransportError)]
         assert len(results) == 2, f"round {round_index}: missing outcomes {results}"
         assert len(admitted) == 1, (
-            f"round {round_index}: exactly one enrollment may spend the grant, "
-            f"{len(admitted)} did: {results}"
+            f"round {round_index}: exactly one enrollment may spend the grant, {len(admitted)} did: {results}"
         )
         assert len(refused) == 1, f"round {round_index}: {results}"
         message = str(refused[0])
@@ -270,12 +259,8 @@ def test_the_same_machine_re_presenting_its_own_grant_still_resolves(
     conn: sqlite3.Connection = state_db.open_rw(client.state_db_path(enroll_hub_dir))
     try:
         credential = enrollment_credentials.GrantCredential(value=token)
-        first = enrollment_credentials.resolve_enrollment_identity(
-            conn, credential, machine_id=machine_id
-        )
-        again = enrollment_credentials.resolve_enrollment_identity(
-            conn, credential, machine_id=machine_id
-        )
+        first = enrollment_credentials.resolve_enrollment_identity(conn, credential, machine_id=machine_id)
+        again = enrollment_credentials.resolve_enrollment_identity(conn, credential, machine_id=machine_id)
     finally:
         conn.close()
     assert first == again, "re-running enroll on the redeeming machine must stay idempotent"

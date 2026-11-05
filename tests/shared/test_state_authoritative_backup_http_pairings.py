@@ -26,9 +26,7 @@ def _connect(data_dir: Path) -> sqlite3.Connection:
 
 
 def _has_table(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
     return row is not None
 
 
@@ -42,15 +40,12 @@ def _insert_http_pairing(conn: sqlite3.Connection, row: tuple[object, ...]) -> N
 
 
 def _pairings(conn: sqlite3.Connection) -> list[tuple[object, ...]]:
-    return conn.execute(
-        "SELECT from_stable_id, to_stable_id, direction FROM pairings ORDER BY 1, 2"
-    ).fetchall()
+    return conn.execute("SELECT from_stable_id, to_stable_id, direction FROM pairings ORDER BY 1, 2").fetchall()
 
 
 def _http_pairings(conn: sqlite3.Connection) -> list[tuple[object, ...]]:
     return conn.execute(
-        "SELECT pairing_id, from_stable_id, to_stable_id, direction, notes "
-        "FROM http_pairings ORDER BY pairing_id"
+        "SELECT pairing_id, from_stable_id, to_stable_id, direction, notes FROM http_pairings ORDER BY pairing_id"
     ).fetchall()
 
 
@@ -133,9 +128,7 @@ def test_backup_without_http_pairings_restores_the_graph_and_leaves_http_rows(
 
 
 @pytest.mark.requirement("LIBM-113")
-def test_live_db_without_http_pairings_gets_it_created_then_restored(
-    new_data_dir: Path, tmp_path: Path
-) -> None:
+def test_live_db_without_http_pairings_gets_it_created_then_restored(new_data_dir: Path, tmp_path: Path) -> None:
     """[if] the live state.db has no http_pairings yet [then] restore creates it and fills it from the backup, [else stop]."""
     backup = backup_state_db(new_data_dir, tmp_path / "backups", keep=3)
     conn = _connect(new_data_dir)
@@ -154,9 +147,7 @@ def test_live_db_without_http_pairings_gets_it_created_then_restored(
         assert _http_pairings(conn) == want_http
         indexes = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='http_pairings'"
-            )
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='http_pairings'")
         }
     finally:
         conn.close()
@@ -190,9 +181,7 @@ def test_control_pairings_only_restore_is_unchanged(old_data_dir: Path, tmp_path
         conn.close()
 
 
-def test_backup_missing_the_required_graph_table_still_refuses(
-    old_data_dir: Path, tmp_path: Path
-) -> None:
+def test_backup_missing_the_required_graph_table_still_refuses(old_data_dir: Path, tmp_path: Path) -> None:
     """Control: the optional table does not relax the required one."""
     backup = backup_state_db(old_data_dir, tmp_path / "backups", keep=3)
     raw = sqlite3.connect(backup.path)
@@ -207,9 +196,7 @@ def test_backup_missing_the_required_graph_table_still_refuses(
 
 @pytest.mark.requirement("PAIR-06")
 @pytest.mark.requirement("LIBM-113")
-def test_backup_from_before_graph_owner_stamp_still_restores(
-    new_data_dir: Path, tmp_path: Path
-) -> None:
+def test_backup_from_before_graph_owner_stamp_still_restores(new_data_dir: Path, tmp_path: Path) -> None:
     """[if] the backup's http_pairings lacks a column added since [then] restore fills it with its default, [else stop]."""
     backup = backup_state_db(new_data_dir, tmp_path / "backups", keep=3)
     raw = sqlite3.connect(backup.path)

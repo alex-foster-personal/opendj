@@ -155,7 +155,6 @@ export interface DeckStateBaseline {
 /** Trailing coalesce window for the localStorage write. */
 const FLUSH_DEBOUNCE_MS = 250;
 
-
 let _events: PerfEvent[] = withinBudgets(_readStorage());
 /** Rows appended since the durable copy was last written. */
 let _unflushed = false;
@@ -556,10 +555,16 @@ export function recordDeckLoadTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
-	stems: StemLoadFacts, extraLabels?: Record<string, string>
+	stems: StemLoadFacts,
+	extraLabels?: Record<string, string>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
-	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, extraLabels === undefined ? labels : { ...labels, ...extraLabels });
+	recordPerfTiming(
+		kind,
+		stemmed === null ? stages : { ...stages, stemmed },
+		deck,
+		extraLabels === undefined ? labels : { ...labels, ...extraLabels }
+	);
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {

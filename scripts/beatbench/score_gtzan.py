@@ -8,7 +8,7 @@
 # ///
 """Score our beat tracker against HUMAN beat annotations, not against rekordbox.
 
-WHY THIS EXISTS. Every figure in `specs/beat-mapping-bench.md` scores us
+WHY THIS EXISTS. Every figure in `(private path)` scores us
 against rekordbox's PQTZ grid. Rekordbox is not ground truth: it is another
 analyzer, with its own offsets and its own octave choices. An agreement figure
 against it cannot say whether a disagreement is our error or theirs, which is
@@ -24,7 +24,7 @@ than just another table. Two things get measured at once:
 1. OUR SCORER, against `mir_eval`, on identical beat times, for BOTH the
    F-measure and the continuity family. `mir_eval` is the reference
    implementation the literature quotes; a gap is our bug. The CONTINUITY half
-   is the check `.planning/debt/1514.md` says the repo still owes: that entry
+   is the check `(private path)` says the repo still owes: that entry
    is about CMLt and AMLt specifically, and an F-measure cross-check does not
    discharge it.
 2. OUR PIPELINE, against a published figure. Reproducing ~0.889 says the
@@ -100,9 +100,9 @@ PUBLISHED_BEAT_THIS_GTZAN_F1 = 0.889
 TIGHT_TOLERANCE_S = 0.02
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # scoring
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 # Agreement bands against mir_eval, named because they mean different things.
 # F_MEASURE_AGREEMENT_BAND is a REPORTING threshold: a per-clip gap above it is
@@ -113,6 +113,7 @@ TIGHT_TOLERANCE_S = 0.02
 # anything above the floor is a genuine difference in the counting.
 F_MEASURE_AGREEMENT_BAND = 1e-3
 RATIO_NOISE_FLOOR = 1e-6
+
 
 def score_one(reference: list[float], estimate: list[float]) -> dict[str, Any] | None:
     """mir_eval scores for one clip, plus the signed offset of our beats.
@@ -139,19 +140,18 @@ def score_one(reference: list[float], estimate: list[float]) -> dict[str, Any] |
             offsets_ms.append((t - ref[idx]) * 1000.0)
     return {
         "f_measure": float(f),
-        "cmlc": float(cmlc), "cmlt": float(cmlt),
-        "amlc": float(amlc), "amlt": float(amlt),
-        "n_reference": int(ref.size), "n_estimate": int(est.size),
+        "cmlc": float(cmlc),
+        "cmlt": float(cmlt),
+        "amlc": float(amlc),
+        "amlt": float(amlt),
+        "n_reference": int(ref.size),
+        "n_estimate": int(est.size),
         "offset_median_ms": float(st.median(offsets_ms)) if offsets_ms else None,
-        "offset_abs_p95_ms": (
-            float(np.percentile(np.abs(offsets_ms), 95)) if offsets_ms else None
-        ),
+        "offset_abs_p95_ms": (float(np.percentile(np.abs(offsets_ms), 95)) if offsets_ms else None),
     }
 
 
-def our_scorer_figures(
-    reference: list[float], estimate: list[float]
-) -> dict[str, float | None] | None:
+def our_scorer_figures(reference: list[float], estimate: list[float]) -> dict[str, float | None] | None:
     """This repo's OWN F-measure and continuity on the SAME trimmed inputs.
 
     Two separate cross-checks travel together here because they share the
@@ -160,7 +160,7 @@ def our_scorer_figures(
     - `f_measure`, from `score_positions`. Greedy nearest-neighbour pairing
       against `mir_eval`'s optimal one-to-one matching.
     - `cmlt` and `amlt`, from `score_continuity`. THIS is the one
-      `.planning/debt/1514.md` records as owed. That entry found this repo's
+      `(private path)` records as owed. That entry found this repo's
       CMLt exactly one continuously-correct beat short of `mir_eval`'s on 4
       librosa tracks and 2 lane tracks, and could not say whether the boundary
       at fault is the candidate interval at `nearest == 0`, the strict versus
@@ -193,7 +193,6 @@ def our_scorer_figures(
     }
 
 
-
 def sweep_constant_shift(
     per_clip_inputs: list[tuple[list[float], list[float]]],
     shifts_ms: list[float],
@@ -222,22 +221,22 @@ def sweep_constant_shift(
         scores: list[float] = []
         tight: list[float] = []
         for reference, estimate in per_clip_inputs:
-            ref = mir_eval.beat.trim_beats(
-                np.array(sorted(reference), dtype=float), min_beat_time=TRIM_S)
+            ref = mir_eval.beat.trim_beats(np.array(sorted(reference), dtype=float), min_beat_time=TRIM_S)
             est = mir_eval.beat.trim_beats(
-                np.array(sorted(t + dt for t in estimate), dtype=float), min_beat_time=TRIM_S)
+                np.array(sorted(t + dt for t in estimate), dtype=float), min_beat_time=TRIM_S
+            )
             if ref.size == 0:
                 continue
-            scores.append(float(
-                mir_eval.beat.f_measure(ref, est, f_measure_threshold=TOLERANCE_S)))
-            tight.append(float(
-                mir_eval.beat.f_measure(ref, est, f_measure_threshold=TIGHT_TOLERANCE_S)))
-        out.append({
-            "shift_ms": shift_ms,
-            "f_measure_mean": st.mean(scores),
-            "f_measure_tight_mean": st.mean(tight),
-            "n": len(scores),
-        })
+            scores.append(float(mir_eval.beat.f_measure(ref, est, f_measure_threshold=TOLERANCE_S)))
+            tight.append(float(mir_eval.beat.f_measure(ref, est, f_measure_threshold=TIGHT_TOLERANCE_S)))
+        out.append(
+            {
+                "shift_ms": shift_ms,
+                "f_measure_mean": st.mean(scores),
+                "f_measure_tight_mean": st.mean(tight),
+                "n": len(scores),
+            }
+        )
     return out
 
 
@@ -307,9 +306,10 @@ def score_all(
     return per_clip, unscorable, sweep_inputs
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # main
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def _percentiles(xs: list[float]) -> dict[str, float]:
     s = sorted(xs)
@@ -340,46 +340,57 @@ def _report(
         f"estimate scoring 0); unscorable {summary['unscorable_by_reason']}"
     )
     print(f"[gtzan] fixtures digest {digest}")
-    print(f"[gtzan] mir_eval F={summary['f_measure_mean']:.4f} "
-          f"(published {PUBLISHED_BEAT_THIS_GTZAN_F1}, "
-          f"delta {summary['delta_vs_published']:+.4f})")
+    print(
+        f"[gtzan] mir_eval F={summary['f_measure_mean']:.4f} "
+        f"(published {PUBLISHED_BEAT_THIS_GTZAN_F1}, "
+        f"delta {summary['delta_vs_published']:+.4f})"
+    )
     print(f"[gtzan] CMLt={summary['cmlt_mean']:.4f} AMLt={summary['amlt_mean']:.4f}")
     if summary.get("our_scorer_f_mean") is not None:
-        print(f"[gtzan] our scorer F={summary['our_scorer_f_mean']:.4f}, "
-              f"max |gap| vs mir_eval={summary['our_scorer_max_abs_gap_vs_mir_eval']:.2e}, "
-              f"clips disagreeing >1e-3: "
-              f"{summary['our_scorer_clips_disagreeing_over_1e_3']}")
+        print(
+            f"[gtzan] our scorer F={summary['our_scorer_f_mean']:.4f}, "
+            f"max |gap| vs mir_eval={summary['our_scorer_max_abs_gap_vs_mir_eval']:.2e}, "
+            f"clips disagreeing >1e-3: "
+            f"{summary['our_scorer_clips_disagreeing_over_1e_3']}"
+        )
         for name in ("cmlt", "amlt"):
             if summary.get(f"our_{name}_n_comparable"):
-                print(f"[gtzan] our {name.upper()} mean={summary[f'our_{name}_mean']:.4f} vs "
-                      f"mir_eval {summary[f'mir_eval_{name}_mean_same_clips']:.4f} on "
-                      f"{summary[f'our_{name}_n_comparable']} comparable clips "
-                      f"({summary[f'our_{name}_n_declined']} declined); "
-                      f"max |gap|={summary[f'our_{name}_max_abs_gap_vs_mir_eval']:.2e}, "
-                      f"disagree>1e-6: {summary[f'our_{name}_clips_disagreeing_over_1e_6']} "
-                      f"(lower {summary[f'our_{name}_clips_lower_than_mir_eval']}, "
-                      f"higher {summary[f'our_{name}_clips_higher_than_mir_eval']})")
+                print(
+                    f"[gtzan] our {name.upper()} mean={summary[f'our_{name}_mean']:.4f} vs "
+                    f"mir_eval {summary[f'mir_eval_{name}_mean_same_clips']:.4f} on "
+                    f"{summary[f'our_{name}_n_comparable']} comparable clips "
+                    f"({summary[f'our_{name}_n_declined']} declined); "
+                    f"max |gap|={summary[f'our_{name}_max_abs_gap_vs_mir_eval']:.2e}, "
+                    f"disagree>1e-6: {summary[f'our_{name}_clips_disagreeing_over_1e_6']} "
+                    f"(lower {summary[f'our_{name}_clips_lower_than_mir_eval']}, "
+                    f"higher {summary[f'our_{name}_clips_higher_than_mir_eval']})"
+                )
             else:
                 print(f"[gtzan] our {name.upper()}: {summary.get(f'our_{name}_note')}")
     else:
         print(f"[gtzan] our scorer: {summary['our_scorer_note']}")
     if args.shift_sweep:
-        print(f"[gtzan] constant-shift sweep: peak F at "
-              f"{summary['shift_sweep_best_ms']:+.0f} ms "
-              f"(F={summary['shift_sweep_best_f']:.4f}, "
-              f"gain over 0 ms {summary['shift_sweep_gain_over_zero']:+.4f})")
-        print(f"[gtzan] same sweep at +/-{int(TIGHT_TOLERANCE_S * 1000)} ms: peak F at "
-              f"{summary['shift_sweep_tight_best_ms']:+.0f} ms "
-              f"(F={summary['shift_sweep_tight_best_f']:.4f}, "
-              f"gain over 0 ms {summary['shift_sweep_tight_gain_over_zero']:+.4f})")
+        print(
+            f"[gtzan] constant-shift sweep: peak F at "
+            f"{summary['shift_sweep_best_ms']:+.0f} ms "
+            f"(F={summary['shift_sweep_best_f']:.4f}, "
+            f"gain over 0 ms {summary['shift_sweep_gain_over_zero']:+.4f})"
+        )
+        print(
+            f"[gtzan] same sweep at +/-{int(TIGHT_TOLERANCE_S * 1000)} ms: peak F at "
+            f"{summary['shift_sweep_tight_best_ms']:+.0f} ms "
+            f"(F={summary['shift_sweep_tight_best_f']:.4f}, "
+            f"gain over 0 ms {summary['shift_sweep_tight_gain_over_zero']:+.4f})"
+        )
     median_offset = summary["offset_vs_human_median_ms"]
     # None when every scored clip had an empty estimate, which is a legitimate
     # input (an all-abstaining candidate scores F=0 on every clip) and used to
     # raise TypeError from `+.1f` AFTER the artifact was written, so the run
     # looked like a crash rather than a result (Codex P2, PR #1660,
     # discussion_r3975279154).
-    offset_text = "UNMEASURED (no clip produced a beat to offset)" if (
-        median_offset is None) else f"{median_offset:+.1f} ms"
+    offset_text = (
+        "UNMEASURED (no clip produced a beat to offset)" if (median_offset is None) else f"{median_offset:+.1f} ms"
+    )
     print(f"[gtzan] offset vs HUMAN beats: median {offset_text}")
     print(f"[gtzan] -> {args.out}")
 
@@ -399,12 +410,15 @@ def main() -> int:
     ap.add_argument("--results", nargs="+", required=True, help="runner output JSON(s)")
     ap.add_argument("--audio-root", default="", help="prefix joined to the wav paths in --pairs")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--shift-sweep", action="store_true",
-                    help="also sweep a constant shift over our beats and report the F peak")
-    ap.add_argument("--expect-fixtures-digest", required=True,
-                    type=fixtures_digest_argument,
-                    help=f"the digest the scored fixtures must hash to, or "
-                         f"{ESTABLISH_DIGEST!r} to mint one for a first round")
+    ap.add_argument(
+        "--shift-sweep", action="store_true", help="also sweep a constant shift over our beats and report the F peak"
+    )
+    ap.add_argument(
+        "--expect-fixtures-digest",
+        required=True,
+        type=fixtures_digest_argument,
+        help=f"the digest the scored fixtures must hash to, or {ESTABLISH_DIGEST!r} to mint one for a first round",
+    )
     args = ap.parse_args()
 
     pairs = json.loads(Path(args.pairs).read_text())
@@ -413,9 +427,7 @@ def main() -> int:
     # Built BEFORE scoring and over every requested pair, because the fixture
     # gate asks what corpus this is, not how well the analyzer did on it.
     digest_inputs = digest_inputs_for(pairs, results, args.audio_root)
-    per_clip, unscorable, sweep_inputs = score_all(
-        pairs, results, args.audio_root, digest_inputs
-    )
+    per_clip, unscorable, sweep_inputs = score_all(pairs, results, args.audio_root, digest_inputs)
 
     if not per_clip:
         print("[gtzan] nothing scored: no clip had both a result and a reference", file=sys.stderr)
@@ -444,8 +456,7 @@ def main() -> int:
     f = [c["f_measure"] for c in per_clip.values()]
     cmlt = [c["cmlt"] for c in per_clip.values()]
     amlt = [c["amlt"] for c in per_clip.values()]
-    offsets = [c["offset_median_ms"] for c in per_clip.values()
-               if c["offset_median_ms"] is not None]
+    offsets = [c["offset_median_ms"] for c in per_clip.values() if c["offset_median_ms"] is not None]
     ours = [c["our_f_measure"] for c in per_clip.values() if c["our_f_measure"] is not None]
 
     summary: dict[str, Any] = {
@@ -455,8 +466,7 @@ def main() -> int:
         # is an absent measurement, while an empty estimate is a measurement of
         # zero and is INSIDE n_scored.
         "unscorable_by_reason": {k: len(v) for k, v in unscorable.items()},
-        "n_scored_with_empty_estimate": sum(
-            1 for c in per_clip.values() if c.get("estimate_was_empty")),
+        "n_scored_with_empty_estimate": sum(1 for c in per_clip.values() if c.get("estimate_was_empty")),
         "fixtures_digest": digest,
         "analyzer_provenance": provenance,
         "trim_s": TRIM_S,
@@ -475,11 +485,9 @@ def main() -> int:
     if ours:
         summary["our_scorer_f_mean"] = st.mean(ours)
         summary["our_scorer_n"] = len(ours)
-        gaps = [abs(c["our_f_measure"] - c["f_measure"]) for c in per_clip.values()
-                if c["our_f_measure"] is not None]
+        gaps = [abs(c["our_f_measure"] - c["f_measure"]) for c in per_clip.values() if c["our_f_measure"] is not None]
         summary["our_scorer_max_abs_gap_vs_mir_eval"] = max(gaps)
-        summary["our_scorer_clips_disagreeing_over_1e_3"] = sum(
-            1 for g in gaps if g > F_MEASURE_AGREEMENT_BAND)
+        summary["our_scorer_clips_disagreeing_over_1e_3"] = sum(1 for g in gaps if g > F_MEASURE_AGREEMENT_BAND)
 
         # The debt-1514 control, reported SEPARATELY from the F-measure one
         # above because they are different metrics with different
@@ -487,24 +495,19 @@ def main() -> int:
         # Denominator is clips where OUR side produced a number, so a clip we
         # declined to score cannot be counted as agreement.
         for name in ("cmlt", "amlt"):
-            paired = [(c[f"our_{name}"], c[name]) for c in per_clip.values()
-                      if c.get(f"our_{name}") is not None]
+            paired = [(c[f"our_{name}"], c[name]) for c in per_clip.values() if c.get(f"our_{name}") is not None]
             summary[f"our_{name}_n_comparable"] = len(paired)
             summary[f"our_{name}_n_declined"] = len(per_clip) - len(paired)
             if not paired:
-                summary[f"our_{name}_note"] = (
-                    "UNMEASURED: no clip produced a comparable value on both sides.")
+                summary[f"our_{name}_note"] = "UNMEASURED: no clip produced a comparable value on both sides."
                 continue
             deltas = [mine - theirs for mine, theirs in paired]
             summary[f"our_{name}_mean"] = st.mean(m for m, _ in paired)
             summary[f"mir_eval_{name}_mean_same_clips"] = st.mean(t for _, t in paired)
             summary[f"our_{name}_max_abs_gap_vs_mir_eval"] = max(abs(d) for d in deltas)
-            summary[f"our_{name}_clips_disagreeing_over_1e_6"] = sum(
-                1 for d in deltas if abs(d) > RATIO_NOISE_FLOOR)
-            summary[f"our_{name}_clips_lower_than_mir_eval"] = sum(
-                1 for d in deltas if d < -RATIO_NOISE_FLOOR)
-            summary[f"our_{name}_clips_higher_than_mir_eval"] = sum(
-                1 for d in deltas if d > RATIO_NOISE_FLOOR)
+            summary[f"our_{name}_clips_disagreeing_over_1e_6"] = sum(1 for d in deltas if abs(d) > RATIO_NOISE_FLOOR)
+            summary[f"our_{name}_clips_lower_than_mir_eval"] = sum(1 for d in deltas if d < -RATIO_NOISE_FLOOR)
+            summary[f"our_{name}_clips_higher_than_mir_eval"] = sum(1 for d in deltas if d > RATIO_NOISE_FLOOR)
     else:
         summary["our_scorer_f_mean"] = None
         summary["our_scorer_note"] = (
@@ -528,19 +531,18 @@ def main() -> int:
         summary["shift_sweep_tight_best_ms"] = best_tight["shift_ms"]
         summary["shift_sweep_tight_best_f"] = best_tight["f_measure_tight_mean"]
         summary["shift_sweep_tight_gain_over_zero"] = (
-            best_tight["f_measure_tight_mean"] - at_zero["f_measure_tight_mean"])
+            best_tight["f_measure_tight_mean"] - at_zero["f_measure_tight_mean"]
+        )
 
     # Per-genre, because GTZAN is 10 genres and a DJ library is not.
     by_genre: dict[str, list[float]] = {}
     for c in per_clip.values():
         by_genre.setdefault(c["genre"], []).append(c["f_measure"])
-    summary["f_measure_by_genre"] = {
-        g: {"n": len(v), "mean": st.mean(v)} for g, v in sorted(by_genre.items())
-    }
+    summary["f_measure_by_genre"] = {g: {"n": len(v), "mean": st.mean(v)} for g, v in sorted(by_genre.items())}
 
-    Path(args.out).write_text(json.dumps(
-        {"schema": 2, "summary": summary, "clips": per_clip, "unscorable": unscorable},
-        indent=1))
+    Path(args.out).write_text(
+        json.dumps({"schema": 2, "summary": summary, "clips": per_clip, "unscorable": unscorable}, indent=1)
+    )
 
     return _report(args, summary, per_clip, unscorable, digest)
 

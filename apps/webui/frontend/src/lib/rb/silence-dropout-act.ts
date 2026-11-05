@@ -7,9 +7,7 @@ import { deckStates } from '$lib/rb/audio-engine.svelte';
 import { withPauseOrigin } from '$lib/rb/unexpected-pause-report';
 import { recordDeckStop } from '$lib/rb/deck-stop-log';
 import { cancelAutoPlayNext } from '$lib/rb/auto-play-next.svelte';
-import {
-	noteAutoPlaySilenceDropout
-} from '$lib/rb/autoplay-silence-recover';
+import { noteAutoPlaySilenceDropout } from '$lib/rb/autoplay-silence-recover';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SilenceDropoutPlan } from '$lib/rb/silence-dropout';
@@ -38,7 +36,13 @@ async function _stopDeck(deck: DeckId): Promise<void> {
 		);
 	} catch {
 		const st = deckStates[deck];
-		if (st.playing) recordDeckStop({ deck, cause: 'engine', position_ms: st.position_ms, stable_id: st.stable_id });
+		if (st.playing)
+			recordDeckStop({
+				deck,
+				cause: 'engine',
+				position_ms: st.position_ms,
+				stable_id: st.stable_id
+			});
 		st.playing = false;
 		st.audible = false;
 		st.transport_pending = false;

@@ -26,7 +26,9 @@ before(async () => {
 	const fixture = fileURLToPath(
 		new URL('./fixtures/playlist-pending-availability-captured.json', import.meta.url)
 	);
-	const row = JSON.parse(readFileSync(fixture, 'utf8')).find((r) => r.file_availability === 'present');
+	const row = JSON.parse(readFileSync(fixture, 'utf8')).find(
+		(r) => r.file_availability === 'present'
+	);
 	const { is_streaming: _drop, comments: _comments, ...rest } = row;
 	base = { ...rest, notes: null };
 });

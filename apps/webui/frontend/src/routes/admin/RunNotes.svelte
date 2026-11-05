@@ -4,7 +4,7 @@
 	 *
 	 * The cards say what moved; this says why it moved and how much of it to
 	 * believe. Text comes from the snapshot's `notes` field in
-	 * scripts/bench/kpi_ledger.json (written by `kpi_append.py --note`), so a
+	 * (private path) (written by `kpi_append.py --note`), so a
 	 * run with no note says so rather than showing invented commentary.
 	 */
 	import { untrack } from 'svelte';
@@ -47,10 +47,7 @@
 			<button type="button" onclick={() => step(-1)} disabled={index === 0} title="Previous run">
 				Prev
 			</button>
-			<select
-				bind:value={index}
-				title="Jump to a run. Notes are paginated one page per snapshot."
-			>
+			<select bind:value={index} title="Jump to a run. Notes are paginated one page per snapshot.">
 				{#each snapshots as snapshot, i}
 					<option value={i}>{i + 1}. {snapshot.label}</option>
 				{/each}

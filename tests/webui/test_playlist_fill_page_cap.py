@@ -4,6 +4,7 @@ The web client fills a playlist with ``PLAYLIST_FILL_PAGE``-row pages after its
 30-row first page. The route must accept that page size, and must still refuse
 anything larger, so one request's hydration stays bounded.
 """
+
 from __future__ import annotations
 
 import re
@@ -18,8 +19,7 @@ from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 from .app_fixtures import _stub_rb_vendor
 
 _FILL_TS = (
-    Path(__file__).resolve().parents[2]
-    / "apps/webui/frontend/src/lib/components/rb/browser/fill-playlist-pane.ts"
+    Path(__file__).resolve().parents[2] / "apps/webui/frontend/src/lib/components/rb/browser/fill-playlist-pane.ts"
 )
 _ROUTE_CAP = 500
 
@@ -42,8 +42,11 @@ def _client(monkeypatch, tmp_path: Path, members: int) -> TestClient:
         items.append(sid)
     backend.seed_playlist(Playlist(playlist_id="pl-fill", name="Fill", vendor="djay", items=items))
     app = create_app(
-        backend=backend, bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
     )
     return TestClient(app)
 

@@ -59,7 +59,8 @@ function _isAlive(pid) {
 async function _waitUntilDead(pid, label) {
 	const deadline = Date.now() + LIVENESS_DEADLINE_MS;
 	while (_isAlive(pid)) {
-		if (Date.now() > deadline) throw new Error(`${label} pid ${pid} still alive after ${LIVENESS_DEADLINE_MS}ms`);
+		if (Date.now() > deadline)
+			throw new Error(`${label} pid ${pid} still alive after ${LIVENESS_DEADLINE_MS}ms`);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
 }
@@ -79,39 +80,53 @@ test('killProcessTree is a no-op for a process that already exited', async () =>
 	killProcessTree(proc); // must not throw
 });
 
-test('plain kill() orphans the grandchild: the defect, and the probe control', { skip: !ON_WINDOWS && POSIX_SKIP }, async () => {
-	const proc = _spawnNode(PARENT_WITH_GRANDCHILD);
-	const grandchildPid = await waitForReadyLine(proc, /^GRANDCHILD (\d+)$/, {
-		timeoutMs: 10_000,
-		label: 'parent-with-grandchild'
-	});
-	assert.ok(_isAlive(grandchildPid), 'grandchild must be alive before the kill');
-	proc.kill();
-	await once(proc, 'exit');
-	await new Promise((resolve) => setTimeout(resolve, 500));
-	const survived = _isAlive(grandchildPid);
-	// Clean up the orphan whichever way the assertion goes.
-	if (survived) process.kill(grandchildPid);
-	await _waitUntilDead(grandchildPid, 'orphaned grandchild (cleanup)');
-	assert.ok(survived, 'kill() ended the grandchild too: the tree walk in killProcessTree is no longer load-bearing here');
-});
+test(
+	'plain kill() orphans the grandchild: the defect, and the probe control',
+	{ skip: !ON_WINDOWS && POSIX_SKIP },
+	async () => {
+		const proc = _spawnNode(PARENT_WITH_GRANDCHILD);
+		const grandchildPid = await waitForReadyLine(proc, /^GRANDCHILD (\d+)$/, {
+			timeoutMs: 10_000,
+			label: 'parent-with-grandchild'
+		});
+		assert.ok(_isAlive(grandchildPid), 'grandchild must be alive before the kill');
+		proc.kill();
+		await once(proc, 'exit');
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		const survived = _isAlive(grandchildPid);
+		// Clean up the orphan whichever way the assertion goes.
+		if (survived) process.kill(grandchildPid);
+		await _waitUntilDead(grandchildPid, 'orphaned grandchild (cleanup)');
+		assert.ok(
+			survived,
+			'kill() ended the grandchild too: the tree walk in killProcessTree is no longer load-bearing here'
+		);
+	}
+);
 
-test('killProcessTree ends the grandchild uv-style fixtures leave behind', { skip: !ON_WINDOWS && POSIX_SKIP }, async () => {
-	const proc = _spawnNode(PARENT_WITH_GRANDCHILD);
-	const grandchildPid = await waitForReadyLine(proc, /^GRANDCHILD (\d+)$/, {
-		timeoutMs: 10_000,
-		label: 'parent-with-grandchild'
-	});
-	assert.ok(_isAlive(grandchildPid), 'grandchild must be alive before the kill');
-	killProcessTree(proc);
-	await once(proc, 'exit');
-	await _waitUntilDead(grandchildPid, 'grandchild');
-});
+test(
+	'killProcessTree ends the grandchild uv-style fixtures leave behind',
+	{ skip: !ON_WINDOWS && POSIX_SKIP },
+	async () => {
+		const proc = _spawnNode(PARENT_WITH_GRANDCHILD);
+		const grandchildPid = await waitForReadyLine(proc, /^GRANDCHILD (\d+)$/, {
+			timeoutMs: 10_000,
+			label: 'parent-with-grandchild'
+		});
+		assert.ok(_isAlive(grandchildPid), 'grandchild must be alive before the kill');
+		killProcessTree(proc);
+		await once(proc, 'exit');
+		await _waitUntilDead(grandchildPid, 'grandchild');
+	}
+);
 
 test('waitForReadyLine resolves the captured port and ignores earlier lines', async () => {
 	const proc = _spawnNode(`console.log('warming up'); console.log('READY 4321'); ${IDLE_FOREVER}`);
 	try {
-		const port = await waitForReadyLine(proc, /^READY (\d+)$/, { timeoutMs: 10_000, label: 'ready-fixture' });
+		const port = await waitForReadyLine(proc, /^READY (\d+)$/, {
+			timeoutMs: 10_000,
+			label: 'ready-fixture'
+		});
 		assert.equal(port, 4321);
 	} finally {
 		killProcessTree(proc);

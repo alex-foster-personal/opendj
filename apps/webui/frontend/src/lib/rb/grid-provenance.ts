@@ -101,7 +101,8 @@ export function libraryGridProvenance(view: GridProvenanceView): GridProvenanceR
 	else if (view.state === 'ready') {
 		if (view.value.source === 'rekordbox') return { value: 'rekordbox analysis', title };
 		else if (view.value.source === 'own') {
-			const value = view.value.status === 'ok' ? 'own analysis' : `own analysis, ${view.value.status}`;
+			const value =
+				view.value.status === 'ok' ? 'own analysis' : `own analysis, ${view.value.status}`;
 			return { value, title };
 		}
 		const unhandledSource: never = view.value.source;

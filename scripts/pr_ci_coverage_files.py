@@ -40,13 +40,11 @@ def require_corroborated_empty_diff(pr_number: int, head_sha: str, pull: object)
     changed = body.get("changed_files")
     if type(changed) is not int or changed != 0:
         raise PreconditionError(
-            f"PR #{pr_number} files listing is empty but the PR object reports "
-            f"changed_files={changed!r}"
+            f"PR #{pr_number} files listing is empty but the PR object reports changed_files={changed!r}"
         )
     head = body.get("head")
     seen_head = head.get("sha") if isinstance(head, dict) else None
     if seen_head != head_sha:
         raise PreconditionError(
-            f"PR #{pr_number} zero-diff PR object describes head {seen_head!r}, "
-            f"not the inspected head {head_sha!r}"
+            f"PR #{pr_number} zero-diff PR object describes head {seen_head!r}, not the inspected head {head_sha!r}"
         )

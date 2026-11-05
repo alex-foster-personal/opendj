@@ -78,9 +78,7 @@ def _png_bytes(color: tuple[int, int, int] = (255, 0, 0), size: tuple[int, int] 
 
 
 # ----- upload: the happy path ----------------------------------------------
-def test_upload_stores_the_file_and_returns_a_fetchable_url(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_upload_stores_the_file_and_returns_a_fetchable_url(client: TestClient, tmp_path: Path) -> None:
     pin = _create(client)
     png = _png_bytes()
 
@@ -106,9 +104,7 @@ def test_upload_stores_the_file_and_returns_a_fetchable_url(
     assert reloaded[0]["attachment"]["id"] == attachment["id"]
 
 
-def test_agent_can_read_and_fetch_the_attachment_over_the_api(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_agent_can_read_and_fetch_the_attachment_over_the_api(client: TestClient, tmp_path: Path) -> None:
     pin = _create(client)
     png = _png_bytes(color=(0, 255, 0))
     upload = client.post(
@@ -174,9 +170,7 @@ def test_upload_boundary_exact_limit_succeeds_one_byte_over_is_refused(
 
 
 # ----- type policy -----------------------------------------------------------
-def test_unsupported_content_type_is_refused_and_writes_nothing(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_unsupported_content_type_is_refused_and_writes_nothing(client: TestClient, tmp_path: Path) -> None:
     pin = _create(client)
     r = client.post(
         f"/api/v1/feedback/comments/{pin['id']}/attachment",
@@ -190,9 +184,7 @@ def test_unsupported_content_type_is_refused_and_writes_nothing(
     assert _comments(tmp_path)[0].get("attachment") is None
 
 
-def test_bytes_that_do_not_decode_as_the_declared_type_are_refused(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_bytes_that_do_not_decode_as_the_declared_type_are_refused(client: TestClient, tmp_path: Path) -> None:
     # A spoofed Content-Type header must not get past declared-type checking
     # alone: the bytes below are not a PNG at all.
     pin = _create(client)
@@ -234,9 +226,7 @@ def test_declared_content_type_mismatched_with_the_decoded_format_is_refused(
     assert _comments(tmp_path)[0].get("attachment") is None
 
 
-def test_bmp_bytes_declared_as_png_are_refused_before_storage(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_bmp_bytes_declared_as_png_are_refused_before_storage(client: TestClient, tmp_path: Path) -> None:
     """With formats=['PNG'] only the PNG plugin runs; real BMP bytes posted as
     image/png must be refused before any file is written (issue #2688)."""
     pin = _create(client)
@@ -254,9 +244,7 @@ def test_bmp_bytes_declared_as_png_are_refused_before_storage(
     assert _comments(tmp_path)[0].get("attachment") is None
 
 
-def test_tga_bytes_declared_as_png_are_refused_before_storage(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_tga_bytes_declared_as_png_are_refused_before_storage(client: TestClient, tmp_path: Path) -> None:
     """With formats=['PNG'] only the PNG plugin runs; real TGA bytes posted as
     image/png must be refused before any file is written (issue #2688)."""
     pin = _create(client)
@@ -274,9 +262,7 @@ def test_tga_bytes_declared_as_png_are_refused_before_storage(
     assert _comments(tmp_path)[0].get("attachment") is None
 
 
-def test_declared_content_type_matching_the_decoded_format_still_succeeds(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_declared_content_type_matching_the_decoded_format_still_succeeds(client: TestClient, tmp_path: Path) -> None:
     """Mutate the guard in both directions (house verification rule): the
     same check that refuses a mismatch above must let a genuinely matching
     upload of every supported type through."""
@@ -366,24 +352,18 @@ def test_empty_upload_is_refused(client: TestClient, tmp_path: Path) -> None:
 
 
 # ----- unknown comment -------------------------------------------------------
-def test_upload_to_an_unknown_comment_is_404_and_writes_nothing(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_upload_to_an_unknown_comment_is_404_and_writes_nothing(client: TestClient, tmp_path: Path) -> None:
     r = client.post(
         "/api/v1/feedback/comments/nope/attachment",
         files={"file": ("shot.png", _png_bytes(), "image/png")},
     )
     assert r.status_code == 404, r.text
     assert r.json()["detail"]["code"] == "COMMENT_NOT_FOUND"
-    assert _attachment_files(tmp_path) == [], (
-        "a valid image aimed at a nonexistent pin must not leave an orphan file"
-    )
+    assert _attachment_files(tmp_path) == [], "a valid image aimed at a nonexistent pin must not leave an orphan file"
 
 
 # ----- replacing an existing attachment --------------------------------------
-def test_a_second_upload_replaces_the_first_and_deletes_its_file(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_a_second_upload_replaces_the_first_and_deletes_its_file(client: TestClient, tmp_path: Path) -> None:
     pin = _create(client)
     first = client.post(
         f"/api/v1/feedback/comments/{pin['id']}/attachment",
@@ -452,9 +432,7 @@ def test_fetching_an_unknown_attachment_id_is_404(client: TestClient) -> None:
     "bad_id",
     ["not-hex-chars", "toolong00000000000000", "short0", "UPPERCASE000"],
 )
-def test_fetching_a_malformed_attachment_id_is_a_clean_404_not_a_crash(
-    client: TestClient, bad_id: str
-) -> None:
+def test_fetching_a_malformed_attachment_id_is_a_clean_404_not_a_crash(client: TestClient, bad_id: str) -> None:
     # None of these match _ATTACHMENT_ID_RE, so they must never reach glob()
     # as a path pattern - a clean 404, not a 500 or a filesystem surprise.
     r = client.get(f"/api/v1/feedback/attachments/{bad_id}")

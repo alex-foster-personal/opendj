@@ -25,7 +25,7 @@ import pytest
 pytestmark = pytest.mark.skipif(
     shutil.which("ffprobe") is None,
     reason="UNAVAILABLE: ffprobe is not on PATH, so register_pair (and its "
-           "bundle-lock acceptance) is unmeasured here. CI installs ffmpeg.",
+    "bundle-lock acceptance) is unmeasured here. CI installs ffmpeg.",
 )
 
 from apps.lyrics.register_stems import (  # noqa: E402
@@ -49,10 +49,7 @@ def _write_wav(path: Path, seconds: float, sample_rate: int = 8000) -> None:
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
         wav.writeframes(
-            b"".join(
-                int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2
-                for i in range(frames)
-            )
+            b"".join(int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2 for i in range(frames))
         )
 
 
@@ -116,8 +113,10 @@ def test_register_pair_refuses_misaligned_parts_and_leaves_nothing(tmp_path: Pat
             stable_id="sid002",
             vocals=tmp_path / "y-vocals.wav",
             instrumental=tmp_path / "y-instrumental.wav",
-            model_name="m", model_version="v",
-            source_path="unknown", storage=RegisterPairStorage(root=root),
+            model_name="m",
+            model_version="v",
+            source_path="unknown",
+            storage=RegisterPairStorage(root=root),
         )
     assert not (root / "sid002").exists(), "no partial bundle may remain"
 
@@ -130,8 +129,10 @@ def test_register_pair_refuses_mixed_codecs(tmp_path: Path) -> None:
             stable_id="sid003",
             vocals=tmp_path / "z-vocals.wav",
             instrumental=tmp_path / "z-instrumental.flac",
-            model_name="m", model_version="v",
-            source_path="unknown", storage=RegisterPairStorage(root=tmp_path / "root"),
+            model_name="m",
+            model_version="v",
+            source_path="unknown",
+            storage=RegisterPairStorage(root=tmp_path / "root"),
         )
 
 
@@ -149,10 +150,15 @@ def test_batch1_is_registrable_via_the_tracks_json_join(tmp_path: Path, monkeypa
 
     corpus_dir = tmp_path / "batch1"
     corpus_dir.mkdir()
-    (corpus_dir / "tracks.json").write_text(json.dumps([
-        {"track_id": "batch1000", "stable_id": "sidA", "path": "/x/a.mp3"},
-        {"track_id": "batch1001", "source_path": "/x/b.mp3"},  # no stable_id
-    ]), encoding="utf-8")
+    (corpus_dir / "tracks.json").write_text(
+        json.dumps(
+            [
+                {"track_id": "batch1000", "stable_id": "sidA", "path": "/x/a.mp3"},
+                {"track_id": "batch1001", "source_path": "/x/b.mp3"},  # no stable_id
+            ]
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(rs, "LYRICS_EVAL_DIR", tmp_path)
 
     mapping = rs._tracks_json_stable_ids("batch1")
@@ -160,7 +166,8 @@ def test_batch1_is_registrable_via_the_tracks_json_join(tmp_path: Path, monkeypa
 
 
 def test_sweep_corpus_leaves_existing_v1_manifest_byte_identical(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pre-existing v1 bundles must never be rewritten by the sweep."""
     from apps.lyrics import register_stems as rs
@@ -172,11 +179,15 @@ def test_sweep_corpus_leaves_existing_v1_manifest_byte_identical(
     _write_wav(stems_dir / "crate000-vocals.wav", 1.0)
     _write_wav(stems_dir / "crate000-instrumental.wav", 1.0)
     (eval_dir / corpus / "tracks.json").write_text(
-        json.dumps([{
-            "track_id": "crate000",
-            "stable_id": "sid-v1",
-            "path": "/lib/track.wav",
-        }]),
+        json.dumps(
+            [
+                {
+                    "track_id": "crate000",
+                    "stable_id": "sid-v1",
+                    "path": "/lib/track.wav",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(rs, "LYRICS_EVAL_DIR", eval_dir)
@@ -220,10 +231,15 @@ def test_batch2_is_registrable_via_the_tracks_json_join(tmp_path: Path, monkeypa
 
     corpus_dir = tmp_path / "batch2"
     corpus_dir.mkdir()
-    (corpus_dir / "tracks.json").write_text(json.dumps([
-        {"track_id": "batch2000", "stable_id": "sidB", "path": "/x/c.mp3"},
-        {"track_id": "batch2001", "source_path": "/x/d.mp3"},  # no stable_id
-    ]), encoding="utf-8")
+    (corpus_dir / "tracks.json").write_text(
+        json.dumps(
+            [
+                {"track_id": "batch2000", "stable_id": "sidB", "path": "/x/c.mp3"},
+                {"track_id": "batch2001", "source_path": "/x/d.mp3"},  # no stable_id
+            ]
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(rs, "LYRICS_EVAL_DIR", tmp_path)
 
     mapping = rs._tracks_json_stable_ids("batch2")

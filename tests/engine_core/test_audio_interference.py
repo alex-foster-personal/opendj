@@ -152,6 +152,7 @@ def test_http_route_on_a_clean_machine_is_empty_not_absent() -> None:
 def test_http_route_reports_unsupported_rather_than_clean_when_it_cannot_look() -> None:
     """UNKNOWN is never collapsed into a pass: a probe that could not run must
     not render as 'nothing is interfering'."""
+
     def boom() -> tuple[str, ...]:
         raise OSError("process list unavailable")
 

@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.retention`."""
+
 from __future__ import annotations
 
 import os

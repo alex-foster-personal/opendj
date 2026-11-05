@@ -53,9 +53,7 @@ def _git_sha(repo_root: Path) -> str:
 
 
 def _engine_log_path() -> Path:
-    return (
-        Path.home() / "Library/Application Support/com.opendj.desktop.chrome-loop/logs/engine.log"
-    )
+    return Path.home() / "Library/Application Support/com.opendj.desktop.chrome-loop/logs/engine.log"
 
 
 def cmd_health(config) -> int:
@@ -83,9 +81,7 @@ def cmd_nightly(config, *, repo_root: Path, base_url: str | None, skip_pr: bool)
     # whole flow where repo_root's own file still holds only whatever the
     # caller had before tonight's job started, dirty or clean. See
     # update_ledger_pr's docstring for why it cannot be captured any later.
-    pre_run_content = (
-        config.ledger_path.read_text(encoding="utf-8") if config.ledger_path.exists() else None
-    )
+    pre_run_content = config.ledger_path.read_text(encoding="utf-8") if config.ledger_path.exists() else None
     try:
         try:
             outcome = run_nightly(

@@ -4,6 +4,7 @@ We craft a handful of fake audio files on disk + a synthetic broken row,
 then assert each of the 6 signals fires correctly and triple-validation
 (≥3 signals) behaves as specified.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -78,8 +79,7 @@ def test_path_rewrite_signal_handles_backup_prefix(tmp_path: Path) -> None:
     with patch.object(
         locate,
         "PATH_REWRITES",
-        ((str(tmp_path / "Convert temp 2 (BACKUP)/"),
-          str(tmp_path / "Manual Library/Convert temp 2 (BACKUP)/")),),
+        ((str(tmp_path / "Convert temp 2 (BACKUP)/"), str(tmp_path / "Manual Library/Convert temp 2 (BACKUP)/")),),
     ):
         idx = locate.FsIndex.build([_make_af(target, size=1000)])
         cache: dict[Path, audio_files.AudioMetadata | None] = {target: None}
@@ -155,7 +155,9 @@ def test_triple_validation_requires_three_signals(tmp_path: Path) -> None:
     # Adding id3_match pushes us to 3.
     cache_full = {
         cand: audio_files.AudioMetadata(
-            title="Test Track", artist="Test Artist", duration_s=None,
+            title="Test Track",
+            artist="Test Artist",
+            duration_s=None,
         )
     }
     best2 = locate._locate_one(row, idx, cache_full)
@@ -178,8 +180,7 @@ def test_find_candidates_ranks_multiple_matches(tmp_path: Path) -> None:
 
     idx = locate.FsIndex.build([_make_af(exact, size=1000), _make_af(fuzzy, size=1000)])
     cache = {
-        exact: audio_files.AudioMetadata(title="Test Track", artist="Test Artist",
-                                         duration_s=200.0),
+        exact: audio_files.AudioMetadata(title="Test Track", artist="Test Artist", duration_s=200.0),
         fuzzy: None,
     }
     row = _row()
@@ -243,9 +244,7 @@ def test_rationale_builds_human_readable_string() -> None:
 
 
 @pytest.mark.requirement("RECON-02")
-def test_load_broken_exits_when_input_csv_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_broken_exits_when_input_csv_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """``_load_broken`` exits 1 if ``broken.csv`` hasn't been generated yet."""
     monkeypatch.setattr(locate, "IN_CSV", tmp_path / "nope.csv")
     with pytest.raises(SystemExit):
@@ -267,12 +266,10 @@ def test_write_output_emits_all_columns(tmp_path: Path, monkeypatch: pytest.Monk
     """``_write_output`` writes one row with every OUT_COLUMNS field populated."""
     out = tmp_path / "located.csv"
     monkeypatch.setattr(locate, "OUT_CSV", out)
-    rows = [
-        {col: ("True" if col == "triple_validated" else str(i))
-         for i, col in enumerate(locate.OUT_COLUMNS)}
-    ]
+    rows = [{col: ("True" if col == "triple_validated" else str(i)) for i, col in enumerate(locate.OUT_COLUMNS)}]
     locate._write_output(rows)
     import csv as _csv
+
     with out.open() as fh:
         r = list(_csv.DictReader(fh))
     assert len(r) == 1
@@ -301,17 +298,20 @@ def test_fs_index_maps_by_nfc_lower_basename(tmp_path: Path) -> None:
 def test_signal_weights_sum_cap_covers_all_six() -> None:
     """Every declared signal has a weight; missing one would mis-score."""
     assert set(locate.SIGNAL_WEIGHTS) == {
-        "basename_exact", "basename_fuzzy", "size_match",
-        "path_rewrite", "id3_match", "duration_match", "fingerprint_match",
+        "basename_exact",
+        "basename_fuzzy",
+        "size_match",
+        "path_rewrite",
+        "id3_match",
+        "duration_match",
+        "fingerprint_match",
     }
     # Every weight is positive.
     assert all(w > 0 for w in locate.SIGNAL_WEIGHTS.values())
 
 
 @pytest.mark.requirement("RECON-02")
-def test_main_end_to_end_writes_located_csv(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_end_to_end_writes_located_csv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Running ``locate.main()`` end-to-end produces ``located.csv``.
 
     We wire up a tiny FS tree with one matching candidate and redirect
@@ -327,8 +327,7 @@ def test_main_end_to_end_writes_located_csv(
     # 2. Input CSV (broken row).
     in_csv = tmp_path / "broken.csv"
     in_csv.write_text(
-        "id,title,artist,original_path,basename,duration_s,file_size\n"
-        "1,T,A,/old/track.mp3,track.mp3,200,1000\n"
+        "id,title,artist,original_path,basename,duration_s,file_size\n1,T,A,/old/track.mp3,track.mp3,200,1000\n"
     )
 
     out_csv = tmp_path / "located.csv"
@@ -339,6 +338,7 @@ def test_main_end_to_end_writes_located_csv(
     locate.main()
     assert out_csv.exists()
     import csv as _csv
+
     rows = list(_csv.DictReader(out_csv.open()))
     assert len(rows) == 1
     assert rows[0]["id"] == "1"

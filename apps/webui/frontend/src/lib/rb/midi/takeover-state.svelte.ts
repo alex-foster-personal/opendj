@@ -27,7 +27,10 @@ function refreshGhost(functionId: string): void {
 	const current = untrack(() => midiTakeoverUi.ghosts[functionId] ?? null);
 	if (
 		current === next ||
-		(current !== null && next !== null && current.value === next.value && current.target === next.target)
+		(current !== null &&
+			next !== null &&
+			current.value === next.value &&
+			current.target === next.target)
 	) {
 		return;
 	}

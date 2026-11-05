@@ -12,7 +12,7 @@ async function _loadBeatStamp() {
 function _grid120Bpm(seconds = 8) {
 	const beats = [];
 	for (let i = 0; i < seconds * 2; i += 1) {
-		beats.push({ n: ((i % 4) + 1), t: i * 0.5 });
+		beats.push({ n: (i % 4) + 1, t: i * 0.5 });
 	}
 	return beats;
 }

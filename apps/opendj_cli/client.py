@@ -81,6 +81,12 @@ class EngineClient:
         self._require_ok(response)
         return self._document(response)
 
+    def practice_devices(self) -> list[str]:
+        """Devices that ship a practice panel layout (ADR-0137)."""
+        response = self._request("GET", "/api/v1/practice/devices", timeout=MIRROR_TIMEOUT_S)
+        self._require_ok(response)
+        return list(self._document(response)["devices"])
+
     def post_order(self, order: dict[str, Any]) -> dict[str, Any]:
         """Submit one AGENT-03 order and wait for the page's own result."""
         from apps.opendj_cli.shell_navigate import (

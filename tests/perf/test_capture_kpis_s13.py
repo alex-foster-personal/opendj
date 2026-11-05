@@ -52,6 +52,35 @@ def _happy_span() -> dict:
     }
 
 
+def test_playwright_wrapper_delegates_s13_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_runner(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(capture_s13, "run_playwright_capture", _fake_runner)
+
+    result = capture_s13._run_playwright_capture(
+        engine="http://engine.test",
+        frontend="http://frontend.test",
+        google_storage_state="state.json",
+        timeout_s=43,
+    )
+
+    assert result == {"ok": True}
+    assert captured == {
+        "engine": "http://engine.test",
+        "frontend": "http://frontend.test",
+        "frontend_root": capture_s13._FRONTEND_ROOT,
+        "playwright_config": capture_s13._PLAYWRIGHT_CONFIG,
+        "timeout_s": 43,
+        "google_storage_state": "state.json",
+    }
+
+
 @pytest.mark.requirement("PERF-KPI-S13")
 def test_happy_span_writes_two_numeric_rows() -> None:
     """[if] a happy S13 span is captured [then] it writes two numeric ledger rows, [else stop]."""
@@ -75,6 +104,21 @@ def test_happy_span_writes_two_numeric_rows() -> None:
     assert "Google consent excluded" in scored["source"]
     assert "Google excluded" in scored["method"]
     assert scored["value"] != 5.0
+    assert scored["round"] == "issue-1885"
+    assert context["round"] == "issue-1885"
+    assert list(scored)[:11] == [
+        "date",
+        "round",
+        "kpi",
+        "value",
+        "unit",
+        "machine",
+        "source",
+        "method",
+        "sha",
+        "capture_id",
+        "note",
+    ]
 
 
 @pytest.mark.requirement("PERF-KPI-S13")
@@ -160,10 +204,7 @@ def test_unreachable_engine_appends_withheld_rows(tmp_path: Path) -> None:
     for row in rows:
         assert row["value"] is None
         assert row["status"] == "withheld"
-    assert all(
-        row["kpi"] != "login_submit_to_library_usable_s" or row["value"] is None
-        for row in rows
-    )
+    assert all(row["kpi"] != "login_submit_to_library_usable_s" or row["value"] is None for row in rows)
 
 
 @pytest.mark.requirement("PERF-KPI-S13")
@@ -212,9 +253,7 @@ def test_scorecard_unknown_on_withheld_rows() -> None:
 @pytest.mark.requirement("PERF-KPI-S13")
 def test_classify_s13_withhold_reason_restored_session() -> None:
     """[if] submit marks are absent [then] reason is restored-session, [else stop]."""
-    reason = classify_s13_withhold_reason(
-        "restored-session: submit or navigate mark missing after login"
-    )
+    reason = classify_s13_withhold_reason("restored-session: submit or navigate mark missing after login")
     assert reason.startswith("restored-session:")
 
 
@@ -296,6 +335,7 @@ def test_unreachable_engine_prints_withheld_stderr(
     assert "login_submit_to_library_usable_s" in captured.err
     assert "WITHHELD" in captured.err
     assert str(ledger) in captured.err
+
 
 @contextmanager
 def _hanging_http_server() -> Iterator[str]:
@@ -406,8 +446,7 @@ def _historical_s13_row() -> dict:
             "scored value is in-app (Google consent excluded)"
         ),
         "method": (
-            "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming "
-            "(in-app, Google excluded)"
+            "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming (in-app, Google excluded)"
         ),
         "sha": "oldsha",
         "capture_id": "perf-capture",
@@ -417,9 +456,7 @@ def _historical_s13_row() -> dict:
 
 @pytest.mark.parametrize("indent_width", [2, 4])
 @pytest.mark.requirement("PERF-KPI-S13")
-def test_append_ledger_rows_preserves_fixture_indent(
-    tmp_path: Path, indent_width: int
-) -> None:
+def test_append_ledger_rows_preserves_fixture_indent(tmp_path: Path, indent_width: int) -> None:
     """[if] append_ledger_rows appends rows [then] git diff shows no deleted lines, [else stop]."""
     historical = _historical_s13_row()
     ledger = tmp_path / "kpi-ledger.json"
@@ -466,7 +503,5 @@ def test_a_reachable_engine_is_not_reported_as_a_timeout() -> None:
         probe.bind(("127.0.0.1", 0))
         closed_port = probe.getsockname()[1]
     with pytest.raises(ConnectionError) as excinfo:
-        capture_s13._http_json(
-            "GET", f"http://127.0.0.1:{closed_port}/api/v1/health", timeout_s=2.0
-        )
+        capture_s13._http_json("GET", f"http://127.0.0.1:{closed_port}/api/v1/health", timeout_s=2.0)
     assert "TimeoutError" not in str(excinfo.value)

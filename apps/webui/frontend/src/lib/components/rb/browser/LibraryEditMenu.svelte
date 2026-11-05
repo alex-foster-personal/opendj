@@ -13,7 +13,8 @@
 	let {
 		hasSelection,
 		onpick
-	}: { hasSelection: boolean; onpick: (action: 'find-replace' | 'bulk-edit' | 'mytag') => void } = $props();
+	}: { hasSelection: boolean; onpick: (action: 'find-replace' | 'bulk-edit' | 'mytag') => void } =
+		$props();
 
 	const NEEDS_SELECTION = 'Select one or more tracks first';
 
@@ -105,7 +106,9 @@
 		>
 			Bulk Edit
 		</button>
-		<button type="button" class="rb-lit-button" role="menuitem" onclick={() => pick('mytag')}>MyTags</button>
+		<button type="button" class="rb-lit-button" role="menuitem" onclick={() => pick('mytag')}
+			>MyTags</button
+		>
 	</div>
 </span>
 

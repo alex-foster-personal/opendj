@@ -82,7 +82,9 @@ export const Busy: Story = {
 export const ManyLongNames: Story = {
 	args: {
 		rows: Array.from({ length: 12 }, (_, i) =>
-			row(`Lumen Fields - Night Drive (Extended Mix) - Remastered Session Take ${i + 1} - Studio Master 24bit 96kHz.flac`)
+			row(
+				`Lumen Fields - Night Drive (Extended Mix) - Remastered Session Take ${i + 1} - Studio Master 24bit 96kHz.flac`
+			)
 		)
 	}
 };

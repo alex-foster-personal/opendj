@@ -6,9 +6,7 @@ export type AnlzRetryEntry =
 	| { status: 'loading' | 'error' }
 	| { status: 'ready'; data: AnlzData; retryAfter?: number; touched?: number };
 
-function _isRetryableEntry(
-	entry: Extract<AnlzRetryEntry, { status: 'ready' }>
-): boolean {
+function _isRetryableEntry(entry: Extract<AnlzRetryEntry, { status: 'ready' }>): boolean {
 	if (entry.data.local_waveform?.status !== 'not_decoded') return false;
 	return entry.data.local_waveform.retryable === true;
 }

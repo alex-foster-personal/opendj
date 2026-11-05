@@ -1,4 +1,5 @@
 """Playlist-set event emission wired to the Phase 5 event bus."""
+
 from __future__ import annotations
 
 import json
@@ -60,15 +61,12 @@ def emit_playlist_component_changed(
     )
 
 
-def _emit(
-    conn: sqlite3.Connection, kind: str, payload: dict[str, object], actor: str
-) -> None:
+def _emit(conn: sqlite3.Connection, kind: str, payload: dict[str, object], actor: str) -> None:
     ts = datetime.now(UTC).isoformat()
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
         conn.execute(
-            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) VALUES (?, ?, ?, ?, ?)",
             (ts, kind, None, payload_json, actor),
         )
     except sqlite3.OperationalError as exc:
@@ -82,6 +80,4 @@ def _emit(
         from apps.shared.state.types import Event
     except ImportError:
         return
-    _get_shared_bus().publish(
-        Event(ts=ts, kind=kind, stable_id=None, payload=payload, actor=actor)
-    )
+    _get_shared_bus().publish(Event(ts=ts, kind=kind, stable_id=None, payload=payload, actor=actor))

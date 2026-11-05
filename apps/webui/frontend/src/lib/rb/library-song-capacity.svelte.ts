@@ -32,7 +32,11 @@ let hiddenWaveRowPx = 0;
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Song rows the table would have with the waveform row showing. */
-export function songRowsAsInWaveformView(viewportPx: number, rowPx: number, hiddenPx: number): number {
+export function songRowsAsInWaveformView(
+	viewportPx: number,
+	rowPx: number,
+	hiddenPx: number
+): number {
 	if (!(rowPx > 0)) return 0;
 	return Math.max(0, Math.floor((viewportPx - hiddenPx) / rowPx));
 }
@@ -43,10 +47,7 @@ export function noteLibrarySongCapacity(songs: number): void {
 	librarySongCapacity.songs = next;
 	if (!librarySongCapacity.showMixerColumnArt && next > SHOW_WHEN_SONG_ROWS_ABOVE) {
 		librarySongCapacity.showMixerColumnArt = true;
-	} else if (
-		librarySongCapacity.showMixerColumnArt &&
-		next <= HIDE_WHEN_SONG_ROWS_AT_OR_BELOW
-	) {
+	} else if (librarySongCapacity.showMixerColumnArt && next <= HIDE_WHEN_SONG_ROWS_AT_OR_BELOW) {
 		librarySongCapacity.showMixerColumnArt = false;
 	}
 }

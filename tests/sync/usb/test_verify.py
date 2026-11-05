@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.verify engine + CLI."""
+
 from __future__ import annotations
 
 import ast
@@ -47,11 +48,11 @@ conflict_policy: canonical-wins
 def _apply(fixture_canonical, drive_root) -> None:
     """Synthesise a drive that matches canonical by copying bytes directly."""
     from apps.sync.usb.diff import compute_plan
+
     profile = _profile()
-    plan = compute_plan(
-        profile=profile, canonical=fixture_canonical, drive_root=drive_root
-    )
+    plan = compute_plan(profile=profile, canonical=fixture_canonical, drive_root=drive_root)
     import shutil
+
     for op in plan.ops:
         assert op.src is not None
         op.dst.parent.mkdir(parents=True, exist_ok=True)
@@ -61,9 +62,7 @@ def _apply(fixture_canonical, drive_root) -> None:
 @pytest.mark.requirement("CAT-02")
 def test_verify_all_ok(fixture_canonical, drive_root) -> None:
     _apply(fixture_canonical, drive_root)
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert report.ok == 3
     assert report.missing == 0
     assert report.extra == 0
@@ -76,9 +75,7 @@ def test_verify_missing(fixture_canonical, drive_root) -> None:
     _apply(fixture_canonical, drive_root)
     # Delete one.
     (drive_root / "Alice" / "AA" / "One.mp3").unlink()
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert report.missing == 1
     assert report.ok == 2
 
@@ -88,9 +85,7 @@ def test_verify_corrupted(fixture_canonical, drive_root) -> None:
     _apply(fixture_canonical, drive_root)
     # Scramble one.
     (drive_root / "Alice" / "AA" / "One.mp3").write_bytes(b"corrupt")
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert report.corrupted == 1
 
 
@@ -100,9 +95,7 @@ def test_verify_extra_without_rename(fixture_canonical, drive_root) -> None:
     extra = drive_root / "Random" / "Thing.mp3"
     extra.parent.mkdir(parents=True)
     extra.write_bytes(b"random unrelated bytes")
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert report.extra == 1
     assert report.renamed == 0
 
@@ -115,9 +108,7 @@ def test_verify_renamed(fixture_canonical, drive_root) -> None:
     dst = drive_root / "Relocated" / "One.mp3"
     dst.parent.mkdir(parents=True)
     src.rename(dst)
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     # One renamed, one missing for the expected path is reported as RENAMED,
     # not MISSING + EXTRA.
     assert report.renamed == 1
@@ -135,24 +126,18 @@ def test_verify_playlist_broken(fixture_canonical, drive_root) -> None:
         "#EXTM3U\n#EXTINF:120,Alice - One\n../Alice/AA/One.mp3\n../Does/Not/Exist.mp3\n",
         encoding="utf-8",
     )
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert "Warmup.m3u8" in report.playlists_broken
 
 
 @pytest.mark.requirement("CAT-02")
-def test_verify_cli_exit_codes(
-    fixture_canonical, drive_root, tmp_path, monkeypatch
-) -> None:
+def test_verify_cli_exit_codes(fixture_canonical, drive_root, tmp_path, monkeypatch) -> None:
     _apply(fixture_canonical, drive_root)
 
     def fake_loader(*, playlist_names, use_shared_state=False, hash_cache=None, db=None):
         return fixture_canonical
 
-    monkeypatch.setattr(
-        "apps.sync.usb.verify.load_canonical_tracks", fake_loader
-    )
+    monkeypatch.setattr("apps.sync.usb.verify.load_canonical_tracks", fake_loader)
 
     pf = tmp_path / "profile.yaml"
     pf.write_text(
@@ -184,16 +169,12 @@ conflict_policy: canonical-wins
     assert data["counts"]["ok"] == 3
     # Delete a file -> exit 5.
     (drive_root / "Alice" / "AA" / "One.mp3").unlink()
-    rc2 = verify_mod.main(
-        ["--profile", str(pf), "--drive-root", str(drive_root), "--only-drift"]
-    )
+    rc2 = verify_mod.main(["--profile", str(pf), "--drive-root", str(drive_root), "--only-drift"])
     assert rc2 == 5
 
 
 @pytest.mark.requirement("CAT-02")
-def test_remediate_missing_round_trip(
-    fixture_canonical, drive_root, monkeypatch, tmp_path
-) -> None:
+def test_remediate_missing_round_trip(fixture_canonical, drive_root, monkeypatch, tmp_path) -> None:
     _apply(fixture_canonical, drive_root)
     # Delete one file so it shows as MISSING.
     (drive_root / "Alice" / "AA" / "One.mp3").unlink()
@@ -237,17 +218,13 @@ conflict_policy: canonical-wins
 
 
 @pytest.mark.requirement("CAT-02")
-def test_plan_from_verify_builds_rename_ops(
-    fixture_canonical, drive_root
-) -> None:
+def test_plan_from_verify_builds_rename_ops(fixture_canonical, drive_root) -> None:
     _apply(fixture_canonical, drive_root)
     src = drive_root / "Alice" / "AA" / "One.mp3"
     dst = drive_root / "Relocated" / "One.mp3"
     dst.parent.mkdir(parents=True)
     src.rename(dst)
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert report.renamed == 1
 
     plan = plan_from_verify(
@@ -312,8 +289,7 @@ def test_hash_parallel_with_hashcache_multiple_workers(tmp_path: Path) -> None:
     # put() must be called once per file, all on the main thread.
     assert len(put_thread_ids) == len(files)
     assert all(tid == main_tid for tid in put_thread_ids), (
-        f"HashCache.put called from non-main threads: {put_thread_ids} "
-        f"(main={main_tid})"
+        f"HashCache.put called from non-main threads: {put_thread_ids} (main={main_tid})"
     )
 
     # Cache populated for every file (via a fresh connection to avoid the
@@ -355,9 +331,7 @@ def test_verify_catches_corrupted_playlist(fixture_canonical, drive_root) -> Non
         encoding="utf-8",
     )
 
-    report = verify_drive(
-        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
-    )
+    report = verify_drive(profile=_profile(), canonical=fixture_canonical, drive_root=drive_root)
     assert "Empty.m3u8" in report.playlists_broken
     assert "HeaderOnly.m3u8" in report.playlists_broken
     assert "NoHeader.m3u8" in report.playlists_broken

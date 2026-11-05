@@ -1,4 +1,5 @@
 """Bad-beatgrid detector tests (META-02)."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -25,8 +26,11 @@ def _rec(**overrides) -> AnalysisRecord:
         analyzed_at=datetime(2026, 4, 17, tzinfo=UTC),
         duration_s=180.0,
         sample_rate=44100,
-        bpm=120.0, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="8m", key_confidence=0.9,
+        bpm=120.0,
+        bpm_confidence=0.9,
+        key_camelot="8A",
+        key_openkey="8m",
+        key_confidence=0.9,
         energy=6,
         onsets_s=[0.0, 0.5, 1.0, 1.5],
         downbeats_s=[0.0, 2.0, 4.0, 6.0],
@@ -61,9 +65,13 @@ def test_bpm_drift_fires_without_tempo_marker() -> None:
     # mean ~ 120 -> drift_pct ~ 0.42 % > default 0.3 %.  No inter-frame
     # delta exceeds 5 % of mean, so no marker -> flag fires.
     bpms = [120.0, 121.0, 119.0, 120.0, 121.0, 119.0, 120.5, 119.5] * 4
-    rec = _rec(features_blob={
-        "bpm_per_frame": bpms, "rms": [0.3] * 64, "rms_hop": 512,
-    })
+    rec = _rec(
+        features_blob={
+            "bpm_per_frame": bpms,
+            "rms": [0.3] * 64,
+            "rms_hop": 512,
+        }
+    )
     flag = dbg.detect_one(rec)
     assert dbg.REASON_DRIFT in flag.reasons
     assert flag.bpm_drift_pct is not None and flag.bpm_drift_pct > 0.3
@@ -73,9 +81,13 @@ def test_bpm_drift_fires_without_tempo_marker() -> None:
 def test_bpm_drift_suppressed_by_tempo_marker() -> None:
     # Same drift, but one frame is a deliberate tempo change (>5 % jump).
     bpms = [120.0, 121.0, 140.0, 140.0, 140.0, 140.0]  # jump > 5 %
-    rec = _rec(features_blob={
-        "bpm_per_frame": bpms, "rms": [0.3] * 64, "rms_hop": 512,
-    })
+    rec = _rec(
+        features_blob={
+            "bpm_per_frame": bpms,
+            "rms": [0.3] * 64,
+            "rms_hop": 512,
+        }
+    )
     flag = dbg.detect_one(rec)
     assert dbg.REASON_DRIFT not in flag.reasons
 
@@ -103,7 +115,8 @@ def test_run_writes_csv_and_events(tmp_path: Path) -> None:
     rec_clean = _rec(stable_id="clean")
     rec_bad = dataclasses.replace(
         _rec(stable_id="bad", onsets_s=[0.0], downbeats_s=[4.0]),
-        onsets_s=[0.0], downbeats_s=[4.0],
+        onsets_s=[0.0],
+        downbeats_s=[4.0],
     )
     db = tmp_path / "state.db"
     csv_out = tmp_path / "flags.csv"
@@ -116,9 +129,7 @@ def test_run_writes_csv_and_events(tmp_path: Path) -> None:
     assert flags[0].stable_id == "bad"
     assert csv_out.exists()
     with sqlite3.connect(str(db)) as conn:
-        rows = conn.execute(
-            "SELECT event_type, stable_id FROM analysis_events"
-        ).fetchall()
+        rows = conn.execute("SELECT event_type, stable_id FROM analysis_events").fetchall()
     assert ("beatgrid.flag", "bad") in rows
 
 

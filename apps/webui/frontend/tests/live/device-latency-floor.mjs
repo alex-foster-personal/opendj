@@ -51,7 +51,8 @@ const PROBE = async () => {
 	return { fresh, running };
 };
 
-const ms = (seconds) => (typeof seconds === 'number' ? `${(seconds * 1000).toFixed(3)}ms` : String(seconds));
+const ms = (seconds) =>
+	typeof seconds === 'number' ? `${(seconds * 1000).toFixed(3)}ms` : String(seconds);
 
 for (const [label, type] of [
 	['WebKit', webkit],

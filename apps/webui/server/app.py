@@ -13,7 +13,6 @@ seeded backend without leaking global state.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -27,13 +26,13 @@ from apps.shared.app_version import APP_VERSION
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S
 
 from . import (
-    ahead_analysis,
-    analysis_autostart,
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
-    boot_grace,
-    coverage_drain,
     library_jobs_autostart,
-    lyric_index_autostart,
+)
+from .app_boot import _build_default_app
+from .app_watchers import (  # noqa: F401  # re-exported for tests and inspect.getsource parity
+    build_auto_analyze_watcher,
+    build_lyric_index_watcher,
 )
 from .app_wiring import (
     _bind_core_state,
@@ -50,12 +49,8 @@ from .app_wiring import (
     _SpaStaticFiles,
 )
 from .backend import StateBackend
-from .cloud_sync import probe_syncthing_status
-from .dev_cloudsync_guard import assert_dev_cloudsync_allowed
 from .frontend_build import frontend_build_dir
 from .request_guard import install_request_guard
-from .routes import ingest as ingest_routes
-from .routes import reconcile as reconcile_routes
 from .share_gate import ShareConfig
 from .usage_telemetry import UsageStore
 
@@ -65,7 +60,7 @@ FRONTEND_BUILD_DIR: Path = frontend_build_dir()
 
 #: The OpenAPI document's own ``info.version``: the version of the HTTP
 #: contract in ``apps/webui/openapi.json``, which changes when the contract
-#: does. It is not the app version (``version`` below, from tauri.conf.json):
+#: does. It is not the app version (``version`` below, from the app package.json):
 #: tying the two together would make every release bump rewrite the committed
 #: schema and trip the contract-drift gate.
 OPENAPI_DOCUMENT_VERSION: str = "0.1.0"
@@ -216,250 +211,6 @@ def create_process_app() -> FastAPI:
 
     set_process_identity("Backend", resolve_backend_port(None))
     return __getattr__("app")
-
-
-def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWatcher:
-    """Bind the reconcile loop to the one-slot ingest refresh job.
-
-    Public because it IS the wiring under test: a test that re-declares these
-    three callables would keep passing after the daemon started draining the
-    wrong scope. Call this instead.
-    """
-
-    def start_unmapped_drain(
-        guard: analysis_autostart.GuardFn,
-    ) -> analysis_autostart.ConsumedFn:
-        """Start the drain and hand back a reader bound to THAT job.
-
-        ``guard`` is the watcher's own refusal, and it is handed DOWN to the
-        locked start rather than run here, so the ledger read it judges and
-        the slot claim happen inside one hold of the registry lock. Run here
-        instead and there is a moment between them again - short, but a
-        parked thread is parked for as long as the scheduler says, and a
-        drain that finishes in it makes this start a repeat of one that
-        already attempted the same queue.
-
-        The job object comes back FROM the locked start, so it is the one
-        the registry just created and the reader survives a manual refresh
-        claiming the single slot. Reread off the registry instead and the
-        window is one statement wide - a short drain can finish and a library
-        refresh claim the slot in it - and a library job, which publishes no
-        queue signature, would then erase the booking.
-
-        The signature is reached through the job rather than
-        RefreshStatusOut because it is internal reconcile state, not part of
-        the wire contract the browser polls: putting it on the response model
-        would drift the OpenAPI schema for a value no client can use.
-        """
-        started = ingest_routes._start_refresh_job(
-            ingest_routes.RefreshIn(scope="unmapped"),
-            ingest_routes._stem_roots(app),
-            lambda: guard(last_attempted_queue()),
-            stem_cloud=ingest_routes.stem_cloud_for(app),
-        )
-
-        def consumed() -> str | None:
-            # The LATEST FINISHED unmapped drain, which is not necessarily
-            # ours: a manual POST /analysis-queue/run targets the same derived
-            # queue, and the queue IT just failed on is the one worth
-            # suppressing.
-            #
-            # Read off `last_unmapped` rather than the one slot, because the
-            # slot is replaceable and a library or batch refresh landing after
-            # that drain hides it completely. Its signature would then be read
-            # as a silence and OUR older one booked instead - and when the
-            # newer drain had deliberately CLEARED its signature, because the
-            # CLI reported a target it never admitted, that older booking is
-            # exactly the suppression the clearing existed to prevent. The
-            # lost target then sits behind `unchanged` for as long as it keeps
-            # its content token.
-            latest = ingest_routes._JOBS.last_unmapped
-            if latest is not None and latest.phase not in ingest_routes.ACTIVE_PHASES:
-                return latest.queue_signature
-            # No unmapped drain has finished in this process, or the newest
-            # one is still running and its signature is not final. Fall back
-            # to what OUR drain read rather than booking None, which would
-            # drop the suppression entirely.
-            return started.queue_signature
-
-        return consumed
-
-    def last_attempted_queue() -> analysis_autostart.Attempt | None:
-        """The newest FINISHED drain, whoever started it.
-
-        The watcher only ever hears about its OWN drains through
-        ``start_unmapped_drain``. A manual POST /analysis-queue/run targets
-        the same derived queue and is invisible to it, which is the hole this
-        closes.
-
-        The job object goes back with the signature so the watcher can tell a
-        NEW attempt from the same finished job still sitting in the one-slot
-        registry, and the SCOPE goes with it because the watcher cannot read
-        a `None` signature without knowing whether the job was ever about this
-        backlog. Identity and scope are the caller's business; only the
-        signature is interpreted here.
-
-        FINISHED is load-bearing and is checked, not assumed. A manual drain
-        that claims the slot after ``running_fn`` said no publishes its
-        signature EARLY - ``_unmapped_targets`` writes it before the first
-        chunk runs - so a still-running job is visible here with a signature
-        that is not its final one. Adopting it would book a queue whose verdict
-        is not in yet, and the case that costs is the one the publish protocol
-        exists for: a CLI that then reports a vanished target clears
-        ``queue_signature`` precisely so the queue is NOT booked, and the
-        booking would already have happened. Restoring that file recreates the
-        same signature, the loop reports ``unchanged`` forever, and a track
-        nothing ever attempted is never analyzed.
-        """
-        current = ingest_routes._JOBS.current
-        if current is not None and current.scope == ingest_routes.UNMAPPED_SCOPE:
-            if current.phase in ingest_routes.ACTIVE_PHASES:
-                return None
-            return analysis_autostart.Attempt(
-                job=current,
-                signature=current.queue_signature,
-                targets_backlog=True,
-            )
-        # The slot holds a library or batch job, or nothing at all, and so
-        # says nothing about this backlog. A finished unmapped drain it
-        # REPLACED still does, and that statement has to outlive the slot for
-        # the same reason `consumed` reads it: a drain that cleared its
-        # signature is asking for its queue to be retried, and a library
-        # refresh landing after it must not be what silences that.
-        latest = ingest_routes._JOBS.last_unmapped
-        if latest is not None and latest.phase not in ingest_routes.ACTIVE_PHASES:
-            return analysis_autostart.Attempt(
-                job=latest,
-                signature=latest.queue_signature,
-                targets_backlog=True,
-            )
-        if current is None or current.phase in ingest_routes.ACTIVE_PHASES:
-            return None
-        return analysis_autostart.Attempt(
-            job=current,
-            signature=current.queue_signature,
-            targets_backlog=False,
-        )
-
-    return analysis_autostart.AutoAnalyzeWatcher(
-        app.state.auto_analyze,
-        scan_fn=ingest_routes.unmapped_backlog,
-        start_fn=start_unmapped_drain,
-        running_fn=lambda: ingest_routes.refresh_status().running,
-        attempted_fn=last_attempted_queue,
-    )
-
-
-def build_lyric_index_watcher(app: FastAPI) -> lyric_index_autostart.LyricIndexWatcher:
-    """Bind the lyric-index reconcile loop to this app's data and usage store.
-
-    Public because it IS the wiring under test: ``create_app`` supplies
-    ``state_db_path`` (whose grandparent directory is the data root that
-    holds ``state/`` - the lyrics cache and the index file both live under
-    ``data_dir/state/``) and ``usage_store`` (the UI-activity probe that
-    pauses the job while someone is using the app).
-    """
-    state_db_path = Path(app.state.state_db_path).resolve()
-    data_dir = state_db_path.parent.parent
-    # A layout mismatch (state_db_path not exactly two levels under the data
-    # root) makes the derivation above point at the wrong tree: the watcher
-    # would then find zero candidates, write the index into that wrong tree,
-    # and report idle forever with no error. Fail loud instead - but only
-    # when the daemon is actually armed to do that reconcile work, so an app
-    # built with the feature off (the default in every test but the lyric
-    # daemon's own) is free to pass a state_db_path with no such layout.
-    if app.state.lyric_index.enabled and (
-        state_db_path.parent.name != "state" or not (data_dir / "state").is_dir()
-    ):
-        raise RuntimeError(
-            f"lyric index data_dir {data_dir} guessed from state_db_path "
-            f"{state_db_path} does not match the required data_dir/state/"
-            "state.db layout; refusing to reconcile a directory that cannot "
-            "hold the lyrics cache."
-        )
-
-    def ui_active() -> bool:
-        # "is the app open and on screen" is the DJ-safe pause signal: index
-        # work never runs while a client could be at the decks.
-        return bool(
-            app.state.usage_store.snapshot()["summary"]["any_client_in_use"]
-        )
-
-    return lyric_index_autostart.LyricIndexWatcher(
-        app.state.lyric_index, data_dir=data_dir, activity_fn=ui_active
-    )
-
-
-def _build_default_app() -> FastAPI:
-    from apps.shared import platform_paths
-    from apps.shared.library_mode import apply_library_env, assert_ready
-    from apps.shared.sync_bind_guard import assert_sync_bind_allowed
-    from apps.webui.library_assets import ensure_stem_storage, stem_storage
-    from apps.webui.server.request_guard import assert_request_guard_bind_allowed
-
-    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
-    # W3, before any disk work: this app mounts /api/v1/sync/*. Covers the bare
-    # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
-    # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
-    assert_sync_bind_allowed(bind_host)
-    assert_request_guard_bind_allowed(bind_host)
-    apply_library_env()
-    platform_paths.refresh_share_root()
-    assert_ready()
-    stems = stem_storage()
-    ensure_stem_storage(stems)
-    hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
-    # Phase 5 wiring: prefer SqliteBackend when ``(private path)`` exists,
-    # else fall back to the in-memory backend (keeps dev + tests fast).
-    # ``make_backend()`` itself already returns InMemoryBackend when no db
-    # file exists; it only raises for a real construction/migration failure,
-    # and that must abort this boot path too (#762) rather than silently
-    # swallow into an empty in-memory library.
-    from .sqlite_backend import make_backend
-
-    backend: StateBackend = make_backend()
-    # Late import, same reason as make_backend()'s: apply_library_env() above
-    # must run first so STATE_DB (re-exported from platform_paths.DATA_DIR)
-    # reflects this process's MDT_DATA_DIR rather than whatever value it
-    # froze to at whatever module happened to import it first.
-    #
-    # Without this, create_app()'s own default for state_db_path is the
-    # literal "(private path)", resolved relative to CWD rather than
-    # MDT_DATA_DIR. That mismatch was silent until debc73644 started binding
-    # app.state.analysis_db_path to state_db_path unconditionally: before
-    # that commit, the analysis routes' _analysis_db_path() saw no override
-    # (getattr returned None) and fell back to STATE_DB directly, so they
-    # happened to be correct by omission. After it, the real daemon's
-    # analysis/beatgrid-fallback routes read the wrong file whenever
-    # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
-    # this entrypoint against a fixture data dir with an unmapped track (#949).
-    from apps.shared.paths import STATE_DB
-    # CLOUDSYNC-35: a cloned data dir syncs as the machine it was cloned from;
-    # refuse before the scheduler is armed, never strip the config afterwards.
-    assert_dev_cloudsync_allowed(Path(str(STATE_DB)).resolve().parent.parent, os.environ)
-    app = create_app(
-        backend=backend,
-        bind_host=bind_host,
-        hostname=hostname,
-        syncthing_status_fn=probe_syncthing_status,
-        stem_roots=stems.roots,
-        state_db_path=str(STATE_DB),
-        auto_analyze=analysis_autostart.arm_from_environ(os.environ),
-        lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
-        cloudsync_scheduler=True,
-        auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
-        auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
-        # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
-        auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
-        stem_hydration=True,
-    )
-    # PERF-BOOT-01: the background scanners hold their first pass until the
-    # launch's library index is served, or BOOT_GRACE_S.
-    boot_grace.arm(app)
-    # HEALTH-15: the daemon's first reconcile scan starts now, not on the
-    # browser's first read (39 to 61 s on the silver preview under load).
-    reconcile_routes.warm_summary_snapshot(app, backend)
-    return app
 
 
 # Single-item cache mutated in place (not rebound) so ``__getattr__`` below

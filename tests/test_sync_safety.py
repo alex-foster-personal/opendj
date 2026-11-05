@@ -1,4 +1,5 @@
 """Phase 4 SYNC-04: safety-rail harness tests."""
+
 from __future__ import annotations
 
 import subprocess
@@ -234,7 +235,8 @@ def test_reverse_script_footer_written_on_exception(tmp_path: Path):
 
 @pytest.mark.requirement("SYNC-8454")
 def test_live_write_session_refuses_when_pgrep_missing_from_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] pgrep is missing from PATH [then] LiveWriteSession refuses, [else stop]."""
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
@@ -252,15 +254,14 @@ def test_live_write_session_refuses_when_pgrep_missing_from_path(
 
 @pytest.mark.requirement("SYNC-8454")
 def test_live_write_session_refuses_when_pgrep_times_out(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] pgrep times out [then] LiveWriteSession refuses, [else stop]."""
     src = _make_db(tmp_path)
 
     def _timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd=["pgrep", "-x", "Rekordbox"], timeout=5
-        )
+        raise subprocess.TimeoutExpired(cmd=["pgrep", "-x", "Rekordbox"], timeout=5)
 
     monkeypatch.setattr("apps.sync.safety.subprocess.run", _timeout)
     sess = LiveWriteSession(
@@ -297,9 +298,7 @@ def test_is_running_raises_when_pgrep_times_out(
     """[if] pgrep times out [then] _is_running raises SafetyAbort, [else stop]."""
 
     def _timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd=["pgrep", "-x", "Rekordbox"], timeout=5
-        )
+        raise subprocess.TimeoutExpired(cmd=["pgrep", "-x", "Rekordbox"], timeout=5)
 
     monkeypatch.setattr("apps.sync.safety.subprocess.run", _timeout)
     with pytest.raises(SafetyAbort, match="pgrep"):
@@ -308,7 +307,8 @@ def test_is_running_raises_when_pgrep_times_out(
 
 @pytest.mark.requirement("SYNC-8454")
 def test_live_write_session_opens_when_pgrep_reports_not_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] pgrep exits 1 [then] LiveWriteSession opens, [else stop]."""
     src = _make_db(tmp_path)
@@ -318,9 +318,7 @@ def test_live_write_session_opens_when_pgrep_reports_not_running(
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(
-        "apps.sync.safety.subprocess.run", lambda *a, **k: _Result()
-    )
+    monkeypatch.setattr("apps.sync.safety.subprocess.run", lambda *a, **k: _Result())
     with LiveWriteSession(
         target="rekordbox",
         reason="test",
@@ -333,7 +331,8 @@ def test_live_write_session_opens_when_pgrep_reports_not_running(
 
 @pytest.mark.requirement("SYNC-8454")
 def test_live_write_session_aborts_when_pgrep_reports_pid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] pgrep reports a PID [then] LiveWriteSession aborts running, [else stop]."""
     src = _make_db(tmp_path)
@@ -343,9 +342,7 @@ def test_live_write_session_aborts_when_pgrep_reports_pid(
         stdout = "123\n"
         stderr = ""
 
-    monkeypatch.setattr(
-        "apps.sync.safety.subprocess.run", lambda *a, **k: _Result()
-    )
+    monkeypatch.setattr("apps.sync.safety.subprocess.run", lambda *a, **k: _Result())
     sess = LiveWriteSession(
         target="rekordbox",
         reason="test",
@@ -359,7 +356,8 @@ def test_live_write_session_aborts_when_pgrep_reports_pid(
 @pytest.mark.requirement("SYNC-8454")
 @pytest.mark.parametrize("returncode", [2, 3])
 def test_is_running_raises_on_unmeasurable_exit_code(
-    monkeypatch: pytest.MonkeyPatch, returncode: int,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
 ) -> None:
     """[if] pgrep exits 2 [then] _is_running raises SafetyAbort, [else stop]."""
 
@@ -388,8 +386,6 @@ def test_is_running_raises_when_pgrep_exits_zero_without_pid(
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(
-        "apps.sync.safety.subprocess.run", lambda *a, **k: _Result()
-    )
+    monkeypatch.setattr("apps.sync.safety.subprocess.run", lambda *a, **k: _Result())
     with pytest.raises(SafetyAbort, match="without a process ID"):
         _is_running("Rekordbox")

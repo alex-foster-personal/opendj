@@ -53,7 +53,9 @@
 	const selected = $derived(
 		selectedId === null ? null : (layout.boxById.get(selectedId)?.node ?? null)
 	);
-	const selectedLanes = $derived(selected === null ? [] : (layout.boxById.get(selected.id)?.lanes ?? []));
+	const selectedLanes = $derived(
+		selected === null ? [] : (layout.boxById.get(selected.id)?.lanes ?? [])
+	);
 	const selectedBlocks = $derived(selected === null ? [] : (reverseDeps.get(selected.id) ?? []));
 
 	/** Node ids on either end of a hovered/selected node, for edge + chip focus. */
@@ -168,11 +170,7 @@
 					{@const from = layout.boxById.get(edge.from)}
 					{@const to = layout.boxById.get(edge.to)}
 					{#if from && to}
-						<path
-							class="edge"
-							class:hot={edgeHot(edge.from, edge.to)}
-							d={edgePath(from, to)}
-						/>
+						<path class="edge" class:hot={edgeHot(edge.from, edge.to)} d={edgePath(from, to)} />
 					{/if}
 				{/each}
 			</g>
@@ -232,7 +230,11 @@
 								y={box.cy + 13}
 								text-anchor="end"
 							>
-								<title>build: {box.node.build?.state ? BUILD_STATE_LABEL[box.node.build.state] : ''}</title>
+								<title
+									>build: {box.node.build?.state
+										? BUILD_STATE_LABEL[box.node.build.state]
+										: ''}</title
+								>
 								{chipBuildGlyph(box)}
 							</text>
 						{/if}
@@ -286,7 +288,8 @@
 					<span title="reuse">reuse: {selected.reuse}</span>
 				{/if}
 				{#each selectedLanes as lane (lane)}
-					<span class="lane-chip" style="--lane: {laneColor(lane)}" title="LANE {lane}">{lane}</span>
+					<span class="lane-chip" style="--lane: {laneColor(lane)}" title="LANE {lane}">{lane}</span
+					>
 				{/each}
 				{#if hasProvenanceGap(selected)}
 					<span class="gap-icon" title="no provenance: status changes must append commits">

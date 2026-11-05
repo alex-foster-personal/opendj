@@ -81,7 +81,9 @@ export function makeTempoLaneSetters(
 		},
 		setTempoLaneScale(next: TempoLaneScale): void {
 			if (parseTempoLaneScale(next) === undefined) {
-				throw new Error(`tempo_lane_scale must be ${TEMPO_LANE_SCALES.join('|')}, got ${String(next)}`);
+				throw new Error(
+					`tempo_lane_scale must be ${TEMPO_LANE_SCALES.join('|')}, got ${String(next)}`
+				);
 			}
 			state.tempo_lane_scale = next;
 			persist();

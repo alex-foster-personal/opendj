@@ -47,9 +47,7 @@ def stdio_params(
     if timeout_s is not None:
         args += ["--timeout", str(timeout_s)]
     # --lock is a global flag, so it precedes the subcommand.
-    return StdioServerParameters(
-        command=sys.executable, args=[*args, "mcp"], env=env
-    )
+    return StdioServerParameters(command=sys.executable, args=[*args, "mcp"], env=env)
 
 
 @asynccontextmanager
@@ -82,9 +80,7 @@ def call_tool(
     timeout_s: float | None = None,
 ) -> CallToolResult:
     """Blocking form of :func:`call_tool_async`."""
-    return asyncio.run(
-        call_tool_async(lock_path, tool, arguments, env=env, timeout_s=timeout_s)
-    )
+    return asyncio.run(call_tool_async(lock_path, tool, arguments, env=env, timeout_s=timeout_s))
 
 
 async def timed_call_tool_async(

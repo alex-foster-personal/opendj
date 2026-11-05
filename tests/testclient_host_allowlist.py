@@ -22,6 +22,7 @@ collects the affected tests. It is idempotent -- calling it more than once
 (e.g. once each from tests/webui/conftest.py and tests/cloudsync/conftest.py
 in the same session) leaves the same loopback default in place.
 """
+
 from __future__ import annotations
 
 from starlette.testclient import TestClient

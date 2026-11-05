@@ -10,6 +10,7 @@ This test starts a recording (``no-capture`` test mode) and then
 invokes the CLI ``stop`` subcommand, asserting the manifest exists
 and marks the recording as finalised.
 """
+
 from __future__ import annotations
 
 import json

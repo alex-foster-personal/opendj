@@ -40,7 +40,11 @@ before(async () => {
 
 describe('applySettledAvailability', () => {
 	it('settles pending rows in place and reports what is left', () => {
-		const held = [row('a', 'present'), row('b', 'AVAILABILITY_PENDING'), row('c', 'AVAILABILITY_PENDING')];
+		const held = [
+			row('a', 'present'),
+			row('b', 'AVAILABILITY_PENDING'),
+			row('c', 'AVAILABILITY_PENDING')
+		];
 		const left = mod.applySettledAvailability(held, [
 			row('a', 'present'),
 			row('b', 'absent'),

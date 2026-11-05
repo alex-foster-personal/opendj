@@ -37,26 +37,26 @@
 		>
 			<h2 id="tc-title" class="tc-title">Help us test Open DJ</h2>
 			<p class="tc-lead">
-				This is a pre-release build. If you agree, the app sends diagnostics to Sentry (EU
-				region) so we can see what broke without asking you for log files. If you decline,
-				the app works exactly the same and sends nothing.
+				This is a pre-release build. If you agree, the app sends diagnostics to Sentry (EU region)
+				so we can see what broke without asking you for log files. If you decline, the app works
+				exactly the same and sends nothing.
 			</p>
 			<ul class="tc-list">
 				<li>
-					<strong>Crash and error reports:</strong> error type and message, code location, the
-					app route, the build id, and machine facts (OS, browser engine, sample rate).
+					<strong>Crash and error reports:</strong> error type and message, code location, the app route,
+					the build id, and machine facts (OS, browser engine, sample rate).
 				</li>
 				{#if replayOffered}
 					<li>
-						<strong>Session replays:</strong> a recording of the app's screen with all text
-						masked (track names become blocks), media blocked (no album art) and no waveform
-						capture, plus where you clicked and any errors at the time.
+						<strong>Session replays:</strong> a recording of the app's screen with all text masked (track
+						names become blocks), media blocked (no album art) and no waveform capture, plus where you
+						clicked and any errors at the time.
 					</li>
 				{/if}
 				<li>
-					<strong>Never:</strong> audio, track titles or playlist names in error reports (fields
-					are allowlisted), file paths (reduced to their extension), your identity or IP, or
-					anything at all while a deck is playing.
+					<strong>Never:</strong> audio, track titles or playlist names in error reports (fields are allowlisted),
+					file paths (reduced to their extension), your identity or IP, or anything at all while a deck
+					is playing.
 				</li>
 			</ul>
 			<details class="tc-details">
@@ -66,14 +66,13 @@
 					limited period, on the order of weeks, and nothing is shared onward.
 				</p>
 				<p>
-					Change your mind later: create an empty file named <code>telemetry-opt-out</code> in
-					the Open DJ data folder (under Library/Application Support) and restart, or delete
+					Change your mind later: create an empty file named <code>telemetry-opt-out</code> in the
+					Open DJ data folder (under Library/Application Support) and restart, or delete
 					<code>telemetry-consent.json</code> there to be asked again.
 				</p>
 				<p>
-					Stem separation, when you ask for it, can upload the source track to the project's
-					stems service. That upload is not covered by this dialog and is not gated by your
-					answer here.
+					Stem separation, when you ask for it, can upload the source track to the project's stems
+					service. That upload is not covered by this dialog and is not gated by your answer here.
 				</p>
 			</details>
 			{#if failure !== null}

@@ -58,9 +58,7 @@ def _collected(marker_expression: str) -> list[str]:
 
 def _is_real_library_module(nodeid: str) -> bool:
     module = nodeid.split("::", 1)[0]
-    return module.startswith(REAL_LIBRARY_MODULE_PREFIX) and (
-        module not in NOT_REAL_LIBRARY_MODULES
-    )
+    return module.startswith(REAL_LIBRARY_MODULE_PREFIX) and (module not in NOT_REAL_LIBRARY_MODULES)
 
 
 def test_every_real_library_test_is_marked_and_nothing_else_is() -> None:

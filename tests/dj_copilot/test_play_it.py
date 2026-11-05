@@ -1,4 +1,5 @@
 """play_it end-to-end tests (PLAY-02)."""
+
 from __future__ import annotations
 
 import json
@@ -19,9 +20,7 @@ pytestmark = pytest.mark.requirement("PLAY-02")
 def test_end_to_end_persists_order(po_conn: sqlite3.Connection) -> None:
     tracks = make_tracks(15, seed=9)
     goal = SetGoal(duration_min=60, peak_at_min=30)
-    po_id, result = play_it(
-        conn=po_conn, playlist_id="pl-e2e", goal=goal, tracks=tracks
-    )
+    po_id, result = play_it(conn=po_conn, playlist_id="pl-e2e", goal=goal, tracks=tracks)
     assert po_id > 0
     assert len(result.order) == 15
 
@@ -33,9 +32,9 @@ def test_end_to_end_persists_order(po_conn: sqlite3.Connection) -> None:
 
 
 def test_pre_flight_refuses_missing_bpm(po_conn: sqlite3.Connection) -> None:
-    tracks = [
-        TrackFeature(f"t-{i}", "A", 120.0, "8A", 5) for i in range(5)
-    ] + [TrackFeature("t-bad", "B", None, "8A", 5)]
+    tracks = [TrackFeature(f"t-{i}", "A", 120.0, "8A", 5) for i in range(5)] + [
+        TrackFeature("t-bad", "B", None, "8A", 5)
+    ]
     goal = SetGoal(duration_min=60)
     with pytest.raises(InsufficientDataError) as excinfo:
         play_it(conn=po_conn, playlist_id="pl-bad", goal=goal, tracks=tracks)
@@ -44,15 +43,10 @@ def test_pre_flight_refuses_missing_bpm(po_conn: sqlite3.Connection) -> None:
 
 
 def test_pre_flight_allows_small_gaps(po_conn: sqlite3.Connection) -> None:
-    tracks = [
-        TrackFeature(f"t-{i:03d}", "A", 120.0 + i * 0.05, "8A", 5)
-        for i in range(100)
-    ]
+    tracks = [TrackFeature(f"t-{i:03d}", "A", 120.0 + i * 0.05, "8A", 5) for i in range(100)]
     tracks[0] = TrackFeature("t-000", "A", None, "8A", 5)
     goal = SetGoal(duration_min=60)
-    po_id, _ = play_it(
-        conn=po_conn, playlist_id="pl-1pct", goal=goal, tracks=tracks
-    )
+    po_id, _ = play_it(conn=po_conn, playlist_id="pl-1pct", goal=goal, tracks=tracks)
     assert po_id > 0
 
 

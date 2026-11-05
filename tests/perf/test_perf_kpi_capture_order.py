@@ -76,9 +76,7 @@ def test_nightly_rows_carry_their_run_capture_time() -> None:
     assert {row["captured_at"] for row in rows} == {"2026-09-29T03:00:00.125000+00:00"}
     assert {row["date"] for row in rows} == {"2026-09-29"}
     whole_second = dt.datetime(2026, 9, 29, 17, 30, tzinfo=dt.UTC)
-    assert _run_rows("air", whole_second, 100.0)[0]["captured_at"] == (
-        "2026-09-29T17:30:00.000000+00:00"
-    )
+    assert _run_rows("air", whole_second, 100.0)[0]["captured_at"] == ("2026-09-29T17:30:00.000000+00:00")
 
 
 def test_readers_prefer_the_later_capture_over_publish_order() -> None:

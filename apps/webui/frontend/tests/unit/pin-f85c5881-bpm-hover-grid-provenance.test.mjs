@@ -26,8 +26,7 @@ before(async () => {
 	issues = await loadTypeScriptModule('src/lib/rb/analysis-issues.ts');
 });
 
-const read = (rel) =>
-	readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
+const read = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
 const own = (over = {}) => ({
 	stable_id: 'a'.repeat(40),
@@ -62,7 +61,14 @@ test('an unmapped track says why it is on own analysis', () => {
 test('rekordbox says so and never shows a confidence figure', () => {
 	const text = mod.gridProvenanceHoverText({
 		state: 'ready',
-		value: own({ source: 'rekordbox', status: null, backend: null, backend_version: null, bpm: null, bpm_confidence: null })
+		value: own({
+			source: 'rekordbox',
+			status: null,
+			backend: null,
+			backend_version: null,
+			bpm: null,
+			bpm_confidence: null
+		})
 	});
 	assert.match(text, /Grid source: rekordbox/);
 	assert.match(text, /rekordbox does not publish/);
@@ -102,7 +108,10 @@ test('a result is reused while fresh and refetched once stale', () => {
 	const fresh = { state: 'ready', value: own(), at: 1000 };
 	assert.equal(mod.gridProvenanceNeedsFetch(fresh, 1000 + mod.GRID_PROVENANCE_TTL_MS - 1), false);
 	assert.equal(mod.gridProvenanceNeedsFetch(fresh, 1000 + mod.GRID_PROVENANCE_TTL_MS), true);
-	assert.equal(mod.gridProvenanceNeedsFetch({ state: 'error', message: 'x', at: 1000 }, 1001), true);
+	assert.equal(
+		mod.gridProvenanceNeedsFetch({ state: 'error', message: 'x', at: 1000 }, 1001),
+		true
+	);
 });
 
 test('the BPM hover carries the provenance sentence after the verdict', () => {
@@ -115,9 +124,15 @@ test('the BPM hover carries the provenance sentence after the verdict', () => {
 
 test('the BPM cell requests the provenance on hover and reads it into the title', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
-	const fn = table.slice(table.indexOf('function bpmCellTitle'), table.indexOf('function _nowRatioFor'));
+	const fn = table.slice(
+		table.indexOf('function bpmCellTitle'),
+		table.indexOf('function _nowRatioFor')
+	);
 	assert.match(fn, /bpmGridHoverText\(row, gridProvenanceFor\(row\.stable_id\)\)/);
-	const cell = table.slice(table.indexOf('class="c-bpm"') - 400, table.indexOf('class="c-bpm"') + 900);
+	const cell = table.slice(
+		table.indexOf('class="c-bpm"') - 400,
+		table.indexOf('class="c-bpm"') + 900
+	);
 	assert.match(cell, /onpointerenter=\{\(\) => requestGridProvenance\(row\.stable_id\)\}/);
 });
 
@@ -132,11 +147,21 @@ test('the library Beatgrid row shows a short value and puts the source and confi
 	const ready = { state: 'ready', value: own() };
 	const row = mod.libraryGridProvenance(ready);
 	assert.equal(row.value, 'own analysis');
-	assert.equal(row.title, mod.gridProvenanceHoverText(ready), 'the hover is the full provenance text');
-	assert.doesNotMatch(row.value, /Confidence/, 'the explanation is not the visible value');
-	assert.equal(mod.libraryGridProvenance({ state: 'ready', value: { ...own(), source: 'rekordbox' } }).value, 'rekordbox analysis');
 	assert.equal(
-		mod.libraryGridProvenance({ state: 'ready', value: own({ status: 'failed', reason: 'decode error', bpm_confidence: null }) }).value,
+		row.title,
+		mod.gridProvenanceHoverText(ready),
+		'the hover is the full provenance text'
+	);
+	assert.doesNotMatch(row.value, /Confidence/, 'the explanation is not the visible value');
+	assert.equal(
+		mod.libraryGridProvenance({ state: 'ready', value: { ...own(), source: 'rekordbox' } }).value,
+		'rekordbox analysis'
+	);
+	assert.equal(
+		mod.libraryGridProvenance({
+			state: 'ready',
+			value: own({ status: 'failed', reason: 'decode error', bpm_confidence: null })
+		}).value,
 		'own analysis, failed'
 	);
 	const failed = mod.libraryGridProvenance({ state: 'error', message: 'HTTP 500' });

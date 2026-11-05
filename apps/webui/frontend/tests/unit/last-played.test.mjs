@@ -57,7 +57,10 @@ test('a newer serato timestamp wins the cell, and an odj source alias is a gig',
 test('combined play_count is not a source, and a stick row count is Rekordbox USB', () => {
 	assert.equal(playFactsFromUnknown({ play_count: 9 }), null);
 	assert.equal(playFactsFromUnknown(null), null);
-	assert.equal(playFactsFromUnknown({ rekordbox_play_count: -3, opendj_last_played_at: 'nope' }), null);
+	assert.equal(
+		playFactsFromUnknown({ rekordbox_play_count: -3, opendj_last_played_at: 'nope' }),
+		null
+	);
 	const shown = displayFacts({
 		stableId: 'usb-vol-1',
 		playCount: 2,
@@ -79,7 +82,10 @@ test('combined play_count is not a source, and a stick row count is Rekordbox US
 });
 
 test('fetched plays replace the listing, except a stick count still counts as USB', () => {
-	const wire = playFactsFromUnknown({ opendj_play_count: 1, opendj_last_played_at: '2026-10-01T12:00:00.000Z' });
+	const wire = playFactsFromUnknown({
+		opendj_play_count: 1,
+		opendj_last_played_at: '2026-10-01T12:00:00.000Z'
+	});
 	const fetched = playFactsFromUnknown({
 		rekordbox_play_count: 3,
 		opendj_play_count: 1,
@@ -97,19 +103,30 @@ test('fetched plays replace the listing, except a stick count still counts as US
 		wire: null,
 		fetched
 	});
-	assert.ok(playHits(stick, NOW).some((hit) => hit.id === 'rekordbox_usb' && hit.detail === '8 plays'));
+	assert.ok(
+		playHits(stick, NOW).some((hit) => hit.id === 'rekordbox_usb' && hit.detail === '8 plays')
+	);
 });
 
 test('LIBPG-7694b the table shows a Last column wired to the cell, and its hover card explains the day count', async () => {
 	const { readFileSync } = await import('node:fs');
-	const read = (path) => readFileSync(new URL(`../../src/lib/components/rb/browser/${path}`, import.meta.url), 'utf8');
+	const read = (path) =>
+		readFileSync(new URL(`../../src/lib/components/rb/browser/${path}`, import.meta.url), 'utf8');
 	const table = read('TrackTable.svelte');
 	assert.match(table, /<LastPlayedCell\s+stableId=\{row\.stable_id\}/);
 	assert.match(table, /onColResizeStart\(e, 'last'\)/);
 	const cell = read('LastPlayedCell.svelte');
 	assert.match(cell, /data-testid="last-played"/);
-	assert.match(cell, /data-testid="last-played"\s+data-custom-tip=""/, 'the cell is a hover-card host');
-	assert.match(cell, /data-testid="last-played-explain"\s*>\{view\.label\}: days since the newest play/, 'the card explains the day count');
+	assert.match(
+		cell,
+		/data-testid="last-played"\s+data-custom-tip=""/,
+		'the cell is a hover-card host'
+	);
+	assert.match(
+		cell,
+		/data-testid="last-played-explain"\s*>\{view\.label\}: days since the newest play/,
+		'the card explains the day count'
+	);
 });
 
 test('a failed plays fetch is not cached, so the next load retries (LIBPG-7694b)', async () => {
@@ -120,10 +137,13 @@ test('a failed plays fetch is not cached, so the next load retries (LIBPG-7694b)
 	globalThis.fetch = async () => {
 		calls += 1;
 		if (fail) throw new TypeError('network down');
-		return new Response(JSON.stringify({ stable_id: 'abc', play_count: 1, rekordbox_play_count: 1 }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		return new Response(
+			JSON.stringify({ stable_id: 'abc', play_count: 1, rekordbox_play_count: 1 }),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 	};
 	try {
 		const mod = await loadTypeScriptModule('src/lib/components/rb/browser/last-played-load.ts', {

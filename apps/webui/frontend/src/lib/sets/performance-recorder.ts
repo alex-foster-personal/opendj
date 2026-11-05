@@ -37,7 +37,12 @@ export function recordRailState(status: RecorderStatus): RecordRailState {
 				poll: 1000
 			};
 		case 'starting':
-			return { recording: false, waiting: true, tip: 'Starting the audio input (click to cancel)', poll: 1000 };
+			return {
+				recording: false,
+				waiting: true,
+				tip: 'Starting the audio input (click to cancel)',
+				poll: 1000
+			};
 		case 'failed':
 		case 'stopped':
 			return {
@@ -74,16 +79,12 @@ export function recorderHeadline(status: RecorderStatus): string {
 	return 'Audio input stopped';
 }
 
-export async function stopPerformanceRecorder(
-	status: RecorderStatus
-): Promise<RecorderStatus> {
+export async function stopPerformanceRecorder(status: RecorderStatus): Promise<RecorderStatus> {
 	if (!status.active || status.session_id === null) {
 		throw new Error('no active recording to stop');
 	}
 	if (!status.owned) {
-		throw new Error(
-			`recording ${status.session_id} is owned by process ${status.pid}`
-		);
+		throw new Error(`recording ${status.session_id} is owned by process ${status.pid}`);
 	}
 	return stopRecorder(status.session_id);
 }

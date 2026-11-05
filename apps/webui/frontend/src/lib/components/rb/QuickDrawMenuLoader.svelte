@@ -31,8 +31,7 @@
 	 */
 	import type { Component } from 'svelte';
 
-	let QuickDrawMenuComponent: Component<{ initialEvent?: MouseEvent | null }> | null =
-		$state(null);
+	let QuickDrawMenuComponent: Component<{ initialEvent?: MouseEvent | null }> | null = $state(null);
 	let loadError: string | null = $state(null);
 	let errorVisible = $state(false);
 	/** The latest right-click made before the module landed; the menu replays it. */
@@ -74,7 +73,8 @@
 	<div class="qd-load-error rb-panel" role="alert" data-testid="quick-draw-menu-load-error">
 		<span>Quick-draw menu failed to load: {loadError}</span>
 		<button type="button" class="qd-load-close" onclick={() => location.reload()}>Reload</button>
-		<button type="button" class="qd-load-close" onclick={() => (errorVisible = false)}>Close</button>
+		<button type="button" class="qd-load-close" onclick={() => (errorVisible = false)}>Close</button
+		>
 	</div>
 {/if}
 

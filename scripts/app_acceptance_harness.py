@@ -76,8 +76,7 @@ def _restore_negative_carrier(run: Run, file_path: str) -> str | None:
     if on_disk != payload:
         got = hashlib.sha256(on_disk).hexdigest()
         want = hashlib.sha256(payload).hexdigest()
-        return (f"analysis: negative: {title}: restore sha256 {got[:12]} != verified "
-                f"{want[:12]}")
+        return f"analysis: negative: {title}: restore sha256 {got[:12]} != verified {want[:12]}"
     return None
 
 

@@ -126,10 +126,7 @@ test('a menu opened with room to spare stays at the pointer when it grows', () =
 	const node = makeNode(LOADING_SIZE);
 	clamp.pointFloatingAction(node, { x: 300, y: 120 });
 	resize(node, LOADED_SIZE);
-	assert.deepEqual(
-		{ left: box(node).left, top: box(node).top },
-		{ left: 300, top: 120 }
-	);
+	assert.deepEqual({ left: box(node).left, top: box(node).top }, { left: 300, top: 120 });
 });
 
 test('a window resize re-clamps, and destroy stops both observers', () => {

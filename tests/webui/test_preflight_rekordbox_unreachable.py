@@ -19,9 +19,7 @@ from apps.webui.server.preflight_checks import LIBRARY_ATTACHED_REKORDBOX_UNREAC
 pytestmark = pytest.mark.requirement("PREFLIGHT-02")
 
 
-def _build_client(
-    monkeypatch: pytest.MonkeyPatch, data_dir: Path, *, rb_app_dir: Path
-) -> TestClient:
+def _build_client(monkeypatch: pytest.MonkeyPatch, data_dir: Path, *, rb_app_dir: Path) -> TestClient:
     state_path = data_dir / "state" / "state.db"
     monkeypatch.setattr(platform_paths, "rekordbox_app_dir", lambda: rb_app_dir)
     monkeypatch.setattr(rb_config, "STATE_DB", state_path)

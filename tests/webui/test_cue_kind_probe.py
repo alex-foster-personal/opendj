@@ -1,4 +1,5 @@
 """Tests for read-only ``cue_kind_probe`` CLI (synthetic sqlite only)."""
+
 from __future__ import annotations
 
 import json

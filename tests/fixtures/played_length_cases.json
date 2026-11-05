@@ -1,0 +1,12 @@
+{
+  "_doc": "Shared by tests/shared/test_played_length.py and apps/webui/frontend/tests/unit/selection-played-length.test.mjs so the Python estimate and its TypeScript mirror cannot drift (LIBUX played length).",
+  "cases": [
+    {"name": "mix points win", "track": {"duration_s": 300, "bpm": 128, "mix_in_s": 30, "mix_out_s": 270}, "played_s": 240, "source": "mix_points"},
+    {"name": "bpm rule: 32 bars at 120 bpm is 64 s", "track": {"duration_s": 300, "bpm": 120}, "played_s": 236, "source": "rule"},
+    {"name": "bpm rule clamps to half the duration", "track": {"duration_s": 90, "bpm": 120}, "played_s": 45, "source": "rule"},
+    {"name": "no bpm: three quarters", "track": {"duration_s": 200, "bpm": null}, "played_s": 150, "source": "rule"},
+    {"name": "inverted mix points fall back to the rule", "track": {"duration_s": 200, "bpm": null, "mix_in_s": 150, "mix_out_s": 100}, "played_s": 150, "source": "rule"},
+    {"name": "no duration is unknown", "track": {"duration_s": null, "bpm": 128}, "played_s": 0, "source": "unknown"}
+  ],
+  "total": {"played_s": 821, "total_s": 1090, "from_mix_points": 1, "from_rule": 4, "unknown": 1}
+}

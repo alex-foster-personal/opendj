@@ -38,10 +38,9 @@ function brokenTrack(overrides = {}) {
 }
 
 before(async () => {
-	missing = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/missing-tracks.ts',
-		{ viteApiBase: API_BASE }
-	);
+	missing = await loadTypeScriptModule('src/lib/components/rb/browser/missing-tracks.ts', {
+		viteApiBase: API_BASE
+	});
 	originalFetch = globalThis.fetch;
 });
 
@@ -100,9 +99,18 @@ test('brokenTrackToBrowserRow copies listing fields and forces unavailable disk 
 });
 
 test('vendor_id presence is the only has_rb_mapping signal', () => {
-	assert.equal(missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: '42' }), 1).has_rb_mapping, true);
-	assert.equal(missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: null }), 2).has_rb_mapping, false);
-	assert.equal(missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: '' }), 3).has_rb_mapping, false);
+	assert.equal(
+		missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: '42' }), 1).has_rb_mapping,
+		true
+	);
+	assert.equal(
+		missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: null }), 2).has_rb_mapping,
+		false
+	);
+	assert.equal(
+		missing.brokenTrackToBrowserRow(brokenTrack({ vendor_id: '' }), 3).has_rb_mapping,
+		false
+	);
 });
 
 test('fetchMissingTrackRows calls GET /api/v1/reconcile/broken with no playlist_id', async () => {

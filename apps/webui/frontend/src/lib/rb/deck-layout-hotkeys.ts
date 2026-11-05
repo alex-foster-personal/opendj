@@ -72,7 +72,6 @@ export function installDeckLayoutHotkeys(): () => void {
 }
 
 // Re-exported so the performance route, which already imports this deck
-// hotkey module, installs the stem-hold chord without a new fan-out edge
-// (quality ratchet frontend.max_fan_out on +page.svelte; same precedent as
-// deck-channel-graph.ts re-exporting the output topology).
-export { installStemHoldHotkey } from '$lib/rb/stem-hold-hotkeys';
+// layout module, sizes the mixer column without a new fan-out edge (quality
+// ratchet frontend.max_fan_out on +page.svelte).
+export { mixerColumnPx } from '$lib/rb/mixer-width';

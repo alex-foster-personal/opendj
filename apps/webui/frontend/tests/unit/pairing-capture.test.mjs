@@ -78,7 +78,11 @@ test('latestSyncSnapshot queries both stable_a/stable_b orders with limit=1', as
 
 	await pairingCapture.latestSyncSnapshot('track-a', 'track-b');
 
-	assert.equal(seen.length, 2, 'the repo matches stable_a/stable_b directionally, so both orders must be asked');
+	assert.equal(
+		seen.length,
+		2,
+		'the repo matches stable_a/stable_b directionally, so both orders must be asked'
+	);
 	assert.ok(seen.some((u) => u.includes('stable_a=track-a') && u.includes('stable_b=track-b')));
 	assert.ok(seen.some((u) => u.includes('stable_a=track-b') && u.includes('stable_b=track-a')));
 	assert.ok(seen.every((u) => u.includes('limit=1')));
@@ -139,7 +143,11 @@ test('latestSyncSnapshot keeps whichever order captured more recently', async ()
 		const isDirect = new URL(request.url).searchParams.get('stable_a') === 'track-a';
 		return jsonResponse([
 			isDirect
-				? snapshotRow({ a_tempo_ratio: 1.1, b_tempo_ratio: 1.2, captured_at: '2026-09-01T00:00:00Z' })
+				? snapshotRow({
+						a_tempo_ratio: 1.1,
+						b_tempo_ratio: 1.2,
+						captured_at: '2026-09-01T00:00:00Z'
+					})
 				: snapshotRow({
 						stable_a: 'track-b',
 						stable_b: 'track-a',
@@ -167,7 +175,10 @@ test('alignHotcues posts one alignment per matching slot letter, skipping the re
 	globalThis.fetch = async (request) => {
 		const body = await request.clone().json();
 		posted.push(body);
-		return jsonResponse({ id: `al-${posted.length}`, ...body, created_at: '2026-09-01T00:00:00Z' }, { status: 201 });
+		return jsonResponse(
+			{ id: `al-${posted.length}`, ...body, created_at: '2026-09-01T00:00:00Z' },
+			{ status: 201 }
+		);
 	};
 
 	const result = await pairingCapture.alignHotcues(
@@ -221,7 +232,10 @@ test('alignHotcues reports how many pairs landed when a POST fails partway throu
 			);
 		}
 		const body = await request.clone().json();
-		return jsonResponse({ id: `al-${calls}`, ...body, created_at: '2026-09-01T00:00:00Z' }, { status: 201 });
+		return jsonResponse(
+			{ id: `al-${calls}`, ...body, created_at: '2026-09-01T00:00:00Z' },
+			{ status: 201 }
+		);
 	};
 
 	const hotCuesA = [hotCue('A', 1000), hotCue('B', 2000), hotCue('C', 3000)];
@@ -232,9 +246,16 @@ test('alignHotcues reports how many pairs landed when a POST fails partway throu
 		(error) => error
 	);
 
-	assert.ok(caught instanceof pairingCapture.PartialAlignmentError, 'expected a PartialAlignmentError');
+	assert.ok(
+		caught instanceof pairingCapture.PartialAlignmentError,
+		'expected a PartialAlignmentError'
+	);
 	assert.equal(caught.paired, 1, 'the A slot landed before the B slot failed');
-	assert.equal(calls, 2, 'the C slot must not be attempted after a failure - earlier POSTs are already durable');
+	assert.equal(
+		calls,
+		2,
+		'the C slot must not be attempted after a failure - earlier POSTs are already durable'
+	);
 });
 
 // -------------------------------------------------------- W19 recordSyncSnapshot
@@ -257,15 +278,28 @@ test('W19 syncSnapshotBody maps the from deck to side a, the elected master, and
 		b_position_ms: 45000
 	});
 	// No elected master between the two: the from deck leads. Time mode is 'beat'.
-	const body = pairingCapture.syncSnapshotBody({ ...a, is_master: false }, { ...b, is_master: false }, false);
+	const body = pairingCapture.syncSnapshotBody(
+		{ ...a, is_master: false },
+		{ ...b, is_master: false },
+		false
+	);
 	assert.equal(body.master_side, 'a');
 	assert.equal(body.sync_mode, 'beat');
 	assert.equal(body.a_position_ms, 30000, 'the frozen position is sent as captured');
 	// An invalid position fails loudly rather than being clamped into a snapshot
 	// that does not represent the Capture (the route refuses negatives too).
-	assert.throws(() => pairingCapture.syncSnapshotBody({ ...a, position_ms: -12 }, b, false), RangeError);
-	assert.throws(() => pairingCapture.syncSnapshotBody(a, { ...b, position_ms: Number.NaN }, false), RangeError);
-	assert.doesNotThrow(() => pairingCapture.syncSnapshotBody({ ...a, position_ms: 0 }, b, false), 'zero is a valid position');
+	assert.throws(
+		() => pairingCapture.syncSnapshotBody({ ...a, position_ms: -12 }, b, false),
+		RangeError
+	);
+	assert.throws(
+		() => pairingCapture.syncSnapshotBody(a, { ...b, position_ms: Number.NaN }, false),
+		RangeError
+	);
+	assert.doesNotThrow(
+		() => pairingCapture.syncSnapshotBody({ ...a, position_ms: 0 }, b, false),
+		'zero is a valid position'
+	);
 });
 
 test('W19 capturePairing with an invalid position writes nothing, not even the pairing row', async () => {
@@ -286,7 +320,11 @@ test('W19 capturePairing with an invalid position writes nothing, not even the p
 			(error) => error
 		);
 	assert.ok(caught instanceof RangeError, 'Capture fails visibly');
-	assert.equal(calls, 0, 'the write-once pairing row must not be created before the snapshot is validated');
+	assert.equal(
+		calls,
+		0,
+		'the write-once pairing row must not be created before the snapshot is validated'
+	);
 });
 
 test('W19 recordSyncSnapshot POSTs the body to /api/v1/pairings/sync-snapshots', async () => {

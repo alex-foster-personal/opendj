@@ -176,7 +176,10 @@ test('APP_VERSION is the build-time app version, never a literal of its own', ()
 		new URL('../../src/lib/rb/usage-heartbeat.ts', import.meta.url),
 		'utf8'
 	);
-	assert.match(source, /APP_VERSION: string =[\s\S]*?import\.meta\.env\.VITE_APP_VERSION \?\? 'unknown'/);
+	assert.match(
+		source,
+		/APP_VERSION: string =[\s\S]*?import\.meta\.env\.VITE_APP_VERSION \?\? 'unknown'/
+	);
 	assert.doesNotMatch(source, /APP_VERSION[^=]*= '\d/, 'no hard-coded version literal');
 	// The unit loader runs no vite build, so the define is absent here.
 	assert.equal(heartbeat.APP_VERSION, 'unknown');

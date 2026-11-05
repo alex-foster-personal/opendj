@@ -13,7 +13,9 @@
 	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
 	 * so horizontal drag stays the fine-adjust axis.
 	 */
+	import AnimRunningDot from './AnimRunningDot.svelte';
 	import { createShiftSelectPress } from '$lib/rb/shift-select-press';
+	import { fitKnobCaption } from '$lib/rb/knob-caption-fit';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { createDeferredClickGuard } from '$lib/rb/deferred-click';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
@@ -68,6 +70,20 @@
 		onsingleclick?: () => void;
 		/** Optional mark rendered inside the caption, before the label text ("[icon] MIX"). */
 		captionLead?: Snippet;
+		/**
+		 * COLORFX-10: immediate tap action. Fires on pointerup when the press
+		 * stayed inside the click slop (a drag still turns the dial), and on
+		 * Enter / Space. Unlike `onsingleclick` it is not deferred for a
+		 * double-click, so a menu opens on the first click.
+		 */
+		ontap?: () => void;
+		/** Optional in-flow mark after the label text (the color FX chevron). */
+		captionTrail?: Snippet;
+		/** Width of `captionTrail` incl. its gap, px, so the caption fit counts it. */
+		captionTrailPx?: number;
+		/** Set when `ontap` opens a menu: drives aria-haspopup and data-popup-open
+		 * (role=slider does not support aria-expanded). */
+		popupOpen?: boolean;
 	}
 
 	let {
@@ -82,7 +98,11 @@
 		accentColor,
 		resetValue = 0.5,
 		onsingleclick,
-		captionLead
+		captionLead,
+		ontap,
+		captionTrail,
+		captionTrailPx = 0,
+		popupOpen
 	}: Props = $props();
 
 	const SWEEP_DEG = DIAL_SWEEP_DEG; // -135deg .. +135deg like rekordbox knobs (7:30 to 4:30, DIALCLOCK-8341)
@@ -91,9 +111,11 @@
 		if (!Number.isFinite(size) || size <= 0) {
 			throw new Error(`Knob size must be a positive finite number, got ${size}`);
 		}
+		const caption = fitKnobCaption(label, size, captionTrail ? captionTrailPx : 0);
 		return (
 			`--knob-dial-size: ${size}px; ` +
-			`--knob-caption-size: 8px; ` +
+			`--knob-caption-size: ${caption.fontPx}px; ` +
+			`--knob-caption-max: ${caption.maxWidthPx}px; ` +
 			`--knob-caption-gap: 1px; ` +
 			(accentColor ? `--knob-accent-color: ${accentColor}; ` : '') +
 			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
@@ -222,7 +244,7 @@
 			const insideSlop = !pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY);
 			// An Alt press on a grouped dial is the same: inside the slop it is
 			// still the link click.
-			if ((onsingleclick !== undefined || altPressInGroup) && insideSlop) return;
+			if ((onsingleclick !== undefined || ontap !== undefined || altPressInGroup) && insideSlop) return;
 			pointerMoved = true;
 		}
 		if (dragTracker === null) return;
@@ -261,7 +283,9 @@
 			altClickKnob(knobId);
 			return;
 		}
-		if (!live || wasDrag || onsingleclick === undefined) return;
+		if (!live || wasDrag) return;
+		ontap?.();
+		if (onsingleclick === undefined) return;
 		singleClickGuard.schedule(() => onsingleclick?.());
 	}
 
@@ -273,7 +297,10 @@
 
 	function handleKeyDown(e: KeyboardEvent): void {
 		if (!live) return;
-		if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+		if (ontap !== undefined && (e.key === 'Enter' || e.key === ' ')) {
+			e.preventDefault();
+			ontap();
+		} else if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
 			e.preventDefault();
 			nudgeKnobOrSelection(knobId, KNOB_CFG.keyStep);
 		} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
@@ -302,6 +329,8 @@
 	aria-valuemax={1}
 	aria-valuenow={displayValue}
 	aria-disabled={inert}
+	aria-haspopup={popupOpen === undefined ? undefined : 'menu'}
+	data-popup-open={popupOpen}
 	tabindex={inert ? -1 : 0}
 	style={visualStyle}
 	onpointerenter={() => setKnobHovered(live ? knobId : null)}
@@ -355,14 +384,16 @@
 			</g>
 		{/if}
 	</svg>
+	<AnimRunningDot animKey={knobId} />
 	{#if takeoverGhost !== null}
 		<span class="sr-only">Hardware at {(takeoverGhost.value * 100).toFixed(0)}%; move to {(takeoverGhost.target * 100).toFixed(0)}% to pick up.</span>
 	{/if}
-	<span class="label">{#if captionLead}<span class="label-lead">{@render captionLead()}</span>{/if}{label}</span>
+	<span class="label">{#if captionLead}<span class="label-lead">{@render captionLead()}</span>{/if}<span class="label-text">{label}</span>{#if captionTrail}{@render captionTrail()}{/if}</span>
 </div>
 
 <style>
 	.knob {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -453,11 +484,26 @@
 			stroke: var(--knob-rainbow-3);
 		}
 	}
+	/* COLORFX-10: the caption is capped to the knob column (dial plus a fixed
+	 * overhang, see knob-caption-fit.ts) so it can never reach a neighbour's
+	 * caption; text that still does not fit at 7px is cut with an ellipsis. */
+	.knob {
+		max-width: var(--knob-caption-max);
+	}
 	.label {
+		display: inline-flex;
+		align-items: center;
+		max-width: var(--knob-caption-max);
 		font-size: var(--knob-caption-size);
 		letter-spacing: 0.04em;
 		color: var(--rb-text-dim);
 		line-height: 1;
+		white-space: nowrap;
+	}
+	.label-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.label-lead {
 		display: inline-block;

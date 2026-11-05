@@ -818,7 +818,7 @@ test('load() kicks the deferred grid upgrade off after the deck swap', () => {
 	assert.ok(start > 0, 'totalBeforeSwap marker not found');
 	const afterSwap = source.slice(start, source.indexOf('async refreshHotCues', start));
 	assert.ok(
-		afterSwap.includes('void upgradeDeckBeatgrid('),
+		afterSwap.includes('void _upgradeDeckBeatgrid('),
 		'the deferred grid upgrade is never started, so an unmapped track keeps ' +
 			'the empty grid /anlz served it (no quantize, no beat loops, no sync)'
 	);
@@ -826,8 +826,11 @@ test('load() kicks the deferred grid upgrade off after the deck swap', () => {
 	// must not leave it silently "synced" with no lock ever scheduled - see
 	// grid-features.effectiveBeatSync, which flips true the instant st.anlz
 	// carries a grid regardless of whether anything phase-locked the deck.
-	const upgradeCallStart = afterSwap.indexOf('void upgradeDeckBeatgrid(');
-	const upgradeCallBlock = afterSwap.slice(upgradeCallStart);
+	// load() starts the upgrade through _upgradeDeckBeatgrid (PARITY-4832 shares
+	// it with the restart after a failed load), so that is where to look.
+	const helperStart = source.indexOf('const _upgradeDeckBeatgrid = ');
+	assert.ok(helperStart > 0, '_upgradeDeckBeatgrid not found - this test is reading the wrong file');
+	const upgradeCallBlock = source.slice(helperStart, source.indexOf('\n', helperStart));
 	assert.ok(
 		upgradeCallBlock.includes('_beatgridGuards.afterBeatgridUpgrade'),
 		'the deferred grid upgrade never resyncs a playing follower once its ' +
@@ -917,7 +920,9 @@ test('the deferred resync reclaims scope through the scheduler before publishing
 });
 
 test('the deferred resync call site threads the same load-token check into afterBeatgridUpgrade', () => {
-	const start = source.indexOf('void upgradeDeckBeatgrid(deck, stable_id, st,');
+	// load() and PARITY-4832's restart after a failed load both start the upgrade
+	// through this one helper, so this is the only call site to pin.
+	const start = source.indexOf('upgradeDeckBeatgrid(deck, stableId, st,');
 	assert.ok(start > 0, 'upgradeDeckBeatgrid call site not found - this test is reading the wrong file');
 	const end = source.indexOf(');', start) + 2;
 	const body = source.slice(start, end);

@@ -17,7 +17,8 @@ export function renderMarkdown(text: string): string {
 }
 
 function purifier(): typeof DOMPurify {
-	if (!DOMPurify.isSupported) throw new Error('renderMarkdown needs a DOM; DOMPurify is unsupported here');
+	if (!DOMPurify.isSupported)
+		throw new Error('renderMarkdown needs a DOM; DOMPurify is unsupported here');
 	if (!hooked) {
 		DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 			if (node.tagName !== 'A') return;

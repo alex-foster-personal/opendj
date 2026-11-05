@@ -129,21 +129,46 @@ for (const theme of ['dark', 'light'] as const) {
 			expect(await paint(page, sel, 'stroke')).toBe('none');
 			const shape = await geometry(page, sel, [
 				// Inside: the four bars, left to right, then the cloud's big and small bumps.
-				[1.1, 11], [2.7, 10], [4.3, 9], [5.9, 8], [10, 7], [14.2, 10],
+				[1.1, 11],
+				[2.7, 10],
+				[4.3, 9],
+				[5.9, 8],
+				[10, 7],
+				[14.2, 10],
 				// Outside: the gaps between bars, above the shortest bar, between
 				// the last bar and the cloud, and above the cloud.
-				[1.9, 11], [3.5, 11], [1.1, 8], [6.7, 11], [10, 3.5]
+				[1.9, 11],
+				[3.5, 11],
+				[1.1, 8],
+				[6.7, 11],
+				[10, 3.5]
 			]);
 			expect(shape.closedSubpaths).toBe(5);
 			expect(shape.bbox).toEqual([0.6, 4.57, 14.65, 7.43]);
-			expect(shape.inFill).toEqual([true, true, true, true, true, true, false, false, false, false, false]);
+			expect(shape.inFill).toEqual([
+				true,
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				false,
+				false,
+				false
+			]);
 		});
 
 		test('control: the other cloud states keep their existing colors', async ({ page }) => {
 			await mount(page, theme);
-			expect(await paint(page, '#remote svg.cloud-icon path >> nth=0', 'fill')).toBe('rgb(229, 72, 77)');
+			expect(await paint(page, '#remote svg.cloud-icon path >> nth=0', 'fill')).toBe(
+				'rgb(229, 72, 77)'
+			);
 			expect(await paint(page, '#local svg.cloud-icon path >> nth=0', 'stroke')).toBe(DIM[theme]);
-			expect(await paint(page, '#spotify svg.provider-icon circle', 'fill')).toBe('rgb(53, 192, 79)');
+			expect(await paint(page, '#spotify svg.provider-icon circle', 'fill')).toBe(
+				'rgb(53, 192, 79)'
+			);
 		});
 	});
 }

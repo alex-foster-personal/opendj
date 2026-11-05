@@ -18,7 +18,9 @@ import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 import { resolveUv } from './fixtures/resolve-uv.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
-const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/playlist_tree_order_server.py', import.meta.url));
+const SERVER_SCRIPT = fileURLToPath(
+	new URL('./fixtures/playlist_tree_order_server.py', import.meta.url)
+);
 
 let m;
 let writeApi;
@@ -32,7 +34,9 @@ before(async () => {
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {
-		serverProcess.once('exit', (code) => reject(new Error(`fixture server exited early (${code})`)));
+		serverProcess.once('exit', (code) =>
+			reject(new Error(`fixture server exited early (${code})`))
+		);
 		createInterface({ input: serverProcess.stdout }).on('line', (line) => {
 			const ready = /^READY (\d+)$/.exec(line);
 			if (ready) resolve(Number(ready[1]));
@@ -130,7 +134,10 @@ test('a second drag waits for the first write, so the newest order is stored las
 	const second = writer([c, b, a]);
 	const third = writer([c, a, b]);
 	assert.deepEqual(shown(state, [a, b, c]), [c, a, b], 'the newest drag repaints at once');
-	await until(async () => (await putsSeen()) === seenBefore + 1, 'the first PUT to reach the route');
+	await until(
+		async () => (await putsSeen()) === seenBefore + 1,
+		'the first PUT to reach the route'
+	);
 	// Only one PUT is ever in flight: the queued ones have not reached the route.
 	await new Promise((r) => setTimeout(r, 100));
 	assert.equal(await putsSeen(), seenBefore + 1);
@@ -219,7 +226,11 @@ test('a playlists event read from an earlier PUT cannot revert a queued newer or
 	await Promise.all([first, second]);
 	assert.equal(writer.busy(), false);
 	assert.deepEqual(await storedOrder(), [c, b, a]);
-	assert.deepEqual(shown(state, [a, b, c]), [c, b, a], 'the idle refresh repaints the stored order');
+	assert.deepEqual(
+		shown(state, [a, b, c]),
+		[c, b, a],
+		'the idle refresh repaints the stored order'
+	);
 	// Once idle, event reads apply again.
 	await eventRefresh();
 	assert.deepEqual(shown(state, [a, b, c]), [c, b, a]);
@@ -239,7 +250,10 @@ test('a playlist created during a write shows at once and keeps the optimistic o
 	await readPlaylists((rows) => {
 		state.rows = writer.overlay(rows);
 	});
-	assert.ok(state.rows.some((p) => p.playlist_id === made), 'the new playlist shows');
+	assert.ok(
+		state.rows.some((p) => p.playlist_id === made),
+		'the new playlist shows'
+	);
 	assert.deepEqual(shown(state, [a, b]), [b, a], 'the optimistic order survives the create read');
 	await call('POST', '/test/release-put');
 	await pending;
@@ -280,8 +294,15 @@ test('a refused write rolls back only the order, keeping a create and rename mad
 	assert.equal(state.toasts.length, 1);
 	assert.equal(state.toasts[0][0], 'error');
 	assert.deepEqual(shown(state, [a, b]), [a, b], 'the stored order is back');
-	assert.ok(state.rows.some((p) => p.playlist_id === made), 'the create made during the burst stays');
-	assert.equal(state.rows.find((p) => p.playlist_id === a).name, 'Renamed-mid-burst', 'the rename stays');
+	assert.ok(
+		state.rows.some((p) => p.playlist_id === made),
+		'the create made during the burst stays'
+	);
+	assert.equal(
+		state.rows.find((p) => p.playlist_id === a).name,
+		'Renamed-mid-burst',
+		'the rename stays'
+	);
 	assert.deepEqual((await storedOrder()).slice(0, 2), [a, b]);
 });
 
@@ -290,7 +311,10 @@ test('resolveUv returns an absolute executable and honours MDT_UV_BIN', async ()
 	const found = resolveUv();
 	assert.ok(isAbsolute(found), found);
 	assert.equal(resolveUv({ ...process.env, MDT_UV_BIN: found }), found);
-	assert.throws(() => resolveUv({ MDT_UV_BIN: `${found}.missing` }), /MDT_UV_BIN=.* is not an executable file/);
+	assert.throws(
+		() => resolveUv({ MDT_UV_BIN: `${found}.missing` }),
+		/MDT_UV_BIN=.* is not an executable file/
+	);
 });
 
 test('resolveUv makes a relative PATH entry absolute before checking it', async () => {

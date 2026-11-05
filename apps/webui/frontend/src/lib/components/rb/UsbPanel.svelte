@@ -3,6 +3,7 @@
 	 * #328 USB stick tracker panel (stub).
 	 * Present volumes + first-seen modal + folded non-music/forgotten list.
 	 * Read-only: never writes to a USB mount.
+	 * Future agentic check/fix: (private path)/
 	 */
 	import {
 		applyFirstSeen,

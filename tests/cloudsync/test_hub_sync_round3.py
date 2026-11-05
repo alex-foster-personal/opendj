@@ -12,7 +12,7 @@ findings (6b/N7) and the generation-token/retention findings (N6) now live in
 back from here. This module keeps N4/A4, N5 and 4a's hub blast radius.
 
 Every test here is one reproduction sketch from
-``.planning/cloudsync-round2-adversarial.md``. The mapping, so a failure
+``(private path)``. The mapping, so a failure
 names the defect it just let back in:
 
 - N4 / A4  -> ``sync_policies``, ``playlist_pins`` and ``track_locations``
@@ -37,6 +37,7 @@ Acceptance criteria, one test each:
 6b/N7 and N6's acceptance criteria live in
 ``test_hub_sync_round3_settling.py``.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -104,9 +105,7 @@ def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
         yield _TestClientTransport(http)
 
 
-def _insert_machine(
-    conn: sqlite3.Connection, machine_id: str, *, name: str, platform: str = "linux"
-) -> None:
+def _insert_machine(conn: sqlite3.Connection, machine_id: str, *, name: str, platform: str = "linux") -> None:
     """A ``machines`` row for a peer this machine knows about."""
     conn.execute(
         "INSERT INTO machines(machine_id, name, platform, is_hub, data_root, "
@@ -126,8 +125,7 @@ def _insert_policy(
 ) -> None:
     stamped = _log(conn, "sync_policies", (machine_id, asset_kind), origin, updated_at)
     conn.execute(
-        "INSERT INTO sync_policies(machine_id, asset_kind, mode, updated_at, "
-        "origin_device_id) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO sync_policies(machine_id, asset_kind, mode, updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?)",
         (machine_id, asset_kind, mode, stamped, origin),
     )
 
@@ -224,9 +222,9 @@ def test_push_merges_the_snapshot_it_carries_and_refuses_without_one(
 
     hub_conn = _open(hub_dir)
     try:
-        assert hub_conn.execute(
-            "SELECT mode FROM sync_policies WHERE machine_id = ?", (unknown,)
-        ).fetchone() == ("cached",)
+        assert hub_conn.execute("SELECT mode FROM sync_policies WHERE machine_id = ?", (unknown,)).fetchone() == (
+            "cached",
+        )
     finally:
         hub_conn.close()
 
@@ -382,9 +380,9 @@ def test_a_collision_on_the_url_index_resolves_instead_of_409ing(
     hub_conn = _open(hub_dir)
     try:
         assert [row[0] for row in _locations(hub_conn)] == ["c" * 32]
-        assert protocol.encode_row_pk(("b" * 32,)) not in _changelog_pks(
-            hub_conn, "track_locations"
-        ), "the superseded row still has a changelog entry; every pull 409s"
+        assert protocol.encode_row_pk(("b" * 32,)) not in _changelog_pks(hub_conn, "track_locations"), (
+            "the superseded row still has a changelog entry; every pull 409s"
+        )
     finally:
         hub_conn.close()
 
@@ -439,16 +437,11 @@ def test_a_row_losing_to_one_of_two_duplicates_is_rejected_whole(
         )
         applied = engine.spoke_apply(
             conn,
-            [
-                protocol.RowChange(
-                    table="track_locations", pk=("d" * 32,), values=dict(contested)
-                )
-            ],
+            [protocol.RowChange(table="track_locations", pk=("d" * 32,), values=dict(contested))],
         )
         assert applied.rejected == 1
         assert [row[0] for row in _locations(conn)] == ["a" * 32, "b" * 32], (
-            "a row that lost on one index still dropped the duplicate it beat "
-            "on the other"
+            "a row that lost on one index still dropped the duplicate it beat on the other"
         )
     finally:
         conn.close()
@@ -478,9 +471,7 @@ def test_a_regular_pull_does_not_overwrite_a_newer_local_row(spoke_a: Path) -> N
                 updated_at=stamp,
                 origin=_DEV_A,
             )
-            return protocol.RowChange(
-                table="track_locations", pk=(location_id,), values=dict(values)
-            )
+            return protocol.RowChange(table="track_locations", pk=(location_id,), values=dict(values))
 
         # POSITIVE CONTROL: a newer pulled row does land, so the probe can see
         # an overwrite at all.
@@ -493,9 +484,7 @@ def test_a_regular_pull_does_not_overwrite_a_newer_local_row(spoke_a: Path) -> N
             "SELECT remote_url FROM track_locations WHERE location_id = ?",
             (location_id,),
         ).fetchone()
-        assert stored[0] == "r2://audio/local-edit", (
-            "an older pulled row overwrote the newer local edit"
-        )
+        assert stored[0] == "r2://audio/local-edit", "an older pulled row overwrote the newer local edit"
     finally:
         conn.close()
 
@@ -538,9 +527,9 @@ def test_a_hard_deleted_hub_row_does_not_take_every_pull_offline(
     with caplog.at_level("ERROR", logger="apps.sync_hub.engine"):
         received = _sync(spoke_b, hub, "spoke-b")
     assert received.applied >= 1, "the surviving rows did not reach B"
-    assert any(
-        "which no longer exists" in record.getMessage() for record in caplog.records
-    ), "the hub dropped an entry silently"
+    assert any("which no longer exists" in record.getMessage() for record in caplog.records), (
+        "the hub dropped an entry silently"
+    )
 
     conn_b = _open(spoke_b)
     try:
@@ -553,9 +542,7 @@ def test_a_hard_deleted_hub_row_does_not_take_every_pull_offline(
     assert _sync(spoke_b, hub, "spoke-b").pulled >= 0
 
 
-def test_the_pull_reports_how_many_entries_it_skipped(
-    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
-) -> None:
+def test_the_pull_reports_how_many_entries_it_skipped(hub: _TestClientTransport, hub_dir: Path, spoke_a: Path) -> None:
     """``skipped`` is observed on the wire, not inferred from a log line."""
     _seed_common_track((spoke_a,), "trk-gone")
     result = _sync(spoke_a, hub, "spoke-a")

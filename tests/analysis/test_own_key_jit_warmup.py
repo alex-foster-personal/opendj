@@ -27,6 +27,7 @@ Regression lines:
   - if own_key.jit_cache_roots ignores NUMBA_CACHE_DIR then the warm-up's
     stamp fingerprints the wrong directory and never vouches
 """
+
 from __future__ import annotations
 
 import math
@@ -59,26 +60,41 @@ def _chord(path: Path, seconds: float = 8.0) -> Path:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(REAL_RATE)
-        out.writeframes(b"".join(
-            struct.pack("<h", int(7000 * sum(
-                math.sin(2 * math.pi * f * i / REAL_RATE) for f in freqs) / 3))
-            for i in range(int(seconds * REAL_RATE))))
+        out.writeframes(
+            b"".join(
+                struct.pack("<h", int(7000 * sum(math.sin(2 * math.pi * f * i / REAL_RATE) for f in freqs) / 3))
+                for i in range(int(seconds * REAL_RATE))
+            )
+        )
     return path
 
 
 def _run(argv: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        argv, cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        argv,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
 
 
 def test_jit_cache_roots_follow_numba_cache_dir(tmp_path: Path) -> None:
     env = {**os.environ, "NUMBA_CACHE_DIR": str(tmp_path)}
-    proc = _run([sys.executable, "-c", (
-        "from apps.analysis.backends.own_key import OwnKeyBackfillBackend as B;"
-        "print([str(p) for p in B.jit_cache_roots()])")], env)
+    proc = _run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from apps.analysis.backends.own_key import OwnKeyBackfillBackend as B;"
+                "print([str(p) for p in B.jit_cache_roots()])"
+            ),
+        ],
+        env,
+    )
     assert proc.returncode == 0, proc.stdout
     assert proc.stdout.strip().splitlines()[-1] == repr([str(tmp_path)])
 
@@ -92,8 +108,7 @@ def test_warmup_compiles_everything_the_key_lane_runs(tmp_path: Path) -> None:
     cache.mkdir()
     env = {**os.environ, "NUMBA_CACHE_DIR": str(cache)}
 
-    warm = _run([sys.executable, "-m", "apps.analysis.jit_warmup",
-                 "--backend", BACKEND_NAME, "--purge"], env)
+    warm = _run([sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", BACKEND_NAME, "--purge"], env)
     assert warm.returncode == 0, warm.stdout
     warmed = cache_fingerprint((cache,))
     assert warmed, f"the own_key warm-up wrote no numba artifacts:\n{warm.stdout}"
@@ -104,14 +119,21 @@ def test_warmup_compiles_everything_the_key_lane_runs(tmp_path: Path) -> None:
     )
 
     audio = _chord(tmp_path / "chord.wav")
-    analyze = _run([sys.executable, "-c", textwrap.dedent(f"""
+    analyze = _run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(f"""
         from pathlib import Path
         from apps.analysis.backends.own_key import analyze_audio
         record = analyze_audio(Path({str(audio)!r}), "sid_chord",
                                db_path=Path({str(tmp_path / "absent.db")!r}))
         lane = record.lanes["key"]
         print("status", lane.status)
-    """)], env)
+    """),
+        ],
+        env,
+    )
     assert analyze.returncode == 0, analyze.stdout
     assert "status " in analyze.stdout, analyze.stdout
     assert cache_fingerprint((cache,)) == warmed, (

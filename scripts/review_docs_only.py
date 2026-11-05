@@ -9,7 +9,7 @@ plus the path list, so the exemption stays visible rather than a silent
 pass. Everything else `just review-triage` checks (the bot-thread
 three-state rule, debt checks, gate freshness) is UNCHANGED for a docs-only
 PR; only the reviewer-coverage requirement is waived. See
-docs/decisions/ADR-NEW-docs-only-review-async.md and REQUIREMENTS.md's
+(private path) and REQUIREMENTS.md's
 REVIEW-09.
 
 SINGLE SOURCE OF TRUTH: ci.yml's own `pull_request.paths` filter already
@@ -56,10 +56,7 @@ def _ci_pull_request_paths() -> tuple[str, ...]:
     catalog = WorkflowCatalog.from_workflows_dir(default_workflows_dir())
     filters = catalog.workflow_filters.get(CI_WORKFLOW_FILE)
     if filters is None:
-        raise RuntimeError(
-            f"{CI_WORKFLOW_FILE} has no pull_request trigger; docs-only "
-            "detection has nothing to parse"
-        )
+        raise RuntimeError(f"{CI_WORKFLOW_FILE} has no pull_request trigger; docs-only detection has nothing to parse")
     paths, _paths_ignore = filters
     if not paths:
         raise RuntimeError(
@@ -81,14 +78,11 @@ def _changed_paths(changed_files: Sequence[str | Mapping[str, str]]) -> list[str
             filename = entry.get("filename")
             if not isinstance(filename, str) or not filename:
                 raise TypeError(
-                    "is_docs_only expects path strings or file objects with "
-                    f"a non-empty filename, got {entry!r}"
+                    f"is_docs_only expects path strings or file objects with a non-empty filename, got {entry!r}"
                 )
             paths.append(filename)
             continue
-        raise TypeError(
-            f"is_docs_only expects path strings or file objects, got {type(entry).__name__}"
-        )
+        raise TypeError(f"is_docs_only expects path strings or file objects, got {type(entry).__name__}")
     return paths
 
 
@@ -109,9 +103,7 @@ def is_docs_only(changed_files: Sequence[str | Mapping[str, str]]) -> bool:
     return not workflow_would_run_for_files(paths, paths=_ci_pull_request_paths())
 
 
-def render_docs_only_pass(
-    pr: str, head_sha: str, gate_commit: str, changed_files: Sequence[str]
-) -> str:
+def render_docs_only_pass(pr: str, head_sha: str, gate_commit: str, changed_files: Sequence[str]) -> str:
     """The exact board `scripts.review_coverage.triage` prints for a
     docs-only PR. Pure and split out from `triage` itself so the exemption's
     output shape -- the literal `ok docs-only` line the policy requires stay

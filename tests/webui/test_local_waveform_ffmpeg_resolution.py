@@ -18,6 +18,7 @@ Regression one-liners:
   - if a resolved ffmpeg the kernel cannot launch raises OSError instead of
     LocalDecodeUnavailable then broken
 """
+
 from __future__ import annotations
 
 import stat
@@ -36,9 +37,7 @@ def _make_executable(path: Path) -> Path:
     return path
 
 
-def test_mdt_ffmpeg_override_wins_over_path_lookup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mdt_ffmpeg_override_wins_over_path_lookup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     override = _make_executable(tmp_path / "custom-ffmpeg")
     monkeypatch.setenv("MDT_FFMPEG", str(override))
     # Patched where the lookup actually lives. decode.resolve_ffmpeg now
@@ -72,9 +71,7 @@ def test_mdt_ffmpeg_set_but_not_executable_raises_rather_than_falling_back(
         decode.resolve_ffmpeg()
 
 
-def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     # Windows' shutil.which only matches a PATHEXT extension, so the real
     # binary there is ffmpeg.exe; a bare "ffmpeg" is never found. It may
@@ -86,9 +83,7 @@ def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(
     assert Path(decode.resolve_ffmpeg()) == on_path
 
 
-def test_neither_mdt_ffmpeg_nor_path_yields_explicit_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_neither_mdt_ffmpeg_nor_path_yields_explicit_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     with pytest.raises(decode.LocalDecodeUnavailable, match="MDT_FFMPEG"):
@@ -106,13 +101,12 @@ def test_a_kernel_launch_failure_becomes_local_decode_unavailable(
     rejects at exec time (discussion_r3909904294, issue #735 follow-up)."""
     unlaunchable = tmp_path / "ffmpeg"
     unlaunchable.write_text("#!/nonexistent-interpreter-xyz-12345\nexit 0\n")
-    unlaunchable.chmod(
-        unlaunchable.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
-    )
+    unlaunchable.chmod(unlaunchable.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     monkeypatch.setenv("MDT_FFMPEG", str(unlaunchable))
     monkeypatch.setenv("MDT_WAVEFORM_DECODER", "ffmpeg")
 
     with pytest.raises(decode.LocalDecodeUnavailable, match="could not be launched"):
         decode.decode_peaks(tmp_path / "irrelevant.wav")
+
 
 pytestmark = pytest.mark.rb_parity

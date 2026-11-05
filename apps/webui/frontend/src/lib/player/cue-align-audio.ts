@@ -117,7 +117,9 @@ async function _playChirpTrain(
 				} catch {
 					// already ended
 				}
-				reject(signal.reason instanceof Error ? signal.reason : new Error('cue alignment chirp aborted'));
+				reject(
+					signal.reason instanceof Error ? signal.reason : new Error('cue alignment chirp aborted')
+				);
 			};
 			signal.addEventListener('abort', onAbort, { once: true });
 			src.onended = () => {
@@ -193,14 +195,23 @@ function _openChirpCapture(
 			const timeoutId = setTimeout(() => {
 				teardown();
 				const error = new Error(`cue alignment record timed out after ${durationMs}ms`);
-				if (!settledOpen) { settledOpen = true; rejectOpen(error); }
+				if (!settledOpen) {
+					settledOpen = true;
+					rejectOpen(error);
+				}
 				rejectSamples(error);
 			}, durationMs + 2500);
 			const onAbort = (): void => {
 				clearTimeout(timeoutId);
 				teardown();
-				const error = signal.reason instanceof Error ? signal.reason : new Error('cue alignment record aborted');
-				if (!settledOpen) { settledOpen = true; rejectOpen(error); }
+				const error =
+					signal.reason instanceof Error
+						? signal.reason
+						: new Error('cue alignment record aborted');
+				if (!settledOpen) {
+					settledOpen = true;
+					rejectOpen(error);
+				}
 				rejectSamples(error);
 			};
 			signal.addEventListener('abort', onAbort, { once: true });
@@ -275,7 +286,9 @@ export function cueAlignAudioEffects(): Pick<
 		throw new Error(`cue alignment calibration cannot start: ${blockers.join('; ')}`);
 	}
 	if (ctx === null || nodes === null || cueId === null) {
-		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
+		throw new Error(
+			'cue alignment calibration: a precondition is null that calibrationBlockers passed'
+		);
 	}
 	const selectedMaster = mixerState.headphones.selected_master_output_device_id;
 	const masterRoute = mixerState.headphones.routes.master;
@@ -295,8 +308,14 @@ export function cueAlignAudioEffects(): Pick<
 			// as the AUDIO IN Test (CUEOUT-8393): refused while MAIN plays in the Mac app.
 			assertMicOpenAllowedNow();
 			const mediaDevices = requireHeadphoneDeviceApi();
-			const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
-			const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);
+			const listed = await withHeadphoneOperationTimeout(
+				'enumerateDevices',
+				mediaDevices.enumerateDevices()
+			);
+			const audio = unlockAudioInputConstraints(
+				listed,
+				mixerState.headphones.selected_input_device_id
+			);
 			const stream = await withHeadphoneOperationTimeout(
 				'getUserMedia',
 				mediaDevices.getUserMedia({ audio, video: false })
@@ -349,6 +368,9 @@ export function cueAlignAudioEffects(): Pick<
 			applyUnsavedAlignmentDelays(delays);
 		},
 		alignmentMode: () => mixerState.headphones.alignment_mode,
-		deviceIds: () => ({ cue: cueId, master: mixerState.headphones.selected_master_output_device_id })
+		deviceIds: () => ({
+			cue: cueId,
+			master: mixerState.headphones.selected_master_output_device_id
+		})
 	};
 }

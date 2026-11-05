@@ -986,6 +986,59 @@ fn an_mp3_behind_a_large_id3_tag_opens() {
     assert!(v["error"].as_str().is_some_and(|e| e.contains("too short to fingerprint")), "{v}");
 }
 
+/// An MP3 whose ID3v2 tag holds UTF-16 text frames opens (NAE-27).
+/// The UTF-16 byte-order mark `FF FE` followed by a text byte reads as an
+/// MPEG layer I frame header; with no ID3v2 reader registered, symphonia's
+/// probe scanned the tag as junk, chose the `mp1` reader 44 bytes in, and the
+/// decode failed with "unsupported audio codec" on files ffmpeg reads
+/// (Sevenn - DARE.mp3 and 21 more in the Wed 4 Nov library). The bytes below
+/// are that file's first two frames.
+#[test]
+fn an_mp3_with_utf16_id3_text_frames_opens() {
+    let d = temp_dir("cli-utf16-tag");
+    let mp3 = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms.mp3")).unwrap();
+    let text_frame = |id: &[u8; 4], text: &str| {
+        let mut body = vec![0x01, 0xff, 0xfe];
+        body.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        body.extend_from_slice(&[0, 0]);
+        let mut f = id.to_vec();
+        f.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        f.extend_from_slice(&[0, 0]);
+        f.extend_from_slice(&body);
+        f
+    };
+    let latin1_frame = |id: &[u8; 4], len: usize| {
+        let mut f = id.to_vec();
+        f.extend_from_slice(&(len as u32 + 1).to_be_bytes());
+        f.extend_from_slice(&[0, 0, 0x00]);
+        f.extend(std::iter::repeat_n(b'x', len));
+        f
+    };
+    // The BOM at 44 parses as a 176-byte layer I frame, so the probe checks
+    // for a matching second header at 220; the TALB frame puts its own BOM
+    // there.
+    let mut frames = text_frame(b"TIT2", "DARE");
+    frames.extend(text_frame(b"TPE1", "Sevenn"));
+    frames.extend(latin1_frame(b"TIT3", 138));
+    frames.extend(text_frame(b"TALB", "Sevenn"));
+    frames.extend(vec![0u8; 256]); // padding
+    let n = frames.len() as u32;
+    let mut file = b"ID3\x03\x00\x00".to_vec();
+    file.extend_from_slice(&[(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    file.extend_from_slice(&frames);
+    assert_eq!(&file[44..48], b"\xff\xfeS\x00", "the false layer I sync sits where it did in the real file");
+    assert_eq!(&file[220..223], b"\xff\xfeS", "and a matching second one a layer I frame later");
+    file.extend_from_slice(&mp3);
+    let tagged = d.join("utf16-tag.mp3");
+    std::fs::write(&tagged, file).unwrap();
+
+    let out = Command::new(BIN).args(["decode", "--rate", "44100", "--mono", "--format", "s16le"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<i16> = out.stdout.chunks_exact(2).map(|b| i16::from_le_bytes(b.try_into().unwrap())).collect();
+    let peak = (0..pcm.len()).max_by_key(|&i| pcm[i].unsigned_abs()).unwrap();
+    assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+}
+
 #[test]
 fn version_says_whether_this_build_can_record_and_record_refuses_cleanly_without_it() {
     // The sets recorder reads `capture` before choosing odj-audio over

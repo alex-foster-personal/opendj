@@ -1,3 +1,4 @@
+/** NATIVE-5054 / FB-18a: re-analyze toast copy and batch progress polling. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 

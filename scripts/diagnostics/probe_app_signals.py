@@ -68,9 +68,7 @@ def fetch_json(url: str, timeout: float) -> Any:
 def _job_rollup(jobs: list[Any]) -> dict[str, Any]:
     """Counts plus the still-running jobs, so a sample explains its own CPU."""
 
-    statuses = Counter(
-        str(item.get("status", "unknown")) for item in jobs if isinstance(item, dict)
-    )
+    statuses = Counter(str(item.get("status", "unknown")) for item in jobs if isinstance(item, dict))
     return {
         "count": len(jobs),
         "by_status": dict(statuses),
@@ -139,9 +137,9 @@ def _decode_local_storage_value(value: Any) -> str:
 def _local_storage_candidates(bundle_ids: Iterable[str]) -> list[Path]:
     found: list[Path] = []
     for bundle_id in bundle_ids:
-        root = Path.home() / "Library/WebKit" / bundle_id / "WebsiteData/Default"
+        root = Path.home() / "Library/WebKit" / bundle_id / "WebsiteData"
         try:
-            found.extend(root.glob("*/*/LocalStorage/localstorage.sqlite3"))
+            found.extend(root.glob("**/LocalStorage/localstorage.sqlite3"))
         except OSError:
             continue
     return sorted(found, key=lambda path: path.stat().st_mtime, reverse=True)
@@ -254,9 +252,7 @@ def _bucket_eviction_horizon(post_gate_events: list[dict[str, Any]], bucket: str
     """
 
     timestamps = sorted(
-        str(event.get("t", ""))
-        for event in post_gate_events
-        if _perf_bucket_of(str(event.get("kind", ""))) == bucket
+        str(event.get("t", "")) for event in post_gate_events if _perf_bucket_of(str(event.get("kind", ""))) == bucket
     )
     if len(timestamps) < DECK_STATE_BUCKETS[bucket]:
         return None
@@ -296,9 +292,7 @@ def _deck_states(
     horizons, since neither bucket sourced its state.
     """
 
-    horizons = {
-        bucket: _bucket_eviction_horizon(post_gate_events, bucket) for bucket in DECK_STATE_BUCKETS
-    }
+    horizons = {bucket: _bucket_eviction_horizon(post_gate_events, bucket) for bucket in DECK_STATE_BUCKETS}
 
     # last_observed[deck] = (timestamp, state, source_bucket); source_bucket is
     # None for a baseline-seeded deck, since neither ring bucket produced it.
@@ -332,8 +326,7 @@ def _deck_states(
     evicted_decks: list[int] = []
     for deck, (last_t, last_state, last_bucket) in last_observed.items():
         untrustworthy = any(
-            bucket != last_bucket and horizon is not None and horizon > last_t
-            for bucket, horizon in horizons.items()
+            bucket != last_bucket and horizon is not None and horizon > last_t for bucket, horizon in horizons.items()
         )
         if untrustworthy:
             evicted_decks.append(deck)
@@ -356,11 +349,7 @@ def browser_perf_ring(bundle_ids: Iterable[str]) -> dict[str, Any]:
     # response (issue #1403 round-4 P3), e.g. reporting a prior session's
     # last_deck_load as if it were this session's.
     gated_events = _post_gate_events(events, gate)
-    loads = [
-        event
-        for event in gated_events
-        if str(event.get("kind", "")).startswith("deck-load")
-    ]
+    loads = [event for event in gated_events if str(event.get("kind", "")).startswith("deck-load")]
     deck_state, evicted_decks = _deck_states(gated_events, baseline)
     loaded_deck_count = sum(deck_state.values()) if len(deck_state) == 4 else None
     return {
@@ -381,9 +370,7 @@ def browser_perf_ring(bundle_ids: Iterable[str]) -> dict[str, Any]:
         # could have been evicted (as opposed to a deck with no evidence at
         # all, which the trend layer already names as "no deck-state evidence").
         "deck_state_reason": (
-            "evicted:" + ",".join(f"deck{deck}" for deck in evicted_decks)
-            if evicted_decks
-            else None
+            "evicted:" + ",".join(f"deck{deck}" for deck in evicted_decks) if evicted_decks else None
         ),
         "last_deck_load": loads[-1] if loads else None,
     }

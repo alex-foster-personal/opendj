@@ -19,11 +19,13 @@ function gate<T>(job: () => Promise<T>): Promise<T> {
 	return new Promise((resolve, reject) => {
 		const run = (): void => {
 			active += 1;
-			job().then(resolve, reject).finally(() => {
-				active -= 1;
-				const next = waiters.shift();
-				if (next !== undefined) next();
-			});
+			job()
+				.then(resolve, reject)
+				.finally(() => {
+					active -= 1;
+					const next = waiters.shift();
+					if (next !== undefined) next();
+				});
 		};
 		if (active < MAX_IN_FLIGHT) run();
 		else waiters.push(run);

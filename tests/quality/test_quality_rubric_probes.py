@@ -37,17 +37,13 @@ def test_xref_integrity_flags_b1_escape(tmp_path: Path) -> None:
 
 
 def test_citation_resolves_flags_b2_placeholder(tmp_path: Path) -> None:
-    (tmp_path / "README.md").write_text(
-        "See https://github.com/example/gpl-serato\n", encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text("See https://github.com/example/gpl-serato\n", encoding="utf-8")
     findings = citation_resolves(tmp_path, REPO)
     assert any(f["code"] == "B2" and f["class"] == "citation_placeholder" for f in findings)
 
 
 def test_schema_id_policy_flags_b3_invalid_host(tmp_path: Path) -> None:
-    (tmp_path / "schema.json").write_text(
-        '{"$id": "https://quality-rubric.invalid/s"}\n', encoding="utf-8"
-    )
+    (tmp_path / "schema.json").write_text('{"$id": "https://quality-rubric.invalid/s"}\n', encoding="utf-8")
     findings = schema_id_policy(tmp_path, REPO)
     assert any(f["code"] == "B3" and f["class"] == "schema_id_host_unresolved" for f in findings)
 
@@ -56,9 +52,7 @@ def test_source_of_truth_unique_flags_b5_competing_corpora(tmp_path: Path) -> No
     corpus = tmp_path / "conformance" / "corpus-0.2"
     corpus.mkdir(parents=True)
     (corpus / "case-01.open-dj.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "README.md").write_text(
-        "Corpus also at tests/fixtures/conformance/\n", encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text("Corpus also at tests/fixtures/conformance/\n", encoding="utf-8")
     findings = source_of_truth_unique(tmp_path, REPO)
     assert any(f["code"] == "B5" and f["class"] == "competing_corpora" for f in findings)
 
@@ -86,14 +80,7 @@ def test_happy_path_probes_emit_no_b_codes(tmp_path: Path) -> None:
 
 def test_xref_integrity_skips_node_modules_enametoolong(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("[x](missing.md)\n", encoding="utf-8")
-    vendored = (
-        tmp_path
-        / "node_modules"
-        / ".pnpm"
-        / "semver@7.8.5"
-        / "node_modules"
-        / "semver"
-    )
+    vendored = tmp_path / "node_modules" / ".pnpm" / "semver@7.8.5" / "node_modules" / "semver"
     vendored.mkdir(parents=True)
     # No ')' in the href: the markdown extractor stops at the first ')'.
     long_href = "=' | '='  partial-" + ("x" * 300)
@@ -106,8 +93,6 @@ def test_xref_integrity_skips_node_modules_enametoolong(tmp_path: Path) -> None:
 
     assert not any("node_modules" in str(f.get("path", "")) for f in findings)
     assert any(
-        f["class"] == "relative_link_dangling"
-        and Path(f["path"]).name == "README.md"
-        and f.get("href") == "missing.md"
+        f["class"] == "relative_link_dangling" and Path(f["path"]).name == "README.md" and f.get("href") == "missing.md"
         for f in findings
     )

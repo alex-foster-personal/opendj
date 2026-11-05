@@ -64,10 +64,18 @@ function _capturePuts() {
 	const original = globalThis.fetch;
 	globalThis.fetch = async (request) => {
 		bodies.push(await request.clone().json());
-		return new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], theme: 'dark' }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		return new Response(
+			JSON.stringify({
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: [],
+				theme: 'dark'
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 	};
 	return {
 		bodies,
@@ -199,7 +207,9 @@ test('hydrateConfirmPrefsFromDisk applies all six lyric prefs from disk', async 
 	globalThis.fetch = async () =>
 		new Response(
 			JSON.stringify({
-				key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [],
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: [],
 				theme: 'dark',
 				lyrics_global: false,
 				lyrics_library_col: false,
@@ -228,10 +238,19 @@ test('hydrate ignores an unknown lyrics_load_strategy from disk', async () => {
 	const prefs = await _loadPrefs();
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], theme: 'dark', lyrics_load_strategy: 'eager' }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		new Response(
+			JSON.stringify({
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: [],
+				theme: 'dark',
+				lyrics_load_strategy: 'eager'
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 	try {
 		await prefs.hydrateConfirmPrefsFromDisk();
 		assert.equal(prefs.uiPrefs.lyrics_load_strategy, 'hover');
@@ -246,10 +265,18 @@ test('the six lyric prefs have settings agent parity: allowlist, read, apply, ca
 	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], theme: 'dark' }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		new Response(
+			JSON.stringify({
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: [],
+				theme: 'dark'
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 	try {
 		for (const [key, def] of Object.entries(LYRIC_DEFAULTS)) {
 			assert.ok(apply.ALLOWED_SETTING_KEYS.includes(key), `${key} missing from allowlist`);

@@ -31,13 +31,20 @@
  * OUT_DIR/.capture-story-previews.json, and the next run deletes exactly those.
  * Any other file in --out is left alone.
  */
-import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	createReadStream,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { chromium } from '@playwright/test';
-
 
 const { values } = parseArgs({
 	options: {
@@ -62,7 +69,15 @@ if (!SKIN_LIST) throw new Error('UI_SKIN_CHOICES not found in src/lib/rb/ui-skin
 const UI_SKIN_CHOICES = [...SKIN_LIST[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
 if (UI_SKIN_CHOICES.length === 0) throw new Error('UI_SKIN_CHOICES parsed as empty');
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png' };
+const MIME = {
+	'.html': 'text/html',
+	'.js': 'text/javascript',
+	'.css': 'text/css',
+	'.json': 'application/json',
+	'.svg': 'image/svg+xml',
+	'.woff2': 'font/woff2',
+	'.png': 'image/png'
+};
 
 const index = JSON.parse(readFileSync(join(STATIC_DIR, 'index.json'), 'utf8'));
 const stories = Object.values(index.entries).filter(
@@ -110,7 +125,9 @@ let failures = 0;
 
 async function captureSkin(story, skin, row) {
 	pageErrors = [];
-	await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story&globals=skin:${skin}`, { waitUntil: 'networkidle' });
+	await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story&globals=skin:${skin}`, {
+		waitUntil: 'networkidle'
+	});
 	const root = page.locator('#storybook-root');
 	await root.waitFor({ state: 'attached', timeout: 15_000 });
 	// Wait for Storybook's render phase to end, play included, as
@@ -120,20 +137,33 @@ async function captureSkin(story, skin, row) {
 	await page.waitForFunction(
 		() => {
 			const phase = window.__STORYBOOK_PREVIEW__?.currentRender?.phase;
-			return ['completed', 'finished', 'errored', 'aborted'].includes(phase) || document.body.classList.contains('sb-show-errordisplay');
+			return (
+				['completed', 'finished', 'errored', 'aborted'].includes(phase) ||
+				document.body.classList.contains('sb-show-errordisplay')
+			);
 		},
 		null,
 		{ timeout: 20_000 }
 	);
-	const renderPhase = await page.evaluate(() => window.__STORYBOOK_PREVIEW__?.currentRender?.phase ?? null);
-	if (renderPhase === 'errored' || renderPhase === 'aborted' || (await page.evaluate(() => document.body.classList.contains('sb-show-errordisplay')))) {
-		pageErrors.push(`render phase ${renderPhase ?? 'error display'} (play failed or was cut short)`);
+	const renderPhase = await page.evaluate(
+		() => window.__STORYBOOK_PREVIEW__?.currentRender?.phase ?? null
+	);
+	if (
+		renderPhase === 'errored' ||
+		renderPhase === 'aborted' ||
+		(await page.evaluate(() => document.body.classList.contains('sb-show-errordisplay')))
+	) {
+		pageErrors.push(
+			`render phase ${renderPhase ?? 'error display'} (play failed or was cut short)`
+		);
 	}
 	// Tags as the preview resolved them. A story that delegates to X.contract.ts
 	// (LibraryLoadIndicator.Idle) carries its tags there, which index.json cannot see.
 	const exceptions = await page.evaluate(() => window.__storyExceptions.splice(0));
 	for (const exception of exceptions) pageErrors.push(exception);
-	const resolvedTags = await page.evaluate(() => window.__STORYBOOK_PREVIEW__?.currentRender?.story?.tags ?? null);
+	const resolvedTags = await page.evaluate(
+		() => window.__STORYBOOK_PREVIEW__?.currentRender?.story?.tags ?? null
+	);
 	if (!Array.isArray(resolvedTags)) pageErrors.push('the preview exposed no story tags');
 	const tags = Array.isArray(resolvedTags) ? resolvedTags : [];
 	// Let entry transitions and fonts settle so the image is the resting state.
@@ -158,7 +188,11 @@ async function captureSkin(story, skin, row) {
 			// checkVisibility with opacityProperty also rejects an element under an
 			// opacity:0 ancestor, so a transparent tooltip cannot widen the crop or
 			// make a wholly transparent story look visible.
-			if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+			if (
+				typeof element.checkVisibility === 'function' &&
+				!element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+			)
+				continue;
 			const style = getComputedStyle(element);
 			if (style.visibility === 'hidden' || style.display === 'none') continue;
 			// getBoundingClientRect ignores scrollports: a virtual list's spacer
@@ -167,16 +201,31 @@ async function captureSkin(story, skin, row) {
 			// that clips overflow, up to the root.
 			const r = element.getBoundingClientRect();
 			const rect = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-			for (let up = element.parentElement; up && up !== rootEl.parentElement; up = up.parentElement) {
+			for (
+				let up = element.parentElement;
+				up && up !== rootEl.parentElement;
+				up = up.parentElement
+			) {
 				const s = getComputedStyle(up);
 				if (s.position === 'fixed') break;
 				const a = up.getBoundingClientRect();
-				if (s.overflowX !== 'visible') { rect.left = Math.max(rect.left, a.left); rect.right = Math.min(rect.right, a.right); }
-				if (s.overflowY !== 'visible') { rect.top = Math.max(rect.top, a.top); rect.bottom = Math.min(rect.bottom, a.bottom); }
+				if (s.overflowX !== 'visible') {
+					rect.left = Math.max(rect.left, a.left);
+					rect.right = Math.min(rect.right, a.right);
+				}
+				if (s.overflowY !== 'visible') {
+					rect.top = Math.max(rect.top, a.top);
+					rect.bottom = Math.min(rect.bottom, a.bottom);
+				}
 			}
 			if (rect.right - rect.left < 1 || rect.bottom - rect.top < 1) continue;
 			box = box
-				? { left: Math.min(box.left, rect.left), top: Math.min(box.top, rect.top), right: Math.max(box.right, rect.right), bottom: Math.max(box.bottom, rect.bottom) }
+				? {
+						left: Math.min(box.left, rect.left),
+						top: Math.min(box.top, rect.top),
+						right: Math.max(box.right, rect.right),
+						bottom: Math.max(box.bottom, rect.bottom)
+					}
 				: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
 		}
 		if (!box) return null;
@@ -185,14 +234,21 @@ async function captureSkin(story, skin, row) {
 		return { x: left, y: top, width: box.right + 4 - left, height: box.bottom + 4 - top };
 	});
 	const file = `${story.id}.${skin}.png`;
-	const png = clip === null ? null : await page.screenshot({ clip, fullPage: true, animations: 'disabled' });
+	const png =
+		clip === null ? null : await page.screenshot({ clip, fullPage: true, animations: 'disabled' });
 	const painted = png === null ? 0 : await countPaintedPixels(page, png);
 	if (png === null || painted < MIN_PAINTED_PIXELS) {
 		// A story may show that a state renders nothing ("Closed", "None"),
 		// but it has to say so with the renders-nothing tag. An untagged
 		// blank is a broken story, not a pass.
-		const why = png === null ? 'rendered nothing visible' : `painted ${painted} pixels, fewer than ${MIN_PAINTED_PIXELS} off the background`;
-		if (!tags.includes('renders-nothing')) row.errors.push(`${skin}: ${why} (tag the story 'renders-nothing' if that is the state it shows)`);
+		const why =
+			png === null
+				? 'rendered nothing visible'
+				: `painted ${painted} pixels, fewer than ${MIN_PAINTED_PIXELS} off the background`;
+		if (!tags.includes('renders-nothing'))
+			row.errors.push(
+				`${skin}: ${why} (tag the story 'renders-nothing' if that is the state it shows)`
+			);
 		else row.skins[skin] = null;
 	} else {
 		writeFileSync(join(OUT_DIR, file), png);
@@ -221,7 +277,11 @@ async function countPaintedPixels(page, png) {
 		const [r0, g0, b0, a0] = [data[0], data[1], data[2], data[3]];
 		let count = 0;
 		for (let i = 0; i < data.length; i += 4) {
-			const delta = Math.abs(data[i] - r0) + Math.abs(data[i + 1] - g0) + Math.abs(data[i + 2] - b0) + Math.abs(data[i + 3] - a0);
+			const delta =
+				Math.abs(data[i] - r0) +
+				Math.abs(data[i + 1] - g0) +
+				Math.abs(data[i + 2] - b0) +
+				Math.abs(data[i + 3] - a0);
 			if (delta > 24) count++;
 		}
 		return count;
@@ -229,7 +289,9 @@ async function countPaintedPixels(page, png) {
 }
 
 try {
-	browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
+	browser = await chromium.launch(
+		process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}
+	);
 	page = await browser.newPage({ viewport: { width: 900, height: 600 }, deviceScaleFactor: 2 });
 	page.on('pageerror', (error) => pageErrors.push(String(error)));
 	// Storybook 10 ends a story whose play function threw as phase 'finished'
@@ -244,13 +306,22 @@ try {
 			set: (value) => {
 				channel = value;
 				for (const name of ['playFunctionThrewException', 'storyThrewException']) {
-					value?.on?.(name, (error) => window.__storyExceptions.push(`${name}: ${error?.message ?? error}`));
+					value?.on?.(name, (error) =>
+						window.__storyExceptions.push(`${name}: ${error?.message ?? error}`)
+					);
 				}
 			}
 		});
 	});
 	for (const story of stories) {
-		const row = { id: story.id, title: story.title, name: story.name, importPath: story.importPath, skins: {}, errors: [] };
+		const row = {
+			id: story.id,
+			title: story.title,
+			name: story.name,
+			importPath: story.importPath,
+			skins: {},
+			errors: []
+		};
 		for (const skin of UI_SKIN_CHOICES) {
 			try {
 				await captureSkin(story, skin, row);
@@ -261,7 +332,9 @@ try {
 			}
 		}
 		if (row.errors.length > 0) failures += 1;
-		console.log(`${row.errors.length ? '[FAIL]' : '[OK]'} ${story.id}${row.errors.length ? ` ${row.errors.join(' | ')}` : ''}`);
+		console.log(
+			`${row.errors.length ? '[FAIL]' : '[OK]'} ${story.id}${row.errors.length ? ` ${row.errors.join(' | ')}` : ''}`
+		);
 		manifest.push(row);
 	}
 } finally {
@@ -270,5 +343,7 @@ try {
 }
 writeFileSync(join(OUT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`, 'utf8');
 writeFileSync(OWNED_LIST, `${JSON.stringify(written, null, 1)}\n`, 'utf8');
-console.log(`[${failures ? 'FAIL' : 'OK'}] ${stories.length} stories x ${UI_SKIN_CHOICES.length} skins, ${failures} failing, in ${OUT_DIR}`);
+console.log(
+	`[${failures ? 'FAIL' : 'OK'}] ${stories.length} stories x ${UI_SKIN_CHOICES.length} skins, ${failures} failing, in ${OUT_DIR}`
+);
 if (failures > 0) process.exit(1);

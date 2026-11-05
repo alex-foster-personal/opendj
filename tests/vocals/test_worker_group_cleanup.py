@@ -44,13 +44,15 @@ import pytest
 
 from apps.shared.process_groups import (
     group_has_live_member,
-    live_group_members,
     process_group_exists,
 )
+from apps.shared.process_tree import TreeRoot, live_tree_members, spawn_tree
 from apps.vocals import cli as vcli
 
-pytestmark = pytest.mark.skipif(
-    os.name == "nt", reason="POSIX process-group semantics"
+# Windows has no zombies (a dead process is gone once its handles close), so
+# the all-zombie-group regression exists only on POSIX.
+posix_zombies_only = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX-specific: zombies and process groups do not exist on Windows"
 )
 
 
@@ -66,7 +68,7 @@ def _kill_group(pgid: int) -> None:
 
 
 @pytest.fixture
-def zombie_worker() -> Iterator[subprocess.Popen[str]]:
+def zombie_worker() -> Iterator[tuple[subprocess.Popen[str], TreeRoot]]:
     """A worker that has exited and NOT been waited on: a real zombie group.
 
     ``start_new_session=True`` makes the child its own group leader, so its
@@ -75,9 +77,8 @@ def zombie_worker() -> Iterator[subprocess.Popen[str]]:
     deliberately never call ``proc.wait()``, which is what keeps it a zombie
     and keeps the pgid allocated.
     """
-    proc = subprocess.Popen(
+    proc, root = spawn_tree(
         [sys.executable, "-c", "pass"],
-        start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         text=True,
@@ -88,20 +89,22 @@ def zombie_worker() -> Iterator[subprocess.Popen[str]]:
             raise AssertionError("the worker never finished exiting")
         time.sleep(0.02)
     try:
-        yield proc
+        yield proc, root
     finally:
         _kill_group(proc.pid)
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=10)
 
 
+@posix_zombies_only
 def test_the_fixture_really_builds_a_zombie_only_group(
-    zombie_worker: subprocess.Popen[str],
+    zombie_worker: tuple[subprocess.Popen[str], TreeRoot],
 ) -> None:
     """Guard the setup: if this is not a zombie group, the test below is void."""
-    assert proc_is_unreaped(zombie_worker), "the worker must not have been waited on"
-    assert process_group_exists(zombie_worker.pid), "the pgid must still be allocated"
-    assert not group_has_live_member(zombie_worker.pid), "nothing may still be running"
+    proc, _root = zombie_worker
+    assert proc_is_unreaped(proc), "the worker must not have been waited on"
+    assert process_group_exists(proc.pid), "the pgid must still be allocated"
+    assert not group_has_live_member(proc.pid), "nothing may still be running"
 
 
 def proc_is_unreaped(proc: subprocess.Popen[str]) -> bool:
@@ -109,8 +112,9 @@ def proc_is_unreaped(proc: subprocess.Popen[str]) -> bool:
     return proc.returncode is None
 
 
+@posix_zombies_only
 def test_terminating_an_all_zombie_group_returns_promptly(
-    zombie_worker: subprocess.Popen[str],
+    zombie_worker: tuple[subprocess.Popen[str], TreeRoot],
 ) -> None:
     """No raise, and nowhere near the grace budget.
 
@@ -122,39 +126,41 @@ def test_terminating_an_all_zombie_group_returns_promptly(
     rather than a hardcoded number, so a future grace change cannot quietly
     turn this test green for the wrong reason.
     """
+    proc, root = zombie_worker
     started = time.monotonic()
-    vcli._terminate_worker_tree(zombie_worker)
+    vcli._terminate_worker_tree(proc, root)
     elapsed = time.monotonic() - started
 
     assert elapsed < vcli.WORKER_TERMINATE_GRACE_S, (
         f"cleanup took {elapsed:.2f}s of the {vcli.WORKER_TERMINATE_GRACE_S}s "
         "grace; it should not wait on a group that holds only zombies"
     )
-    assert zombie_worker.returncode == 0, "the worker must be reaped, not abandoned"
+    assert proc.returncode == 0, "the worker must be reaped, not abandoned"
 
 
 def test_a_live_group_is_still_confirmed_dead_before_returning() -> None:
-    """The zombie shortcut must not blind the check to a group that IS live.
+    """[if] a worker and its child both ignore the polite signal [then] terminating it still leaves nothing running, [else stop].
 
-    A worker that ignores SIGTERM and spawns a child that ignores it too is
-    the case the ladder exists for: SIGTERM is not enough, SIGKILL is, and the
-    function may not return until nothing in the group is running. If the
-    zombie-aware check ever short-circuits on "no live member" too eagerly,
-    this leaks a child and fails here rather than in production.
+    The zombie shortcut must not blind the check to a tree that IS live. A
+    worker that ignores the polite signal and spawns a child that ignores it
+    too is the case the ladder exists for: the polite rung is not enough, the
+    forced rung is, and the function may not return until nothing in the tree
+    is running. Runs on both arms: SIGTERM is what POSIX ignores, SIGBREAK
+    (what CTRL_BREAK raises) is what Windows ignores.
     """
-    source = (
-        "import signal, subprocess, sys, time\n"
-        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        "child = subprocess.Popen([sys.executable, '-c',\n"
-        "    'import signal, time;"
-        " signal.signal(signal.SIGTERM, signal.SIG_IGN);"
-        " time.sleep(600)'])\n"
-        "print(child.pid, flush=True)\n"
-        "time.sleep(600)\n"
+    ignore = "import signal; signal.signal(getattr(signal, 'SIGBREAK', signal.SIGTERM), signal.SIG_IGN)"
+    child_source = ignore + "; import time; time.sleep(600)"
+    source = "\n".join(
+        [
+            "import subprocess, sys, time",
+            ignore,
+            f"child = subprocess.Popen([sys.executable, '-c', {child_source!r}])",
+            "print(child.pid, flush=True)",
+            "time.sleep(600)",
+        ]
     )
-    proc = subprocess.Popen(
+    proc, root = spawn_tree(
         [sys.executable, "-c", source],
-        start_new_session=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         text=True,
@@ -162,20 +168,17 @@ def test_a_live_group_is_still_confirmed_dead_before_returning() -> None:
     assert proc.stdout is not None
     child_pid = int(proc.stdout.readline().strip())
     try:
-        assert group_has_live_member(proc.pid), "fixture must start out live"
+        time.sleep(0.3)  # let both install their handler
+        assert live_tree_members(root), "fixture must start out live"
 
-        vcli._terminate_worker_tree(proc)
+        vcli._terminate_worker_tree(proc, root)
 
-        # Zombie-aware on purpose: the child is reparented when its leader
-        # dies, so for a moment it can still be a corpse awaiting init. A
-        # corpse answers kill(pid, 0), which is why the raw pid probe that
-        # reads as the obvious assertion here would flake.
-        survivors = {proc.pid for proc in live_group_members(proc.pid)}
-        assert not survivors, f"the group still has live members: {survivors}"
+        survivors = {member.pid for member in live_tree_members(root)}
+        assert not survivors, f"the tree still has live members: {survivors}"
         assert child_pid not in survivors, "the TERM-resistant child leaked"
     finally:
-        _kill_group(proc.pid)
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(child_pid, signal.SIGKILL)
+        for leftover in live_tree_members(root):
+            with contextlib.suppress(OSError):
+                leftover.kill()
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=10)

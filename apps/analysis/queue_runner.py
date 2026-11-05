@@ -43,6 +43,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wai
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 
+from apps.analysis_key import key_guess
 from apps.shared.events import publish as publish_engine_event
 
 from . import queue_store
@@ -53,10 +54,11 @@ from .jit_warmup import raise_if_warmup_refused, warm_backend_jit
 from .lane_enums import LaneContractError
 from .lanes import parse_own_backend
 from .pool import analyze_one, spawn_pool
-from .source_bytes import StaleSourceBytesError, assert_source_bytes_unchanged
 from .queue import CascadeOutcome, QueueError, enqueue, runnable_sizing_inputs
+from .queue_cascade_note import cascade_note
 from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord, RecordContractError
+from .source_bytes import StaleSourceBytesError, assert_source_bytes_unchanged
 from .store import upsert_record
 from .worker_diagnostics import (
     pool_death_message,
@@ -125,6 +127,8 @@ def _already_current(
         return False
     if (backend, version) in queue_store.stale_rows(conn, item.stable_id, item.lane):
         return False
+    if key_guess.needs_guess_rerun(item.lane, row[0]):
+        return False  # KEY-GUESS-01: a pre-guess decline re-runs once to gain its guess
     return not dependency_stale_row(conn, item.stable_id, item.lane, row[0])
 
 
@@ -656,7 +660,7 @@ def run_batch(
     queue_store.clear_batch_runner(conn, batch_id)
     if cascade_resolver is not None:
         summary.cascade_batch_id = _enqueue_cascade(
-            conn, summary.cascade_outcomes, cascade_resolver
+            conn, summary.cascade_outcomes, cascade_resolver, parent_batch_id=batch_id
         )
     return summary
 
@@ -665,6 +669,8 @@ def _enqueue_cascade(
     conn: sqlite3.Connection,
     outcomes: Sequence[CascadeOutcome],
     resolver: Callable[..., Sequence[object]],
+    *,
+    parent_batch_id: str,
 ) -> str | None:
     """Enqueue one follow-up batch for everything the cascade invalidated."""
     requeued = [o for o in outcomes if o.requeued]
@@ -685,7 +691,7 @@ def _enqueue_cascade(
     return enqueue(
         conn,
         list(candidates),  # type: ignore[arg-type]
-        note=f"dependency cascade: {lane} re-queued after its dependency moved",
+        note=cascade_note(lane, parent_batch_id),
     ).batch_id
 
 

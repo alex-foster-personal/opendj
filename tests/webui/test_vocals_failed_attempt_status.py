@@ -56,7 +56,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKER_SCRIPT = REPO_ROOT / "scripts" / "vocal_region_worker.py"
 
 RESULT: dict[str, Any] = {
-    "schema": 2,
+    "schema": vcache.VOCAL_CACHE_SCHEMA,
     "source": "demucs-htdemucs",
     "audio_path": "song.wav",
     "source_sample_rate": 44100,
@@ -113,7 +113,6 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     conn.commit()
     conn.close()
-    monkeypatch.setattr(vocals_routes, "DATA_DIR", data)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", data / "master.plain.db")
     monkeypatch.setattr(rb_config, "STATE_DB", data / "state" / "state.db")
     monkeypatch.setattr(rb_config, "VOCAL_CACHE_DIR", vcache.cache_dir(data))

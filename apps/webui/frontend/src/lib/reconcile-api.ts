@@ -82,7 +82,9 @@ export async function applyRelocate(
 					expected_candidate_identity: opts.expectedCandidateIdentity,
 					expected_original_path: opts.expectedOriginalPath,
 					expected_vendor_id: opts.expectedVendorId,
-					confirm: true
+					confirm: true,
+					// RECON-07: the UI never overrides the same-recording guard; a 409 is shown as is.
+					allow_different_recording: false
 				}
 			})
 		);

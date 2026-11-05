@@ -83,7 +83,6 @@ import logging
 import math
 import os
 import shutil
-import signal
 import sqlite3
 import struct
 import subprocess
@@ -108,11 +107,7 @@ from apps.shared.platform_paths import (
     resolve_asset_path,
 )
 from apps.shared.process_groups import WorkerCleanupError as _WorkerCleanupError
-from apps.shared.process_groups import (
-    group_has_live_member,
-    signal_group,
-    wait_group_gone,
-)
+from apps.shared.process_tree import TreeRoot, spawn_tree, stop_tree
 from apps.shared.state import locations as state_locations
 from apps.vocals import attempts as vattempts
 from apps.vocals import cache as vcache
@@ -131,8 +126,8 @@ DEFAULT_TRICKLE_LIMIT: int = 5
 WORKER_TIMEOUT_S: float = 30 * 60
 LOCK_LEASE_S: float = 30
 LOCK_HEARTBEAT_S: float = 5
+# Per rung: the polite signal gets this long, and so does the forced rung's confirm.
 WORKER_TERMINATE_GRACE_S: float = 2
-_WINDOWS: bool = os.name == "nt"
 WORKER_SCRIPT: Path = (
     Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
 )
@@ -170,9 +165,12 @@ class Ctx:
     """Resolved data locations for one invocation (--data-dir aware)."""
 
     data_dir: Path
+    state_db_path: Path | None = None
 
     @property
     def state_db(self) -> Path:
+        if self.state_db_path is not None:
+            return self.state_db_path
         return self.data_dir / "state" / "state.db"
 
     @property
@@ -574,62 +572,21 @@ def _worker_command(audio_path: Path) -> list[str]:
     ]
 
 
-def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
-    """Terminate and reap the complete worker process group before returning."""
-    if _WINDOWS:
-        try:
-            taskkill = subprocess.run(
-                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-        except OSError as exc:
-            raise WorkerCleanupError(
-                f"taskkill unavailable; vocal worker tree {proc.pid} is unverified"
-            ) from exc
-        if taskkill.returncode != 0:
-            raise WorkerCleanupError(
-                f"taskkill failed for vocal worker tree {proc.pid} "
-                f"(exit {taskkill.returncode}): {taskkill.stderr.strip()}"
-            )
-        try:
-            proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
-        except subprocess.TimeoutExpired as exc:
-            raise WorkerCleanupError(
-                f"taskkill did not reap vocal worker tree {proc.pid}: "
-                f"{taskkill.stderr.strip()}"
-            ) from exc
-        return
+def _terminate_worker_tree(proc: subprocess.Popen[str], root: TreeRoot) -> None:
+    """Stop and reap the complete worker tree before returning, on every OS.
 
-    # Every rung below asks "is anything still RUNNING in the group", never
-    # "does the pgid still exist". They are different questions on macOS: an
-    # all-zombie group (the worker died, nobody has waited on it yet) keeps its
-    # pgid and answers killpg with EPERM. Reading that as "alive" made this
-    # function burn the full WORKER_TERMINATE_GRACE_S against a corpse and then
-    # raise, falsely reporting a worker that survived SIGKILL and stranding its
-    # claim for manual recovery. See apps/shared/process_groups.
-    process_group_id = proc.pid
+    ``apps.shared.process_tree`` owns the ladder and the proof: it raises
+    WorkerCleanupError (its ProcessTreeError subclass) when any member of the
+    tree may still be running, which is what keeps this track's claim held.
+    Its one budget covers both rungs, so it gets two of ours: the polite
+    signal keeps its WORKER_TERMINATE_GRACE_S and so does the forced confirm.
+    """
+    stop_tree(root, grace_s=2 * WORKER_TERMINATE_GRACE_S)
     try:
-        if signal_group(process_group_id, signal.SIGTERM) is not None:
-            proc.wait()
-            return
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
-        if group_has_live_member(process_group_id):
-            signal_group(process_group_id, signal.SIGKILL)
-        proc.wait()
-        if not wait_group_gone(process_group_id, WORKER_TERMINATE_GRACE_S):
-            raise WorkerCleanupError(  # noqa: TRY301
-                f"vocal worker process group {process_group_id} survived SIGKILL"
-            )
-    except WorkerCleanupError:
-        raise
-    except BaseException as exc:
+        proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
+    except subprocess.TimeoutExpired as exc:
         raise WorkerCleanupError(
-            f"vocal worker process group {process_group_id} cleanup is unverified"
+            f"vocal worker {proc.pid} was stopped but its handle did not exit"
         ) from exc
 
 
@@ -687,13 +644,8 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
     if timeout_s <= 0:
         raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
     preflight_worker(audio_path, os.environ)
-    process_kwargs: dict[str, Any] = {}
-    if _WINDOWS:
-        process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        process_kwargs["start_new_session"] = True
     try:
-        proc = subprocess.Popen(
+        proc, root = spawn_tree(
             _worker_command(audio_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -701,14 +653,13 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
             text=True,
             encoding="utf-8",
             errors="replace",
-            **process_kwargs,
         )
     except (FileNotFoundError, PermissionError) as exc:
         raise WorkerUnavailableError(WORKER_UNAVAILABLE_MESSAGE) from exc
     try:
         stdout, stderr = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:
-        _terminate_worker_tree(proc)
+        _terminate_worker_tree(proc, root)
         sys.stderr.write(proc.communicate()[1] or "")
         raise RuntimeError(
             f"vocal_region_worker timed out after {timeout_s}s for {audio_path}"

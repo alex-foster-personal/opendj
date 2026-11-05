@@ -29,10 +29,6 @@ from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
 from apps.shared.state.migrated_open import open_rw_migrated
 
 
-def _open_conn(db: Path) -> sqlite3.Connection:
-    return open_rw_migrated(db, apply_playlist_set_migrations)
-
-
 def _set_to_dict(ps) -> dict[str, Any]:  # type: ignore[no-untyped-def]
     return {
         "id": ps.id,
@@ -292,7 +288,7 @@ def _dispatch(conn, args) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        conn = _open_conn(args.db)
+        conn = open_rw_migrated(args.db, apply_playlist_set_migrations)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return 2

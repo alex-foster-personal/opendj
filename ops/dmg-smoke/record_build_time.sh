@@ -3,7 +3,7 @@
 # trap logic (the format-string construction and the `ops/logs/ship-dmg.log`
 # append it did directly). The trap now delegates to this script instead of
 # duplicating that logic inline (review round 2, P1: "add beside" is a
-# defect -- see docs/conventions/supersession.md).
+# defect -- see (private path)).
 #
 # The ONE place that computes a `phase=build_total` verdict and appends it to
 # ops/logs/ship-dmg.log. Extracted from the justfile `dmg` recipe's
@@ -20,7 +20,7 @@
 # Usage: record_build_time.sh <budget_path> <log_root> <elapsed_seconds> <rc> [run_id]
 #   <budget_path> and <log_root> are separate on purpose, matching the
 #   recipe's own independent `_budget`/`_root` variables (only coincidentally
-#   the same directory in production): tests/scripts/test_build_budget.py's
+#   the same directory in production): (private path)'s
 #   `_run_recorder` deliberately points <log_root> at a throwaway tmp_path
 #   while passing the real ops/build-budget.env as <budget_path> directly, to
 #   exercise this writer without needing a full checkout under tmp_path.
@@ -62,5 +62,5 @@ _verdict=OK
 mkdir -p "$_root/ops/logs"
 printf '%s run=just-dmg mode=direct run_id=%s phase=build_total seconds=%s rc=%s verdict=%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$_run_id" "$_elapsed" "$_rc" "$_verdict" \
-    >> "$_root/ops/logs/ship-dmg.log"
+    >>"$_root/ops/logs/ship-dmg.log"
 echo "[TIMING] total=${_elapsed}s rc=${_rc} verdict=$_verdict (soft=${BUILD_TOTAL_SOFT_S}s hard=${BUILD_TOTAL_HARD_S}s, includes 2x Apple notarization)"

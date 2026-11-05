@@ -4,7 +4,7 @@
 # ///
 """Derive farm KPIs from per-track cache telemetry instead of hand-entering them.
 
-Every farm-written data/state/vocal-cache/{stable_id}.json carries
+Every farm-written (private path)/{stable_id}.json carries
 ``worker.timings.{load_s, separate_s, container_s}``; the file mtime is the
 publication instant. That is enough to reconstruct wall clock, cost, throughput
 and a bounded concurrency figure without anyone typing a number. This module is
@@ -87,7 +87,7 @@ BASIS_SPANS: str = "container-wall-spans"
 BASIS_PUBLICATION: str = "publication-window"
 
 
-#----- samples --------------------------------------------------------------
+# ----- samples --------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -151,9 +151,19 @@ def _column_by_stable_id(column: str, stable_ids: list[str]) -> dict[str, object
 
 def _ffprobe_duration_s(audio_path: str) -> float:
     proc = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
-        capture_output=True, text=True, check=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            audio_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return float(proc.stdout.strip())
 
@@ -167,16 +177,13 @@ def load_samples(cache_dir: Path = CACHE_DIR) -> list[TrackSample]:
     """
     entries = _instrumented_entries(cache_dir)
     if not entries:
-        raise SystemExit(
-            f"[ERROR] no cache entry under {cache_dir} carries worker.timings.container_s"
-        )
+        raise SystemExit(f"[ERROR] no cache entry under {cache_dir} carries worker.timings.container_s")
 
     missing = [p.stem for p, e in entries if not e.get("duration_s")]
     from_db = {k: float(v) / 1000.0 for k, v in _column_by_stable_id("duration_ms", missing).items()}
     unprobed = [sid for sid in missing if sid not in from_db]
     from_probe = {
-        sid: _ffprobe_duration_s(str(path))
-        for sid, path in _column_by_stable_id("file_path", unprobed).items()
+        sid: _ffprobe_duration_s(str(path)) for sid, path in _column_by_stable_id("file_path", unprobed).items()
     }
 
     samples: list[TrackSample] = []
@@ -188,15 +195,17 @@ def load_samples(cache_dir: Path = CACHE_DIR) -> list[TrackSample]:
             unresolved.append(stable_id)
             continue
         worker = entry["worker"]
-        samples.append(TrackSample(
-            stable_id=stable_id,
-            published_at=path.stat().st_mtime,
-            container_s=_timing(worker, "container_s", path.name),
-            separate_s=_timing(worker, "separate_s", path.name),
-            load_s=_timing(worker, "load_s", path.name),
-            duration_s=float(duration_s),
-            wall_span=_wall_span(worker, path.name),
-        ))
+        samples.append(
+            TrackSample(
+                stable_id=stable_id,
+                published_at=path.stat().st_mtime,
+                container_s=_timing(worker, "container_s", path.name),
+                separate_s=_timing(worker, "separate_s", path.name),
+                load_s=_timing(worker, "load_s", path.name),
+                duration_s=float(duration_s),
+                wall_span=_wall_span(worker, path.name),
+            )
+        )
     if unresolved:
         raise SystemExit(
             "[ERROR] track duration unresolvable (cache, state.db and ffprobe all failed) "
@@ -206,7 +215,7 @@ def load_samples(cache_dir: Path = CACHE_DIR) -> list[TrackSample]:
     return samples
 
 
-#----- window selection -----------------------------------------------------
+# ----- window selection -----------------------------------------------------
 
 
 def _parse_ts(raw: str) -> float:
@@ -217,8 +226,7 @@ def _iso(epoch_s: float) -> str:
     return datetime.fromtimestamp(epoch_s, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def select_window(samples: list[TrackSample], window: str,
-                  since: str | None, until: str | None) -> list[TrackSample]:
+def select_window(samples: list[TrackSample], window: str, since: str | None, until: str | None) -> list[TrackSample]:
     """`latest` = last contiguous publication cluster; `all` = everything."""
     if window not in ("all", "latest"):
         raise SystemExit(f"[ERROR] --window must be 'latest' or 'all', got {window!r}")
@@ -238,7 +246,7 @@ def select_window(samples: list[TrackSample], window: str,
     return picked
 
 
-#----- derivation -----------------------------------------------------------
+# ----- derivation -----------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -280,8 +288,9 @@ def sweep_peak(spans: list[tuple[float, float]]) -> int:
     return peak
 
 
-def _concurrency(samples: list[TrackSample], container_s_total: float,
-                 publication_wall_s: float) -> tuple[str, float, int | None]:
+def _concurrency(
+    samples: list[TrackSample], container_s_total: float, publication_wall_s: float
+) -> tuple[str, float, int | None]:
     """(basis, mean, peak). Peak is None unless every call stamped its own span."""
     spans = [s.wall_span for s in samples]
     if all(span is not None for span in spans):
@@ -298,9 +307,7 @@ def _concurrency(samples: list[TrackSample], container_s_total: float,
 def derive(samples: list[TrackSample], cache_dir: Path = CACHE_DIR) -> DerivedKpis:
     wall_s = samples[-1].published_at - samples[0].published_at
     if wall_s <= 0:
-        raise SystemExit(
-            "[ERROR] publication wall is zero: cannot derive rate KPIs from a single instant"
-        )
+        raise SystemExit("[ERROR] publication wall is zero: cannot derive rate KPIs from a single instant")
     container_s_total = sum(s.container_s for s in samples)
     stem_minutes_total = sum(s.duration_s for s in samples) / 60.0
     tracks = len(samples)
@@ -325,13 +332,14 @@ def derive(samples: list[TrackSample], cache_dir: Path = CACHE_DIR) -> DerivedKp
     )
 
 
-def derive_window(window: str = "latest", since: str | None = None,
-                  until: str | None = None, cache_dir: Path = CACHE_DIR) -> DerivedKpis:
+def derive_window(
+    window: str = "latest", since: str | None = None, until: str | None = None, cache_dir: Path = CACHE_DIR
+) -> DerivedKpis:
     """One-call entry point used by kpi_append.py."""
     return derive(select_window(load_samples(cache_dir), window, since, until), cache_dir)
 
 
-#----- ledger mapping -------------------------------------------------------
+# ----- ledger mapping -------------------------------------------------------
 
 # Ledger KPI key -> DerivedKpis field. Anything in here is DERIVED and must not
 # be hand-set; anything absent (si_sdr_db, region_iou, human_quality_1to10,
@@ -355,13 +363,17 @@ def ledger_values(derived: DerivedKpis) -> dict[str, float | None]:
     return {key: fields[attr] for key, attr in DERIVED_LEDGER_KEYS.items()}
 
 
-#----- cli ------------------------------------------------------------------
+# ----- cli ------------------------------------------------------------------
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--window", default="latest", choices=["latest", "all"],
-                        help="latest contiguous publication cluster, or every entry")
+    parser.add_argument(
+        "--window",
+        default="latest",
+        choices=["latest", "all"],
+        help="latest contiguous publication cluster, or every entry",
+    )
     parser.add_argument("--since", default=None, help="ISO 8601 lower bound on publication time")
     parser.add_argument("--until", default=None, help="ISO 8601 upper bound on publication time")
     parser.add_argument("--cache-dir", default=str(CACHE_DIR), help="vocal-cache directory")
@@ -375,17 +387,20 @@ def main() -> None:
 
     fields = asdict(derived)
     width = max(len(key) for key in fields)
-    print(f"derived from {derived.tracks_measured} instrumented cache entries "
-          f"({derived.window_start} .. {derived.window_end})")
+    print(
+        f"derived from {derived.tracks_measured} instrumented cache entries "
+        f"({derived.window_start} .. {derived.window_end})"
+    )
     print("-" * (width + 18))
     for key, value in fields.items():
         print(f"{key.ljust(width)}  {'not derivable' if value is None else value}")
     print("-" * (width + 18))
     if derived.concurrency_basis == BASIS_PUBLICATION:
-        print("NOTE: no container-stamped wall_span in this window, so mean concurrency is "
-              "GPU-seconds per second of PUBLICATION wall and peak is not derivable.")
-    print(f"NORTH STAR: {derived.stem_min_per_10min_wall} stem-minutes separated "
-          f"per 10 minutes of wall clock")
+        print(
+            "NOTE: no container-stamped wall_span in this window, so mean concurrency is "
+            "GPU-seconds per second of PUBLICATION wall and peak is not derivable."
+        )
+    print(f"NORTH STAR: {derived.stem_min_per_10min_wall} stem-minutes separated per 10 minutes of wall clock")
 
 
 if __name__ == "__main__":

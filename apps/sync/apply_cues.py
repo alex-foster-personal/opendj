@@ -12,20 +12,13 @@ the legitimate bulk-all-tracks workflow and the real safety rail is
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.sync.diff_csv import load_diff_rows
 from apps.sync.safety import LiveWriteSession, SafetyAbort
-
-
-def _load_cue_diff(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open("r", newline="", encoding="utf-8") as fp:
-        return list(csv.DictReader(fp))
 
 
 def dry_run(rows: list[dict]) -> int:
@@ -57,7 +50,7 @@ def live_run(
     per-track writer plumbing (RB + djay) is exercised in the smoke test.
     Live bulk-write against a real user library is an O2 probe item that
     requires manual sign-off and is intentionally deferred from this CLI
-    to the runbook ``docs/phase-04-probe-o2-runbook.md``.
+    to the runbook ``(private path)``.
 
     The ``--live`` path does NOT mutate cue bytes. It exits 0 after
     exercising the 7-rail safety harness and emits a stderr banner so
@@ -77,7 +70,7 @@ def live_run(
     # [I1 fix] Loud banner so users cannot mistake this CLI path for a real
     # write. The actual rb_writer.write_cues / djay_writer.patch_cue_points
     # plumbing lives in the smoke-test harness; the probe runbook
-    # (docs/phase-04-probe-o2-runbook.md) is the sanctioned live-write path.
+    # ((private path)) is the sanctioned live-write path.
     _print_stub_banner()
 
     if not rows:
@@ -147,7 +140,7 @@ def _print_stub_banner() -> None:
         "  The --live path exercises the 7-rail safety harness only.\n"
         "  No cue bytes are written to the rekordbox or djay DB.\n"
         "  Real cue writes are gated behind the Phase 4 O2 probe\n"
-        "  runbook: docs/phase-04-probe-o2-runbook.md\n"
+        "  runbook: (private path)\n"
         "============================================================\n",
         file=sys.stderr,
     )
@@ -173,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prune", action="store_true")
     args = parser.parse_args(argv)
 
-    rows = _load_cue_diff(args.diff_csv)
+    rows = load_diff_rows(args.diff_csv)
     if not args.live:
         return dry_run(rows)
     if (args.cautious or args.bulk) and not args.i_understand_the_risks:

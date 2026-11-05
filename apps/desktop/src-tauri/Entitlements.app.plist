@@ -4,7 +4,7 @@
 <!--
   Entitlements for the Developer ID app bundle itself (tauri.conf.json
   bundle.macOS.entitlements). The engine payload's executables carry their
-  own, in Entitlements.engine.plist.
+  own, in ../shared/Entitlements.engine.plist.
 
   WHY audio-input. The app is signed with the hardened runtime, which
   notarization requires, and a hardened app without this key is refused every
@@ -12,7 +12,7 @@
   an input: set recording (SET-10, SET-11), where the engine's odj-audio,
   attributed to this app by macOS privacy (TCC), captures the input the DJ
   picked on the REC button (usually a loopback such as BlackHole), and carries
-  the same key itself (Entitlements.engine.plist); and the
+  the same key itself (../shared/Entitlements.engine.plist); and the
   headphone cue latency calibration (CUEOUT-11), which listens briefly in the
   web view. NSMicrophoneUsageDescription in Info.plist is the prompt text.
 

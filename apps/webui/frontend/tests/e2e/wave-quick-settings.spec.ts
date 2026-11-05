@@ -29,7 +29,9 @@ async function diskShowSections(page: Page): Promise<boolean> {
 	});
 }
 
-test('WAVEQS-8348c/8348d: the popover opens, flips sections for Settings and disk, and closes on Escape and outside press', async ({ page }) => {
+test('WAVEQS-8348c/8348d: the popover opens, flips sections for Settings and disk, and closes on Escape and outside press', async ({
+	page
+}) => {
 	test.setTimeout(120_000);
 	await openPerformance(page);
 

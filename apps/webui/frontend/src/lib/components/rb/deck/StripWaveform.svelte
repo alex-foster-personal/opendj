@@ -33,7 +33,7 @@
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
-	import { drawStripWaveform, TEMPO_LANE_COLORS } from './strip-waveform-render';
+	import { drawStripWaveform, stripBackingSize, TEMPO_LANE_COLORS } from './strip-waveform-render';
 	import { tempoCurveData, tempoStabilityKey, tempoStabilityTitle } from '$lib/rb/tempo-stability';
 	import { requestTempoStability, tempoStabilityFor } from '$lib/rb/tempo-stability.svelte';
 	import { readPalette } from '../wave/cues';
@@ -44,9 +44,11 @@
 	import { prefetchDeckStripAnlz } from './strip-anlz-prefetch';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import { decodePreviewStrip } from '$lib/rb/api-rb';
-	import { shouldShowNativeGridMarker } from './strip-native-grid';
+	import { gridProviderChip } from './strip-grid-provider';
 	import { phraseMomentTicks } from '$lib/rb/phrase-moment-ticks';
 	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
+	import { effectiveQuantize } from '$lib/player/grid-features';
+	import { overviewSeekMs, waveSnapModeFromModifiers } from '../wave/wave-scrub';
 	import { devicePixelRatioNow, startDevicePixelRatioWatch } from '$lib/ui/device-pixel-ratio.svelte';
 
 	let {
@@ -63,8 +65,6 @@
 	} = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
-	const W = 400;
-	const H = 40;
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	/** Play affordance above the last paused seek point (pct along strip). */
@@ -93,6 +93,11 @@
 	// Listen for density changes from mount, before the playhead below is ever read.
 	startDevicePixelRatioWatch();
 	let stripBoxW: number = $state(0);
+	let stripBoxH: number = $state(0);
+	// DECKUX-8337: draw at the strip's real device size; one repaint per resize.
+	const backing = $derived(stripBackingSize(stripBoxW, stripBoxH, devicePixelRatioNow()));
+	const W: number = $derived(backing.widthPx);
+	const H: number = $derived(backing.heightPx);
 	// Snapped to the device pixel grid (snapFractionToPixels), so the marker's
 	// `left` is rewritten only when it moves, not every frame.
 	const posPct: number = $derived(
@@ -125,15 +130,11 @@
 			: deck.anlz.cues.filter((c) => c.kind === 'memory').map((c) => c.in_ms)
 	);
 
-	// PARITY-02: OWN selected but this track has no own analysis to serve -
-	// the backend already returns the real empty grid plus this reason
-	// (rb_assets.py _resolve_beatgrid_source); nothing previously read it, so
-	// the strip went inert with no explanation beyond the toggle itself
-	// (discussion_r3921839841).
-	const ownGridUnavailable: string | null = $derived(
-		deck.anlz?.beatgrid_source === 'own' ? deck.anlz.beatgrid_own_unavailable_reason : null
-	);
-	const showNativeGridMarker: boolean = $derived(shouldShowNativeGridMarker(deck.anlz));
+	// DECKUX-LABEL-01: which producer served this deck's grid, as a small
+	// neutral chip. PARITY-02's own-unavailable reason (rb_assets.py
+	// _resolve_beatgrid_source) rides the chip's title, so an own-selected
+	// track with no own analysis still says why the strip has no grid.
+	const providerChip = $derived(gridProviderChip(deck.anlz));
 
 	// First stored loop in the hot-cue bank -> in/out time chips (display-only
 	// at v1 per COMPONENT-MAP 1.3; sparse coverage is real).
@@ -310,8 +311,17 @@
 			if (!deck.playing) playHintPct = (state.focusStartS * 1000 / deck.duration_ms) * 100;
 			return;
 		}
-		await onSeek(ratio * deck.duration_ms);
-		if (!deck.playing) playHintPct = ratio * 100;
+		// WAVE-SEEK-01: proportional to the whole track; quantize on snaps to the
+		// NEAREST beat of the engine's own grid, never a bar or phrase.
+		const targetMs = overviewSeekMs({
+			pointerX: e.clientX - rect.left,
+			widthPx: rect.width,
+			durationMs: deck.duration_ms,
+			beats: deck.anlz?.beatgrid.beats ?? null,
+			mode: waveSnapModeFromModifiers(e, effectiveQuantize(deck))
+		});
+		await onSeek(targetMs);
+		if (!deck.playing) playHintPct = (targetMs / deck.duration_ms) * 100;
 	}
 
 	async function handlePlayHint(e: MouseEvent): Promise<void> {
@@ -345,6 +355,7 @@
 		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
 		title={stripTitle ?? undefined}
 		bind:clientWidth={stripBoxW}
+		bind:clientHeight={stripBoxH}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
@@ -352,12 +363,8 @@
 			<span class="strip-loading" aria-busy="true" title="Loading waveform preview">…</span>
 		{:else if deck.anlz_error !== null}
 			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
-		{:else if ownGridUnavailable !== null}
-			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
-		{:else if showNativeGridMarker}
-			<span class="native-grid-wrap">
-				<span class="native-grid" data-testid="native-grid-marker" title="Measured native beatgrid; rekordbox has no AnalysisDataPath.">native grid</span>
-			</span>
+		{:else if providerChip !== null}
+			<span class="grid-provider" data-testid={`grid-provider-chip-${deck.deck_id}`} title={providerChip.title}>{providerChip.text}</span>
 		{/if}
 
 		{#each sectionLabels as item, i (i)}
@@ -479,29 +486,16 @@
 		color: var(--rb-text-dim);
 		letter-spacing: 1px;
 	}
-	.native-grid-wrap {
+	/* DECKUX-LABEL-01: a provider fact, not a warning - small, dim, cornered. */
+	.grid-provider {
 		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		pointer-events: none;
-	}
-	.native-grid {
-		/* F08 (#7147): an opaque theme-consistent pill behind the label. Over a
-		   bare canvas the rendered contrast audit cannot resolve a backdrop and
-		   reports the label unmeasured; this pill gives it a real background, and
-		   the pair is the palette-validated one also used by .cue-letter
-		   (color-contrast.ts: fg rb-bg on bg rb-green, body floor 4.5:1). */
-		padding: 0 3px;
-		border-radius: 2px;
-		background: var(--rb-green);
-		color: var(--rb-bg);
+		top: 1px;
+		right: 4px;
 		font-size: var(--rb-fs-label);
-		font-weight: 600;
-		line-height: 1.2;
-		letter-spacing: 1px;
+		color: var(--rb-text-dim);
+		opacity: 0.8;
 		pointer-events: none;
+		white-space: nowrap;
 	}
 	.section-label {
 		position: absolute;

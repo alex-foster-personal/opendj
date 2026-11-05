@@ -272,11 +272,14 @@ const IN_PAGE = async ({ sampleRate, targetFrames, renderQuantum }) => {
 	await cueCtx.close();
 
 	const expectedMs = (targetFrames / sampleRate) * 1000;
-	const toleranceMs = (renderQuantum * 2 / sampleRate) * 1000;
+	const toleranceMs = ((renderQuantum * 2) / sampleRate) * 1000;
 	const validDelays = delays.filter((d) => Number.isFinite(d));
 	const meanDelayMs =
-		validDelays.length > 0 ? validDelays.reduce((sum, d) => sum + d, 0) / validDelays.length : Number.NaN;
-	const spreadMs = validDelays.length > 0 ? Math.max(...validDelays) - Math.min(...validDelays) : Number.NaN;
+		validDelays.length > 0
+			? validDelays.reduce((sum, d) => sum + d, 0) / validDelays.length
+			: Number.NaN;
+	const spreadMs =
+		validDelays.length > 0 ? Math.max(...validDelays) - Math.min(...validDelays) : Number.NaN;
 
 	return {
 		freqL,
@@ -330,7 +333,9 @@ try {
 	const measurementJitterMs = result.toleranceMs * 4;
 
 	console.log(`chromium=${browser.version()} sampleRate=${SAMPLE_RATE}`);
-	console.log(`expected bridge delay ${result.expectedMs.toFixed(3)} ms +/- ${result.toleranceMs.toFixed(3)} ms`);
+	console.log(
+		`expected bridge delay ${result.expectedMs.toFixed(3)} ms +/- ${result.toleranceMs.toFixed(3)} ms`
+	);
 	console.log(`measured delays (ms): ${result.delays.map((d) => d.toFixed(2)).join(', ')}`);
 	console.log(
 		`mean delay=${result.meanDelayMs.toFixed(3)} ms spread=${result.spreadMs.toFixed(3)} ms (jitter bound ${measurementJitterMs.toFixed(3)} ms)`
@@ -350,7 +355,9 @@ try {
 		process.exit(1);
 	}
 	if (!delayOk) {
-		console.error('[FAIL] bridge delay outside tolerance, a trial failed to detect the impulse, or spread exceeded the measurement jitter bound');
+		console.error(
+			'[FAIL] bridge delay outside tolerance, a trial failed to detect the impulse, or spread exceeded the measurement jitter bound'
+		);
 		process.exit(1);
 	}
 	if (!underrunOk) {

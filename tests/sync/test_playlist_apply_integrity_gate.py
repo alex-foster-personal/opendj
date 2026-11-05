@@ -22,6 +22,7 @@ Acceptance criteria (UNCAPTURED-REQUIREMENTS.md H1):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -68,9 +69,7 @@ def _nothing_running(monkeypatch: pytest.MonkeyPatch) -> None:
         returncode = 1
         stdout = ""
 
-    monkeypatch.setattr(
-        subprocess, "run", lambda *a, **k: _Result()
-    )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Result())
 
 
 # ----- unit: the gate itself --------------------------------------------
@@ -82,9 +81,7 @@ def test_gate_refuses_and_names_the_broken_ratio(tmp_path: Path) -> None:
     assert rep.broken_ratio == pytest.approx(0.75)
     with pytest.raises(pa.PlaylistApplyError) as exc:
         pa._integrity_gate(rep, allow_broken=False)
-    assert "75.0%" in str(exc.value), (
-        "the refusal must name the broken ratio, not just say 'unhealthy'"
-    )
+    assert "75.0%" in str(exc.value), "the refusal must name the broken ratio, not just say 'unhealthy'"
 
 
 @pytest.mark.requirement("SYNC-03")
@@ -104,14 +101,10 @@ def test_gate_returns_an_override_note_when_allow_broken(tmp_path: Path) -> None
 
 
 @pytest.mark.requirement("SYNC-03")
-def test_live_apply_aborts_before_taking_a_backup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_live_apply_aborts_before_taking_a_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The refusal must land ahead of the backup, not after it."""
     _nothing_running(monkeypatch)
-    monkeypatch.setattr(
-        pa, "_live_integrity_report", lambda: _report(tmp_path, present=1, broken=3)
-    )
+    monkeypatch.setattr(pa, "_live_integrity_report", lambda: _report(tmp_path, present=1, broken=3))
 
     def _no_backup(*args: object, **kwargs: object) -> tuple[Path, str]:
         raise AssertionError("backup taken despite a failing integrity gate")
@@ -122,9 +115,12 @@ def test_live_apply_aborts_before_taking_a_backup(
 
     rc = pa.main(
         [
-            "--plan", str(_plan_file(tmp_path)),
-            "--backup-dir", str(tmp_path / "backups"),
-            "--live", "--i-understand-the-risks",
+            "--plan",
+            str(_plan_file(tmp_path)),
+            "--backup-dir",
+            str(tmp_path / "backups"),
+            "--live",
+            "--i-understand-the-risks",
             "--skip-tsaf-validation",
         ]
     )
@@ -136,23 +132,23 @@ def test_override_flag_proceeds_and_is_recorded_in_the_reversal_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _nothing_running(monkeypatch)
-    monkeypatch.setattr(
-        pa, "_live_integrity_report", lambda: _report(tmp_path, present=1, broken=3)
-    )
+    monkeypatch.setattr(pa, "_live_integrity_report", lambda: _report(tmp_path, present=1, broken=3))
     db = tmp_path / "djay.db"
     db.write_bytes(b"djay")
     monkeypatch.setattr(pa, "_live_db_path", lambda live: db)
-    monkeypatch.setattr(
-        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()
-    )
+    monkeypatch.setattr(pa, "apply_plan", lambda *a, **k: pa.ApplyResult())
     monkeypatch.setattr("builtins.input", lambda: pa.CONFIRMATION_PHRASE)
 
     backup_dir = tmp_path / "backups"
     rc = pa.main(
         [
-            "--plan", str(_plan_file(tmp_path)),
-            "--backup-dir", str(backup_dir),
-            "--live", "--i-understand-the-risks", "--allow-broken",
+            "--plan",
+            str(_plan_file(tmp_path)),
+            "--backup-dir",
+            str(backup_dir),
+            "--live",
+            "--i-understand-the-risks",
+            "--allow-broken",
             "--skip-tsaf-validation",
         ]
     )
@@ -160,9 +156,7 @@ def test_override_flag_proceeds_and_is_recorded_in_the_reversal_log(
     reversals = sorted(backup_dir.glob("restore-playlist-sync-*.py"))
     assert reversals, "no reversal script written"
     text = reversals[-1].read_text(encoding="utf-8")
-    assert "--allow-broken override" in text, (
-        "the reversal log must record that the gate was overridden"
-    )
+    assert "--allow-broken override" in text, "the reversal log must record that the gate was overridden"
     assert "75.0%" in text
 
 
@@ -171,28 +165,25 @@ def test_healthy_library_reaches_the_write_path_with_no_override_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _nothing_running(monkeypatch)
-    monkeypatch.setattr(
-        pa, "_live_integrity_report", lambda: _report(tmp_path, present=40, broken=0)
-    )
+    monkeypatch.setattr(pa, "_live_integrity_report", lambda: _report(tmp_path, present=40, broken=0))
     db = tmp_path / "djay.db"
     db.write_bytes(b"djay")
     monkeypatch.setattr(pa, "_live_db_path", lambda live: db)
-    monkeypatch.setattr(
-        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()
-    )
+    monkeypatch.setattr(pa, "apply_plan", lambda *a, **k: pa.ApplyResult())
     monkeypatch.setattr("builtins.input", lambda: pa.CONFIRMATION_PHRASE)
 
     backup_dir = tmp_path / "backups"
     rc = pa.main(
         [
-            "--plan", str(_plan_file(tmp_path)),
-            "--backup-dir", str(backup_dir),
-            "--live", "--i-understand-the-risks",
+            "--plan",
+            str(_plan_file(tmp_path)),
+            "--backup-dir",
+            str(backup_dir),
+            "--live",
+            "--i-understand-the-risks",
             "--skip-tsaf-validation",
         ]
     )
     assert rc == 0
-    text = sorted(backup_dir.glob("restore-playlist-sync-*.py"))[-1].read_text(
-        encoding="utf-8"
-    )
+    text = sorted(backup_dir.glob("restore-playlist-sync-*.py"))[-1].read_text(encoding="utf-8")
     assert "override" not in text.lower() or "no override was used" in text

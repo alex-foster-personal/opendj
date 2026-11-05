@@ -4,6 +4,7 @@ We never invoke the real chromaprint backend here; we monkeypatch the
 ``acoustid`` shim so these tests run everywhere regardless of whether
 ``libchromaprint`` is installed.
 """
+
 from __future__ import annotations
 
 import builtins
@@ -63,9 +64,7 @@ class TestCacheSchema:
     def test_creates_sqlite_schema(self, tmp_path: Path) -> None:
         c = FingerprintCache(tmp_path / "fp.sqlite")
         try:
-            cur = c._con.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            cur = c._con.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cur.fetchall()}
             assert "fingerprints" in tables
         finally:
@@ -137,9 +136,7 @@ class TestCompare:
         score = cache.compare(a, b)
         assert score == 0.5  # different names -> different fake fingerprints
 
-    def test_compare_none_if_path_missing(
-        self, cache: FingerprintCache, fake_acoustid: _FakeAcoustid
-    ) -> None:
+    def test_compare_none_if_path_missing(self, cache: FingerprintCache, fake_acoustid: _FakeAcoustid) -> None:
         assert cache.compare(None, None) is None
 
 

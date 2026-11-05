@@ -28,8 +28,9 @@ The rules, each one tested:
   values and empty cue sets, and never refreshes anything.
 * **Deletes stay deleted** (LIBM-140): a track the user removed is not brought
   back by an import, and is left out of every imported playlist.
-* **Dry-run by default**, inside one discarded write unit with a silent bus,
-  exactly like the rekordbox and folder ingests.
+* **Dry-run by default**, inside one discarded
+  :meth:`StateWriter.transaction` (``commit=False``) so queued bus events
+  are dropped, exactly like the rekordbox and folder ingests.
 
 What it does not carry yet, by design and reported rather than hidden:
 beatgrids (the state ``beatgrid`` field has no importer contract yet), track
@@ -63,7 +64,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state import provenance as state_provenance
-from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import compute_playlist_id
 
@@ -296,11 +296,8 @@ def ingest_library(  # noqa: PLR0913 - one keyword per import option, all option
     now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
     report = VendorIngestReport(vendor=vendor, source=source, dry_run=dry_run)
     conn = writer.raw_conn
-    original_bus = writer.bus
-    if dry_run:
-        writer.bus = _DryRunSilentBus()  # type: ignore[assignment]
     try:
-        with state_db.write_unit(conn, f"ingest_{vendor}", keep=not dry_run):
+        with writer._join_or_begin(commit=not dry_run):
             by_path = _live_tracks_by_path(conn)
             stamp = modified_at or now_fn().astimezone(_dt.UTC).isoformat()
             entry_to_sid: dict[str, str] = {}
@@ -331,7 +328,6 @@ def ingest_library(  # noqa: PLR0913 - one keyword per import option, all option
                 ),
             )
     finally:
-        writer.bus = original_bus
         report.duration_s = round(time.perf_counter() - start, 3)
     return report
 
@@ -558,15 +554,13 @@ def read_vendor(vendor: Vendor, source: Path) -> VendorRead:
             options=SeratoAdapterOptions(audio_root=serato_volume_root(source), absolute_paths_are_logical=False)
         )
         library, adapter_report = adapter.read(source)
-        # The reader drops a whole row only for want of a file path.
-        dropped = sum(1 for w in adapter_report.warnings if w.field == "location" and w.action == "dropped")
+        dropped = _location_entries_dropped(adapter_report)
         return VendorRead(library, serato_path_resolver(source), _count_warnings(adapter_report, _SERATO_READER_LOSSES), dropped)
     if vendor == "traktor":
         from apps.adapters.traktor.adapter import TraktorAdapter
 
         library, adapter_report = TraktorAdapter().read(source)
-        # The reader drops a whole entry only for want of a file location.
-        dropped = sum(1 for w in adapter_report.warnings if w.field == "location" and w.action == "dropped")
+        dropped = _location_entries_dropped(adapter_report)
         return VendorRead(library, traktor_path_resolver(), _count_warnings(adapter_report, _TRAKTOR_READER_LOSSES), dropped)
     if vendor == "rekordbox-xml":
         from apps.adapters.rekordbox_xml import read_rekordbox_xml
@@ -619,6 +613,15 @@ _TRAKTOR_READER_LOSSES = frozenset({
     ("cue_points.position", "dropped"),
     ("cue_points.color", "downgraded"),
 })
+
+
+def _location_entries_dropped(adapter_report: AdapterReport) -> int:
+    """Whole library entries a reader dropped for want of a file path."""
+    return sum(
+        1
+        for warning in adapter_report.warnings
+        if warning.field == "location" and warning.action == "dropped"
+    )
 
 
 def _count_warnings(adapter_report: AdapterReport, losses: frozenset[tuple[str, str]]) -> dict[str, int]:

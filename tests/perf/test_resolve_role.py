@@ -14,21 +14,14 @@ import pytest
 from scripts.diagnostics.probe_process_family import ProcessRow
 from scripts.perf.resolve_role import RoleUnresolved, _reject_ambiguous_shell
 
-SHELL_A = ProcessRow(
-    pid=100, ppid=1, pgid=100, command="/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
-)
-SHELL_B = ProcessRow(
-    pid=200, ppid=1, pgid=200, command="/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
-)
+SHELL_A = ProcessRow(pid=100, ppid=1, pgid=100, command="/Applications/Open DJ.app/Contents/MacOS/opendj-desktop")
+SHELL_B = ProcessRow(pid=200, ppid=1, pgid=200, command="/Applications/Open DJ.app/Contents/MacOS/opendj-desktop")
 NOT_A_SHELL = ProcessRow(pid=50, ppid=1, pgid=50, command="/usr/libexec/some-other-daemon")
 ENGINE_OF_SHELL_A = ProcessRow(
     pid=101,
     ppid=100,
     pgid=100,
-    command=(
-        "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
-        "-m apps.engine_core serve"
-    ),
+    command=("/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 -m apps.engine_core serve"),
 )
 
 

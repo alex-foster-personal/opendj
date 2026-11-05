@@ -1,4 +1,5 @@
 """SMART-03 -- per-key debouncer."""
+
 from __future__ import annotations
 
 import pytest

@@ -172,10 +172,12 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "pair-transitions",
         "Saved transitions between two tracks",
-        state_tables("pair_transitions"),
+        state_tables("pair_transitions", "pair_decisions", "pair_verdicts"),
         "machine_local",
         "Each machine remembers its own transitions for now (migrations_v25.py, ADR-0129). "
-        "Keys are stable ids, so syncing the table later is additive.",
+        "Keys are stable ids, so syncing the table later is additive. pair_decisions (migrations_v28.py, "
+        "ADR-0139) is AutoPlay's decision record beside it and pair_verdicts the listener's one-tap verdict, machine-local "
+        "the same way.",
         (),
     ),
     fixed(
@@ -442,6 +444,15 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
         # playlist_memberships/playlist_pins, which genuinely reference
         # playlists(playlist_id)) -- same as its sibling "play-orders" above,
         # which declares both of its deps as logical for the same reason.
+        (logical("library-playlists"), logical("library-tracks")),
+    ),
+    fixed(
+        "set-targets",
+        "Set target length and skip-in-set flags",
+        state_tables("set_targets", "set_skips"),
+        "not_yet_built",
+        "A playlist-as-set's optional target length and the tracks marked skip "
+        f"in set (LIBUX-8679). {_OUTSIDE_SYNC_SET}",
         (logical("library-playlists"), logical("library-tracks")),
     ),
     fixed(

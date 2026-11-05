@@ -1,4 +1,5 @@
 """Tests for apps.shared.state.db -- connection leak regression."""
+
 from __future__ import annotations
 
 import sqlite3

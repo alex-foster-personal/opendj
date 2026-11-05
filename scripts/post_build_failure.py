@@ -75,9 +75,7 @@ def post_batch(batch_file: Path, host: str | None) -> int:
             host=host,
             build_sha=record["head_sha"],
         )
-    print(
-        f"[sink] listed={len(records)} posted={len(records) - len(already)} already={len(already)}"
-    )
+    print(f"[sink] listed={len(records)} posted={len(records) - len(already)} already={len(already)}")
     missing = sorted(set(records) - _keys_in_sink(set(records)))
     for key in missing:
         print(f"[sink] not in the sink after posting:{key.rstrip()}", file=sys.stderr)
@@ -104,9 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.from_log is not None:
         text = args.from_log.read_text(encoding="utf-8")
-        parsed = event_from_headless_dmg_log(
-            text, host=args.host, build_sha=args.sha
-        )
+        parsed = event_from_headless_dmg_log(text, host=args.host, build_sha=args.sha)
         if parsed is None:
             print("no FAILED verdict")
             return 0

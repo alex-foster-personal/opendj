@@ -2,6 +2,7 @@
 
 [if] rb-djay sync HTTP routes are called [then] status, plan, and apply wiring match SYNC contracts, [else stop].
 """
+
 from __future__ import annotations
 
 import csv
@@ -93,7 +94,9 @@ def test_match_with_injected_tracks(client: TestClient, tmp_path: Path, monkeypa
     assert Path(body["matches_csv"]).exists()
 
 
-def test_playlist_plan_with_fixture_matches(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_playlist_plan_with_fixture_matches(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     matches = tmp_path / "matches.csv"
     matches.parent.mkdir(parents=True, exist_ok=True)
     with matches.open("w", newline="", encoding="utf-8") as fp:
@@ -173,7 +176,9 @@ def test_playlist_apply_live_without_risks_flag_is_refused(client: TestClient) -
 
 @pytest.mark.requirement("SYNC-05")
 @pytest.mark.requirement("SYNC-06")
-def test_metadata_plan_writes_diff_csv_paths(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_metadata_plan_writes_diff_csv_paths(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     matches = tmp_path / "matches.csv"
     with matches.open("w", newline="", encoding="utf-8") as fp:
         writer = csv.writer(fp)

@@ -46,11 +46,12 @@ _STATUS = ("status", "--no-github", "--no-size", "--no-remote", "--json")
 def _real_fleet_af() -> Path:
     """The fleet-af copy the stub would run, or an UNAVAILABLE report naming where it looked."""
     home = worktree_tools.fleet_af_home()
-    missing = [t for t in worktree_tools.TOOLS
-               if not (home / worktree_tools.PACKAGE / f"{t}.py").is_file()]
+    missing = [t for t in worktree_tools.TOOLS if not (home / worktree_tools.PACKAGE / f"{t}.py").is_file()]
     if missing:
-        pytest.skip(f"UNAVAILABLE: no fleet-af {worktree_tools.PACKAGE} {missing} under {home} "
-                    "(set FLEET_AF_HOME or create the live clone); the hand-off was not measured")
+        pytest.skip(
+            f"UNAVAILABLE: no fleet-af {worktree_tools.PACKAGE} {missing} under {home} "
+            "(set FLEET_AF_HOME or create the live clone); the hand-off was not measured"
+        )
     return home
 
 
@@ -58,15 +59,21 @@ def _run(fleet_af: Path, *args: str, cwd: Path = REPO_ROOT) -> subprocess.Comple
     env = {**os.environ, "FLEET_AF_HOME": str(fleet_af), "PYTHONPATH": str(REPO_ROOT)}
     return subprocess.run(
         [sys.executable, "-m", "scripts.worktree_tools", *args],
-        cwd=cwd, env=env, capture_output=True, text=True, timeout=300, check=False,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
     )
 
 
 def _git_repo(path: Path) -> Path:
     path.mkdir(parents=True)
-    for cmd in (["init", "-q", "-b", "main"],
-                ["-c", "user.name=t", "-c", "user.email=t@example.invalid",
-                 "commit", "-q", "--allow-empty", "-m", "root"]):
+    for cmd in (
+        ["init", "-q", "-b", "main"],
+        ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "root"],
+    ):
         subprocess.run(["git", *cmd], cwd=path, check=True, capture_output=True)
     return path
 
@@ -78,10 +85,20 @@ def _listed(done: subprocess.CompletedProcess[str]) -> set[Path]:
 
 def test_lifecycle_argv_puts_this_checkout_right_after_the_subcommand() -> None:
     assert worktree_tools.tool_argv("lifecycle", ["guard", "--cap", "3"]) == [
-        "guard", "--repo", str(REPO_ROOT), "--cap", "3"]
+        "guard",
+        "--repo",
+        str(REPO_ROOT),
+        "--cap",
+        "3",
+    ]
     # A caller's --repo follows the stub's, so argparse's last-wins gives it the say.
     assert worktree_tools.tool_argv("lifecycle", ["status", "--repo", "/elsewhere"]) == [
-        "status", "--repo", str(REPO_ROOT), "--repo", "/elsewhere"]
+        "status",
+        "--repo",
+        str(REPO_ROOT),
+        "--repo",
+        "/elsewhere",
+    ]
 
 
 def test_worker_guard_argv_is_untouched() -> None:
@@ -112,8 +129,19 @@ def test_real_worker_guard_refusal_comes_back_unchanged(tmp_path: Path) -> None:
     A repository with no `origin` has no remote-tracking base, so the fail-closed
     guard must refuse and create nothing."""
     repo, target = _git_repo(tmp_path / "repo"), tmp_path / "target"
-    done = _run(_real_fleet_af(), "worker_guard", "create", "--repo", str(repo),
-                "--target", str(target), "--branch", "af--x", "--base", "origin/main")
+    done = _run(
+        _real_fleet_af(),
+        "worker_guard",
+        "create",
+        "--repo",
+        str(repo),
+        "--target",
+        str(target),
+        "--branch",
+        "af--x",
+        "--base",
+        "origin/main",
+    )
     assert done.returncode != 0 and done.returncode != worktree_tools.EXIT_UNAVAILABLE
     assert "origin/main" in done.stderr and not target.exists()
 
@@ -131,8 +159,7 @@ def test_unknown_tool_exits_2(tmp_path: Path) -> None:
     assert done.returncode == 2 and "usage:" in done.stderr
 
 
-def test_unset_home_resolves_to_the_live_clone(monkeypatch: pytest.MonkeyPatch,
-                                               tmp_path: Path) -> None:
+def test_unset_home_resolves_to_the_live_clone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] FLEET_AF_HOME is unset [then] the live clone, never ~/code/fleet-af, [else stop]."""
     monkeypatch.delenv("FLEET_AF_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))

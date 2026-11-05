@@ -43,7 +43,10 @@ describe('trackify-feed', () => {
 			{ stable_id: 'a', key: '8A', bpm: 120, file_exists: true }
 		]);
 		assert.equal(allTracks.epoch, 1);
-		assert.deepEqual(allTracks.rows.map((row) => row.stable_id), ['a']);
+		assert.deepEqual(
+			allTracks.rows.map((row) => row.stable_id),
+			['a']
+		);
 
 		// Switch to a genuinely different, EMPTY playlist. Rows must clear
 		// (already true before this fix), and the epoch must ALSO bump: the
@@ -51,7 +54,11 @@ describe('trackify-feed', () => {
 		// played/quarantined bookkeeping only on an epoch change, and without
 		// one here, revisiting a scope later would wrongly treat a track as
 		// "already played" from a different scope's history.
-		const emptyPlaylist = controller.step(true, { playlist_id: 'p1', name: 'Empty', kind: 'playlist' }, []);
+		const emptyPlaylist = controller.step(
+			true,
+			{ playlist_id: 'p1', name: 'Empty', kind: 'playlist' },
+			[]
+		);
 		assert.deepEqual(emptyPlaylist.rows, []);
 		assert.equal(
 			emptyPlaylist.epoch,
@@ -67,7 +74,11 @@ describe('trackify-feed', () => {
 			{ playlist_id: 'p1', name: 'Empty', kind: 'playlist' },
 			[]
 		);
-		assert.equal(samePlaylistAgain.epoch, 2, 'polling the same empty scope again must not re-bump epoch');
+		assert.equal(
+			samePlaylistAgain.epoch,
+			2,
+			'polling the same empty scope again must not re-bump epoch'
+		);
 	});
 
 	describe('pagination hard limit', () => {
@@ -90,7 +101,16 @@ describe('trackify-feed', () => {
 			// fail loud rather than be presented as complete at the 200-page cap.
 			globalThis.fetch = async () =>
 				jsonResponse({
-					items: [{ stable_id: 'x', key: null, bpm: null, file_exists: true, file_availability: 'AVAILABILITY_PRESENT', has_rb_mapping: true }],
+					items: [
+						{
+							stable_id: 'x',
+							key: null,
+							bpm: null,
+							file_exists: true,
+							file_availability: 'AVAILABILITY_PRESENT',
+							has_rb_mapping: true
+						}
+					],
 					next_cursor: 'still-more'
 				});
 
@@ -121,8 +141,7 @@ describe('trackify-feed', () => {
 				);
 
 			await assert.rejects(
-				() =>
-					feed.fetchTrackifyViewRows({ playlist_id: 'pl-1', name: 'Warmup', kind: 'playlist' }),
+				() => feed.fetchTrackifyViewRows({ playlist_id: 'pl-1', name: 'Warmup', kind: 'playlist' }),
 				/exceeds .* rows/
 			);
 		});
@@ -132,7 +151,16 @@ describe('trackify-feed', () => {
 			globalThis.fetch = async () => {
 				calls += 1;
 				return jsonResponse({
-					items: [{ stable_id: 'x', key: null, bpm: null, file_exists: true, file_availability: 'AVAILABILITY_PRESENT', has_rb_mapping: true }],
+					items: [
+						{
+							stable_id: 'x',
+							key: null,
+							bpm: null,
+							file_exists: true,
+							file_availability: 'AVAILABILITY_PRESENT',
+							has_rb_mapping: true
+						}
+					],
 					next_cursor: calls < 3 ? 'more' : null
 				});
 			};

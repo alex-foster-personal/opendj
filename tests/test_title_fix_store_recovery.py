@@ -37,7 +37,8 @@ def test_a_scan_that_died_after_its_auto_apply_committed_keeps_the_batch_link(tm
     assert store.expire_stale_scans(stale_before=FUTURE) == 1, "control: the scan must actually expire"
     expired = store.get_scan(scan.scan_id)
     assert expired.state == "failed" and expired.auto_batch_id == batch.batch_id, (
-        f"if the link is lost then the scan status hides an undoable automatic change: {expired}")
+        f"if the link is lost then the scan status hides an undoable automatic change: {expired}"
+    )
 
 
 @pytest.mark.requirement("TFIX-01")
@@ -53,7 +54,9 @@ def test_an_uncommitted_or_manual_batch_is_never_linked_to_a_dead_scan(tmp_path:
     unstamped = store.create_batch("auto", "safe_tier", 1)
     store.claim_pending([second.proposal_id], unstamped.batch_id, {})
     store.expire_stale_scans(stale_before=FUTURE)
-    assert store.get_scan(scan.scan_id).auto_batch_id is None, "if a manual or unstamped batch is linked then the link lies"
+    assert store.get_scan(scan.scan_id).auto_batch_id is None, (
+        "if a manual or unstamped batch is linked then the link lies"
+    )
 
 
 @pytest.mark.requirement("TFIX-01")
@@ -66,9 +69,13 @@ def test_a_failed_rescan_keeps_the_earlier_pending_proposal_and_a_usable_one_rep
     second_scan = store.create_scan(1, 0.5)
     unknown = Verdict("unknown", "", "", "none", Proposal("", ""), error="provider timeout")
     store.add_verdict(second_scan.scan_id, Track("t1", "raw title", ""), [], unknown)
-    assert store.get_proposals([pending.proposal_id])[0].state == "pending", "if an unknown rescan supersedes it then paid work is lost"
+    assert store.get_proposals([pending.proposal_id])[0].state == "pending", (
+        "if an unknown rescan supersedes it then paid work is lost"
+    )
     store.add_verdict(second_scan.scan_id, Track("t1", "raw title", ""), [], _fixed("Cleaner Title"))
-    assert store.get_proposals([pending.proposal_id])[0].state == "superseded", "control: a usable rescan still replaces it"
+    assert store.get_proposals([pending.proposal_id])[0].state == "superseded", (
+        "control: a usable rescan still replaces it"
+    )
 
 
 @pytest.mark.requirement("TFIX-01")
@@ -89,7 +96,9 @@ def test_a_proposal_lookup_larger_than_the_sqlite_variable_cap_still_returns_eve
     monkeypatch.setattr(sqlite3, "connect", capped_connect)
     monkeypatch.setattr(title_fix_store.CFG, "SQL_IN_CHUNK", 3)
     ids = [r.proposal_id for r in rows]
-    assert [p.proposal_id for p in store.get_proposals(ids)] == ids, "if the lookup is one IN (...) then a big auto-apply fails"
+    assert [p.proposal_id for p in store.get_proposals(ids)] == ids, (
+        "if the lookup is one IN (...) then a big auto-apply fails"
+    )
 
 
 def test_chunked_splits_without_losing_or_reordering_ids() -> None:
@@ -103,18 +112,26 @@ def test_chunked_splits_without_losing_or_reordering_ids() -> None:
 @pytest.mark.requirement("TFIX-06")
 @pytest.mark.parametrize(
     ("content", "needle"),
-    [('{"enabled": tr', "not valid JSON"), (json.dumps({**FULL_CONFIG, "tag_families": None}), "tag_families must be a list"),
-     ("[1, 2]", "not a JSON object"), ('{"enabled": true, "bogus": 1}', "unknown keys"),
-     ('{"enabled": true}', "missing keys")],
+    [
+        ('{"enabled": tr', "not valid JSON"),
+        (json.dumps({**FULL_CONFIG, "tag_families": None}), "tag_families must be a list"),
+        ("[1, 2]", "not a JSON object"),
+        ('{"enabled": true, "bogus": 1}', "unknown keys"),
+        ('{"enabled": true}', "missing keys"),
+    ],
 )
-def test_a_malformed_saved_config_raises_config_error_naming_the_file(tmp_path: Path, content: str, needle: str) -> None:
+def test_a_malformed_saved_config_raises_config_error_naming_the_file(
+    tmp_path: Path, content: str, needle: str
+) -> None:
     """[if] the saved config is truncated, mis-shaped or has unknown keys [then] load_config raises ConfigError naming it, [else stop]."""
     paths = title_fix_store.StorePaths(tmp_path / "data" / "state" / "state.db")
     paths.config.parent.mkdir(parents=True)
     paths.config.write_text(content, encoding="utf-8")
     with pytest.raises(title_fix_store.ConfigError, match=needle) as raised:
         title_fix_store.load_config(paths)
-    assert paths.config.name in str(raised.value), "if the error names no file then the operator cannot tell what to repair"
+    assert paths.config.name in str(raised.value), (
+        "if the error names no file then the operator cannot tell what to repair"
+    )
     paths.config.unlink()
     assert title_fix_store.load_config(paths) == title_fix_store.TitleFixConfig(), "control: no file means the defaults"
 
@@ -124,9 +141,13 @@ def test_a_producer_credit_the_proposal_removes_is_recorded_on_the_proposal(tmp_
     """[if] a proposal removes a producer credit from the title [then] the credit is stored in its notes, [else stop]."""
     store = _store(tmp_path)
     scan = store.create_scan(2, 0.5)
-    with_credit = Verdict("fixed", "Pine Ogre", "Clean Title", "regex", Proposal("Pine Ogre", "Clean Title"), producer="Marrow Vell")
+    with_credit = Verdict(
+        "fixed", "Pine Ogre", "Clean Title", "regex", Proposal("Pine Ogre", "Clean Title"), producer="Marrow Vell"
+    )
     row = store.add_verdict(scan.scan_id, Track("t1", "Clean Title - prod. Marrow Vell", "Pine Ogre"), [], with_credit)
-    assert "producer credit removed from the title: Marrow Vell" in row.notes, f"if the credit is not recorded it is lost on apply: {row.notes}"
+    assert "producer credit removed from the title: Marrow Vell" in row.notes, (
+        f"if the credit is not recorded it is lost on apply: {row.notes}"
+    )
     plain = store.add_verdict(scan.scan_id, Track("t2", "raw", "Pine Ogre"), [], _fixed("Plain"))
     assert not any("producer" in note for note in plain.notes), "control: no credit, no note"
 
@@ -136,9 +157,13 @@ def test_a_scan_records_the_auto_apply_policy_it_started_under(tmp_path: Path) -
     """[if] a scan begins under a policy [then] the scan row keeps that policy whatever the settings say later, [else stop]."""
     store = _store(tmp_path)
     scan = store.begin_scan(1, 0.5, auto_apply_policy="safe_tier", stale_before="0")
-    assert scan is not None and scan.auto_apply_policy == "safe_tier", f"if the policy is not recorded the panel shows the wrong one: {scan}"
+    assert scan is not None and scan.auto_apply_policy == "safe_tier", (
+        f"if the policy is not recorded the panel shows the wrong one: {scan}"
+    )
     title_fix_store.save_config(store.paths, title_fix_store.TitleFixConfig(True, "off", 0.5, ("version",)))
-    assert store.get_scan(scan.scan_id).auto_apply_policy == "safe_tier", "a settings change must not rewrite a running scan's policy"
+    assert store.get_scan(scan.scan_id).auto_apply_policy == "safe_tier", (
+        "a settings change must not rewrite a running scan's policy"
+    )
 
 
 @pytest.mark.requirement("TFIX-01")

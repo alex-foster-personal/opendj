@@ -18,7 +18,7 @@ decks).
 
 ``MUSIC_DJ_LYRIC_INDEX`` is a fail-fast enum, ``on`` (the default) or
 ``off``. Only the real daemon entry point reads it
-(``app.py:_build_default_app``); ``create_app`` takes ``lyric_index=False``
+(``app_boot.py:_build_default_app``); ``create_app`` takes ``lyric_index=False``
 so no test builds a thread.
 
 Requirements (mini-PRD):

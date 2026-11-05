@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 485735,
+  "measured_with_pr": 485914,
+  "sha": "bfadc9cc52d29493fa804e595f5c08e417e5be44",
+  "date": "Thu 05 Nov 2026",
+  "reason": "E2e-only PR under apps/webui/frontend; no src or lazy-chunk edits. CI PR-delta measured 179 B gzip other-lazy drift over merge-base main (above the 128 B noise floor).",
+  "payback": "none planned; incidental build variance, not intentional surface growth"
+}

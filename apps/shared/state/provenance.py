@@ -69,9 +69,16 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # {"offset_ms", "beat_shift"} per grid source, applied when /anlz
         # serves the grid (apps/shared/state/grid_edit.py).
         "beatgrid_edit",
+        # GRID-OCTAVE-02: {"v": 1, "source": "own"|"mik"|null}, the user's pick
+        # where our tempo and Mixed In Key's disagree (apps/shared/state/tempo_pick.py).
+        "grid_tempo_pick",
         # AUTOGAIN-04: the user's own auto gain offset in dB (a float), set
         # from the deck's AG readout or PUT /auto-gain/tracks/{id}/user-offset.
         "auto_gain_user_db",
+        # Classical recording metadata as one JSON object (composer, catalogue,
+        # movement, soloist, ensemble, conductor, label, recording_year). Written
+        # only by apps.shared.state.library_org.set_classical.
+        "classical",
     }
 )
 

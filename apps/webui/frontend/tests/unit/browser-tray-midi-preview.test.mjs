@@ -59,7 +59,9 @@ test('openIoView pins the headphone I/O menu without auto-opening MIDI drawer', 
 		'utf8'
 	);
 	const cluster = readFileSync(
-		fileURLToPath(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)),
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)
+		),
 		'utf8'
 	);
 	assert.doesNotMatch(ioSurface, /toggleMidiPanel/);
@@ -71,10 +73,15 @@ test('openIoView pins the headphone I/O menu without auto-opening MIDI drawer', 
 
 test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to show', () => {
 	const cluster = readFileSync(
-		fileURLToPath(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)),
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)
+		),
 		'utf8'
 	);
-	assert.match(cluster, /midiLabelStatus\(midiState\.permission, midiUi\.requestPending, midiMappedCount > 0, midiOn\)/);
+	assert.match(
+		cluster,
+		/midiLabelStatus\(midiState\.permission, midiUi\.requestPending, midiMappedCount > 0, midiOn\)/
+	);
 	// An explicit off must read the persisted choice, not a constant (Codex P2, PR #3896).
 	assert.match(cluster, /const midiOn = \$derived\(midiEnabledPersisted\(\)\)/);
 	assert.match(cluster, /midiLabelTitle\([^)]*, midiOn\)/);
@@ -84,7 +91,11 @@ test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to sh
 	for (const status of ['grey', 'green', 'amber', 'red']) {
 		assert.match(cluster, new RegExp(`\\.midi-btn\\.st-${status} \\{`));
 	}
-	assert.match(cluster, /bullets=\{\[midiTitle, /, 'the MIDI explainer must say why the color is what it is');
+	assert.match(
+		cluster,
+		/bullets=\{\[midiTitle, /,
+		'the MIDI explainer must say why the color is what it is'
+	);
 	assert.match(cluster, /<MidiStatusGlyph glyph=\{midiGlyph\} \/>/);
 });
 

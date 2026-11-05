@@ -17,14 +17,15 @@ import logging
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.autodj.live import heard_on_deck
 from apps.autodj.lookahead import Decision, decide
-from apps.autodj.pair_memory import PairTransition, get_pair_transition
+from apps.autodj.pair_memory import PairTransition, get_pair_transition, save_decision
 from apps.autodj.profile import TrackProfile
 from apps.shared.state import db as state_db_module
 from apps.transition_score.live import (
@@ -96,6 +97,8 @@ class TransitionDecideIn(BaseModel):
     in_deck: int = Field(ge=1, le=4)
     #: AutoPlay's own picks, best first: the chooser picks among these, never beyond them.
     shortlist: list[str] = Field(min_length=1, max_length=8)
+    #: AUTOPLAY-HEARD: the key shift each shortlisted track would load with (the page's own load rule); absent means 0.
+    in_key_shifts: dict[str, Annotated[int, Field(ge=-6, le=6)]] = Field(default_factory=dict)
     intent: str | None = None
     recent_styles: list[str] = Field(default_factory=list, max_length=64)
     #: The earliest a window may start, ms on the outgoing track's clock: what the page can still reach.
@@ -289,6 +292,35 @@ def plan_transition(
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "deck_empty", str(error))
 
 
+def _deck_state(mirror: Mapping[str, Any], deck: int) -> Mapping[str, Any]:
+    decks = mirror.get("decks")
+    state = decks.get(str(deck)) if isinstance(decks, Mapping) else None
+    return state if isinstance(state, Mapping) else {}
+
+
+def _record_decision(
+    state_db: Path, out_id: str, decision: Decision, body: TransitionDecideIn, unprofiled: list[dict[str, str]]
+) -> None:
+    """AUTOPLAY-8881: keep the decision beside the pair's plan, for ``GET /dj/transitions/last``. Pure logging; an
+    in track of "" stores a decision that chose nothing. The shortlist is the one asked, and tracks dropped before
+    planning (no analysis) are kept among the rejections, and the intent and recent styles the chooser weighed (its variety
+    memory) are kept too, so a loss to intent or to the variety cap can be explained."""
+    stored = decision.to_json()
+    document = {
+        **stored,
+        "shortlist": list(body.shortlist),
+        "rejected": [*unprofiled, *stored["rejected"]],
+        "intent": body.intent,
+        "recent_styles": list(body.recent_styles),
+    }
+    conn = state_db_module.open_rw(state_db)
+    try:
+        with state_db_module.write_unit(conn, "pair_decision"):
+            save_decision(conn, out_id, decision.track or "", document)
+    finally:
+        conn.close()
+
+
 def _shortlist_profiles(
     source: ServingTrackSource, shortlist: list[str]
 ) -> tuple[list[TrackProfile], list[dict[str, str]]]:
@@ -324,13 +356,19 @@ def decide_transition(
     live = LiveRequest(body.out_deck, body.in_deck, body.intent, tuple(body.recent_styles))
     try:
         out_id = _track(mirror, body.out_deck)
-        out_profile = source.profile(out_id)
+        out_profile = heard_on_deck(source.profile(out_id), _deck_state(mirror, body.out_deck), with_tempo=True)
         bar_now = _bar_now(out_profile, mirror, body.out_deck)
     except DeckNotPlannable as error:
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "deck_empty", str(error))
     except (PairNotTryable, TryError) as error:
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "no_analysis", str(error))
     profiles, unprofiled = _shortlist_profiles(source, body.shortlist)
+    follower_range = _deck_state(mirror, body.in_deck).get("pitch_range")
+    reach = float(follower_range) if isinstance(follower_range, (int, float)) and follower_range > 0 else None
+    profiles = [
+        profile.as_heard(key_shift=body.in_key_shifts.get(profile.stable_id, 0), pitch_range_pct=reach)
+        for profile in profiles
+    ]
     decision = decide(
         out_profile,
         profiles,
@@ -343,6 +381,7 @@ def decide_transition(
     )
     answer = _decide_document(out_profile, decision, bar_now)
     answer.rejected = [*unprofiled, *answer.rejected]
+    _record_decision(state_db, out_id, decision, body, unprofiled)
     return answer
 
 

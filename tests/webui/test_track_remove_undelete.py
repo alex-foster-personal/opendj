@@ -146,14 +146,11 @@ def test_remove_then_undelete_in_two_playlists_leaves_file_untouched(
             (playlist_b["playlist_id"], 1),
         ):
             membership_deleted_at = conn.execute(
-                "SELECT deleted_at FROM playlist_memberships "
-                "WHERE playlist_id = ? AND position = ?",
+                "SELECT deleted_at FROM playlist_memberships WHERE playlist_id = ? AND position = ?",
                 (playlist_id, position),
             ).fetchone()[0]
             assert membership_deleted_at == body["deleted_at"]
-        changelog_tables = {
-            row[0] for row in conn.execute("SELECT DISTINCT table_name FROM local_changelog")
-        }
+        changelog_tables = {row[0] for row in conn.execute("SELECT DISTINCT table_name FROM local_changelog")}
     finally:
         conn.close()
     assert "tracks" in changelog_tables

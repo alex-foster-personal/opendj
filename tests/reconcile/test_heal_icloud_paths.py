@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 
@@ -77,6 +78,7 @@ def test_classify_no_twin() -> None:
     assert row.status == "no_twin"
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="zone helper Darwin-scoped")
 def test_build_plan_finds_music_twin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -200,7 +202,7 @@ def _twin(tmp_path: Path) -> Path:
     return twin
 
 
-def _recording_console(monkeypatch: pytest.MonkeyPatch) -> "io.StringIO":
+def _recording_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     import io as _io
 
     from rich.console import Console

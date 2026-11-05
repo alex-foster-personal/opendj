@@ -2,6 +2,7 @@
 
 [if] availability rows are upserted for a track [then] scoped lookup returns the stored state, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -45,9 +46,7 @@ def state_db_path(tmp_path: Path) -> Path:
     return target
 
 
-def test_scoped_existing_lookup_matches_full_lookup(
-    state_db_path: Path, tmp_path: Path
-) -> None:
+def test_scoped_existing_lookup_matches_full_lookup(state_db_path: Path, tmp_path: Path) -> None:
     audio_dir = tmp_path / "audio"
     audio_dir.mkdir()
     paths = [str(audio_dir / f"{index}.mp3") for index in range(4)]

@@ -81,6 +81,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from apps.shared.env_on_off import read_on_off_environ
 from apps.shared.shutdown_bound import SpawnAfterQuit, quit_started
 from apps.webui.server import coverage_cloud_vocals as cloud_vocals_mod
 from apps.webui.server import coverage_drain_analysis as analysis_step
@@ -137,12 +138,13 @@ def build_for_app(app: Any) -> CoverageDrain:
 
 
 def arm_from_environ(environ: Mapping[str, str]) -> bool:
-    raw = environ.get(COVERAGE_DRAIN_ENV, "on").strip().lower()
-    if raw not in COVERAGE_DRAIN_VALUES:
-        raise ValueError(
-            f"{COVERAGE_DRAIN_ENV}={raw!r} is not a member of {COVERAGE_DRAIN_VALUES}"
-        )
-    return raw == "on"
+    return read_on_off_environ(
+        environ,
+        env_key=COVERAGE_DRAIN_ENV,
+        allowed=COVERAGE_DRAIN_VALUES,
+        default="on",
+        normalize=True,
+    )
 
 
 #-----------------------------------------------------------------------------

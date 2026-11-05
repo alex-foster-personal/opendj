@@ -19,6 +19,7 @@ Found live Tue 3 Nov 2026: 20 of 31 tracks of one playlist had a blank key.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,9 +47,19 @@ pytestmark = pytest.mark.requirement("NATIVE-36")
 
 def _key_item(stable_id: str) -> queue_store.QueueItem:
     return queue_store.QueueItem(
-        batch_id="qb_test", stable_id=stable_id, lane="key", backend=BACKEND_NAME,
-        file_path="/x.mp3", duration_s=None, predicted_peak_mb=None, state="running",
-        reason=None, attempts=1, enqueued_at="", started_at=None, finished_at=None,
+        batch_id="qb_test",
+        stable_id=stable_id,
+        lane="key",
+        backend=BACKEND_NAME,
+        file_path="/x.mp3",
+        duration_s=None,
+        predicted_peak_mb=None,
+        state="running",
+        reason=None,
+        attempts=1,
+        enqueued_at="",
+        started_at=None,
+        finished_at=None,
         runner_id=None,
     )
 

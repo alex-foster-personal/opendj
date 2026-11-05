@@ -97,9 +97,7 @@ def test_validator_never_writes(fleet: sqlite3.Connection) -> None:
     before = fleet.total_changes
     validate_fleet_policy(
         fleet,
-        _proposal(
-            excluded_tables=("tracks",), policies=(PolicyCell(SPOKE, "audio", "excluded", None),)
-        ),
+        _proposal(excluded_tables=("tracks",), policies=(PolicyCell(SPOKE, "audio", "excluded", None),)),
     )
     assert fleet.total_changes == before
 
@@ -180,9 +178,7 @@ def test_pin_target_passes_for_live_playlist(fleet: sqlite3.Connection) -> None:
 
 def test_library_table_exclusion_is_an_error(fleet: sqlite3.Connection) -> None:
     """if excluding a sync-set table or an unknown table passes then broken"""
-    fired = _fired(
-        fleet, _proposal(excluded_tables=("tracks", "no_such_table")), "library_non_configurable"
-    )
+    fired = _fired(fleet, _proposal(excluded_tables=("tracks", "no_such_table")), "library_non_configurable")
     assert {(v.subject, v.severity) for v in fired} == {
         ("tracks", "error"),
         ("no_such_table", "error"),

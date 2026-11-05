@@ -53,5 +53,9 @@ export const OneUnticked: Story = { args: { selected: new Set(['s1', 's3']) } };
 
 /** A store image that could not be fetched on Save names the track. */
 export const SaveFailed: Story = {
-	args: { error: 's2: itunes answered 404 for the cover', selected: new Set(['s2']), suggestions: [PENDING[1]] }
+	args: {
+		error: 's2: itunes answered 404 for the cover',
+		selected: new Set(['s2']),
+		suggestions: [PENDING[1]]
+	}
 };

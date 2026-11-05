@@ -268,7 +268,10 @@ test('[RESCUE-03] 20s ceiling resumes decoded decks and toast names undecoded', 
 	await pending;
 	const resume = calls.find((command) => command.type === 'rescue_resume');
 	assert.ok(resume);
-	assert.deepEqual(resume.decks.map((entry) => entry.deck), [1]);
+	assert.deepEqual(
+		resume.decks.map((entry) => entry.deck),
+		[1]
+	);
 	const toastMessage = toasts.at(-1)?.[0];
 	assert.match(String(toastMessage), /deck 3: not decoded/);
 });

@@ -8,8 +8,18 @@ const source = readFileSync(filename, 'utf8');
 
 test('finished-track eject waits for silent settled output at the actual track end', () => {
 	assert.ok(source.includes('const finished = $derived('));
-	const condition = source.slice(source.indexOf('const finished ='), source.indexOf('// ---- anlz source'));
-	for (const guard of ['deck.stable_id !== null', 'deck.duration_ms > 0', 'deck.position_ms >= deck.duration_ms', '!deck.audible', '!deck.playing', '!deck.transport_pending']) {
+	const condition = source.slice(
+		source.indexOf('const finished ='),
+		source.indexOf('// ---- anlz source')
+	);
+	for (const guard of [
+		'deck.stable_id !== null',
+		'deck.duration_ms > 0',
+		'deck.position_ms >= deck.duration_ms',
+		'!deck.audible',
+		'!deck.playing',
+		'!deck.transport_pending'
+	]) {
 		assert.ok(condition.includes(guard), `missing finished-state guard: ${guard}`);
 	}
 });

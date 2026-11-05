@@ -14,6 +14,7 @@ Single-line intent, in the repo's regression style:
   - if a truncated file is padded then corruption reads as data
   - if the envelope lands inside the cache entry then every listing row pays for it
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,10 @@ from scripts.modal_vocal_farm import (
 )
 
 SIGNATURE: dict[str, int] = {
-    "device": 1, "inode": 2, "size": 3, "mtime_ns": 4,
+    "device": 1,
+    "inode": 2,
+    "size": 3,
+    "mtime_ns": 4,
 }
 
 
@@ -91,15 +95,11 @@ def test_float16_does_not_flip_a_threshold(tmp_path: Path) -> None:
     ratios = rng.uniform(OFF_RATIO * 0.5, ON_RATIO * 2.0, frames)
     vocals = mix * ratios
 
-    exact = regions_from_envelope(
-        ratio_envelope(vocals.tolist(), mix.tolist(), HOP_S), frames * HOP_S
-    )
+    exact = regions_from_envelope(ratio_envelope(vocals.tolist(), mix.tolist(), HOP_S), frames * HOP_S)
     stored = read_envelope(_write(tmp_path, vocals.tolist(), mix.tolist()))
     assert stored is not None
     rebuilt = regions_from_envelope(
-        ratio_envelope(
-            stored.vocals_rms.tolist(), stored.mix_rms.tolist(), HOP_S
-        ),
+        ratio_envelope(stored.vocals_rms.tolist(), stored.mix_rms.tolist(), HOP_S),
         frames * HOP_S,
     )
     assert rebuilt == exact, "float16 storage changed the derived regions"
@@ -168,10 +168,10 @@ def test_envelope_never_lands_in_the_cache_entry(tmp_path: Path) -> None:
     audio.write_bytes(b"not really audio")
     # The REAL signature: write_entry refuses to publish if it disagrees with
     # the file on disk, which is the iCloud-inode guard doing its job.
-    signature = _signature_of(audio.stat())
+    signature = _signature_of(audio.stat(), audio.read_bytes())
     frames = 6
     result = {
-        "schema": 2,
+        "schema": vcache.VOCAL_CACHE_SCHEMA,
         "source": "demucs-htdemucs",
         "fps": 1.0 / HOP_S,
         "duration_s": 180.0,
@@ -193,9 +193,7 @@ def test_envelope_never_lands_in_the_cache_entry(tmp_path: Path) -> None:
     }
     track = GapTrack(stable_id="sid1", audio_path=audio)
     data_dir = tmp_path / "data"
-    _write_result(
-        data_dir, track, result, PRESETS["htdemucs-ov0.1"], signature, 123.0
-    )
+    _write_result(data_dir, track, result, PRESETS["htdemucs-ov0.1"], signature, 123.0)
 
     entry = json.loads(vcache.cache_path(data_dir, "sid1").read_text())
     assert "envelope" not in entry

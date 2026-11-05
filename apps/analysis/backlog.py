@@ -69,6 +69,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import fs_residency, platform_paths
+from apps.shared.hashing import sha256_file_hex as _content_digest
 from apps.shared.state import analysis_stale
 from apps.shared.state import locations as track_locations
 from apps.shared.state import sync_stamp as _sync_stamp
@@ -356,25 +357,6 @@ def _first_playable(
 #: "these bytes moved" bit. POSIX only. On Windows ``st_ctime`` is the file's
 #: CREATION time, which a same-length in-place rewrite does not move at all.
 CTIME_IS_INODE_CHANGE: bool = os.name != "nt"
-
-#: Read size for :func:`_content_digest`. One MiB keeps a whole track off the
-#: heap without paying a syscall per block.
-DIGEST_BLOCK_BYTES: int = 1 << 20
-
-
-def _content_digest(path: Path) -> str:
-    """sha256 over the whole file, streamed a block at a time.
-
-    Only reached where stat cannot answer the question (see
-    :data:`CTIME_IS_INODE_CHANGE`). Streamed rather than read whole because
-    the inputs are audio files and the caller is a timer.
-    """
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(DIGEST_BLOCK_BYTES), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
 
 def _content_token(
     path: Path, *, ctime_is_inode_change: bool = CTIME_IS_INODE_CHANGE

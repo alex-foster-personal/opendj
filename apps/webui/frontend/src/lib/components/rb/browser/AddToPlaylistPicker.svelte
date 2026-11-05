@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { PlaylistNode } from '$lib/rb/library-types';
-	import {
-		filterPlaylistsByName,
-		PLAYLIST_PICKER_SEARCH_THRESHOLD
-	} from '$lib/rb/add-to-playlist';
+	import { filterPlaylistsByName, PLAYLIST_PICKER_SEARCH_THRESHOLD } from '$lib/rb/add-to-playlist';
 
 	let {
 		open = false,

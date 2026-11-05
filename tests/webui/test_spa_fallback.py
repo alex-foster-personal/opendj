@@ -1,4 +1,5 @@
 """Production SPA routing regressions."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -17,7 +18,8 @@ def production_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     build_dir = tmp_path / "build"
     build_dir.mkdir()
     (build_dir / "index.html").write_text(
-        "<html><body>rekordbox parity</body></html>", encoding="utf-8",
+        "<html><body>rekordbox parity</body></html>",
+        encoding="utf-8",
     )
     assets_dir = build_dir / "assets"
     assets_dir.mkdir()
@@ -25,7 +27,8 @@ def production_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     immutable_dir = build_dir / "_app" / "immutable" / "assets"
     immutable_dir.mkdir(parents=True)
     (immutable_dir / "x.abc123.js").write_text(
-        "window.hashedChunk = true;", encoding="utf-8",
+        "window.hashedChunk = true;",
+        encoding="utf-8",
     )
     monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", build_dir)
 
@@ -36,7 +39,8 @@ def production_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
 
 @pytest.mark.parametrize("path", ["/performance", "/performance/preload1"])
 def test_extensionless_client_routes_serve_spa_index(
-    production_client: TestClient, path: str,
+    production_client: TestClient,
+    path: str,
 ) -> None:
     response = production_client.get(path)
 
@@ -55,7 +59,8 @@ def test_api_routes_take_precedence_over_spa(production_client: TestClient) -> N
 
 @pytest.mark.parametrize("path", ["/api/not-real", "/api/v1/not-real"])
 def test_unknown_api_route_remains_json_404(
-    production_client: TestClient, path: str,
+    production_client: TestClient,
+    path: str,
 ) -> None:
     response = production_client.get(path)
 
@@ -69,7 +74,8 @@ def test_unknown_api_route_remains_json_404(
     [(r"api\v1\not-real", False), (r"performance\preload1", True)],
 )
 def test_windows_mounted_paths_are_classified_correctly(
-    path: str, expected: bool,
+    path: str,
+    expected: bool,
 ) -> None:
     assert app_module._SpaStaticFiles._is_client_route(path) is expected
 
@@ -90,7 +96,8 @@ def test_existing_asset_is_served(production_client: TestClient) -> None:
 
 @pytest.mark.parametrize("path", ["/", "/index.html", "/performance"])
 def test_html_entry_responses_are_not_cached(
-    production_client: TestClient, path: str,
+    production_client: TestClient,
+    path: str,
 ) -> None:
     response = production_client.get(path)
 
@@ -105,5 +112,6 @@ def test_hashed_immutable_asset_is_cached_forever(
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
 
 pytestmark = pytest.mark.rb_parity

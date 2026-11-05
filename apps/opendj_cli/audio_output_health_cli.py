@@ -1,4 +1,8 @@
-"""``opendj audio_output_health`` / ``audio_switch_output``: issue #923 HTTP parity."""
+"""``opendj audio_output_health`` / ``audio_switch_output`` / ``audio_reconnect_speaker``.
+
+Issue #923 HTTP parity, plus AUDIO-DEVICE-05: the Reconnect speaker button's
+shell step (blueutil disconnect + reconnect of the main Bluetooth output).
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,11 @@ from apps.opendj_cli.refusal import fail as _fail
 
 OUTPUT_HEALTH_PATH = "/api/v1/audio/output-health"
 SWITCH_OUTPUT_PATH = "/api/v1/audio/switch-output"
+RECONNECT_SPEAKER_PATH = "/api/v1/audio/reconnect-speaker"
 REQUEST_TIMEOUT_S = 3.0
+# The engine waits up to 50 s on the shell; this outlasts it so the engine's
+# own 503 arrives rather than a client timeout.
+RECONNECT_TIMEOUT_S = 60.0
 
 
 def _request(
@@ -117,4 +125,44 @@ def run_switch_output(
     else:
         print(f"status: {response.status_code}")
         print(response.text)
+    return exit_for_status(response.status_code)
+
+
+def run_reconnect_speaker(
+    rest: Sequence[str],
+    *,
+    as_json: bool = False,
+    lock: Path | None = None,
+) -> int:
+    """AUDIO-DEVICE-05: same shell step as the I/O panel's Reconnect speaker button."""
+    if list(rest) != ["--confirm"]:
+        return _fail(
+            as_json,
+            "usage",
+            "audio_reconnect_speaker refuses without exactly --confirm; it disconnects and "
+            "reconnects the main Bluetooth output",
+            EXIT_FAILED,
+        )
+    try:
+        target = resolve_backend_base_url(lock_path=lock)
+    except (UsageError, EngineNotRunning) as error:
+        return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    url = f"{target.base_url.rstrip('/')}{RECONNECT_SPEAKER_PATH}"
+    try:
+        with httpx.Client(timeout=RECONNECT_TIMEOUT_S) as client:
+            response = client.post(url)
+    except httpx.HTTPError as error:
+        return _fail(as_json, "request_failed", str(error), EXIT_FAILED)
+    try:
+        payload: Any = response.json()
+    except json.JSONDecodeError:
+        payload = {"raw": response.text}
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    elif response.is_success:
+        print(f"reconnected: {payload.get('device_name')} in {payload.get('elapsed_ms')} ms")
+    else:
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        refusal = detail.get("error") if isinstance(detail, dict) else response.text
+        print(f"reconnect failed ({response.status_code}): {refusal}")
     return exit_for_status(response.status_code)

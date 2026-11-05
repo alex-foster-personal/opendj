@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -266,8 +267,32 @@ def pytest_runtestloop(session: pytest.Session) -> None:
     _log_ci_venv_probe("execution")
 
 
+HOST_MUTATION_ENV = "ODJ_ALLOW_HOST_MUTATION"
+
+
+def host_mutation_skip_reason(environ: Mapping[str, str]) -> str | None:
+    """Why a ``host_mutation`` test is skipped here, or None when it is opted in (TESTHOST-01).
+
+    A test that changes the real machine (its output volume, an attached disk
+    image, a USB eject) runs only where someone set ``ODJ_ALLOW_HOST_MUTATION=1``
+    on purpose: a plain run on a DJ's own Mac must never touch the speakers.
+    """
+    if environ.get(HOST_MUTATION_ENV) == "1":
+        return None
+    return (
+        f"OPT-IN: changes real host state; set {HOST_MUTATION_ENV}=1 to run it (TESTHOST-01)"
+    )
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip ``requires_*``-marked items whose platform/extra is absent."""
+    """Skip ``requires_*``-marked items whose platform/extra is absent, and
+    ``host_mutation`` items unless the run opted in (TESTHOST-01)."""
+    host_mutation_reason = host_mutation_skip_reason(os.environ)
+    if host_mutation_reason is not None:
+        skip_host_mutation = pytest.mark.skip(reason=host_mutation_reason)
+        for item in items:
+            if "host_mutation" in item.keywords:
+                item.add_marker(skip_host_mutation)
     skip_darwin = pytest.mark.skip(reason="macOS-only")
     skip_joblib = pytest.mark.skip(reason="needs joblib")
     skip_madmom = pytest.mark.skip(

@@ -1,7 +1,7 @@
 """Capture a live djay leaf-playlist TSAF blob + page-data sidecar.
 
 One-time helper for Phase 3 plan 02 step 1. See
-``.planning/phases/03-playlist-sync/03-02-PLAN.md`` for the full runbook.
+``(private path)`` for the full runbook.
 
 Manual preamble for the operator:
 
@@ -14,15 +14,16 @@ Manual preamble for the operator:
 
 Outputs:
 
-* ``tests/fixtures/djay/leaf_playlist.blob`` -- raw TSAF bytes (~100 bytes).
-* ``tests/fixtures/djay/leaf_playlist_one_member_page.bin`` -- the 8-byte
+* ``(private path)`` -- raw TSAF bytes (~100 bytes).
+* ``(private path)`` -- the 8-byte
   int64-LE page-data blob for the one-member case.
-* ``tests/fixtures/djay/leaf_playlist.parse.txt`` -- human-readable dump.
+* ``(private path)`` -- human-readable dump.
 
 Once the fixture lands, replace
 ``apps.sync.playlist_tsaf.PLAYLIST_TYPE_LEAF`` with the observed byte
 (or pass ``--leaf-type-byte=<byte>`` to the apply CLI).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -39,8 +40,7 @@ CAPTURE_TMP = paths.DATA_DIR / "sync" / "_capture.db"
 
 def _find_leaf_blob(con: sqlite3.Connection) -> tuple[str, bytes] | None:
     for key, data in con.execute(
-        "SELECT key, data FROM database2 "
-        "WHERE collection = 'mediaItemPlaylists' AND key != 'mediaItemPlaylist-root'"
+        "SELECT key, data FROM database2 WHERE collection = 'mediaItemPlaylists' AND key != 'mediaItemPlaylist-root'"
     ):
         if data is None:
             continue

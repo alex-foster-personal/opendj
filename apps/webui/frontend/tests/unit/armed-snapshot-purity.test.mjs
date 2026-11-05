@@ -23,20 +23,28 @@ let derivedDepth = 0;
 function guardedState(value) {
 	// Plain records only: a Proxy around a Set or Map breaks its methods'
 	// internal-slot receivers, and the armed records are plain objects.
-	if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+	if (
+		value === null ||
+		typeof value !== 'object' ||
+		Object.getPrototypeOf(value) !== Object.prototype
+	) {
 		return value;
 	}
 	return new Proxy(value, {
 		set(target, key, next) {
 			if (derivedDepth > 0) {
-				throw new Error(`state_unsafe_mutation: wrote ${String(key)} while a $derived was evaluating`);
+				throw new Error(
+					`state_unsafe_mutation: wrote ${String(key)} while a $derived was evaluating`
+				);
 			}
 			target[key] = next;
 			return true;
 		},
 		deleteProperty(target, key) {
 			if (derivedDepth > 0) {
-				throw new Error(`state_unsafe_mutation: deleted ${String(key)} while a $derived was evaluating`);
+				throw new Error(
+					`state_unsafe_mutation: deleted ${String(key)} while a $derived was evaluating`
+				);
 			}
 			return delete target[key];
 		}
@@ -69,7 +77,9 @@ function loadPlayingDeck() {
 	deck.playing = true;
 	deck.loop = null;
 	deck.position_ms = 200;
-	deck.anlz = { beatgrid: { source: 'rekordbox', beats: BEATS, beat_count: BEATS.length, status: 'ok' } };
+	deck.anlz = {
+		beatgrid: { source: 'rekordbox', beats: BEATS, beat_count: BEATS.length, status: 'ok' }
+	};
 }
 
 function unloadDeck() {
@@ -85,7 +95,13 @@ function clockedDriver(clock, cue = null) {
 		stableId: () => 'purity-deck',
 		refresh: async () => {},
 		hasRbMapping: () => true,
-		triggerState: () => ({ cue, playing: true, loopEngaged: false, positionSec: 0.2, beats: BEATS }),
+		triggerState: () => ({
+			cue,
+			playing: true,
+			loopEngaged: false,
+			positionSec: 0.2,
+			beats: BEATS
+		}),
 		jump: async () => {},
 		arm: async (_deck, _positionMs, armAt) => {
 			const at = typeof armAt === 'function' ? armAt(0.2) : armAt;
@@ -101,7 +117,15 @@ async function withArmedSession(arm, body) {
 	ipc.uiPrefs.beat_sync_max = true;
 	loadPlayingDeck();
 	const clock = { sec: 10 };
-	const cue = { slot: 'A', in_ms: 60000, out_ms: null, is_loop: false, beat_loop_size: null, color_table_index: null, comment: null };
+	const cue = {
+		slot: 'A',
+		in_ms: 60000,
+		out_ms: null,
+		is_loop: false,
+		beat_loop_size: null,
+		color_table_index: null,
+		comment: null
+	};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest(clockedDriver(clock, cue));
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -118,7 +142,13 @@ async function withArmedSession(arm, body) {
 
 test('the guarded $state really does refuse a write during a simulated $derived (control)', () => {
 	const probe = guardedState({ a: 1 });
-	assert.throws(() => asDerived(() => { probe.a = 2; }), /state_unsafe_mutation/);
+	assert.throws(
+		() =>
+			asDerived(() => {
+				probe.a = 2;
+			}),
+		/state_unsafe_mutation/
+	);
 	probe.a = 3;
 	assert.equal(probe.a, 3, 'outside a derived the same write is allowed');
 });
@@ -139,11 +169,15 @@ test('an expired armed waveform seek reads as null from inside a $derived withou
 	await withArmedSession(
 		() =>
 			window.musicDjToolsPerformance.dispatch({
-				type: 'waveform_seek', deck: 1, position_ms: 60000, snap: 'downbeat'
+				type: 'waveform_seek',
+				deck: 1,
+				position_ms: 60000,
+				snap: 'downbeat'
 			}),
 		async (clock) => {
 			assert.equal(
-				asDerived(() => ipc.queryPerformanceState()).decks[1].waveform_seek_armed.target_position_ms,
+				asDerived(() => ipc.queryPerformanceState()).decks[1].waveform_seek_armed
+					.target_position_ms,
 				60000
 			);
 			clock.sec += 60;
@@ -162,12 +196,25 @@ test('an expired quantized launch reads as null from inside a $derived without w
 	});
 	try {
 		await withArmedSession(
-			() => window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true, quantize: true }),
+			() =>
+				window.musicDjToolsPerformance.dispatch({
+					type: 'play',
+					deck: 1,
+					playing: true,
+					quantize: true
+				}),
 			async () => {
-				assert.ok(asDerived(() => ipc.queryPerformanceState()).decks[1].quantized_launch_armed.remaining_ms > 0);
+				assert.ok(
+					asDerived(() => ipc.queryPerformanceState()).decks[1].quantized_launch_armed
+						.remaining_ms > 0
+				);
 				launchClock.sec += 60;
 				const state = asDerived(() => ipc.queryPerformanceState());
-				assert.equal(state.decks[1].quantized_launch_armed, null, 'a launched arm reads as not armed');
+				assert.equal(
+					state.decks[1].quantized_launch_armed,
+					null,
+					'a launched arm reads as not armed'
+				);
 			}
 		);
 	} finally {
@@ -190,7 +237,13 @@ test('quantized launch armed reads null when the engine has no audio graph yet',
 	});
 	try {
 		await withArmedSession(
-			() => window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true, quantize: true }),
+			() =>
+				window.musicDjToolsPerformance.dispatch({
+					type: 'play',
+					deck: 1,
+					playing: true,
+					quantize: true
+				}),
 			async () => {
 				const state = asDerived(() => ipc.queryPerformanceState());
 				assert.equal(
@@ -216,7 +269,13 @@ test('a play press after a quantized launch has landed is not swallowed as a dis
 	});
 	try {
 		await withArmedSession(
-			() => window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true, quantize: true }),
+			() =>
+				window.musicDjToolsPerformance.dispatch({
+					type: 'play',
+					deck: 1,
+					playing: true,
+					quantize: true
+				}),
 			async () => {
 				launchClock.sec += 60;
 				// The expired record is no longer cleared by a read, so the

@@ -52,7 +52,11 @@ test('concurrent loads share one request and a held index makes none', async () 
 	assert.equal(index.libraryIndexIsCurrent(), true);
 	index.invalidateLibraryIndex();
 	assert.equal(index.libraryIndexIsCurrent(), false);
-	assert.deepEqual(index.peekLibraryIndex().items, ['a', 'b'], 'the stale copy is still there to paint');
+	assert.deepEqual(
+		index.peekLibraryIndex().items,
+		['a', 'b'],
+		'the stale copy is still there to paint'
+	);
 	await index.loadLibraryIndex();
 	assert.equal(calls.count, 2);
 });
@@ -78,7 +82,10 @@ test('All Tracks paints a held current index with no request at all', async () =
 		progressTotal: 3
 	});
 	assert.equal(loads + firstPages, 0);
-	assert.deepEqual(pane.rows.map((r) => r.stable_id), ['a', 'b', 'c']);
+	assert.deepEqual(
+		pane.rows.map((r) => r.stable_id),
+		['a', 'b', 'c']
+	);
 	assert.equal(pane.loading, false);
 	assert.equal(pane.load_progress, null);
 });
@@ -100,7 +107,10 @@ test('a stale held index paints at once, then the current index replaces it', as
 		}
 	});
 	assert.deepEqual(paintedRows, ['old']);
-	assert.deepEqual(pane.rows.map((r) => r.stable_id), ['a', 'b']);
+	assert.deepEqual(
+		pane.rows.map((r) => r.stable_id),
+		['a', 'b']
+	);
 });
 
 test('with nothing held, the first page paints and ONE index request completes the list', async () => {
@@ -127,7 +137,10 @@ test('with nothing held, the first page paints and ONE index request completes t
 	});
 	await fill;
 	assert.equal(loads, 1);
-	assert.deepEqual(pane.rows.map((r) => r.stable_id), ['a', 'b', 'c', 'd']);
+	assert.deepEqual(
+		pane.rows.map((r) => r.stable_id),
+		['a', 'b', 'c', 'd']
+	);
 	assert.equal(pane.load_progress, null);
 });
 

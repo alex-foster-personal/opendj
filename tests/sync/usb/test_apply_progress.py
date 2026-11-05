@@ -32,8 +32,7 @@ def _column_types(columns) -> list[type]:
 
 def test_progress_columns_include_time_remaining() -> None:
     assert TimeRemainingColumn in _column_types(_progress_columns()), (
-        "apply's progress bar must carry a remaining-time estimate (M17), "
-        "not elapsed only"
+        "apply's progress bar must carry a remaining-time estimate (M17), not elapsed only"
     )
 
 
@@ -41,9 +40,7 @@ def test_progress_columns_keep_elapsed_and_bar_and_count() -> None:
     types = _column_types(_progress_columns())
     assert BarColumn in types
     assert TimeElapsedColumn in types
-    assert types.count(TextColumn) >= 2, (
-        "expected a description column and a completed/total column"
-    )
+    assert types.count(TextColumn) >= 2, "expected a description column and a completed/total column"
 
 
 def test_progress_columns_render_completed_over_total() -> None:

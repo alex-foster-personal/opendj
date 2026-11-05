@@ -63,7 +63,11 @@
 
 <div class="brand" data-testid="backstage-brand">
 	<svg class="mark" viewBox="80 80 352 352" aria-hidden="true"
-		><path d="M 367.72,144.28 A 188.00,188.00 0 0,0 101.85,410.15 Z" fill="#9c4b34" transform="translate(21.21,-21.21)" /><path
+		><path
+			d="M 367.72,144.28 A 188.00,188.00 0 0,0 101.85,410.15 Z"
+			fill="#9c4b34"
+			transform="translate(21.21,-21.21)"
+		/><path
 			d="M 410.15,101.85 A 188.00,188.00 0 0,1 144.28,367.72 Z"
 			fill="#D97757"
 			transform="translate(-21.21,21.21)"

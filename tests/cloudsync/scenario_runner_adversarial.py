@@ -56,9 +56,7 @@ from .scenario_runner_common import (
 
 _FAULT_PATHS: frozenset[str] = frozenset({"hello", "push", "pull", "digest"})
 _INJECTABLE_FAULT_MODES: tuple[str, ...] = ("fail_before_send", "drop_response_after_commit")
-_SPOKE_ONLY_ACTIONS: frozenset[str] = frozenset(
-    {"delete", "reinsert", "skew_clock", "fault", "rename_machine"}
-)
+_SPOKE_ONLY_ACTIONS: frozenset[str] = frozenset({"delete", "reinsert", "skew_clock", "fault", "rename_machine"})
 
 Handler = Callable[[SimRun, str, Mapping[str, Any]], None]
 
@@ -73,8 +71,7 @@ def _synced_pk(
     spec = protocol.SPEC_BY_TABLE.get(table)
     if spec is None:
         raise ScenarioError(
-            f"{table!r} is not a synced LWW table; tombstones apply only to "
-            f"{sorted(protocol.SPEC_BY_TABLE)}"
+            f"{table!r} is not a synced LWW table; tombstones apply only to {sorted(protocol.SPEC_BY_TABLE)}"
         )
     raw = _require_mapping(_require(args, "pk", where=table), where=f"{table}.pk")
     pk = _resolve_pk(run, table, raw, self_machine=machine)
@@ -119,9 +116,7 @@ def _apply_delete(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
             (stamp, stamp, origin, *pk.values()),
         )
         if cursor.rowcount == 0:
-            raise ScenarioError(
-                f"delete: no LIVE {table} row {pk} (missing, or already tombstoned)"
-            )
+            raise ScenarioError(f"delete: no LIVE {table} row {pk} (missing, or already tombstoned)")
     finally:
         conn.close()
 
@@ -170,9 +165,7 @@ def _apply_rename_machine(run: SimRun, machine: str, args: Mapping[str, Any]) ->
 def _apply_fault(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     mode = str(_require(args, "mode", where="fault"))
     if mode not in _INJECTABLE_FAULT_MODES:
-        raise ScenarioError(
-            f"fault.mode must be one of {list(_INJECTABLE_FAULT_MODES)}, got {mode!r}"
-        )
+        raise ScenarioError(f"fault.mode must be one of {list(_INJECTABLE_FAULT_MODES)}, got {mode!r}")
     path = str(_require(args, "path", where="fault"))
     if path not in _FAULT_PATHS:
         raise ScenarioError(f"fault.path must be one of {sorted(_FAULT_PATHS)}, got {path!r}")
@@ -187,8 +180,7 @@ def assert_faults_spent(run: SimRun) -> None:
     pending = {machine: t.pending for machine, t in run.transports.items() if t.pending}
     if pending:
         raise ScenarioError(
-            f"armed fault(s) never fired, so this scenario never exercised the "
-            f"failure it names: {pending}"
+            f"armed fault(s) never fired, so this scenario never exercised the failure it names: {pending}"
         )
 
 
@@ -197,9 +189,7 @@ def assert_faults_spent(run: SimRun) -> None:
 
 def _apply_restore_hub(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     if machine != run.scenario.hub.id:
-        raise ScenarioError(
-            f"restore_hub runs on the hub ({run.scenario.hub.id!r}), not {machine!r}"
-        )
+        raise ScenarioError(f"restore_hub runs on the hub ({run.scenario.hub.id!r}), not {machine!r}")
     op = str(_require(args, "op", where="restore_hub"))
     name = str(_require(args, "name", where="restore_hub"))
     hub_db = client.state_db_path(run.data_dirs[machine])
@@ -211,9 +201,7 @@ def _apply_restore_hub(run: SimRun, machine: str, args: Mapping[str, Any]) -> No
         run.hub_snapshots[name] = target
     elif op == "restore":
         if name not in run.hub_snapshots:
-            raise ScenarioError(
-                f"restore_hub: no snapshot {name!r} (taken: {sorted(run.hub_snapshots)})"
-            )
+            raise ScenarioError(f"restore_hub: no snapshot {name!r} (taken: {sorted(run.hub_snapshots)})")
         _copy_db(run.hub_snapshots[name], hub_db)
     else:
         raise ScenarioError(f"restore_hub.op must be 'snapshot' or 'restore', got {op!r}")
@@ -221,9 +209,7 @@ def _apply_restore_hub(run: SimRun, machine: str, args: Mapping[str, Any]) -> No
 
 def _apply_prune(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     default_changelog = (
-        engine.HUB_CHANGELOG_TABLE
-        if machine == run.scenario.hub.id
-        else sync_stamp.LOCAL_CHANGELOG_TABLE
+        engine.HUB_CHANGELOG_TABLE if machine == run.scenario.hub.id else sync_stamp.LOCAL_CHANGELOG_TABLE
     )
     changelog = str(args.get("changelog") or default_changelog)
     keep_days = _require_number(args, "keep_days", where="prune")
@@ -267,9 +253,7 @@ def _edit_track_field(run: SimRun, machine: str, args: Mapping[str, Any]) -> Non
     conn = run.conn(machine)
     try:
         _require_track(conn, stable_id, "edit track_fields")
-        stamp = _log_edit(
-            conn, "track_fields", (stable_id, field_name), origin, _stamp(args, run, machine)
-        )
+        stamp = _log_edit(conn, "track_fields", (stable_id, field_name), origin, _stamp(args, run, machine))
         conn.execute(
             """
             INSERT INTO track_fields(
@@ -300,17 +284,13 @@ def _edit_track_location(run: SimRun, machine: str, args: Mapping[str, Any]) -> 
     conn = run.conn(machine)
     try:
         _require_track(conn, stable_id, "edit track_locations")
-        owner = conn.execute(
-            "SELECT machine_id FROM track_locations WHERE location_id = ?", (location_id,)
-        ).fetchone()
+        owner = conn.execute("SELECT machine_id FROM track_locations WHERE location_id = ?", (location_id,)).fetchone()
         if owner is not None and owner[0] != origin:
             raise ScenarioError(
                 f"edit track_locations: {location_id!r} belongs to machine {owner[0]}; "
                 f"a machine writes only its own locations (ADR 08 point 1)"
             )
-        stamp = _log_edit(
-            conn, "track_locations", (location_id,), origin, _stamp(args, run, machine)
-        )
+        stamp = _log_edit(conn, "track_locations", (location_id,), origin, _stamp(args, run, machine))
         conn.execute(
             """
             INSERT INTO track_locations(

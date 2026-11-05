@@ -48,7 +48,9 @@ test('a child that exits before LISTENING fails at once with its status and stde
 	await assert.rejects(
 		startMidiMapsTestServer({
 			cwd: REPO_ROOT,
-			..._node("console.log('BOOT interpreter 5'); console.error('ImportError: no module named demo'); process.exit(3)"),
+			..._node(
+				"console.log('BOOT interpreter 5'); console.error('ImportError: no module named demo'); process.exit(3)"
+			),
 			stallMs: 30_000,
 			totalMs: 60_000
 		}),
@@ -65,7 +67,12 @@ test('a child that exits before LISTENING fails at once with its status and stde
 
 test('a child that exits 0 before LISTENING is a failure too, not a silent wait', async () => {
 	await assert.rejects(
-		startMidiMapsTestServer({ cwd: REPO_ROOT, ..._node('process.exit(0)'), stallMs: 30_000, totalMs: 60_000 }),
+		startMidiMapsTestServer({
+			cwd: REPO_ROOT,
+			..._node('process.exit(0)'),
+			stallMs: 30_000,
+			totalMs: 60_000
+		}),
 		/Boot stages reached: none[\s\S]*exited with code 0 signal null/
 	);
 });
@@ -74,7 +81,9 @@ test('a child that stops making progress fails after the stall budget and is kil
 	await assert.rejects(
 		startMidiMapsTestServer({
 			cwd: REPO_ROOT,
-			..._node("console.log('BOOT interpreter 1'); console.log('BOOT imported 2'); setInterval(() => {}, 1000)"),
+			..._node(
+				"console.log('BOOT interpreter 1'); console.log('BOOT imported 2'); setInterval(() => {}, 1000)"
+			),
 			stallMs: 400,
 			totalMs: 30_000
 		}),
@@ -92,7 +101,7 @@ test('a child that keeps reporting progress is waited for past the stall budget,
 	await assert.rejects(
 		startMidiMapsTestServer({
 			cwd: REPO_ROOT,
-			..._node("let n = 0; setInterval(() => console.log(`BOOT step${n++} ${n * 100}`), 100)"),
+			..._node('let n = 0; setInterval(() => console.log(`BOOT step${n++} ${n * 100}`), 100)'),
 			stallMs: 400,
 			totalMs: 1_500
 		}),

@@ -1,4 +1,5 @@
 """Syncthing capability probe tests (cloud-sync-surface, CAT-04)."""
+
 from __future__ import annotations
 
 import json
@@ -42,9 +43,7 @@ def test_probe_parses_connections_and_folder_state(monkeypatch):
                 "DEVICE-B": {"connected": False},
             }
         },
-        "http://127.0.0.1:8384/rest/db/status?folder=music-library": {
-            "state": "idle"
-        },
+        "http://127.0.0.1:8384/rest/db/status?folder=music-library": {"state": "idle"},
     }
 
     class _FakeResponse:
@@ -72,19 +71,25 @@ def test_probe_parses_connections_and_folder_state(monkeypatch):
 @pytest.mark.requirement("CAT-05")
 def test_health_surfaces_configured_syncthing_status(seed_backend):
     app = create_app(
-        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
+        backend=seed_backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
         syncthing_status_fn=lambda: {
-            "peers_connected": 2, "folder_state": "syncing",
+            "peers_connected": 2,
+            "folder_state": "syncing",
         },
     )
     from fastapi.testclient import TestClient
+
     with TestClient(app) as client:
         r = client.get("/api/v1/health")
         assert r.status_code == 200
         body = r.json()
         assert body["syncthing"] == {
-            "peers_connected": 2, "folder_state": "syncing",
+            "peers_connected": 2,
+            "folder_state": "syncing",
             "last_scan_at": None,
         }
+
 
 pytestmark = pytest.mark.rb_parity

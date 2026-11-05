@@ -109,7 +109,9 @@ export function describeAudioOutputHealth(
 	if (combined === 'ok') {
 		const browserNote = snapshot.browser ? describeBrowserLiveness(snapshot.browser) : '';
 		const deviceName = snapshot.device?.default_device_name;
-		const deviceNote = deviceName ? ` OS probe: ${deviceName} is delivering.` : ' OS probe: delivering.';
+		const deviceNote = deviceName
+			? ` OS probe: ${deviceName} is delivering.`
+			: ' OS probe: delivering.';
 		return {
 			cssClass: 'ok',
 			title: `${BASE_EXPLAINER} OK - ${browserNote}${deviceNote}`,

@@ -14,9 +14,14 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const dir = new URL('../../src/lib/components/rb/mixer/', import.meta.url);
-const css = readFileSync(fileURLToPath(new URL('HeadphoneCluster.io-panel.css', dir)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const css = readFileSync(
+	fileURLToPath(new URL('HeadphoneCluster.io-panel.css', dir)),
+	'utf8'
+).replace(/\/\*[\s\S]*?\*\//g, '');
 const cluster = readFileSync(fileURLToPath(new URL('HeadphoneCluster.svelte', dir)), 'utf8');
-const selectors = [...css.matchAll(/([^{}]+)\{[^}]*\}/g)].flatMap((m) => m[1].split(',').map((s) => s.trim()));
+const selectors = [...css.matchAll(/([^{}]+)\{[^}]*\}/g)].flatMap((m) =>
+	m[1].split(',').map((s) => s.trim())
+);
 
 test('the I/O panel stylesheet declares rules and is imported by the cluster', () => {
 	assert.ok(selectors.length >= 15, `expected the I/O panel rules, found ${selectors.length}`);

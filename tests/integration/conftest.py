@@ -3,6 +3,7 @@
 Self-contained Phase 5 DDL copy; mirrors tests/smartlists/conftest.py so
 the integration tests don't depend on sibling phase conftests.
 """
+
 from __future__ import annotations
 
 import json

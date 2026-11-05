@@ -17,7 +17,17 @@ before(async () => {
 });
 
 function key(k, mods = {}) {
-	return { key: k, metaKey: false, ctrlKey: false, altKey: false, ...mods, prevented: 0, preventDefault() { this.prevented += 1; } };
+	return {
+		key: k,
+		metaKey: false,
+		ctrlKey: false,
+		altKey: false,
+		...mods,
+		prevented: 0,
+		preventDefault() {
+			this.prevented += 1;
+		}
+	};
 }
 
 test('pending import: T then M are held and replay in order, once, when the panel binds', () => {

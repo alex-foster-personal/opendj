@@ -4,11 +4,7 @@
 	 * briefly on the in-page redirect path, and for the full desktop-shell
 	 * system-browser poll.
 	 */
-	import {
-		cancelSignIn,
-		signInOverlay,
-		signInStatusText
-	} from '$lib/auth/sign-in-overlay.svelte';
+	import { cancelSignIn, signInOverlay, signInStatusText } from '$lib/auth/sign-in-overlay.svelte';
 	import SignInOverlayView from './SignInOverlayView.svelte';
 </script>
 

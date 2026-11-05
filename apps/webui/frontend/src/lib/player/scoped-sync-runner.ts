@@ -31,7 +31,10 @@
  * the same key can run concurrently with the still in-flight widened work.
  */
 export type WidenScope = (work: () => Promise<void>) => Promise<void>;
-export type ScopedRunner<TKey> = (key: TKey, run: (widen: WidenScope) => Promise<void>) => Promise<void>;
+export type ScopedRunner<TKey> = (
+	key: TKey,
+	run: (widen: WidenScope) => Promise<void>
+) => Promise<void>;
 
 export interface ScopedSyncRunner<TKey> {
 	install(runner: ScopedRunner<TKey>): void;

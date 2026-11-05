@@ -111,9 +111,5 @@ class MachineView:
 
 def machine_view(conn: sqlite3.Connection) -> MachineView:
     """This machine's versions, its ``sync_state`` fence rows, and both seqs."""
-    fence_rows = conn.execute(
-        "SELECT peer, last_push_seq, peer_generation, last_sync_at FROM sync_state"
-    ).fetchall()
-    return MachineView(
-        read_versions(conn), fence_rows, engine.local_seq(conn), engine.current_seq(conn)
-    )
+    fence_rows = conn.execute("SELECT peer, last_push_seq, peer_generation, last_sync_at FROM sync_state").fetchall()
+    return MachineView(read_versions(conn), fence_rows, engine.local_seq(conn), engine.current_seq(conn))

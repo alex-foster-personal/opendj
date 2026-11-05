@@ -22,6 +22,7 @@ network.
 - if a per-track failure aborts the run, or exits 0, then a 200-track batch
   either loses 199 good tracks or hides a bad one -- broken
 """
+
 from __future__ import annotations
 
 import json
@@ -48,10 +49,8 @@ def _track_entry(name: str, file_path: str | None = None, **overrides) -> dict:
         "n_words": 2,
         "stats": {"source_method": "lrclib get", "pct_witness_red": 0.5},
         "words": [
-            {"word": "one", "start_s": 1.0, "end_s": 1.2, "score": -0.5,
-             "witness": "agree", "line_final": False},
-            {"word": "two", "start_s": 1.5, "end_s": 1.9, "score": -0.4,
-             "witness": "contradict", "line_final": True},
+            {"word": "one", "start_s": 1.0, "end_s": 1.2, "score": -0.5, "witness": "agree", "line_final": False},
+            {"word": "two", "start_s": 1.5, "end_s": 1.9, "score": -0.4, "witness": "contradict", "line_final": True},
         ],
     }
     if file_path is not None:
@@ -85,8 +84,7 @@ def db_path(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 (stable_id, file_path, NOW, NOW),
             )
         conn.execute(
-            "INSERT INTO track_vendor_ids (vendor, vendor_id, stable_id) "
-            "VALUES ('rekordbox', '12345', 'sid-vendor')"
+            "INSERT INTO track_vendor_ids (vendor, vendor_id, stable_id) VALUES ('rekordbox', '12345', 'sid-vendor')"
         )
     finally:
         conn.close()
@@ -126,22 +124,15 @@ def _ingest(
 def _ingested_ids(db_path: Path) -> set[str]:
     conn = sqlite3.connect(db_path)
     try:
-        return {
-            str(row[0])
-            for row in conn.execute(
-                "SELECT stable_id FROM lyric_verdict WHERE deleted_at IS NULL"
-            )
-        }
+        return {str(row[0]) for row in conn.execute("SELECT stable_id FROM lyric_verdict WHERE deleted_at IS NULL")}
     finally:
         conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # matching
-#-----------------------------------------------------------------------------
-def test_file_path_match_ingests_the_unique_row(
-    tmp_path: Path, db_path: Path, data_dir: Path
-) -> None:
+# -----------------------------------------------------------------------------
+def test_file_path_match_ingests_the_unique_row(tmp_path: Path, db_path: Path, data_dir: Path) -> None:
     report = _ingest(
         *_write_run(tmp_path, [_track_entry("crate000", "/lib/good.mp3")]),
         db_path,
@@ -150,23 +141,19 @@ def test_file_path_match_ingests_the_unique_row(
     assert (report.n_tracks, report.n_matched, report.n_ingested) == (1, 1, 1)
     assert report.failures == () and report.unmatched == ()
     assert _ingested_ids(db_path) == {"sid-good"}
-    parsed = karaoke_cache.parse_words(
-        karaoke_cache.cache_path(data_dir, "sid-good"), "sid-good"
-    )
+    parsed = karaoke_cache.parse_words(karaoke_cache.cache_path(data_dir, "sid-good"), "sid-good")
     assert [entry.word for entry in parsed.words] == ["one", "two"]
     assert report.n_words == 2
 
 
-def test_file_path_match_never_guesses_and_names_every_reason(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_file_path_match_never_guesses_and_names_every_reason(tmp_path: Path, db_path: Path) -> None:
     report = _ingest(
         *_write_run(
             tmp_path,
             [
-                _track_entry("crate001", "/lib/dup.mp3"),     # two rows hold this
+                _track_entry("crate001", "/lib/dup.mp3"),  # two rows hold this
                 _track_entry("crate002", "/lib/absent.mp3"),  # no row holds this
-                _track_entry("crate003"),                     # no file_path at all
+                _track_entry("crate003"),  # no file_path at all
             ],
         ),
         db_path,
@@ -196,29 +183,23 @@ def test_vendor_id_default_unchanged(tmp_path: Path, db_path: Path) -> None:
     assert _ingested_ids(db_path) == {"sid-vendor"}
 
 
-def test_an_unknown_vendor_id_is_unmatched_not_invented(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_an_unknown_vendor_id_is_unmatched_not_invented(tmp_path: Path, db_path: Path) -> None:
     report = _ingest(*_write_run(tmp_path, [_track_entry("99999")]), db_path)
     assert _ingested_ids(db_path) == set()
     assert len(report.unmatched) == 1
     assert "no rekordbox vendor id in state.db" in report.unmatched[0]
 
 
-def test_an_unknown_match_mode_is_refused_by_name(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_an_unknown_match_mode_is_refused_by_name(tmp_path: Path, db_path: Path) -> None:
     manifest, coverage = _write_run(tmp_path, [_track_entry("12345")])
     with pytest.raises(ValueError, match="unhandled match_by 'isrc'"):
         _ingest(manifest, coverage, db_path, match_by="isrc")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # what a matched track writes
-#-----------------------------------------------------------------------------
-def test_the_row_records_the_artifact_and_its_provenance(
-    tmp_path: Path, db_path: Path, data_dir: Path
-) -> None:
+# -----------------------------------------------------------------------------
+def test_the_row_records_the_artifact_and_its_provenance(tmp_path: Path, db_path: Path, data_dir: Path) -> None:
     _ingest(*_write_run(tmp_path, [_track_entry("12345")]), db_path)
     conn = state_db.open_rw(db_path)
     try:
@@ -235,14 +216,12 @@ def test_the_row_records_the_artifact_and_its_provenance(
     assert verdict.pipeline_version == PIPELINE_VERSION
     path = karaoke_cache.cache_path(data_dir, "sid-vendor")
     assert path.is_file()
-    assert verdict.words_content_hash == karaoke_cache.write_words(
-        path, karaoke_cache.parse_words(path, "sid-vendor")
-    )[1]
+    assert (
+        verdict.words_content_hash == karaoke_cache.write_words(path, karaoke_cache.parse_words(path, "sid-vendor"))[1]
+    )
 
 
-def test_without_coverage_the_verdict_is_unknown_not_guessed(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_without_coverage_the_verdict_is_unknown_not_guessed(tmp_path: Path, db_path: Path) -> None:
     manifest, _ = _write_run(tmp_path, [_track_entry("12345")])
     _ingest(manifest, None, db_path)
     conn = state_db.open_rw(db_path)
@@ -255,9 +234,7 @@ def test_without_coverage_the_verdict_is_unknown_not_guessed(
     assert verdict.coverage_pct is None
 
 
-def test_write_false_matches_and_reports_but_writes_nothing(
-    tmp_path: Path, db_path: Path, data_dir: Path
-) -> None:
+def test_write_false_matches_and_reports_but_writes_nothing(tmp_path: Path, db_path: Path, data_dir: Path) -> None:
     manifest, coverage = _write_run(tmp_path, [_track_entry("12345")])
     report = _ingest(manifest, coverage, db_path, write=False)
     assert (report.n_matched, report.n_ingested, report.n_words) == (1, 0, 0)
@@ -269,12 +246,10 @@ def test_write_false_matches_and_reports_but_writes_nothing(
     assert f"denominator: 1 tracks in {manifest.name}" in rendered
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # re-ingest: upsert on a live row, refusal on a tombstoned one
-#-----------------------------------------------------------------------------
-def test_ingesting_the_same_track_twice_is_a_plain_upsert(
-    tmp_path: Path, db_path: Path
-) -> None:
+# -----------------------------------------------------------------------------
+def test_ingesting_the_same_track_twice_is_a_plain_upsert(tmp_path: Path, db_path: Path) -> None:
     """resurrect=False only bites a TOMBSTONED row.
 
     A live row is simply updated, which is what makes a re-run of a 200-track
@@ -291,16 +266,14 @@ def test_ingesting_the_same_track_twice_is_a_plain_upsert(
     conn = state_db.open_rw(db_path)
     try:
         assert conn.execute("SELECT COUNT(*) FROM lyric_verdict").fetchone()[0] == 1
-        assert conn.execute(
-            "SELECT COUNT(*) FROM local_changelog WHERE table_name='lyric_verdict'"
-        ).fetchone()[0] == 2, "each upsert is its own pushable changelog entry"
+        assert (
+            conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name='lyric_verdict'").fetchone()[0] == 2
+        ), "each upsert is its own pushable changelog entry"
     finally:
         conn.close()
 
 
-def test_a_purged_track_is_not_resurrected_by_the_next_batch(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_a_purged_track_is_not_resurrected_by_the_next_batch(tmp_path: Path, db_path: Path) -> None:
     manifest, coverage = _write_run(tmp_path, [_track_entry("12345")])
     _ingest(manifest, coverage, db_path)
     conn = state_db.open_rw(db_path)
@@ -318,9 +291,9 @@ def test_a_purged_track_is_not_resurrected_by_the_next_batch(
     assert _ingested_ids(db_path) == set()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # per-track failures
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_a_bad_track_neither_aborts_the_run_nor_exits_zero(
     tmp_path: Path, db_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -350,9 +323,7 @@ def test_a_bad_track_neither_aborts_the_run_nor_exits_zero(
     assert "[WARN] 1 track(s) could not be matched" in printed
 
 
-def test_a_track_with_no_source_method_is_a_named_failure(
-    tmp_path: Path, db_path: Path
-) -> None:
+def test_a_track_with_no_source_method_is_a_named_failure(tmp_path: Path, db_path: Path) -> None:
     """Without a source the purge lever could never find these words again."""
     entry = _track_entry("12345")
     entry["stats"] = {"pct_witness_red": 0.5}

@@ -1,4 +1,5 @@
 """Focused tests for shared Track -> TrackFeature projection helpers."""
+
 from __future__ import annotations
 
 import pytest

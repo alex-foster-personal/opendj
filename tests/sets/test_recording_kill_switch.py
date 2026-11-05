@@ -10,6 +10,7 @@ it must ship DISABLED, not broken, and with no code change: one flag,
 [if] the flag is off [then] the CLI's ``rec start`` fails with that same reason
     (it surfaces the route's non-2xx body), [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -34,9 +35,7 @@ def _client(tmp_path: Path, overrides: dict[str, bool] | None) -> tuple[TestClie
     flag_dir.mkdir()
     if overrides is not None:
         (flag_dir / "feature-flags.json").write_text(json.dumps(overrides))
-    service = RecorderService(
-        sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db", capture_enabled=False
-    )
+    service = RecorderService(sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db", capture_enabled=False)
     app = FastAPI()
     app.state.sets_recorder_service = service
     app.state.feature_flags = load_flags(flag_dir)

@@ -42,6 +42,7 @@ legacy-to-content mappings does this run still need to record."
 
 -Claude
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -151,9 +152,7 @@ def new_journal_mappings(
     uploads, so an already-present object still gets journaled.
     """
     return [
-        (lk, key)
-        for lk, key, size in planned
-        if final_remote.get(key) == size and (lk, key) not in already_journaled
+        (lk, key) for lk, key, size in planned if final_remote.get(key) == size and (lk, key) not in already_journaled
     ]
 
 
@@ -172,9 +171,7 @@ def journal_new_mappings(
     key, so recording it would journal a corrupt mapping.
     """
     new_mappings = [
-        (lk, k)
-        for lk, k in new_journal_mappings(planned, remote, already_journaled)
-        if lk not in exclude_legacy_keys
+        (lk, k) for lk, k in new_journal_mappings(planned, remote, already_journaled) if lk not in exclude_legacy_keys
     ]
     if not new_mappings:
         return
@@ -199,8 +196,4 @@ def swapped_during_upload(
     A same-size swap in that window ships wrong bytes under the OLD digest's
     key, invisible to a size-only R2 listing; this closes that gap.
     """
-    return [
-        remote_path
-        for remote_path, _ in jobs
-        if post_digests.get(remote_path) != pre_digests.get(remote_path)
-    ]
+    return [remote_path for remote_path, _ in jobs if post_digests.get(remote_path) != pre_digests.get(remote_path)]

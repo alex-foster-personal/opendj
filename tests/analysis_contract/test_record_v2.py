@@ -2,7 +2,7 @@
 
 [if] an own record lands without its version, fingerprint or model hash [then] fail, [else stop].
 
-Spec: `specs/native-analysis-v1.md` section 3 ("Record") and section 8's
+Spec: `(private path)` section 3 ("Record") and section 8's
 regression lines. Requirement: NATIVE-09.
 
 Acceptance lines exercised here:
@@ -16,6 +16,7 @@ Acceptance lines exercised here:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -49,9 +50,10 @@ from tests.analysis_contract.conftest import (
 pytestmark = pytest.mark.requirement("NATIVE-09")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # round trip and back-compat
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_v2_record_round_trips_through_json() -> None:
     record = own_record()
@@ -63,16 +65,23 @@ def test_v2_record_round_trips_through_json() -> None:
 
 def test_pre_v2_row_loads_with_empty_lanes_and_backfill_producer() -> None:
     """The 347 rows already in state.db predate every v2 field."""
-    legacy = json.dumps({
-        "stable_id": "old-1",
-        "backend": "librosa-only",
-        "backend_version": "librosa==0.10.2.post1+downbeats=inferred",
-        "analyzed_at": "2026-01-01T00:00:00Z",
-        "duration_s": 210.0, "sample_rate": 44100,
-        "bpm": 124.0, "bpm_confidence": 0.5,
-        "key_camelot": "5A", "key_openkey": "12m", "key_confidence": 0.4,
-        "energy": 5, "energy_source": "inferred",
-    })
+    legacy = json.dumps(
+        {
+            "stable_id": "old-1",
+            "backend": "librosa-only",
+            "backend_version": "librosa==0.10.2.post1+downbeats=inferred",
+            "analyzed_at": "2026-01-01T00:00:00Z",
+            "duration_s": 210.0,
+            "sample_rate": 44100,
+            "bpm": 124.0,
+            "bpm_confidence": 0.5,
+            "key_camelot": "5A",
+            "key_openkey": "12m",
+            "key_confidence": 0.4,
+            "energy": 5,
+            "energy_source": "inferred",
+        }
+    )
     record = AnalysisRecord.from_json(legacy)
     assert record.lanes == {}
     assert record.producer == "backfill"
@@ -84,15 +93,20 @@ def test_pre_v1_backend_is_exempt_from_the_v2_contract() -> None:
     """The exemption is deliberate, so it is asserted rather than assumed."""
     record = AnalysisRecord.from_json(own_record().to_json())
     legacy = dataclasses.replace(
-        record, backend="librosa-only", producer_version="", decode_fingerprint="",
-        lanes={}, producer="backfill",
+        record,
+        backend="librosa-only",
+        producer_version="",
+        decode_fingerprint="",
+        lanes={},
+        producer="backfill",
     )
     validate_record_contract(legacy)  # must not raise
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the required fields (NATIVE-09 mutation tests)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_own_record_without_producer_version_is_refused() -> None:
     bad = dataclasses.replace(own_record(), producer_version="", backend_version="")
@@ -173,9 +187,10 @@ def test_non_semver_producer_version_is_refused() -> None:
         validate_record_contract(bad)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # lane payload shapes
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_beatgrid_ok_with_no_beats_is_a_contract_violation() -> None:
     payload = beatgrid_payload()
@@ -185,9 +200,7 @@ def test_beatgrid_ok_with_no_beats_is_a_contract_violation() -> None:
 
 
 def test_a_lane_that_found_no_pulse_says_so_with_failed_and_a_reason() -> None:
-    validate_lane_result(
-        "beatgrid", LaneResult(status="failed", reason="no_trackable_pulse")
-    )
+    validate_lane_result("beatgrid", LaneResult(status="failed", reason="no_trackable_pulse"))
 
 
 def test_failed_lane_without_a_reason_is_refused() -> None:
@@ -199,8 +212,7 @@ def test_failed_lane_carrying_a_payload_is_refused() -> None:
     with pytest.raises(LaneContractError, match="carries a payload"):
         validate_lane_result(
             "beatgrid",
-            LaneResult(status="failed", reason="no_trackable_pulse",
-                       payload=beatgrid_payload()),
+            LaneResult(status="failed", reason="no_trackable_pulse", payload=beatgrid_payload()),
         )
 
 
@@ -219,11 +231,14 @@ def test_key_segments_ok_with_no_segments_is_refused() -> None:
 
 def test_waveform_kind_must_be_tri_on_an_own_record() -> None:
     with pytest.raises(LaneContractError, match="tri"):
-        validate_lane_payload("waveform", {
-            "kind": "mono",
-            "preview": {"length": 0, "low": [], "mid": [], "high": []},
-            "detail": {"length": 0, "low": [], "mid": [], "high": []},
-        })
+        validate_lane_payload(
+            "waveform",
+            {
+                "kind": "mono",
+                "preview": {"length": 0, "low": [], "mid": [], "high": []},
+                "detail": {"length": 0, "low": [], "mid": [], "high": []},
+            },
+        )
 
 
 def test_unknown_lane_is_refused() -> None:
@@ -239,9 +254,10 @@ def test_every_lane_payload_helper_validates() -> None:
     validate_lane_payload("loudness", loudness_payload())
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # backend naming and semver
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_own_backend_names_round_trip() -> None:
     assert own_backend("beatgrid", "inapp") == "own_beatgrid.inapp"

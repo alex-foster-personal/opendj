@@ -31,10 +31,7 @@ export const MIN_TEMPO_RATIO = Number.EPSILON;
 export function pitchRatioFromFaderValue(value: number, pitchRangePct: number): number {
 	_assertPositive('pitchRangePct', pitchRangePct);
 	if (!Number.isFinite(value)) throw new RangeError(`value must be finite, got ${value}`);
-	return Math.max(
-		MIN_TEMPO_RATIO,
-		1 + (_clamp01(value) - 0.5) * 2 * (pitchRangePct / 100)
-	);
+	return Math.max(MIN_TEMPO_RATIO, 1 + (_clamp01(value) - 0.5) * 2 * (pitchRangePct / 100));
 }
 
 export function faderValueFromPitchRatio(ratio: number, pitchRangePct: number): number {

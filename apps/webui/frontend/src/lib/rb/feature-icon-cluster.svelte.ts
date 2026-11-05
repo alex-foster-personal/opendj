@@ -84,7 +84,7 @@ function _readSingleClick(): boolean {
 	try {
 		if (_storageMissingInBrowser()) {
 			reportSettingSaveError(
-				"Feature icon click mode cannot be read: this browser has no storage; showing the one-button strip",
+				'Feature icon click mode cannot be read: this browser has no storage; showing the one-button strip',
 				new Error('localStorage is unavailable')
 			);
 			return false;
@@ -122,7 +122,7 @@ export function setFeatureIconSingleClick(next: boolean): void {
 	try {
 		if (_storageMissingInBrowser()) {
 			reportSettingSaveError(
-				"Feature icon click mode cannot be saved: this browser has no storage; it applies until you reload",
+				'Feature icon click mode cannot be saved: this browser has no storage; it applies until you reload',
 				new Error('localStorage is unavailable')
 			);
 			return;

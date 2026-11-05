@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 473426,
+  "measured_with_pr": 473565,
+  "sha": "58fe3a4ecd",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #9037 adds On now copy on the Settings Performance tier row (tierOnNowLabel in perf-tier.ts plus the overlay span), which rides the lazy Settings overlay in other-lazy. CI measured other-lazy 473426 -> 473565, +139 B gzip, above the 128 B PR-delta noise floor.",
+  "payback": "none planned; the On now label is the shipped PERFMODE-9037 surface"
+}

@@ -1,7 +1,7 @@
 """Build the data manifest for scripts/bench/lyrics_align_verifier.html.
 
 Joins JamendoLyrics ground truth (apps.lyrics.jamendo) to a predictions dir written by an
-aligner run (contract in specs/karaoke-lyrics-alignment.md) and emits ONE JSON the karaoke
+aligner run (contract in (private path)) and emits ONE JSON the karaoke
 verification page fetches. Metrics come from apps.lyrics.metrics, never recomputed here, so
 the page and `python -m apps.lyrics score` can never disagree.
 
@@ -79,9 +79,9 @@ PHRASE_MIN_RUN: int = 3
 _EDGE_PUNCT = re.compile(r"^\W+|\W+$", re.UNICODE)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # ground truth + prediction join
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _metrics_dict(report: OnsetErrorReport) -> dict[str, Any]:
@@ -175,9 +175,7 @@ def _mark_displaced_phrases(joined: list[dict[str, Any]]) -> None:
             for lo, hi in _coherent_pieces(offsets, run_start, i):
                 if hi - lo < PHRASE_MIN_RUN:
                     continue
-                n_displaced = sum(
-                    1 for w in joined[lo:hi] if w.get("displaced_to_repeat") is True
-                )
+                n_displaced = sum(1 for w in joined[lo:hi] if w.get("displaced_to_repeat") is True)
                 if n_displaced * 2 <= hi - lo:
                     continue
                 shift = sorted(offsets[lo:hi])[(hi - lo) // 2]
@@ -192,15 +190,12 @@ def _join_words(song: JamendoSong, pred_words: list[dict[str, Any]]) -> list[dic
     """Index-align ground truth to prediction. Raises on any forced-alignment contract breach."""
     if len(pred_words) != len(song.words):
         raise ValueError(
-            f"forced alignment must cover every reference word: "
-            f"{len(song.words)} ref vs {len(pred_words)} pred words"
+            f"forced alignment must cover every reference word: {len(song.words)} ref vs {len(pred_words)} pred words"
         )
     joined: list[dict[str, Any]] = []
     for i, (ref, pred) in enumerate(zip(song.words, pred_words, strict=True)):
         if pred.get("word") != ref.word:
-            raise ValueError(
-                f"word {i} text mismatch: ref {ref.word!r} vs pred {pred.get('word')!r}"
-            )
+            raise ValueError(f"word {i} text mismatch: ref {ref.word!r} vs pred {pred.get('word')!r}")
         pred_start = pred.get("start_s")
         if not isinstance(pred_start, (int, float)) or math.isnan(float(pred_start)):
             raise ValueError(f"word {i} ({ref.word!r}) has no usable start_s: {pred_start!r}")
@@ -235,7 +230,7 @@ def _stem_url(stem_dir: Path, name: str) -> str:
         raise FileNotFoundError(
             f"no vocal stem for {name} in {stem_dir} (looked for "
             f"{name}-vocals{{{','.join(STEM_EXTENSIONS)}}}) -- the MIX/VOCALS toggle needs one "
-            f"per song, see specs/karaoke-lyrics-alignment.md"
+            f"per song, see (private path)"
         )
     if len(hits) > 1:
         raise ValueError(
@@ -280,20 +275,17 @@ def _song_entry(song: JamendoSong, pred_path: Path | None, stem_dir: Path) -> di
     entry["words"] = words
     entry["n_displaced_to_repeat"] = sum(1 for w in words if w.get("displaced_to_repeat"))
     entry["n_displaced_by_phrase"] = sum(1 for w in words if w.get("displaced_by_phrase"))
-    entry["metrics"] = _metrics_dict(
-        score_onsets([w["gt_start_s"] for w in words], [w["pred_start_s"] for w in words])
-    )
+    entry["metrics"] = _metrics_dict(score_onsets([w["gt_start_s"] for w in words], [w["pred_start_s"] for w in words]))
     return entry
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def build_manifest(dataset_dir: Path, pred_dir: Path, stem_dir: Path) -> dict[str, Any]:
     if not pred_dir.is_dir():
         raise FileNotFoundError(
-            f"predictions dir {pred_dir} missing -- run the aligner first, "
-            f"see specs/karaoke-lyrics-alignment.md"
+            f"predictions dir {pred_dir} missing -- run the aligner first, see (private path)"
         )
     if not stem_dir.is_dir():
         raise FileNotFoundError(

@@ -11,13 +11,16 @@
  *
  * Regression one-liners:
  *   - if a command with no session resolves to anything but { ok: false, reason: 'no_session' } then broken
- *   - if the no-session case logs an error, pushes a toast or rejects then broken
+ *   - if a non-load command with no session logs an error, pushes a toast or rejects then broken
+ *   - if a load with no session leaves deck_errors empty then broken (#2339)
  *   - if a failure the dispatcher did not persist reaches neither console.error nor a toast then broken
  *   - if a failure the dispatcher already toasted is toasted a second time then broken
  *   - if a command that succeeds resolves to anything but { ok: true } then broken
  *   - if a load that suppressed its toast fails without a console.error, or with a toast, then broken
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -68,6 +71,39 @@ test('no session yet: a typed no_session result, logged at debug, nothing else',
 	assert.equal(seen.debug.length, 1);
 	assert.match(String(seen.debug[0][0]), /head_delay_ms/);
 	assert.equal(ipc.performanceCommandStatus.last_error, errorBefore);
+});
+
+test('load with no session: typed no_session plus deck error and toast (#2339)', async () => {
+	assert.equal(globalThis.window?.musicDjToolsPerformance, undefined);
+	const ipcSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const uiFn = ipcSource.slice(
+		ipcSource.indexOf('export async function runPerformanceCommandFromUi'),
+		ipcSource.indexOf('function _toastId')
+	);
+	assert.match(uiFn, /command\.type === 'load'/);
+	assert.match(uiFn, /recordDeckLoadRefusal\(command\.deck/);
+
+	ipc.performanceCommandStatus.deck_errors[1] = null;
+	let result;
+	const seen = await withConsole(async () => {
+		result = await ipc.runPerformanceCommandFromUi({
+			type: 'load',
+			deck: 1,
+			stable_id: 'present-track'
+		});
+	});
+
+	assert.equal(result.ok, false);
+	assert.equal(result.reason, 'no_session');
+	assert.equal(seen.debug.length, 1);
+	assert.match(String(seen.debug[0][0]), /load/);
+	assert.ok(
+		typeof ipc.performanceCommandStatus.deck_errors[1] === 'string' &&
+			ipc.performanceCommandStatus.deck_errors[1].length > 0
+	);
 });
 
 test('a command that succeeds resolves { ok: true } and logs nothing', async () => {

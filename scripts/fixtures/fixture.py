@@ -51,10 +51,10 @@ from typing import Any
 MANIFEST_VERSION = 1
 
 
-
 def _ro_uri(db: Path) -> str:
     """Read-only SQLite URI; as_uri() percent-encodes ? and # so they stay in the path."""
     return Path(db).resolve().as_uri() + "?mode=ro"
+
 
 def _vacuum_copy(src: Path, dst: Path) -> None:
     con = sqlite3.connect(_ro_uri(src), uri=True)
@@ -160,7 +160,8 @@ def _anlz_sources(data: Path, state_db: Path, sids: list[str]) -> dict[str, list
     try:
         for sid in sids:
             row = scon.execute(
-                "SELECT vendor_id FROM track_vendor_ids WHERE stable_id=? AND vendor='rekordbox' AND deleted_at IS NULL", (sid,)
+                "SELECT vendor_id FROM track_vendor_ids WHERE stable_id=? AND vendor='rekordbox' AND deleted_at IS NULL",
+                (sid,),
             ).fetchone()
             if not row:
                 continue
@@ -201,7 +202,10 @@ def cmd_export(a: argparse.Namespace) -> int:
         anlz = _anlz_sources(data, state_db, chosen)
         bare = [s for s in chosen if s not in anlz]
         if bare and not a.allow_unanalyzed:
-            print(f"[FAIL] no rekordbox ANLZ files on disk for {bare}; analyze them first or pass --allow-unanalyzed", file=sys.stderr)
+            print(
+                f"[FAIL] no rekordbox ANLZ files on disk for {bare}; analyze them first or pass --allow-unanalyzed",
+                file=sys.stderr,
+            )
             return 2
     else:
         playable = list(paths)
@@ -250,8 +254,12 @@ def cmd_export(a: argparse.Namespace) -> int:
                 src, stored = paths[sid]
                 arc = f"audio/{sid}{src.suffix.lower()}"
                 z.write(src, arc)
-                manifest["tracks"][sid] = {"original_path": stored, "bundle_path": arc, "bytes": src.stat().st_size,
-                                           "anlz": [n for _, n in anlz.get(sid, [])]}
+                manifest["tracks"][sid] = {
+                    "original_path": stored,
+                    "bundle_path": arc,
+                    "bytes": src.stat().st_size,
+                    "anlz": [n for _, n in anlz.get(sid, [])],
+                }
             for sid in chosen:
                 for src, arc in anlz.get(sid, []):
                     z.write(src, arc)
@@ -287,8 +295,9 @@ def _rewrite_state_paths(con: sqlite3.Connection, manifest: dict[str, Any], data
             # The bundle carries this one file: any other location row (another
             # copy on the publisher's machine, a remote URL) is audio the app's
             # picker could choose instead, so the track keeps only its own.
-            con.execute("DELETE FROM track_locations WHERE stable_id=? AND (file_path IS NULL OR file_path != ?)",
-                        (sid, new))
+            con.execute(
+                "DELETE FROM track_locations WHERE stable_id=? AND (file_path IS NULL OR file_path != ?)", (sid, new)
+            )
     return rewritten
 
 
@@ -297,12 +306,19 @@ def _rekordbox_ids(con: sqlite3.Connection, sids: list[str]) -> dict[str, str]:
     if "track_vendor_ids" not in {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         return {}
     marks = ",".join("?" * len(sids))
-    return {sid: str(vid) for sid, vid in con.execute(
-        f"SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor='rekordbox' AND deleted_at IS NULL"
-        f" AND stable_id IN ({marks})", sids)}
+    return {
+        sid: str(vid)
+        for sid, vid in con.execute(
+            f"SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor='rekordbox' AND deleted_at IS NULL"
+            f" AND stable_id IN ({marks})",
+            sids,
+        )
+    }
 
 
-def _rewrite_master_paths(pcon: sqlite3.Connection, manifest: dict[str, Any], data: Path, rb_ids: dict[str, str]) -> None:
+def _rewrite_master_paths(
+    pcon: sqlite3.Connection, manifest: dict[str, Any], data: Path, rb_ids: dict[str, str]
+) -> None:
     """Point each bundled track's own djmdContent row at its unpacked file.
 
     The row is the one state.db names by rekordbox id, whatever FolderPath it
@@ -314,8 +330,10 @@ def _rewrite_master_paths(pcon: sqlite3.Connection, manifest: dict[str, Any], da
         return
     for sid, row in manifest["tracks"].items():
         if sid in rb_ids:
-            pcon.execute("UPDATE djmdContent SET FolderPath=? WHERE CAST(ID AS TEXT)=?",
-                         (str((data / row["bundle_path"]).resolve()), rb_ids[sid]))
+            pcon.execute(
+                "UPDATE djmdContent SET FolderPath=? WHERE CAST(ID AS TEXT)=?",
+                (str((data / row["bundle_path"]).resolve()), rb_ids[sid]),
+            )
 
 
 # 2100-01-01T00:00:00Z. Every filesystem a pack lands on must store this exactly:
@@ -348,15 +366,18 @@ def _untraced_anlz(pcon: sqlite3.Connection, manifest: dict[str, Any], rb_ids: d
         claims = manifest["tracks"][sid].get("anlz") or []
         if not claims:
             continue
-        row = pcon.execute("SELECT AnalysisDataPath FROM djmdContent WHERE CAST(ID AS TEXT)=? AND rb_local_deleted=0",
-                           (vid,)).fetchone()
+        row = pcon.execute(
+            "SELECT AnalysisDataPath FROM djmdContent WHERE CAST(ID AS TEXT)=? AND rb_local_deleted=0", (vid,)
+        ).fetchone()
         if row is None:
             continue
         adp = row[0]
         dat = f"{SHARE_ARC}/{adp.lstrip('/')}" if isinstance(adp, str) and adp.startswith("/PIONEER/") else None
         if dat is None or dat not in claims or any(c.rsplit("/", 1)[0] != dat.rsplit("/", 1)[0] for c in claims):
-            return (f"track {sid}: master.plain.db AnalysisDataPath {adp!r} does not reach its bundled ANLZ "
-                    f"{sorted(claims)[:3]}")
+            return (
+                f"track {sid}: master.plain.db AnalysisDataPath {adp!r} does not reach its bundled ANLZ "
+                f"{sorted(claims)[:3]}"
+            )
     return None
 
 
@@ -392,8 +413,12 @@ def _bundled_library_problem(z: zipfile.ZipFile, manifest: dict[str, Any]) -> st
                 _rewrite_state_paths(con, manifest, Path(tmp))
                 marks = ",".join("?" * len(sids))
                 # A tombstoned row is not a track the library lists.
-                listed = {r[0] for r in con.execute(
-                    f"SELECT stable_id FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})", sids)}
+                listed = {
+                    r[0]
+                    for r in con.execute(
+                        f"SELECT stable_id FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})", sids
+                    )
+                }
             except sqlite3.DatabaseError as e:
                 return f"bundled {name} is not readable ({e})"
             finally:
@@ -404,16 +429,24 @@ def _bundled_library_problem(z: zipfile.ZipFile, manifest: dict[str, Any]) -> st
     return None
 
 
-_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"{p}{i}" for p in ("COM", "LPT") for i in [*"123456789", "\u00b9", "\u00b2", "\u00b3"])}
+_WINDOWS_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"{p}{i}" for p in ("COM", "LPT") for i in [*"123456789", "\u00b9", "\u00b2", "\u00b3"]),
+}
 
 
 def _windows_component_problem(component: str) -> bool:
     """Whether Windows or ext4 refuses this path component: reserved characters or device names, a trailing dot or space, or an overlong name."""
-    return (any(ch in '<>:"|?*' or ord(ch) < 32 for ch in component)
-            # ext4 caps a name at 255 bytes and NTFS at 255 UTF-16 units; the larger count binds.
-            or max(len(component.encode("utf-8")), len(component.encode("utf-16-le")) // 2) > 255
-            or component.endswith((".", " "))
-            or component.split(".", 1)[0].rstrip(" ").upper() in _WINDOWS_RESERVED)
+    return (
+        any(ch in '<>:"|?*' or ord(ch) < 32 for ch in component)
+        # ext4 caps a name at 255 bytes and NTFS at 255 UTF-16 units; the larger count binds.
+        or max(len(component.encode("utf-8")), len(component.encode("utf-16-le")) // 2) > 255
+        or component.endswith((".", " "))
+        or component.split(".", 1)[0].rstrip(" ").upper() in _WINDOWS_RESERVED
+    )
 
 
 def _fold(name: str) -> str:
@@ -438,7 +471,9 @@ def _member_name_problem(names: list[str]) -> str | None:
         return f"bundle member names cannot be created on every platform: {bad_win[:5]}"
     # Every component can be valid while the whole name is too long to create.
     if long_names := sorted(n for n in names if len(n.encode()) > _MAX_MEMBER_BYTES):
-        return f"bundle member names are longer than {_MAX_MEMBER_BYTES} bytes: {[n[:60] + '...' for n in long_names[:3]]}"
+        return (
+            f"bundle member names are longer than {_MAX_MEMBER_BYTES} bytes: {[n[:60] + '...' for n in long_names[:3]]}"
+        )
     # Two file members that land on one path, or a file member that is also another
     # member's parent directory, cannot both be extracted, and extraction runs after
     # --force has cleared the target. Names are compared case-folded and Unicode
@@ -476,8 +511,11 @@ def _bundle_problem(z: zipfile.ZipFile, manifest: dict[str, Any], data: Path) ->
     if not isinstance(manifest.get("tracks"), dict) or not manifest["tracks"]:
         return "manifest lists no tracks"
     # Import rewrites each row's paths using both fields, so both must be strings.
-    malformed = [sid for sid, row in manifest["tracks"].items()
-                 if not isinstance(row, dict) or not all(isinstance(row.get(k), str) for k in ("bundle_path", "original_path"))]
+    malformed = [
+        sid
+        for sid, row in manifest["tracks"].items()
+        if not isinstance(row, dict) or not all(isinstance(row.get(k), str) for k in ("bundle_path", "original_path"))
+    ]
     if malformed:
         return f"manifest track rows lack bundle_path/original_path strings: {malformed[:5]}"
     # Every path the manifest names is used after extraction (paths are rewritten
@@ -486,8 +524,11 @@ def _bundle_problem(z: zipfile.ZipFile, manifest: dict[str, Any], data: Path) ->
     members = set(z.namelist())
     file_members = {n for n in members if not n.endswith("/")}
     anlz = manifest.get("anlz_files", {})
-    named = ([row.get("bundle_path") for row in manifest["tracks"].values()] + list(anlz)
-             + list(manifest.get("state_files", [])))
+    named = (
+        [row.get("bundle_path") for row in manifest["tracks"].values()]
+        + list(anlz)
+        + list(manifest.get("state_files", []))
+    )
     # A directory entry is a member too, but the manifest's paths must be files.
     stray = [n for n in named if not isinstance(n, str) or n not in file_members or n == "manifest.json"]
     if stray:
@@ -495,28 +536,42 @@ def _bundle_problem(z: zipfile.ZipFile, manifest: dict[str, Any], data: Path) ->
     # A track's anlz list is what marks it analyzed (ensure then wants its rekordbox
     # row), so each entry must be an ANLZ file the bundle carries, mtime and all.
     claims = {sid: row.get("anlz", []) for sid, row in manifest["tracks"].items()}
-    unbundled = sorted(sid for sid, names in claims.items()
-                       if not isinstance(names, list) or any(not isinstance(n, str) or n not in anlz for n in names))
+    unbundled = sorted(
+        sid
+        for sid, names in claims.items()
+        if not isinstance(names, list) or any(not isinstance(n, str) or n not in anlz for n in names)
+    )
     if unbundled:
         return f"track anlz entries are not bundled anlz_files for {unbundled[:5]}"
     # Import points tracks.file_path at bundle_path, so it must be the audio export
     # wrote under audio/, never a database or state file that also happens to be a member.
-    if not_audio := sorted(sid for sid, row in manifest["tracks"].items() if not row["bundle_path"].startswith("audio/")):
+    if not_audio := sorted(
+        sid for sid, row in manifest["tracks"].items() if not row["bundle_path"].startswith("audio/")
+    ):
         return f"bundle_path is not under audio/ for {not_audio[:5]}"
     # os.utime applies these after extraction, so each must be a time every platform
     # stores exactly: Windows refuses negative timestamps, and ext4 clamps huge ones.
-    bad_mtime = [n for n, t in anlz.items()
-                 if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t)
-                 or not 0 <= t <= _MAX_MTIME]
+    bad_mtime = [
+        n
+        for n, t in anlz.items()
+        if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t) or not 0 <= t <= _MAX_MTIME
+    ]
     if bad_mtime:
         return f"anlz_files has mtimes that are not applicable timestamps for {bad_mtime[:5]}"
     # Lexical, not resolved: every member lies under a library root that import
     # requires absent or --force removes first (a link included, never followed),
     # so resolving here would follow a link that is about to go. A name that ".."
     # keeps inside data is refused below with the other names that are not canonical.
-    unsafe = [n for n in members if n != "manifest.json"
-              and (PurePosixPath(n).is_absolute() or bool(PureWindowsPath(n).drive)
-                   or posixpath.normpath(n).split("/")[0] == "..")]
+    unsafe = [
+        n
+        for n in members
+        if n != "manifest.json"
+        and (
+            PurePosixPath(n).is_absolute()
+            or bool(PureWindowsPath(n).drive)
+            or posixpath.normpath(n).split("/")[0] == ".."
+        )
+    ]
     if unsafe:
         return f"unsafe path in bundle: {unsafe[0]}"
     if problem := _member_name_problem(z.namelist()) or _member_path_problem(members, data):
@@ -598,8 +653,11 @@ def cmd_import(a: argparse.Namespace) -> int:
     # person can tell whether to restore or drop it, so nothing runs over it.
     replaced = sorted(data.glob(f"{REPLACED_PREFIX}*")) if data.is_dir() else []
     if replaced:
-        print(f"[FAIL] {replaced[0]} holds the library an interrupted --force import replaced; "
-              f"move its contents back into {data} or delete it, then rerun", file=sys.stderr)
+        print(
+            f"[FAIL] {replaced[0]} holds the library an interrupted --force import replaced; "
+            f"move its contents back into {data} or delete it, then rerun",
+            file=sys.stderr,
+        )
         return 2
     # Extraction overwrites, and --force replaces, these; without --force none may be there.
     # A link counts even when it dangles: extraction would write through it.
@@ -634,8 +692,11 @@ def cmd_import(a: argparse.Namespace) -> int:
                 try:
                     _put_back_replaced(aside, data, moved, installing)
                 except OSError as e:
-                    print(f"[FAIL] the import failed and putting the earlier library back failed too ({e}); "
-                          f"it is in {aside}", file=sys.stderr)
+                    print(
+                        f"[FAIL] the import failed and putting the earlier library back failed too ({e}); "
+                        f"it is in {aside}",
+                        file=sys.stderr,
+                    )
                     raise
                 print(f"[FAIL] the import failed; the earlier library was put back in {data}", file=sys.stderr)
             raise
@@ -691,8 +752,11 @@ def main() -> int:
     e.add_argument("--pick", type=int, default=6)
     e.add_argument("--max-audio-mb", type=float, default=400)
     e.add_argument("--with-stems", action="store_true")
-    e.add_argument("--allow-unanalyzed", action="store_true",
-                   help="let --ids name tracks with no anlz-cache entry (tests only; publish never passes it)")
+    e.add_argument(
+        "--allow-unanalyzed",
+        action="store_true",
+        help="let --ids name tracks with no anlz-cache entry (tests only; publish never passes it)",
+    )
     i = sub.add_parser("import")
     i.add_argument("--zip", required=True)
     i.add_argument("--data-dir", required=True)

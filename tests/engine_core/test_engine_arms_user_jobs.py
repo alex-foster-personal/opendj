@@ -10,6 +10,7 @@ job pending since 06:28Z), and #2610's hydration never wired.
 Run in a SUBPROCESS for the same reason as ``test_data_dir_sandbox``: the
 legacy modules resolve their paths from MDT_DATA_DIR at import time.
 """
+
 from __future__ import annotations
 
 import json

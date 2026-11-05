@@ -32,8 +32,14 @@ test('the sweep has no strong self-correlation away from zero, unlike the period
 	const train = cueLatency.cueLatencyClickTrain({ sampleRate: rate });
 	const sweepSide = worstSidelobe(sweep, rate, 3);
 	const trainSide = worstSidelobe(train, rate, 3);
-	assert.ok(trainSide > 0.5, `control: the click train's period sidelobe should be strong, got ${trainSide.toFixed(2)}`);
-	assert.ok(sweepSide < 0.2, `if the sweep correlates ${sweepSide.toFixed(2)} with itself off zero then echoes can still pull the lag - broken`);
+	assert.ok(
+		trainSide > 0.5,
+		`control: the click train's period sidelobe should be strong, got ${trainSide.toFixed(2)}`
+	);
+	assert.ok(
+		sweepSide < 0.2,
+		`if the sweep correlates ${sweepSide.toFixed(2)} with itself off zero then echoes can still pull the lag - broken`
+	);
 });
 
 test('a strong echo 60 ms after the probe does not move the measured lag', () => {
@@ -53,15 +59,25 @@ test('a strong echo 60 ms after the probe does not move the measured lag', () =>
 		captured[i] += 0.02 * (seed / 2147483648 - 0.5);
 	}
 	const { lagMs } = cueLatency.crossCorrelateLagMs(sweep, captured, rate);
-	assert.ok(Math.abs(lagMs - trueLagMs) <= 1, `if a 60 ms echo moves the lag to ${lagMs.toFixed(1)} ms then calibration jumps a period - broken`);
+	assert.ok(
+		Math.abs(lagMs - trueLagMs) <= 1,
+		`if a 60 ms echo moves the lag to ${lagMs.toFixed(1)} ms then calibration jumps a period - broken`
+	);
 });
 
 test('the sweep has its named duration at both common rates and stays inside full scale', () => {
 	for (const rate of [44100, 48000]) {
 		const sweep = cueLatency.cueLatencySweep({ sampleRate: rate });
 		assert.equal(sweep.length, Math.round((cueLatency.CUE_LATENCY_SWEEP_MS / 1000) * rate));
-		assert.ok(sweep.every((v) => Math.abs(v) <= 1), 'if the sweep clips then the speaker distorts the probe - broken');
-		assert.equal(sweep[0], 0, 'if the sweep does not fade in then it clicks, which is a periodic-free but broadband transient - broken');
+		assert.ok(
+			sweep.every((v) => Math.abs(v) <= 1),
+			'if the sweep clips then the speaker distorts the probe - broken'
+		);
+		assert.equal(
+			sweep[0],
+			0,
+			'if the sweep does not fade in then it clicks, which is a periodic-free but broadband transient - broken'
+		);
 	}
 	assert.throws(() => cueLatency.cueLatencySweep({ sampleRate: 0 }), /sampleRate/);
 });

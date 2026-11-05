@@ -40,11 +40,12 @@ trust a row:
 
 The 347 rows stored on this machine were written by ``librosa-only`` and
 ``librosa+madmom``, before any of the above existed. :meth:`from_json`
-loads them with ``lanes={}`` and ``producer="backfill"``, and
-:func:`validate_record_contract` applies ONLY to ``own_*`` backends, which
-is exactly the set the v1 contract covers. A pre-v1 backend is not made
-retroactively invalid, and it is never eligible for the canonical pointer
-either.
+loads them with ``lanes={}`` when the ``lanes`` key is absent and
+``producer="backfill"``, and :func:`validate_record_contract` applies ONLY
+to ``own_*`` backends, which is exactly the set the v1 contract covers. A
+pre-v1 backend is not made retroactively invalid, and it is never eligible
+for the canonical pointer either. An explicit null ``lanes`` or a non-object
+``lanes`` value is malformed stored JSON and raises :class:`StoredRecordError`.
 
 -Claude
 """
@@ -73,6 +74,10 @@ EnergySource = Literal["mik", "inferred"]
 
 class RecordContractError(ValueError):
     """An own record violates the native-analysis v1 record contract."""
+
+
+class StoredRecordError(RecordContractError):
+    """A record's JSON does not have the shape the store writes."""
 
 
 # `sha256:` followed by exactly 64 lowercase hex digits. Both digest fields
@@ -153,8 +158,27 @@ class AnalysisRecord:
         data.setdefault("uses_model", False)
         data.setdefault("model_sha256", None)
         data.setdefault("decode_fingerprint", "")
-        data["lanes"] = {lane: LaneResult.from_dict(block) for lane, block in (data.get("lanes") or {}).items()}
+        data["lanes"] = _lanes_from_stored_json(data)
         return cls(**data)
+
+
+def _lanes_from_stored_json(data: dict[str, Any]) -> dict[str, LaneResult]:
+    """Parse ``lanes`` from one stored record object.
+
+    A missing key is legacy (no lanes). An explicit null or a non-object is
+    malformed and raises :class:`StoredRecordError`, matching the store helper.
+    """
+    label = f"stored analysis record for {data.get('stable_id')!r}"
+    if "lanes" not in data:
+        return {}
+    lanes = data["lanes"]
+    if lanes is None:
+        raise StoredRecordError(f"{label} has explicit null lanes")
+    if not isinstance(lanes, dict):
+        raise StoredRecordError(
+            f"{label} has lanes of type {type(lanes).__name__}, not an object"
+        )
+    return {lane: LaneResult.from_dict(block) for lane, block in lanes.items()}
 
 
 def validate_record_contract(record: AnalysisRecord) -> None:
@@ -259,5 +283,6 @@ __all__ = [
     "AnalysisRecord",
     "EnergySource",
     "RecordContractError",
+    "StoredRecordError",
     "validate_record_contract",
 ]

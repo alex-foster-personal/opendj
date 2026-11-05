@@ -9,9 +9,6 @@ export interface ReorderSummary {
  * orderings. Assumes both are permutations of the same set (server-checked
  * by the solver, which only ever reorders the playlist's existing items). */
 export function summarizeReorder(previous: string[], proposed: string[]): ReorderSummary {
-	const moved = proposed.reduce(
-		(count, id, i) => count + (previous[i] === id ? 0 : 1),
-		0
-	);
+	const moved = proposed.reduce((count, id, i) => count + (previous[i] === id ? 0 : 1), 0);
 	return { movedCount: moved, unchanged: moved === 0 };
 }

@@ -112,6 +112,7 @@ test('toast helper formats singular and plural counts', () => {
 test('writablePlaylistNodes keeps playlist kind only', () => {
 	const nodes = [
 		playlistNode({ kind: 'playlist' }),
+		playlistNode({ kind: 'playlist', playlist_id: '_incoming', name: 'Inbox' }),
 		playlistNode({ kind: 'all_tracks', playlist_id: 'all', name: 'All Tracks' }),
 		playlistNode({ kind: 'folder', playlist_id: 'folder-1', name: 'Folder' }),
 		playlistNode({ kind: 'missing_tracks', playlist_id: 'missing', name: 'Missing Tracks' })
@@ -119,6 +120,7 @@ test('writablePlaylistNodes keeps playlist kind only', () => {
 	const writable = addToPlaylist.writablePlaylistNodes(nodes);
 	assert.equal(writable.length, 1);
 	assert.equal(writable[0].kind, 'playlist');
+	assert.notEqual(writable[0].playlist_id, '_incoming');
 });
 
 test('filterPlaylistsByName is case-insensitive substring and empty query returns all', () => {

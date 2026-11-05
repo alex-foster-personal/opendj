@@ -27,7 +27,7 @@ export async function expectFirstRunSetup(page: Page): Promise<Locator> {
 
 	if (await setupFailed.isVisible()) {
 		throw new Error(
-			'First-run setup failed to load: "Setup failed to load" alertdialog is visible',
+			'First-run setup failed to load: "Setup failed to load" alertdialog is visible'
 		);
 	}
 	await expect(setupDialog).toBeVisible();

@@ -18,6 +18,10 @@ export interface RecordedStretchProcessor {
 	connected: boolean;
 	disposed: boolean;
 	schedules: Array<{ outputTime: number; change: Record<string, unknown> }>;
+	/** Set by a test before the swap to make `connect` throw: a swap that fails on a deck that is not playing. */
+	connectError?: Error;
+	/** Awaited by `dispose` first, so a test can hold the window a failed swap leaves open. */
+	beforeDispose?: () => Promise<void>;
 }
 
 function registry(): RecordedStretchProcessor[] {
@@ -43,6 +47,7 @@ export class StretchDeckProcessor {
 		return {
 			connect(_destination: AudioNode) {
 				if (record.disposed) throw new Error('stretch stub: connect after dispose');
+				if (record.connectError !== undefined) throw record.connectError;
 				record.connected = true;
 			},
 			disconnect() {
@@ -60,6 +65,7 @@ export class StretchDeckProcessor {
 				record.schedules.push({ outputTime, change: { active: false } });
 			},
 			async dispose() {
+				if (record.beforeDispose !== undefined) await record.beforeDispose();
 				record.disposed = true;
 				record.connected = false;
 			}

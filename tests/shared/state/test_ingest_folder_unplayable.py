@@ -1,4 +1,5 @@
 """Folder import rejects corrupt and non-audio files before row insert."""
+
 from __future__ import annotations
 
 import os
@@ -9,11 +10,18 @@ from pathlib import Path
 
 import pytest
 
-
 from apps.shared import flac_meta
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder
 from apps.shared.state.writer import StateWriter
+from tests.shared.audio_probe_fixtures import (
+    GUID_PCM,
+    WAVE_FORMAT_ADPCM,
+    write_aifc,
+    write_aiff,
+    write_extensible_wav,
+    write_tagged_wav,
+)
 
 
 def _write_wav(path: Path, seconds: float = 0.05) -> Path:
@@ -43,9 +51,7 @@ def _build_corrupt_fixture_dir(root: Path) -> None:
     _write_wav(truncated, seconds=1.0)
     truncated.write_bytes(truncated.read_bytes()[:5000])
 
-    (root / "actually-text.wav").write_text(
-        "This is prose, not audio. " * 100, encoding="utf-8"
-    )
+    (root / "actually-text.wav").write_text("This is prose, not audio. " * 100, encoding="utf-8")
 
     (root / "riff-then-garbage.wav").write_bytes(b"RIFF" + os.urandom(4000))
 
@@ -72,9 +78,7 @@ def _ingest(root: Path, state_path: Path) -> folder.FolderIngestReport:
 def _track_count(state_path: Path) -> int:
     conn = state_db.open_rw(state_path)
     try:
-        return conn.execute(
-            "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL").fetchone()[0]
     finally:
         conn.close()
 
@@ -94,6 +98,28 @@ def test_folder_import_rejects_corrupt_wav_fixtures(tmp_path: Path) -> None:
     assert report.files_seen == 7
     assert report.files_rejected_unplayable == 6
     assert report.files_without_tags == 1
+
+
+@pytest.mark.requirement("SETUP-16")
+def test_folder_import_wav_aiff_structural_followup(tmp_path: Path) -> None:
+    """[if] extensible PCM and AIFF import and bad tags reject [then] 3 rows, [else stop]."""
+    root = tmp_path / "mix"
+    root.mkdir()
+    _write_wav(root / "pcm-control.wav")
+    write_extensible_wav(root / "ext-pcm.wav")
+    write_extensible_wav(root / "guid-bad.wav", guid=GUID_PCM[:-1] + b"\x00")
+    write_tagged_wav(root / "adpcm.wav", WAVE_FORMAT_ADPCM)
+    write_aifc(root / "ima4.aiff", b"ima4")
+    write_aiff(root / "ok.aiff")
+    state_path = tmp_path / "state.db"
+
+    report = _ingest(root, state_path)
+
+    assert _track_count(state_path) == 3
+    assert report.tracks_inserted == 3
+    assert report.files_seen == 6
+    assert report.files_rejected_unplayable == 3
+    assert report.files_without_tags == 3
 
 
 def test_valid_untagged_wav_imports_without_rejection(tmp_path: Path) -> None:

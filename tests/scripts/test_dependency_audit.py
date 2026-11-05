@@ -4,6 +4,7 @@ Acceptance:
 - [if] a known-CVE dependency is in the closure [then] the audit names advisory id and path
 - [if] the audit tool itself fails to run [then] UNKNOWN and non-zero exit
 - [if] a finding is dev-only [then] the report says so
+- [if] the output-probe crate is audited only through the Tauri crate [then] fail, [else stop].
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from scripts.dependency_audit_core import (
     parse_pnpm_audit_json,
     summarize,
 )
+from scripts.third_party_licenses import RUST_CRATES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "periodic-checks.yml"
@@ -117,6 +119,18 @@ def test_summarize_unknown_beats_findings() -> None:
     )
     assert code == EXIT_UNKNOWN
     assert "UNKNOWN scans: b" in text
+
+
+def test_cargo_audit_covers_the_output_probe_crate_on_its_own_lockfile() -> None:
+    """[if] the output-probe crate is audited only through the Tauri crate [then] fail, [else stop]."""
+    crates = dict(mod.CARGO_AUDIT_CRATES)
+    assert crates.get("apps/desktop/native/odj-output-probe") == "rust-output-probe"
+    assert len(set(crates.values())) == len(crates), "each Rust tree needs its own report label"
+    assert set(crates) == {crate for crate, _ in RUST_CRATES}, (
+        "every shipped Rust tree the license scan names is audited"
+    )
+    for crate in crates:
+        assert (REPO_ROOT / crate / "Cargo.lock").is_file(), f"{crate} has no Cargo.lock; cargo audit cannot run there"
 
 
 def test_run_all_unknown_when_tool_produces_no_output() -> None:

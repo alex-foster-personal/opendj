@@ -22,6 +22,34 @@ def test_in_progress_line_publishes_nothing(hub: RecordingHub) -> None:
     assert hub.events == []
 
 
+def test_folder_completion_calls_on_tracks_replaced(hub: RecordingHub) -> None:
+    calls: list[str] = []
+
+    def recorder() -> None:
+        calls.append("tracks")
+
+    on_setup_import_progress(
+        {"payload": {"mode": "folder"}},
+        {"progress": 1.0, "message": "done"},
+        on_tracks_replaced=recorder,
+    )
+    assert calls == ["tracks"]
+    assert hub.events == [
+        ("library.changed", {"kind": "tracks", "ids": []}),
+    ]
+
+
+def test_in_progress_does_not_call_on_tracks_replaced(hub: RecordingHub) -> None:
+    calls: list[str] = []
+
+    on_setup_import_progress(
+        {"payload": {"mode": "folder"}},
+        {"progress": 0.5},
+        on_tracks_replaced=lambda: calls.append("tracks"),
+    )
+    assert calls == []
+
+
 def test_folder_completion_publishes_tracks_only(hub: RecordingHub) -> None:
     on_setup_import_progress(
         {"payload": {"mode": "folder"}},

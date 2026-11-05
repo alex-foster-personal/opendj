@@ -14,8 +14,14 @@ test('TopBar.svelte still compiles with the performance Stage control', () => {
 });
 
 test('TopBar wires Stage through the shared openStage store and deck read model', () => {
-	assert.match(source, /import\s*\{[^}]*openStage[^}]*\}\s*from\s*'\$lib\/lyrics\/stage-store\.svelte'/);
-	assert.match(source, /import\s*\{[^}]*getDeckState[^}]*\}\s*from\s*'\$lib\/rb\/audio-engine\.svelte'/);
+	assert.match(
+		source,
+		/import\s*\{[^}]*openStage[^}]*\}\s*from\s*'\$lib\/lyrics\/stage-store\.svelte'/
+	);
+	assert.match(
+		source,
+		/import\s*\{[^}]*getDeckState[^}]*\}\s*from\s*'\$lib\/rb\/audio-engine\.svelte'/
+	);
 	assert.match(source, /openStage\(stageTarget\.stableId,\s*stageTarget\.deck\)/);
 	assert.match(
 		source,
@@ -31,7 +37,10 @@ test('TopBar renders one Stage button, inside the LYR menu, disabled when no dec
 		1,
 		'exactly one Stage button must be present'
 	);
-	const menu = source.slice(source.indexOf('class="ap-menu lyr-menu"'), source.indexOf('</span>', source.indexOf('class="ap-menu lyr-menu"')));
+	const menu = source.slice(
+		source.indexOf('class="ap-menu lyr-menu"'),
+		source.indexOf('</span>', source.indexOf('class="ap-menu lyr-menu"'))
+	);
 	assert.match(menu, /class="bsm-toggle lyr-menu-stage"/, 'Stage lives in the LYR menu');
 	assert.match(menu, /disabled=\{stageTarget === null\}/);
 	assert.match(menu, /aria-label="Open karaoke stage"/);
@@ -43,7 +52,11 @@ test('compact lyric chip is not presented as the global LYR preference being off
 		/<span\s+class="lyrics-compact-chip topbar-slot-lyr-compact"[\s\S]*?<\/span>/
 	)?.[0];
 	assert.ok(chipBlock, 'compact lyric-status chip markup must exist');
-	assert.doesNotMatch(chipBlock, /aria-pressed/, 'the compact chip must not masquerade as the LYR toggle');
+	assert.doesNotMatch(
+		chipBlock,
+		/aria-pressed/,
+		'the compact chip must not masquerade as the LYR toggle'
+	);
 	assert.match(
 		source,
 		/class="bsm-toggle topbar-slot-lyr"[\s\S]*aria-pressed=\{uiPrefs\.lyrics_global\}/

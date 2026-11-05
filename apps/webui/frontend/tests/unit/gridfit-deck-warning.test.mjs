@@ -25,11 +25,17 @@ const WRONG = {
 	verdict: 'wrong_bpm',
 	reason: null,
 	deck_warning: true,
-	message: 'Beatgrid tempo 127.00 BPM does not match the audio (about 128.00 BPM): Beat Sync will drift on this track.',
+	message:
+		'Beatgrid tempo 127.00 BPM does not match the audio (about 128.00 BPM): Beat Sync will drift on this track.',
 	grid_bpm: 127,
 	audio_bpm: 128
 };
-const SHIFTED = { ...WRONG, verdict: 'shifted', deck_warning: false, message: 'Beatgrid is offset from the kicks by about 30 ms.' };
+const SHIFTED = {
+	...WRONG,
+	verdict: 'shifted',
+	deck_warning: false,
+	message: 'Beatgrid is offset from the kicks by about 30 ms.'
+};
 
 before(async () => {
 	fit = await loadTypeScriptModule('src/lib/rb/grid-audio-fit.svelte.ts');
@@ -45,7 +51,10 @@ beforeEach(() => {
 		const id = String(url).split('/beatgrid-flags/')[1].split('/')[0];
 		const body = replies.get(id);
 		if (body instanceof Error) return new Response('engine said no', { status: 500 });
-		return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		return new Response(JSON.stringify(body), {
+			status: 200,
+			headers: { 'Content-Type': 'application/json' }
+		});
 	};
 });
 
@@ -59,7 +68,11 @@ test('a wrong-BPM finding leads the warning; shifted and no answer add nothing',
 	const shape = 'Beatgrid: 12 of 400 intervals uneven - Beat Sync may wander on this track';
 	assert.equal(fit.deckGridWarningText(null, WRONG), WRONG.message);
 	assert.equal(fit.deckGridWarningText(shape, WRONG), `${WRONG.message} | ${shape}`);
-	assert.equal(fit.deckGridWarningText(shape, SHIFTED), shape, 'shifted is a library finding, never a deck warning');
+	assert.equal(
+		fit.deckGridWarningText(shape, SHIFTED),
+		shape,
+		'shifted is a library finding, never a deck warning'
+	);
 	assert.equal(fit.deckGridWarningText(null, SHIFTED), null);
 	assert.equal(fit.deckGridWarningText(shape, null), shape);
 	assert.equal(fit.deckGridWarningText(null, null), null);
@@ -73,7 +86,10 @@ test('one request per track, made only after the delay, and its answer is kept',
 	assert.equal(calls.length, 0, 'asked during the deck load');
 	await wait(fit.REQUEST_DELAY_MS + 100);
 	assert.equal(calls.length, 1, 'asked more than once for one track');
-	assert.ok(calls[0].at - started >= fit.REQUEST_DELAY_MS - 5, `asked after ${calls[0].at - started} ms`);
+	assert.ok(
+		calls[0].at - started >= fit.REQUEST_DELAY_MS - 5,
+		`asked after ${calls[0].at - started} ms`
+	);
 	assert.match(calls[0].url, /\/api\/v1\/beatgrid-flags\/b{40}\/audio-fit$/);
 	assert.deepEqual(fit.gridAudioFitFor(WRONG.stable_id), WRONG);
 	fit.requestGridAudioFit(WRONG.stable_id);
@@ -95,5 +111,8 @@ test('a failed request gives no answer and so no warning', async () => {
 	}
 	assert.equal(fit.gridAudioFitFor(id), null);
 	assert.equal(fit.deckGridWarningText(null, fit.gridAudioFitFor(id)), null);
-	assert.ok(logged.some((line) => line.includes('[grid-audio-fit] could not judge')), 'a failure must be logged, not silent');
+	assert.ok(
+		logged.some((line) => line.includes('[grid-audio-fit] could not judge')),
+		'a failure must be logged, not silent'
+	);
 });

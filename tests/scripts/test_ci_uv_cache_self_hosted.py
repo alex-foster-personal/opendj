@@ -41,9 +41,7 @@ def _setup_uv_steps() -> list[tuple[str, str, dict]]:
 
 def test_setup_uv_is_used_somewhere() -> None:
     """[if] no workflow uses setup-uv [then] the guard below is vacuous, [else stop]."""
-    assert _setup_uv_steps(), (
-        "no astral-sh/setup-uv step found; the hosted-only guard has nothing to check"
-    )
+    assert _setup_uv_steps(), "no astral-sh/setup-uv step found; the hosted-only guard has nothing to check"
 
 
 def test_no_setup_uv_cache_is_enabled_unconditionally() -> None:
@@ -53,10 +51,7 @@ def test_no_setup_uv_cache_is_enabled_unconditionally() -> None:
         value = (step.get("with") or {}).get("enable-cache")
         if value is None or value is False or str(value).strip() in {HOSTED_ONLY, "false"}:
             continue
-        offenders.append(
-            f"{workflow}:{job_id}:{step.get('name') or step.get('uses')} enable-cache={value!r}"
-        )
+        offenders.append(f"{workflow}:{job_id}:{step.get('name') or step.get('uses')} enable-cache={value!r}")
     assert not offenders, (
-        "setup-uv cache must be absent or hosted-only "
-        f"(`enable-cache: {HOSTED_ONLY}`), found: {offenders}"
+        f"setup-uv cache must be absent or hosted-only (`enable-cache: {HOSTED_ONLY}`), found: {offenders}"
     )

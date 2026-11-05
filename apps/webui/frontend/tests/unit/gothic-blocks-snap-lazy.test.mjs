@@ -53,7 +53,11 @@ describe('block-layout-lazy loader', () => {
 			await settle();
 			assert.equal(errors, 1, 'first failure is reported');
 			assert.notEqual(mod.blockSnapLoadError(), null);
-			assert.deepEqual(timers.map((t) => t.ms), [1_000], 'the failure scheduled its own retry');
+			assert.deepEqual(
+				timers.map((t) => t.ms),
+				[1_000],
+				'the failure scheduled its own retry'
+			);
 			// Sixty frames inside the window start no fetch. A refetch would land
 			// (esbuild's test bundle resolves a re-import of the failing module).
 			for (let i = 0; i < 60; i += 1) assert.equal(mod.blockSnapApiFor(true), null);

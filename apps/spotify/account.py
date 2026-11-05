@@ -56,7 +56,9 @@ __all__ = [
 
 # What the sign-in tab says once Spotify's redirect arrives: never "connected",
 # because the token exchange and the saves can still fail after it.
-CALLBACK_RECEIVED_TEXT = "Spotify sent your sign-in to Open DJ. Open DJ shows whether it connected; you can close this tab."
+CALLBACK_RECEIVED_TEXT = (
+    "Spotify sent your sign-in to Open DJ. Open DJ shows whether it connected; you can close this tab."
+)
 
 # Spotify caps /me/playlists at 50 per page.
 PAGE_SIZE = 50
@@ -95,7 +97,9 @@ class EnvClientIdInvalid(ClientIdUnreadable):
     """
 
     def __init__(self, value: str, problem: str) -> None:
-        Exception.__init__(self, f"SPOTIFY_CLIENT_ID in the environment is not a Spotify Client ID ({value!r}): {problem}")
+        Exception.__init__(
+            self, f"SPOTIFY_CLIENT_ID in the environment is not a Spotify Client ID ({value!r}): {problem}"
+        )
         self.path = None
 
 
@@ -273,9 +277,7 @@ def _parse_playlist(item: dict[str, Any], user_id: str) -> AccountPlaylist:
     )
 
 
-def _add_playlist_rows(
-    items: list[Any], user_id: str, seen: set[str], playlists: list[AccountPlaylist]
-) -> None:
+def _add_playlist_rows(items: list[Any], user_id: str, seen: set[str], playlists: list[AccountPlaylist]) -> None:
     for item in items:
         # Spotify returns null entries for playlists that were deleted; any
         # other non-object is drift and fails rather than silently shortening
@@ -345,7 +347,9 @@ def _next_offset(next_url: str, page_end: int) -> int:
         )
     advertised = int(values[0])
     if advertised != page_end:
-        raise RuntimeError(f"Spotify /me/playlists next link points at offset {advertised}, not {page_end} where the page ended")
+        raise RuntimeError(
+            f"Spotify /me/playlists next link points at offset {advertised}, not {page_end} where the page ended"
+        )
     return advertised
 
 
@@ -399,9 +403,7 @@ def _walk_account_playlists(api: AccountApi, user_id: str) -> tuple[list[Account
             raise RuntimeError(f"Spotify /me/playlists offered another page after an empty one at offset {offset}")
         offset = _next_offset(next_url, page_end)
         if offset > total_reported:
-            raise RuntimeError(
-                f"Spotify /me/playlists kept offering pages past its reported total of {total_reported}"
-            )
+            raise RuntimeError(f"Spotify /me/playlists kept offering pages past its reported total of {total_reported}")
 
 
 def _env_client_id(source: Mapping[str, str]) -> str | None:
@@ -415,9 +417,7 @@ def _env_client_id(source: Mapping[str, str]) -> str | None:
         raise EnvClientIdInvalid(value, str(exc)) from exc
 
 
-def resolve_client_id(
-    env: dict[str, str] | None = None, client_id_path: Path | None = None
-) -> str | None:
+def resolve_client_id(env: dict[str, str] | None = None, client_id_path: Path | None = None) -> str | None:
     """SPOTIFY_CLIENT_ID from the env, else the id saved by the last sign-in."""
     from_env = _env_client_id(os.environ if env is None else env)
     if from_env is not None:

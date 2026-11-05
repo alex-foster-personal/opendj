@@ -34,6 +34,11 @@ import uvicorn
 #: tick measured on a loaded CI runner (over 15s).
 THREAD_HANG_GUARD_S: float = 120.0
 
+#: CLI/MCP hang guard for a command that must outlive the engine's claimed-order
+#: 503 page_gone (`ORDER_RESULT_DEADLINE_S` in apps/webui/server/routes/commands.py).
+#: Equal values race: the CLI reports a generic timeout instead of the named reason.
+ORDER_HANG_GUARD_S: float = 135.0
+
 #: Tick interval for a test that needs exactly one tick. A long interval parks
 #: the thread in ``stop.wait()`` after that tick, which ``stop()`` interrupts
 #: at once, so a lifespan's bounded join measures the join itself rather than

@@ -3,6 +3,7 @@
 Ties to RECON-01 (broken-link enumeration builds on ``iter_tracks``) and
 SYNC-02 (matching builds on track/playlist iteration).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -78,9 +79,7 @@ def test_iter_tracks_flags_streaming_tracks(rb_pyrekordbox_db) -> None:
     assert streaming, "fixture should include spotify: tracks"
     for t in streaming:
         assert t.file_path is None, t
-        assert t.folder_path == "" or t.folder_path.startswith(
-            ("spotify:", "tidal:", "http://", "https://")
-        )
+        assert t.folder_path == "" or t.folder_path.startswith(("spotify:", "tidal:", "http://", "https://"))
 
 
 @pytest.mark.requirement("RECON-01")
@@ -110,10 +109,7 @@ def test_iter_tracks_empty_artist_is_empty_string_not_none(rb_pyrekordbox_db) ->
 def test_iter_tracks_unicode_title_roundtrip(rb_pyrekordbox_db) -> None:
     """Unicode in FolderPath survives the iter_tracks layer unchanged."""
     tracks = list(rekordbox_db.iter_tracks(rb_pyrekordbox_db))
-    unicode_tracks = [
-        t for t in tracks
-        if t.folder_path and any(ord(c) > 127 for c in t.folder_path)
-    ]
+    unicode_tracks = [t for t in tracks if t.folder_path and any(ord(c) > 127 for c in t.folder_path)]
     assert unicode_tracks, "fixture should include unicode filenames"
     # Each unicode track's FolderPath is valid UTF-8 (no mojibake).
     for t in unicode_tracks:
@@ -165,9 +161,7 @@ def test_iter_playlists_top_level_parent_id_is_none(rb_pyrekordbox_db) -> None:
 
 
 @pytest.mark.requirement("INFRA-02")
-def test_open_db_raises_when_live_and_working_both_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_open_db_raises_when_live_and_working_both_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If neither live nor working DB exists, ``open_db`` raises."""
     from apps.shared import paths as shared_paths
 
@@ -178,5 +172,6 @@ def test_open_db_raises_when_live_and_working_both_missing(
 
     with pytest.raises(FileNotFoundError):
         rekordbox_db.open_db()
+
 
 pytestmark = pytest.mark.rb_parity

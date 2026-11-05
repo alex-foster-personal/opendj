@@ -26,9 +26,7 @@ export const ALLOWED_PIN_ATTACHMENT_TYPES: ReadonlySet<string> = new Set([
  * with an explicit message - FB-11 forbids a silent drop), or an accepted
  * image file. */
 export type PastedImageOutcome =
-	| { kind: 'none' }
-	| { kind: 'rejected'; type: string }
-	| { kind: 'file'; file: File };
+	{ kind: 'none' } | { kind: 'rejected'; type: string } | { kind: 'file'; file: File };
 
 /** Classifies the first image-shaped clipboard item (an item whose MIME type
  * starts with `image/`), or reports no image item was present at all. Plain-

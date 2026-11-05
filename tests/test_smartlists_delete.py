@@ -39,7 +39,8 @@ def test_delete_smartlist_create_delete_list_absent(client, state_db_path):
     conn = sqlite3.connect(str(state_db_path))
     try:
         row = conn.execute(
-            "SELECT name, deleted_at FROM smartlists WHERE id=?", (sid,),
+            "SELECT name, deleted_at FROM smartlists WHERE id=?",
+            (sid,),
         ).fetchone()
     finally:
         conn.close()

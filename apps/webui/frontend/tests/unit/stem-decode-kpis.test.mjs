@@ -20,7 +20,12 @@ import {
 test('aliasTwoPartBundle maps vocals and drums-as-instrumental', () => {
 	const vocals = Buffer.from('vocals-audio');
 	const drums = Buffer.from('drums-audio');
-	const two = aliasTwoPartBundle({ vocals, drums, bass: Buffer.from('b'), other: Buffer.from('o') });
+	const two = aliasTwoPartBundle({
+		vocals,
+		drums,
+		bass: Buffer.from('b'),
+		other: Buffer.from('o')
+	});
 	assert.equal(two.vocals, vocals);
 	assert.equal(two.instrumental, drums);
 });
@@ -72,9 +77,18 @@ test('independenceHolds is true only when widths settle independently', () => {
 
 test('agreeLine applies stopwatchLane with the caller margin', () => {
 	const margin = 1.25;
-	assert.equal(agreeLine({ chosenLane: 'workers', baselineMs: 171, workerMs: 100, margin }).agrees, true);
-	assert.equal(agreeLine({ chosenLane: 'workers', baselineMs: 110, workerMs: 100, margin }).agrees, false);
-	assert.equal(agreeLine({ chosenLane: 'main-thread', baselineMs: 51, workerMs: 100, margin }).agrees, true);
+	assert.equal(
+		agreeLine({ chosenLane: 'workers', baselineMs: 171, workerMs: 100, margin }).agrees,
+		true
+	);
+	assert.equal(
+		agreeLine({ chosenLane: 'workers', baselineMs: 110, workerMs: 100, margin }).agrees,
+		false
+	);
+	assert.equal(
+		agreeLine({ chosenLane: 'main-thread', baselineMs: 51, workerMs: 100, margin }).agrees,
+		true
+	);
 });
 
 test('kpiId names per-width per-engine lane timings', () => {
@@ -86,7 +100,10 @@ test('kpiId names per-width per-engine lane timings', () => {
 		kpiId({ width: 4, engine: 'chromium', lane: 'workers' }),
 		'stem_decode_4way_ms_chromium_workers'
 	);
-	assert.throws(() => kpiId({ width: 3, engine: 'webkit', lane: 'workers' }), /unknown stem decode width/);
+	assert.throws(
+		() => kpiId({ width: 3, engine: 'webkit', lane: 'workers' }),
+		/unknown stem decode width/
+	);
 });
 
 test('laneTimingsToRows emits eight rows with shared capture metadata', () => {
@@ -111,7 +128,8 @@ test('laneTimingsToRows emits eight rows with shared capture metadata', () => {
 			date: '2026-09-11',
 			round: 'issue-2310',
 			machine: 'test-host',
-			source: 'pnpm test:live:stem-decode-workers PERF-STEMDEC-02, <N> distinct 44.1kHz FLACs, Playwright <engine>, warm pool, decode only',
+			source:
+				'pnpm test:live:stem-decode-workers PERF-STEMDEC-02, <N> distinct 44.1kHz FLACs, Playwright <engine>, warm pool, decode only',
 			captureId: 'issue-2310-stemdec-02',
 			fixtureCount: 4
 		}
@@ -154,9 +172,18 @@ test('missingFixtureMessage names Q18_FLAC_DIR', () => {
 });
 
 test('mpegKpiId names the four declared mp3 KPI cards', () => {
-	assert.equal(mpegKpiId({ engine: 'webkit', lane: 'main-thread' }), 'stem_decode_4way_mp3_ms_webkit_main');
-	assert.equal(mpegKpiId({ engine: 'webkit', lane: 'workers' }), 'stem_decode_4way_mp3_ms_webkit_workers');
-	assert.equal(mpegKpiId({ engine: 'chromium', lane: 'main-thread' }), 'stem_decode_4way_mp3_ms_chromium_main');
+	assert.equal(
+		mpegKpiId({ engine: 'webkit', lane: 'main-thread' }),
+		'stem_decode_4way_mp3_ms_webkit_main'
+	);
+	assert.equal(
+		mpegKpiId({ engine: 'webkit', lane: 'workers' }),
+		'stem_decode_4way_mp3_ms_webkit_workers'
+	);
+	assert.equal(
+		mpegKpiId({ engine: 'chromium', lane: 'main-thread' }),
+		'stem_decode_4way_mp3_ms_chromium_main'
+	);
 	assert.equal(
 		mpegKpiId({ engine: 'chromium', lane: 'workers' }),
 		'stem_decode_4way_mp3_ms_chromium_workers'
@@ -231,7 +258,13 @@ test('mpegLedgerAppendAllowed rejects incomplete or withheld rows', () => {
 		],
 		{ date: '2026-09-12', machine: 'test-host' }
 	);
-	const base = { fixtureCount: 4, enginesRan: 2, requiredEngines: 2, structuralFailures: 0, rows: goodRows };
+	const base = {
+		fixtureCount: 4,
+		enginesRan: 2,
+		requiredEngines: 2,
+		structuralFailures: 0,
+		rows: goodRows
+	};
 	assert.equal(mpegLedgerAppendAllowed(base), true);
 	assert.equal(mpegLedgerAppendAllowed({ ...base, fixtureCount: 3 }), false);
 	assert.equal(mpegLedgerAppendAllowed({ ...base, enginesRan: 1 }), false);

@@ -34,9 +34,7 @@ def test_an_unset_stick_fails_instead_of_skipping() -> None:
 
 
 @pytest.mark.parametrize("opt_out", OPT_OUTS)
-def test_the_explicit_opt_out_prints_its_reason_and_skips(
-    opt_out: str, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_the_explicit_opt_out_prints_its_reason_and_skips(opt_out: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(pytest.skip.Exception) as skipped:
         live_stick_root({opt_out: "1"})
     reason = str(skipped.value)

@@ -239,7 +239,10 @@ test('detect: a failed Look again over an earlier answer says so (Mac check 3b)'
 
 	const html = render();
 	const text = assertClean(html, 'failed re-check');
-	assert.match(text, /Looking again did not finish\. What is shown below is from the earlier search\./);
+	assert.match(
+		text,
+		/Looking again did not finish\. What is shown below is from the earlier search\./
+	);
 	assert.match(text, /Your DJ collection: found/, 'the earlier answer may stay visible');
 	assert.match(html, /class="probes[^"]*\bstale\b/, 'and it is drawn as the old one');
 	assert.doesNotMatch(text, /Looking for your music on this machine/);
@@ -268,7 +271,10 @@ test('welcome: a failed first status load offers Try again and never strands Get
 	const html = render();
 	const text = assertClean(html, 'welcome, status failed');
 	assert.match(text, /Your library could not be read yet\. Try again, or get started anyway\./);
-	assert.match(html, /<button[^>]*data-agent-endpoint="GET \/api\/v1\/setup\/status"[^>]*>\s*Try again/);
+	assert.match(
+		html,
+		/<button[^>]*data-agent-endpoint="GET \/api\/v1\/setup\/status"[^>]*>\s*Try again/
+	);
 	const getStarted = /<button([^>]*)>\s*Get started/.exec(html);
 	assert.ok(getStarted !== null, 'Get started must render');
 	assert.doesNotMatch(getStarted[1], /disabled/, 'Get started must stay enabled');

@@ -249,8 +249,7 @@ def _compact_cache(out: Path) -> set[str]:
             if interrupted_tail:
                 preview = line if len(line) <= 120 else f"{line[:117]}..."
                 print(
-                    f"{out}:{line_num}: discarding incomplete cache fragment (will rescore): "
-                    f"{preview!r}",
+                    f"{out}:{line_num}: discarding incomplete cache fragment (will rescore): {preview!r}",
                     file=sys.stderr,
                 )
                 continue

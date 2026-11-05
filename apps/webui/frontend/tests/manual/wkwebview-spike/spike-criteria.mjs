@@ -7,7 +7,7 @@
  * .planning/REQUIREMENTS.md (LATENCY-01 to LATENCY-03). This file records WHAT
  * is measured and how a verdict is spelled; it never decides an invariant on
  * its own. It is also the criterion set of record: the lane-A-era
- * docs/quality/wkwebview-spike-protocol.md that first published WKV-01 to
+ * (private path) that first published WKV-01 to
  * WKV-10 never reached main, so this registry is the only published copy.
  *
  * Lane-A vocabulary kept verbatim because recorded evidence cites it, with its
@@ -16,8 +16,8 @@
  * (PASS / FAIL / UNAVAILABLE, no overwrites -- enforced by the functions
  * below), and `phase_4_entry_gate` is simply the gate this document opens or
  * holds shut. On main that gate is the packaged-decode verdict tracked in
- * docs/perf/RESOURCES.md and in the dated log at
- * .agents/skills/odj-latency-and-performance-loops/SKILL.md.
+ * (private path) and in the dated log at
+ * (private path).
  *
  * Nothing here observes WKWebView. Every `expectation` string below is an
  * expectation to be tested by a human at a Mac, not an observed fact.
@@ -396,7 +396,9 @@ export function renderEvidenceMarkdown(document_) {
 		'# DESK-005 WKWebView spike evidence',
 		'',
 		`- schema: ${document_.schema}`,
-		...REQUIRED_HOST_FIELDS.map((field) => `- ${field.replace(/_/g, ' ')}: ${document_.host[field]}`),
+		...REQUIRED_HOST_FIELDS.map(
+			(field) => `- ${field.replace(/_/g, ' ')}: ${document_.host[field]}`
+		),
 		`- gate verdict: ${gate.verdict} (Phase 4 entry gate ${gate.phase_4_entry_gate})`,
 		'',
 		'| ID | Criterion | Verdict | Missing capability | Detail | Evidence |',

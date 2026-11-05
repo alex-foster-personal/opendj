@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const MARKERS = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/feedback/FeedbackPinMarkers.svelte', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/feedback/FeedbackPinMarkers.svelte', import.meta.url)
+	),
 	'utf8'
 );
 const LAYER = readFileSync(

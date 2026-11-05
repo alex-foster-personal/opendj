@@ -15,9 +15,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_SPEC = importlib.util.spec_from_file_location(
-    "savepoint_gate", REPO_ROOT / "scripts" / "savepoint_gate.py"
-)
+_SPEC = importlib.util.spec_from_file_location("savepoint_gate", REPO_ROOT / "scripts" / "savepoint_gate.py")
 assert _SPEC is not None and _SPEC.loader is not None
 savepoint_gate = importlib.util.module_from_spec(_SPEC)
 sys.modules["savepoint_gate"] = savepoint_gate
@@ -28,17 +26,14 @@ def test_fast_mode_drops_exactly_the_slow_steps() -> None:
     steps = savepoint_gate._steps()
     fast = [s for s in steps if not s.slow]
     slow = [s.name for s in steps if s.slow]
-    assert slow == ["pytest-full", "e2e-smoke"], (
-        f"the slow set moved: {slow}. --fast must keep proving units + types."
-    )
+    assert slow == ["pytest-full", "e2e-smoke"], f"the slow set moved: {slow}. --fast must keep proving units + types."
     assert [s.name for s in fast] == ["svelte-kit-sync", "frontend-unit", "svelte-check"]
 
 
 def test_svelte_kit_sync_is_always_first() -> None:
     steps = savepoint_gate._steps()
     assert steps[0].name == "svelte-kit-sync", (
-        "an unsynced worktree cascades into ~46 phantom failures and a hang; "
-        "sync must run before any frontend step"
+        "an unsynced worktree cascades into ~46 phantom failures and a hang; sync must run before any frontend step"
     )
 
 
@@ -82,16 +77,12 @@ def test_a_failing_step_stops_the_gate_with_nonzero_exit(monkeypatch) -> None:
     monkeypatch.setattr(savepoint_gate.subprocess, "run", _fake_run)
     exit_code = savepoint_gate.main([])
     assert exit_code == 1
-    assert ran == ["svelte-kit-sync", "frontend-unit"], (
-        f"the gate kept running past a red step: {ran}"
-    )
+    assert ran == ["svelte-kit-sync", "frontend-unit"], f"the gate kept running past a red step: {ran}"
 
 
 def test_all_green_returns_zero(monkeypatch) -> None:
     class _Result:
         returncode = 0
 
-    monkeypatch.setattr(
-        savepoint_gate.subprocess, "run", lambda argv, cwd: _Result()
-    )
+    monkeypatch.setattr(savepoint_gate.subprocess, "run", lambda argv, cwd: _Result())
     assert savepoint_gate.main(["--fast"]) == 0

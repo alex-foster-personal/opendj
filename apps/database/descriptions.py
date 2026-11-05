@@ -16,6 +16,8 @@ from __future__ import annotations
 #: table name -> what one row of it means.
 TABLES: dict[str, str] = {
     "pair_transitions": "The saved transition for one ordered pair of tracks, as a plan. Most recent wins. Machine-local.",
+    "pair_decisions": "AutoPlay's last lookahead decision for one ordered pair: shortlist, rejections, candidates. Machine-local.",
+    "pair_verdicts": "The listener's one-tap good / meh / bad on the transition that ran between one ordered pair. Machine-local.",
     # ----- state_core: the library itself -------------------------------
     "tracks": (
         "One musical work as this project understands it, independent of any "
@@ -299,6 +301,9 @@ TABLES: dict[str, str] = {
         "One saved rule that resolves to a track set at read time. Stores the "
         "rule, never the resulting tracks."
     ),
+    # ----- set target and skip flags (LIBUX-8679) ------------------------
+    "set_targets": "Optional target length of a playlist shown as a set.",
+    "set_skips": "One track marked skip-in-set within a playlist set.",
     # ----- play orders ---------------------------------------------------
     "play_orders": "One ordered sequence of tracks prepared for performance.",
     "play_order_entries": "One track's slot within one play order.",

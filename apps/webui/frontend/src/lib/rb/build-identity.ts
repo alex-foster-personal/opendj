@@ -75,6 +75,19 @@ export interface ShellStamp {
 	evidence_written_at_utc: string | null;
 }
 
+/** Mirrors `LineageOut` (INSTALL-44): the long-lived line a build carries, as a colour. */
+export interface Lineage {
+	color_name: string;
+	color_hex: string;
+	lines: string[];
+	line_shares: Record<string, number>;
+	unresolved_lines: string[];
+	previous_git_sha_full: string | null;
+	descends_from_previous: boolean | null;
+	missing_commits: number | null;
+	missing_from: string | null;
+}
+
 /** The engine's answer, mirroring `BuildInfoOut` in apps/engine_core/build_info.py. */
 export interface EngineStamp {
 	source: 'payload' | 'repo';
@@ -90,6 +103,8 @@ export interface EngineStamp {
 	bundle_identifier: string | null;
 	app_version: string | null;
 	manifest_path: string | null;
+	lineage?: Lineage | null;
+	lineage_unavailable?: string | null;
 }
 
 /**
@@ -378,6 +393,41 @@ export function describeDrift(
 		return 'aligned';
 	}
 	return 'drifted';
+}
+
+export interface LineageBadge {
+	name: string;
+	hex: string;
+	title: string;
+}
+
+/**
+ * The colour swatch and name for the engine's build (INSTALL-44), or null when
+ * the engine has not answered or states no lineage (then the title of the
+ * summary carries `lineage_unavailable`).
+ */
+export function lineageBadge(state: SideState<EngineStamp>): LineageBadge | null {
+	if (state.kind !== 'ok') return null;
+	const lineage = state.value.lineage ?? null;
+	if (lineage === null) return null;
+	const shares = Object.entries(lineage.line_shares)
+		.map(([line, share]) => `${line} ${Math.round(share * 100)}%`)
+		.join(', ');
+	const blended = lineage.lines.length > 1 ? ` (a blend of ${lineage.lines.join(' + ')} until they merge)` : '';
+	const descent =
+		lineage.descends_from_previous === null
+			? 'No previous build was running when this one was made.'
+			: lineage.descends_from_previous
+				? `Descends from the build running when it was made (${(lineage.previous_git_sha_full ?? '').slice(0, 8)}).`
+				: `Did NOT descend from the build running when it was made: missing ${lineage.missing_commits} commits from ${lineage.missing_from}.`;
+	return {
+		name: lineage.color_name,
+		hex: lineage.color_hex,
+		title:
+			`Build line: ${lineage.color_name}${blended}. Carries ${lineage.lines.join(', ')}` +
+			`${shares ? ` (${shares} of each line's own commits)` : ''}.\n${descent}` +
+			(lineage.unresolved_lines.length > 0 ? `\nNot in the build clone: ${lineage.unresolved_lines.join(', ')}.` : '')
+	};
 }
 
 /** The one-line label for a side, or the fault sentence that replaces it. */

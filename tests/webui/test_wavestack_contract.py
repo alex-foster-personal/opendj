@@ -103,5 +103,7 @@ def test_waveform_gutter_labels_empty_and_unavailable_artwork_states() -> None:
     assert "no track loaded" in gutter
     assert "{#if loaded}<WaveTrackSummary {deck} />{/if}" in gutter
     assert "No artwork found" in source
-    assert "artworkFailed" in source
+    # The shared cover module owns the failed-load state since the artwork retry fix.
+    assert "coverFailed(sid)" in source
+    assert "coverVisible(deck.stable_id)" in source
     assert "loaded deck ${deck.stable_id} is missing a title" in source

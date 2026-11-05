@@ -29,6 +29,7 @@ a value that is machine-specific and MUST NOT be hardcoded here (#910).
 Required: the script fails fast if it is unset rather than silently
 matching zero rows.
 """
+
 from __future__ import annotations
 
 import argparse

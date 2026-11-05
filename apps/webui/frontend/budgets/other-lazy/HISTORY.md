@@ -309,3 +309,5 @@ measured 480,663. Main's CI job 125662168293 (main 1da0577f16) measured 480,645,
 ceiled to KiB (481,280) plus 1 KiB of jitter => 482,304. Payback: none planned.
 { name: 'other-lazy', limit: 482304, measured: 480663, note: 'all other routes plus deferred shell' }
 ```
+
+REBASELINED Thu 5 Nov 2026 (preventive rebaseline, surface within 3% of ceiling, Thu 5 Nov 2026; main 86084188b4, #8869, run 42023794899, frontend job 127238947586): CI measured 485,775 B gzip, 97.2% of base 482,304 + charges 17,408 (6529, 6555, 8342, 8801) = 499,712 (99.8% on an earlier run, 888 B left). Measured ceiled to KiB (486,400) plus 1 KiB => 487,424 by the README rule, superseded by measured plus 2% (485,775 x 1.02 = 495,490 => 495,616); the four charges are folded into the base and deleted. Payback: none planned. Headroom note: the README's "next KiB plus 1 KiB" rule leaves headroom below build noise on large surfaces (local other-lazy read 486,102 against CI 485,775; library tipped on 15 B of noise on Thu 5 Nov 2026), so this preventive rebaseline uses CI measured plus 2%, rounded up to the next KiB: 485,775 x 1.02 = 495,490 => 495,616.

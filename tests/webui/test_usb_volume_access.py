@@ -126,9 +126,7 @@ def test_listing_types_ok_denied_and_other_failures(tmp_path: Path, roots: FakeR
     deadline = access_mod.root_listing_deadline()
 
     results = {
-        path.name: access_mod.await_root_listing(
-            access_mod.start_root_listing(path), deadline_mono=deadline
-        )
+        path.name: access_mod.await_root_listing(access_mod.start_root_listing(path), deadline_mono=deadline)
         for path in (readable, refused, broken)
     }
 
@@ -160,10 +158,7 @@ def test_a_parked_listing_is_pending_and_the_scan_stays_bounded(
     assert elapsed >= access_mod.ROOT_LISTING_TIMEOUT_S * 0.9, (
         f"control: the scan returned in {elapsed:.2f}s, so the parked listing was never awaited"
     )
-    summary = {
-        name: (out.access, out.role, out.kind, out.is_music, out.hide_reason)
-        for name, out in by_name.items()
-    }
+    summary = {name: (out.access, out.role, out.kind, out.is_music, out.hide_reason) for name, out in by_name.items()}
     assert summary == {
         "Parked": ("pending", "usb_stick", "unknown", True, None),
         "Refused": ("denied", "usb_stick", "unknown", True, None),
@@ -187,9 +182,7 @@ def test_hung_listings_share_one_deadline(
     by_name, elapsed = _scan(volumes_root)
 
     assert {out.access for out in by_name.values()} == {"pending"}
-    assert elapsed < HTTP_BUDGET_S, (
-        f"if {len(names)} hung listings take {elapsed:.2f}s then each got its own timeout"
-    )
+    assert elapsed < HTTP_BUDGET_S, f"if {len(names)} hung listings take {elapsed:.2f}s then each got its own timeout"
 
 
 def test_a_parked_listing_is_joined_not_restarted_and_clears_when_answered(
@@ -250,9 +243,7 @@ def test_get_volumes_answers_within_one_second_while_a_prompt_is_open(
     volumes_root = _volumes_root(tmp_path, "Stick")
     roots.park(volumes_root / "Stick")
     # The host gates (darwin, /Volumes, diskutil, sandbox) are not under test here.
-    monkeypatch.setattr(
-        usb_mod, "_system_discovery", lambda *, usb_export_gate: _discovery(volumes_root)
-    )
+    monkeypatch.setattr(usb_mod, "_system_discovery", lambda *, usb_export_gate: _discovery(volumes_root))
     monkeypatch.setattr(usb_mod, "_diskutil_info", lambda _mount, _cmd: FIXED_USB)
     simulated = client.post("/api/v1/usb/volumes", json={"id": "sim:access", "name": "Sim"})
     assert simulated.status_code == 200

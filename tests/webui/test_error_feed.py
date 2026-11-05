@@ -176,10 +176,7 @@ def test_ui_mirror_faults_are_included(tmp_path: Path) -> None:
         )
         body = client.get("/api/v1/errors").json()
 
-    assert any(
-        event["source"] == "ui-mirror" and event["kind"] == "audio-output-dead"
-        for event in body["events"]
-    )
+    assert any(event["source"] == "ui-mirror" and event["kind"] == "audio-output-dead" for event in body["events"])
 
 
 def test_engine_warn_keeps_warning_not_info(tmp_path: Path) -> None:

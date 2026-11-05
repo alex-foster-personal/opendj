@@ -19,6 +19,7 @@ test payload and deleted in a ``finally``; a leaked object would cost about
 one ten-millionth of a cent a month, but leaving litter in the canonical
 asset bucket is how a bucket stops being trustworthy.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +43,7 @@ REQUEST_TIMEOUT_SECONDS: int = 30
 
 
 def _request(url: str, method: str, *, body: bytes | None = None, headers=None):
-    request = urllib.request.Request(
-        url, data=body, method=method, headers=headers or {}
-    )
+    request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     return urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS)
 
 
@@ -88,8 +87,7 @@ def test_live_r2_round_trip_put_ranged_get_delete():
                 assert response.status in (200, 204)
         except urllib.error.HTTPError as exc:  # pragma: no cover - cleanup
             pytest.fail(
-                f"live probe object {key} could not be deleted (HTTP "
-                f"{exc.code}); remove it by hand before rerunning."
+                f"live probe object {key} could not be deleted (HTTP {exc.code}); remove it by hand before rerunning."
             )
 
     # The key must be gone; a presigned GET on a deleted object is a 404.
@@ -105,9 +103,7 @@ def test_live_r2_rejects_an_expired_signature():
         pytest.skip("live R2 creds absent; see the round-trip test for the how.")
 
     stale = datetime.now(UTC) - timedelta(seconds=1200)
-    url = asset_store.presign_url(
-        cfg, hashlib.sha256(b"expired probe").hexdigest(), 300, now=stale
-    )
+    url = asset_store.presign_url(cfg, hashlib.sha256(b"expired probe").hexdigest(), 300, now=stale)
     with pytest.raises(urllib.error.HTTPError) as excinfo:
         _request(url, "GET")
     assert excinfo.value.code == 403

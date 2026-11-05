@@ -45,7 +45,7 @@ works as expected.
     [if] `modal app list` itself fails [then ⛔️] raise with modal's stderr,
          never silently return zero apps
 
-  ✔︎ ✅ pull full logs per app into data/state/modal-logs/<app>/<date>.log
+  ✔︎ ✅ pull full logs per app into (private path)/<app>/<date>.log
     [if] an app has already been pulled (app_id header present) [then] skip
          it without re-fetching or duplicating lines
     [if] `modal app logs <id>` fails for one app [then ⛔️] raise immediately;
@@ -56,7 +56,7 @@ works as expected.
 
   ✔︎ ✅ --dry-run lists what would be pulled without calling `modal app
     logs` or touching the filesystem, for a cheap parity/smoke check
-    [if] --dry-run is passed [then] no file under data/state/modal-logs/
+    [if] --dry-run is passed [then] no file under (private path)/
          is created or modified
 
 Run (repo already has the `modal` CLI authenticated as this Mac's profile):
@@ -122,10 +122,7 @@ def list_apps(app_prefix: str) -> list[ModalApp]:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"`modal app list --json` failed (exit {result.returncode}): "
-            f"{result.stderr.strip()}"
-        )
+        raise RuntimeError(f"`modal app list --json` failed (exit {result.returncode}): {result.stderr.strip()}")
     rows = json.loads(result.stdout)
     apps = [
         ModalApp(
@@ -143,20 +140,21 @@ def list_apps(app_prefix: str) -> list[ModalApp]:
 def fetch_app_logs(app_id: str, *, tail: int) -> str:
     result = subprocess.run(
         [
-            "modal", "app", "logs", app_id,
+            "modal",
+            "app",
+            "logs",
+            app_id,
             "--timestamps",
             "--show-function-id",
             "--show-container-id",
-            "-n", str(tail),
+            "-n",
+            str(tail),
         ],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"`modal app logs {app_id}` failed (exit {result.returncode}): "
-            f"{result.stderr.strip()}"
-        )
+        raise RuntimeError(f"`modal app logs {app_id}` failed (exit {result.returncode}): {result.stderr.strip()}")
     return result.stdout
 
 
@@ -200,19 +198,25 @@ def append_block(path: Path, app: ModalApp, log_text: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
-        "--app-prefix", default=DEFAULT_APP_PREFIX,
+        "--app-prefix",
+        default=DEFAULT_APP_PREFIX,
         help=f"only pull Modal Apps whose description starts with this (default {DEFAULT_APP_PREFIX!r})",
     )
     parser.add_argument(
-        "--data-dir", type=Path, default=DEFAULT_DATA_DIR,
+        "--data-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
         help="repo data dir; logs land under <data-dir>/state/modal-logs/",
     )
     parser.add_argument(
-        "--tail", type=int, default=DEFAULT_TAIL,
+        "--tail",
+        type=int,
+        default=DEFAULT_TAIL,
         help=f"max log lines to request per app (default {DEFAULT_TAIL})",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="list apps that would be pulled; touch nothing",
     )
     return parser

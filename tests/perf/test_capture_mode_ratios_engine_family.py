@@ -116,7 +116,9 @@ def _sampler(launcher: int, engine_root: int | None) -> tuple[cmr._ProcessTreeSa
 def test_sample_counts_the_engine_and_its_descendant_and_nothing_else() -> None:
     """[if] an engine root is given [then] the total is browser plus engine tree and nothing outside them, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        outsider = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        outsider = subprocess.Popen(
+            _SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         try:
             sampler, native = _sampler(launcher, engine)
             reading = sampler.sample()
@@ -153,7 +155,9 @@ def test_sample_without_an_engine_root_stays_browser_only() -> None:
 def test_sample_raises_when_the_engine_root_exits_mid_capture() -> None:
     """[if] the engine exits after the sampler pinned it [then] sample() raises, never reads zero, [else stop]."""
     with _tree() as (launcher, _browser_child):
-        engine = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        engine = subprocess.Popen(
+            _SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         sampler, _native = _sampler(launcher, engine.pid)
         assert sampler.sample()["engine_footprint_mb"] > 0.0
         engine.kill()

@@ -4,9 +4,10 @@
  * The overlay is a one-shot: the engine records the dismissal in the data dir
  * and never offers it again. That was the whole story, so a tester who had
  * skipped setup, or who had imported once and wanted to import again, had NO
- * route to /setup from inside the running app. This file pins the three doors
- * that now exist -- the Cmd+, settings overlay, the /admin Setup tab and the
- * /settings page -- and the one shared module all three call.
+ * route to /setup from inside the running app. This file pins the four doors
+ * that now exist -- the Cmd+, settings overlay, the /admin Setup tab, the
+ * /settings page and the Library workspace top bar -- and the one shared
+ * module all four call.
  *
  * The decision logic is executed for real against the REAL generated client,
  * with globalThis.fetch as the only seam, exactly as setup-wizard.test.mjs
@@ -253,7 +254,8 @@ test('every entry point goes through the shared module, none reimplements it', (
 	for (const relative of [
 		'src/lib/components/settings/SettingsOverlay.svelte',
 		'src/routes/admin/+page.svelte',
-		'src/routes/settings/+page.svelte'
+		'src/routes/settings/+page.svelte',
+		'src/lib/components/library/LibraryTopBar.svelte'
 	]) {
 		const source = read(relative);
 		assert.match(source, /from '\$lib\/setup\/run-setup'/, relative);

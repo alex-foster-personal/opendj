@@ -47,6 +47,7 @@ helper) so the assertions are about the behavior CI actually depends on:
   installed with ``uv pip --no-deps`` (missing transitive ``numpy``) still
   prints ``soundfile=ERROR``.
 """
+
 from __future__ import annotations
 
 import os
@@ -162,12 +163,8 @@ def test_fails_on_mismatched_venv_under_ci() -> None:
     assert "CI_VENV_PROBE" in output and "wrong interpreter" in output, (
         f"failure did not name the CI_VENV_PROBE mismatch:\n{output}"
     )
-    assert _DECOY_VENV in output, (
-        f"failure did not name the actual (wrong) venv:\n{output}"
-    )
-    assert str(REPO_ROOT / ".venv") in output, (
-        f"failure did not name the expected repo venv:\n{output}"
-    )
+    assert _DECOY_VENV in output, f"failure did not name the actual (wrong) venv:\n{output}"
+    assert str(REPO_ROOT / ".venv") in output, f"failure did not name the expected repo venv:\n{output}"
 
 
 def test_fails_on_shared_interpreter_binary_with_a_different_venv_root() -> None:
@@ -203,12 +200,9 @@ def test_passes_on_matching_venv_under_ci() -> None:
     )
     output = proc.stdout + proc.stderr
     assert proc.returncode == 0, (
-        "if a CI session on the real venv fails, then the guard is too broad "
-        f"(rc={proc.returncode}):\n{output}"
+        f"if a CI session on the real venv fails, then the guard is too broad (rc={proc.returncode}):\n{output}"
     )
-    assert "CI_VENV_PROBE" in output, (
-        f"the probe line must still print on a passing session:\n{output}"
-    )
+    assert "CI_VENV_PROBE" in output, f"the probe line must still print on a passing session:\n{output}"
 
 
 def test_passes_when_deliberately_isolated_ci_session_opts_out() -> None:
@@ -338,9 +332,7 @@ def test_soundfile_error_on_broken_install() -> None:
     )
     probe_lines = _probe_lines(output)
     assert probe_lines, f"CI_VENV_PROBE line missing from fault session:\n{output}"
-    assert any(
-        "soundfile=ERROR" in line and "ModuleNotFoundError" in line for line in probe_lines
-    ), (
+    assert any("soundfile=ERROR" in line and "ModuleNotFoundError" in line for line in probe_lines), (
         f"broken install must still read as ERROR with exception detail:\n{output}"
     )
     assert not any("soundfile=absent" in line for line in probe_lines), (

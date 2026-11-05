@@ -7,6 +7,7 @@ fake bookmark blobs are actual bookmark blobs, byte-for-byte parseable by
 bugs that actually cost time on this data (the ASCII-scrape false zero match
 and the seconds/ms confusion).
 """
+
 from __future__ import annotations
 
 import json
@@ -58,9 +59,7 @@ class _BookmarkBuilder:
         return self._add(TYPE_STRING, text.encode("utf-8"))
 
     def add_array(self, offsets: list[int]) -> int:
-        return self._add(
-            TYPE_ARRAY, b"".join(struct.pack("<I", o) for o in offsets)
-        )
+        return self._add(TYPE_ARRAY, b"".join(struct.pack("<I", o) for o in offsets))
 
     def build(self, entries: dict[int, int]) -> bytes:
         toc_offset = 4 + len(self.data)
@@ -121,11 +120,7 @@ def make_mik_store(tmp_path: Path):
         )
         for index, song in enumerate(songs, start=1):
             path_value = song.get("path")
-            blob = (
-                make_bookmark(path_value)
-                if path_value
-                else song.get("bookmark_blob")
-            )
+            blob = make_bookmark(path_value) if path_value else song.get("bookmark_blob")
             conn.execute(
                 "INSERT INTO ZSONG(Z_PK, ZNAME, ZARTIST, ZALBUM, ZKEY, ZENERGY, "
                 "ZTEMPO, ZVOLUME, ZCLIPPEDPEAKCOUNT, ZANALYSISDATE, "
@@ -140,16 +135,13 @@ def make_mik_store(tmp_path: Path):
                     song.get("tempo", 124.0),
                     song.get("volume", -11.5),
                     song.get("clipped_peaks", 0),
-                    _core_data_seconds(
-                        song.get("analysed_at", "2024-01-01T00:00:00+00:00")
-                    ),
+                    _core_data_seconds(song.get("analysed_at", "2024-01-01T00:00:00+00:00")),
                     blob,
                 ),
             )
             if song.get("confidence") is not None:
                 conn.execute(
-                    "INSERT INTO ZKEYSEGMENT(ZSONG, ZCONFIDENCE, ZKEY) "
-                    "VALUES (?, ?, ?)",
+                    "INSERT INTO ZKEYSEGMENT(ZSONG, ZCONFIDENCE, ZKEY) VALUES (?, ?, ?)",
                     (
                         song.get("pk", index),
                         song["confidence"],
@@ -158,8 +150,7 @@ def make_mik_store(tmp_path: Path):
                 )
             for start_s, length_s, energy in song.get("segments", []):
                 conn.execute(
-                    "INSERT INTO ZENERGYSEGMENT(ZSONG, ZENERGY, ZLENGTH, "
-                    "ZSTARTTIME) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO ZENERGYSEGMENT(ZSONG, ZENERGY, ZLENGTH, ZSTARTTIME) VALUES (?, ?, ?, ?)",
                     (song.get("pk", index), float(energy), length_s, start_s),
                 )
         conn.commit()

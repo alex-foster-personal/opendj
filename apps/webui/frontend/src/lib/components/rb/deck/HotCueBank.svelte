@@ -31,6 +31,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
+	import { engagedLoopForHotCue } from '$lib/rb/hot-cue-loop';
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
@@ -58,7 +59,7 @@
 		 * unconditional seek. pressT0Ms is the triggering click's own
 		 * event.timeStamp, Q1's operator-felt press stamp. */
 		onJump: (slot: HotCueSlot, pressT0Ms?: number) => Promise<void>;
-		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
+		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string, outMs?: number | null) => Promise<HotCueMutation>;
 		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
 		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
@@ -104,6 +105,8 @@
 	let undo: { slot: HotCueSlot; revision: string; reversalId: string } | null = $state(null);
 	let renameSlot: HotCueSlot | null = $state(null);
 	let renameNewCueAtMs: number | null = $state(null);
+	/** HOTCUE-LOOP-01: the engaged loop's end when the empty pad was pressed. */
+	let renameNewLoopOutMs: number | null = null;
 	let renameStableId: string | null = $state(null);
 	let renameDraft = $state('');
 	let renameInputEl: HTMLInputElement | null = $state(null);
@@ -143,7 +146,11 @@
 		// track can save whether or not a rekordbox mapping exists. stable_id
 		// is the "is there a deck to save onto" signal (#804).
 		if (deck.stable_id === null) return;
-		await beginRename(entry.slot, deck.position_ms, deck.stable_id);
+		// HOTCUE-LOOP-01: captured at the press, so naming it after the loop
+		// was exited still saves the loop that was playing.
+		const loop = engagedLoopForHotCue(deck);
+		renameNewLoopOutMs = loop?.out_ms ?? null;
+		await beginRename(entry.slot, loop?.in_ms ?? deck.position_ms, deck.stable_id);
 	}
 
 	async function beginRename(
@@ -185,7 +192,8 @@
 		try {
 			if (newCueAtMs !== null) {
 				if (stableId === null) throw new Error(`hot cue ${entry.slot}: rename track is unavailable`);
-				setUndo(entry.slot, await onSave(entry.slot, comment, newCueAtMs, true, stableId));
+				const loopOutMs = renameNewLoopOutMs;
+				setUndo(entry.slot, await onSave(entry.slot, comment, newCueAtMs, loopOutMs === null, stableId, loopOutMs));
 			} else if (entry.cue !== null) {
 				setUndo(entry.slot, await onRename(entry.slot, entry.cue.in_ms, comment ?? ''));
 			} else {
@@ -194,6 +202,7 @@
 			if (renameSlot === entry.slot) {
 				renameSlot = null;
 				renameNewCueAtMs = null;
+				renameNewLoopOutMs = null;
 				renameStableId = null;
 				renameInputEl = null;
 			}
@@ -206,6 +215,7 @@
 		if (renameSlot !== slot) return;
 		renameSlot = null;
 		renameNewCueAtMs = null;
+		renameNewLoopOutMs = null;
 		renameStableId = null;
 		renameInputEl = null;
 	}

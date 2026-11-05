@@ -1,6 +1,6 @@
 """Pins lifecycle validation error messages for the shared _assert_member helper.
 
-  - [if] a validation message drifts [then] this module fails, [else stop].
+- [if] a validation message drifts [then] this module fails, [else stop].
 """
 
 from __future__ import annotations
@@ -17,8 +17,7 @@ pytestmark = pytest.mark.requirement("CAT-04")
     [
         (
             lambda: transition("cancelled", "resubscribed"),
-            "unknown lifecycle state 'cancelled'; expected one of "
-            "['active', 'past_due', 'read_only', 'archived']",
+            "unknown lifecycle state 'cancelled'; expected one of ['active', 'past_due', 'read_only', 'archived']",
         ),
         (
             lambda: transition("active", "refund"),

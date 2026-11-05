@@ -38,6 +38,7 @@ Acceptances (one assertion block each):
   REPORTED - deleting it would drop the newer generation under a ledger that
   points at the older bytes -- broken.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -120,9 +121,7 @@ def test_delete_after_without_a_ledger_key_refuses_loudly():
     # fast instead of shipping a silent destructive default.
     store = DictStore({_legacy("htdemucs", STABLE, "vocals.flac"): BODY})
     try:
-        migrate_legacy_stems(
-            store, "bucket", dry_run=False, delete_after=True
-        )
+        migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True)
     except ValueError as exc:
         assert "ledger_key" in str(exc)
     else:
@@ -132,9 +131,7 @@ def test_delete_after_without_a_ledger_key_refuses_loudly():
 def test_delete_after_writes_the_ledger_then_removes_a_verified_legacy_copy():
     legacy_key = _legacy("htdemucs", STABLE, "drums.flac")
     store = DictStore({legacy_key: BODY})
-    result = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.migrated == 1
     assert result.deleted == 1
     assert result.ledger_key == LEDGER_KEY
@@ -164,16 +161,17 @@ def test_a_ledger_key_under_the_scanned_prefix_is_refused():
     store = DictStore({legacy_key: BODY})
     try:
         migrate_legacy_stems(
-            store, "bucket", dry_run=False, delete_after=True,
+            store,
+            "bucket",
+            dry_run=False,
+            delete_after=True,
             ledger_key="stems/migrations/run/ledger.json",
         )
     except ValueError as exc:
         assert "ledger_key" in str(exc)
         assert "namespace" in str(exc)
     else:
-        raise AssertionError(
-            "a delete_after ledger_key under the scanned prefix must raise"
-        )
+        raise AssertionError("a delete_after ledger_key under the scanned prefix must raise")
 
 
 def test_a_ledger_anywhere_in_the_legacy_namespace_is_refused_even_on_a_narrowed_prefix():
@@ -185,7 +183,10 @@ def test_a_ledger_anywhere_in_the_legacy_namespace_is_refused_even_on_a_narrowed
     store = DictStore({legacy_key: BODY})
     try:
         migrate_legacy_stems(
-            store, "bucket", dry_run=False, delete_after=True,
+            store,
+            "bucket",
+            dry_run=False,
+            delete_after=True,
             prefix="stems/htdemucs/",
             ledger_key="stems/migrations/run/ledger.json",
         )
@@ -194,8 +195,7 @@ def test_a_ledger_anywhere_in_the_legacy_namespace_is_refused_even_on_a_narrowed
         assert "namespace" in str(exc)
     else:
         raise AssertionError(
-            "a ledger under the legacy namespace must be refused even when "
-            "the run's own prefix is narrower"
+            "a ledger under the legacy namespace must be refused even when the run's own prefix is narrower"
         )
 
 
@@ -206,8 +206,12 @@ def test_a_ledger_key_never_enters_the_migration_scan():
     store = DictStore({legacy_key: BODY})
     store.objects[LEDGER_KEY] = _ledger_for("bucket")
     result = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True,
-        ledger_key=LEDGER_KEY, keys=[legacy_key, LEDGER_KEY],
+        store,
+        "bucket",
+        dry_run=False,
+        delete_after=True,
+        ledger_key=LEDGER_KEY,
+        keys=[legacy_key, LEDGER_KEY],
     )
     assert result.deleted == 1
     assert result.failures == ()
@@ -233,9 +237,7 @@ def test_a_short_write_of_the_new_object_is_kept_and_reported_not_silently_delet
                 self.objects[key] = body
 
     short = ShortWriteDestination({legacy_key: BODY})
-    result = migrate_legacy_stems(
-        short, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(short, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.deleted == 0
     assert legacy_key in short.objects  # old copy survived the short write
     assert short.objects[_asset(BODY)] != BODY  # new copy is truncated
@@ -258,9 +260,7 @@ def test_a_failed_ledger_write_aborts_all_deletes():
                 self.objects[key] = body
 
     store = TruncateLedger({legacy_key: BODY})
-    result = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.deleted == 0
     assert result.migrated == 1
     assert legacy_key in store.objects
@@ -295,15 +295,23 @@ def test_a_failed_second_batch_restores_the_prior_ledger_not_destroying_it():
 
     store = TruncatesSecondLedgerPut({k1: BODY, k2: BODY})
     first = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True,
-        ledger_key=LEDGER_KEY, keys=[k1],
+        store,
+        "bucket",
+        dry_run=False,
+        delete_after=True,
+        ledger_key=LEDGER_KEY,
+        keys=[k1],
     )
     assert first.deleted == 1
     prior_ledger = store.objects[LEDGER_KEY]
 
     second = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True,
-        ledger_key=LEDGER_KEY, keys=[k2],
+        store,
+        "bucket",
+        dry_run=False,
+        delete_after=True,
+        ledger_key=LEDGER_KEY,
+        keys=[k2],
     )
     assert second.deleted == 0
     assert k2 in store.objects  # not deleted under the failed overwrite
@@ -323,13 +331,21 @@ def test_reusing_a_ledger_key_across_batches_extends_it_not_overwrites():
     k2 = _legacy("htdemucs", "cd34" * 10, "vocals.flac")
     store = DictStore({k1: BODY, k2: BODY})
     first = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True,
-        ledger_key=LEDGER_KEY, keys=[k1],
+        store,
+        "bucket",
+        dry_run=False,
+        delete_after=True,
+        ledger_key=LEDGER_KEY,
+        keys=[k1],
     )
     assert first.deleted == 1
     second = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True,
-        ledger_key=LEDGER_KEY, keys=[k2],
+        store,
+        "bucket",
+        dry_run=False,
+        delete_after=True,
+        ledger_key=LEDGER_KEY,
+        keys=[k2],
     )
     assert second.deleted == 1
     entries = json.loads(store.objects[LEDGER_KEY].decode("utf-8"))["entries"]
@@ -347,16 +363,12 @@ def test_a_conflicting_remap_of_an_already_ledgered_old_key_aborts_the_delete():
     legacy_key = _legacy("htdemucs", STABLE, "drums.flac")
     replaced = b"re-rendered vocal flac bytes, different content"
     store = DictStore({legacy_key: BODY})
-    first = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    first = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert first.deleted == 1
     assert legacy_key not in store.objects
 
     store.objects[legacy_key] = replaced  # stale uploader re-creates the key
-    second = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    second = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert second.deleted == 0
     assert store.objects[legacy_key] == replaced  # newer generation survives
     assert any("already maps to" in failure for failure in second.failures)
@@ -370,15 +382,11 @@ def test_an_identical_repeat_of_an_already_ledgered_mapping_is_not_a_conflict():
     # an identical entry (no conflict) and re-migrates the repeat cleanly.
     legacy_key = _legacy("htdemucs", STABLE, "drums.flac")
     store = DictStore({legacy_key: BODY})
-    first = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    first = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert first.deleted == 1
 
     store.objects[legacy_key] = BODY  # identical content re-created
-    second = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    second = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert second.deleted == 1
     assert legacy_key not in store.objects
     assert all("already maps to" not in failure for failure in second.failures)
@@ -411,16 +419,12 @@ def test_a_legacy_object_overwritten_mid_run_is_kept_not_deleted():
 
     replaced = b"newer render overwrote the key while the migration ran"
     store = SourceSwapsAfterFirstRead({legacy_key: BODY}, replaced)
-    result = migrate_legacy_stems(
-        store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(store, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.migrated == 1
     assert result.deleted == 0
     assert store.objects[legacy_key] == replaced  # newer generation survives
     assert store.objects[_asset(BODY)] == BODY  # old bytes were re-keyed
-    assert any(
-        "changed during the migration" in failure for failure in result.failures
-    )
+    assert any("changed during the migration" in failure for failure in result.failures)
 
 
 def test_a_cross_campaign_or_unreadable_existing_ledger_refuses_the_delete():
@@ -431,9 +435,7 @@ def test_a_cross_campaign_or_unreadable_existing_ledger_refuses_the_delete():
     # it to record this one would orphan the other campaign's deletes.
     cross = DictStore({legacy_key: BODY})
     cross.objects[LEDGER_KEY] = _ledger_for("other-bucket")
-    result = migrate_legacy_stems(
-        cross, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(cross, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.deleted == 0
     assert legacy_key in cross.objects
     assert len(result.failures) == 1
@@ -443,9 +445,7 @@ def test_a_cross_campaign_or_unreadable_existing_ledger_refuses_the_delete():
     # would silently discard whatever it recorded.
     corrupt = DictStore({legacy_key: BODY})
     corrupt.objects[LEDGER_KEY] = b"{not json"
-    result = migrate_legacy_stems(
-        corrupt, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY
-    )
+    result = migrate_legacy_stems(corrupt, "bucket", dry_run=False, delete_after=True, ledger_key=LEDGER_KEY)
     assert result.deleted == 0
     assert legacy_key in corrupt.objects
     assert len(result.failures) == 1
@@ -453,16 +453,14 @@ def test_a_cross_campaign_or_unreadable_existing_ledger_refuses_the_delete():
 
 
 def _ledger_for(bucket: str) -> bytes:
-    return (
-        json.dumps(
-            {
-                "schema_version": 1,
-                "layout": REKEY_LEDGER_LAYOUT,
-                "bucket": bucket,
-                "entries": [],
-            }
-        ).encode("utf-8")
-    )
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "layout": REKEY_LEDGER_LAYOUT,
+            "bucket": bucket,
+            "entries": [],
+        }
+    ).encode("utf-8")
 
 
 def test_identical_bytes_in_two_legacy_bundles_collapse_to_one_new_object():
@@ -492,7 +490,9 @@ def test_a_key_forced_into_the_scan_that_is_not_legacy_is_reported():
     # A caller scanning a broad prefix or passing a keys override can surface
     # an assets/... key; it must be reported, never silently moved.
     result = migrate_legacy_stems(
-        DictStore(), "bucket", dry_run=True,
+        DictStore(),
+        "bucket",
+        dry_run=True,
         keys=["assets/ab/" + "ab" * 32],
     )
     assert result.migrated == 0
@@ -502,8 +502,7 @@ def test_a_key_forced_into_the_scan_that_is_not_legacy_is_reported():
 
 def test_rekey_plan_is_pure_and_reports_missing_bodies():
     legacy_key = _legacy("htdemucs", STABLE, "vocals.flac")
-    plan = rekey_plan([legacy_key, _legacy("htdemucs", STABLE, "bass.flac")],
-                      {legacy_key: BODY})
+    plan = rekey_plan([legacy_key, _legacy("htdemucs", STABLE, "bass.flac")], {legacy_key: BODY})
     assert plan.migrated == 1
     assert plan.rekeyed[0] == (legacy_key, _asset(BODY))
     assert len(plan.failures) == 1

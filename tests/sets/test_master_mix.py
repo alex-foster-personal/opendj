@@ -7,6 +7,7 @@ dropping the seq check in MasterMixWriter.append; dropping the header rewrite in
 _Segment.append; writing one chunk twice in MasterMixWriter.append (caught by the
 exact frame-count tests); defaulting RecorderStartRequest.source to "master".
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -143,7 +144,6 @@ def test_capture_state_tracks_the_page_feeding_it(tmp_path: Path) -> None:
     assert "open /performance page" in (never_fed.error or "")
 
 
-
 def _wav_frames_total(directory: Path) -> int:
     return sum(_wav(p)[2] for p in sorted(directory.glob("audio_*.wav")))
 
@@ -167,7 +167,9 @@ def test_wav_frames_equal_frames_sent_exactly_across_rolls_and_streams(tmp_path:
     assert len(list(tmp_path.glob("audio_*.wav"))) >= 4, "the roll and the stream change must both open segments"
     summary = writer.summary()
     assert {k: summary[k] for k in ("frames_accepted", "chunks_accepted", "streams")} == {
-        "frames_accepted": sent, "chunks_accepted": 10, "streams": 2
+        "frames_accepted": sent,
+        "chunks_accepted": 10,
+        "streams": 2,
     }
     assert _wav_frames_total(tmp_path) == sent
 
@@ -189,7 +191,9 @@ def test_stop_closes_with_every_sent_frame_and_nothing_after(master_client, monk
     events = [json.loads(line) for line in (session_dir / "timeline.jsonl").read_text().splitlines()]
     [closed] = [e["value"] for e in events if e["action"] == "master_mix_closed"]
     assert {k: closed[k] for k in ("frames_accepted", "chunks_accepted", "streams")} == {
-        "frames_accepted": sent, "chunks_accepted": len(_CHUNK_FRAMES), "streams": 1
+        "frames_accepted": sent,
+        "chunks_accepted": len(_CHUNK_FRAMES),
+        "streams": 1,
     }
     assert _wav_frames_total(session_dir) == sent
     manifest = json.loads((session_dir / "manifest.json").read_text())
@@ -216,9 +220,7 @@ class _FakePage:
             raise MasterTapUnavailable(self.fail_attach)
         self.attached.append(session_id)
         if self.first_chunk is not None:
-            self.service.write_master_pcm(
-                session_id, stream="page", seq=0, sample_rate=RATE, pcm=self.first_chunk
-            )
+            self.service.write_master_pcm(session_id, stream="page", seq=0, sample_rate=RATE, pcm=self.first_chunk)
 
 
 @pytest.fixture
@@ -240,6 +242,7 @@ def master_client(tmp_path: Path):
     with TestClient(app) as client:
         client.page = page  # type: ignore[attr-defined]
         yield client, service
+
 
 def _pcm(client: TestClient, seq: int, pcm: bytes, session: str = SESSION, stream: str = "tab-1"):
     return client.post(
@@ -363,8 +366,12 @@ def test_rec_cli_returns_only_once_audio_is_written() -> None:
     clock = iter([0.0, 5.0, 20.0])
     with pytest.raises(rec_cli.RecCommandFailed, match="did not start within"):
         rec_cli.wait_until_recording(
-            "u", {"capture": "starting"}, timeout_s=12, read=lambda: {"capture": "starting"},
-            sleep=lambda _s: None, monotonic=lambda: next(clock),
+            "u",
+            {"capture": "starting"},
+            timeout_s=12,
+            read=lambda: {"capture": "starting"},
+            sleep=lambda _s: None,
+            monotonic=lambda: next(clock),
         )
 
 
@@ -406,9 +413,7 @@ def test_the_order_bus_channel_attaches_through_the_leader_page() -> None:
 def test_master_pcm_requires_its_stream_seq_and_rate(master_client) -> None:
     """[if] a chunk omits stream, seq or rate [then] 422, never a guess, [else stop]."""
     client, _ = master_client
-    response = client.post(
-        f"/api/sets/recorder/{SESSION}/master-pcm", params={"seq": 0}, content=_tone(480)
-    )
+    response = client.post(f"/api/sets/recorder/{SESSION}/master-pcm", params={"seq": 0}, content=_tone(480))
     assert response.status_code == 422
 
 
@@ -419,9 +424,7 @@ def test_master_pcm_requires_its_stream_seq_and_rate(master_client) -> None:
 def test_a_source_that_contradicts_its_input_is_422(master_client, source: str, device: str) -> None:
     """[if] loopback names a mic or external a loopback [then] 422, nothing starts, [else stop]."""
     client, _ = master_client
-    response = client.post(
-        "/api/sets/recorder/start", json={"source": source, "device_name": device, "sources": []}
-    )
+    response = client.post("/api/sets/recorder/start", json={"source": source, "device_name": device, "sources": []})
     assert response.status_code == 422
     assert "loopback input" in response.json()["detail"]
     assert client.get("/api/sets/recorder").json()["active"] is False

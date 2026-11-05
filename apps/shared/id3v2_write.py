@@ -53,9 +53,12 @@ def encode_geob(mime: str, filename: str, description: str, payload: bytes) -> b
     # Serato writes encoding 0 (latin-1) with ASCII mime / description.
     return (
         bytes([_ENC_LATIN1])
-        + mime.encode("latin-1") + b"\x00"
-        + filename.encode("latin-1") + b"\x00"
-        + description.encode("latin-1") + b"\x00"
+        + mime.encode("latin-1")
+        + b"\x00"
+        + filename.encode("latin-1")
+        + b"\x00"
+        + description.encode("latin-1")
+        + b"\x00"
         + payload
     )
 
@@ -63,9 +66,11 @@ def encode_geob(mime: str, filename: str, description: str, payload: bytes) -> b
 def encode_apic(mime: str, picture_type: int, description: str, data: bytes) -> bytes:
     return (
         bytes([_ENC_LATIN1])
-        + mime.encode("latin-1") + b"\x00"
+        + mime.encode("latin-1")
+        + b"\x00"
         + bytes([picture_type])
-        + description.encode("latin-1") + b"\x00"
+        + description.encode("latin-1")
+        + b"\x00"
         + data
     )
 

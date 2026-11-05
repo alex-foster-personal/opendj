@@ -236,11 +236,7 @@ describe('AutoPlay candidate path accepts musical notation', () => {
 	it('a musically tagged playlist is no longer stranded end to end', () => {
 		const { simulateAutoPlayChain } = autoPlay;
 		const chain = simulateAutoPlayChain({
-			playlist: [
-				row('a', 'Gm', 124),
-				row('b', 'Dm', 125),
-				row('c', 'Am', 126)
-			],
+			playlist: [row('a', 'Gm', 124), row('b', 'Dm', 125), row('c', 'Am', 126)],
 			start_stable_id: 'a',
 			enforce_play_order: false,
 			maximize_reach: false,

@@ -20,13 +20,20 @@ before(async () => {
 const ALL = { level: true, stems: false, eq: true, trim: false, filter: true };
 
 test('the command parses only all five booleans and has no deck queue scope', () => {
-	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL }), { type: 'track_load_reset', ...ALL });
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL }), {
+		type: 'track_load_reset',
+		...ALL
+	});
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_load_reset', ...ALL }), null);
 	// Controls: a missing item, a non-boolean, or an extra key is refused, not guessed.
 	const { filter: _omit, ...four } = ALL;
 	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...four }));
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL, eq: 'yes' }));
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL, deck: 1 }));
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL, eq: 'yes' })
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'track_load_reset', ...ALL, deck: 1 })
+	);
 });
 
 test('dispatching the command changes the choice and query state shows it', async () => {
@@ -58,6 +65,9 @@ test('the panel changes one item by dispatching the full command, never by writi
 	assert.equal(cmd.eq, true);
 	assert.deepEqual(Object.keys(cmd).sort(), ['eq', 'filter', 'level', 'stems', 'trim', 'type']);
 	const panel = await readFile('src/lib/components/rb/TrackLoadResetPanel.svelte', 'utf8');
-	assert.match(panel, /runPerformanceCommandFromUi\(trackLoadResetCommand\(item\.id, event\.currentTarget\.checked\)\)/);
+	assert.match(
+		panel,
+		/runPerformanceCommandFromUi\(trackLoadResetCommand\(item\.id, event\.currentTarget\.checked\)\)/
+	);
 	assert.doesNotMatch(panel, /writeTrackLoadReset|setTrackLoadReset/);
 });

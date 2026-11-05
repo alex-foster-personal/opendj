@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.classify.model` (sklearn GBC trainer)."""
+
 from __future__ import annotations
 
 import json
@@ -109,15 +110,19 @@ def test_train_produces_joblib_and_meta_when_gate_passes(tmp_path: Path):
 @pytest.mark.requires_joblib
 def test_predict_returns_class_and_confidence(tmp_path: Path):
     ids = _synthetic_corpus(tmp_path, n_sessions=5)
-    report = model_mod.train(
-        ids, sessions_root=tmp_path, models_dir=tmp_path / "models"
-    )
+    report = model_mod.train(ids, sessions_root=tmp_path, models_dir=tmp_path / "models")
     assert report.accepted
     from apps.sets.transitions import Transition
 
     t = Transition(
-        idx=0, t_start_s=0.0, t_change_s=10.0, t_end_s=10.1,
-        from_deck="A", to_deck="B", from_track=None, to_track=None,
+        idx=0,
+        t_start_s=0.0,
+        t_change_s=10.0,
+        t_end_s=10.1,
+        from_deck="A",
+        to_deck="B",
+        from_track=None,
+        to_track=None,
     )
     t.features = {
         "overlap_s": 0.1,
@@ -137,8 +142,14 @@ def test_predict_raises_when_no_model(tmp_path: Path):
     from apps.sets.transitions import Transition
 
     t = Transition(
-        idx=0, t_start_s=0.0, t_change_s=10.0, t_end_s=10.0,
-        from_deck="A", to_deck="B", from_track=None, to_track=None,
+        idx=0,
+        t_start_s=0.0,
+        t_change_s=10.0,
+        t_end_s=10.0,
+        from_deck="A",
+        to_deck="B",
+        from_track=None,
+        to_track=None,
     )
     with pytest.raises(model_mod.ModelNotReadyError):
         model_mod.predict(t, models_dir=tmp_path / "empty-models")
@@ -152,9 +163,7 @@ def test_train_skips_sessions_without_labels(tmp_path: Path):
     for i in range(1, 5):  # transitions only, no labels
         sess = tmp_path / f"unlabeled-{i}"
         sess.mkdir()
-        (sess / "transitions.jsonl").write_text(
-            json.dumps({"idx": 0, "features": {"overlap_s": 1.0}}) + "\n"
-        )
+        (sess / "transitions.jsonl").write_text(json.dumps({"idx": 0, "features": {"overlap_s": 1.0}}) + "\n")
     ids = ["session-00"] + [f"unlabeled-{i}" for i in range(1, 5)]
     report = model_mod.train(ids, sessions_root=tmp_path, models_dir=tmp_path / "m")
     assert report.n_training_sessions == 1

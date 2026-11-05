@@ -84,8 +84,5 @@ def test_headless_dmg_failed_verdict_becomes_a_build_event() -> None:
 
 def test_headless_dmg_ok_verdict_is_not_an_error() -> None:
     """if the log's verdict is OK then no build-failure event is minted."""
-    log = (
-        "REPORT TO USER: headless dmg build OK in 12s: /tmp/OpenDJ.dmg "
-        "(sha abc1234, signed+notarized)\n"
-    )
+    log = "REPORT TO USER: headless dmg build OK in 12s: /tmp/OpenDJ.dmg (sha abc1234, signed+notarized)\n"
     assert event_from_headless_dmg_log(log, host="silver", build_sha=SHA) is None

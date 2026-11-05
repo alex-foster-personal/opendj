@@ -495,70 +495,56 @@ def test_a_burst_of_selections_cancels_the_oldest_waiting_jobs(
         f.result(timeout=60)  # control: the newest ones still run to an answer
 
 
-def _frames_of(thread: threading.Thread) -> list[str]:
-    """The function names on ``thread``'s live stack, innermost last (a real observation, no hook)."""
-    frame = sys._current_frames().get(thread.ident or -1)
-    names: list[str] = []
-    while frame is not None:
-        names.append(frame.f_code.co_name)
-        frame = frame.f_back
-    return names[::-1]
-
-
-@pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="scrapped on CI as flaky; runs locally",
-)
 def test_the_peak_cache_is_read_before_the_worker_can_fill_it(track: float, tmp_path: Path):
     """The wait decision uses entry-time state: peaks cached after the check must not turn `pending` into a wait.
 
-    Deterministic, nothing patched (discussion_r4263939420): the test holds the
-    real in-flight lock, so the request parks inside the real ``_submit``. Only
-    then are the real peaks decoded into the real cache. A request that read
-    the cache at entry (before ``_submit``) answers ``pending`` at once; one
-    that read it after submitting would see it cached and wait for the cut."""
+    Deterministic, nothing patched (discussion_r4263939420, issue #7450): the
+    request thread's profiler parks on the CALL of the real ``_submit``, then
+    this test decodes the real peaks into the real cache, then ``_submit``
+    runs. A request that already read the cache (before ``_submit``) answers
+    ``pending`` at once; one that reads it after submitting would see it
+    cached and wait for the cut.
+    """
     assert local_waveform.peaks_entry_current(SID) is not True, "control: no peaks cached yet"
+    at_submit, release = threading.Event(), threading.Event()
+    order: list[str] = []
     out: dict[str, Any] = {}
-    parked = False
-    for _ in range(50):  # the request must reach _submit while the lock is held by this test
-        fast_sidecar._INFLIGHT_LOCK.acquire()
-        request = threading.Thread(
-            target=lambda: out.update(fast_sidecar.fast_sections(_payload(), SID, tmp_path, wait_s=30.0)), daemon=True
-        )
-        request.start()
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            frames = _frames_of(request)
-            if "_submit" in frames:
+    peaks_code = fast_sidecar._peaks_cached.__code__
+    submit_code = fast_sidecar._submit.__code__
+
+    def request() -> None:
+        parked = False
+
+        def profiler(frame, event, arg):
+            nonlocal parked
+            if event != "call":
+                return
+            if frame.f_code is peaks_code:
+                order.append("peaks")
+            elif frame.f_code is submit_code and not parked:
                 parked = True
-                break
-            if "_held_failure" in frames:
-                # Parked one step early: let only that check through, then take the lock back.
-                fast_sidecar._INFLIGHT_LOCK.release()
-                while "_held_failure" in _frames_of(request):
-                    pass
-                fast_sidecar._INFLIGHT_LOCK.acquire()
-                continue
-            if not request.is_alive():
-                break  # ran straight past: try again from an empty cache
-            time.sleep(0.001)
-        if parked:
-            break
-        fast_sidecar._INFLIGHT_LOCK.release()
-        request.join(timeout=60)
-        _served(_payload(), tmp_path)
-        local_waveform._entry_path(SID).unlink(missing_ok=True)
-        fast_sidecar.fast_path(tmp_path, SID).unlink(missing_ok=True)
-        out.clear()
-    assert parked, "control: the request parked inside the real _submit"
-    try:
-        local_waveform.ensure_local_peaks(SID)  # the cache fills AFTER the entry check, before the submit
-        assert local_waveform.peaks_entry_current(SID) is True, "control: the real peaks are now cached"
-    finally:
-        fast_sidecar._INFLIGHT_LOCK.release()
-    request.join(timeout=60)
+                order.append("submit")
+                at_submit.set()
+                release.wait(timeout=60)
+
+        previous = sys.getprofile()
+        sys.setprofile(profiler)
+        try:
+            out.update(fast_sidecar.fast_sections(_payload(), SID, tmp_path, wait_s=30.0))
+        finally:
+            sys.setprofile(previous)
+
+    req = threading.Thread(target=request, daemon=True)
+    req.start()
+    assert at_submit.wait(timeout=60), "control: the request entered the real _submit"
+    local_waveform.ensure_local_peaks(SID)
+    assert local_waveform.peaks_entry_current(SID) is True, "control: the real peaks are now cached"
+    release.set()
+    req.join(timeout=60)
+    assert not req.is_alive(), "control: the request finished"
+    assert order == ["peaks", "submit"], "control: the entry-time peak read ran before _submit"
     assert out["status"] == "pending", "read at entry: uncached, so no wait, whatever the cache holds later"
-    _served(_payload(), tmp_path)  # let this test's own job finish inside its own fixture
+    _served(_payload(), tmp_path)
 
 
 def test_stale_cached_peaks_do_not_hold_the_load(track: float, tmp_path: Path):

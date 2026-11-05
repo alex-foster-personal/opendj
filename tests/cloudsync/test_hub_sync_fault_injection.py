@@ -118,9 +118,7 @@ def _edit_titles(data_dir: Path, stable_ids: tuple[str, ...], *, updated_at: str
     conn = _open(data_dir)
     try:
         for stable_id in stable_ids:
-            _set_track_title(
-                conn, stable_id, title=f"edited {stable_id}", updated_at=updated_at, origin=_DEV_A
-            )
+            _set_track_title(conn, stable_id, title=f"edited {stable_id}", updated_at=updated_at, origin=_DEV_A)
     finally:
         conn.close()
 
@@ -128,9 +126,7 @@ def _edit_titles(data_dir: Path, stable_ids: tuple[str, ...], *, updated_at: str
 def _titles(data_dir: Path) -> dict[str, str]:
     conn = _open(data_dir)
     try:
-        return {
-            str(row[0]): str(row[1]) for row in conn.execute("SELECT stable_id, title FROM tracks")
-        }
+        return {str(row[0]): str(row[1]) for row in conn.execute("SELECT stable_id, title FROM tracks")}
     finally:
         conn.close()
 
@@ -141,9 +137,7 @@ def _changelog_entries(hub_dir: Path) -> list[str]:
     try:
         return [
             str(row[0])
-            for row in conn.execute(
-                "SELECT row_pk FROM hub_changelog WHERE table_name = 'tracks' ORDER BY seq"
-            )
+            for row in conn.execute("SELECT row_pk FROM hub_changelog WHERE table_name = 'tracks' ORDER BY seq")
         ]
     finally:
         conn.close()
@@ -253,9 +247,9 @@ def test_a_push_chunk_that_never_left_the_spoke_lands_on_the_next_sync(
     faulty.assert_all_fired()
 
     hub_titles = _titles(hub_dir)
-    assert [sid for sid in TRACK_IDS if hub_titles[sid] == edited[sid]] == list(
-        TRACK_IDS[:PUSH_CHUNK_ROWS]
-    ), "only the first chunk may have reached the hub"
+    assert [sid for sid in TRACK_IDS if hub_titles[sid] == edited[sid]] == list(TRACK_IDS[:PUSH_CHUNK_ROWS]), (
+        "only the first chunk may have reached the hub"
+    )
     assert _push_fence(spoke_a, first.hub_machine_id) == fence_before
 
     recovered = _sync(spoke_a, hub, "spoke-a")

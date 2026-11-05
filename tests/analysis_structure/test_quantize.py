@@ -39,9 +39,7 @@ def test_phrase_snap_moves_at_most_one_bar():
     q = quantize(seg(0.0, 34.1, 100.0), GRID, phrase_bars=4, phrase_offset=0)
     first, second = q.boundaries
     assert first.bar == 16 and first.phrase_aligned
-    assert (
-        second.bar == 50 and not second.phrase_aligned
-    )  # 50 % 4 == 2: a tie, left on its downbeat
+    assert second.bar == 50 and not second.phrase_aligned  # 50 % 4 == 2: a tie, left on its downbeat
 
 
 def test_phrase_offset_is_voted_from_the_music_not_bar_one():

@@ -3,11 +3,7 @@
  * filtering, and default compatibility expansion (issue #7599).
  */
 import { camelotRulesAllow, parseCamelotKey, type CamelotKey } from '$lib/player/key/camelot';
-import {
-	CAMELOT_MUSICAL_SEPARATOR,
-	displayKey,
-	type KeyNotation
-} from '$lib/rb/key-notation';
+import { CAMELOT_MUSICAL_SEPARATOR, displayKey, type KeyNotation } from '$lib/rb/key-notation';
 import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
 import { camelotKeyColor } from '$lib/rb/camelot-color';
 
@@ -86,7 +82,9 @@ export function libraryKeyWheelSegments(): LibraryKeyWheelSegment[] {
 		for (const mode of ['B', 'A'] as const) {
 			const { outer, inner } = RINGS[mode];
 			const middle = (outer + inner) / 2;
-			const [labelX, labelY] = _point(middle, number * 30 - 90).split(' ').map(Number);
+			const [labelX, labelY] = _point(middle, number * 30 - 90)
+				.split(' ')
+				.map(Number);
 			segments.push({
 				code: `${number}${mode}`,
 				number,
@@ -117,10 +115,7 @@ export function canonicalizeLibraryKeyFilter(keys: readonly string[]): string[] 
 	return LIBRARY_KEY_WHEEL_ORDER.filter((code) => selected.has(code));
 }
 
-export function validateLibraryKeyFilterField(
-	raw: unknown,
-	storageKey: string
-): string[] {
+export function validateLibraryKeyFilterField(raw: unknown, storageKey: string): string[] {
 	if (raw === undefined) return [];
 	if (!Array.isArray(raw)) {
 		throw new Error(`${storageKey}: library_key_filter must be an array`);
@@ -133,10 +128,7 @@ export function validateLibraryKeyFilterField(
 	}
 }
 
-export function toggleLibraryKeySelection(
-	current: readonly string[],
-	code: string
-): string[] {
+export function toggleLibraryKeySelection(current: readonly string[], code: string): string[] {
 	if (!isCanonicalCamelotCode(code)) {
 		throw new Error(`toggleLibraryKeySelection: invalid code ${JSON.stringify(code)}`);
 	}
@@ -199,10 +191,7 @@ export function resolveLibraryKeyFilterReference(
 	const selected = parseCamelotKey(selectedRowKey);
 	if (selected !== null) return `${selected.number}${selected.mode}`;
 	const playing = decks.filter((d) => d.playing);
-	const ordered = [
-		...playing.filter((d) => d.is_master),
-		...playing.filter((d) => !d.is_master)
-	];
+	const ordered = [...playing.filter((d) => d.is_master), ...playing.filter((d) => !d.is_master)];
 	for (const deck of ordered) {
 		const parsed = parseCamelotKey(deck.key);
 		if (parsed !== null) return `${parsed.number}${parsed.mode}`;
@@ -249,7 +238,9 @@ export function libraryKeyWheelLabelLines(
 	if (notation === 'camelot_musical') {
 		const bullet = shown.text.indexOf(CAMELOT_MUSICAL_SEPARATOR);
 		if (bullet === -1) {
-			throw new Error(`libraryKeyWheelLabelLines: ${JSON.stringify(shown.text)} has no Camelot/musical separator`);
+			throw new Error(
+				`libraryKeyWheelLabelLines: ${JSON.stringify(shown.text)} has no Camelot/musical separator`
+			);
 		}
 		return {
 			line1: shown.text.slice(0, bullet).trim(),

@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.__main__ CLI (VOICE-01)."""
+
 from __future__ import annotations
 
 import io
@@ -125,8 +126,7 @@ class TestRun:
 
         def _boom():
             raise RuntimeError(
-                "sounddevice not importable; install PortAudio + the "
-                "`sounddevice` wheel or re-run without mic capture"
+                "sounddevice not importable; install PortAudio + the `sounddevice` wheel or re-run without mic capture"
             )
 
         monkeypatch.setattr(audio, "_sounddevice", _boom)

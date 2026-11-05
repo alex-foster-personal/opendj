@@ -18,11 +18,7 @@ import type { AutoPlayStallReason } from '$lib/rb/autoplay-stall';
 
 /** Why AutoPlay will not hand off right now. Stall reasons pass through verbatim. */
 export type AutoPlayDisarmReason =
-	| 'disabled'
-	| 'not-installed'
-	| 'no-deck-playing'
-	| 'no-playing-master'
-	| AutoPlayStallReason;
+	'disabled' | 'not-installed' | 'no-deck-playing' | 'no-playing-master' | AutoPlayStallReason;
 
 export interface AutoPlayMirrorStatus {
 	autoplay_enabled: boolean;

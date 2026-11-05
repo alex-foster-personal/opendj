@@ -17,13 +17,20 @@
  */
 export type ExplainerDismiss = 'instant' | 'stay';
 
-export function resolveExplainerDismiss(dismiss: ExplainerDismiss | undefined, hasAction: boolean): ExplainerDismiss {
+export function resolveExplainerDismiss(
+	dismiss: ExplainerDismiss | undefined,
+	hasAction: boolean
+): ExplainerDismiss {
 	if (dismiss !== undefined) return dismiss;
 	return hasAction ? 'stay' : 'instant';
 }
 
 /** Whether the action slot renders right now. */
-export function explainerShowsAction(mode: ExplainerDismiss, hasAction: boolean, pinned: boolean): boolean {
+export function explainerShowsAction(
+	mode: ExplainerDismiss,
+	hasAction: boolean,
+	pinned: boolean
+): boolean {
 	if (!hasAction) return false;
 	return mode === 'stay' || pinned;
 }

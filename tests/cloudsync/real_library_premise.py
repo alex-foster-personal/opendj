@@ -44,8 +44,7 @@ def prepared_or_skip(source: Path, dest_dir: Path, *, repaired: bool) -> Prepare
         # An explicit raise rather than pytest.skip(), so the type checker sees
         # no fall-through: the isolated mypy env types pytest as Any.
         raise pytest.skip.Exception(
-            f"{exc} (default source {source}; set {REAL_LIBRARY_ENV_VAR} to a "
-            f"pre-repair library to run this tier)"
+            f"{exc} (default source {source}; set {REAL_LIBRARY_ENV_VAR} to a pre-repair library to run this tier)"
         ) from exc
 
 

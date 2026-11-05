@@ -113,7 +113,7 @@ def _build_bundle(
     ``bundle_id`` is omitted from the manifest unless given, matching a bundle
     built before the identity fix (PR #1536); tests that pin an id pass one.
     ``include_payload_hash=False`` reproduces the round 0-2 bundle recorded in
-    specs/native-analysis-v1.md, which predates payload_sha256 entirely
+    (private path), which predates payload_sha256 entirely
     (Codex P1 BLOCKING, PR #1536, thread on score.py:358).
     """
     bundle = root / "v1"
@@ -191,9 +191,7 @@ def _build_full_identity_bundle(root: Path) -> Path:
     bundle_id = score.compute_bundle_id(
         seed=1,
         sample_size=1,
-        tracks=[
-            {"stable_id": "clip", "truth_sha256": truth_sha256, "payload_sha256": payload_sha256}
-        ],
+        tracks=[{"stable_id": "clip", "truth_sha256": truth_sha256, "payload_sha256": payload_sha256}],
     )
     manifest_payload = {
         "bundle": score.EXPECTED_BUNDLE,
@@ -400,7 +398,7 @@ def test_the_cli_exits_zero_via_bundle_id_flag_when_pinned_id_matches(tmp_path: 
 
 # ----- legacy manifests predating payload_sha256 stay scorable -------------------
 # Codex P1 BLOCKING (PR #1536, thread on score.py:358): the round 0-2 bundle
-# recorded in specs/native-analysis-v1.md predates payload_sha256 entirely, so
+# recorded in (private path) predates payload_sha256 entirely, so
 # directly indexing track["payload_sha256"] raised KeyError instead of scoring it,
 # breaking reproducibility of an already-recorded, immutable fixture.
 

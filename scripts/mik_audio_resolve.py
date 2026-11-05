@@ -53,9 +53,7 @@ from apps.equivalence.sources import (
 
 MIK_DB = Path.home() / "Library/Application Support/Mixedinkey/Collection10.mikdb"
 CORE_DATA_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
-AUDIO_SUFFIXES = frozenset(
-    {".mp3", ".m4a", ".aiff", ".aif", ".wav", ".flac", ".aac", ".ogg", ".opus", ".alac"}
-)
+AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".aiff", ".aif", ".wav", ".flac", ".aac", ".ogg", ".opus", ".alac"})
 
 
 def core_data_time(value: float | None) -> datetime | None:
@@ -94,10 +92,7 @@ class ResolvedAudio:
 def _analysis_dates(db_path: Path) -> dict[int, float | None]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        return {
-            int(pk): date
-            for pk, date in conn.execute("SELECT Z_PK, ZANALYSISDATE FROM ZSONG")
-        }
+        return {int(pk): date for pk, date in conn.execute("SELECT Z_PK, ZANALYSISDATE FROM ZSONG")}
     finally:
         conn.close()
 
@@ -122,19 +117,12 @@ def _present_basenames(state_db: Path) -> dict[str, str]:
         raise FileNotFoundError(f"state.db not found: {state_db}")
     conn = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
     try:
-        rows = conn.execute(
-            "SELECT file_path FROM tracks "
-            "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
-        )
+        rows = conn.execute("SELECT file_path FROM tracks WHERE file_path IS NOT NULL AND deleted_at IS NULL")
         candidates: dict[str, set[str]] = {}
         for (path,) in rows:
             if path and os.path.exists(path):
                 candidates.setdefault(Path(path).name.casefold(), set()).add(path)
-        return {
-            name: next(iter(paths))
-            for name, paths in candidates.items()
-            if len(paths) == 1
-        }
+        return {name: next(iter(paths)) for name, paths in candidates.items() if len(paths) == 1}
     finally:
         conn.close()
 
@@ -204,11 +192,7 @@ def resolve(data_dir: Path, mik_db: Path = MIK_DB) -> list[ResolvedAudio]:
             continue
         rb_path = pair.left.path
         if rb_path and _is_audio(rb_path) and os.path.isfile(rb_path):
-            resolved.append(
-                _describe(
-                    mik, rb_path, "rekordbox", pair.tier, pair.left.content_id, epoch
-                )
-            )
+            resolved.append(_describe(mik, rb_path, "rekordbox", pair.tier, pair.left.content_id, epoch))
             continue
         names = [pair.left.file_name]
         if rb_path:
@@ -218,11 +202,7 @@ def resolve(data_dir: Path, mik_db: Path = MIK_DB) -> list[ResolvedAudio]:
                 continue
             hit = present.get(name.casefold())
             if hit and _is_audio(hit) and os.path.isfile(hit):
-                resolved.append(
-                    _describe(
-                        mik, hit, "state_db", pair.tier, pair.left.content_id, epoch
-                    )
-                )
+                resolved.append(_describe(mik, hit, "state_db", pair.tier, pair.left.content_id, epoch))
                 break
     return resolved
 

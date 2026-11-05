@@ -17,7 +17,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 type Beat = { n: number; t: number };
 
-test.skip(process.platform === 'win32', 'POSIX-only: guardedWebServerCommand launches /bin/sh and .venv/bin/python');
+test.skip(
+	process.platform === 'win32',
+	'POSIX-only: guardedWebServerCommand launches /bin/sh and .venv/bin/python'
+);
 
 async function trackWithGrid(page: Page): Promise<{ stableId: string; downbeatsMs: number[] }> {
 	const listing = await page.request.get('/api/v1/tracks?limit=50');
@@ -27,15 +30,21 @@ async function trackWithGrid(page: Page): Promise<{ stableId: string; downbeatsM
 		const anlz = await page.request.get(`/api/v1/tracks/${stable_id}/anlz?points=100`);
 		if (!anlz.ok()) continue;
 		const beats = ((await anlz.json()) as { beatgrid: { beats: Beat[] } }).beatgrid.beats;
-		const downbeatsMs = beats.filter((beat) => beat.n === 1).map((beat) => Math.round(beat.t * 1000));
+		const downbeatsMs = beats
+			.filter((beat) => beat.n === 1)
+			.map((beat) => Math.round(beat.t * 1000));
 		if (downbeatsMs.length >= 2) return { stableId: stable_id, downbeatsMs };
 	}
 	throw new Error('no fixture track serves a grid on /anlz: the seeding step did not run');
 }
 
-test('the waveform menu sets the transition-in cue and the track API reads it back', async ({ page }) => {
+test('the waveform menu sets the transition-in cue and the track API reads it back', async ({
+	page
+}) => {
 	await page.goto('/performance?muted=1');
-	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, { timeout: 60_000 });
+	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, {
+		timeout: 60_000
+	});
 	const { stableId, downbeatsMs } = await trackWithGrid(page);
 	const cueUrl = `/api/v1/tracks/${stableId}/transition-in`;
 	await page.request.delete(cueUrl);
@@ -44,7 +53,8 @@ test('the waveform menu sets the transition-in cue and the track API reads it ba
 	await page.evaluate(async (stable_id) => {
 		await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id } as never);
 	}, stableId);
-	const durationOf = () => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].duration_ms ?? 0);
+	const durationOf = () =>
+		page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].duration_ms ?? 0);
 	await expect.poll(durationOf).toBeGreaterThan(0);
 	const durationMs = await durationOf();
 
@@ -59,14 +69,21 @@ test('the waveform menu sets the transition-in cue and the track API reads it ba
 	await item.click();
 
 	await expect.poll(async () => (await (await page.request.get(cueUrl)).json()).cue).not.toBeNull();
-	const { cue } = (await (await page.request.get(cueUrl)).json()) as { cue: { kind: string; in_ms: number } };
+	const { cue } = (await (await page.request.get(cueUrl)).json()) as {
+		cue: { kind: string; in_ms: number };
+	};
 	expect(cue.kind).toBe('transition_in');
 	expect(downbeatsMs, 'the stored cue must sit on a served downbeat').toContain(cue.in_ms);
 	const clickedMs = fraction * durationMs;
 	const barMs = Math.max(...downbeatsMs.slice(1).map((t, i) => t - downbeatsMs[i]));
-	expect(Math.abs(cue.in_ms - clickedMs), 'snapped within one bar of the click').toBeLessThanOrEqual(barMs);
+	expect(
+		Math.abs(cue.in_ms - clickedMs),
+		'snapped within one bar of the click'
+	).toBeLessThanOrEqual(barMs);
 
 	await expect
-		.poll(async () => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].transition_in_ms))
+		.poll(async () =>
+			page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].transition_in_ms)
+		)
 		.toBe(cue.in_ms);
 });

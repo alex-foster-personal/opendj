@@ -74,7 +74,10 @@ function _worst(
 	better: (left: number, right: number) => boolean
 ): { bus: 'master' | 'cue'; value: number } {
 	let worst: { bus: 'master' | 'cue'; value: number } | null = null;
-	for (const [bus, runs] of [['master', master], ['cue', cue]] as const) {
+	for (const [bus, runs] of [
+		['master', master],
+		['cue', cue]
+	] as const) {
 		for (const run of runs) {
 			const value = pick(run);
 			if (worst === null || better(value, worst.value)) worst = { bus, value };
@@ -89,7 +92,12 @@ export function diagnoseUnstableMeasurement(
 	cue: readonly MeasuredRun[],
 	limits: UnstableLimits
 ): UnstableDiagnosis {
-	const mostClipped = _worst(master, cue, (run) => run.clippedFraction, (a, b) => a > b);
+	const mostClipped = _worst(
+		master,
+		cue,
+		(run) => run.clippedFraction,
+		(a, b) => a > b
+	);
 	if (mostClipped.value > CLIPPED_FRACTION_MAX) {
 		return {
 			reason: 'input_clipped',
@@ -100,7 +108,12 @@ export function diagnoseUnstableMeasurement(
 				`cannot be trusted. Turn that output down, or lower the microphone input level, and run it again.`
 		};
 	}
-	const weakest = _worst(master, cue, (run) => run.peak, (a, b) => a < b);
+	const weakest = _worst(
+		master,
+		cue,
+		(run) => run.peak,
+		(a, b) => a < b
+	);
 	if (weakest.value < limits.comfortablePeak) {
 		const fix =
 			weakest.bus === 'master'
@@ -120,7 +133,10 @@ export function diagnoseUnstableMeasurement(
 	// Neither bus alone exceeding the limit still fails the run when they
 	// drift in opposite directions, and then no single bus is to blame.
 	const bus: UnstableBus = masterMoved === cueMoved ? 'both' : masterMoved ? 'master' : 'cue';
-	const who = bus === 'both' ? 'both outputs changed their latency' : `the ${BUS_LABEL[bus]} latency itself changed`;
+	const who =
+		bus === 'both'
+			? 'both outputs changed their latency'
+			: `the ${BUS_LABEL[bus]} latency itself changed`;
 	return {
 		reason: 'path_latency_moved',
 		bus,

@@ -724,7 +724,9 @@ def test_pool_width_is_sized_from_live_capacity_at_startup(
     assert batch.state == queue_store.BATCH_DONE
     assert "analysis pool startup" in caplog.text
     assert "widens to" in caplog.text
-    assert live.reason in caplog.text
+    # The reason quotes live free RAM, which moves between this read and the
+    # runner's own on a busy host; the chosen width is the stable part.
+    assert f"chose {live.workers} worker(s)" in caplog.text
     conn.close()
 
 

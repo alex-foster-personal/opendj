@@ -54,11 +54,7 @@ def classify_user_agent(user_agent: str) -> Surface | None:
     """
     if "AppleWebKit/" in user_agent and "Safari/" not in user_agent:
         return "desktop-shell"
-    if (
-        "Safari/" in user_agent
-        or "Chrome/" in user_agent
-        or "Firefox/" in user_agent
-    ):
+    if "Safari/" in user_agent or "Chrome/" in user_agent or "Firefox/" in user_agent:
         return "browser"
     return None
 
@@ -142,19 +138,14 @@ class UsageStore:
         now = self._monotonic()
         clients = [
             self._client_view(entry, now)
-            for entry in sorted(
-                self._clients.values(), key=lambda item: item.seen.monotonic
-            )
+            for entry in sorted(self._clients.values(), key=lambda item: item.seen.monotonic)
         ]
         return {
             "clients": clients,
             "summary": {
                 "any_client_open": any(row["is_open"] for row in clients),
                 "any_client_in_use": any(row["in_use"] for row in clients),
-                "desktop_shell_open": any(
-                    row["is_open"] and row["surface"] == "desktop-shell"
-                    for row in clients
-                ),
+                "desktop_shell_open": any(row["is_open"] and row["surface"] == "desktop-shell" for row in clients),
             },
             "passive_activity": self._passive_view(now),
             "in_use_window_seconds": IN_USE_WINDOW_SECONDS,
@@ -185,27 +176,17 @@ class UsageStore:
     def _passive_view(self, now: float) -> dict:
         by_surface = {
             surface: {
-                "last_request_at": (
-                    self._passive[surface].wall_clock
-                    if surface in self._passive
-                    else None
-                ),
+                "last_request_at": (self._passive[surface].wall_clock if surface in self._passive else None),
                 "seconds_since_request": (
-                    round(now - self._passive[surface].monotonic, 3)
-                    if surface in self._passive
-                    else None
+                    round(now - self._passive[surface].monotonic, 3) if surface in self._passive else None
                 ),
             }
             for surface in SURFACES
         }
-        latest = max(
-            self._passive.values(), key=lambda seen: seen.monotonic, default=None
-        )
+        latest = max(self._passive.values(), key=lambda seen: seen.monotonic, default=None)
         return {
             "last_request_at": latest.wall_clock if latest else None,
-            "seconds_since_last_request": (
-                round(now - latest.monotonic, 3) if latest else None
-            ),
+            "seconds_since_last_request": (round(now - latest.monotonic, 3) if latest else None),
             "by_surface": by_surface,
         }
 

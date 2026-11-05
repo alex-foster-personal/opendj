@@ -64,10 +64,16 @@ def test_harness_honors_paths_relative_to_manifest(tmp_path: Path) -> None:
         limit=0,
     )
 
-    assert _harness.run(
-        args, candidate="stub", version="test", device="cpu",
-        build_analyzer=lambda: analyzer,
-    ) == 0
+    assert (
+        _harness.run(
+            args,
+            candidate="stub",
+            version="test",
+            device="cpu",
+            build_analyzer=lambda: analyzer,
+        )
+        == 0
+    )
     assert seen == [str(wav)]
     payload = json.loads(Path(args.out).read_text())
     assert payload["n_fixtures"] == 1
@@ -82,9 +88,7 @@ def test_harness_refuses_unknown_paths_relative_to(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(SystemExit, match="paths_relative_to"):
-        _harness.resolve_fixture_paths(
-            json.loads(manifest.read_text()), str(manifest)
-        )
+        _harness.resolve_fixture_paths(json.loads(manifest.read_text()), str(manifest))
 
 
 def test_throwing_analyzer_is_an_error_not_a_dropped_id(tmp_path: Path) -> None:
@@ -114,10 +118,16 @@ def test_throwing_analyzer_is_an_error_not_a_dropped_id(tmp_path: Path) -> None:
         limit=0,
     )
 
-    assert _harness.run(
-        args, candidate="stub", version="test", device="cpu",
-        build_analyzer=lambda: analyzer,
-    ) == 0
+    assert (
+        _harness.run(
+            args,
+            candidate="stub",
+            version="test",
+            device="cpu",
+            build_analyzer=lambda: analyzer,
+        )
+        == 0
+    )
     payload = json.loads(Path(args.out).read_text())
     assert set(payload["results"]) == {"ok", "boom"}
     assert payload["n_failed"] == 1
@@ -182,9 +192,7 @@ def test_skey_adapter_remaps_paths_and_converts_notations(tmp_path: Path) -> Non
         json.dumps({"fixtures": fixtures_one, "paths_relative_to": "manifest"}),
         encoding="utf-8",
     )
-    assert skey_main(
-        ["--fixtures", str(manifest), "--out", str(out), "--skey-raw", str(raw_path)]
-    ) == 0
+    assert skey_main(["--fixtures", str(manifest), "--out", str(out), "--skey-raw", str(raw_path)]) == 0
     written = json.loads(out.read_text())
     assert written["candidate"] == "skey"
     assert written["results"]["synthetic-agree-1"]["key_openkey"] == "1m"

@@ -137,9 +137,7 @@ test('shouldStartDrain is false while a drain is already running', () => {
 });
 
 test('shouldStartDrain is false after a drain failed, so the wizard cannot loop', () => {
-	const f = analysisFollowup(
-		queue({ job: { ...queue().job, phase: 'error', error: 'boom' } })
-	);
+	const f = analysisFollowup(queue({ job: { ...queue().job, phase: 'error', error: 'boom' } }));
 	assert.equal(f.shouldStartDrain, false);
 });
 

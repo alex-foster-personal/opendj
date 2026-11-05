@@ -81,6 +81,8 @@ from apps.analysis_waveform.decode import (
     select_decoder,
 )
 from apps.analysis_waveform.lane_payload import build_waveform_payload
+from apps.shared.cheap_content_fp import content_fp_from_path
+from apps.shared.keyed_lock import KeyedLocks
 
 # STRIP_COLUMNS is imported, not restated: the browser strip is ONE contract
 # (120 columns x 3 bands, SPIKE-A1) whichever source filled it, and two copies
@@ -121,8 +123,7 @@ def peaks_version(profile: decode.DecodeProfile = decode.PROFILE) -> str:
 
 _DECODE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_DECODES)
 _DECODE_ADMISSION = threading.BoundedSemaphore(MAX_DECODE_WAITERS)
-_TRACK_LOCKS_GUARD = threading.Lock()
-_TRACK_LOCKS: dict[str, threading.Lock] = {}
+_TRACK_LOCKS = KeyedLocks()
 
 
 # ----- on-disk cache ----------------------------------------------------------
@@ -138,7 +139,7 @@ def _strip_path(stable_id: str) -> Path:
 
 def _source_key(path: Path) -> dict[str, Any]:
     """Identity of the decoded bytes: path, inode, size, nanosecond mtime,
-    and (POSIX only) nanosecond ctime.
+    cheap content fingerprint, and (POSIX only) nanosecond ctime.
 
     mtime alone cannot detect a replacement that preserves its timestamp - a
     sync/restore/repair tool commonly replaces a file via a temp-file plus
@@ -149,16 +150,14 @@ def _source_key(path: Path) -> dict[str, Any]:
 
     inode alone still misses an IN-PLACE overwrite (same file, same inode)
     that also restores the original mtime - size can coincide there too.
-    ctime closes that gap: unlike mtime it cannot be set from user space on
-    POSIX (no ctime argument to utime/os.utime), so the kernel bumps it to
-    "now" on every content write regardless of what the writer does to
-    mtime afterward (verified live: a same-mtime in-place rewrite still
-    moved ctime, Codex finding, issue #735 follow-up). Gated to POSIX
-    because st_ctime means something different on Windows (creation time,
-    which a content rewrite does NOT move) - see IS_WINDOWS in
-    apps/shared/platform_paths.py. This narrower in-place-overwrite gap is
-    unaddressed on Windows and is shared, un-fixed-there-either, by
-    apps/vocals/cache.py's identical mtime+inode signature (Sat 8 Aug 2026).
+    content_fp (blake2b over size plus the first and last 64 KiB) closes
+    that gap on every platform, including Windows where st_ctime is creation
+    time and does not move on a content rewrite. POSIX still also records
+    nanosecond ctime: unlike mtime it cannot be set from user space (no
+    ctime argument to utime/os.utime), so the kernel bumps it to "now" on
+    every content write regardless of what the writer does to mtime
+    afterward (verified live: a same-mtime in-place rewrite still moved
+    ctime, Codex finding, issue #735 follow-up).
 
     device is deliberately NOT included - it is mount-scoped, not file
     identity, and comparing it invalidated 300 of 640 live vocal-cache
@@ -170,6 +169,7 @@ def _source_key(path: Path) -> dict[str, Any]:
         "inode": stat.st_ino,
         "size": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
+        "content_fp": content_fp_from_path(path, size=stat.st_size),
     }
     if os.name == "posix":
         key["ctime_ns"] = stat.st_ctime_ns
@@ -262,12 +262,7 @@ def _write_json(path: Path, entry: dict[str, Any]) -> None:
 
 
 def _track_lock(stable_id: str) -> threading.Lock:
-    with _TRACK_LOCKS_GUARD:
-        lock = _TRACK_LOCKS.get(stable_id)
-        if lock is None:
-            lock = threading.Lock()
-            _TRACK_LOCKS[stable_id] = lock
-        return lock
+    return _TRACK_LOCKS.lock_for(stable_id)
 
 
 def peaks_entry_current(stable_id: str) -> bool:
@@ -295,8 +290,8 @@ def audio_revision(stable_id: str, profile: decode.DecodeProfile = decode.PROFIL
     """A digest of the peaks ``stable_id`` would get now: its bytes and how they are decoded. NEVER decodes.
 
     The same identity the peak cache checks (``_decode_key``: path, inode, size,
-    mtime, POSIX ctime, decoder) plus ``peaks_version()``, so anything that
-    rebuilds the peaks also moves this.
+    mtime, content_fp, POSIX ctime, decoder) plus ``peaks_version()``, so anything
+    that rebuilds the peaks also moves this.
     ``profile`` is the producer configuration asked about, as for
     ``peaks_version``; callers leave it at the shipped one.
 

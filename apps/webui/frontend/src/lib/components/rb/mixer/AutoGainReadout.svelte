@@ -9,7 +9,11 @@
 	 * PUT /api/v1/auto-gain/tracks/{id}/user-offset; CLI twin:
 	 * `opendj track auto-gain <id> set <dB>|clear`.
 	 */
-	import { autoGainReadout, AUTO_GAIN_OFFSET_MAX_DB, AUTO_GAIN_OFFSET_MIN_DB } from '$lib/rb/auto-gain';
+	import {
+		autoGainReadout,
+		AUTO_GAIN_OFFSET_MAX_DB,
+		AUTO_GAIN_OFFSET_MIN_DB
+	} from '$lib/rb/auto-gain';
 	import { deckAutoGain, type DeckId } from '$lib/rb/auto-gain.svelte';
 
 	let {
@@ -18,7 +22,10 @@
 	}: {
 		deckId: DeckId;
 		/** The Mixer's `auto_gain_offset` dispatch (performance-ipc). */
-		onoffset: (offsetDb: number | null, stableId: string) => Promise<{ ok: boolean; error?: unknown }>;
+		onoffset: (
+			offsetDb: number | null,
+			stableId: string
+		) => Promise<{ ok: boolean; error?: unknown }>;
 	} = $props();
 
 	const current = $derived(deckAutoGain[deckId]);
@@ -66,7 +73,12 @@
 	function submit(event: SubmitEvent): void {
 		event.preventDefault();
 		const value = draft;
-		if (value === null || !Number.isFinite(value) || value < AUTO_GAIN_OFFSET_MIN_DB || value > AUTO_GAIN_OFFSET_MAX_DB) {
+		if (
+			value === null ||
+			!Number.isFinite(value) ||
+			value < AUTO_GAIN_OFFSET_MIN_DB ||
+			value > AUTO_GAIN_OFFSET_MAX_DB
+		) {
 			error = `Enter a number of dB from ${AUTO_GAIN_OFFSET_MIN_DB} to ${AUTO_GAIN_OFFSET_MAX_DB}.`;
 			return;
 		}

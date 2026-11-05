@@ -23,9 +23,7 @@ from apps.open_dj import (
     serialize_jcs,
 )
 
-_STUB_MP3: Path = (
-    Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
-)
+_STUB_MP3: Path = Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
 
 
 def _sample_library() -> OpenDjLibrary:
@@ -54,6 +52,7 @@ def _sample_library() -> OpenDjLibrary:
         tracks=(t1, t2),
         playlists=(Playlist(name="warmup", track_ids=()),),
     )
+
 
 pytestmark = pytest.mark.requirement("OPEN-02")
 
@@ -168,9 +167,7 @@ def test_subcrate_playlist_name_cannot_escape_subcrates_dir(tmp_path) -> None:
     lib = OpenDjLibrary(
         version="0.1",
         tracks=(track,),
-        playlists=(
-            Playlist(name="../../evil", track_ids=(track.track_id,)),
-        ),
+        playlists=(Playlist(name="../../evil", track_ids=(track.track_id,)),),
     )
     target = tmp_path / "_Serato_"
     adapter.write(lib, target)
@@ -253,7 +250,8 @@ def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
     audio_root, _ = _stage_mp3(tmp_path)
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
-            audio_root=audio_root, backup_dir=tmp_path / "_backups",
+            audio_root=audio_root,
+            backup_dir=tmp_path / "_backups",
         )
     )
     cues = (
@@ -294,7 +292,8 @@ def test_geob_beatgrid_roundtrip(tmp_path) -> None:
     audio_root, _ = _stage_mp3(tmp_path)
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
-            audio_root=audio_root, backup_dir=tmp_path / "_backups",
+            audio_root=audio_root,
+            backup_dir=tmp_path / "_backups",
         )
     )
     beats = (
@@ -319,9 +318,7 @@ def test_geob_beatgrid_roundtrip(tmp_path) -> None:
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_write_skips_missing_audio_with_warning(tmp_path) -> None:
     """Missing audio file -> structured warning, crate DB still written."""
-    adapter = SeratoAdapter(
-        options=SeratoAdapterOptions(audio_root=tmp_path / "does_not_exist")
-    )
+    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=tmp_path / "does_not_exist"))
     track = Track(
         track_id="missing",
         file_path="nope.mp3",
@@ -336,9 +333,7 @@ def test_geob_write_skips_missing_audio_with_warning(tmp_path) -> None:
     # No GEOB frame written because the file didn't exist.
     assert report.counts.get("geob_frames_written", 0) == 0
     # Structured warning flagged.
-    assert any(
-        w.action == "dropped" and "missing" in w.reason for w in report.warnings
-    )
+    assert any(w.action == "dropped" and "missing" in w.reason for w in report.warnings)
 
 
 @pytest.mark.requirement("DJIMPORT-6039")
@@ -390,7 +385,8 @@ def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
 
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
-            audio_root=audio_root, backup_dir=backup_dir,
+            audio_root=audio_root,
+            backup_dir=backup_dir,
         )
     )
     track = Track(
@@ -398,9 +394,7 @@ def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
         file_path="audio/track.mp3",
         title="Rail 2 guard",
         artists=("Test",),
-        cues=(
-            CuePoint(index=0, position_ms=0, type="hot", name="Intro"),
-        ),
+        cues=(CuePoint(index=0, position_ms=0, type="hot", name="Intro"),),
     )
     lib = OpenDjLibrary(version="0.1", tracks=(track,))
     report = adapter.write(lib, tmp_path / "_Serato_")
@@ -413,14 +407,14 @@ def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
     assert len(backups) == 1, f"expected exactly one .bak, got {backups}"
     backup_sha = hashlib.sha256(backups[0].read_bytes()).hexdigest()
     assert backup_sha == pre_sha, (
-        "backup was taken AFTER the mutation instead of before; "
-        f"backup_sha={backup_sha} pre_sha={pre_sha}"
+        f"backup was taken AFTER the mutation instead of before; backup_sha={backup_sha} pre_sha={pre_sha}"
     )
 
 
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_write_skips_track_when_backup_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rail 2 hardening: if the backup step raises we MUST skip the track
     with a structured warning, NOT proceed to mutate the MP3 unbacked.
@@ -429,7 +423,8 @@ def test_geob_write_skips_track_when_backup_fails(
     backup_dir = tmp_path / "serato_backups"
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
-            audio_root=audio_root, backup_dir=backup_dir,
+            audio_root=audio_root,
+            backup_dir=backup_dir,
         )
     )
 
@@ -437,7 +432,8 @@ def test_geob_write_skips_track_when_backup_fails(
         raise OSError("simulated disk full")
 
     monkeypatch.setattr(
-        "apps.adapters.serato.adapter.backup_file", _boom,
+        "apps.adapters.serato.adapter.backup_file",
+        _boom,
     )
 
     track = Track(
@@ -450,11 +446,7 @@ def test_geob_write_skips_track_when_backup_fails(
     lib = OpenDjLibrary(version="0.1", tracks=(track,))
     report = adapter.write(lib, tmp_path / "_Serato_")
     assert report.counts.get("geob_frames_written", 0) == 0
-    assert any(
-        "backup failed" in w.reason and "Rail 2" in w.reason
-        for w in report.warnings
-    )
-
+    assert any("backup failed" in w.reason and "Rail 2" in w.reason for w in report.warnings)
 
 
 # ---------------------------------------------------------- Codex P16-F01
@@ -500,7 +492,5 @@ def test_serato_playlist_membership_roundtrip(tmp_path) -> None:
     pl_members = set(lib_back.playlists[0].track_ids)
     assert pl_members, "playlist must not be empty after round-trip"
     # Every playlist member must resolve to a real track row.
-    assert pl_members.issubset(track_ids), (
-        f"playlist members {pl_members} not in track set {track_ids}"
-    )
+    assert pl_members.issubset(track_ids), f"playlist members {pl_members} not in track set {track_ids}"
     assert len(lib_back.playlists[0].track_ids) == 2

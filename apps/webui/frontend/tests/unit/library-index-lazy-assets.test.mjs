@@ -34,7 +34,10 @@ test('the asset window asks only for rows in view plus margin', () => {
 	assert.equal(ids.length, 90 - 2);
 	assert.equal(ids[0], 't4970');
 	assert.equal(ids.at(-1), 't5059');
-	assert.ok(!ids.includes('t5010') && !ids.includes('t5020'), 'rows with a strip are not asked for');
+	assert.ok(
+		!ids.includes('t5010') && !ids.includes('t5020'),
+		'rows with a strip are not asked for'
+	);
 	// Mutation control: a window that ignored the view would ask for all 10,000.
 	const everything = fill.stripLessIdsNear(rows, 0, rows.length, 0, () => false);
 	assert.equal(everything.length, 9_999);
@@ -43,12 +46,21 @@ test('the asset window asks only for rows in view plus margin', () => {
 
 test('a refreshed row object is asked for again even though its id was settled', () => {
 	const settled = new WeakSet();
-	const before = [{ stable_id: 'a', strip: null }, { stable_id: 'b', strip: null }];
+	const before = [
+		{ stable_id: 'a', strip: null },
+		{ stable_id: 'b', strip: null }
+	];
 	before.forEach((r) => settled.add(r));
-	assert.deepEqual(fill.stripLessIdsNear(before, 0, 2, 0, (r) => settled.has(r)), []);
+	assert.deepEqual(
+		fill.stripLessIdsNear(before, 0, 2, 0, (r) => settled.has(r)),
+		[]
+	);
 	// A library refresh: same ids, new objects carrying no cover or stems.
 	const after = before.map((r) => ({ ...r }));
-	assert.deepEqual(fill.stripLessIdsNear(after, 0, 2, 0, (r) => settled.has(r)), ['a', 'b']);
+	assert.deepEqual(
+		fill.stripLessIdsNear(after, 0, 2, 0, (r) => settled.has(r)),
+		['a', 'b']
+	);
 });
 
 const STRIP = Buffer.from(new Uint8Array(360).fill(5)).toString('base64');
@@ -79,7 +91,8 @@ function listWire(i) {
 		play_count: (i * 3) % 4,
 		preview_b64: i % 5 === 0 ? null : STRIP,
 		preview_max: i % 5 === 0 ? null : 5,
-		vocals: i % 4 === 0 ? { status: 'no_vocals', fps: 10, regions: [] } : { status: 'not_analyzed' },
+		vocals:
+			i % 4 === 0 ? { status: 'no_vocals', fps: 10, regions: [] } : { status: 'not_analyzed' },
 		stems: { status: 'none' },
 		artwork_available: i % 3 === 0,
 		artwork_status: i % 3 === 0 ? 'ok' : 'no_image_path',
@@ -91,7 +104,14 @@ function listWire(i) {
 }
 
 test('no sort, filter or search reads the deferred fields', () => {
-	const DEFERRED = ['preview_b64', 'preview_max', 'vocals', 'artwork_available', 'artwork_status', 'stems'];
+	const DEFERRED = [
+		'preview_b64',
+		'preview_max',
+		'vocals',
+		'artwork_available',
+		'artwork_status',
+		'stems'
+	];
 	const full = Array.from({ length: 40 }, (_, i) => wire.rowFromListWire(listWire(i), i + 1));
 	const index = Array.from({ length: 40 }, (_, i) => {
 		const item = listWire(i);
@@ -103,10 +123,29 @@ test('no sort, filter or search reads the deferred fields', () => {
 		'index rows really lack them'
 	);
 	const ids = (rows) => rows.map((r) => r.stable_id).join(',');
-	const keys = ['order', 'plays', 'title', 'artist', 'key', 'bpm', 'rating', 'comments', 'time', 'energy', 'genre', 'lyrics', 'grid', 'autoplay'];
+	const keys = [
+		'order',
+		'plays',
+		'title',
+		'artist',
+		'key',
+		'bpm',
+		'rating',
+		'comments',
+		'time',
+		'energy',
+		'genre',
+		'lyrics',
+		'grid',
+		'autoplay'
+	];
 	for (const key of keys) {
 		for (const dir of [1, -1]) {
-			assert.equal(ids(contract.sortRows(index, key, dir)), ids(contract.sortRows(full, key, dir)), `sort ${key} ${dir}`);
+			assert.equal(
+				ids(contract.sortRows(index, key, dir)),
+				ids(contract.sortRows(full, key, dir)),
+				`sort ${key} ${dir}`
+			);
 		}
 	}
 	for (const query of ['', 'alpha', 'artist 3', '8a', '124', 'note 4', 'house']) {
@@ -138,20 +177,34 @@ test('cover images wait in the boot scheduler queue and are released when it dra
 	const queue = [];
 	const held = { defer: (label, task) => queue.push({ label, task }) };
 	let released = 0;
-	assert.equal(fill.holdArtworkForBoot(() => (released += 1), held), false, 'held while the queue is closed');
-	assert.deepEqual(queue.map((q) => q.label), ['track-table:artwork']);
+	assert.equal(
+		fill.holdArtworkForBoot(() => (released += 1), held),
+		false,
+		'held while the queue is closed'
+	);
+	assert.deepEqual(
+		queue.map((q) => q.label),
+		['track-table:artwork']
+	);
 	assert.equal(released, 0);
 	queue[0].task();
 	assert.equal(released, 1, 'released once when the queue drains');
 
 	const open = { defer: (_label, task) => task() };
 	let late = 0;
-	assert.equal(fill.holdArtworkForBoot(() => (late += 1), open), true, 'loads at once after boot');
+	assert.equal(
+		fill.holdArtworkForBoot(() => (late += 1), open),
+		true,
+		'loads at once after boot'
+	);
 	assert.equal(late, 0, 'and does not also call release');
 });
 
 test('the slow boot side requests go through the boot scheduler', () => {
-	assert.match(read('src/lib/components/rb/EnrichCard.svelte'), /bootScheduler\.defer\('enrich-card:load', \(\) => void load\(\)\)/);
+	assert.match(
+		read('src/lib/components/rb/EnrichCard.svelte'),
+		/bootScheduler\.defer\('enrich-card:load', \(\) => void load\(\)\)/
+	);
 	assert.match(
 		read('src/lib/components/rb/wave/lyrics-cached-ids.svelte.ts'),
 		/bootScheduler\.defer\('lyrics-cached-ids:load', \(\) => \{\s*void loadLyricsCachedIds\(\)/
@@ -199,7 +252,10 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 		const rows = [row('t1'), row('t2')];
 		const settled = new WeakSet();
 		const out = await fillModule.fetchAndApplyRowAssets(['t1'], () => rows, settled);
-		assert.ok(settled.has(rows[0]) && !settled.has(rows[1]), 'only the answered row object is settled');
+		assert.ok(
+			settled.has(rows[0]) && !settled.has(rows[1]),
+			'only the answered row object is settled'
+		);
 		assert.equal(asked.length, 1);
 		assert.equal(asked[0].url, 'https://rows.example.test/api/v1/library/row-assets');
 		assert.deepEqual(asked[0].body, { ids: ['t1'] });

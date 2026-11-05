@@ -157,6 +157,8 @@ export function sparkX(index: number, snapshotCount: number): number {
 /** y for a value under the given bounds. */
 export function sparkY(value: number, bounds: { lo: number; hi: number }): number {
 	return (
-		SPARK_H - SPARK_PAD - (SPARK_H - 2 * SPARK_PAD) * ((value - bounds.lo) / (bounds.hi - bounds.lo))
+		SPARK_H -
+		SPARK_PAD -
+		(SPARK_H - 2 * SPARK_PAD) * ((value - bounds.lo) / (bounds.hi - bounds.lo))
 	);
 }

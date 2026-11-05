@@ -23,6 +23,7 @@ Numbers this module measures are printed. Run with ``-s`` to see them.
 
 [if] a real naive stamp costs more than its own rows [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest
@@ -54,9 +55,7 @@ def _sync(fleet: RealLibraryFleet, spoke: SeededSpoke) -> client.SyncResult:
     )
 
 
-@pytest.mark.parametrize(
-    "real_library_subset_tracks", [SMALL_SUBSET_TRACKS], indirect=True
-)
+@pytest.mark.parametrize("real_library_subset_tracks", [SMALL_SUBSET_TRACKS], indirect=True)
 def test_one_unorderable_stored_stamp_quarantines_its_row_and_nothing_else(
     real_library_hub_and_spokes: RealLibraryFleet,
     real_library_db: PreparedLibrary,
@@ -83,9 +82,7 @@ def test_one_unorderable_stored_stamp_quarantines_its_row_and_nothing_else(
 
     conn = _open(fleet.spoke_a.data_dir)
     try:
-        victim = conn.execute(
-            "SELECT stable_id FROM tracks ORDER BY stable_id LIMIT 1"
-        ).fetchone()[0]
+        victim = conn.execute("SELECT stable_id FROM tracks ORDER BY stable_id LIMIT 1").fetchone()[0]
         clean_digest = protocol.sync_digest(conn)
         conn.execute(
             "UPDATE tracks SET updated_at = ? WHERE stable_id = ?",
@@ -103,7 +100,10 @@ def test_one_unorderable_stored_stamp_quarantines_its_row_and_nothing_else(
     assert poisoned.quarantined is not None, "this digest must report, not abstain"
     assert poisoned.quarantined["tracks"] == 1
     assert set(poisoned.quarantined) == {
-        "tracks", "track_fields", "track_locations", "track_vendor_ids",
+        "tracks",
+        "track_fields",
+        "track_locations",
+        "track_vendor_ids",
     }
     assert poisoned.quarantined_rows is not None and poisoned.quarantined_rows > 1
     assert poisoned.tables["tracks"] != clean_digest.tables["tracks"], (
@@ -129,13 +129,11 @@ def test_one_unorderable_stored_stamp_quarantines_its_row_and_nothing_else(
     # library the same assertion reads 62 == 82.
     membership_rows = poisoned.quarantined.get(protocol.MEMBERSHIP_TABLE, 0)
     assert result.quarantined == poisoned.quarantined_rows - membership_rows, (
-        "the digest and the offer must exclude the same rows, or two "
-        "converged peers disagree forever"
+        "the digest and the offer must exclude the same rows, or two converged peers disagree forever"
     )
     assert result.pushed == fleet.spoke_a.pushable_rows - result.quarantined
     assert result.pushed > 0.9 * fleet.spoke_a.pushable_rows, (
-        "one legacy stamp must cost one track and its dependants, not the "
-        "library"
+        "one legacy stamp must cost one track and its dependants, not the library"
     )
 
     # T4: NOTHING was fabricated. Under the coalescing design the peer would
@@ -143,18 +141,14 @@ def test_one_unorderable_stored_stamp_quarantines_its_row_and_nothing_else(
     # at that pk at all, and the spoke still holds the original bytes.
     hub_conn = _open(fleet.hub_dir)
     try:
-        assert hub_conn.execute(
-            "SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (victim,)
-        ).fetchone()[0] == 0
+        assert hub_conn.execute("SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (victim,)).fetchone()[0] == 0
     finally:
         hub_conn.close()
     conn = _open(fleet.spoke_a.data_dir)
     try:
-        assert conn.execute(
-            "SELECT updated_at FROM tracks WHERE stable_id = ?", (victim,)
-        ).fetchone()[0] == legacy.stored, (
-            "quarantine must not rewrite the row it holds back"
-        )
+        assert (
+            conn.execute("SELECT updated_at FROM tracks WHERE stable_id = ?", (victim,)).fetchone()[0] == legacy.stored
+        ), "quarantine must not rewrite the row it holds back"
     finally:
         conn.close()
     print(
@@ -180,8 +174,7 @@ def test_the_repair_puts_a_quarantined_row_back_in_the_sync_set(
     # empty sets.
     before = _sync(fleet, fleet.spoke_a)
     assert before.quarantined > 0, (
-        "the unrepaired tier carried no quarantined row, so the repair "
-        "assertion below would pass vacuously"
+        "the unrepaired tier carried no quarantined row, so the repair assertion below would pass vacuously"
     )
 
     conn = state_db.open_rw(client.state_db_path(fleet.spoke_a.data_dir))
@@ -194,19 +187,13 @@ def test_the_repair_puts_a_quarantined_row_back_in_the_sync_set(
 
     after = _sync(fleet, fleet.spoke_a)
     assert after.quarantined == 0
-    assert after.pushed >= before.quarantined, (
-        "the rows the repair freed must actually be offered"
-    )
+    assert after.pushed >= before.quarantined, "the rows the repair freed must actually be offered"
     hub_conn = _open(fleet.hub_dir)
     try:
-        hub_tracks = int(
-            hub_conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
-        )
+        hub_tracks = int(hub_conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
     finally:
         hub_conn.close()
-    assert hub_tracks == fleet.subset_tracks, (
-        "after the repair every track must have reached the hub"
-    )
+    assert hub_tracks == fleet.subset_tracks, "after the repair every track must have reached the hub"
     print(
         f"[real-library] repair freed {before.quarantined} quarantined row(s); "
         f"the hub now holds all {hub_tracks} tracks"

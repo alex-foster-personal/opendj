@@ -4,6 +4,7 @@
 [if] a set is saved, re-routed or run with a live pick over HTTP [then] its parts and frozen run tracks follow, [else stop].
 [if] a component or set is addressed under another playlist's path [then] 404, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -79,9 +80,7 @@ def test_component_round_trip(client: TestClient) -> None:
     assert comp["stable_ids"] == ["a", "b"]
     assert comp["tags"] == ["deep"]
 
-    renamed = client.patch(
-        f"/api/v1/playlists/{pid}/components/{cid}", json={"name": "Warmer"}
-    )
+    renamed = client.patch(f"/api/v1/playlists/{pid}/components/{cid}", json={"name": "Warmer"})
     assert renamed.status_code == 200, renamed.text
     assert renamed.json()["name"] == "Warmer"
     assert renamed.json()["tags"] == ["deep"], "a field left out must not change"
@@ -125,9 +124,7 @@ def test_component_under_another_playlist_is_not_found(client: TestClient) -> No
     pid = _playlist(client, "Mine")
     other = _playlist(client, "Other")
     cid = _component(client, pid, "Warm", "opener", ["a"])
-    assert client.patch(
-        f"/api/v1/playlists/{other}/components/{cid}", json={"name": "Stolen"}
-    ).status_code == 404
+    assert client.patch(f"/api/v1/playlists/{other}/components/{cid}", json={"name": "Stolen"}).status_code == 404
     assert client.delete(f"/api/v1/playlists/{other}/components/{cid}").status_code == 404
     # The owner still sees it unchanged: the 404 came before any write.
     [comp] = client.get(f"/api/v1/playlists/{pid}/components").json()["components"]
@@ -138,9 +135,7 @@ def test_components_list_flags_a_borrowed_component(client: TestClient) -> None:
     pid, opener, ending_x, ending_y = _two_endings(client)
     other = _playlist(client, "Other gig")
     closer = _component(client, other, "Sig", "ending", ["zq-sig-1"])
-    saved = client.post(
-        f"/api/v1/playlists/{pid}/sets", json={"name": "Borrowed", "parts": [opener, closer]}
-    )
+    saved = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "Borrowed", "parts": [opener, closer]})
     assert saved.status_code == 201, saved.text
     listed = client.get(f"/api/v1/playlists/{pid}/components").json()["components"]
     own = [c["id"] for c in listed if not c["borrowed"]]
@@ -182,7 +177,9 @@ def test_editing_a_borrowed_component_publishes_the_borrowing_playlist(client: T
     pid, opener, _, _ = _two_endings(client)
     other = _playlist(client, "Other gig")
     closer = _component(client, other, "Sig", "ending", ["zq-sig-1"])
-    assert client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "B", "parts": [opener, closer]}).status_code == 201
+    assert (
+        client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "B", "parts": [opener, closer]}).status_code == 201
+    )
     hub = _RecordingHub()
     bus_seam.set_hub(hub)
     try:
@@ -204,9 +201,7 @@ def test_editing_a_borrowed_component_publishes_the_borrowing_playlist(client: T
 
 def test_routes_list_every_ending_and_mark_saved_sets(client: TestClient) -> None:
     pid, opener, ending_x, ending_y = _two_endings(client)
-    saved = client.post(
-        f"/api/v1/playlists/{pid}/sets", json={"name": "Peak night", "parts": [opener, ending_x]}
-    )
+    saved = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "Peak night", "parts": [opener, ending_x]})
     assert saved.status_code == 201, saved.text
     assert saved.json()["parts"] == [opener, ending_x]
 
@@ -234,9 +229,7 @@ def test_route_rules_come_back_as_422(client: TestClient) -> None:
         f"/api/v1/playlists/{pid}/sets", json={"name": "Both", "parts": [opener, ending_x, ending_y]}
     )
     assert two_endings.status_code == 422, two_endings.text
-    backwards = client.post(
-        f"/api/v1/playlists/{pid}/sets", json={"name": "Back", "parts": [ending_x, opener]}
-    )
+    backwards = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "Back", "parts": [ending_x, opener]})
     assert backwards.status_code == 422, backwards.text
     first = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "One", "parts": [opener, ending_x]})
     assert first.status_code == 201, first.text
@@ -246,9 +239,9 @@ def test_route_rules_come_back_as_422(client: TestClient) -> None:
 
 def test_replace_route_keeps_old_runs(client: TestClient, db_path: Path) -> None:
     pid, opener, ending_x, ending_y = _two_endings(client)
-    set_id = client.post(
-        f"/api/v1/playlists/{pid}/sets", json={"name": "Night", "parts": [opener, ending_x]}
-    ).json()["id"]
+    set_id = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "Night", "parts": [opener, ending_x]}).json()[
+        "id"
+    ]
     run = client.post(f"/api/v1/playlists/{pid}/sets/{set_id}/runs", json={"kind": "performance"})
     assert run.status_code == 201, run.text
 
@@ -267,16 +260,14 @@ def test_replace_route_keeps_old_runs(client: TestClient, db_path: Path) -> None
     empty = client.put(f"/api/v1/playlists/{pid}/sets/{set_id}/parts", json={"parts": []})
     assert empty.status_code == 422, empty.text
     other = _playlist(client, "Other")
-    assert client.put(
-        f"/api/v1/playlists/{other}/sets/{set_id}/parts", json={"parts": [opener]}
-    ).status_code == 404
+    assert client.put(f"/api/v1/playlists/{other}/sets/{set_id}/parts", json={"parts": [opener]}).status_code == 404
 
 
 def test_live_pick_run_freezes_the_ending_played(client: TestClient, db_path: Path) -> None:
     pid, opener, ending_x, ending_y = _two_endings(client)
-    set_id = client.post(
-        f"/api/v1/playlists/{pid}/sets", json={"name": "Night", "parts": [opener, ending_x]}
-    ).json()["id"]
+    set_id = client.post(f"/api/v1/playlists/{pid}/sets", json={"name": "Night", "parts": [opener, ending_x]}).json()[
+        "id"
+    ]
     run = client.post(
         f"/api/v1/playlists/{pid}/sets/{set_id}/runs",
         json={"kind": "performance", "played_parts": [opener, ending_y]},

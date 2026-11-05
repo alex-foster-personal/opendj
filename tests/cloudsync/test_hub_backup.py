@@ -3,7 +3,7 @@
 Every refusal here is paired with a subject the same instrument accepts, so
 a verify that said no to everything would fail the round trip, and one that
 said yes to everything would fail the corrupted-file control
-(.claude/rules/verification.md).
+((private path)).
 
 [if] hub backup/restore run on real data [then] round trip works, bad files refuse, [else stop].
 """
@@ -72,9 +72,7 @@ def _corrupt_index(db: Path) -> None:
     try:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         page_size = conn.execute("PRAGMA page_size").fetchone()[0]
-        (root,) = conn.execute(
-            "SELECT rootpage FROM sqlite_master WHERE name = 'backup_probe_marker'"
-        ).fetchone()
+        (root,) = conn.execute("SELECT rootpage FROM sqlite_master WHERE name = 'backup_probe_marker'").fetchone()
     finally:
         conn.close()
     raw = bytearray(db.read_bytes())
@@ -102,9 +100,7 @@ def test_backup_restore_round_trip_preserves_every_row(hub_data_dir: Path, tmp_p
     assert _rows(target) == _rows(hub_backup.hub_state_db(hub_data_dir))
 
 
-def test_backup_is_online_and_excludes_uncommitted_writes(
-    hub_data_dir: Path, tmp_path: Path
-) -> None:
+def test_backup_is_online_and_excludes_uncommitted_writes(hub_data_dir: Path, tmp_path: Path) -> None:
     """if a backup blocks on, or includes, a writer's uncommitted transaction then broken"""
     writer = sqlite3.connect(hub_backup.hub_state_db(hub_data_dir), isolation_level=None)
     try:
@@ -121,15 +117,11 @@ def test_backup_is_online_and_excludes_uncommitted_writes(
     assert len(_rows(hub_backup.hub_state_db(hub_data_dir))) == PROBE_ROWS + 5
 
 
-def test_corrupted_source_is_refused_and_leaves_no_backup(
-    hub_data_dir: Path, tmp_path: Path
-) -> None:
+def test_corrupted_source_is_refused_and_leaves_no_backup(hub_data_dir: Path, tmp_path: Path) -> None:
     """if a corrupted hub DB yields a backup file under a restorable name then broken"""
     dest = tmp_path / "backups"
     source = hub_backup.hub_state_db(hub_data_dir)
-    assert (
-        hub_backup.verify_backup(source)["backup_probe"] == PROBE_ROWS
-    )  # control: instrument says yes
+    assert hub_backup.verify_backup(source)["backup_probe"] == PROBE_ROWS  # control: instrument says yes
     _corrupt_index(source)
     with pytest.raises(hub_backup.HubBackupError, match="integrity_check"):
         hub_backup.verify_backup(source)
@@ -156,9 +148,7 @@ def test_restore_refuses_to_overwrite_an_existing_db(hub_data_dir: Path, tmp_pat
     assert hashlib.sha256(live.read_bytes()).hexdigest() == before
 
 
-def test_restore_refuses_while_an_engine_holds_the_data_dir(
-    hub_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_refuses_while_an_engine_holds_the_data_dir(hub_data_dir: Path, tmp_path: Path) -> None:
     """if restore writes into a data dir a live engine holds the lock on then broken"""
     backup = hub_backup.backup_hub_db(hub_data_dir, tmp_path / "backups", keep=3)
     target = tmp_path / "busy-hub"
@@ -229,9 +219,7 @@ def test_restore_whose_copy_lost_a_row_is_refused(
 
 
 @pytest.mark.parametrize("suffix", ["-wal", "-shm", "-journal"])
-def test_restore_refuses_a_stale_sidecar_alone(
-    suffix: str, hub_data_dir: Path, tmp_path: Path
-) -> None:
+def test_restore_refuses_a_stale_sidecar_alone(suffix: str, hub_data_dir: Path, tmp_path: Path) -> None:
     """if restore writes a state.db beside a stale -wal/-shm/-journal sidecar then broken"""
     backup = hub_backup.backup_hub_db(hub_data_dir, tmp_path / "backups", keep=3)
     target = tmp_path / "restored-hub"
@@ -244,12 +232,8 @@ def test_restore_refuses_a_stale_sidecar_alone(
     assert sidecar.read_bytes() == b"stale frames from another db"
 
 
-@pytest.mark.parametrize(
-    "dir_name", ["with space", "hash#dir", "query?dir", "pct%20dir", "pct%dir"]
-)
-def test_backup_and_restore_under_uri_special_directories(
-    dir_name: str, hub_data_dir: Path, tmp_path: Path
-) -> None:
+@pytest.mark.parametrize("dir_name", ["with space", "hash#dir", "query?dir", "pct%20dir", "pct%dir"])
+def test_backup_and_restore_under_uri_special_directories(dir_name: str, hub_data_dir: Path, tmp_path: Path) -> None:
     """if '#', '?', '%' or ' ' in a path breaks verify or writes a stray file then broken"""
     root = tmp_path / "case"
     base = root / dir_name
@@ -284,14 +268,9 @@ def test_keep_retains_only_the_newest_backups(hub_data_dir: Path, tmp_path: Path
 
 def test_backup_stamp_refuses_a_non_utc_clock() -> None:
     """if a backup is stamped from a local-offset clock then broken"""
-    assert (
-        hub_backup.backup_file_name(datetime(2026, 9, 11, 3, 30, tzinfo=UTC))
-        == "hub-state-20260911T033000UTC.db"
-    )
+    assert hub_backup.backup_file_name(datetime(2026, 9, 11, 3, 30, tzinfo=UTC)) == "hub-state-20260911T033000UTC.db"
     with pytest.raises(hub_backup.HubBackupError, match="UTC"):
-        hub_backup.backup_file_name(
-            datetime(2026, 9, 11, 3, 30, tzinfo=timezone(timedelta(hours=1)))
-        )
+        hub_backup.backup_file_name(datetime(2026, 9, 11, 3, 30, tzinfo=timezone(timedelta(hours=1))))
 
 
 def test_cli_backup_then_restore_into_existing_db_exits_nonzero(
@@ -299,17 +278,10 @@ def test_cli_backup_then_restore_into_existing_db_exits_nonzero(
 ) -> None:
     """if the backup CLI does not exit 0 on success and 1 on a refused restore then broken"""
     dest = tmp_path / "backups"
-    assert (
-        hub_backup.main(
-            ["backup", "--data-dir", str(hub_data_dir), "--dest", str(dest), "--keep", "2"]
-        )
-        == 0
-    )
+    assert hub_backup.main(["backup", "--data-dir", str(hub_data_dir), "--dest", str(dest), "--keep", "2"]) == 0
     assert "[OK] backup" in capsys.readouterr().out
     (newest,) = hub_backup.list_backups(dest)
-    assert (
-        hub_backup.main(["restore", "--backup", str(newest), "--data-dir", str(hub_data_dir)]) == 1
-    )
+    assert hub_backup.main(["restore", "--backup", str(newest), "--data-dir", str(hub_data_dir)]) == 1
     assert "refusing to overwrite" in capsys.readouterr().err
 
 
@@ -328,9 +300,7 @@ def _cloud_config() -> CloudConfig:
     )
 
 
-def test_r2_upload_writes_the_verified_bytes_and_never_overwrites(
-    hub_data_dir: Path, tmp_path: Path
-) -> None:
+def test_r2_upload_writes_the_verified_bytes_and_never_overwrites(hub_data_dir: Path, tmp_path: Path) -> None:
     """if an upload misses hub-backups/<host>/<file> or overwrites a stamped key then broken"""
     backup = hub_backup.backup_hub_db(hub_data_dir, tmp_path / "backups", keep=3)
     store = InMemoryAssetS3()

@@ -1,6 +1,6 @@
 """NATIVE-12: the refusal half of the Mixed In Key corpus guard.
 
-``data/reference/mik/<date>/`` holds a captured Mixed In Key run. NATIVE-12 says
+``(private path)/<date>/`` holds a captured Mixed In Key run. NATIVE-12 says
 it is reference data only: anything taken from it into files, the odj library or
 ``state.db`` needs its OWN recorded decision first, and ``state.db`` has no such
 decision today.
@@ -10,7 +10,7 @@ module with no decision, admits one that has a decision for exactly the action
 it asked for, and that a registry which cannot be read or is not backed by its
 record document fails loudly rather than reading as an empty one. The static
 half -- that no source in the checkout reaches this corpus unclassified -- is
-``tests/mik/test_reference_import_guard_sweep.py``.
+``(private path)``.
 
 One line, in the repo's marked-scope form:
   - [if] a module has no import decision [then] the guard refuses it, [else stop].
@@ -68,7 +68,6 @@ def test_no_import_decision_is_recorded_today() -> None:
     )
 
 
-
 # ----------------------------------------------------------- the refusal itself
 
 
@@ -84,9 +83,7 @@ def test_guard_refuses_an_unregistered_module() -> None:
 def test_guard_admits_a_registered_module(tmp_path: Path) -> None:
     """Once a decision exists, the named module passes and an unnamed one does not."""
     write_record(tmp_path, "MIK-IMPORT-02")
-    registry = write_registry(
-        tmp_path / "registry.json", [registry_entry("apps/mik/load.py", "MIK-IMPORT-02")]
-    )
+    registry = write_registry(tmp_path / "registry.json", [registry_entry("apps/mik/load.py", "MIK-IMPORT-02")])
     granted = reference_guard.require_mik_import_decision(
         "apps/mik/load.py", action="import", registry_path=registry, record_root=tmp_path
     )

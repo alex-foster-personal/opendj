@@ -20,6 +20,7 @@ Usage::
 
     uv run --no-sync python scripts/usb_export_progress.py --expect-gb 4.7
 """
+
 from __future__ import annotations
 
 import argparse
@@ -133,9 +134,7 @@ def main() -> None:
     expect = int(args.expect_gb * 1024**3)
     console.print(f"[dim]scanning {STICK} for a baseline (this takes a moment)...[/]")
     base = _scan(STICK)
-    console.print(
-        f"[OK] baseline: {_fmt_bytes(base.total_bytes)} across {base.files:,} files"
-    )
+    console.print(f"[OK] baseline: {_fmt_bytes(base.total_bytes)} across {base.files:,} files")
     console.print("[dim]start the export in rekordbox now -- ctrl-c to stop watching[/]\n")
 
     window: deque[Sample] = deque(maxlen=WINDOW)

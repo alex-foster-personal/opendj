@@ -116,9 +116,7 @@ from scripts.ci_health_core import (
 
 # The store is shared with scripts/iteration_metrics.sh and is machine-local, never
 # committed.
-ITERATION_METRICS_PATH = (
-    Path.home() / ".local" / "share" / "mdt-iteration-metrics" / "metrics.jsonl"
-)
+ITERATION_METRICS_PATH = Path.home() / ".local" / "share" / "mdt-iteration-metrics" / "metrics.jsonl"
 
 ITERATION_SPEED_MEDIAN_WINDOW = 20
 ITERATION_SPEED_REGRESSION_FACTOR = 1.5
@@ -256,9 +254,7 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
         it. A backlog that deep also means the watchdog itself was down for a long time,
         which has already alerted through other paths.
     """
-    lookback = (watermark - timedelta(hours=JOB_FETCH_CREATED_LOOKBACK_HOURS)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    lookback = (watermark - timedelta(hours=JOB_FETCH_CREATED_LOOKBACK_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     fetched: list[Run] = []
     note: str | None = None
     raw_seen = 0
@@ -350,9 +346,7 @@ def _fetch_jobs(
         # windows is an accepted miss: rare, manual, and it re-measures steps the sample
         # already describes.
         listed = {run.run_id for run in candidates}
-        candidates += [
-            run for run in runs if run.updated_at >= watermark and run.run_id not in listed
-        ]
+        candidates += [run for run in runs if run.updated_at >= watermark and run.run_id not in listed]
 
         # Process oldest first.  This is a resumable queue backed by the CI metric
         # watermark: recording these runs advances the cursor only as far as the bounded
@@ -426,9 +420,7 @@ def _read_metrics(path: Path) -> list[Metric]:
         try:
             seconds = float(record["seconds"])
         except (TypeError, ValueError) as exc:
-            raise PreconditionError(
-                f"{path}:{number} has a non-numeric seconds value: {record['seconds']!r}"
-            ) from exc
+            raise PreconditionError(f"{path}:{number} has a non-numeric seconds value: {record['seconds']!r}") from exc
         job_id = record.get("job_id")
         metrics.append(
             Metric(

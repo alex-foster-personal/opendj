@@ -12,10 +12,7 @@ import {
 	registerSignInCancel,
 	setSignInPhase
 } from '$lib/auth/sign-in-overlay.svelte';
-import {
-	navigateForSignIn,
-	type SignInNavigationDeps
-} from '$lib/auth/system-browser-signin';
+import { navigateForSignIn, type SignInNavigationDeps } from '$lib/auth/system-browser-signin';
 
 function defaultNavigationDeps(): SignInNavigationDeps {
 	return {
@@ -65,10 +62,6 @@ export async function runSignInAfterStartLogin(
 	if (result === 'cancelled') {
 		return;
 	}
-	pushToast(
-		'Google sign-in timed out. Click the account button to try again.',
-		'error',
-		12000
-	);
+	pushToast('Google sign-in timed out. Click the account button to try again.', 'error', 12000);
 	failSignIn();
 }

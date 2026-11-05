@@ -77,11 +77,7 @@ def _parse_candidate_json(stdout: str) -> dict[str, Any]:
 
 
 def output_parity(reference_db: float, challenger_db: float) -> str:
-    return (
-        "within-audibility-bar"
-        if abs(challenger_db - reference_db) < AUDIBILITY_DB
-        else "material-difference"
-    )
+    return "within-audibility-bar" if abs(challenger_db - reference_db) < AUDIBILITY_DB else "material-difference"
 
 
 def _load_mono(path: Path) -> tuple[Any, int]:
@@ -102,8 +98,7 @@ def _score_outputs(track_dir: Path, output_dir: Path) -> dict[str, Any]:
         estimate, estimate_rate = _load_mono(output_dir / f"{stem}.wav")
         if truth_rate != estimate_rate:
             raise RuntimeError(
-                f"{stem}: output rate {estimate_rate} differs from truth rate "
-                f"{truth_rate}; refusing resample"
+                f"{stem}: output rate {estimate_rate} differs from truth rate {truth_rate}; refusing resample"
             )
         scores[stem] = si_sdr_db(truth, estimate)
     return {
@@ -140,8 +135,13 @@ def _run(command: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]
     # comparison. Start the whole tree in its own process group so the timeout
     # path can kill it as one unit.
     process = subprocess.Popen(
-        command, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=environment, start_new_session=True,
+        command,
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+        start_new_session=True,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout_s)
@@ -204,9 +204,7 @@ def _fixture_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _candidate_cell(
-    candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int
-) -> dict[str, Any]:
+def _candidate_cell(candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int) -> dict[str, Any]:
     started = time.perf_counter()
     run = _run(
         [
@@ -299,9 +297,7 @@ def main() -> None:
         },
         "fixture_source": manifest["source"],
         "fixture_provenance": _fixture_provenance(manifest),
-        "clip_length_note": (
-            "Each fixture is approximately 6.803 seconds; no result extrapolates to a full track."
-        ),
+        "clip_length_note": ("Each fixture is approximately 6.803 seconds; no result extrapolates to a full track."),
         "quality_measure": {
             "metric": "true-stem SI-SDR per stem, mean across four stems",
             "parity_bar_db": AUDIBILITY_DB,

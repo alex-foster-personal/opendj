@@ -1,4 +1,5 @@
 """Library organization foundation (PRD R-UNDO-1/2, R-API-2, s6 invariants)."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -23,6 +24,10 @@ def writer(tmp_path: Path) -> Iterator[StateWriter]:
     w = StateWriter(conn, FakeEventBus(), actor="test")
     w.insert_playlist(playlist_id="folder", name="Viva", vendor="local", vendor_pl_id="1")
     w.insert_playlist(playlist_id="list", name="Violins", vendor="local", vendor_pl_id="2")
+    conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES ('t', 'inferred', 'T', '2026-10-30T00:00:00Z', '2026-10-30T00:00:00Z')"
+    )
     yield w
     conn.close()
 
@@ -54,9 +59,7 @@ def test_a_set_needs_a_parent_and_owns_set_status(writer: StateWriter) -> None:
         org.organize_playlist(writer, S, "list", {"kind": "set"})
     with pytest.raises(org.OrgError):
         org.organize_playlist(writer, S, "list", {"set_status": "draft"})
-    row = org.organize_playlist(
-        writer, S, "list", {"kind": "set", "parent_id": "folder", "set_status": "draft"}
-    ).row
+    row = org.organize_playlist(writer, S, "list", {"kind": "set", "parent_id": "folder", "set_status": "draft"}).row
     assert row["set_status"] == "draft"
 
 
@@ -67,9 +70,7 @@ def test_a_bad_stage_is_validation_not_a_500(writer: StateWriter) -> None:
 
 
 def test_blank_section_title_stays_new_section(writer: StateWriter) -> None:
-    row = org.add_section(
-        writer, S, owner_kind="playlist", owner_id="list", before_position=3, title="  "
-    ).row
+    row = org.add_section(writer, S, owner_kind="playlist", owner_id="list", before_position=3, title="  ").row
     assert row["title"] == "New section"
 
 
@@ -81,9 +82,7 @@ def test_identical_write_is_a_no_op_with_no_undo(writer: StateWriter) -> None:
 
 
 def test_undo_reverts_an_insert_and_an_update(writer: StateWriter) -> None:
-    section = org.add_section(
-        writer, S, owner_kind="playlist", owner_id="list", before_position=0, title="Peak"
-    ).row
+    section = org.add_section(writer, S, owner_kind="playlist", owner_id="list", before_position=0, title="Peak").row
     org.update_section(writer, S, section["id"], {"title": "Closers"})
     assert org.undo_last(writer, S).op == "section.update"
     rows = org.list_rows(writer._conn, "playlist_section")
@@ -111,9 +110,7 @@ def test_fifty_operations_all_undo(writer: StateWriter) -> None:
 
 
 def test_undo_refuses_a_row_changed_since_and_keeps_the_entry(writer: StateWriter) -> None:
-    section = org.add_section(
-        writer, S, owner_kind="playlist", owner_id="list", before_position=0
-    ).row
+    section = org.add_section(writer, S, owner_kind="playlist", owner_id="list", before_position=0).row
     org.update_section(writer, "other-session", section["id"], {"title": "Theirs"})
     with pytest.raises(org.OrgError) as refused:
         org.undo_last(writer, S)
@@ -133,9 +130,7 @@ def test_a_new_primary_demotes_the_old_one(writer: StateWriter) -> None:
     first = org.create_work(writer, S, {"kind": "song", "title": "A"}).row["id"]
     second = org.create_work(writer, S, {"kind": "song", "title": "B"}).row["id"]
     for work in (first, second):
-        org.link_member(
-            writer, S, work, member_kind="track", member_id="t", role="remix", is_primary=True
-        )
+        org.link_member(writer, S, work, member_kind="track", member_id="t", role="remix", is_primary=True)
     primaries = org.list_rows(writer._conn, "work_member", {"is_primary": 1})
     assert [r["work_id"] for r in primaries] == [second]
 
@@ -148,7 +143,5 @@ def test_a_dismissed_pair_is_unordered(writer: StateWriter) -> None:
 
 def test_every_write_reaches_the_sync_changelog(writer: StateWriter) -> None:
     org.put_tag_meta(writer, S, "piano")
-    logged = writer._conn.execute(
-        "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tag_meta'"
-    ).fetchone()[0]
+    logged = writer._conn.execute("SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tag_meta'").fetchone()[0]
     assert logged == 1

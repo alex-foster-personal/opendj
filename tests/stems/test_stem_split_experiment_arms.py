@@ -18,6 +18,7 @@ Acceptance criteria (UNCAPTURED-REQUIREMENTS.md H8):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -51,8 +52,7 @@ def _rows(data_dir: Path) -> list[tuple[str, str]]:
         return [
             (sid, json.loads(payload)["arm"])
             for sid, payload in conn.execute(
-                "SELECT stable_id, payload_json FROM events WHERE kind = ? "
-                "ORDER BY id",
+                "SELECT stable_id, payload_json FROM events WHERE kind = ? ORDER BY id",
                 (ssr.EVENT_KIND,),
             )
         ]
@@ -66,18 +66,14 @@ def _rows(data_dir: Path) -> list[tuple[str, str]]:
 @pytest.mark.requirement("GUARD-03")
 def test_a_second_wave_never_relabels_an_existing_assignment(data_dir: Path) -> None:
     ids = [f"sid-{i:03d}" for i in range(40)]
-    written = ssr.record_assignments(
-        data_dir, [(sid, ssr.assign_arm(sid)) for sid in ids], dry_run=False
-    )
+    written = ssr.record_assignments(data_dir, [(sid, ssr.assign_arm(sid)) for sid in ids], dry_run=False)
     assert written == len(ids)
     first = dict(_rows(data_dir))
 
     # A second wave that would assign EVERY track to a different arm. Nothing
     # may move, and nothing may be appended.
     other = next(a for a in ssr.ARMS if a.name != first[ids[0]])
-    again = ssr.record_assignments(
-        data_dir, [(sid, other) for sid in ids], dry_run=False
-    )
+    again = ssr.record_assignments(data_dir, [(sid, other) for sid in ids], dry_run=False)
     assert again == 0, f"{again} track(s) were relabelled by a re-run"
     assert dict(_rows(data_dir)) == first
     assert len(_rows(data_dir)) == len(ids), "a re-run appended duplicate rows"
@@ -86,13 +82,9 @@ def test_a_second_wave_never_relabels_an_existing_assignment(data_dir: Path) -> 
 @pytest.mark.requirement("GUARD-03")
 def test_a_second_wave_only_records_the_tracks_that_are_new(data_dir: Path) -> None:
     old = [f"sid-{i:03d}" for i in range(10)]
-    ssr.record_assignments(
-        data_dir, [(s, ssr.assign_arm(s)) for s in old], dry_run=False
-    )
+    ssr.record_assignments(data_dir, [(s, ssr.assign_arm(s)) for s in old], dry_run=False)
     mixed = old + [f"sid-new-{i}" for i in range(4)]
-    written = ssr.record_assignments(
-        data_dir, [(s, ssr.assign_arm(s)) for s in mixed], dry_run=False
-    )
+    written = ssr.record_assignments(data_dir, [(s, ssr.assign_arm(s)) for s in mixed], dry_run=False)
     assert written == 4
     assert len(_rows(data_dir)) == 14
 
@@ -100,18 +92,14 @@ def test_a_second_wave_only_records_the_tracks_that_are_new(data_dir: Path) -> N
 @pytest.mark.requirement("GUARD-03")
 def test_dry_run_records_nothing(data_dir: Path) -> None:
     ids = [f"sid-{i}" for i in range(5)]
-    assert ssr.record_assignments(
-        data_dir, [(s, ssr.assign_arm(s)) for s in ids], dry_run=True
-    ) == 5
+    assert ssr.record_assignments(data_dir, [(s, ssr.assign_arm(s)) for s in ids], dry_run=True) == 5
     assert _rows(data_dir) == []
 
 
 @pytest.mark.requirement("GUARD-03")
 def test_already_assigned_reads_back_what_was_recorded(data_dir: Path) -> None:
     ids = [f"sid-{i}" for i in range(6)]
-    ssr.record_assignments(
-        data_dir, [(s, ssr.assign_arm(s)) for s in ids], dry_run=False
-    )
+    ssr.record_assignments(data_dir, [(s, ssr.assign_arm(s)) for s in ids], dry_run=False)
     assert ssr.already_assigned(data_dir) == set(ids)
 
 
@@ -139,8 +127,7 @@ def test_assignment_is_derived_from_experiment_id_and_stable_id(
     monkeypatch.setattr(ssr, "EXPERIMENT_ID", "stem-split-vX-test")
     after = [ssr.assign_arm(s).name for s in ids]
     assert before != after, (
-        "bumping EXPERIMENT_ID did not change any assignment; the arm is not "
-        "salted by the experiment"
+        "bumping EXPERIMENT_ID did not change any assignment; the arm is not salted by the experiment"
     )
 
 
@@ -153,9 +140,7 @@ def test_recorded_payload_names_the_experiment_and_its_arm_set(
     conn = sqlite3.connect(data_dir / "state" / "state.db")
     try:
         payload = json.loads(
-            conn.execute(
-                "SELECT payload_json FROM events WHERE kind = ?", (ssr.EVENT_KIND,)
-            ).fetchone()[0]
+            conn.execute("SELECT payload_json FROM events WHERE kind = ?", (ssr.EVENT_KIND,)).fetchone()[0]
         )
     finally:
         conn.close()
@@ -175,9 +160,7 @@ def test_experiment_id_must_move_when_the_arm_set_moves() -> None:
     together.
     """
     fingerprint = hashlib.sha256(
-        "|".join(
-            f"{a.name}:{a.preset}:{a.codec}:{a.weight}" for a in ssr.ARMS
-        ).encode()
+        "|".join(f"{a.name}:{a.preset}:{a.codec}:{a.weight}" for a in ssr.ARMS).encode()
     ).hexdigest()[:16]
     assert (ssr.EXPERIMENT_ID, fingerprint) == (
         "stem-split-v2",
@@ -214,16 +197,13 @@ def test_assignments_are_durable_before_the_first_arm_is_farmed(
 
     recorded = dict(_rows(data_dir))
     assert set(recorded) == set(ids), (
-        f"only {len(recorded)}/{len(ids)} assignments survived the crash; the "
-        "intended batch is not recoverable"
+        f"only {len(recorded)}/{len(ids)} assignments survived the crash; the intended batch is not recoverable"
     )
     assert recorded == {s: ssr.assign_arm(s).name for s in ids}
 
 
 @pytest.mark.requirement("GUARD-03")
-def test_plan_only_records_nothing_and_runs_nothing(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_plan_only_records_nothing_and_runs_nothing(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ids = [f"sid-{i}" for i in range(8)]
     monkeypatch.setattr(ssr, "_assert_arms_runnable", lambda: None)
     monkeypatch.setattr(ssr, "candidate_tracks", lambda d, limit: ids)

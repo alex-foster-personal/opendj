@@ -30,6 +30,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -116,7 +117,9 @@ def main() -> None:
     }
 
     print(f"n={result['n_bundles']} bundles, {result['n_points']} stem-level points")
-    print(f"\nfloor vs pure loudness ratio: max deviation {max_dev:.4f} dB, median {result['median_abs_deviation_db']:.4f} dB")
+    print(
+        f"\nfloor vs pure loudness ratio: max deviation {max_dev:.4f} dB, median {result['median_abs_deviation_db']:.4f} dB"
+    )
     print(f"identity holds within {IDENTITY_TOL_DB} dB: {identity_holds}")
     print("\nmixture floor by stem, dB (median [min, max]):")
     for n, v in result["mixture_floor_by_stem_db"].items():

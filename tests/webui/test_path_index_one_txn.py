@@ -29,9 +29,7 @@ def _wal_commit_frames(db_path: Path) -> int:
     page_size = struct.unpack(">I", data[8:12])[0]
     frame = 24 + page_size
     return sum(
-        1
-        for off in range(32, len(data) - frame + 1, frame)
-        if struct.unpack(">I", data[off + 4 : off + 8])[0] != 0
+        1 for off in range(32, len(data) - frame + 1, frame) if struct.unpack(">I", data[off + 4 : off + 8])[0] != 0
     )
 
 

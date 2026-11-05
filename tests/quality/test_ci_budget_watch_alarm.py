@@ -150,11 +150,7 @@ def test_the_over_threshold_stop_cannot_suppress_the_coverage_sentinel() -> None
 def test_both_alarm_steps_are_present() -> None:
     """Neither alarm step may be deleted to satisfy the ordering property."""
     workflow = _workflow()
-    names = [
-        step.get("name")
-        for job in workflow.get("jobs", {}).values()
-        for step in (job.get("steps") or [])
-    ]
+    names = [step.get("name") for job in workflow.get("jobs", {}).values() for step in (job.get("steps") or [])]
     for alarm in ALARM_STEPS:
         assert alarm in names, (
             f"{alarm!r} is missing from ci-budget-watch.yml; the ledger must report "
@@ -172,8 +168,7 @@ def test_the_coverage_sentinel_can_still_fail_the_run() -> None:
         if step.get("name") == SENTINEL_STEP
     )
     assert sentinel.get("continue-on-error") is not True, (
-        "the coverage sentinel is marked continue-on-error, so an uncovered PR head "
-        "is reported and then discarded"
+        "the coverage sentinel is marked continue-on-error, so an uncovered PR head is reported and then discarded"
     )
     command = sentinel.get("run") or ""
     assert command.strip().endswith("--publish-status"), (
@@ -181,8 +176,7 @@ def test_the_coverage_sentinel_can_still_fail_the_run() -> None:
     )
     for swallowed in ("|| true", "|| echo", "exit 0"):
         assert swallowed not in command, (
-            f"the sentinel's exit code is swallowed by {swallowed!r}, so it can no "
-            "longer fail the run"
+            f"the sentinel's exit code is swallowed by {swallowed!r}, so it can no longer fail the run"
         )
 
 
@@ -203,8 +197,7 @@ def test_restoring_the_sentinel_above_the_alarm_steps_is_rejected() -> None:
 
     suppressed = alarm_steps_the_sentinel_can_suppress(mutated)
     assert set(suppressed) == set(ALARM_STEPS), (
-        "planting the sentinel above both alarm steps must be caught; "
-        f"the check reported {suppressed}"
+        f"planting the sentinel above both alarm steps must be caught; the check reported {suppressed}"
     )
 
 
@@ -302,8 +295,7 @@ def test_the_alert_issue_step_also_fires_on_a_ledger_failure() -> None:
     condition = _step(workflow, ALERT_STEP)["if"]
     for state in ("WARN", "STOP"):
         assert f"steps.ledger.outputs.state == '{state}'" in condition, (
-            f"the {state} alarm path must survive the #3166 fix unweakened; "
-            f"got if: {condition!r}"
+            f"the {state} alarm path must survive the #3166 fix unweakened; got if: {condition!r}"
         )
 
 
@@ -333,9 +325,7 @@ def test_the_alert_issue_step_also_fires_on_an_unknown_state() -> None:
 def test_reverting_the_alert_condition_to_pre_fix_is_rejected() -> None:
     """Mutation: put the WARN/STOP-only condition back and the checker must catch it."""
     mutated = deepcopy(_workflow())
-    _step(mutated, ALERT_STEP)["if"] = (
-        "steps.ledger.outputs.state == 'WARN' || steps.ledger.outputs.state == 'STOP'"
-    )
+    _step(mutated, ALERT_STEP)["if"] = "steps.ledger.outputs.state == 'WARN' || steps.ledger.outputs.state == 'STOP'"
     assert alert_issue_step_fires_on_ledger_failure(mutated) is False
 
 
@@ -343,11 +333,7 @@ def test_removing_the_ledger_fail_step_is_rejected() -> None:
     """Mutation: drop the step that reds the job on a blind ledger and the checker must catch it."""
     mutated = deepcopy(_workflow())
     steps = mutated["jobs"]["watch"]["steps"]
-    steps[:] = [
-        step
-        for step in steps
-        if step.get("name") != "Fail the job when the ledger cannot measure spend"
-    ]
+    steps[:] = [step for step in steps if step.get("name") != "Fail the job when the ledger cannot measure spend"]
     assert a_failed_ledger_still_fails_the_job(mutated) is False
 
 

@@ -67,7 +67,8 @@ export interface FidelityStats {
 	levelDb: number;
 }
 
-export type FidelityVerdict = { kind: 'ok' } | { kind: 'degraded'; reason: string } | { kind: 'skip'; reason: string };
+export type FidelityVerdict =
+	{ kind: 'ok' } | { kind: 'degraded'; reason: string } | { kind: 'skip'; reason: string };
 
 const EPS = 1e-12;
 const toDb = (power: number): number => 10 * Math.log10(power + EPS);
@@ -75,9 +76,12 @@ const toDb = (power: number): number => 10 * Math.log10(power + EPS);
 //------------------------------------------------------------------ helpers
 
 function _assertWindow(w: StereoWindow, name: string): void {
-	if (!(w.left instanceof Float32Array) || !(w.right instanceof Float32Array)) throw new TypeError(`${name}: channels must be Float32Array`);
-	if (w.left.length !== w.right.length || w.left.length === 0) throw new RangeError(`${name}: L/R must be equal, non-empty lengths`);
-	if (!Number.isFinite(w.sampleRate) || w.sampleRate <= 0) throw new RangeError(`${name}: sampleRate must be positive`);
+	if (!(w.left instanceof Float32Array) || !(w.right instanceof Float32Array))
+		throw new TypeError(`${name}: channels must be Float32Array`);
+	if (w.left.length !== w.right.length || w.left.length === 0)
+		throw new RangeError(`${name}: L/R must be equal, non-empty lengths`);
+	if (!Number.isFinite(w.sampleRate) || w.sampleRate <= 0)
+		throw new RangeError(`${name}: sampleRate must be positive`);
 }
 
 /** In-place radix-2 FFT. `re.length` must be a power of two. */
@@ -182,11 +186,15 @@ export function fidelityStats(w: StereoWindow): FidelityStats {
 export function compareFidelity(master: FidelityStats, source: FidelityStats): FidelityVerdict {
 	const cfg = FIDELITY_GUARD_CFG;
 	if (source.levelDb < cfg.SILENCE_DB) return { kind: 'skip', reason: 'the source is silent here' };
-	if (master.levelDb < cfg.SILENCE_DB) return { kind: 'skip', reason: 'the master is silent (fader down or a gap)' };
+	if (master.levelDb < cfg.SILENCE_DB)
+		return { kind: 'skip', reason: 'the master is silent (fader down or a gap)' };
 	const sideGap = Math.abs(master.balanceDb) - Math.abs(source.balanceDb);
 	if (sideGap > cfg.BALANCE_DB) {
 		const side = master.balanceDb > 0 ? 'left' : 'right';
-		return { kind: 'degraded', reason: `${side} channel only (other side ${Math.abs(master.balanceDb).toFixed(0)} dB down; mono split cue?)` };
+		return {
+			kind: 'degraded',
+			reason: `${side} channel only (other side ${Math.abs(master.balanceDb).toFixed(0)} dB down; mono split cue?)`
+		};
 	}
 	if (
 		Number.isFinite(master.correlation) &&
@@ -194,15 +202,24 @@ export function compareFidelity(master: FidelityStats, source: FidelityStats): F
 		master.correlation >= cfg.CORRELATION_MONO &&
 		master.correlation - source.correlation > cfg.CORRELATION_RISE
 	) {
-		return { kind: 'degraded', reason: `stereo width lost (L/R correlation ${master.correlation.toFixed(2)} vs ${source.correlation.toFixed(2)} in the original)` };
+		return {
+			kind: 'degraded',
+			reason: `stereo width lost (L/R correlation ${master.correlation.toFixed(2)} vs ${source.correlation.toFixed(2)} in the original)`
+		};
 	}
 	const highTilt = master.highsDb - master.midsDb - (source.highsDb - source.midsDb);
 	if (Math.abs(highTilt) > cfg.TILT_DB) {
-		return { kind: 'degraded', reason: `highs ${Math.abs(highTilt).toFixed(1)} dB ${highTilt < 0 ? 'below' : 'above'} the original` };
+		return {
+			kind: 'degraded',
+			reason: `highs ${Math.abs(highTilt).toFixed(1)} dB ${highTilt < 0 ? 'below' : 'above'} the original`
+		};
 	}
 	const lowTilt = master.lowsDb - master.midsDb - (source.lowsDb - source.midsDb);
 	if (Math.abs(lowTilt) > cfg.TILT_DB) {
-		return { kind: 'degraded', reason: `lows ${Math.abs(lowTilt).toFixed(1)} dB ${lowTilt < 0 ? 'below' : 'above'} the original` };
+		return {
+			kind: 'degraded',
+			reason: `lows ${Math.abs(lowTilt).toFixed(1)} dB ${lowTilt < 0 ? 'below' : 'above'} the original`
+		};
 	}
 	return { kind: 'ok' };
 }
@@ -214,7 +231,11 @@ export interface FidelityEpisode {
 	firing: string | null;
 }
 
-export const FIDELITY_EPISODE_IDLE: FidelityEpisode = Object.freeze({ degradedRun: 0, okRun: 0, firing: null });
+export const FIDELITY_EPISODE_IDLE: FidelityEpisode = Object.freeze({
+	degradedRun: 0,
+	okRun: 0,
+	firing: null
+});
 
 /** Persistence: `fire` is the reason exactly once per episode. A skip neither
  * builds nor ends one. */
@@ -229,11 +250,19 @@ export function stepFidelityEpisode(
 		case 'ok': {
 			const okRun = state.okRun + 1;
 			const ended = okRun >= cfg.RECOVER_WINDOWS;
-			return { state: { degradedRun: ended ? 0 : state.degradedRun, okRun, firing: ended ? null : state.firing }, fire: null };
+			return {
+				state: {
+					degradedRun: ended ? 0 : state.degradedRun,
+					okRun,
+					firing: ended ? null : state.firing
+				},
+				fire: null
+			};
 		}
 		case 'degraded': {
 			const degradedRun = state.degradedRun + 1;
-			const fire = state.firing === null && degradedRun >= cfg.PERSIST_WINDOWS ? verdict.reason : null;
+			const fire =
+				state.firing === null && degradedRun >= cfg.PERSIST_WINDOWS ? verdict.reason : null;
 			return { state: { degradedRun, okRun: 0, firing: state.firing ?? fire }, fire };
 		}
 		default: {

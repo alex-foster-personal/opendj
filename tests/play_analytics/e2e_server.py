@@ -18,15 +18,24 @@ from fastapi import FastAPI
 
 from apps.engine_core.account.api import entitlements_router
 from apps.engine_core.build_info import MANIFEST_ENV, add_build_info_route
+from apps.engine_core.local_update import add_app_update_routes
 from apps.engine_core.update_channel import add_update_check_route
+from apps.feature_flags import load_flags
+from apps.feature_flags.http import flags_router
 from apps.play_analytics.http import create_router
 from apps.shared import platform_paths
 from apps.shared.state.schema import apply_migrations
+from apps.webui.server.backend import BackendError, ConflictError, InMemoryBackend, NotFoundError
+from apps.webui.server.errors import handle_backend_error, handle_conflict, handle_not_found
 from apps.webui.server.models import PreflightOut
 from apps.webui.server.preflight_checks import run_preflight
+from apps.webui.server.routes import client_errors as client_errors_routes
 from apps.webui.server.routes import client_events as client_events_routes
 from apps.webui.server.routes import cloudsync_status as cloudsync_status_routes
 from apps.webui.server.routes import ui_prefs as ui_prefs_routes
+from apps.webui.server.routes.playlists import router as playlists_router
+from apps.webui.server.routes.tracks import router as tracks_router
+from apps.webui.server.sqlite_backend import SqliteBackend
 
 
 def _seed_database(db_path: Path) -> None:
@@ -123,10 +132,7 @@ def _seed_database(db_path: Path) -> None:
                 action, value_json, source
             ) VALUES (?, ?, ?, ?, ?, 'track_loaded', ?, 'e2e_fixture')
             """,
-            [
-                (*row[:5], json.dumps({"title": row[5], "artist": row[6]}))
-                for row in rows
-            ],
+            [(*row[:5], json.dumps({"title": row[5], "artist": row[6]})) for row in rows],
         )
 
 
@@ -183,21 +189,41 @@ def create_app(db_path: Path) -> FastAPI:
     app.state.data_dir = db_path.parent
     app.state.client_event_log_dir = db_path.parent
     app.state.state_db_path = state_db_path
+    # Tracks listing probes auto-cues through analysis_db_path; without this
+    # pin it falls back to the module-level STATE_DB outside the fixture dir.
+    app.state.analysis_db_path = state_db_path
+    # Client-errors otherwise writes DEFAULT_LOG_DIR under the home share.
+    app.state.client_error_log_dir = db_path.parent
+    app.state.backend = SqliteBackend(state_db_path, fallback=InMemoryBackend())
+    # The shell reads flags once at boot (GET /api/v1/flags). load_flags
+    # resolves from the throwaway data dir; a missing flags file is the
+    # production default set, not a stub payload.
+    app.state.feature_flags = load_flags(db_path.parent)
+    app.add_exception_handler(NotFoundError, handle_not_found)
+    app.add_exception_handler(ConflictError, handle_conflict)
+    app.add_exception_handler(BackendError, handle_backend_error)
     app.include_router(create_router(db_path=db_path))
     app.include_router(entitlements_router, prefix="/api/v1")
     app.include_router(ui_prefs_routes.router, prefix="/api/v1")
     app.include_router(client_events_routes.router, prefix="/api/v1")
     app.include_router(cloudsync_status_routes.router, prefix="/api/v1")
+    app.include_router(tracks_router, prefix="/api/v1")
+    app.include_router(playlists_router, prefix="/api/v1")
+    app.include_router(client_errors_routes.router, prefix="/api/v1")
+    app.include_router(flags_router, prefix="/api/v1")
     # Real routes, not a hand-stub: a dev checkout has no OPENDJ_PAYLOAD_MANIFEST,
     # so build identity resolves from git and carries app_version from
-    # tauri.conf.json. The public manifest is still unpublished, so
-    # /update/check answers HTTP 200 with endpoint-refused rather than 502.
+    # tauri.conf.json. /update/check reads the live public manifest and answers
+    # HTTP 200 with a named status (platform-unsupported off darwin-aarch64).
     # Hermetic by the same mechanism CI runs under. Strip the manifest env so a
     # Playwright server that inherits a real OPENDJ_PAYLOAD_MANIFEST from its
     # launcher still resolves a repo identity, not a live payload's.
     fixture_environ = {k: v for k, v in os.environ.items() if k != MANIFEST_ENV}
     add_build_info_route(app, environ=fixture_environ, repo_root=platform_paths.PROJECT_ROOT)
     add_update_check_route(app)
+    # After build-info so GET /api/v1/app-update/status can read the mounted
+    # identity. The shell polls this on every page; a 404 fails the spec.
+    add_app_update_routes(app, data_dir=db_path.parent)
 
     # Real check logic (apps.webui.server.preflight_checks.run_preflight),
     # not a hand-stub -- the shipped route wrapper reads a module-level

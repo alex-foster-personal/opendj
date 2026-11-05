@@ -17,9 +17,7 @@ def same_requirement(key: Key, other: Key) -> bool:
     return spelled_markers_equivalent(key[3], other[3])
 
 
-def pair_by_meaning(
-    expected: Counter[Key], recorded: Counter[Key]
-) -> tuple[Counter[Key], Counter[Key]]:
+def pair_by_meaning(expected: Counter[Key], recorded: Counter[Key]) -> tuple[Counter[Key], Counter[Key]]:
     """Drop, from both leftover sides, requirements that differ only by an equivalent marker."""
     left, right = Counter(expected), Counter(recorded)
     for key_a in list(left):

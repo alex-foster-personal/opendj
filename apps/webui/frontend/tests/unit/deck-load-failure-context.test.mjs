@@ -345,7 +345,7 @@ test('the reporter rides the failure context on the toast that already reaches t
 		// its stage context to the helper, and the helper forwards the context
 		// it was given as pushToast's context argument.
 		/_pushDeckLoadFailureToast\(deck, message, cause, failureContext\);/.test(MODULE_SOURCE) &&
-			/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*context\s*[,)]/.test(
+			/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*DECK_LOAD_ERROR_TOAST_MS,\s*cause,\s*context\s*[,)]/.test(
 				MODULE_SOURCE
 			),
 		'the failure context must ride the toast report that already reaches the ' +

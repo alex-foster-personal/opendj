@@ -99,8 +99,9 @@ test('Capture with 2 checked decks creates the pairing and records a sync snapsh
 			[index + 1, stable_id] as const
 		);
 	}
-	// The fixture tracks carry no beatgrid, and BeatSyncMax (on by default)
-	// records beats, so the button stays disabled with it on (PAIR-05).
+	// BeatSyncMax (on by default) records beats, so Capture stays disabled with
+	// it on (PAIR-05). One library track has an own beatgrid for BPM-provenance
+	// e2e; this test clicks BSM off before capture regardless.
 	const bsm = page.locator('button.topbar-slot-bsm');
 	if ((await bsm.getAttribute('aria-pressed')) === 'true') await bsm.click();
 	await expect(bsm).toHaveAttribute('aria-pressed', 'false');

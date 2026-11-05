@@ -21,7 +21,6 @@ process groups.
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -31,12 +30,14 @@ import pytest
 
 from apps.engine_core.jobs.reap import (
     WorkerIdentity,
-    group_has_live_member,
     process_group_exists,
     reap,
     reap_group,
+    worker_tree_has_live_member,
 )
 from tests.waits import wait_for_external_state
+
+_WINDOWS = sys.platform == "win32"
 
 # The leader spawns a child in its OWN process group (no start_new_session on
 # the inner Popen), prints the child's pid, and exits immediately. What is left
@@ -50,8 +51,8 @@ print(child.pid, flush=True)
 
 def _kill_pid(pid: int) -> None:
     try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
+        psutil.Process(pid).kill()
+    except psutil.NoSuchProcess:
         return
 
 
@@ -70,8 +71,12 @@ def _leaderless_group() -> tuple[int, int, float]:
     outright while the group is still live through the child.
     """
     spawned_at = time.time()
+    # The leader runs the BASE interpreter: on Windows a venv python.exe is a
+    # launcher whose real interpreter is a second process, and that dead
+    # middle process would hide the child from the parentage walk (a limit
+    # apps.shared.process_tree documents) rather than test the reap.
     leader = subprocess.Popen(
-        [sys.executable, "-c", _LEADER_SOURCE],
+        [sys._base_executable, "-c", _LEADER_SOURCE],
         start_new_session=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -101,11 +106,17 @@ def leaderless() -> tuple[int, int, float]:
 
 def test_the_fixture_really_builds_a_leaderless_live_group(leaderless) -> None:
     """Guard the setup: if this shape is wrong, the tests below prove nothing."""
-    pgid, child_pid, _ = leaderless
+    pgid, child_pid, spawned_at = leaderless
     assert not psutil.pid_exists(pgid), "the leader is supposed to be gone"
-    assert process_group_exists(pgid), "the group is supposed to still be live"
-    assert os.getpgid(child_pid) == pgid, "the child must hold the leader's pgid"
-    assert group_has_live_member(pgid)
+    if not _WINDOWS:
+        assert process_group_exists(pgid), "the group is supposed to still be live"
+        assert os.getpgid(child_pid) == pgid, "the child must hold the leader's pgid"
+    else:
+        assert psutil.Process(child_pid).ppid() == pgid, "the child must name the dead leader"
+    if not _WINDOWS:
+        assert worker_tree_has_live_member(
+            WorkerIdentity(pgid=pgid, argv=("x",), started_at=spawned_at)
+        )
 
 
 def test_a_dead_leader_with_live_children_still_gets_reaped(leaderless) -> None:
@@ -124,9 +135,17 @@ def test_a_dead_leader_with_live_children_still_gets_reaped(leaderless) -> None:
 
     result = reap_group(identity)
 
+    if _WINDOWS:
+        # Nothing pins a dead recorded leader's pid on Windows, so a process
+        # naming it may be a stranger's child: refused, kept, and said so.
+        assert not result.group_cleared, result.outcome
+        assert "unattributable" in result.outcome, result.outcome
+        assert str(child_pid) in result.outcome, result.outcome
+        assert psutil.pid_exists(child_pid), f"an unproven orphan was killed: {result.outcome}"
+        return
     assert result.group_cleared, result.outcome
     assert "reap:" in result.outcome, result.outcome
-    assert not group_has_live_member(pgid), result.outcome
+    assert not worker_tree_has_live_member(identity), result.outcome
     wait_for_external_state(
         lambda: not _pid_is_running(child_pid),
         what=(
@@ -155,7 +174,10 @@ def test_a_leaderless_group_that_predates_the_spawn_is_refused(
     result = reap_group(identity)
 
     assert "reap skipped" in result.outcome, result.outcome
-    assert "recycled" in result.outcome, result.outcome
+    if not _WINDOWS:
+        # On Windows a process older than the recorded spawn is never part of
+        # the tree at all, so there is no live group to call recycled.
+        assert "recycled" in result.outcome, result.outcome
     assert result.group_cleared, "nothing of ours is in a recycled group"
     assert psutil.pid_exists(child_pid), (
         f"an unproven group was killed anyway: {result.outcome}"
@@ -167,7 +189,7 @@ def test_a_dead_leader_with_no_survivors_is_simply_gone(leaderless) -> None:
     pgid, child_pid, spawned_at = leaderless
     _kill_pid(child_pid)
     wait_for_external_state(
-        lambda: not group_has_live_member(pgid),
+        lambda: not psutil.pid_exists(child_pid),
         what=f"process group {pgid} empty after SIGKILL of its last member {child_pid}",
     )
 

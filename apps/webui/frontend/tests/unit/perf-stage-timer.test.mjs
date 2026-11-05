@@ -33,7 +33,10 @@ const { stageTimer } = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts'
 function scriptedClock(readings) {
 	const queue = [...readings];
 	const clock = () => {
-		assert.ok(queue.length > 0, `the clock was read more than the ${readings.length} scripted times`);
+		assert.ok(
+			queue.length > 0,
+			`the clock was read more than the ${readings.length} scripted times`
+		);
 		clock.reads += 1;
 		return queue.shift();
 	};
@@ -58,7 +61,10 @@ test('stageTimer passes the value through and records the stage in whole ms', as
 test('stageTimer records a stage that throws, then rethrows', async () => {
 	const stages = {};
 	const time = stageTimer(stages, scriptedClock([5000, 5007.2]));
-	await assert.rejects(time('fetchStems', Promise.reject(new Error('fetch failed'))), /fetch failed/);
+	await assert.rejects(
+		time('fetchStems', Promise.reject(new Error('fetch failed'))),
+		/fetch failed/
+	);
 	assert.equal(stages.fetchStems, 7, 'a failed stage must still be timed');
 });
 

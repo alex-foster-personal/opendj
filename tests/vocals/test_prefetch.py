@@ -15,6 +15,7 @@ Single-line intent, in the repo's regression style:
   - if a read error is swallowed then a corrupt path silently drops a track
   - if abandoning the generator hangs then a mid-run abort never terminates
 """
+
 from __future__ import annotations
 
 import threading
@@ -179,9 +180,7 @@ def test_abandoning_the_generator_terminates(tmp_path: Path) -> None:
     assert time.perf_counter() - started < 5.0, "generator close did not return"
 
 
-@pytest.mark.parametrize(
-    "kwargs", [{"depth": 0}, {"workers": 0}, {"max_bytes": 0}]
-)
+@pytest.mark.parametrize("kwargs", [{"depth": 0}, {"workers": 0}, {"max_bytes": 0}])
 def test_rejects_nonsense_bounds(tmp_path: Path, kwargs: dict[str, int]) -> None:
     """if invalid bounds are accepted then the window is silently unbounded"""
     paths = [_write(tmp_path, "x.bin", 8)]

@@ -15,6 +15,7 @@ from collections.abc import Callable
 from apps.analysis.canonical import dependency_stale_row
 from apps.analysis.lanes import parse_own_backend
 from apps.analysis.queue import LANE_DEPENDENCIES
+from apps.analysis_key import key_guess
 from apps.shared.state import analysis_stale
 
 
@@ -37,6 +38,16 @@ def done_ids(conn_factory: Callable[[], sqlite3.Connection], backend: str) -> se
         done = {row[0] for row in rows}
         if lane in LANE_DEPENDENCIES and done:
             done -= _dependency_stale_ids(conn, lane, backend, version)
+        if lane == "key" and done:
+            # KEY-GUESS-01: a declined key saved before guesses existed runs
+            # once more so it gains one; the new record carries it, so never twice.
+            done -= {
+                row[0] for row in conn.execute(
+                    "SELECT stable_id FROM analysis WHERE backend = ? AND backend_version = ? AND "
+                    + key_guess.declined_without_guess_sql(),
+                    (backend, version),
+                )
+            }
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc):
             return set()

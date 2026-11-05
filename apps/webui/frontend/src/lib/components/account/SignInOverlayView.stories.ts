@@ -28,4 +28,7 @@ export const Waiting: Story = {
 };
 
 /** Not signing in: nothing renders. */
-export const Closed: Story = { tags: ['renders-nothing'], args: { open: false, phase: 'idle', statusText: '' } };
+export const Closed: Story = {
+	tags: ['renders-nothing'],
+	args: { open: false, phase: 'idle', statusText: '' }
+};

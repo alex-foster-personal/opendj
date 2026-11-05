@@ -23,5 +23,6 @@ export const audioEngineBridge: AudioEngineBridge = {
 };
 
 if (typeof window !== 'undefined') {
-	(window as Window & { __mdtAudioEngine?: AudioEngineBridge }).__mdtAudioEngine = audioEngineBridge;
+	(window as Window & { __mdtAudioEngine?: AudioEngineBridge }).__mdtAudioEngine =
+		audioEngineBridge;
 }

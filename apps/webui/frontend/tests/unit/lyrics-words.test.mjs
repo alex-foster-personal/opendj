@@ -32,11 +32,14 @@ test('loadLyrics caches 404 from getTrackLyricsWords as none', async () => {
 	globalThis.fetch = async (request) => {
 		const url = String(request.url);
 		if (url.includes('/lyrics/words')) {
-			return new Response(JSON.stringify({ detail: 'no live lyric_verdict row for missing-track-id' }), {
-				status: 404,
-				statusText: 'Not Found',
-				headers: { 'content-type': 'application/json' }
-			});
+			return new Response(
+				JSON.stringify({ detail: 'no live lyric_verdict row for missing-track-id' }),
+				{
+					status: 404,
+					statusText: 'Not Found',
+					headers: { 'content-type': 'application/json' }
+				}
+			);
 		}
 		if (url.includes('/lyrics') && !url.includes('/words')) {
 			return new Response(JSON.stringify({ detail: 'no line lyrics' }), {

@@ -48,8 +48,7 @@ def test_os_title_preserves_an_exact_spawn_argv() -> None:
 def test_process_command_is_the_exact_worker_reap_identity() -> None:
     argv = (sys.executable, "-m", "apps.engine_core.setup.worker", "--data-dir", "/tmp/dj")
     assert process_command("worker", invocation_argv=argv) == (
-        f"opendj-worker --name opendj-worker [{sys.executable} -m "
-        "apps.engine_core.setup.worker --data-dir /tmp/dj]"
+        f"opendj-worker --name opendj-worker [{sys.executable} -m apps.engine_core.setup.worker --data-dir /tmp/dj]"
     )
 
 
@@ -88,9 +87,7 @@ def test_set_process_identity_preserves_probe_markers_in_the_os_title() -> None:
         return proc.pid in {int(pid) for pid in result.stdout.split() if pid.isdigit()}
 
     try:
-        waited = wait_for_external_state(
-            _child_renamed, what=f"pgrep -f opendj-engine finding child {proc.pid}"
-        )
+        waited = wait_for_external_state(_child_renamed, what=f"pgrep -f opendj-engine finding child {proc.pid}")
         command = subprocess.run(
             ["ps", "-p", str(proc.pid), "-ww", "-o", "command="],
             capture_output=True,

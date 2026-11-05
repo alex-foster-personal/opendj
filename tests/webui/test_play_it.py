@@ -1,4 +1,5 @@
 """PLAY IT sort action router tests (play-it-sort-action)."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -27,9 +28,7 @@ def test_solve_happy_path(client: TestClient, seed_backend: InMemoryBackend) -> 
     assert body["previous_order"] == ["track-001", "track-002", "track-004"]
     assert sorted(body["proposed_order"]) == sorted(body["previous_order"])
     assert len(body["steps"]) == 3
-    assert body["etag"] == compute_etag(
-        "pl-002", seed_backend.get_playlist("pl-002").updated_at
-    )
+    assert body["etag"] == compute_etag("pl-002", seed_backend.get_playlist("pl-002").updated_at)
 
 
 def test_production_app_registers_play_it_contract() -> None:
@@ -54,18 +53,31 @@ def test_solve_preserves_duplicate_membership_occurrences() -> None:
     backend = InMemoryBackend()
     base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
     for stable_id in ("a", "b"):
-        backend.seed_track(Track(
-            stable_id=stable_id, title=stable_id, artist=stable_id.upper(),
-            bpm=120.0, key="8A", created_at=base, updated_at=base,
-        ))
-    backend.seed_playlist(Playlist(
-        playlist_id="pl-duplicates", name="Duplicate Test",
-        items=["a", "a", "b"], created_at=base, updated_at=base,
-    ))
+        backend.seed_track(
+            Track(
+                stable_id=stable_id,
+                title=stable_id,
+                artist=stable_id.upper(),
+                bpm=120.0,
+                key="8A",
+                created_at=base,
+                updated_at=base,
+            )
+        )
+    backend.seed_playlist(
+        Playlist(
+            playlist_id="pl-duplicates",
+            name="Duplicate Test",
+            items=["a", "a", "b"],
+            created_at=base,
+            updated_at=base,
+        )
+    )
     app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host")
     with TestClient(app) as c:
         response = c.post(
-            "/api/v1/play-it/pl-duplicates/solve", json={"duration_min": 30},
+            "/api/v1/play-it/pl-duplicates/solve",
+            json={"duration_min": 30},
         )
 
     assert response.status_code == 200, response.text
@@ -105,15 +117,26 @@ def test_solve_insufficient_data_missing_bpm() -> None:
     base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
     for i in range(20):
         bpm = None if i < 2 else 120.0 + i
-        backend.seed_track(Track(
-            stable_id=f"t-{i:03d}", title=f"Track {i}", artist="A",
-            bpm=bpm, key="8A", created_at=base, updated_at=base,
-        ))
-    backend.seed_playlist(Playlist(
-        playlist_id="pl-gap", name="Gap Test",
-        items=[f"t-{i:03d}" for i in range(20)],
-        created_at=base, updated_at=base,
-    ))
+        backend.seed_track(
+            Track(
+                stable_id=f"t-{i:03d}",
+                title=f"Track {i}",
+                artist="A",
+                bpm=bpm,
+                key="8A",
+                created_at=base,
+                updated_at=base,
+            )
+        )
+    backend.seed_playlist(
+        Playlist(
+            playlist_id="pl-gap",
+            name="Gap Test",
+            items=[f"t-{i:03d}" for i in range(20)],
+            created_at=base,
+            updated_at=base,
+        )
+    )
     app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host")
     with TestClient(app) as c:
         r = c.post("/api/v1/play-it/pl-gap/solve", json={"duration_min": 60})
@@ -126,10 +149,15 @@ def test_solve_insufficient_data_missing_bpm() -> None:
 def test_solve_empty_playlist_returns_empty_order() -> None:
     backend = InMemoryBackend()
     base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC))
-    backend.seed_playlist(Playlist(
-        playlist_id="pl-empty", name="Empty",
-        items=[], created_at=base, updated_at=base,
-    ))
+    backend.seed_playlist(
+        Playlist(
+            playlist_id="pl-empty",
+            name="Empty",
+            items=[],
+            created_at=base,
+            updated_at=base,
+        )
+    )
     app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host")
     with TestClient(app) as c:
         r = c.post("/api/v1/play-it/pl-empty/solve", json={"duration_min": 60})
@@ -188,9 +216,7 @@ def test_solve_pin_not_in_playlist_is_422(client: TestClient) -> None:
 @pytest.mark.requirement("SET-04")
 def test_openapi_lists_pin_goal_fields() -> None:
     """[if] OpenAPI describes PlayItGoalIn [then] it lists the pin goal fields, [else stop]."""
-    schema = create_app(mount_frontend=False).openapi()["components"]["schemas"][
-        "PlayItGoalIn"
-    ]
+    schema = create_app(mount_frontend=False).openapi()["components"]["schemas"]["PlayItGoalIn"]
     assert "peak_pins" in schema["properties"]
     assert "opener_pins" in schema["properties"]
     assert "closer_pin" in schema["properties"]

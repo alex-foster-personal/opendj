@@ -7,6 +7,7 @@ file, one whose ``file_path`` points nowhere. Every assertion is a fresh
 read against the DB, never a remembered number (honest-denominator house
 rule).
 """
+
 from __future__ import annotations
 
 import wave
@@ -64,14 +65,24 @@ def seeded(data_dir: Path, good_wav: Path) -> Path:
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=GOOD_ID, stable_id_tier="isrc", title="Real Track",
-            artists=["Someone"], album="An Album", isrc="GBCEN0900132",
-            duration_ms=100, file_path=str(good_wav),
+            stable_id=GOOD_ID,
+            stable_id_tier="isrc",
+            title="Real Track",
+            artists=["Someone"],
+            album="An Album",
+            isrc="GBCEN0900132",
+            duration_ms=100,
+            file_path=str(good_wav),
         )
         writer.upsert_track(
-            stable_id=DEAD_ID, stable_id_tier="isrc", title="Ghost Track",
-            artists=["No One"], album=None, isrc="GBCEN0900133",
-            duration_ms=100, file_path=str(data_dir / "audio" / "missing.wav"),
+            stable_id=DEAD_ID,
+            stable_id_tier="isrc",
+            title="Ghost Track",
+            artists=["No One"],
+            album=None,
+            isrc="GBCEN0900133",
+            duration_ms=100,
+            file_path=str(data_dir / "audio" / "missing.wav"),
         )
     finally:
         writer.close()
@@ -91,9 +102,7 @@ def _content_hashes(db_path: Path) -> dict[str, str | None]:
 def _event_kinds(db_path: Path, stable_id: str) -> list[str]:
     conn = state_db.open_ro(db_path)
     try:
-        rows = conn.execute(
-            "SELECT kind FROM events WHERE stable_id = ?", (stable_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT kind FROM events WHERE stable_id = ?", (stable_id,)).fetchall()
     finally:
         conn.close()
     return [r[0] for r in rows]
@@ -112,9 +121,7 @@ def test_dry_run_changes_nothing(seeded: Path, data_dir: Path) -> None:
     assert hashes[DEAD_ID] is None
 
 
-def test_live_hashes_exactly_the_resolvable_row(
-    seeded: Path, data_dir: Path, good_wav: Path
-) -> None:
+def test_live_hashes_exactly_the_resolvable_row(seeded: Path, data_dir: Path, good_wav: Path) -> None:
     dry = run_backfill(data_dir, live=False)
     live = run_backfill(data_dir, live=True)
 
@@ -174,9 +181,7 @@ def test_cli_rejects_for_hub_flag() -> None:
 
 
 def test_cli_parses_live_with_data_dir_and_limit(tmp_path: Path) -> None:
-    args = build_parser().parse_args(
-        ["--data-dir", str(tmp_path), "--limit", "5", "--live"]
-    )
+    args = build_parser().parse_args(["--data-dir", str(tmp_path), "--limit", "5", "--live"])
     assert args.live is True
     assert args.dry_run is False
     assert args.limit == 5
@@ -184,7 +189,8 @@ def test_cli_parses_live_with_data_dir_and_limit(tmp_path: Path) -> None:
 
 
 def _seed_foreign_path_with_local_location(
-    data_dir: Path, good_wav: Path,
+    data_dir: Path,
+    good_wav: Path,
 ) -> Path:
     """Track row points at another machine's path; local location is playable."""
     db_path = data_dir / "state" / "state.db"
@@ -192,9 +198,14 @@ def _seed_foreign_path_with_local_location(
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=FOREIGN_ID, stable_id_tier="isrc", title="Synced Track",
-            artists=["Someone"], album="An Album", isrc="GBCEN0900134",
-            duration_ms=100, file_path=str(good_wav),
+            stable_id=FOREIGN_ID,
+            stable_id_tier="isrc",
+            title="Synced Track",
+            artists=["Someone"],
+            album="An Album",
+            isrc="GBCEN0900134",
+            duration_ms=100,
+            file_path=str(good_wav),
         )
         # Synced libraries keep ingest-time file_path from the other spoke while
         # this machine's track_locations row was probed locally.
@@ -209,7 +220,8 @@ def _seed_foreign_path_with_local_location(
 
 
 def test_hashes_via_this_machine_primary_location_when_track_path_is_foreign(
-    data_dir: Path, good_wav: Path,
+    data_dir: Path,
+    good_wav: Path,
 ) -> None:
     db_path = _seed_foreign_path_with_local_location(data_dir, good_wav)
 
@@ -228,16 +240,22 @@ def test_hashes_via_this_machine_primary_location_when_track_path_is_foreign(
 
 
 def test_falls_back_to_track_path_when_local_location_missing(
-    data_dir: Path, good_wav: Path,
+    data_dir: Path,
+    good_wav: Path,
 ) -> None:
     db_path = data_dir / "state" / "state.db"
     conn = state_db.open_rw(db_path)
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=GOOD_ID, stable_id_tier="isrc", title="Local Path Track",
-            artists=["Someone"], album="An Album", isrc="GBCEN0900132",
-            duration_ms=100, file_path=str(good_wav),
+            stable_id=GOOD_ID,
+            stable_id_tier="isrc",
+            title="Local Path Track",
+            artists=["Someone"],
+            album="An Album",
+            isrc="GBCEN0900132",
+            duration_ms=100,
+            file_path=str(good_wav),
         )
         conn.execute("DELETE FROM track_locations WHERE stable_id = ?", (GOOD_ID,))
     finally:
@@ -260,9 +278,14 @@ def _seed_remote_only_location(data_dir: Path, good_wav: Path) -> Path:
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=REMOTE_ONLY_ID, stable_id_tier="isrc", title="Remote Only",
-            artists=["No One"], album=None, isrc="GBCEN0900135",
-            duration_ms=100, file_path=str(data_dir / "audio" / "missing.wav"),
+            stable_id=REMOTE_ONLY_ID,
+            stable_id_tier="isrc",
+            title="Remote Only",
+            artists=["No One"],
+            album=None,
+            isrc="GBCEN0900135",
+            duration_ms=100,
+            file_path=str(data_dir / "audio" / "missing.wav"),
         )
         conn.execute(
             "INSERT INTO machines(machine_id, name, platform, is_hub, "
@@ -283,7 +306,8 @@ def _seed_remote_only_location(data_dir: Path, good_wav: Path) -> Path:
 
 
 def test_never_uses_another_machines_location_even_when_file_exists(
-    data_dir: Path, good_wav: Path,
+    data_dir: Path,
+    good_wav: Path,
 ) -> None:
     db_path = _seed_remote_only_location(data_dir, good_wav)
 
@@ -300,7 +324,9 @@ def test_never_uses_another_machines_location_even_when_file_exists(
 
 @pytest.mark.xfail(strict=True, reason="issue #2839: track_path-only regression")
 def test_mutation_track_path_only_breaks_location_resolution(
-    data_dir: Path, good_wav: Path, monkeypatch: pytest.MonkeyPatch,
+    data_dir: Path,
+    good_wav: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _seed_foreign_path_with_local_location(data_dir, good_wav)
     monkeypatch.setattr(
@@ -313,7 +339,10 @@ def test_mutation_track_path_only_breaks_location_resolution(
 
 
 def _resolve_without_machine_filter(
-    conn, stable_id: str, track_file_path: str | None, _machine_id: str,
+    conn,
+    stable_id: str,
+    track_file_path: str | None,
+    _machine_id: str,
 ) -> tuple[str | None, str]:
     row = conn.execute(
         "SELECT file_path FROM track_locations "
@@ -331,11 +360,15 @@ def _resolve_without_machine_filter(
 
 @pytest.mark.xfail(strict=True, reason="issue #2839: missing machine_id filter")
 def test_mutation_no_machine_filter_hashes_foreign_location(
-    data_dir: Path, good_wav: Path, monkeypatch: pytest.MonkeyPatch,
+    data_dir: Path,
+    good_wav: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _seed_remote_only_location(data_dir, good_wav)
     monkeypatch.setattr(
-        backfill_module, "_resolve_hash_path", _resolve_without_machine_filter,
+        backfill_module,
+        "_resolve_hash_path",
+        _resolve_without_machine_filter,
     )
     report = run_backfill(data_dir, live=False)
     assert report.resolvable == 0

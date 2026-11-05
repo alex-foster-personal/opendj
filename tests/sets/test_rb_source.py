@@ -1,4 +1,5 @@
 """Tests for the Rekordbox HISTORY deck-state source."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -50,8 +51,7 @@ def test_rb_source_only_emits_new_rows_on_second_poll(
     conn = sqlite3.connect(str(rb_history_db))
     try:
         conn.execute(
-            "INSERT INTO djmdSongPlaylist(ID, PlaylistID, ContentID, TrackNo)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO djmdSongPlaylist(ID, PlaylistID, ContentID, TrackNo) VALUES (?, ?, ?, ?)",
             ("sp-4", "hist-1", "c-4", 4),
         )
         conn.commit()

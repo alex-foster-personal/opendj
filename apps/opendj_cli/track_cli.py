@@ -30,8 +30,12 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from apps.opendj_cli import EXIT_FAILED, api_cli
+import httpx
+
+from apps.opendj_cli import EXIT_FAILED, EXIT_NO_ENGINE, api_cli
+from apps.opendj_cli.origin import EngineNotRunning
 from apps.opendj_cli.refusal import fail as _fail
+from apps.opendj_cli.track_comment import TrackCommentError, engine_client, set_track_comment
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
 KEY_SEGMENTS_VERB = "key-segments"
@@ -45,7 +49,14 @@ GRID_FLAG_VERB = "grid-flag"
 #: over `/api/v1/tracks/{id}/grid-edit` on the running engine.
 GRID_EDIT_VERB = "grid-edit"
 _GRID_EDIT_SOURCES = ("rekordbox", "own")
+#: GRID-OCTAVE-02: the CLI twin of the BPM hover card's "use the other tempo",
+#: over `/api/v1/tracks/{id}/bpm-pick`.
+BPM_PICK_VERB = "bpm-pick"
 _GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
+#: SRCFLAG-01..03: the CLI twin of `/api/v1/source-flags` (flag-only source checks).
+SOURCE_FLAGS_VERB = "source-flags"
+_SOURCE_FLAGS_PATH = "/api/v1/source-flags"
+_SOURCE_FLAG_CODES = ("all", "length_mismatch", "stems_other_recording", "hardlinked_write")
 #: GRIDFIT-03: the CLI twin of the grid-vs-audio routes under the same prefix.
 GRID_FIT_VERB = "grid-fit"
 GRID_FIT_SCAN_VERB = "grid-fit-scan"
@@ -59,6 +70,9 @@ TRANSITION_IN_VERB = "transition-in"
 #: Issue #8339: the CLI twin of `/api/v1/tracks/{id}/tempo-stability` (the deck
 #: strip's tempo lane and the waveform's tempo-change marks).
 TEMPO_VERB = "tempo"
+#: LIBUX-56: the CLI twin of the library's Comment cell editor (double-click
+#: the cell, or right-click a row and choose Edit comment).
+COMMENT_VERB = "comment"
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 #: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
 #: letter). Same rule as the grid verbs: the engine owns the scan, so these
@@ -75,8 +89,11 @@ _USAGE = (
     "                               [include-dismissed] [all-tracks] [limit N]\n"
     "       opendj track grid-scan [all-tracks] [no-wait]\n"
     "       opendj track grid-flag <stable_id> dismiss|restore\n"
+    "       opendj track source-flags [all|length_mismatch|stems_other_recording|\n"
+    "                                 hardlinked_write | <stable_id> | scan]\n"
     "       opendj track grid-edit <stable_id> [show | nudge MS | shift BEATS |\n"
     "                              set MS BEATS | reset] [rekordbox|own]\n"
+    "       opendj track bpm-pick <stable_id> own|mik|clear\n"
     "       opendj track grid-fit [findings|wrong_bpm|off_beat|shifted|no_verdict|fit|unknown|all] [limit N]\n"
     "       opendj track grid-fit <stable_id> [force]\n"
     "       opendj track grid-fit-scan [no-wait]\n"
@@ -85,7 +102,9 @@ _USAGE = (
     "       opendj track quality-of <stable_id>\n"
     "       opendj track auto-gain <stable_id> [set <dB>|clear]\n"
     "       opendj track transition-in <stable_id> [set <ms>|clear]\n"
-    "       opendj track tempo <stable_id>"
+    "       opendj track tempo <stable_id>\n"
+    "       opendj track played-length <stable_id>...\n"
+    "       opendj track comment <stable_id> set <text> | clear"
 )
 
 
@@ -140,6 +159,20 @@ def _grid_flags(args: Sequence[str]) -> int:
     suffix = f"?{'&'.join(query)}" if query else ""
     return api_cli.run(["GET", f"{_GRID_FLAGS_PATH}{suffix}"], as_json=True)
 
+
+
+def _source_flags(args: Sequence[str]) -> int:
+    """SRCFLAG-01..03: `GET /api/v1/source-flags[?code=]`, one track, or `scan`."""
+    if not args:
+        return api_cli.run(["GET", _SOURCE_FLAGS_PATH], as_json=True)
+    if len(args) != 1:
+        return _usage_error()
+    token = args[0]
+    if token == "scan":
+        return api_cli.run(["POST", f"{_SOURCE_FLAGS_PATH}/scan"], as_json=True)
+    elif token in _SOURCE_FLAG_CODES:
+        return api_cli.run(["GET", f"{_SOURCE_FLAGS_PATH}?code={token}"], as_json=True)
+    return api_cli.run(["GET", f"{_SOURCE_FLAGS_PATH}/{token}"], as_json=True)
 
 def _grid_scan(args: Sequence[str]) -> int:
     """`POST /api/v1/beatgrid-flags/scan`: bring stored verdicts up to date."""
@@ -206,6 +239,17 @@ def _grid_edit(args: Sequence[str]) -> int:
     method, suffix, fields = write
     body = fields if source is None else {"source": source, **fields}
     return api_cli.run([method, f"{path}{suffix}", "--json", json.dumps(body)], as_json=True)
+def _bpm_pick(args: Sequence[str]) -> int:
+    """Serve our tempo or Mixed In Key's where they disagree (`clear` shows the dispute again)."""
+    if len(args) != 2 or args[1] not in ("own", "mik", "clear"):
+        return _usage_error()
+    stable_id, pick = args
+    path = f"/api/v1/tracks/{stable_id}/bpm-pick"
+    if pick == "clear":
+        return api_cli.run(["DELETE", path], as_json=True)
+    return api_cli.run(["PUT", path, "--json", json.dumps({"source": pick})], as_json=True)
+
+
 def _is_stable_id(token: str) -> bool:
     return len(token) == 40 and all(c in "0123456789abcdef" for c in token)
 
@@ -329,11 +373,42 @@ def _transition_in(args: Sequence[str]) -> int:
     return _usage_error()
 
 
+def _played_length(args: Sequence[str]) -> int:
+    """`POST /api/v1/tracks/played-length`: rough mixed length of these tracks (LIBUX played length)."""
+    if not args:
+        return _usage_error()
+    body = json.dumps({"stable_ids": list(args)})
+    return api_cli.run(["POST", "/api/v1/tracks/played-length", "--json", body], as_json=True)
+
+
 def _tempo(args: Sequence[str]) -> int:
     """`GET /api/v1/tracks/{id}/tempo-stability`: verdict and tempo segments."""
     if len(args) != 1:
         return _usage_error()
     return api_cli.run(["GET", f"/api/v1/tracks/{args[0]}/tempo-stability"], as_json=True)
+
+
+def _comment(args: Sequence[str]) -> int:
+    """`PATCH /api/v1/tracks/{id}` with `{"comments": ...}`: what the Comment cell editor saves."""
+    if len(args) == 2 and args[1] == "clear":
+        comment = ""
+    elif len(args) == 3 and args[1] == "set":
+        comment = args[2]
+    else:
+        return _usage_error()
+    try:
+        base_url = api_cli.resolve_backend_base_url().base_url
+    except EngineNotRunning as error:
+        return _fail(True, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    try:
+        with engine_client(base_url) as client:
+            result = set_track_comment(client, args[0], comment)
+    except TrackCommentError as error:
+        return _fail(True, error.code, error.message, EXIT_FAILED)
+    except httpx.TransportError as error:
+        return _fail(True, "engine_unreachable", f"{base_url}: {error}", EXIT_NO_ENGINE)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
@@ -471,6 +546,7 @@ __all__ = [
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",
     "KEY_SEGMENTS_VERB",
+    "SOURCE_FLAGS_VERB",
     "TEMPO_VERB",
     "TRANSITION_IN_VERB",
     "run",
@@ -481,6 +557,7 @@ __all__ = [
 #: verb is one line rather than another branch.
 _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     GRID_FLAGS_VERB: _grid_flags,
+    SOURCE_FLAGS_VERB: _source_flags,
     GRID_SCAN_VERB: _grid_scan,
     GRID_FLAG_VERB: _grid_flag,
     GRID_FIT_VERB: _grid_fit,
@@ -490,6 +567,9 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     QUALITY_OF_VERB: _quality_of,
     AUTO_GAIN_VERB: _auto_gain,
     GRID_EDIT_VERB: _grid_edit,
+    BPM_PICK_VERB: _bpm_pick,
     TRANSITION_IN_VERB: _transition_in,
     TEMPO_VERB: _tempo,
+    "played-length": _played_length,
+    COMMENT_VERB: _comment,
 }

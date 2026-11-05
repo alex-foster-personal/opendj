@@ -27,6 +27,7 @@ block here would advertise a floor nothing enforces.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import shlex
@@ -34,7 +35,7 @@ import subprocess
 
 from scripts.b2store import store_ssh_host
 
-#----- pure: constants --------------------------------------------------------
+# ----- pure: constants --------------------------------------------------------
 
 # Printed by the remote existence guard when the target directory is absent:
 # in-band on exit 0, so "absent" is never inferred from error text that a merely
@@ -42,7 +43,8 @@ from scripts.b2store import store_ssh_host
 ABSENT_SENTINEL: str = "__B2_PATH_ABSENT__"
 
 
-#----- pure: command construction ---------------------------------------------
+# ----- pure: command construction ---------------------------------------------
+
 
 def quote_remote(remote_path: str) -> str:
     """shlex-quote a remote path for bifrost2's bash, refusing backslashes.
@@ -71,8 +73,7 @@ def find_command(remote_root: str, find_args: str) -> str:
     The guard is read-only. A `mkdir -p` here would make every read a write.
     """
     quoted = quote_remote(remote_root)
-    return (f"if [ -d {quoted} ]; then find {quoted} {find_args}; "
-            f"else echo {ABSENT_SENTINEL}; fi")
+    return f"if [ -d {quoted} ]; then find {quoted} {find_args}; else echo {ABSENT_SENTINEL}; fi"
 
 
 def mkdir_command(remote_paths: list[str]) -> str:
@@ -86,7 +87,8 @@ def mkdir_command(remote_paths: list[str]) -> str:
     return "mkdir -p " + " ".join(quote_remote(p) for p in remote_paths)
 
 
-#----- pure: listing parsing --------------------------------------------------
+# ----- pure: listing parsing --------------------------------------------------
+
 
 def listing_or_absent(stdout: str) -> str | None:
     """None if the guard reported the path absent, otherwise the listing."""
@@ -122,7 +124,8 @@ def parse_names(listing: str) -> set[str]:
     return {line.strip() for line in listing.splitlines() if line.strip()}
 
 
-#----- io ---------------------------------------------------------------------
+# ----- io ---------------------------------------------------------------------
+
 
 def run(argv: list[str], timeout: int = 900) -> subprocess.CompletedProcess[str]:
     """Run a command, capturing output, raising with stderr on failure.
@@ -131,12 +134,11 @@ def run(argv: list[str], timeout: int = 900) -> subprocess.CompletedProcess[str]
     library's names carry non-ASCII, so a strict decode would abort a multi-GB
     transfer over one cosmetic byte.
     """
-    done = subprocess.run(argv, text=True, capture_output=True, timeout=timeout,
-                          check=False, encoding="utf-8", errors="replace")
+    done = subprocess.run(
+        argv, text=True, capture_output=True, timeout=timeout, check=False, encoding="utf-8", errors="replace"
+    )
     if done.returncode != 0:
-        raise RuntimeError(
-            f"command failed ({done.returncode}): {' '.join(argv)}\n{done.stderr.strip()}"
-        )
+        raise RuntimeError(f"command failed ({done.returncode}): {' '.join(argv)}\n{done.stderr.strip()}")
     return done
 
 

@@ -35,7 +35,9 @@ export const INSTALL_LOOPBACK_URL = 'https://existential.audio/blackhole/';
 
 /** Why MACHINE cannot record the master mix in this page, or null when it
  *  can (SET-12): the Rust engine preview mixes outside the page. */
-export function masterMixUnavailableReason(engineIsRust: boolean = rustMode.enabled): string | null {
+export function masterMixUnavailableReason(
+	engineIsRust: boolean = rustMode.enabled
+): string | null {
 	return engineIsRust
 		? 'The Rust engine (preview) mixes outside the page, so its master mix cannot be recorded yet. Switch Settings > Audio engine to Web Audio, or record a loopback input.'
 		: null;
@@ -46,9 +48,7 @@ export function masterMixUnavailableReason(engineIsRust: boolean = rustMode.enab
  *  renumbers inputs whenever one is plugged in, so a remembered index drifts
  *  (SET-10). */
 export type RecordInputChoice =
-	| { kind: 'master' }
-	| { kind: 'device'; name: string }
-	| { kind: 'none' };
+	{ kind: 'master' } | { kind: 'device'; name: string } | { kind: 'none' };
 
 /** The choice REC last started on, kept by the daemon under its sets root,
  *  or null when unknown. Not localStorage: the desktop shell serves this UI
@@ -100,7 +100,8 @@ export function initialRecordSelection(
 	devices: RecorderDevices | null,
 	masterAvailable: boolean
 ): { mode: RecordMode; choice: RecordInputChoice | null } {
-	if (remembered?.kind === 'master' && masterAvailable) return { mode: 'machine', choice: remembered };
+	if (remembered?.kind === 'master' && masterAvailable)
+		return { mode: 'machine', choice: remembered };
 	if (remembered?.kind === 'none') return { mode: 'midi', choice: remembered };
 	if (remembered?.kind === 'device') {
 		const device = devices?.devices.find((d) => d.name === remembered.name);
@@ -120,17 +121,18 @@ export async function listRecorderDevices(): Promise<RecorderDevices> {
 	}
 }
 
-export const PERFORMANCE_RECORDER_SOURCES: RecorderSourceName[] = [
-	'djay_monitor',
-	'opendj_decks'
-];
+export const PERFORMANCE_RECORDER_SOURCES: RecorderSourceName[] = ['djay_monitor', 'opendj_decks'];
 
 /** The start request for a choice made in a view; the source is always
  *  explicit (SET-12). A blank name is refused by the daemon (422). */
 export function startRequestFor(choice: RecordInputChoice, mode: RecordMode): RecorderStartInput {
 	const base = { session_id: null, sources: PERFORMANCE_RECORDER_SOURCES };
 	if (choice.kind !== 'device') return { ...base, source: choice.kind };
-	return { ...base, source: mode === 'loopback' ? 'loopback' : 'external', device_name: choice.name };
+	return {
+		...base,
+		source: mode === 'loopback' ? 'loopback' : 'external',
+		device_name: choice.name
+	};
 }
 
 export async function startPerformanceRecorder(

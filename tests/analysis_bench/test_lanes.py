@@ -36,8 +36,12 @@ def test_beatgrid_continues_its_own_counter() -> None:
 def test_key_registers_krumhansl_and_skey() -> None:
     names = [c.name for c in lanes.get_lane("key").candidates]
     assert names == [
-        "constant_key", "most_common_key", "truth_echo", "truth_echo_mik",
-        "krumhansl", "skey",
+        "constant_key",
+        "most_common_key",
+        "truth_echo",
+        "truth_echo_mik",
+        "krumhansl",
+        "skey",
     ]
     assert lanes.get_lane("key").fixture_builder == "scripts/build_key_bundle.py"
 

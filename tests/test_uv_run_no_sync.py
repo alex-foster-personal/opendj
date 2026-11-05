@@ -420,11 +420,7 @@ def _find_launcher_violations(text: str) -> list[tuple[int, str]]:
 def _walk(base: Path) -> list[Path]:
     if not base.is_dir():
         return []
-    return [
-        path
-        for path in base.rglob("*")
-        if path.is_file() and not SKIP_DIR_NAMES.intersection(path.parts)
-    ]
+    return [path for path in base.rglob("*") if path.is_file() and not SKIP_DIR_NAMES.intersection(path.parts)]
 
 
 def _all_scanned_py_files() -> list[Path]:
@@ -454,10 +450,7 @@ def _launcher_findings() -> list[tuple[str, int, str]]:
             # Unreadable is UNKNOWN, and UNKNOWN is not a pass.
             findings.append((rel, 0, f"UNREADABLE, cannot verify: {exc}"))
             continue
-        findings.extend(
-            (rel, lineno, command)
-            for lineno, command in _find_launcher_violations(text)
-        )
+        findings.extend((rel, lineno, command) for lineno, command in _find_launcher_violations(text))
     return findings
 
 
@@ -491,8 +484,7 @@ def test_every_uv_run_argv_has_no_sync() -> None:
     assert not all_violations, (
         "Found `uv run` argv list(s) without --no-sync against the project "
         "env (this re-syncs the venv and prunes engine extras on the live "
-        "preview), or a file that could not be parsed to check:\n"
-        + "\n".join(all_violations)
+        "preview), or a file that could not be parsed to check:\n" + "\n".join(all_violations)
     )
 
 
@@ -517,12 +509,9 @@ def test_intentional_sync_allowlist_is_live() -> None:
     changed, or been deleted, and nobody would be told."""
     findings = _launcher_findings()
     dead = [
-        f"{allowed_path}: marker {marker!r} matches no scanned `uv run` command "
-        f"(reason on file: {reason})"
+        f"{allowed_path}: marker {marker!r} matches no scanned `uv run` command (reason on file: {reason})"
         for allowed_path, marker, reason in INTENTIONAL_SYNC
-        if not any(
-            rel == allowed_path and marker in command for rel, _, command in findings
-        )
+        if not any(rel == allowed_path and marker in command for rel, _, command in findings)
     ]
     assert not dead, (
         "INTENTIONAL_SYNC entries no longer match anything -- delete them or "

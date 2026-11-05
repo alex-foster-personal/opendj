@@ -82,9 +82,7 @@ def verify_engine_target(
     engine: str, frontend: str, sha: str, repo_root: Path = _REPO
 ) -> tuple[EngineTarget | None, str | None]:
     """`(target, None)` once every pre-capture engine gate passes, else `(None, reason)`."""
-    reason, _frontend_mode, engine_pid = _verify_capture_targets(
-        engine, frontend, sha, repo_root=repo_root
-    )
+    reason, _frontend_mode, engine_pid = _verify_capture_targets(engine, frontend, sha, repo_root=repo_root)
     if reason is not None:
         return None, reason
     if engine_pid is None:
@@ -99,9 +97,7 @@ def verify_engine_target(
     return EngineTarget(origin=engine, pid=engine_pid), None
 
 
-def reverify_engine_target(
-    target: EngineTarget, frontend: str, sha: str, repo_root: Path = _REPO
-) -> str | None:
+def reverify_engine_target(target: EngineTarget, frontend: str, sha: str, repo_root: Path = _REPO) -> str | None:
     """After sampling: the same gates, with the engine pid pinned to the pre-capture one."""
     reason, _frontend_mode, _engine_pid = _verify_capture_targets(
         target.origin, frontend, sha, expected_engine_pid=target.pid, repo_root=repo_root

@@ -13,8 +13,8 @@ import adapter from '@sveltejs/adapter-static';
 // a git checkout should fail loudly rather than ship an unstamped bundle
 // that would silently pass no identity check at all.
 const GIT_SHA_FULL = execSync('git rev-parse HEAD', { cwd: import.meta.dirname })
-  .toString()
-  .trim();
+	.toString()
+	.trim();
 
 // Codex P1/BLOCKING, PR #4034, discussion_r4132707456: kit.version.name
 // carried only the sha, with no dirty marker -- unlike the engine's own
@@ -26,27 +26,27 @@ const GIT_SHA_FULL = execSync('git rev-parse HEAD', { cwd: import.meta.dirname }
 // single string; scripts/perf/capture_library_mode.py's
 // `_verify_frontend_build_version` looks for exactly this suffix.
 const REPO_ROOT = execSync('git rev-parse --show-toplevel', { cwd: import.meta.dirname })
-  .toString()
-  .trim();
+	.toString()
+	.trim();
 const GIT_DIRTY = execSync('git status --porcelain', { cwd: REPO_ROOT }).toString().trim() !== '';
 const FRONTEND_VERSION = GIT_DIRTY ? `${GIT_SHA_FULL}-dirty` : GIT_SHA_FULL;
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
-  kit: {
-    adapter: adapter({
-      fallback: 'index.html',
-      pages: 'build',
-      assets: 'build',
-      strict: false,
-    }),
-    alias: {
-      $lib: 'src/lib',
-    },
-    version: {
-      name: FRONTEND_VERSION,
-    },
-  },
+	kit: {
+		adapter: adapter({
+			fallback: 'index.html',
+			pages: 'build',
+			assets: 'build',
+			strict: false
+		}),
+		alias: {
+			$lib: 'src/lib'
+		},
+		version: {
+			name: FRONTEND_VERSION
+		}
+	}
 };
 
 export default config;

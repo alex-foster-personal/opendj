@@ -19,6 +19,7 @@ from apps.shared.state.events import EventBus
 from apps.shared.state.writer import StateWriter
 from apps.webui.server import playlist_tree_order as tree_order
 from apps.webui.server.app import create_app
+from apps.webui.server.inbox_playlist import INBOX_PLAYLIST_ID
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
 
@@ -60,7 +61,11 @@ def _create(client: TestClient, name: str) -> str:
 def _seqs(client: TestClient) -> dict[str, int | None]:
     r = client.get("/api/v1/playlists", params={"availability": "skip"})
     assert r.status_code == 200, r.text
-    return {row["name"]: row["seq"] for row in r.json()}
+    return {
+        row["name"]: row["seq"]
+        for row in r.json()
+        if row["playlist_id"] != INBOX_PLAYLIST_ID
+    }
 
 
 def test_no_stored_order_keeps_the_old_seq(client: TestClient, db_path: Path) -> None:

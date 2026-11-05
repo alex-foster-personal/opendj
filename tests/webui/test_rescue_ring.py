@@ -50,9 +50,7 @@ def test_snapshot_rejected_over_32k(tmp_path: Path) -> None:
         append_snapshot(tmp_path, payload)
 
 
-def test_interrupted_write_keeps_prior_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_interrupted_write_keeps_prior_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     rescue_dir = tmp_path / "state" / "rescue"
     rescue_dir.mkdir(parents=True)
     append_snapshot(tmp_path, _minimal_snapshot(1, marker="v1"))

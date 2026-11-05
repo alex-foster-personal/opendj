@@ -37,9 +37,7 @@ from scripts.lyrics_alignment.scorer import (
     lyric_align_score,
 )
 
-FIXTURE_PATH = (
-    Path(__file__).parents[1] / "fixtures" / "lyrics_alignment" / "jamendo_round3a_measured.json"
-)
+FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "lyrics_alignment" / "jamendo_round3a_measured.json"
 FIXTURE_SHA256 = "sha256:76fa7ebd019e91173539ba88b1cf0f98a0b0b8fa971d0ca8f28273e22fc0affa"
 SHIP_TIER_PATH = Path(__file__).parents[1] / "fixtures" / "lyrics_alignment" / "ship_tier.json"
 RATCHET_TOLERANCE = 1e-9
@@ -62,15 +60,11 @@ def test_every_track_reproduces_its_measured_score(fixture: dict) -> None:
     for track in fixture["tracks"]:
         score = lyric_align_score(track["reference_onsets_s"], track["predicted_onsets_s"])
         measured = track["measured"]
-        assert score.medae_s == pytest.approx(measured["medae_s"], abs=RATCHET_TOLERANCE), (
-            track["track_id"]
-        )
-        assert score.pco_300ms == pytest.approx(measured["pco_300ms"], abs=RATCHET_TOLERANCE), (
-            track["track_id"]
-        )
-        assert score.catastrophe_rate == pytest.approx(
-            measured["catastrophe_rate"], abs=RATCHET_TOLERANCE
-        ), track["track_id"]
+        assert score.medae_s == pytest.approx(measured["medae_s"], abs=RATCHET_TOLERANCE), track["track_id"]
+        assert score.pco_300ms == pytest.approx(measured["pco_300ms"], abs=RATCHET_TOLERANCE), track["track_id"]
+        assert score.catastrophe_rate == pytest.approx(measured["catastrophe_rate"], abs=RATCHET_TOLERANCE), track[
+            "track_id"
+        ]
         assert score.words_reference == measured["words_reference"], track["track_id"]
 
 
@@ -130,9 +124,7 @@ def test_fixture_carries_timings_only(fixture: dict) -> None:
     for track in fixture["tracks"]:
         assert set(track) == allowed, track["track_id"]
         assert track["track_id"].startswith("jl-"), "track ids must stay opaque digests"
-        assert all(
-            isinstance(t, (int, float)) for t in track["reference_onsets_s"]
-        ), track["track_id"]
+        assert all(isinstance(t, (int, float)) for t in track["reference_onsets_s"]), track["track_id"]
 
 
 def test_measured_fixture_loader_rejects_checksum_mismatch() -> None:

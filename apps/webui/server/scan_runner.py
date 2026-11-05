@@ -4,6 +4,7 @@ Supersedes: the ScanRunner class bodies in audio_quality_scan.py and
 grid_quality_scan.py (issue #7646). Domain modules keep a thin adapter
 named ScanRunner so routes, tests, and grid_audio_fit_scan stay put.
 """
+
 from __future__ import annotations
 
 import logging

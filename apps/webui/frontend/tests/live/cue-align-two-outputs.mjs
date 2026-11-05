@@ -105,7 +105,8 @@ const IN_PAGE = async ({ cueMatch, micMatch, mode, repeat, extraPreroll, cueBed 
 	for (const track of stream.getTracks()) track.stop();
 	const devices = await navigator.mediaDevices.enumerateDevices();
 	const pick = (kind, needle) =>
-		devices.find((d) => d.kind === kind && d.label.toLowerCase().includes(needle.toLowerCase())) ?? null;
+		devices.find((d) => d.kind === kind && d.label.toLowerCase().includes(needle.toLowerCase())) ??
+		null;
 	const cueDevice = pick('audiooutput', cueMatch);
 	const micDevice = pick('audioinput', micMatch);
 	const inventory = devices.map((d) => ({ kind: d.kind, label: d.label, id: d.deviceId }));
@@ -197,18 +198,31 @@ const IN_PAGE = async ({ cueMatch, micMatch, mode, repeat, extraPreroll, cueBed 
 					const timer = setTimeout(() => {
 						teardown();
 						const error = new Error('record timed out');
-						if (!opened) { opened = true; rejectOpen(error); }
+						if (!opened) {
+							opened = true;
+							rejectOpen(error);
+						}
 						reject(error);
 					}, durationMs + 2500);
-					signal.addEventListener('abort', () => {
-						clearTimeout(timer);
-						teardown();
-						const error = new Error('aborted');
-						if (!opened) { opened = true; rejectOpen(error); }
-						reject(error);
-					}, { once: true });
+					signal.addEventListener(
+						'abort',
+						() => {
+							clearTimeout(timer);
+							teardown();
+							const error = new Error('aborted');
+							if (!opened) {
+								opened = true;
+								rejectOpen(error);
+							}
+							reject(error);
+						},
+						{ once: true }
+					);
 					processor.onaudioprocess = (event) => {
-						if (!opened) { opened = true; resolveOpen({ startedAtSec: ctx.currentTime, samples }); }
+						if (!opened) {
+							opened = true;
+							resolveOpen({ startedAtSec: ctx.currentTime, samples });
+						}
 						const input = event.inputBuffer.getChannelData(0);
 						const n = Math.min(input.length, frames - offset);
 						out.set(input.subarray(0, n), offset);
@@ -227,22 +241,37 @@ const IN_PAGE = async ({ cueMatch, micMatch, mode, repeat, extraPreroll, cueBed 
 		// the shipped 40 ms preroll so a run can tell "the mic could not hear it"
 		// apart from "the capture had not started yet".
 		sleep: (ms) => new Promise((r) => setTimeout(r, ms + extraPreroll)),
-		async pauseDecks() { return []; },
+		async pauseDecks() {
+			return [];
+		},
 		async resumeDecks() {},
 		now: () => Date.now(),
-		persist(result) { log.push({ persisted: result }); },
+		persist(result) {
+			log.push({ persisted: result });
+		},
 		alignmentMode: () => mode,
 		deviceIds: () => ({ cue: cueDevice.deviceId, master: null }),
-		onProbe(probe) { log.push({ probe }); }
+		onProbe(probe) {
+			log.push({ probe });
+		}
 	};
 
 	const runs = [];
 	for (let i = 0; i < repeat; i += 1) {
-		const calibration = { step: 'idle', cue_latency_ms: null, master_latency_ms: null, offset_ms: null, error: null };
+		const calibration = {
+			step: 'idle',
+			cue_latency_ms: null,
+			master_latency_ms: null,
+			offset_ms: null,
+			error: null
+		};
 		const controller = shipped.align.createCueAlignController(effects, calibration);
 		const startedAt = performance.now();
 		await controller.run({ interactive: false });
-		runs.push({ ...calibration, seconds: Number(((performance.now() - startedAt) / 1000).toFixed(1)) });
+		runs.push({
+			...calibration,
+			seconds: Number(((performance.now() - startedAt) / 1000).toFixed(1))
+		});
 	}
 	await ctx.close();
 	return {
@@ -294,7 +323,9 @@ try {
 	}
 	console.log(`chromium=${browser.version()} sampleRate=${result.sampleRate}`);
 	console.log(`master=OS default   cue="${result.cue}"   mic="${result.mic}"`);
-	console.log(`threshold=${result.threshold}  ladder=${result.ladder.join(', ')}  extraPreroll=${EXTRA_PREROLL}ms\n`);
+	console.log(
+		`threshold=${result.threshold}  ladder=${result.ladder.join(', ')}  extraPreroll=${EXTRA_PREROLL}ms\n`
+	);
 	for (const entry of result.log) {
 		if (entry.probe === undefined || entry.probe.peak === null) continue;
 		const p = entry.probe;
@@ -313,7 +344,9 @@ try {
 	const applied = result.runs.filter((r) => r.step === 'applied');
 	if (applied.length > 1) {
 		const offsets = applied.map((r) => r.offset_ms);
-		console.log(`\noffset spread across ${applied.length} runs: ${Math.max(...offsets) - Math.min(...offsets)} ms`);
+		console.log(
+			`\noffset spread across ${applied.length} runs: ${Math.max(...offsets) - Math.min(...offsets)} ms`
+		);
 	}
 	process.exit(applied.length === result.runs.length ? 0 : 1);
 } finally {

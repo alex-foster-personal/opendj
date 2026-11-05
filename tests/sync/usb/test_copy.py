@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.copy."""
+
 from __future__ import annotations
 
 import hashlib

@@ -18,7 +18,11 @@ function makeDirEntry(name) {
 		name,
 		fullPath: `/${name}`,
 		createReader() {
-			return { readEntries(cb) { cb([]); } };
+			return {
+				readEntries(cb) {
+					cb([]);
+				}
+			};
 		}
 	};
 }
@@ -33,15 +37,19 @@ describe('collectDroppedFolderName', () => {
 
 	it('returns null for flat file drops', () => {
 		const dt = {
-			items: [{
-				webkitGetAsEntry: () => ({
-					isFile: true,
-					isDirectory: false,
-					name: 'track.mp3',
-					fullPath: '/track.mp3',
-					file(cb) { cb(new File(['x'], 'track.mp3')); }
-				})
-			}]
+			items: [
+				{
+					webkitGetAsEntry: () => ({
+						isFile: true,
+						isDirectory: false,
+						name: 'track.mp3',
+						fullPath: '/track.mp3',
+						file(cb) {
+							cb(new File(['x'], 'track.mp3'));
+						}
+					})
+				}
+			]
 		};
 		assert.equal(drop.collectDroppedFolderName(dt), null);
 	});

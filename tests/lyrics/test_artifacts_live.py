@@ -22,6 +22,7 @@ in a venue. The payload carries a uuid so the digest is unique to this run,
 and the object is deleted in a ``finally``: leaving litter in the canonical
 asset bucket is how a bucket stops being trustworthy.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -96,9 +97,7 @@ def test_live_r2_words_artifact_round_trip(
         # The only location record is the row's hash, so removing the local
         # file is the whole test: what comes back must come from R2.
         artifact.path.unlink()
-        loaded = artifacts.load_words(
-            conn, data_dir=data_dir, stable_id=STABLE_ID, s3=s3, cfg=cfg
-        )
+        loaded = artifacts.load_words(conn, data_dir=data_dir, stable_id=STABLE_ID, s3=s3, cfg=cfg)
         assert loaded is not None
         assert [entry.word for entry in loaded.words] == [probe, "two"]
         assert loaded.pipeline_version == PIPELINE_VERSION
@@ -107,7 +106,6 @@ def test_live_r2_words_artifact_round_trip(
     finally:
         removed = asset_store.delete_asset(cfg, s3, artifact.content_hash)
         assert removed, (
-            f"live probe object for {artifact.content_hash} could not be "
-            "deleted; remove it by hand before rerunning."
+            f"live probe object for {artifact.content_hash} could not be deleted; remove it by hand before rerunning."
         )
     assert not asset_store.object_exists(cfg, s3, artifact.content_hash)

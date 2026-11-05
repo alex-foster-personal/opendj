@@ -6,6 +6,7 @@ real USB write or burn Anthropic credits.
 
 Requirement: CAT-06 -- Rekordbox 7 USB export automation prototype.
 """
+
 from __future__ import annotations
 
 import io
@@ -63,17 +64,13 @@ class TestCoordScaling:
 
     def test_identity_no_downsample(self) -> None:
         geom = DisplayGeometry(1280, 720, 1280, 720)
-        x, y = scaled_to_points(
-            640, 360, scaled_width=1280, scaled_height=720, geometry=geom
-        )
+        x, y = scaled_to_points(640, 360, scaled_width=1280, scaled_height=720, geometry=geom)
         assert (x, y) == (640, 360)
 
     def test_non_retina_downsample(self) -> None:
         """5120×2160 non-Retina → 1280×540 Claude frame."""
         geom = DisplayGeometry(5120, 2160, 5120, 2160)
-        x, y = scaled_to_points(
-            640, 270, scaled_width=1280, scaled_height=540, geometry=geom
-        )
+        x, y = scaled_to_points(640, 270, scaled_width=1280, scaled_height=540, geometry=geom)
         # 640 * 5120/1280 = 2560; 270 * 2160/540 = 1080
         assert (x, y) == (2560, 1080)
 
@@ -82,23 +79,17 @@ class TestCoordScaling:
         Clicking (1280, 800) in Claude frame should land at (1440, 900)
         in macOS points -- the bottom-right corner."""
         geom = DisplayGeometry(2880, 1800, 1440, 900)
-        x, y = scaled_to_points(
-            1280, 800, scaled_width=1280, scaled_height=800, geometry=geom
-        )
+        x, y = scaled_to_points(1280, 800, scaled_width=1280, scaled_height=800, geometry=geom)
         assert (x, y) == (1440, 900)
 
     def test_origin_maps_to_origin(self) -> None:
         geom = DisplayGeometry(2880, 1800, 1440, 900)
-        assert scaled_to_points(
-            0, 0, scaled_width=1280, scaled_height=800, geometry=geom
-        ) == (0, 0)
+        assert scaled_to_points(0, 0, scaled_width=1280, scaled_height=800, geometry=geom) == (0, 0)
 
     def test_rejects_zero_dims(self) -> None:
         geom = DisplayGeometry(1000, 1000, 1000, 1000)
         with pytest.raises(ValueError):
-            scaled_to_points(
-                1, 1, scaled_width=0, scaled_height=10, geometry=geom
-            )
+            scaled_to_points(1, 1, scaled_width=0, scaled_height=10, geometry=geom)
 
 
 # --------------------------------------------------------------------------- #
@@ -145,9 +136,7 @@ def _synthetic_png(width: int, height: int) -> bytes:
 class TestScreenshot:
     def test_synthetic_downsample(self) -> None:
         raw = _synthetic_png(5120, 2160)
-        png, geom, scaled = take_screenshot(
-            downsample_width=1280, _raw_bytes=raw
-        )
+        png, geom, scaled = take_screenshot(downsample_width=1280, _raw_bytes=raw)
         assert png[:8] == b"\x89PNG\r\n\x1a\n", "must return a PNG"
         assert len(png) > 0
         assert scaled == (1280, 540)
@@ -156,9 +145,7 @@ class TestScreenshot:
 
     def test_no_downsample_below_threshold(self) -> None:
         raw = _synthetic_png(800, 600)
-        png, _, scaled = take_screenshot(
-            downsample_width=1280, _raw_bytes=raw
-        )
+        png, _, scaled = take_screenshot(downsample_width=1280, _raw_bytes=raw)
         assert scaled == (800, 600)
         assert png[:8] == b"\x89PNG\r\n\x1a\n"
 
@@ -224,9 +211,7 @@ class TestAgentDryRunInit:
         main_resp = SimpleNamespace(
             id="msg_1",
             stop_reason="end_turn",
-            content=[
-                SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")
-            ],
+            content=[SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")],
             usage=SimpleNamespace(input_tokens=100, output_tokens=20),
         )
         mock_client.beta.messages.create.side_effect = [probe_resp, main_resp]
@@ -261,10 +246,9 @@ class TestAgentDryRunInit:
         second_call = mock_client.beta.messages.create.call_args_list[1]
         msgs = second_call.kwargs["messages"]
         first_user_content = msgs[0]["content"]
-        assert any(
-            isinstance(b, dict) and b.get("type") == "image"
-            for b in first_user_content
-        ), "initial user turn must embed a screenshot"
+        assert any(isinstance(b, dict) and b.get("type") == "image" for b in first_user_content), (
+            "initial user turn must embed a screenshot"
+        )
 
         # Loop terminated cleanly (1 real API call + probe).
         assert result.steps == 1
@@ -275,13 +259,9 @@ class TestAgentDryRunInit:
         # Trace directory was created.
         assert result.trace_root.exists()
         # Cost math
-        assert result.estimated_cost_usd == pytest.approx(
-            100 / 1_000_000 * 3.0 + 20 / 1_000_000 * 15.0
-        )
+        assert result.estimated_cost_usd == pytest.approx(100 / 1_000_000 * 3.0 + 20 / 1_000_000 * 15.0)
 
-    def test_offline_flow_never_activates_an_app(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_offline_flow_never_activates_an_app(self, tmp_path: Path, monkeypatch) -> None:
         """Regression (Sun 31 Aug 2026): this offline flow used to run the
         real frontmost preflight, and AppleScript ``activate`` LAUNCHES a
         stopped app - so `pytest tests/` cold-started Rekordbox (MyTag +
@@ -325,9 +305,7 @@ class TestAgentDryRunInit:
         resp = SimpleNamespace(
             id="msg_1",
             stop_reason="end_turn",
-            content=[
-                SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")
-            ],
+            content=[SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")],
             usage=SimpleNamespace(input_tokens=1, output_tokens=1),
         )
         mock_client.beta.messages.create.side_effect = [resp, resp]
@@ -344,13 +322,10 @@ class TestAgentDryRunInit:
         run_export_agent(cfg, client=mock_client)
 
         assert activations == [], (
-            f"offline test invoked a real activation subprocess {activations} "
-            "- it will open Rekordbox"
+            f"offline test invoked a real activation subprocess {activations} - it will open Rekordbox"
         )
 
-    def test_preflight_reaches_real_activation_when_frontmost_app_set(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_preflight_reaches_real_activation_when_frontmost_app_set(self, tmp_path: Path, monkeypatch) -> None:
         """Companion to the regression above: proves ``frontmost_app=None``
         is doing real work rather than a guard that happens to never fire.
         With ``frontmost_app`` set, ``run_export_agent``'s real preflight
@@ -388,9 +363,7 @@ class TestAgentDryRunInit:
         resp = SimpleNamespace(
             id="msg_1",
             stop_reason="end_turn",
-            content=[
-                SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")
-            ],
+            content=[SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")],
             usage=SimpleNamespace(input_tokens=1, output_tokens=1),
         )
         mock_client.beta.messages.create.side_effect = [resp, resp]

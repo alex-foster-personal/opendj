@@ -33,6 +33,7 @@
 		tabs,
 		active,
 		onactivate,
+		onclose,
 		ontogglesticky,
 		onreorder,
 		ondropplaylist,
@@ -42,6 +43,8 @@
 		tabs: PaneTabInfo[];
 		active: number;
 		onactivate: (index: number) => void;
+		/** Close a tab (close button or middle-click); the last tab never closes. */
+		onclose?: (index: number) => void;
 		/** Lock/unlock a tab so playlist selections route around it. */
 		ontogglesticky: (index: number) => void;
 		/** Tab dragged from one slot to another. */
@@ -58,6 +61,12 @@
 	let dragFrom: number | null = $state(null);
 	/** Index the pointer is currently over, for the drop-target outline. */
 	let dragOver: number | null = $state(null);
+
+	function _onAuxClick(event: MouseEvent, index: number): void {
+		if (event.button !== 1 || onclose === undefined || tabs.length <= 1) return;
+		event.preventDefault();
+		onclose(index);
+	}
 
 	function _label(tab: PaneTabInfo): string {
 		if (tab.loading) return `${tab.title} (loading...)`;
@@ -117,6 +126,7 @@
 				ondragover={(e) => _onTabDragOver(e, i)}
 				ondrop={(e) => _onTabDrop(e, i)}
 				ondragend={_onTabDragEnd}
+				onauxclick={(e) => _onAuxClick(e, i)}
 			>
 				<button
 					class="lock"
@@ -192,6 +202,18 @@
 						</button>
 					</span>
 				{/if}
+				{#if onclose !== undefined && tabs.length > 1}
+					<button
+						class="close-tab"
+						onclick={() => onclose?.(i)}
+						title="close this tab (Cmd+W)"
+						aria-label="close this pane tab"
+					>
+						<svg viewBox="0 0 8 8" width="8" height="8" aria-hidden="true">
+							<path d="M1 1 L7 7 M7 1 L1 7" fill="none" stroke="currentColor" stroke-width="1.3" />
+						</svg>
+					</button>
+				{/if}
 			</div>
 		{:else}
 			<button
@@ -200,6 +222,7 @@
 				role="tab"
 				aria-selected="false"
 				onclick={() => onactivate(i)}
+				onauxclick={(e) => _onAuxClick(e, i)}
 				draggable="true"
 				ondragstart={(e) => _onTabDragStart(e, i)}
 				ondragover={(e) => _onTabDragOver(e, i)}
@@ -235,6 +258,20 @@
 </div>
 
 <style>
+	.close-tab {
+		margin-left: 4px;
+		padding: 0 3px;
+		border: 0;
+		background: none;
+		color: inherit;
+		opacity: 0.6;
+		cursor: pointer;
+		font-size: 12px;
+		line-height: 1;
+	}
+	.close-tab:hover {
+		opacity: 1;
+	}
 	.tabs {
 		display: flex;
 		align-items: stretch;

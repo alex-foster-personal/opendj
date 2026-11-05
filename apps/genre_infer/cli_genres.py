@@ -25,7 +25,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from apps.analysis import store as analysis_store
+from apps.shared.state import db as state_db
 
 from . import findings, keystore, pipeline, providers, service, tag_write
 
@@ -38,7 +38,7 @@ def _print(doc: Any) -> None:
 
 
 def _run(args: argparse.Namespace, fn: Callable[[Any], Any]) -> int:
-    conn = analysis_store.open_conn(args.state_path)
+    conn = state_db.open_rw(args.state_path)
     try:
         findings.ensure_schema(conn)
         conn.commit()

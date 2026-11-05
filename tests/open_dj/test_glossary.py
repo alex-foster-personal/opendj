@@ -32,9 +32,10 @@ MARKDOWN_PATH = REPO / "open-dj" / "terminology.md"
 SCHEMA_PATH = REPO / "open-dj" / "schema" / "v0.2" / "open-dj.schema.json"
 
 # Track.extensions is a passthrough bag for x_* adapter data, not a vendor
-# library concept, so it is the only Track field allowed to sit outside the
-# glossary. Wire aliases map onto the canonical names we actually ship.
-TRACK_FIELDS_EXCLUDED = frozenset({"extensions"})
+# library concept. source_modified_at is adapter transport only and is
+# stripped before the wire document, so both sit outside the glossary.
+# Wire aliases map onto the canonical names we actually ship.
+TRACK_FIELDS_EXCLUDED = frozenset({"extensions", "source_modified_at"})
 WIRE_ALIAS_TO_CANONICAL = {
     "cues": "cue_points",
     "key": "key_camelot",
@@ -79,9 +80,7 @@ def test_every_entry_names_a_canonical_term() -> None:
     for index, entry in enumerate(payload["entries"]):
         assert isinstance(entry, dict), f"entries[{index}] is not a dict"
         canonical = entry.get("canonical")
-        assert isinstance(canonical, str) and canonical.strip(), (
-            f"entries[{index}] has no non-empty canonical term"
-        )
+        assert isinstance(canonical, str) and canonical.strip(), f"entries[{index}] has no non-empty canonical term"
         if canonical in seen:
             duplicates.append(canonical)
         seen[canonical] = index
@@ -102,15 +101,11 @@ def test_every_entry_names_a_canonical_term() -> None:
         ("INFO @RANKING", "rating"),
     ],
 )
-def test_lookup_resolves_vendor_term_to_all_shipped_adapters(
-    term: str, canonical: str
-) -> None:
+def test_lookup_resolves_vendor_term_to_all_shipped_adapters(term: str, canonical: str) -> None:
     from apps.open_dj.glossary import lookup
 
     result = lookup(term)
-    assert result["canonical"] == canonical, (
-        f"{term!r} resolved to {result['canonical']!r}, expected {canonical!r}"
-    )
+    assert result["canonical"] == canonical, f"{term!r} resolved to {result['canonical']!r}, expected {canonical!r}"
     assert set(result["vendors"]) == set(ADAPTERS), (
         f"{term!r} vendors {sorted(result['vendors'])} != shipped {sorted(ADAPTERS)}"
     )
@@ -126,9 +121,7 @@ def test_lookup_unknown_term_raises() -> None:
 def test_every_shipped_adapter_has_glossary_coverage() -> None:
     shipped = set(ADAPTERS)
     docs = {p.stem for p in (REPO / "open-dj" / "adapters").glob("*.md")}
-    assert docs == shipped, (
-        f"adapter docs {sorted(docs)} != shipped adapters {sorted(shipped)}"
-    )
+    assert docs == shipped, f"adapter docs {sorted(docs)} != shipped adapters {sorted(shipped)}"
     payload = _load_map()
     for entry in payload["entries"]:
         canonical = entry["canonical"]
@@ -136,9 +129,7 @@ def test_every_shipped_adapter_has_glossary_coverage() -> None:
             f"{canonical}: vendors {sorted(entry['vendors'])} != shipped {sorted(shipped)}"
         )
     if "adapters" in payload:
-        assert payload["adapters"] == sorted(shipped), (
-            f"top-level adapters {payload['adapters']} != {sorted(shipped)}"
-        )
+        assert payload["adapters"] == sorted(shipped), f"top-level adapters {payload['adapters']} != {sorted(shipped)}"
 
 
 def test_every_canonical_field_has_a_glossary_entry() -> None:
@@ -149,9 +140,7 @@ def test_every_canonical_field_has_a_glossary_entry() -> None:
         coverage.update(entry.get("code_aliases") or [])
 
     required: set[str] = set()
-    required.update(
-        f.name for f in dataclasses.fields(Track) if f.name not in TRACK_FIELDS_EXCLUDED
-    )
+    required.update(f.name for f in dataclasses.fields(Track) if f.name not in TRACK_FIELDS_EXCLUDED)
     required.update(field.field for field in serato_capabilities().fields)
     required.update(field.field for field in traktor_capabilities().fields)
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -165,9 +154,7 @@ def test_every_canonical_field_has_a_glossary_entry() -> None:
         if mapped is not None and mapped in coverage:
             continue
         missing.append(name)
-    assert not missing, (
-        "glossary is missing canonical coverage for: " + ", ".join(missing)
-    )
+    assert not missing, "glossary is missing canonical coverage for: " + ", ".join(missing)
 
 
 def test_markdown_and_json_share_the_same_canonical_set() -> None:
@@ -188,8 +175,7 @@ def test_markdown_and_json_share_the_same_canonical_set() -> None:
             if not cell:
                 blank.append(f"{canonical}.{vendor}")
     assert md_canonicals == json_canonicals, (
-        f"markdown-only={sorted(md_canonicals - json_canonicals)} "
-        f"json-only={sorted(json_canonicals - md_canonicals)}"
+        f"markdown-only={sorted(md_canonicals - json_canonicals)} json-only={sorted(json_canonicals - md_canonicals)}"
     )
     assert not blank, f"blank vendor cells: {blank}"
 

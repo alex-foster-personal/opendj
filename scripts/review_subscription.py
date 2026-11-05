@@ -111,9 +111,7 @@ class SubscriptionLane:
 
     def is_thread(self, login: str, body: str) -> bool:
         """Opened by this lane at ANY head: authorship, for the three-state rule."""
-        return _normalize_login(login) in SUBSCRIPTION_LOGINS and bool(
-            self.marker_re.search(body or "")
-        )
+        return _normalize_login(login) in SUBSCRIPTION_LOGINS and bool(self.marker_re.search(body or ""))
 
 
 #: Pinned per lane (REVIEW-21). Measured Thu 8 Oct 2026: the Grok lane passed no
@@ -130,9 +128,7 @@ CURSOR_MODEL = "composer-2.5"
 CURSOR_EFFORT = "high"
 CURSOR_REPORTED_MODELS: frozenset[str] = frozenset({"composer-2.5"})
 
-GROK_LANE = SubscriptionLane(
-    GROK, "grok", "grok", GROK_MODEL, GROK_EFFORT, GROK_REPORTED_MODELS, GROK_FENCE
-)
+GROK_LANE = SubscriptionLane(GROK, "grok", "grok", GROK_MODEL, GROK_EFFORT, GROK_REPORTED_MODELS, GROK_FENCE)
 CURSOR_LANE = SubscriptionLane(
     CURSOR, "cursor", "cursor", CURSOR_MODEL, CURSOR_EFFORT, CURSOR_REPORTED_MODELS, CURSOR_FENCE
 )

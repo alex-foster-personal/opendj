@@ -24,6 +24,7 @@ Regression one-liners:
     skip drops information and this whole approach is broken
   - if an unknown stable_id stops 404ing loudly then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -107,20 +108,17 @@ def _make_state_db(path: Path) -> None:
                 (sid, f"track {sid[0]}", f"/music/{sid[0]}.mp3"),
             )
         conn.execute(
-            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
-            "VALUES (?, 'rekordbox', ?)",
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)",
             (MAPPED, VENDOR_MAPPED),
         )
         conn.execute(
-            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
-            "VALUES (?, 'rekordbox', ?)",
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)",
             (DELETED_RB, VENDOR_DELETED),
         )
         # The reason the flag is not called has_vendor_mapping: this row IS
         # vendor-mapped, just not to rekordbox, so rb-meta still 404s.
         conn.execute(
-            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
-            "VALUES (?, 'djay', 'djay-0001')",
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'djay', 'djay-0001')",
             (DJAY_ONLY,),
         )
         # The mapping row itself is tombstoned (re-import/re-map case): the
@@ -141,8 +139,7 @@ def _make_state_db(path: Path) -> None:
         )
         for position, sid in enumerate((MAPPED, LOCAL_ONLY)):
             conn.execute(
-                "INSERT INTO playlist_memberships (playlist_id, stable_id, "
-                "position) VALUES ('pl-mixed', ?, ?)",
+                "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('pl-mixed', ?, ?)",
                 (sid, position),
             )
         conn.executemany(
@@ -203,9 +200,7 @@ def test_listing_flags_only_the_live_rekordbox_mapping(client: TestClient) -> No
         (TOMBSTONED_MAPPING, False),
     ],
 )
-def test_flag_agrees_with_rb_meta_vendor(
-    client: TestClient, stable_id: str, expected_flag: bool
-) -> None:
+def test_flag_agrees_with_rb_meta_vendor(client: TestClient, stable_id: str, expected_flag: bool) -> None:
     """The whole point of the flag: it predicts which vendor rb-meta serves.
 
     False must mean the `local` payload, so gating the fetch off loses
@@ -288,9 +283,7 @@ def test_playlist_detail_rows_carry_the_flag_too(client: TestClient) -> None:
         (TOMBSTONED_MAPPING, False),
     ],
 )
-def test_single_track_get_carries_the_flag_too(
-    client: TestClient, stable_id: str, expected_flag: bool
-) -> None:
+def test_single_track_get_carries_the_flag_too(client: TestClient, stable_id: str, expected_flag: bool) -> None:
     """GET /tracks/{sid} is the ONE fetch the deck-load path makes -- the
     hot-cue SAVE inert-with-tooltip state (PARITY-TODO, issue #736) reads
     this field off the loaded deck's track, not off a listing row it may
@@ -319,9 +312,7 @@ def test_patch_track_response_carries_the_flag_too(client: TestClient) -> None:
     ("stable_id", "expected_flag"),
     [(MAPPED, True), (LOCAL_ONLY, False)],
 )
-def test_patch_conflict_response_carries_the_flag_too(
-    client: TestClient, stable_id: str, expected_flag: bool
-) -> None:
+def test_patch_conflict_response_carries_the_flag_too(client: TestClient, stable_id: str, expected_flag: bool) -> None:
     """A 409's `current` payload is a track view too (errors.py ConflictBody),
     and the track page can "Take theirs" straight from it (#736 review). A
     stale If-Match raises ConflictError(current.to_dict(), ...) straight from

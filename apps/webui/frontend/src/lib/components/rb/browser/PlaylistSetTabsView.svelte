@@ -68,8 +68,7 @@
 					<span
 						class="route-glyph"
 						data-testid="playlist-set-route-glyph"
-						title="This set's route: one component per slot, by initials"
-						>{glyphFor(set)}</span
+						title="This set's route: one component per slot, by initials">{glyphFor(set)}</span
 					>
 				{/if}
 			</button>

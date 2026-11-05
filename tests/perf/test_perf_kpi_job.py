@@ -23,11 +23,7 @@ def _history_events(state_dir: Path) -> list[str]:
     history = state_dir / "history.jsonl"
     if not history.exists():
         return []
-    return [
-        json.loads(line)["event"]
-        for line in history.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return [json.loads(line)["event"] for line in history.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _listening(port: int) -> bool:
@@ -75,9 +71,7 @@ def test_nightly_fails_when_data_dir_unset(monkeypatch: pytest.MonkeyPatch, tmp_
     assert _ledger_entries(tmp_path) == []
 
 
-def test_nightly_fails_when_state_db_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_fails_when_state_db_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If state/state.db is missing then nightly exits non-zero with engine_unavailable."""
     data_dir = tmp_path / "library"
     data_dir.mkdir()
@@ -98,9 +92,7 @@ def test_nightly_fails_when_state_db_missing(
     assert str(missing) in history
 
 
-def test_nightly_refuses_bound_scratch_port(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_refuses_bound_scratch_port(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If the scratch port is already bound then nightly exits without touching the occupant."""
     port = free_port()
     data_dir = tmp_path / "library"
@@ -126,9 +118,7 @@ def test_nightly_refuses_bound_scratch_port(
         occupant.wait(timeout=5)
 
 
-def test_nightly_starts_real_engine_and_stops_it(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_starts_real_engine_and_stops_it(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If a real fixture library is available then nightly runs and releases the scratch port."""
     port = free_port()
     data_dir = tmp_path / "fixture-data"
@@ -246,9 +236,7 @@ def test_base_url_starts_no_engine(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         occupant.wait(timeout=5)
 
 
-def test_load_config_does_not_require_machine_label(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_config_does_not_require_machine_label(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The health path never attributes a ledger entry to a machine (round 4,
     P1/BLOCKING): Air's already-installed com.af.perf-kpi-health plist
     predates MDT_PERF_KPI_MACHINE entirely, so requiring it inside
@@ -262,9 +250,7 @@ def test_load_config_does_not_require_machine_label(
     assert config.machine == ""
 
 
-def test_require_machine_label_raises_when_unset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_require_machine_label_raises_when_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """cmd_nightly's own guard (require_machine_label) still fails loud
     before doing any nightly work when the label truly is missing."""
     nightly_env(monkeypatch, tmp_path)

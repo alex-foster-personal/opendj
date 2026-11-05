@@ -1,0 +1,5 @@
+{
+ "id": "positive-control-low-contrast",
+ "tokens": {"color": {"panel": "#1a1c20", "label": "#33363c"}},
+ "contrast_pairs": [["label", "panel", "text"]]
+}

@@ -33,6 +33,7 @@ the winning write actually named).
      [then] a soft-deleted-but-present track logs nothing at all, since it
      is no longer skipped [else broken].
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,14 +69,18 @@ def _seed_playlist(conn, playlist_id: str) -> None:
 def _member(columns: tuple[str, ...], playlist_id: str, stable_id: str, position: int) -> dict:
     row = {c: None for c in columns}
     row.update(
-        playlist_id=playlist_id, stable_id=stable_id, position=position,
-        updated_at=NOW, origin_device_id=_DEV,
+        playlist_id=playlist_id,
+        stable_id=stable_id,
+        position=position,
+        updated_at=NOW,
+        origin_device_id=_DEV,
     )
     return row
 
 
 def test_a_soft_deleted_tracks_row_is_still_inserted(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The bundle is written verbatim: a live and a soft-deleted track's
     memberships both land, and neither logs a skip."""
@@ -92,22 +97,21 @@ def test_a_soft_deleted_tracks_row_is_still_inserted(
         with caplog.at_level(logging.WARNING, logger="apps.sync_hub.engine"):
             _replace_members(conn, "pl1", members)
         rows = conn.execute(
-            "SELECT stable_id FROM playlist_memberships WHERE playlist_id=? "
-            "ORDER BY position",
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id=? ORDER BY position",
             ("pl1",),
         ).fetchall()
         assert [r[0] for r in rows] == ["trk-live", "trk-gone"]
         messages = [r.getMessage() for r in caplog.records]
         assert not any("trk-gone" in m for m in messages), (
-            f"a soft-deleted-but-present track must not be skipped or "
-            f"logged as skipped: {messages}"
+            f"a soft-deleted-but-present track must not be skipped or logged as skipped: {messages}"
         )
     finally:
         conn.close()
 
 
 def test_a_never_arrived_track_is_still_skipped(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Control: a track this machine has never heard of at all is still
     skipped (FK safety -- the fix above must not over-admit)."""
@@ -128,8 +132,6 @@ def test_a_never_arrived_track_is_still_skipped(
         ).fetchall()
         assert [r[0] for r in rows] == ["trk-live"]
         messages = [r.getMessage() for r in caplog.records]
-        assert any(
-            "trk-unknown" in m and "not here yet" in m for m in messages
-        )
+        assert any("trk-unknown" in m and "not here yet" in m for m in messages)
     finally:
         conn.close()

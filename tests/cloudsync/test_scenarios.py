@@ -1,5 +1,5 @@
 """Fast-lane pytest wrapper over every scenario in ``tests/cloudsync/scenarios/``
-(``specs/design_decision_07.md`` point 3).
+(``(private path)`` point 3).
 
 Each YAML file becomes one parametrized test id, run in sim mode -- N data
 dirs behind one in-process hub, the same non-mock pattern as
@@ -16,6 +16,7 @@ Acceptance criteria:
   error, a scenario author's typo would silently run against the wrong
   topology -- broken.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,9 +41,7 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MDT_IS_HUB", raising=False)
 
 
-@pytest.mark.parametrize(
-    "scenario_path", _SCENARIO_PATHS, ids=[path.stem for path in _SCENARIO_PATHS]
-)
+@pytest.mark.parametrize("scenario_path", _SCENARIO_PATHS, ids=[path.stem for path in _SCENARIO_PATHS])
 def test_scenario_converges_in_sim_mode(scenario_path: Path, tmp_path: Path) -> None:
     """Load one scenario and run it to completion in sim mode."""
     scenario = load_scenario(scenario_path)

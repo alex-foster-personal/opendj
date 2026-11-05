@@ -5,38 +5,39 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { appVersionFromTauriConf, TAURI_CONF_REL } from '../../vite-app-version.ts';
+import { appVersionFromAppPackage, APP_PACKAGE_REL } from '../../vite-app-version.ts';
 
 // N12, public-launch sweep (Wed 7 Oct 2026): the public 1.0.0-alpha.1 build
 // reported 0.1.0 from the engine, Settings and the usage heartbeat. Every
-// surface now reads tauri.conf.json `version`; these tests hold the mirrors.
+// surface now reads apps/desktop/electron/package.json `version`; these tests
+// hold the mirrors.
 const REPO = fileURLToPath(new URL('../../../../../', import.meta.url));
-const TAURI_VERSION = JSON.parse(readFileSync(join(REPO, TAURI_CONF_REL), 'utf8')).version;
+const APP_VERSION = JSON.parse(readFileSync(join(REPO, APP_PACKAGE_REL), 'utf8')).version;
 
-test('the bundle reads its version from tauri.conf.json', () => {
-	assert.equal(typeof TAURI_VERSION, 'string');
-	assert.equal(appVersionFromTauriConf(REPO), TAURI_VERSION);
+test('the bundle reads its version from the app package.json', () => {
+	assert.equal(typeof APP_VERSION, 'string');
+	assert.equal(appVersionFromAppPackage(REPO), APP_VERSION);
 });
 
-test('a tauri.conf.json without a version fails the build instead of guessing', () => {
+test('an app package.json without a version fails the build instead of guessing', () => {
 	const root = mkdtempSync(join(tmpdir(), 'app-version-'));
-	mkdirSync(join(root, 'apps/desktop/src-tauri'), { recursive: true });
-	writeFileSync(join(root, TAURI_CONF_REL), JSON.stringify({ productName: 'x' }));
-	assert.throws(() => appVersionFromTauriConf(root), /no non-empty string "version"/);
+	mkdirSync(join(root, 'apps/desktop/electron'), { recursive: true });
+	writeFileSync(join(root, APP_PACKAGE_REL), JSON.stringify({ productName: 'x' }));
+	assert.throws(() => appVersionFromAppPackage(root), /no non-empty string "version"/);
 });
 
-test('control: another version in tauri.conf.json is what the bundle reports', () => {
+test('control: another version in the app package.json is what the bundle reports', () => {
 	const root = mkdtempSync(join(tmpdir(), 'app-version-'));
-	mkdirSync(join(root, 'apps/desktop/src-tauri'), { recursive: true });
-	writeFileSync(join(root, TAURI_CONF_REL), JSON.stringify({ version: '9.9.9-beta.3' }));
-	assert.equal(appVersionFromTauriConf(root), '9.9.9-beta.3');
+	mkdirSync(join(root, 'apps/desktop/electron'), { recursive: true });
+	writeFileSync(join(root, APP_PACKAGE_REL), JSON.stringify({ version: '9.9.9-beta.3' }));
+	assert.equal(appVersionFromAppPackage(root), '9.9.9-beta.3');
 });
 
-test('the Electron shell reports the same app version (app.getVersion reads its package.json)', () => {
-	const electron = JSON.parse(readFileSync(join(REPO, 'apps/desktop/electron/package.json'), 'utf8'));
+test('the Tauri shell still reports the same app version while it ships', () => {
+	const tauri = JSON.parse(readFileSync(join(REPO, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
 	assert.equal(
-		electron.version,
-		TAURI_VERSION,
-		'bump apps/desktop/electron/package.json "version" together with tauri.conf.json'
+		tauri.version,
+		APP_VERSION,
+		'bump apps/desktop/src-tauri/tauri.conf.json "version" together with apps/desktop/electron/package.json'
 	);
 });

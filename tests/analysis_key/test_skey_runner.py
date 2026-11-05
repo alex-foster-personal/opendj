@@ -8,6 +8,7 @@ gate: an explicit environment variable rather than a try/except on an import,
 because a test that skips itself when something is broken is a check that
 cannot fail.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,16 +26,11 @@ RUNNER = os.path.join(REPO_ROOT, "apps", "analysis_key", "skey_runner.py")
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MDT_KEY_MODEL_TESTS") != "1",
-    reason=(
-        "needs uv, a network fetch of S-KEY, and about a minute of CPU; "
-        "set MDT_KEY_MODEL_TESTS=1 to run"
-    ),
+    reason=("needs uv, a network fetch of S-KEY, and about a minute of CPU; set MDT_KEY_MODEL_TESTS=1 to run"),
 )
 
 
-def _write_synthetic_tone(
-    path: str, freq_hz: float = 220.0, seconds: float = 5.0, sr: int = 44100
-) -> None:
+def _write_synthetic_tone(path: str, freq_hz: float = 220.0, seconds: float = 5.0, sr: int = 44100) -> None:
     n = int(sr * seconds)
     with wave.open(path, "w") as fh:
         fh.setnchannels(1)
@@ -69,10 +65,30 @@ def test_skey_runner_produces_a_key_and_reports_onnx_export_attempts(tmp_path) -
     track = payload["results"][audio_path]
     assert track["error"] is None
     assert track["label"] in {
-        "A Major", "Bb Major", "B Major", "C Major", "C# Major", "D Major", "D# Major",
-        "E Major", "F Major", "F# Major", "G Major", "G# Major",
-        "B minor", "C minor", "C# minor", "D minor", "D# minor", "E minor",
-        "F minor", "F# minor", "G minor", "G# minor", "A minor", "Bb minor",
+        "A Major",
+        "Bb Major",
+        "B Major",
+        "C Major",
+        "C# Major",
+        "D Major",
+        "D# Major",
+        "E Major",
+        "F Major",
+        "F# Major",
+        "G Major",
+        "G# Major",
+        "B minor",
+        "C minor",
+        "C# minor",
+        "D minor",
+        "D# minor",
+        "E minor",
+        "F minor",
+        "F# minor",
+        "G minor",
+        "G# minor",
+        "A minor",
+        "Bb minor",
     }
     assert track["key_rekordbox_style"]
 
@@ -95,8 +111,16 @@ def test_skey_runner_skip_onnx_export_flag(tmp_path) -> None:
 
     result = subprocess.run(
         [
-            "uv", "run", RUNNER, "--audio", audio_path, "--out", out_path,
-            "--device", "cpu", "--skip-onnx-export",
+            "uv",
+            "run",
+            RUNNER,
+            "--audio",
+            audio_path,
+            "--out",
+            out_path,
+            "--device",
+            "cpu",
+            "--skip-onnx-export",
         ],
         cwd=REPO_ROOT,
         capture_output=True,

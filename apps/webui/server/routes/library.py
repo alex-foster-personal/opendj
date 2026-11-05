@@ -155,6 +155,7 @@ def post_row_assets(
                 artwork_available=r["artwork_available"],
                 artwork_status=r["artwork_status"],
                 stems=r["stems"],
+                tempo=r["tempo_curve"],
             )
             for r in rows
         },

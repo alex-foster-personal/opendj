@@ -25,7 +25,16 @@ const PAGE = { tagName: 'DIV', getAttribute: () => null };
 const TEXT = { tagName: 'INPUT', type: 'text', getAttribute: () => null };
 
 function key(k, extra = {}) {
-	return { code: '', key: k, target: PAGE, metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, ...extra };
+	return {
+		code: '',
+		key: k,
+		target: PAGE,
+		metaKey: true,
+		ctrlKey: false,
+		altKey: false,
+		shiftKey: false,
+		...extra
+	};
 }
 const ON = { gridJump: true };
 const resolve = (e, ctx = ON) => routing.resolvePerformanceShortcutAction(e, ctx);
@@ -38,8 +47,16 @@ test('flag off: Cmd+arrows stay unbound', () => {
 test('Cmd/Ctrl+Right and Left jump 4 bars, Shift 8', () => {
 	assert.deepEqual(resolve(key('ArrowRight')), { kind: 'grid-jump', bars: 4, repeat: false });
 	assert.deepEqual(resolve(key('ArrowLeft')), { kind: 'grid-jump', bars: -4, repeat: false });
-	assert.deepEqual(resolve(key('ArrowRight', { shiftKey: true })), { kind: 'grid-jump', bars: 8, repeat: false });
-	assert.deepEqual(resolve(key('ArrowLeft', { metaKey: false, ctrlKey: true })), { kind: 'grid-jump', bars: -4, repeat: false });
+	assert.deepEqual(resolve(key('ArrowRight', { shiftKey: true })), {
+		kind: 'grid-jump',
+		bars: 8,
+		repeat: false
+	});
+	assert.deepEqual(resolve(key('ArrowLeft', { metaKey: false, ctrlKey: true })), {
+		kind: 'grid-jump',
+		bars: -4,
+		repeat: false
+	});
 });
 
 test('WASD: Cmd+D mirrors Right; Cmd+A mirrors Left only after a deck press', () => {

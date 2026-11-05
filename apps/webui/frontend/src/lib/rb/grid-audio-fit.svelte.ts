@@ -39,7 +39,9 @@ const _entries: Record<string, Entry> = $state({});
 
 async function _request(stableId: string): Promise<void> {
 	try {
-		const response = await fetch(`${API_BASE}/api/v1/beatgrid-flags/${encodeURIComponent(stableId)}/audio-fit`);
+		const response = await fetch(
+			`${API_BASE}/api/v1/beatgrid-flags/${encodeURIComponent(stableId)}/audio-fit`
+		);
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${await response.text()}`);
 		_entries[stableId] = { state: 'done', fit: (await response.json()) as GridAudioFit };
 	} catch (error: unknown) {
@@ -66,7 +68,10 @@ export function gridAudioFitFor(stableId: string | null): GridAudioFit | null {
  * The sentence the BEAT SYNC warning shows: the audio-fit finding (when the
  * deck must act on it) before the grid-shape one, joined. Pure.
  */
-export function deckGridWarningText(shapeWarning: string | null, fit: GridAudioFit | null): string | null {
+export function deckGridWarningText(
+	shapeWarning: string | null,
+	fit: GridAudioFit | null
+): string | null {
 	const audio = fit !== null && fit.deck_warning && fit.message ? fit.message : null;
 	if (audio === null) return shapeWarning;
 	if (shapeWarning === null) return audio;

@@ -320,6 +320,8 @@ test.describe('stretch quality render path', () => {
 		writeManifest();
 		// eslint-disable-next-line no-console
 		console.log(`[manifest] ${manifestPath} (${cellByKey.size} cells)`);
-		expect([...cellByKey.values()].filter((cell) => cell.status === 'ok').length).toBeGreaterThan(0);
+		expect([...cellByKey.values()].filter((cell) => cell.status === 'ok').length).toBeGreaterThan(
+			0
+		);
 	});
 });

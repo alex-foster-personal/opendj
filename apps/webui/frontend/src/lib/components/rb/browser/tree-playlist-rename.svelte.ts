@@ -10,6 +10,7 @@
  */
 import { tick } from 'svelte';
 import type { PlaylistNode } from '$lib/rb/library-types';
+import { isInboxPlaylistId } from './inbox-id';
 
 export class TreePlaylistRename {
 	/** playlist_id currently being renamed inline; null = no row editing. */
@@ -33,7 +34,13 @@ export class TreePlaylistRename {
 
 	async begin(node: PlaylistNode): Promise<void> {
 		if (this.renameOf() === undefined) return;
-		if (node.kind === 'all_tracks' || node.kind === 'missing_tracks' || node.playlist_id === 'all') return;
+		if (
+			node.kind === 'all_tracks' ||
+			node.kind === 'missing_tracks' ||
+			node.playlist_id === 'all' ||
+			isInboxPlaylistId(node.playlist_id)
+		)
+			return;
 		this.editingId = node.playlist_id;
 		this.editDraft = node.name;
 		await tick();

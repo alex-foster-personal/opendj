@@ -6,7 +6,9 @@ import { buildFlags } from '$lib/api/store-build.svelte';
 
 export const GRID_JUMP_FLAG_ID = 'deck.snapped_jump';
 
-export function gridJumpEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
+export function gridJumpEnabledIn(
+	flags: readonly { flag_id: string; enabled: boolean }[]
+): boolean {
 	return flags.find((flag) => flag.flag_id === GRID_JUMP_FLAG_ID)?.enabled === true;
 }
 

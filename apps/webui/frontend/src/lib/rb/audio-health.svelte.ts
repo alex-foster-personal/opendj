@@ -54,10 +54,23 @@ export function hzMeterQualityOk(meterHz: number, tickHz: number): boolean {
  * inspectable through UI and public IPC. */
 const WAVEFORM_STUTTER_WINDOW_MS = 2000;
 const WAVEFORM_STUTTER_GAP_MS = 34;
-interface WavePaintCadence { previousMs: number; frames: number; stutters: number; worstGapMs: number; }
+interface WavePaintCadence {
+	previousMs: number;
+	frames: number;
+	stutters: number;
+	worstGapMs: number;
+}
 const _waveRows = new Map<number, WavePaintCadence>();
 let _waveWindowStartMs: number | null = null;
-let _waveSnapshot = $state({ active: false, frames: 0, stutters: 0, worst_gap_ms: 0, elapsed_ms: 0, window_ms: WAVEFORM_STUTTER_WINDOW_MS, threshold_ms: WAVEFORM_STUTTER_GAP_MS });
+let _waveSnapshot = $state({
+	active: false,
+	frames: 0,
+	stutters: 0,
+	worst_gap_ms: 0,
+	elapsed_ms: 0,
+	window_ms: WAVEFORM_STUTTER_WINDOW_MS,
+	threshold_ms: WAVEFORM_STUTTER_GAP_MS
+});
 
 function _publishWaveformWindow(elapsedMs = 0): void {
 	const rows = [..._waveRows.values()];
@@ -74,7 +87,8 @@ function _publishWaveformWindow(elapsedMs = 0): void {
 
 /** Called from the actual WaveRow rAF callback with its browser timestamp. */
 export function noteWaveformPaintFrame(deck: number, nowMs: number): void {
-	if (!Number.isFinite(nowMs)) throw new TypeError(`waveform paint timestamp must be finite, got ${nowMs}`);
+	if (!Number.isFinite(nowMs))
+		throw new TypeError(`waveform paint timestamp must be finite, got ${nowMs}`);
 	let row = _waveRows.get(deck);
 	if (row === undefined) {
 		row = { previousMs: nowMs, frames: 1, stutters: 0, worstGapMs: 0 };

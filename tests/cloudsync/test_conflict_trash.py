@@ -64,17 +64,13 @@ def test_store_is_idempotent_and_rejects_expired_restore() -> None:
     s3 = InMemoryAssetS3()
 
     first = conflict_trash.store_record(_cfg(), s3, record)
-    second = conflict_trash.store_record(
-        _cfg(), s3, replace(record, captured_at=now + timedelta(minutes=1))
-    )
+    second = conflict_trash.store_record(_cfg(), s3, replace(record, captured_at=now + timedelta(minutes=1)))
 
     assert first.uploaded is True
     assert second.uploaded is False
     assert conflict_trash.restore_record(_cfg(), s3, first.object_key, now=now) == record
     with pytest.raises(conflict_trash.ExpiredTrashError, match="expired"):
-        conflict_trash.restore_record(
-            _cfg(), s3, first.object_key, now=now + timedelta(days=14, microseconds=1)
-        )
+        conflict_trash.restore_record(_cfg(), s3, first.object_key, now=now + timedelta(days=14, microseconds=1))
 
 
 @pytest.mark.live_r2
@@ -85,6 +81,7 @@ def test_live_r2_conflict_trash_round_trip() -> None:
     cfg = live_r2_config()
     if cfg is None:
         pytest.skip("live R2 creds absent; set " + ", ".join(LIVE_R2_ENV_VARS))
+    assert cfg is not None
     pytest.importorskip("boto3")
     s3 = asset_store.boto3_asset_client(cfg)
     record = conflict_trash.TrashRecord(
@@ -99,9 +96,6 @@ def test_live_r2_conflict_trash_round_trip() -> None:
     )
     result = conflict_trash.store_record(cfg, s3, record)
     try:
-        assert (
-            conflict_trash.restore_record(cfg, s3, result.object_key, now=datetime.now(UTC))
-            == record
-        )
+        assert conflict_trash.restore_record(cfg, s3, result.object_key, now=datetime.now(UTC)) == record
     finally:
         assert s3.delete_object(cfg.state_bucket, result.object_key)

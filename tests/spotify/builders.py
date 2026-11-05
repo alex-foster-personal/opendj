@@ -1,4 +1,5 @@
 """Shared Spotify test object builders (tests only)."""
+
 from __future__ import annotations
 
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack

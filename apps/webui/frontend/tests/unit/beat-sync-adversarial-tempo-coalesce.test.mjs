@@ -135,7 +135,12 @@ test('S1: a sync command on another deck is a barrier too; a command on an unrel
 	const last = tempo(1, 1.04);
 	await drain();
 	assert.deepEqual(await Promise.all([first, pinned, master, overtaken, eqOther, last]), [
-		1.01, 1.02, 'master', 'skipped', 'eq2', 1.04
+		1.01,
+		1.02,
+		'master',
+		'skipped',
+		'eq2',
+		1.04
 	]);
 	assert.deepEqual(executed, ['tempo1=1.01', 'tempo1=1.02', 'master', 'eq2', 'tempo1=1.04']);
 });
@@ -194,11 +199,16 @@ test('S1 control: a non-tempo command on the same deck is never skipped', async 
 
 test('S1 source pin: the dispatcher gates _execute on the coalescer', () => {
 	// PLAY-18 routes the queued body through _executeAs (it records the command source).
-	assert.match(DISPATCHER, /if \(_tempoCoalescer\.runs\(deck, tempoTicket\)\) \{\s*await _executeAs\(command, pressT0Ms, source\);/);
+	assert.match(
+		DISPATCHER,
+		/if \(_tempoCoalescer\.runs\(deck, tempoTicket\)\) \{\s*await _executeAs\(command, pressT0Ms, source\);/
+	);
 });
 
 test('S1 source pin: the ticket is taken on the queued path, after the unqueued branches', () => {
-	const mark = DISPATCHER.indexOf("_tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');");
+	const mark = DISPATCHER.indexOf(
+		"_tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');"
+	);
 	assert.ok(mark > 0, 'the dispatcher marks every queued command with the coalescer');
 	assert.ok(mark > DISPATCHER.indexOf('if (scopes === null) {'), 'mark after the unqueued branch');
 	assert.ok(mark < DISPATCHER.indexOf('_commandScheduler.run(scopes, run)'), 'mark before queuing');

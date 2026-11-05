@@ -31,10 +31,15 @@ export function requestTempoStability(stableId: string, key: string): void {
 			params: { path: { stable_id: stableId } }
 		})
 		.then(({ data, error }) => {
-			if (data === undefined) throw new Error(`tempo stability: ${JSON.stringify(error ?? 'empty response')}`);
+			if (data === undefined)
+				throw new Error(`tempo stability: ${JSON.stringify(error ?? 'empty response')}`);
 			_entries[key] = { state: 'ready', value: data };
 		})
 		.catch((err: unknown) => {
-			_entries[key] = { state: 'error', message: err instanceof Error ? err.message : String(err), at: Date.now() };
+			_entries[key] = {
+				state: 'error',
+				message: err instanceof Error ? err.message : String(err),
+				at: Date.now()
+			};
 		});
 }

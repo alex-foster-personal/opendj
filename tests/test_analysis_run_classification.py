@@ -22,6 +22,7 @@ Regression lines:
   - if an analysis install with no librosa exits 5 rather than 4 then broken
   - if that install hides a lost target from the drain then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -40,9 +41,7 @@ from apps.analysis.backends import DEFAULT_BACKEND
 
 
 @pytest.fixture()
-def analyzer_config_was_never_installed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Iterator[Path]:
+def analyzer_config_was_never_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
     """Point the production config loader at a config that is not there.
 
     ``LibrosaBackend.analyze`` calls ``config.load_config()`` on every track,
@@ -90,7 +89,8 @@ def test_a_backend_setup_failure_is_not_reported_as_a_failed_track(
 @pytest.mark.requires_audio_stack
 @pytest.mark.requirement("PARITY-06")
 def test_the_cli_exits_internal_error_when_the_backend_cannot_be_set_up(
-    analyzer_config_was_never_installed, tmp_path: Path,
+    analyzer_config_was_never_installed,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """End to end: the same fault must reach the caller as status 5, not 1.
@@ -101,13 +101,18 @@ def test_the_cli_exits_internal_error_when_the_backend_cannot_be_set_up(
     audio = tmp_path / "fine.mp3"
     audio.write_bytes(b"\x00" * 32)
 
-    code = run_mod.main([
-        "--backend", "librosa", "--all", "--files", str(audio),
-    ])
+    code = run_mod.main(
+        [
+            "--backend",
+            "librosa",
+            "--all",
+            "--files",
+            str(audio),
+        ]
+    )
 
     assert code == run_mod.EXIT_INTERNAL_ERROR, (
-        f"a machine-wide setup failure exited {code}; "
-        f"{run_mod.EXIT_TRACK_FAILURES} would invite a retry per chunk"
+        f"a machine-wide setup failure exited {code}; {run_mod.EXIT_TRACK_FAILURES} would invite a retry per chunk"
     )
 
 
@@ -137,9 +142,7 @@ def test_bytes_every_installed_decoder_rejects_are_blamed_on_the_file(
 
 @pytest.mark.requires_audio_stack
 @pytest.mark.requirement("PARITY-06")
-def test_a_misconfigured_sample_rate_is_not_blamed_on_the_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_misconfigured_sample_rate_is_not_blamed_on_the_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A bad config value fails INSIDE the decode, and is still not per-file.
 
     This is the case the allow-list exists for. ``analyzer.sample_rate_hz``
@@ -161,9 +164,7 @@ def test_a_misconfigured_sample_rate_is_not_blamed_on_the_file(
     from apps.analysis.backends.base import TrackUnreadable
     from apps.analysis.backends.librosa import LibrosaBackend
 
-    shipped = yaml.safe_load(
-        (Path(analysis_config.__file__).parent / "config.yaml").read_text()
-    )
+    shipped = yaml.safe_load((Path(analysis_config.__file__).parent / "config.yaml").read_text())
     shipped["analyzer"]["sample_rate_hz"] = 0
     broken = tmp_path / "config.yaml"
     broken.write_text(yaml.safe_dump(shipped))
@@ -186,9 +187,7 @@ def test_a_misconfigured_sample_rate_is_not_blamed_on_the_file(
 
 
 @pytest.mark.requirement("PARITY-06")
-def test_a_lost_target_outranks_a_backend_that_could_not_run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_lost_target_outranks_a_backend_that_could_not_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Two true things at once, and only one of them clears the booking.
 
     A chunk can both lose a target before it is queued AND find the analysis
@@ -218,14 +217,24 @@ def test_a_lost_target_outranks_a_backend_that_could_not_run(
     present = tmp_path / "here.mp3"
     present.write_bytes(b"\x00" * 32)
     handoff = tmp_path / "chunk.pairs.json"
-    handoff.write_text(json.dumps([
-        ["sid00010", str(present)],
-        ["sid00011", str(tmp_path / "gone.mp3")],
-    ]))
+    handoff.write_text(
+        json.dumps(
+            [
+                ["sid00010", str(present)],
+                ["sid00011", str(tmp_path / "gone.mp3")],
+            ]
+        )
+    )
 
-    code = run_mod.main([
-        "--backend", "mik", "--all", "--pairs-json", str(handoff),
-    ])
+    code = run_mod.main(
+        [
+            "--backend",
+            "mik",
+            "--all",
+            "--pairs-json",
+            str(handoff),
+        ]
+    )
 
     assert code == run_mod.EXIT_MISSING_TARGETS, (
         f"exited {code}; only {run_mod.EXIT_MISSING_TARGETS} makes the ingest "
@@ -325,14 +334,17 @@ def test_the_cli_reports_a_post_admission_loss_as_a_missing_target(
     handoff.write_text(json.dumps([["sid00021", str(doomed)]]))
 
     with _losing_one_target_after_admission(doomed):
-        code = run_mod.main([
-            "--backend", DEFAULT_BACKEND, "--all", "--pairs-json", str(handoff),
-        ])
+        code = run_mod.main(
+            [
+                "--backend",
+                DEFAULT_BACKEND,
+                "--all",
+                "--pairs-json",
+                str(handoff),
+            ]
+        )
 
-    assert not doomed.exists(), (
-        "fixture precondition: the eviction never fired, so this asserts "
-        "nothing about the race"
-    )
+    assert not doomed.exists(), "fixture precondition: the eviction never fired, so this asserts nothing about the race"
     assert code == run_mod.EXIT_MISSING_TARGETS, (
         f"exited {code}; only {run_mod.EXIT_MISSING_TARGETS} makes the ingest "
         "worker clear the booking, so this target would never be retried"
@@ -407,16 +419,19 @@ def test_the_cli_reports_a_denied_read_with_the_systemic_status(
     sf.write(denied, np.full(22050, 0.1, dtype="float32"), 22050)
     denied.chmod(0o000)
     if os.access(denied, os.R_OK):
-        pytest.skip(
-            "UNAVAILABLE: this process can read a mode-000 file, so the "
-            "denial cannot be made real here."
-        )
+        pytest.skip("UNAVAILABLE: this process can read a mode-000 file, so the denial cannot be made real here.")
     handoff = tmp_path / "chunk.pairs.json"
     handoff.write_text(json.dumps([["sid00031", str(denied)]]))
 
-    code = run_mod.main([
-        "--backend", DEFAULT_BACKEND, "--all", "--pairs-json", str(handoff),
-    ])
+    code = run_mod.main(
+        [
+            "--backend",
+            DEFAULT_BACKEND,
+            "--all",
+            "--pairs-json",
+            str(handoff),
+        ]
+    )
 
     assert code == run_mod.EXIT_INTERNAL_ERROR, (
         f"exited {code}; only a systemic status stops the chunk loop, and "
@@ -425,9 +440,7 @@ def test_the_cli_reports_a_denied_read_with_the_systemic_status(
 
 
 @pytest.fixture()
-def librosa_was_never_installed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def librosa_was_never_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Make this process an install without the ``analysis`` extra.
 
     That is a real deployment shape, and the one a ``uv sync --extra dev``
@@ -443,9 +456,7 @@ def librosa_was_never_installed(
 
 
 @pytest.mark.requirement("PARITY-06")
-def test_an_install_without_librosa_exits_backend_unavailable(
-    librosa_was_never_installed, tmp_path: Path
-) -> None:
+def test_an_install_without_librosa_exits_backend_unavailable(librosa_was_never_installed, tmp_path: Path) -> None:
     """A missing analyzer is a fact about this machine, so it is status 4.
 
     5 also stops the drain, but it tells the user the run "came apart"; 4 is
@@ -456,20 +467,23 @@ def test_an_install_without_librosa_exits_backend_unavailable(
     handoff = tmp_path / "chunk.pairs.json"
     handoff.write_text(json.dumps([["sid00020", str(present)]]))
 
-    code = run_mod.main([
-        "--backend", "librosa", "--all", "--pairs-json", str(handoff),
-    ])
+    code = run_mod.main(
+        [
+            "--backend",
+            "librosa",
+            "--all",
+            "--pairs-json",
+            str(handoff),
+        ]
+    )
 
     assert code == run_mod.EXIT_BACKEND_UNAVAILABLE, (
-        f"exited {code}; a missing analysis extra is "
-        f"{run_mod.EXIT_BACKEND_UNAVAILABLE}, not an internal fault"
+        f"exited {code}; a missing analysis extra is {run_mod.EXIT_BACKEND_UNAVAILABLE}, not an internal fault"
     )
 
 
 @pytest.mark.requirement("PARITY-06")
-def test_a_lost_target_outranks_an_install_without_librosa(
-    librosa_was_never_installed, tmp_path: Path
-) -> None:
+def test_a_lost_target_outranks_an_install_without_librosa(librosa_was_never_installed, tmp_path: Path) -> None:
     """The precedence above, for the failure the warm-up raises first.
 
     ``test_a_lost_target_outranks_a_backend_that_could_not_run`` pins it for a
@@ -482,14 +496,24 @@ def test_a_lost_target_outranks_an_install_without_librosa(
     present = tmp_path / "here.mp3"
     present.write_bytes(b"\x00" * 32)
     handoff = tmp_path / "chunk.pairs.json"
-    handoff.write_text(json.dumps([
-        ["sid00021", str(present)],
-        ["sid00022", str(tmp_path / "gone.mp3")],
-    ]))
+    handoff.write_text(
+        json.dumps(
+            [
+                ["sid00021", str(present)],
+                ["sid00022", str(tmp_path / "gone.mp3")],
+            ]
+        )
+    )
 
-    code = run_mod.main([
-        "--backend", "librosa", "--all", "--pairs-json", str(handoff),
-    ])
+    code = run_mod.main(
+        [
+            "--backend",
+            "librosa",
+            "--all",
+            "--pairs-json",
+            str(handoff),
+        ]
+    )
 
     assert code == run_mod.EXIT_MISSING_TARGETS, (
         f"exited {code}; only {run_mod.EXIT_MISSING_TARGETS} makes the ingest "

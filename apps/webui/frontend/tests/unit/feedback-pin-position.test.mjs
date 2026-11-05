@@ -69,7 +69,11 @@ describe('resolvePinPosition tiers', () => {
 		assert.equal(r.via, null);
 		assert.deepEqual([r.x, r.y, r.x_pct, r.y_pct], [125, 320, 12.5, 40]);
 		assert.deepEqual(calls, [], 'an old pin was re-resolved against its diagnostic anchor');
-		assert.equal(pos.resolvedPinStyle(old, r), feedback.pinStyle(old), 'old pin style string changed');
+		assert.equal(
+			pos.resolvedPinStyle(old, r),
+			feedback.pinStyle(old),
+			'old pin style string changed'
+		);
 	});
 
 	it('an old pin carrying null/empty capture fields (dumped by a newer daemon) still draws as before', () => {
@@ -137,20 +141,37 @@ describe('resolvePinPosition tiers', () => {
 	});
 
 	it('an anchor-only capture resolving on its anchor is NOT a fallback', () => {
-		const pin = { x_pct: 1, y_pct: 1, anchor: '.x', element_offset: null, nearby_anchors: [CAPTURED.nearby_anchors[1]] };
-		const r = pos.resolvePinPosition(pin, dom({ '[data-testid="mixer"]': { left: 600, top: 100, width: 5, height: 5 } }).measure, VIEWPORT);
+		const pin = {
+			x_pct: 1,
+			y_pct: 1,
+			anchor: '.x',
+			element_offset: null,
+			nearby_anchors: [CAPTURED.nearby_anchors[1]]
+		};
+		const r = pos.resolvePinPosition(
+			pin,
+			dom({ '[data-testid="mixer"]': { left: 600, top: 100, width: 5, height: 5 } }).measure,
+			VIEWPORT
+		);
 		assert.equal(r.tier, 'anchor');
 		assert.equal(r.fallback, false);
 	});
 
 	it('an element offset with no anchor selector cannot claim tier 1', () => {
 		const pin = { ...CAPTURED, anchor: null };
-		const r = pos.resolvePinPosition(pin, dom({ '#topbar': { left: 0, top: 0, width: 10, height: 10 } }).measure, VIEWPORT);
+		const r = pos.resolvePinPosition(
+			pin,
+			dom({ '#topbar': { left: 0, top: 0, width: 10, height: 10 } }).measure,
+			VIEWPORT
+		);
 		assert.equal(r.tier, 'anchor');
 	});
 
 	it('refuses a fake viewport instead of dividing by zero', () => {
-		assert.throws(() => pos.resolvePinPosition(CAPTURED, dom({}).measure, { w: 0, h: 800 }), /real viewport/);
+		assert.throws(
+			() => pos.resolvePinPosition(CAPTURED, dom({}).measure, { w: 0, h: 800 }),
+			/real viewport/
+		);
 	});
 });
 
@@ -169,7 +190,10 @@ describe('buildPinPlacement', () => {
 	});
 
 	it('keeps at most three unique neighbours, closest offset first, never the primary', () => {
-		const n = (selector, left, top, w = 10, h = 10) => ({ selector, rect: { left, top, width: w, height: h } });
+		const n = (selector, left, top, w = 10, h = 10) => ({
+			selector,
+			rect: { left, top, width: w, height: h }
+		});
 		const p = pos.buildPinPlacement({ x: 200, y: 250 }, primary, [
 			n('#deck-a', 190, 240),
 			n('#far', 900, 700),
@@ -200,14 +224,26 @@ describe('parsePinPlacement and the parked draft', () => {
 			nearby_anchors: []
 		});
 		assert.equal(pos.parsePinPlacement(undefined), null);
-		assert.equal(pos.parsePinPlacement({ element_offset: { dx_pct: 'x', dy_pct: 1 }, nearby_anchors: [] }), null);
-		assert.equal(pos.parsePinPlacement({ element_offset: null, nearby_anchors: [{ selector: '#a' }] }), null);
+		assert.equal(
+			pos.parsePinPlacement({ element_offset: { dx_pct: 'x', dy_pct: 1 }, nearby_anchors: [] }),
+			null
+		);
+		assert.equal(
+			pos.parsePinPlacement({ element_offset: null, nearby_anchors: [{ selector: '#a' }] }),
+			null
+		);
 		const four = Array.from({ length: 4 }, (_, i) => ({ selector: `#a${i}`, dx_px: 0, dy_px: 0 }));
 		assert.equal(pos.parsePinPlacement({ element_offset: null, nearby_anchors: four }), null);
 	});
 
 	it('a refresh mid-draft keeps the placement; a corrupt one drops only the placement', () => {
-		const draft = { point: { x_pct: 1, y_pct: 2 }, anchor: '#deck-a', text: 'hi', page: '/', placement };
+		const draft = {
+			point: { x_pct: 1, y_pct: 2 },
+			anchor: '#deck-a',
+			text: 'hi',
+			page: '/',
+			placement
+		};
 		const ok = restore.restoreParkedPinDraft(JSON.stringify(draft), '/', { width: 10, height: 10 });
 		assert.deepEqual(ok.draft.placement, placement);
 		const bad = restore.restoreParkedPinDraft(
@@ -217,21 +253,35 @@ describe('parsePinPlacement and the parked draft', () => {
 		);
 		assert.equal(bad.draft.text, 'hi', 'a corrupt placement lost the typed text');
 		assert.equal(bad.draft.placement, null);
-		const legacy = restore.restoreParkedPinDraft(JSON.stringify({ ...draft, placement: undefined }), '/', {
-			width: 10,
-			height: 10
-		});
+		const legacy = restore.restoreParkedPinDraft(
+			JSON.stringify({ ...draft, placement: undefined }),
+			'/',
+			{
+				width: 10,
+				height: 10
+			}
+		);
 		assert.equal(legacy.draft.placement, null);
 	});
 });
 
 describe('findUniqueBySelector', () => {
-	const root = (count) => ({ querySelectorAll: () => Array.from({ length: count }, (_, i) => ({ i })) });
+	const root = (count) => ({
+		querySelectorAll: () => Array.from({ length: count }, (_, i) => ({ i }))
+	});
 
 	it('resolves only exactly one match, and refuses selector shapes it did not produce', () => {
 		assert.deepEqual(pos.findUniqueBySelector('#deck-a', root(1)), { i: 0 });
-		assert.equal(pos.findUniqueBySelector('#deck-a', root(2)), null, 'an ambiguous selector resolved');
+		assert.equal(
+			pos.findUniqueBySelector('#deck-a', root(2)),
+			null,
+			'an ambiguous selector resolved'
+		);
 		assert.equal(pos.findUniqueBySelector('#deck-a', root(0)), null);
-		assert.equal(pos.findUniqueBySelector('div > span', root(1)), null, 'an arbitrary CSS selector was run');
+		assert.equal(
+			pos.findUniqueBySelector('div > span', root(1)),
+			null,
+			'an arbitrary CSS selector was run'
+		);
 	});
 });

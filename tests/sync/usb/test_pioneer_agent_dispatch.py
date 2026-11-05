@@ -7,6 +7,7 @@ router + simulated-skip branches for every supported action type.
 
 Requirement: CAT-06.
 """
+
 from __future__ import annotations
 
 import sys
@@ -123,8 +124,10 @@ def test_translate_key_combo_empty_string_emits_waitzero() -> None:
 
 def test_scaled_to_points_rejects_nonpositive_dimensions() -> None:
     geom = DisplayGeometry(
-        pixel_width=1920, pixel_height=1080,
-        point_width=1920, point_height=1080,
+        pixel_width=1920,
+        pixel_height=1080,
+        point_width=1920,
+        point_height=1080,
     )
     with pytest.raises(ValueError):
         scaled_to_points(10, 10, scaled_width=0, scaled_height=10, geometry=geom)
@@ -136,11 +139,17 @@ def test_scaled_to_points_retina_divides_by_backing_scale() -> None:
     # Retina: physical is 2× point. A downsampled 1920×1080 frame maps
     # back to 2× points via (pixel/scaled) × (1/backing_scale) = 1.
     geom = DisplayGeometry(
-        pixel_width=3840, pixel_height=2160,
-        point_width=1920, point_height=1080,
+        pixel_width=3840,
+        pixel_height=2160,
+        point_width=1920,
+        point_height=1080,
     )
     x, y = scaled_to_points(
-        960, 540, scaled_width=1920, scaled_height=1080, geometry=geom,
+        960,
+        540,
+        scaled_width=1920,
+        scaled_height=1080,
+        geometry=geom,
     )
     assert (x, y) == (960, 540)
 
@@ -173,14 +182,15 @@ def test_capture_window_falls_back_to_display_when_no_match(
     # Stub display geometry + feed a raw PNG so the Quartz path never runs.
     def _fake_geom() -> DisplayGeometry:
         return DisplayGeometry(
-            pixel_width=8, pixel_height=4,
-            point_width=8, point_height=4,
+            pixel_width=8,
+            pixel_height=4,
+            point_width=8,
+            point_height=4,
         )
+
     monkeypatch.setattr(aa, "get_display_geometry", _fake_geom)
 
-    _png, meta = aa.capture_window(
-        "rekordbox", downsample_width=100, _raw_bytes=_tiny_png()
-    )
+    _png, meta = aa.capture_window("rekordbox", downsample_width=100, _raw_bytes=_tiny_png())
     assert meta["capture_mode"] == "display"
     assert meta["window_id"] is None
     assert meta["owner_name"] == ""
@@ -199,8 +209,10 @@ def test_capture_window_uses_injected_window_metadata(
         "layer": 0,
     }
     _png, meta = capture_window(
-        "rekordbox", downsample_width=100,
-        _raw_bytes=_tiny_png(), _injected_window=window,
+        "rekordbox",
+        downsample_width=100,
+        _raw_bytes=_tiny_png(),
+        _injected_window=window,
     )
     assert meta["capture_mode"] == "window"
     assert meta["window_id"] == 42
@@ -216,11 +228,17 @@ def test_capture_window_uses_injected_window_metadata(
 
 def test_display_fallback_metadata_carries_window_hints() -> None:
     geom = DisplayGeometry(
-        pixel_width=3840, pixel_height=2160,
-        point_width=1920, point_height=1080,
+        pixel_width=3840,
+        pixel_height=2160,
+        point_width=1920,
+        point_height=1080,
     )
     meta = _display_fallback_metadata(
-        b"", geom, (960, 540), prev_owner="rekordbox", prev_title="Deck",
+        b"",
+        geom,
+        (960, 540),
+        prev_owner="rekordbox",
+        prev_title="Deck",
     )
     assert meta["capture_mode"] == "display"
     assert meta["window_bounds"] == {"x": 0.0, "y": 0.0, "w": 1920.0, "h": 1080.0}
@@ -251,8 +269,11 @@ def _mk_actuator(tmp_path: Path, **kwargs) -> Actuator:
         "backing_scale": 1.0,
     }
     act = Actuator(
-        tr, downsample_width=200, simulated=True,
-        frontmost_app=None, enforce_click_guard=False,
+        tr,
+        downsample_width=200,
+        simulated=True,
+        frontmost_app=None,
+        enforce_click_guard=False,
         **kwargs,
     )
     act._last_capture_meta = meta
@@ -264,9 +285,7 @@ def test_execute_action_right_click_simulated_skips(tmp_path: Path) -> None:
     act = _mk_actuator(tmp_path)
     # With the _mk_actuator metadata (ds 200×150 → phys 400×300, bounds at
     # (0,0)), the click at (10,10) maps to point (20,20).
-    result = act.execute_action(
-        {"action": "right_click", "coordinate": [10, 10]}
-    )
+    result = act.execute_action({"action": "right_click", "coordinate": [10, 10]})
     assert result["ok"] is True
     assert result["skipped"] is True
     assert result["meta"]["point"] == [20, 20]
@@ -274,9 +293,7 @@ def test_execute_action_right_click_simulated_skips(tmp_path: Path) -> None:
 
 def test_execute_action_double_click_simulated_skips(tmp_path: Path) -> None:
     act = _mk_actuator(tmp_path)
-    result = act.execute_action(
-        {"action": "double_click", "coordinate": [10, 10]}
-    )
+    result = act.execute_action({"action": "double_click", "coordinate": [10, 10]})
     assert result["ok"] is True and result["skipped"] is True
 
 
@@ -299,9 +316,7 @@ def test_execute_action_mouse_move_simulated_updates_cursor(
 ) -> None:
     """simulated=True + mouse_move: no cliclick, but cursor state advances."""
     act = _mk_actuator(tmp_path)
-    result = act.execute_action(
-        {"action": "mouse_move", "coordinate": [100, 75]}
-    )
+    result = act.execute_action({"action": "mouse_move", "coordinate": [100, 75]})
     assert result["ok"] is True
     # After mouse_move, _last_cursor should reflect the translated point
     # (100×(400/200), 75×(300/150)) = (200, 150).
@@ -339,11 +354,13 @@ def test_execute_action_key_requires_text(tmp_path: Path) -> None:
 
 def test_execute_action_left_click_drag_simulated_skips(tmp_path: Path) -> None:
     act = _mk_actuator(tmp_path)
-    result = act.execute_action({
-        "action": "left_click_drag",
-        "start_coordinate": [10, 10],
-        "coordinate": [50, 60],
-    })
+    result = act.execute_action(
+        {
+            "action": "left_click_drag",
+            "start_coordinate": [10, 10],
+            "coordinate": [50, 60],
+        }
+    )
     assert result["ok"] is True and result["skipped"] is True
     # Coordinates are translated via window_scaled_to_global_points (×2/×2).
     assert result["meta"]["from"] == [20, 20]
@@ -361,12 +378,14 @@ def test_execute_action_left_click_drag_requires_endpoints(
 
 def test_execute_action_scroll_simulated_skips(tmp_path: Path) -> None:
     act = _mk_actuator(tmp_path)
-    result = act.execute_action({
-        "action": "scroll",
-        "coordinate": [10, 10],
-        "scroll_direction": "down",
-        "scroll_amount": 3,
-    })
+    result = act.execute_action(
+        {
+            "action": "scroll",
+            "coordinate": [10, 10],
+            "scroll_direction": "down",
+            "scroll_amount": 3,
+        }
+    )
     assert result["ok"] is True and result["skipped"] is True
     assert result["meta"]["direction"] == "down"
     assert result["meta"]["amount"] == 3
@@ -377,11 +396,13 @@ def test_execute_action_scroll_simulated_skips(tmp_path: Path) -> None:
 def test_execute_action_scroll_without_coordinate(tmp_path: Path) -> None:
     """Scroll with no coordinate still works (simulated)."""
     act = _mk_actuator(tmp_path)
-    result = act.execute_action({
-        "action": "scroll",
-        "scroll_direction": "up",
-        "scroll_amount": 2,
-    })
+    result = act.execute_action(
+        {
+            "action": "scroll",
+            "scroll_direction": "up",
+            "scroll_amount": 2,
+        }
+    )
     assert result["ok"] is True and result["skipped"] is True
     assert result["meta"]["direction"] == "up"
 
@@ -395,18 +416,24 @@ def test_execute_action_wait_simulated_returns_ok(tmp_path: Path) -> None:
 
 
 def test_execute_action_screenshot_captures_via_simulated_meta(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``screenshot`` action delegates to ``capture()``."""
     act = _mk_actuator(tmp_path)
+
     # Stub capture() so no Quartz path runs; just return a tiny base64 blob.
     def _fake_capture():
         meta = {
             "capture_mode": "window",
             "window_bounds": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
-            "window_id": 0, "owner_name": "", "title": "",
-            "downsample_width": 1, "downsample_height": 1,
-            "physical_width": 1, "physical_height": 1,
+            "window_id": 0,
+            "owner_name": "",
+            "title": "",
+            "downsample_width": 1,
+            "downsample_height": 1,
+            "physical_width": 1,
+            "physical_height": 1,
             "backing_scale": 1.0,
         }
         act._last_capture_meta = meta
@@ -417,6 +444,7 @@ def test_execute_action_screenshot_captures_via_simulated_meta(
             "scaled_size": (1, 1),
             "base64": "QUJD",
         }
+
     monkeypatch.setattr(act, "capture", _fake_capture)
     result = act.execute_action({"action": "screenshot"})
     assert result["ok"] is True
@@ -448,8 +476,10 @@ def test_execute_action_accepts_type_key_instead_of_action(
 def test_window_scaled_to_global_points_with_retina_and_offset() -> None:
     """Window at (1000,500), physical 2× points, click maps to global pt."""
     meta = {
-        "downsample_width": 200, "downsample_height": 150,
-        "physical_width": 400, "physical_height": 300,
+        "downsample_width": 200,
+        "downsample_height": 150,
+        "physical_width": 400,
+        "physical_height": 300,
         "backing_scale": 2.0,
         "window_bounds": {"x": 1000.0, "y": 500.0, "w": 200.0, "h": 150.0},
     }

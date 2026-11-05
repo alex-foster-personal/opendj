@@ -69,9 +69,7 @@ class _PublishLog:
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         if topic == JOBS_TOPIC:
-            self.seen.append(
-                (str(payload["status"]), payload.get("worker_pgid") is not None)
-            )
+            self.seen.append((str(payload["status"]), payload.get("worker_pgid") is not None))
 
 
 @pytest.fixture
@@ -124,15 +122,12 @@ def test_the_pgid_is_written_before_the_runner_yields_after_the_fork(
     after_claim = log.seen[log.seen.index(("running", False)) + 1 :]
     assert after_claim, "nothing was published after the claim"
     assert after_claim[0] == ("running", True), (
-        f"something was published between the fork and the pgid write: "
-        f"{after_claim[:3]}"
+        f"something was published between the fork and the pgid write: {after_claim[:3]}"
     )
     store.close()
 
 
-def test_shutdown_covers_a_job_still_inside_its_spawn_window(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_shutdown_covers_a_job_still_inside_its_spawn_window(tmp_path: Path, kinds: None) -> None:
     """stop() must cancel what was CLAIMED, not only what has registered.
 
     The job below is spawned and then shut down before its task has run a
@@ -157,9 +152,7 @@ def test_shutdown_covers_a_job_still_inside_its_spawn_window(
     final = asyncio.run(drive())
 
     assert final["status"] == "cancelled", final
-    assert final["worker_pgid"] is not None, (
-        "the row must still name the group that was killed"
-    )
+    assert final["worker_pgid"] is not None, "the row must still name the group that was killed"
     store.close()
 
 
@@ -178,9 +171,7 @@ def test_a_row_with_no_recorded_pgid_names_the_spawn_window(
     boot_a.claim_queued()
     boot_a.close()
 
-    boot_b = JobStore(
-        tmp_path / "jobs.db", boot_id="boot-b", owner_pid=os.getpid()
-    )
+    boot_b = JobStore(tmp_path / "jobs.db", boot_id="boot-b", owner_pid=os.getpid())
     recovered = boot_b.recover()
 
     assert [row["id"] for row in recovered] == [job["id"]]
@@ -188,15 +179,11 @@ def test_a_row_with_no_recorded_pgid_names_the_spawn_window(
     assert "no worker pgid was ever recorded" in error, error
     assert "between the fork and the write" in error, error
     assert "nothing that can now identify it" in error, error
-    assert "nothing to reap" not in error, (
-        f"the benign sentence is still there: {error}"
-    )
+    assert "nothing to reap" not in error, f"the benign sentence is still there: {error}"
     boot_b.close()
 
 
-def test_cancelling_an_unheld_running_row_names_the_spawn_window(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_cancelling_an_unheld_running_row_names_the_spawn_window(tmp_path: Path, kinds: None) -> None:
     """The runner's own orphan message must name the condition too.
 
     A 'running' row this engine holds no worker for got in one of two ways:
@@ -222,9 +209,7 @@ def test_cancelling_an_unheld_running_row_names_the_spawn_window(
     store.close()
 
 
-def test_a_fork_outlasting_the_settle_window_is_killed_not_abandoned(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_a_fork_outlasting_the_settle_window_is_killed_not_abandoned(tmp_path: Path, kinds: None) -> None:
     """stop() cancels a fork it stopped waiting for, and its worker dies.
 
     The task below has forked -- its worker process exists -- but is still

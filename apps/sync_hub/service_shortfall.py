@@ -13,6 +13,7 @@ They return ``None`` when nothing was held back, so a caller reads
 into either a partial 200 (for a peer that advertised it understands
 quarantine) or main's loud 422 (for a peer that did not).
 """
+
 from __future__ import annotations
 
 from apps.sync_hub import engine, protocol

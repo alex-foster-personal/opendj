@@ -28,7 +28,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
@@ -37,7 +37,6 @@ from apps.cloud import job as cloud_job
 from apps.engine_core.account.api import (
     account_router,
     entitlements_router,
-    flags_router,
 )
 from apps.engine_core.app_posture_api import add_app_posture_route
 from apps.engine_core.assistant.api import router as assistant_router
@@ -72,10 +71,12 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.plugins_api import mount_plugins
 from apps.engine_core.rescue_api import add_rescue_routes
+from apps.engine_core.session_played import add_session_played_routes
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
 from apps.engine_core.setup.library_events import on_setup_import_progress
+from apps.engine_core.local_update import add_app_update_routes
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
@@ -164,7 +165,7 @@ def create_app(
     # The chassis ships zero kinds; each kind opts in here. Registration is
     # process-global and idempotent, and it must happen before the jobs router
     # can be reached, or an enqueue for a real kind would 400 as unknown.
-    _register_job_kinds()
+    _register_job_kinds(app)
     app.include_router(jobs_router, prefix=API_PREFIX)
     # Engine-only: the plan describes a run only an engine can start.
     app.include_router(stems_plan_router, prefix=API_PREFIX)
@@ -177,13 +178,12 @@ def create_app(
     # runs. Stateless and dependency-free -- it reads its key and model off
     # the environment, so it needs nothing from app.state.
     app.include_router(assistant_router, prefix=API_PREFIX)
-    # The commercial seam: account management, the entitlement resolver, and
-    # the feature-flag file. All three ship inert -- there are no paid
-    # features and no declared flags -- but they are registered here so the
-    # committed OpenAPI contract carries them and an agent can drive the same
-    # surfaces the account panel does.
+    # The commercial seam: account management and the entitlement resolver.
+    # Both ship inert -- there are no paid features -- but they are registered
+    # here so the committed OpenAPI contract carries them and an agent can
+    # drive the same surfaces the account panel does. GET /api/v1/flags mounts
+    # on the wrapped legacy app instead (issue #5789).
     app.include_router(entitlements_router, prefix=API_PREFIX)
-    app.include_router(flags_router, prefix=API_PREFIX)
     app.include_router(account_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
     # Identity before the SPA mount, like every other route: a Mount at "/"
@@ -210,6 +210,9 @@ def create_app(
     # question the shell's button asks.
     add_update_check_route(app)
     add_update_apply_route(app)
+    # Restart to update (INSTALL-39/40): an agent flags a local build ready,
+    # the tray shows the nudge, and the shell's updater installs it.
+    add_app_update_routes(app, data_dir=cfg.data_dir)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
     # Plan 20-02: this engine supervises odj-audio (the shell only bundles it
@@ -225,6 +228,7 @@ def create_app(
     add_audio_engine_routes(app, audio_engine)
     app.state.engine_cfg = cfg
     add_rescue_routes(app)
+    add_session_played_routes(app)
     # The plugin store, and every module the user enabled (PLUG-6522e). Last
     # among the API routes so a module's routes can be checked against every
     # core route, and before the SPA mount, which would shadow them. Changes
@@ -262,7 +266,7 @@ def create_app(
 
 
 # ----- job kinds ---------------------------------------------------------
-def _register_job_kinds() -> None:
+def _register_job_kinds(app: FastAPI | None = None) -> None:
     """Wire every domain's job kind into the chassis registry.
 
     THE COMPOSITION ROOT, and the only place that knows both halves. The
@@ -281,14 +285,26 @@ def _register_job_kinds() -> None:
     register_finish_observer(
         stems_job.JOB_KIND, coverage_stems_jobs.record_stems_job_failure
     )
-    register_progress_observer(SETUP_IMPORT_KIND, on_setup_import_progress)
+    def _on_setup_import_progress(job: dict[str, Any], line: dict[str, Any]) -> None:
+        def _drop_reconcile_summary_cache() -> None:
+            cache = getattr(app.state, "reconcile_summary_cache", None) if app is not None else None
+            if cache is not None:
+                cache.invalidate()
+
+        on_setup_import_progress(
+            job,
+            line,
+            on_tracks_replaced=_drop_reconcile_summary_cache if app is not None else None,
+        )
+
+    register_progress_observer(SETUP_IMPORT_KIND, _on_setup_import_progress)
     register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
     register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------
 def _compose_legacy(cfg: EngineConfig) -> FastAPI:
-    """Mirror of ``apps.webui.server.app._build_default_app`` with the SPA
+    """Mirror of ``apps.webui.server.app_boot._build_default_app`` with the SPA
     mount deferred, because the chassis has routes to add after it.
 
     Deliberate difference: the legacy factory swallows a SqliteBackend

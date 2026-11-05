@@ -54,9 +54,9 @@ RUNNER = os.path.join(REPO_ROOT, "apps", "analysis_beatgrid", "beat_this_runner.
 
 SAMPLE_RATE = 44100
 CLICK_BPM = 128.0
-TRACK_S = 200.0            # long enough to hold a change at 2:00 plus 8 bars after
+TRACK_S = 200.0  # long enough to hold a change at 2:00 plus 8 bars after
 RAMP_AT_S = 120.0
-RAMP_FACTOR = 1.03         # the 3 percent of the acceptance line
+RAMP_FACTOR = 1.03  # the 3 percent of the acceptance line
 # The ramp is spread over 8 bars, which is the detector's own MIN_SEGMENT_BARS.
 # Shorter and it degenerates towards the step this replaced; much longer and no
 # 8-bar window contains enough of the change for any detector to see it, which
@@ -66,8 +66,7 @@ RAMP_OVER_S = 8 * 4 * (60.0 / CLICK_BPM)
 pytestmark = pytest.mark.skipif(
     os.environ.get("MDT_BEATGRID_MODEL_TESTS") != "1",
     reason=(
-        "needs uv, ffmpeg, the Beat This! checkpoint and about a minute of CPU; "
-        "set MDT_BEATGRID_MODEL_TESTS=1 to run"
+        "needs uv, ffmpeg, the Beat This! checkpoint and about a minute of CPU; set MDT_BEATGRID_MODEL_TESTS=1 to run"
     ),
 )
 
@@ -81,9 +80,7 @@ def _steady_beat_times(bpm: float, seconds: float) -> list[float]:
     return [i * period for i in range(int(seconds / period) + 1) if i * period < seconds]
 
 
-def _ramped_beat_times(
-    bpm: float, seconds: float, ramp_at_s: float, ramp_over_s: float, factor: float
-) -> list[float]:
+def _ramped_beat_times(bpm: float, seconds: float, ramp_at_s: float, ramp_over_s: float, factor: float) -> list[float]:
     """Beat onsets for a tempo that RAMPS CONTINUOUSLY rather than stepping.
 
     NATIVE-03's acceptance line asks for "an injected 3 percent ramp at 2:00",
@@ -137,17 +134,13 @@ def _render_clicks(path: str, beat_times: list[float], seconds: float) -> list[f
             if start + i >= n_samples:
                 break
             envelope = math.exp(-i / (0.010 * SAMPLE_RATE))
-            samples[start + i] += (
-                amplitude * envelope * math.sin(2 * math.pi * frequency * i / SAMPLE_RATE)
-            )
+            samples[start + i] += amplitude * envelope * math.sin(2 * math.pi * frequency * i / SAMPLE_RATE)
 
     with wave.open(path, "wb") as fh:
         fh.setnchannels(1)
         fh.setsampwidth(2)
         fh.setframerate(SAMPLE_RATE)
-        fh.writeframes(
-            b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples)
-        )
+        fh.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples))
     return beat_times
 
 
@@ -165,24 +158,47 @@ def _inject_tempo_step(source: str, target: str, at_s: float, factor: float) -> 
         check=True,
     )
     subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", source, "-ss", str(at_s),
-         "-filter:a", f"atempo={factor}", tail],
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            source,
+            "-ss",
+            str(at_s),
+            "-filter:a",
+            f"atempo={factor}",
+            tail,
+        ],
         check=True,
     )
     listing = target + ".txt"
     with open(listing, "w", encoding="utf-8") as fh:
         fh.write(f"file '{head}'\nfile '{tail}'\n")
     subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-         "-i", listing, "-c", "copy", target],
+        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", listing, "-c", "copy", target],
         check=True,
     )
 
 
 def _run_model(wav_paths: list[str], out_path: str) -> dict:
     subprocess.run(
-        ["uv", "run", "--no-project", "--script", RUNNER,
-         "--out", out_path, "--device", "cpu", "--measure-rss", "--audio", *wav_paths],
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--script",
+            RUNNER,
+            "--out",
+            out_path,
+            "--device",
+            "cpu",
+            "--measure-rss",
+            "--audio",
+            *wav_paths,
+        ],
         check=True,
         cwd=REPO_ROOT,
     )
@@ -213,9 +229,7 @@ def analyzed(tmp_path_factory) -> dict:
     _inject_tempo_step(steady, stepped, RAMP_AT_S, RAMP_FACTOR)
     ramp_truth = _ramped_beat_times(CLICK_BPM, TRACK_S, RAMP_AT_S, RAMP_OVER_S, RAMP_FACTOR)
     _render_clicks(ramped, ramp_truth, TRACK_S)
-    ramp_4pct_truth = _ramped_beat_times(
-        CLICK_BPM, TRACK_S, ramp_at_s=90.0, ramp_over_s=30.0, factor=1.04
-    )
+    ramp_4pct_truth = _ramped_beat_times(CLICK_BPM, TRACK_S, ramp_at_s=90.0, ramp_over_s=30.0, factor=1.04)
     _render_clicks(ramped_4pct, ramp_4pct_truth, TRACK_S)
 
     payload = _run_model([steady, stepped, ramped, ramped_4pct], str(workdir / "beats.json"))
@@ -296,8 +310,7 @@ def test_every_beat_is_numbered_consistently_with_the_emitted_downbeats(analyzed
         earlier_index = beats.index(earlier)
         later_index = beats.index(later)
         assert later_index - earlier_index == BAR_BEATS, (
-            f"served bar-1 at {earlier}s and {later}s are {later_index - earlier_index} "
-            "beats apart, expected 4"
+            f"served bar-1 at {earlier}s and {later}s are {later_index - earlier_index} beats apart, expected 4"
         )
 
 
@@ -409,9 +422,7 @@ def test_a_four_percent_ramp_emits_tempo_map_anchors_bracketing_the_ramp(analyze
     assert any(a.at_s <= 90.0 for a in anchors)
     tolerance_s = MIN_SEGMENT_BARS * 4 * (60.0 / CLICK_BPM)
     later = [a for a in anchors if 90.0 - tolerance_s <= a.at_s <= 120.0 + tolerance_s]
-    assert later, (
-        f"no anchor near ramp window; anchors at {[round(a.at_s, 1) for a in anchors]}"
-    )
+    assert later, f"no anchor near ramp window; anchors at {[round(a.at_s, 1) for a in anchors]}"
     assert later[-1].bpm > anchors[0].bpm
 
 
@@ -433,10 +444,7 @@ def test_the_untouched_track_yields_zero_markers(analyzed):
     """
     result = analyzed["payload"]["results"][analyzed["steady"]]
     analysis = detect_tempo_changes(result["beats"])
-    detail = [
-        (round(m.at_s, 1), round(m.bpm_before, 2), round(m.bpm_after, 2))
-        for m in analysis.markers
-    ]
+    detail = [(round(m.at_s, 1), round(m.bpm_before, 2), round(m.bpm_after, 2)) for m in analysis.markers]
     assert analysis.markers == (), f"false positives on an unmutated track: {detail}"
     assert analysis.static_grid_untrusted is False
 
@@ -451,13 +459,27 @@ def test_a_run_where_every_track_failed_exits_nonzero(tmp_path) -> None:
     argument sent one bogus path, the runner printed `done: 0/1` and returned
     0, and the artifact it wrote had no results at all. In a sharded backfill
     that is a missing shard the merge accepts, which is the exit-code
-    false-green `.claude/rules/verification.md` names first.
+    false-green `(private path)` names first.
     """
     out = str(tmp_path / "allfail.json")
     result = subprocess.run(
-        ["uv", "run", "--no-project", "--script", RUNNER,
-         "--out", out, "--device", "cpu", "--audio", str(tmp_path / "absent.wav")],
-        check=False, capture_output=True, text=True, cwd=REPO_ROOT,
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--script",
+            RUNNER,
+            "--out",
+            out,
+            "--device",
+            "cpu",
+            "--audio",
+            str(tmp_path / "absent.wav"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
     )
     assert result.returncode != 0, "a run that produced nothing reported success"
     assert "all 1 track(s) errored" in result.stderr
@@ -476,10 +498,24 @@ def test_a_run_with_SOME_failures_still_exits_zero(tmp_path) -> None:
     _render_clicks(good, _steady_beat_times(CLICK_BPM, 8.0), 8.0)
     out = str(tmp_path / "partial.json")
     result = subprocess.run(
-        ["uv", "run", "--no-project", "--script", RUNNER,
-         "--out", out, "--device", "cpu",
-         "--audio", good, str(tmp_path / "absent.wav")],
-        check=False, capture_output=True, text=True, cwd=REPO_ROOT,
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--script",
+            RUNNER,
+            "--out",
+            out,
+            "--device",
+            "cpu",
+            "--audio",
+            good,
+            str(tmp_path / "absent.wav"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
     )
     assert result.returncode == 0, result.stderr
     with open(out, encoding="utf-8") as fh:

@@ -26,4 +26,6 @@ export const Release: Story = { args: { cue: 'release', cueLabel: 'Release press
 
 /** Unknown cue: the component renders nothing at all. */
 export const UnknownRendersNothing: Story = {
-	tags: ['renders-nothing'], args: { cue: 'unknown', cueLabel: '' } };
+	tags: ['renders-nothing'],
+	args: { cue: 'unknown', cueLabel: '' }
+};

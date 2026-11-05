@@ -29,6 +29,7 @@ from apps.webui.port_config import (
     PROJECT_ROOT,
     PortConfigError,
     WebuiPorts,
+    _bind_succeeds,
     _read_dotenv,
     _resolved_raw_value,
     claim_ports,
@@ -234,13 +235,7 @@ def can_bind(port: int) -> bool:
     Match uvicorn/Vite's address-reuse behavior so a clean restart is not
     blocked by the previous listener's harmless TCP TIME_WAIT sockets.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            probe.bind(("127.0.0.1", port))
-        except OSError:
-            return False
-    return True
+    return _bind_succeeds(port, reuse_address=True)
 
 
 def wait_bindable(port: int, seconds: float, label: str) -> None:

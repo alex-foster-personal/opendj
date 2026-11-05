@@ -243,7 +243,7 @@ def test_every_swap_rename_and_journal_removal_is_flushed_before_the_next_step()
         assert not named(found, "rename"), f"{fn.__name__} renames without flushing"
         assert not named(found, "unlink"), f"{fn.__name__} drops a journal without flushing"
         assert not named(found, "mkdir"), f"{fn.__name__} makes a directory without flushing it"
-    flushed = [ast.unparse(c.args[0]) for c in named(calls(rc._rename_durably), "_fsync_dir")]
+    flushed = [ast.unparse(c.args[0]) for c in named(calls(rc._rename_durably), "fsync_dir")]
     assert sorted(flushed) == ["destination.parent", "source.parent"], f"_rename_durably flushes {flushed}"
     assert [ast.unparse(c.args[0]) for c in named(calls(rc._remove_journal), "_fsync_dir")] == ["journal.parent"]
 

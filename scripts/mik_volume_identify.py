@@ -58,12 +58,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mik_audio_resolve import ResolvedAudio, resolve, tier_counts
 
-_PEAK = re.compile(
-    r"^\s*\[Parsed_astats.*?\] Peak level dB: (-?\d+\.?\d*|-inf)", re.MULTILINE
-)
-_RMS = re.compile(
-    r"^\s*\[Parsed_astats.*?\] RMS level dB: (-?\d+\.?\d*|-inf)", re.MULTILINE
-)
+_PEAK = re.compile(r"^\s*\[Parsed_astats.*?\] Peak level dB: (-?\d+\.?\d*|-inf)", re.MULTILINE)
+_RMS = re.compile(r"^\s*\[Parsed_astats.*?\] RMS level dB: (-?\d+\.?\d*|-inf)", re.MULTILINE)
 _JSON_BLOCK = re.compile(r"\{[^{}]*\"input_i\"[^{}]*\}", re.DOTALL)
 
 CANDIDATES: tuple[str, ...] = (
@@ -110,10 +106,7 @@ def measure(path: str) -> dict[str, float | str | None]:
             "-map",
             "0:a:0",
             "-af",
-            (
-                "astats=measure_perchannel=none:measure_overall="
-                "Peak_level+RMS_level,loudnorm=print_format=json"
-            ),
+            ("astats=measure_perchannel=none:measure_overall=Peak_level+RMS_level,loudnorm=print_format=json"),
             "-f",
             "null",
             "-",
@@ -195,6 +188,7 @@ def numpy_peak_rms(path: str) -> tuple[float, float]:
     samples = np.frombuffer(proc.stdout, dtype="<f4")
     peak = float(np.max(np.abs(samples)))
     rms = float(np.sqrt(np.mean(np.square(samples, dtype=np.float64))))
+
     def to_db(x: float) -> float:
         return 20.0 * math.log10(x) if x > 0 else -math.inf
 
@@ -264,9 +258,7 @@ def mtime_before_analysis(clean: list[AudioLoudness]) -> list[AudioLoudness]:
     comparison passed. Exclude it the same way ``scripts/key_third_opinion.py``
     excludes it, or its current (possibly re-encoded) bytes bias the fits.
     """
-    return [
-        m for m in clean if m.analysis_date_iso is not None and not m.reencoded_after_analysis
-    ]
+    return [m for m in clean if m.analysis_date_iso is not None and not m.reencoded_after_analysis]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -300,8 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         random.Random(args.seed).shuffle(usable)
         usable = usable[: args.sample]
     print(
-        f"measuring {len(usable)} of {population} MIK rows with audio on disk, "
-        f"tiers {tier_counts(usable)}",
+        f"measuring {len(usable)} of {population} MIK rows with audio on disk, tiers {tier_counts(usable)}",
         flush=True,
     )
 
@@ -349,9 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         # row's own peak/RMS must be present; a None here is ffmpeg lying
         # about its own success, which the cross-check must not paper over.
         if row.sample_peak_dbfs is None or row.rms_db is None:
-            raise RuntimeError(
-                f"{row.path}: ffmpeg reported success but left peak/RMS unset"
-            )
+            raise RuntimeError(f"{row.path}: ffmpeg reported success but left peak/RMS unset")
         peak_db, rms_db = numpy_peak_rms(row.path)
         cross.append(
             {
@@ -363,13 +352,8 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
     if cross:
-        peak_delta = max(
-            abs(float(c["ffmpeg_peak_dbfs"]) - float(c["numpy_peak_dbfs"]))
-            for c in cross
-        )
-        rms_delta = max(
-            abs(float(c["ffmpeg_rms_db"]) - float(c["numpy_rms_db"])) for c in cross
-        )
+        peak_delta = max(abs(float(c["ffmpeg_peak_dbfs"]) - float(c["numpy_peak_dbfs"])) for c in cross)
+        rms_delta = max(abs(float(c["ffmpeg_rms_db"]) - float(c["numpy_rms_db"])) for c in cross)
         report["numpy_cross_check"] = {
             "files": len(cross),
             "max_peak_delta_db": peak_delta,

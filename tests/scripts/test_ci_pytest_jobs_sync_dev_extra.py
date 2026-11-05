@@ -128,11 +128,7 @@ def _extended_with_bare_sync() -> dict[str, Any]:
     """The real e2e.yml with the fix reverted: the extended job's `uv sync` made bare."""
     document = copy.deepcopy(_load(E2E))
     steps = document["jobs"]["extended"]["steps"]
-    sync_steps = [
-        step
-        for step in steps
-        if any(_uv_sync_args(c) is not None for c in _commands(step.get("run") or ""))
-    ]
+    sync_steps = [step for step in steps if any(_uv_sync_args(c) is not None for c in _commands(step.get("run") or ""))]
     assert len(sync_steps) == 1, f"expected one uv sync step in extended, got {len(sync_steps)}"
     sync_steps[0]["run"] = "uv sync"
     return document

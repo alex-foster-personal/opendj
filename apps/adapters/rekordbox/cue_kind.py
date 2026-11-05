@@ -3,6 +3,7 @@
 The map lives in ``apps.shared`` so ingest and ``rekordbox_db`` can use it without
 violating the import-linter ``shared-is-the-stable-core`` contract.
 """
+
 from __future__ import annotations
 
 from apps.shared.rekordbox_cue_kind import (

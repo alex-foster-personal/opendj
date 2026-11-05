@@ -14,6 +14,7 @@ Direction of the gate: where the two disagree, the CONSOLIDATED module is
 wrong and gets fixed. This is consolidation, not redesign -- the legacy
 definition is the specification.
 """
+
 from __future__ import annotations
 
 import os
@@ -41,6 +42,7 @@ from apps.shared.pairings.schema_sql import (
     ensure_phase08_tables,
 )
 from apps.shared.play_orders.schema import apply_play_order_migrations
+from apps.shared.state.migrations_v6_v8 import _V8_NON_VIEW_DDL
 from apps.shared.state.schema import INFRASTRUCTURE_TABLES
 from apps.shared.state.schema import apply_migrations as legacy_state_migrations
 from apps.spotify.state_writer import ensure_aux_tables
@@ -63,10 +65,7 @@ def _shadow_prefixes(conn: sqlite3.Connection) -> tuple[str, ...]:
     detail of the one statement that made them, so they are excluded from
     the comparison rather than enumerated in the schema module.
     """
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' "
-        "AND sql LIKE '%USING fts5%'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE '%USING fts5%'").fetchall()
     return tuple(f"{r[0]}_" for r in rows)
 
 
@@ -78,9 +77,7 @@ def objects(conn: sqlite3.Connection) -> dict[str, str]:
     """
     shadows = _shadow_prefixes(conn)
     result: dict[str, str] = {}
-    rows = conn.execute(
-        "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')"
-    ).fetchall()
+    rows = conn.execute("SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')").fetchall()
     for name, sql in rows:
         if sql is None or str(name).startswith("sqlite_"):
             continue
@@ -123,13 +120,14 @@ def build_legacy(tmp_path: Path) -> dict[str, str]:
     # --- shared state.db path --------------------------------------------
     state_path = tmp_path / "state.db"
     state = _connect(state_path)
-    legacy_state_migrations(state)          # apps/shared/state/schema.py
-    _ensure_analysis_tables(state)          # apps/analysis/store.py
-    ensure_phase08_tables(state)            # apps/shared/pairings/schema_sql.py
-    apply_play_order_migrations(state)      # apps/shared/play_orders/schema.py
+    legacy_state_migrations(state)  # apps/shared/state/schema.py
+    _ensure_analysis_tables(state)  # apps/analysis/store.py
+    ensure_phase08_tables(state)  # apps/shared/pairings/schema_sql.py
+    apply_play_order_migrations(state)  # apps/shared/play_orders/schema.py
     from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
-    apply_playlist_set_migrations(state)    # apps/shared/playlist_sets/schema.py
-    ensure_aux_tables(state)                # apps/spotify/state_writer.py
+
+    apply_playlist_set_migrations(state)  # apps/shared/playlist_sets/schema.py
+    ensure_aux_tables(state)  # apps/spotify/state_writer.py
     sets_ensure_schema(state, events_table="set_events")  # apps/sets/state.py
     state.commit()
     merged.update(objects(state))
@@ -219,30 +217,21 @@ def test_table_sets_are_identical(fresh: sqlite3.Connection) -> None:
     """
     declared = set(consolidated.ALL_TABLES) | set(INFRASTRUCTURE_TABLES)
     created = _table_names(fresh)
-    assert not declared - created, (
-        f"consolidated schema is missing tables: {sorted(declared - created)}"
-    )
-    assert not created - declared, (
-        f"consolidated schema invents tables: {sorted(created - declared)}"
-    )
+    assert not declared - created, f"consolidated schema is missing tables: {sorted(declared - created)}"
+    assert not created - declared, f"consolidated schema invents tables: {sorted(created - declared)}"
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
     shadows = _shadow_prefixes(conn)
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     return {
         str(r[0])
         for r in rows
-        if not str(r[0]).startswith("sqlite_")
-        and not any(str(r[0]).startswith(p) for p in shadows)
+        if not str(r[0]).startswith("sqlite_") and not any(str(r[0]).startswith(p) for p in shadows)
     }
 
 
-def test_object_names_match_legacy(
-    fresh: sqlite3.Connection, legacy: dict[str, str]
-) -> None:
+def test_object_names_match_legacy(fresh: sqlite3.Connection, legacy: dict[str, str]) -> None:
     """Same set of tables AND indexes on both sides.
 
     ``schema_meta`` is the one legitimate consolidated-only object beyond the
@@ -253,47 +242,63 @@ def test_object_names_match_legacy(
     fresh_names = set(objects(fresh))
     legacy_names = set(legacy)
     assert fresh_names - legacy_names == set(), (
-        "consolidated schema creates objects no legacy bootstrap does: "
-        f"{sorted(fresh_names - legacy_names)}"
+        f"consolidated schema creates objects no legacy bootstrap does: {sorted(fresh_names - legacy_names)}"
     )
     legacy_only = legacy_names - fresh_names - LEGACY_ONLY_PLAYLIST_SETS
     assert legacy_only == set(), (
-        "legacy bootstraps create objects the consolidated schema drops: "
-        f"{sorted(legacy_only)}"
+        f"legacy bootstraps create objects the consolidated schema drops: {sorted(legacy_only)}"
     )
 
 
+def test_analysis_retention_reuses_v8_non_view_ddl(fresh: sqlite3.Connection) -> None:
+    """The consolidated domain reuses v8 tables/indexes without its views."""
+    assert consolidated.DOMAINS["analysis_retention"] is _V8_NON_VIEW_DDL
+
+    normalized = tuple(" ".join(statement.split()).upper() for statement in _V8_NON_VIEW_DDL)
+    assert all(statement.startswith(("CREATE TABLE", "CREATE INDEX")) for statement in normalized)
+    assert not any(statement.startswith("CREATE VIEW") for statement in normalized)
+    assert tuple(statement.split()[5] for statement in normalized) == (
+        "TRACK_AVAILABILITY",
+        "IDX_TRACK_AVAILABILITY_STATE",
+        "UNMATCHED_SOURCE_ANALYSIS",
+        "IDX_UNMATCHED_SOURCE_ANALYSIS_PENDING",
+        "IDX_UNMATCHED_SOURCE_ANALYSIS_PROMOTED",
+        "TRACK_ENERGY_SEGMENTS",
+        "IDX_TRACK_ENERGY_SEGMENTS_START",
+        "ANALYSIS_FIELD_VERIFICATION",
+    )
+
+    view_names = {
+        str(row[0])
+        for row in fresh.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'view' AND name IN (?, ?, ?)",
+            ("tracks_available", "tracks_unavailable", "track_fields_available"),
+        )
+    }
+    assert view_names == set()
+
+
 @pytest.mark.parametrize("name", sorted(consolidated.ALL_TABLES))
-def test_table_definition_matches_legacy(
-    name: str, fresh: sqlite3.Connection, legacy: dict[str, str]
-) -> None:
+def test_table_definition_matches_legacy(name: str, fresh: sqlite3.Connection, legacy: dict[str, str]) -> None:
     """Table-by-table: the consolidated DDL is byte-semantically the legacy DDL."""
     fresh_objects = objects(fresh)
     assert name in legacy, f"no legacy bootstrap creates {name}"
     assert name in fresh_objects, f"consolidated schema does not create {name}"
     assert fresh_objects[name] == legacy[name], (
-        f"{name} drifted from its legacy definition.\n"
-        f"legacy:       {legacy[name]}\n"
-        f"consolidated: {fresh_objects[name]}"
+        f"{name} drifted from its legacy definition.\nlegacy:       {legacy[name]}\nconsolidated: {fresh_objects[name]}"
     )
 
 
-def test_index_definitions_match_legacy(
-    fresh: sqlite3.Connection, legacy: dict[str, str]
-) -> None:
+def test_index_definitions_match_legacy(fresh: sqlite3.Connection, legacy: dict[str, str]) -> None:
     """Index-by-index equivalence, including the partial-index WHERE clauses."""
     fresh_objects = objects(fresh)
     fresh_tables = _table_names(fresh)
-    fresh_indexes = {
-        name: sql for name, sql in fresh_objects.items() if name not in fresh_tables
-    }
+    fresh_indexes = {name: sql for name, sql in fresh_objects.items() if name not in fresh_tables}
     assert fresh_indexes, "no indexes found -- the comparison would be vacuous"
     for name, sql in sorted(fresh_indexes.items()):
         assert name in legacy, f"consolidated index {name} has no legacy origin"
         assert sql == legacy[name], (
-            f"index {name} drifted from its legacy definition.\n"
-            f"legacy:       {legacy[name]}\n"
-            f"consolidated: {sql}"
+            f"index {name} drifted from its legacy definition.\nlegacy:       {legacy[name]}\nconsolidated: {sql}"
         )
 
 
@@ -322,13 +327,10 @@ def test_durable_ladder_excludes_the_regenerable_caches(
     therefore cannot live in it without making that promise false.
     """
     for table in consolidated.ALL_CACHE_TABLES:
-        assert table not in consolidated.ALL_TABLES, (
-            f"{table} is regenerable and must not be in the durable ladder"
-        )
+        assert table not in consolidated.ALL_TABLES, f"{table} is regenerable and must not be in the durable ladder"
     created = _table_names(fresh)
     assert not created & set(consolidated.ALL_CACHE_TABLES), (
-        "apply_migrations created cache tables in state.db: "
-        f"{sorted(created & set(consolidated.ALL_CACHE_TABLES))}"
+        f"apply_migrations created cache tables in state.db: {sorted(created & set(consolidated.ALL_CACHE_TABLES))}"
     )
 
 
@@ -338,8 +340,7 @@ def test_cache_migrations_create_every_declared_cache_table(
     """F5: the DDL did not get dropped on the way out of the ladder."""
     created = _table_names(fresh_caches)
     assert created == set(consolidated.ALL_CACHE_TABLES), (
-        f"cache DB holds {sorted(created)}, "
-        f"declared {sorted(consolidated.ALL_CACHE_TABLES)}"
+        f"cache DB holds {sorted(created)}, declared {sorted(consolidated.ALL_CACHE_TABLES)}"
     )
 
 
@@ -353,9 +354,7 @@ def test_cache_migrations_are_idempotent(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_cache_object_names_match_legacy(
-    fresh_caches: sqlite3.Connection, legacy_caches: dict[str, str]
-) -> None:
+def test_cache_object_names_match_legacy(fresh_caches: sqlite3.Connection, legacy_caches: dict[str, str]) -> None:
     """F5: moving the domain out of the ladder must not change what it builds."""
     assert set(objects(fresh_caches)) == set(legacy_caches)
 
@@ -460,9 +459,7 @@ def test_adoption_replays_the_track_locations_backfill(tmp_path: Path) -> None:
 
     consolidated.apply_migrations(conn)
 
-    rows = conn.execute(
-        "SELECT stable_id, kind, role, file_path FROM track_locations"
-    ).fetchall()
+    rows = conn.execute("SELECT stable_id, kind, role, file_path FROM track_locations").fetchall()
     assert rows == [("sid2", "local", "primary", "/music/backfill.aiff")]
     conn.close()
 
@@ -543,9 +540,7 @@ def test_adoption_probes_run_when_the_legacy_counter_reads_zero(tmp_path: Path) 
     probes, not the counter, are what decide adoptability.
     """
     conn = _connect(tmp_path / "counterless_v1.db")
-    conn.execute(
-        "CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
+    conn.execute("CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
     _v5_track_fields(conn)
     _v1_track_field_history(conn)
     conn.commit()
@@ -581,12 +576,8 @@ def test_refused_adoption_leaves_the_legacy_counter_unstamped(tmp_path: Path) ->
 def test_adoption_refuses_a_db_below_the_adoptable_floor(tmp_path: Path) -> None:
     """schema_meta stamped at v1 means table rebuilds are still owed."""
     conn = _connect(tmp_path / "stamped_v1.db")
-    conn.execute(
-        "CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
-    conn.execute(
-        "INSERT INTO schema_meta(version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')"
-    )
+    conn.execute("CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')")
     conn.commit()
 
     with pytest.raises(consolidated.SchemaAdoptionError, match="v1"):
@@ -641,9 +632,7 @@ def test_adoption_refuses_a_drifted_table_shape(tmp_path: Path) -> None:
         consolidated.apply_migrations(conn)
     message = str(caught.value)
     assert "settings" in message, "the refusal must name the object"
-    assert "expected" in message and "found" in message, (
-        "the refusal must show expected vs found shape"
-    )
+    assert "expected" in message and "found" in message, "the refusal must show expected vs found shape"
     assert "value TEXT NOT NULL" in message, "expected shape must be quoted back"
     conn.close()
 
@@ -691,9 +680,7 @@ def test_shape_audit_adopts_a_legacy_pairings_table_without_snapshot_json(
 
     consolidated.apply_migrations(conn)
     assert consolidated.was_adopted(conn)
-    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [
-        ("kept", None)
-    ]
+    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [("kept", None)]
     conn.close()
 
 
@@ -716,9 +703,7 @@ def test_a_db_already_at_schema_version_still_gains_snapshot_json(
     conn.commit()
 
     assert consolidated.apply_migrations(conn) == consolidated.SCHEMA_VERSION
-    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [
-        ("kept", None)
-    ]
+    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [("kept", None)]
     conn.close()
 
 
@@ -779,9 +764,7 @@ def test_a_failing_rollback_is_reported_but_never_swallows_the_cause(
     with pytest.raises(RuntimeError, match="simulated ladder failure") as caught:
         consolidated.apply_migrations(conn)
     notes = " ".join(getattr(caught.value, "__notes__", []))
-    assert "rollback" in notes.lower(), (
-        f"the failed rollback must be reported alongside the cause, got {notes!r}"
-    )
+    assert "rollback" in notes.lower(), f"the failed rollback must be reported alongside the cause, got {notes!r}"
     assert "simulated rollback failure" in notes
     conn.close()
 
@@ -813,9 +796,7 @@ def test_migration_takes_the_write_lock_up_front(tmp_path: Path) -> None:
     consolidated.apply_migrations(conn)
 
     begins = [s for s in conn.statements if s.upper().startswith("BEGIN")]
-    assert begins == ["BEGIN IMMEDIATE"], (
-        f"runner must open its transaction IMMEDIATE, issued {begins}"
-    )
+    assert begins == ["BEGIN IMMEDIATE"], f"runner must open its transaction IMMEDIATE, issued {begins}"
     conn.close()
 
 
@@ -833,9 +814,7 @@ def _impatient_connect(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(str(path), timeout=0)
 
 
-def test_migration_sets_its_own_busy_timeout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_migration_sets_its_own_busy_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """F4: a contended DB must wait for the lock, not fail instantly.
 
     The runner inherited whatever busy timeout the caller happened to set. On
@@ -858,9 +837,7 @@ def test_migration_sets_its_own_busy_timeout(
         consolidated.apply_migrations(victim)
     waited = time.monotonic() - started
 
-    assert waited >= 0.4, (
-        f"gave up after {waited:.3f}s -- the 500ms busy timeout was not applied"
-    )
+    assert waited >= 0.4, f"gave up after {waited:.3f}s -- the 500ms busy timeout was not applied"
     victim.close()
     holder.rollback()
     holder.close()
@@ -904,8 +881,7 @@ def test_migration_succeeds_when_the_lock_clears_within_the_timeout(
 REAL_STATE_DB = Path(
     os.environ.get(
         "ODJ_REAL_STATE_DB",
-        "/Users/old/code/music-dj-tools-wt-rebuild-agentB-from-Fable-data"
-        "/state/state.db",
+        "/Users/old/code/music-dj-tools-wt-rebuild-agentB-from-Fable-data/state/state.db",
     )
 )
 """A live state.db to adopt. Overridable; skipped when absent.
@@ -945,15 +921,10 @@ runner a no-op instead of a second competing bootstrap."""
 
 def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
     names = sorted(_table_names(conn))
-    return {
-        name: int(conn.execute(f"SELECT COUNT(*) FROM '{name}'").fetchone()[0])
-        for name in names
-    }
+    return {name: int(conn.execute(f"SELECT COUNT(*) FROM '{name}'").fetchone()[0]) for name in names}
 
 
-@pytest.mark.skipif(
-    not REAL_STATE_DB.exists(), reason=f"no live state DB at {REAL_STATE_DB}"
-)
+@pytest.mark.skipif(not REAL_STATE_DB.exists(), reason=f"no live state DB at {REAL_STATE_DB}")
 def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> None:
     """The invariant the whole runner exists to protect.
 
@@ -980,9 +951,7 @@ def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> N
     for name, before in pre_ladder_counts.items():
         if name in LEDGER_TABLES:
             continue  # the ladder is SUPPOSED to stamp its own counter
-        assert ladder_counts[name] == before, (
-            f"legacy ladder changed the row count of {name}"
-        )
+        assert ladder_counts[name] == before, f"legacy ladder changed the row count of {name}"
 
     before_objects = objects(conn)
     before_counts = _row_counts(conn)
@@ -1030,21 +999,15 @@ def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> N
     # by definition, and adoption is right to carry it forward -- pinning this
     # at +2 would only hold while the sample happened to sit at the terminal
     # legacy version, and would fail every future bump for the wrong reason.
-    legacy_steps_owed = max(
-        0, consolidated.LEGACY_SHARED_STATE_VERSION - before_legacy_version
-    )
-    assert after_counts["schema_meta"] == (
-        before_counts["schema_meta"] + 2 + legacy_steps_owed
-    ), (
+    legacy_steps_owed = max(0, consolidated.LEGACY_SHARED_STATE_VERSION - before_legacy_version)
+    assert after_counts["schema_meta"] == (before_counts["schema_meta"] + 2 + legacy_steps_owed), (
         "adoption should add the two marker rows plus one row per legacy step "
         f"it had to run (owed {legacy_steps_owed} from v{before_legacy_version})"
     )
 
     created = set(after_counts) - set(before_counts) - LEDGER_TABLES
     non_empty = {n: after_counts[n] for n in created if after_counts[n]}
-    assert non_empty == {}, (
-        f"newly created tables should be empty, got rows in {non_empty}"
-    )
+    assert non_empty == {}, f"newly created tables should be empty, got rows in {non_empty}"
     conn.close()
 
 

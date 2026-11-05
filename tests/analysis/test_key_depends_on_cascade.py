@@ -188,9 +188,7 @@ def test_a_failed_beatgrid_lane_digests_its_named_failure() -> None:
     from apps.analysis.lanes import LaneResult
 
     def _failed(reason: str) -> AnalysisRecord:
-        record = _beatgrid_record(
-            "sid-failed", backend_version="v1", decode_fingerprint=FINGERPRINT_V1
-        )
+        record = _beatgrid_record("sid-failed", backend_version="v1", decode_fingerprint=FINGERPRINT_V1)
         failed = LaneResult(status="failed", reason=reason, payload={})
         return dataclasses.replace(record, lanes={"beatgrid": failed})
 

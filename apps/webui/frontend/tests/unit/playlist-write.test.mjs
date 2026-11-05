@@ -204,15 +204,17 @@ test('transferPlaylistTracks maps 409 to PlaylistConflictError', async () => {
 
 	const caught = await playlistWrite
 		.transferPlaylistTracks('pl-1', '"rev-1"', { stable_ids: ['t-1'], mode: 'add' })
-		.then(() => null, (error) => error);
+		.then(
+			() => null,
+			(error) => error
+		);
 
 	assert.ok(caught instanceof playlistWrite.PlaylistConflictError);
 	assert.deepEqual(caught.current, current);
 });
 
 test('transferPlaylistTracks refuses a response without an ETag header', async () => {
-	globalThis.fetch = async () =>
-		jsonResponse({ dest: playlistRow(), source: null });
+	globalThis.fetch = async () => jsonResponse({ dest: playlistRow(), source: null });
 
 	await assert.rejects(
 		playlistWrite.transferPlaylistTracks('pl-1', '"rev-1"', {
@@ -243,7 +245,9 @@ test('duplicatePlaylist posts with no If-Match and no body on the happy path', a
 	globalThis.fetch = async (request) => {
 		seen = request;
 		bodyText = await request.clone().text();
-		return jsonResponse(playlistRow({ playlist_id: 'pl-2', name: 'Warmup (copy)' }), { status: 201 });
+		return jsonResponse(playlistRow({ playlist_id: 'pl-2', name: 'Warmup (copy)' }), {
+			status: 201
+		});
 	};
 
 	const row = await playlistWrite.duplicatePlaylist('pl-1');

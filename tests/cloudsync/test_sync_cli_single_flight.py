@@ -103,9 +103,7 @@ def test_maintenance_sync_cli_exit_code_for_a_concurrent_round(
     exit code and reason, exactly like the Gig/deck-playing defer above it,
     rather than a hub connection error or an uncaught exception."""
     with single_flight.sync_flock_for(tmp_path):
-        exit_code = maintenance.main(
-            ["sync", "--data-dir", str(tmp_path), "--hub", "http://127.0.0.1:1", "--force"]
-        )
+        exit_code = maintenance.main(["sync", "--data-dir", str(tmp_path), "--hub", "http://127.0.0.1:1", "--force"])
     assert exit_code == maintenance.EXIT_SYNC_DEFERRED
     assert f"DEFERRED: {DEFER_REASON_SYNC_IN_PROGRESS}" in capsys.readouterr().err
 
@@ -147,9 +145,7 @@ def test_maintenance_sync_journals_success_while_still_holding_the_flock(
 
     monkeypatch.setattr(sync_status, "write_result", _spy_write_result)
 
-    result = maintenance.sync(
-        spoke_a, "http://hub.invalid", transport=hub, name="spoke-a", force=True
-    )
+    result = maintenance.sync(spoke_a, "http://hub.invalid", transport=hub, name="spoke-a", force=True)
 
     assert checked["write_result_ran_under_the_flock"] is True
     assert result.digest  # sanity: a real completed round came back

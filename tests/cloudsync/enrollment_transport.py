@@ -12,6 +12,7 @@ is the shared floor, so what it depends on has to sit below it.
 ``from tests.cloudsync.test_hub_sync import _TestClientTransport`` still
 resolves to this one class rather than a second copy of it.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -37,9 +38,7 @@ class TestClientTransport:
         """``bearer`` mirrors :class:`apps.sync_hub.transport.HttpTransport`:
         sent as ``Authorization: Bearer`` on every call, none when None."""
         self._http = http
-        self._headers: dict[str, str] = (
-            {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
-        )
+        self._headers: dict[str, str] = {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
 
     @property
     def app_state(self) -> Any:

@@ -253,6 +253,385 @@ function _jogWheel(deck: DeckId): JogWheel {
 
 // ------------------------------------------------------------ action switch
 
+/** Hot-cue in-point for a slot, or null when the slot is empty. */
+function _findHotCue(deck: DeckId, slot: HotCueSlot): number | null {
+	const cue = deckStates[deck].hot_cues.find((c) => c.slot === slot);
+	return cue === undefined ? null : cue.in_ms;
+}
+
+function _unhandledMidiAction(action: never): never {
+	throw new Error(`Unhandled MidiAction: ${JSON.stringify(action)}`);
+}
+
+function _ifPressedOnLoadedDeck(
+	value: MidiInputValue,
+	deck: DeckId,
+	what: string,
+	then: () => void
+): void {
+	if (!_pressed(value)) return;
+	if (_deckIsEmpty(deck)) return _toastEmptyDeck(deck, what);
+	then();
+}
+
+type _MidiGlueCtx = {
+	deviceId: string | undefined;
+	pressT0Ms: number | undefined;
+	physicalControlId: string | undefined;
+};
+
+type _DeckTransportAction = Extract<
+	MidiAction,
+	{ type: 'deck_play_toggle' | 'deck_cue' | 'deck_hot_cue' }
+>;
+type _DeckLoopAction = Extract<
+	MidiAction,
+	{
+		type:
+			| 'deck_beat_loop'
+			| 'deck_auto_loop_toggle'
+			| 'deck_loop_exit'
+			| 'deck_manual_loop_cycle'
+			| 'deck_loop_scale';
+	}
+>;
+type _DeckKeyTempoAction = Extract<
+	MidiAction,
+	{ type: 'deck_sync_toggle' | 'deck_key_sync_toggle' | 'deck_key_nudge' | 'deck_tempo_nudge' }
+>;
+
+function _handleDeckHotCue(
+	action: Extract<MidiAction, { type: 'deck_hot_cue' }>,
+	value: MidiInputValue,
+	pressT0Ms?: number
+): void {
+	if (!_pressed(value)) return;
+	if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'hot cues');
+	const cue = _findHotCue(action.deck, action.slot);
+	if (cue === null) {
+		// Empty slot is a REAL library state, not an error to throw on.
+		pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
+		return;
+	}
+	_cmdHotCue(action.deck, action.slot, pressT0Ms);
+}
+
+function _handleDeckTransport(
+	action: _DeckTransportAction,
+	value: MidiInputValue,
+	pressT0Ms?: number
+): void {
+	switch (action.type) {
+		case 'deck_play_toggle':
+			_ifPressedOnLoadedDeck(value, action.deck, 'play', () => _cmdPlayToggle(action.deck, pressT0Ms));
+			return;
+		case 'deck_cue':
+			_ifPressedOnLoadedDeck(value, action.deck, 'cueing', () => _cmdPressCue(action.deck, pressT0Ms));
+			return;
+		case 'deck_hot_cue':
+			_handleDeckHotCue(action, value, pressT0Ms);
+			return;
+	}
+}
+
+function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _MidiGlueCtx): void {
+	const { deviceId } = ctx;
+	switch (action.type) {
+		case 'deck_beat_loop':
+			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () => _cmdBeatLoop(action.deck, action.beats));
+			return;
+		case 'deck_auto_loop_toggle':
+			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () =>
+				toggleControllerAutoLoop(action.deck, deviceId, pushToast)
+			);
+			return;
+		case 'deck_loop_exit':
+			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () => {
+				clearControllerManualLoop(action.deck, deviceId);
+				_cmdLoopExit(action.deck);
+			});
+			return;
+		case 'deck_manual_loop_cycle':
+			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () =>
+				cycleControllerManualLoop(action.deck, deviceId, pushToast)
+			);
+			return;
+		case 'deck_loop_scale':
+			_ifPressedOnLoadedDeck(value, action.deck, 'resizing a loop', () =>
+				_scaleLoop(action.deck, action.factor)
+			);
+			return;
+	}
+}
+
+function _handleDeckKeyAndTempo(action: _DeckKeyTempoAction, value: MidiInputValue): void {
+	switch (action.type) {
+		case 'deck_sync_toggle':
+			_ifPressedOnLoadedDeck(value, action.deck, 'syncing', () =>
+				void dispatchPerformanceCommand({
+					type: 'beat_sync',
+					deck: action.deck,
+					enabled: !deckStates[action.deck].beat_sync_enabled
+				})
+			);
+			return;
+		case 'deck_key_sync_toggle':
+			_ifPressedOnLoadedDeck(value, action.deck, 'key sync', () =>
+				void dispatchPerformanceCommand({
+					type: 'key_sync',
+					deck: action.deck,
+					enabled: !deckStates[action.deck].key_sync_enabled
+				})
+			);
+			return;
+		case 'deck_key_nudge':
+			_ifPressedOnLoadedDeck(value, action.deck, 'changing key', () =>
+				void dispatchPerformanceCommand({
+					type: 'key_nudge',
+					deck: action.deck,
+					semitones: action.semitones
+				})
+			);
+			return;
+		case 'deck_tempo_nudge':
+			_ifPressedOnLoadedDeck(value, action.deck, 'nudging tempo', () =>
+				_tempoNudge(action.deck, action.direction)
+			);
+			return;
+	}
+}
+
+function _handleDeckJog(action: Extract<MidiAction, { type: 'deck_jog' }>, value: MidiInputValue): void {
+	if (value.kind !== 'relative') {
+		throw new Error(`deck_jog requires a relative binding, got ${value.kind}`);
+	}
+	if (_deckIsEmpty(action.deck)) return;
+	_jogWheel(action.deck).turn(value.delta);
+}
+
+function _handleControllerPadMode(
+	action: Extract<MidiAction, { type: 'controller_pad_mode' }>,
+	value: MidiInputValue,
+	deviceId: string | undefined
+): void {
+	if (!_pressed(value)) return;
+	selectControllerPadMode(deviceId, action.deck, action.mode, _syncLeds, pushToast);
+}
+
+function _handleDeckStemEqToggle(
+	action: Extract<MidiAction, { type: 'deck_stem_eq_toggle' }>,
+	value: MidiInputValue
+): void {
+	if (_pressed(value)) toggleControllerStemEq(action.deck, pushToast);
+}
+
+function _handleControllerPad(
+	action: Extract<MidiAction, { type: 'controller_pad' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	runControllerPad(
+		ctx.deviceId,
+		action.deck,
+		action.pad,
+		action.shifted,
+		_pressed(value),
+		pushToast,
+		ctx.pressT0Ms
+	);
+}
+
+function _handleMixerChannel(
+	action: Extract<MidiAction, { type: 'mixer_channel' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
+	if (v === null) return;
+	if (action.target === 'trim') {
+		void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
+	} else if (action.target === 'eq') {
+		if (action.band === undefined) {
+			throw new Error('mixer_channel eq action requires band (device map bug)');
+		}
+		setControllerEq(action.deck, action.band, v, pushToast, ctx.pressT0Ms);
+	} else if (action.target === 'fader') {
+		onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
+		void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, ctx.pressT0Ms);
+	} else if (action.target === 'filter') {
+		void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, ctx.pressT0Ms);
+	} else {
+		const _exhaustive: never = action.target;
+		throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);
+	}
+}
+
+function _handleMixerGlobal(
+	action: Extract<MidiAction, { type: 'mixer_global' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
+	if (v === null) return;
+	if (action.target === 'crossfader') {
+		void dispatchPerformanceCommand({ type: 'crossfader', value: v }, ctx.pressT0Ms);
+	} else if (action.target === 'master') {
+		void dispatchPerformanceCommand({ type: 'master_volume', value: v });
+	} else {
+		const _exhaustive: never = action.target;
+		throw new Error(`Unhandled mixer_global target: ${_exhaustive}`);
+	}
+}
+
+function _handleChannelCue(action: Extract<MidiAction, { type: 'channel_cue' }>, value: MidiInputValue): void {
+	if (!_pressed(value)) return;
+	void dispatchPerformanceCommand({
+		type: 'channel_cue',
+		deck: action.deck,
+		enabled: !mixerState.channels[action.deck].cue_enabled
+	});
+}
+
+function _handleHeadphoneMix(
+	action: Extract<MidiAction, { type: 'headphone_mix' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
+	if (v === null) return;
+	_dispatchHeadphoneMix(v);
+}
+
+function _handleHeadphoneLevel(
+	action: Extract<MidiAction, { type: 'headphone_level' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
+	if (v === null) return;
+	void dispatchPerformanceCommand({
+		type: 'headphone_level',
+		value: v
+	});
+}
+
+function _handleMasterCue(action: Extract<MidiAction, { type: 'master_cue' }>, value: MidiInputValue): void {
+	if (action.mode === 'latch') {
+		if (!_pressed(value)) return;
+		if (_masterCue === null) _engageMasterCue();
+		else _disengageMasterCue();
+	} else if (action.mode === 'hold') {
+		if (_pressed(value)) _engageMasterCue();
+		else _disengageMasterCue();
+	} else {
+		const _exhaustive: never = action.mode;
+		throw new Error(`Unhandled master_cue mode: ${_exhaustive}`);
+	}
+}
+
+function _handleDeckPitch(
+	action: Extract<MidiAction, { type: 'deck_pitch' }>,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void {
+	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
+	if (v === null) return;
+	if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
+	const ratio = pitchRatioFromFader(v, pitchRanges[action.deck]);
+	_jogWheels.get(action.deck)?.tempoMoved(ratio);
+	void dispatchPerformanceCommand({ type: 'tempo', deck: action.deck, ratio });
+}
+
+function _handleBrowseEncoder(
+	action: Extract<MidiAction, { type: 'browse_encoder' }>,
+	value: MidiInputValue
+): void {
+	if (value.kind !== 'relative') {
+		throw new Error(`browse_encoder requires a relative binding, got ${value.kind}`);
+	}
+	_requireBrowseAdapter('browse_encoder')?.moveSelection(value.delta);
+}
+
+function _handleBrowseLoad(action: Extract<MidiAction, { type: 'browse_load' }>, value: MidiInputValue): void {
+	if (!_pressed(value)) return;
+	_requireBrowseAdapter('browse_load')?.loadSelected(action.deck);
+}
+
+function _routeMidiAction(
+	action: MidiAction,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx,
+	pressT0Ms: number | undefined,
+	deviceId: string | undefined
+): void {
+	switch (action.type) {
+		case 'deck_play_toggle':
+		case 'deck_cue':
+		case 'deck_hot_cue':
+			_handleDeckTransport(action, value, pressT0Ms);
+			return;
+		case 'deck_beat_loop':
+		case 'deck_auto_loop_toggle':
+		case 'deck_loop_exit':
+		case 'deck_manual_loop_cycle':
+		case 'deck_loop_scale':
+			_handleDeckLoop(action, value, ctx);
+			return;
+		case 'deck_sync_toggle':
+		case 'deck_key_sync_toggle':
+		case 'deck_key_nudge':
+		case 'deck_tempo_nudge':
+			_handleDeckKeyAndTempo(action, value);
+			return;
+		case 'deck_jog':
+			_handleDeckJog(action, value);
+			return;
+		case 'controller_pad_mode':
+			_handleControllerPadMode(action, value, deviceId);
+			return;
+		case 'deck_stem_eq_toggle':
+			_handleDeckStemEqToggle(action, value);
+			return;
+		case 'controller_pad':
+			_handleControllerPad(action, value, ctx);
+			return;
+		case 'mixer_channel':
+			_handleMixerChannel(action, value, ctx);
+			return;
+		case 'mixer_global':
+			_handleMixerGlobal(action, value, ctx);
+			return;
+		case 'channel_cue':
+			_handleChannelCue(action, value);
+			return;
+		case 'headphone_mix':
+			_handleHeadphoneMix(action, value, ctx);
+			return;
+		case 'headphone_level':
+			_handleHeadphoneLevel(action, value, ctx);
+			return;
+		case 'master_cue':
+			_handleMasterCue(action, value);
+			return;
+		case 'deck_pitch':
+			_handleDeckPitch(action, value, ctx);
+			return;
+		case 'browse_encoder':
+			_handleBrowseEncoder(action, value);
+			return;
+		case 'browse_load':
+			_handleBrowseLoad(action, value);
+			return;
+		case 'shift_modifier':
+			// Consumed inside webmidi.svelte.ts; reaching the glue is a bug.
+			throw new Error('shift_modifier must never reach the action glue');
+		default: {
+			const _exhaustive: never = action;
+			return _unhandledMidiAction(_exhaustive);
+		}
+	}
+}
+
 /** The action switch. Exported for unit tests; production wiring goes
  * through attachMidiGlue() -> registerActionHandler. */
 export function handleMidiAction(
@@ -263,235 +642,12 @@ export function handleMidiAction(
 	controlId?: string
 ): void {
 	const physicalControlId = controlId ?? activeMidiControlId();
-	switch (action.type) {
-		case 'deck_play_toggle': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'play');
-			_cmdPlayToggle(action.deck, pressT0Ms);
-			return;
-		}
-		case 'deck_cue': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'cueing');
-			_cmdPressCue(action.deck, pressT0Ms);
-			return;
-		}
-		case 'deck_hot_cue': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'hot cues');
-			const cue = _findHotCue(action.deck, action.slot);
-			if (cue === null) {
-				// Empty slot is a REAL library state, not an error to throw on.
-				pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
-				return;
-			}
-			_cmdHotCue(action.deck, action.slot, pressT0Ms);
-			return;
-		}
-		case 'deck_beat_loop': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
-			_cmdBeatLoop(action.deck, action.beats);
-			return;
-		}
-		case 'deck_auto_loop_toggle': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
-			toggleControllerAutoLoop(action.deck, _deviceId, pushToast);
-			return;
-		}
-		case 'deck_loop_exit': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
-			clearControllerManualLoop(action.deck, _deviceId);
-			_cmdLoopExit(action.deck);
-			return;
-		}
-		case 'deck_sync_toggle': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'syncing');
-			void dispatchPerformanceCommand({
-				type: 'beat_sync',
-				deck: action.deck,
-				enabled: !deckStates[action.deck].beat_sync_enabled
-			});
-			return;
-		}
-		case 'deck_manual_loop_cycle': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
-			cycleControllerManualLoop(action.deck, _deviceId, pushToast);
-			return;
-		}
-		case 'deck_loop_scale': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'resizing a loop');
-			_scaleLoop(action.deck, action.factor);
-			return;
-		}
-		case 'deck_key_sync_toggle': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'key sync');
-			void dispatchPerformanceCommand({
-				type: 'key_sync',
-				deck: action.deck,
-				enabled: !deckStates[action.deck].key_sync_enabled
-			});
-			return;
-		}
-		case 'deck_key_nudge': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'changing key');
-			void dispatchPerformanceCommand({
-				type: 'key_nudge',
-				deck: action.deck,
-				semitones: action.semitones
-			});
-			return;
-		}
-		case 'deck_tempo_nudge': {
-			if (!_pressed(value)) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'nudging tempo');
-			_tempoNudge(action.deck, action.direction);
-			return;
-		}
-		case 'deck_jog': {
-			if (value.kind !== 'relative') {
-				throw new Error(`deck_jog requires a relative binding, got ${value.kind}`);
-			}
-			if (_deckIsEmpty(action.deck)) return;
-			_jogWheel(action.deck).turn(value.delta);
-			return;
-		}
-		case 'controller_pad_mode': {
-			if (!_pressed(value)) return;
-			selectControllerPadMode(_deviceId, action.deck, action.mode, _syncLeds, pushToast);
-			return;
-		}
-		case 'deck_stem_eq_toggle': {
-			if (_pressed(value)) toggleControllerStemEq(action.deck, pushToast);
-			return;
-		}
-		case 'controller_pad': {
-			runControllerPad(
-				_deviceId,
-				action.deck,
-				action.pad,
-				action.shifted,
-				_pressed(value),
-				pushToast,
-				pressT0Ms
-			);
-			return;
-		}
-		case 'mixer_channel': {
-			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
-			if (v === null) return;
-			if (action.target === 'trim') {
-				void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
-			} else if (action.target === 'eq') {
-				if (action.band === undefined) {
-					throw new Error('mixer_channel eq action requires band (device map bug)');
-				}
-				setControllerEq(action.deck, action.band, v, pushToast, pressT0Ms);
-			} else if (action.target === 'fader') {
-				onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
-				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
-			} else if (action.target === 'filter') {
-				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
-			} else {
-				const _exhaustive: never = action.target;
-				throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);
-			}
-			return;
-		}
-		case 'mixer_global': {
-			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
-			if (v === null) return;
-			if (action.target === 'crossfader') {
-				void dispatchPerformanceCommand({ type: 'crossfader', value: v }, pressT0Ms);
-			} else if (action.target === 'master') {
-				void dispatchPerformanceCommand({ type: 'master_volume', value: v });
-			} else {
-				const _exhaustive: never = action.target;
-				throw new Error(`Unhandled mixer_global target: ${_exhaustive}`);
-			}
-			return;
-		}
-		case 'channel_cue': {
-			if (!_pressed(value)) return;
-			void dispatchPerformanceCommand({
-				type: 'channel_cue',
-				deck: action.deck,
-				enabled: !mixerState.channels[action.deck].cue_enabled
-			});
-			return;
-		}
-		case 'headphone_mix': {
-			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
-			if (v === null) return;
-			_dispatchHeadphoneMix(v);
-			return;
-		}
-		case 'headphone_level': {
-			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
-			if (v === null) return;
-			void dispatchPerformanceCommand({
-				type: 'headphone_level',
-				value: v
-			});
-			return;
-		}
-		case 'master_cue': {
-			if (action.mode === 'latch') {
-				if (!_pressed(value)) return;
-				if (_masterCue === null) _engageMasterCue();
-				else _disengageMasterCue();
-			} else if (action.mode === 'hold') {
-				if (_pressed(value)) _engageMasterCue();
-				else _disengageMasterCue();
-			} else {
-				const _exhaustive: never = action.mode;
-				throw new Error(`Unhandled master_cue mode: ${_exhaustive}`);
-			}
-			return;
-		}
-		case 'deck_pitch': {
-			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
-			if (v === null) return;
-			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
-			const ratio = pitchRatioFromFader(v, pitchRanges[action.deck]);
-			_jogWheels.get(action.deck)?.tempoMoved(ratio);
-			void dispatchPerformanceCommand({ type: 'tempo', deck: action.deck, ratio });
-			return;
-		}
-		case 'browse_encoder': {
-			if (value.kind !== 'relative') {
-				throw new Error(`browse_encoder requires a relative binding, got ${value.kind}`);
-			}
-			_requireBrowseAdapter('browse_encoder')?.moveSelection(value.delta);
-			return;
-		}
-		case 'browse_load': {
-			if (!_pressed(value)) return;
-			_requireBrowseAdapter('browse_load')?.loadSelected(action.deck);
-			return;
-		}
-		case 'shift_modifier': {
-			// Consumed inside webmidi.svelte.ts; reaching the glue is a bug.
-			throw new Error('shift_modifier must never reach the action glue');
-		}
-		default: {
-			const _exhaustive: never = action;
-			throw new Error(`Unhandled MidiAction: ${JSON.stringify(_exhaustive)}`);
-		}
-	}
-}
-
-/** Hot-cue in-point for a slot, or null when the slot is empty. */
-function _findHotCue(deck: DeckId, slot: HotCueSlot): number | null {
-	const cue = deckStates[deck].hot_cues.find((c) => c.slot === slot);
-	return cue === undefined ? null : cue.in_ms;
+	const ctx: _MidiGlueCtx = {
+		deviceId: _deviceId,
+		pressT0Ms,
+		physicalControlId
+	};
+	_routeMidiAction(action, value, ctx, pressT0Ms, _deviceId);
 }
 
 /** Fader position 0..1 -> playbackRate ratio within +-range%.

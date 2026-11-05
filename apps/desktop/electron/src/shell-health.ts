@@ -8,7 +8,13 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 
-import { OUTPUT_HEALTH_PATH, SWITCH_OUTPUT_PATH, type OutputAction } from './output-health';
+import {
+	INPUT_DEVICES_PATH,
+	OUTPUT_HEALTH_PATH,
+	RECONNECT_SPEAKER_PATH,
+	SWITCH_OUTPUT_PATH,
+	type OutputAction
+} from './output-health';
 import { utcTimestampIso } from './shell-log';
 
 export const HEALTH_PATH = '/api/v1/health';
@@ -44,7 +50,7 @@ export class ShellHealthServer {
 
 	static async start(
 		dataDir: string,
-		outputHealth: (action: OutputAction) => string
+		outputHealth: (action: OutputAction) => string | Promise<string>
 	): Promise<ShellHealthServer> {
 		let instance: ShellHealthServer | null = null;
 		const server = http.createServer((req, res) => {
@@ -61,8 +67,16 @@ export class ShellHealthServer {
 			if (req.method === 'GET' && target === HEALTH_PATH) {
 				return respond(200, JSON.stringify({ ...instance.snapshot, checked_at: utcTimestampIso() }));
 			}
-			if (req.method === 'GET' && target === OUTPUT_HEALTH_PATH) return respond(200, outputHealth('probe'));
-			if (req.method === 'POST' && target === SWITCH_OUTPUT_PATH) return respond(200, outputHealth('switch'));
+			const answer = (action: OutputAction): void => {
+				Promise.resolve(outputHealth(action)).then(
+					(body) => respond(200, body),
+					(error: unknown) => respond(500, JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+				);
+			};
+			if (req.method === 'GET' && target === OUTPUT_HEALTH_PATH) return answer('probe');
+			if (req.method === 'POST' && target === SWITCH_OUTPUT_PATH) return answer('switch');
+			if (req.method === 'POST' && target === RECONNECT_SPEAKER_PATH) return answer('reconnect');
+			if (req.method === 'GET' && target === INPUT_DEVICES_PATH) return answer('inputs');
 			return respond(404, '{"status":"not_found"}');
 		});
 		server.keepAliveTimeout = 750;

@@ -51,7 +51,10 @@ test('not visible is hidden whatever the status says', () => {
 
 test('the rendered sidebar shows nothing before the status has answered', () => {
 	const html = ssr.render(ssr.AssistantSidebar, { props: { visible: true } }).body;
-	const text = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, '').trim();
+	const text = html
+		.replace(/<!--[\s\S]*?-->/g, '')
+		.replace(/<[^>]*>/g, '')
+		.trim();
 	assert.equal(text, '');
 });
 

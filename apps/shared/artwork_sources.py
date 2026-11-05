@@ -35,6 +35,7 @@ no online cover costs one lookup a week, not one per view.
 ``ODJ_ARTWORK_ONLINE=0`` turns the online lookup off (no request leaves the
 machine); the cache is still served.
 """
+
 from __future__ import annotations
 
 import functools
@@ -85,9 +86,7 @@ SIDECAR_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"
 _FEAT = re.compile(r"\s*[\(\[]?\s*(feat\.?|ft\.?|featuring)\s.*$", re.I)
 _MIX = re.compile(r"\s*[\(\[]\s*(original|extended|club|radio)\s*(mix|edit|version)\s*[\)\]]", re.I)
 # Mixed In Key style prefixes: "6A - 7 - Title", "6A - Title", "Am - 5 - Title".
-_KEY_PREFIX = re.compile(
-    r"^\s*(?:\d{1,2}[AB]\s*-\s*(?:\d{1,2}\s*-\s*)?|[A-G][#b]?m?\s*-\s*\d{1,2}\s*-\s*)"
-)
+_KEY_PREFIX = re.compile(r"^\s*(?:\d{1,2}[AB]\s*-\s*(?:\d{1,2}\s*-\s*)?|[A-G][#b]?m?\s*-\s*\d{1,2}\s*-\s*)")
 
 
 # ----- folder image -----------------------------------------------------------
@@ -176,9 +175,7 @@ def query_title(title: str | None) -> str:
 
 def query_artist(artist: str | None) -> str:
     """First credited artist of a comma/ampersand/feat. joined list."""
-    return re.split(
-        r"\s*(?:,|;|&| x | feat\.? | ft\.? )\s*", artist or "", maxsplit=1, flags=re.I
-    )[0].strip()
+    return re.split(r"\s*(?:,|;|&| x | feat\.? | ft\.? )\s*", artist or "", maxsplit=1, flags=re.I)[0].strip()
 
 
 def normalize(text: str | None) -> str:
@@ -231,7 +228,8 @@ def _release_tier(rel: dict, ours: str) -> int:
     own = (
         rel.get("status") == "Official"
         and str(group.get("primary-type") or "").lower() in _OWN_TYPES
-        and bool(ours) and ours in credit
+        and bool(ours)
+        and ours in credit
     )
     return 0 if own else 1
 
@@ -306,7 +304,8 @@ class ArtworkCache:
                 continue
             if meta.get("status") == "suggested":
                 out[str(meta["stable_id"])] = StoreSuggestion(
-                    **{k: meta[k] for k in StoreSuggestion.__dataclass_fields__})
+                    **{k: meta[k] for k in StoreSuggestion.__dataclass_fields__}
+                )
         return out
 
     def store_declined(self, stable_id: str) -> bool:
@@ -342,8 +341,12 @@ class ArtworkCache:
         self._put_meta(stable_id, {"status": "miss", "reason": reason})
 
     def _put_meta(self, stable_id: str, meta: dict) -> None:
-        meta = {**meta, "stable_id": stable_id, "checked_epoch": time.time(),
-                "checked_utc": datetime.now(UTC).isoformat(timespec="seconds")}
+        meta = {
+            **meta,
+            "stable_id": stable_id,
+            "checked_epoch": time.time(),
+            "checked_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
         _write_atomic(self._base(stable_id).with_suffix(".json"), json.dumps(meta).encode())
 
     def _meta(self, stable_id: str) -> dict | None:
@@ -416,8 +419,9 @@ class _Backoff:
 _BACKOFF = _Backoff()
 
 
-def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-                 http: HttpGet | None = None) -> tuple[bytes, str] | None:
+def online_cover(
+    cache: ArtworkCache, stable_id: str, query: TrackQuery, http: HttpGet | None = None
+) -> tuple[bytes, str] | None:
     """The cached online cover, looking it up first when it was never tried.
 
     Returns None when the lookup is off, the track has no artist or title,
@@ -452,8 +456,9 @@ def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
         lock.release()
 
 
-def _lookup(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-            http: HttpGet) -> tuple[tuple[bytes, str] | None, bool]:
+def _lookup(
+    cache: ArtworkCache, stable_id: str, query: TrackQuery, http: HttpGet
+) -> tuple[tuple[bytes, str] | None, bool]:
     """(cover or None, whether the network was unreachable).
 
     MusicBrainz + Cover Art Archive first, then the store searches, whose hit
@@ -483,8 +488,7 @@ _Step = tuple[tuple[bytes, str] | None, str, int | None]
 """(cover, miss reason, transient status): a transient status means not a fact about the track."""
 
 
-def _lookup_musicbrainz(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-                        http: HttpGet) -> _Step:
+def _lookup_musicbrainz(cache: ArtworkCache, stable_id: str, query: TrackQuery, http: HttpGet) -> _Step:
     lucene = f'recording:"{_lucene(query_title(query.title))}" AND artist:"{_lucene(query_artist(query.artist))}"'
     status, body = http.get(f"{MB_URL}?fmt=json&limit=100&query={urllib.parse.quote(lucene)}")
     if status != 200:
@@ -498,10 +502,16 @@ def _lookup_musicbrainz(cache: ArtworkCache, stable_id: str, query: TrackQuery,
         # The count separates "MusicBrainz does not know this song" (0) from
         # "it knows songs by that name, none by this artist at this length".
         found = len(payload.get("recordings", []))
-        return None, (f"no matching recording (MusicBrainz returned {found} for this title and "
-                      "artist, none with the same title, artist and length)" if found else
-                      "no matching recording (MusicBrainz has no recording with this title "
-                      "by this artist)"), None
+        return (
+            None,
+            (
+                f"no matching recording (MusicBrainz returned {found} for this title and "
+                "artist, none with the same title, artist and length)"
+                if found
+                else "no matching recording (MusicBrainz has no recording with this title by this artist)"
+            ),
+            None,
+        )
     for group in groups[:MAX_RELEASE_GROUPS]:
         status, data = http.get(CAA_URL.format(rg=group))
         if status == 200:
@@ -585,8 +595,10 @@ def matching_store_hits(hits: list[StoreHit], query: TrackQuery) -> list[StoreHi
     ours = normalize(query_artist(query.artist))
     want_s = (query.duration_ms or 0) / 1000.0
     matches = [
-        hit for hit in hits
-        if title and normalize(hit.title) == title
+        hit
+        for hit in hits
+        if title
+        and normalize(hit.title) == title
         and artist_matches(normalize(hit.artist), ours)
         and _is_store_cover_url(hit.cover_url)
     ]
@@ -613,8 +625,9 @@ class StoreSuggestion:
     track_artist: str
 
 
-def _lookup_store(query: TrackQuery, http: HttpGet, name: str,
-                  search: StoreSearch) -> tuple[StoreSuggestion | None, str, int | None]:
+def _lookup_store(
+    query: TrackQuery, http: HttpGet, name: str, search: StoreSearch
+) -> tuple[StoreSuggestion | None, str, int | None]:
     build_url, parse_hits = search
     status, body = http.get(build_url(query))
     if status != 200:
@@ -627,8 +640,11 @@ def _lookup_store(query: TrackQuery, http: HttpGet, name: str,
     if not matches:
         return None, f"no artist+title match in {len(hits)} results", None
     best = matches[0]
-    return StoreSuggestion(name, best.cover_url, best.title, best.artist,
-                           query.title or "", query.artist or ""), "", None
+    return (
+        StoreSuggestion(name, best.cover_url, best.title, best.artist, query.title or "", query.artist or ""),
+        "",
+        None,
+    )
 
 
 class SuggestionError(ValueError):

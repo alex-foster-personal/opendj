@@ -133,7 +133,10 @@ async function dispatch(page: Page, command: PerformanceCommand): Promise<Perfor
 	}, command);
 }
 
-function pushEvent(session: HuntSession, partial: Omit<HuntEvent, 'ts' | 'action' | 'route'> & { route?: string }): void {
+function pushEvent(
+	session: HuntSession,
+	partial: Omit<HuntEvent, 'ts' | 'action' | 'route'> & { route?: string }
+): void {
 	session.events.push({
 		ts: nowIso(),
 		action: session.lastAction,
@@ -210,7 +213,9 @@ async function drainToasts(page: Page, session: HuntSession): Promise<void> {
 	const ipcToasts = await page.evaluate(() => {
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) return [];
-		return ipc.toasts().map((toast) => ({ id: toast.id, kind: toast.kind, message: toast.message }));
+		return ipc
+			.toasts()
+			.map((toast) => ({ id: toast.id, kind: toast.kind, message: toast.message }));
 	});
 	const dismissIds: string[] = [];
 	for (const toast of ipcToasts) {
@@ -268,7 +273,10 @@ async function pollFindings(page: Page, session: HuntSession): Promise<void> {
 	for (const deckId of [1, 2] as const) {
 		const deck = state.decks[deckId];
 		if (deck.playing) {
-			if (session.stall.lastPos[deckId] !== null && deck.position_ms === session.stall.lastPos[deckId]) {
+			if (
+				session.stall.lastPos[deckId] !== null &&
+				deck.position_ms === session.stall.lastPos[deckId]
+			) {
 				if (session.stall.frozenSince[deckId] === null) session.stall.frozenSince[deckId] = now;
 				else if (
 					!session.stall.frozenRecorded[deckId] &&
@@ -324,7 +332,11 @@ async function openPlaylist(page: Page, name: string): Promise<void> {
 async function ensureAutoPlay(page: Page): Promise<void> {
 	const autoPlay = page.getByRole('button', { name: 'AutoPlay', exact: true });
 	await expect(autoPlay).toBeVisible();
-	for (let attempt = 0; attempt < 3 && (await autoPlay.getAttribute('aria-pressed')) !== 'true'; attempt += 1) {
+	for (
+		let attempt = 0;
+		attempt < 3 && (await autoPlay.getAttribute('aria-pressed')) !== 'true';
+		attempt += 1
+	) {
 		await autoPlay.click();
 	}
 	await expect(autoPlay).toHaveAttribute('aria-pressed', 'true');
@@ -342,7 +354,9 @@ async function loadOntoDeck(page: Page, index: number, deck: 1 | 2): Promise<str
 	);
 	await title.hover();
 	await page.waitForTimeout(PAST_GUARD_MS);
-	await row.locator(`button[title="Load onto deck ${deck}"]`).click({ force: true, timeout: 5_000 });
+	await row
+		.locator(`button[title="Load onto deck ${deck}"]`)
+		.click({ force: true, timeout: 5_000 });
 	return stableId;
 }
 
@@ -376,10 +390,13 @@ test('NEGATIVE CONTROL: a synthetic throw is captured and named', async ({ page 
 		})
 		.catch(() => undefined);
 	await expect
-		.poll(async () => {
-			await drainRejections(page, session);
-			return session.events.some((event) => event.message.includes(NEGATIVE_CONTROL_NEEDLE));
-		}, { timeout: 5_000 })
+		.poll(
+			async () => {
+				await drainRejections(page, session);
+				return session.events.some((event) => event.message.includes(NEGATIVE_CONTROL_NEEDLE));
+			},
+			{ timeout: 5_000 }
+		)
 		.toBe(true);
 
 	const named = session.events.filter((event) => event.message.includes(NEGATIVE_CONTROL_NEEDLE));
@@ -395,7 +412,9 @@ test('NEGATIVE CONTROL: a synthetic throw is captured and named', async ({ page 
 	const allowlist = loadAllowlist(ALLOW_PATH);
 	const unexpected = unexpectedSignatures(groupBySignature(session.events), allowlist);
 	expect(unexpected.length, 'unexpectedSignatures must name the injected throw').toBeGreaterThan(0);
-	expect(unexpected.some((finding) => finding.signature.includes(NEGATIVE_CONTROL_NEEDLE))).toBe(true);
+	expect(unexpected.some((finding) => finding.signature.includes(NEGATIVE_CONTROL_NEEDLE))).toBe(
+		true
+	);
 });
 
 test(`AutoPlay mixing hunt reports every error over ${huntMinutes()} minutes`, async ({ page }) => {

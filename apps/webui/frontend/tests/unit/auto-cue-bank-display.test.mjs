@@ -60,8 +60,8 @@ test('onSlotClick still refuses unloaded empty slots and still beginRenames load
 	);
 	assert.match(
 		fnText,
-		/await beginRename\(entry\.slot, deck\.position_ms, deck\.stable_id\);/,
-		'an empty pad must still SAVE the current playhead, not the proposal time_s'
+		/await beginRename\(entry\.slot, loop\?\.in_ms \?\? deck\.position_ms, deck\.stable_id\);/,
+		'an empty pad must still SAVE the current playhead (or the engaged loop in, HOTCUE-LOOP-01), not the proposal time_s'
 	);
 	assert.doesNotMatch(
 		fnText,

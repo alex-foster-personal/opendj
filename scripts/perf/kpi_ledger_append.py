@@ -1,4 +1,4 @@
-"""Append-only writer for docs/perf/kpi-ledger.json used by perf KPI nightly."""
+"""Append-only writer for (private path) used by perf KPI nightly."""
 
 from __future__ import annotations
 
@@ -134,13 +134,7 @@ def append_entries(path: Path, rows: list[dict[str, Any]], *, validate: bool = T
     if empty_match is not None:
         formatted = _format_new_entries(rows)
         new_array = "[\n" + formatted + "\n]"
-        new_text = (
-            stripped[: empty_match.start()]
-            + '"entries": '
-            + new_array
-            + stripped[empty_match.end() :]
-            + "\n"
-        )
+        new_text = stripped[: empty_match.start()] + '"entries": ' + new_array + stripped[empty_match.end() :] + "\n"
         _atomic_write(path, new_text)
         return
 

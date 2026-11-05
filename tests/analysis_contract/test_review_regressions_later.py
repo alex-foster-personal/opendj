@@ -10,6 +10,7 @@ mutation back to its pre-fix source.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -51,7 +52,8 @@ def _bare_db(tmp_path):
     conn = sqlite3.connect(path)
     conn.execute(
         "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES ('t1', 'inferred', 'x', ?, ?)", (STAMP, STAMP),
+        "VALUES ('t1', 'inferred', 'x', ?, ?)",
+        (STAMP, STAMP),
     )
     conn.execute(
         "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
@@ -62,9 +64,10 @@ def _bare_db(tmp_path):
     return path, conn
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P1 round 3: an EXISTING database must gain the new tables
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_an_already_stamped_database_gains_the_new_tables(tmp_path) -> None:
     """Reproduced: apply_migrations returns at `current >= SCHEMA_VERSION`.
@@ -81,10 +84,7 @@ def test_an_already_stamped_database_gains_the_new_tables(tmp_path) -> None:
         assert consolidated.apply_migrations(conn) == consolidated.SCHEMA_VERSION
         names = ("analysis_canonical", "analysis_projection", "analysis_source_default")
         present = lambda: {  # noqa: E731
-            n: conn.execute(
-                "SELECT count(*) FROM sqlite_master WHERE name=?", (n,)
-            ).fetchone()[0]
-            for n in names
+            n: conn.execute("SELECT count(*) FROM sqlite_master WHERE name=?", (n,)).fetchone()[0] for n in names
         }
         assert all(present().values()), "fresh database must create all three"
 
@@ -99,16 +99,15 @@ def test_an_already_stamped_database_gains_the_new_tables(tmp_path) -> None:
         assert not any(present().values()), "precondition: the tables are gone"
 
         consolidated.apply_migrations(conn)
-        assert all(present().values()), (
-            "an existing install must gain the tables on upgrade"
-        )
+        assert all(present().values()), "an existing install must gain the tables on upgrade"
     finally:
         conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 3: a digest field must contain a digest
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_a_placeholder_decode_fingerprint_is_refused(db) -> None:
     """`sha256:decode-fixture` was accepted and means nothing."""
@@ -125,9 +124,10 @@ def test_a_real_digest_is_still_accepted(db) -> None:
     assert analysis_store.upsert_record(own_record(), conn=db).inserted is True
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 3: every waveform band sample, not just the count
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), "loud"])
 def test_a_bad_waveform_band_sample_is_refused(db, bad: object) -> None:
@@ -143,18 +143,18 @@ def test_a_bad_waveform_band_sample_is_refused(db, bad: object) -> None:
 
 
 def test_a_well_formed_waveform_is_still_accepted(db) -> None:
-    assert analysis_store.upsert_record(
-        own_record(lane="waveform"), conn=db
-    ).inserted is True
+    assert analysis_store.upsert_record(own_record(lane="waveform"), conn=db).inserted is True
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 4: the lane-level confidence is a measurement too
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad", ["very", float("nan"), float("inf")])
 def test_a_lane_confidence_that_is_not_a_finite_number_is_refused(
-    db, bad: object,
+    db,
+    bad: object,
 ) -> None:
     """It is copied verbatim into ProvenanceOut.confidence: float | None."""
     from tests.analysis_contract.conftest import loudness_payload
@@ -163,9 +163,7 @@ def test_a_lane_confidence_that_is_not_a_finite_number_is_refused(
         analysis_store.upsert_record(
             own_record(
                 lane="loudness",
-                result=LaneResult(
-                    status="ok", confidence=bad, payload=loudness_payload()
-                ),
+                result=LaneResult(status="ok", confidence=bad, payload=loudness_payload()),
             ),
             conn=db,
         )
@@ -179,20 +177,17 @@ def test_a_real_confidence_and_none_both_still_pass(db) -> None:
         analysis_store.upsert_record(
             own_record(
                 lane="loudness",
-                result=LaneResult(
-                    status="ok", confidence=confidence, payload=loudness_payload()
-                ),
+                result=LaneResult(status="ok", confidence=confidence, payload=loudness_payload()),
             ),
             conn=db,
         )
-    assert db.execute(
-        "SELECT count(*) FROM analysis_projection WHERE field='loudness_lufs'"
-    ).fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM analysis_projection WHERE field='loudness_lufs'").fetchone()[0] == 1
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 4: a failed key-segment block must name its reason
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_failed_key_segments_without_a_reason_are_refused(db) -> None:
     """The projection surfaces that reason; it cannot invent one."""
@@ -209,21 +204,24 @@ def test_failed_key_segments_with_a_reason_still_project_it(db) -> None:
     """The control, and the round-three fix still holding."""
     payload = key_payload()
     payload["segments"] = {
-        "status": "failed", "reason": "no_downbeats_for_bar_sync", "segments": [],
+        "status": "failed",
+        "reason": "no_downbeats_for_bar_sync",
+        "segments": [],
     }
     analysis_store.upsert_record(
         own_record(lane="key", result=LaneResult(status="ok", payload=payload)),
         conn=db,
     )
-    assert db.execute(
-        "SELECT status, reason FROM analysis_projection "
-        "WHERE field='key_change_count'"
-    ).fetchone() == ("failed", "no_downbeats_for_bar_sync")
+    assert db.execute("SELECT status, reason FROM analysis_projection WHERE field='key_change_count'").fetchone() == (
+        "failed",
+        "no_downbeats_for_bar_sync",
+    )
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 4: the migration audit must see every rung it creates
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_the_audit_reference_covers_the_v2_tables(tmp_path) -> None:
     """A malformed v2 table must be REFUSED, not preserved by IF NOT EXISTS.
@@ -237,17 +235,14 @@ def test_the_audit_reference_covers_the_v2_tables(tmp_path) -> None:
     reference = consolidated._reference_objects()
     for name in consolidated.TABLES["native_analysis_v1"]:
         assert name in reference, (
-            f"{name} is created by the ladder but absent from the audit "
-            "reference, so its shape is never checked"
+            f"{name} is created by the ladder but absent from the audit reference, so its shape is never checked"
         )
 
     path = tmp_path / "engine.db"
     conn = sqlite3.connect(path, isolation_level=None)
     try:
         # A v1-era database carrying a WRONG-SHAPED v2 table.
-        conn.execute(
-            "CREATE TABLE analysis_canonical (stable_id TEXT PRIMARY KEY)"
-        )
+        conn.execute("CREATE TABLE analysis_canonical (stable_id TEXT PRIMARY KEY)")
         with pytest.raises(Exception) as excinfo:
             consolidated.apply_migrations(conn)
         assert "analysis_canonical" in str(excinfo.value)
@@ -255,9 +250,10 @@ def test_the_audit_reference_covers_the_v2_tables(tmp_path) -> None:
         conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 5: pitch class is a discrete identity, not a rounded number
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad", [-0.5, 11.9, 3.5])
 def test_a_fractional_pitch_class_is_refused(db, bad: float) -> None:
@@ -273,7 +269,8 @@ def test_a_fractional_pitch_class_is_refused(db, bad: float) -> None:
 
 @pytest.mark.parametrize("out_of_range", [-1, 12])
 def test_an_out_of_range_integer_pitch_class_is_still_refused(
-    db, out_of_range: int,
+    db,
+    out_of_range: int,
 ) -> None:
     """The control: the range check must survive the type check landing on top."""
     payload = key_payload()
@@ -303,9 +300,10 @@ def test_every_valid_pitch_class_is_accepted() -> None:
     assert seen == set(range(12)), "every pitch class 0..11 must be reachable"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 6: a grid the deck cannot consume is not `ok`
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def _beats(*specs) -> list[dict]:
     return [{"t": t, "n": n, "bpm": bpm} for t, n, bpm in specs]
@@ -333,9 +331,7 @@ def test_a_grid_the_deck_would_reject_is_refused(db, beats, why: str) -> None:
     payload = beatgrid_payload()
     payload["beats"] = beats
     with pytest.raises(LaneContractError):
-        analysis_store.upsert_record(
-            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
-        )
+        analysis_store.upsert_record(own_record(result=LaneResult(status="ok", payload=payload)), conn=db)
 
 
 def test_a_grid_the_deck_accepts_is_still_stored(db) -> None:
@@ -345,14 +341,13 @@ def test_a_grid_the_deck_accepts_is_still_stored(db) -> None:
     exactly what `validateBeatGrid` is written to accept.
     """
     assert analysis_store.upsert_record(own_record(), conn=db).inserted is True
-    assert db.execute(
-        "SELECT value FROM analysis_projection WHERE field='bpm'"
-    ).fetchone()[0] == 128.0
+    assert db.execute("SELECT value FROM analysis_projection WHERE field='bpm'").fetchone()[0] == 128.0
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 7: a version the ranking cannot tell apart defeats order independence
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad", ["1.0.0-01", "1.0.0-alpha..1", "1.0.0-", "1.0.0-1."])
 def test_a_malformed_semver_prerelease_is_refused(bad: str) -> None:
@@ -387,9 +382,10 @@ def test_the_store_refuses_a_record_whose_version_cannot_be_ranked(db) -> None:
     assert db.execute("SELECT count(*) FROM analysis").fetchone()[0] == 0
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P1 round 7: a GET must not migrate the database
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_the_source_get_does_not_create_or_migrate_anything(tmp_path) -> None:
     """Reproduced by shape: `_open` used `store.open_conn`, which is READ-WRITE.
@@ -406,9 +402,7 @@ def test_the_source_get_does_not_create_or_migrate_anything(tmp_path) -> None:
     path = tmp_path / "state.db"
     state_db.open_rw(path).close()
     probe = sqlite3.connect(path)
-    before = sorted(
-        r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    )
+    before = sorted(r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'"))
     assert "analysis_projection" not in before, "precondition: not yet provisioned"
     probe.close()
 
@@ -420,9 +414,7 @@ def test_the_source_get_does_not_create_or_migrate_anything(tmp_path) -> None:
     assert body.json()["lanes"]["key"]["effective"] == "rbx"
 
     probe = sqlite3.connect(path)
-    after = sorted(
-        r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    )
+    after = sorted(r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'"))
     probe.close()
     assert after == before, f"the GET created {sorted(set(after) - set(before))}"
 
@@ -438,9 +430,7 @@ def test_the_source_get_works_on_a_read_only_database(tmp_path) -> None:
 
     path = tmp_path / "state.db"
     conn = analysis_store.open_conn(path)
-    conn.execute(
-        "INSERT INTO analysis_source_default VALUES ('loudness', 'own', ?)", (STAMP,)
-    )
+    conn.execute("INSERT INTO analysis_source_default VALUES ('loudness', 'own', ?)", (STAMP,))
     conn.commit()
     conn.close()
     os.chmod(path, 0o444)
@@ -454,9 +444,10 @@ def test_the_source_get_works_on_a_read_only_database(tmp_path) -> None:
         os.chmod(path, 0o644)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 8: values that are the right TYPE and the wrong VALUE
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad_bpm", [0.0, -120.0])
 def test_a_nonpositive_projected_bpm_is_refused(db, bad_bpm: float) -> None:
@@ -470,14 +461,13 @@ def test_a_nonpositive_projected_bpm_is_refused(db, bad_bpm: float) -> None:
     payload = beatgrid_payload()
     payload["bpm"] = bad_bpm
     with pytest.raises(LaneContractError, match="must be > 0"):
-        analysis_store.upsert_record(
-            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
-        )
+        analysis_store.upsert_record(own_record(result=LaneResult(status="ok", payload=payload)), conn=db)
 
 
 @pytest.mark.parametrize("bad_length", [3.9, -1, True])
 def test_a_waveform_length_that_is_not_a_nonnegative_integer_is_refused(
-    db, bad_length: object,
+    db,
+    bad_length: object,
 ) -> None:
     """int(3.9) is 3, so a block declaring 3.9 with three samples used to pass."""
     from tests.analysis_contract.conftest import waveform_payload
@@ -493,7 +483,8 @@ def test_a_waveform_length_that_is_not_a_nonnegative_integer_is_refused(
 
 @pytest.mark.parametrize("bad", [-0.2, 1.2])
 def test_a_confidence_outside_zero_to_one_is_refused_everywhere(
-    db, bad: float,
+    db,
+    bad: float,
 ) -> None:
     """Own values reach the SAME ProvenanceOut.confidence as every other source.
 
@@ -506,8 +497,7 @@ def test_a_confidence_outside_zero_to_one_is_refused_everywhere(
         analysis_store.upsert_record(
             own_record(
                 lane="loudness",
-                result=LaneResult(status="ok", confidence=bad,
-                                  payload=loudness_payload()),
+                result=LaneResult(status="ok", confidence=bad, payload=loudness_payload()),
             ),
             conn=db,
         )
@@ -515,9 +505,7 @@ def test_a_confidence_outside_zero_to_one_is_refused_everywhere(
     payload = beatgrid_payload()
     payload["bpm_confidence"] = bad
     with pytest.raises(LaneContractError, match=r"\[0, 1\]"):
-        analysis_store.upsert_record(
-            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
-        )
+        analysis_store.upsert_record(own_record(result=LaneResult(status="ok", payload=payload)), conn=db)
 
     key = key_payload()
     key["segments"]["segments"][0]["confidence"] = bad

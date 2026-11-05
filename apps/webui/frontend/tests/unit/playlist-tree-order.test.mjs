@@ -20,6 +20,12 @@ test('tree order: seq first, then no-seq rows by name', () => {
 	assert.deepEqual(m.treeOrderIds(rows), ['b', 'a', 'd', 'c']);
 });
 
+test('Inbox sorts first even against seq zero and AAA name', () => {
+	const rows = [pl('_incoming', 'Inbox', null), pl('aaa', 'AAA', 0)];
+	assert.deepEqual(m.treeOrderIds(rows), ['_incoming', 'aaa']);
+	assert.deepEqual(m.nameSortedIds(rows), ['_incoming', 'aaa']);
+});
+
 test('move before and after a target', () => {
 	const order = ['a', 'b', 'c', 'd'];
 	assert.deepEqual(m.movePlaylistInOrder(order, 'd', 'b', 'before'), ['a', 'd', 'b', 'c']);

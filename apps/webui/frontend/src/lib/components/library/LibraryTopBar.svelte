@@ -15,7 +15,13 @@
 	} from '$lib/rb/library-mode-runtime';
 	import { holdLibraryExitForGigRelease } from '$lib/library/library-exit-gate';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
-	import { health } from '$lib/stores.svelte';
+	import { health, pushToast } from '$lib/stores.svelte';
+	import {
+		ADD_MUSIC_LABEL,
+		ADD_MUSIC_TITLE,
+		runSetup,
+		runSetupBlocked
+	} from '$lib/setup/run-setup';
 	import LibraryTopBarView from './LibraryTopBarView.svelte';
 
 	// Main has no app-shell sidebar beside a full-bleed route (PERF-UI-07
@@ -33,6 +39,12 @@
 			? { tracks: health.data.state_db.tracks, playlists: health.data.state_db.playlists }
 			: null
 	);
+	const addMusicBlocked = $derived(runSetupBlocked());
+
+	async function onAddMusic(): Promise<void> {
+		const failure = await runSetup(goto);
+		if (failure !== null) pushToast(`Could not reopen setup: ${failure}`, 'error');
+	}
 
 	/**
 	 * LIBWS-06: leaving Library through its own picker. Library may have been
@@ -89,6 +101,10 @@
 	pathname={$page.url.pathname}
 	{selectedCount}
 	{libraryCounts}
+	addMusicLabel={ADD_MUSIC_LABEL}
+	addMusicTitle={ADD_MUSIC_TITLE}
+	{addMusicBlocked}
+	onAddMusic={() => void onAddMusic()}
 	{selectMode}
 	{modeForHref}
 >

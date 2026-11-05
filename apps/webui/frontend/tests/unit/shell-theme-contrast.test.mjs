@@ -27,7 +27,8 @@ before(async () => {
 	cc = await loadTypeScriptModule('src/lib/rb/color-contrast.ts');
 });
 
-const read = (rel) => readFileSync(fileURLToPath(new URL(`../../src/${rel}`, import.meta.url)), 'utf8');
+const read = (rel) =>
+	readFileSync(fileURLToPath(new URL(`../../src/${rel}`, import.meta.url)), 'utf8');
 const APP_CSS = read('app.css');
 const SELECTORS = { dark: ':root', light: "html[data-theme='light']" };
 
@@ -80,10 +81,9 @@ test('control: the dark text color on the light background fails (the check can 
 });
 
 test('shell rules outside the token blocks carry no hard-coded hex color', () => {
-	const withoutTokenBlocks = APP_CSS.replace(/:root \{[^}]*\}/, '').replace(
-		/html\[data-theme='light'\] \{[^}]*\}/,
-		''
-	).replace(/html\[data-skin='light'\] \{[^}]*\}/, '');
+	const withoutTokenBlocks = APP_CSS.replace(/:root \{[^}]*\}/, '')
+		.replace(/html\[data-theme='light'\] \{[^}]*\}/, '')
+		.replace(/html\[data-skin='light'\] \{[^}]*\}/, '');
 	const literals = withoutTokenBlocks.match(/#[0-9a-fA-F]{3,6}\b/g) ?? [];
 	assert.deepEqual(literals, []);
 });
@@ -129,10 +129,15 @@ for (const rel of SHELL_CHROME) {
 test('Light skin shell (light block plus its neutral overrides) meets every stated WCAG floor', () => {
 	const light = cc.parseColorTokens(APP_CSS, "html[data-theme='light']");
 	const skin = cc.parseColorTokens(APP_CSS, "html[data-skin='light']");
-	assert.ok(Object.keys(skin).length >= 8, `Light skin shell parse looks short (${Object.keys(skin).length})`);
+	assert.ok(
+		Object.keys(skin).length >= 8,
+		`Light skin shell parse looks short (${Object.keys(skin).length})`
+	);
 	const tokens = { ...light, ...skin };
 	const violations = cc.validateScheme(tokens, SHELL_PAIRINGS);
 	assert.deepEqual(violations, [], cc.describeViolations(violations));
 	// The skin block comes after the shared light block so it wins at equal specificity.
-	assert.ok(APP_CSS.indexOf("html[data-skin='light'] {") > APP_CSS.indexOf("html[data-theme='light'] {"));
+	assert.ok(
+		APP_CSS.indexOf("html[data-skin='light'] {") > APP_CSS.indexOf("html[data-theme='light'] {")
+	);
 });

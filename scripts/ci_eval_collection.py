@@ -63,9 +63,7 @@ def _missing_baseline_anomaly(campaign: dict[str, Any], campaign_runs: list[dict
     """
     base = campaign["base_branch"]
     seen = {
-        row.get("workflowName")
-        for row in campaign_runs
-        if row.get("event") == "push" and row.get("headBranch") == base
+        row.get("workflowName") for row in campaign_runs if row.get("event") == "push" and row.get("headBranch") == base
     }
     missing = [name for name in campaign["expected_workflows"] if name not in seen]
     if not missing:
@@ -89,13 +87,21 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
     all_runs = _json_command(
         runner,
         [
-            "gh", "run", "list", "--repo", target, "--limit", "100", "--json",
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            target,
+            "--limit",
+            "100",
+            "--json",
             "databaseId,workflowName,status,conclusion,url,createdAt,updatedAt,headBranch,headSha,event",
         ],
     )
     known_workflows = set(campaign["expected_workflows"])
     campaign_runs = [
-        row for row in all_runs
+        row
+        for row in all_runs
         if row.get("workflowName") in known_workflows
         and row.get("createdAt")
         and _timestamp(row["createdAt"]) >= prepared_at
@@ -106,17 +112,14 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
         run_id = run.get("databaseId")
         priced = {"jobs": [], "unknown_jobs": [], "total_cost": 0.0}
         if run.get("status") == "completed" and run_id is not None:
-            payload = _json_command(
-                runner, ["gh", "api", f"repos/{target}/actions/runs/{run_id}/jobs?per_page=100"]
-            )
+            payload = _json_command(runner, ["gh", "api", f"repos/{target}/actions/runs/{run_id}/jobs?per_page=100"])
             priced = price_jobs(payload.get("jobs") or [])
             total_cost += priced["total_cost"]
         if run_id is not None:
             priced_runs[int(run_id)] = priced
     for pr in campaign["prs"]:
         matching = [
-            row for row in campaign_runs
-            if row.get("event") == "pull_request" and row.get("headBranch") == pr["branch"]
+            row for row in campaign_runs if row.get("event") == "pull_request" and row.get("headBranch") == pr["branch"]
         ]
         workflow_rows = []
         for expected in campaign["expected_workflows"]:
@@ -134,45 +137,57 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
                     anomalies.append(f"PR #{pr['number']}: {expected} estimated at ${priced['total_cost']:.3f}")
                 if priced["unknown_jobs"]:
                     anomalies.append(f"PR #{pr['number']}: {expected} has unpriced runner jobs")
-            workflow_rows.append({
-                "workflow": expected, "run_id": run.get("databaseId"), "url": run.get("url"),
-                "status": run.get("status"), "conclusion": run.get("conclusion"),
-                "cost_usd": priced["total_cost"], "jobs": priced["jobs"],
-                "unknown_jobs": priced["unknown_jobs"],
-            })
+            workflow_rows.append(
+                {
+                    "workflow": expected,
+                    "run_id": run.get("databaseId"),
+                    "url": run.get("url"),
+                    "status": run.get("status"),
+                    "conclusion": run.get("conclusion"),
+                    "cost_usd": priced["total_cost"],
+                    "jobs": priced["jobs"],
+                    "unknown_jobs": priced["unknown_jobs"],
+                }
+            )
         cases.append({**pr, "workflows": workflow_rows})
-    direct_complete = all(
-        workflow["status"] == "completed" for case in cases for workflow in case["workflows"]
-    )
+    direct_complete = all(workflow["status"] == "completed" for case in cases for workflow in case["workflows"])
     monitored_completed = [
-        row for row in campaign_runs
+        row
+        for row in campaign_runs
         if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"
     ]
     unfinished = _unfinished_runs_anomaly(campaign_runs)
     missing_baseline = _missing_baseline_anomaly(campaign, campaign_runs)
-    anomalies.extend(
-        gap for gap in (unfinished if direct_complete else "", missing_baseline) if gap
-    )
+    anomalies.extend(gap for gap in (unfinished if direct_complete else "", missing_baseline) if gap)
     complete = direct_complete and not unfinished and not missing_baseline
     run_rows = []
     for run in sorted(campaign_runs, key=lambda row: row.get("createdAt") or ""):
         priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})
-        run_rows.append({**run, "cost_usd": priced["total_cost"], "jobs": priced["jobs"], "unknown_jobs": priced["unknown_jobs"]})
+        run_rows.append(
+            {**run, "cost_usd": priced["total_cost"], "jobs": priced["jobs"], "unknown_jobs": priced["unknown_jobs"]}
+        )
     return {
-        "schema_version": 1, "run_id": campaign["run_id"],
-        "source_repository": campaign["source_repository"], "source_ref": campaign["source_ref"],
-        "target_repository": target, "collected_at": datetime.now(UTC).isoformat(),
-        "complete": complete, "estimated_gross_cost_usd": total_cost,
+        "schema_version": 1,
+        "run_id": campaign["run_id"],
+        "source_repository": campaign["source_repository"],
+        "source_ref": campaign["source_ref"],
+        "target_repository": target,
+        "collected_at": datetime.now(UTC).isoformat(),
+        "complete": complete,
+        "estimated_gross_cost_usd": total_cost,
         "monitored_runs_completed": len(monitored_completed),
         "anomalies": anomalies,
-        "cases": cases, "campaign_runs": run_rows,
+        "cases": cases,
+        "campaign_runs": run_rows,
     }
 
 
 def render_campaign_report(result: dict[str, Any]) -> str:
     """Render the collection snapshot and the required human assessment prompt."""
     lines = [
-        "# CI evaluation campaign snapshot", "", f"- Run: `{result['run_id']}`",
+        "# CI evaluation campaign snapshot",
+        "",
+        f"- Run: `{result['run_id']}`",
         f"- Source: `{result['source_repository']}@{result['source_ref']}`",
         f"- Disposable target: `{result['target_repository']}`",
         f"- Complete: **{str(result['complete']).lower()}**",
@@ -196,10 +211,15 @@ def render_campaign_report(result: dict[str, Any]) -> str:
         lines.extend(f"- {item}" for item in result["anomalies"])
     else:
         lines.append("- None in this snapshot.")
-    lines.extend([
-        "", "## Required LLM assessment", "",
-        "This snapshot is evidence, not the verdict. Use `$af-evalsuite-ci` to inspect "
-        "failed logs, compare all ten PRs, review CI spend, and write the "
-        "final assessment.", "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Required LLM assessment",
+            "",
+            "This snapshot is evidence, not the verdict. Use `$af-evalsuite-ci` to inspect "
+            "failed logs, compare all ten PRs, review CI spend, and write the "
+            "final assessment.",
+            "",
+        ]
+    )
     return "\n".join(lines)

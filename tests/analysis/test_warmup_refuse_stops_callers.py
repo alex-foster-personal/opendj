@@ -1,4 +1,5 @@
 """Queue runner stops when jit warm-up is refused (issue #7227)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,9 +27,7 @@ def _candidate(stable_id: str, tmp_path: Path) -> admission.Candidate:
 
 
 @pytest.mark.requirement("JIT-8573")
-def test_run_batch_raises_when_warm_up_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_batch_raises_when_warm_up_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] warm-up is refused [then] run_batch raises before the pool, [else stop]."""
     from apps.analysis import queue_runner
 

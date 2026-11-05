@@ -10,6 +10,7 @@ Marked ``slow`` because the parse takes several seconds on the full
 fixture; uses the ``big_usb_fixture`` pytest fixture so it skips
 cleanly when LaCie isn't mounted.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -61,8 +62,7 @@ def test_big_fixture_anlz_coverage(big_usb_data: dict) -> None:
     # On a real export the counts are usually identical; we allow a tiny
     # slack for tracks that Rekordbox never analysed.
     assert meta["anlz_total_dirs"] >= meta["total_tracks"] * 0.95, (
-        f"ANLZ coverage {meta['anlz_total_dirs']} << "
-        f"tracks {meta['total_tracks']}"
+        f"ANLZ coverage {meta['anlz_total_dirs']} << tracks {meta['total_tracks']}"
     )
 
 
@@ -90,6 +90,5 @@ def test_big_fixture_invariants_pass(big_usb_data: dict) -> None:
         strict_errors.append(err)
 
     assert strict_errors == [], (
-        f"{len(strict_errors)} invariant failures (tolerated "
-        f"{len(errors) - len(strict_errors)}): {strict_errors[:5]}"
+        f"{len(strict_errors)} invariant failures (tolerated {len(errors) - len(strict_errors)}): {strict_errors[:5]}"
     )

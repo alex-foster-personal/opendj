@@ -2,6 +2,7 @@
 
 [if] python -m apps.set_notes runs on a data dir [then] list/get/put/409 match HTTP, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from apps.set_notes.store import Geometry, open_set_notes, save_set_note
-
 from tests.webui.set_notes_test_db import init_empty_state_db
 
 pytestmark = pytest.mark.requirement("SETNOTE-6340c")
@@ -86,3 +86,9 @@ def test_bad_scope_and_missing_db_exit_2(data_dir: Path, tmp_path: Path) -> None
     absent = _cli(tmp_path / "no-data", "list")
     assert absent.returncode == 2, absent.stderr
     assert json.loads(absent.stderr)["error"] == "state_db_missing"
+
+
+def test_negative_base_rev_is_rejected(data_dir: Path) -> None:
+    """[if] --base-rev is negative [then] argparse exits 2, [else stop]."""
+    bad = _cli(data_dir, "put", "scratch", "--body-file", "-", "--base-rev", "-1", stdin="x")
+    assert bad.returncode == 2, bad.stderr

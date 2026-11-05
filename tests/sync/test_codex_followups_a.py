@@ -14,6 +14,7 @@ destructive write) with no new data invariant to assert beyond "the CLI
 main still works"; the existing ``test_playlist_apply_integration``
 suite covers that path.
 """
+
 from __future__ import annotations
 
 import os
@@ -67,9 +68,7 @@ def fake_acoustid(monkeypatch: pytest.MonkeyPatch) -> _FakeAcoustid:
     return mod
 
 
-def test_p02_f2_cache_invalidates_on_mtime_change(
-    tmp_path: Path, fake_acoustid: _FakeAcoustid
-) -> None:
+def test_p02_f2_cache_invalidates_on_mtime_change(tmp_path: Path, fake_acoustid: _FakeAcoustid) -> None:
     audio = tmp_path / "track.mp3"
     audio.write_bytes(b"v1")
     cache = FingerprintCache(tmp_path / "fp.sqlite")
@@ -84,15 +83,11 @@ def test_p02_f2_cache_invalidates_on_mtime_change(
         cache.close()
 
     assert first is not None and second is not None
-    assert first[1] != second[1], (
-        "cache must recompute when the audio file content changes on disk"
-    )
+    assert first[1] != second[1], "cache must recompute when the audio file content changes on disk"
     assert len(fake_acoustid.calls) == 2
 
 
-def test_p02_f2_cache_hits_when_file_unchanged(
-    tmp_path: Path, fake_acoustid: _FakeAcoustid
-) -> None:
+def test_p02_f2_cache_hits_when_file_unchanged(tmp_path: Path, fake_acoustid: _FakeAcoustid) -> None:
     audio = tmp_path / "track.mp3"
     audio.write_bytes(b"stable")
     cache = FingerprintCache(tmp_path / "fp.sqlite")

@@ -952,6 +952,39 @@ export function beatJumpMovesTransportWithinDuration(
 	}
 }
 
+/**
+ * Whether a join could anchor the follower within `radiusBeats` of its own
+ * beats at `followerPositionSec`: some beat there whose local tempo (the join's
+ * own windowed measure, `_bestFollowerAnchor`) a ratio in [min, max], raw,
+ * half or double time, matches to the master's local tempo at its position.
+ * The cheap form of "would a re-join stay here" (a few windows, not a whole
+ * plan): the phase lock asks it before seeking an out-of-reach follower.
+ */
+export function followerAnchorReachableNear(request: {
+	masterGrid: readonly AnlzBeat[];
+	masterPositionSec: number;
+	masterTempoRatio: number;
+	followerGrid: readonly AnlzBeat[];
+	followerPositionSec: number;
+	minFollowerTempoRatio: number;
+	maxFollowerTempoRatio: number;
+	radiusBeats: number;
+}): boolean {
+	const master = request.masterGrid;
+	const follower = request.followerGrid;
+	if (master.length < 2 || follower.length < 2) return false;
+	const masterBpm = _windowedIntervalBpm(master, _nearestBeatIndex(master, request.masterPositionSec));
+	const at = _nearestBeatIndex(follower, request.followerPositionSec);
+	const radius = Math.ceil(request.radiusBeats);
+	for (let index = Math.max(0, at - radius); index <= Math.min(follower.length - 2, at + radius); index++) {
+		const rawRatio = (masterBpm * request.masterTempoRatio) / _windowedIntervalBpm(follower, index);
+		if (_tempoRatioWithinRangeOrNull(rawRatio, request.minFollowerTempoRatio, request.maxFollowerTempoRatio) !== null) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /** Local tempo (BPM) from the nearest beat's interval; null when unusable. */
 export function gridBpmAt(
 	beats: readonly AnlzBeat[],
@@ -1147,6 +1180,28 @@ export function detectBeatgridIssue(beats: readonly AnlzBeat[]): BeatgridIssue |
 		};
 	}
 	return worst;
+}
+
+/** Fraction of decoded length below which library duration or grid span is short. */
+export const SHORT_DURATION_RATIO = 0.5;
+
+/**
+ * True when library duration or the grid's last beat is under 50% of decoded length.
+ *
+ * A missing / non-finite library duration or grid last-beat skips that arm.
+ * Empty beats are missing, not last-beat 0 (convert last `AnlzBeat.t` seconds
+ * to ms at the call site). Non-finite or non-positive decodedMs is not flagged.
+ */
+export function shortDurationFlag(
+	libraryMs: number | null | undefined,
+	gridLastBeatMs: number | null | undefined,
+	decodedMs: number
+): boolean {
+	if (!Number.isFinite(decodedMs) || decodedMs <= 0) return false;
+	const half = decodedMs * SHORT_DURATION_RATIO;
+	if (Number.isFinite(libraryMs) && (libraryMs as number) < half) return true;
+	if (Number.isFinite(gridLastBeatMs) && (gridLastBeatMs as number) < half) return true;
+	return false;
 }
 
 // --------------------------------------------------- re-anchor rate ramp

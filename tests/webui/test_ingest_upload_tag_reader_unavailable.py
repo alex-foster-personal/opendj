@@ -16,6 +16,7 @@ replacing the GPL mutagen extra):
   [if] tinytag genuinely is installed [then] this route's existing behavior
   is unchanged, else stop
 """
+
 from __future__ import annotations
 
 import subprocess

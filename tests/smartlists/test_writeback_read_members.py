@@ -7,6 +7,7 @@ Mirrors the fixtures in ``tests/smartlists/test_writers_phase3.py`` (same
 duck-typed RB database / real throwaway djay sqlite file) so the two
 suites stay easy to cross-reference.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -57,8 +58,7 @@ def state_conn() -> Iterator[sqlite3.Connection]:
         ("sid-3", "djay", "dj-uuid-300"),
     ]
     conn.executemany(
-        "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) VALUES (?, ?, ?)",
         rows,
     )
     yield conn
@@ -134,9 +134,7 @@ class TestRBReadMembers:
 
 
 _SQLCIPHER_KEY = "pr273-test-key"
-_PYREKORDBOX_TEST_KEY = (
-    "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-)
+_PYREKORDBOX_TEST_KEY = "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
 
 
 def _create_encrypted_marker_db(path: Path) -> None:
@@ -255,9 +253,7 @@ def test_online_backup_uses_unlocked_sqlcipher_connection(
     unlocked = _sqlcipher_connect(backup, _SQLCIPHER_KEY)
     try:
         assert unlocked.execute("PRAGMA quick_check").fetchone() == ("ok",)
-        assert unlocked.execute("SELECT value FROM marker").fetchone() == (
-            "encrypted-rekordbox",
-        )
+        assert unlocked.execute("SELECT value FROM marker").fetchone() == ("encrypted-rekordbox",)
     finally:
         unlocked.close()
 
@@ -315,14 +311,12 @@ def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
 
     try:
         playlist = next(
-            candidate
-            for candidate in database.get_playlist()
-            if list(getattr(candidate, "Songs", []) or [])
+            candidate for candidate in database.get_playlist() if list(getattr(candidate, "Songs", []) or [])
         )
         playlist_id = str(playlist.ID)
         songs = sorted(
             list(playlist.Songs),
-            key=lambda song: (getattr(song, "TrackNo", 0) or 0),
+            key=lambda song: getattr(song, "TrackNo", 0) or 0,
         )
         native_members = [str(song.ContentID) for song in songs]
         stable_members = [f"stable-{index}" for index in range(len(native_members))]
@@ -331,13 +325,18 @@ def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
             list(zip(stable_members, native_members, strict=True)),
         )
         desired_members = list(reversed(stable_members))
-        expected_revision = hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": stable_members},
-            sort_keys=True, separators=(",", ":"),
-        ).encode()).hexdigest()
-        mapping_revision = hashlib.sha256(json.dumps(sorted(
-            zip(stable_members, native_members, strict=True)
-        ), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        expected_revision = hashlib.sha256(
+            json.dumps(
+                {"target_id": playlist_id, "members": stable_members},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        mapping_revision = hashlib.sha256(
+            json.dumps(
+                sorted(zip(stable_members, native_members, strict=True)), sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
         writer = RBPlaylistWriter(
             db=database,
             state_conn=mapping_conn,
@@ -360,11 +359,14 @@ def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
             assert unlocked_backup.execute("PRAGMA quick_check").fetchone() == ("ok",)
         finally:
             unlocked_backup.close()
-        assert writer.restore_backup(
-            backup.backup_id,
-            playlist_id,
-            post_revision,
-        ) == expected_revision
+        assert (
+            writer.restore_backup(
+                backup.backup_id,
+                playlist_id,
+                post_revision,
+            )
+            == expected_revision
+        )
         assert writer.read_members_by_id(playlist_id) == stable_members
     finally:
         mapping_conn.close()
@@ -401,8 +403,7 @@ def djay_db(tmp_path: Path) -> Path:
         ("dj-uuid-300", b"blob-300"),
     ]
     con.executemany(
-        "INSERT INTO database2(collection, key, data) VALUES "
-        "('mediaItemUserData', ?, ?)",
+        "INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', ?, ?)",
         user_rows,
     )
     con.close()
@@ -420,15 +421,14 @@ def _seed_existing_playlist(djay_db: Path, name: str, member_uuids: list[str]) -
     con = sqlite3.connect(str(djay_db), isolation_level=None)
     try:
         con.execute(
-            "INSERT INTO database2(collection, key, data) "
-            "VALUES ('mediaItemPlaylists', ?, ?)",
+            "INSERT INTO database2(collection, key, data) VALUES ('mediaItemPlaylists', ?, ?)",
             (uuid, blob),
         )
         rowids = resolve_userdata_rowids(con, member_uuids)
         page_key = ptsaf.new_page_key()
         page_data = ptsaf.build_page_data(rowids)
         con.execute(
-            'INSERT INTO view_mediaItemPlaylistView_page '
+            "INSERT INTO view_mediaItemPlaylistView_page "
             '(pageKey, "group", prevPageKey, count, data) '
             "VALUES (?, ?, NULL, ?, ?)",
             (page_key, uuid, len(rowids), page_data),
@@ -449,7 +449,9 @@ class TestResolveStableIdForDjay:
 class TestDjayReadMembers:
     def test_returns_stable_ids_in_page_order(self, djay_db, state_conn) -> None:
         _seed_existing_playlist(
-            djay_db, "My Set", ["dj-uuid-200", "dj-uuid-100"],
+            djay_db,
+            "My Set",
+            ["dj-uuid-200", "dj-uuid-100"],
         )
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         assert w.read_members("My Set") == ["sid-2", "sid-1"]
@@ -457,13 +459,14 @@ class TestDjayReadMembers:
     def test_skips_unmapped_uuids(self, djay_db, state_conn) -> None:
         con = sqlite3.connect(str(djay_db), isolation_level=None)
         con.execute(
-            "INSERT INTO database2(collection, key, data) VALUES "
-            "('mediaItemUserData', 'dj-untracked', ?)",
+            "INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', 'dj-untracked', ?)",
             (b"blob-untracked",),
         )
         con.close()
         _seed_existing_playlist(
-            djay_db, "My Set", ["dj-uuid-100", "dj-untracked"],
+            djay_db,
+            "My Set",
+            ["dj-uuid-100", "dj-untracked"],
         )
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         assert w.read_members("My Set") == ["sid-1"]
@@ -475,50 +478,85 @@ class TestDjayReadMembers:
 
     def test_native_id_read_refuses_an_unmapped_member_before_writeback(self, djay_db, state_conn) -> None:
         con = sqlite3.connect(str(djay_db), isolation_level=None)
-        con.execute("INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', 'dj-unmapped', ?)", (b"blob",))
+        con.execute(
+            "INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', 'dj-unmapped', ?)", (b"blob",)
+        )
         con.close()
         playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100", "dj-unmapped"])
         writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="unmapped UUID"):
             writer.read_members_by_id(playlist_id)
 
-    def test_reversal_persistence_failure_rolls_back_without_mutating_target(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+    def test_reversal_persistence_failure_rolls_back_without_mutating_target(
+        self, djay_db, state_conn, monkeypatch, tmp_path
+    ) -> None:
         from apps.smartlists import writeback_backup
 
         playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
         writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
-        expected = hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
-        ).encode()).hexdigest()
-        mapping_revision = hashlib.sha256(json.dumps(sorted([
-            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
-        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        expected = hashlib.sha256(
+            json.dumps({"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        mapping_revision = hashlib.sha256(
+            json.dumps(
+                sorted(
+                    [
+                        ("sid-1", "dj-uuid-100"),
+                        ("sid-2", "dj-uuid-200"),
+                    ]
+                ),
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
-        monkeypatch.setattr(writeback_backup, "write_reversal", lambda *_args: (_ for _ in ()).throw(OSError("disk full")))
+        monkeypatch.setattr(
+            writeback_backup, "write_reversal", lambda *_args: (_ for _ in ()).throw(OSError("disk full"))
+        )
         with pytest.raises(OSError, match="disk full"):
             writer.apply_with_backup_by_id(playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, nullcontext)
         assert writer.read_members_by_id(playlist_id) == ["sid-1"]
 
-    def test_rollback_uses_stable_cas_but_restores_exact_native_preimage(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+    def test_rollback_uses_stable_cas_but_restores_exact_native_preimage(
+        self, djay_db, state_conn, monkeypatch, tmp_path
+    ) -> None:
         from apps.smartlists import writeback_backup
 
         playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
         writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
-        expected = hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
-        ).encode()).hexdigest()
-        mapping_revision = hashlib.sha256(json.dumps(sorted([
-            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
-        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        expected = hashlib.sha256(
+            json.dumps({"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        mapping_revision = hashlib.sha256(
+            json.dumps(
+                sorted(
+                    [
+                        ("sid-1", "dj-uuid-100"),
+                        ("sid-2", "dj-uuid-200"),
+                    ]
+                ),
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
 
         backup, post_revision = writer.apply_with_backup_by_id(
-            playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, nullcontext,
+            playlist_id,
+            ["sid-1", "sid-2"],
+            expected,
+            mapping_revision,
+            nullcontext,
         )
 
-        assert post_revision == hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": ["sid-1", "sid-2"]}, sort_keys=True, separators=(",", ":")
-        ).encode()).hexdigest()
+        assert (
+            post_revision
+            == hashlib.sha256(
+                json.dumps(
+                    {"target_id": playlist_id, "members": ["sid-1", "sid-2"]}, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest()
+        )
         assert writer.restore_backup(backup.backup_id, playlist_id, post_revision) == expected
 
         con = sqlite3.connect(djay_db)

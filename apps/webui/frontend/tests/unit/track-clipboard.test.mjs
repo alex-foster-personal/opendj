@@ -128,7 +128,14 @@ test('paste needs a clipboard and a real playlist in the collection view', () =>
 		/nothing to paste/
 	);
 	assert.match(mod.pasteBlockReason(playlist, 'spotify', clip), /open a playlist/);
-	for (const kind of ['all_tracks', 'smartlist', 'folder', 'missing_tracks', 'taglist', 'autolist']) {
+	for (const kind of [
+		'all_tracks',
+		'smartlist',
+		'folder',
+		'missing_tracks',
+		'taglist',
+		'autolist'
+	]) {
 		assert.match(
 			mod.pasteBlockReason({ ...playlist, kind }, 'collection', clip),
 			/open a playlist/,
@@ -214,7 +221,10 @@ test('BrowserPanel installs and removes the edit-shortcut listener', () => {
 	assert.match(src, /const onLibraryEditKey = createLibraryEditKeys\(\{/);
 	// The handler and paste live in library-edit-keys.ts (BrowserPanel size cap).
 	const keys = readFileSync(EDIT_KEYS, 'utf8');
-	assert.ok(keys.includes('async function _pasteTracks'), '_pasteTracks missing from library-edit-keys.ts');
+	assert.ok(
+		keys.includes('async function _pasteTracks'),
+		'_pasteTracks missing from library-edit-keys.ts'
+	);
 	// Paste goes through the set-union transfer endpoint, not a full rewrite.
 	const paste = keys.slice(keys.indexOf('async function _pasteTracks'));
 	assert.match(paste.slice(0, 4000), /transferPlaylistTracks\(/);

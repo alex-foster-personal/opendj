@@ -256,7 +256,8 @@ function deferredFetch() {
 
 test('a frame that lands while a hydrate GET is in flight is not rolled back by its older snapshot', async () => {
 	const fake = makeFakeBus();
-	globalThis.fetch = async () => jsonResponse([job({ id: 'import', status: 'running', progress: 0.5 })]);
+	globalThis.fetch = async () =>
+		jsonResponse([job({ id: 'import', status: 'running', progress: 0.5 })]);
 	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 
@@ -269,7 +270,11 @@ test('a frame that lands while a hydrate GET is in flight is not rolled back by 
 	await pending;
 
 	assert.equal(store.jobs.length, 1);
-	assert.equal(store.jobs[0].status, 'succeeded', 'the newer frame must survive the older snapshot');
+	assert.equal(
+		store.jobs[0].status,
+		'succeeded',
+		'the newer frame must survive the older snapshot'
+	);
 });
 
 test('a hydrate still repairs rows no frame touched during its GET', async () => {
@@ -283,7 +288,14 @@ test('a hydrate still repairs rows no frame touched during its GET', async () =>
 	const slow = deferredFetch();
 	globalThis.fetch = slow.fetch;
 	const pending = store.hydrate();
-	fake.deliver(job({ id: 'new-mid-flight', status: 'queued', progress: 0, created_at: '2026-08-19T12:00:00.000Z' }));
+	fake.deliver(
+		job({
+			id: 'new-mid-flight',
+			status: 'queued',
+			progress: 0,
+			created_at: '2026-08-19T12:00:00.000Z'
+		})
+	);
 	slow.release([job({ id: 'stale', status: 'failed', progress: 0.2 })]);
 	await pending;
 
@@ -459,7 +471,8 @@ test('cancel posts to the cancel route and upserts the returned row', async () =
 
 test('a 409 refusal is surfaced verbatim, not reworded or swallowed', async () => {
 	const refusal = 'job job-1 is queued; only a running job cancels';
-	globalThis.fetch = async () => jsonResponse({ detail: { code: 'CONFLICT', message: refusal } }, 409);
+	globalThis.fetch = async () =>
+		jsonResponse({ detail: { code: 'CONFLICT', message: refusal } }, 409);
 	store.jobs = [job({ id: 'job-1', status: 'queued' })];
 
 	await store.cancel('job-1');

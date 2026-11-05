@@ -9,6 +9,7 @@ red under a mutation back to its pre-fix source.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -49,7 +50,8 @@ def _bare_db(tmp_path):
     conn = sqlite3.connect(path)
     conn.execute(
         "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES ('t1', 'inferred', 'x', ?, ?)", (STAMP, STAMP),
+        "VALUES ('t1', 'inferred', 'x', ?, ?)",
+        (STAMP, STAMP),
     )
     conn.execute(
         "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
@@ -60,9 +62,10 @@ def _bare_db(tmp_path):
     return path, conn
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 9: a key the deck cannot parse is not a successful measurement
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bad", ["13Z", "13A", "0A", "8C", "8", "A8", "8a "])
 def test_a_camelot_key_the_deck_cannot_parse_is_refused(db, bad: str) -> None:
@@ -108,11 +111,8 @@ def test_the_camelot_table_matches_the_decks_own(db) -> None:
 
     from apps.analysis.lane_payloads import _CAMELOT_PITCH_CLASS
 
-    source = (
-        _Path(__file__).resolve().parents[2]
-        / "apps/webui/frontend/src/lib/player/key/camelot.ts"
-    ).read_text()
-    block = source[source.index("const CAMELOT_ROOTS"):]
+    source = (_Path(__file__).resolve().parents[2] / "apps/webui/frontend/src/lib/player/key/camelot.ts").read_text()
+    block = source[source.index("const CAMELOT_ROOTS") :]
     minor = [int(x) for x in _re.search(r"A: \[([\d, ]+)\]", block).group(1).split(",")]
     major = [int(x) for x in _re.search(r"B: \[([\d, ]+)\]", block).group(1).split(",")]
     assert len(minor) == len(major) == 12
@@ -123,9 +123,10 @@ def test_the_camelot_table_matches_the_decks_own(db) -> None:
         assert _CAMELOT_PITCH_CLASS[f"{n}B"] == (pitch_class, False)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # P2 round 9: a source read, and a toggle, must not create state.db
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_the_source_get_answers_when_state_db_does_not_exist(tmp_path) -> None:
     """`mode=ro` raises on an absent file, which is exactly the fresh-daemon case."""
@@ -158,9 +159,7 @@ def test_a_toggle_only_put_does_not_create_state_db(tmp_path) -> None:
     app = create_app()
     app.state.analysis_db_path = path
     with TestClient(app) as client:
-        resp = client.put(
-            "/api/v1/analysis/source", json={"lane": "key", "toggle": "own"}
-        )
+        resp = client.put("/api/v1/analysis/source", json={"lane": "key", "toggle": "own"})
         assert resp.status_code == 200, resp.text
         assert resp.json()["lanes"]["key"]["effective"] == "own"
     assert not path.exists(), "a toggle-only PUT must not create the database"

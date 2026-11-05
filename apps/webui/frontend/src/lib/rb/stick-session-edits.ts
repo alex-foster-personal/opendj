@@ -1,5 +1,5 @@
 /**
- * Play from USB (specs/usb-play-from-stick.md 4b "Frontend guards" and
+ * Play from USB ((private path) 4b "Frontend guards" and
  * decision 2): edits to a stick track stay in this page session. They are
  * never written to the stick and make no request to the daemon.
  *
@@ -130,24 +130,29 @@ export function withSessionRating<T extends { rating?: number | null }>(stableId
 // writes (session only)
 //-----------------------------------------------------------------------------
 
-/** The library's save semantics (apps/adapters/rekordbox/writer.py
- * save_hot_cue): a point cue at `in_ms`, loop and color cleared. */
+/** The library's save semantics (apps/shared/state/cue_store.py
+ * save_hot_cue): a point cue at `in_ms`, or a loop hot cue when `out_ms` is
+ * set (HOTCUE-LOOP-01); color cleared. */
 export function saveSessionHotCue(
 	stableId: string,
 	slot: HotCueSlot,
 	in_ms: number,
 	revision: string,
-	comment: string | null
+	comment: string | null,
+	out_ms: number | null = null
 ): HotCueMutation {
 	if (!Number.isInteger(in_ms) || in_ms < 0) {
 		_refuse('HOT_CUE_POSITION_INVALID', `hot cue ${slot}: in_ms must be a whole number >= 0, got ${in_ms}`);
+	}
+	if (out_ms !== null && (!Number.isInteger(out_ms) || out_ms <= in_ms)) {
+		_refuse('INVALID_LOOP_END', `hot cue ${slot}: out_ms must be a whole number after ${in_ms}, got ${out_ms}`);
 	}
 	return _reversibleChange(stableId, slot, revision, {
 		kind: 'hot_cue',
 		slot,
 		in_ms,
-		out_ms: null,
-		is_loop: false,
+		out_ms,
+		is_loop: out_ms !== null,
 		active_loop: false,
 		beat_loop_size: null,
 		color_table_index: null,

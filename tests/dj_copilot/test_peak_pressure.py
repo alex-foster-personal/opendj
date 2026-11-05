@@ -2,6 +2,7 @@
 
 [if] the coach scores a play timeline [then] it cues from metadata energy and peak tags with no camera input, [else stop].
 """
+
 from __future__ import annotations
 
 import re

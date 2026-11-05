@@ -80,9 +80,9 @@ test('LIBUX-51: the history popover renders inside the positioned toolbar, so it
 	assert.match(TABS_SRC, /\.source-toolbar \{[^}]*position: relative;/);
 });
 
-test('LIBUX-51: the popover is a read-only tooltip that closes when the pointer leaves undo and never blocks a click', () => {
+test('LIBUX-51 superseded by LIBUX-8626: the popover is interactive but only after a deliberate hover, and closes once the pointer leaves', () => {
 	const button = TABS_SRC.slice(TABS_SRC.indexOf('data-testid="playlist-undo"'), TABS_SRC.indexOf('data-testid="playlist-redo"'));
-	assert.match(button, /onmouseleave=\{closeHistory\}/);
-	assert.match(button, /onblur=\{closeHistory\}/);
-	assert.match(TABS_SRC, /\.history-popover \{[^}]*pointer-events: none;/);
+	assert.match(button, /onmouseenter=\{intendHistory\}/);
+	assert.match(button, /onmouseleave=\{releaseHistory\}/);
+	assert.match(button, /onblur=\{releaseHistoryOnBlur\}/);
 });

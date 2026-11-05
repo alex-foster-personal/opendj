@@ -46,7 +46,14 @@ const CHANNELS = {
 	2: { fader: 0.8, eq_low: 0.5, eq_mid: 0.5, eq_high: 0.5, filter: 0.5 }
 };
 
-function input({ clockMs = 70_000, inMs = 300 + 8 * IN_BAR_MS, inPlaying = false, ratio = 1, grid = inGrid, order = ORDER } = {}) {
+function input({
+	clockMs = 70_000,
+	inMs = 300 + 8 * IN_BAR_MS,
+	inPlaying = false,
+	ratio = 1,
+	grid = inGrid,
+	order = ORDER
+} = {}) {
 	return {
 		order,
 		channels: CHANNELS,
@@ -58,7 +65,8 @@ function input({ clockMs = 70_000, inMs = 300 + 8 * IN_BAR_MS, inPlaying = false
 }
 
 const deckOf = (geometry, deck) => geometry.decks.find((row) => row.deck === deck);
-const curveOf = (geometry, deck, name) => deckOf(geometry, deck).curves.find((curve) => curve.name === name);
+const curveOf = (geometry, deck, name) =>
+	deckOf(geometry, deck).curves.find((curve) => curve.name === name);
 
 test('clock curves land on the clock grid: plan bar b is start_bar + b', () => {
 	const geometry = overlay.buildPlanOverlay(input());
@@ -102,7 +110,9 @@ test('incoming curves land on the incoming grid and start at the launch, from th
 });
 
 test('a play dispatched exactly on a bar starts on the next downbeat, never on that bar', () => {
-	const events = ORDER.events.map((event, index) => (index === 0 ? { ...event, at_bar: -1 } : event));
+	const events = ORDER.events.map((event, index) =>
+		index === 0 ? { ...event, at_bar: -1 } : event
+	);
 	const onTheBar = overlay.buildPlanOverlay({ ...input(), order: { ...ORDER, events } });
 	assert.equal(deckOf(onTheBar, 2).start_ms, deckOf(overlay.buildPlanOverlay(input()), 2).start_ms);
 	const later = ORDER.events.map((event, index) => (index === 0 ? { ...event, at_bar: 2 } : event));
@@ -113,7 +123,8 @@ test('a play dispatched exactly on a bar starts on the next downbeat, never on t
 });
 
 test('only the knobs the plan carries are drawn, plus fader and low EQ always', () => {
-	const names = (deck) => deckOf(overlay.buildPlanOverlay(input()), deck).curves.map((curve) => curve.name);
+	const names = (deck) =>
+		deckOf(overlay.buildPlanOverlay(input()), deck).curves.map((curve) => curve.name);
 	assert.deepEqual(names(1), ['fader', 'eq_low', 'filter']);
 	assert.deepEqual(names(2), ['fader', 'eq_low']);
 });
@@ -131,16 +142,24 @@ test('STALE: cueing the idle incoming deck later moves every incoming point by t
 
 test('STALE: a beat jump on the PLAYING incoming deck re-derives against the clock deck, not the launch', () => {
 	// Clock at plan bar 2, incoming two bars past its cue: in step with the plan, so nothing moved.
-	const inStep = overlay.buildPlanOverlay(input({ clockMs: 42 * BAR_MS, inMs: 300 + 10 * IN_BAR_MS, inPlaying: true }));
+	const inStep = overlay.buildPlanOverlay(
+		input({ clockMs: 42 * BAR_MS, inMs: 300 + 10 * IN_BAR_MS, inPlaying: true })
+	);
 	assert.equal(deckOf(inStep, 2).start_ms, 300 + 8 * IN_BAR_MS);
 	assert.equal(inStep.anchor_moved, null);
-	const jumped = overlay.buildPlanOverlay(input({ clockMs: 42 * BAR_MS, inMs: 300 + 11 * IN_BAR_MS, inPlaying: true }));
+	const jumped = overlay.buildPlanOverlay(
+		input({ clockMs: 42 * BAR_MS, inMs: 300 + 11 * IN_BAR_MS, inPlaying: true })
+	);
 	assert.equal(deckOf(jumped, 2).start_ms, 300 + 9 * IN_BAR_MS);
 });
 
 test('the opposite way: the clock deck playing on alone never moves a playing incoming deck in step with it', () => {
-	const early = overlay.buildPlanOverlay(input({ clockMs: 42 * BAR_MS, inMs: 300 + 10 * IN_BAR_MS, inPlaying: true }));
-	const later = overlay.buildPlanOverlay(input({ clockMs: 45 * BAR_MS, inMs: 300 + 13 * IN_BAR_MS, inPlaying: true }));
+	const early = overlay.buildPlanOverlay(
+		input({ clockMs: 42 * BAR_MS, inMs: 300 + 10 * IN_BAR_MS, inPlaying: true })
+	);
+	const later = overlay.buildPlanOverlay(
+		input({ clockMs: 45 * BAR_MS, inMs: 300 + 13 * IN_BAR_MS, inPlaying: true })
+	);
 	assert.deepEqual(deckOf(later, 2), deckOf(early, 2));
 });
 
@@ -198,22 +217,42 @@ test('alignmentChanged ignores sample jitter and catches a real move, a tempo ch
 	assert.equal(overlay.alignmentChanged(base, jitter), false);
 	const nudged = overlay.incomingAlignment(input({ inMs: 300 + 8 * IN_BAR_MS + 40 }));
 	assert.equal(overlay.alignmentChanged(base, nudged), true);
-	assert.equal(overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.01 }))), true);
+	assert.equal(
+		overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.01 }))),
+		true
+	);
 	// A small ratio change that moves the span's far end by more than the tolerance must rebuild: 0.002 x 16 x 1600 ms.
-	assert.equal(overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.002 }))), true);
-	assert.equal(overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.0002 }))), false);
+	assert.equal(
+		overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.002 }))),
+		true
+	);
+	assert.equal(
+		overlay.alignmentChanged(base, overlay.incomingAlignment(input({ ratio: 1.0002 }))),
+		false
+	);
 	assert.equal(overlay.alignmentChanged(base, null), true);
 	assert.equal(overlay.alignmentChanged(null, null), false);
 });
 
 // The incoming track slows from 1,600 ms bars to 800 ms bars for its last ten, so its final interval is not local.
-const slowingGrid = Array.from({ length: 80 }, (_, bar) => 300 + Math.min(bar, 70) * IN_BAR_MS + Math.max(0, bar - 70) * 800);
+const slowingGrid = Array.from(
+	{ length: 80 },
+	(_, bar) => 300 + Math.min(bar, 70) * IN_BAR_MS + Math.max(0, bar - 70) * 800
+);
 
 test('alignmentChanged measures a move in track milliseconds where the curves are, not by the last bar', () => {
 	const base = overlay.incomingAlignment(input({ grid: slowingGrid }));
-	const nudged = overlay.incomingAlignment(input({ grid: slowingGrid, inMs: 300 + 8 * IN_BAR_MS + 30 }));
-	assert.equal(overlay.alignmentChanged(base, nudged), true, 'a 30 ms move on a 1,600 ms bar is a real move');
-	const jitter = overlay.incomingAlignment(input({ grid: slowingGrid, inMs: 300 + 8 * IN_BAR_MS + 5 }));
+	const nudged = overlay.incomingAlignment(
+		input({ grid: slowingGrid, inMs: 300 + 8 * IN_BAR_MS + 30 })
+	);
+	assert.equal(
+		overlay.alignmentChanged(base, nudged),
+		true,
+		'a 30 ms move on a 1,600 ms bar is a real move'
+	);
+	const jitter = overlay.incomingAlignment(
+		input({ grid: slowingGrid, inMs: 300 + 8 * IN_BAR_MS + 5 })
+	);
 	assert.equal(overlay.alignmentChanged(base, jitter), false);
 });
 
@@ -224,7 +263,10 @@ test('barAt before the grid uses the first interval, so it inverts msAtBar there
 });
 
 test('the planned cue is the last prepared seek, the one the deck ends on', () => {
-	const order = { ...ORDER, prepare: [{ type: 'seek', deck: 2, position_ms: 300, exact: true }, ...ORDER.prepare] };
+	const order = {
+		...ORDER,
+		prepare: [{ type: 'seek', deck: 2, position_ms: 300, exact: true }, ...ORDER.prepare]
+	};
 	assert.equal(overlay.buildPlanOverlay(input({ order })).anchor_moved, null);
 });
 
@@ -240,7 +282,16 @@ test('a build that fails still shows a pending plan on both decks, with no curve
 	assert.equal(failed.bars, 16);
 	assert.equal(failed.anchor_moved, null);
 	assert.deepEqual(
-		failed.decks.map((row) => [row.deck, row.role, row.unavailable, row.curves.length, row.start_ms]),
-		[[1, 'clock', 'build_failed', 0, null], [2, 'incoming', 'build_failed', 0, null]]
+		failed.decks.map((row) => [
+			row.deck,
+			row.role,
+			row.unavailable,
+			row.curves.length,
+			row.start_ms
+		]),
+		[
+			[1, 'clock', 'build_failed', 0, null],
+			[2, 'incoming', 'build_failed', 0, null]
+		]
 	);
 });

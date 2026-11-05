@@ -90,17 +90,19 @@ from apps.shared.pairings.schema_sql import (
     migrate_smartlists_deleted_at,
 )
 from apps.shared.state.analysis_stale import STALE_TABLES_SQL
+from apps.shared.state.migrations_v6_v8 import _V8_NON_VIEW_DDL as _LEGACY_V8_NON_VIEW_DDL
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 from apps.shared.state.migrations_v25 import _V25 as _LEGACY_V25
 from apps.shared.state.migrations_v26 import _V26 as _LEGACY_V26
 from apps.shared.state.migrations_v27 import _V27 as _LEGACY_V27
+from apps.shared.state.migrations_v28 import _V28 as _LEGACY_V28
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 16
+SCHEMA_VERSION: int = 17
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -564,101 +566,12 @@ _NATIVE_ANALYSIS_V1: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: analysis retention -- availability dimension, unmatched staging,
 # energy time series, per-field verification provenance
-# Legacy source: apps/shared/state/schema.py (_V8, the af--analysis-retention
-# migration). Views are deliberately NOT mirrored here: this consolidated
-# module tracks tables/indexes only (see DOMAINS/TABLES docstrings); no other
-# domain here carries a view either.
+# DDL owner: apps/shared/state/migrations_v6_v8.py. Its three safe-default
+# views are deliberately excluded because the consolidated domain registry
+# tracks tables and indexes only (see DOMAINS/TABLES docstrings).
 # ==========================================================================
 
-_ANALYSIS_RETENTION: tuple[str, ...] = (
-    """
-    CREATE TABLE IF NOT EXISTS track_availability (
-        stable_id     TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
-        state         TEXT NOT NULL CHECK (state IN
-                        ('present','absent','awaiting_volume','streaming')),
-        checked_path  TEXT,
-        checked_at    TEXT NOT NULL
-    )
-    """,
-    (
-        "CREATE INDEX IF NOT EXISTS idx_track_availability_state "
-        "ON track_availability(state)"
-    ),
-    """
-    CREATE TABLE IF NOT EXISTS unmatched_source_analysis (
-        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-        source             TEXT NOT NULL CHECK (source IN
-                             ('mik','rekordbox','djay','serato','traktor',
-                              'open-dj-tool','manual','inferred','webui')),
-        source_row_id      TEXT NOT NULL,
-        field_name         TEXT NOT NULL,
-        value_json         TEXT NOT NULL,
-        unmatched_reason   TEXT NOT NULL CHECK (unmatched_reason IN
-                             ('no_candidate','ambiguous_candidates',
-                              'lost_collision')),
-        confidence         REAL CHECK (confidence IS NULL OR
-                                       (confidence >= 0 AND confidence <= 1)),
-        title              TEXT,
-        artist             TEXT,
-        album              TEXT,
-        isrc               TEXT,
-        duration_ms        INTEGER,
-        source_path        TEXT,
-        modified_at        TEXT NOT NULL,
-        imported_at        TEXT NOT NULL,
-        promoted_stable_id TEXT REFERENCES tracks(stable_id) ON DELETE SET NULL,
-        promoted_at        TEXT,
-        UNIQUE (source, source_row_id, field_name)
-    )
-    """,
-    (
-        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_pending "
-        "ON unmatched_source_analysis(source, field_name) "
-        "WHERE promoted_stable_id IS NULL"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_promoted "
-        "ON unmatched_source_analysis(promoted_stable_id) "
-        "WHERE promoted_stable_id IS NOT NULL"
-    ),
-    """
-    CREATE TABLE IF NOT EXISTS track_energy_segments (
-        stable_id   TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
-        seq         INTEGER NOT NULL,
-        start_ms    INTEGER NOT NULL CHECK (start_ms >= 0),
-        length_ms   INTEGER NOT NULL CHECK (length_ms > 0),
-        energy      INTEGER NOT NULL CHECK (energy BETWEEN 1 AND 10),
-        source      TEXT NOT NULL CHECK (source IN
-                      ('mik','rekordbox','djay','serato','traktor',
-                       'open-dj-tool','manual','inferred','webui')),
-        confidence  REAL CHECK (confidence IS NULL OR
-                                (confidence >= 0 AND confidence <= 1)),
-        start_clamped INTEGER NOT NULL DEFAULT 0
-                        CHECK (start_clamped IN (0, 1)),
-        modified_at TEXT NOT NULL,
-        PRIMARY KEY (stable_id, source, seq)
-    )
-    """,
-    (
-        "CREATE INDEX IF NOT EXISTS idx_track_energy_segments_start "
-        "ON track_energy_segments(stable_id, start_ms)"
-    ),
-    """
-    CREATE TABLE IF NOT EXISTS analysis_field_verification (
-        source      TEXT NOT NULL,
-        field_name  TEXT NOT NULL,
-        status      TEXT NOT NULL,
-        basis       TEXT NOT NULL CHECK (basis IN
-                      ('cross_source','single_source','unverified')),
-        normaliser  TEXT,
-        checked_at  TEXT,
-        verified_by TEXT,
-        overridden  INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
-        recorded_at TEXT NOT NULL,
-        PRIMARY KEY (source, field_name)
-    )
-    """,
-)
+_ANALYSIS_RETENTION: tuple[str, ...] = _LEGACY_V8_NON_VIEW_DDL
 
 
 
@@ -1201,7 +1114,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     ),
     "lyrics": ("lyric_verdict",),
     "feedback": ("feedback_pins",),
-    "pair_transitions": ("pair_transitions",),
+    "pair_transitions": ("pair_transitions", "pair_decisions", "pair_verdicts"),
     "library_org": (
         "playlist_section", "tag_type", "tag_meta", "tag_synonym", "work",
         "work_member", "work_dismissal", "work_pref", "undo_journal",
@@ -1378,9 +1291,12 @@ the legacy step's pair_transitions repair is _V14's table already."""
 _V16: list[str] = list(_LEGACY_V27)
 """15 -> 16: path_availability.mtime_ns (legacy ladder v27, issue #7584)."""
 
+_V17: list[str] = list(_LEGACY_V28)
+"""16 -> 17: AutoPlay decision record and verdict (legacy ladder v28, ADR-0139)."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14, _V15, _V16,
+    _V14, _V15, _V16, _V17,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]

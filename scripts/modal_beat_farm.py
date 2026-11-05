@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Modal GPU beat farm: the remote half of the v2 analysis compute plane.
 
-WHY THIS EXISTS. `specs/native-analysis-v1.md` section 7 puts "multi-candidate
+WHY THIS EXISTS. `(private path)` section 7 puts "multi-candidate
 sweeps over 10k tracks" and "any training or fine-tune" on the ALWAYS REMOTE
 line, split as "nucbox/agentbox for CPU, Modal for GPU". The CPU half is
-proven: round 2 of `specs/beat-mapping-bench.md` ran 998 GTZAN clips on nucbox
+proven: round 2 of `(private path)` ran 998 GTZAN clips on nucbox
 at about 7.5 s per 30 s clip across 32 cores. The GPU half was a plan.
 **nucbox has no NVIDIA GPU at all** (`nvidia-smi` finds no device, checked Thu
 10 Sep 2026), so Modal is not the faster option for GPU work here, it is the
@@ -115,11 +115,9 @@ import modal
 
 CHECKPOINT = "final0"
 # The digest measured on nucbox for the run that produced
-# ops/beatbench/round-2/gtzan-scores.json. Baking the weights is only worth
+# (private path). Baking the weights is only worth
 # anything if the baked ones are THESE ones.
-EXPECTED_CHECKPOINT_SHA256 = (
-    "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
-)
+EXPECTED_CHECKPOINT_SHA256 = "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
 TORCH_CACHE_DIR = "/root/.cache/torch"
 # The exact versions apps/analysis_beatgrid/beat_this_runner.py pins in its
 # PEP 723 header. Kept identical on purpose: a CPU/GPU parity claim is about the
@@ -183,9 +181,19 @@ def _audio_duration_s(path: Path) -> float:
 
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-            capture_output=True, text=True, check=True,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
     except FileNotFoundError as exc:
         raise SystemExit(
@@ -202,10 +210,7 @@ def _audio_duration_s(path: Path) -> float:
 
 def _gpu_usd_per_s() -> float:
     if GPU_KIND not in GPU_USD_PER_S:
-        raise SystemExit(
-            f"error: no published rate for {GPU_KIND!r}; "
-            f"known: {', '.join(sorted(GPU_USD_PER_S))}"
-        )
+        raise SystemExit(f"error: no published rate for {GPU_KIND!r}; known: {', '.join(sorted(GPU_USD_PER_S))}")
     return GPU_USD_PER_S[GPU_KIND]
 
 
@@ -307,17 +312,11 @@ class BeatFarm:
             # of the speed while the cost line still said GPU, so the timing
             # figure this farm exists to produce would be a fiction.
             raise RuntimeError(
-                "no CUDA device in a GPU container: refusing to run and report "
-                "a GPU figure measured on a CPU"
+                "no CUDA device in a GPU container: refusing to run and report a GPU figure measured on a CPU"
             )
-        self.model, _, self.ckpt_path, self.ckpt_sha = runner._load_model(
-            CHECKPOINT, "cuda"
-        )
+        self.model, _, self.ckpt_path, self.ckpt_sha = runner._load_model(CHECKPOINT, "cuda")
         if self.ckpt_sha != EXPECTED_CHECKPOINT_SHA256:
-            raise RuntimeError(
-                f"container loaded {self.ckpt_sha} but the image baked "
-                f"{EXPECTED_CHECKPOINT_SHA256}"
-            )
+            raise RuntimeError(f"container loaded {self.ckpt_sha} but the image baked {EXPECTED_CHECKPOINT_SHA256}")
 
     @modal.method()
     def analyze(self, key: str, audio: bytes) -> dict[str, Any]:
@@ -337,9 +336,7 @@ class BeatFarm:
             fh.write(audio)
             path = fh.name
         try:
-            result = self.runner.analyze_one(
-                path, self.model, self.runner.DEFAULT_PEAK_THRESHOLD, activations_dir
-            )
+            result = self.runner.analyze_one(path, self.model, self.runner.DEFAULT_PEAK_THRESHOLD, activations_dir)
         # Broad on purpose: one unreadable clip must not kill a 998-way
         # fan-out, and the failure is RECORDED per clip rather than swallowed.
         except Exception as exc:
@@ -393,9 +390,7 @@ class BeatFarm:
             # hybrid benchmark (Codex P1 BLOCKING, PR #1660,
             # discussion_r3975279132). A digest of the bytes that actually ran
             # cannot drift the way a hand-maintained version string does.
-            "runner_sha256": hashlib.sha256(
-                Path(REMOTE_RUNNER).read_bytes()
-            ).hexdigest(),
+            "runner_sha256": hashlib.sha256(Path(REMOTE_RUNNER).read_bytes()).hexdigest(),
         }
 
 
@@ -435,11 +430,11 @@ def _refuse_dependency_drift(versions: dict[str, str]) -> None:
 
 def _audio_paths(audio_dir: str, limit: int) -> list[Path]:
     paths = sorted(
-        p for p in Path(audio_dir).rglob("*")
+        p
+        for p in Path(audio_dir).rglob("*")
         # GTZAN repacks carry AppleDouble `._` sidecars that look like audio to
         # a suffix check and are not; they cost a container each if fed in.
-        if p.suffix.lower() in {".wav", ".mp3", ".flac", ".m4a", ".aiff"}
-        and not p.name.startswith("._")
+        if p.suffix.lower() in {".wav", ".mp3", ".flac", ".m4a", ".aiff"} and not p.name.startswith("._")
     )
     if not paths:
         raise SystemExit(f"error: no audio under {audio_dir}")
@@ -482,8 +477,8 @@ def run(
     audio_s = sum(_audio_duration_s(p) for p in paths)
     estimate = audio_s * ESTIMATE_GPU_S_PER_AUDIO_S * _gpu_usd_per_s()
     print(
-        f"[farm] {len(paths)} files, {audio_s/60:.1f} min of audio on {GPU_KIND}, "
-        f"estimated ${estimate:.2f} at ${_gpu_usd_per_s()*3600:.2f}/GPU-hour"
+        f"[farm] {len(paths)} files, {audio_s / 60:.1f} min of audio on {GPU_KIND}, "
+        f"estimated ${estimate:.2f} at ${_gpu_usd_per_s() * 3600:.2f}/GPU-hour"
     )
     # BOTH SIDES OF THIS COMPARISON HAVE TO BE FINITE, and neither was checked:
     # `nan` makes every comparison false and `inf` cannot be exceeded, so a farm
@@ -582,7 +577,7 @@ def run(
     Path(out).write_text(json.dumps(payload, indent=1))
     print(
         f"[farm] {len(results)} clips in {wall:.1f}s "
-        f"({wall/max(len(results),1):.2f}s/clip wall), {failed} failed -> {out}"
+        f"({wall / max(len(results), 1):.2f}s/clip wall), {failed} failed -> {out}"
     )
     # THE SAME DEFECT AS THE DIRECT RUNNER'S, IN THE SIBLING PRODUCER: fixing the
     # instance left the class. `len(results) == len(paths)` still holds when

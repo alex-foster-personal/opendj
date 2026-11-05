@@ -1,4 +1,4 @@
-"""Shared harness for ops/dmg-smoke/run.sh Linux contract tests (DEVOPS-04)."""
+"""Shared harness for (private path) Linux contract tests (DEVOPS-04)."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ bundle_dir="{bundle_dir}"
 log_dir="{log_dir}"
 record_build_time="{RECORD_BUILD_TIME}"
 real_budget="{REAL_BUILD_BUDGET}"
-# ops/dmg-smoke/run.sh exports this before invoking the real headless script,
+# (private path) exports this before invoking the real headless script,
 # so this fixture can correlate a fabricated row the same way a real build's
 # row is correlated (review round 4, P1: "correlate the timing row with this
 # build"). Fixtures below stamp any DMG_SMOKE_TIMING_LOG content with it too,
@@ -443,16 +443,10 @@ def write_gh_fixtures(
     comments: list[dict] | None = None,
 ) -> None:
     fixture_dir.mkdir(parents=True, exist_ok=True)
-    fixture_dir.joinpath("commits_main.json").write_text(
-        json.dumps({"sha": HEAD_SHA}), encoding="utf-8"
-    )
-    fixture_dir.joinpath("compare.json").write_text(
-        json.dumps({"total_commits": merge_count}), encoding="utf-8"
-    )
+    fixture_dir.joinpath("commits_main.json").write_text(json.dumps({"sha": HEAD_SHA}), encoding="utf-8")
+    fixture_dir.joinpath("compare.json").write_text(json.dumps({"total_commits": merge_count}), encoding="utf-8")
     pages = [comments or []]
-    fixture_dir.joinpath("comments.json").write_text(
-        json.dumps(pages), encoding="utf-8"
-    )
+    fixture_dir.joinpath("comments.json").write_text(json.dumps(pages), encoding="utf-8")
 
 
 def setup_layout(home: Path) -> dict[str, Path]:
@@ -548,8 +542,8 @@ def zero_health_json() -> str:
 def success_env() -> dict[str, str]:
     """The extra_env baseline for a healthy attach: preflight passes,
     /health reports nonzero tracks/playlists, and a live engine/app pid.
-    Shared by tests/scripts/test_dmg_smoke_run.py and
-    tests/scripts/test_dmg_smoke_build_timing.py (split out at the 600-line
+    Shared by (private path) and
+    (private path) (split out at the 600-line
     file-size ratchet, review round 4, P1)."""
     return {
         "DMG_SMOKE_PREFLIGHT_JSON": ok_preflight_json(),

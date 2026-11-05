@@ -33,7 +33,9 @@ MANIFESTS=(
   apps/desktop/electron/pnpm-lock.yaml
   apps/ai_gateway_worker/pnpm-lock.yaml
   apps/launcher/pnpm-lock.yaml
+  (private path)
   apps/desktop/src-tauri/Cargo.lock
+  apps/desktop/native/odj-output-probe/Cargo.lock
   apps/webui/server/native/waveform/Cargo.lock
   apps/audio-engine/Cargo.lock
   apps/live-core/Cargo.lock

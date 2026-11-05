@@ -4,6 +4,7 @@ Plan 12-03 Step 5. Keeps the audio-serving endpoint safe: resolves
 ``<session_dir>/audio_*`` segments by name only (no path traversal) and
 enumerates segments from the filesystem + cached manifest metadata.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

@@ -1,4 +1,5 @@
 """Stage 2 (pairings) re-rank tests (AI-01)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -43,9 +44,7 @@ def test_no_pairings_table_is_noop(tmp_path) -> None:
     conn = sqlite3.connect(str(db), isolation_level=None)
     try:
         stage1 = [_sc("a", 0.6), _sc("b", 0.5)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         assert [s.stable_id for s in out] == ["a", "b"]
     finally:
         conn.close()
@@ -65,9 +64,7 @@ def test_manual_pair_jumps_over_higher_unpaired(tmp_path) -> None:
         )
         # "a" scores higher pre-bump; "b" gets the manual bump (+0.15)
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         assert [s.stable_id for s in out] == ["b", "a"]
         assert out[0].rationale.get("pair_manual") == 1.0
     finally:
@@ -87,9 +84,7 @@ def test_learned_smaller_bump(tmp_path) -> None:
             ("cur", "b"),
         )
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         # "b" gets +0.05 but "a" still wins (0.60 > 0.55).
         assert [s.stable_id for s in out] == ["a", "b"]
     finally:
@@ -109,9 +104,7 @@ def test_pairings_direction_out_of_ignored(tmp_path) -> None:
             ("cur", "b"),
         )
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         # "out_of" direction means "paired when b is the current"; for
         # current=cur we ignore it.
         assert [s.stable_id for s in out] == ["a", "b"]
@@ -133,9 +126,7 @@ def test_reverse_stored_edge_bumps_its_partner(tmp_path, direction: str) -> None
             ("b", "cur", direction),
         )
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         assert [s.stable_id for s in out] == ["b", "a"]
         assert out[0].rationale.get("pair_manual") == 1.0
     finally:
@@ -154,9 +145,7 @@ def test_reverse_into_edge_is_not_a_pairing_for_its_target(tmp_path) -> None:
             "VALUES ('b', 'cur', 'into', 'manual', '2026-01-01', '2026-01-01')"
         )
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         assert [s.stable_id for s in out] == ["a", "b"]
     finally:
         conn.close()
@@ -180,9 +169,7 @@ def test_duplicate_edge_keeps_the_strongest_source(tmp_path, order: str) -> None
                 (from_id, to_id, source),
             )
         stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
-        out = rerank_with_pairings(
-            conn=conn, current_stable_id="cur", stage1=stage1
-        )
+        out = rerank_with_pairings(conn=conn, current_stable_id="cur", stage1=stage1)
         assert [s.stable_id for s in out] == ["b", "a"]
         assert out[0].rationale.get("pair_manual") == 1.0
     finally:

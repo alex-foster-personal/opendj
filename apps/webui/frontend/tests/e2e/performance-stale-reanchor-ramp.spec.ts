@@ -66,7 +66,9 @@ async function _dispatch(page: Page, command: PerformanceCommand): Promise<Perfo
 
 async function _idleState(page: Page): Promise<PerformanceState> {
 	await _waitForIpc(page);
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.query().command_pending === false);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance?.query().command_pending === false
+	);
 	return _query(page);
 }
 
@@ -230,9 +232,7 @@ test.describe('stale re-anchor ramp supersession @performance-stale-reanchor', (
 				const master = state.decks[1];
 				const follower = state.decks[2];
 				const nextMaster = master.beatgrid_ms.find((beat) => beat > master.position_ms + 0.5);
-				const nextFollower = follower.beatgrid_ms.find(
-					(beat) => beat > follower.position_ms + 0.5
-				);
+				const nextFollower = follower.beatgrid_ms.find((beat) => beat > follower.position_ms + 0.5);
 				if (nextMaster === undefined || nextFollower === undefined) return;
 				settledPhaseDeltasMs.push(
 					Math.abs(

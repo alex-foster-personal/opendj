@@ -24,9 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PREFIX = "[requirement-marker-ratchet-gate]"
 
 PYTEST_TARGETS: tuple[str, ...] = (
-    "tests/test_requirement_markers.py",
-    "tests/test_requirement_intent_ratchet.py",
-    "tests/quality/test_gate_scope.py",
+    "(private path)",
+    "(private path)",
+    "(private path)",
 )
 
 _VALID_SCOPE = re.compile(r"^tests/[A-Za-z0-9_./:-]+(?:::[A-Za-z0-9_]+)?$")
@@ -34,16 +34,14 @@ _SCOPE_LINE = re.compile(r"^\s*(?:E\s+)?(tests/[^\s:]+\.py(?:::[^\s]+)?)\s*$")
 _UNREGISTERED = re.compile(
     r"(?:AssertionError:\s*)?unregistered gate suites:\s*((?:tests/[^,\s]+(?:,\s*)?)+)\.\s+Add each"
 )
-_STALE_KNOWN = re.compile(
-    r"(?:AssertionError:\s*)?KNOWN_UNSCOPED is out of date:\s*\[([^\]]+)\]"
-)
-_MISSING_SCOPE = re.compile(
-    r"(?:AssertionError:\s*)?pytest_scope names ([^,]+), which does not exist"
-)
+_STALE_KNOWN = re.compile(r"(?:AssertionError:\s*)?KNOWN_UNSCOPED is out of date:\s*\[([^\]]+)\]")
+_MISSING_SCOPE = re.compile(r"(?:AssertionError:\s*)?pytest_scope names ([^,]+), which does not exist")
 _INTENT_BLOCK = re.compile(
     r"Marked pytest scopes need[^:]*:\s*\n((?:\s+(?:E\s+)?tests/[^\n]+\n?)+)",
     re.MULTILINE,
 )
+
+
 def _scopes_from_intent_blocks(output: str) -> list[str]:
     """Scopes listed under a 'Marked pytest scopes need ...' assertion."""
     found: list[str] = [

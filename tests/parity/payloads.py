@@ -658,4 +658,3 @@ def round1_waveform_fixture() -> dict[str, Any]:
         ],
         round_n=1,
     )
-

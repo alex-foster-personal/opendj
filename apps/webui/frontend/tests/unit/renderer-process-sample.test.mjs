@@ -23,10 +23,7 @@ test('selectChromiumFamilyPids throws when no renderer is listed', () => {
 });
 
 test('selectChromiumFamilyPids throws on a non-integer pid rather than dropping it', () => {
-	assert.throws(
-		() => sample.selectChromiumFamilyPids([{ id: 'x', type: 'renderer' }]),
-		/pid/
-	);
+	assert.throws(() => sample.selectChromiumFamilyPids([{ id: 'x', type: 'renderer' }]), /pid/);
 });
 
 //-----------------------------------------------------------------------------
@@ -113,7 +110,10 @@ test('assertLoopbackOrigin rejects a remote hostname', () => {
 // assertEngineOwnsListener alone cannot tell apart from the real thing. This
 // checks the verified-local pid's OWN command line instead.
 test('isEngineCommand recognizes the repo engine invocation and the packaged launcher', () => {
-	assert.equal(sample.isEngineCommand('uv run --no-sync python -m apps.engine_core serve --port 8686'), true);
+	assert.equal(
+		sample.isEngineCommand('uv run --no-sync python -m apps.engine_core serve --port 8686'),
+		true
+	);
 	assert.equal(
 		sample.isEngineCommand('/Applications/OpenDJ.app/Contents/Resources/bin/opendj-engine'),
 		true
@@ -121,7 +121,11 @@ test('isEngineCommand recognizes the repo engine invocation and the packaged lau
 });
 
 test('isEngineCommand rejects a forwarder, whatever it is called', () => {
-	for (const command of ['ssh -L 8686:remote:8686 user@remote', 'kubectl port-forward pod/engine 8686:8686', 'socat TCP-LISTEN:8686 TCP:remote:8686']) {
+	for (const command of [
+		'ssh -L 8686:remote:8686 user@remote',
+		'kubectl port-forward pod/engine 8686:8686',
+		'socat TCP-LISTEN:8686 TCP:remote:8686'
+	]) {
 		assert.equal(sample.isEngineCommand(command), false);
 	}
 });
@@ -148,7 +152,10 @@ test('isEngineCommand rejects a forwarder whose ARGUMENT happens to embed the en
 // passed, because nothing required argv[0] to actually be the interpreter
 // running it.
 test('isEngineCommand rejects an SSH forwarder whose remote command embeds the real module invocation', () => {
-	assert.equal(sample.isEngineCommand('ssh -L 8686:remote:8686 host python -m apps.engine_core'), false);
+	assert.equal(
+		sample.isEngineCommand('ssh -L 8686:remote:8686 host python -m apps.engine_core'),
+		false
+	);
 });
 
 // assertEnginePidPinned (Sol P1/BLOCKING, PR #4034, discussion_r4138402621):
@@ -204,7 +211,8 @@ test('parsePsTable parses rows and throws on a malformed one rather than droppin
 });
 
 test('parseFootprintMb reads phys_footprint in every unit footprint prints', () => {
-	const line = (unit) => `Google Chrome Helper (Renderer) [432]: 64-bit    Footprint: 12 ${unit} (16384 bytes per page)`;
+	const line = (unit) =>
+		`Google Chrome Helper (Renderer) [432]: 64-bit    Footprint: 12 ${unit} (16384 bytes per page)`;
 	assert.equal(sample.parseFootprintMb(line('MB'), 432), 12);
 	assert.equal(sample.parseFootprintMb(line('GB'), 432), 12 * 1024);
 	assert.equal(sample.parseFootprintMb(line('KB'), 432), 12 / 1024);
@@ -212,10 +220,17 @@ test('parseFootprintMb reads phys_footprint in every unit footprint prints', () 
 
 test('parseFootprintMb throws on output for a different pid or no Footprint line', () => {
 	assert.throws(
-		() => sample.parseFootprintMb('python3.12 [77]: 64-bit    Footprint: 90 MB (16384 bytes per page)', 78),
+		() =>
+			sample.parseFootprintMb(
+				'python3.12 [77]: 64-bit    Footprint: 90 MB (16384 bytes per page)',
+				78
+			),
 		/asked for 78/
 	);
-	assert.throws(() => sample.parseFootprintMb('footprint: no process found', 78), /no Footprint line/);
+	assert.throws(
+		() => sample.parseFootprintMb('footprint: no process found', 78),
+		/no Footprint line/
+	);
 });
 
 test('countLiveFamilyMembers counts live members only', () => {

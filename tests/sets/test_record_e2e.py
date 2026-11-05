@@ -1,4 +1,5 @@
 """End-to-end recorder tests (mocked capture + sources)."""
+
 from __future__ import annotations
 
 import json

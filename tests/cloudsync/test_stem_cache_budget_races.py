@@ -19,6 +19,7 @@ And one from Codex's review of #6820 (2dff9aa9b, STEM-58):
 * [if] a landed swap left its backup [then] eviction discards it with the
   bundle, so no later read restores the older render (Codex on #6821).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -186,9 +187,7 @@ def test_the_post_hydrate_pass_hashes_nothing_to_look_for_rerenders(tmp_path: Pa
     stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
     index = {"fresh": make_bundle(stems_dir, "fresh", atime=100.0)}
     hashed: list[str] = []
-    monkeypatch.setattr(
-        budget, "unconfirmed_reason", lambda bundle, idx: hashed.append(bundle.stable_id)
-    )
+    monkeypatch.setattr(budget, "unconfirmed_reason", lambda bundle, idx: hashed.append(bundle.stable_id))
     enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=200 * GIB), max_evict_bytes=1)
     assert hashed == []
 
@@ -273,9 +272,7 @@ def test_the_merge_does_not_keep_what_a_pass_saw_or_what_is_gone(tmp_path: Path)
         stems_dir=stems_dir,
         seen={**_seen(stems_dir, "seen-clean"), "deleted": "gone"},
     )
-    written = budget.save_upload_queue(
-        data_dir, {}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "seen-clean")
-    )
+    written = budget.save_upload_queue(data_dir, {}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "seen-clean"))
     assert written == {} and budget.load_upload_queue(data_dir) == {}
 
 
@@ -323,9 +320,7 @@ def test_a_lost_claim_smaller_than_the_shortfall_still_evicts_the_rest(tmp_path:
     index["next"] = make_bundle(stems_dir, "next", atime=200.0)
     one_bundle = sum(p.stat().st_size for p in (stems_dir / "lru").rglob("*") if p.is_file())
     _lose_the_claim_for(budget, "lru", monkeypatch)
-    report = enforce(
-        stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1)
-    )
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1))
     assert report.evicted_stable_ids == ("next",)
 
 
@@ -490,9 +485,7 @@ def test_a_pass_that_scanned_an_older_render_keeps_the_newer_verdict(tmp_path: P
         data_dir, {"rerendered": entry}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "rerendered")
     )
     # Pass A judged generation 1 clean and saves last.
-    written = budget.save_upload_queue(
-        data_dir, {}, {"rerendered": "gen1-fp"}, stems_dir=stems_dir, seen=older
-    )
+    written = budget.save_upload_queue(data_dir, {}, {"rerendered": "gen1-fp"}, stems_dir=stems_dir, seen=older)
     assert written == {"rerendered": entry}
     assert budget.load_verified_fingerprints(data_dir) == {}
 
@@ -506,9 +499,7 @@ def test_a_pass_whose_scan_is_current_still_overrides_the_file(tmp_path: Path):
     data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
     make_bundle(stems_dir, "settled", atime=100.0)
     entry: dict[str, object] = {"reason": "not_in_r2_index", "bytes": 1, "queued_at": "t"}
-    budget.save_upload_queue(
-        data_dir, {"settled": entry}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "settled")
-    )
+    budget.save_upload_queue(data_dir, {"settled": entry}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "settled"))
     written = budget.save_upload_queue(
         data_dir, {}, {"settled": "fp"}, stems_dir=stems_dir, seen=_seen(stems_dir, "settled")
     )
@@ -979,7 +970,9 @@ def test_eviction_discards_a_landed_swap_s_backup_so_no_read_restores_it(tmp_pat
     assert not evicted_backup.exists()
     assert restore_orphaned_swap(stems_dir / "landed", data_dir) is False
     assert not (stems_dir / "landed").exists(), "the eviction stands"
-    assert (kept_backup / "manifest.json").read_bytes() == b"older render", "control: a kept bundle's backup is untouched"
+    assert (kept_backup / "manifest.json").read_bytes() == b"older render", (
+        "control: a kept bundle's backup is untouched"
+    )
 
 
 @pytest.mark.requirement("STEM-58")

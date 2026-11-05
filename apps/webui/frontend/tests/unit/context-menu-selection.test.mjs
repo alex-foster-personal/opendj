@@ -24,7 +24,11 @@ function readFunctionBody(source, name) {
 
 test('context-menu selection ignores pointer modifiers and selects keyboard targets', () => {
 	const pointer = readFunctionBody(menu, 'openMenu');
-	assert.match(pointer, /onselectrow\(row\);/, 'context-click must not extend selection from Control or Command');
+	assert.match(
+		pointer,
+		/onselectrow\(row\);/,
+		'context-click must not extend selection from Control or Command'
+	);
 
 	const keyboard = readFunctionBody(menu, 'openFromKeyboard');
 	assert.match(keyboard, /openMenu\(/, 'keyboard context menu must reuse the same open path');

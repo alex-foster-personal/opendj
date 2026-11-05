@@ -6,10 +6,11 @@ Deliverable 4 of nav1-beatgrid-record (issue #1591): several BPM and tempo-chang
 combinations under both the PARITY-02 toggle and the persisted own default,
 asserting `effective_fields` reads the same value `apps.analysis.canonical` wrote
 into `analysis_projection`. The single-record producer-path check stays in
-`tests/analysis_beatgrid/test_bpm_projection_agreement.py`.
+`(private path)`.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -43,9 +44,7 @@ SWEEP_CASES: list[tuple[str, float, int]] = [
 SOURCE_MODES = ("toggle", "promote")
 
 
-def _write_own_record(
-    db: sqlite3.Connection, stable_id: str, bpm: float, tempo_changes: int
-) -> dict[str, Any]:
+def _write_own_record(db: sqlite3.Connection, stable_id: str, bpm: float, tempo_changes: int) -> dict[str, Any]:
     payload = beatgrid_payload(bpm=bpm, tempo_changes=tempo_changes)
     record = dataclasses.replace(
         own_record(
@@ -72,8 +71,7 @@ def _select_own(db: sqlite3.Connection, source_mode: str) -> selection.Selection
 
 def _projection_bpm_row(db: sqlite3.Connection, stable_id: str) -> tuple[Any, ...]:
     row = db.execute(
-        "SELECT value, status, backend FROM analysis_projection "
-        "WHERE stable_id = ? AND field = 'bpm'",
+        "SELECT value, status, backend FROM analysis_projection WHERE stable_id = ? AND field = 'bpm'",
         (stable_id,),
     ).fetchone()
     assert row is not None, f"no bpm projection for {stable_id}"
@@ -104,15 +102,12 @@ def test_effective_fields_bpm_matches_canonical_projection(
     if tempo_changes > 0:
         expected_count = len(payload["tempo_changes"])
         count_row = db.execute(
-            "SELECT value, status FROM analysis_projection "
-            "WHERE stable_id = ? AND field = 'tempo_change_count'",
+            "SELECT value, status FROM analysis_projection WHERE stable_id = ? AND field = 'tempo_change_count'",
             (stable_id,),
         ).fetchone()
         assert count_row is not None
         assert count_row[0] == expected_count
-        got_count = selection.effective_fields(db, [stable_id], selected)[stable_id][
-            "tempo_change_count"
-        ]
+        got_count = selection.effective_fields(db, [stable_id], selected)[stable_id]["tempo_change_count"]
         assert got_count.value == count_row[0] == expected_count
 
 
@@ -149,12 +144,8 @@ def test_no_own_value_ever_enters_track_fields(db: sqlite3.Connection) -> None:
     stable_id = "sid-no-track-fields"
     _write_own_record(db, stable_id, 128.0, 0)
 
-    written_rows = db.execute(
-        "SELECT COUNT(*) FROM track_fields WHERE stable_id = ?", (stable_id,)
-    ).fetchone()[0]
-    history = db.execute(
-        "SELECT COUNT(*) FROM track_field_history WHERE stable_id = ?", (stable_id,)
-    ).fetchone()[0]
+    written_rows = db.execute("SELECT COUNT(*) FROM track_fields WHERE stable_id = ?", (stable_id,)).fetchone()[0]
+    history = db.execute("SELECT COUNT(*) FROM track_field_history WHERE stable_id = ?", (stable_id,)).fetchone()[0]
     assert written_rows == 0
     assert history == 0
 
@@ -171,16 +162,13 @@ def test_a_failed_lane_projects_a_named_failure_through_effective_fields(
     store_mod.upsert_record(record, conn=db)
 
     row = db.execute(
-        "SELECT value, status, reason FROM analysis_projection "
-        "WHERE stable_id = ? AND field = 'bpm'",
+        "SELECT value, status, reason FROM analysis_projection WHERE stable_id = ? AND field = 'bpm'",
         (stable_id,),
     ).fetchone()
     assert row == (None, "failed", "no_trackable_pulse")
 
     selection.set_toggle("beatgrid", "own")
-    got = selection.effective_fields(
-        db, [stable_id], selection.Selection.resolve(db)
-    )[stable_id]["bpm"]
+    got = selection.effective_fields(db, [stable_id], selection.Selection.resolve(db))[stable_id]["bpm"]
     assert got.status == "failed"
     assert got.reason == "no_trackable_pulse"
     assert got.value is None

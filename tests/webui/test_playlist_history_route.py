@@ -7,6 +7,7 @@ Regression one-liners:
   * if a sneaky live mutation does not 409 conflict on undo then broken
   * if GET /playlist-history without state.db is not 503 then broken
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -35,9 +36,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -48,9 +54,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -160,7 +169,10 @@ def test_conflict_409_when_live_diverges(client: TestClient, db_path: Path) -> N
     assert put.status_code == 200
     with PlaylistStore(db_path, bus=FakeEventBus()) as sneaky:
         sneaky.replace_memberships(
-            pid, ["t-002"], expected_etag=put.headers["ETag"], record_edit=False,
+            pid,
+            ["t-002"],
+            expected_etag=put.headers["ETag"],
+            record_edit=False,
         )
     conflict = client.post("/api/v1/playlist-history/undo")
     assert conflict.status_code == 409, conflict.text
@@ -171,9 +183,12 @@ def test_conflict_409_when_live_diverges(client: TestClient, db_path: Path) -> N
 def test_503_without_state_db(tmp_path: Path) -> None:
     missing = tmp_path / "nope" / "state.db"
     app = create_app(
-        backend=InMemoryBackend(), state_db_path=str(missing),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=InMemoryBackend(),
+        state_db_path=str(missing),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         r = c.get("/api/v1/playlist-history")

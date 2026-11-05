@@ -141,9 +141,7 @@ def hub_app(tmp_path: Path) -> FastAPI:
     app.include_router(service.router, prefix="/api/v1")
 
     @app.middleware("http")
-    async def observe_digest(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
+    async def observe_digest(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         probe: _DigestProbe | None = request.app.state.digest_probe
         if probe is None or not request.url.path.endswith("/digest"):
             return await call_next(request)
@@ -163,9 +161,7 @@ def _synced_spoke(tmp_path: Path, http: TestClient, tracks: int) -> tuple[Path, 
         _seed_library(conn, tracks)
     finally:
         conn.close()
-    first = client.run_sync(
-        spoke, "http://hub.invalid", transport=TestClientTransport(http), name=f"spoke-{tracks}"
-    )
+    first = client.run_sync(spoke, "http://hub.invalid", transport=TestClientTransport(http), name=f"spoke-{tracks}")
     return spoke, first.machine_id
 
 
@@ -253,8 +249,7 @@ def test_the_digest_phase_times_the_hub_fetch_alone(
     _assert_met(probe)
     digest_s = timer._phase_s["digest"]
     assert 0 < digest_s < SLOW_LOCAL_S / 2, (
-        f"digest phase {digest_s:.3f} s against a {SLOW_LOCAL_S} s local hash: the "
-        "span must cover the hub fetch only"
+        f"digest phase {digest_s:.3f} s against a {SLOW_LOCAL_S} s local hash: the span must cover the hub fetch only"
     )
 
 
@@ -290,13 +285,9 @@ def test_a_failing_local_digest_waits_for_the_hub_fetch_and_leaves_no_worker(
         # A real damaged spoke database: the last table the digest walks is gone.
         conn.execute(f"DROP TABLE {MEMBERSHIP_TABLE}")
         probe = _armed(hub_app, conn, _DigestProbe(hold_hub_until_rollback=True))
-        with pytest.raises(
-            protocol.SyncProtocolError, match=f"'{MEMBERSHIP_TABLE}' does not exist"
-        ):
+        with pytest.raises(protocol.SyncProtocolError, match=f"'{MEMBERSHIP_TABLE}' does not exist"):
             client._digests(TestClientTransport(http), conn, machine_id)
-        assert probe.hub_finished.is_set(), (
-            "the in-flight hub fetch must be joined before the local error leaves"
-        )
+        assert probe.hub_finished.is_set(), "the in-flight hub fetch must be joined before the local error leaves"
     _assert_met(probe)
     assert probe.spoke_rolled_back.is_set(), "the local read transaction must be rolled back"
     assert _digest_workers() == []

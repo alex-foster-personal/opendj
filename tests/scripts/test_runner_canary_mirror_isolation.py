@@ -110,9 +110,7 @@ def test_mirror_target_refuses_a_rewrite_of_the_mirror_url(world) -> None:
     bootstrap_default_branch(world, bare=impostor)
     gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
     mirror_url = repo_url(world, CONFIG["mirror_repository"])
-    gitconfig.write_text(
-        gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {mirror_url}\n'
-    )
+    gitconfig.write_text(gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {mirror_url}\n')
     result = run_mirror_script(world, world["on_main"])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "would rewrite" in result.stdout and ".insteadof" in result.stdout
@@ -180,9 +178,7 @@ def _log_every_git_child(world: World) -> Path:
     real_git = shutil.which("git")
     assert real_git, "control: a real git is on PATH"
     shim = shim_dir / "git"
-    shim.write_text(
-        f'#!/bin/sh\n{{ printf "=== %s\\n" "$*"; env; }} >> "{log}"\nexec "{real_git}" "$@"\n'
-    )
+    shim.write_text(f'#!/bin/sh\n{{ printf "=== %s\\n" "$*"; env; }} >> "{log}"\nexec "{real_git}" "$@"\n')
     shim.chmod(0o755)
     world["env"]["PATH"] = f"{shim_dir}{os.pathsep}{world['env']['PATH']}"
     return log
@@ -329,9 +325,7 @@ def challenging_server() -> Iterator[str]:
         server.server_close()
 
 
-def test_a_credentialed_call_starts_no_credential_helper_or_askpass(
-    world, challenging_server: str
-) -> None:
+def test_a_credentialed_call_starts_no_credential_helper_or_askpass(world, challenging_server: str) -> None:
     """Same class: a credential helper or askpass program named in git config, or in
     GIT_ASKPASS, would be started inside the mirror's ls-remote and inherit the header."""
     log = Path(str(world["source"]) + "-cred.log")
@@ -340,10 +334,7 @@ def test_a_credentialed_call_starts_no_credential_helper_or_askpass(
     askpass = _logging_program(bin_dir / "askpass-config", log, exit_code=1)
     env_askpass = _logging_program(bin_dir / "askpass-env", log, exit_code=1)
     gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text()
-        + f"[credential]\n\thelper = {helper}\n[core]\n\taskPass = {askpass}\n"
-    )
+    gitconfig.write_text(gitconfig.read_text() + f"[credential]\n\thelper = {helper}\n[core]\n\taskPass = {askpass}\n")
     # The challenge URL builds the mirror URL; the file spellings keep origin a valid source.
     templates = [f"{challenging_server}{{repo}}.git", *world["config"]["remote_url_templates"]]
     config = {**world["config"], "remote_url_templates": templates}
@@ -442,9 +433,7 @@ def test_only_the_operators_config_routes_the_provenance_clone(world, owner: str
     bootstrap_default_branch(world)
     source = CONFIG["source_repository"]
     templates = [*world["config"]["remote_url_templates"], SSH_SPELLING]
-    world["config_path"].write_text(
-        json.dumps({**world["config"], "remote_url_templates": templates})
-    )
+    world["config_path"].write_text(json.dumps({**world["config"], "remote_url_templates": templates}))
     git(
         world["source"],
         "remote",
@@ -481,9 +470,7 @@ def test_only_the_operators_config_routes_the_provenance_clone(world, owner: str
 
 
 @pytest.mark.parametrize("target", ["mirror", "source"])
-def test_every_git_call_but_the_source_push_switches_configured_programs_off(
-    world, target: str
-) -> None:
+def test_every_git_call_but_the_source_push_switches_configured_programs_off(world, target: str) -> None:
     """The class, not the instance: the switches are the default on every git child. The
     source push is the one exception (so its checkout's hooks run); the mirror push carries
     them too, beside the ones its auth environment adds."""

@@ -19,6 +19,7 @@ Acceptance tests (each maps to one test below):
   [if] a v2-schema state.db rejects source='webui' after migration
        [then broken]
 """
+
 from __future__ import annotations
 
 import json
@@ -90,7 +91,8 @@ def _patch_all_fields(backend: SqliteBackend) -> str:
 
 class TestRestartPersistence:
     def test_patch_survives_new_backend_instance(
-        self, state_db_path: Path,
+        self,
+        state_db_path: Path,
     ) -> None:
         first = SqliteBackend(state_db_path)
         _patch_all_fields(first)
@@ -108,7 +110,8 @@ class TestRestartPersistence:
             assert prov.confidence == 1.0, field_name
 
     def test_provenance_rows_and_event_in_state_db(
-        self, state_db_path: Path,
+        self,
+        state_db_path: Path,
     ) -> None:
         backend = SqliteBackend(state_db_path)
         _patch_all_fields(backend)
@@ -118,8 +121,7 @@ class TestRestartPersistence:
             rows = {
                 r[0]: r
                 for r in conn.execute(
-                    "SELECT field_name, value_json, source, confidence "
-                    "FROM track_fields WHERE stable_id = ?",
+                    "SELECT field_name, value_json, source, confidence FROM track_fields WHERE stable_id = ?",
                     (SID,),
                 )
             }
@@ -131,8 +133,7 @@ class TestRestartPersistence:
                 assert row[2] == "webui", field_name
                 assert row[3] == 1.0, field_name
             events = conn.execute(
-                "SELECT COUNT(*) FROM events "
-                "WHERE kind = 'track.field.set' AND stable_id = ?",
+                "SELECT COUNT(*) FROM events WHERE kind = 'track.field.set' AND stable_id = ?",
                 (SID,),
             ).fetchone()[0]
             assert events == 3
@@ -140,7 +141,8 @@ class TestRestartPersistence:
             conn.close()
 
     def test_etag_advances_and_stale_etag_conflicts(
-        self, state_db_path: Path,
+        self,
+        state_db_path: Path,
     ) -> None:
         backend = SqliteBackend(state_db_path)
         current = backend.get_track(SID)
@@ -150,8 +152,10 @@ class TestRestartPersistence:
 
         with pytest.raises(ConflictError):
             backend.update_track(
-                SID, {"rating": 1},
-                expected_etag=stale_etag, source="webui",
+                SID,
+                {"rating": 1},
+                expected_etag=stale_etag,
+                source="webui",
             )
 
         # The fresh etag is accepted -- and it is re-derived identically
@@ -160,7 +164,10 @@ class TestRestartPersistence:
         track = reborn.get_track(SID)
         assert _served_etag(track) == new_etag
         reborn.update_track(
-            SID, {"rating": 3}, expected_etag=new_etag, source="webui",
+            SID,
+            {"rating": 3},
+            expected_etag=new_etag,
+            source="webui",
         )
         assert reborn.get_track(SID).rating == 3
 
@@ -170,14 +177,18 @@ class TestHttpPatchRoundTrip:
     def client(self, state_db_path: Path) -> Iterator[TestClient]:
         app = create_app(
             backend=SqliteBackend(state_db_path),
-            bind_host="127.0.0.1", hostname="test-host",
-            lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+            bind_host="127.0.0.1",
+            hostname="test-host",
+            lock_status_fn=lambda: None,
+            syncthing_status_fn=lambda: None,
         )
         with TestClient(app) as c:
             yield c
 
     def test_http_patch_persists_across_restart(
-        self, client: TestClient, state_db_path: Path,
+        self,
+        client: TestClient,
+        state_db_path: Path,
     ) -> None:
         got = client.get(f"/api/v1/tracks/{SID}")
         assert got.status_code == 200
@@ -204,17 +215,20 @@ class TestHttpPatchRoundTrip:
         assert track.provenance["rating"].source == "webui"
 
     def test_http_patch_stale_etag_is_409(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         got = client.get(f"/api/v1/tracks/{SID}")
         etag = got.headers["ETag"]
         first = client.patch(
-            f"/api/v1/tracks/{SID}", json={"rating": 2},
+            f"/api/v1/tracks/{SID}",
+            json={"rating": 2},
             headers={"If-Match": etag},
         )
         assert first.status_code == 200
         second = client.patch(
-            f"/api/v1/tracks/{SID}", json={"rating": 1},
+            f"/api/v1/tracks/{SID}",
+            json={"rating": 1},
             headers={"If-Match": etag},
         )
         assert second.status_code == 409
@@ -222,7 +236,8 @@ class TestHttpPatchRoundTrip:
 
 class TestSchemaMigration:
     def test_v2_db_migrates_and_accepts_webui_source(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A pre-existing v2 state.db (source CHECK without 'webui') must
         migrate in place on boot and accept the edit.
@@ -241,18 +256,15 @@ class TestSchemaMigration:
         conn = sqlite3.connect(str(db_path))
         try:
             # Build v1+v2 only (the pre-'webui' schema).
-            conn.execute(
-                "CREATE TABLE schema_meta ("
-                "  version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
+            conn.execute("CREATE TABLE schema_meta (  version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
             for version, statements in enumerate(
-                state_schema.MIGRATIONS[:2], start=1,
+                state_schema.MIGRATIONS[:2],
+                start=1,
             ):
                 for stmt in statements:
                     conn.execute(stmt)
                 conn.execute(
-                    "INSERT INTO schema_meta(version, applied_at) "
-                    "VALUES (?, ?)",
+                    "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
                     (version, datetime.now(UTC).isoformat()),
                 )
             now = datetime.now(UTC).isoformat()
@@ -285,7 +297,10 @@ class TestSchemaMigration:
         current = backend.get_track(SID)
         etag = _served_etag(current)
         updated = backend.update_track(
-            SID, {"rating": 5}, expected_etag=etag, source="webui",
+            SID,
+            {"rating": 5},
+            expected_etag=etag,
+            source="webui",
         )
         assert updated.rating == 5
         # Pre-existing provenance survived the table rebuild.

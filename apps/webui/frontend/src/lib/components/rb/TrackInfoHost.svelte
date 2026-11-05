@@ -64,14 +64,12 @@
 </script>
 
 {#if loadFailure !== null}
-	<span class="tb-load-failure" role="alert" data-testid="topbar-track-info-load-failure">{loadFailure}</span>
+	<span class="tb-load-failure" role="alert" data-testid="topbar-track-info-load-failure"
+		>{loadFailure}</span
+	>
 {/if}
 {#if Overlay !== null && shown !== null}
-	<Overlay
-		deckId={shown.deckId}
-		stableId={shown.stableId}
-		{onclose}
-	/>
+	<Overlay deckId={shown.deckId} stableId={shown.stableId} {onclose} />
 {/if}
 
 <style>

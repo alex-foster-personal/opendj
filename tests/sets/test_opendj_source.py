@@ -12,12 +12,13 @@ Each test maps to one plain-English acceptance criterion:
 
 There is deliberately NO capture-time dwell gate: a brief audition
 writes a row too, carrying a small ``audible_s`` for a read-time filter
-to judge. See docs/product/set-dwell-threshold-analysis.md.
+to judge. See (private path).
 
 The wire contract is a periodic deck-state snapshot at
 :data:`SNAPSHOT_INTERVAL_S`-ish cadence, so the fixtures below feed
 runs of snapshots rather than two lone endpoints.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -71,9 +72,7 @@ def _deck(
 def _snapshot(offset_s: float, decks: dict[str, dict]) -> dict:
     """Build one wire snapshot at ``T0 + offset_s``."""
     return {
-        "observed_at": (T0 + timedelta(seconds=offset_s)).isoformat(
-            timespec="milliseconds"
-        ),
+        "observed_at": (T0 + timedelta(seconds=offset_s)).isoformat(timespec="milliseconds"),
         "decks": decks,
     }
 
@@ -229,9 +228,7 @@ def test_reloading_the_same_track_later_counts_as_a_second_play(
     mid = LONG_RUN_S + CADENCE_S
     snaps += _run(mid, CADENCE_S, {"1": _deck("trk-b", playing=True, audible=True)})
     tail = mid + CADENCE_S * 2
-    snaps += _run(
-        tail, LONG_RUN_S, {"1": _deck("trk-a", playing=True, audible=True)}
-    )
+    snaps += _run(tail, LONG_RUN_S, {"1": _deck("trk-a", playing=True, audible=True)})
     _feed(src, snaps)
 
     rows = sets_state.fetch_events("s-replay", action="track_loaded")
@@ -269,9 +266,7 @@ def test_the_row_appears_on_the_first_audible_second_then_grows(
     _feed(src, _run(CADENCE_S * 2, LONG_RUN_S, audible))
     later = sets_state.fetch_events("s-grow", action="track_loaded")
     assert len(later) == 1, "still one row, updated rather than duplicated"
-    assert src.status()["decks"]["1"]["event_id"] == row_id, (
-        "the same row was updated in place, not replaced"
-    )
+    assert src.status()["decks"]["1"]["event_id"] == row_id, "the same row was updated in place, not replaced"
     assert later[0].value["audible_s"] > first_dwell
 
 
@@ -357,9 +352,7 @@ def test_a_long_observation_gap_is_not_credited_as_continuous_play(
     rows = sets_state.fetch_events("s-gap", action="track_loaded")
     assert len(rows) == 1
     assert rows[0].value["audible_s"] == pytest.approx(MAX_SNAPSHOT_GAP_S)
-    assert src.status()["decks"]["1"]["audible_s"] == pytest.approx(
-        MAX_SNAPSHOT_GAP_S
-    )
+    assert src.status()["decks"]["1"]["audible_s"] == pytest.approx(MAX_SNAPSHOT_GAP_S)
 
 
 # ---------------------------------------------------------------------------

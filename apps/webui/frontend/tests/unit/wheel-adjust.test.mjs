@@ -201,14 +201,8 @@ test('a non-positive or non-finite step is refused at bind and at update', () =>
 });
 
 test('missing get/set is refused rather than silently no-oping', () => {
-	assert.throws(
-		() => wheelAdjust(new EventTarget(), { step: 0.028, set: () => {} }),
-		TypeError
-	);
-	assert.throws(
-		() => wheelAdjust(new EventTarget(), { step: 0.028, get: () => 0 }),
-		TypeError
-	);
+	assert.throws(() => wheelAdjust(new EventTarget(), { step: 0.028, set: () => {} }), TypeError);
+	assert.throws(() => wheelAdjust(new EventTarget(), { step: 0.028, get: () => 0 }), TypeError);
 });
 
 // ------------------------------------------------------------- step table
@@ -249,7 +243,10 @@ test('nudge receives the raw signed step, even when the control is pinned at an 
 	node.dispatchEvent(up);
 	node.dispatchEvent(wheelEvent(100));
 	assert.equal(deltas.length, 2);
-	assert.ok(deltas[0] > 0, `wheel up at the top end reached nudge as ${deltas[0]}, not a positive step`);
+	assert.ok(
+		deltas[0] > 0,
+		`wheel up at the top end reached nudge as ${deltas[0]}, not a positive step`
+	);
 	assert.ok(deltas[1] < 0);
 	assert.equal(sets.length, 0, 'set() must not also run when nudge is given');
 	assert.ok(up.defaultPrevented, 'the page scrolled underneath a nudged control');

@@ -1,4 +1,5 @@
 """Tests for apps.spotify.client -- fetch + cache + pagination + retry."""
+
 from __future__ import annotations
 
 import os
@@ -141,7 +142,6 @@ def test_fetch_retries_once_on_401(fake_cache_dir: Path) -> None:
     assert playlist.track_count == 1
     kinds = [op for op, _ in fake.call_log]
     assert kinds.count("playlist") == 2
-
 
 
 @pytest.mark.requirement("CAT-01")

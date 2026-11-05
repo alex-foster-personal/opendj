@@ -73,8 +73,11 @@ import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import {
+	pioneerBrowserAndGlobalBindings,
 	pioneerDeckBindings,
+	pioneerDeckHints,
 	pioneerNote,
+	pioneerPadBindings,
 	pioneerPadChannel,
 	pioneerCc,
 	pioneerDeckChannel
@@ -119,11 +122,20 @@ function _mixerBindings(deck: DeckId): MidiBinding[] {
 		// [PDF] p.2 M3 TRIM: CC 4 (0x04) MSB (LSB 36 unbound - header note).
 		{ source: pioneerCc(ch, 0x04), action: { type: 'mixer_channel', deck, target: 'trim' } },
 		// [PDF] p.2 M4 EQ HI: CC 7 (0x07) MSB (LSB 39 unbound).
-		{ source: pioneerCc(ch, 0x07), action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
+		{
+			source: pioneerCc(ch, 0x07),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' }
+		},
 		// [PDF] p.2 M5 EQ MID: CC 11 (0x0B) MSB (LSB 43 unbound).
-		{ source: pioneerCc(ch, 0x0b), action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
+		{
+			source: pioneerCc(ch, 0x0b),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' }
+		},
 		// [PDF] p.2 M6 EQ LOW: CC 15 (0x0F) MSB (LSB 47 unbound).
-		{ source: pioneerCc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
+		{
+			source: pioneerCc(ch, 0x0f),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' }
+		},
 		// [PDF] p.2 M2 CH FADER: CC 19 (0x13) MSB (LSB 51 unbound), "Min at
 		// bottom end, Max at top end" - matches setFader 0..1, no invert.
 		{ source: pioneerCc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } },
@@ -135,98 +147,30 @@ function _mixerBindings(deck: DeckId): MidiBinding[] {
 // -------------------------------------------------------- per-deck pad bank
 
 function _padBindings(deck: DeckId): MidiBinding[] {
-	const ch = pioneerPadChannel(deck);
-	const bindings: MidiBinding[] = [];
-	for (let pad = 0; pad < 8; pad++) {
-		// [PDF] p.2-3 P1..P8, HOT CUE mode: pad k -> note k-1 (0..7).
-		bindings.push({
-			source: pioneerNote(ch, pad),
-			action: { type: 'deck_hot_cue', deck, slot: HOT_CUE_SLOTS[pad] }
-		});
-		// [PDF] p.2-3 P1..P8, BEAT LOOP mode: pad k -> note 95+k
-		// (96..103 / 0x60..0x67). Beats per pad: our table (see const).
-		bindings.push({
-			source: pioneerNote(ch, 0x60 + pad),
-			action: { type: 'deck_beat_loop', deck, beats: DDJ400_BEAT_LOOP_PAD_BEATS[pad] }
-		});
-	}
-	return bindings;
+	// [PDF] p.2-3 P1..P8 HOT CUE (notes 0-7) and BEAT LOOP (notes 0x60-0x67).
+	// The doubling ladder is our software assignment (see const above).
+	return pioneerPadBindings(deck, DDJ400_BEAT_LOOP_PAD_BEATS);
 }
 
 // -------------------------------------------------- browser + global mixer
 
 function _browserAndGlobalBindings(): MidiBinding[] {
-	// Browser + global mixer share channel 7 ([PDF] p.1 channel table).
-	const ch = 7;
-	return [
-		// [PDF] p.1 B1 Rotary Selector rotate: CC 64 (0x40), relative ticks
-		// ("Turn clockwise : 1 ~ 30 (0x01 ~ 0x1E), counterclockwise :
-		// 127 ~ 98 (0x7F ~ 0x62)").
-		{ source: pioneerCc(ch, 0x40), action: { type: 'browse_encoder' }, relative: true },
-		// [PDF] p.1 B1 rotate +SHIFT: CC 100 (0x64), same tick encoding.
-		// Software choice (ours): same selection movement.
-		{ source: pioneerCc(ch, 0x64), action: { type: 'browse_encoder' }, relative: true },
-		// [PDF] p.1 B2-L / B2-R LOAD: deck 1 note 70 (0x46), deck 2 note 71
-		// (0x47). The DDJ-400 has one LOAD button per deck (no deck 3/4).
-		{ source: pioneerNote(ch, 0x46), action: { type: 'browse_load', deck: 1 } },
-		{ source: pioneerNote(ch, 0x47), action: { type: 'browse_load', deck: 2 } },
-		// [PDF] p.2 M1 CROSSFADER: CC 31 (0x1F) MSB (LSB 63 unbound),
-		// "Min at left side, Max at right side" - engine x=0 is full A
-		// (left), no invert.
-		{ source: pioneerCc(ch, 0x1f), action: { type: 'mixer_global', target: 'crossfader' } },
-		// [PDF] p.2 M8 MASTER LEVEL: CC 8 (0x08) MSB (LSB 40 unbound).
-		{ source: pioneerCc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } },
-		// [PDF] p.2 M10 HEADPHONES MIXING: CC 12 (0x0C) MSB (LSB 44 unbound).
-		{ source: pioneerCc(ch, 0x0c), action: { type: 'headphone_mix' } },
-		// [PDF] p.2 M11 HEADPHONES LEVEL: CC 13 (0x0D) MSB (LSB 45 unbound).
-		{ source: pioneerCc(ch, 0x0d), action: { type: 'headphone_level' } },
-		// [PDF] p.2 M9 MASTER CUE: note 99 (0x63). Pioneer press/release on one
-		// note -> latch (restore previous MIX on second press).
-		{ source: pioneerNote(ch, 0x63), action: { type: 'master_cue', mode: 'latch' } }
-	];
+	// [PDF] p.1 B1/B2 BROWSE + LOAD, p.2 M1/M8/M9/M10/M11 global mixer.
+	return pioneerBrowserAndGlobalBindings();
 }
 
 // ------------------------------------------------------------------- hints
 
-/** Documented-but-unbound physical controls. The P0 MidiAction union has no
- * case for any of these, so pressing them produces learn-log traffic only -
- * the hint names what was touched instead of showing a bare "unmapped
- * source". Every number is transcribed from the [PDF] rows cited inline. */
+/** Documented-but-unbound physical controls ([PDF] p.1 D3/D5-D10, p.2 M7).
+ * Row names are the DDJ-400's; wire numbers are shared with the FLX4. */
 function _deckHints(deck: DeckId): ControlHint[] {
-	const ch = pioneerDeckChannel(deck);
-	return [
-		// [PDF] p.1 D3 JOG DIAL: platter rotate CC 34 (0x22) vinyl-mode ON /
-		// CC 35 (0x23) vinyl-mode OFF, +SHIFT CC 41 (0x29); wheel-side rotate
-		// CC 33 (0x21); touch note 54 (0x36), +SHIFT note 103 (0x67).
-		{ source: pioneerCc(ch, 0x22), label: `JOG platter, vinyl on (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x23), label: `JOG platter, vinyl off (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x29), label: `JOG platter + SHIFT (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x21), label: `JOG wheel side (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x36), label: `JOG touch (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x67), label: `JOG touch + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D5 BEAT SYNC: note 88 (0x58), LONG press note 92 (0x5C),
-		// +SHIFT note 96 (0x60).
-		{ source: pioneerNote(ch, 0x58), label: `BEAT SYNC (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x5c), label: `BEAT SYNC long press (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x60), label: `BEAT SYNC + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D6 LOOP IN/4BEAT short press: note 16 (0x10), +SHIFT
-		// note 76 (0x4C). (The LONG press, note 20, IS bound - see above.)
-		{ source: pioneerNote(ch, 0x10), label: `LOOP IN (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x4c), label: `LOOP IN + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D7 LOOP OUT: note 17 (0x11), +SHIFT note 78 (0x4E).
-		{ source: pioneerNote(ch, 0x11), label: `LOOP OUT (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x4e), label: `LOOP OUT + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D8 RELOOP/EXIT +SHIFT: note 80 (0x50). (Unshifted IS bound.)
-		{ source: pioneerNote(ch, 0x50), label: `RELOOP/EXIT + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D9 CUE/LOOP CALL left: note 81 (0x51), +SHIFT note 62 (0x3E).
-		{ source: pioneerNote(ch, 0x51), label: `CUE/LOOP CALL back (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x3e), label: `CUE/LOOP CALL back + SHIFT (deck ${deck})` },
-		// [PDF] p.1 D10 CUE/LOOP CALL right: note 83 (0x53), +SHIFT note 61 (0x3D).
-		{ source: pioneerNote(ch, 0x53), label: `CUE/LOOP CALL forward (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x3d), label: `CUE/LOOP CALL forward + SHIFT (deck ${deck})` },
-		// [PDF] p.2 M7 CH CUE +SHIFT: note 104 (0x68). Unshifted IS bound.
-		{ source: pioneerNote(ch, 0x68), label: `CH CUE + SHIFT (deck ${deck})` }
-	];
+	return pioneerDeckHints(deck, {
+		loopIn: 'LOOP IN',
+		loopInShift: 'LOOP IN + SHIFT',
+		loopOut: 'LOOP OUT',
+		loopOutShift: 'LOOP OUT + SHIFT',
+		loopExitShift: 'RELOOP/EXIT + SHIFT'
+	});
 }
 
 /** Global (channel 5 EFFECT / channel 7 BROWSER+MIXER) unbound controls. */

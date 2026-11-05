@@ -21,6 +21,7 @@ Usage (run from the repo root, in the worktree's own .venv):
 The numbers are in-process (Starlette TestClient): no socket, no browser, no
 competing boot requests. They bound the handler, not the page.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -87,7 +88,9 @@ def _page_url(limit: int, cursor: str | None, extra: str) -> str:
 
 
 def _fire_boot_burst(
-    client: TestClient, timings: dict[str, Any], requests: tuple[tuple[str, str], ...],
+    client: TestClient,
+    timings: dict[str, Any],
+    requests: tuple[tuple[str, str], ...],
 ) -> list[threading.Thread]:
     def fire(method: str, url: str) -> None:
         started = time.perf_counter()
@@ -120,7 +123,8 @@ def _walk(
         trace.reset()
         started = time.perf_counter()
         response = client.get(
-            _page_url(page_limit, cursor, extra), headers={"accept-encoding": "identity"},
+            _page_url(page_limit, cursor, extra),
+            headers={"accept-encoding": "identity"},
         )
         wall_ms = (time.perf_counter() - started) * 1000
         if response.status_code != 200:
@@ -132,16 +136,18 @@ def _walk(
         # Under --contend the burst's own statements share the trace, so the
         # count is only attributable to the listing on an uncontended walk.
         statements = trace.statements_outside(REFRESH_THREAD)
-        pages.append({
-            "page": len(pages),
-            "rows": len(payload["items"]),
-            "wall_ms": round(wall_ms, 1),
-            "statements": len(statements),
-            "connections": trace.connections_outside(REFRESH_THREAD),
-            "bytes": len(body),
-            "gzip_bytes": len(gzip.compress(body, compresslevel=5)),
-            "shapes": statement_shapes(statements).most_common(40),
-        })
+        pages.append(
+            {
+                "page": len(pages),
+                "rows": len(payload["items"]),
+                "wall_ms": round(wall_ms, 1),
+                "statements": len(statements),
+                "connections": trace.connections_outside(REFRESH_THREAD),
+                "bytes": len(body),
+                "gzip_bytes": len(gzip.compress(body, compresslevel=5)),
+                "shapes": statement_shapes(statements).most_common(40),
+            }
+        )
         cursor = payload.get("next_cursor")
         if cursor is None:
             for thread in burst_threads:
@@ -150,14 +156,27 @@ def _walk(
 
 
 def _profile_page(
-    app: Any, backend: SqliteBackend, limit: int, cursor: str | None, top: int,
+    app: Any,
+    backend: SqliteBackend,
+    limit: int,
+    cursor: str | None,
+    top: int,
 ) -> str:
     """cProfile the handler on THIS thread (the route runs in a worker thread
     under the client, where a profiler started here sees only the wait)."""
     request = Request({"type": "http", "app": app, "headers": [], "query_string": b""})
     call = lambda: tracks_route.list_tracks(  # noqa: E731
-        request=request, q=None, bpm_min=None, bpm_max=None, key=None, rating_min=None,
-        tag=None, available="all", show_deleted=False, cursor=cursor, limit=limit,
+        request=request,
+        q=None,
+        bpm_min=None,
+        bpm_max=None,
+        key=None,
+        rating_min=None,
+        tag=None,
+        available="all",
+        show_deleted=False,
+        cursor=cursor,
+        limit=limit,
         backend=backend,
     )
     call()
@@ -173,8 +192,7 @@ def _profile_page(
     body = page.body if isinstance(page, Response) else page.model_dump_json()
     dump_ms = (time.perf_counter() - started) * 1000
     out = io.StringIO()
-    out.write(f"handler_ms={handler_ms:.1f} (under cProfile) model_dump_json_ms={dump_ms:.1f} "
-              f"bytes={len(body)}\n")
+    out.write(f"handler_ms={handler_ms:.1f} (under cProfile) model_dump_json_ms={dump_ms:.1f} bytes={len(body)}\n")
     stats = pstats.Stats(profiler, stream=out)
     stats.sort_stats("cumulative").print_stats(top)
     stats.sort_stats("tottime").print_stats(top)
@@ -214,7 +232,8 @@ def main() -> None:
     parser.add_argument("--profile", type=int, help="page index to cProfile after the walks")
     parser.add_argument("--contend", action="store_true", help="fire BOOT_BURST as each walk starts")
     parser.add_argument(
-        "--contend-undeferred", action="store_true",
+        "--contend-undeferred",
+        action="store_true",
         help="fire BOOT_BURST_UNDEFERRED as each walk starts",
     )
     args = parser.parse_args()
@@ -240,8 +259,13 @@ def main() -> None:
             bursts: list[dict[str, Any]] = [{} for _ in range(args.walks)]
             walks = [
                 _walk(
-                    client, trace, args.limit, args.first_limit, args.extra,
-                    bursts[index] if contended else None, burst_requests,
+                    client,
+                    trace,
+                    args.limit,
+                    args.first_limit,
+                    args.extra,
+                    bursts[index] if contended else None,
+                    burst_requests,
                 )
                 for index in range(args.walks)
             ]
@@ -254,17 +278,23 @@ def main() -> None:
                     raise SystemExit(f"--profile {args.profile}: the walk has {len(walks[-1])} pages")
                 cursor = None
                 for index in range(args.profile):
-                    page = client.get(_page_url(
-                        args.first_limit if index == 0 else args.limit, cursor, args.extra,
-                    )).json()
+                    page = client.get(
+                        _page_url(
+                            args.first_limit if index == 0 else args.limit,
+                            cursor,
+                            args.extra,
+                        )
+                    ).json()
                     cursor = page["next_cursor"]
                 profile_text = _profile_page(
-                    app, backend, args.first_limit if args.profile == 0 else args.limit, cursor, 60,
+                    app,
+                    backend,
+                    args.first_limit if args.profile == 0 else args.limit,
+                    cursor,
+                    60,
                 )
     summary = _summary(walks)
-    summary["contended"] = (
-        "all" if args.contend else "undeferred" if args.contend_undeferred else "none"
-    )
+    summary["contended"] = "all" if args.contend else "undeferred" if args.contend_undeferred else "none"
     if contended:
         failed = {k: v for burst in bursts for k, v in burst.items() if v[0] >= 400}
         if failed:

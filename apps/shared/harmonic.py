@@ -109,9 +109,20 @@ class CamelotKey:
             raise ValueError(f"Invalid Camelot key: {s!r}")
         try:
             number = int(s[:-1])
-        except ValueError:
-            raise ValueError(f"Invalid Camelot key: {s!r}")
+        except ValueError as error:
+            raise ValueError(f"Invalid Camelot key: {s!r}") from error
         return cls(number=number, letter=letter)
+
+
+def shift_camelot(key: str, semitones: int) -> str:
+    """The Camelot key heard after a key shift of ``semitones`` (mode kept): one semitone is 7 steps round the wheel.
+
+    Mirrors the webui's ``effectiveCamelotKey``: 9A shifted +1 is 4A (E minor up to F minor).
+    """
+    parsed = CamelotKey.from_string(key)
+    if semitones == 0:
+        return str(parsed)
+    return str(CamelotKey(number=(parsed.number - 1 + 7 * semitones) % 12 + 1, letter=parsed.letter))
 
 
 def key_to_camelot(key_string: str) -> CamelotKey:
@@ -327,8 +338,7 @@ def bpm_compatibility(bpm1: float | None, bpm2: float | None, max_diff_pct: floa
     # 3% diff -> ~0.91, 6% diff -> ~0.64, 10% -> 0.0
     normalized = effective_diff / max_diff_pct
     score = 1.0 - (normalized**2)
-    score = max(0.0, score - tempo_penalty)
-    return score
+    return max(0.0, score - tempo_penalty)
 
 
 def energy_compatibility(rating1: int, rating2: int) -> float:

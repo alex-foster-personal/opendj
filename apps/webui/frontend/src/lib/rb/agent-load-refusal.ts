@@ -67,7 +67,8 @@ export function deckPlayingRefusal(
 ): DeckPlayingRefusal | null {
 	if (!(error instanceof DeckReplacementBlockedError)) return null;
 	const record = _record(command);
-	const override = record !== null && record.type === 'load' ? { ...record, replace_playing: true } : null;
+	const override =
+		record !== null && record.type === 'load' ? { ...record, replace_playing: true } : null;
 	return {
 		code: error.code,
 		detail: { ..._snapshot(error.deck, state), active_state: [...error.activeState], override }

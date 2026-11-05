@@ -245,7 +245,6 @@ def test_s2_stays_unmeasured_when_neither_required_reading_names_a_capture() -> 
     assert "evidence cohort" in score.note
 
 
-
 def test_s2_stays_unmeasured_when_every_capture_id_is_blank() -> None:
     """A fresh reviewer round's own reproduction: `"capture_id": ""` on every
     required reading used to count as one NAMED cohort (the set held one

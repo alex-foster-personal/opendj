@@ -198,8 +198,7 @@ _KEY_INTERPRETATION: dict[str, str] = {
         "likely the dominant-vs-tonic ambiguity between two key detectors"
     ),
     "camelot_hop_-1_fifth_down": (
-        "one step anticlockwise on the Camelot wheel (a perfect fifth down): as "
-        "above, mirrored"
+        "one step anticlockwise on the Camelot wheel (a perfect fifth down): as above, mirrored"
     ),
 }
 
@@ -246,9 +245,7 @@ def _numeric_interpretation(signature: str) -> str:
 # ------------------------------------------------------------- comparison
 
 
-def compare_pair(
-    pairings: list[Pairing], spec: FieldPair
-) -> tuple[Agreement, list[RowComparison]]:
+def compare_pair(pairings: list[Pairing], spec: FieldPair) -> tuple[Agreement, list[RowComparison]]:
     """Normalise both sides of every pairing and split agree / disagree."""
     left_ok = is_comparable_unit(spec.left.kind, spec.left.unit)
     right_ok = is_comparable_unit(spec.right.kind, spec.right.unit)
@@ -303,9 +300,7 @@ def compare_pair(
     return agreement, comparisons
 
 
-def _canonical(
-    raw: Any, spec: SourceField, unit_ok: bool, counts: Counter[str], side: str
-) -> Any:
+def _canonical(raw: Any, spec: SourceField, unit_ok: bool, counts: Counter[str], side: str) -> Any:
     if not unit_ok:
         counts[f"{side}_missing"] += 1
         return None
@@ -375,8 +370,7 @@ def _offset_cluster_for_signature(
         subset_form=subset_form if systematic else None,
         subset_coverage=subset_coverage,
         examples=[
-            f"{r.title!r}: {r.left_raw!r} vs {r.right_raw!r} "
-            f"-> {r.left_canonical} vs {r.right_canonical}"
+            f"{r.title!r}: {r.left_raw!r} vs {r.right_raw!r} -> {r.left_canonical} vs {r.right_canonical}"
             for r in rows[:5]
         ],
     )
@@ -410,8 +404,12 @@ def detect_offset_clusters(
         for signature, rows in grouped.items()
         if (
             cluster := _offset_cluster_for_signature(
-                signature, rows, kind=kind, total=total,
-                comparable=comparable, forms=forms,
+                signature,
+                rows,
+                kind=kind,
+                total=total,
+                comparable=comparable,
+                forms=forms,
             )
         )
         is not None
@@ -419,9 +417,7 @@ def detect_offset_clusters(
     return sorted(clusters, key=lambda c: c.count, reverse=True)
 
 
-def _dominant_form(
-    rows: list[RowComparison], form_counts: dict[str, int]
-) -> tuple[str | None, float | None]:
+def _dominant_form(rows: list[RowComparison], form_counts: dict[str, int]) -> tuple[str | None, float | None]:
     """The notation this cluster is confined to, and how much of it it covers."""
     if not form_counts:
         return None, None

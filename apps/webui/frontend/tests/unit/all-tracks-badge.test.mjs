@@ -43,7 +43,11 @@ test('a valid availability answer shows present, not total minus broken', () => 
 });
 
 test('present 0 is a value, not a reason to fall back (overshoot control)', () => {
-	const badge = allTracksBadge(40, 0, { ...AVAILABILITY, present: 0, total: AVAILABILITY.total - AVAILABILITY.present });
+	const badge = allTracksBadge(40, 0, {
+		...AVAILABILITY,
+		present: 0,
+		total: AVAILABILITY.total - AVAILABILITY.present
+	});
 	assert.equal(badge.count, 0);
 	assert.match(badge.title, /^0 tracks with audio on this machine/);
 });
@@ -52,7 +56,10 @@ test('unknown availability keeps the non-broken count and says so', () => {
 	for (const availability of ['unknown', null]) {
 		const badge = allTracksBadge(1355, 10, availability);
 		assert.equal(badge.count, 1355);
-		assert.equal(badge.title, '1355 non-broken tracks, 10 broken (audio on this machine not measured)');
+		assert.equal(
+			badge.title,
+			'1355 non-broken tracks, 10 broken (audio on this machine not measured)'
+		);
 	}
 });
 
@@ -67,9 +74,18 @@ function assertMalformed(badge, reason) {
 test('a malformed bucket is an error, not half-read and not the old count (negative control)', () => {
 	const { streaming: _drop, ...missing } = AVAILABILITY;
 	assertMalformed(allTracksBadge(1355, 10, missing), /bucket streaming is missing/);
-	assertMalformed(allTracksBadge(1355, 10, { ...AVAILABILITY, present: -1 }), /bucket present is -1/);
-	assertMalformed(allTracksBadge(1355, 10, { ...AVAILABILITY, present: 1.5 }), /bucket present is 1\.5/);
-	assertMalformed(allTracksBadge(1355, 10, { ...AVAILABILITY, present: '1029' }), /bucket present is "1029"/);
+	assertMalformed(
+		allTracksBadge(1355, 10, { ...AVAILABILITY, present: -1 }),
+		/bucket present is -1/
+	);
+	assertMalformed(
+		allTracksBadge(1355, 10, { ...AVAILABILITY, present: 1.5 }),
+		/bucket present is 1\.5/
+	);
+	assertMalformed(
+		allTracksBadge(1355, 10, { ...AVAILABILITY, present: '1029' }),
+		/bucket present is "1029"/
+	);
 	assertMalformed(allTracksBadge(1355, 10, 42), /expected bucket counts, got number/);
 	assertMalformed(allTracksBadge(1355, 10, 'gone'), /expected bucket counts, got string/);
 	assertMalformed(allTracksBadge(1355, 10, []), /expected bucket counts, got an array/);
@@ -82,8 +98,14 @@ test('buckets that do not sum to total are an error, not a measurement (negative
 		allTracksBadge(1355, 10, { ...AVAILABILITY, total: AVAILABILITY.total + 1 }),
 		/buckets sum to 1365, not the total 1366/
 	);
-	assertMalformed(allTracksBadge(1355, 10, { ...AVAILABILITY, present: AVAILABILITY.present - 1 }), /sum to 1364/);
-	assertMalformed(allTracksBadge(1355, 10, { ...AVAILABILITY, streaming: AVAILABILITY.streaming + 5 }), /sum to 1370/);
+	assertMalformed(
+		allTracksBadge(1355, 10, { ...AVAILABILITY, present: AVAILABILITY.present - 1 }),
+		/sum to 1364/
+	);
+	assertMalformed(
+		allTracksBadge(1355, 10, { ...AVAILABILITY, streaming: AVAILABILITY.streaming + 5 }),
+		/sum to 1370/
+	);
 	// Control: the exact partition is still read as a measurement, with no error.
 	const ok = allTracksBadge(1355, 10, AVAILABILITY);
 	assert.equal(ok.count, AVAILABILITY.present);

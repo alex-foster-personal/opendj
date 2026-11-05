@@ -54,47 +54,47 @@
 </script>
 
 {#if showSurface}
-<section
-	class="preflight"
-	class:preflight-boot={mode === 'boot' && blocking}
-	class:preflight-boot-strip={mode === 'boot' && !blocking}
-	class:preflight-admin={mode === 'admin'}
-	data-preflight-mode={mode}
-	data-preflight-status={status}
-	data-preflight-blocking={blocking ? 'true' : 'false'}
-	style:--preflight-boot-z={mode === 'boot' && blocking ? OVERLAY_Z.preflightBoot : undefined}
->
-	{#if mode === 'boot' && blocking}
-		<header class="preflight-brand" aria-label="Open DJ">
-			<div class="preflight-mark" aria-hidden="true"></div>
-			<div class="preflight-lockup">
-				<span class="preflight-name">Open DJ<AlphaBadge /></span>
-				<p class="preflight-welcome">
-					Welcome. Import your music to start DJing, or keep going once setup finishes.
-				</p>
-			</div>
-		</header>
-	{/if}
-	<h2>{bootHeadline}</h2>
-	{#if engineError}
-		<p class="preflight-error">Could not reach the engine: {engineError}</p>
-	{/if}
-	{#if mode === 'boot' && blocking && firstRunHasError}
-		<p class="preflight-error" role="alert">{firstRunError}</p>
-	{/if}
-	<ul class="preflight-checks">
-		{@render checkRows()}
-	</ul>
-	<PreflightActions
-		actions={visibleActions}
-		disabled={disabledActions}
-		pending={pendingAction}
-		status={actionStatus}
-		{footer}
-		{explainers}
-		{onAction}
-	/>
-</section>
+	<section
+		class="preflight"
+		class:preflight-boot={mode === 'boot' && blocking}
+		class:preflight-boot-strip={mode === 'boot' && !blocking}
+		class:preflight-admin={mode === 'admin'}
+		data-preflight-mode={mode}
+		data-preflight-status={status}
+		data-preflight-blocking={blocking ? 'true' : 'false'}
+		style:--preflight-boot-z={mode === 'boot' && blocking ? OVERLAY_Z.preflightBoot : undefined}
+	>
+		{#if mode === 'boot' && blocking}
+			<header class="preflight-brand" aria-label="Open DJ">
+				<div class="preflight-mark" aria-hidden="true"></div>
+				<div class="preflight-lockup">
+					<span class="preflight-name">Open DJ<AlphaBadge /></span>
+					<p class="preflight-welcome">
+						Welcome. Import your music to start DJing, or keep going once setup finishes.
+					</p>
+				</div>
+			</header>
+		{/if}
+		<h2>{bootHeadline}</h2>
+		{#if engineError}
+			<p class="preflight-error">Could not reach the engine: {engineError}</p>
+		{/if}
+		{#if mode === 'boot' && blocking && firstRunHasError}
+			<p class="preflight-error" role="alert">{firstRunError}</p>
+		{/if}
+		<ul class="preflight-checks">
+			{@render checkRows()}
+		</ul>
+		<PreflightActions
+			actions={visibleActions}
+			disabled={disabledActions}
+			pending={pendingAction}
+			status={actionStatus}
+			{footer}
+			{explainers}
+			{onAction}
+		/>
+	</section>
 {/if}
 
 <style>

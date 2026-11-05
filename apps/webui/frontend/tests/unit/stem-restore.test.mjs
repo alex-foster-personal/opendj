@@ -25,7 +25,11 @@ before(async () => {
 	hydrate = await loadTypeScriptModule('src/lib/rb/stem-hydrate-wait.ts');
 });
 
-const READY = { status: 'ready', error: null, available_controls: ['vocal', 'instrumental', 'drums'] };
+const READY = {
+	status: 'ready',
+	error: null,
+	available_controls: ['vocal', 'instrumental', 'drums']
+};
 const LOADING = { status: 'loading', error: null, available_controls: [] };
 const SAVED = { vocal: { muted: true, solo: false, gain: 0.25 } };
 
@@ -105,7 +109,10 @@ test('a deck that never leaves loading still fails loud, at the restore deadline
 		),
 		/deck 1 stem restore timed out/
 	);
-	assert.ok(deck.state.nowMs >= restore.STEM_RESTORE_MAX_WAIT_MS, `gave up at ${deck.state.nowMs} ms`);
+	assert.ok(
+		deck.state.nowMs >= restore.STEM_RESTORE_MAX_WAIT_MS,
+		`gave up at ${deck.state.nowMs} ms`
+	);
 	assert.deepEqual(deck.state.dispatched, []);
 });
 
@@ -119,7 +126,11 @@ test('a deck that loads another track mid-wait refuses the old controls', async 
 		}
 	};
 	await assert.rejects(
-		withinRealMs(restore.restoreStemControls(deck.dispatch, deck.query, 1, SAVED, clock), 5000, 'stale restore'),
+		withinRealMs(
+			restore.restoreStemControls(deck.dispatch, deck.query, 1, SAVED, clock),
+			5000,
+			'stale restore'
+		),
 		/deck 1 changed during stem restore/
 	);
 	assert.deepEqual(deck.state.dispatched, []);

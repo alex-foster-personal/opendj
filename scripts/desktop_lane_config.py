@@ -88,15 +88,11 @@ def product_slug(base_product_name: str) -> str:
     """A shell-safe stem for the artifact, so testers never quote a path."""
     slug = re.sub(r"[^A-Za-z0-9]", "", base_product_name)
     if slug == "":
-        raise LaneLabelError(
-            f"productName {base_product_name!r} has no alphanumeric characters"
-        )
+        raise LaneLabelError(f"productName {base_product_name!r} has no alphanumeric characters")
     return slug
 
 
-def overlay(
-    base_product_name: str, base_identifier: str, label: str | None
-) -> dict[str, str]:
+def overlay(base_product_name: str, base_identifier: str, label: str | None) -> dict[str, str]:
     """The ``tauri build --config`` overlay for this lane.
 
     Empty when there is no label: an empty overlay is a no-op merge, so the
@@ -110,9 +106,7 @@ def overlay(
     }
 
 
-def dmg_filename(
-    base_product_name: str, label: str | None, version: str, arch: str
-) -> str:
+def dmg_filename(base_product_name: str, label: str | None, version: str, arch: str) -> str:
     """Name the artifact ``OpenDJ-B-0.1.0-aarch64.dmg``.
 
     Tauri names its own output from productName, which yields spaces and
@@ -126,8 +120,7 @@ def dmg_filename(
     """
     if not arch:
         raise LaneLabelError(
-            "an artifact name needs an architecture; the recipe declares "
-            "arm64 only (justfile, ARM64 ONLY v1 decision)"
+            "an artifact name needs an architecture; the recipe declares arm64 only (justfile, ARM64 ONLY v1 decision)"
         )
     stem = product_slug(base_product_name)
     parts = [stem] if label is None else [stem, label]
@@ -159,10 +152,7 @@ def manifest_stamp(manifest_path: Path, field: str) -> str:
     if not isinstance(identity, dict):
         raise LaneLabelError(f"{manifest_path} has no identity block")
     if field not in identity:
-        raise LaneLabelError(
-            f"{manifest_path} identity has no {field!r}; it has "
-            f"{', '.join(sorted(identity))}"
-        )
+        raise LaneLabelError(f"{manifest_path} identity has no {field!r}; it has {', '.join(sorted(identity))}")
     value = identity[field]
     if isinstance(value, bool):
         return "1" if value else "0"
@@ -184,9 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="artifact architecture, e.g. aarch64; required for dmg-name",
     )
-    parser.add_argument(
-        "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
-    )
+    parser.add_argument("--manifest", default=None, type=Path, help="payload manifest; required for stamp")
     parser.add_argument("--field", default=None, help="identity field; required for stamp")
     args = parser.parse_args(argv)
 

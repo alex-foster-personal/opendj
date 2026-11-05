@@ -2,7 +2,7 @@
 
 [if] write order changes the canonical pointer or the projection [then] fail, [else stop].
 
-Spec: `specs/native-analysis-v1.md` section 3 ("Record"). Requirements:
+Spec: `(private path)` section 3 ("Record"). Requirements:
 NATIVE-09 (order independence), NATIVE-04 and NATIVE-07 (the read model).
 
 Acceptance lines exercised here:
@@ -17,6 +17,7 @@ Acceptance lines exercised here:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -34,26 +35,25 @@ pytestmark = pytest.mark.requirement("NATIVE-09")
 
 def _projection(conn: sqlite3.Connection, stable_id: str) -> dict[str, tuple]:
     rows = conn.execute(
-        "SELECT field, value, status, reason, backend, backend_version "
-        "FROM analysis_projection WHERE stable_id = ?",
+        "SELECT field, value, status, reason, backend, backend_version FROM analysis_projection WHERE stable_id = ?",
         (stable_id,),
     ).fetchall()
     return {r[0]: tuple(r[1:]) for r in rows}
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # order independence: the headline regression
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_pointer_and_projection_do_not_depend_on_write_order(tmp_path) -> None:
     """Write backfill then inapp, and inapp then backfill. Compare both ends."""
+
     def build(order: list[str], path: str) -> tuple[tuple[str, str] | None, dict[str, tuple]]:
         conn = store_mod.open_conn(tmp_path / path)
         try:
             for producer in order:
-                store_mod.upsert_record(
-                    own_record(producer=producer, version="1.2.0"), conn=conn
-                )
+                store_mod.upsert_record(own_record(producer=producer, version="1.2.0"), conn=conn)
             return (canonical_pointer(conn, "t1", "beatgrid"), _projection(conn, "t1"))
         finally:
             conn.close()
@@ -83,8 +83,7 @@ def test_version_ordering_is_numeric_not_lexical(db) -> None:
 def test_cand_rows_are_never_eligible(db) -> None:
     """[if] a row comes from a bench candidate [then] it never goes canonical, [else stop]."""
     store_mod.upsert_record(
-        own_record(producer="cand", version="9.9.9",
-                   backend="own_beatgrid.cand.beat_this"),
+        own_record(producer="cand", version="9.9.9", backend="own_beatgrid.cand.beat_this"),
         conn=db,
     )
     assert canonical_pointer(db, "t1", "beatgrid") is None
@@ -99,17 +98,22 @@ def test_pre_v1_rows_are_never_eligible(db) -> None:
     import dataclasses
 
     legacy = dataclasses.replace(
-        own_record(), backend="librosa-only",
-        backend_version="librosa==0.10.2.post1", producer="backfill",
-        producer_version="", decode_fingerprint="", lanes={},
+        own_record(),
+        backend="librosa-only",
+        backend_version="librosa==0.10.2.post1",
+        producer="backfill",
+        producer_version="",
+        decode_fingerprint="",
+        lanes={},
     )
     store_mod.upsert_record(legacy, conn=db)
     assert canonical_pointer(db, "t1", "beatgrid") is None
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # projection contents
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_beatgrid_projects_bpm_and_tempo_change_count(db) -> None:
     from tests.analysis_contract.conftest import beatgrid_payload
@@ -126,7 +130,8 @@ def test_beatgrid_projects_bpm_and_tempo_change_count(db) -> None:
 
 def test_key_projects_camelot_and_change_count(db) -> None:
     record = own_record(
-        lane="key", result=LaneResult(status="ok", payload=key_payload(segments=3)),
+        lane="key",
+        result=LaneResult(status="ok", payload=key_payload(segments=3)),
     )
     store_mod.upsert_record(record, conn=db)
     proj = _projection(db, "t1")
@@ -149,15 +154,16 @@ def test_a_failed_lane_projects_a_null_value_with_status_and_reason(db) -> None:
     )
     store_mod.upsert_record(record, conn=db)
     proj = _projection(db, "t1")
-    assert proj["key"] == (None, "failed", "no_tonal_center",
-                           "own_key.inapp", "1.0.0")
+    assert proj["key"] == (None, "failed", "no_tonal_center", "own_key.inapp", "1.0.0")
 
 
 def test_key_segments_can_be_missing_while_the_key_itself_is_ok(db) -> None:
     """The segments block carries its own status; key_change_count follows it."""
     payload = key_payload()
     payload["segments"] = {
-        "status": "missing", "reason": "no own downbeats yet", "segments": [],
+        "status": "missing",
+        "reason": "no own downbeats yet",
+        "segments": [],
     }
     store_mod.upsert_record(
         own_record(lane="key", result=LaneResult(status="ok", payload=payload)),
@@ -181,16 +187,15 @@ def test_numeric_projection_values_compare_numerically_in_sql(db) -> None:
             ),
             conn=db,
         )
-    hits = db.execute(
-        "SELECT stable_id FROM analysis_projection WHERE field='bpm' AND value > 99.5"
-    ).fetchall()
+    hits = db.execute("SELECT stable_id FROM analysis_projection WHERE field='bpm' AND value > 99.5").fetchall()
     # Lexically '100.0' < '99.0', so a TEXT column would return the wrong row.
     assert [h[0] for h in hits] == ["fast"]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the write boundary
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def test_upsert_refuses_an_own_record_with_no_producer_version(db) -> None:
     import dataclasses
@@ -206,9 +211,13 @@ def test_upsert_of_a_legacy_record_still_works(db) -> None:
     import dataclasses
 
     legacy = dataclasses.replace(
-        own_record(), backend="librosa-only",
-        backend_version="librosa==0.10.2.post1", producer="backfill",
-        producer_version="", decode_fingerprint="", lanes={},
+        own_record(),
+        backend="librosa-only",
+        backend_version="librosa==0.10.2.post1",
+        producer="backfill",
+        producer_version="",
+        decode_fingerprint="",
+        lanes={},
     )
     result = store_mod.upsert_record(legacy, conn=db)
     assert result.inserted is True

@@ -76,9 +76,7 @@ def test_serial_skip_shape_fails_with_did_not_run(tmp_path: Path) -> None:
 
 def test_all_failed_still_executed_passes(tmp_path: Path) -> None:
     """Same defects but every test executed (failed, not skipped) must pass."""
-    tests = [
-        _test_entry(title=f"observed failure {i}", status="failed") for i in range(24)
-    ]
+    tests = [_test_entry(title=f"observed failure {i}", status="failed") for i in range(24)]
     report = _write_report(tmp_path, _suite_tree(tests))
     result = _run(report)
     assert result.returncode == 0, result.stderr

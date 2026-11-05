@@ -1,7 +1,7 @@
 """Fast, scoped pre-PR gate: the commands a build factory runs before it opens a PR.
 
 The repository owns these commands; the factory only calls them (OPS-44, and
-docs/decisions/ADR-NEW-repo-owns-pre-pr-gate-commands.md). IDD's SSSF quality phase
+(private path)). IDD's SSSF quality phase
 reads `[tool.sssf.quality]` in pyproject.toml, runs one block per call and reads the
 exit code. GitHub CI stays the authoritative gate. This is the cheap catch
 that runs first, on the files the change touched, in well under five minutes.
@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import re
 import subprocess
 import sys
@@ -56,6 +57,8 @@ from typing import Literal
 from scripts.affected_tests import UnresolvedPaths, affected_tests
 
 REPO = Path(__file__).resolve().parents[1]
+# Self-hosted runner fixture root (ci/runner-toolset.yml item 10).
+_CI_FIXTURE_HOST = Path("/opt/mdt-fixtures")
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -140,6 +143,14 @@ def _run(
 def _echo(completed: subprocess.CompletedProcess[str]) -> None:
     sys.stdout.write(completed.stdout)
     sys.stdout.write(completed.stderr)
+
+
+def _bootstrap_mux_fixture_host() -> None:
+    """Use the provisioned CI fixture host when IDD does not load runner ``.env``."""
+    if os.environ.get("MUX_FIXTURE_HOST"):
+        return
+    if _CI_FIXTURE_HOST.is_dir():
+        os.environ["MUX_FIXTURE_HOST"] = str(_CI_FIXTURE_HOST)
 
 
 # ----- lint ----------------------------------------------------------------------
@@ -361,6 +372,7 @@ class Tests:
 
     @staticmethod
     def pytest(selection: list[str]) -> Verdict:
+        _bootstrap_mux_fixture_host()
         ledger = json.loads((REPO / CFG.DURATIONS_LEDGER).read_text(encoding="utf-8"))
         estimate, unrecorded = Tests.ledger_estimate(selection, ledger)
         print(

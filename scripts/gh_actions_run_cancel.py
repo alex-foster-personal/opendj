@@ -110,12 +110,7 @@ def _resolve_actor(actor: str) -> str:
     """GitHub workflow initiator when unset; local OS user only off Actions."""
     if actor:
         return actor
-    return (
-        os.environ.get("GITHUB_ACTOR")
-        or os.environ.get("USER")
-        or os.environ.get("LOGNAME")
-        or "unknown"
-    )
+    return os.environ.get("GITHUB_ACTOR") or os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
 
 
 def cancel_run(

@@ -21,8 +21,7 @@ export const FIXTURE_DATA_DIR = fileURLToPath(
 	new URL('fixtures/silence-expected-audible-data', import.meta.url)
 );
 
-const FIXTURE_BUILDER =
-	'apps.webui.frontend.tests.e2e.support.silence_expected_audible_fixture';
+const FIXTURE_BUILDER = 'apps.webui.frontend.tests.e2e.support.silence_expected_audible_fixture';
 
 export default defineConfig({
 	captureGitInfo: { commit: false, diff: false },
@@ -37,16 +36,19 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: guardedWebServerCommand('silence-expected-audible-engine', [
-				`mkdir -p ${FIXTURE_DATA_DIR}`,
-				'&&',
-				`uv run --no-sync python -m ${FIXTURE_BUILDER} --data-dir ${FIXTURE_DATA_DIR}`,
-				'&&',
-				'uv run --no-sync python -m apps.webui.server',
-				'--host 127.0.0.1',
-				`--port ${SILENCE_EXPECTED_AUDIBLE_API_PORT}`,
-				'--prod'
-			].join(' ')),
+			command: guardedWebServerCommand(
+				'silence-expected-audible-engine',
+				[
+					`mkdir -p ${FIXTURE_DATA_DIR}`,
+					'&&',
+					`uv run --no-sync python -m ${FIXTURE_BUILDER} --data-dir ${FIXTURE_DATA_DIR}`,
+					'&&',
+					'uv run --no-sync python -m apps.webui.server',
+					'--host 127.0.0.1',
+					`--port ${SILENCE_EXPECTED_AUDIBLE_API_PORT}`,
+					'--prod'
+				].join(' ')
+			),
 			cwd: REPOSITORY_ROOT,
 			url: `${API_ORIGIN}/api/v1/health`,
 			reuseExistingServer: false,

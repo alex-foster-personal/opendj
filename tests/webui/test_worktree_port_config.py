@@ -8,7 +8,9 @@ import socket
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+import time
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -30,6 +32,7 @@ from apps.webui.port_config import (
     WebuiPorts,
     WorktreeUnavailableError,
     _allocate_pair,
+    _frontend_listener_matches_pair,
     _lane_pool_starts,
     assert_source_tree_matches_worktree,
     check_reservation,
@@ -40,6 +43,54 @@ from apps.webui.port_config import (
     resolve_ports,
     show_ports,
 )
+from apps.webui.server.ui_url import UI_DOCUMENT_MARKER
+
+
+def _git_worktree(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".git").mkdir()
+    return path
+
+
+@contextmanager
+def _own_ui_listener(port: int, worktree: Path) -> Iterator[None]:
+    html_path = worktree / "index.html"
+    html_path.write_text(
+        f"<!DOCTYPE html><html><head><meta {UI_DOCUMENT_MARKER}='hover'></head></html>",
+        encoding="utf-8",
+    )
+    worktree_str = str(worktree)
+    server_code = f"""
+import http.server
+import socketserver
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory={worktree_str!r}, **kwargs)
+with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
+    httpd.serve_forever()
+"""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", server_code],
+        cwd=worktree,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.2)
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                break
+        time.sleep(0.05)
+    else:
+        proc.terminate()
+        proc.wait(timeout=5)
+        raise AssertionError(f"UI listener on port {port} did not start")
+    try:
+        yield
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
 
 
 def _write_env(root: Path, backend: int, frontend: int) -> None:
@@ -523,9 +574,8 @@ def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
     fresh pair out from under its own running engine (observed on the Air's
     preview worktree, ports 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
     """
-    repo_root = tmp_path / "repo-a"
+    repo_root = _git_worktree(tmp_path / "repo-a")
     common_dir = tmp_path / "common"
-    repo_root.mkdir()
     common_dir.mkdir()
     configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
     monkeypatch.setattr(
@@ -533,13 +583,7 @@ def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
         lambda ports: ports == configured,
     )
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vite:
-
-        # Bind like the real servers (uvicorn, Vite): SO_REUSEADDR on.
-
-        vite.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        vite.bind(("127.0.0.1", configured.frontend))
-        vite.listen()
+    with _own_ui_listener(configured.frontend, repo_root):
         claimed = claim_ports(
             repo_root=repo_root,
             common_dir=common_dir,
@@ -592,6 +636,101 @@ def test_claim_moves_off_the_configured_pair_when_a_foreign_process_holds_it(
 
     assert claimed != configured
     assert claimed.frontend != configured.frontend
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_frontend_listener_matcher_rejects_bare_listen_socket(tmp_path: Path) -> None:
+    """[if] bare listen socket on frontend [then] matcher is false, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    ports = _pool_pair(_a_pool_slot_bindable_on_this_host())
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as bare:
+        bare.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        bare.bind(("127.0.0.1", ports.frontend))
+        bare.listen()
+        assert not _frontend_listener_matches_pair(ports, repo_root)
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_keeps_remembered_pair_while_own_ui_holds_frontend(tmp_path: Path) -> None:
+    """[if] own UI on frontend and backend free [then] keep pair, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    dotenv = repo_root / ".env"
+    first_text = dotenv.read_text(encoding="utf-8")
+    first_stat = dotenv.stat()
+    with _own_ui_listener(first.frontend, repo_root):
+        second = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert second == first
+    assert dotenv.read_text(encoding="utf-8") == first_text
+    assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
+    assert dotenv.stat().st_ino == first_stat.st_ino
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_keeps_configured_pair_while_own_ui_holds_frontend(tmp_path: Path) -> None:
+    """[if] own UI on frontend, no registry [then] configured pair kept, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
+    with _own_ui_listener(configured.frontend, repo_root):
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+    assert claimed == configured
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_moves_when_ui_runs_from_foreign_worktree(tmp_path: Path) -> None:
+    """[if] UI document from foreign checkout [then] pair moves, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    foreign_root = _git_worktree(tmp_path / "repo-b")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
+    with _own_ui_listener(configured.frontend, foreign_root):
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+    assert claimed != configured
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_moves_when_foreign_backend_and_own_ui_hold_pair(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] own UI plus foreign backend [then] pair moves, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
+    monkeypatch.setattr(
+        "apps.webui.port_config._backend_listener_matches_pair",
+        lambda ports: False,
+    )
+    with (
+        _own_ui_listener(configured.frontend, repo_root),
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM) as foreign_backend,
+    ):
+        foreign_backend.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        foreign_backend.bind(("127.0.0.1", configured.backend))
+        foreign_backend.listen()
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+    assert claimed != configured
 
 
 def test_two_runner_clones_with_distinct_lanes_never_select_the_same_pair(

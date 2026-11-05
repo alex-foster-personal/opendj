@@ -25,6 +25,7 @@ Acceptance:
 
 [if] empty first-sync dies on a child row [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -155,9 +156,7 @@ def test_spoke_apply_skips_members_whose_track_is_not_here_yet(
         result = engine.spoke_apply(conn, [change])
         assert result.accepted == 1
         assert _members(conn, "pl-1") == ("trk-here",)
-        assert conn.execute(
-            "SELECT name FROM playlists WHERE playlist_id = 'pl-1'"
-        ).fetchone()[0] == "mixed"
+        assert conn.execute("SELECT name FROM playlists WHERE playlist_id = 'pl-1'").fetchone()[0] == "mixed"
     finally:
         conn.close()
 
@@ -220,16 +219,12 @@ def test_first_sync_pull_lands_members_whose_tracks_are_in_a_later_chunk(
     try:
         _sync(spoke_b, hub, "spoke-b")
     except SyncApplyError as exc:
-        pytest.fail(
-            "empty-spoke first-sync aborted on a playlist member whose track "
-            f"was in a later pull chunk: {exc}"
-        )
+        pytest.fail(f"empty-spoke first-sync aborted on a playlist member whose track was in a later pull chunk: {exc}")
 
     conn = _open(spoke_b)
     try:
         assert _members(conn, "pl-1") == ("trk-1", "trk-3"), (
-            "buffering the pull drain until it finishes must land the "
-            "member whose track arrived in a later chunk"
+            "buffering the pull drain until it finishes must land the member whose track arrived in a later chunk"
         )
     finally:
         conn.close()
@@ -265,8 +260,7 @@ def _retarget_location(
 ) -> None:
     stamped = _log(conn, "track_locations", (location_id,), origin, updated_at)
     conn.execute(
-        "UPDATE track_locations SET stable_id = ?, updated_at = ?, "
-        "origin_device_id = ? WHERE location_id = ?",
+        "UPDATE track_locations SET stable_id = ?, updated_at = ?, origin_device_id = ? WHERE location_id = ?",
         (stable_id, stamped, origin, location_id),
     )
 
@@ -331,13 +325,9 @@ def test_first_sync_pull_lands_locations_whose_tracks_are_in_a_later_chunk(
         ).fetchone()
         assert row is not None, "location must land on the empty spoke"
         assert row[0] == "trk-loc-2", (
-            "buffering the pull drain must land the location on the track "
-            "that arrived in a later chunk"
+            "buffering the pull drain must land the location on the track that arrived in a later chunk"
         )
-        landed = {
-            str(item[0])
-            for item in conn.execute("SELECT stable_id FROM tracks")
-        }
+        landed = {str(item[0]) for item in conn.execute("SELECT stable_id FROM tracks")}
         assert {"trk-loc-1", "trk-loc-2"} <= landed
     finally:
         conn.close()

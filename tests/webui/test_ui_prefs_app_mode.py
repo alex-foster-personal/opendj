@@ -65,9 +65,7 @@ def test_old_blob_without_app_mode_defaults_null(prefs_client: TestClient, tmp_p
 
 
 @pytest.mark.requirement("PERFMODE-11")
-def test_malformed_last_gig_at_on_disk_returns_422(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_malformed_last_gig_at_on_disk_returns_422(prefs_client: TestClient, tmp_path: Path) -> None:
     """[if] on-disk last_gig_at is malformed [then] GET returns 422, [else stop]."""
     prefs = tmp_path / "data" / "state" / "ui-prefs.json"
     prefs.write_text(

@@ -30,7 +30,13 @@ function clockedDriver(clock) {
 		stableId: () => 'narrow-deck',
 		refresh: async () => {},
 		hasRbMapping: () => true,
-		triggerState: () => ({ cue: null, playing: true, loopEngaged: false, positionSec: 0.2, beats: BEATS }),
+		triggerState: () => ({
+			cue: null,
+			playing: true,
+			loopEngaged: false,
+			positionSec: 0.2,
+			beats: BEATS
+		}),
 		jump: async () => {},
 		arm: async (_deck, _positionMs, armAt) => {
 			const at = typeof armAt === 'function' ? armAt(0.2) : armAt;
@@ -46,7 +52,9 @@ async function withPlayingDeck(body) {
 	ipc.uiPrefs.beat_sync_max = true;
 	const deck = ipc.deckStates[1];
 	Object.assign(deck, { stable_id: 'narrow-deck', playing: true, loop: null, position_ms: 200 });
-	deck.anlz = { beatgrid: { source: 'rekordbox', beats: BEATS, beat_count: BEATS.length, status: 'ok' } };
+	deck.anlz = {
+		beatgrid: { source: 'rekordbox', beats: BEATS, beat_count: BEATS.length, status: 'ok' }
+	};
 	const clock = { sec: 10 };
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest(clockedDriver(clock));
 	const uninstall = ipc.installPerformanceBrowserIpc();
@@ -65,7 +73,11 @@ function assertParity(label) {
 	const snapshot = ipc.queryPerformanceState();
 	assert.equal(ipc.queryMasterMode(), snapshot.master_mode, `${label}: master_mode`);
 	for (const deck of [1, 2, 3, 4]) {
-		assert.deepEqual(ipc.queryWaveformSeekArmed(deck), snapshot.decks[deck].waveform_seek_armed, `${label}: seek ${deck}`);
+		assert.deepEqual(
+			ipc.queryWaveformSeekArmed(deck),
+			snapshot.decks[deck].waveform_seek_armed,
+			`${label}: seek ${deck}`
+		);
 		assert.deepEqual(
 			ipc.queryQuantizedLaunchArmed(deck),
 			snapshot.decks[deck].quantized_launch_armed,
@@ -80,7 +92,12 @@ test('narrow reads equal the snapshot fields while nothing is armed', async () =
 
 test('a waveform seek reads the same armed and expired through the narrow accessor', async () => {
 	await withPlayingDeck(async (clock) => {
-		await window.musicDjToolsPerformance.dispatch({ type: 'waveform_seek', deck: 1, position_ms: 60000, snap: 'downbeat' });
+		await window.musicDjToolsPerformance.dispatch({
+			type: 'waveform_seek',
+			deck: 1,
+			position_ms: 60000,
+			snap: 'downbeat'
+		});
 		assert.equal(ipc.queryWaveformSeekArmed(1).target_position_ms, 60000);
 		assertParity('seek armed');
 		clock.sec += 60;
@@ -98,7 +115,12 @@ test('a quantized launch reads the same armed and expired through the narrow acc
 	});
 	try {
 		await withPlayingDeck(async () => {
-			await window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true, quantize: true });
+			await window.musicDjToolsPerformance.dispatch({
+				type: 'play',
+				deck: 1,
+				playing: true,
+				quantize: true
+			});
 			assert.ok(ipc.queryQuantizedLaunchArmed(1).remaining_ms > 0);
 			assertParity('launch armed');
 			launchClock.sec += 60;
@@ -112,20 +134,39 @@ test('a quantized launch reads the same armed and expired through the narrow acc
 });
 
 test('deck components never derive the whole performance snapshot', () => {
-	for (const rel of ['components/rb/deck/DeckHeader.svelte', 'components/rb/Deck.svelte', 'components/rb/wave/WaveRow.svelte']) {
+	for (const rel of [
+		'components/rb/deck/DeckHeader.svelte',
+		'components/rb/Deck.svelte',
+		'components/rb/wave/WaveRow.svelte'
+	]) {
 		const source = read(rel);
-		assert.doesNotMatch(source, /\$derived\(\s*queryPerformanceState\(\)/, `${rel} derives the whole snapshot`);
-		assert.doesNotMatch(source, /=\{\s*queryPerformanceState\(\)/, `${rel} reads the whole snapshot in a template prop`);
+		assert.doesNotMatch(
+			source,
+			/\$derived\(\s*queryPerformanceState\(\)/,
+			`${rel} derives the whole snapshot`
+		);
+		assert.doesNotMatch(
+			source,
+			/=\{\s*queryPerformanceState\(\)/,
+			`${rel} reads the whole snapshot in a template prop`
+		);
 	}
 });
 
 test('master mode is reactive state, so a narrow derived sees lock and unlock', () => {
-	assert.match(read('rb/audio-engine.svelte.ts'), /let _masterMode: MasterMode = \$state\('auto'\);/);
+	assert.match(
+		read('rb/audio-engine.svelte.ts'),
+		/let _masterMode: MasterMode = \$state\('auto'\);/
+	);
 });
 
 test('the transition read maps each analysis grid once, not per tick', () => {
 	const source = read('rb/transition-read.svelte.ts');
 	assert.match(source, /beatgrid: _mappedOnce\(_beatMemo,/);
 	assert.match(source, /phrases: _mappedOnce\(_phraseMemo,/);
-	assert.doesNotMatch(source, /beatgrid\.beats \?\? \[\]\)\.map\(/, 'the per-tick grid copy is back');
+	assert.doesNotMatch(
+		source,
+		/beatgrid\.beats \?\? \[\]\)\.map\(/,
+		'the per-tick grid copy is back'
+	);
 });

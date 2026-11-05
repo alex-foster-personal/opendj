@@ -44,12 +44,12 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
-
-from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 
 from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import machine_identity
@@ -325,16 +325,13 @@ class CloudSyncScheduler:
                         in_flight = asyncio.create_task(
                             asyncio.to_thread(self.run_round, hub_url, effective.machine_name)
                         )
-                await self._sleep(self._cfg.BEAT_INTERVAL_S)
+                await sleep_until_stop(self._stopping, self._cfg.BEAT_INTERVAL_S)
         finally:
             if in_flight is not None:
                 await self._drain(in_flight)
 
     def _stopped(self) -> bool:
         return self._stopping is not None and self._stopping.is_set()
-
-    async def _sleep(self, seconds: float) -> None:
-        await sleep_until_stop(self._stopping, seconds)
 
     async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
         try:

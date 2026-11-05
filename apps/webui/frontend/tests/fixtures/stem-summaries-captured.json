@@ -38,27 +38,8 @@
 		"error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
 	},
 	"all_files_missing": {
-		"status": "ready",
-		"model": "htdemucs",
-		"preset": null,
-		"overlap": null,
-		"shifts": null,
-		"format": "",
-		"groups": {
-			"V": {
-				"bytes": 0,
-				"parts": []
-			},
-			"D": {
-				"bytes": 0,
-				"parts": []
-			},
-			"I": {
-				"bytes": 0,
-				"parts": []
-			}
-		},
-		"total_bytes": 0
+		"status": "invalid",
+		"error": "every stem file listed in manifest.json is missing: bass.flac, drums.flac, other.flac, vocals.flac"
 	},
 	"drums_missing": {
 		"status": "ready",

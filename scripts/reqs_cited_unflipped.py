@@ -64,12 +64,7 @@ class Citation:
 
 
 def pending_v1_ids(payload: dict) -> list[str]:
-    return [
-        r["id"]
-        for section in payload["v1"].values()
-        for r in section["requirements"]
-        if r["status"] != "shipped"
-    ]
+    return [r["id"] for section in payload["v1"].values() for r in section["requirements"] if r["status"] != "shipped"]
 
 
 def citations(pending: Iterable[str], prs: Iterable[dict]) -> list[Citation]:
@@ -181,9 +176,7 @@ def merged_prs(search: str, repo: str = DEFAULT_REPO) -> list[dict]:
 
 def render(found: list[Citation], label: str, scanned: int) -> str:
     cited = len({c.req_id for c in found})
-    lines = [
-        f"[reqs-cited-unflipped] scanned={scanned} merged PRs in {label}, cited pending ids={cited}"
-    ]
+    lines = [f"[reqs-cited-unflipped] scanned={scanned} merged PRs in {label}, cited pending ids={cited}"]
     for c in sorted(found, key=lambda c: (c.req_id, c.merged_at)):
         tag = "docs-title" if c.docs_only_title else "feature"
         lines.append(f"  {c.req_id:14s} #{c.pr_number} {c.merged_at[:10]} [{tag}] {c.title[:70]}")
@@ -200,13 +193,9 @@ def main(
 ) -> int:
     parser = argparse.ArgumentParser(prog="reqs_cited_unflipped")
     parser.add_argument("--days", type=int, default=None)
-    parser.add_argument(
-        "--since", default=None, help="window start, ISO instant; takes precedence over --days"
-    )
+    parser.add_argument("--since", default=None, help="window start, ISO instant; takes precedence over --days")
     parser.add_argument("--until", default=None, help="window end, ISO instant (inclusive)")
-    parser.add_argument(
-        "--strict", action="store_true", help="exit 1 when any cited pending id is found"
-    )
+    parser.add_argument("--strict", action="store_true", help="exit 1 when any cited pending id is found")
     parser.add_argument(
         "--reqs-path",
         type=Path,

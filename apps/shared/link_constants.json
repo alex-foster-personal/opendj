@@ -1,0 +1,8 @@
+{
+  "_doc": "LINKCONST-01: B2B Link constants the engine and the page must apply identically. Edit here, then run `uv run python -m apps.shared.link_constants --write` to regenerate the page module.",
+  "gap_perf_kinds": ["xrun", "silent-while-playing", "audio-output-dead", "audio-output-dead-persistent"],
+  "locked_ms": 5,
+  "played_share_min": 0.5,
+  "cursor_anchors": ["deck-1", "deck-2", "deck-3", "deck-4", "mixer", "browser", "topbar", "viewport"],
+  "peer_max_project_ms": 2000
+}

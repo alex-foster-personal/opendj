@@ -81,7 +81,10 @@ test('no exported nameMatch uses syntax the engine matcher rejects', async () =>
 test('classic Mixtour and Mixtour Pro ports resolve as the engine resolves them, in either map order', async () => {
 	const { cases } = JSON.parse(readFileSync(NAME_MATCH_CASES, 'utf8'));
 	for (const want of ['classic', 'pro', 'none']) {
-		assert.ok(cases.some((c) => c.want === want), `the fixture holds no ${want} case`);
+		assert.ok(
+			cases.some((c) => c.want === want),
+			`the fixture holds no ${want} case`
+		);
 	}
 	const { DEVICE_MAP_REGISTRY, webmidi } = await loadRegistry();
 	const kindOf = { [CLASSIC]: 'classic', [PRO]: 'pro' };
@@ -93,9 +96,17 @@ test('classic Mixtour and Mixtour Pro ports resolve as the engine resolves them,
 		for (const { port, want } of cases) {
 			const got = webmidi.resolveMapForPort(port);
 			const kind = got === null ? 'none' : kindOf[got.nameMatch];
-			assert.equal(kind, want, `${JSON.stringify(port)} with ${order[0].nameMatch} registered first`);
+			assert.equal(
+				kind,
+				want,
+				`${JSON.stringify(port)} with ${order[0].nameMatch} registered first`
+			);
 			// Each pattern on its own, in both directions.
-			assert.equal(classic.test(port), want === 'classic', `classic pattern alone, ${JSON.stringify(port)}`);
+			assert.equal(
+				classic.test(port),
+				want === 'classic',
+				`classic pattern alone, ${JSON.stringify(port)}`
+			);
 			assert.equal(pro.test(port), want === 'pro', `Pro pattern alone, ${JSON.stringify(port)}`);
 		}
 	}

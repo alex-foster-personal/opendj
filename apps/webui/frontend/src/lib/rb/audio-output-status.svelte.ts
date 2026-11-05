@@ -38,7 +38,10 @@ export const audioOutputStatus: AudioOutputStatus = $state({
 	fallback: null
 });
 
-export function publishDjOutputResolution(resolution: DjOutputResolution, warnToast: WarnToast): void {
+export function publishDjOutputResolution(
+	resolution: DjOutputResolution,
+	warnToast: WarnToast
+): void {
 	audioOutputStatus.requested_profile = resolution.requested;
 	audioOutputStatus.active_profile = resolution.profile;
 	audioOutputStatus.fallback = resolution.fallback;

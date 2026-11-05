@@ -601,6 +601,10 @@ def test_library_organization_rows_converge_through_a_real_hub(
                 writer, "s", owner_kind="playlist", owner_id="list", before_position=0
             )
             work = library_org.create_work(writer, "s", {"kind": "song", "title": "A"}).row
+            writer.upsert_track(
+                stable_id="t", stable_id_tier="isrc", title="t", artists=["x"],
+                album=None, isrc=None, duration_ms=None, file_path=None,
+            )
             library_org.link_member(
                 writer, "s", work["id"], member_kind="track", member_id="t", role="remix"
             )

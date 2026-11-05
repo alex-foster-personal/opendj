@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 399838,
+  "measured_with_pr": 400881,
+  "sha": "562a7da9ec",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #8881 adds the AutoPlay menu's Why this track readout with the one-tap verdict (AutoPlayWhy.svelte, autoplay-why.ts) and the typed autoplay_verdict command, which ride on the /performance surface through the top bar. CI's bundle-budget step measured main at 399838 and this PR at 400881 B gzip (+1043); this push adds the intent line and moves both calls onto the shared API client, so the charge is the measured growth ceiled to KiB plus one KiB of headroom for that change",
+  "payback": "none planned; lazy-loading the readout is a follow-up if the menu grows"
+}

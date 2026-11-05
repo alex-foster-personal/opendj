@@ -38,7 +38,7 @@
  *   clickable (loading deck 2 through its own button), proving the fix is a
  *   TIMING guard and not a removal of the feature.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type ConsoleMessage, type Locator, type Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
 import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
@@ -105,18 +105,70 @@ async function _openAllTracks(page: Page): Promise<void> {
 	await _expectEveryDeckEmpty(page);
 }
 
+function _boardRoster(board: PerformanceState): string {
+	return ([1, 2, 3, 4] as const)
+		.map((id) => {
+			const d = board.decks[id];
+			return (
+				`deck${id}[sid=${d.stable_id?.slice(0, 8) ?? 'null'} ` +
+				`playing=${d.playing} pending=${d.transport_pending}]`
+			);
+		})
+		.join(' ');
+}
+
+function _deckErrorTail(deckErrors: string[]): string {
+	if (deckErrors.length === 0) return '';
+	return `; deck-error: ${deckErrors.slice(-3).join(' | ')}`;
+}
+
 /** Wait until the deck holds THIS track with no transport pending. Waiting for
- * any id could not tell a wrong-track load from the right one (#6242). */
+ * any id could not tell a wrong-track load from the right one (#6242).
+ *
+ * #6242 needed (2): a transport drop (Failed to fetch / ECONNRESET) is a
+ * failed load, not a retry. A settled wrong id fails immediately; collected
+ * deck-error console lines ride that failure so a fetch miss is visible. */
 async function _waitForDeckLoaded(page: Page, deck: 1 | 2, stableId: string): Promise<void> {
-	await expect
-		.poll(
-			async () => {
-				const state = (await _query(page)).decks[deck];
-				return state.transport_pending ? `${state.stable_id} (pending)` : state.stable_id;
-			},
-			{ message: `deck ${deck} never settled holding ${stableId}`, timeout: 45_000 }
-		)
-		.toBe(stableId);
+	const deckErrors: string[] = [];
+	const onConsole = (msg: ConsoleMessage) => {
+		const text = msg.text();
+		if (text.includes('deck-error')) deckErrors.push(text);
+	};
+	page.on('console', onConsole);
+	// expect.poll retries a thrown callback until timeout, so a settled wrong
+	// id cannot throw inside the poll. Record it and return the expected id to
+	// stop the poll this tick, then throw after.
+	let settledWrong: Error | undefined;
+	try {
+		await expect
+			.poll(
+				async () => {
+					const board = await _query(page);
+					const state = board.decks[deck];
+					if (state.transport_pending) {
+						return `${state.stable_id} (pending)`;
+					}
+					if (typeof state.stable_id === 'string' && state.stable_id !== stableId) {
+						settledWrong = new Error(
+							`deck ${deck} settled on ${state.stable_id}, expected ${stableId}; board: ${_boardRoster(board)}${_deckErrorTail(deckErrors)}`
+						);
+						return stableId;
+					}
+					return state.stable_id;
+				},
+				{ message: `deck ${deck} never settled holding ${stableId}`, timeout: 45_000 }
+			)
+			.toBe(stableId);
+		if (settledWrong) throw settledWrong;
+	} catch (err) {
+		if (settledWrong) throw settledWrong;
+		const tail = _deckErrorTail(deckErrors);
+		if (tail === '') throw err;
+		const wrapped = new Error(`${err instanceof Error ? err.message : String(err)}${tail}`);
+		throw wrapped;
+	} finally {
+		page.off('console', onConsole);
+	}
 }
 
 /** No deck may hold a track before the test loads one: a rescue restore of an

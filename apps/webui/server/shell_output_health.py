@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 
 SHELL_JSON_NAME = ".engine.shell.json"
 SHELL_TIMEOUT_S = 3.0
+# AUDIO-DEVICE-05: blueutil disconnect, reconnect and the CoreAudio reappear
+# wait take up to about 30 s on the shell side.
+RECONNECT_TIMEOUT_S = 50.0
 SHELL_HEALTH_TIMEOUT_REASON = "shell_health_timeout"
 
 
@@ -63,7 +66,7 @@ class ShellOutputHealthClient:
             return None
         return port
 
-    def _request(self, method: str, path: str) -> dict[str, Any]:
+    def _request(self, method: str, path: str, timeout_s: float = SHELL_TIMEOUT_S) -> dict[str, Any]:
         if sys.platform != "darwin":
             return _unknown("installed macOS shell required for OS output probe")
         port = self.read_health_port()
@@ -72,14 +75,14 @@ class ShellOutputHealthClient:
         url = f"http://127.0.0.1:{port}{path}"
         request = Request(url, method=method, headers={"Accept": "application/json"})
         try:
-            with urlopen(request, timeout=SHELL_TIMEOUT_S) as response:
+            with urlopen(request, timeout=timeout_s) as response:
                 body = response.read().decode("utf-8")
         except TimeoutError as err:
-            raise ShellHealthTimeout(f"{method} {path} timed out after {SHELL_TIMEOUT_S}s: {err}") from err
+            raise ShellHealthTimeout(f"{method} {path} timed out after {timeout_s}s: {err}") from err
         except URLError as err:
             if isinstance(err.reason, TimeoutError):
                 raise ShellHealthTimeout(
-                    f"{method} {path} timed out after {SHELL_TIMEOUT_S}s: {err.reason}"
+                    f"{method} {path} timed out after {timeout_s}s: {err.reason}"
                 ) from err
             return _unknown(f"shell output-health request failed: {err}")
         try:
@@ -107,6 +110,28 @@ class ShellOutputHealthClient:
             }
         return self._request("POST", "/api/v1/audio/switch-output")
 
+    def post_reconnect_speaker(self) -> dict[str, Any]:
+        """AUDIO-DEVICE-05: blueutil reconnect of the main Bluetooth output."""
+        if sys.platform != "darwin":
+            return {"reconnected": False, "error": "installed macOS shell required to reconnect a Bluetooth speaker"}
+        if self.read_health_port() is None:
+            return {"reconnected": False, "error": "desktop shell health port unavailable (.engine.shell.json missing)"}
+        payload = self._request("POST", "/api/v1/audio/reconnect-speaker", RECONNECT_TIMEOUT_S)
+        if "reconnected" not in payload:
+            return {"reconnected": False, "error": str(payload.get("reason") or "shell reconnect returned no result")}
+        return payload
+
+    def get_input_devices(self) -> dict[str, Any]:
+        """AUDIO-DEVICE-04: CoreAudio inputs with transport, for the mic guard."""
+        if sys.platform != "darwin":
+            return {"inputs": [], "error": "installed macOS shell required to list CoreAudio inputs"}
+        if self.read_health_port() is None:
+            return {"inputs": [], "error": "desktop shell health port unavailable (.engine.shell.json missing)"}
+        payload = self._request("GET", "/api/v1/audio/input-devices")
+        if "inputs" not in payload:
+            return {"inputs": [], "error": str(payload.get("reason") or "shell input listing returned no result")}
+        return payload
+
 
 def data_dir_from_state_db(state_db_path: Path) -> Path:
     if state_db_path.parent.name == "state":
@@ -120,6 +145,7 @@ def lyric_index_data_dir_from_state_db(state_db_path: Path) -> Path:
 
 
 __all__ = [
+    "RECONNECT_TIMEOUT_S",
     "SHELL_HEALTH_TIMEOUT_REASON",
     "ShellHealthTimeout",
     "ShellOutputHealthClient",

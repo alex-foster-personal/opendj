@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.sessions`."""
+
 from __future__ import annotations
 
 import json
@@ -32,13 +33,9 @@ def _seed_session(
     )
     write_manifest(sess, manifest)
     if transitions:
-        (sess / "transitions.jsonl").write_text(
-            "\n".join(json.dumps(t) for t in transitions) + "\n"
-        )
+        (sess / "transitions.jsonl").write_text("\n".join(json.dumps(t) for t in transitions) + "\n")
     if labels:
-        (sess / "labels.jsonl").write_text(
-            "\n".join(json.dumps({"idx": i, "class": c}) for i, c in labels) + "\n"
-        )
+        (sess / "labels.jsonl").write_text("\n".join(json.dumps({"idx": i, "class": c}) for i, c in labels) + "\n")
     return sess
 
 
@@ -87,6 +84,34 @@ def test_get_session_loads_transitions_and_labels(sets_root: Path):
 @pytest.mark.requirement("SET-03")
 def test_get_session_returns_none_for_missing(sets_root: Path):
     assert sessions_mod.get_session("nope", sets_root=sets_root) is None
+
+
+@pytest.mark.requirement("SET-03")
+def test_get_session_rejects_manifest_id_mismatch(sets_root: Path):
+    _seed_session(
+        sets_root,
+        "B",
+        transitions=[{"idx": 9, "predicted_class": "from-b"}],
+        labels=[(9, "from-b")],
+    )
+    sess_a = sets_root / "A"
+    sess_a.mkdir()
+    write_manifest(
+        sess_a,
+        Manifest(
+            session_id="B",
+            started_at="2026-04-17T21:30:00.000+00:00",
+            ended_at="2026-04-17T23:45:00.000+00:00",
+            capture_device="BlackHole 2ch",
+            event_count=1,
+            deck_sources=["djay_monitor"],
+            mp3_segments=[],
+        ),
+    )
+    (sess_a / "transitions.jsonl").write_text(json.dumps({"idx": 0, "predicted_class": "from-a"}) + "\n")
+    (sess_a / "labels.jsonl").write_text(json.dumps({"idx": 0, "class": "from-a"}) + "\n")
+    with pytest.raises(ValueError, match="does not match"):
+        sessions_mod.get_session("A", sets_root=sets_root)
 
 
 @pytest.mark.requirement("SET-03")

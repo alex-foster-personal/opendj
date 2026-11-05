@@ -62,9 +62,7 @@ def verified(name: str, fixture_dir: Path = FIXTURE_DIR) -> Path:
     """
     files = load_manifest(fixture_dir)["files"]
     if name not in files:
-        raise AssertionError(
-            f"{name} is not in {fixture_dir / MANIFEST_NAME}; known: {sorted(files)}"
-        )
+        raise AssertionError(f"{name} is not in {fixture_dir / MANIFEST_NAME}; known: {sorted(files)}")
     path = fixture_dir / name
     if not path.is_file():
         raise AssertionError(f"canonical fixture missing: {path}")

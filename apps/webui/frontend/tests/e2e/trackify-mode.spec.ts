@@ -39,7 +39,11 @@ function _recordDeckLoadReports(page: import('@playwright/test').Page): ReportTr
 			const body = request.postDataJSON() as { message: string; context?: Record<string, unknown> };
 			if (body.context?.source !== 'deck-load') return;
 			const answer = (await response.json()) as { stored?: boolean };
-			tracker.deckLoad.push({ message: body.message, context: body.context, stored: response.ok() && answer.stored === true });
+			tracker.deckLoad.push({
+				message: body.message,
+				context: body.context,
+				stored: response.ok() && answer.stored === true
+			});
 		} finally {
 			tracker.answered += 1;
 		}
@@ -55,7 +59,10 @@ function _recordDeckLoadReports(page: import('@playwright/test').Page): ReportTr
  * report is queued synchronously before the load promise rejects, so it cannot
  * slip in behind this check. A request that never answers fails the poll.
  */
-async function _waitForReportQuiescence(page: import('@playwright/test').Page, tracker: ReportTracker): Promise<void> {
+async function _waitForReportQuiescence(
+	page: import('@playwright/test').Page,
+	tracker: ReportTracker
+): Promise<void> {
 	await expect
 		.poll(
 			async () => {
@@ -78,7 +85,8 @@ async function _recordAddedToasts(page: import('@playwright/test').Page): Promis
 		new MutationObserver((records) => {
 			for (const record of records) {
 				for (const node of record.addedNodes) {
-					if (node instanceof HTMLElement && node.matches('[data-toast-id]')) added.push(node.textContent ?? '');
+					if (node instanceof HTMLElement && node.matches('[data-toast-id]'))
+						added.push(node.textContent ?? '');
 				}
 			}
 		}).observe(document.body, { childList: true, subtree: true });
@@ -104,7 +112,9 @@ test('mode chooser navigates to Trackify listening shell', async ({ page }) => {
 	await _openTrackifyFromGig(page);
 });
 
-test('failed load skips to the next track with a dismissible toast within 2 s', async ({ page }) => {
+test('failed load skips to the next track with a dismissible toast within 2 s', async ({
+	page
+}) => {
 	test.setTimeout(120_000);
 	await _openTrackifyFromGig(page);
 	const goodId = await page.evaluate(async () => {
@@ -161,15 +171,23 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	// observer, not the live DOM: toHaveCount retries, and would pass once the
 	// engine toast expired.
 	const added = await _readAddedToasts(page);
-	expect(added, `toasts added by one failed Trackify load: ${JSON.stringify(added)}`).toHaveLength(1);
+	expect(added, `toasts added by one failed Trackify load: ${JSON.stringify(added)}`).toHaveLength(
+		1
+	);
 	expect(added[0]).toMatch(/^Trackify: skipped track/);
 	// The muted toast still owes the server its report: the only record of which
 	// stage the load died in.
 	await _waitForReportQuiescence(page, reports);
-	expect(reports.deckLoad, 'one failed load, one deck-load report on the real backend').toHaveLength(1);
+	expect(
+		reports.deckLoad,
+		'one failed load, one deck-load report on the real backend'
+	).toHaveLength(1);
 	expect(reports.deckLoad[0].stored, 'the real backend must have stored the report').toBe(true);
 	expect(reports.deckLoad[0].context.deck).toBe(1);
-	expect(Number.isFinite(reports.deckLoad[0].context.stage_failedAt), JSON.stringify(reports.deckLoad[0].context)).toBe(true);
+	expect(
+		Number.isFinite(reports.deckLoad[0].context.stage_failedAt),
+		JSON.stringify(reports.deckLoad[0].context)
+	).toBe(true);
 	await page.waitForFunction(
 		(goodId) => window.musicDjToolsTrackify?.query().deck.stable_id === goodId,
 		goodId,
@@ -180,7 +198,9 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	expect(reports.deckLoad, 'no second deck-load report arrived after the advance').toHaveLength(1);
 });
 
-test('control: an ordinary failed load keeps the engine toast and reports once', async ({ page }) => {
+test('control: an ordinary failed load keeps the engine toast and reports once', async ({
+	page
+}) => {
 	const toastLog: string[] = [];
 	page.on('console', (message) => {
 		if (message.text().startsWith('[perf-event] toast-error')) toastLog.push(message.text());
@@ -191,7 +211,11 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 	await _recordAddedToasts(page);
 	const rejected = await page.evaluate(async (missingId) => {
 		try {
-			await window.musicDjToolsPerformance?.dispatch({ type: 'load', deck: 1, stable_id: missingId });
+			await window.musicDjToolsPerformance?.dispatch({
+				type: 'load',
+				deck: 1,
+				stable_id: missingId
+			});
 			return false;
 		} catch {
 			return true;
@@ -199,7 +223,10 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 	}, MISSING_STABLE_ID);
 	expect(rejected, 'a load of an unknown stable_id must reject').toBe(true);
 	await _waitForReportQuiescence(page, reports);
-	expect(reports.deckLoad, 'one failed load, one deck-load report on the real backend').toHaveLength(1);
+	expect(
+		reports.deckLoad,
+		'one failed load, one deck-load report on the real backend'
+	).toHaveLength(1);
 	expect(reports.deckLoad[0].stored).toBe(true);
 	const added = await _readAddedToasts(page);
 	expect(
@@ -212,7 +239,8 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 	).toHaveLength(0);
 	const deckToast = toastLog.find((line) => line.includes('Deck 1 load failed - '));
 	expect(deckToast, JSON.stringify(toastLog)).toBeDefined();
-	expect(deckToast, 'an RbApiError message already reads CODE: detail; the toast must not repeat the code').not.toContain(
-		'TRACK_NOT_FOUND: TRACK_NOT_FOUND'
-	);
+	expect(
+		deckToast,
+		'an RbApiError message already reads CODE: detail; the toast must not repeat the code'
+	).not.toContain('TRACK_NOT_FOUND: TRACK_NOT_FOUND');
 });

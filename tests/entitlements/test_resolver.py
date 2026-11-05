@@ -102,9 +102,7 @@ def test_plan_says_it_gates_nothing() -> None:
 
 # ----- fail fast on a provider that does not exist ------------------------
 @pytest.mark.parametrize("value", ["polar", "stripe", "lemonsqueezy", " x "])
-def test_a_configured_provider_refuses_rather_than_guessing(
-    monkeypatch: pytest.MonkeyPatch, value: str
-) -> None:
+def test_a_configured_provider_refuses_rather_than_guessing(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv(PROVIDER_ENV, value)
     calls: tuple[Callable[[], object], ...] = (
         configured_provider,

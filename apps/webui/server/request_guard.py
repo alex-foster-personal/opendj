@@ -89,7 +89,7 @@ def build_allowed_hostnames(
     this daemon's own configured hostname.
 
     ``daemon_hostname`` is ``app.state.hostname`` -- the same value the real
-    entry point sets from ``MUSIC_DJ_HOSTNAME`` (``_build_default_app``) and
+    entry point sets from ``MUSIC_DJ_HOSTNAME`` (``app_boot._build_default_app``) and
     every test fixture sets via ``create_app(hostname=...)``. Omitting it
     left a client that addresses this daemon by its own advertised LAN
     hostname (rather than a loopback IP) 403ing on every request.

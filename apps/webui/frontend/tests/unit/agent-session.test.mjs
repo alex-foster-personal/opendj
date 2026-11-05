@@ -111,7 +111,10 @@ test('message events feed the resent history verbatim and never the visible item
 		{ type: 'message', message: answered },
 		{ type: 'done', reason: 'stop' }
 	]);
-	assert.deepEqual(session.items.map((item) => item.kind), ['user']);
+	assert.deepEqual(
+		session.items.map((item) => item.kind),
+		['user']
+	);
 	assert.deepEqual(s.requestFor(session, ['x']), {
 		messages: [{ role: 'user', content: 'find techno' }, asked, answered],
 		approved_tool_call_ids: ['x'],
@@ -144,7 +147,10 @@ test('an error event is shown and ends the turn without a done', () => {
 
 test('a resumed response keeps the one tier chip of its user turn; the next turn gets its own', () => {
 	const tier = { type: 'tier', tier: 'instant', model: null, reason: 'rule: deck transport' };
-	const held = turn('pause deck 4', [tier, { type: 'confirm', call: call('instant_1', 'command'), reason: 'r' }]);
+	const held = turn('pause deck 4', [
+		tier,
+		{ type: 'confirm', call: call('instant_1', 'command'), reason: 'r' }
+	]);
 	const resumed = s.foldEvents(s.resumeTurn(held), [
 		{ ...tier, reason: 'resume: answer the held instant call' },
 		{ type: 'tool_result', call_id: 'instant_1', ok: true, result: {}, error: null },

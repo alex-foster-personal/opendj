@@ -124,12 +124,20 @@ def run(
     track_timeout_s: float = 3600.0,
 ) -> int:
     """Separate every track locally, skipping fresh bundles."""
-    with contextlib.suppress(OSError):
-        os.nice(NICE_LEVEL)
+    if hasattr(os, "nice"):
+        with contextlib.suppress(OSError):
+            os.nice(NICE_LEVEL)
+    else:
+        print(
+            "[stems-local] priority not lowered: this OS has no os.nice (POSIX only)",
+            file=sys.stderr,
+            flush=True,
+        )
 
     root = _stems_root(data_dir)
     total = len(tracks)
-    protocol.emit(0.0, f"0/{total} local stems (htdemucs, nice={NICE_LEVEL})")
+    nice_label = str(NICE_LEVEL) if hasattr(os, "nice") else "UNAVAILABLE"
+    protocol.emit(0.0, f"0/{total} local stems (htdemucs, nice={nice_label})")
 
     done = 0
     skipped = 0

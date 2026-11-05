@@ -123,6 +123,7 @@ def test_routes_are_in_the_live_openapi(base_url: str) -> None:
 # ----- volume route + tools ------------------------------------------------
 
 
+@pytest.mark.host_mutation
 @needs_volume_arm
 def test_volume_route_round_trip_restores_original(base_url: str) -> None:
     with httpx.Client(base_url=base_url, timeout=60) as client:
@@ -138,6 +139,7 @@ def test_volume_route_round_trip_restores_original(base_url: str) -> None:
         assert restored.json()["volume"] == original["volume"]
 
 
+@pytest.mark.host_mutation
 @needs_volume_arm
 def test_volume_tools_round_trip_restores_original(base_url: str) -> None:
     _volume_or_skip(base_url)

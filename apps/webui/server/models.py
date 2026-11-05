@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
-from .models_grid_quality import GridQualityRowOut
+from .models_grid_quality import GridQualityRowOut, TempoCurveRowOut, TrackAnalysisHintsOut
 
 # PREFLIGHT-01's boot-gate schemas live in their own module (models.py size budget);
 # re-exported here so every existing import keeps working.
@@ -21,6 +21,13 @@ FileAvailabilityStatus = Literal[
     "streaming",
     "awaiting_volume",
 ]
+
+
+class BpmAlternative(BaseModel):
+    """One tempo a track could be served at (GRID-OCTAVE-02): ours or Mixed In Key's."""
+
+    source: Literal["own", "mik"]
+    bpm: float
 
 
 class ProvenanceOut(BaseModel):
@@ -61,6 +68,11 @@ class TrackOut(BaseModel):
     duration_ms: int | None = None
     bpm: float | None = None
     key: str | None = None
+    # KEY-GUESS-01: a declined key's best candidate, shown dimmed as "8A?".
+    key_guess: str | None = None
+    key_guess_confidence: float | None = None
+    # KEY-FALLBACK-01: where the shown key came from (own, rekordbox, file_tag, mik_tag, guess).
+    key_source: Literal["own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
     rating: int | None = None
     tags: list[str] = []
     notes: str | None = None
@@ -240,8 +252,20 @@ def compact_listing_analysis_wire(data: dict[str, Any]) -> dict[str, Any]:
         value_proves_ok = value_key is not None and _lane_has_value(data.get(value_key))
         if status is None or (status == "ok" and value_proves_ok):
             data.pop(status_key, None)
+    # KEY-GUESS-01: only a declined key carries a guess; absent reads as none.
+    for guess_key in ("key_guess", "key_guess_confidence", "key_source"):
+        if data.get(guess_key) is None:
+            data.pop(guess_key, None)
     return data
 
+
+
+class SourceFlagOut(BaseModel):
+    """SRCFLAG-01..03: one flag-only finding about a track's source file."""
+
+    code: Literal["length_mismatch", "stems_other_recording", "hardlinked_write"]
+    severity: Literal["warning", "info"]
+    message: str
 
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
@@ -296,6 +320,11 @@ class TrackListItemOut(TrackOut):
     bpm_method: str | None = None
     bpm_confidence: float | None = None
     bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
+    # GRID-OCTAVE-02: our tempo and Mixed In Key's disagree (an octave, or over
+    # 6%) and the user has not picked one; both tempos, ours first; the pick.
+    bpm_disputed: bool = False
+    bpm_alternatives: list[BpmAlternative] = Field(default_factory=list)
+    bpm_pick: Literal["own", "mik"] | None = None
     # STANDALONE-03: empty analysis cells must state why. Same status/reason
     # fields TrackRowOut already carries for playlists; All Tracks used to drop
     # them when assembling TrackListItemOut, so the browser defaulted absent
@@ -305,6 +334,8 @@ class TrackListItemOut(TrackOut):
     # ok status only where the served value proves it.
     key_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
     key_reason: str | None = None
+    # SRCFLAG-01..03: flag-only findings from the last source-flags scan.
+    source_flags: list[SourceFlagOut] = Field(default_factory=list)
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
     # The listing routes pass the same computed status TrackRowOut carries, so
     # this lane must accept it too or GET /tracks fails validation on the row.
@@ -324,6 +355,8 @@ class TrackListItemOut(TrackOut):
 
     lyrics: LyricsRowSummaryOut | None = None
     grid_quality: GridQualityRowOut | None = None
+    #: Analyzer facts (issue #7879: dynamic_tempo from the stored tempo verdict).
+    analysis_hints: TrackAnalysisHintsOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
@@ -421,6 +454,8 @@ class RowAssetOut(BaseModel):
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
     stems: dict[str, Any]
+    #: Row strip tempo curve (issue #7879); null when steady or never judged.
+    tempo: TempoCurveRowOut | None = None
 
 
 class RowAssetsOut(BaseModel):
@@ -543,6 +578,13 @@ class TrackRowOut(BaseModel):
     energy_reason: str
     key_status: Literal["ok", "failed", "missing", "available-not-selected"]
     key_reason: str | None
+    # SRCFLAG-01..03: flag-only findings from the last source-flags scan.
+    source_flags: list[SourceFlagOut] = Field(default_factory=list)
+    # KEY-GUESS-01: a declined key's best candidate (key stays null), shown dimmed as "8A?".
+    key_guess: str | None = None
+    key_guess_confidence: float | None = None
+    # KEY-FALLBACK-01: where the shown key came from (own, rekordbox, file_tag, mik_tag, guess).
+    key_source: Literal["own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
     bpm_status: Literal[
         "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
@@ -552,10 +594,16 @@ class TrackRowOut(BaseModel):
     bpm_method: str | None = None
     bpm_confidence: float | None = None
     bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
+    # GRID-OCTAVE-02: our tempo and Mixed In Key's disagree (an octave, or over
+    # 6%) and the user has not picked one; both tempos, ours first; the pick.
+    bpm_disputed: bool = False
+    bpm_alternatives: list[BpmAlternative] = Field(default_factory=list)
+    bpm_pick: Literal["own", "mik"] | None = None
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
     grid_quality: GridQualityRowOut | None = None
+    analysis_hints: TrackAnalysisHintsOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
 

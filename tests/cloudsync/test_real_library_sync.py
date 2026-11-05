@@ -1,7 +1,7 @@
 """Hub sync against the REAL library: convergence, cost, tombstones, relinks.
 
-Contract under test: ``specs/design_decision_04.md`` over the v7 schema of
-``specs/design_decision_05.md``, same as ``test_hub_sync.py`` -- but driven by
+Contract under test: ``(private path)`` over the v7 schema of
+``(private path)``, same as ``test_hub_sync.py`` -- but driven by
 a deterministic slice of the production 9,986-track library instead of rows a
 fixture invented. That difference is the whole point of this module: synthetic
 rows come from one writer, in one era, in one timestamp spelling, and agree
@@ -40,6 +40,7 @@ Numbers this module measures are printed. Run with ``-s`` to see them.
 
 [if] production-shaped data cannot round trip [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import math
@@ -136,9 +137,7 @@ def _connections(
 
 
 def _fleet_digests(fleet: RealLibraryFleet) -> dict[str, protocol.SyncDigest]:
-    return {
-        label: protocol.sync_digest(conn) for label, conn in _connections(fleet)
-    }
+    return {label: protocol.sync_digest(conn) for label, conn in _connections(fleet)}
 
 
 def _assert_converged(fleet: RealLibraryFleet) -> dict[str, protocol.SyncDigest]:
@@ -172,9 +171,7 @@ def _replace_members(
     would never reach a peer.
     """
     stamp = sync_stamp.stamp_and_log(conn, "playlists", (playlist_id,), machine_id)
-    conn.execute(
-        "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
-    )
+    conn.execute("DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,))
     for position, stable_id in enumerate(stable_ids):
         conn.execute(
             "INSERT INTO playlist_memberships("
@@ -183,25 +180,20 @@ def _replace_members(
             (playlist_id, stable_id, position, stamp.updated_at, machine_id),
         )
     conn.execute(
-        "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-        "WHERE playlist_id = ?",
+        "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
         (stamp.updated_at, machine_id, playlist_id),
     )
     return stamp.updated_at
 
 
-def _relink(
-    conn: sqlite3.Connection, old_ids: list[str], machine_id: str
-) -> list[str]:
+def _relink(conn: sqlite3.Connection, old_ids: list[str], machine_id: str) -> list[str]:
     """Give each row a new ``location_id``, stamped and logged like a writer."""
     new_ids: list[str] = []
     conn.execute("BEGIN")
     try:
         for index, old_id in enumerate(old_ids):
             new_id = f"{RELINK_ID_PREFIX}{index:026d}"
-            stamp = sync_stamp.stamp_and_log(
-                conn, "track_locations", (new_id,), machine_id
-            )
+            stamp = sync_stamp.stamp_and_log(conn, "track_locations", (new_id,), machine_id)
             conn.execute(
                 "UPDATE track_locations SET location_id = ?, updated_at = ?, "
                 "origin_device_id = ? WHERE location_id = ?",
@@ -257,10 +249,7 @@ def test_a_real_subset_converges_across_the_fleet(
     _sync(fleet, fleet.spoke_a)
     _assert_converged(fleet)
 
-    expected_locations = (
-        fleet.spoke_a.row_counts["track_locations"]
-        + fleet.spoke_b.row_counts["track_locations"]
-    )
+    expected_locations = fleet.spoke_a.row_counts["track_locations"] + fleet.spoke_b.row_counts["track_locations"]
     counts: dict[str, dict[str, int]] = {}
     for label, conn in _connections(fleet):
         counts[label] = table_counts(conn)
@@ -353,14 +342,10 @@ def test_a_real_playlist_edited_on_one_spoke_converges(
         # Reversed AND with the head dropped: a merge that appended instead of
         # replacing would still contain the dropped track.
         after = tuple(reversed(before[1:]))
-        _replace_members(
-            conn, playlist_id, after, sync_stamp.local_machine_id(conn)
-        )
+        _replace_members(conn, playlist_id, after, sync_stamp.local_machine_id(conn))
     finally:
         conn.close()
-    print(
-        f"[real-library] edited playlist {name!r}: {size} -> {len(after)} members"
-    )
+    print(f"[real-library] edited playlist {name!r}: {size} -> {len(after)} members")
 
     _sync(fleet, fleet.spoke_a)
     _sync(fleet, fleet.spoke_b)
@@ -378,9 +363,7 @@ def test_a_real_playlist_edited_on_one_spoke_converges(
 # ----- a real tombstone --------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "real_library_subset_tracks", [SMALL_SUBSET_TRACKS], indirect=True
-)
+@pytest.mark.parametrize("real_library_subset_tracks", [SMALL_SUBSET_TRACKS], indirect=True)
 def test_a_real_track_tombstoned_on_one_spoke_disappears_fleet_wide(
     real_library_hub_and_spokes: RealLibraryFleet,
 ) -> None:
@@ -396,14 +379,11 @@ def test_a_real_track_tombstoned_on_one_spoke_disappears_fleet_wide(
 
     conn = _open(fleet.spoke_a.data_dir)
     try:
-        victim, title = conn.execute(
-            "SELECT stable_id, title FROM tracks ORDER BY stable_id LIMIT 1"
-        ).fetchone()
+        victim, title = conn.execute("SELECT stable_id, title FROM tracks ORDER BY stable_id LIMIT 1").fetchone()
         machine_id = sync_stamp.local_machine_id(conn)
         stamp = sync_stamp.stamp_and_log(conn, "tracks", (victim,), machine_id)
         conn.execute(
-            "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
-            "origin_device_id = ? WHERE stable_id = ?",
+            "UPDATE tracks SET deleted_at = ?, updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
             (stamp.updated_at, stamp.updated_at, machine_id, victim),
         )
     finally:
@@ -414,15 +394,10 @@ def test_a_real_track_tombstoned_on_one_spoke_disappears_fleet_wide(
     _sync(fleet, fleet.spoke_b)
 
     for label, conn in _connections(fleet):
-        row = conn.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ?", (victim,)
-        ).fetchone()
+        row = conn.execute("SELECT deleted_at FROM tracks WHERE stable_id = ?", (victim,)).fetchone()
         assert row is not None, f"{label} hard-deleted the row instead"
         assert row[0] == stamp.updated_at, label
-        assert (
-            conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
-            == fleet.subset_tracks
-        ), label
+        assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == fleet.subset_tracks, label
 
     # A third sync must not resurrect it: a peer still holding a live copy
     # would push it back and the tombstone would lose to a row it outranks.
@@ -430,9 +405,7 @@ def test_a_real_track_tombstoned_on_one_spoke_disappears_fleet_wide(
     _assert_converged(fleet)
     for label, conn in _connections(fleet):
         assert (
-            conn.execute(
-                "SELECT deleted_at FROM tracks WHERE stable_id = ?", (victim,)
-            ).fetchone()[0]
+            conn.execute("SELECT deleted_at FROM tracks WHERE stable_id = ?", (victim,)).fetchone()[0]
             == stamp.updated_at
         ), label
 
@@ -467,8 +440,7 @@ def test_relinked_track_locations_converge_on_the_natural_key(
         old_ids = [
             str(row[0])
             for row in conn.execute(
-                "SELECT location_id FROM track_locations WHERE machine_id = ? "
-                "ORDER BY location_id LIMIT ?",
+                "SELECT location_id FROM track_locations WHERE machine_id = ? ORDER BY location_id LIMIT ?",
                 (machine_id, RELINKED_LOCATIONS),
             )
         ]
@@ -486,10 +458,9 @@ def test_relinked_track_locations_converge_on_the_natural_key(
     _sync(fleet, fleet.spoke_a)
 
     digests = _assert_converged(fleet)
-    assert (
-        digests["hub"].tables["track_locations"]
-        != before.tables["track_locations"]
-    ), "the relink changed nothing; the assertions below would pass vacuously"
+    assert digests["hub"].tables["track_locations"] != before.tables["track_locations"], (
+        "the relink changed nothing; the assertions below would pass vacuously"
+    )
     placeholders = ", ".join("?" * len(old_ids))
     for label, conn in _connections(fleet):
         count = table_counts(conn)["track_locations"]
@@ -508,8 +479,7 @@ def test_relinked_track_locations_converge_on_the_natural_key(
         assert surviving == set(new_ids), label
         stale = int(
             conn.execute(
-                f"SELECT COUNT(*) FROM track_locations WHERE location_id IN "
-                f"({placeholders})",
+                f"SELECT COUNT(*) FROM track_locations WHERE location_id IN ({placeholders})",
                 tuple(old_ids),
             ).fetchone()[0]
         )

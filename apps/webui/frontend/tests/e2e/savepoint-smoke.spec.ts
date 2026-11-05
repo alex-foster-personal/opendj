@@ -75,7 +75,7 @@ const FADER_KEY_STEP = 0.02;
  * unfiltered console gate would be red on a perfectly healthy stack.
  *
  * - artwork/stems 404: this track genuinely has no embedded art or stem bundle.
- * - smartlists 503: the smartlists router resolves ``data/state/state.db``
+ * - smartlists 503: the smartlists router resolves ``(private path)``
  *   relative to the process cwd instead of the shared paths module, so it is
  *   always unavailable when the gate runs from a worktree. The UI renders the
  *   honest "smartlists unavailable" row rather than faking a list.
@@ -147,9 +147,7 @@ async function _renderedAvailableRowIds(): Promise<string[]> {
 	return page.evaluate(
 		(limit) =>
 			Array.from(
-				document.querySelectorAll<HTMLTableRowElement>(
-					'.table-wrap table tbody tr[data-stable-id]'
-				)
+				document.querySelectorAll<HTMLTableRowElement>('.table-wrap table tbody tr[data-stable-id]')
 			)
 				.filter((row) => !row.classList.contains('broken'))
 				.slice(0, limit)
@@ -315,7 +313,9 @@ test('3. transport play then pause changes deck state', async () => {
 	}
 
 	await playButton.click();
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.query().decks[1].playing === true);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance?.query().decks[1].playing === true
+	);
 	await expect(playButton).toHaveAttribute('aria-label', 'pause');
 	await page.waitForFunction(() => {
 		const deck = window.musicDjToolsPerformance?.query().decks[1];

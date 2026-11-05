@@ -8,6 +8,7 @@ Marked ``@pytest.mark.integration`` so ``make test`` skips it unless
 against synthesized CSV inputs and asserts the end-to-end flow
 completes without raising.
 """
+
 from __future__ import annotations
 
 import csv
@@ -58,9 +59,7 @@ def test_full_phase4_smoke(tmp_path: Path, capsys):
     djay_ratings = {"a": 3, "b": 4}
     pairs = [("1", "a"), ("2", "b")]
 
-    analysis, ratings = build_analysis_diff(
-        rb_analysis, djay_analysis, rb_ratings, djay_ratings, pairs
-    )
+    analysis, ratings = build_analysis_diff(rb_analysis, djay_analysis, rb_ratings, djay_ratings, pairs)
     assert len(analysis) > 0
     assert len(ratings) == 2
 
@@ -97,4 +96,4 @@ def test_full_phase4_smoke(tmp_path: Path, capsys):
 
     # The smoke is green: the pipeline completes without live writes or
     # exceptions. Live-DB validation is a user-driven runbook (see
-    # ``docs/phase-04-cautious-runbook.md`` and ``phase-04-probe-o2-runbook.md``).
+    # ``(private path)`` and ``phase-04-probe-o2-runbook.md``).

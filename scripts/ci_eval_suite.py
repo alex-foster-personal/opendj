@@ -249,9 +249,7 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
             ]
         )
         runner.run(["git", "remote", "rename", "origin", "source"], cwd=checkout)
-        ssh_url = runner.run(
-            ["gh", "repo", "view", target, "--json", "sshUrl", "--jq", ".sshUrl"]
-        ).stdout.strip()
+        ssh_url = runner.run(["gh", "repo", "view", target, "--json", "sshUrl", "--jq", ".sshUrl"]).stdout.strip()
         runner.run(["git", "remote", "add", "origin", ssh_url], cwd=checkout)
         # collect_campaign keeps runs with createdAt >= prepared_at. Stamp
         # the window before the baseline push so that push's own CI / docs
@@ -263,9 +261,7 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
             ["git", "push", "-u", "origin", f"HEAD:refs/heads/{campaign['base_branch']}"],
             cwd=checkout,
         )
-        runner.run(
-            ["gh", "repo", "edit", target, "--default-branch", campaign["base_branch"]]
-        )
+        runner.run(["gh", "repo", "edit", target, "--default-branch", campaign["base_branch"]])
 
     campaign["state"] = "prepared"
     if not campaign.get("prepared_at"):
@@ -343,9 +339,7 @@ def _ensure_pushed_case(
     return head_sha
 
 
-def _upsert_pushed_pr_row(
-    campaign: dict[str, Any], case: dict[str, Any], head_sha: str
-) -> dict[str, Any]:
+def _upsert_pushed_pr_row(campaign: dict[str, Any], case: dict[str, Any], head_sha: str) -> dict[str, Any]:
     prs = campaign.setdefault("prs", [])
     for row in prs:
         if row["case_id"] == case["id"]:
@@ -357,9 +351,7 @@ def _upsert_pushed_pr_row(
     return row
 
 
-def _create_or_reuse_pr(
-    runner: CommandRunner, campaign: dict[str, Any], case: dict[str, Any]
-) -> tuple[int, str]:
+def _create_or_reuse_pr(runner: CommandRunner, campaign: dict[str, Any], case: dict[str, Any]) -> tuple[int, str]:
     existing = _existing_pr(runner, campaign["target_repository"], case["branch"])
     if existing:
         return existing["number"], existing["url"]

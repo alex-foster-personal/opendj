@@ -495,7 +495,8 @@ test('KEY SYNC uses desired controls for a fresh paused target and output truth 
 		'10A',
 		targetEffective,
 		masterEffective,
-		2
+		2,
+		'compatible'
 	);
 	assert.equal(Number.isInteger(targetManualShift), true);
 	assert.ok(
@@ -692,7 +693,8 @@ test('KEY SYNC uses the same presented manual-shift baseline for pending desired
 		'10A',
 		audio.keySyncEffectiveAudibleSemitones(source),
 		0,
-		baseline
+		baseline,
+		'compatible'
 	);
 	assert.equal(baseline, 0);
 	assert.equal(target, 2, 'the second unpresented command must not compound the pending +1 into +3');
@@ -1744,9 +1746,9 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 		assert.equal(audio.getDeckState(1).stable_id, null);
 		assert.equal(audio.getDeckState(1).anlz, null);
 		assert.match(audio.deckLoadErrors[1], /ANALYSIS_NOT_FOUND/);
-		assert.ok(timerDelays.includes(5_000), 'the failure toast must still be raised');
+		assert.ok(timerDelays.includes(8_000), 'the failure toast must still be raised');
 		assert.deepEqual(
-			timerDelays.filter((delay) => delay !== 5_000 && delay !== 250),
+			timerDelays.filter((delay) => delay !== 8_000 && delay !== 250),
 			[],
 			'only the toast expiry and the perf ring flush may schedule work on the ' +
 				'load-failure path; anything else is a stray timer on a failing load'

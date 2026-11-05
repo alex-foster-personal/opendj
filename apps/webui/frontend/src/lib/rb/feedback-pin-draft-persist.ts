@@ -1,4 +1,4 @@
-import { PIN_DRAFT_KEY, serializePinDraft, type PinDraft } from "./feedback";
+import { PIN_DRAFT_KEY, serializePinDraft, type PinDraft } from './feedback';
 
 /**
  * Park (or clear) the unsent comment-pin draft, reporting rather than
@@ -14,21 +14,21 @@ import { PIN_DRAFT_KEY, serializePinDraft, type PinDraft } from "./feedback";
  * where it was.
  */
 export function persistParkedPinDraft(
-  storage: Storage,
-  pinDraft: PinDraft | null,
-  foreignDraftParked: boolean,
-  onError: (err: unknown) => void,
+	storage: Storage,
+	pinDraft: PinDraft | null,
+	foreignDraftParked: boolean,
+	onError: (err: unknown) => void
 ): void {
-  try {
-    if (pinDraft === null || pinDraft.text.trim() === "") {
-      // A foreign-page draft was deliberately left out of local state, not
-      // cleared by the user - do not let its absence here delete the copy
-      // still parked in storage for its own page.
-      if (!foreignDraftParked) storage.removeItem(PIN_DRAFT_KEY);
-    } else {
-      storage.setItem(PIN_DRAFT_KEY, serializePinDraft(pinDraft));
-    }
-  } catch (err) {
-    onError(err);
-  }
+	try {
+		if (pinDraft === null || pinDraft.text.trim() === '') {
+			// A foreign-page draft was deliberately left out of local state, not
+			// cleared by the user - do not let its absence here delete the copy
+			// still parked in storage for its own page.
+			if (!foreignDraftParked) storage.removeItem(PIN_DRAFT_KEY);
+		} else {
+			storage.setItem(PIN_DRAFT_KEY, serializePinDraft(pinDraft));
+		}
+	} catch (err) {
+		onError(err);
+	}
 }

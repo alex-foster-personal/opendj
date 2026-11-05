@@ -4,6 +4,7 @@ Plan 12-03 Step 1. Reads ``manifest.json``, runs
 :func:`apps.sets.classify.classify_session` if ``transitions.jsonl`` is
 missing, then prints a summary + per-transition table.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,9 +58,7 @@ def replay(
     root = sets_paths.resolve_sets_root(sets_root)
     session = get_session(session_id, sets_root=root)
     if session is None:
-        (console or Console()).print(
-            f"[red]no session {session_id!r} under {root}[/red]"
-        )
+        (console or Console()).print(f"[red]no session {session_id!r} under {root}[/red]")
         return 2
 
     transitions = session.transitions
@@ -75,9 +74,7 @@ def replay(
             cutoff = latest - since_s
             transitions = [t for t in transitions if t.get("t_change_s", 0.0) >= cutoff]
     if class_filter:
-        transitions = [
-            t for t in transitions if t.get("predicted_class") == class_filter
-        ]
+        transitions = [t for t in transitions if t.get("predicted_class") == class_filter]
 
     if output_format == "jsonl":
         for t in transitions:
@@ -99,10 +96,7 @@ def _render_rich(console: Console, session, transitions: list[dict[str, Any]]) -
         f"started={summary.started_at} ended={summary.ended_at} "
         f"duration={hours}h{mins:02d}m{secs:02d}s"
     )
-    console.print(
-        f"{summary.event_count} events, {summary.transition_count} transitions, "
-        f"share={summary.share_state}"
-    )
+    console.print(f"{summary.event_count} events, {summary.transition_count} transitions, share={summary.share_state}")
 
     table = Table(title=f"Transitions ({len(transitions)})")
     table.add_column("#", justify="right")

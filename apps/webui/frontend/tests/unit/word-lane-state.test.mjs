@@ -31,8 +31,24 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /** Real /api/v1/tracks/{id}/lyrics word shapes (KaraokeWordOut). */
 const WORDS = [
-	{ idx: 0, word: 'hold', start_s: 1.2, end_s: 1.5, line_final: false, score: 0.9, witness: 'agree' },
-	{ idx: 1, word: 'on', start_s: 1.6, end_s: 1.9, line_final: true, score: 0.8, witness: 'contradict' }
+	{
+		idx: 0,
+		word: 'hold',
+		start_s: 1.2,
+		end_s: 1.5,
+		line_final: false,
+		score: 0.9,
+		witness: 'agree'
+	},
+	{
+		idx: 1,
+		word: 'on',
+		start_s: 1.6,
+		end_s: 1.9,
+		line_final: true,
+		score: 0.8,
+		witness: 'contradict'
+	}
 ];
 const PREFS_ON = { lyrics_global: true, lyrics_waveform_overlay: true };
 

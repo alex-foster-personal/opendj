@@ -3,6 +3,7 @@
 [if] nothing overrides the flag [then] it resolves OFF (Svelte deck), [else stop].
 [if] feature-flags.json sets it on [then] it resolves ON (React twins), [else stop].
 """
+
 from __future__ import annotations
 
 from pathlib import Path

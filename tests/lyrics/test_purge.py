@@ -21,6 +21,7 @@ rather than implied.
 - if a second purge over the same prefix tombstones rows again then the purge
   is not idempotent and the counts double-report -- broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -47,9 +48,9 @@ from .conftest import (
 WORDS = [word("one", start_s=1.0, end_s=1.2), word("two", start_s=1.5, line_final=True)]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # helpers
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _seed_verdict(
     conn: sqlite3.Connection,
     data_dir: Path,
@@ -91,10 +92,7 @@ def _seed_verdict(
 def _changelog_pks(conn: sqlite3.Connection) -> list[str]:
     return [
         str(row[0])
-        for row in conn.execute(
-            "SELECT row_pk FROM local_changelog WHERE table_name = 'lyric_verdict' "
-            "ORDER BY rowid"
-        )
+        for row in conn.execute("SELECT row_pk FROM local_changelog WHERE table_name = 'lyric_verdict' ORDER BY rowid")
     ]
 
 
@@ -117,9 +115,9 @@ def _purge(
     )
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # local mode: row + file, and an honest word about R2
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_local_mode_tombstones_every_matching_row_and_removes_its_file(
     conn: sqlite3.Connection, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -148,8 +146,7 @@ def test_the_row_is_tombstoned_not_deleted(
     _seed_verdict(conn, data_dir, "sid-1", source="musixmatch api")
     _purge(conn, data_dir)
     row = conn.execute(
-        "SELECT deleted_at, updated_at, origin_device_id FROM lyric_verdict "
-        "WHERE stable_id = 'sid-1'"
+        "SELECT deleted_at, updated_at, origin_device_id FROM lyric_verdict WHERE stable_id = 'sid-1'"
     ).fetchone()
     assert row is not None, "the row must still exist, carrying its tombstone"
     assert row[0] is not None
@@ -190,9 +187,9 @@ def test_local_mode_says_why_r2_was_left_alone(
     assert purge.LOCAL_MODE_R2_REASON in rendered
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # cloud mode: the object goes too
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_cloud_mode_deletes_the_object_and_a_head_no_longer_finds_it(
     conn: sqlite3.Connection,
     data_dir: Path,
@@ -202,9 +199,7 @@ def test_cloud_mode_deletes_the_object_and_a_head_no_longer_finds_it(
 ) -> None:
     use_cloud_mode(monkeypatch)
     seed_stamped_policy(conn, asset_kind="karaoke_words", mode="pinned")
-    artifact = _seed_verdict(
-        conn, data_dir, "sid-1", source="musixmatch api", s3=fake_s3, cfg=cfg
-    )
+    artifact = _seed_verdict(conn, data_dir, "sid-1", source="musixmatch api", s3=fake_s3, cfg=cfg)
     assert asset_store.object_exists(cfg, fake_s3, artifact.content_hash)
 
     report = _purge(conn, data_dir, s3=fake_s3, cfg=cfg)
@@ -234,19 +229,11 @@ def test_counts_are_observed_per_store_never_inferred_from_each_other(
     """
     use_cloud_mode(monkeypatch)
     seed_stamped_policy(conn, asset_kind="karaoke_words", mode="pinned")
-    pinned = _seed_verdict(
-        conn, data_dir, "sid-pinned", source="musixmatch api", s3=fake_s3, cfg=cfg
-    )
-    fileless = _seed_verdict(
-        conn, data_dir, "sid-fileless", source="musixmatch bulk", s3=fake_s3, cfg=cfg
-    )
+    pinned = _seed_verdict(conn, data_dir, "sid-pinned", source="musixmatch api", s3=fake_s3, cfg=cfg)
+    fileless = _seed_verdict(conn, data_dir, "sid-fileless", source="musixmatch bulk", s3=fake_s3, cfg=cfg)
     fileless.path.unlink()
-    conn.execute(
-        "UPDATE sync_policies SET mode = 'excluded' WHERE asset_kind = 'karaoke_words'"
-    )
-    excluded = _seed_verdict(
-        conn, data_dir, "sid-excluded", source="musixmatch web", s3=fake_s3, cfg=cfg
-    )
+    conn.execute("UPDATE sync_policies SET mode = 'excluded' WHERE asset_kind = 'karaoke_words'")
+    excluded = _seed_verdict(conn, data_dir, "sid-excluded", source="musixmatch web", s3=fake_s3, cfg=cfg)
     assert not asset_store.object_exists(cfg, fake_s3, excluded.content_hash)
 
     report = _purge(conn, data_dir, s3=fake_s3, cfg=cfg)
@@ -298,17 +285,15 @@ def test_cloud_mode_without_an_s3_client_is_refused(
         _purge(conn, data_dir, s3=None, cfg=None)
 
 
-def test_an_empty_prefix_is_refused(
-    conn: sqlite3.Connection, data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_empty_prefix_is_refused(conn: sqlite3.Connection, data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     use_local_mode(monkeypatch)
     with pytest.raises(store.LyricStoreError, match="whole library"):
         _purge(conn, data_dir, prefix="")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # dry run and idempotence
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_dry_run_through_the_cli_writes_nothing(
     conn: sqlite3.Connection,
     data_dir: Path,
@@ -351,9 +336,7 @@ def test_dry_run_in_cloud_mode_deletes_no_object(
     """It also refuses to claim an object count it did not observe."""
     use_cloud_mode(monkeypatch)
     seed_stamped_policy(conn, asset_kind="karaoke_words", mode="pinned")
-    artifact = _seed_verdict(
-        conn, data_dir, "sid-1", source="musixmatch api", s3=fake_s3, cfg=cfg
-    )
+    artifact = _seed_verdict(conn, data_dir, "sid-1", source="musixmatch api", s3=fake_s3, cfg=cfg)
 
     report = _purge(conn, data_dir, s3=fake_s3, cfg=cfg, dry_run=True)
 

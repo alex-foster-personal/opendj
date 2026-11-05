@@ -40,6 +40,16 @@ runs none of them):
 Not done here: ``opendj install-cli``, signing, notarization, a dmg, and
 building on another machine.
 
+``--lane LABEL`` (parity matrix row 65, OPS-09 double intent: ``MDT_LANE_LABEL``
+must name the same label) builds and installs a lane beside the product, as
+the Tauri ``just dmg X`` lane does: ``Open DJ (LABEL).app``, bundle id and data
+dir identifier ``com.opendj.desktop.lane-<label>`` (``desktop_lane_config``),
+payload label LABEL. The pack runs ``pack:dir``'s chain with electron-builder
+``-c`` overrides for the name, ``appId`` and the packed ``opendj.identifier``,
+and every quit, install and read-back step targets the lane bundle only.
+Without a label nothing changes: the product stays ``com.opendj.desktop``,
+the data dir both shells share.
+
 ``--local-fast`` (Mon 2 Nov 2026, mirrors ``ship_dmg.sh --local-fast``, #8225)
 is the one signed path: a build installed ONLY on this Mac, Developer ID
 signed with the hardened runtime and not notarized, so macOS privacy grants
@@ -66,6 +76,11 @@ Acceptance:
 - [if] ``--local-fast --dry-run`` is given [then] the plan names the payload
   signing, the manifest refresh, the app signing and both signature checks,
   and runs none of them [else stop].
+- [if] ``--lane B`` runs without ``MDT_LANE_LABEL=B`` (or the reverse, or a
+  different or unsafe label) [then] the run exits 2 and runs nothing [else stop].
+- [if] ``MDT_LANE_LABEL=B --lane B --dry-run`` is given [then] the plan packs
+  ``com.opendj.desktop.lane-b`` and installs, quits and reads back only
+  ``/Applications/Open DJ (B).app`` [else stop].
 """
 
 from __future__ import annotations
@@ -87,11 +102,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# The ship-dmg dispatcher launches this file directly; re-enter package mode so
+# sibling scripts can import the repo's apps package without mutating sys.path.
+if __name__ == "__main__" and not __package__:
+    os.chdir(Path(__file__).resolve().parents[1])
+    os.execv(sys.executable, [sys.executable, "-m", "scripts.ship_electron", *sys.argv[1:]])
+
 try:
-    from scripts import build_ffmpeg_lgpl, electron_local_sign, electron_payload
+    from scripts import build_ffmpeg_lgpl, desktop_lane_config, electron_local_sign, electron_payload
     from scripts import electron_post_install as post
 except ImportError:  # run as a file: scripts/ship_electron.py
     import build_ffmpeg_lgpl  # type: ignore[no-redef,import-not-found]
+    import desktop_lane_config  # type: ignore[no-redef,import-not-found]
     import electron_local_sign  # type: ignore[no-redef,import-not-found]
     import electron_payload  # type: ignore[no-redef,import-not-found]
     import electron_post_install as post  # type: ignore[no-redef,import-not-found]
@@ -111,7 +133,7 @@ QUARANTINE_XATTR = "com.apple.quarantine"
 #: launchctl print's answer for a service that was never bootstrapped (the
 #: loop is not installed on that Mac), which is a real "not running".
 PERSONA_NOT_INSTALLED = "Could not find service"
-PACKED_APP_REL = f"{ELECTRON_DIR_REL}/out/mac-arm64/{APP_NAME}"
+PACKED_APP_REL = f"{ELECTRON_DIR_REL}/out/mac-arm64/{APP_NAME}"  # the product's; a lane's is Bundle.packed_rel
 PAYLOAD_STAGE_REL = f"{ELECTRON_DIR_REL}/out/payload-stage"
 SHELL_STAMP_IN_ASAR = "dist/build-identity.json"
 STAMP_LANE = "electron"
@@ -159,6 +181,74 @@ class Step:
     title: str
     commands: list[str] = field(default_factory=list)
     action: Callable[[], None] | None = None
+
+
+@dataclass(frozen=True)
+class Bundle:
+    """The app a run packs and installs: the product, or a lane beside it (parity row 65).
+
+    A lane suffixes the name and the bundle id exactly as the Tauri lane overlay
+    does (``scripts/desktop_lane_config.py``), and the bundle id is also the data
+    dir identifier, so a lane never opens the product's library.
+    """
+
+    display_name: str
+    bundle_id: str
+    lane: str | None = None
+
+    @property
+    def app_name(self) -> str:
+        return f"{self.display_name}.app"
+
+    @property
+    def packed_rel(self) -> str:
+        return f"{ELECTRON_DIR_REL}/out/mac-arm64/{self.app_name}"
+
+    @property
+    def installed(self) -> str:
+        return f"{APPLICATIONS}/{self.app_name}"
+
+
+PRODUCT = Bundle(BUNDLE_DISPLAY_NAME, BUNDLE_ID)
+
+
+def lane_bundle(label: str) -> Bundle:
+    """The lane's bundle; an unsafe label raises ``desktop_lane_config.LaneLabelError``."""
+    lane = desktop_lane_config.validate_label(label)
+    if lane is None:
+        raise desktop_lane_config.LaneLabelError("an empty lane label names no lane")
+    return Bundle(
+        desktop_lane_config.lane_product_name(BUNDLE_DISPLAY_NAME, lane),
+        desktop_lane_config.lane_identifier(BUNDLE_ID, lane),
+        lane,
+    )
+
+
+def lane_pack_commands(bundle: Bundle) -> list[list[str]]:
+    """``pnpm pack:dir``'s chain, run in the shell dir, with the lane's name, bundle id
+    and data dir identifier given to electron-builder and the lane's paths to the
+    post-pack checks. The product keeps ``pack:dir`` itself."""
+    app = f"out/mac-arm64/{bundle.app_name}"
+    return [
+        ["pnpm", "exec", "tsc", "-p", "tsconfig.json"],
+        ["node", "scripts/stamp-build.mjs"],
+        [
+            "pnpm",
+            "exec",
+            "electron-builder",
+            "--dir",
+            "--mac",
+            "--arm64",
+            "--publish",
+            "never",
+            f"-c.appId={bundle.bundle_id}",
+            f"-c.productName={bundle.display_name}",
+            f"-c.extraMetadata.productName={bundle.display_name}",
+            f"-c.extraMetadata.opendj.identifier={bundle.bundle_id}",
+        ],
+        ["node", "scripts/verify-pack.mjs", f"{app}/Contents/Resources/payload", "dist/build-identity.json"],
+        ["node", "scripts/read-fuses.mjs", f"{app}/Contents/Frameworks/Electron Framework.framework/Electron Framework"],
+    ]
 
 
 # ----- local identity ----------------------------------------------------
@@ -228,7 +318,7 @@ def read_asar_file(asar: Path, inner: str) -> bytes:
 # ----- stamps ------------------------------------------------------------
 
 
-def verify_packed_app(app: Path, target_sha: str) -> list[str]:
+def verify_packed_app(app: Path, target_sha: str, bundle: Bundle = PRODUCT) -> list[str]:
     """Check the packed bundle against the target commit. Returns OK lines, raises on any mismatch."""
     plist_path = app / "Contents" / "Info.plist"
     try:
@@ -238,10 +328,10 @@ def verify_packed_app(app: Path, target_sha: str) -> list[str]:
         raise ShipError(f"cannot read {plist_path}: {exc}") from exc
     found_id = plist.get("CFBundleIdentifier")
     found_name = plist.get("CFBundleName")
-    if found_id != BUNDLE_ID:
-        raise ShipError(f"{plist_path} CFBundleIdentifier is {found_id!r}, expected {BUNDLE_ID!r}")
-    if found_name != BUNDLE_DISPLAY_NAME:
-        raise ShipError(f"{plist_path} CFBundleName is {found_name!r}, expected {BUNDLE_DISPLAY_NAME!r}")
+    if found_id != bundle.bundle_id:
+        raise ShipError(f"{plist_path} CFBundleIdentifier is {found_id!r}, expected {bundle.bundle_id!r}")
+    if found_name != bundle.display_name:
+        raise ShipError(f"{plist_path} CFBundleName is {found_name!r}, expected {bundle.display_name!r}")
 
     asar = app / "Contents" / "Resources" / "app.asar"
     try:
@@ -250,8 +340,8 @@ def verify_packed_app(app: Path, target_sha: str) -> list[str]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ShipError(f"a stamp inside {asar} is not JSON: {exc}") from exc
     identifier = (packed_pkg.get("opendj") or {}).get("identifier")
-    if identifier != BUNDLE_ID:
-        raise ShipError(f"packed package.json opendj.identifier is {identifier!r}, expected {BUNDLE_ID!r}")
+    if identifier != bundle.bundle_id:
+        raise ShipError(f"packed package.json opendj.identifier is {identifier!r}, expected {bundle.bundle_id!r}")
     if shell_stamp.get("git_sha_full") != target_sha:
         raise ShipError(
             f"shell stamp {SHELL_STAMP_IN_ASAR} says {shell_stamp.get('git_sha_full')!r}, target is {target_sha}"
@@ -272,7 +362,7 @@ def verify_packed_app(app: Path, target_sha: str) -> list[str]:
     if manifest.get("output_probe", {}).get("staged") is not True:
         raise ShipError("payload manifest output_probe.staged is not true")
     return [
-        f"[OK] bundle: {BUNDLE_DISPLAY_NAME} / {BUNDLE_ID}, data dir identifier {identifier}",
+        f"[OK] bundle: {bundle.display_name} / {bundle.bundle_id}, data dir identifier {identifier}",
         f"[OK] shell stamp and payload manifest both {target_sha[:12]}",
     ]
 
@@ -304,6 +394,7 @@ class Options:
     no_acceptance: bool = False
     acceptance_on: list[str] = field(default_factory=list)
     local_fast: bool = False
+    bundle: Bundle = PRODUCT
 
 
 def parse_args(argv: Sequence[str], env: dict) -> Options:
@@ -343,9 +434,15 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
         action="store_true",
         help="Developer ID sign (hardened runtime, not notarized) and install on THIS Mac only; needs --machine <this Mac>",
     )
+    parser.add_argument(
+        "--lane",
+        metavar="LABEL",
+        help="build and install the lane bundle 'Open DJ (LABEL)' / com.opendj.desktop.lane-<label>, with its own "
+        "data dir, beside the product; needs MDT_LANE_LABEL set to the same label (double intent, OPS-09)",
+    )
     args, unknown = parser.parse_known_args(list(argv))
     if unknown:
-        not_here = [a for a in unknown if a.split("=")[0] in ("--lane", "--build-on", "--requested-at")]
+        not_here = [a for a in unknown if a.split("=")[0] in ("--build-on", "--requested-at")]
         if not_here:
             parser.exit(EXIT_USAGE, f"[ERROR] {not_here[0].split('=')[0]} is not supported with --shell electron\n")
         parser.exit(EXIT_USAGE, f"[ERROR] unrecognized arguments: {' '.join(unknown)}\n")
@@ -353,6 +450,20 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
     refusal = post.acceptance_refusal(args.acceptance_on)
     if refusal is not None:
         parser.exit(EXIT_USAGE, refusal + "\n")
+    bundle = PRODUCT
+    env_lane = (env.get("MDT_LANE_LABEL") or "").strip()
+    cli_lane = (args.lane or "").strip()
+    if cli_lane != env_lane:
+        parser.exit(
+            EXIT_USAGE,
+            f"[ERROR] a lane build needs double intent: MDT_LANE_LABEL={env_lane!r} (env) and --lane={cli_lane!r} "
+            "(flag) must both be set to the SAME label. Run with neither for the plain product.\n",
+        )
+    if cli_lane:
+        try:
+            bundle = lane_bundle(cli_lane)
+        except desktop_lane_config.LaneLabelError as exc:
+            parser.exit(EXIT_USAGE, f"[ERROR] {exc}\n")
     return Options(
         dry_run=args.dry_run,
         unsigned=args.unsigned or env.get("MDT_SHIP_UNSIGNED", "") == "1",
@@ -363,6 +474,7 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
         no_acceptance=args.no_acceptance,
         acceptance_on=list(dict.fromkeys(args.acceptance_on)),
         local_fast=args.local_fast,
+        bundle=bundle,
     )
 
 
@@ -384,15 +496,22 @@ def _q(path: str) -> str:
     return shlex.quote(path)
 
 
+def _engine_payload_label_flag(lane: str | None) -> str:
+    """Dry-run plan text pinned by ``(private path)`` (unquoted lane labels)."""
+    if lane:
+        return f"--label {lane}"
+    return "--label ''"
+
+
 def staging_dir(run_id: str) -> str:
     """Where the replacement bundle is built before it is swapped in: a sibling
     of the installed app, so the swap is a same-volume rename."""
     return f"{APPLICATIONS}/.opendj-ship-{run_id}"
 
 
-def swap_command(installed: str, staging: str, populate: str) -> str:
+def swap_command(installed: str, staging: str, populate: str, app_name: str = APP_NAME) -> str:
     """Build the replacement in `staging` with `populate` (which must leave the
-    bundle at staging/APP_NAME), prove it is a bundle, and only then rename the
+    bundle at staging/`app_name`), prove it is a bundle, and only then rename the
     installed app aside and the new one into place. The previous app is kept
     at staging/previous.app and renamed back if the swap fails, so a full disk,
     a corrupt archive or a failed copy leaves the installed app as it was. On
@@ -402,7 +521,7 @@ def swap_command(installed: str, staging: str, populate: str) -> str:
     made, 81 populate failed, 82 the result is not a bundle, 83 the installed
     app could not be moved aside, 84 the swap failed and the previous app was
     put back, 85 the swap failed and so did the restore."""
-    new, old = f"{staging}/{APP_NAME}", f"{staging}/previous.app"
+    new, old = f"{staging}/{app_name}", f"{staging}/previous.app"
     q_inst, q_stage, q_new, q_old = _q(installed), _q(staging), _q(new), _q(old)
     return (
         f"rm -rf {q_stage} && mkdir {q_stage} || exit 80; "
@@ -436,11 +555,11 @@ def cleanup_command(staging: str) -> str:
     return f"rm -rf {_q(staging)}"
 
 
-def populate_command(machine: str, local: str, archive: str, staging: str) -> str:
+def populate_command(machine: str, local: str, archive: str, staging: str, bundle: Bundle) -> str:
     """The copy that fills `staging`: ditto from the packed app here, or ditto
-    out of the shipped archive over ssh (--keepParent puts APP_NAME at its root)."""
+    out of the shipped archive over ssh (--keepParent puts the app at its root)."""
     if machine == local:
-        return f"ditto {_q(str(REPO_ROOT / PACKED_APP_REL))} {_q(staging + '/' + APP_NAME)}"
+        return f"ditto {_q(str(REPO_ROOT / bundle.packed_rel))} {_q(staging + '/' + bundle.app_name)}"
     return f"ditto -x -k {_q(archive)} {_q(staging)}"
 
 
@@ -465,21 +584,23 @@ class InstallScript:
     cleanup: str
 
 
-def install_script(machine: str, local: str, run_id: str) -> InstallScript:
-    installed = f"{APPLICATIONS}/{APP_NAME}"
+def install_script(machine: str, local: str, run_id: str, bundle: Bundle) -> InstallScript:
+    installed = bundle.installed
     staging = staging_dir(run_id)
     archive = archive_path(run_id)
     remote = machine != local
     ship: tuple[tuple[str, ...], ...] = ()
     if remote:
-        packed = str(REPO_ROOT / PACKED_APP_REL)
+        packed = str(REPO_ROOT / bundle.packed_rel)
         ship = (
             ("ditto", "-c", "-k", "--keepParent", packed, archive),
             ("scp", "-q", *SSH_OPTS, archive, f"{MACHINES[machine]}:{archive}"),
         )
     return InstallScript(
         ship=ship,
-        swap=swap_command(installed, staging, populate_command(machine, local, archive, staging)),
+        swap=swap_command(
+            installed, staging, populate_command(machine, local, archive, staging, bundle), bundle.app_name
+        ),
         remove_archive=f"rm -f {_q(archive)}" if remote else None,
         quarantine=quarantine_command(installed),
         shell_check=installed_shell_command(installed),
@@ -490,11 +611,11 @@ def install_script(machine: str, local: str, run_id: str) -> InstallScript:
     )
 
 
-def install_commands(machine: str, local: str, run_id: str) -> list[str]:
+def install_commands(machine: str, local: str, run_id: str, bundle: Bundle) -> list[str]:
     """The install as the plan prints it: the same strings `act()` executes,
     with the condition each one runs under. A target command is shown after
     `ssh <host> ` exactly as it is handed to ssh as the remote command."""
-    script = install_script(machine, local, run_id)
+    script = install_script(machine, local, run_id, bundle)
     on = "" if machine == local else f"ssh {' '.join(SSH_OPTS)} {MACHINES[machine]} "
     lines = [" ".join(_q(arg) for arg in argv) for argv in script.ship]
     lines.append(f"{on}{script.swap}")
@@ -554,7 +675,7 @@ class Build:
         self.target_sha = target_sha
         self.runner = runner
         self.stage = REPO_ROOT / PAYLOAD_STAGE_REL
-        self.app = REPO_ROOT / PACKED_APP_REL
+        self.app = REPO_ROOT / opts.bundle.packed_rel
 
     def preflight(self) -> None:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
@@ -598,7 +719,7 @@ class Build:
                 "--out",
                 str(self.stage),
                 "--label",
-                "",
+                self.opts.bundle.lane or "",
             ]
         )
 
@@ -606,13 +727,18 @@ class Build:
         env = {**os.environ, "OPENDJ_BUILD_LANE_LABEL": STAMP_LANE, "OPENDJ_BUILD_CHANNEL": STAMP_CHANNEL}
         env.pop("MDT_LANE_LABEL", None)
         self.runner.local_run(["pnpm", "--dir", ELECTRON_DIR_REL, "install", "--frozen-lockfile"])
-        self.runner.local_run(["pnpm", "--dir", ELECTRON_DIR_REL, "pack:dir"], env=env)
+        if self.opts.bundle.lane is None:
+            self.runner.local_run(["pnpm", "--dir", ELECTRON_DIR_REL, "pack:dir"], env=env)
+            return
+        env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false"
+        for argv in lane_pack_commands(self.opts.bundle):
+            self.runner.local_run(argv, env=env, cwd=REPO_ROOT / ELECTRON_DIR_REL)
 
     def copy_payload(self) -> None:
         replace_placeholder_payload(self.app, self.stage)
 
     def verify(self) -> None:
-        for line in verify_packed_app(self.app, self.target_sha):
+        for line in verify_packed_app(self.app, self.target_sha, self.opts.bundle):
             print(line)
 
     # ----- --local-fast only -------------------------------------------------
@@ -646,7 +772,8 @@ class Build:
 
 def _local_fast_steps(build: Build, identity: str) -> tuple[Step, Step]:
     """The two signing steps --local-fast adds: the payload after it is built, the app after the payload swap."""
-    payload_in_app = PACKED_APP_REL + "/Contents/Resources/payload"
+    packed = build.opts.bundle.packed_rel
+    payload_in_app = packed + "/Contents/Resources/payload"
     who = f"{electron_local_sign.IDENTITY_ENV}={_q(identity)}"
     sign_payload = Step(
         "sign the staged payload: Developer ID, hardened runtime, engine entitlements, numba JIT proof",
@@ -660,16 +787,16 @@ def _local_fast_steps(build: Build, identity: str) -> tuple[Step, Step]:
             f"codesign --force --options runtime --timestamp=none --sign {_q(identity)} <each loose Mach-O, framework, "
             f"helper app (+ --entitlements {electron_local_sign.ELECTRON_ENTITLEMENTS_REL})>  # inside out, payload excluded",
             f"codesign --force --options runtime --timestamp=none --sign {_q(identity)} "
-            f"--entitlements {electron_local_sign.ELECTRON_ENTITLEMENTS_REL} {_q(PACKED_APP_REL)}",
-            f"codesign --verify --deep --strict {_q(PACKED_APP_REL)}  # then: runtime flag, Developer ID authority, entitlements",
+            f"--entitlements {electron_local_sign.ELECTRON_ENTITLEMENTS_REL} {_q(packed)}",
+            f"codesign --verify --deep --strict {_q(packed)}  # then: runtime flag, Developer ID authority, entitlements",
         ],
         lambda: build.sign_app(identity),
     )
     return sign_payload, sign_app
 
 
-def _installed_signature_step(machine: str) -> Step:
-    installed = f"{APPLICATIONS}/{APP_NAME}"
+def _installed_signature_step(machine: str, bundle: Bundle) -> Step:
+    installed = bundle.installed
 
     def act() -> None:
         for line in electron_local_sign.verify_signed_app(Path(installed)):
@@ -686,7 +813,18 @@ def _installed_signature_step(machine: str) -> Step:
 
 def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, identity: str | None = None) -> list[Step]:
     build = Build(opts, target_sha, runner)
-    payload_in_app = _q(PACKED_APP_REL + "/Contents/Resources/payload")
+    bundle = opts.bundle
+    payload_in_app = _q(bundle.packed_rel + "/Contents/Resources/payload")
+    if bundle.lane is None:
+        pack_lines = [
+            f"OPENDJ_BUILD_LANE_LABEL={STAMP_LANE} OPENDJ_BUILD_CHANNEL={STAMP_CHANNEL} pnpm --dir {ELECTRON_DIR_REL} pack:dir"
+        ]
+    elif bundle.lane is not None:
+        pack_lines = [
+            f"cd {ELECTRON_DIR_REL} && OPENDJ_BUILD_LANE_LABEL={STAMP_LANE} OPENDJ_BUILD_CHANNEL={STAMP_CHANNEL} "
+            f"CSC_IDENTITY_AUTO_DISCOVERY=false {' '.join(_q(a) for a in argv)}"
+            for argv in lane_pack_commands(bundle)
+        ]
     steps = [
         Step(
             "preflight: arm64 Mac that may build, clean checkout at the target, every target reachable",
@@ -704,19 +842,17 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, iden
             build.build_spa,
         ),
         Step(
-            "build the engine payload (the just dmg payload step, plain label)",
+            f"build the engine payload (the just dmg payload step, {'lane ' + bundle.lane if bundle.lane else 'plain'} label)",
             [
                 f"rm -rf {ELECTRON_DIR_REL}/out/mac-arm64  # else the last packed app is staged into the payload",
-                f"uv run --no-sync python -m scripts.build_engine_payload --out {PAYLOAD_STAGE_REL} --label ''",
+                f"uv run --no-sync python -m scripts.build_engine_payload --out {PAYLOAD_STAGE_REL} "
+                f"{_engine_payload_label_flag(bundle.lane)}",
             ],
             build.build_payload,
         ),
         Step(
             "pack the shell, unsigned",
-            [
-                f"pnpm --dir {ELECTRON_DIR_REL} install --frozen-lockfile",
-                f"OPENDJ_BUILD_LANE_LABEL={STAMP_LANE} OPENDJ_BUILD_CHANNEL={STAMP_CHANNEL} pnpm --dir {ELECTRON_DIR_REL} pack:dir",
-            ],
+            [f"pnpm --dir {ELECTRON_DIR_REL} install --frozen-lockfile", *pack_lines],
             build.pack_shell,
         ),
         Step(
@@ -730,7 +866,8 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, iden
         Step(
             "verify the stamps",
             [
-                f"Info.plist CFBundleIdentifier == {BUNDLE_ID}, CFBundleName == {BUNDLE_DISPLAY_NAME}",
+                f"Info.plist CFBundleIdentifier == {bundle.bundle_id}, CFBundleName == {bundle.display_name}, "
+                f"packed opendj.identifier (the data dir) == {bundle.bundle_id}",
                 f"app.asar {SHELL_STAMP_IN_ASAR} git_sha_full == payload manifest git_sha_full == {target_sha}",
                 "Contents/Resources/payload/bin/odj-output-probe executable and manifest.output_probe.staged",
             ],
@@ -743,33 +880,34 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, iden
         steps.insert(6, sign_app)  # after the payload swap, before the stamp check
     steps.extend(_install_step(machine, opts, target_sha, run_id, runner) for machine in opts.machines)
     if identity is not None:
-        steps.extend(_installed_signature_step(machine) for machine in opts.machines)
+        steps.extend(_installed_signature_step(machine, bundle) for machine in opts.machines)
     return steps
 
 
 def _install_step(machine: str, opts: Options, target_sha: str, run_id: str, runner: Runner) -> Step:
-    installed = f"{APPLICATIONS}/{APP_NAME}"
+    bundle = opts.bundle
+    installed = bundle.installed
     on = "" if machine == opts.local else f"ssh {' '.join(SSH_OPTS)} {MACHINES[machine]} "
-    probe = f"{on}{app_running_command()}"
+    probe = f"{on}{app_running_command(bundle)}"
     if opts.no_close:
         quit_lines = [f"{probe}  # every 1s for up to {NO_CLOSE_WAIT_S}s while the operator quits it; never a signal"]
     else:
         quit_lines = [
-            f"{on}{QUIT_COMMAND}  # never a signal",
+            f"{on}{quit_command(bundle)}  # never a signal",
             f"{probe}  # every 1s for up to {QUIT_TIMEOUT_S}s until it exits; still running fails the install",
         ]
     staging = staging_dir(run_id)
-    script = install_script(machine, opts.local, run_id)
+    script = install_script(machine, opts.local, run_id, bundle)
     commands = [
         f"{on}{PERSONA_PROBE}  # refuse while state = running (OPS-35)",
         f"{probe}  # exit 0 running, {APP_NOT_RUNNING_EXIT} not running (then no quit), anything else fails",
         *quit_lines,
-        *install_commands(machine, opts.local, run_id),
+        *install_commands(machine, opts.local, run_id, bundle),
     ]
 
     def act() -> None:
         _refuse_if_persona_active(runner, machine)
-        _quit_installed(runner, machine, opts.no_close)
+        _quit_installed(runner, machine, opts.no_close, bundle)
         archive = archive_path(run_id)
         for argv in script.ship:
             subprocess.run(_resolved(argv), check=True)
@@ -781,7 +919,7 @@ def _install_step(machine: str, opts: Options, target_sha: str, run_id: str, run
                 os.remove(archive)
         try:
             _clear_quarantine(runner, machine, script.quarantine)
-            _read_back(runner, machine, script, target_sha, packed_asar_sha256())
+            _read_back(runner, machine, script, target_sha, packed_asar_sha256(bundle), bundle)
         except ShipError:
             _roll_back(runner, machine, script.rollback, installed, staging)
             raise
@@ -890,14 +1028,18 @@ def _refuse_if_persona_active(runner: Runner, machine: str) -> None:
 
 
 APP_NOT_RUNNING_EXIT = 3
-QUIT_COMMAND = f"osascript -e 'tell application \"{BUNDLE_DISPLAY_NAME}\" to quit'"
+def quit_command(bundle: Bundle) -> str:
+    return f"osascript -e {_q(f'tell application {json.dumps(bundle.display_name)} to quit')}"
 
 
-def app_running_command() -> str:
+QUIT_COMMAND = quit_command(PRODUCT)
+
+
+def app_running_command(bundle: Bundle) -> str:
     """Exit 0 when the installed app has a process, APP_NOT_RUNNING_EXIT only
     when `ps` itself succeeded and listed none; any other exit (90 no ps, 91 ps
     failed, 255 ssh) means the probe did not measure."""
-    needle = _q(APPLICATIONS + "/" + APP_NAME + "/Contents/")
+    needle = _q(bundle.installed + "/Contents/")
     return (
         "command -v ps >/dev/null 2>&1 || exit 90; "
         "procs=$(ps -axo comm=) || exit 91; "
@@ -906,44 +1048,44 @@ def app_running_command() -> str:
     )
 
 
-def _app_running(runner: Runner, machine: str) -> bool:
-    out = runner.shell(machine, app_running_command(), check=False)
+def _app_running(runner: Runner, machine: str, bundle: Bundle) -> bool:
+    out = runner.shell(machine, app_running_command(bundle), check=False)
     if out.returncode == 0:
         return True
     if out.returncode == APP_NOT_RUNNING_EXIT:
         return False
     raise ShipError(
-        f"{machine}: the running-app probe exited {out.returncode} (UNKNOWN), so {BUNDLE_DISPLAY_NAME} "
+        f"{machine}: the running-app probe exited {out.returncode} (UNKNOWN), so {bundle.display_name} "
         f"cannot be ruled out as running; refusing to replace it: {(out.stderr or out.stdout).strip()}"
     )
 
 
-def _quit_installed(runner: Runner, machine: str, no_close: bool) -> None:
-    if not _app_running(runner, machine):
+def _quit_installed(runner: Runner, machine: str, no_close: bool, bundle: Bundle) -> None:
+    if not _app_running(runner, machine, bundle):
         return
     if no_close:
         print(
-            f"[ACTION] {machine}: QUIT {BUNDLE_DISPLAY_NAME} yourself now; waiting up to {NO_CLOSE_WAIT_S}s", flush=True
+            f"[ACTION] {machine}: QUIT {bundle.display_name} yourself now; waiting up to {NO_CLOSE_WAIT_S}s", flush=True
         )
         timeout = NO_CLOSE_WAIT_S
     else:
-        runner.shell(machine, QUIT_COMMAND, check=False)
+        runner.shell(machine, quit_command(bundle), check=False)
         timeout = QUIT_TIMEOUT_S
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _app_running(runner, machine):
+        if not _app_running(runner, machine, bundle):
             return
         time.sleep(1)
-    if _app_running(runner, machine):
+    if _app_running(runner, machine, bundle):
         raise ShipError(
-            f"{machine}: {BUNDLE_DISPLAY_NAME} is still running after {timeout}s; refusing to install over it or to signal it"
+            f"{machine}: {bundle.display_name} is still running after {timeout}s; refusing to install over it or to signal it"
         )
 
 
-def packed_asar_sha256() -> str:
+def packed_asar_sha256(bundle: Bundle) -> str:
     """The sha256 of the packed app.asar, whose shell stamp the build step
     already verified against the target; the installed copy must match it."""
-    asar = REPO_ROOT / PACKED_APP_REL / "Contents" / "Resources" / "app.asar"
+    asar = REPO_ROOT / bundle.packed_rel / "Contents" / "Resources" / "app.asar"
     digest = hashlib.sha256()
     with asar.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -968,8 +1110,10 @@ def installed_shell_command(installed: str) -> str:
     )
 
 
-def _read_back(runner: Runner, machine: str, script: InstallScript, target_sha: str, packed_asar: str) -> None:
-    installed = f"{APPLICATIONS}/{APP_NAME}"
+def _read_back(
+    runner: Runner, machine: str, script: InstallScript, target_sha: str, packed_asar: str, bundle: Bundle
+) -> None:
+    installed = bundle.installed
     shell = runner.shell(machine, script.shell_check, check=False)
     reasons = {
         90: "shasum is not on PATH",
@@ -995,11 +1139,11 @@ def _read_back(runner: Runner, machine: str, script: InstallScript, target_sha: 
         raise ShipError(
             f"{machine}: the installed manifest's git_sha_full is {sha!r}, not a sha; the install is UNVERIFIED"
         )
-    if sha != target_sha or plist_id.stdout.strip() != BUNDLE_ID:
+    if sha != target_sha or plist_id.stdout.strip() != bundle.bundle_id:
         raise ShipError(
-            f"{machine}: installed stamp {sha[:12]} / {plist_id.stdout.strip()!r} is not {target_sha[:12]} / {BUNDLE_ID}"
+            f"{machine}: installed stamp {sha[:12]} / {plist_id.stdout.strip()!r} is not {target_sha[:12]} / {bundle.bundle_id}"
         )
-    print(f"[OK] {machine}: {installed} at {sha[:12]}, {BUNDLE_ID}")
+    print(f"[OK] {machine}: {installed} at {sha[:12]}, {bundle.bundle_id}")
 
 
 # ----- post-install (acceptance, relaunch, health) -----------------------
@@ -1011,7 +1155,7 @@ def post_install_steps(
     """ship_dmg.sh's order: per machine the acceptance (app still closed) then
     the relaunch; then the health phase on every machine. No step raises on a
     failed check: it records into `outcome`, and main exits 1 at the end."""
-    installed = f"{APPLICATIONS}/{APP_NAME}"
+    installed = opts.bundle.installed
     steps: list[Step] = []
     for machine in opts.machines:
         on = "" if machine == opts.local else f"ssh {' '.join(SSH_OPTS)} {MACHINES[machine]} "
@@ -1121,8 +1265,13 @@ def print_plan(steps: Sequence[Step], opts: Options, target_sha: str) -> None:
     print(f"[PLAN] shell: electron, {signing}, target {target_sha}")
     print(f"[PLAN] this machine: {opts.local}; install targets: {', '.join(opts.machines)}")
     print(
-        f"[PLAN] installs only {APPLICATIONS}/{APP_NAME}, replacing whichever shell built it; no other Open DJ bundle is quit or deleted"
+        f"[PLAN] installs only {opts.bundle.installed}, replacing whichever shell built it; no other Open DJ bundle is quit or deleted"
     )
+    if opts.bundle.lane is not None:
+        print(
+            f"[PLAN] lane {opts.bundle.lane}: bundle id and data dir identifier {opts.bundle.bundle_id}; "
+            f"{APPLICATIONS}/{APP_NAME} and its library are not touched"
+        )
     for number, step in enumerate(steps, 1):
         print(f"[PLAN] {number}. {step.title}")
         for command in step.commands:
@@ -1184,13 +1333,13 @@ def main(argv: Sequence[str] | None = None, env: dict | None = None) -> int:
         for reason in failures:
             print(f"[ERROR] {reason}", file=sys.stderr)
         print(
-            f"[ERROR] {APP_NAME} is installed on {', '.join(opts.machines)} at {target_sha[:12]} but NOT shipped. "
+            f"[ERROR] {opts.bundle.app_name} is installed on {', '.join(opts.machines)} at {target_sha[:12]} but NOT shipped. "
             f"Acceptance: {accepted}. Results: {REPO_ROOT / 'ops' / 'logs'}/acceptance-*-{run_id}.json",
             file=sys.stderr,
         )
         return EXIT_FAILED
     print(
-        f"[DONE] {APP_NAME} installed, relaunched and healthy on {', '.join(opts.machines)} at {target_sha[:12]}, "
+        f"[DONE] {opts.bundle.app_name} installed, relaunched and healthy on {', '.join(opts.machines)} at {target_sha[:12]}, "
         f"{how}. Acceptance: {accepted}."
     )
     return 0

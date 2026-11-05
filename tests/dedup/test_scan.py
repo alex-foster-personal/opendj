@@ -2,6 +2,7 @@
 
 Uses the fake acoustid backend from conftest so fpcalc is not required.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,9 +20,7 @@ from tests.dedup.phase7_support import PHASE7_DEDUP_AUDIO_COUNT, patch_chromapri
 @pytest.mark.requirement("META-03")
 def test_smoke_fixtures(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = tmp_path / "cache.sqlite"
-    out = scan_mod.run_scan(
-        roots=[tmp_fixture_tree], db_path=db, force_recompute=False
-    )
+    out = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db, force_recompute=False)
     assert out.scanned == PHASE7_DEDUP_AUDIO_COUNT
     assert out.computed == PHASE7_DEDUP_AUDIO_COUNT
     assert out.cache_hits == 0
@@ -34,9 +33,7 @@ def test_smoke_fixtures(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None
 
 
 @pytest.mark.requirement("META-03")
-def test_incremental_rerun_is_cache_hits(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid
-) -> None:
+def test_incremental_rerun_is_cache_hits(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = tmp_path / "cache.sqlite"
     first = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db)
     assert first.computed == PHASE7_DEDUP_AUDIO_COUNT
@@ -48,14 +45,10 @@ def test_incremental_rerun_is_cache_hits(
 
 
 @pytest.mark.requirement("META-03")
-def test_force_recompute_hits_every_file(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid
-) -> None:
+def test_force_recompute_hits_every_file(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None:
     db = tmp_path / "cache.sqlite"
     _ = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db)
-    forced = scan_mod.run_scan(
-        roots=[tmp_fixture_tree], db_path=db, force_recompute=True
-    )
+    forced = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db, force_recompute=True)
     assert forced.computed == PHASE7_DEDUP_AUDIO_COUNT
     assert forced.cache_hits == 0
 
@@ -64,9 +57,7 @@ def test_force_recompute_hits_every_file(
 
 
 @pytest.mark.requirement("META-03")
-def test_chromaprint_missing_raises(
-    tmp_path: Path, tmp_fixture_tree, monkeypatch
-) -> None:
+def test_chromaprint_missing_raises(tmp_path: Path, tmp_fixture_tree, monkeypatch) -> None:
     """With no engine build and no fpcalc, scan raises ChromaprintMissing immediately."""
     patch_chromaprint_backend_missing(monkeypatch)
 
@@ -79,9 +70,7 @@ def test_chromaprint_missing_raises(
 
 
 @pytest.mark.requirement("META-03")
-def test_cli_quiet(
-    tmp_path: Path, tmp_fixture_tree, fake_acoustid, capsys
-) -> None:
+def test_cli_quiet(tmp_path: Path, tmp_fixture_tree, fake_acoustid, capsys) -> None:
     rc = scan_mod.main(
         [
             "--root",
@@ -97,12 +86,8 @@ def test_cli_quiet(
 
 
 @pytest.mark.requirement("META-03")
-def test_cli_chromaprint_missing_exit_2(
-    tmp_path: Path, tmp_fixture_tree, monkeypatch, capsys
-) -> None:
+def test_cli_chromaprint_missing_exit_2(tmp_path: Path, tmp_fixture_tree, monkeypatch, capsys) -> None:
     patch_chromaprint_backend_missing(monkeypatch)
 
-    rc = scan_mod.main(
-        ["--root", str(tmp_fixture_tree), "--db", str(tmp_path / "cli.sqlite"), "--quiet"]
-    )
+    rc = scan_mod.main(["--root", str(tmp_fixture_tree), "--db", str(tmp_path / "cli.sqlite"), "--quiet"])
     assert rc == 2

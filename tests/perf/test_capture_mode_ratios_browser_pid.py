@@ -59,8 +59,7 @@ _PYTHON = getattr(sys, "_base_executable", None) or sys.executable
 _SLEEPER = [_PYTHON, "-c", "import time; time.sleep(30)"]
 
 _DESCENDANT_PREFIX = (
-    "import subprocess as _sp\n"
-    f"_sp.Popen({_SLEEPER!r}, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+    f"import subprocess as _sp\n_sp.Popen({_SLEEPER!r}, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
 )
 
 
@@ -172,9 +171,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     `test_sample_excludes_the_root_launcher_pid_from_the_browser_only_kpi`
     guards at the unit level).
     """
-    child = _spawn_with_descendant(
-        _GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]'
-    )
+    child = _spawn_with_descendant(_GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]')
     engine = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         native = _RecordingNative(DarwinProcessMetrics())

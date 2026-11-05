@@ -47,9 +47,7 @@ from tests.scripts.test_lock_metadata_types import (
     ],
     ids=["no-name", "no-source", "name-integer"],
 )
-def test_a_malformed_lock_package_beside_the_root_is_unknown(
-    tmp_path: Path, appended: str, named: str
-) -> None:
+def test_a_malformed_lock_package_beside_the_root_is_unknown(tmp_path: Path, appended: str, named: str) -> None:
     """A `[[package]]` without `name` or `source` is "missing field", `uv lock --check`
     exit 2 (measured uv 0.8.17, Codex P2 on #3763, round 33); the root filter had
     dropped it and reported the pair clean. A record without `version` is the control:
@@ -58,9 +56,7 @@ def test_a_malformed_lock_package_beside_the_root_is_unknown(
     got, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
     assert got == EXIT_UNKNOWN, message
     assert named in message
-    control = UNMARKED_LOCK + (
-        '\n[[package]]\nname = "ghost"\nsource = { registry = "https://pypi.org/simple" }\n'
-    )
+    control = UNMARKED_LOCK + ('\n[[package]]\nname = "ghost"\nsource = { registry = "https://pypi.org/simple" }\n')
     got, message = _run(tmp_path, UNMARKED_PYPROJECT, control)
     assert got == EXIT_OK, message
 
@@ -79,9 +75,7 @@ def test_a_malformed_specifier_on_a_path_source_is_unknown(tmp_path: Path, spec:
     code, message = _run(tmp_path, bad, MINI_LOCK)
     assert code == EXIT_UNKNOWN, message
     assert "UNKNOWN" in message
-    good = MINI_PYPROJECT.replace(
-        'dependencies = ["localdep"]', 'dependencies = ["localdep>=1"]', 1
-    )
+    good = MINI_PYPROJECT.replace('dependencies = ["localdep"]', 'dependencies = ["localdep>=1"]', 1)
     code, message = _run(tmp_path, good, MINI_LOCK)
     assert code == EXIT_OK, message
 
@@ -154,9 +148,7 @@ def test_a_lock_dependency_record_that_uv_cannot_read_is_unknown(tmp_path: Path,
         "marker-int",
     ],
 )
-def test_an_undeclared_source_entry_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, entry: str
-) -> None:
+def test_an_undeclared_source_entry_that_uv_cannot_read_is_unknown(tmp_path: Path, entry: str) -> None:
     """A `[tool.uv.sources]` entry no requirement names is still parsed by uv: each shape
     is "Failed to parse: `pyproject.toml`", `uv lock --check` exit 2 (measured uv
     0.8.17, Codex P2 on #3763, round 37), while the gate read only the entries a
@@ -186,9 +178,7 @@ def test_an_undeclared_source_entry_that_uv_cannot_read_is_unknown(
     ],
     ids=["float", "integer"],
 )
-def test_a_non_root_package_version_that_is_not_a_string_is_unknown(
-    tmp_path: Path, version: str, named: str
-) -> None:
+def test_a_non_root_package_version_that_is_not_a_string_is_unknown(tmp_path: Path, version: str, named: str) -> None:
     """`version = 0.0` on the registry package six is "invalid type: floating point
     `0.0`, expected a string", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2
     on #3763, round 35); the record check read only `name` and `source`, and
@@ -260,9 +250,7 @@ def test_a_lock_package_container_that_is_not_a_list_is_unknown(tmp_path: Path) 
     ],
     ids=["string", "empty", "registry-integer", "unknown-key", "extra-key-beside-valid"],
 )
-def test_a_non_root_package_source_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, source: str, code: int
-) -> None:
+def test_a_non_root_package_source_that_uv_cannot_read_is_unknown(tmp_path: Path, source: str, code: int) -> None:
     """Measured uv 0.8.17 (Codex P2 on #3763, round 34) on six's registry source:
     `"bad"`, `{}`, `{ registry = 1 }` and `{ bogus = "x" }` are "did not match any
     variant of untagged enum SourceWire" (exit 2); a stray key beside the registry is
@@ -345,9 +333,7 @@ SIX_RECORD = 'requires-dist = [{ name = "six" }]'
         "marker-bad",
     ],
 )
-def test_a_recorded_requirement_field_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, field: str
-) -> None:
+def test_a_recorded_requirement_field_that_uv_cannot_read_is_unknown(tmp_path: Path, field: str) -> None:
     """Each is "Failed to parse `uv.lock`", exit 2 on a registry requirement (measured
     uv 0.8.17, Codex P2 on #3763, round 38): the lock's specifier gets no trailing-comma
     allowance, and `marker = ""` had read as no marker. Control: `specifier = ""` is
@@ -357,9 +343,7 @@ def test_a_recorded_requirement_field_that_uv_cannot_read_is_unknown(
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, lock)
     assert code == EXIT_UNKNOWN, message
     assert "requires-dist 'six'" in message or "empty specifier clause" in message
-    control = UNMARKED_LOCK.replace(
-        SIX_RECORD, SIX_RECORD.replace('"six"', '"six", specifier = ""')
-    )
+    control = UNMARKED_LOCK.replace(SIX_RECORD, SIX_RECORD.replace('"six"', '"six", specifier = ""'))
     code, message = _run(tmp_path, UNMARKED_PYPROJECT, control)
     assert code == EXIT_OK, message
 
@@ -403,10 +387,7 @@ SDIST = (
     'sdist = { url = "https://files.example/six-1.17.0.tar.gz", hash = "sha256:ff70", '
     'size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }'
 )
-WHEEL = (
-    f'{{ url = "{WHEEL_URL}", hash = "sha256:4721", '
-    'size = 11050, upload-time = "2024-12-04T17:35:26.475Z" }'
-)
+WHEEL = f'{{ url = "{WHEEL_URL}", hash = "sha256:4721", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" }}'
 WHEELS = WHEELS.replace("{WHEEL}", WHEEL)
 ARTIFACTS = f"{SDIST}\n{WHEELS}\n"
 
@@ -474,9 +455,7 @@ ARTIFACTS = f"{SDIST}\n{WHEELS}\n"
         "wheel-upload-time-int",
     ],
 )
-def test_a_package_artifact_record_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, edit, named: str
-) -> None:
+def test_a_package_artifact_record_that_uv_cannot_read_is_unknown(tmp_path: Path, edit, named: str) -> None:
     """Each shape is "Failed to parse `uv.lock`", `uv lock --check` exit 2 (measured uv
     0.8.17, Codex P2 on #3763, round 38: `SourceDistWire` / `WheelWire` did not match),
     while the record loop typed only name, source, version and dependencies."""
@@ -544,9 +523,7 @@ SIX_HEAD = 'name = "six"\nversion = "1.17.0"\nsource = { registry = "https://pyp
 
 @pytest.mark.parametrize("site", ["lock", "package"])
 @pytest.mark.parametrize("value", ["[true]", "{}", '["bad"]', '[""]', "[1]", "\"os_name == 'x'\""])
-def test_a_resolution_marker_that_uv_cannot_read_is_unknown(
-    tmp_path: Path, site: str, value: str
-) -> None:
+def test_a_resolution_marker_that_uv_cannot_read_is_unknown(tmp_path: Path, site: str, value: str) -> None:
     """`resolution-markers` of each shape, on the lock or on a package, is "Failed to
     parse `uv.lock`", `uv lock --check` exit 2 (measured uv 0.8.17, Codex P2 on #3763,
     round 39), while `lock_schema` had read only `version`. Controls: `[]` on either,
@@ -569,9 +546,7 @@ def test_a_resolution_marker_that_uv_cannot_read_is_unknown(
     ("first", "second"),
     [("foo_bar", "foo-bar"), ('"Foo.Bar"', "foo_bar"), ("localdep", "LocalDep")],
 )
-def test_source_names_that_collide_after_normalization_are_unknown(
-    tmp_path: Path, first: str, second: str
-) -> None:
+def test_source_names_that_collide_after_normalization_are_unknown(tmp_path: Path, first: str, second: str) -> None:
     """`foo_bar = ...` beside `foo-bar = ...` in `[tool.uv.sources]`, declared or not,
     is "duplicate sources for package", "Failed to parse: `pyproject.toml`", exit 2
     (measured uv 0.8.17, Codex P2 on #3763, round 39), while the normalized lookup had

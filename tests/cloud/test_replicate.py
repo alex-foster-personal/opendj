@@ -3,6 +3,7 @@
 Uses a :class:`FakeSubprocess` to stand in for the ``litestream`` binary.
 No network I/O; everything runs against FakeS3Client.
 """
+
 from __future__ import annotations
 
 import threading
@@ -30,9 +31,7 @@ def _wait_for_signal(signal: threading.Event, thread: threading.Thread, what: st
     started = time.monotonic()
     while not signal.wait(timeout=LIVENESS_CHECK_S):
         if not thread.is_alive():
-            raise AssertionError(
-                f"WRONG OUTCOME: the replicator thread exited before {what}"
-            )
+            raise AssertionError(f"WRONG OUTCOME: the replicator thread exited before {what}")
         if time.monotonic() - started > THREAD_HANG_GUARD_S:
             raise AssertionError(f"HANG: never saw that {what} within {THREAD_HANG_GUARD_S}s")
 
@@ -40,9 +39,7 @@ def _wait_for_signal(signal: threading.Event, thread: threading.Thread, what: st
 def _join_after_stop(thread: threading.Thread) -> None:
     """Join the replicator thread; a thread still alive is a HANG, not slowness."""
     thread.join(timeout=THREAD_HANG_GUARD_S)
-    assert not thread.is_alive(), (
-        f"HANG: the replicator thread was still alive {THREAD_HANG_GUARD_S}s after stop"
-    )
+    assert not thread.is_alive(), f"HANG: the replicator thread was still alive {THREAD_HANG_GUARD_S}s after stop"
 
 
 class SignallingS3(FakeS3Client):
@@ -52,9 +49,7 @@ class SignallingS3(FakeS3Client):
         super().__init__()
         self.lock_acquired = threading.Event()
 
-    def put_object_if_none_match(
-        self, bucket: str, key: str, body: bytes
-    ) -> tuple[bool, str | None]:
+    def put_object_if_none_match(self, bucket: str, key: str, body: bytes) -> tuple[bool, str | None]:
         created, etag = super().put_object_if_none_match(bucket, key, body)
         if created and key == "LOCK.json":
             self.lock_acquired.set()
@@ -259,10 +254,7 @@ def test_cloud_lock_released_only_after_litestream_exit():
             with self._mutex:
                 if self.returncode is not None:
                     return self.returncode
-                if (
-                    self._terminate_at is not None
-                    and time.monotonic() - self._terminate_at >= self._exit_delay
-                ):
+                if self._terminate_at is not None and time.monotonic() - self._terminate_at >= self._exit_delay:
                     self.returncode = -15
                     proc_exit_time["t"] = time.monotonic()
                     return self.returncode

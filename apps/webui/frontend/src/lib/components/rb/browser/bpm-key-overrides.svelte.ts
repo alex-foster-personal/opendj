@@ -51,7 +51,11 @@ export function editedKey(stableId: string, fallback: string | null): string | n
 	return edited === undefined ? fallback : edited;
 }
 
-export async function commitBpmEdit(stableId: string, bpm: number, decks: CellEditDecks): Promise<void> {
+export async function commitBpmEdit(
+	stableId: string,
+	bpm: number,
+	decks: CellEditDecks
+): Promise<void> {
 	bpmEdits = { ...bpmEdits, [stableId]: bpm };
 	for (const deck of decks.ids) {
 		const state = decks.states[deck];
@@ -78,7 +82,11 @@ export async function commitBpmEdit(stableId: string, bpm: number, decks: CellEd
 	}
 }
 
-export async function commitKeyEdit(stableId: string, label: string, decks: CellEditDecks): Promise<void> {
+export async function commitKeyEdit(
+	stableId: string,
+	label: string,
+	decks: CellEditDecks
+): Promise<void> {
 	keyEdits = { ...keyEdits, [stableId]: label };
 	for (const deck of decks.ids) {
 		const state = decks.states[deck];
@@ -93,7 +101,8 @@ export async function commitKeyEdit(stableId: string, label: string, decks: Cell
 		const step: 1 | -1 = delta > 0 ? 1 : -1;
 		// The cell already shows the key. A refused nudge (toasted by the dispatcher) stops the rest.
 		for (let i = 0; i < Math.abs(delta); i++) {
-			if (!(await runPerformanceCommandFromUi({ type: 'key_nudge', deck, semitones: step })).ok) break;
+			if (!(await runPerformanceCommandFromUi({ type: 'key_nudge', deck, semitones: step })).ok)
+				break;
 		}
 	}
 }

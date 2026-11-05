@@ -61,28 +61,42 @@ async function _clickWithJitter(page: Page, knob: Locator, jitterPx: number): Pr
 	await page.mouse.up();
 }
 
-test('a single click steps MIX by exactly one third, after the double-click window', async ({ page }) => {
+test('a single click steps MIX by exactly one third, after the double-click window', async ({
+	page
+}) => {
 	const knob = await _openMixKnob(page);
 	const before = await _mixValue(knob);
 	await knob.click();
 	await page.waitForTimeout(INSIDE_SINGLE_CLICK_MS);
-	expect(await _mixValue(knob), 'the step fired before a double-click could cancel it').toBeCloseTo(before, 6);
-	await expect.poll(async () => Math.abs((await _mixValue(knob)) - before), { timeout: 5_000 }).toBeCloseTo(THIRD, 6);
+	expect(await _mixValue(knob), 'the step fired before a double-click could cancel it').toBeCloseTo(
+		before,
+		6
+	);
+	await expect
+		.poll(async () => Math.abs((await _mixValue(knob)) - before), { timeout: 5_000 })
+		.toBeCloseTo(THIRD, 6);
 });
 
-test('a double-click resets MIX to 0 and no delayed single-click step follows', async ({ page }) => {
+test('a double-click resets MIX to 0 and no delayed single-click step follows', async ({
+	page
+}) => {
 	const knob = await _openMixKnob(page);
 	// Move off 0 first, so a stray one-third step after the reset is visible.
 	await knob.click();
 	await expect.poll(async () => _mixValue(knob), { timeout: 5_000 }).not.toBeCloseTo(0, 6);
 	await knob.dblclick();
 	await page.waitForTimeout(PAST_SINGLE_CLICK_MS);
-	expect(await _mixValue(knob), 'a double-click let a delayed single-click step through').toBeCloseTo(0, 6);
+	expect(
+		await _mixValue(knob),
+		'a double-click let a delayed single-click step through'
+	).toBeCloseTo(0, 6);
 });
 
 test('a click with 2 px of pointer jitter still steps MIX', async ({ page }) => {
 	const knob = await _openMixKnob(page);
 	const before = await _mixValue(knob);
 	await _clickWithJitter(page, knob, 2);
-	await expect.poll(async () => Math.abs((await _mixValue(knob)) - before), { timeout: 5_000 }).toBeCloseTo(THIRD, 6);
+	await expect
+		.poll(async () => Math.abs((await _mixValue(knob)) - before), { timeout: 5_000 })
+		.toBeCloseTo(THIRD, 6);
 });

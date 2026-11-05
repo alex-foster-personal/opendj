@@ -116,7 +116,7 @@ _require_command() {
 _validate_arguments() {
     local capture_path capture_sha capture_dir capture_absolute capture_command_dir capture_command_absolute capture_repo capture_relative expected_blob actual_blob
     case "${KIND}" in
-        cpu|memory|disk|memory-notify) ;;
+        cpu | memory | disk | memory-notify) ;;
         *) _die_usage "--kind must be cpu, memory, disk, or memory-notify" ;;
     esac
     _is_positive_integer "${DURATION_SECONDS}" && [ "${DURATION_SECONDS}" -ge 2 ] || _die_usage "--duration must be at least 2 seconds"
@@ -144,10 +144,13 @@ _validate_arguments() {
     CAPTURE_BLOB="${expected_blob}"
     [ -n "${OUTPUT_PATH}" ] || _die_usage "--output is required"
     [ -d "$(dirname "${OUTPUT_PATH}")" ] || _die_usage "output parent does not exist: $(dirname "${OUTPUT_PATH}")"
-    [ -x "${PYTHON_BIN}" ] || { _error "python interpreter is not executable: ${PYTHON_BIN}"; exit "${EXIT_UNAVAILABLE}"; }
+    [ -x "${PYTHON_BIN}" ] || {
+        _error "python interpreter is not executable: ${PYTHON_BIN}"
+        exit "${EXIT_UNAVAILABLE}"
+    }
     case "${KIND}" in
         cpu) _is_positive_integer "${LEVEL}" && [ "${LEVEL}" -le 100 ] || _die_usage "cpu --level must be 1 through 100" ;;
-        memory|disk) [[ "${LEVEL}" =~ ^[1-9][0-9]*[KMGTP]?$ ]] || _die_usage "${KIND} --level must be a positive size such as 2G" ;;
+        memory | disk) [[ "${LEVEL}" =~ ^[1-9][0-9]*[KMGTP]?$ ]] || _die_usage "${KIND} --level must be a positive size such as 2G" ;;
         memory-notify) [ "${LEVEL}" = warn ] || [ "${LEVEL}" = critical ] || _die_usage "memory-notify --level must be warn or critical" ;;
     esac
     if [ "${KIND}" != memory-notify ] && [ "${CONFIRM_REAL_PRESSURE}" -ne 1 ]; then
@@ -393,16 +396,46 @@ _write_report() {
 _main() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --kind) KIND="${2:-}"; shift 2 ;;
-            --level) LEVEL="${2:-}"; shift 2 ;;
-            --duration) DURATION_SECONDS="${2:-}"; shift 2 ;;
-            --capture-command) CAPTURE_COMMAND="${2:-}"; shift 2 ;;
-            --capture-implementation) CAPTURE_IMPLEMENTATION="${2:-}"; shift 2 ;;
-            --output) OUTPUT_PATH="${2:-}"; shift 2 ;;
-            --machine-tag) MACHINE_TAG="${2:-}"; shift 2 ;;
-            --library-scale-fixture) LIBRARY_SCALE_FIXTURE="${2:-}"; shift 2 ;;
-            --confirm-real-pressure) CONFIRM_REAL_PRESSURE=1; shift ;;
-            --help|-h) _usage; return 0 ;;
+            --kind)
+                KIND="${2:-}"
+                shift 2
+                ;;
+            --level)
+                LEVEL="${2:-}"
+                shift 2
+                ;;
+            --duration)
+                DURATION_SECONDS="${2:-}"
+                shift 2
+                ;;
+            --capture-command)
+                CAPTURE_COMMAND="${2:-}"
+                shift 2
+                ;;
+            --capture-implementation)
+                CAPTURE_IMPLEMENTATION="${2:-}"
+                shift 2
+                ;;
+            --output)
+                OUTPUT_PATH="${2:-}"
+                shift 2
+                ;;
+            --machine-tag)
+                MACHINE_TAG="${2:-}"
+                shift 2
+                ;;
+            --library-scale-fixture)
+                LIBRARY_SCALE_FIXTURE="${2:-}"
+                shift 2
+                ;;
+            --confirm-real-pressure)
+                CONFIRM_REAL_PRESSURE=1
+                shift
+                ;;
+            --help | -h)
+                _usage
+                return 0
+                ;;
             *) _die_usage "unknown argument: $1" ;;
         esac
     done

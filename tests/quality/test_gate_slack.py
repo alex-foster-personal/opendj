@@ -90,16 +90,12 @@ def test_exactly_at_allowance_plus_slack_passes(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If a PR lands one file over a 48 allowance with 1 slack then it passes."""
-    code, out = _run_gate(
-        capsys, monkeypatch, metric_value=_ALLOWANCE + _SLACK, slack={_KEY: _SLACK}
-    )
+    code, out = _run_gate(capsys, monkeypatch, metric_value=_ALLOWANCE + _SLACK, slack={_KEY: _SLACK})
     assert code == 0, (
-        "if a metric sits exactly at allowance + slack then the gate must pass, "
-        f"but it exited {code}\n{out}"
+        f"if a metric sits exactly at allowance + slack then the gate must pass, but it exited {code}\n{out}"
     )
     assert "WITHIN SLACK" in out, (
-        "a run that used its slack must say so out loud; a silent pass is how "
-        f"debt grows unwatched\n{out}"
+        f"a run that used its slack must say so out loud; a silent pass is how debt grows unwatched\n{out}"
     )
     assert "REGRESSION" not in out and "FAIL:" not in out
 
@@ -116,8 +112,7 @@ def test_one_past_allowance_plus_slack_fails(
         base_values={_KEY: _ALLOWANCE},
     )
     assert code == 1, (
-        "if a metric passes allowance + slack then the ceiling must fail the "
-        f"run, but it exited {code}\n{out}"
+        f"if a metric passes allowance + slack then the ceiling must fail the run, but it exited {code}\n{out}"
     )
     assert "FAIL: 1 metric(s) got worse." in out
     assert "WITHIN SLACK" not in out
@@ -133,9 +128,7 @@ def test_within_slack_prints_both_raw_numbers(
         "the WITHIN SLACK line must name the measured value, the recorded "
         f"allowance and the ceiling, so nothing is hidden behind a pass\n{out}"
     )
-    assert "used declared slack" in out, (
-        f"the verdict must attribute the pass to the slack band\n{out}"
-    )
+    assert "used declared slack" in out, f"the verdict must attribute the pass to the slack band\n{out}"
 
 
 def test_a_metric_without_slack_is_gated_at_its_bare_allowance(
@@ -150,8 +143,7 @@ def test_a_metric_without_slack_is_gated_at_its_bare_allowance(
         base_values={_KEY: _ALLOWANCE},
     )
     assert code == 1, (
-        "if a metric has no slack entry then one unit over its allowance must "
-        f"still fail, but it exited {code}\n{out}"
+        f"if a metric has no slack entry then one unit over its allowance must still fail, but it exited {code}\n{out}"
     )
     assert "REGRESSION" in out and "WITHIN SLACK" not in out
 
@@ -181,9 +173,7 @@ def test_slack_line_is_not_offered_as_a_ratchet() -> None:
 
 def test_equal_to_allowance_stays_silent_with_slack_declared() -> None:
     """Trunk sitting exactly at its allowance is held, never 'within slack'."""
-    regressions, ratchets, unknown, within = qg._compare(
-        [_m(_ALLOWANCE)], {_KEY: _ALLOWANCE}, {_KEY: _SLACK}
-    )
+    regressions, ratchets, unknown, within = qg._compare([_m(_ALLOWANCE)], {_KEY: _ALLOWANCE}, {_KEY: _SLACK})
     assert not (regressions or ratchets or unknown or within), (
         "trunk at its own allowance must report nothing at all, but the gate "
         f"said {regressions or ratchets or unknown or within}"
@@ -196,8 +186,7 @@ def test_trunk_at_its_allowance_is_never_red(
     """The state that jammed the board: measured == allowance must pass clean."""
     code, out = _run_gate(capsys, monkeypatch, metric_value=_ALLOWANCE, slack={_KEY: _SLACK})
     assert code == 0 and "PASS: nothing got worse." in out, (
-        "a tree exactly at its allowance must pass with nothing reported, but "
-        f"it exited {code}\n{out}"
+        f"a tree exactly at its allowance must pass with nothing reported, but it exited {code}\n{out}"
     )
 
 
@@ -260,9 +249,7 @@ def test_the_inherited_block_is_unchanged_without_slack() -> None:
 # ----- the band survives a ratchet-down ------------------------------------
 
 
-def test_update_baseline_carries_the_slack_block(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_update_baseline_carries_the_slack_block(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """If the baseline is rewritten then `slack` survives, like `burn_down`."""
     target = tmp_path / "baseline.json"
     target.write_text(
@@ -321,9 +308,7 @@ def test_update_baseline_never_raises_an_allowance_a_slack_run_floated_up(
     )
 
 
-def test_repeated_updates_cannot_walk_the_ceiling_upward(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_repeated_updates_cannot_walk_the_ceiling_upward(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Three passing within-slack runs in a row leave the allowance where it was."""
     target = tmp_path / "baseline.json"
     target.write_text(
@@ -364,9 +349,7 @@ def test_update_baseline_still_lowers_an_improved_metric(
     monkeypatch.setattr(qg, "BASELINE", target)
     qg._write_baseline([_m(_ALLOWANCE - 3)])
     recorded = json.loads(target.read_text())["metrics"][_KEY]
-    assert recorded == _ALLOWANCE - 3, (
-        f"a burn-down must lower the allowance, but the file recorded {recorded}"
-    )
+    assert recorded == _ALLOWANCE - 3, f"a burn-down must lower the allowance, but the file recorded {recorded}"
     assert "ALLOWANCE KEPT" not in capsys.readouterr().out
 
 
@@ -390,9 +373,7 @@ def test_update_baseline_holds_a_metric_that_is_exactly_at_its_allowance(
     assert "ALLOWANCE KEPT" not in capsys.readouterr().out
 
 
-def test_update_baseline_will_not_bank_a_regression_either(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_update_baseline_will_not_bank_a_regression_either(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Past the ceiling, an update still keeps the old number rather than raising.
 
     A red run should not be launderable into a green one by re-recording the

@@ -51,16 +51,12 @@ def _poster_step() -> dict:
 
 
 def _workflow_names() -> set[str]:
-    return {
-        str(yaml.safe_load(path.read_text(encoding="utf-8"))["name"])
-        for path in WORKFLOWS.glob("*.y*ml")
-    }
+    return {str(yaml.safe_load(path.read_text(encoding="utf-8"))["name"]) for path in WORKFLOWS.glob("*.y*ml")}
 
 
 def test_the_per_completion_sink_workflow_is_gone() -> None:
     assert not (WORKFLOWS / "error-sink.yml").exists(), (
-        "the sink rides a scheduled batch pass; a workflow_run follower per completion "
-        "is the job this round removed"
+        "the sink rides a scheduled batch pass; a workflow_run follower per completion is the job this round removed"
     )
 
 

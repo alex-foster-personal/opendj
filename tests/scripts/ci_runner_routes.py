@@ -197,6 +197,8 @@ MAIN_RESERVED_JOBS = {
     "quality": MAIN_QUALITY_RUNS_ON,
     # Wed 4 Nov 2026 (ADR-NEW-import-contracts-gate-on-pull-requests): the ci gate's route.
     "import-contracts": MAIN_LIGHT_RUNS_ON,
+    # Thu 5 Nov 2026 (ADR-NEW-bundle-budget-pr-delta): the nightly rebaseline issue job.
+    "bundle-rebaseline-issue": MAIN_LIGHT_RUNS_ON,
 }
 #: Every ci.yml job and the exact route it carries since the repair reserve widened to all.
 REPAIR_ROUTED_JOBS = MAIN_RESERVED_JOBS | {"fast": FAST_RUNS_ON}

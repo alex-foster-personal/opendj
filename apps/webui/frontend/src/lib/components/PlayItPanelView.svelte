@@ -42,7 +42,9 @@
 		undo: () => unknown;
 	} = $props();
 
-	const summary = $derived(result ? summarizeReorder(result.previous_order, result.proposed_order) : null);
+	const summary = $derived(
+		result ? summarizeReorder(result.previous_order, result.proposed_order) : null
+	);
 
 	function trackLabel(track: PlaylistTrack): string {
 		const title = track.title ?? track.stable_id;
@@ -59,7 +61,12 @@
 
 <section class="play-it">
 	<h3>PLAY IT</h3>
-	<form onsubmit={(e) => { e.preventDefault(); solve(); }}>
+	<form
+		onsubmit={(e) => {
+			e.preventDefault();
+			solve();
+		}}
+	>
 		<label>
 			Duration (min)
 			<input type="number" min="30" max="240" bind:value={durationMin} />
@@ -146,7 +153,9 @@
 				{/each}
 			</ol>
 			{#if result.constraints_unmet.length > 0}
-				<p class="warn">{result.constraints_unmet.length} constraint(s) could not be fully satisfied.</p>
+				<p class="warn">
+					{result.constraints_unmet.length} constraint(s) could not be fully satisfied.
+				</p>
 			{/if}
 			<button onclick={apply} disabled={applying || applied !== null}>
 				{applying ? 'Applying...' : 'Apply order'}

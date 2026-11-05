@@ -16,6 +16,7 @@ to catch. The run here is the real producer over real audio.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import math
@@ -76,8 +77,7 @@ def _seed_track(conn: Any, stable_id: str) -> None:
     the state layer does not know about.
     """
     conn.execute(
-        "INSERT OR IGNORE INTO tracks (stable_id, stable_id_tier, created_at, "
-        "updated_at) VALUES (?, 'inferred', ?, ?)",
+        "INSERT OR IGNORE INTO tracks (stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'inferred', ?, ?)",
         (stable_id, STAMP, STAMP),
     )
     conn.commit()
@@ -101,21 +101,16 @@ def _count(conn: Any, table: str) -> int:
 
 def _own_key_rows(conn: Any) -> list[tuple[str, str]]:
     """Every `track_fields` row (field, source) the OWN path could have written."""
-    return list(
-        conn.execute(
-            "SELECT field_name, source FROM track_fields WHERE field_name = 'key'"
-        ).fetchall()
-    )
+    return list(conn.execute("SELECT field_name, source FROM track_fields WHERE field_name = 'key'").fetchall())
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the delta
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.requires_canonical_decode
-def test_a_key_backfill_run_writes_no_track_fields_and_no_history(
-    tmp_path: Path, state_db: Path
-) -> None:
+def test_a_key_backfill_run_writes_no_track_fields_and_no_history(tmp_path: Path, state_db: Path) -> None:
     stable_id = "t-delta"
     audio = tmp_path / "a-minor.wav"
     _write_a_minor_wav(audio)
@@ -163,14 +158,13 @@ def test_a_promotion_writes_no_track_fields_either(tmp_path: Path, state_db: Pat
         conn.close()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the two readers agree
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 @pytest.mark.requires_canonical_decode
-def test_the_track_list_and_the_smartlist_column_agree_on_the_effective_key(
-    tmp_path: Path, state_db: Path
-) -> None:
+def test_the_track_list_and_the_smartlist_column_agree_on_the_effective_key(tmp_path: Path, state_db: Path) -> None:
     stable_id = "t-readers"
     audio = tmp_path / "a-minor.wav"
     _write_a_minor_wav(audio)
@@ -183,18 +177,14 @@ def test_the_track_list_and_the_smartlist_column_agree_on_the_effective_key(
         upsert_record(record, conn=conn)
 
         # Reader 1: the row fetch every track-list caller uses.
-        fetched = selection.effective_fields(
-            conn, [stable_id], selection.Selection.resolve(conn)
-        )[stable_id]["key"].value
+        fetched = selection.effective_fields(conn, [stable_id], selection.Selection.resolve(conn))[stable_id][
+            "key"
+        ].value
 
         # Reader 2: the SQL the smartlist evaluator builds, over the same
         # tracks table. Not a re-implementation: the same function.
-        column = selection.field_column_sql(
-            "key", selection.Selection.resolve(conn)
-        )
-        queried = conn.execute(
-            f"SELECT {column} FROM tracks WHERE stable_id = ?", (stable_id,)
-        ).fetchone()[0]
+        column = selection.field_column_sql("key", selection.Selection.resolve(conn))
+        queried = conn.execute(f"SELECT {column} FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()[0]
 
         assert fetched is not None
         assert queried == fetched

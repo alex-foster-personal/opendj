@@ -80,8 +80,10 @@ def _keep_oldest(owner: str, repo: str, found: list[dict]) -> dict | None:
     """Two racing runs can each create one: keep the oldest, close the rest as duplicates."""
     for dup in found[1:]:
         if dup.get("state") == "open":
-            _gh(["api", f"repos/{owner}/{repo}/issues/{dup['number']}", "--method", "PATCH", "--input", "-"],
-                {"state": "closed", "state_reason": "duplicate"})
+            _gh(
+                ["api", f"repos/{owner}/{repo}/issues/{dup['number']}", "--method", "PATCH", "--input", "-"],
+                {"state": "closed", "state_reason": "duplicate"},
+            )
     return found[0] if found else None
 
 

@@ -7,7 +7,9 @@ import { buildFlags } from '$lib/api/store-build.svelte';
 
 export const REACT_DECK_FLAG_ID = 'ui.react.deck';
 
-export function reactDeckEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
+export function reactDeckEnabledIn(
+	flags: readonly { flag_id: string; enabled: boolean }[]
+): boolean {
 	return flags.find((flag) => flag.flag_id === REACT_DECK_FLAG_ID)?.enabled === true;
 }
 

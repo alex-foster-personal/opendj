@@ -57,9 +57,7 @@ def test_put_rejects_invalid_app_posture(prefs_client: TestClient, bad) -> None:
 
 
 @pytest.mark.requirement("PERFMODE-03")
-def test_old_blob_without_app_posture_defaults_prep(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_old_blob_without_app_posture_defaults_prep(prefs_client: TestClient, tmp_path: Path) -> None:
     """[if] an old blob lacks app_posture [then] GET still reports prep, [else stop]."""
     prefs = tmp_path / "data" / "state" / "ui-prefs.json"
     prefs.write_text(json.dumps({"theme": "dark"}) + "\n", encoding="utf-8")

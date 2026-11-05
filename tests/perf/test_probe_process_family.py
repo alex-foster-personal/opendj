@@ -81,9 +81,7 @@ def test_one_shell_still_finds_its_own_webkit_cluster() -> None:
     gpu = _gpu(301)
     native = _native({100: 0.0, 300: 3.0, 301: 4.0})
 
-    family, association = associate_process_family(
-        [shell, webcontent, gpu], shell, native
-    )
+    family, association = associate_process_family([shell, webcontent, gpu], shell, native)
 
     assert association["webkit_cluster_found"] is True
     assert association["webkit_cluster_ambiguous"] is False
@@ -179,9 +177,7 @@ def test_a_second_unrelated_webkit_cluster_in_window_is_refused() -> None:
     own_webcontent = _webcontent(301)
     native = _native({100: 0.0, 300: 1.0, 301: 10.0})
 
-    family, association = associate_process_family(
-        [shell, unrelated_webcontent, own_webcontent], shell, native
-    )
+    family, association = associate_process_family([shell, unrelated_webcontent, own_webcontent], shell, native)
 
     assert association["webkit_cluster_found"] is False
     assert association["webkit_cluster_ambiguous"] is True
@@ -190,7 +186,7 @@ def test_a_second_unrelated_webkit_cluster_in_window_is_refused() -> None:
 
 def test_two_webcontents_inside_the_cluster_window_are_kept_not_refused() -> None:
     """Fresh evidence against an earlier fix here: the locked production
-    capture at tests/fixtures/perf/MANIFEST.json ("probe-samples.jsonl") shows
+    capture at (private path) ("probe-samples.jsonl") shows
     one real Open DJ family legitimately holding two `webkit-webcontent` PIDs
     at once, both inside the 3s cluster window. A prior guard treated a second
     in-window WebContent as proof of an unrelated app -- "one WKWebView" does
@@ -203,9 +199,7 @@ def test_two_webcontents_inside_the_cluster_window_are_kept_not_refused() -> Non
     second_webcontent = _webcontent(301)
     native = _native({100: 0.0, 300: 10.0, 301: 12.0})
 
-    family, association = associate_process_family(
-        [shell, first_webcontent, second_webcontent], shell, native
-    )
+    family, association = associate_process_family([shell, first_webcontent, second_webcontent], shell, native)
 
     assert association["webkit_cluster_found"] is True
     assert association["webkit_cluster_ambiguous"] is False
@@ -215,15 +209,9 @@ def test_two_webcontents_inside_the_cluster_window_are_kept_not_refused() -> Non
 @pytest.mark.requirement("PERFMODE-05")
 def test_opendj_process_name_uses_the_setproctitle_token() -> None:
     """[if] a command line carries a setproctitle --name [then] name parser returns, [else stop]."""
-    assert (
-        opendj_process_name("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3]")
-        == "opendj-engine"
-    )
+    assert opendj_process_name("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3]") == "opendj-engine"
     assert opendj_process_name("opendj-worker --name opendj-worker [...]") == "opendj-worker"
-    assert (
-        opendj_process_name("opendj-backend --name opendj-backend --port 8787 [...]")
-        == "opendj-backend"
-    )
+    assert opendj_process_name("opendj-backend --name opendj-backend --port 8787 [...]") == "opendj-backend"
 
 
 @pytest.mark.requirement("PERFMODE-05")

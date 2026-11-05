@@ -44,10 +44,12 @@ function arg(name, fallback = null) {
 }
 const APP_URL = arg('url');
 const CHANNEL = arg('channel', 'chromium');
-if (APP_URL === null) throw new Error('--url <frontend dev server origin on 127.0.0.1> is required');
+if (APP_URL === null)
+	throw new Error('--url <frontend dev server origin on 127.0.0.1> is required');
 const ORIGIN_B = new URL(APP_URL).origin;
 const ORIGIN_A = ORIGIN_B.replace('127.0.0.1', 'localhost');
-if (ORIGIN_A === ORIGIN_B) throw new Error('--url must use 127.0.0.1 so localhost can serve as the other origin');
+if (ORIGIN_A === ORIGIN_B)
+	throw new Error('--url must use 127.0.0.1 so localhost can serve as the other origin');
 const EXIT_CODE = { PASS: 0, FAIL: 1, UNAVAILABLE: 2 };
 const RESTORE_WAIT_MS = 30_000;
 /** Labels the enumeration policy would auto-pin as master on its own
@@ -59,7 +61,9 @@ async function openPerformance(context, origin, pageErrors) {
 	const page = await context.newPage();
 	page.on('pageerror', (error) => pageErrors.push(`${origin}: ${String(error)}`));
 	await page.goto(`${origin}/performance`);
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, null, { timeout: 60_000 });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, null, {
+		timeout: 60_000
+	});
 	return page;
 }
 
@@ -76,7 +80,8 @@ const newestSnapshotAt = (page) =>
  * is always closed first. */
 async function probe(browser) {
 	const context = await browser.newContext();
-	for (const origin of [ORIGIN_A, ORIGIN_B]) await context.grantPermissions(['microphone'], { origin });
+	for (const origin of [ORIGIN_A, ORIGIN_B])
+		await context.grantPermissions(['microphone'], { origin });
 	const pageErrors = [];
 
 	// Launch 1, origin A: pick an output the app would not pick by itself.
@@ -86,9 +91,12 @@ async function probe(browser) {
 		prefs.setAppPosture('gig');
 		await window.musicDjToolsPerformance.dispatch({ type: 'headphone_outputs_refresh' });
 	});
-	const stateA = await pageA.evaluate(() => window.musicDjToolsPerformance.query().mixer.headphones);
+	const stateA = await pageA.evaluate(
+		() => window.musicDjToolsPerformance.query().mixer.headphones
+	);
 	const labelCounts = new Map();
-	for (const output of stateA.outputs) labelCounts.set(output.label, (labelCounts.get(output.label) ?? 0) + 1);
+	for (const output of stateA.outputs)
+		labelCounts.set(output.label, (labelCounts.get(output.label) ?? 0) + 1);
 	const chosen = stateA.outputs.find(
 		(output) =>
 			!['default', 'communications'].includes(output.id) &&
@@ -100,13 +108,15 @@ async function probe(browser) {
 	if (chosen === undefined) {
 		return {
 			verdict: 'UNAVAILABLE',
-			reason: 'no real output with a unique visible label that the auto-pin policy would not choose anyway',
+			reason:
+				'no real output with a unique visible label that the auto-pin policy would not choose anyway',
 			outputs: stateA.outputs.map((output) => output.label)
 		};
 	}
 	const ringBefore = await newestSnapshotAt(pageA);
 	await pageA.evaluate(
-		(id) => window.musicDjToolsPerformance.dispatch({ type: 'headphone_master_select', device_id: id }),
+		(id) =>
+			window.musicDjToolsPerformance.dispatch({ type: 'headphone_master_select', device_id: id }),
 		chosen.id
 	);
 	await pageA.waitForTimeout(1_000);
@@ -115,13 +125,20 @@ async function probe(browser) {
 
 	// Launch 2, origin B: the page's own boot restore reads the ring back.
 	const pageB = await openPerformance(context, ORIGIN_B, pageErrors);
-	await pageB.evaluate(() => window.musicDjToolsPerformance.dispatch({ type: 'headphone_outputs_refresh' }));
-	const outputsB = await pageB.evaluate(() => window.musicDjToolsPerformance.query().mixer.headphones.outputs);
+	await pageB.evaluate(() =>
+		window.musicDjToolsPerformance.dispatch({ type: 'headphone_outputs_refresh' })
+	);
+	const outputsB = await pageB.evaluate(
+		() => window.musicDjToolsPerformance.query().mixer.headphones.outputs
+	);
 	const sameDeviceB = outputsB.find((output) => output.label === chosen.label);
 	if (sameDeviceB === undefined) {
 		return { verdict: 'FAIL', reason: `'${chosen.label}' is not enumerated under ${ORIGIN_B}` };
 	} else if (sameDeviceB.id === chosen.id) {
-		return { verdict: 'UNAVAILABLE', reason: 'this engine did not salt the id per origin; the case cannot be shown' };
+		return {
+			verdict: 'UNAVAILABLE',
+			reason: 'this engine did not salt the id per origin; the case cannot be shown'
+		};
 	}
 	let masterB = null;
 	const deadline = Date.now() + RESTORE_WAIT_MS;
@@ -136,7 +153,10 @@ async function probe(browser) {
 	// NEGATIVE CONTROL: the pre-fix replay, origin A's id straight into the selector.
 	const control = await pageB.evaluate(async (foreignId) => {
 		try {
-			await window.musicDjToolsPerformance.dispatch({ type: 'headphone_master_select', device_id: foreignId });
+			await window.musicDjToolsPerformance.dispatch({
+				type: 'headphone_master_select',
+				device_id: foreignId
+			});
 			return null;
 		} catch (error) {
 			return String(error);
@@ -146,8 +166,11 @@ async function probe(browser) {
 	const checks = {
 		pick_wrote_ring_snapshot: ringAfter > ringBefore,
 		boot_restore_routed_master_to_same_output: masterB === sameDeviceB.id,
-		no_uncaught_enumeration_error: !pageErrors.some((error) => /enumerated headphone output/.test(error)),
-		control_refused_foreign_id: control !== null && /not an enumerated headphone output/.test(control)
+		no_uncaught_enumeration_error: !pageErrors.some((error) =>
+			/enumerated headphone output/.test(error)
+		),
+		control_refused_foreign_id:
+			control !== null && /not an enumerated headphone output/.test(control)
 	};
 	return {
 		verdict: Object.values(checks).every(Boolean) ? 'PASS' : 'FAIL',
@@ -169,5 +192,7 @@ try {
 } finally {
 	await browser.close();
 }
-console.log(JSON.stringify({ channel: CHANNEL, origins: [ORIGIN_A, ORIGIN_B], ...outcome }, null, 2));
+console.log(
+	JSON.stringify({ channel: CHANNEL, origins: [ORIGIN_A, ORIGIN_B], ...outcome }, null, 2)
+);
 process.exitCode = EXIT_CODE[outcome.verdict];

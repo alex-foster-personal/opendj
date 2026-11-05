@@ -36,7 +36,10 @@ function _parseStringArrayLiteral(source, exportName) {
 	const end = source.indexOf(']', start);
 	const block = source.slice(start + marker.length, end);
 	const ids = [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-	assert.ok(ids.length > 0, `${exportName} parsed to zero entries - the regex is asking the wrong question`);
+	assert.ok(
+		ids.length > 0,
+		`${exportName} parsed to zero entries - the regex is asking the wrong question`
+	);
 	return ids;
 }
 
@@ -68,7 +71,10 @@ test('every wireable BACKGROUND_SHED_JOBS id has a registered run in production 
 		APP_INIT_SOURCE.indexOf('jobs:'),
 		APP_INIT_SOURCE.indexOf('onShed:')
 	);
-	assert.ok(jobsBlock.length > 0, 'if the jobs: array cannot be located this guard asserts nothing');
+	assert.ok(
+		jobsBlock.length > 0,
+		'if the jobs: array cannot be located this guard asserts nothing'
+	);
 
 	for (const id of BACKGROUND_SHED_JOBS) {
 		if (SHED_JOBS_WITH_NO_REAL_WORK.includes(id)) continue;

@@ -91,7 +91,9 @@ export class DeckReplacementBlockedError extends Error {
 		readonly deck: DeckId,
 		readonly activeState: readonly string[]
 	) {
-		super(`load: deck ${deck} must be fully stopped before replacement; active state: ${activeState.join(', ')}`);
+		super(
+			`load: deck ${deck} must be fully stopped before replacement; active state: ${activeState.join(', ')}`
+		);
 	}
 }
 
@@ -132,9 +134,7 @@ export function masterSwitchFollowers(
 ): DeckId[] {
 	return DECK_IDS.filter(
 		(candidate) =>
-			candidate !== deck &&
-			activity[candidate].playing &&
-			activity[candidate].beat_sync_enabled
+			candidate !== deck && activity[candidate].playing && activity[candidate].beat_sync_enabled
 	);
 }
 
@@ -194,9 +194,7 @@ export interface TransportMutationActivity {
 	presentationPending: boolean;
 }
 
-export function transportNeedsScheduledMutation(
-	activity: TransportMutationActivity
-): boolean {
+export function transportNeedsScheduledMutation(activity: TransportMutationActivity): boolean {
 	for (const [name, value] of Object.entries({
 		playing: activity.playing,
 		audible: activity.audible,
@@ -315,7 +313,9 @@ export function applyPausedDeckControlSettings(
 	update: PausedDeckControlUpdate
 ): DeckControlSettings {
 	if (!Number.isFinite(current.tempoRatio) || current.tempoRatio <= 0) {
-		throw new RangeError(`control tempo ratio must be finite and positive, got ${current.tempoRatio}`);
+		throw new RangeError(
+			`control tempo ratio must be finite and positive, got ${current.tempoRatio}`
+		);
 	}
 	if (typeof current.masterTempoEnabled !== 'boolean') {
 		throw new TypeError('control Master Tempo must be boolean');
@@ -325,12 +325,11 @@ export function applyPausedDeckControlSettings(
 		update.tempoRatio !== undefined &&
 		(!Number.isFinite(update.tempoRatio) || update.tempoRatio <= 0)
 	) {
-		throw new RangeError(`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`);
+		throw new RangeError(
+			`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`
+		);
 	}
-	if (
-		update.masterTempoEnabled !== undefined &&
-		typeof update.masterTempoEnabled !== 'boolean'
-	) {
+	if (update.masterTempoEnabled !== undefined && typeof update.masterTempoEnabled !== 'boolean') {
 		throw new TypeError('updated Master Tempo must be boolean');
 	}
 	if (update.keyShiftSemitones !== undefined) _assertKeyShift(update.keyShiftSemitones);

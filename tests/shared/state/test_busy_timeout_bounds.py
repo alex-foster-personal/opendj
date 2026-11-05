@@ -27,7 +27,8 @@ pytestmark = pytest.mark.requirement("GUARD-09")
     [
         pytest.param(
             lambda path, bound: sqlite_backend.read_tracks_schema_version(
-                path, busy_timeout_s=bound,
+                path,
+                busy_timeout_s=bound,
             ),
             id="read_tracks_schema_version",
         ),
@@ -36,15 +37,16 @@ pytestmark = pytest.mark.requirement("GUARD-09")
             id="open_rw",
         ),
         pytest.param(
-            lambda path, bound: state_db.open_ro(path, busy_timeout_s=bound)
-            .execute("SELECT COUNT(*) FROM sqlite_master")
-            .fetchone(),
+            lambda path, bound: (
+                state_db.open_ro(path, busy_timeout_s=bound).execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+            ),
             id="open_ro",
         ),
     ],
 )
 def test_a_peer_lock_held_past_the_bound_raises_within_it(
-    tmp_path: Path, open_with_bound: Callable[[Path, float], object],
+    tmp_path: Path,
+    open_with_bound: Callable[[Path, float], object],
 ) -> None:
     """[if] a peer holds the lock past a handle's busy wait [then] the open
     raises ``database is locked`` no sooner than the bound and no later than
@@ -61,9 +63,7 @@ def test_a_peer_lock_held_past_the_bound_raises_within_it(
     finally:
         holder.kill()
         holder.communicate(timeout=30)
-    assert bound_s <= elapsed < bound_s + slack_s, (
-        f"raised after {elapsed:.2f}s against a {bound_s}s bound"
-    )
+    assert bound_s <= elapsed < bound_s + slack_s, f"raised after {elapsed:.2f}s against a {bound_s}s bound"
 
 
 @pytest.mark.parametrize("bound", [math.inf, math.nan, 0.0, -1.0])
@@ -79,10 +79,12 @@ def test_an_unbounded_or_zero_busy_wait_is_refused(tmp_path: Path, bound: float)
 
 
 @pytest.mark.parametrize(
-    "bound", [0.5, state_db.DEFAULT_BUSY_TIMEOUT_S, state_db.BOOT_BUSY_TIMEOUT_S],
+    "bound",
+    [0.5, state_db.DEFAULT_BUSY_TIMEOUT_S, state_db.BOOT_BUSY_TIMEOUT_S],
 )
 def test_each_handle_carries_the_bound_it_was_asked_for(
-    tmp_path: Path, bound: float,
+    tmp_path: Path,
+    bound: float,
 ) -> None:
     """[if] a handle is opened with a busy wait [then] SQLite reports that
     exact wait for every later statement, [else stop]. The first statement

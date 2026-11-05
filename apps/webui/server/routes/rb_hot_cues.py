@@ -11,6 +11,7 @@ until issue #4069's rekordbox-UI experiment (see ``cue_kind.KIND_BY_SLOT``).
 
   * ``GET    /api/v1/tracks/{stable_id}/hot-cues`` -> eight slot revisions
   * ``PUT    /api/v1/tracks/{stable_id}/hot-cues/{slot}`` -> mutation + reversal token
+    (body ``out_ms`` saves a loop hot cue, HOTCUE-LOOP-01)
   * ``DELETE /api/v1/tracks/{stable_id}/hot-cues/{slot}`` -> mutation + reversal token
   * ``PUT    /api/v1/tracks/{stable_id}/hot-cues/{slot}/restore`` -> CAS restore
 
@@ -71,6 +72,13 @@ class HotCueSaveIn(BaseModel):
         description="Cue position in ms. Already quantized to the beatgrid "
                     "by the caller when quantize is enabled -- this "
                     "endpoint never guesses at beat alignment.",
+    )
+    out_ms: StrictInt | None = Field(
+        None,
+        description="Loop end in ms (HOTCUE-LOOP-01). Set it to save a loop "
+                    "hot cue, the loop that was active when the cue was set; "
+                    "must be after in_ms and inside the track. Omit or null "
+                    "for a point cue.",
     )
     comment: str | None = None
     color_table_index: int | None = Field(None, ge=0)
@@ -186,30 +194,30 @@ def _write_op(
     stable_id: str,
     op: Callable[[sqlite3.Connection, cue_store.StoredCues, Any, cue_store.WriteBlob], dict[str, Any]],
 ) -> dict[str, Any]:
-    """Run one read-modify-write of the track's cue set under BEGIN IMMEDIATE."""
+    """Run one read-modify-write of the track's cue set under a writer unit."""
     content = _rekordbox_content(stable_id)
     conn = state_db.open_rw(_state_db_path(request))
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        with StateWriter(conn, actor="webui") as writer:
-            state = cue_store.load(conn, stable_id, _vendor_cues(content))
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                state = cue_store.load(conn, stable_id, _vendor_cues(content))
 
-            def write(blob: dict[str, Any]) -> None:
-                writer.set_field(
-                    stable_id,
-                    cue_store.CUE_FIELD,
-                    blob,
-                    source=cue_store.OWN_SOURCE,
-                    modified_at=canonical_now(),
-                )
+                def write(blob: dict[str, Any]) -> None:
+                    writer.set_field(
+                        stable_id,
+                        cue_store.CUE_FIELD,
+                        blob,
+                        source=cue_store.OWN_SOURCE,
+                        modified_at=canonical_now(),
+                    )
 
-            result = op(conn, state, content, write)
-        conn.commit()
+                result = op(conn, state, content, write)
     except cue_store.CueStoreError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         _raise_store_error(exc)
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise
     finally:
         conn.close()
@@ -258,6 +266,7 @@ def save_hot_cue(
             state,
             slot,
             body.in_ms,
+            out_ms=body.out_ms,
             expected_revision=if_match,
             comment=body.comment,
             color_table_index=body.color_table_index,

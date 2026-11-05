@@ -102,9 +102,7 @@ def build_arm_from_skey_raw(
     return {
         "schema": 1,
         "candidate": "skey",
-        "candidate_version": (
-            f"skey@{raw.get('skey_revision') or raw.get('producer_version') or 'unknown'}"
-        ),
+        "candidate_version": (f"skey@{raw.get('skey_revision') or raw.get('producer_version') or 'unknown'}"),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "n_fixtures": len(fixtures),
         "n_failed": n_failed,
@@ -128,18 +126,23 @@ def _invoke_skey_runner(
     if not wavs:
         raise SystemExit("[skey-adapter] bundle has no wav paths to analyze")
     cmd = [
-        "uv", "run", "--no-project", "--script", str(runner),
-        "--device", device,
+        "uv",
+        "run",
+        "--no-project",
+        "--script",
+        str(runner),
+        "--device",
+        device,
         "--skip-onnx-export",
-        "--audio", *wavs,
-        "--out", str(out),
+        "--audio",
+        *wavs,
+        "--out",
+        str(out),
     ]
     print(f"[skey-adapter] {' '.join(cmd)}", flush=True)
     completed = subprocess.run(cmd, check=False)
     if completed.returncode != 0:
-        raise SystemExit(
-            f"[skey-adapter] skey_runner.py exited {completed.returncode}"
-        )
+        raise SystemExit(f"[skey-adapter] skey_runner.py exited {completed.returncode}")
     if not out.is_file():
         raise SystemExit(f"[skey-adapter] skey_runner.py wrote no {out}")
     return json.loads(out.read_text(encoding="utf-8"))

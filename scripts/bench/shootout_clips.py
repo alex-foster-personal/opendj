@@ -40,6 +40,7 @@ Requirements (mini-PRD):
 Run:
   uv run scripts/bench/shootout_clips.py --source-dir .tmp/bench/shootout
 """
+
 from __future__ import annotations
 
 import argparse
@@ -117,8 +118,7 @@ def _encode_m4a(source: Path, destination: Path) -> None:
     out_s = _duration_s(destination)
     if abs(source_s - out_s) > _DURATION_TOL_S:
         raise RuntimeError(
-            f"{destination} encoded to {out_s:.3f}s from a {source_s:.3f}s source "
-            "-- truncated, refusing to publish it"
+            f"{destination} encoded to {out_s:.3f}s from a {source_s:.3f}s source -- truncated, refusing to publish it"
         )
 
 
@@ -146,8 +146,7 @@ def _top_models(manifest: dict[str, Any]) -> list[str]:
             medians[name] = _median(scores)
     if len(medians) < TOP_N_MODELS:
         raise RuntimeError(
-            f"only {len(medians)} test-set-clean models have scores, need "
-            f"{TOP_N_MODELS} for the listening set"
+            f"only {len(medians)} test-set-clean models have scores, need {TOP_N_MODELS} for the listening set"
         )
     return sorted(medians, key=lambda k: medians[k], reverse=True)[:TOP_N_MODELS]
 
@@ -177,16 +176,11 @@ def _track_block(track: dict[str, Any], models: list[str], source_dir: Path) -> 
     _encode_m4a(source_dir / f"{slug}-mixture.flac", _OUT_DIR / f"{slug}-mixture.m4a")
 
     scored = [(name, track["results"][name]["si_sdr"]) for name in models]
-    ranks = {
-        name: position + 1
-        for position, (name, _) in enumerate(sorted(scored, key=lambda kv: kv[1]))
-    }
+    ranks = {name: position + 1 for position, (name, _) in enumerate(sorted(scored, key=lambda kv: kv[1]))}
     clips = []
     for name in models:
         _encode_m4a(source_dir / f"{slug}-{name}.flac", _OUT_DIR / f"{slug}-{name}.m4a")
-        _encode_m4a(
-            source_dir / f"{slug}-{name}.inst.flac", _OUT_DIR / f"{slug}-{name}.inst.m4a"
-        )
+        _encode_m4a(source_dir / f"{slug}-{name}.inst.flac", _OUT_DIR / f"{slug}-{name}.inst.m4a")
         result = track["results"][name]
         training, clean = shootout_spec.provenance(name)
         clips.append(

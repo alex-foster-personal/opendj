@@ -49,8 +49,7 @@ def test_helper_module_run_directly_fails_loud_and_names_the_entrypoint(module: 
         f"(stdout={result.stdout!r}, stderr={result.stderr!r})"
     )
     assert "python -m apps.lyrics " in result.stderr, (
-        f"if the refusal from {module} does not name `python -m apps.lyrics` then broken "
-        f"(stderr={result.stderr!r})"
+        f"if the refusal from {module} does not name `python -m apps.lyrics` then broken (stderr={result.stderr!r})"
     )
 
 

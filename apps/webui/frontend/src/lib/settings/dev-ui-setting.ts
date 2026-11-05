@@ -5,7 +5,17 @@ export const DEV_UI_SETTING: SettingDef = {
 	id: 'show_dev_ui',
 	label: 'Show developer pages',
 	group: 'advanced',
-	keywords: ['developer', 'dev', 'debug', 'admin', 'queues', 'progress', 'ledger', 'todo', 'unbuilt'],
+	keywords: [
+		'developer',
+		'dev',
+		'debug',
+		'admin',
+		'queues',
+		'progress',
+		'ledger',
+		'todo',
+		'unbuilt'
+	],
 	title: 'Show developer-only pages and unbuilt settings',
 	detail:
 		'When on, the sidebar shows the Admin, Progress ledger and Queues links, and the settings list shows unbuilt (todo) rows, if any. Default off. Saved in this browser only.',

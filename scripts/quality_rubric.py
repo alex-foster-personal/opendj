@@ -41,9 +41,7 @@ def _git_head() -> str | None:
     return result.stdout.strip()
 
 
-def _resolve_surface_root(
-    rubric: Rubric, surface_id: str, root_override: Path | None
-) -> tuple[Path, str]:
+def _resolve_surface_root(rubric: Rubric, surface_id: str, root_override: Path | None) -> tuple[Path, str]:
     if surface_id not in rubric.surfaces:
         raise ValueError(f"unknown surface: {surface_id}")
     declared = rubric.surfaces[surface_id]
@@ -122,10 +120,7 @@ def _print_human_report(report: dict[str, Any]) -> None:
             for finding in dimension["findings"]:
                 code = finding.get("code") or "-"
                 href = finding.get("href") or finding.get("detail") or ""
-                print(
-                    f"[rubric] finding {code} {finding.get('class')} "
-                    f"{finding.get('path')} {href}".rstrip()
-                )
+                print(f"[rubric] finding {code} {finding.get('class')} {finding.get('path')} {href}".rstrip())
 
 
 def cmd_validate_rubric(rubric_path: Path) -> int:

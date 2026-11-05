@@ -65,7 +65,7 @@ LEDGER_PATH = Path(__file__).with_name("kpi_ledger.json")
 CONFIGURED_ONLY_KEYS: frozenset[str] = frozenset({"max_parallel_gpus"})
 
 
-#----- io + validation ------------------------------------------------------
+# ----- io + validation ------------------------------------------------------
 
 
 def _load_ledger(path: Path) -> dict:
@@ -106,7 +106,7 @@ def _reject_derivable_sets(set_values: dict[str, float]) -> None:
     )
 
 
-#----- table render ---------------------------------------------------------
+# ----- table render ---------------------------------------------------------
 
 
 def _fmt(value: float | None) -> str:
@@ -135,25 +135,39 @@ def _render_table(ledger: dict) -> str:
     return "\n".join(lines)
 
 
-#----- main -----------------------------------------------------------------
+# ----- main -----------------------------------------------------------------
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Append a KPI snapshot to kpi_ledger.json.")
     parser.add_argument("--label", required=True, help="short run label for the snapshot column")
-    parser.add_argument("--set", dest="sets", action="append", default=[], metavar="key=value",
-                        help="set one NON-derivable KPI; repeatable")
-    parser.add_argument("--claim", dest="claims", action="append", default=[], metavar="key=value",
-                        help="record a hand figure next to the derived one; repeatable")
+    parser.add_argument(
+        "--set",
+        dest="sets",
+        action="append",
+        default=[],
+        metavar="key=value",
+        help="set one NON-derivable KPI; repeatable",
+    )
+    parser.add_argument(
+        "--claim",
+        dest="claims",
+        action="append",
+        default=[],
+        metavar="key=value",
+        help="record a hand figure next to the derived one; repeatable",
+    )
     parser.add_argument("--note", default=None, help="author commentary shown in the admin panel")
-    parser.add_argument("--no-derive", dest="derive", action="store_false",
-                        help="snapshot has no telemetry behind it; mark derivable keys unmeasured")
-    parser.add_argument("--window", default="latest", choices=["latest", "all"],
-                        help="telemetry window to derive from")
+    parser.add_argument(
+        "--no-derive",
+        dest="derive",
+        action="store_false",
+        help="snapshot has no telemetry behind it; mark derivable keys unmeasured",
+    )
+    parser.add_argument("--window", default="latest", choices=["latest", "all"], help="telemetry window to derive from")
     parser.add_argument("--since", default=None, help="ISO 8601 lower bound on publication time")
     parser.add_argument("--until", default=None, help="ISO 8601 upper bound on publication time")
-    parser.add_argument("--allow-stale", action="store_true",
-                        help="permit telemetry older than the previous snapshot")
+    parser.add_argument("--allow-stale", action="store_true", help="permit telemetry older than the previous snapshot")
     args = parser.parse_args()
 
     ledger = _load_ledger(LEDGER_PATH)
@@ -164,9 +178,7 @@ def main() -> None:
 
     values: dict[str, float | None] = {key: set_values.get(key) for key in valid_keys}
     provenance = {
-        key: "hand" if key in set_values
-        else "configured-not-measured" if key in CONFIGURED_ONLY_KEYS
-        else "unmeasured"
+        key: "hand" if key in set_values else "configured-not-measured" if key in CONFIGURED_ONLY_KEYS else "unmeasured"
         for key in valid_keys
     }
     derivation: dict | None = None
@@ -204,16 +216,20 @@ def main() -> None:
 
     print(f"[OK] appended snapshot {args.label!r} ({snapshot['ts']})")
     if derivation is not None:
-        print(f"[OK] derived {len(DERIVED_LEDGER_KEYS)} key(s) from "
-              f"{derivation['tracks_measured']} cache entries, concurrency basis "
-              f"{derivation['concurrency_basis']}")
+        print(
+            f"[OK] derived {len(DERIVED_LEDGER_KEYS)} key(s) from "
+            f"{derivation['tracks_measured']} cache entries, concurrency basis "
+            f"{derivation['concurrency_basis']}"
+        )
     for key, claimed in claim_values.items():
         derived_value = values.get(key)
         if derived_value is None:
             print(f"[WARN] claim {key}={claimed} has no derived counterpart to check against")
         elif abs(claimed - derived_value) > 1e-9:
-            print(f"[WARN] claim {key}={claimed} disagrees with derived {derived_value} "
-                  f"(delta {claimed - derived_value:+.4g}); the derived value is what renders")
+            print(
+                f"[WARN] claim {key}={claimed} disagrees with derived {derived_value} "
+                f"(delta {claimed - derived_value:+.4g}); the derived value is what renders"
+            )
     print(_render_table(ledger))
 
 

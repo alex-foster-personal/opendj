@@ -198,9 +198,7 @@ def test_an_upload_time_uv_reads_keeps_the_verdict(tmp_path: Path, stamp: str) -
         "exponent",
     ],
 )
-def test_an_artifact_size_is_read_up_to_the_ceiling_uv_reads(
-    tmp_path: Path, size: str, code: int, named: str
-) -> None:
+def test_an_artifact_size_is_read_up_to_the_ceiling_uv_reads(tmp_path: Path, size: str, code: int, named: str) -> None:
     """uv 0.8.17 reads a size up to 2**64-1 and refuses 2**64 and any float (exit 2,
     measured round 55); uv 0.7.22 stops at 2**63-1 (Codex), so a size between the two
     ceilings is UNKNOWN rather than certified for either uv"""

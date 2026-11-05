@@ -91,7 +91,10 @@ test('a stored mode is shown verbatim and only cached unlocks the budget', () =>
 		assert.equal(cell.mode, mode);
 		assert.equal(cell.budgetEditable, false, `${mode} must lock the budget`);
 	}
-	assert.equal(view.policyCellView(policy({ mode: 'cached', cache_budget_mb: 512 })).budgetEditable, true);
+	assert.equal(
+		view.policyCellView(policy({ mode: 'cached', cache_budget_mb: 512 })).budgetEditable,
+		true
+	);
 });
 
 test('a budget edit on an unset cell is refused and writes nothing', () => {
@@ -117,7 +120,10 @@ test('a budget edit is refused unless the stored mode is cached', () => {
 test('a malformed budget is refused on a cached cell', () => {
 	/** if -1, 1.5 or text reaches the PUT body then broken */
 	for (const raw of ['-1', '1.5', 'lots']) {
-		assert.equal(view.policyBudgetChange('m1', 'audio', policy({ mode: 'cached' }), raw).kind, 'refuse');
+		assert.equal(
+			view.policyBudgetChange('m1', 'audio', policy({ mode: 'cached' }), raw).kind,
+			'refuse'
+		);
 	}
 });
 
@@ -128,11 +134,21 @@ test('picking unset clears a stored cell, and a real mode sends no stray budget'
 	// Already unset: nothing to clear, and nothing is written.
 	assert.deepEqual(view.policyModeChange('m1', 'audio', undefined, 'unset'), { kind: 'noop' });
 	assert.equal(view.policyModeChange('m1', 'audio', undefined, 'bogus').kind, 'refuse');
-	const toStream = view.policyModeChange('m1', 'audio', policy({ mode: 'cached', cache_budget_mb: 64 }), 'stream');
+	const toStream = view.policyModeChange(
+		'm1',
+		'audio',
+		policy({ mode: 'cached', cache_budget_mb: 64 }),
+		'stream'
+	);
 	assert.equal(toStream.kind, 'put');
 	assert.equal(toStream.body.mode, 'stream');
 	assert.equal(toStream.body.cache_budget_mb, null);
-	const toCached = view.policyModeChange('m1', 'audio', policy({ mode: 'cached', cache_budget_mb: 64 }), 'cached');
+	const toCached = view.policyModeChange(
+		'm1',
+		'audio',
+		policy({ mode: 'cached', cache_budget_mb: 64 }),
+		'cached'
+	);
 	assert.equal(toCached.body.cache_budget_mb, 64);
 });
 
@@ -203,8 +219,14 @@ test('the chip lights only with a fresh heartbeat, and keeps inconclusive distin
 	/** if a running loop never leaves off, or inconclusive folds into ok, then broken */
 	const live = { configured: true, running: true, enabled: true };
 	assert.equal(view.chipState(status(live)), 'syncing');
-	assert.equal(view.chipState(status({ ...live, last_result: { status: 'ok', message: '' } })), 'ok');
-	assert.equal(view.chipState(status({ ...live, last_result: { status: 'error', message: '' } })), 'error');
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'ok', message: '' } })),
+		'ok'
+	);
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'error', message: '' } })),
+		'error'
+	);
 	assert.equal(
 		view.chipState(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
 		'inconclusive'
@@ -227,7 +249,11 @@ test('chip icon: off by choice is a neutral cloud-off, the "!" is only for turne
 			status({ reason: 'CloudSync config is invalid: bad json' }),
 			'cloud-alert'
 		],
-		['enabled with no hub_url', status({ reason: 'CloudSync is enabled but no hub_url is set.' }), 'cloud-alert'],
+		[
+			'enabled with no hub_url',
+			status({ reason: 'CloudSync is enabled but no hub_url is set.' }),
+			'cloud-alert'
+		],
 		[
 			'configured, scheduler not running',
 			status({
@@ -237,14 +263,26 @@ test('chip icon: off by choice is a neutral cloud-off, the "!" is only for turne
 			'cloud-alert'
 		],
 		['syncing', status({ ...live, reason: null }), 'cloud'],
-		['waiting for hub', status({ ...live, reason: `${view.WAITING_FOR_HUB_PREFIX}: unreachable` }), 'cloud'],
-		['ok', status({ ...live, reason: null, last_result: { status: 'ok', message: '' } }), 'cloud-tick'],
+		[
+			'waiting for hub',
+			status({ ...live, reason: `${view.WAITING_FOR_HUB_PREFIX}: unreachable` }),
+			'cloud'
+		],
+		[
+			'ok',
+			status({ ...live, reason: null, last_result: { status: 'ok', message: '' } }),
+			'cloud-tick'
+		],
 		[
 			'inconclusive',
 			status({ ...live, reason: null, last_result: { status: 'inconclusive', message: '' } }),
 			'cloud-alert'
 		],
-		['error', status({ ...live, reason: null, last_result: { status: 'error', message: 'x' } }), 'cloud-alert'],
+		[
+			'error',
+			status({ ...live, reason: null, last_result: { status: 'error', message: 'x' } }),
+			'cloud-alert'
+		],
 		[
 			'update required',
 			status({
@@ -276,7 +314,11 @@ test('the chip renders the slashed cloud for cloud-off and the "!" only for clou
 	);
 	assert.match(chip, /\{#if icon === 'cloud-off'\}[\s\S]*?data-icon="cloud-off"[\s\S]*?\{:else\}/);
 	assert.match(chip, /\{#if icon === 'cloud-alert'\}\s*<svg\s+class="chip-alert"/);
-	assert.equal((chip.match(/class="chip-alert"/g) ?? []).length, 1, 'one "!" glyph, behind cloud-alert only');
+	assert.equal(
+		(chip.match(/class="chip-alert"/g) ?? []).length,
+		1,
+		'one "!" glyph, behind cloud-alert only'
+	);
 });
 
 test('chipFullLabel matches the full status strings', () => {
@@ -423,7 +465,10 @@ test('chip state helpers still return the existing off/syncing/ok/error/inconclu
 		view.chipState(status({ ...live, last_result: { status: 'error', message: '' } })),
 		'error'
 	);
-	assert.equal(view.chipShortLabel(status({ ...live, last_result: { status: 'error', message: '' } })), 'err');
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'error', message: '' } })),
+		'err'
+	);
 	assert.equal(
 		view.chipShortLabel(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
 		'inc'
@@ -475,19 +520,19 @@ test('Sync now posts the effective hub URL and machine name, and refuses without
 });
 
 test('syncNowRequest refuses when gig posture gates sync', () => {
-	const decision = view.syncNowRequest(
-		config({ hub_url: 'http://hub:8686', configured: true }),
-		{ appPosture: 'gig', uiMirror: null }
-	);
+	const decision = view.syncNowRequest(config({ hub_url: 'http://hub:8686', configured: true }), {
+		appPosture: 'gig',
+		uiMirror: null
+	});
 	assert.equal(decision.kind, 'refuse');
 	assert.match(decision.reason, /gig_posture/);
 });
 
 test('syncNowRequest refuses when a deck is playing', () => {
-	const decision = view.syncNowRequest(
-		config({ hub_url: 'http://hub:8686', configured: true }),
-		{ appPosture: 'prep', uiMirror: { decks: { '1': { playing: true } } } }
-	);
+	const decision = view.syncNowRequest(config({ hub_url: 'http://hub:8686', configured: true }), {
+		appPosture: 'prep',
+		uiMirror: { decks: { 1: { playing: true } } }
+	});
 	assert.equal(decision.kind, 'refuse');
 	assert.match(decision.reason, /deck_playing/);
 });
@@ -510,7 +555,7 @@ test('quick-action labels and gate helpers stay shared with the status tab', () 
 	assert.equal(view.ADVANCED_OPTIONS_LABEL, 'Advanced options');
 	const playingGate = {
 		appPosture: 'prep',
-		uiMirror: { decks: { '1': { playing: true } } }
+		uiMirror: { decks: { 1: { playing: true } } }
 	};
 	const ordinary = view.syncNowRequest(
 		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true }),
@@ -528,11 +573,17 @@ test('quick-action labels and gate helpers stay shared with the status tab', () 
 test('the config form mirrors the backend validator', () => {
 	/** if enabled=true with no hub, or a non-http hub, reaches the PUT then broken */
 	assert.equal(view.configPutBody({ enabled: true, hubUrl: ' ', machineName: '' }).kind, 'refuse');
-	assert.equal(view.configPutBody({ enabled: false, hubUrl: 'ftp://x', machineName: '' }).kind, 'refuse');
-	assert.deepEqual(view.configPutBody({ enabled: true, hubUrl: ' http://h:1 ', machineName: '  ' }), {
-		kind: 'put',
-		body: { enabled: true, hub_url: 'http://h:1', machine_name: null }
-	});
+	assert.equal(
+		view.configPutBody({ enabled: false, hubUrl: 'ftp://x', machineName: '' }).kind,
+		'refuse'
+	);
+	assert.deepEqual(
+		view.configPutBody({ enabled: true, hubUrl: ' http://h:1 ', machineName: '  ' }),
+		{
+			kind: 'put',
+			body: { enabled: true, hub_url: 'http://h:1', machine_name: null }
+		}
+	);
 });
 
 // requirement: CSUI-01
@@ -555,7 +606,9 @@ test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
 test('plainSyncFailureCause names common transport failures and never invents unknown ones', () => {
 	/** if an unrecognized message is dropped instead of falling back then broken */
 	assert.match(
-		view.plainSyncFailureCause('POST http://h:1/api/v1/sync/hello failed: [Errno 61] Connection refused'),
+		view.plainSyncFailureCause(
+			'POST http://h:1/api/v1/sync/hello failed: [Errno 61] Connection refused'
+		),
 		/could not reach the hub machine \(connection refused\)/
 	);
 	assert.match(view.plainSyncFailureCause('Read timed out'), /did not respond in time \(timeout\)/);
@@ -564,9 +617,14 @@ test('plainSyncFailureCause names common transport failures and never invents un
 		/hub address could not be found \(DNS lookup failed\)/
 	);
 	assert.match(view.plainSyncFailureCause('401 Unauthorized'), /rejected the sign-in/);
-	assert.match(view.plainSyncFailureCause('some brand new exception text'), /last sync attempt failed/);
 	assert.match(
-		view.plainSyncFailureCause('POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 45.0s)'),
+		view.plainSyncFailureCause('some brand new exception text'),
+		/last sync attempt failed/
+	);
+	assert.match(
+		view.plainSyncFailureCause(
+			'POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 45.0s)'
+		),
 		/502, after 45s/
 	);
 });
@@ -577,7 +635,10 @@ test('an unreachable hub on a live loop is a wait, never a red error (#3870)', (
 		configured: true,
 		running: true,
 		reason: `${view.WAITING_FOR_HUB_PREFIX}: could not reach the hub machine. Sync retries in the background.`,
-		last_result: { status: 'error', message: 'could not reach the hub machine: [Errno 111] Connection refused' }
+		last_result: {
+			status: 'error',
+			message: 'could not reach the hub machine: [Errno 111] Connection refused'
+		}
 	});
 	assert.equal(view.isWaitingForHub(waiting), true);
 	const headline = view.statusHeadline(waiting);
@@ -662,7 +723,11 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 
 	/** if an inconclusive result reads as ok or as error then broken */
 	const inconclusive = view.statusHeadline(
-		status({ configured: true, running: true, last_result: { status: 'inconclusive', message: '' } })
+		status({
+			configured: true,
+			running: true,
+			last_result: { status: 'inconclusive', message: '' }
+		})
 	);
 	assert.equal(inconclusive.tone, 'warn');
 	assert.match(inconclusive.text, /could not fully confirm/);

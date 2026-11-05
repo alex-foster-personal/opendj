@@ -3,7 +3,11 @@
  */
 import type { AnlzData } from '$lib/rb/anlz-types';
 import type { BeatgridFallbackOut } from '$lib/rb/beatgrid-fallback-api';
-import { resolvePaintAnlz, shouldUseBeatgridFallback, type BeatgridFallbackGate } from '$lib/rb/beatgrid-fallback';
+import {
+	resolvePaintAnlz,
+	shouldUseBeatgridFallback,
+	type BeatgridFallbackGate
+} from '$lib/rb/beatgrid-fallback';
 import type { BeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 
 export function beatgridFallbackGate(input: {
@@ -29,6 +33,9 @@ export function readyBeatgridFallback(
 	return entry !== undefined && entry.status === 'ready' ? entry.data : null;
 }
 
-export function paintAnlzForRow(anlz: AnlzData | null, fallback: BeatgridFallbackOut | null): AnlzData | null {
+export function paintAnlzForRow(
+	anlz: AnlzData | null,
+	fallback: BeatgridFallbackOut | null
+): AnlzData | null {
 	return resolvePaintAnlz(anlz, fallback);
 }

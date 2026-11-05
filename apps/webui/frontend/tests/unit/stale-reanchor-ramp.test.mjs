@@ -35,7 +35,9 @@ test('superseding commands bump re-anchor operation generation', () => {
 	const pauseBody = engineBlockAfter('pause(deck: DeckId, pressT0Ms?: number): Promise<void> {');
 	assert.match(pauseBody, /_bumpReanchorOperation\(deck\)/);
 
-	const beatSyncBody = engineBlockAfter('setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
+	const beatSyncBody = engineBlockAfter(
+		'setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {'
+	);
 	const disableAt = beatSyncBody.indexOf('if (!enabled) {');
 	assert.notEqual(disableAt, -1);
 	const disableBranch = beatSyncBody.slice(disableAt, disableAt + 400);
@@ -55,7 +57,9 @@ test('superseding commands bump re-anchor operation generation', () => {
 });
 
 test('the ramp tail checks generation before and after each schedule await', () => {
-	const body = engineBlockAfter('async function _continueTempoRamp(\n\tdeck: DeckId,\n\tsyncAt: number,\n\tremainingSteps: readonly TempoRampStep[],\n\tmasterTempoEnabled: boolean,\n\tgeneration: number\n): Promise<void> {');
+	const body = engineBlockAfter(
+		'async function _continueTempoRamp(\n\tdeck: DeckId,\n\tsyncAt: number,\n\tremainingSteps: readonly TempoRampStep[],\n\tmasterTempoEnabled: boolean,\n\tgeneration: number\n): Promise<void> {'
+	);
 	const loopAt = body.indexOf('for (const step of remainingSteps)');
 	assert.notEqual(loopAt, -1);
 	const preSchedule = body.indexOf('_reanchorOperationIsCurrent(deck, generation)');
@@ -87,8 +91,12 @@ test('a later re-anchor ramp step does not inherit the first step pending bounda
 });
 
 test('ramp owner is released only for the captured generation', () => {
-	const releaseBody = engineBlockAfter('function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {');
+	const releaseBody = engineBlockAfter(
+		'function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {'
+	);
 	assert.match(releaseBody, /if \(rt\.reanchorRampOwnerGeneration === generation\)/);
-	const rampBody = engineBlockAfter('async function _continueTempoRamp(\n\tdeck: DeckId,\n\tsyncAt: number,\n\tremainingSteps: readonly TempoRampStep[],\n\tmasterTempoEnabled: boolean,\n\tgeneration: number\n): Promise<void> {');
+	const rampBody = engineBlockAfter(
+		'async function _continueTempoRamp(\n\tdeck: DeckId,\n\tsyncAt: number,\n\tremainingSteps: readonly TempoRampStep[],\n\tmasterTempoEnabled: boolean,\n\tgeneration: number\n): Promise<void> {'
+	);
 	assert.match(rampBody, /_releaseReanchorRampOwner\(deck, generation\)/);
 });

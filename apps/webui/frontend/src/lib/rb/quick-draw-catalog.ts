@@ -131,9 +131,7 @@ export const QUICK_DRAW_ACTIONS: Record<QuickDrawActionId, QuickDrawAction> = {
 		priority: 'P1',
 		group: 'contextual',
 		build: (ctx) =>
-			ctx.playing === undefined
-				? null
-				: { type: 'play', deck: ctx.deck, playing: !ctx.playing }
+			ctx.playing === undefined ? null : { type: 'play', deck: ctx.deck, playing: !ctx.playing }
 	},
 	cue: _deckOnly('cue', 'Cue', 'P1', 'contextual', (deck) => ({ type: 'cue', deck })),
 	seek: {

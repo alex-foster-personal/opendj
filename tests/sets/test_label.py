@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.label`."""
+
 from __future__ import annotations
 
 import json
@@ -12,24 +13,37 @@ from apps.sets import label as label_mod
 def _write_transitions(sets_root: Path, session_id: str, transitions: list[dict]) -> None:
     sess = sets_root / session_id
     sess.mkdir(parents=True, exist_ok=True)
-    (sess / "transitions.jsonl").write_text(
-        "\n".join(json.dumps(t) for t in transitions) + "\n"
-    )
+    (sess / "transitions.jsonl").write_text("\n".join(json.dumps(t) for t in transitions) + "\n")
 
 
 @pytest.fixture
 def transitions_fixture(sets_root: Path) -> list[dict]:
     """3 transitions with predicted classes."""
     rows = [
-        {"idx": 0, "from_track": "t0a", "to_track": "t0b",
-         "predicted_class": "cut", "confidence": 0.9,
-         "features": {"overlap_s": 0.1, "fade_s": 0.0}},
-        {"idx": 1, "from_track": "t1a", "to_track": "t1b",
-         "predicted_class": "blend", "confidence": 0.75,
-         "features": {"overlap_s": 10.0, "fade_s": 4.0}},
-        {"idx": 2, "from_track": "t2a", "to_track": "t2b",
-         "predicted_class": "quick_double", "confidence": 0.85,
-         "features": {"overlap_s": 1.0, "fade_s": 0.2}},
+        {
+            "idx": 0,
+            "from_track": "t0a",
+            "to_track": "t0b",
+            "predicted_class": "cut",
+            "confidence": 0.9,
+            "features": {"overlap_s": 0.1, "fade_s": 0.0},
+        },
+        {
+            "idx": 1,
+            "from_track": "t1a",
+            "to_track": "t1b",
+            "predicted_class": "blend",
+            "confidence": 0.75,
+            "features": {"overlap_s": 10.0, "fade_s": 4.0},
+        },
+        {
+            "idx": 2,
+            "from_track": "t2a",
+            "to_track": "t2b",
+            "predicted_class": "quick_double",
+            "confidence": 0.85,
+            "features": {"overlap_s": 1.0, "fade_s": 0.2},
+        },
     ]
     _write_transitions(sets_root, "s1", rows)
     return rows
@@ -37,9 +51,7 @@ def transitions_fixture(sets_root: Path) -> list[dict]:
 
 @pytest.mark.requirement("SET-02")
 def test_append_label_writes_jsonl_row(sets_root: Path):
-    label_mod.append_label(
-        "s1", 0, "cut", sets_root=sets_root, labeler="test-bot"
-    )
+    label_mod.append_label("s1", 0, "cut", sets_root=sets_root, labeler="test-bot")
     labels = label_mod.read_labels("s1", sets_root=sets_root)
     assert labels[0] == "cut"
     raw = (sets_root / "s1" / "labels.jsonl").read_text().strip()

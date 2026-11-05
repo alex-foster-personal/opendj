@@ -19,7 +19,9 @@ test.beforeEach(async ({ page }) => {
 	await spendBootLanding(page);
 });
 
-test('at 1280px the header status strip separates every readout with middle dots', async ({ page }) => {
+test('at 1280px the header status strip separates every readout with middle dots', async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto(APP_SHELL_ROUTE);
 
@@ -30,7 +32,9 @@ test('at 1280px the header status strip separates every readout with middle dots
 	// toHaveText reads textContent, which also holds the whitespace BETWEEN the
 	// flex items, so it passed while every separator rendered as a bare "·".
 	// Read the separators themselves (Wed 7 Oct 2026).
-	const sepTexts = await strip.locator('.sep').evaluateAll((els) => els.map((el) => el.textContent));
+	const sepTexts = await strip
+		.locator('.sep')
+		.evaluateAll((els) => els.map((el) => el.textContent));
 	expect(sepTexts.length).toBeGreaterThanOrEqual(3);
 	for (const text of sepTexts) expect(text).toBe(' · ');
 
@@ -73,9 +77,7 @@ test('at narrow width the status strip never concatenates readouts', async ({ pa
 		const wrapped = el.clientHeight > 22;
 		const ellipsized = Array.from(el.querySelectorAll('.readout')).some((node) => {
 			const style = getComputedStyle(node);
-			return (
-				node.scrollWidth > node.clientWidth + 1 && style.textOverflow === 'ellipsis'
-			);
+			return node.scrollWidth > node.clientWidth + 1 && style.textOverflow === 'ellipsis';
 		});
 		return wrapped || ellipsized;
 	});

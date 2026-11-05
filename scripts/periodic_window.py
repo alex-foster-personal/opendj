@@ -24,12 +24,8 @@ from typing import Any, Protocol
 from scripts.gh_version_guard import require_gh_min_version
 
 BOT_LOGIN = "github-actions[bot]"
-DEFAULT_MARKER = re.compile(
-    r"<!-- periodic-checks state sha=([0-9a-f]{40})(?: threshold=(\d+))? -->"
-)
-ROW_MARKER = re.compile(
-    r"<!-- periodic-checks row=(\d+) state sha=([0-9a-f]{40})(?: threshold=(\d+))? -->"
-)
+DEFAULT_MARKER = re.compile(r"<!-- periodic-checks state sha=([0-9a-f]{40})(?: threshold=(\d+))? -->")
+ROW_MARKER = re.compile(r"<!-- periodic-checks row=(\d+) state sha=([0-9a-f]{40})(?: threshold=(\d+))? -->")
 _HTTP_STATUS = re.compile(r"HTTP\s+(\d{3})", re.IGNORECASE)
 
 
@@ -104,9 +100,7 @@ def parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def select_state_marker(
-    comments: list[dict[str, Any]], *, row: int | None
-) -> StateMarker | None:
+def select_state_marker(comments: list[dict[str, Any]], *, row: int | None) -> StateMarker | None:
     """Newest github-actions[bot] comment with exactly one matching marker."""
     trusted: list[StateMarker] = []
     for comment in comments:
@@ -133,9 +127,7 @@ def select_state_marker(
     return trusted[-1]
 
 
-def _markers_in_body(
-    body: str, *, row: int | None
-) -> list[tuple[str, int | None, int | None]]:
+def _markers_in_body(body: str, *, row: int | None) -> list[tuple[str, int | None, int | None]]:
     found: list[tuple[str, int | None, int | None]] = []
     if row is None:
         for match in DEFAULT_MARKER.finditer(body):
@@ -237,10 +229,7 @@ def decide_window(
     except GhError as exc:
         if exc.status == 404:
             label = f"row={row} " if row is not None else ""
-            reason = (
-                f"{label}state SHA {marker.sha} is absent from history "
-                f"(compare 404); bootstrapping"
-            )
+            reason = f"{label}state SHA {marker.sha} is absent from history (compare 404); bootstrapping"
             return done(
                 run=True,
                 count=-1,
@@ -292,9 +281,7 @@ def decide_window(
             reason=reason,
         )
     if row is not None:
-        reason = (
-            f"only {count} merges since {short} (row={row} threshold {threshold})"
-        )
+        reason = f"only {count} merges since {short} (row={row} threshold {threshold})"
     else:
         reason = (
             f"only {count} merges since {short} (threshold {threshold}), "
@@ -335,16 +322,9 @@ def cadence_alarm(
         return "P0: e2e.yml scheduled cadence has zero completed runs"
     if not _is_fail(newest):
         return ""
-    older_fail = [
-        at
-        for at, run in dated
-        if _is_fail(run) and (current - at).total_seconds() > cadence_seconds
-    ]
+    older_fail = [at for at, run in dated if _is_fail(run) and (current - at).total_seconds() > cadence_seconds]
     if older_fail:
-        return (
-            "P1: e2e.yml scheduled workflow has been red for more than one "
-            "cadence period"
-        )
+        return "P1: e2e.yml scheduled workflow has been red for more than one cadence period"
     return ""
 
 

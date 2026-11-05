@@ -57,9 +57,7 @@ STORAGE_KEY = "mdt.perfEventLog"
 STORAGE_TABLE = "ItemTable"
 """WebKit's localStorage table name."""
 
-NON_DURATION_STAGES = frozenset(
-    {"audioBytes", "audioPrefetchHit", "stemmed", "deferredToStop"}
-)
+NON_DURATION_STAGES = frozenset({"audioBytes", "audioPrefetchHit", "stemmed", "deferredToStop"})
 """Keys inside `stages` that are NOT milliseconds.
 
 `stages` is stringly overloaded today: `audioBytes` is a byte count,
@@ -216,8 +214,7 @@ def _decode_storage_value(raw: bytes) -> str:
         if text.lstrip().startswith("["):
             return text
     raise PerfLogUnreadable(
-        f"{STORAGE_KEY} value ({len(raw)} bytes) decoded as neither UTF-16LE nor "
-        "UTF-8 JSON. It is not a perf ring."
+        f"{STORAGE_KEY} value ({len(raw)} bytes) decoded as neither UTF-16LE nor UTF-8 JSON. It is not a perf ring."
     )
 
 
@@ -230,9 +227,7 @@ def read_localstorage_perf_log(store: Path) -> list[dict[str, Any]]:
         copy = _copy_sqlite_with_sidecars(store, Path(scratch))
         connection = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
         try:
-            rows = connection.execute(
-                f"SELECT value FROM {STORAGE_TABLE} WHERE key = ?", (STORAGE_KEY,)
-            ).fetchall()
+            rows = connection.execute(f"SELECT value FROM {STORAGE_TABLE} WHERE key = ?", (STORAGE_KEY,)).fetchall()
         except sqlite3.DatabaseError as exc:
             raise PerfLogUnreadable(f"{store}: {exc}") from exc
         finally:
@@ -259,14 +254,10 @@ def _parse_perf_log(text: str, origin: str) -> list[dict[str, Any]]:
     except ValueError as exc:
         raise PerfLogUnreadable(f"{origin}: perf ring is not JSON: {exc}") from exc
     if not isinstance(parsed, list):
-        raise PerfLogUnreadable(
-            f"{origin}: perf ring is {type(parsed).__name__}, expected a JSON array"
-        )
+        raise PerfLogUnreadable(f"{origin}: perf ring is {type(parsed).__name__}, expected a JSON array")
     for index, row in enumerate(parsed):
         if not isinstance(row, dict) or not all(type(row.get(key)) is str for key in ("t", "kind")):
-            raise PerfLogUnreadable(
-                f"{origin}: row {index} is not a PerfEvent (needs string `t` and `kind`)"
-            )
+            raise PerfLogUnreadable(f"{origin}: row {index} is not a PerfEvent (needs string `t` and `kind`)")
     return parsed
 
 
@@ -317,8 +308,7 @@ def epoch_us(stamp: str, origin: str) -> int:
         moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     except (AttributeError, ValueError) as exc:
         raise PerfLogUnreadable(
-            f"{origin}: {stamp!r} is not an ISO 8601 timestamp, so its events "
-            "cannot be placed on a timeline"
+            f"{origin}: {stamp!r} is not an ISO 8601 timestamp, so its events cannot be placed on a timeline"
         ) from exc
     if moment.tzinfo is None:
         raise PerfLogUnreadable(
@@ -331,9 +321,7 @@ def epoch_us(stamp: str, origin: str) -> int:
 # ------------------------------------------------------------- stage helpers
 
 
-def unclassified_deck_stages(
-    stages: dict[str, Any], *, is_load: bool = False
-) -> set[str]:
+def unclassified_deck_stages(stages: dict[str, Any], *, is_load: bool = False) -> set[str]:
     """Load-path stage names the phase model has no declared meaning for.
 
     Reported by every caller instead of being dropped, because the ring is
@@ -431,9 +419,7 @@ def deck_load_phase_model(stages: dict[str, Any]) -> PhaseModel | None:
     contested_fetch_group = False
     if fetch_wall is not None:
         fetch_wall_ms = float(fetch_wall)
-        fetch_members = [
-            float(stages[name]) for name in FETCH_GROUP_STAGES if name in stages
-        ]
+        fetch_members = [float(stages[name]) for name in FETCH_GROUP_STAGES if name in stages]
         if len(fetch_members) > 1:
             # `Promise.all` starts every member together, but they queue
             # behind the SAME single-worker engine, so a member's own
@@ -458,21 +444,15 @@ def deck_load_phase_model(stages: dict[str, Any]) -> PhaseModel | None:
                 phases.append(Phase("fetch-floor", floor_ms, False, "the lone fetch member"))
             remainder_ms = fetch_wall_ms - floor_ms
             if remainder_ms > 0:
-                phases.append(
-                    Phase("fetch-remainder", remainder_ms, False, "not concurrent work (#705)")
-                )
+                phases.append(Phase("fetch-remainder", remainder_ms, False, "not concurrent work (#705)"))
         else:
             # No member breakdown: absence of proof is not proof of full
             # parallelism (Codex P1/BLOCKING, #705, perf_log_model.py:459).
             contested_fetch_group = True
             if fetch_wall_ms > 0:
-                phases.append(
-                    Phase("fetch-unmeasured", fetch_wall_ms, False, "no fetch-group breakdown")
-                )
+                phases.append(Phase("fetch-unmeasured", fetch_wall_ms, False, "no fetch-group breakdown"))
 
-    decode_members = [
-        float(stages[name]) for name in DECODE_GROUP_STAGES if name in stages
-    ]
+    decode_members = [float(stages[name]) for name in DECODE_GROUP_STAGES if name in stages]
     if decode_members:
         phases.append(
             Phase(
@@ -486,9 +466,7 @@ def deck_load_phase_model(stages: dict[str, Any]) -> PhaseModel | None:
         )
 
     phases.extend(
-        Phase(name, float(stages[name]), False, "awaited on its own")
-        for name in SERIAL_TAIL_STAGES
-        if name in stages
+        Phase(name, float(stages[name]), False, "awaited on its own") for name in SERIAL_TAIL_STAGES if name in stages
     )
 
     before_swap = float(stages.get("totalBeforeSwap", total))
@@ -553,8 +531,7 @@ def stem_phase_model(stages: dict[str, Any]) -> PhaseModel | None:
             name,
             float(stages[name]),
             False,
-            "4 serial worklet creates today (register queue Q7); not yet "
-            "fanned out, so more workers cannot shrink it",
+            "4 serial worklet creates today (register queue Q7); not yet fanned out, so more workers cannot shrink it",
         )
         for name in STEM_SERIAL_CREATE_STAGES
         if name in stages

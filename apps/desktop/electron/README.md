@@ -29,7 +29,7 @@ Known quirks and gotchas (data dirs, signing, permissions, CDP, CI): see
 | `src/engine.ts`, `src/engine-log.ts`, `src/shell-log.ts` | `engine.rs`, `engine_log.rs` |
 | `src/launch.ts`, `src/boot.ts` | `launch.rs`, `start_engine` in `main.rs` |
 | `src/supervisor.ts` | `supervisor.rs` (INSTALL-23) |
-| `src/shell-health.ts`, `src/output-health.ts` | `shell_health.rs`, `output_health.rs`; `list` via `odj-output-probe` |
+| `src/shell-health.ts`, `src/output-health.ts` | `shell_health.rs`; `output_health.rs` runs as the `odj-output-probe` helper, built from `../native/odj-output-probe/` |
 | `src/updater.ts` | the updater plugin (OPS-15) |
 | `src/policy.ts` | flags, window size, build identity, trusted origins, permissions |
 | `src/side-player.ts`, `src/side-player-layout.ts` | new: the docked Spotify side player (SPOT-6555b), bridge version 2 |

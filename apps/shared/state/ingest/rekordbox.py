@@ -41,7 +41,6 @@ from apps.shared.state import cue_store, deleted_tracks
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
-from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
@@ -226,6 +225,235 @@ def _rb_modified_at(raw: Any) -> str:
         return _UNKNOWN_MODIFIED_AT
 
 
+@dataclasses.dataclass
+class _RbIngestRun:
+    writer: StateWriter
+    conn: Any
+    report: IngestReport
+    cues_by_content: dict[str, list[dict[str, Any]]]
+    rb_to_stable: dict[str, str] = dataclasses.field(default_factory=dict)
+    seen_sids: set[str] = dataclasses.field(default_factory=set)
+    deleted_sids: set[str] = dataclasses.field(default_factory=set)
+    existing_inferred: dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+def _open_rb_db(rb_db_path: Path) -> Any:
+    from pyrekordbox import Rekordbox6Database
+
+    return Rekordbox6Database(path=str(rb_db_path), unlock=False)
+
+
+def _collect_rb_ingest_inputs(
+    rb_db: Any,
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    all_rows = list(_rb_rows(rb_db))
+    local_paths = [track["folder_path"] for track in all_rows if track["folder_path"] and not track["is_streaming"]]
+    assert_no_path_collisions(local_paths)
+    cues_by_content = _rb_cues_by_content(rb_db)
+    return all_rows, cues_by_content
+
+
+def _rb_track_mtime(path_str: str, is_streaming: bool) -> float:
+    # Only hit the filesystem for real local paths; skip streaming URIs so
+    # we do not spuriously call os.path.exists / os.path.getmtime on
+    # schemes that will never resolve on disk.
+    if path_str and not is_streaming and os.path.exists(path_str):
+        try:
+            return os.path.getmtime(path_str)
+        except OSError:
+            return 0.0
+    return 0.0
+
+
+def _resolve_rb_track_identity(run: _RbIngestRun, track: dict[str, Any]) -> tuple[str, str, str] | None:
+    # Always feed the raw folder_path into the tier-3 hash so streaming
+    # rows (spotify:/tidal:/http[s]:) collide only when their URIs are
+    # identical. The previous behaviour (empty path for streaming) meant
+    # every ISRC-less streaming track hashed to sha1("|0.0"), so the
+    # seen_sids guard below silently dropped all but the first.
+    # See (private path) (2/3).
+    path_str = track["folder_path"]
+    mtime = _rb_track_mtime(path_str, track["is_streaming"])
+    try:
+        sid, tier = state_ids.stable_id(
+            isrc=track["isrc"],
+            fingerprint=None,
+            duration_ms=track["duration_ms"],
+            size_bytes=track["file_size"],
+            abs_path=path_str,
+            mtime=mtime,
+        )
+    except ValueError:
+        run.report.tracks_skipped += 1
+        return None
+    if tier == "inferred" and path_str:
+        reused = run.existing_inferred.get(path_collision_key(path_str))
+        if reused is not None:
+            sid = reused
+        else:
+            run.existing_inferred[path_collision_key(path_str)] = sid
+
+    run.rb_to_stable[track["id"]] = sid
+    # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
+    # multiple RB rows share a stable_id. Honour the first and skip
+    # subsequent collisions so reruns are truly idempotent.
+    if sid in run.seen_sids:
+        run.report.tracks_skipped += 1
+        return None
+    run.seen_sids.add(sid)
+    return sid, tier, path_str
+
+
+def _write_rb_analysed_fields(
+    run: _RbIngestRun,
+    sid: str,
+    track: dict[str, Any],
+    modified_at: str,
+) -> None:
+    if track["bpm"] is not None and run.writer.set_field(
+        sid,
+        "bpm",
+        track["bpm"],
+        source="rekordbox",
+        modified_at=modified_at,
+    ):
+        run.report.fields_written += 1
+    if track["key_name"] and run.writer.set_field(
+        sid,
+        "key",
+        track["key_name"],
+        source="rekordbox",
+        modified_at=modified_at,
+    ):
+        run.report.fields_written += 1
+    if track["rating"] is not None and run.writer.set_field(
+        sid,
+        "rating",
+        track["rating"],
+        source="rekordbox",
+        modified_at=modified_at,
+    ):
+        run.report.fields_written += 1
+    run.report.cue_sets_written += int(
+        cue_store.import_vendor_cues(
+            run.writer.set_field,
+            run.conn,
+            sid,
+            run.cues_by_content.get(track["id"], []),
+            source="rekordbox",
+            modified_at=modified_at,
+        )
+    )
+
+
+def _write_rb_track(
+    run: _RbIngestRun,
+    track: dict[str, Any],
+    sid: str,
+    tier: str,
+    path_str: str,
+) -> None:
+    content_hash = _content_hash_for(path_str, track["is_streaming"])
+    audio_hash = _audio_hash_for(path_str, track["is_streaming"])
+    if content_hash is None and path_str and not track["is_streaming"]:
+        run.report.content_hash_missing += 1
+
+    if (
+        deleted_tracks.find_deleted_match(
+            run.conn,
+            stable_id=sid,
+            content_hash=content_hash,
+            audio_hash=audio_hash,
+        )
+        is not None
+    ):
+        # Deletes stay deleted: rekordbox listing the file is not a restore.
+        # Recorded so the playlist pass below cannot put it back in a
+        # playlist either.
+        run.deleted_sids.add(sid)
+        run.report.tracks_skipped_deleted += 1
+        return
+
+    changed = run.writer.upsert_track(
+        stable_id=sid,
+        stable_id_tier=tier,
+        title=track["title"] or None,
+        artists=[track["artist"]] if track["artist"] else [],
+        album=track["album"] or None,
+        isrc=track["isrc"],
+        duration_ms=track["duration_ms"],
+        file_path=path_str or None,
+        content_hash=content_hash,
+        audio_hash=audio_hash,
+    )
+    if changed:
+        existing_vendor = run.conn.execute(
+            "SELECT 1 FROM track_vendor_ids WHERE stable_id = ? AND vendor = 'rekordbox'",
+            (sid,),
+        ).fetchone()
+        if existing_vendor is None:
+            run.report.tracks_inserted += 1
+        else:
+            run.report.tracks_updated += 1
+    else:
+        run.report.tracks_unchanged += 1
+    run.report.tier_counts[tier] = run.report.tier_counts.get(tier, 0) + 1
+
+    run.writer.set_vendor_id(sid, "rekordbox", track["id"])
+    modified_at = _rb_modified_at(track["updated_at"])
+    _write_rb_analysed_fields(run, sid, track, modified_at)
+
+
+def _ingest_rb_track(run: _RbIngestRun, track: dict[str, Any]) -> None:
+    resolved = _resolve_rb_track_identity(run, track)
+    if resolved is None:
+        return
+    sid, tier, path_str = resolved
+    _write_rb_track(run, track, sid, tier, path_str)
+
+
+def _ingest_rb_playlists(run: _RbIngestRun, rb_db: Any) -> None:
+    for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
+        pl_id = compute_playlist_id("rekordbox", rb_pl_id)
+        inserted = run.writer.insert_playlist(
+            playlist_id=pl_id,
+            name=pl_name,
+            vendor="rekordbox",
+            vendor_pl_id=rb_pl_id,
+        )
+        if inserted:
+            run.report.playlists_inserted += 1
+        member_sids = [
+            run.rb_to_stable[tid]
+            for tid in rb_tids
+            if tid in run.rb_to_stable and run.rb_to_stable[tid] not in run.deleted_sids
+        ]
+        run.writer.set_playlist_memberships(pl_id, member_sids)
+
+
+def _register_rb_adapter(run: _RbIngestRun, now_fn: _ClockFn) -> None:
+    tracks_seen = run.report.tracks_inserted + run.report.tracks_updated + run.report.tracks_unchanged
+    run.writer.register_adapter(
+        "rekordbox",
+        last_run_at=now_fn().isoformat(),
+        last_ok=True,
+        notes=f"tracks={tracks_seen} dry_run={run.report.dry_run}",
+    )
+
+
+def _close_rb_db(rb_db: Any) -> None:
+    try:
+        rb_db.close()
+    except sqlite3.Error as exc:
+        _log.warning("Failed to close Rekordbox DB", exc_info=exc)
+    except Exception as exc:  # pragma: no cover - defensive cleanup path
+        # Do not re-raise: a cleanup failure in the finally block must not
+        # mask a successful ingest or shadow an in-flight exception from
+        # the try body. Log loudly with a traceback so the failure is
+        # visible to operators without breaking otherwise-successful runs.
+        _log.error("Unexpected error closing Rekordbox DB", exc_info=exc)
+
+
 def ingest_rb(
     writer: StateWriter,
     rb_db_path: Path,
@@ -236,232 +464,34 @@ def ingest_rb(
 ) -> IngestReport:
     """Ingest the Rekordbox DB at ``rb_db_path`` into the state DB.
 
-    Everything runs in one :func:`apps.shared.state.db.write_unit`, which
-    holds the writer lock from its first read (STATE-15). ``dry_run=True``
-    discards the unit at the end; ``dry_run=False`` keeps it.
+    Everything runs in one :meth:`StateWriter.transaction`, which holds the
+    writer lock from its first read (STATE-15). ``dry_run=True`` discards
+    the unit at the end; ``dry_run=False`` keeps it. Queued bus events
+    flush only after COMMIT.
     """
-    from pyrekordbox import Rekordbox6Database
-
     start = time.perf_counter()
     report = IngestReport(rb_path=str(rb_db_path), dry_run=dry_run)
     now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
-
-    rb_db = Rekordbox6Database(path=str(rb_db_path), unlock=False)
-    # [I2] Use the public ``raw_conn`` accessor so this outer SAVEPOINT
-    # composes with StateWriter's internal SAVEPOINTs without reaching into
-    # private attributes.
-    conn = writer.raw_conn
-    savepoint = "phase5_ingest_rb"
-
-    # [P05-F02 / INFRA-03] During dry-run, the outer SAVEPOINT is rolled back
-    # at the end, so any ``writer.bus.publish`` calls made during the run
-    # would leak phantom events to subscribers for mutations that never
-    # actually landed in state.db. Swap the bus for a silent drop-in for
-    # the duration of the dry-run so publishes are simply discarded. Live
-    # runs keep the real bus.
-    original_bus = writer.bus
-    if dry_run:
-        writer.bus = _DryRunSilentBus()
-
+    rb_db = _open_rb_db(rb_db_path)
     try:
-        all_rows = list(_rb_rows(rb_db))
-        local_paths = [
-            track["folder_path"]
-            for track in all_rows
-            if track["folder_path"] and not track["is_streaming"]
-        ]
-        assert_no_path_collisions(local_paths)
-
-        cues_by_content = _rb_cues_by_content(rb_db)
-
-        with state_db.write_unit(conn, savepoint, keep=not dry_run):
-            rb_to_stable: dict[str, str] = {}
-            # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
-            # multiple RB rows share a stable_id. Honour the first and skip
-            # subsequent collisions so reruns are truly idempotent.
-            seen_sids: set[str] = set()
-            # Ids the user removed (LIBM-140): skipped above, and filtered out
-            # of every playlist's membership below.
-            deleted_sids: set[str] = set()
-            existing_inferred = live_inferred_by_path_key(conn)
-
+        all_rows, cues_by_content = _collect_rb_ingest_inputs(rb_db)
+        with writer._join_or_begin(commit=not dry_run):
+            run = _RbIngestRun(
+                writer=writer,
+                conn=writer.raw_conn,
+                report=report,
+                cues_by_content=cues_by_content,
+                existing_inferred=live_inferred_by_path_key(writer.raw_conn),
+            )
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:
                     break
-                # Always feed the raw folder_path into the tier-3 hash so
-                # streaming rows (spotify:/tidal:/http[s]:) collide only
-                # when their URIs are identical. The previous behaviour
-                # (empty path for streaming) meant every ISRC-less
-                # streaming track hashed to sha1("|0.0"), so the
-                # seen_sids guard below silently dropped all but the first.
-                # See (private path) (2/3).
-                path_str = track["folder_path"]
-                mtime = 0.0
-                # Only hit the filesystem for real local paths; skip
-                # streaming URIs so we do not spuriously call
-                # os.path.exists / os.path.getmtime on schemes that will
-                # never resolve on disk.
-                if path_str and not track["is_streaming"] and os.path.exists(path_str):
-                    try:
-                        mtime = os.path.getmtime(path_str)
-                    except OSError:
-                        mtime = 0.0
-                try:
-                    sid, tier = state_ids.stable_id(
-                        isrc=track["isrc"],
-                        fingerprint=None,
-                        duration_ms=track["duration_ms"],
-                        size_bytes=track["file_size"],
-                        abs_path=path_str,
-                        mtime=mtime,
-                    )
-                except ValueError:
-                    report.tracks_skipped += 1
-                    continue
-                if tier == "inferred" and path_str:
-                    reused = existing_inferred.get(path_collision_key(path_str))
-                    if reused is not None:
-                        sid = reused
-                    else:
-                        existing_inferred[path_collision_key(path_str)] = sid
-
-                rb_to_stable[track["id"]] = sid
-                if sid in seen_sids:
-                    report.tracks_skipped += 1
-                    continue
-                seen_sids.add(sid)
-
-                content_hash = _content_hash_for(path_str, track["is_streaming"])
-                audio_hash = _audio_hash_for(path_str, track["is_streaming"])
-                if content_hash is None and path_str and not track["is_streaming"]:
-                    report.content_hash_missing += 1
-
-                if (
-                    deleted_tracks.find_deleted_match(
-                        conn,
-                        stable_id=sid,
-                        content_hash=content_hash,
-                        audio_hash=audio_hash,
-                    )
-                    is not None
-                ):
-                    # Deletes stay deleted: rekordbox listing the file is not
-                    # a restore. Recorded so the playlist pass below cannot
-                    # put it back in a playlist either.
-                    deleted_sids.add(sid)
-                    report.tracks_skipped_deleted += 1
-                    continue
-
-                changed = writer.upsert_track(
-                    stable_id=sid,
-                    stable_id_tier=tier,
-                    title=track["title"] or None,
-                    artists=[track["artist"]] if track["artist"] else [],
-                    album=track["album"] or None,
-                    isrc=track["isrc"],
-                    duration_ms=track["duration_ms"],
-                    file_path=path_str or None,
-                    content_hash=content_hash,
-                    audio_hash=audio_hash,
-                )
-                if changed:
-                    existing_vendor = conn.execute(
-                        "SELECT 1 FROM track_vendor_ids "
-                        "WHERE stable_id = ? AND vendor = 'rekordbox'",
-                        (sid,),
-                    ).fetchone()
-                    if existing_vendor is None:
-                        report.tracks_inserted += 1
-                    else:
-                        report.tracks_updated += 1
-                else:
-                    report.tracks_unchanged += 1
-                report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
-
-                writer.set_vendor_id(sid, "rekordbox", track["id"])
-
-                modified_at = _rb_modified_at(track["updated_at"])
-                if track["bpm"] is not None:
-                    if writer.set_field(
-                        sid,
-                        "bpm",
-                        track["bpm"],
-                        source="rekordbox",
-                        modified_at=modified_at,
-                    ):
-                        report.fields_written += 1
-                if track["key_name"]:
-                    if writer.set_field(
-                        sid,
-                        "key",
-                        track["key_name"],
-                        source="rekordbox",
-                        modified_at=modified_at,
-                    ):
-                        report.fields_written += 1
-                if track["rating"] is not None:
-                    if writer.set_field(
-                        sid,
-                        "rating",
-                        track["rating"],
-                        source="rekordbox",
-                        modified_at=modified_at,
-                    ):
-                        report.fields_written += 1
-                report.cue_sets_written += int(
-                    cue_store.import_vendor_cues(
-                        writer.set_field,
-                        conn,
-                        sid,
-                        cues_by_content.get(track["id"], []),
-                        source="rekordbox",
-                        modified_at=modified_at,
-                    )
-                )
-
-            for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
-                pl_id = compute_playlist_id("rekordbox", rb_pl_id)
-                inserted = writer.insert_playlist(
-                    playlist_id=pl_id,
-                    name=pl_name,
-                    vendor="rekordbox",
-                    vendor_pl_id=rb_pl_id,
-                )
-                if inserted:
-                    report.playlists_inserted += 1
-                member_sids = [
-                    rb_to_stable[tid]
-                    for tid in rb_tids
-                    if tid in rb_to_stable and rb_to_stable[tid] not in deleted_sids
-                ]
-                writer.set_playlist_memberships(pl_id, member_sids)
-
-            tracks_seen = (
-                report.tracks_inserted
-                + report.tracks_updated
-                + report.tracks_unchanged
-            )
-            writer.register_adapter(
-                "rekordbox",
-                last_run_at=now_fn().isoformat(),
-                last_ok=True,
-                notes=f"tracks={tracks_seen} dry_run={dry_run}",
-            )
+                _ingest_rb_track(run, track)
+            _ingest_rb_playlists(run, rb_db)
+            _register_rb_adapter(run, now_fn)
     finally:
-        # Always restore the real bus, even if the ingest raised.
-        writer.bus = original_bus
-        try:
-            rb_db.close()
-        except sqlite3.Error as exc:
-            _log.warning("Failed to close Rekordbox DB", exc_info=exc)
-        except Exception as exc:  # pragma: no cover - defensive cleanup path
-            # Do not re-raise: a cleanup failure in the finally block must not
-            # mask a successful ingest or shadow an in-flight exception from
-            # the try body. Log loudly with a traceback so the failure is
-            # visible to operators without breaking otherwise-successful runs.
-            _log.error("Unexpected error closing Rekordbox DB", exc_info=exc)
+        _close_rb_db(rb_db)
         report.duration_s = round(time.perf_counter() - start, 3)
-
     return report
 
 

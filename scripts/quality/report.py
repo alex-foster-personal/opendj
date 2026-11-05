@@ -30,9 +30,7 @@ RESIDUAL_CAVEAT = """> **Residual caveat (spec amendment 1).** `residual_dbr` is
 
 
 def _commit_sha() -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
@@ -73,7 +71,7 @@ def build_report(results: dict[str, object]) -> str:
     parts.append("")
     parts.append(
         f"Generated {datetime.now(UTC).strftime('%a %-d %b %Y %H:%M UTC')} at commit "
-        f"`{_commit_sha()}`. Binding spec: `.planning/QUALITY-METHODOLOGY-RECONCILED.md`."
+        f"`{_commit_sha()}`. Binding spec: `(private path)`."
     )
     parts.append("")
     parts.append(
@@ -249,36 +247,20 @@ def build_report(results: dict[str, object]) -> str:
                     condition,
                     _cell(
                         next(
-                            (
-                                float(row["rate"])
-                                for row in cells
-                                if row["condition_id"] == condition
-                            ),
+                            (float(row["rate"]) for row in cells if row["condition_id"] == condition),
                             None,
                         ),
                         ".3f",
                     ),
                     _cell(
                         next(
-                            (
-                                float(row["semitones"])
-                                for row in cells
-                                if row["condition_id"] == condition
-                            ),
+                            (float(row["semitones"]) for row in cells if row["condition_id"] == condition),
                             None,
                         ),
                         "+.0f",
                     ),
                     *[
-                        _cell(
-                            _mean(
-                                [
-                                    float(row["lsd_db"])
-                                    for row in by_arm[arm]
-                                    if row["condition_id"] == condition
-                                ]
-                            )
-                        )
+                        _cell(_mean([float(row["lsd_db"]) for row in by_arm[arm] if row["condition_id"] == condition]))
                         for arm in arms
                     ],
                 ]
@@ -391,9 +373,7 @@ def build_report(results: dict[str, object]) -> str:
             [
                 [
                     "S1 determinism",
-                    "**PASS**"
-                    if not determinism_failures
-                    else f"**FAIL** ({len(determinism_failures)})",
+                    "**PASS**" if not determinism_failures else f"**FAIL** ({len(determinism_failures)})",
                     "every cell rendered TWICE in-page and the two sha256s compared; "
                     "inequality FAILS the run rather than being recorded",
                 ],
@@ -434,24 +414,9 @@ def build_report(results: dict[str, object]) -> str:
             [
                 [
                     arm,
+                    _cell(_mean([float(row["lsd_db"]) for row in by_arm[arm] if str(row["condition_id"]) == "C0"])),
                     _cell(
-                        _mean(
-                            [
-                                float(row["lsd_db"])
-                                for row in by_arm[arm]
-                                if str(row["condition_id"]) == "C0"
-                            ]
-                        )
-                    ),
-                    _cell(
-                        _mean(
-                            [
-                                float(row["lsd_db"])
-                                for row in by_arm[arm]
-                                if str(row["condition_id"]) == "C0"
-                            ]
-                        )
-                        - 1.14,
+                        _mean([float(row["lsd_db"]) for row in by_arm[arm] if str(row["condition_id"]) == "C0"]) - 1.14,
                         "+.2f",
                     ),
                 ]

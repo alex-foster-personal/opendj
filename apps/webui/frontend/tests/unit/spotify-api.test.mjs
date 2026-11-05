@@ -82,10 +82,8 @@ test('fails loudly when a canonical purchase link is missing', async () => {
 });
 
 test('surfaces an explicit HTTP failure', async () => {
-	globalThis.fetch = async () => Response.json({ detail: 'not an imported Spotify playlist' }, { status: 404 });
+	globalThis.fetch = async () =>
+		Response.json({ detail: 'not an imported Spotify playlist' }, { status: 404 });
 
-	await assert.rejects(
-		() => api.getSpotifyPendingTracks(PLAYLIST_ID),
-		/error 404/i
-	);
+	await assert.rejects(() => api.getSpotifyPendingTracks(PLAYLIST_ID), /error 404/i);
 });

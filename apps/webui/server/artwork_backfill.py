@@ -16,6 +16,7 @@ MusicBrainz Picard, run after import. One worker, because MusicBrainz allows
 one request a second anyway; the ingest request never waits for it. Every
 track that ends without a cover gets one log line naming why.
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,28 +51,30 @@ def cover_outcome(stable_id: str) -> Outcome:
     if not artwork_sources.online_enabled():
         return Outcome("skipped", "online lookups are off (ODJ_ARTWORK_ONLINE=0)")
     if not artwork_sources.query_title(query.title) or not artwork_sources.query_artist(query.artist):
-        return Outcome("skipped", f"no title and artist to search by (title={query.title!r}, "
-                                  f"artist={query.artist!r})")
+        return Outcome("skipped", f"no title and artist to search by (title={query.title!r}, artist={query.artist!r})")
     cache = paths.online_artwork_cache()
     if artwork_sources.online_cover(cache, stable_id, query) is not None:
         return Outcome("found", "online cover cached")
     suggestion = cache.suggestion(stable_id)
     if suggestion is not None:
-        return Outcome("suggested", f"{suggestion.source} has a cover; it is saved only if you say so "
-                                    "(LIBM-188)")
+        return Outcome("suggested", f"{suggestion.source} has a cover; it is saved only if you say so (LIBM-188)")
     reason = cache.miss_reason(stable_id)
     if reason is not None:
         return Outcome("miss", f"{reason} (title={query.title!r}, artist={query.artist!r})")
-    return Outcome("deferred", "lookup did not finish (network unreachable or MusicBrainz busy); "
-                               "the next deck load retries it")
+    return Outcome(
+        "deferred", "lookup did not finish (network unreachable or MusicBrainz busy); the next deck load retries it"
+    )
 
 
 class CoverBackfill:
     """A bounded queue of stable ids and the one daemon thread that drains it."""
 
-    def __init__(self, run_one: Callable[[str], Outcome] = cover_outcome,
-                 maxsize: int = QUEUE_MAX,
-                 on_outcome: Callable[[str, Outcome], None] | None = None) -> None:
+    def __init__(
+        self,
+        run_one: Callable[[str], Outcome] = cover_outcome,
+        maxsize: int = QUEUE_MAX,
+        on_outcome: Callable[[str, Outcome], None] | None = None,
+    ) -> None:
         self._run_one = run_one
         self._on_outcome = on_outcome
         self._queue: queue.Queue[str] = queue.Queue(maxsize=maxsize)
@@ -85,8 +88,11 @@ class CoverBackfill:
             try:
                 self._queue.put_nowait(stable_id)
             except queue.Full:
-                log.warning("artwork backfill: queue full (%d), %s not queued; "
-                            "a deck load still looks it up", self._queue.maxsize, stable_id)
+                log.warning(
+                    "artwork backfill: queue full (%d), %s not queued; a deck load still looks it up",
+                    self._queue.maxsize,
+                    stable_id,
+                )
                 continue
             queued += 1
         if queued:
@@ -100,8 +106,7 @@ class CoverBackfill:
     def _ensure_worker(self) -> None:
         with self._start_guard:
             if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(
-                    target=self._drain, name="artwork-backfill", daemon=True)
+                self._thread = threading.Thread(target=self._drain, name="artwork-backfill", daemon=True)
                 self._thread.start()
 
     def _drain(self) -> None:
@@ -125,6 +130,4 @@ class CoverBackfill:
         if outcome.status in ("has_cover", "found", "suggested"):
             log.info("artwork backfill %s: %s (%s)", stable_id, outcome.status, outcome.reason)
         else:
-            log.warning("artwork backfill %s: no cover, %s: %s",
-                        stable_id, outcome.status, outcome.reason)
-
+            log.warning("artwork backfill %s: no cover, %s: %s", stable_id, outcome.status, outcome.reason)

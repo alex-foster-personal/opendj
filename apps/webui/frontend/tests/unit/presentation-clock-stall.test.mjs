@@ -312,11 +312,7 @@ test('a non-finite or negative performanceTime does not throw', () => {
 		const timeline = playingTimeline();
 		assert.doesNotThrow(
 			() =>
-				audio.observePresentedTransportTimeline(
-					timeline,
-					{ contextTime: 2, performanceTime },
-					600
-				),
+				audio.observePresentedTransportTimeline(timeline, { contextTime: 2, performanceTime }, 600),
 			`if performanceTime=${String(performanceTime)} throws then broken - a field the ` +
 				'module itself calls diagnostic can permanently kill the rAF loop that paints ' +
 				'the waveform, while audio carries on'

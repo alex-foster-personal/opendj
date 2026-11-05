@@ -1,4 +1,5 @@
 """Phase 4 SYNC-04 Plan 3: RB cue writer tests (unit + fixture DB)."""
+
 from __future__ import annotations
 
 import pytest

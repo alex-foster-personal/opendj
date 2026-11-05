@@ -109,9 +109,7 @@ def _write_machine_id(path: Path, machine_id: str) -> bool:
         except FileExistsError:
             return False
         except OSError as exc:
-            raise MachineIdentityError(
-                f"cannot publish the machine id file at {path}: {exc}"
-            ) from exc
+            raise MachineIdentityError(f"cannot publish the machine id file at {path}: {exc}") from exc
         return True
     finally:
         staging.unlink(missing_ok=True)
@@ -129,9 +127,7 @@ def get_or_create_machine_id(data_dir: Path) -> str:
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise MachineIdentityError(
-            f"cannot create the data dir {target_dir} for the machine id: {exc}"
-        ) from exc
+        raise MachineIdentityError(f"cannot create the data dir {target_dir} for the machine id: {exc}") from exc
 
     path = machine_id_path(target_dir)
     # Read first: every lookup after the first mint is a plain read, so a
@@ -143,9 +139,7 @@ def get_or_create_machine_id(data_dir: Path) -> str:
     try:
         existing = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise MachineIdentityError(
-            f"machine id file {path} exists but is unreadable: {exc}"
-        ) from exc
+        raise MachineIdentityError(f"machine id file {path} exists but is unreadable: {exc}") from exc
     return _validate_machine_id(existing, path)
 
 
@@ -165,9 +159,7 @@ def read_machine_id(data_dir: Path) -> str | None:
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise MachineIdentityError(
-            f"machine id file {path} exists but is unreadable: {exc}"
-        ) from exc
+        raise MachineIdentityError(f"machine id file {path} exists but is unreadable: {exc}") from exc
     return _validate_machine_id(existing, path)
 
 
@@ -301,14 +293,11 @@ def register_machine(
 
 def _refuse_rename_onto_taken_name(conn: sqlite3.Connection, identity: MachineIdentity) -> None:
     """Raise if registering ``identity`` would rename its row onto another id's name."""
-    own_row = conn.execute(
-        "SELECT name FROM machines WHERE machine_id = ?", (identity.machine_id,)
-    ).fetchone()
+    own_row = conn.execute("SELECT name FROM machines WHERE machine_id = ?", (identity.machine_id,)).fetchone()
     if own_row is None:
         return  # INSERT path: a name conflict here adopts the existing row.
     holder = conn.execute(
-        "SELECT machine_id, last_seen, data_root FROM machines "
-        "WHERE name = ? AND machine_id != ?",
+        "SELECT machine_id, last_seen, data_root FROM machines WHERE name = ? AND machine_id != ?",
         (identity.name, identity.machine_id),
     ).fetchone()
     if holder is None:

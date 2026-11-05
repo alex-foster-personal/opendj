@@ -65,15 +65,22 @@ export function filterPowerShare(knob: number): number {
 
 /** Power share of a broadband signal the three EQ bands pass, equal thirds. */
 export function eqPowerShare(low: number, mid: number, high: number): number {
-	return (stemLinearFromKnob(low) ** 2 + stemLinearFromKnob(mid) ** 2 + stemLinearFromKnob(high) ** 2) / 3;
+	return (
+		(stemLinearFromKnob(low) ** 2 + stemLinearFromKnob(mid) ** 2 + stemLinearFromKnob(high) ** 2) /
+		3
+	);
 }
 
 function _stemPowerShare(deck: DeckStems): number {
 	const stems = deck.stems;
 	if (stems.status !== 'ready') return 1; // not separated yet: the full mix plays
-	if (stems.layout === null) throw new Error('stems are ready but have no layout: the stem-state contract is broken');
+	if (stems.layout === null)
+		throw new Error('stems are ready but have no layout: the stem-state contract is broken');
 	const gains = Object.values(stemPartGains(stems.controls, stems.layout));
-	if (gains.length === 0) throw new Error('stems are ready but the layout has no parts: the stem-state contract is broken');
+	if (gains.length === 0)
+		throw new Error(
+			'stems are ready but the layout has no parts: the stem-state contract is broken'
+		);
 	return gains.reduce((sum, g) => sum + g * g, 0) / gains.length;
 }
 
@@ -144,7 +151,11 @@ function _loudestCandidate(input: LevelHandoffInput): LevelHandoffDeck | null {
 	let best: LevelHandoffDeck | null = null;
 	for (const deck of input.decks) {
 		if (deck.id === input.master || !deck.playing || !(deck.levelDb > CANDIDATE_LOUD_DB)) continue;
-		if (best === null || deck.levelDb > best.levelDb || (deck.levelDb === best.levelDb && deck.id < best.id)) {
+		if (
+			best === null ||
+			deck.levelDb > best.levelDb ||
+			(deck.levelDb === best.levelDb && deck.id < best.id)
+		) {
 			best = deck;
 		}
 	}
@@ -156,7 +167,10 @@ function _loudestCandidate(input: LevelHandoffInput): LevelHandoffDeck | null {
  * MASTER_QUIET_DB WHILE a loud candidate is playing, and resets the moment
  * either stops being true, so a dip that comes back never hands off.
  */
-export function stepLevelHandoff(prev: LevelHandoffState, input: LevelHandoffInput): LevelHandoffStep {
+export function stepLevelHandoff(
+	prev: LevelHandoffState,
+	input: LevelHandoffInput
+): LevelHandoffStep {
 	const masterDeck = input.decks.find((d) => d.id === input.master);
 	const masterDb = masterDeck?.levelDb ?? -Infinity;
 	const idle = (): LevelHandoffStep => ({
@@ -165,18 +179,30 @@ export function stepLevelHandoff(prev: LevelHandoffState, input: LevelHandoffInp
 		masterDb,
 		toDb: null
 	});
-	if (input.master === null || input.locked || masterDeck === undefined || !masterDeck.playing) return idle();
+	if (input.master === null || input.locked || masterDeck === undefined || !masterDeck.playing)
+		return idle();
 	if (!(masterDb < MASTER_QUIET_DB)) return idle();
 	const candidate = _loudestCandidate(input);
 	if (candidate === null) return idle();
-	const since = prev.master === input.master && prev.quietSinceMs !== null ? prev.quietSinceMs : input.nowMs;
+	const since =
+		prev.master === input.master && prev.quietSinceMs !== null ? prev.quietSinceMs : input.nowMs;
 	if (input.nowMs - since < handoffHoldMs(input.masterBpm)) {
-		return { state: { master: input.master, quietSinceMs: since }, handoffTo: null, masterDb, toDb: candidate.levelDb };
+		return {
+			state: { master: input.master, quietSinceMs: since },
+			handoffTo: null,
+			masterDb,
+			toDb: candidate.levelDb
+		};
 	}
 	// The quiet clock is kept after a decision: a handoff queued behind a command is
 	// decided again by this same step when its turn comes, and only an unbroken dip
 	// still has a full beat behind it then (a recovery resets the clock to null).
-	return { state: { master: input.master, quietSinceMs: since }, handoffTo: candidate.id, masterDb, toDb: candidate.levelDb };
+	return {
+		state: { master: input.master, quietSinceMs: since },
+		handoffTo: candidate.id,
+		masterDb,
+		toDb: candidate.levelDb
+	};
 }
 
 function _fmtDb(db: number | null): string {
@@ -193,5 +219,7 @@ export function masterHandoffMessage(
 	levels?: { masterDb: number; toDb: number | null }
 ): string {
 	const base = `master ${from ?? 'none'} -> ${to ?? 'none'} (${reason})`;
-	return levels === undefined ? base : `${base}: master ${_fmtDb(levels.masterDb)} dB, deck ${to} ${_fmtDb(levels.toDb)} dB`;
+	return levels === undefined
+		? base
+		: `${base}: master ${_fmtDb(levels.masterDb)} dB, deck ${to} ${_fmtDb(levels.toDb)} dB`;
 }

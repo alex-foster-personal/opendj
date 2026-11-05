@@ -64,9 +64,7 @@ def test_every_pytest_job_pins_native_thread_pools_to_one_thread() -> None:
     for workflow, job_id in PYTEST_JOBS:
         env = _job(workflow, job_id).get("env") or {}
         for cap in THREAD_CAPS:
-            assert str(env.get(cap)) == "1", (
-                f"{workflow}:{job_id} must set {cap}: \"1\", got {env.get(cap)!r}"
-            )
+            assert str(env.get(cap)) == "1", f'{workflow}:{job_id} must set {cap}: "1", got {env.get(cap)!r}'
 
 
 def test_e2e_gate_pins_native_thread_pools_to_one_thread() -> None:
@@ -75,6 +73,4 @@ def test_e2e_gate_pins_native_thread_pools_to_one_thread() -> None:
     for workflow, job_id in ANALYSIS_SUBPROCESS_JOBS:
         env = _job(workflow, job_id).get("env") or {}
         for cap in THREAD_CAPS:
-            assert str(env.get(cap)) == "1", (
-                f"{workflow}:{job_id} must set {cap}: \"1\", got {env.get(cap)!r}"
-            )
+            assert str(env.get(cap)) == "1", f'{workflow}:{job_id} must set {cap}: "1", got {env.get(cap)!r}'

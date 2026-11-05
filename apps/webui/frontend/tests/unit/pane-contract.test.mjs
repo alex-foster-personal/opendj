@@ -256,6 +256,18 @@ test('sortRows: MIK energy is numeric and missing values stay last in both direc
 	]);
 });
 
+// KEY-GUESS-01: if an ambiguous key's best guess does not sort with real keys then broken
+test('sortRows: a declined key sorts by its best guess, blanks stay last', () => {
+	const rows = [
+		_row({ stable_id: 'none', key: null, key_guess: null }),
+		_row({ stable_id: 'guess8A', key: null, key_status: 'failed', key_guess: '8A' }),
+		_row({ stable_id: 'real4A', key: '4A' })
+	];
+	assert.deepEqual(contract.sortRows(rows, 'key', 1).map((row) => row.stable_id), [
+		'real4A', 'guess8A', 'none'
+	]);
+});
+
 test('select / setSearch / rememberScroll write the pane cursor state', () => {
 	const p = contract.createPaneStore();
 	p.select('sid-9');

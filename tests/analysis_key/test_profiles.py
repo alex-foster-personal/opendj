@@ -5,6 +5,7 @@ librosa.feature.chroma_cqt output (12 pitch-class rows, C=0) dominated by a
 triad, so every candidate profile (which all peak sharply at the tonic and
 moderately at the third/fifth) should agree on the same key.
 """
+
 from __future__ import annotations
 
 import numpy as np

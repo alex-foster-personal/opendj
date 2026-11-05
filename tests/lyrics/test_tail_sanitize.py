@@ -2,6 +2,7 @@
 
 [if] produce writes track words [then] the silence hallucination and past-duration words drop while real lyrics stay, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest
@@ -137,6 +138,7 @@ def test_weak_thank_you_without_silence_gap_kept() -> None:
 
 def test_gap_threshold_boundary() -> None:
     """[if] gap just under the threshold [then] kept; at the threshold [then] dropped [else stop]."""
+
     def _case(gap: float) -> list[str]:
         words = [
             word("sing", start_s=1.0, end_s=2.0, witness="agree", line_final=True),

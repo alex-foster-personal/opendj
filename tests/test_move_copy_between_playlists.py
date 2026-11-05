@@ -7,6 +7,7 @@ Regression one-liners:
   * if an interrupt between dest and source writes leaves both lists dirty then broken
   * if a stale dest etag 409s but source was already written then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -35,9 +36,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -48,9 +54,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -120,16 +129,13 @@ def _event_kinds(db_path: Path) -> list[str]:
 def _event_actors(db_path: Path) -> set[str]:
     conn = sqlite3.connect(str(db_path))
     try:
-        return {
-            row[0] for row in conn.execute(
-                "SELECT DISTINCT actor FROM events WHERE kind LIKE 'playlist.%'"
-            )
-        }
+        return {row[0] for row in conn.execute("SELECT DISTINCT actor FROM events WHERE kind LIKE 'playlist.%'")}
     finally:
         conn.close()
 
 
 # --- copy (add) identity ---------------------------------------------------
+
 
 def test_copy_adds_to_dest_preserves_source(client: TestClient) -> None:
     pid_a, etag_a = _create(client, "A")
@@ -156,6 +162,7 @@ def test_copy_skip_already_present_is_idempotent(client: TestClient) -> None:
 
 # --- move identity ---------------------------------------------------------
 
+
 def test_move_removes_from_source_adds_to_dest(client: TestClient) -> None:
     pid_a, etag_a = _create(client, "A")
     pid_b, etag_b = _create(client, "B")
@@ -163,9 +170,13 @@ def test_move_removes_from_source_adds_to_dest(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, ["t-003"])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001"], mode="move",
-        source_id=pid_a, source_etag=etag_a,
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
     )
     assert r.status_code == 200, r.text
     assert _get_items(client, pid_b) == ["t-003", "t-001"]
@@ -179,9 +190,13 @@ def test_move_already_in_dest_still_removes_from_source(client: TestClient) -> N
     etag_b = _put_tracks(client, pid_b, etag_b, ["t-001", "t-002"])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001"], mode="move",
-        source_id=pid_a, source_etag=etag_a,
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
     )
     assert r.status_code == 200, r.text
     assert _get_items(client, pid_b) == ["t-001", "t-002"]
@@ -190,14 +205,19 @@ def test_move_already_in_dest_still_removes_from_source(client: TestClient) -> N
 
 # --- validation ------------------------------------------------------------
 
+
 def test_cycle_self_drop_rejected(client: TestClient) -> None:
     pid, etag = _create(client, "Self")
     etag = _put_tracks(client, pid, etag, ["t-001"])
 
     r = _transfer(
-        client, pid, etag,
-        stable_ids=["t-001"], mode="move",
-        source_id=pid, source_etag=etag,
+        client,
+        pid,
+        etag,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid,
+        source_etag=etag,
     )
     assert r.status_code == 422, r.text
     assert _get_items(client, pid) == ["t-001"]
@@ -228,9 +248,13 @@ def test_stale_dest_etag_409_source_unchanged(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, [])
 
     r = _transfer(
-        client, pid_b, '"stale-dest"',
-        stable_ids=["t-001"], mode="move",
-        source_id=pid_a, source_etag=etag_a,
+        client,
+        pid_b,
+        '"stale-dest"',
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
     )
     assert r.status_code == 409, r.text
     assert r.json()["current"]["playlist_id"] == pid_b
@@ -245,9 +269,13 @@ def test_stale_source_etag_409_dest_unchanged(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, [])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001"], mode="move",
-        source_id=pid_a, source_etag='"stale-source"',
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag='"stale-source"',
     )
     assert r.status_code == 409, r.text
     assert r.json()["current"]["playlist_id"] == pid_a
@@ -262,9 +290,13 @@ def test_unknown_stable_id_422_neither_written(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, ["t-002"])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-missing"], mode="move",
-        source_id=pid_a, source_etag=etag_a,
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-missing"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
     )
     assert r.status_code == 422, r.text
     assert _get_items(client, pid_a) == ["t-001"]
@@ -276,14 +308,19 @@ def test_unknown_source_playlist_404(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, [])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001"], mode="move",
-        source_id="pl-does-not-exist", source_etag='"x"',
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id="pl-does-not-exist",
+        source_etag='"x"',
     )
     assert r.status_code == 404, r.text
 
 
 # --- rollback / events / de-dupe -------------------------------------------
+
 
 def test_interrupt_second_write_rolls_back(db_path: Path) -> None:
     store = PlaylistStore(db_path, bus=FakeEventBus(), actor="webui")
@@ -308,9 +345,12 @@ def test_interrupt_second_write_rolls_back(db_path: Path) -> None:
         with patch.object(store._writer, "set_playlist_memberships", side_effect=boom):
             with pytest.raises(RuntimeError, match="simulated interrupt"):
                 store.transfer_memberships(
-                    pb.playlist_id, ["t-001"],
-                    dest_etag=pb.etag, mode="move",
-                    source_id=pa.playlist_id, source_etag=pa.etag,
+                    pb.playlist_id,
+                    ["t-001"],
+                    dest_etag=pb.etag,
+                    mode="move",
+                    source_id=pa.playlist_id,
+                    source_etag=pa.etag,
                 )
 
         assert store.get_playlist_row(pa.playlist_id).items == ["t-001", "t-002"]
@@ -320,7 +360,8 @@ def test_interrupt_second_write_rolls_back(db_path: Path) -> None:
 
 
 def test_move_appends_membership_events_with_webui_actor(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     pid_a, etag_a = _create(client, "A")
     pid_b, etag_b = _create(client, "B")
@@ -329,13 +370,17 @@ def test_move_appends_membership_events_with_webui_actor(
 
     kinds_before = _event_kinds(db_path)
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001"], mode="move",
-        source_id=pid_a, source_etag=etag_a,
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
     )
     assert r.status_code == 200, r.text
     kinds_after = _event_kinds(db_path)
-    new_kinds = kinds_after[len(kinds_before):]
+    new_kinds = kinds_after[len(kinds_before) :]
     assert new_kinds.count("playlist.memberships.set") == 2
     assert _event_actors(db_path) == {"webui"}
 
@@ -345,8 +390,11 @@ def test_duplicate_ids_in_request_append_once(client: TestClient) -> None:
     etag_b = _put_tracks(client, pid_b, etag_b, [])
 
     r = _transfer(
-        client, pid_b, etag_b,
-        stable_ids=["t-001", "t-001", "t-002"], mode="add",
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001", "t-001", "t-002"],
+        mode="add",
     )
     assert r.status_code == 200, r.text
     assert _get_items(client, pid_b) == ["t-001", "t-002"]

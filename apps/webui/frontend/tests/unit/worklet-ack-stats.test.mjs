@@ -213,7 +213,10 @@ test('a single slow ack is reported immediately, not up to a window later', () =
 
 test('an ack at the threshold is not slow; the one above it is', () => {
 	stats.recordWorkletAck('schedule', stats.WORKLET_ACK_SLOW_MS, true);
-	assert.deepEqual(warnLines.filter((line) => line.includes('worklet-ack-slow')), []);
+	assert.deepEqual(
+		warnLines.filter((line) => line.includes('worklet-ack-slow')),
+		[]
+	);
 	stats.recordWorkletAck('schedule', stats.WORKLET_ACK_SLOW_MS + 0.001, true);
 	assert.equal(warnLines.filter((line) => line.includes('worklet-ack-slow')).length, 1);
 });

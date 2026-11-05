@@ -40,7 +40,8 @@ const meta = {
 		volumes: [stick('vol:a1', 'DJ STICK'), stick('vol:b2', 'BACKUP USB')],
 		openSticks: {},
 		canImport: () => true,
-		importTitle: 'Open this stick and analyze BPM, key and beatgrid once its tracks are in the library.',
+		importTitle:
+			'Open this stick and analyze BPM, key and beatgrid once its tracks are in the library.',
 		importButtonLabel: 'Open',
 		ontoggle: fn(),
 		ondetails: fn(),

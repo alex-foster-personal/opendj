@@ -418,15 +418,114 @@ export function deriveKeySyncNudge(
 	return bestNudge;
 }
 
-/** Convert a listener-facing KEY SYNC nudge to the absolute manual schedule value. */
+//----------------------------------------------------------------- KEY SYNC modes (KEYSYNC-01)
+// exact (default, the maintainer Wed 4 Nov 2026): transpose onto the leader's key, as
+// Serato Pitch 'n Time Key Sync does. relative: land on the leader's Camelot
+// number in this deck's own mode (A<->B relative major/minor, the same notes).
+// compatible: the Pioneer / rekordbox family-root behaviour (deriveKeySyncNudge).
+
+export type KeySyncMode = 'exact' | 'relative' | 'compatible';
+export const KEY_SYNC_MODES: readonly KeySyncMode[] = ['exact', 'relative', 'compatible'];
+
+export function isKeySyncMode(value: unknown): value is KeySyncMode {
+	return typeof value === 'string' && (KEY_SYNC_MODES as readonly string[]).includes(value);
+}
+
+/** Shortest signed path in semitones, -5..+6: the tritone tie is +6, the
+ * same rule as Mixxx's KeyUtils shortest steps (and up measured cleaner on
+ * our stretcher, ops/quality/stretch/report.md). Fractional input rounds. */
+function _shortestSignedSemitones(semitones: number): number {
+	const folded = ((semitones % 12) + 12) % 12;
+	return Math.round(folded > 6 ? folded - 12 : folded);
+}
+
+function _keySyncTargetRoot(deck: CamelotKey, leader: CamelotKey, mode: 'exact' | 'relative'): number {
+	if (mode === 'exact' && deck.mode !== leader.mode) {
+		throw new RangeError(
+			`KEY SYNC exact cannot transpose ${deck.number}${deck.mode} onto ${leader.number}${leader.mode}: the modes differ; use relative to land on ${leader.number}${deck.mode}`
+		);
+	}
+	return CAMELOT_ROOTS[deck.mode][leader.number - 1];
+}
+
+function _parseKeySyncKeys(deckKey: string | null, leaderKey: string | null): [CamelotKey, CamelotKey] {
+	const deck = parseCamelotKey(deckKey);
+	const leader = parseCamelotKey(leaderKey);
+	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
+	if (leader === null) throw new Error('KEY SYNC requires a parseable Camelot key on the leader');
+	return [deck, leader];
+}
+
+/** Semitones that move `followerKey` onto `leaderKey` under `mode`, -6..+6. */
+export function keySyncSemitoneDelta(
+	followerKey: string | null,
+	leaderKey: string | null,
+	mode: 'exact' | 'relative'
+): number {
+	if (mode !== 'exact' && mode !== 'relative') throw new RangeError(`keySyncSemitoneDelta: mode must be exact or relative, got ${String(mode)}`);
+	const [deck, leader] = _parseKeySyncKeys(followerKey, leaderKey);
+	return _shortestSignedSemitones(_keySyncTargetRoot(deck, leader, mode) - deck.root);
+}
+
+/** True when exact KEY SYNC cannot match: both keys parse but their modes differ. */
+export function keySyncModeMismatch(followerKey: string | null, leaderKey: string | null, mode: KeySyncMode): boolean {
+	if (mode !== 'exact') return false;
+	const deck = parseCamelotKey(followerKey);
+	const leader = parseCamelotKey(leaderKey);
+	return deck !== null && leader !== null && deck.mode !== leader.mode;
+}
+
+/** DECK-KEY-01: the one key every deck surface reads (header readout, KEY SYNC,
+ * ladder, nudges, tempo modal): the library's resolved key (Mixed In Key /
+ * rekordbox fallback and key_source applied server side by the same resolver
+ * the library row uses), else the analyser's "?" guess. */
+export function keySyncKey(deck: { key: string | null; key_guess?: string | null }): string | null {
+	return deck.key ?? deck.key_guess ?? null;
+}
+
+export function keySyncKeyIsGuess(deck: { key: string | null; key_guess?: string | null }): boolean {
+	return deck.key === null && (deck.key_guess ?? null) !== null;
+}
+
+/** KEY-FALLBACK-01: where a shown key came from, for the library cell and the deck key hover. */
+export const KEY_SOURCE_HINT: Readonly<Record<string, string>> = {
+	own: 'our analysis',
+	rekordbox: 'from rekordbox',
+	file_tag: 'from the file tag',
+	mik_tag: 'from Mixed In Key tag'
+};
+
+/** The hover phrase for a key_source, or null for none / a guess (the "?" says that). */
+export function keySourceHint(source: string | null | undefined): string | null {
+	return source === null || source === undefined ? null : (KEY_SOURCE_HINT[source] ?? null);
+}
+
+/** Convert a listener-facing KEY SYNC plan to the absolute manual schedule value.
+ * exact/relative pick the absolute shift -6..+6 that puts this deck's audible
+ * root on the leader's audible target root; the deck's own varispeed offset
+ * (Master Tempo off) is the effective minus the presented manual shift. */
 export function deriveKeySyncTargetManualShift(
 	deckKey: string | null,
 	masterKey: string | null,
 	deckEffectiveAudibleSemitones: number,
 	masterEffectiveAudibleSemitones: number,
-	presentedManualShiftSemitones: number
+	presentedManualShiftSemitones: number,
+	mode: KeySyncMode
 ): number {
 	_assertKeyShift(presentedManualShiftSemitones);
+	if (mode === 'exact' || mode === 'relative') {
+		_assertEffectiveAudibleSemitones('deck', deckEffectiveAudibleSemitones);
+		_assertEffectiveAudibleSemitones('master', masterEffectiveAudibleSemitones);
+		const [deck, leader] = _parseKeySyncKeys(deckKey, masterKey);
+		const deckVarispeed = deckEffectiveAudibleSemitones - presentedManualShiftSemitones;
+		const target = _shortestSignedSemitones(
+			_keySyncTargetRoot(deck, leader, mode) + masterEffectiveAudibleSemitones - deck.root - deckVarispeed
+		);
+		_assertKeyShift(target);
+		return target;
+	} else if (mode !== 'compatible') {
+		throw new RangeError(`KEY SYNC mode must be exact, relative or compatible, got ${String(mode)}`);
+	}
 	const nudge = deriveKeySyncNudge(
 		deckKey,
 		masterKey,
@@ -460,6 +559,60 @@ export function composeStretchSemitones(
 	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 
+//----------------------------------------------------------------- KEY SYNC ladder (KEYSYNC-01)
+// The chevron beside KEY SYNC lists every shift -6..+6 with the key it lands
+// on and, when that key mixes harmonically with the target, the pattern name.
+// Reference: the Mixed In Key Camelot harmonic-mixing guide
+// (https://mixedinkey.com/harmonic-mixing-guide/): same key, relative, +-1,
+// +2 energy, +7 / +5 dominant / subdominant, and the A<->B mood shift
+// (minor to its parallel major is +3 numbers, B to A is -3). Steps are
+// Camelot numbers from the target; `other` steps are written from an A target.
+
+export interface KeyLadderPattern {
+	label: string;
+	to: 'same' | 'other';
+	step: number;
+}
+
+export const KEY_LADDER_PATTERNS: readonly KeyLadderPattern[] = [
+	{ label: 'exact', to: 'same', step: 0 },
+	{ label: 'relative', to: 'other', step: 0 },
+	{ label: '+1 energy boost', to: 'same', step: 1 },
+	{ label: '-1', to: 'same', step: -1 },
+	{ label: '+2 energy', to: 'same', step: 2 },
+	{ label: '+7 dominant', to: 'same', step: 7 },
+	{ label: '+5 subdominant', to: 'same', step: 5 },
+	{ label: 'mood shift A<->B', to: 'other', step: 3 }
+];
+
+export interface KeyLadderRow {
+	shift: number;
+	key: string;
+	pattern: string | null;
+	desirable: boolean;
+}
+
+function _ladderPattern(landed: CamelotKey, target: CamelotKey): string | null {
+	const sameMode = landed.mode === target.mode;
+	const numberStep = _pitchClass(landed.number - target.number);
+	const match = KEY_LADDER_PATTERNS.find(
+		(p) => sameMode === (p.to === 'same') && numberStep === _pitchClass(p.to === 'other' && target.mode === 'B' ? -p.step : p.step)
+	);
+	return match?.label ?? null;
+}
+
+/** Rows +6 down to -6: absolute shift from the follower's original key. */
+export function keyShiftLadder(followerKey: string | null, targetKey: string | null): KeyLadderRow[] {
+	const [follower, target] = _parseKeySyncKeys(followerKey, targetKey);
+	const rows: KeyLadderRow[] = [];
+	for (let shift = 6; shift >= -6; shift -= 1) {
+		const landed = shift === 0 ? follower : _shiftCamelotKey(follower, shift);
+		const pattern = _ladderPattern(landed, target);
+		rows.push({ shift, key: `${landed.number}${landed.mode}`, pattern, desirable: pattern !== null });
+	}
+	return rows;
+}
+
 //----------------------------------------------------------------- KEY SYNC status (DECKUX-34)
 // `key_sync_enabled` is the operator's arm; it can outlive the master it was
 // armed against (restore before any master, master handed off or reloaded,
@@ -472,13 +625,29 @@ export type KeySyncStatus =
 	| 'syncing'
 	| 'waiting-no-master'
 	| 'waiting-is-master'
-	| 'waiting-no-key';
+	| 'waiting-no-key'
+	| 'waiting-mode-mismatch';
 
 export interface KeySyncStatusDeck {
 	stable_id: string | null;
 	key: string | null;
+	key_guess?: string | null;
 	key_sync_enabled: boolean;
+	/** KEYSYNC-01: exact (default), relative or compatible. */
+	key_sync_mode: KeySyncMode;
+	/** KEYSYNC-01: the deck to follow; null follows the elected MASTER. */
+	key_sync_target: DeckId | null;
 	is_master: boolean;
+}
+
+/** The deck a KEY SYNC follower takes its key from: its target, else MASTER. */
+export function keySyncLeaderDeck(
+	deck: DeckId,
+	decks: Readonly<Record<DeckId, KeySyncStatusDeck>>
+): DeckId | null {
+	const target = decks[deck].key_sync_target;
+	if (target !== null) return target;
+	return DECK_IDS.find((candidate) => decks[candidate].is_master) ?? null;
 }
 
 export function deriveKeySyncStatus(
@@ -488,13 +657,15 @@ export function deriveKeySyncStatus(
 	if (!DECK_IDS.includes(deck)) throw new RangeError(`KEY SYNC deck must be within 1..4, got ${deck}`);
 	const source = decks[deck];
 	if (!source.key_sync_enabled) return 'off';
-	if (source.is_master) return 'waiting-is-master';
-	const masterDeck = DECK_IDS.find((candidate) => decks[candidate].is_master);
-	if (masterDeck === undefined || decks[masterDeck].stable_id === null) return 'waiting-no-master';
-	const master = decks[masterDeck];
-	if (source.stable_id === null || parseCamelotKey(source.key) === null || parseCamelotKey(master.key) === null) {
+	if (source.key_sync_target === null && source.is_master) return 'waiting-is-master';
+	const leaderDeck = keySyncLeaderDeck(deck, decks);
+	if (leaderDeck === null || decks[leaderDeck].stable_id === null) return 'waiting-no-master';
+	const leaderKey = keySyncKey(decks[leaderDeck]);
+	const sourceKey = keySyncKey(source);
+	if (source.stable_id === null || parseCamelotKey(sourceKey) === null || parseCamelotKey(leaderKey) === null) {
 		return 'waiting-no-key';
 	}
+	if (keySyncModeMismatch(sourceKey, leaderKey, source.key_sync_mode)) return 'waiting-mode-mismatch';
 	return 'following';
 }
 
@@ -522,6 +693,8 @@ export function keySyncStatusTitle(status: Exclude<KeySyncStatus, 'off' | 'follo
 			return 'KEY SYNC ARMED - not following: this deck is the master. Applies again when another deck is master.';
 		case 'waiting-no-key':
 			return 'KEY SYNC ARMED - not following: this deck or the master has no Camelot key.';
+		case 'waiting-mode-mismatch':
+			return 'KEY SYNC ARMED - not following: exact needs both keys in the same mode (A or B). Right-click KEY SYNC and pick relative to land on the relative major/minor.';
 		default: {
 			const _exhaustive: never = status;
 			throw new Error(`Unhandled KEY SYNC status: ${String(_exhaustive)}`);

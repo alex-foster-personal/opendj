@@ -4,6 +4,7 @@ Deterministic output (same input -> byte-identical output when
 ``include_timestamp=False``). Sort: confidence ASC then title ASC so
 the DJ tackles the clearest gaps first.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -119,10 +120,7 @@ def render_markdown(
     lines.append("")
 
     if not entries:
-        lines.append(
-            "> Nothing to acquire -- every track matched cleanly. "
-            "Nice library."
-        )
+        lines.append("> Nothing to acquire -- every track matched cleanly. Nice library.")
         lines.append("")
         return "\n".join(lines)
 
@@ -132,10 +130,7 @@ def render_markdown(
         lines.append(f"- Album: {entry.album or '_unknown_'}")
         lines.append(f"- Duration: {format_duration(entry.duration_ms)}")
         lines.append(f"- ISRC: `{entry.isrc}`" if entry.isrc else "- ISRC: _missing_")
-        lines.append(
-            f"- Spotify: [{entry.spotify_uri}]"
-            f"({_spotify_web_url(entry.spotify_uri)})"
-        )
+        lines.append(f"- Spotify: [{entry.spotify_uri}]({_spotify_web_url(entry.spotify_uri)})")
         lines.append(f"- Match confidence: {entry.confidence:.2f}")
         lines.append("")
         lines.append("Search on:")
@@ -152,10 +147,7 @@ def render_markdown(
     if include_footer:
         lines.append("---")
         lines.append("")
-        lines.append(
-            "Re-run matching after acquiring: "
-            "`make spotify-rematch PLAYLIST_ID=" + playlist.id + "`"
-        )
+        lines.append("Re-run matching after acquiring: `make spotify-rematch PLAYLIST_ID=" + playlist.id + "`")
         lines.append("")
     return "\n".join(lines)
 
@@ -168,9 +160,7 @@ def render_markdown_file(
     include_timestamp: bool = True,
 ) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    text = render_markdown(
-        playlist, entries, include_timestamp=include_timestamp
-    )
+    text = render_markdown(playlist, entries, include_timestamp=include_timestamp)
     # P09-F02: pin the text encoding so non-ASCII track/artist names are
     # not corrupted under locales where the default encoding is not UTF-8.
     out_path.write_text(text, encoding="utf-8")

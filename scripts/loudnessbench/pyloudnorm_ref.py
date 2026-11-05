@@ -38,8 +38,16 @@ import pyloudnorm  # type: ignore[import-not-found]  # PEP 723 dep, not in the r
 def _decode(path: Path) -> tuple[np.ndarray, int]:
     probe = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-select_streams", "a:0",
-            "-show_entries", "stream=sample_rate", "-of", "csv=p=0", str(path),
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate",
+            "-of",
+            "csv=p=0",
+            str(path),
         ],
         capture_output=True,
         text=True,
@@ -50,8 +58,20 @@ def _decode(path: Path) -> tuple[np.ndarray, int]:
     sample_rate = int(probe.stdout.strip())
     decoded = subprocess.run(
         [
-            "ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0",
-            "-f", "f32le", "-ac", "2", "-ar", str(sample_rate), "-",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-f",
+            "f32le",
+            "-ac",
+            "2",
+            "-ar",
+            str(sample_rate),
+            "-",
         ],
         capture_output=True,
         check=False,

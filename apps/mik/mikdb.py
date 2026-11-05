@@ -6,7 +6,7 @@ MIK is READ-ONLY to us as policy: we never write to its store, and
 at execute time rather than corrupting a 1.37 GiB store we cannot regenerate.
 
 What is read (and why the rest is skipped) is settled in
-``.planning/legacy-app-audits/MIK-AUDIT.md``:
+``(private path)``:
 
 * ``ZSONG``          -- scalars: Camelot key, energy 1-10, BPM, loudness.
 * ``ZKEYSEGMENT``    -- exactly one row per song, so its ``ZCONFIDENCE`` is a
@@ -49,6 +49,7 @@ ZENERGYSEGMENT.      4.2 .. 460.6 s, none <= 0. NOT rounded independently of
                        corrupt half the corpus
 ===================  =======================================================
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,12 +62,9 @@ from .bookmark import BookmarkParseError, parse_bookmark_path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_STORE = Path.home() / (
-    "Library/Application Support/Mixedinkey/Collection10.mikdb"
-)
+DEFAULT_STORE = Path.home() / ("Library/Application Support/Mixedinkey/Collection10.mikdb")
 FLOW_STORE = Path.home() / (
-    "Library/Containers/com.mixedinkey.Flow/Data/Library/Application Support/"
-    "com.mixedinkey.Flow/Energetic.mikdb"
+    "Library/Containers/com.mixedinkey.Flow/Data/Library/Application Support/com.mixedinkey.Flow/Energetic.mikdb"
 )
 
 # Core Data stores dates as seconds since 2001-01-01T00:00:00Z.
@@ -328,23 +326,18 @@ def _validated_segment_row(
         stats.note("segment: length rounds to <= 0 ms")
         return None
     energy_value = float(energy)
-    if energy_value != int(energy_value) or not (
-        ENERGY_MIN <= int(energy_value) <= ENERGY_MAX
-    ):
+    if energy_value != int(energy_value) or not (ENERGY_MIN <= int(energy_value) <= ENERGY_MAX):
         stats.segments_rejected += 1
         stats.note(f"segment: energy outside {ENERGY_MIN}-{ENERGY_MAX}")
         return None
     return (start_ms, length_ms, int(energy_value), clamped)
 
 
-def _segment_rows_by_song(
-    conn: sqlite3.Connection, stats: ReadStats
-) -> dict[int, list[EnergySegment]]:
+def _segment_rows_by_song(conn: sqlite3.Connection, stats: ReadStats) -> dict[int, list[EnergySegment]]:
     """All ZENERGYSEGMENT rows, converted to ms, grouped and ordered by start."""
     by_song: dict[int, list[tuple[int, int, int, bool]]] = {}
     for song_pk, start_s, length_s, energy in conn.execute(
-        "SELECT ZSONG, ZSTARTTIME, ZLENGTH, ZENERGY FROM ZENERGYSEGMENT "
-        "ORDER BY ZSONG, ZSTARTTIME"
+        "SELECT ZSONG, ZSTARTTIME, ZLENGTH, ZENERGY FROM ZENERGYSEGMENT ORDER BY ZSONG, ZSTARTTIME"
     ):
         stats.segments_read += 1
         if song_pk is None:
@@ -377,10 +370,7 @@ def _segment_rows_by_song(
 
 
 def _require_tables(conn: sqlite3.Connection) -> None:
-    names = {
-        row[0]
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     for table in ("ZSONG", "ZENERGYSEGMENT", "ZKEYSEGMENT"):
         if table not in names:
             raise MikReadError(
@@ -408,9 +398,7 @@ def read_songs(
 
     confidence_by_song: dict[int, float | None] = {}
     multi_key: list[int] = []
-    for raw_song_pk, confidence in conn.execute(
-        "SELECT ZSONG, ZCONFIDENCE FROM ZKEYSEGMENT ORDER BY ZSONG"
-    ):
+    for raw_song_pk, confidence in conn.execute("SELECT ZSONG, ZCONFIDENCE FROM ZKEYSEGMENT ORDER BY ZSONG"):
         if raw_song_pk is None:
             continue
         song_pk = int(raw_song_pk)

@@ -1,4 +1,5 @@
 """SQLite backup regressions for live writeback targets."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -52,7 +53,10 @@ def test_reversal_metadata_is_bound_to_one_exact_vendor_target_and_revision(monk
     target = tmp_path / "live.db"
     target.touch()
     writeback_backup.write_reversal("djay", REVERSAL_ID, target, "playlist-a", ["a"], ["native-a"], "post-revision")
-    assert writeback_backup.read_reversal("djay", REVERSAL_ID, target, "playlist-a", "post-revision") == (["a"], ["native-a"])
+    assert writeback_backup.read_reversal("djay", REVERSAL_ID, target, "playlist-a", "post-revision") == (
+        ["a"],
+        ["native-a"],
+    )
     try:
         other = tmp_path / "other.db"
         other.touch()

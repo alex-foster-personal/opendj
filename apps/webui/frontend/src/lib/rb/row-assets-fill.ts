@@ -23,6 +23,8 @@ import {
 	type Vocals
 } from './api-rb';
 
+import type { TempoCurveData } from '$lib/components/rb/wave/tempo-marks';
+
 export type { PreviewStripData, Vocals };
 
 type ArtworkStatus = 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
@@ -34,6 +36,8 @@ export interface RowAssetTarget {
 	artwork_available: boolean | null;
 	artwork_status: ArtworkStatus;
 	stems: StemSummary | null;
+	/** Row strip tempo curve (issue #7879), as the daemon stored it. */
+	tempo_curve?: TempoCurveData | null;
 }
 
 /** Ask for `ids`, settle every row among `rows()` (read once the answer lands) that
@@ -60,6 +64,7 @@ export async function fetchAndApplyRowAssets(
 		row.artwork_available = asset.artwork_available ?? null;
 		row.artwork_status = asset.artwork_status as ArtworkStatus;
 		row.stems = parseStemSummary(asset.stems);
+		row.tempo_curve = asset.tempo ?? null;
 	}
 	const strips: Record<string, { preview_b64: string; preview_max: number } | null> = {};
 	for (const id of ids) {

@@ -11,7 +11,10 @@ import {
 
 import CloudSyncQuickActionsView from './CloudSyncQuickActionsView.svelte';
 
-const post = { kind: 'post', body: { hub_url: 'http://box.example-tailnet.ts.net:8686', name: 'gig-laptop', force: false } } as const;
+const post = {
+	kind: 'post',
+	body: { hub_url: 'http://box.example-tailnet.ts.net:8686', name: 'gig-laptop', force: false }
+} as const;
 
 /**
  * The status chip's quick-actions popover (issue #3531). The container

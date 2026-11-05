@@ -19,7 +19,8 @@ export const CUE_LATENCY_PREROLL_MS = 40;
 /** Level calculated from audio samples received by the production capture
  * path.  This is an observation of that buffer, not an acoustic-output claim. */
 export function capturedSignalLevel(samples: Float32Array): { rms: number; peak: number } {
-	if (!(samples instanceof Float32Array)) throw new TypeError('captured signal must be a Float32Array');
+	if (!(samples instanceof Float32Array))
+		throw new TypeError('captured signal must be a Float32Array');
 	if (samples.length === 0) return { rms: 0, peak: 0 };
 	let sumSquares = 0;
 	let peak = 0;
@@ -67,12 +68,7 @@ export function cueLatencyCaptureMs(maxLagMs = HEAD_DELAY_MAX_MS): number {
 	if (!Number.isFinite(maxLagMs) || maxLagMs < 0) {
 		throw new RangeError(`cue latency capture window must be >= 0, got ${maxLagMs}`);
 	}
-	return (
-		CUE_LATENCY_PREROLL_MS +
-		CUE_LATENCY_PERIOD_MS * CUE_LATENCY_CLICK_COUNT +
-		maxLagMs +
-		40
-	);
+	return CUE_LATENCY_PREROLL_MS + CUE_LATENCY_PERIOD_MS * CUE_LATENCY_CLICK_COUNT + maxLagMs + 40;
 }
 
 /**
@@ -104,7 +100,9 @@ export function cueLatencySweep(opts: { sampleRate: number }): Float32Array {
 	for (let i = 0; i < total; i += 1) {
 		const t = i / sampleRate;
 		// Phase of an exponential sweep: 2*pi*f0*T/ln(f1/f0) * (e^(t*ln(f1/f0)/T) - 1).
-		const phase = ((2 * Math.PI * CUE_LATENCY_SWEEP_START_HZ * durationSec) / ratio) * (Math.exp((t * ratio) / durationSec) - 1);
+		const phase =
+			((2 * Math.PI * CUE_LATENCY_SWEEP_START_HZ * durationSec) / ratio) *
+			(Math.exp((t * ratio) / durationSec) - 1);
 		const edge = Math.min(i, total - 1 - i);
 		const taper = edge >= fade ? 1 : 0.5 * (1 - Math.cos((Math.PI * edge) / fade));
 		out[i] = 0.9 * Math.sin(phase) * taper;

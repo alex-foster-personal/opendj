@@ -28,12 +28,24 @@ test('the snapshot module measures ages on the monotonic clock, never Date', () 
 	const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 	assert.doesNotMatch(code, /\bDate\b/, 'no wall-clock read or delta in code');
 	assert.match(code, /performance\.now\(\)/, 'the monotonic clock is the one it reads');
-	for (const fn of ['readFreshProcessFamilySnapshot', 'processFamilyRefreshDue', 'readUnavailableProbeStale', 'processFamilySnapshotAgeMs']) {
-		assert.match(code, new RegExp(`export function ${fn}\\([^)]*monoNowMs: number = _monoNowMs\\(\\)`), fn);
+	for (const fn of [
+		'readFreshProcessFamilySnapshot',
+		'processFamilyRefreshDue',
+		'readUnavailableProbeStale',
+		'processFamilySnapshotAgeMs'
+	]) {
+		assert.match(
+			code,
+			new RegExp(`export function ${fn}\\([^)]*monoNowMs: number = _monoNowMs\\(\\)`),
+			fn
+		);
 	}
 	const meters = readFileSync(
 		fileURLToPath(new URL('../../src/lib/components/rb/PerfMeters.svelte', import.meta.url)),
 		'utf8'
 	);
-	assert.doesNotMatch(meters, /(readFreshProcessFamilySnapshot|processFamilyRefreshDue|readUnavailableProbeStale|processFamilySnapshotAgeMs)\(Date\.now\(\)/);
+	assert.doesNotMatch(
+		meters,
+		/(readFreshProcessFamilySnapshot|processFamilyRefreshDue|readUnavailableProbeStale|processFamilySnapshotAgeMs)\(Date\.now\(\)/
+	);
 });

@@ -19,9 +19,7 @@ from apps.cloud.config import CloudConfig
 
 
 @contextmanager
-def serve_presigned_assets(
-    cfg: CloudConfig, bodies: dict[str, bytes]
-) -> Iterator[str]:
+def serve_presigned_assets(cfg: CloudConfig, bodies: dict[str, bytes]) -> Iterator[str]:
     """Serve ``bodies`` (digest -> bytes) on loopback until the block exits.
 
     Sets ``MDT_ASSET_PRESIGN_HOST`` so real presigned URLs minted by the hub
@@ -38,11 +36,7 @@ def serve_presigned_assets(
                 return
             key = path[len(prefix) :]
             digest = next(
-                (
-                    content_hash
-                    for content_hash, body in bodies.items()
-                    if asset_object_key(content_hash) == key
-                ),
+                (content_hash for content_hash, body in bodies.items() if asset_object_key(content_hash) == key),
                 None,
             )
             if digest is None:
@@ -82,9 +76,7 @@ def serve_presigned_assets(
 
 
 @contextmanager
-def serve_presigned_assets_by_key(
-    cfg: CloudConfig, bodies: dict[str, bytes]
-) -> Iterator[str]:
+def serve_presigned_assets_by_key(cfg: CloudConfig, bodies: dict[str, bytes]) -> Iterator[str]:
     """Serve ``bodies`` (object_key -> bytes) on loopback until the block exits."""
     import os
 

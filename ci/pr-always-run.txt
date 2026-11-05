@@ -177,6 +177,12 @@ tests/scripts/test_runner_toolset_repo_pins.py
 # the derived check on merge.
 tests/quality/test_hosted_runner_pins_are_allowlisted.py
 
+# Issue #7012: `git ls-files -- .mergify.yml` from REPO, then every workflow step
+# and a pinned ADR tuple. The detector sees the ls-files; a reintroduced root
+# config or a dead-decision ADR flip has no import link to this module. Caught
+# by the derived index-reader check on PR #8667.
+tests/quality/test_no_mergify_config.py
+
 # The labelled title-fix eval sets are owner-library rows (licensing rule R14): nothing under
 # tests/fixtures/title_fix may be tracked, and the default fixture directory is not under tests/.
 (private path)
@@ -214,7 +220,13 @@ tests/scripts/test_desktop_html5_drag_drop.py
 # and never reaches this guard.
 tests/engine_core/test_library_changed_kinds.py
 
+# The Tauri drag-drop guard (DECKUX-8350) rglobs every frontend src file for native drop listeners, so a new
+# listener in any frontend file would otherwise never select it.
+tests/scripts/test_html5_drag_drop.py
 # Issue #8584 guard: `git ls-files` at the repo root and slides a 2-line window over every
 # tracked path for stale "append flags to performance-register.md" agent copy. A new doc
 # outside the perf docs can miss every import-linked selector and still reach this scan.
 (private path)
+# Every module under apps/ and scripts/ keeps POSIX-only imports guarded (CROSS-6892): an AST
+# scan of the whole tree, so a new module anywhere can break it without an import link.
+tests/test_no_unguarded_posix_imports.py

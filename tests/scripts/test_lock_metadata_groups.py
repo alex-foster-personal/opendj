@@ -55,13 +55,11 @@ def test_dependency_groups_match_the_requires_dev_uv_records(tmp_path: Path) -> 
     # 0.8.17, Codex P2 on #3763, round 28), so the pair is not a stale group.
     equivalent = GROUPS_PYPROJECT.replace(
         'dev = ["six>=1.16",',
-        "dev = [\"attrs>=23; python_version < '3.12'\","
-        ' "attrs>=23; python_full_version < \'3.12\'", "six>=1.16",',
+        'dev = ["attrs>=23; python_version < \'3.12\'", "attrs>=23; python_full_version < \'3.12\'", "six>=1.16",',
     )
     lock = GROUPS_LOCK.replace(
         "dev = [\n",
-        'dev = [\n    { name = "attrs", marker = "python_full_version < \'3.12\'",'
-        ' specifier = ">=23" },\n',
+        'dev = [\n    { name = "attrs", marker = "python_full_version < \'3.12\'", specifier = ">=23" },\n',
     )
     assert equivalent != GROUPS_PYPROJECT and lock != GROUPS_LOCK
     code, message = _run(tmp_path, equivalent, lock)

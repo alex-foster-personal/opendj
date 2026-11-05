@@ -3,11 +3,7 @@ import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte
 import { listingGenre } from './genre-source';
 
 export type MinorIssueId =
-	| 'not-on-cloud'
-	| 'low-quality'
-	| 'missing-genre'
-	| 'stems-failed'
-	| 'no-lyrics';
+	'not-on-cloud' | 'low-quality' | 'missing-genre' | 'stems-failed' | 'no-lyrics';
 
 export interface MinorIssue {
 	id: MinorIssueId;

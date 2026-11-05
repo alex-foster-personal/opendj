@@ -158,16 +158,13 @@ def _bars(times: Sequence[float]) -> list[_Bar]:
     if len(edges) > 2 and edges[-1] - edges[-2] < 2:
         del edges[-2]
     return [
-        _Bar(times[a], times[b], b - a, 60.0 * (b - a) / (times[b] - times[a]))
-        for a, b in itertools.pairwise(edges)
+        _Bar(times[a], times[b], b - a, 60.0 * (b - a) / (times[b] - times[a])) for a, b in itertools.pairwise(edges)
     ]
 
 
 def _smoothed(values: Sequence[float]) -> list[float]:
     half = _SMOOTH_BARS // 2
-    return [
-        statistics.median(values[max(0, i - half) : i + half + 1]) for i in range(len(values))
-    ]
+    return [statistics.median(values[max(0, i - half) : i + half + 1]) for i in range(len(values))]
 
 
 def _detrended_jitter(intervals: Sequence[float]) -> float:
@@ -278,9 +275,7 @@ def _segment(
     )
 
 
-def _verdict(
-    segments: Sequence[TempoSegment], change_count: int, grid_class: GridClass
-) -> Verdict:
+def _verdict(segments: Sequence[TempoSegment], change_count: int, grid_class: GridClass) -> Verdict:
     moving = [segment for segment in segments if segment.kind != "steady"]
     if not moving and change_count == 0 and grid_class != "variable_tempo":
         return "steady"
@@ -302,9 +297,7 @@ def _verdict(
 # ----- Entry point --------------------------------------------------------
 
 
-def tempo_stability(
-    beat_times_s: Sequence[float], beat_bpms: Sequence[float] | None = None
-) -> TempoStability:
+def tempo_stability(beat_times_s: Sequence[float], beat_bpms: Sequence[float] | None = None) -> TempoStability:
     """Where the tempo of one served beatgrid moves, and how far.
 
     Needs at least two beats; the caller reports a grid without them as not
@@ -328,15 +321,10 @@ def tempo_stability(
     raw_fold = [_is_fold(bar.bpm, nominal) or _is_fold(value, nominal) for bar, value in zip(bars, smooth, strict=True)]
     folded = [any(raw_fold[max(0, i - 1) : i + 2]) for i in range(len(bars))]
     labels = _absorb_short_runs(
-        [
-            _bar_label(_pct(smooth[i], nominal), jitters[i], ramps[i], folded[i])
-            for i in range(len(bars))
-        ]
+        [_bar_label(_pct(smooth[i], nominal), jitters[i], ramps[i], folded[i]) for i in range(len(bars))]
     )
     segments = tuple(_segment(bars, smooth, jitters, run, nominal) for run in _runs(labels))
-    change_count = sum(
-        1 for marker in changes.markers if not _is_fold(marker.bpm_after, marker.bpm_before)
-    )
+    change_count = sum(1 for marker in changes.markers if not _is_fold(marker.bpm_after, marker.bpm_before))
     verdict = _verdict(segments, change_count, quality.grid_class)
     largest = max(
         (abs(_pct(value, nominal)) for value, fold in zip(smooth, folded, strict=True) if not fold),

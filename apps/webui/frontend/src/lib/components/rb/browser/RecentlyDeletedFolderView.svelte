@@ -36,60 +36,60 @@
 <!-- The read-only marker wraps the header AND its child rows: they render as
      siblings, so a marker on the header alone leaves every child unmarked. -->
 <div class="subtree" data-menu-target="tree-readonly">
-<div
-	class="row folder"
-	data-testid="playlist-recently-deleted"
-	role="button"
-	tabindex="0"
-	onclick={() => ontoggle()}
-	onkeydown={(e) => {
-		if (e.key === 'Enter') ontoggle();
-	}}
->
-	<span class="disclosure" class:open>&#9656;</span>
-	<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-		<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
-	</svg>
-	<span class="name">Recently deleted</span>
-	<span class="count" title={_countTitle()}>{_countText()}</span>
-</div>
-{#if open}
-	<div class="collapse" in:collapse out:collapse>
-		<div class="collapse-inner">
-			{#if error !== null}
-				<div class="row child rb-inert" title={error}>
-					<span class="name error">deleted playlists unavailable</span>
-				</div>
-			{:else if rows === null}
-				<div class="row child rb-inert">
-					<span class="name dim">...</span>
-				</div>
-			{:else if rows.length === 0}
-				<div class="row child rb-inert" data-testid="playlist-recently-deleted-empty">
-					<span class="name dim">no deleted playlists</span>
-				</div>
-			{:else}
-				{#each rows as row (row.playlist_id)}
-					<div class="row child rb-inert" data-testid="playlist-deleted-row">
-						<span class="name" title={row.name}>{row.name}</span>
-						<button
-							type="button"
-							class="restore"
-							title="Restore playlist"
-							data-testid="restore-playlist"
-							onclick={(e) => {
-								e.stopPropagation();
-								onrestore(row.playlist_id, row.name);
-							}}
-						>
-							&#8635;
-						</button>
-					</div>
-				{/each}
-			{/if}
-		</div>
+	<div
+		class="row folder"
+		data-testid="playlist-recently-deleted"
+		role="button"
+		tabindex="0"
+		onclick={() => ontoggle()}
+		onkeydown={(e) => {
+			if (e.key === 'Enter') ontoggle();
+		}}
+	>
+		<span class="disclosure" class:open>&#9656;</span>
+		<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+			<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
+		</svg>
+		<span class="name">Recently deleted</span>
+		<span class="count" title={_countTitle()}>{_countText()}</span>
 	</div>
-{/if}
+	{#if open}
+		<div class="collapse" in:collapse out:collapse>
+			<div class="collapse-inner">
+				{#if error !== null}
+					<div class="row child rb-inert" title={error}>
+						<span class="name error">deleted playlists unavailable</span>
+					</div>
+				{:else if rows === null}
+					<div class="row child rb-inert">
+						<span class="name dim">...</span>
+					</div>
+				{:else if rows.length === 0}
+					<div class="row child rb-inert" data-testid="playlist-recently-deleted-empty">
+						<span class="name dim">no deleted playlists</span>
+					</div>
+				{:else}
+					{#each rows as row (row.playlist_id)}
+						<div class="row child rb-inert" data-testid="playlist-deleted-row">
+							<span class="name" title={row.name}>{row.name}</span>
+							<button
+								type="button"
+								class="restore"
+								title="Restore playlist"
+								data-testid="restore-playlist"
+								onclick={(e) => {
+									e.stopPropagation();
+									onrestore(row.playlist_id, row.name);
+								}}
+							>
+								&#8635;
+							</button>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>

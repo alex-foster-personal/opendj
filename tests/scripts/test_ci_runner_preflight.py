@@ -35,6 +35,7 @@ Regression lines:
     env, coreutils) then the run fails for the wrong reason, not the one
     under test
 """
+
 from __future__ import annotations
 
 import os

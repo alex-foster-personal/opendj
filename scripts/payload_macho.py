@@ -45,9 +45,7 @@ def describe_macho(path: Path) -> str | None:
     at it. The signing paths carried the same defect and are fixed the same
     way, in scripts/lib/macho.sh.
     """
-    result = subprocess.run(
-        ["file", "-b", str(path)], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["file", "-b", str(path)], capture_output=True, text=True, check=False)
     description = " ".join(result.stdout.split())
     # A tool that cannot measure must report UNKNOWN, never a verdict. Reading
     # a failed classification as "not Mach-O" would drop the file from the
@@ -88,14 +86,8 @@ def macho_filetype(path: Path) -> str:
     A universal binary repeats the header per slice; all slices share a
     filetype, and a file whose slices disagree is refused rather than guessed.
     """
-    result = subprocess.run(
-        ["otool", "-hv", str(path)], capture_output=True, text=True, check=False
-    )
-    types = {
-        line.split()[4]
-        for line in result.stdout.splitlines()
-        if line.startswith("MH_") and len(line.split()) > 4
-    }
+    result = subprocess.run(["otool", "-hv", str(path)], capture_output=True, text=True, check=False)
+    types = {line.split()[4] for line in result.stdout.splitlines() if line.startswith("MH_") and len(line.split()) > 4}
     if result.returncode != 0 or len(types) != 1:
         raise _build_error(
             f"otool -hv could not give {path} a single Mach-O filetype "

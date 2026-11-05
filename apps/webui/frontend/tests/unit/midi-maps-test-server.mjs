@@ -118,7 +118,9 @@ export function startMidiMapsTestServer({
 
 		const armStall = () => {
 			clearTimeout(stallTimer);
-			const last = boot.length ? `after stage '${boot[boot.length - 1].stage}'` : 'before the first BOOT line';
+			const last = boot.length
+				? `after stage '${boot[boot.length - 1].stage}'`
+				: 'before the first BOOT line';
 			stallTimer = setTimeout(() => fail(`no startup progress for ${stallMs}ms ${last}`), stallMs);
 		};
 
@@ -162,7 +164,8 @@ export function startMidiMapsTestServer({
 					proc.stdout.resume(); // keep draining so the pipe never back-pressures the server
 					resolveReady({ proc, port, origin, boot, readyAfterMs: Date.now() - startedAt });
 				},
-				(error) => fail(`listening on ${port} but ${PROBE_PATH} never answered 200 (${error.message})`)
+				(error) =>
+					fail(`listening on ${port} but ${PROBE_PATH} never answered 200 (${error.message})`)
 			);
 		});
 	});
@@ -174,7 +177,9 @@ async function _probe(origin, probeMs) {
 	let last = 'no attempt';
 	while (Date.now() < deadline) {
 		try {
-			const response = await fetch(`${origin}${PROBE_PATH}`, { signal: AbortSignal.timeout(2_000) });
+			const response = await fetch(`${origin}${PROBE_PATH}`, {
+				signal: AbortSignal.timeout(2_000)
+			});
 			if (response.ok) return;
 			last = `HTTP ${response.status}`;
 		} catch (error) {

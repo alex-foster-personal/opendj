@@ -12,6 +12,7 @@ import type { AnlzBeat, AnlzBeatgridEdit, AnlzBeatgridSource, AnlzCue, AnlzData 
 import type { DeckId } from './deck-slots';
 import type { HotCue, HotCueSlot } from './hot-cue-types';
 import type { StemDeckState } from './stem-types';
+import type { KeySyncMode } from '$lib/player/key/camelot';
 
 /** Re-exported so deck components and the dispatcher take the deck's own
  * id and hot-cue types from one module (frontend coupling ratchet). */
@@ -69,6 +70,11 @@ export interface DeckState {
 	bpm: number | null;
 	/** Camelot key text from TrackOut (e.g. '7A'); null unknown. */
 	key: string | null;
+	/** KEY-GUESS-01: a declined key's best guess from TrackOut, shown dimmed as "8A?" while `key` is null. */
+	key_guess?: string | null;
+	/** DECK-KEY-01: where `key` (or the guess) came from, the library row's key_source:
+	 * own | rekordbox | file_tag | mik_tag | guess; null unknown or unloaded. */
+	key_source?: string | null;
 	/** Musical pitch transposition applied by the real deck DSP, in integer
 	 * semitones from -12 through +12. The source key remains immutable. */
 	key_shift_semitones: number;
@@ -96,6 +102,10 @@ export interface DeckState {
 	/** Operator arm for KEY SYNC. Whether the deck is actually following a
 	 * master right now is keySyncStatus(), which the control lights from. */
 	key_sync_enabled: boolean;
+	/** KEYSYNC-01: exact (default, Serato-style), relative (A<->B) or compatible (Pioneer family). */
+	key_sync_mode: KeySyncMode;
+	/** KEYSYNC-01: the deck KEY SYNC follows; null follows the elected MASTER. */
+	key_sync_target: DeckId | null;
 	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
 	master_tempo_enabled: boolean;
 	/** Arm slip mode. This does not alter an existing transport schedule. */

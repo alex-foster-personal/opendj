@@ -45,12 +45,8 @@ from tests.waits import wait_for_external_state
 BROKEN_FUNNEL_STATUS_2026_08_22 = {
     "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
     "Web": {
-        "agentbox.example-tailnet.ts.net:443": {
-            "Handlers": {"/": {"Proxy": "http://127.0.0.1:8084"}}
-        },
-        "agentbox.example-tailnet.ts.net:80": {
-            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}
-        },
+        "agentbox.example-tailnet.ts.net:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8084"}}},
+        "agentbox.example-tailnet.ts.net:80": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}},
     },
     "AllowFunnel": {"agentbox.example-tailnet.ts.net:443": True},
 }
@@ -58,12 +54,8 @@ BROKEN_FUNNEL_STATUS_2026_08_22 = {
 FIXED_SERVE_STATUS_2026_08_22 = {
     "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
     "Web": {
-        "agentbox.example-tailnet.ts.net:443": {
-            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9400"}}
-        },
-        "agentbox.example-tailnet.ts.net:80": {
-            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}
-        },
+        "agentbox.example-tailnet.ts.net:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:9400"}}},
+        "agentbox.example-tailnet.ts.net:80": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}},
     },
 }
 
@@ -88,13 +80,10 @@ def test_allowed_hosts_come_from_root_env_and_refuse_blank(tmp_path: Path) -> No
         "agentbox",
         "agentbox.example-tailnet.ts.net",
     ]
-    assert (
-        resolve_allowed_hosts(
-            environ={"MUSIC_DJ_ALLOWED_HOSTS": "shell-host"},
-            dotenv_path=env_path,
-        )
-        == ["shell-host"]
-    )
+    assert resolve_allowed_hosts(
+        environ={"MUSIC_DJ_ALLOWED_HOSTS": "shell-host"},
+        dotenv_path=env_path,
+    ) == ["shell-host"]
 
 
 def test_log_home_is_durable_only_on_agentbox(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,17 +123,13 @@ def test_dated_logs_append_off_the_worktree(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "first\n"
 
 
-def test_dated_log_path_uses_utc_when_no_time_is_supplied(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dated_log_path_uses_utc_when_no_time_is_supplied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import apps.webui.run_agentbox as runner
 
     monkeypatch.setattr(runner.time, "gmtime", lambda: time.strptime("2026-08-17", "%Y-%m-%d"))
     monkeypatch.setattr(runner.time, "localtime", lambda: time.strptime("2026-08-18", "%Y-%m-%d"))
 
-    assert dated_log_path("webui-backend", durable_dir=tmp_path) == (
-        tmp_path / "webui-backend-2026-08-17.log"
-    )
+    assert dated_log_path("webui-backend", durable_dir=tmp_path) == (tmp_path / "webui-backend-2026-08-17.log")
 
 
 #: A MagicDNS name on a synthetic tailnet. The real label is deployment config
@@ -170,9 +155,7 @@ def test_the_tailnet_destination_comes_from_config(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     monkeypatch.setenv(AGENTBOX_SSH_HOSTS_ENV, TAILNET_HOST)
     assert allowed_ssh_host(TAILNET_HOST) is True
-    assert allowed_ssh_host(
-        "agentbox", environ={AGENTBOX_HOST_ENV: "agentbox", AGENTBOX_SSH_HOSTS_ENV: ""}
-    ) is True
+    assert allowed_ssh_host("agentbox", environ={AGENTBOX_HOST_ENV: "agentbox", AGENTBOX_SSH_HOSTS_ENV: ""}) is True
 
 
 def test_an_unconfigured_tailnet_destination_is_refused(
@@ -181,9 +164,7 @@ def test_an_unconfigured_tailnet_destination_is_refused(
     monkeypatch.delenv(AGENTBOX_SSH_HOSTS_ENV, raising=False)
     monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     assert allowed_ssh_host(TAILNET_HOST) is False
-    assert TAILNET_HOST not in allowed_ssh_hosts(
-        environ={AGENTBOX_HOST_ENV: "agentbox"}
-    )
+    assert TAILNET_HOST not in allowed_ssh_hosts(environ={AGENTBOX_HOST_ENV: "agentbox"})
 
 
 def test_config_is_parsed_as_an_exact_list(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,9 +206,7 @@ def test_ssh_hop_is_tailnet_only_and_not_a_shell(monkeypatch: pytest.MonkeyPatch
 
 
 def test_public_host_prefers_magicdns() -> None:
-    assert public_host(["agentbox", "agentbox.example-tailnet.ts.net"]) == (
-        "agentbox.example-tailnet.ts.net"
-    )
+    assert public_host(["agentbox", "agentbox.example-tailnet.ts.net"]) == ("agentbox.example-tailnet.ts.net")
     assert public_host(["agentbox"]) == "agentbox"
 
 
@@ -290,14 +269,11 @@ def test_listener_pids_sees_a_real_loopback_socket() -> None:
     try:
         assert proc.stdout is not None
         announcement = proc.stdout.readline().split()
-        assert announcement[:1] == ["bound"], (
-            f"child never bound port {port} (rc={proc.poll()})"
-        )
+        assert announcement[:1] == ["bound"], f"child never bound port {port} (rc={proc.poll()})"
         listener = int(announcement[1])
         seen = listener_pids(port)
         assert listener in seen, (
-            f"port {port} is held by {listener} (Popen saw {proc.pid}) "
-            f"but listener_pids reported {seen}"
+            f"port {port} is held by {listener} (Popen saw {proc.pid}) but listener_pids reported {seen}"
         )
         assert can_bind(port) is False
     finally:
@@ -368,9 +344,10 @@ def test_redirect_response_does_not_follow_a_real_redirect() -> None:
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        assert redirect_response(
-            f"http://127.0.0.1:{port}/performance", host="agentbox"
-        ) == (307, "https://agentbox.example-tailnet.ts.net/performance")
+        assert redirect_response(f"http://127.0.0.1:{port}/performance", host="agentbox") == (
+            307,
+            "https://agentbox.example-tailnet.ts.net/performance",
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -378,12 +355,16 @@ def test_redirect_response_does_not_follow_a_real_redirect() -> None:
 
 def test_https_status_returns_zero_for_a_real_closed_socket() -> None:
     port = _free_port()
-    assert https_status(
-        f"https://agentbox.example-tailnet.ts.net:{port}/",
-        resolve_host="agentbox.example-tailnet.ts.net",
-        resolve_ip="127.0.0.1",
-        timeout=0.2,
-    ) == 0
+    assert (
+        https_status(
+            f"https://agentbox.example-tailnet.ts.net:{port}/",
+            resolve_host="agentbox.example-tailnet.ts.net",
+            resolve_ip="127.0.0.1",
+            timeout=0.2,
+        )
+        == 0
+    )
+
 
 pytestmark = pytest.mark.rb_parity
 
@@ -394,9 +375,7 @@ def test_the_served_origin_is_read_back_from_the_launcher() -> None:
         "[OK] reserved 8585/5173 hosts=agentbox\n"
         "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 203.0.113.5\n"
     )
-    assert serve_url_from_launcher_output(reported) == (
-        "https://agentbox.example-tailnet.ts.net/"
-    )
+    assert serve_url_from_launcher_output(reported) == ("https://agentbox.example-tailnet.ts.net/")
 
 
 def test_the_last_serve_line_wins() -> None:

@@ -96,7 +96,10 @@ export function peakConcurrentLoads(
 	// before CLOSES at the same instant, so two spans that merely touch are
 	// counted as coincident -- the same closed-interval convention as
 	// spansOverlap, applied to the count rather than the boolean.
-	const edges: Array<readonly [number, number]> = [[subject.startMs, 1], [subjectEnd, -1]];
+	const edges: Array<readonly [number, number]> = [
+		[subject.startMs, 1],
+		[subjectEnd, -1]
+	];
 	for (const other of others) {
 		if (other.id === subject.id) continue;
 		if (!spansOverlap(subject, other, nowMs)) continue;

@@ -19,14 +19,16 @@ const isWire = (value: unknown): value is Wire =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 const isText = (value: unknown): value is string => typeof value === 'string';
 const isIdText = (value: unknown): boolean => isText(value) && value !== '';
-const isOneOf = (value: unknown, ...allowed: string[]): boolean => isText(value) && allowed.includes(value);
+const isOneOf = (value: unknown, ...allowed: string[]): boolean =>
+	isText(value) && allowed.includes(value);
 const isTextOrNull = (value: unknown): boolean => value === null || isText(value);
 const isAbsentOr = (value: unknown, check: (present: unknown) => boolean): boolean =>
 	value === undefined || value === null || check(value);
 
 const isToolCall = (value: unknown): boolean =>
 	isWire(value) && isIdText(value.id) && isIdText(value.name) && isWire(value.arguments);
-const isToolError = (value: unknown): boolean => isWire(value) && isText(value.code) && isText(value.message);
+const isToolError = (value: unknown): boolean =>
+	isWire(value) && isText(value.code) && isText(value.message);
 const isMessage = (value: unknown): boolean =>
 	isWire(value) &&
 	isOneOf(value.role, 'user', 'assistant', 'tool') &&
@@ -36,7 +38,8 @@ const isMessage = (value: unknown): boolean =>
 
 /** Keyed by the union, so a new event type does not compile until it has a rule. */
 const VALID_EVENT: Record<AgentEvent['type'], (event: Wire) => boolean> = {
-	tier: (e) => isOneOf(e.tier, 'instant', 'fast', 'think') && isTextOrNull(e.model) && isText(e.reason),
+	tier: (e) =>
+		isOneOf(e.tier, 'instant', 'fast', 'think') && isTextOrNull(e.model) && isText(e.reason),
 	text: (e) => isText(e.delta),
 	tool_call: (e) => isToolCall(e.call) && isOneOf(e.gate, 'read', 'confirm'),
 	confirm: (e) => isToolCall(e.call) && isText(e.reason),
@@ -62,12 +65,17 @@ export function parseAgentLine(line: string): AgentEvent {
 		throw new AssistantError('assistant_contract_drift', `unknown event type: ${String(type)}`);
 	}
 	if (!VALID_EVENT[type as AgentEvent['type']](value as Wire)) {
-		throw new AssistantError('assistant_contract_drift', `malformed ${type} event: ${line.slice(0, 120)}`);
+		throw new AssistantError(
+			'assistant_contract_drift',
+			`malformed ${type} event: ${line.slice(0, 120)}`
+		);
 	}
 	return value as AgentEvent;
 }
 
-export async function* parseAgentStream(body: ReadableStream<Uint8Array>): AsyncGenerator<AgentEvent> {
+export async function* parseAgentStream(
+	body: ReadableStream<Uint8Array>
+): AsyncGenerator<AgentEvent> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -85,7 +93,10 @@ export async function* parseAgentStream(body: ReadableStream<Uint8Array>): Async
 				yield event;
 			}
 			if (done && !terminal) {
-				throw new AssistantError('assistant_contract_drift', 'the agent stream ended with no done or error event');
+				throw new AssistantError(
+					'assistant_contract_drift',
+					'the agent stream ended with no done or error event'
+				);
 			}
 			if (done) return;
 		}
@@ -94,7 +105,10 @@ export async function* parseAgentStream(body: ReadableStream<Uint8Array>): Async
 	}
 }
 
-export async function* streamAgent(input: AgentIn, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+export async function* streamAgent(
+	input: AgentIn,
+	signal: AbortSignal
+): AsyncGenerator<AgentEvent> {
 	const response = await fetch(`${API_BASE}${AGENT_PATH}`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -102,6 +116,7 @@ export async function* streamAgent(input: AgentIn, signal: AbortSignal): AsyncGe
 		signal
 	});
 	if (!response.ok) throw await assistantRefusal(response);
-	if (!response.body) throw new AssistantError('assistant_no_stream', 'the agent reply had no body');
+	if (!response.body)
+		throw new AssistantError('assistant_no_stream', 'the agent reply had no body');
 	yield* parseAgentStream(response.body);
 }

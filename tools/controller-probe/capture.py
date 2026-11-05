@@ -12,7 +12,7 @@ the expected map beside this file are THEORY-FIRST: both were derived from the
 vendor MIDI message list PDF, and no wire in either has been confirmed against
 the hardware. This CLI is the instrument that confirms them. It is the
 agent-native equivalent of the in-app learn wizard in
-``specs/controller-onboarding.md`` section 3.4.
+``(private path)`` section 3.4.
 
 Subcommands::
 
@@ -257,16 +257,12 @@ def build_reverse_index(
     return index
 
 
-def lookup_control(
-    index: Mapping[tuple[int, int], ExpectedControl], status: int, code: int
-) -> ExpectedControl | None:
+def lookup_control(index: Mapping[tuple[int, int], ExpectedControl], status: int, code: int) -> ExpectedControl | None:
     """Reverse-look-up one wire pair. Exact match only, never a near miss."""
     return index.get((status, code))
 
 
-def is_accounted_for(
-    index: Mapping[tuple[int, int], ExpectedControl], status: int, code: int
-) -> bool:
+def is_accounted_for(index: Mapping[tuple[int, int], ExpectedControl], status: int, code: int) -> bool:
     """Is this pair explained by the map, either directly or as a known release?
 
     The expected map lists the note-ON status for every button and no note-OFF
@@ -329,9 +325,7 @@ def filter_controls(
 # ------------------------------------------------------------------ verdicts
 
 
-def compute_verdict(
-    expected: Mapping[str, Any], observed: Sequence[Mapping[str, Any]], skipped: bool
-) -> str:
+def compute_verdict(expected: Mapping[str, Any], observed: Sequence[Mapping[str, Any]], skipped: bool) -> str:
     """Grade one capture entry.
 
     An explicit skip, and a step that gathered NO messages at all, are both
@@ -348,10 +342,7 @@ def compute_verdict(
 
 
 def _format_expected(expected: Mapping[str, Any]) -> str:
-    return (
-        f"{expected['kind']} ch{expected['ch']} "
-        f"status 0x{expected['status']:02X} code {expected['code']}"
-    )
+    return f"{expected['kind']} ch{expected['ch']} status 0x{expected['status']:02X} code {expected['code']}"
 
 
 def _format_observed(observed: Sequence[Mapping[str, Any]]) -> str:
@@ -421,9 +412,7 @@ def resolve_port(names: Sequence[str], needle: str) -> int:
     listing = "\n".join(f"  [{i}] {name}" for i, name in enumerate(names)) or "  (none)"
     if not hits:
         raise SystemExit(f"error: no input port matching {needle!r}. Ports:\n{listing}")
-    raise SystemExit(
-        f"error: {len(hits)} input ports match {needle!r}; narrow it with --port. Ports:\n{listing}"
-    )
+    raise SystemExit(f"error: {len(hits)} input ports match {needle!r}; narrow it with --port. Ports:\n{listing}")
 
 
 def _open_port(needle: str) -> tuple[rtmidi.MidiIn, str]:
@@ -661,9 +650,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
     )
     if not selected:
         sections = sorted({c.section for c in expected_map.controls})
-        raise SystemExit(
-            f"error: filters selected zero controls. Sections in the map: {', '.join(sections)}"
-        )
+        raise SystemExit(f"error: filters selected zero controls. Sections in the map: {', '.join(sections)}")
     midi_in, port_name = _open_port(args.port)
     events: queue.Queue[tuple[str, tuple[int, ...]]] = queue.Queue()
     midi_in.set_callback(_make_callback(events))
@@ -733,10 +720,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
         max([len("expected")] + [len(r.expected_text) for r in report.rows]),
         max([len("observed")] + [len(r.observed_text) for r in report.rows]),
     )
-    header = (
-        f"{'id':<{widths[0]}} | {'expected':<{widths[1]}} | "
-        f"{'observed':<{widths[2]}} | verdict"
-    )
+    header = f"{'id':<{widths[0]}} | {'expected':<{widths[1]}} | {'observed':<{widths[2]}} | verdict"
     print(header)
     print("-" * len(header))
     for row in report.rows:

@@ -39,8 +39,7 @@ class AccessLogRateGate:
                 self._muted = True
                 rate = len(self._timestamps) / self.window_seconds
                 logging.getLogger(_MUTE_LOGGER).warning(
-                    "uvicorn access logging muted: %.1f lines/s over %ds "
-                    "(threshold %d/s)",
+                    "uvicorn access logging muted: %.1f lines/s over %ds (threshold %d/s)",
                     rate,
                     self.window_seconds,
                     self.max_lines_per_second,

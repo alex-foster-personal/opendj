@@ -12,7 +12,9 @@ const src = readFileSync(
 );
 
 function openingEffect() {
-	const m = src.match(/\$effect\(\(\) => \{\n\t\tif \(!settingsOverlay\.open\) \{[\s\S]*?searchEl\?\.focus\(\)\);\n\t\}\);/);
+	const m = src.match(
+		/\$effect\(\(\) => \{\n\t\tif \(!settingsOverlay\.open\) \{[\s\S]*?searchEl\?\.focus\(\)\);\n\t\}\);/
+	);
 	assert.ok(m, 'the opening effect must exist');
 	return m[0];
 }

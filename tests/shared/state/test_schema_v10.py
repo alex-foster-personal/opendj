@@ -2,7 +2,7 @@
 
 [if] a fresh ladder does not create lyric_verdict and its triage index [then] fail, [else stop].
 
-Contract under test: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and
+Contract under test: ``(private path)`` D13.1 and
 the ``sync_policies`` half of D13.2, implemented in
 :mod:`apps.shared.state.migrations_v10`.
 
@@ -27,6 +27,7 @@ Acceptance criteria, one assertion block each:
   migrates QUIETLY, the new table ships without its triage index and nothing
   says so -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -63,9 +64,7 @@ def _objects(conn: sqlite3.Connection) -> dict[str, str]:
     """``name -> normalised DDL`` for every real table and index."""
     return {
         str(name): normalize_object_sql(str(sql))
-        for name, sql in conn.execute(
-            "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')"
-        ).fetchall()
+        for name, sql in conn.execute("SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')").fetchall()
         if sql is not None and not str(name).startswith("sqlite_")
     }
 
@@ -131,8 +130,7 @@ def _insert_verdict(conn: sqlite3.Connection, **overrides: object) -> None:
 
 def _insert_track(conn: sqlite3.Connection) -> None:
     conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
-        "VALUES (?, 'isrc', ?, ?)",
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
         (_SID, _TS, _TS),
     )
 
@@ -174,10 +172,7 @@ def test_the_sync_trio_is_declared_exactly_as_tracks_declares_it(
     state_conn: sqlite3.Connection,
 ) -> None:
     """updated_at NOT NULL, the other two nullable -- ADR 04 c7 / D13.1."""
-    notnull = {
-        str(row[1]): bool(row[3])
-        for row in state_conn.execute("PRAGMA table_info(lyric_verdict)")
-    }
+    notnull = {str(row[1]): bool(row[3]) for row in state_conn.execute("PRAGMA table_info(lyric_verdict)")}
     assert notnull["updated_at"] is True, (
         "a NULL-stamped verdict row would sync as epoch-old and lose every "
         "conflict silently; NOT NULL makes the peer's batch fail instead"
@@ -193,9 +188,7 @@ def test_the_foreign_key_to_tracks_is_enforced(
     state_conn: sqlite3.Connection,
 ) -> None:
     fks = state_conn.execute("PRAGMA foreign_key_list(lyric_verdict)").fetchall()
-    assert [(row[2], row[3], row[4], row[6]) for row in fks] == [
-        ("tracks", "stable_id", "stable_id", "CASCADE")
-    ]
+    assert [(row[2], row[3], row[4], row[6]) for row in fks] == [("tracks", "stable_id", "stable_id", "CASCADE")]
     with pytest.raises(sqlite3.IntegrityError):
         _insert_verdict(state_conn)
 
@@ -207,9 +200,7 @@ def test_every_declared_verdict_is_accepted(state_conn: sqlite3.Connection) -> N
     _insert_track(state_conn)
     for verdict in state_schema.LYRIC_VERDICTS:
         _insert_verdict(state_conn, verdict=verdict)
-    stored = state_conn.execute(
-        "SELECT verdict FROM lyric_verdict WHERE stable_id = ?", (_SID,)
-    ).fetchone()[0]
+    stored = state_conn.execute("SELECT verdict FROM lyric_verdict WHERE stable_id = ?", (_SID,)).fetchone()[0]
     assert stored == state_schema.LYRIC_VERDICTS[-1]
 
 
@@ -256,17 +247,13 @@ def test_the_widened_check_admits_the_two_new_kinds(
     )
     for kind in ASSET_KIND_CHECK_VALUES:
         state_conn.execute(
-            "INSERT INTO sync_policies(machine_id, asset_kind, mode) "
-            "VALUES ('m1', ?, 'pinned')",
+            "INSERT INTO sync_policies(machine_id, asset_kind, mode) VALUES ('m1', ?, 'pinned')",
             (kind,),
         )
-    assert state_conn.execute(
-        "SELECT COUNT(*) FROM sync_policies"
-    ).fetchone()[0] == len(ASSET_KIND_CHECK_VALUES)
+    assert state_conn.execute("SELECT COUNT(*) FROM sync_policies").fetchone()[0] == len(ASSET_KIND_CHECK_VALUES)
     with pytest.raises(sqlite3.IntegrityError):
         state_conn.execute(
-            "INSERT INTO sync_policies(machine_id, asset_kind, mode) "
-            "VALUES ('m1', 'beatgrid_cache', 'pinned')"
+            "INSERT INTO sync_policies(machine_id, asset_kind, mode) VALUES ('m1', 'beatgrid_cache', 'pinned')"
         )
 
 
@@ -296,31 +283,24 @@ def test_a_v8_db_migrates_with_its_policy_rows_and_column_list_intact(
 
     conn = state_db.open_rw(db_path)
     try:
-        assert conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0] == state_schema.SCHEMA_VERSION
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
         assert _columns(conn, "sync_policies") == v8_columns
-        assert conn.execute(
-            "SELECT machine_id, asset_kind, mode, cache_budget_mb, updated_at, "
-            "origin_device_id, deleted_at FROM sync_policies ORDER BY asset_kind"
-        ).fetchall() == v8_rows
-        tombstoned = conn.execute(
-            "SELECT COUNT(*) FROM sync_policies WHERE deleted_at IS NOT NULL"
-        ).fetchone()[0]
+        assert (
+            conn.execute(
+                "SELECT machine_id, asset_kind, mode, cache_budget_mb, updated_at, "
+                "origin_device_id, deleted_at FROM sync_policies ORDER BY asset_kind"
+            ).fetchall()
+            == v8_rows
+        )
+        tombstoned = conn.execute("SELECT COUNT(*) FROM sync_policies WHERE deleted_at IS NOT NULL").fetchone()[0]
         assert tombstoned == 1, (
             "the rebuild dropped a tombstone; this machine's digest now "
             "disagrees with every peer that still remembers the delete"
         )
-        pk = [
-            str(row[1])
-            for row in conn.execute("PRAGMA table_info(sync_policies)")
-            if int(row[5]) > 0
-        ]
+        pk = [str(row[1]) for row in conn.execute("PRAGMA table_info(sync_policies)") if int(row[5]) > 0]
         assert pk == ["machine_id", "asset_kind"]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert "sync_policies_v10" not in _objects(conn), (
-            "the scratch table survived the rename"
-        )
+        assert "sync_policies_v10" not in _objects(conn), "the scratch table survived the rename"
     finally:
         conn.close()
 
@@ -334,8 +314,7 @@ def test_a_migrated_ladder_and_a_fresh_ladder_agree_byte_for_byte(
     fresh = state_db.open_rw(tmp_path / "fresh" / "state" / "state.db")
     try:
         assert _objects(migrated) == _objects(fresh), (
-            "a machine that upgraded and a machine that started fresh are "
-            "not running the same schema"
+            "a machine that upgraded and a machine that started fresh are not running the same schema"
         )
     finally:
         migrated.close()
@@ -363,28 +342,18 @@ def test_a_stale_index_name_on_a_renamed_aside_table_fails_the_migration(
     try:
         # The branch-era pair, verbatim in shape, then renamed aside exactly
         # as the runbook does -- but WITHOUT the DROP INDEX step.
-        conn.execute(
-            "CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, "
-            "pct_witness_red REAL)"
-        )
-        conn.execute(
-            "CREATE INDEX idx_lyric_verdict_red "
-            "ON lyric_verdict(pct_witness_red DESC)"
-        )
+        conn.execute("CREATE TABLE lyric_verdict (stable_id TEXT PRIMARY KEY, pct_witness_red REAL)")
+        conn.execute("CREATE INDEX idx_lyric_verdict_red ON lyric_verdict(pct_witness_red DESC)")
         conn.execute("ALTER TABLE lyric_verdict RENAME TO lyric_verdict_legacy")
         conn.commit()
-        assert "idx_lyric_verdict_red" in _objects(conn), (
-            "fixture assumption: the rename carries the index across"
-        )
+        assert "idx_lyric_verdict_red" in _objects(conn), "fixture assumption: the rename carries the index across"
         with pytest.raises(sqlite3.OperationalError, match="idx_lyric_verdict_red"):
             state_schema.apply_migrations(conn)
         # Every rung below v10 (v9 enrollment included) succeeds and stamps;
         # only the lyric_verdict rung fails, so the DB sits one below IT.
         # Derived from the ladder rather than SCHEMA_VERSION - 1: v11+ landed above.
-        assert conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0] == state_schema.MIGRATIONS.index(_V10), (
-            "a failed step must not stamp its version"
-        )
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == state_schema.MIGRATIONS.index(
+            _V10
+        ), "a failed step must not stamp its version"
     finally:
         conn.close()

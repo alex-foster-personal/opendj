@@ -128,8 +128,8 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 			}
 		}
 	}
-	// Control: 2 rows x (5 + 4 options) x 3 skins. A zero here would mean the loop never ran.
-	assert.equal(painted, 27, 'every preview row x option x skin combination was painted');
+	// Control: 2 rows x (5 + 4 options) x 5 skins. A zero here would mean the loop never ran.
+	assert.equal(painted, 45, 'every preview row x option x skin combination was painted');
 });
 
 test('CHROME-16 if a design has no painter branch then the preview falls through silently instead of failing', () => {

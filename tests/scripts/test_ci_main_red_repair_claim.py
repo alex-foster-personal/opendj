@@ -353,17 +353,14 @@ def test_github_race_loser_backs_off_after_post(
     ]
     reset_gh_executable_cache()
     set_gh_runner(None)
-    replay = install_main_red_repair_gh_replay(
-        monkeypatch, tmp_path, seed_comments=[], inject_on_post=inject_on_post
-    )
+    replay = install_main_red_repair_gh_replay(monkeypatch, tmp_path, seed_comments=[], inject_on_post=inject_on_post)
     ok, msg = try_claim("loser", red=red, now=8001.0, claim_dir=claim_dir)
     assert ok is False
     assert "winner" in msg
     claim_file, _ = claim_file_paths(claim_dir)
     assert not claim_file.exists()
     assert any(
-        GITHUB_RELEASE_MARKER in str(c.get("body")) and "owner=loser" in str(c.get("body"))
-        for c in replay.comments
+        GITHUB_RELEASE_MARKER in str(c.get("body")) and "owner=loser" in str(c.get("body")) for c in replay.comments
     )
     assert any(len(inv) >= 3 and inv[1:3] == ["api", "-X"] for inv in replay.invocations)
 
@@ -422,8 +419,7 @@ def test_release_clears_remote_when_local_belongs_to_other_owner(
     assert "unchanged" in msg
     assert {c.owner for c in _load_file_claims(claim_dir)} == {"owner-a"}
     assert any(
-        GITHUB_RELEASE_MARKER in str(c.get("body")) and "owner=owner-b" in str(c.get("body"))
-        for c in store["comments"]
+        GITHUB_RELEASE_MARKER in str(c.get("body")) and "owner=owner-b" in str(c.get("body")) for c in store["comments"]
     )
 
 
@@ -444,7 +440,8 @@ def test_release_clears_remote_without_local_file(claim_dir: Path, monkeypatch: 
         {
             "id": 1,
             "created_at": "2026-01-01T00:00:00Z",
-            "body": "<!-- main-red-repair-claim v1 -->\n" + json.dumps(
+            "body": "<!-- main-red-repair-claim v1 -->\n"
+            + json.dumps(
                 {
                     "main_sha": record.main_sha,
                     "identities_key": record.identities_key,
@@ -583,9 +580,7 @@ def test_parse_github_active_claims_keeps_disjoint_same_owner() -> None:
     assert keys == {"key-a", "key-b"}
 
 
-def test_third_owner_blocked_by_disjoint_remote_claim(
-    claim_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_third_owner_blocked_by_disjoint_remote_claim(claim_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENDJ_MAIN_RED_REPAIR_COORD", "both")
     monkeypatch.setenv("OPENDJ_MAIN_RED_REPAIR_ISSUE", "4046")
     red_a = _red("5" * 40, frozenset({"FAILED tests/a.py::one"}))
@@ -620,9 +615,7 @@ def test_third_owner_blocked_by_disjoint_remote_claim(
     assert "owner-b" in msg
 
 
-def test_github_mode_fails_closed_when_issue_unavailable(
-    claim_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_github_mode_fails_closed_when_issue_unavailable(claim_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENDJ_MAIN_RED_REPAIR_COORD", "github")
     monkeypatch.delenv("OPENDJ_MAIN_RED_REPAIR_ISSUE", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)

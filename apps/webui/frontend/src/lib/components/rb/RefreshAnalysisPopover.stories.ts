@@ -58,9 +58,30 @@ const coverage: IngestCoverage = {
 const config: IngestConfig = {
 	path: '/music/.opendj/ingest.json',
 	steps: [
-		{ id: 'analysis', label: 'Analysis', enabled: true, default_enabled: true, requires_rb_row: false, hint: 'tempo, key, beatgrid' },
-		{ id: 'stems', label: 'Stems', enabled: true, default_enabled: false, requires_rb_row: false, hint: 'vocal, drums, instrumental' },
-		{ id: 'vocals', label: 'Vocals', enabled: false, default_enabled: false, requires_rb_row: false, hint: 'vocal cache' }
+		{
+			id: 'analysis',
+			label: 'Analysis',
+			enabled: true,
+			default_enabled: true,
+			requires_rb_row: false,
+			hint: 'tempo, key, beatgrid'
+		},
+		{
+			id: 'stems',
+			label: 'Stems',
+			enabled: true,
+			default_enabled: false,
+			requires_rb_row: false,
+			hint: 'vocal, drums, instrumental'
+		},
+		{
+			id: 'vocals',
+			label: 'Vocals',
+			enabled: false,
+			default_enabled: false,
+			requires_rb_row: false,
+			hint: 'vocal cache'
+		}
 	]
 };
 

@@ -81,7 +81,13 @@ export async function nudgeGridEdit(
 
 /** Reset one half of the edit; the server keeps the other in the same
  * transaction, so a concurrent agent edit of that half survives. */
-export async function resetGridEditPart(stableId: string, source: GridEditSource, part: 'adjust' | 'shift') {
+export async function resetGridEditPart(
+	stableId: string,
+	source: GridEditSource,
+	part: 'adjust' | 'shift'
+) {
 	refuseStickWrite(stableId, 'grid edit');
-	return unwrap(api.DELETE(_GRID_EDIT, { params: { path: { stable_id: stableId }, query: { source, part } } }));
+	return unwrap(
+		api.DELETE(_GRID_EDIT, { params: { path: { stable_id: stableId }, query: { source, part } } })
+	);
 }

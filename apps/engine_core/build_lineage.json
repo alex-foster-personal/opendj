@@ -1,0 +1,33 @@
+{
+  "_doc": "INSTALL-44 build lineage colours. Each long-lived line owns a fixed colour; a build carrying two or more non-trunk lines gets the nearest palette colour to their blend (cerulean + yellow = teal) until they merge. The palette is deliberately sparse so every name is distinct at a glance. A line colours a build only when the build carries at least carry_threshold of the line's own commits; below that it is listed in line_shares but the build keeps its trunk colour. Read by apps/engine_core/build_lineage.py.",
+  "trunk": "main",
+  "carry_threshold": 0.5,
+  "lines": [
+    {
+      "name": "main",
+      "ref": "origin/main",
+      "color": "white"
+    },
+    {
+      "name": "af--set-rc",
+      "ref": "origin/af--set-rc",
+      "color": "cerulean"
+    },
+    {
+      "name": "af--b2b-link",
+      "ref": "origin/af--b2b-link",
+      "color": "yellow"
+    }
+  ],
+  "palette": {
+    "white": "#ffffff",
+    "cerulean": "#007ba7",
+    "yellow": "#ffff00",
+    "teal": "#008080",
+    "orange": "#ff8c00",
+    "magenta": "#ff00ff",
+    "violet": "#8a2be2",
+    "red": "#e0201b",
+    "indigo": "#4b0082"
+  }
+}

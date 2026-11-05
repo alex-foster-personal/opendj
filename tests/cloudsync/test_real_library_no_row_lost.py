@@ -50,6 +50,7 @@ Numbers this module measures are printed. Run with ``-s`` to see them.
 
 [if] a sync-set table ends short on the hub [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -87,9 +88,7 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _sync(fleet: RealLibraryFleet, spoke: SeededSpoke) -> client.SyncResult:
-    return client.run_sync(
-        spoke.data_dir, HUB_URL, transport=fleet.transport, name=spoke.data_dir.name
-    )
+    return client.run_sync(spoke.data_dir, HUB_URL, transport=fleet.transport, name=spoke.data_dir.name)
 
 
 def _counts(conn: sqlite3.Connection) -> dict[str, int]:
@@ -100,10 +99,7 @@ def _counts(conn: sqlite3.Connection) -> dict[str, int]:
     dropped tombstone read as parity.
     """
     return {
-        spec.name: int(
-            conn.execute(f"SELECT COUNT(*) FROM {spec.name}").fetchone()[0]
-        )
-        for spec in protocol.SYNC_TABLES
+        spec.name: int(conn.execute(f"SELECT COUNT(*) FROM {spec.name}").fetchone()[0]) for spec in protocol.SYNC_TABLES
     }
 
 
@@ -147,8 +143,7 @@ def test_a_dirty_library_settles_instead_of_re_offering_forever(
     # Control, as a presence: this fleet really is holding rows back. Without
     # it every assertion below is satisfied by a fleet with nothing to hold.
     assert first.quarantined > 0, (
-        "the unrepaired tier held nothing back, so the livelock assertions "
-        "below would pass vacuously"
+        "the unrepaired tier held nothing back, so the livelock assertions below would pass vacuously"
     )
 
     fences = [_fence(spoke)]
@@ -166,8 +161,7 @@ def test_a_dirty_library_settles_instead_of_re_offering_forever(
         f"times it succeeds"
     )
     assert quarantined == [first.quarantined] * SETTLED_PASSES, (
-        f"the held-back set moved while nothing was written: "
-        f"first={first.quarantined}, later={quarantined}"
+        f"the held-back set moved while nothing was written: first={first.quarantined}, later={quarantined}"
     )
     assert fences == sorted(fences), f"the push fence regressed: {fences}"
     assert len(set(fences)) == 1, (
@@ -206,10 +200,7 @@ def test_no_row_is_lost_once_the_repair_runs_and_no_rotate_is_needed(
 
     def _forbidden(*args: object, **kwargs: object) -> str:
         rotates.append("called")
-        raise AssertionError(
-            "generation.rotate was called; convergence must not need the "
-            "hub's restore token"
-        )
+        raise AssertionError("generation.rotate was called; convergence must not need the hub's restore token")
 
     # Control on the guard itself: patching a name that no longer exists
     # would make this test pass by watching nothing, so raising=True.
@@ -234,18 +225,14 @@ def test_no_row_is_lost_once_the_repair_runs_and_no_rotate_is_needed(
         hub_conn.close()
     # Control that the parity below is not trivially true from the start:
     # SOME table must be short while rows are held.
-    assert any(
-        held_back[table] < spoke_counts[table] for table in spoke_counts
-    ), (
+    assert any(held_back[table] < spoke_counts[table] for table in spoke_counts), (
         f"the hub already matched the spoke before the repair, so the "
         f"post-repair equality proves nothing: {held_back} vs {spoke_counts}"
     )
 
     repaired = _repair(spoke)
     after = _sync(fleet, spoke)
-    assert after.quarantined == 0, (
-        f"{after.quarantined} row(s) still held after the documented repair"
-    )
+    assert after.quarantined == 0, f"{after.quarantined} row(s) still held after the documented repair"
 
     hub_conn = _open(fleet.hub_dir)
     try:

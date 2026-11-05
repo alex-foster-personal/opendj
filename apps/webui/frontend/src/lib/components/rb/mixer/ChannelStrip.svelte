@@ -3,6 +3,8 @@
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
 	 * channel number, TRIM, HI/MID/LOW, FILTER,
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
+	 * With the mixer's S button on and stems ready, VOCAL/INST/BASS stand in
+	 * a column beside HI/MID/LOW and DRUMS beside FILTER (stem-dial-map.ts).
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
 	import AutoGainReadout from './AutoGainReadout.svelte';
@@ -20,13 +22,16 @@
 	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
-	import {
-		STEM_DIAL_LABELS,
-		stemDialAssignment,
-		type EqDial
-	} from '$lib/rb/stem-dial-map';
-	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice } from '$lib/rb/color-fx';
+	import { STEM_DIAL_LABELS, channelShowsStemDials, stemDialLayout } from '$lib/rb/stem-dial-map';
+	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice, type ColorFxEffect } from '$lib/rb/color-fx';
 	import { colorFx } from '$lib/rb/color-fx.svelte';
+	import {
+		COLOR_FX_MENU_CLOSED,
+		classifyColorFxPress,
+		colorFxMenuClose,
+		colorFxMenuOnPointerDown,
+		colorFxMenuOnTap
+	} from '$lib/rb/color-fx-menu';
 	import { dialClockLabel } from '$lib/rb/dial-clock';
 	import { quickPickModifier } from '$lib/rb/cmdk-actions';
 	import StemRow from '../deck/StemRow.svelte';
@@ -63,7 +68,8 @@
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
-		stemEqMode: boolean;
+		/** The mixer's S button (uiPrefs.mixer_stems): stem dials on every channel with stems. */
+		mixerStems: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
 		/** AUTOGAIN-04: set (dB) or clear (null) the user's auto gain via the dispatcher. */
@@ -74,7 +80,6 @@
 		oncolorfx: (effect: ColorFxChoice) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
-		onStemEqMode: (enabled: boolean) => void;
 		onStemGain: (stem: StemControl, value: number) => void;
 		onStemMute: (stem: StemControl) => Promise<void>;
 		onStemSolo: (stem: StemControl) => Promise<void>;
@@ -90,7 +95,7 @@
 		filter,
 		fader,
 		cueEnabled,
-		stemEqMode,
+		mixerStems,
 		stemPending,
 		ontrim,
 		onAutoGainOffset,
@@ -99,7 +104,6 @@
 		oncolorfx,
 		onfader,
 		oncue,
-		onStemEqMode,
 		onStemGain,
 		onStemMute,
 		onStemSolo
@@ -137,20 +141,69 @@
 		return `Color FX: ECHO ${colorSettings.echo_beats} beat at ${bpm.toFixed(1)} BPM = ${ms} ms per repeat; ${at}`;
 	});
 
-	/** COLORFX-8341: a modifier press on the color slot is the cycle gesture, so it
+	// ------------------------------------------------- color FX menu (COLORFX-10)
+
+	/** Chevron (7px) plus its 2px gap after the caption text, for the caption fit. */
+	const COLOR_FX_CHEVRON_TRAIL_PX = 9;
+	let colorFxMenu = $state(COLOR_FX_MENU_CLOSED);
+	let colorFxMenuEl = $state<HTMLElement | null>(null);
+	let colorFxTriggerEl = $state<HTMLElement | null>(null);
+	/** Viewport position of the open menu: fixed, so the strip's overflow clip cannot cut it. */
+	let colorFxMenuPos = $state({ left: 0, top: 0 });
+
+	/** Read-only on the event: no preventDefault / stopPropagation, so the press
+	 * that closes the menu still starts a drag on whatever knob is under it. */
+	function handleDocumentPointerDown(event: PointerEvent): void {
+		const where = classifyColorFxPress(event.target as Node | null, colorFxMenuEl, colorFxTriggerEl);
+		colorFxMenu = colorFxMenuOnPointerDown(colorFxMenu, where);
+	}
+
+	function handleColorFxTap(): void {
+		colorFxMenu = colorFxMenuOnTap(colorFxMenu);
+		if (!colorFxMenu.open || colorFxTriggerEl === null) return;
+		const rect = colorFxTriggerEl.getBoundingClientRect();
+		colorFxMenuPos = { left: rect.left + rect.width / 2, top: rect.bottom + 2 };
+	}
+
+	function chooseColorFx(effect: ColorFxEffect): void {
+		colorFxMenu = colorFxMenuClose();
+		if (effect !== colorSettings.effect) oncolorfx(effect);
+	}
+
+	function handleDocumentKeyDown(event: KeyboardEvent): void {
+		if (event.key === 'Escape' && colorFxMenu.open) colorFxMenu = colorFxMenuClose();
+	}
+
+	$effect(() => {
+		// Capture phase: sees every press first, including ones a child handler
+		// stops later. It only reads the event.
+		document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+		document.addEventListener('keydown', handleDocumentKeyDown);
+		return () => {
+			document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+			document.removeEventListener('keydown', handleDocumentKeyDown);
+		};
+	});
+
+	/** STEMDIAL-DRAG-01: the slot also holds the DRUMS dial, whose presses are its own. */
+	function pressOnColorKnob(event: Event): boolean {
+		return colorFxTriggerEl !== null && event.target instanceof Node && colorFxTriggerEl.contains(event.target);
+	}
+
+	/** COLORFX-8341: a modifier press on the color knob is the cycle gesture, so it
 	 * never also turns the knob (Knob's drag) or opens the native select. */
 	function handleColorSlotPointerDown(event: PointerEvent): void {
-		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		if (!isColorFxCycleGesture(event, cycleModifier) || !pressOnColorKnob(event)) return;
 		event.preventDefault();
 		event.stopPropagation();
 	}
 	function handleColorSlotMouseDown(event: MouseEvent): void {
-		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		if (!isColorFxCycleGesture(event, cycleModifier) || !pressOnColorKnob(event)) return;
 		event.preventDefault(); // a native select opens on mousedown
 		event.stopPropagation();
 	}
 	function handleColorSlotClick(event: MouseEvent): void {
-		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		if (!isColorFxCycleGesture(event, cycleModifier) || !pressOnColorKnob(event)) return;
 		event.preventDefault();
 		event.stopPropagation(); // not also a MIXUX-08 deck select
 		oncolorfx(COLOR_FX_NEXT);
@@ -258,66 +311,20 @@
 	 * to size FILTER in the MORE and LESS floors. */
 	const filterSize = $derived(trimSize);
 
-	const assignment = $derived(
-		stemEqMode && deck.stems.status === 'ready'
-			? stemDialAssignment(deck.stems.available_controls)
-			: { high: null, mid: null, low: null }
-	);
+	const stemDials = $derived(channelShowsStemDials(mixerStems, deck.stems));
+	const stemLayout = $derived(stemDialLayout(deck.stems.available_controls));
 
 	function stemKnobRole(stem: StemControl): KnobRole {
 		if (stem === 'vocal') return 'stem-vocal';
 		if (stem === 'instrumental') return 'stem-instrumental';
-		return 'stem-drums';
+		if (stem === 'bass') return 'stem-bass';
+		if (stem === 'drums') return 'stem-drums';
+		throw new Error(`no mixer stem dial for ${stem}`);
 	}
 
-	interface DialView {
-		label: string;
-		value: number;
-		onchange: (value: number) => void;
-		knobRole: KnobRole;
-		accentColor?: string;
-		accessibleLabel: string;
-		stemControl: string;
+	function stemAccessibleLabel(stem: StemControl): string {
+		return `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`;
 	}
-
-	function dialView(band: EqDial, eqValue: number, eqLabel: string, eqAccessible: string): DialView {
-		const stem = assignment[band];
-		if (stem !== null) {
-			return {
-				label: STEM_DIAL_LABELS[stem],
-				value: deck.stems.controls[stem].gain,
-				// Write the gain here, in the same turn as the pointer, so the
-				// dial is not waiting on stem_gain to come back around the
-				// command queue. The command still owns the audio graph.
-				onchange: (value) => {
-					deck.stems.controls[stem].gain = value;
-					onStemGain(stem, value);
-				},
-				knobRole: stemKnobRole(stem),
-				accentColor: stemCssColor(stem),
-				accessibleLabel: `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`,
-				stemControl: stem
-			};
-		}
-		return {
-			label: eqLabel,
-			value: eqValue,
-			onchange: (value) => oneq(band, value),
-			knobRole: band,
-			accessibleLabel: eqAccessible,
-			stemControl: ''
-		};
-	}
-
-	const hiDial = $derived.by(() => dialView('high', eqHigh, 'HI', `high EQ deck ${deckId}`));
-	const midDial = $derived.by(() => dialView('mid', eqMid, 'MID', `mid EQ deck ${deckId}`));
-	const lowDial = $derived.by(() => dialView('low', eqLow, 'LOW', `low EQ deck ${deckId}`));
-
-	const stemModeTitle = $derived(
-		stemEqMode
-			? 'STEM ON - click to restore EQ on HI/MID/LOW'
-			: 'STEM - click to turn HI/MID/LOW into stem levels for this channel'
-	);
 </script>
 
 <div
@@ -328,7 +335,7 @@
 	class:selected={selected}
 	data-mixer-channel={deckId}
 	onclick={handleStripClick}
-	data-stem-eq-mode={stemEqMode}
+	data-mixer-stems={stemDials}
 	role="group"
 	aria-label={`channel ${deckId}`}
 	onpointerenter={() => setHoveredDeck(deckId)}
@@ -371,44 +378,70 @@
 		/>
 		<AutoGainReadout {deckId} onoffset={onAutoGainOffset} />
 	</div>
-	<div class="eq-stack">
+	{#snippet stemDial(stem: StemControl, size: number)}
 		<Knob
-			knobId={knobId(deckId, hiDial.knobRole)}
-			label={hiDial.label}
-			accessibleLabel={hiDial.accessibleLabel}
-			value={hiDial.value}
+			knobId={knobId(deckId, stemKnobRole(stem))}
+			label={STEM_DIAL_LABELS[stem]}
+			accessibleLabel={stemAccessibleLabel(stem)}
+			value={deck.stems.controls[stem].gain}
+			{size}
+			accentColor={stemCssColor(stem)}
+			onchange={(value) => {
+				// Write the gain here, in the same turn as the pointer, so the
+				// dial is not waiting on stem_gain to come back around the
+				// command queue. The command still owns the audio graph.
+				deck.stems.controls[stem].gain = value;
+				onStemGain(stem, value);
+			}}
+		/>
+	{/snippet}
+	<!-- Grid flows down a column then across: HI MID LOW, then VOCAL INST BASS
+	     beside them row for row. An absent stem keeps its cell empty. -->
+	<div class="eq-stack" class:with-stems={stemDials}>
+		<Knob
+			knobId={knobId(deckId, 'high')}
+			label="HI"
+			accessibleLabel={`high EQ deck ${deckId}`}
+			value={eqHigh}
 			size={eqSize}
-			{...(hiDial.accentColor ? { accentColor: hiDial.accentColor } : {})}
-			onchange={hiDial.onchange}
+			onchange={(value) => oneq('high', value)}
 		/>
 		<Knob
-			knobId={knobId(deckId, midDial.knobRole)}
-			label={midDial.label}
-			accessibleLabel={midDial.accessibleLabel}
-			value={midDial.value}
+			knobId={knobId(deckId, 'mid')}
+			label="MID"
+			accessibleLabel={`mid EQ deck ${deckId}`}
+			value={eqMid}
 			size={eqSize}
-			{...(midDial.accentColor ? { accentColor: midDial.accentColor } : {})}
-			onchange={midDial.onchange}
+			onchange={(value) => oneq('mid', value)}
 		/>
 		<Knob
-			knobId={knobId(deckId, lowDial.knobRole)}
-			label={lowDial.label}
-			accessibleLabel={lowDial.accessibleLabel}
-			value={lowDial.value}
+			knobId={knobId(deckId, 'low')}
+			label="LOW"
+			accessibleLabel={`low EQ deck ${deckId}`}
+			value={eqLow}
 			size={eqSize}
-			{...(lowDial.accentColor ? { accentColor: lowDial.accentColor } : {})}
-			onchange={lowDial.onchange}
+			onchange={(value) => oneq('low', value)}
 		/>
+		{#if stemDials}
+			{#each stemLayout.column as stem, row (row)}
+				{#if stem === null}
+					<span class="stem-dial-empty" aria-hidden="true"></span>
+				{:else}
+					{@render stemDial(stem, eqSize)}
+				{/if}
+			{/each}
+		{/if}
 	</div>
-	<!-- COLORFX-09: on SPACE / ECHO the whole slot is a Web-Audio-only control, so
-	     Rust engine mode holds the knob inert with the PARITY-TODO title instead of
-	     letting it drive the Rust FILTER. On FILTER the knob stays live there. -->
-	<!-- COLORFX-8341: Cmd-click (Ctrl-click off a Mac) anywhere on the slot, caption
-	     included, cycles to the next effect; the same `color_fx {effect: next}`
+	<!-- COLORFX-09: on SPACE / ECHO the color knob is a Web-Audio-only control, so
+	     Rust engine mode holds it inert with the PARITY-TODO title instead of
+	     letting it drive the Rust FILTER. On FILTER the knob stays live there.
+	     STEMDIAL-DRAG-01: the hold sits on the knob, not the slot, so the DRUMS
+	     dial beside it (stem_gain, which the engine plays) still turns. -->
+	<!-- COLORFX-8341: Cmd-click (Ctrl-click off a Mac) on the color knob, caption
+	     included, cycles to the next effect (a plain tap still opens the COLORFX-10 menu); the same `color_fx {effect: next}`
 	     an agent sends. -->
 	<div
 		class="filter-slot"
-		data-rust-command={colorSettings.effect === 'filter' ? undefined : 'color_fx'}
 		data-testid={`color-fx-slot-${deckId}`}
 		onpointerdowncapture={handleColorSlotPointerDown}
 		onmousedowncapture={handleColorSlotMouseDown}
@@ -416,34 +449,56 @@
 		role="group"
 		aria-label={`color FX deck ${deckId}`}
 	>
-		<Knob
-			knobId={knobId(deckId, 'filter')}
-			label={COLOR_FX_LABELS[colorSettings.effect]}
-			accessibleLabel={`filter deck ${deckId}`}
-			value={filter}
-			size={filterSize}
-			{...(colorTint ? { accentColor: colorTint } : {})}
-			onchange={onfilter}
-		/>
-		<!-- COLORFX-02 / MIXUX-02: a borderless chevron beside the caption opens the
-		     effect list; the native select stays the real, keyboard-reachable control.
-		     Rust engine mode holds the select inert by name (data-rust-command). -->
-		<svg class="color-fx-chevron" width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
-			<path d="M0.5 0.5 L3.5 4 L6.5 0.5" fill="none" stroke="currentColor" stroke-width="1.2" />
-		</svg>
-		<select
-			class="color-fx-select"
-			aria-label={`color FX type deck ${deckId}`}
-			title={colorFxTitle}
-			data-testid={`color-fx-select-${deckId}`}
-			data-rust-command="color_fx"
-			value={colorSettings.effect}
-			onchange={(event) => oncolorfx(event.currentTarget.value as ColorFxChoice)}
+		<!-- COLORFX-10: a tap on the dial or its caption opens the effect menu, a
+		     drag still turns the knob. The chevron sits IN the caption (in flow),
+		     so the caption's width counts it and it cannot hang over a neighbour. -->
+		<span
+			class="filter-knob"
+			data-rust-command={colorSettings.effect === 'filter' ? undefined : 'color_fx'}
+			bind:this={colorFxTriggerEl}
+			data-testid={`color-fx-trigger-${deckId}`}
 		>
-			{#each COLOR_FX_EFFECTS as effect (effect)}
-				<option value={effect}>{COLOR_FX_LABELS[effect]}</option>
-			{/each}
-		</select>
+			<Knob
+				knobId={knobId(deckId, 'filter')}
+				label={COLOR_FX_LABELS[colorSettings.effect]}
+				accessibleLabel={`filter deck ${deckId}`}
+				value={filter}
+				size={filterSize}
+				{...(colorTint ? { accentColor: colorTint } : {})}
+				onchange={onfilter}
+				ontap={handleColorFxTap}
+				popupOpen={colorFxMenu.open}
+				captionTrail={colorFxChevron}
+				captionTrailPx={COLOR_FX_CHEVRON_TRAIL_PX}
+			/>
+		</span>
+		{#if colorFxMenu.open}
+			<div
+				class="color-fx-menu"
+				role="menu"
+				aria-label={`color FX type deck ${deckId}`}
+				title={colorFxTitle}
+				data-testid={`color-fx-menu-${deckId}`}
+				style={`left: ${colorFxMenuPos.left}px; top: ${colorFxMenuPos.top}px;`}
+				bind:this={colorFxMenuEl}
+			>
+				{#each COLOR_FX_EFFECTS as effect (effect)}
+					<button
+						type="button"
+						role="menuitemradio"
+						class="color-fx-option"
+						class:checked={colorSettings.effect === effect}
+						aria-checked={colorSettings.effect === effect}
+						data-testid={`color-fx-option-${deckId}-${effect}`}
+						data-rust-command="color_fx"
+						onclick={() => chooseColorFx(effect)}>{COLOR_FX_LABELS[effect]}</button
+					>
+				{/each}
+			</div>
+		{/if}
+		{#if stemDials && stemLayout.filterPartner !== null}
+			{@render stemDial(stemLayout.filterPartner, filterSize)}
+		{/if}
 	</div>
 	<button
 		class:enabled={cueEnabled}
@@ -472,16 +527,7 @@
 			label={`channel fader deck ${deckId}`}
 		/>
 	</div>
-	<button
-		type="button"
-		class="stem-label"
-		class:enabled={stemEqMode}
-		aria-pressed={stemEqMode}
-		aria-label={`stem EQ mode channel ${deckId}`}
-		title={stemModeTitle}
-		data-testid={`stem-mode-channel-${deckId}`}
-		onclick={() => onStemEqMode(!stemEqMode)}>STEM</button
-	>
+	<span class="stem-label" title="Stem mute (click) and solo (Shift+click) for this channel">STEM</span>
 	<div class="stem-slot">
 		<StemRow
 			deck={deck}
@@ -490,10 +536,18 @@
 			onMute={onStemMute}
 			onSolo={onStemSolo}
 			stemsResetOn={trackLoadResetEnabled('stems')}
-			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el)}
+			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
 		/>
 	</div>
 </div>
+
+{#snippet colorFxChevron()}
+	<span class="color-fx-chevron" title={colorFxTitle} data-testid={`color-fx-chevron-${deckId}`}>
+		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
+			<path d="M0.5 0.5 L3.5 4 L6.5 0.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+		</svg>
+	</span>
+{/snippet}
 
 <style>
 	.strip {
@@ -670,36 +724,76 @@
 		grid-area: trim;
 		margin-bottom: 3px;
 	}
+	/* Rows are HI/MID/LOW; with the S button on a second column of stem dials
+	 * stands beside them. Same row height either way, so the strip floors in
+	 * channel-strip-less-floor.test.mjs hold with stems on or off. */
 	.eq-stack {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-rows: repeat(3, auto);
+		grid-auto-flow: column;
+		justify-items: center;
 		align-items: center;
-		gap: 3px;
+		gap: 3px 4px;
+	}
+	.stem-dial-empty {
+		display: block;
 	}
 	.filter-slot {
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
 		margin-top: 1px;
 		margin-bottom: 3px;
 		position: relative;
 	}
-	/* The chevron sits just right of the knob caption; the select is laid
-	   over it, transparent, so the control adds no layout height. */
-	.color-fx-chevron {
-		position: absolute;
-		right: -9px;
-		bottom: 2px;
-		color: var(--rb-text-dim);
-		pointer-events: none;
+	/* The FILTER knob and its in-caption effect chevron, kept together so the
+	   S view's DRUMS dial can sit beside them in the same slot (COLORFX-10:
+	   the chevron is in flow, so it can no longer hang over that dial). */
+	.filter-knob {
+		display: flex;
+		justify-content: center;
 	}
-	.color-fx-select {
-		position: absolute;
-		right: -11px;
-		bottom: -2px;
-		width: 12px;
-		height: 12px;
-		opacity: 0;
-		cursor: pointer;
+	/* COLORFX-10: in flow after the caption text (Knob's captionTrail), 2px gap. */
+	.color-fx-chevron {
+		display: inline-flex;
+		flex: none;
+		margin-left: 2px;
+		color: var(--rb-text-dim);
+	}
+	/* position: fixed from the trigger's rect: the strip slot clips overflow. */
+	.color-fx-menu {
+		position: fixed;
+		transform: translateX(-50%);
+		z-index: 50;
+		display: flex;
+		flex-direction: column;
+		min-width: 44px;
+		padding: 2px;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+	}
+	.color-fx-option {
+		background: transparent;
 		border: 0;
-		padding: 0;
+		border-radius: 2px;
+		padding: 3px 6px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 8px;
+		letter-spacing: 0.04em;
+		line-height: 1;
+		text-align: left;
+		cursor: pointer;
+	}
+	.color-fx-option:hover,
+	.color-fx-option:focus-visible {
+		background: color-mix(in srgb, var(--rb-accent) 22%, transparent);
+		color: var(--rb-text);
+	}
+	.color-fx-option.checked {
+		color: var(--rb-accent);
 	}
 	.cue-btn {
 		background: var(--rb-panel-raised);
@@ -755,16 +849,9 @@
 		color: var(--rb-text-dim);
 		line-height: 1;
 		flex: none;
-		background: transparent;
-		border: none;
-		padding: 0;
-		cursor: pointer;
 		font-family: var(--rb-font);
 		/* Pin 8cd32a28c36d: clearer gap above the STEM row (was 2px). */
 		margin-top: 4px;
-	}
-	.stem-label.enabled {
-		color: var(--rb-accent);
 	}
 	.strip.less .stem-label {
 		grid-area: stemlabel;

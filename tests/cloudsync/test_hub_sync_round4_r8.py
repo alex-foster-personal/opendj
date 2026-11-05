@@ -8,7 +8,7 @@ picked "round4" for their module name; this lane's file lost that race on
 disk and was renamed rather than overwriting the other lane's tests.
 
 Every test here is one reproduction sketch from
-``.planning/cloudsync-round3-adversarial.md`` Part 2 ("R8. Smaller things")
+``(private path)`` Part 2 ("R8. Smaller things")
 turned into a regression. The mapping, so a failure names the defect it just
 let back in:
 
@@ -35,6 +35,7 @@ Acceptance criteria:
 - if ``/digest`` answers a machine that never said hello, 7b is closed
   everywhere except here -- broken.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -119,9 +120,7 @@ def _track_row(stable_id: str, *, updated_at: str, deleted_at: str | None) -> di
     "bad",
     ["not-a-timestamp-at-all", "2026-08-30T10:00:00", "", "2026-13-01T00:00:00+00:00"],
 )
-def test_an_unparseable_deleted_at_is_refused_with_422(
-    hub: _TestClientTransport, spoke_a: Path, bad: str
-) -> None:
+def test_an_unparseable_deleted_at_is_refused_with_422(hub: _TestClientTransport, spoke_a: Path, bad: str) -> None:
     """Round 3 R8: garbage ``deleted_at`` was accepted and stored verbatim.
 
     ``[observed]`` in the round 3 review: a push carrying
@@ -144,9 +143,7 @@ def test_an_unparseable_deleted_at_is_refused_with_422(
     assert "SYNC_PROTOCOL" in str(excinfo.value)
 
 
-def test_a_null_deleted_at_still_means_not_deleted(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_null_deleted_at_still_means_not_deleted(hub: _TestClientTransport, spoke_a: Path) -> None:
     """The fix must not touch the NULL case: NULL still means "not deleted".
 
     ``_checked_value`` returns ``None`` before the column-specific branch
@@ -165,9 +162,7 @@ def test_a_null_deleted_at_still_means_not_deleted(
     assert response["accepted"] == 1
 
 
-def test_a_real_deleted_at_timestamp_still_propagates(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_real_deleted_at_timestamp_still_propagates(hub: _TestClientTransport, spoke_a: Path) -> None:
     """A genuine soft delete must still sync -- the fix rejects garbage only."""
     result = _sync(spoke_a, hub, "spoke-a")
     response = hub.post(
@@ -184,9 +179,7 @@ def test_a_real_deleted_at_timestamp_still_propagates(
 # ----- R8: /status refuses BEFORE it writes ---------------------------------
 
 
-def test_a_refused_status_call_does_not_register_the_hub(
-    hub: _TestClientTransport, hub_dir: Path
-) -> None:
+def test_a_refused_status_call_does_not_register_the_hub(hub: _TestClientTransport, hub_dir: Path) -> None:
     """Round 3 R8: a refused ``/status`` call still had a write side effect.
 
     ``[observed]`` in the round 3 review: ``status refused: HTTP 409
@@ -231,12 +224,8 @@ def test_digest_without_a_machine_id_is_refused(hub: _TestClientTransport) -> No
     assert "422" in str(excinfo.value)
 
 
-def test_digest_answers_a_registered_machine(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_digest_answers_a_registered_machine(hub: _TestClientTransport, spoke_a: Path) -> None:
     """The tightened endpoint still works for the case it exists to serve."""
     result = _sync(spoke_a, hub, "spoke-a")
-    response = hub.get(
-        f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id}
-    )
+    response = hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id})
     assert "overall" in response and "seq" in response

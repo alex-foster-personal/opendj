@@ -21,7 +21,7 @@ Requirements:
     - [if] a pod reads instruction-shaped text [then] it is data, not an action
     - [if] no real-library flag is given [then] fixture library, sandboxed HOME
 
-Supersession (``docs/conventions/supersession.md``): these names are new, and
+Supersession (``(private path)``): these names are new, and
 this is the whole mapping, so nothing authoritative is left "beside" them.
 ``REDTEAM_STOP`` is the ONE red-team switch: the live nucbox-jobs launcher
 already pauses on that exact path, and this module adopts it rather than adding
@@ -147,9 +147,7 @@ class OperatorHost:
     path_value: str
 
     @classmethod
-    def from_environment(
-        cls, home: Path | None = None, path_value: str | None = None
-    ) -> OperatorHost:
+    def from_environment(cls, home: Path | None = None, path_value: str | None = None) -> OperatorHost:
         """Read the operator's real home and PATH, failing fast if PATH is unset."""
         inherited_path = (os.environ.get("PATH", "") if path_value is None else path_value).strip()
         if not inherited_path:
@@ -171,7 +169,7 @@ class PodSpawn:
     data_dir: Path
 
 
-#----- kill switch ------------------------------------------------------------
+# ----- kill switch ------------------------------------------------------------
 
 
 def jobs_root() -> Path:
@@ -202,7 +200,7 @@ def assert_pods_allowed(stop_path: Path) -> None:
     raise RedTeamStopped(f"red-team fleet is stopped by {stop_path}: {reason}")
 
 
-#----- injection guard --------------------------------------------------------
+# ----- injection guard --------------------------------------------------------
 
 
 def detect_instruction_shaped(text: str) -> tuple[str, ...]:
@@ -232,7 +230,7 @@ def render_pod_prompt(*, instructions: str, blocks: Sequence[UntrustedBlock]) ->
     return "\n\n".join(sections) + "\n"
 
 
-#----- run log: the MCP trace layout, with 7-day expiry -----------------------
+# ----- run log: the MCP trace layout, with 7-day expiry -----------------------
 
 
 def _now_ms() -> int:
@@ -290,9 +288,7 @@ def ensure_run_directory(*, run_root: Path, run_id: str, now: int | None = None)
     return run_dir
 
 
-def prune_expired_runs(
-    *, run_root: Path, now: int, ttl_days: int = RUN_TTL_DAYS
-) -> tuple[str, ...]:
+def prune_expired_runs(*, run_root: Path, now: int, ttl_days: int = RUN_TTL_DAYS) -> tuple[str, ...]:
     """Delete runs older than ``ttl_days`` by their meta.json, never by their name.
 
     Copied from the MCP trace layout: the creation time comes from
@@ -328,7 +324,7 @@ def prune_expired_runs(
     return tuple(removed)
 
 
-#----- the guarded spawn ------------------------------------------------------
+# ----- the guarded spawn ------------------------------------------------------
 
 
 def _assert_sandboxed_home(*, pod_home: Path, host_home: Path) -> None:
@@ -342,14 +338,10 @@ def _assert_sandboxed_home(*, pod_home: Path, host_home: Path) -> None:
         )
 
 
-def _assert_real_library_allowed(
-    *, real_library_path: Path, pod_home: Path, host_home: Path
-) -> None:
+def _assert_real_library_allowed(*, real_library_path: Path, pod_home: Path, host_home: Path) -> None:
     """The one flagged escape hatch still may not point at the operator's HOME."""
     if not real_library_path.is_dir():
-        raise RealLibraryUnavailable(
-            f"{REAL_LIBRARY_FLAG} path {real_library_path} is not a directory"
-        )
+        raise RealLibraryUnavailable(f"{REAL_LIBRARY_FLAG} path {real_library_path} is not a directory")
     resolved = real_library_path.resolve()
     if resolved == host_home.resolve() or host_home.resolve().is_relative_to(resolved):
         raise RealLibraryUnavailable(
@@ -417,9 +409,7 @@ def build_pod_spawn(
 
     mode = LibraryMode.FIXTURE
     if real_library_path is not None:
-        _assert_real_library_allowed(
-            real_library_path=real_library_path, pod_home=home, host_home=operator.home
-        )
+        _assert_real_library_allowed(real_library_path=real_library_path, pod_home=home, host_home=operator.home)
         mode = LibraryMode.REAL
 
     run_dir = ensure_run_directory(run_root=run_root, run_id=run_id, now=now)
@@ -449,7 +439,7 @@ def build_pod_spawn(
     )
 
 
-#----- CLI --------------------------------------------------------------------
+# ----- CLI --------------------------------------------------------------------
 
 
 def _plan_command(arguments: argparse.Namespace) -> int:

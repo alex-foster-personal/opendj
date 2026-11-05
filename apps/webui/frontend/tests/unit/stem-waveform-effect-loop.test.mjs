@@ -31,7 +31,14 @@ const ENTRY = [
 
 function envelopeResponse(stableId, part) {
 	return new Response(
-		JSON.stringify({ schema: 1, stable_id: stableId, part, layout: 'demucs4', points: 4, envelope: [0, 0.5, 1, 0.25] }),
+		JSON.stringify({
+			schema: 1,
+			stable_id: stableId,
+			part,
+			layout: 'demucs4',
+			points: 4,
+			envelope: [0, 0.5, 1, 0.25]
+		}),
 		{ status: 200, headers: { 'content-type': 'application/json' } }
 	);
 }
@@ -72,7 +79,10 @@ test('if ensureStemWaveform from an effect stops refreshing the LRU touch then b
 	row.stop();
 	assert.equal(row.error, null, String(row.error));
 	const after = live.getStemWaveformEntry('touch-track', 'bass').touched;
-	assert.ok(after > before, `a visible row must stay most-recently-used (touched ${before} -> ${after})`);
+	assert.ok(
+		after > before,
+		`a visible row must stay most-recently-used (touched ${before} -> ${after})`
+	);
 });
 
 test('if an effect over an uncached stem waveform does not fetch exactly once then broken', async () => {

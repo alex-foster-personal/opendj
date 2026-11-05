@@ -51,30 +51,19 @@ def library_to_wire_document(
     library: OpenDjLibrary,
     *,
     source: str = _DEFAULT_SOURCE,
-    modified_at: datetime | str,
 ) -> dict[str, Any]:
     """Return the v0.2 wire-format ``dict`` for ``library``.
 
     ``source`` is the :mod:`apps.open_dj.provenance` enum value stamped
-    onto authored fields (``bpm``, ``key``, ``rating``). ``modified_at``
-    stamps every provenance envelope in the document and is REQUIRED: the
-    typed :class:`apps.open_dj.schema.Track` layer has no per-track source
-    timestamp of its own (class-family serato/traktor adapters do not
-    expose one yet), so this function does not guess one via the wall
-    clock -- the caller (``open-dj-tool export``) decides and passes an
-    explicit value, once, at the export boundary. Passing ``datetime.now()``
-    there is a legitimate choice for a snapshot-time stamp; defaulting to
-    it silently inside this serializer is not, because it makes two calls
-    for the same untouched library disagree on output bytes whenever they
-    straddle a wall-clock second.
+    onto authored fields (``bpm``, ``key``, ``rating``). Each track's
+    ``source_modified_at`` stamps that track's provenance envelopes.
+    This function does not guess a wall-clock time: a provenance-bearing
+    track with a missing or naive stamp raises :class:`RuntimeError`.
     """
     doc: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "kind": "library",
-        "tracks": [
-            _track_to_wire(t, source=source, modified_at=modified_at)
-            for t in library.tracks
-        ],
+        "tracks": [_track_to_wire(t, source=source) for t in library.tracks],
     }
 
     playlists = _flatten_playlists(library.playlists)
@@ -98,10 +87,6 @@ def _apply_optional_scalars(
     source: str,
     modified_at: datetime | str,
 ) -> None:
-    if t.album:
-        track["album"] = t.album
-    if t.isrc:
-        track["isrc"] = t.isrc
     if t.bpm is not None:
         track["bpm"] = wrap(float(t.bpm), source=source, modified_at=modified_at)
     if t.key_camelot:
@@ -110,9 +95,48 @@ def _apply_optional_scalars(
         track["rating"] = wrap(int(t.rating), source=source, modified_at=modified_at)
 
 
-def _track_to_wire(
-    t: Track, *, source: str, modified_at: datetime | str
-) -> dict[str, Any]:
+def _track_has_provenance_fields(t: Track) -> bool:
+    return (
+        t.bpm is not None
+        or bool(t.key_camelot)
+        or t.rating is not None
+        or bool(t.cues)
+        or bool(t.beats)
+    )
+
+
+def _resolve_track_modified_at(t: Track) -> datetime:
+    stamp = t.source_modified_at
+    if stamp is None:
+        raise RuntimeError(
+            f"track {t.track_id}: provenance-bearing fields are set but "
+            "source_modified_at is missing. Stamp it from the vendor library "
+            "file mtime rather than the wall clock."
+        )
+    if stamp.tzinfo is None:
+        raise RuntimeError(
+            f"track {t.track_id}: source_modified_at ({stamp!r}) is naive. "
+            "Pass an aware UTC datetime from utc_mtime()."
+        )
+    return stamp
+
+
+def _stamp_track_provenance(track: dict[str, Any], t: Track, *, source: str) -> None:
+    if not _track_has_provenance_fields(t):
+        return
+    modified_at = _resolve_track_modified_at(t)
+    _apply_optional_scalars(track, t, source=source, modified_at=modified_at)
+    cue_points = _cues_to_wire(t.cues, source=source, modified_at=modified_at)
+    if cue_points:
+        track["cue_points"] = cue_points
+    beatgrid = _beats_to_wire(
+        t.beats, fallback_bpm=t.bpm, source=source, modified_at=modified_at
+    )
+    if beatgrid is not None:
+        track["beatgrid"] = beatgrid
+
+
+def _track_to_wire(t: Track, *, source: str) -> dict[str, Any]:
     track: dict[str, Any] = {
         "track_id": t.track_id,
         "title": t.title,
@@ -131,17 +155,12 @@ def _track_to_wire(
     if content_hash is not None:
         track["content_hash"] = str(content_hash)
 
-    _apply_optional_scalars(track, t, source=source, modified_at=modified_at)
+    if t.album:
+        track["album"] = t.album
+    if t.isrc:
+        track["isrc"] = t.isrc
 
-    cue_points = _cues_to_wire(t.cues, source=source, modified_at=modified_at)
-    if cue_points:
-        track["cue_points"] = cue_points
-
-    beatgrid = _beats_to_wire(
-        t.beats, fallback_bpm=t.bpm, source=source, modified_at=modified_at
-    )
-    if beatgrid is not None:
-        track["beatgrid"] = beatgrid
+    _stamp_track_provenance(track, t, source=source)
 
     # Typed-only scalars that the wire schema doesn't model -> x_ passthrough.
     if t.play_count:

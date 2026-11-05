@@ -53,12 +53,8 @@ def main() -> None:
             shipped += mark == "x"
             lines.append(f"- [{mark}] **{rid}** {desc} ({status}, {phase})")
         lines.append("")
-    lines.append(
-        f"Denominator: {total} v1 requirements total; {shipped} shipped in v1 at"
-    )
-    lines.append(
-        "freeze time (the parity obligation set). Re-run this script rather than"
-    )
+    lines.append(f"Denominator: {total} v1 requirements total; {shipped} shipped in v1 at")
+    lines.append("freeze time (the parity obligation set). Re-run this script rather than")
     lines.append("citing remembered figures.")
     lines.append("")
     OUT.parent.mkdir(parents=True, exist_ok=True)

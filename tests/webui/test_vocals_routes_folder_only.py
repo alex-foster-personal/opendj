@@ -24,6 +24,7 @@ Regression one-liners:
   - if a rekordbox copy behind a directory the engine cannot enter answers a bare 500 or falls back then broken
   - if a rekordbox copy that vanishes after it was seen turns the request into a no-rekordbox one then broken
   - if a vocal-cache path that is there but broken answers 500 on status or /anlz then broken
+  - if folder-only GET /vocals/status 503s because master.plain.db is a directory or dangling link then broken
   - if a state.db failure is reported as MASTER_DB_UNREADABLE then broken
 """
 from __future__ import annotations
@@ -82,7 +83,6 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conn.close()
     assert not (data / "master.plain.db").exists()
 
-    monkeypatch.setattr(vocals_routes, "DATA_DIR", data)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", data / "master.plain.db")
     monkeypatch.setattr(rb_config, "STATE_DB", data / "state" / "state.db")
     monkeypatch.setattr(rb_config, "VOCAL_CACHE_DIR", vcache.cache_dir(data))
@@ -248,6 +248,58 @@ def test_broken_rekordbox_copy_fails_typed_and_claims_nothing(
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == "MASTER_DB_UNREADABLE"
     assert not vcache.cache_path(data_dir, "hasstem").exists()
+
+
+def _insert_rekordbox_mapping(data_dir: Path, stable_id: str, vendor_id: str = "1") -> None:
+    conn = sqlite3.connect(data_dir / "state" / "state.db")
+    conn.execute(
+        "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
+        "VALUES (?, 'rekordbox', ?)",
+        (stable_id, vendor_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.requirement("VOCALS-9029")
+@pytest.mark.parametrize(
+    "break_copy",
+    [_as_directory, _as_dangling_link, _as_empty_file, _as_garbage_file],
+)
+def test_folder_only_status_ignores_broken_rekordbox_copy_with_cached_vocals(
+    client: TestClient, data_dir: Path, stem_bundle: None, break_copy: Callable[[Path], None]
+) -> None:
+    """[if] a folder track has demucs cached and master.plain.db is broken [then] status is 200 demucs, [else stop]."""
+    analyze = client.post(
+        "/api/v1/vocals/analyze", json={"stable_ids": ["hasstem"], "mode": "from-stems"}
+    )
+    assert analyze.status_code == 202, analyze.text
+    assert analyze.json()["claimed"] == ["hasstem"]
+    break_copy(data_dir / "master.plain.db")
+
+    hasstem = client.get("/api/v1/vocals/hasstem/status")
+    assert hasstem.status_code == 200, hasstem.text
+    assert hasstem.json()["status"] == "demucs"
+
+    nostem = client.get("/api/v1/vocals/nostem/status")
+    assert nostem.status_code == 200, nostem.text
+    assert nostem.json()["status"] == "not_analyzed"
+
+
+@pytest.mark.requirement("VOCALS-9029")
+@pytest.mark.parametrize("break_copy", [_as_empty_file, _as_garbage_file])
+def test_mapped_track_status_with_unreadable_copy_file_is_typed_503(
+    data_dir: Path, stem_bundle: None, break_copy: Callable[[Path], None]
+) -> None:
+    """[if] a mapped track's copy is empty or garbage [then] status is 503 MASTER_DB_UNREADABLE, [else stop]."""
+    break_copy(data_dir / "master.plain.db")
+    _insert_rekordbox_mapping(data_dir, "hasstem")
+
+    with _unhandled_safe_client(data_dir) as safe_client:
+        response = safe_client.get("/api/v1/vocals/hasstem/status")
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "MASTER_DB_UNREADABLE"
 
 
 def test_status_of_a_mapped_track_does_not_fall_back_on_a_dangling_copy(

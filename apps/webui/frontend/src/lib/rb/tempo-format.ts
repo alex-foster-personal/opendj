@@ -22,5 +22,7 @@ export function formatPitchRange(rangePct: number): string {
  * decimals can be drawn smaller. "--.--" (no BPM) splits the same way. */
 export function splitBpmText(text: string): { whole: string; fraction: string } {
 	const dot = text.indexOf('.');
-	return dot < 0 ? { whole: text, fraction: '' } : { whole: text.slice(0, dot), fraction: text.slice(dot) };
+	return dot < 0
+		? { whole: text, fraction: '' }
+		: { whole: text.slice(0, dot), fraction: text.slice(dot) };
 }

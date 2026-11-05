@@ -89,7 +89,10 @@ test('fetchDedupClusters uses configured base and forwards cancellation', async 
 	assert.equal(request.signal.aborted, true, 'caller cancellation must reach the request');
 	assert.equal(response.revision, INITIAL_REVISION);
 	assert.equal(response.clusters[0].cluster_key, CLUSTER_KEY);
-	assert.equal(dedupApi.dedupArtworkUrl('track/id'), `${API_BASE}/api/v1/tracks/track%2Fid/artwork?size=s`);
+	assert.equal(
+		dedupApi.dedupArtworkUrl('track/id'),
+		`${API_BASE}/api/v1/tracks/track%2Fid/artwork?size=s`
+	);
 });
 
 test('postDedupDecision binds stable identity and CAS revision', async () => {
@@ -186,7 +189,10 @@ test('response validation rejects an ETag/body revision mismatch', async () => {
 			headers: { 'content-type': 'application/json', etag: NEXT_REVISION }
 		});
 
-	await assert.rejects(dedupApi.fetchDedupClusters(), /dedup: response revision does not match ETag/);
+	await assert.rejects(
+		dedupApi.fetchDedupClusters(),
+		/dedup: response revision does not match ETag/
+	);
 });
 
 test('decision response cannot claim that irreversible apply already ran', async () => {
@@ -205,13 +211,7 @@ test('decision response cannot claim that irreversible apply already ran', async
 		);
 
 	await assert.rejects(
-		dedupApi.postDedupDecision(
-			7,
-			CLUSTER_KEY,
-			'track-canon',
-			'merge',
-			INITIAL_REVISION
-		),
+		dedupApi.postDedupDecision(7, CLUSTER_KEY, 'track-canon', 'merge', INITIAL_REVISION),
 		/dedup: decision response must remain pending apply/
 	);
 });

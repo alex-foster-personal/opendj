@@ -3,6 +3,7 @@
 [if] a v12 database migrates to v13 [then] every membership row gets a unique item_id, [else stop].
 [if] schema v13 is applied [then] memberships gain stable item ids and TEXT order keys, [else stop].
 """
+
 from __future__ import annotations
 
 import re
@@ -25,9 +26,7 @@ def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
 def _objects(conn: sqlite3.Connection) -> dict[str, str]:
     return {
         str(name): normalize_object_sql(str(sql))
-        for name, sql in conn.execute(
-            "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')"
-        ).fetchall()
+        for name, sql in conn.execute("SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')").fetchall()
         if sql is not None and not str(name).startswith("sqlite_")
     }
 
@@ -41,9 +40,7 @@ def test_fresh_ladder_has_item_id_and_order_key() -> None:
     assert "order_key" in cols
     indexes = {
         row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='playlist_memberships'"
-        )
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='playlist_memberships'")
     }
     assert "idx_playlist_memberships_item_id" in indexes
     conn.close()
@@ -164,38 +161,27 @@ def test_v13_order_key_is_text_and_order_preserved(tmp_path: Path) -> None:
             ("2026-09-12T00:00:00+00:00",),
         )
         conn.commit()
-        col_types = {
-            row[1]: row[2]
-            for row in conn.execute("PRAGMA table_info(playlist_memberships)")
-        }
+        col_types = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(playlist_memberships)")}
         assert col_types["order_key"] == "TEXT"
         by_position = [
             row[0]
             for row in conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id='pl-1' ORDER BY position"
+                "SELECT stable_id FROM playlist_memberships WHERE playlist_id='pl-1' ORDER BY position"
             )
         ]
         by_order_key = [
             row[0]
             for row in conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id='pl-1' ORDER BY order_key"
+                "SELECT stable_id FROM playlist_memberships WHERE playlist_id='pl-1' ORDER BY order_key"
             )
         ]
         assert by_position == by_order_key == ["t-a", "t-b", "t-c"]
-        keys = [
-            row[0]
-            for row in conn.execute(
-                "SELECT order_key FROM playlist_memberships WHERE playlist_id='pl-1'"
-            )
-        ]
+        keys = [row[0] for row in conn.execute("SELECT order_key FROM playlist_memberships WHERE playlist_id='pl-1'")]
         assert all(re.fullmatch(r"[0-9A-Za-z]+", k) for k in keys)
         item_ids_before = [
             row[0]
             for row in conn.execute(
-                "SELECT item_id FROM playlist_memberships WHERE playlist_id='pl-1' "
-                "ORDER BY position"
+                "SELECT item_id FROM playlist_memberships WHERE playlist_id='pl-1' ORDER BY position"
             )
         ]
         for stmt in _V13[2:4]:
@@ -204,16 +190,13 @@ def test_v13_order_key_is_text_and_order_preserved(tmp_path: Path) -> None:
         item_ids_after = [
             row[0]
             for row in conn.execute(
-                "SELECT item_id FROM playlist_memberships WHERE playlist_id='pl-1' "
-                "ORDER BY position"
+                "SELECT item_id FROM playlist_memberships WHERE playlist_id='pl-1' ORDER BY position"
             )
         ]
         assert item_ids_before == item_ids_after
         state_schema.apply_migrations(conn)
         conn.commit()
-        version = conn.execute(
-            "SELECT COUNT(*) FROM schema_meta WHERE version=13"
-        ).fetchone()[0]
+        version = conn.execute("SELECT COUNT(*) FROM schema_meta WHERE version=13").fetchone()[0]
         assert version == 1
     finally:
         conn.close()

@@ -20,6 +20,7 @@ Mini-PRD
 * [if] --dry-run is passed [then] the parsed namespace says dry-run, so the
   command body cannot read it as live.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,11 +50,7 @@ def _option_strings(parser: argparse.ArgumentParser) -> set[str]:
 
 def _mode_bearing(build) -> list[tuple[str, argparse.ArgumentParser]]:
     """Every subcommand that can mutate state, i.e. that declares --live."""
-    return [
-        (name, sub)
-        for name, sub in _subparsers(build()).items()
-        if "--live" in _option_strings(sub)
-    ]
+    return [(name, sub) for name, sub in _subparsers(build()).items() if "--live" in _option_strings(sub)]
 
 
 def _other_required_args(parser: argparse.ArgumentParser) -> list[str]:
@@ -84,8 +81,7 @@ def test_a_mode_bearing_subcommand_refuses_to_run_without_an_explicit_mode(cli: 
         with pytest.raises(SystemExit) as excinfo:
             CLIS[cli]().parse_args(argv)
         assert excinfo.value.code != 0, (
-            f"{cli} {name} accepted {argv} with no explicit mode - it will "
-            "proceed in a guessed mode"
+            f"{cli} {name} accepted {argv} with no explicit mode - it will proceed in a guessed mode"
         )
 
 

@@ -1,4 +1,5 @@
 """SMART-02 -- ``python -m apps.smartlists.refresh`` CLI tests."""
+
 from __future__ import annotations
 
 import io
@@ -14,9 +15,7 @@ from apps.smartlists.cli import create as cli_create
 pytestmark = pytest.mark.requirement("SMART-02")
 
 
-FIXTURE_DIR = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "smartlists"
-)
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "smartlists"
 
 
 _PHASE5_DDL: tuple[str, ...] = (
@@ -65,11 +64,16 @@ def db_path(tmp_path: Path) -> Path:
 
 
 def _seed_smartlist(db_path: Path, name: str, rule_file: str) -> None:
-    cli_create.main([
-        "--db", str(db_path),
-        "--name", name,
-        "--rule", str(FIXTURE_DIR / rule_file),
-    ])
+    cli_create.main(
+        [
+            "--db",
+            str(db_path),
+            "--name",
+            name,
+            "--rule",
+            str(FIXTURE_DIR / rule_file),
+        ]
+    )
 
 
 def test_refresh_default_is_dry_run(db_path: Path) -> None:
@@ -81,7 +85,8 @@ def test_refresh_default_is_dry_run(db_path: Path) -> None:
 
 
 def test_refresh_live_requires_risk_flag(
-    db_path: Path, capsys: pytest.CaptureFixture,
+    db_path: Path,
+    capsys: pytest.CaptureFixture,
 ) -> None:
     _seed_smartlist(db_path, "x", "high_energy.json")
     rc = cli_refresh.main(["--db", str(db_path), "--live"])
@@ -102,13 +107,19 @@ def test_refresh_live_with_flag_runs(
     from apps.smartlists.writers import FakeWriter
 
     monkeypatch.setattr(
-        cli_refresh, "_build_writers",
+        cli_refresh,
+        "_build_writers",
         lambda **kw: [FakeWriter("rekordbox")],
     )
     _seed_smartlist(db_path, "x", "high_energy.json")
-    rc = cli_refresh.main([
-        "--db", str(db_path), "--live", "--i-understand-the-risks",
-    ])
+    rc = cli_refresh.main(
+        [
+            "--db",
+            str(db_path),
+            "--live",
+            "--i-understand-the-risks",
+        ]
+    )
     assert rc == 0
 
 
@@ -127,16 +138,22 @@ def test_live_refresh_fails_when_no_vendor_writers(
     """
     monkeypatch.setattr(cli_refresh, "_build_writers", lambda **kw: [])
     _seed_smartlist(db_path, "x", "high_energy.json")
-    rc = cli_refresh.main([
-        "--db", str(db_path), "--live", "--i-understand-the-risks",
-    ])
+    rc = cli_refresh.main(
+        [
+            "--db",
+            str(db_path),
+            "--live",
+            "--i-understand-the-risks",
+        ]
+    )
     assert rc != 0
     err = capsys.readouterr().err
     assert "no vendor playlist writers" in err
 
 
 def test_refresh_name_not_found_returns_1(
-    db_path: Path, capsys: pytest.CaptureFixture,
+    db_path: Path,
+    capsys: pytest.CaptureFixture,
 ) -> None:
     _seed_smartlist(db_path, "a", "high_energy.json")
     rc = cli_refresh.main(["--db", str(db_path), "--name", "nope"])

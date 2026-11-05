@@ -27,7 +27,8 @@ def test_normalize_token() -> None:
 
 def test_matched_deltas_and_summary() -> None:
     report = crosscheck(
-        ["Hey", "now", "go"], [1.0, 2.0, 3.5],
+        ["Hey", "now", "go"],
+        [1.0, 2.0, 3.5],
         _asr(("hey", 1.1), ("now", 2.0), ("go", 3.0)),
     )
     statuses = [v.status for v in report.verdicts]
@@ -41,7 +42,8 @@ def test_matched_deltas_and_summary() -> None:
 
 def test_lone_unmatched_word_not_flagged_by_default() -> None:
     report = crosscheck(
-        ["one", "mystery", "three"], [1.0, 2.0, 3.0],
+        ["one", "mystery", "three"],
+        [1.0, 2.0, 3.0],
         _asr(("one", 1.0), ("three", 3.0)),
     )
     assert report.verdicts[1].status == "unmatched"
@@ -59,9 +61,7 @@ def test_unmatched_runs_flag_at_threshold_length() -> None:
     assert flagged_indices(report, 0.5, min_unmatched_run=5) == {1, 2, 3, 4, 5}, (
         "if a 5-run of asr-unheard words is not flagged then broken"
     )
-    assert flagged_indices(report, 0.5, min_unmatched_run=6) == set(), (
-        "if a 5-run flags at min run 6 then broken"
-    )
+    assert flagged_indices(report, 0.5, min_unmatched_run=6) == set(), "if a 5-run flags at min run 6 then broken"
 
 
 def test_unmatchable_breaks_an_unmatched_run() -> None:
@@ -75,7 +75,8 @@ def test_unmatchable_breaks_an_unmatched_run() -> None:
 
 def test_unmatchable_tokens_stay_out_of_denominator_and_flags() -> None:
     report = crosscheck(
-        ["hello", "--", "world"], [1.0, 1.5, 2.0],
+        ["hello", "--", "world"],
+        [1.0, 1.5, 2.0],
         _asr(("hello", 1.0), ("world", 2.0)),
     )
     assert report.verdicts[1].status == "unmatchable"
@@ -95,10 +96,8 @@ def test_repeated_tokens_survive_autojunk() -> None:
 
 
 def test_version_similarity_separates_right_from_wrong_text() -> None:
-    right = crosscheck(["a", "b", "c", "d"], [1, 2, 3, 4],
-                       _asr(("a", 1), ("b", 2), ("c", 3), ("d", 4)))
-    wrong = crosscheck(["w", "x", "y", "z"], [1, 2, 3, 4],
-                       _asr(("a", 1), ("b", 2), ("c", 3), ("d", 4)))
+    right = crosscheck(["a", "b", "c", "d"], [1, 2, 3, 4], _asr(("a", 1), ("b", 2), ("c", 3), ("d", 4)))
+    wrong = crosscheck(["w", "x", "y", "z"], [1, 2, 3, 4], _asr(("a", 1), ("b", 2), ("c", 3), ("d", 4)))
     assert right.version_similarity > 0.99
     assert wrong.version_similarity < 0.01, "if wrong text scores similar then broken"
 
@@ -110,9 +109,9 @@ def test_input_validation() -> None:
         crosscheck([], [], _asr(("a", 1.0)))
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # round-5 witness_verdicts (local-first matching)
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_witness_local_rescues_diff_orphaned_words() -> None:
@@ -121,8 +120,7 @@ def test_witness_local_rescues_diff_orphaned_words() -> None:
     from apps.lyrics.crosscheck import witness_verdicts
 
     # ASR word ORDER scrambled so SequenceMatcher cannot match both, times near-perfect.
-    verdicts = witness_verdicts(["hello", "world"], [10.0, 11.0],
-                                _asr(("world", 11.1), ("hello", 10.1)))
+    verdicts = witness_verdicts(["hello", "world"], [10.0, 11.0], _asr(("world", 11.1), ("hello", 10.1)))
     assert [v.verdict for v in verdicts] == ["agree", "agree"]
     assert {v.source for v in verdicts} == {"local"}
 
@@ -144,16 +142,14 @@ def test_witness_detached_region_stays_red() -> None:
     from apps.lyrics.crosscheck import witness_verdicts
 
     words = ["alpha", "bravo", "charlie", "delta", "echo"]
-    verdicts = witness_verdicts(words, [100.0, 100.2, 100.4, 100.6, 100.8],
-                                _asr(("zulu", 100.0), ("yankee", 100.5)))
+    verdicts = witness_verdicts(words, [100.0, 100.2, 100.4, 100.6, 100.8], _asr(("zulu", 100.0), ("yankee", 100.5)))
     assert [v.verdict for v in verdicts] == ["lost"] * 5
 
 
 def test_witness_lone_unheard_is_not_red() -> None:
     from apps.lyrics.crosscheck import witness_verdicts
 
-    verdicts = witness_verdicts(["hello", "qwxz", "world"], [10.0, 10.5, 11.0],
-                                _asr(("hello", 10.1), ("world", 11.1)))
+    verdicts = witness_verdicts(["hello", "qwxz", "world"], [10.0, 10.5, 11.0], _asr(("hello", 10.1), ("world", 11.1)))
     assert [v.verdict for v in verdicts] == ["agree", "unheard", "agree"]
 
 
@@ -162,9 +158,9 @@ def test_witness_window_zero_reproduces_diff_only() -> None:
     then the ablation flag lies."""
     from apps.lyrics.crosscheck import witness_verdicts
 
-    verdicts = witness_verdicts(["hello", "world"], [10.0, 11.0],
-                                _asr(("world", 11.1), ("hello", 10.1)),
-                                local_window_s=0.0)
+    verdicts = witness_verdicts(
+        ["hello", "world"], [10.0, 11.0], _asr(("world", 11.1), ("hello", 10.1)), local_window_s=0.0
+    )
     assert all(v.source in ("diff", "none") for v in verdicts)
 
 

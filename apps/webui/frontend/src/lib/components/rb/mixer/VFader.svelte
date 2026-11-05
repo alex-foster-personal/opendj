@@ -5,6 +5,7 @@
 	 * Optional thin green→red meter pulse from the live deck analyser.
 	 * It now renders through ChannelLevelMeter as ten discrete segments.
 	 */
+	import AnimRunningDot from './AnimRunningDot.svelte';
 	import { createShiftSelectPress } from '$lib/rb/shift-select-press';
 	import ChannelLevelMeter from './ChannelLevelMeter.svelte';
 	import FaderRejoinGuidance from './FaderRejoinGuidance.svelte';
@@ -283,6 +284,7 @@
 		<div class="rb-fader-ghost" style={`top: ${takeoverGhostTopPx}px;`}></div>
 	{/if}
 	<div class="rb-fader-thumb" style={`top: ${thumbTopPx}px;`}></div>
+	<AnimRunningDot animKey={controlId} />
 	{#if showGuidance && ghostTopPx !== null}
 		<FaderRejoinGuidance fromY={ghostTopPx + THUMB_H / 2} toY={thumbTopPx + THUMB_H / 2} trackWidth={30} />
 	{/if}

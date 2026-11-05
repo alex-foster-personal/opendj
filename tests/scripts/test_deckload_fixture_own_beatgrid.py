@@ -4,6 +4,7 @@ The Beat This! run itself needs the verified checkpoint (MDT_BEATGRID_WEIGHTS)
 and torch, so it is exercised by the performance e2e config, not here. These
 pin the parts that must refuse loudly without it. -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path

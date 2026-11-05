@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.platform_capabilities import posix_bash_or_skip
 from tests.scripts.macho_fixtures import BUNDLE_SO, DYLIB, EXECUTABLE, hydrate
 
 TAURI_DIR = Path(__file__).resolve().parents[2] / "apps/desktop/src-tauri"
@@ -196,13 +197,11 @@ def payload(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def _macho_files(payload: Path) -> list[str]:
     """Run the shared helper and read back its NUL-separated output."""
     result = subprocess.run(
-        ["bash", "-c", f'. "{MACHO_LIB}"; macho_files "$1"', "_", str(payload)],
+        [posix_bash_or_skip(), "-c", f'. "{MACHO_LIB}"; macho_files "$1"', "_", str(payload)],
         capture_output=True,
         check=True,
     )
-    return sorted(
-        str(Path(p).relative_to(payload)) for p in result.stdout.decode().split("\0") if p
-    )
+    return sorted(str(Path(p).relative_to(payload)) for p in result.stdout.decode().split("\0") if p)
 
 
 def test_the_fixture_is_recognizable_as_macho(payload: Path) -> None:
@@ -244,7 +243,7 @@ def test_the_old_predicate_missed_only_the_interpreter(payload: Path) -> None:
     the entire defect and the entire fix.
     """
     result = subprocess.run(
-        ["bash", "-c", EXTENSION_ONLY_PREDICATE, "_", str(payload)],
+        [posix_bash_or_skip(), "-c", EXTENSION_ONLY_PREDICATE, "_", str(payload)],
         capture_output=True,
         check=True,
     )
@@ -313,9 +312,7 @@ def _run_check_payload(tmp_path: Path, payload: Path | None) -> subprocess.Compl
     minutes. The extraction is asserted non-empty by the caller, so a rename
     fails this loudly instead of silently testing nothing.
     """
-    body = re.search(
-        r"^check_payload\(\) \{.*?^\}", SHIP_APPSTORE.read_text(), re.MULTILINE | re.DOTALL
-    )
+    body = re.search(r"^check_payload\(\) \{.*?^\}", SHIP_APPSTORE.read_text(), re.MULTILINE | re.DOTALL)
     assert body, "check_payload is no longer a top-level function in ship_appstore.sh"
     harness = tmp_path / "harness.sh"
     harness.write_text(
@@ -332,7 +329,7 @@ def _run_check_payload(tmp_path: Path, payload: Path | None) -> subprocess.Compl
     staged.mkdir(parents=True)
     if payload is not None:
         shutil.copytree(payload, staged, dirs_exist_ok=True, symlinks=True)
-    return subprocess.run(["bash", str(harness)], capture_output=True, text=True, check=False)
+    return subprocess.run([posix_bash_or_skip(), str(harness)], capture_output=True, text=True, check=False)
 
 
 def test_the_payload_check_survives_a_staged_payload(tmp_path: Path, payload: Path) -> None:
@@ -369,8 +366,7 @@ def test_both_signing_scripts_use_the_shared_helper(script: Path) -> None:
     """
     body = script.read_text()
     assert "lib/macho.sh" in body, (
-        f"{script.name} does not source scripts/lib/macho.sh. Both signing "
-        "paths must find the same Mach-O files."
+        f"{script.name} does not source scripts/lib/macho.sh. Both signing paths must find the same Mach-O files."
     )
     assert "macho_files" in body, f"{script.name} never calls macho_files"
 
@@ -381,7 +377,7 @@ def test_both_signing_scripts_use_the_shared_helper(script: Path) -> None:
 )
 def test_the_signing_scripts_parse(script: Path) -> None:
     """bash -n, because none of this path runs in CI to find a typo for us."""
-    subprocess.run(["bash", "-n", str(script)], check=True, capture_output=True)
+    subprocess.run([posix_bash_or_skip(), "-n", str(script)], check=True, capture_output=True)
 
 
 # ----- the engine JIT under the App Store signing (INSTALL-3287) ------------
@@ -480,7 +476,7 @@ def test_the_probe_strips_only_keys_a_profile_must_authorize() -> None:
 def _verdict(out: str, rc: int) -> subprocess.CompletedProcess[str]:
     script = f'set -euo pipefail; . "{JIT_SMOKE_LIB}"; sandboxed_jit_verdict "$1" "$2"'
     return subprocess.run(
-        ["bash", "-c", script, "verdict", out, str(rc)],
+        [posix_bash_or_skip(), "-c", script, "verdict", out, str(rc)],
         capture_output=True,
         text=True,
         check=False,
@@ -557,9 +553,7 @@ def _probe_identity(
     identities = tmp_path / "identities"
     identities.write_text(keychain)
     fake = bin_dir / "security"
-    fake.write_text(
-        '#!/bin/sh\necho "$*" >> "$FAKE_SECURITY_LOG"\ncat "$FAKE_SECURITY_IDENTITIES"\n'
-    )
+    fake.write_text('#!/bin/sh\necho "$*" >> "$FAKE_SECURITY_LOG"\ncat "$FAKE_SECURITY_IDENTITIES"\n')
     fake.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k != "MDT_MAS_PROBE_CERT"}
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
@@ -568,7 +562,7 @@ def _probe_identity(
     env.update(env_extra or {})
     script = f'set -euo pipefail; . "{JIT_SMOKE_LIB}"; sandboxed_jit_probe_identity "$1"'
     result = subprocess.run(
-        ["bash", "-c", script, "identity", payload_identity],
+        [posix_bash_or_skip(), "-c", script, "identity", payload_identity],
         capture_output=True,
         text=True,
         check=False,
@@ -580,9 +574,7 @@ def _probe_identity(
 DISTRIBUTION = "Apple Distribution: Dev Name (TEAM123456)"
 DEVELOPMENT = "Apple Development: Dev Name (TEAM123456)"
 DEVELOPER_ID = "Developer ID Application: Dev Name (TEAM123456)"
-KEYCHAIN_WITH_DEVELOPMENT = (
-    f'  1) 0A1B "{DISTRIBUTION}"\n  2) 2C3D "{DEVELOPMENT}"\n     2 valid identities found\n'
-)
+KEYCHAIN_WITH_DEVELOPMENT = f'  1) 0A1B "{DISTRIBUTION}"\n  2) 2C3D "{DEVELOPMENT}"\n     2 valid identities found\n'
 KEYCHAIN_STORE_ONLY = f'  1) 0A1B "{DISTRIBUTION}"\n     1 valid identities found\n'
 
 

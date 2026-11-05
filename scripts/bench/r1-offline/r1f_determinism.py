@@ -37,6 +37,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -131,8 +132,14 @@ def worker(out_path: Path, device: str) -> None:
     started = time.perf_counter()
     with torch.no_grad():
         out = apply_model(
-            model, tensor, overlap=OVERLAP, shifts=0, split=True,
-            progress=False, device=device, num_workers=0,
+            model,
+            tensor,
+            overlap=OVERLAP,
+            shifts=0,
+            split=True,
+            progress=False,
+            device=device,
+            num_workers=0,
         )[0]
     elapsed = time.perf_counter() - started
     vocals = out[model.sources.index("vocals")].cpu().numpy().T
@@ -163,9 +170,17 @@ def main() -> None:
         out_path = scratch / f"run{i}.wav"
         print(f"  run {i + 1}/{args.runs} on {args.device} ...", flush=True)
         proc = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), "--worker",
-             "--out", str(out_path), "--device", args.device],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--worker",
+                "--out",
+                str(out_path),
+                "--device",
+                args.device,
+            ],
+            capture_output=True,
+            text=True,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"run {i} failed:\n{proc.stdout}\n{proc.stderr}")
@@ -181,7 +196,9 @@ def main() -> None:
                 "separate_s": meta["separate_s"],
             }
         )
-        print(f"    si_sdr {runs[-1]['si_sdr']:.6f} dB  sample sha {runs[-1]['sample_sha256']}  {meta['separate_s']:.1f}s")
+        print(
+            f"    si_sdr {runs[-1]['si_sdr']:.6f} dB  sample sha {runs[-1]['sample_sha256']}  {meta['separate_s']:.1f}s"
+        )
 
     if len(runs) < 2:
         raise RuntimeError("a standard deviation needs at least 2 runs")
@@ -197,7 +214,9 @@ def main() -> None:
     # Reporting only the first would license a 0.008 dB result as though it mattered.
     def judge(delta: float) -> str:
         real = "real, above noise" if abs(delta) > 3 * max(stdev, 1e-12) else "inside noise, not measurable"
-        audible = "and above the 0.2 dB inaudibility bar" if abs(delta) >= 0.2 else "but below the 0.2 dB inaudibility bar"
+        audible = (
+            "and above the 0.2 dB inaudibility bar" if abs(delta) >= 0.2 else "but below the 0.2 dB inaudibility bar"
+        )
         return f"{real}, {audible}"
 
     verdict = {f"{k} ({v} dB)": judge(v) for k, v in QUOTED_DELTAS.items()}

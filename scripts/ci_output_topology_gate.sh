@@ -29,20 +29,20 @@ config=tests/e2e/playwright.audio-output-topology.config.ts
 present=0
 missing=""
 for feature_file in src/lib/rb/audio-output-topology.ts "$config" tests/e2e/audio-output-topology.spec.ts; do
-  if [ -f "$feature_file" ]; then
-    present=$((present + 1))
-  else
-    missing="${missing}missing: ${feature_file}"$'\n'
-  fi
+    if [ -f "$feature_file" ]; then
+        present=$((present + 1))
+    else
+        missing="${missing}missing: ${feature_file}"$'\n'
+    fi
 done
 
 if [ "$present" -eq 0 ]; then
-  echo "SKIPPED: the output-topology feature is not in this tree (no source, spec or config), so its gate did not run"
-  exit 0
+    echo "SKIPPED: the output-topology feature is not in this tree (no source, spec or config), so its gate did not run"
+    exit 0
 fi
 if [ -n "$missing" ]; then
-  echo "FAIL: the output-topology feature is only partly in this tree, so its gate cannot run" >&2
-  printf '%s' "$missing" >&2
-  exit 1
+    echo "FAIL: the output-topology feature is only partly in this tree, so its gate cannot run" >&2
+    printf '%s' "$missing" >&2
+    exit 1
 fi
 exec pnpm exec playwright test --config "$config" --output test-results/audio-output-topology

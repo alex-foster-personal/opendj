@@ -22,7 +22,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { FIXTURE_MANIFEST_PATH } from './playwright.performance.config';
 
-type Manifest = { populated_playlist_id: string; tracks: { stable_id: string; title?: string | null }[] };
+type Manifest = {
+	populated_playlist_id: string;
+	tracks: { stable_id: string; title?: string | null }[];
+};
 
 function manifest(): Manifest {
 	return JSON.parse(readFileSync(FIXTURE_MANIFEST_PATH, 'utf8')) as Manifest;
@@ -49,9 +52,14 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 		const boxes = [...header.querySelectorAll('button, label, select')]
 			.map((el) => el.getBoundingClientRect())
 			.filter((r) => r.width > 0 && r.height > 0);
-		return { lowestTop: Math.max(...boxes.map((r) => r.top)), highestBottom: Math.min(...boxes.map((r) => r.bottom)) };
+		return {
+			lowestTop: Math.max(...boxes.map((r) => r.top)),
+			highestBottom: Math.min(...boxes.map((r) => r.bottom))
+		};
 	});
-	expect(rows.lowestTop, 'the library header wrapped onto a second line').toBeLessThan(rows.highestBottom);
+	expect(rows.lowestTop, 'the library header wrapped onto a second line').toBeLessThan(
+		rows.highestBottom
+	);
 
 	const pencil = page.getByTestId('library-edit-menu');
 	const items = ['Find & Replace', 'Bulk Edit', 'MyTags'].map((name) =>
@@ -85,19 +93,27 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 	await expect(items[0]).toBeEnabled();
 	await items[0].click();
 	await expect(page.getByRole('dialog', { name: /^Find & Replace - 1 track/ })).toBeVisible();
-	await page.getByRole('dialog', { name: /^Find & Replace/ }).getByRole('button', { name: 'close' }).click();
+	await page
+		.getByRole('dialog', { name: /^Find & Replace/ })
+		.getByRole('button', { name: 'close' })
+		.click();
 
 	await pencil.click();
 	await items[1].click();
 	await expect(page.getByRole('dialog', { name: /^Bulk Edit - 1 track/ })).toBeVisible();
-	await page.getByRole('dialog', { name: /^Bulk Edit/ }).getByRole('button', { name: 'close' }).click();
+	await page
+		.getByRole('dialog', { name: /^Bulk Edit/ })
+		.getByRole('button', { name: 'close' })
+		.click();
 
 	await pencil.click();
 	await page.keyboard.press('Escape');
 	await expect(pencil).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('the add-track search is hidden, still mounted, and its routes keep answering', async ({ page }) => {
+test('the add-track search is hidden, still mounted, and its routes keep answering', async ({
+	page
+}) => {
 	const { populated_playlist_id: playlistId, tracks } = manifest();
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await openFixturePlaylist(page);

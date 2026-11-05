@@ -19,6 +19,8 @@ The e2e gate's separate reserve, `CI_RUNS_ON_E2E_MERGE_QUEUE` (ADR amendment Fri
     python -m scripts.ci_merge_queue_pool                  # the live variable
     python -m scripts.ci_merge_queue_pool --assume '["self-hosted","linux","mq"]'
                                                            # preflight a value before setting it
+    python -m scripts.ci_merge_queue_pool --variable CI_RUNS_ON_E2E_TRUNK
+                                                           # the main e2e trunk lane (E2ELANE-01)
 
 Exit codes: 0 OK or OFF (variable unset), 1 STRANDED, 2 UNKNOWN (could not measure).
 A WARN line (reserve shared with another CI_RUNS_ON_* pool) does not change the exit.
@@ -38,6 +40,8 @@ MINI-PRD
             [then] UNKNOWN, exit 2 [else stop]
        [if] label case differs between the variable and a runner (`linux` vs `Linux`)
             [then] they still match, as GitHub's own matching does [else stop]
+       [if] `--variable` names another reserve (CI_RUNS_ON_E2E_TRUNK, E2ELANE-01)
+            [then] the same three verdicts apply to it, naming it [else stop]
     R3 Reserve exclusivity ........................................... done + ran + regression
        [if] a matching runner is also matched by another CI_RUNS_ON_* variable
             [then] print WARN naming the runner and the variable, exit unchanged [else stop]
@@ -77,15 +81,15 @@ class Verdict:
 
 
 # -----------------------------------------------------------------------------
-def parse_labels(value: str) -> frozenset[str]:
+def parse_labels(value: str, variable: str = VARIABLE) -> frozenset[str]:
     """The label set a `runs-on` JSON value asks for, lowercased as GitHub compares them."""
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError as error:
-        raise MeasurementError(f"{VARIABLE} is not JSON: {value!r} ({error})") from None
+        raise MeasurementError(f"{variable} is not JSON: {value!r} ({error})") from None
     labels = [parsed] if isinstance(parsed, str) else parsed
     if not isinstance(labels, list) or not labels or not all(isinstance(x, str) for x in labels):
-        raise MeasurementError(f"{VARIABLE} is not a label or a list of labels: {value!r}")
+        raise MeasurementError(f"{variable} is not a label or a list of labels: {value!r}")
     return frozenset(label.lower() for label in labels)
 
 
@@ -93,29 +97,34 @@ def _matching(wanted: frozenset[str], runners: list[Runner]) -> list[Runner]:
     return [runner for runner in runners if wanted <= runner.labels]
 
 
-def pool_verdict(value: str | None, runners: list[Runner], other_pools: dict[str, str]) -> Verdict:
+def pool_verdict(
+    value: str | None,
+    runners: list[Runner],
+    other_pools: dict[str, str],
+    variable: str = VARIABLE,
+) -> Verdict:
     """Classify the pool. `other_pools` maps every other CI_RUNS_ON_* variable to its value."""
     if value is None:
         return Verdict(
             "OFF",
             EXIT_OK,
-            [f"[OFF] {VARIABLE} is unset: Trunk drafts use the general pools (route off)"],
+            [f"[OFF] {variable} is unset: the jobs it routes use the general pools (route off)"],
         )
-    wanted = parse_labels(value)
+    wanted = parse_labels(value, variable)
     matches = _matching(wanted, runners)
     online = sorted((r for r in matches if r.online), key=lambda r: r.name)
     offline = sorted(r.name for r in matches if not r.online)
     if not online:
         lines = [
-            f"[STRANDED] {VARIABLE}={value} but 0 online runners carry every label "
-            f"{sorted(wanted)}; every Trunk batch job will sit queued until one comes online",
+            f"[STRANDED] {variable}={value} but 0 online runners carry every label "
+            f"{sorted(wanted)}; every job it routes will sit queued until one comes online",
             f"    offline matches: {', '.join(offline) or 'none'}",
-            f"    off switch: gh variable delete {VARIABLE} --repo <owner>/<repo>",
+            f"    off switch: gh variable delete {variable} --repo <owner>/<repo>",
         ]
         return Verdict("STRANDED", EXIT_STRANDED, lines)
     busy = sum(r.busy for r in online)
     lines = [
-        f"[OK] {VARIABLE}={value}: {len(online)} online runner(s) match, {busy} busy: "
+        f"[OK] {variable}={value}: {len(online)} online runner(s) match, {busy} busy: "
         + ", ".join(r.name for r in online)
     ]
     if offline:
@@ -126,7 +135,7 @@ def pool_verdict(value: str | None, runners: list[Runner], other_pools: dict[str
         shared = sorted(
             name
             for name, other in other_pools.items()
-            if runner in _matching(parse_labels(other), [runner])
+            if runner in _matching(parse_labels(other, name), [runner])
         )
         if shared:
             lines.append(
@@ -170,7 +179,7 @@ def _runner(item: dict) -> Runner:
     )
 
 
-def measure(repo: str, assume: str | None) -> Verdict:
+def measure(repo: str, assume: str | None, variable: str = VARIABLE) -> Verdict:
     variables = {
         v["name"]: v["value"]
         for v in _gh_list(f"repos/{repo}/actions/variables?per_page=30", "variables")
@@ -179,22 +188,29 @@ def measure(repo: str, assume: str | None) -> Verdict:
     runners = [
         _runner(item) for item in _gh_list(f"repos/{repo}/actions/runners?per_page=100", "runners")
     ]
-    value = assume if assume is not None else variables.get(VARIABLE)
-    others = {name: v for name, v in variables.items() if name != VARIABLE}
-    return pool_verdict(value, runners, others)
+    value = assume if assume is not None else variables.get(variable)
+    others = {name: v for name, v in variables.items() if name != variable}
+    return pool_verdict(value, runners, others, variable)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=DEFAULT_REPO, help="owner/name to read")
     parser.add_argument(
+        "--variable",
+        default=VARIABLE,
+        help=f"the reserve variable to check (default {VARIABLE}; also CI_RUNS_ON_E2E_TRUNK)",
+    )
+    parser.add_argument(
         "--assume",
         metavar="JSON",
-        help=f"evaluate this {VARIABLE} value against the live runners instead of the live one",
+        help="evaluate this value of --variable against the live runners instead of the live one",
     )
     args = parser.parse_args(argv)
+    if not args.variable.startswith(VARIABLE_PREFIX):
+        parser.error(f"--variable must name a {VARIABLE_PREFIX}* variable")
     try:
-        verdict = measure(args.repo, args.assume)
+        verdict = measure(args.repo, args.assume, args.variable)
     except MeasurementError as error:
         print(f"[UNKNOWN] {error}")
         return EXIT_UNKNOWN

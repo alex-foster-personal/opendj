@@ -4,7 +4,7 @@ Does not build, mount, or launch a dmg. Linux can prove the fail-fast
 instrument is intact and whether ledger issue #1492 carries a headed Mac
 row-7 comment. Headed attach stays UNOBSERVED / needs:mac until that comment
 exists. This observer never writes a ``row=7 sha=`` marker: that marker is
-owned by ``ops/dmg-smoke/run.sh`` on the Air.
+owned by ``(private path)`` on the Air.
 
 Exit codes: 0 instrument ok (mac may be UNOBSERVED), 1 instrument broken
 or headed evidence is not a fresh PASS or FLAG with positive counts, 2 UNKNOWN
@@ -40,10 +40,10 @@ EXIT_UNKNOWN = 2
 HEADING = "## Periodic check row 7 (desktop dmg smoke)"
 ZERO_COUNT = '[ "$TRACKS" -gt 0 ] && [ "$PLAYLISTS" -gt 0 ]'
 REQUIRED_FILES = (
-    Path("ops/dmg-smoke/run.sh"),
-    Path("ops/dmg-smoke/com.af.dmg-smoke.plist.template"),
+    Path("(private path)"),
+    Path("(private path)"),
     Path("scripts/install_dmg_smoke_launchd.sh"),
-    Path("tests/scripts/test_dmg_smoke_run.py"),
+    Path("(private path)"),
 )
 REQUIRED_SUBSTRINGS = (
     ZERO_COUNT,
@@ -94,11 +94,7 @@ def instrument_findings(root: Path) -> list[str]:
     if not run_sh.is_file():
         return findings
     text = run_sh.read_text(encoding="utf-8")
-    findings.extend(
-        f"run.sh missing fail-fast {needle!r}"
-        for needle in REQUIRED_SUBSTRINGS
-        if needle not in text
-    )
+    findings.extend(f"run.sh missing fail-fast {needle!r}" for needle in REQUIRED_SUBSTRINGS if needle not in text)
     for line in text.splitlines():
         code = line.split("#", 1)[0]
         if SHIP_DMG_LINE.search(code):
@@ -176,11 +172,7 @@ ATTACH_HELD_RESULTS = frozenset({"PASS", "FLAG"})
 
 
 def headed_attach_held(headed: HeadedRun) -> bool:
-    return (
-        headed.result in ATTACH_HELD_RESULTS
-        and headed.tracks > 0
-        and headed.playlists > 0
-    )
+    return headed.result in ATTACH_HELD_RESULTS and headed.tracks > 0 and headed.playlists > 0
 
 
 def headed_is_fresh(headed: HeadedRun, now: datetime, clock_days: int) -> bool:
@@ -238,10 +230,7 @@ def summary_line(
     if findings:
         return f"{SUMMARY_PREFIX} instrument=FAIL " + "; ".join(findings)
     if headed is None:
-        return (
-            f"{SUMMARY_PREFIX} instrument=ok mac=UNOBSERVED needs:mac "
-            "headed_comments=0"
-        )
+        return f"{SUMMARY_PREFIX} instrument=ok mac=UNOBSERVED needs:mac headed_comments=0"
     age = elapsed_days_since(headed.created_at, now) if now is not None else None
     stale = now is None or not headed_is_fresh(headed, now, clock_days)
     if not headed_attach_held(headed):
@@ -283,11 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     findings = instrument_findings(args.root)
     if findings:
-        print(
-            summary_line(
-                findings=findings, headed=None, now=now, clock_days=args.clock_days
-            )
-        )
+        print(summary_line(findings=findings, headed=None, now=now, clock_days=args.clock_days))
         return EXIT_FINDINGS
 
     try:
@@ -298,11 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_UNKNOWN
 
     headed = latest_headed(comments)
-    print(
-        summary_line(
-            findings=(), headed=headed, now=now, clock_days=args.clock_days
-        )
-    )
+    print(summary_line(findings=(), headed=headed, now=now, clock_days=args.clock_days))
     if headed is None:
         return EXIT_OK
     if headed_attach_held(headed) and headed_is_fresh(headed, now, args.clock_days):

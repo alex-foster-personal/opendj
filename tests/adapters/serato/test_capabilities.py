@@ -10,11 +10,7 @@ import pytest
 from apps.adapters.serato import capabilities
 from apps.open_dj import serialize_jcs
 
-SNAPSHOT_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "serato_capabilities.snapshot.json"
-)
+SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / "data" / "serato_capabilities.snapshot.json"
 
 pytestmark = pytest.mark.requirement("OPEN-02")
 
@@ -30,7 +26,7 @@ pytestmark = pytest.mark.requirement("OPEN-02")
 # plus sort_keys=True plus a trailing newline is the format on disk. Run from
 # the repo root, which is what makes the relative path resolve.
 REGEN_COMMAND = (
-    "python -c \"import json; from apps.adapters.serato import capabilities; "
+    'python -c "import json; from apps.adapters.serato import capabilities; '
     "open('tests/data/serato_capabilities.snapshot.json', 'w').write("
     "json.dumps(capabilities().to_dict(), indent=2, sort_keys=True) + '\\n')\""
 )
@@ -40,8 +36,7 @@ REGEN_COMMAND = (
 def test_capabilities_snapshot_matches() -> None:
     """Serialise capabilities via JCS and compare byte-for-byte."""
     assert SNAPSHOT_PATH.exists(), (
-        f"missing snapshot at {SNAPSHOT_PATH}.\n"
-        f"Regenerate from the repo root with:\n  {REGEN_COMMAND}"
+        f"missing snapshot at {SNAPSHOT_PATH}.\nRegenerate from the repo root with:\n  {REGEN_COMMAND}"
     )
     actual = serialize_jcs(capabilities().to_dict())
     expected = SNAPSHOT_PATH.read_bytes()

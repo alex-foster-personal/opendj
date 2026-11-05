@@ -132,25 +132,44 @@
 
 {#if track}
 	<a href="/">&larr; back to library</a>
-	<h2><ProvenanceTooltip {track} field="title">{track.title ?? '(untitled)'}</ProvenanceTooltip></h2>
+	<h2>
+		<ProvenanceTooltip {track} field="title">{track.title ?? '(untitled)'}</ProvenanceTooltip>
+	</h2>
 	<p><ProvenanceTooltip {track} field="artist">{track.artist ?? ''}</ProvenanceTooltip></p>
 	<p>BPM: {track.bpm ?? '?'} · Key: {shownKey(track.key) ?? '?'}</p>
 	{#if quality}<p><QualityBadge {quality} /></p>{/if}
-	<p>Rating: <RatingStars rating={track.rating ?? 0} onrate={(n) => applyPatch({ rating: n })} /></p>
+	<p>
+		Rating: <RatingStars rating={track.rating ?? 0} onrate={(n) => applyPatch({ rating: n })} />
+	</p>
 
 	<h3>Tags</h3>
 	<div>
 		{#each track.tags as tag}
-			<span class="chip">{tag} <button onclick={() => applyPatch({ tags_remove: [tag] })}>×</button></span>
+			<span class="chip"
+				>{tag} <button onclick={() => applyPatch({ tags_remove: [tag] })}>×</button></span
+			>
 		{/each}
-		<input placeholder="Add tag" bind:value={newTag}
-			onkeydown={(e) => { if (e.key === 'Enter' && newTag) { applyPatch({ tags_add: [newTag] }); newTag = ''; } }} />
+		<input
+			placeholder="Add tag"
+			bind:value={newTag}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' && newTag) {
+					applyPatch({ tags_add: [newTag] });
+					newTag = '';
+				}
+			}}
+		/>
 	</div>
 
 	<h3>Notes</h3>
-	<textarea rows="4" value={track.notes ?? ''} onblur={(e) => saveNotesOnBlur((e.currentTarget as HTMLTextAreaElement).value)}></textarea>
+	<textarea
+		rows="4"
+		value={track.notes ?? ''}
+		onblur={(e) => saveNotesOnBlur((e.currentTarget as HTMLTextAreaElement).value)}></textarea>
 	{#if notesError !== null}
-		<p class="notes-error" role="alert">Notes not saved: {notesError}. Edit and leave the field to retry.</p>
+		<p class="notes-error" role="alert">
+			Notes not saved: {notesError}. Edit and leave the field to retry.
+		</p>
 	{/if}
 
 	{#if stageWordCount > 0}

@@ -79,7 +79,9 @@ function _updateEdgeHover(e: PointerEvent | MouseEvent): void {
 	for (const [edge, nearEdge] of edges) {
 		const sticky = alreadyHovered.has(edge) && _pointerInRegion(edge, e.clientX, e.clientY);
 		void runPerformanceCommandFromUi({
-			type: 'tech_mode_edge_hover', edge, hovered: nearEdge || sticky
+			type: 'tech_mode_edge_hover',
+			edge,
+			hovered: nearEdge || sticky
 		});
 	}
 }

@@ -19,22 +19,32 @@ async function waitForIpc(page: Page): Promise<void> {
 
 async function loadAndPlayDeck1(page: Page): Promise<void> {
 	await page.getByRole('button', { name: /all tracks/i }).click();
-	const stableId = await page.locator('.track-row[data-stable-id]').first().getAttribute('data-stable-id');
+	const stableId = await page
+		.locator('.track-row[data-stable-id]')
+		.first()
+		.getAttribute('data-stable-id');
 	expect(stableId, 'fixture library must expose a track row').toBeTruthy();
 	await page.evaluate(async (sid) => {
 		const ipc = window.musicDjToolsPerformance!;
 		await ipc.dispatch({ type: 'load', deck: 1, stable_id: sid! });
 		await ipc.dispatch({ type: 'play', deck: 1, playing: true });
 	}, stableId);
-	await page.waitForFunction(() => window.musicDjToolsPerformance!.query().decks[1].playing === true);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance!.query().decks[1].playing === true
+	);
 }
 
-test('suspended AudioContext records audio-unexpected-pause fault and client error', async ({ page }) => {
+test('suspended AudioContext records audio-unexpected-pause fault and client error', async ({
+	page
+}) => {
 	test.setTimeout(60_000);
 	await page.addInitScript(() => {
 		const Orig = window.AudioContext;
 		const seen: AudioContext[] = [];
-		const Wrapped = function (this: AudioContext, ...args: ConstructorParameters<typeof AudioContext>) {
+		const Wrapped = function (
+			this: AudioContext,
+			...args: ConstructorParameters<typeof AudioContext>
+		) {
 			const ctx = new Orig(...args);
 			seen.push(ctx);
 			return ctx;
@@ -42,8 +52,9 @@ test('suspended AudioContext records audio-unexpected-pause fault and client err
 		Wrapped.prototype = Orig.prototype;
 		Object.setPrototypeOf(Wrapped, Orig);
 		window.AudioContext = Wrapped;
-		(window as Window & { __mdtCapturedAudioContexts?: AudioContext[] }).__mdtCapturedAudioContexts =
-			seen;
+		(
+			window as Window & { __mdtCapturedAudioContexts?: AudioContext[] }
+		).__mdtCapturedAudioContexts = seen;
 	});
 
 	await page.setViewportSize({ width: 1280, height: 800 });
@@ -60,8 +71,8 @@ test('suspended AudioContext records audio-unexpected-pause fault and client err
 	);
 	await page.evaluate(async () => {
 		const contexts =
-			(window as Window & { __mdtCapturedAudioContexts?: AudioContext[] }).__mdtCapturedAudioContexts ??
-			[];
+			(window as Window & { __mdtCapturedAudioContexts?: AudioContext[] })
+				.__mdtCapturedAudioContexts ?? [];
 		const ctx = contexts.find((c) => c.state === 'running') ?? contexts.at(-1);
 		if (ctx === undefined) throw new Error('no captured AudioContext');
 		await ctx.suspend();

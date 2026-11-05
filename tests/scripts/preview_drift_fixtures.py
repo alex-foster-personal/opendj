@@ -5,6 +5,7 @@ containment-focused sibling ``test_preview_drift_check_containment.py`` can
 both build the same throwaway repo without duplicating the harness (and
 without either file crossing the 600-line file-size ratchet).
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -31,9 +32,7 @@ def _git_env(cwd: Path, when: datetime | None = None) -> dict[str, str]:
 
 
 def _run(cwd: Path, *args: str, when: datetime | None = None) -> str:
-    proc = subprocess.run(
-        ["git", *args], cwd=cwd, env=_git_env(cwd, when), capture_output=True, text=True, check=True
-    )
+    proc = subprocess.run(["git", *args], cwd=cwd, env=_git_env(cwd, when), capture_output=True, text=True, check=True)
     return proc.stdout
 
 

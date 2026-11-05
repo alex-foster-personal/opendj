@@ -54,7 +54,10 @@ describe('trackify-autoplay pure logic', () => {
 		assert.equal(decide({ playing: false, position_ms: 200_000 }), true);
 		// Once per track, never while a load is in flight, never with an
 		// unknown duration.
-		assert.equal(decide({ playing: false, position_ms: 200_000 }, { already_triggered_for: 'a' }), false);
+		assert.equal(
+			decide({ playing: false, position_ms: 200_000 }, { already_triggered_for: 'a' }),
+			false
+		);
 		assert.equal(decide({ playing: false, position_ms: 200_000 }, { in_flight: true }), false);
 		assert.equal(decide({ playing: true, position_ms: 200_000, duration_ms: null }), false);
 		assert.equal(decide({ playing: true, position_ms: 200_000 }, { enabled: false }), false);

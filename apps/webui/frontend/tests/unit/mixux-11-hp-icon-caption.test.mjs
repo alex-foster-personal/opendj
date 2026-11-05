@@ -60,7 +60,7 @@ test('MIXUX-11: the MIX and VOL captions lead with the headphone icon', () => {
 	]) {
 		const caption = captionOf(html, id, label);
 		assert.match(caption, /^<span class="label [^"]*"><span class="label-lead [^"]*"><svg class="hp-caption-icon/, `${label}: the icon must lead the caption`);
-		assert.match(caption, new RegExp(`</svg></span>${label}</span>$`), `${label}: the word follows the icon`);
+		assert.match(caption, new RegExp(`</svg></span><span class="label-text[^"]*">${label}</span>$`), `${label}: the word follows the icon`);
 	}
 	assert.doesNotMatch(html, /hp-control-icon/, 'the standalone icon beside the dial is gone');
 	assert.equal(html.match(/hp-caption-icon/g)?.length, 2, 'exactly two headphone icons: MIX and VOL');

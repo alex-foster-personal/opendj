@@ -14,7 +14,7 @@ from apps.opendj_cli.verbs import InvocationError, parse_invocation
 
 
 @pytest.mark.requirement("CHROME-12")
-@pytest.mark.parametrize("skin", ["default", "mono-dev", "light"])
+@pytest.mark.parametrize("skin", ["default", "mono-dev", "light", "green-room", "practice-ddj-flx4"])
 def test_set_skin_reaches_every_cycled_skin(skin: str) -> None:
     """[if] set_skin <skin> builds no set_skin command [then] the cycle is UI-only, [else stop]."""
     assert parse_invocation(["set_skin", skin, "rekordbox", "auto"]).command == {
@@ -24,8 +24,8 @@ def test_set_skin_reaches_every_cycled_skin(skin: str) -> None:
 
 @pytest.mark.requirement("CHROME-12")
 def test_cli_skin_values_match_the_webui_cycle_order() -> None:
-    """[if] UI_SKIN_VALUES is not default, mono-dev, light [then] CLI and button disagree, [else stop]."""
-    assert UI_SKIN_VALUES == ("default", "mono-dev", "light")
+    """[if] UI_SKIN_VALUES is not default, mono-dev, light, green-room, practice-ddj-flx4 [then] CLI and button disagree, [else stop]."""
+    assert UI_SKIN_VALUES == ("default", "mono-dev", "light", "green-room", "practice-ddj-flx4")
 
 
 @pytest.mark.requirement("CHROME-12")

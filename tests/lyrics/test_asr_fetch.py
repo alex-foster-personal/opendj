@@ -37,8 +37,7 @@ def _seed_track(db_path: Path, stable_id: str) -> None:
         "duration_ms INTEGER, deleted_at TEXT)"
     )
     conn.execute(
-        "INSERT INTO tracks (stable_id, title, artists_json, duration_ms, deleted_at) "
-        "VALUES (?, ?, ?, ?, NULL)",
+        "INSERT INTO tracks (stable_id, title, artists_json, duration_ms, deleted_at) VALUES (?, ?, ?, ?, NULL)",
         (stable_id, "Title", '["Artist"]', 180_000),
     )
     conn.commit()

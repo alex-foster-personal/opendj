@@ -8,6 +8,7 @@
 - [if] a route repeats a slot or breaks slot order [then] refuse it, [else stop].
 - [if] a live pick leaves the set's own slots [then] refuse it, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -97,9 +98,7 @@ def test_tags_are_normalized(conn: sqlite3.Connection) -> None:
 
 def test_routes_count_every_combination_and_name_saved_sets(conn: sqlite3.Connection) -> None:
     ids = _party(conn)
-    party = create_playlist_set(
-        conn, "pl1", "AtlantisParty", parts=[ids["warm"], ids["main"], ids["banger"]]
-    )
+    party = create_playlist_set(conn, "pl1", "AtlantisParty", parts=[ids["warm"], ids["main"], ids["banger"]])
     listing = list_routes(conn, "pl1")
     assert listing.total == 6
     assert listing.truncated is False
@@ -152,9 +151,7 @@ def test_repeated_track_on_a_route_is_flagged(conn: sqlite3.Connection) -> None:
 
 def test_set_with_parts_resolves_live_and_runs_freeze(conn: sqlite3.Connection) -> None:
     ids = _party(conn)
-    set_id = create_playlist_set(
-        conn, "pl1", "Sunrise", parts=[ids["warm"], ids["main"], ids["sunrise"]]
-    )
+    set_id = create_playlist_set(conn, "pl1", "Sunrise", parts=[ids["warm"], ids["main"], ids["sunrise"]])
     ps = load_playlist_set(conn, set_id)
     assert ps.parts == [ids["warm"], ids["main"], ids["sunrise"]]
     assert [e.stable_id for e in ps.entries] == OPENER_A + MAIN + SUNRISE
@@ -167,18 +164,16 @@ def test_set_with_parts_resolves_live_and_runs_freeze(conn: sqlite3.Connection) 
     assert [e.stable_id for e in edited.entries] == OPENER_A + MAIN + ["zq-sun-new"]
     # The earlier run keeps what it actually played.
     assert [sid for sid, _ in load_run_entries(conn, first_run)] == OPENER_A + MAIN + SUNRISE
-    assert {cid for _, cid in load_run_entries(conn, first_run)} == {
-        ids["warm"], ids["main"], ids["sunrise"]
-    }
+    assert {cid for _, cid in load_run_entries(conn, first_run)} == {ids["warm"], ids["main"], ids["sunrise"]}
 
 
 def test_live_ending_pick_is_recorded_on_the_run(conn: sqlite3.Connection) -> None:
     ids = _party(conn)
-    set_id = create_playlist_set(
-        conn, "pl1", "AtlantisParty", parts=[ids["warm"], ids["main"], ids["banger"]]
-    )
+    set_id = create_playlist_set(conn, "pl1", "AtlantisParty", parts=[ids["warm"], ids["main"], ids["banger"]])
     record_run(
-        conn, set_id, "performance",
+        conn,
+        set_id,
+        "performance",
         played_parts=[ids["warm"], ids["main"], ids["singalong"]],
     )
     run_id = load_playlist_set(conn, set_id, include_runs=True).runs[-1].id
@@ -356,9 +351,7 @@ def test_route_replacing_a_snapshot_keeps_old_runs_and_drops_dead_entries(
     conn.execute("DELETE FROM playlist_set_run_entries WHERE run_id=?", (run_id,))
     update_set_parts(conn, set_id, [ids["warm"], ids["main"]])
     assert load_run_entries(conn, run_id) == [("zq-old-1", None), ("zq-old-2", None)]
-    left = conn.execute(
-        "SELECT COUNT(*) FROM playlist_set_entries WHERE set_id=?", (set_id,)
-    ).fetchone()[0]
+    left = conn.execute("SELECT COUNT(*) FROM playlist_set_entries WHERE set_id=?", (set_id,)).fetchone()[0]
     assert left == 0
     assert [e.stable_id for e in load_playlist_set(conn, set_id).entries] == [*OPENER_A, *MAIN]
 
@@ -379,10 +372,15 @@ def test_live_pick_must_fill_the_sets_own_slots(conn: sqlite3.Connection) -> Non
     assert load_playlist_set(conn, set_id).play_count == 0
     assert load_playlist_set(conn, flat).play_count == 0
     # Control: swapping both the opener and the ending within their slots is a live pick.
-    assert record_run(
-        conn, set_id, "performance",
-        played_parts=[ids["straight"], ids["main"], ids["banger"]],
-    ) == 1
+    assert (
+        record_run(
+            conn,
+            set_id,
+            "performance",
+            played_parts=[ids["straight"], ids["main"], ids["banger"]],
+        )
+        == 1
+    )
 
 
 def test_a_route_is_saved_once_per_playlist(conn: sqlite3.Connection) -> None:
@@ -424,7 +422,7 @@ def test_routes_list_saved_sets_that_skip_a_slot_or_borrow(
     listing = list_routes(conn, "pl1")
     assert listing.total == full.total + 2
     assert listing.routes[: full.total] == full.routes
-    assert [(r.parts, r.set_id) for r in listing.routes[full.total:]] == [
+    assert [(r.parts, r.set_id) for r in listing.routes[full.total :]] == [
         ([ids["warm"], ids["sunrise"]], skip),
         ([ids["warm"], ids["main"], closer], borrow),
     ]
@@ -447,9 +445,7 @@ def test_routes_of_a_playlist_with_only_borrowed_parts(conn: sqlite3.Connection)
     assert (listing.total, listing.truncated) == (1, False)
 
 
-def test_route_uniqueness_is_checked_inside_the_write_lock(
-    conn: sqlite3.Connection, tmp_path: Path
-) -> None:
+def test_route_uniqueness_is_checked_inside_the_write_lock(conn: sqlite3.Connection, tmp_path: Path) -> None:
     """A second writer that checked before the first committed must still refuse."""
     ids = _party(conn)
     first = state_db.open_rw(tmp_path / "state.db")
@@ -460,9 +456,7 @@ def test_route_uniqueness_is_checked_inside_the_write_lock(
     def _second() -> None:
         other = state_db.open_rw(tmp_path / "state.db")
         try:
-            outcome.append(
-                create_playlist_set(other, "pl1", "Second", parts=[ids["warm"], ids["main"]])
-            )
+            outcome.append(create_playlist_set(other, "pl1", "Second", parts=[ids["warm"], ids["main"]]))
         except BaseException as exc:  # noqa: BLE001 - the refusal is the result
             outcome.append(exc)
         finally:
@@ -485,9 +479,7 @@ def test_v1_database_migrates_without_touching_sets(tmp_path: Path) -> None:
     ps_schema._ensure_meta(c)
     for stmt in ps_schema._V1:
         c.execute(stmt)
-    c.execute(
-        "INSERT INTO playlist_sets_schema_meta(version, applied_at) VALUES (1, 'x')"
-    )
+    c.execute("INSERT INTO playlist_sets_schema_meta(version, applied_at) VALUES (1, 'x')")
     c.execute(
         "INSERT INTO playlist_sets(id, playlist_id, name, play_count, created_at, updated_at) "
         "VALUES (7, 'pl1', 'Old', 3, 't', 't')"
@@ -532,8 +524,21 @@ def test_cli_round_trip(tmp_path: Path) -> None:
     c.close()
 
     def make(name: str, slot: str, tracks: str) -> int:
-        out = _run_cli(db, "component", "create", "--playlist", "pl1", "--name", name,
-                       "--slot", slot, "--tracks", tracks, "--tag", "test")
+        out = _run_cli(
+            db,
+            "component",
+            "create",
+            "--playlist",
+            "pl1",
+            "--name",
+            name,
+            "--slot",
+            slot,
+            "--tracks",
+            tracks,
+            "--tag",
+            "test",
+        )
         assert out.returncode == 0, out.stderr
         return json.loads(out.stdout)["id"]
 
@@ -547,15 +552,13 @@ def test_cli_round_trip(tmp_path: Path) -> None:
     assert body["total"] == 2
     assert [r["parts"] for r in body["routes"]] == [[opener, end_a], [opener, end_b]]
 
-    created = _run_cli(db, "create", "--playlist", "pl1", "--name", "Gig",
-                       "--parts", f"{opener},{end_a}")
+    created = _run_cli(db, "create", "--playlist", "pl1", "--name", "Gig", "--parts", f"{opener},{end_a}")
     assert created.returncode == 0, created.stderr
     gig = json.loads(created.stdout)
     assert gig["parts"] == [opener, end_a]
     assert [e["stable_id"] for e in gig["entries"]] == ["zq-a", "zq-b", "zq-c"]
 
-    performed = _run_cli(db, "perform", "--set", str(gig["id"]),
-                         "--played-parts", f"{opener},{end_b}")
+    performed = _run_cli(db, "perform", "--set", str(gig["id"]), "--played-parts", f"{opener},{end_b}")
     assert performed.returncode == 0, performed.stderr
     assert json.loads(performed.stdout)["play_count"] == 1
 
@@ -583,15 +586,38 @@ def test_cli_text_routes_flag_repeats_and_lists_reject_empty_items(tmp_path: Pat
     def cli(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "-m", "apps.playlist_sets", "--db", str(db), *args],
-            check=False, capture_output=True, text=True,
+            check=False,
+            capture_output=True,
+            text=True,
         )
 
-    assert cli("component", "create", "--playlist", "pl1", "--name", "Warm",
-               "--slot", "opener", "--tracks", "zq-a,zq-shared").returncode == 0
-    assert cli("component", "create", "--playlist", "pl1", "--name", "Close",
-               "--slot", "ending", "--tracks", "zq-shared").returncode == 0
-    assert cli("component", "create", "--playlist", "pl1", "--name", "Fresh",
-               "--slot", "ending", "--tracks", "zq-z").returncode == 0
+    assert (
+        cli(
+            "component",
+            "create",
+            "--playlist",
+            "pl1",
+            "--name",
+            "Warm",
+            "--slot",
+            "opener",
+            "--tracks",
+            "zq-a,zq-shared",
+        ).returncode
+        == 0
+    )
+    assert (
+        cli(
+            "component", "create", "--playlist", "pl1", "--name", "Close", "--slot", "ending", "--tracks", "zq-shared"
+        ).returncode
+        == 0
+    )
+    assert (
+        cli(
+            "component", "create", "--playlist", "pl1", "--name", "Fresh", "--slot", "ending", "--tracks", "zq-z"
+        ).returncode
+        == 0
+    )
     rows = cli("routes", "--playlist", "pl1").stdout.splitlines()
     # One route plays zq-shared twice and says so in plain text; the other does not.
     assert [r for r in rows if "repeats" in r] == [rows[0]]
@@ -599,8 +625,7 @@ def test_cli_text_routes_flag_repeats_and_lists_reject_empty_items(tmp_path: Pat
     assert "repeats" not in rows[1]
 
     for bad in ("zq-a,,zq-b", "zq-a,", ","):
-        out = cli("component", "create", "--playlist", "pl1", "--name", "Bad",
-                  "--slot", "main", "--tracks", bad)
+        out = cli("component", "create", "--playlist", "pl1", "--name", "Bad", "--slot", "main", "--tracks", bad)
         assert out.returncode == 2, bad
         assert "empty item" in out.stderr
     out = cli("create", "--playlist", "pl1", "--name", "Gig", "--parts", "1,,3")

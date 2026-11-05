@@ -27,8 +27,7 @@ import type { SettingDef } from './catalog-types';
 export const WAVE_QS_INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 export type WaveQsRow =
-	| { kind: 'setting'; id: string }
-	| { kind: 'inert'; id: string; label: string; detail: string };
+	{ kind: 'setting'; id: string } | { kind: 'inert'; id: string; label: string; detail: string };
 
 export interface WaveQsGroup {
 	id: 'look' | 'zoom' | 'markers' | 'lanes';
@@ -48,7 +47,11 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 			{ kind: 'setting', id: 'waveform_design' },
 			{ kind: 'setting', id: 'wave_palette' },
 			{ kind: 'setting', id: 'ui_skin' },
-			_inert('wave_height', 'Half or full height', 'The deck waveform is always drawn full height and mirrored.')
+			_inert(
+				'wave_height',
+				'Half or full height',
+				'The deck waveform is always drawn full height and mirrored.'
+			)
 		]
 	},
 	{
@@ -65,13 +68,29 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 		label: 'On the waveform',
 		rows: [
 			{ kind: 'setting', id: 'show_sections' },
-			_inert('phrase_markers', 'Phrase markers', 'Phrase markers (intro, verse, chorus) are always drawn.'),
-			_inert('bar_lines', 'Bar and downbeat lines', 'The beat grid, bar and downbeat lines are always drawn.'),
+			_inert(
+				'phrase_markers',
+				'Phrase markers',
+				'Phrase markers (intro, verse, chorus) are always drawn.'
+			),
+			_inert(
+				'bar_lines',
+				'Bar and downbeat lines',
+				'The beat grid, bar and downbeat lines are always drawn.'
+			),
 			_inert('hot_cues', 'Hot cues', 'Hot cue markers are always drawn.'),
 			_inert('memory_cues', 'Memory cues', 'Memory cue markers are always drawn.'),
 			_inert('loop_cues', 'Loop cues', 'Saved loop bands are always drawn.'),
-			_inert('vocal_lane', 'Vocal lane', 'The vocal lane is always drawn where vocals are analyzed.'),
-			_inert('tempo_lane', 'Tempo-change lane', 'The tempo-change lane is being built on its own branch.')
+			_inert(
+				'vocal_lane',
+				'Vocal lane',
+				'The vocal lane is always drawn where vocals are analyzed.'
+			),
+			_inert(
+				'tempo_lane',
+				'Tempo-change lane',
+				'The tempo-change lane is being built on its own branch.'
+			)
 		]
 	},
 	{
@@ -90,17 +109,22 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 /** The hover title for a live row: the setting's summary, then its agent twin. */
 export function waveQsRowTitle(def: SettingDef): string {
 	const verb = WAVE_QS_VERBS[def.id];
-	if (verb === undefined) throw new Error(`waveform quick settings: ${def.id} has no command-bus verb`);
+	if (verb === undefined)
+		throw new Error(`waveform quick settings: ${def.id} has no command-bus verb`);
 	return `${def.title}. Agents: opendj ${verb}`;
 }
 
 /** Resolve a live row to its catalog entry; a missing or unimplemented entry throws. */
 export function resolveWaveQsSetting(catalog: readonly SettingDef[], id: string): SettingDef {
 	const def = catalog.find((entry) => entry.id === id);
-	if (def === undefined) throw new Error(`waveform quick settings: no Settings catalog entry ${id}`);
-	if (!def.implemented) throw new Error(`waveform quick settings: catalog entry ${id} is not implemented`);
+	if (def === undefined)
+		throw new Error(`waveform quick settings: no Settings catalog entry ${id}`);
+	if (!def.implemented)
+		throw new Error(`waveform quick settings: catalog entry ${id} is not implemented`);
 	if (def.control.kind !== 'boolean' && def.control.kind !== 'enum') {
-		throw new Error(`waveform quick settings: ${id} is a ${def.control.kind} control, only boolean and enum render here`);
+		throw new Error(
+			`waveform quick settings: ${id} is a ${def.control.kind} control, only boolean and enum render here`
+		);
 	}
 	return def;
 }

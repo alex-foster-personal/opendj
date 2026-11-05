@@ -227,9 +227,7 @@ class _Join:
     )
 
 
-def _ingest_deck_load_row(
-    join: _Join, row: dict[str, Any], key: tuple[str | None, Any], family: str
-) -> None:
+def _ingest_deck_load_row(join: _Join, row: dict[str, Any], key: tuple[str | None, Any], family: str) -> None:
     """One `deck-load` row: model it, record it, and queue it for the stem
     row that may follow. A row the model cannot complete queues nothing and
     clears whatever was already waiting under `key`."""
@@ -260,23 +258,17 @@ def _ingest_deck_load_row(
         total_ms=model.total_ms,
         parallel_ms=model.parallelizable_ms,
         residual_ms=model.residual_ms,
-        fetch_members_ms={
-            name: float(value) for name, value in stages.items() if name in FETCH_GROUP_STAGES
-        },
+        fetch_members_ms={name: float(value) for name, value in stages.items() if name in FETCH_GROUP_STAGES},
         fetch_wall_ms=float(stages["fetchWall"]) if "fetchWall" in stages else None,
         anomalous=bool(load_unclassified) or residual_material,
         ceiling_unknown=model.contested_fetch_group,
-        stem_layout_pending=(
-            isinstance(row.get("labels"), dict) and row["labels"].get("stemLayout") == "pending"
-        ),
+        stem_layout_pending=(isinstance(row.get("labels"), dict) and row["labels"].get("stemLayout") == "pending"),
     )
     join.records.append(record)
     join.awaiting_stem.setdefault(key, []).append(record)
 
 
-def _ingest_stem_row(
-    join: _Join, row: dict[str, Any], key: tuple[str | None, Any], family: str
-) -> None:
+def _ingest_stem_row(join: _Join, row: dict[str, Any], key: tuple[str | None, Any], family: str) -> None:
     """One stem-kind row, resolved against the most recent load still
     awaiting one under `key`. Every early return here leaves that load
     either popped-and-marked or untouched, never half-resolved."""
@@ -358,9 +350,7 @@ def build_records(rows: list[dict[str, Any]]) -> tuple[list[LoadRecord], dict[st
     # stays mix-only instead -- UNLESS the load's own row said
     # `labels.stemLayout: pending`, direct evidence regardless of the ring (#705:300).
     still_pending = orphaned + [record for queue in awaiting_stem.values() for record in queue]
-    stem_kind_rows_seen = (
-        notes["stem_rows"] or notes["stem_rows_failed_excluded"] or notes["stem_rows_no_stems"]
-    )
+    stem_kind_rows_seen = notes["stem_rows"] or notes["stem_rows_failed_excluded"] or notes["stem_rows_no_stems"]
     for pending_record in still_pending:
         if stem_kind_rows_seen or pending_record.stem_layout_pending:
             pending_record.anomalous = True
@@ -420,25 +410,19 @@ def aggregate(records: list[LoadRecord]) -> dict[str, Any]:
         "serial_ms": round(total - parallel, 1),
         "parallel_fraction": round(fraction, 4),
         "serial_fraction": round(1.0 - fraction, 4),
-        "median_load_ms": round(
-            statistics.median(record.combined_total_ms for record in clean), 1
-        ),
+        "median_load_ms": round(statistics.median(record.combined_total_ms for record in clean), 1),
         # None when >=1 clean load is contested: pooling a fraction that
         # already charges unproven time as serial is the same unfounded
         # ceiling Codex flagged, one level up (#705).
         "speedup": (
-            {f"N={int(n)}": round(amdahl_speedup(fraction, n), 3) for n in WORKER_COUNTS}
-            if ceiling_known
-            else None
+            {f"N={int(n)}": round(amdahl_speedup(fraction, n), 3) for n in WORKER_COUNTS} if ceiling_known else None
         ),
         # Raw, possibly-infinite value: `print_aggregate`'s `.3f` prints
         # `inf` cleanly. Only `main()`'s `--json` branch cannot carry
         # `math.inf`, so IT normalizes this field (`_normalize_ceiling`).
         "ceiling_speedup": round(_ceiling(fraction), 3) if ceiling_known else None,
         "floor_ms_if_parallel_were_free": round(total - parallel, 1),
-        "median_fetch_concurrency": (
-            round(statistics.median(concurrencies), 2) if concurrencies else None
-        ),
+        "median_fetch_concurrency": (round(statistics.median(concurrencies), 2) if concurrencies else None),
     }
 
 
@@ -446,9 +430,7 @@ def aggregate(records: list[LoadRecord]) -> dict[str, Any]:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--localstorage", type=Path, help="WKWebView localstorage.sqlite3")
     parser.add_argument("--perf-log", type=Path, help="JSON dump of the ring")
     parser.add_argument("--json", action="store_true", help="machine-readable output")

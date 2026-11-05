@@ -8,6 +8,9 @@ IPC or CLI parity; the CLI twin is ``opendj track grid-edit``).
   POST   /api/v1/tracks/{stable_id}/grid-edit/nudge    relative step (the clicks)
   PUT    /api/v1/tracks/{stable_id}/grid-edit          absolute value
   DELETE /api/v1/tracks/{stable_id}/grid-edit          reset to the measured grid
+  PUT    /api/v1/tracks/{stable_id}/bpm-pick            {"source": "own"|"mik"}: settle a
+                                                       disputed tempo (GRID-OCTAVE-02)
+  DELETE /api/v1/tracks/{stable_id}/bpm-pick            forget the pick (the dispute shows again)
 
 ``source`` picks which grid (rekordbox or own) the edit belongs to. Omitted,
 it is the grid ``/anlz`` serves this track right now, resolved by the same
@@ -35,7 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
-from apps.shared.state import grid_edit
+from apps.shared.state import grid_edit, tempo_pick
 from apps.shared.state.sync_stamp import canonical_now
 from apps.shared.state.writer import StateWriter
 
@@ -85,6 +88,21 @@ class GridEditSetIn(BaseModel):
     source: grid_edit.GridSource | None = None
     offset_ms: float
     beat_shift: StrictInt = Field(ge=-64, le=64)
+
+
+class BpmPickIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Whose tempo the deck and the library serve where ours and Mixed In Key's disagree.
+    source: tempo_pick.TempoPick
+
+
+class BpmPickOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    stable_id: str
+    #: The stored pick; null once cleared.
+    source: tempo_pick.TempoPick | None
 
 
 def _raise(exc: grid_edit.GridEditError) -> NoReturn:
@@ -154,29 +172,29 @@ def _write(
     source: grid_edit.GridSource | None,
     change: Callable[[grid_edit.GridEdit], grid_edit.GridEdit],
 ) -> GridEditOut:
-    """One read-modify-write of the track's edit under BEGIN IMMEDIATE."""
+    """One read-modify-write of the track's edit under a writer unit."""
     resolved = source if source is not None else _served_source(request, stable_id)
     conn = state_db.open_rw(state_db_path(request))
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        _require_track(conn, stable_id)
-        stored = grid_edit.read(conn, stable_id)
-        edits = grid_edit.with_edit(stored, resolved, change(stored.for_source(resolved)))
-        with StateWriter(conn, actor="webui") as writer:
-            writer.set_field(
-                stable_id,
-                grid_edit.FIELD,
-                grid_edit.blob(edits),
-                source=grid_edit.OWN_SOURCE,
-                modified_at=canonical_now(),
-            )
-        after = grid_edit.read(conn, stable_id)
-        conn.commit()
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                _require_track(conn, stable_id)
+                stored = grid_edit.read(conn, stable_id)
+                edits = grid_edit.with_edit(stored, resolved, change(stored.for_source(resolved)))
+                writer.set_field(
+                    stable_id,
+                    grid_edit.FIELD,
+                    grid_edit.blob(edits),
+                    source=grid_edit.OWN_SOURCE,
+                    modified_at=canonical_now(),
+                )
+                after = grid_edit.read(conn, stable_id)
     except grid_edit.GridEditError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         _raise(exc)
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise
     finally:
         conn.close()
@@ -262,11 +280,16 @@ def reset_grid_edit(
     return _write(request, stable_id, source, lambda _edit: grid_edit.IDENTITY)
 
 
-def apply_stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Apply this track's stored edit for the grid ``payload`` serves (``/anlz``)."""
+def _served_grid_source(stable_id: str, payload: dict[str, Any]) -> grid_edit.GridSource:
     source = (payload.get("beatgrid") or {}).get("source")
     if source not in grid_edit.GRID_SOURCES:
         raise RuntimeError(f"/anlz payload for {stable_id} names beatgrid source {source!r}")
+    return source
+
+
+def stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> grid_edit.GridEdit:
+    """This track's stored edit for the grid ``payload`` serves; the identity when none."""
+    source = _served_grid_source(stable_id, payload)
     stored = grid_edit.NO_EDITS
     conn = state_conn_ro(state_db_path(request))
     if conn is not None:
@@ -275,14 +298,78 @@ def apply_stored_grid_edit(request: Request, stable_id: str, payload: dict[str, 
                 stored = grid_edit.read(conn, stable_id)
         finally:
             conn.close()
-    return grid_edit.apply_to_payload(payload, stored.for_source(source), source)
+    return stored.for_source(source)
+
+
+def apply_stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply this track's stored edit for the grid ``payload`` serves (``/anlz``)."""
+    source = _served_grid_source(stable_id, payload)
+    return grid_edit.apply_to_payload(payload, stored_grid_edit(request, stable_id, payload), source)
+
+
+# ----------------------------------------------------------------- tempo pick (GRID-OCTAVE-02)
+
+
+def stored_tempo_pick(request: Request, stable_id: str) -> tempo_pick.TempoPick | None:
+    """The track's stored pick between our tempo and Mixed In Key's; None when none."""
+    conn = state_conn_ro(state_db_path(request))
+    if conn is None:
+        return None
+    try:
+        return tempo_pick.read(conn, stable_id)
+    finally:
+        conn.close()
+
+
+def _write_tempo_pick(request: Request, stable_id: str, pick: tempo_pick.TempoPick | None) -> BpmPickOut:
+    conn = state_db.open_rw(state_db_path(request))
+    try:
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                _require_track(conn, stable_id)
+                writer.set_field(
+                    stable_id, tempo_pick.FIELD, tempo_pick.blob(pick), source=tempo_pick.OWN_SOURCE, modified_at=canonical_now()
+                )
+    except Exception:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    finally:
+        conn.close()
+    # The grid /anlz serves changes (decks re-read on beatgrid_edit) and so does the row's BPM.
+    publish("library.changed", {"kind": EVENT_KIND, "ids": [stable_id]})
+    publish("library.changed", {"kind": "tracks", "ids": [stable_id]})
+    return BpmPickOut(stable_id=stable_id, source=pick)
+
+
+@router.put("/{stable_id}/bpm-pick", response_model=BpmPickOut)
+def set_bpm_pick(
+    request: Request,
+    stable_id: str,
+    body: BpmPickIn,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> BpmPickOut:
+    """Serve ``source``'s tempo where ours and Mixed In Key's disagree; the dispute marker goes."""
+    return _write_tempo_pick(request, stable_id, body.source)
+
+
+@router.delete("/{stable_id}/bpm-pick", response_model=BpmPickOut)
+def clear_bpm_pick(
+    request: Request,
+    stable_id: str,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> BpmPickOut:
+    return _write_tempo_pick(request, stable_id, None)
 
 
 __all__ = [
     "EVENT_KIND",
+    "BpmPickIn",
+    "BpmPickOut",
     "GridEditNudgeIn",
     "GridEditOut",
     "GridEditSetIn",
     "apply_stored_grid_edit",
     "router",
+    "stored_grid_edit",
+    "stored_tempo_pick",
 ]

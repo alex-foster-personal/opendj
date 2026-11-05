@@ -47,6 +47,10 @@ export function appendShellLog(level: string, message: string): void {
 /** Prove the engine log can be appended to, before anything depends on it. */
 export function verifyLogWritable(logPath: string): void {
 	try {
+		// Windows opens a directory for append without complaint, so ask first.
+		if (fs.existsSync(logPath) && fs.statSync(logPath).isDirectory()) {
+			throw new Error('EISDIR: it is a directory, not a file');
+		}
 		fs.closeSync(fs.openSync(logPath, 'a'));
 	} catch (error) {
 		throw new EngineError(

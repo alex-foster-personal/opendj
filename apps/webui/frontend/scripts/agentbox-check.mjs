@@ -43,7 +43,10 @@ function httpRedirect(ip, requestHost, path) {
 			(response) => {
 				response.resume();
 				response.once('end', () => {
-					resolve({ status: response.statusCode ?? 0, location: response.headers.location ?? null });
+					resolve({
+						status: response.statusCode ?? 0,
+						location: response.headers.location ?? null
+					});
 				});
 			}
 		);
@@ -74,10 +77,7 @@ async function main() {
 
 	const browser = await chromium.launch({
 		headless: true,
-		args: [
-			`--host-resolver-rules=MAP ${host} ${ip}`,
-			'--autoplay-policy=no-user-gesture-required'
-		]
+		args: [`--host-resolver-rules=MAP ${host} ${ip}`, '--autoplay-policy=no-user-gesture-required']
 	});
 	try {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

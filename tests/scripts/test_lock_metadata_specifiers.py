@@ -23,9 +23,9 @@ BOUND = 'requires-dist = [{ name = "six", specifier = ">=1" }]'
 def _pair(python: str = ">=3.11", dependency: str = "six") -> tuple[str, str]:
     assert UNMARKED_PYPROJECT.count('requires-python = ">=3.11"') == 1
     assert UNMARKED_PYPROJECT.count('dependencies = ["six"]') == 1
-    pyproject = UNMARKED_PYPROJECT.replace(
-        'requires-python = ">=3.11"', f'requires-python = "{python}"'
-    ).replace('dependencies = ["six"]', f'dependencies = ["{dependency}"]')
+    pyproject = UNMARKED_PYPROJECT.replace('requires-python = ">=3.11"', f'requires-python = "{python}"').replace(
+        'dependencies = ["six"]', f'dependencies = ["{dependency}"]'
+    )
     assert UNMARKED_LOCK.count(REQUIRES) == 1
     lock = UNMARKED_LOCK if dependency == "six" else UNMARKED_LOCK.replace(REQUIRES, BOUND)
     return pyproject, lock
@@ -56,9 +56,7 @@ def test_whitespace_inside_a_specifier_token_is_unknown(
     [(">= 3.11", "six"), (" >= 3.11 ", "six"), (">=3.11", "six >= 1"), (">=3.11", "six>=1")],
     ids=["python-space-between", "python-space-around", "dep-space-between", "dep-plain"],
 )
-def test_whitespace_around_a_specifier_token_still_matches(
-    tmp_path: Path, python: str, dependency: str
-) -> None:
+def test_whitespace_around_a_specifier_token_still_matches(tmp_path: Path, python: str, dependency: str) -> None:
     """CONTROLS: each pair is `uv lock --check` exit 0 (measured uv 0.8.17, round 49)."""
     code, message = _run(tmp_path, *_pair(python, dependency))
     assert code == EXIT_OK, message

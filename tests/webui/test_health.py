@@ -1,4 +1,5 @@
 """Health endpoint + bind-warning + lock-holder tests (CAT-05, CAT-05b)."""
+
 from __future__ import annotations
 
 import pytest
@@ -126,11 +127,16 @@ def test_openapi_schema_generated(client):
     assert schema["info"]["title"] == "music-dj-tools webui"
     paths = schema["paths"]
     for path in (
-        "/api/v1/tracks", "/api/v1/tracks/{stable_id}",
-        "/api/v1/playlists", "/api/v1/playlists/{playlist_id}",
-        "/api/v1/pairings", "/api/v1/pairings/{pairing_id}",
-        "/api/v1/queues/{kind}", "/api/v1/health",
+        "/api/v1/tracks",
+        "/api/v1/tracks/{stable_id}",
+        "/api/v1/playlists",
+        "/api/v1/playlists/{playlist_id}",
+        "/api/v1/pairings",
+        "/api/v1/pairings/{pairing_id}",
+        "/api/v1/queues/{kind}",
+        "/api/v1/health",
     ):
         assert path in paths, f"missing: {path}"
+
 
 pytestmark = pytest.mark.rb_parity

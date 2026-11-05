@@ -2,7 +2,7 @@
 
 The transfer itself needs R2 credentials, but every decision the job makes
 before a byte moves is pure and pinned here. Following the precedent set by
-tests/scripts/test_b2_stems_to_r2.py, no S3 client is faked: a test built on a
+(private path), no S3 client is faked: a test built on a
 stubbed client proves the stub behaves, not that the job is right.
 
   [if] the work set stops excluding size-matched objects, a re-run pushes
@@ -67,7 +67,8 @@ def _bundle_root(tmp_path: Path, *, manifest: bool = True) -> Path:
     return tmp_path
 
 
-#----- planning ---------------------------------------------------------------
+# ----- planning ---------------------------------------------------------------
+
 
 def test_only_publishable_bundles_are_planned(tmp_path: Path) -> None:
     """A manifestless bundle is complete but unloadable, so it must not be
@@ -84,9 +85,7 @@ def test_planned_uploads_cover_every_file_with_farm_keys(tmp_path: Path) -> None
     planned = migrate.planned_uploads(bundles)
     keys = {item.key for item in planned}
     bodies = {name: path.read_bytes() for name, path in bundles[0].files.items()}
-    assert keys == {
-        migrate.object_key_for_body(body) for body in bodies.values()
-    }
+    assert keys == {migrate.object_key_for_body(body) for body in bodies.values()}
     assert all(item.size == item.source.stat().st_size for item in planned)
 
 
@@ -98,7 +97,8 @@ def test_content_type_is_set_per_extension(tmp_path: Path) -> None:
     assert by_suffix[".json"] == "application/json"
 
 
-#----- the resumable work set -------------------------------------------------
+# ----- the resumable work set -------------------------------------------------
+
 
 def test_work_set_skips_objects_already_in_r2() -> None:
     planned = [Upload("assets/aa/aa", Path("/x"), 100)]
@@ -174,7 +174,8 @@ def test_put_object_kwargs_ships_the_exact_bytes_it_hashed(tmp_path: Path) -> No
     assert kwargs["ContentType"] == item.content_type
 
 
-#----- verification -----------------------------------------------------------
+# ----- verification -----------------------------------------------------------
+
 
 def test_reconcile_confirms_matching_sizes() -> None:
     attempted = [Upload("k", Path("/x"), 100)]
@@ -197,7 +198,8 @@ def test_reconcile_rejects_a_missing_object() -> None:
     assert "R2 has None" in bad[0]
 
 
-#----- safety -----------------------------------------------------------------
+# ----- safety -----------------------------------------------------------------
+
 
 def test_no_delete_capability_exists() -> None:
     """This job publishes the only copy of renders that cost GPU hours, so
@@ -222,16 +224,13 @@ def test_no_delete_capability_exists() -> None:
 
 
 def test_parser_offers_no_delete_flag() -> None:
-    options = {
-        option
-        for action in migrate.build_parser()._actions
-        for option in action.option_strings
-    }
+    options = {option for action in migrate.build_parser()._actions for option in action.option_strings}
     assert not any("delete" in option for option in options)
     assert "--dry-run" in options
 
 
-#----- journal ----------------------------------------------------------------
+# ----- journal ----------------------------------------------------------------
+
 
 def test_journal_is_append_only(tmp_path: Path) -> None:
     journal = tmp_path / "nested" / "migration.jsonl"
@@ -387,9 +386,7 @@ def test_new_journal_mappings_includes_objects_already_present_in_r2() -> None:
     excluded from `todo` on the next run and never journaled at all -- a
     permanent loss of its legacy-to-content mapping despite a successful,
     no-op rerun."""
-    already_present = Upload(
-        "assets/aa/aa", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3"
-    )
+    already_present = Upload("assets/aa/aa", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3")
     result = migrate.new_journal_mappings(
         planned=[already_present],
         final_remote={"assets/aa/aa": 100},
@@ -402,7 +399,8 @@ def test_new_journal_mappings_skips_pairs_already_journaled() -> None:
     item = Upload("assets/aa/aa", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3")
     already_journaled = {(item.legacy_key, item.key)}
     result = migrate.new_journal_mappings(
-        planned=[item], final_remote={"assets/aa/aa": 100},
+        planned=[item],
+        final_remote={"assets/aa/aa": 100},
         already_journaled=already_journaled,
     )
     assert result == []
@@ -412,9 +410,7 @@ def test_new_journal_mappings_rejournals_a_re_rendered_source() -> None:
     """A re-render keeps the same legacy_key but changes the content key;
     deduping by legacy_key alone would silently drop the new mapping."""
     old_pair = ("stems/p/a/vocals.mp3", "assets/aa/aa")
-    re_rendered = Upload(
-        "assets/bb/bb", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3"
-    )
+    re_rendered = Upload("assets/bb/bb", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3")
     result = migrate.new_journal_mappings(
         planned=[re_rendered],
         final_remote={"assets/bb/bb": 100},
@@ -425,9 +421,7 @@ def test_new_journal_mappings_rejournals_a_re_rendered_source() -> None:
 
 def test_new_journal_mappings_excludes_objects_not_yet_confirmed() -> None:
     item = Upload("assets/aa/aa", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3")
-    result = migrate.new_journal_mappings(
-        planned=[item], final_remote={}, already_journaled=set()
-    )
+    result = migrate.new_journal_mappings(planned=[item], final_remote={}, already_journaled=set())
     assert result == []
 
 
@@ -438,9 +432,7 @@ def test_new_journal_mappings_excludes_a_short_object() -> None:
     notice, exactly the size-vs-presence mistake reconcile() already guards
     against on the upload side."""
     item = Upload("assets/aa/aa", Path("/x"), 100, legacy_key="stems/p/a/vocals.mp3")
-    result = migrate.new_journal_mappings(
-        planned=[item], final_remote={"assets/aa/aa": 3}, already_journaled=set()
-    )
+    result = migrate.new_journal_mappings(planned=[item], final_remote={"assets/aa/aa": 3}, already_journaled=set())
     assert result == []
 
 
@@ -468,8 +460,6 @@ def test_dry_run_needs_no_credentials(
     root = _bundle_root(tmp_path)
     for key in r2_stems.R2_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
-    exit_code = migrate.main(
-        ["--root", str(root), "--data-dir", str(tmp_path / "nodata"), "--dry-run"]
-    )
+    exit_code = migrate.main(["--root", str(root), "--data-dir", str(tmp_path / "nodata"), "--dry-run"])
     assert exit_code == 0
     assert "nothing uploaded" in capsys.readouterr().out

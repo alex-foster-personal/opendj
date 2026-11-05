@@ -4,7 +4,7 @@ Three fixture cases the checker must distinguish, per issue #1473: a present
 path, a missing path, and a changed (drifted) threshold. Each case is built
 twice -- once in the state the checker should pass, once mutated so the
 checker must fail -- so a test that never goes red on the mutated state would
-be caught rather than silently passing for the wrong reason (`.claude/rules/
+be caught rather than silently passing for the wrong reason (`(private path)/
 verification.md` "mutate the guard, in BOTH directions").
 """
 
@@ -83,9 +83,7 @@ def test_path_citation_mutation_present_vs_missing(tmp_path: Path) -> None:
 
     repo_root_missing = tmp_path / "b" / "repo"
     (repo_root_missing / "docs" / "moc").mkdir(parents=True)
-    (repo_root_missing / "docs" / "moc" / "fixture-area.md").write_text(
-        "`apps/widget.py`\n", encoding="utf-8"
-    )
+    (repo_root_missing / "docs" / "moc" / "fixture-area.md").write_text("`apps/widget.py`\n", encoding="utf-8")
     _, drift_missing = mod.run(repo_root_missing, repo_root_missing / "docs" / "moc")
     assert drift_missing == 1
 
@@ -188,9 +186,7 @@ def test_root_level_line_citation_is_checked(tmp_path: Path) -> None:
     repo_root = _write_repo(tmp_path, source_line="WIDGET_MAX = 10")
     _write_root_file(repo_root, "AGENTS.md")
     _write_root_file(repo_root, "justfile")
-    _write_moc(
-        repo_root, "Rules: `AGENTS.md:2-3`. Recipes: `justfile:1`, and `justfile` overall.\n"
-    )
+    _write_moc(repo_root, "Rules: `AGENTS.md:2-3`. Recipes: `justfile:1`, and `justfile` overall.\n")
 
     rows, drift_count = mod.run(repo_root, repo_root / "docs" / "moc")
 

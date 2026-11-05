@@ -33,7 +33,10 @@
  *       [if] a mix that refuses its stop is retired before the stems start [then ⛔️]
  *       [if] a mix whose stop is still unacknowledged when the stems start keeps playing under them [then ⛔️]
  */
-import { _positionForSegment, safeTransportScheduleTime } from '$lib/player/transport/schedule-math';
+import {
+	_positionForSegment,
+	safeTransportScheduleTime
+} from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { StretchScheduleChange } from '$lib/rb/stretch-adapter';
@@ -256,7 +259,10 @@ export interface StemCrossfadeGain {
  * for its stop to have rendered through the stretcher's own tail. */
 export const STEM_HANDOFF_RETIRE_AFTER_SEC = 1;
 
-export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: number): StemHandoffDeps {
+export function stemLandingDeps(
+	port: StemLandingPort,
+	incomingLatencySec: number
+): StemHandoffDeps {
 	const setTimer = port.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
 	const rt = port.runtime;
 	let outgoing: StemLandingProcessor | null = null;
@@ -338,14 +344,19 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			stopAcknowledged = true;
 		},
 		retireRefusedOutgoing: (when, error) => {
-			console.error('stem handoff: the mix refused its stop; retiring it at the handoff instant', error);
+			console.error(
+				'stem handoff: the mix refused its stop; retiring it at the handoff instant',
+				error
+			);
 			setTimer(retireOutgoingOnce, Math.max(0, fadeEnd(when) - port.clock.currentTime) * 1000);
 		},
 		commit: (when) => port.commit(when),
 		holdCommandsUntil: (when) => {
 			const queued = rt.scheduleTail;
 			const untilMs = Math.max(0, when - port.clock.currentTime) * 1000;
-			rt.scheduleTail = queued.then(() => new Promise<void>((resolve) => setTimer(resolve, untilMs)));
+			rt.scheduleTail = queued.then(
+				() => new Promise<void>((resolve) => setTimer(resolve, untilMs))
+			);
 		},
 		stale: () => port.stale(),
 		replaceable: () => port.replaceable(),

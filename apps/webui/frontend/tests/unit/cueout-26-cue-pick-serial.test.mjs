@@ -91,7 +91,10 @@ class ReplyWorker {
 				if (type === 'close') nativeCueOpen = null;
 				this.onmessage?.({ data: { kind: 'message', payload: { type: 'ok', id, ...devices } } });
 			};
-			const fail = (text) => this.onmessage?.({ data: { kind: 'message', payload: { type: 'error', id, message: text } } });
+			const fail = (text) =>
+				this.onmessage?.({
+					data: { kind: 'message', payload: { type: 'error', id, message: text } }
+				});
 			const index = holdTypes.indexOf(type);
 			if (index !== -1) {
 				holdTypes.splice(index, 1);
@@ -129,14 +132,24 @@ function roomContext() {
 	};
 	ctx.audioWorklet = { addModule: async () => {} };
 	ctx.getOutputTimestamp = () => ({ contextTime: 0, performanceTime: 0 });
-	const param = () => ({ value: 0, setTargetAtTime(v) { this.value = v; }, setValueAtTime(v) { this.value = v; } });
+	const param = () => ({
+		value: 0,
+		setTargetAtTime(v) {
+			this.value = v;
+		},
+		setValueAtTime(v) {
+			this.value = v;
+		}
+	});
 	const node = (kind) => ({
 		kind,
 		context: ctx,
 		gain: param(),
 		delayTime: param(),
 		fftSize: 32,
-		connect() { return this; },
+		connect() {
+			return this;
+		},
 		disconnect() {}
 	});
 	ctx.destination = node('destination');
@@ -245,8 +258,16 @@ test('an older ordinary CUE pick settling after a newer one publishes, saves and
 		if (settle === 'ok') held[0].ok();
 		else held[0].fail('open refused');
 		await assert.doesNotReject(older, `a superseded pick that settles ${settle} must not reject`);
-		assert.equal(state.selected_output_device_id, USB, `${settle}: the older pick must not publish its device`);
-		assert.equal(state.routes.cue.state, 'selected', `${settle}: the older pick must not mark the route failed`);
+		assert.equal(
+			state.selected_output_device_id,
+			USB,
+			`${settle}: the older pick must not publish its device`
+		);
+		assert.equal(
+			state.routes.cue.state,
+			'selected',
+			`${settle}: the older pick must not mark the route failed`
+		);
 		assert.equal(state.active, true);
 		assert.equal(savedCueId(), USB, `${settle}: the older pick must not save its device`);
 		held.length = 0;
@@ -310,7 +331,11 @@ async function onBrowserPath(make, fn) {
 	delete globalThis.OPENDJ_CUE_SINK;
 	Object.defineProperty(globalThis, 'navigator', {
 		value: {
-			mediaDevices: { enumerateDevices: async () => [], addEventListener() {}, removeEventListener() {} }
+			mediaDevices: {
+				enumerateDevices: async () => [],
+				addEventListener() {},
+				removeEventListener() {}
+			}
 		},
 		configurable: true
 	});
@@ -343,143 +368,196 @@ function browserOutputs(state) {
 test("an older browser CUE pick's late rollback is put back on the CUE the menu shows (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(cue.sinkId, PHONES);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		// The older pick fails; its rollback to the phones queues behind the dock.
-		cue.release(BUS_OUT, false);
-		await Promise.allSettled([older, newer]);
-		await waitFor(() => cue.sinkId === DOCK && cue.sinkCalls.at(-1) === DOCK, 'the sink to come back to the dock');
-		assert.deepEqual(cue.sinkCalls.slice(-3), [DOCK, PHONES, DOCK], 'the stale rollback landed, then the shown CUE was re-applied');
-		assert.equal(state.selected_output_device_id, DOCK);
-		assert.equal(state.routes.cue.state, 'selected');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			assert.equal(cue.sinkId, PHONES);
+			cue.hold(BUS_OUT);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			// The older pick fails; its rollback to the phones queues behind the dock.
+			cue.release(BUS_OUT, false);
+			await Promise.allSettled([older, newer]);
+			await waitFor(
+				() => cue.sinkId === DOCK && cue.sinkCalls.at(-1) === DOCK,
+				'the sink to come back to the dock'
+			);
+			assert.deepEqual(
+				cue.sinkCalls.slice(-3),
+				[DOCK, PHONES, DOCK],
+				'the stale rollback landed, then the shown CUE was re-applied'
+			);
+			assert.equal(state.selected_output_device_id, DOCK);
+			assert.equal(state.routes.cue.state, 'selected');
+		}
+	);
 });
 
 test('control: the newest CUE pick whose rollback cannot restore stays silenced (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		cue.hold(PHONES);
-		const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
-		cue.release(BUS_OUT, false);
-		await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
-		cue.release(PHONES, false);
-		await assert.rejects(pick);
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(cue.state, 'suspended', 'a failed restore silences the cue');
-		assert.equal(cue.sinkCalls.filter((id) => id === PHONES).length, 2, 'nothing re-applies the CUE over that silence');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			cue.hold(BUS_OUT);
+			cue.hold(PHONES);
+			const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
+			cue.release(BUS_OUT, false);
+			await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
+			cue.release(PHONES, false);
+			await assert.rejects(pick);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(cue.state, 'suspended', 'a failed restore silences the cue');
+			assert.equal(
+				cue.sinkCalls.filter((id) => id === PHONES).length,
+				2,
+				'nothing re-applies the CUE over that silence'
+			);
+		}
+	);
 });
 
 test('a stale CUE pick waits for the newest one to settle before it corrects the sink (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		cue.hold(DOCK);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		cue.release(BUS_OUT, false);
-		await waitFor(() => cue.isHeld(DOCK), 'the newer pick to reach setSinkId');
-		// The newest pick fails too and rolls the menu back.
-		cue.release(DOCK, false);
-		await older;
-		await assert.rejects(newer);
-		await new Promise((r) => setTimeout(r, 20));
-		assert.notEqual(cue.sinkId, DOCK, 'the failed newer device must not be re-applied over its rollback');
-		assert.equal(cue.sinkId, state.selected_output_device_id, 'the sink ends on the CUE the menu shows');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			cue.hold(BUS_OUT);
+			cue.hold(DOCK);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			cue.release(BUS_OUT, false);
+			await waitFor(() => cue.isHeld(DOCK), 'the newer pick to reach setSinkId');
+			// The newest pick fails too and rolls the menu back.
+			cue.release(DOCK, false);
+			await older;
+			await assert.rejects(newer);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.notEqual(
+				cue.sinkId,
+				DOCK,
+				'the failed newer device must not be re-applied over its rollback'
+			);
+			assert.equal(
+				cue.sinkId,
+				state.selected_output_device_id,
+				'the sink ends on the CUE the menu shows'
+			);
+		}
+	);
 });
 
 test("a CUE pick during the stale-pick correction's move keeps the sink on the newest CUE (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		// The first DOCK landing is the newer pick's; hold the next one, the
-		// correction that follows the stale rollback.
-		let armed = false;
-		cue.afterLand = (id) => {
-			if (id === DOCK && !armed) {
-				armed = true;
-				cue.hold(DOCK);
-			}
-		};
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		cue.release(BUS_OUT, false);
-		await Promise.allSettled([older, newer]);
-		await waitFor(() => cue.isHeld(DOCK), 'the correction to reach setSinkId');
-		// The operator picks another CUE while the correction is pending, and
-		// the correction then fails: its rollback queues behind that pick.
-		const latest = hp.selectHeadphoneOutput(AUX, source);
-		await waitFor(() => cue.sinkCalls.at(-1) === AUX, 'the latest pick to queue its setSinkId');
-		cue.release(DOCK, false);
-		await latest;
-		await waitFor(() => cue.sinkId === AUX && cue.sinkCalls.at(-1) === AUX && cue.sinkCalls.at(-2) !== AUX, 'the sink to end on the latest CUE');
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(state.selected_output_device_id, AUX);
-		assert.equal(cue.sinkId, AUX, 'the correction\'s rollback must not leave the sink on a stale CUE');
-		assert.equal(state.error, null, 'a correction the newer pick superseded shows no error over it');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			// The first DOCK landing is the newer pick's; hold the next one, the
+			// correction that follows the stale rollback.
+			let armed = false;
+			cue.afterLand = (id) => {
+				if (id === DOCK && !armed) {
+					armed = true;
+					cue.hold(DOCK);
+				}
+			};
+			cue.hold(BUS_OUT);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			cue.release(BUS_OUT, false);
+			await Promise.allSettled([older, newer]);
+			await waitFor(() => cue.isHeld(DOCK), 'the correction to reach setSinkId');
+			// The operator picks another CUE while the correction is pending, and
+			// the correction then fails: its rollback queues behind that pick.
+			const latest = hp.selectHeadphoneOutput(AUX, source);
+			await waitFor(() => cue.sinkCalls.at(-1) === AUX, 'the latest pick to queue its setSinkId');
+			cue.release(DOCK, false);
+			await latest;
+			await waitFor(
+				() => cue.sinkId === AUX && cue.sinkCalls.at(-1) === AUX && cue.sinkCalls.at(-2) !== AUX,
+				'the sink to end on the latest CUE'
+			);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(state.selected_output_device_id, AUX);
+			assert.equal(
+				cue.sinkId,
+				AUX,
+				"the correction's rollback must not leave the sink on a stale CUE"
+			);
+			assert.equal(
+				state.error,
+				null,
+				'a correction the newer pick superseded shows no error over it'
+			);
+		}
+	);
 });
 
 test('control: a stale-pick correction that fails with no newer pick is tried once (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		let armed = false;
-		cue.afterLand = (id) => {
-			if (id === DOCK && !armed) {
-				armed = true;
-				cue.hold(DOCK);
-			}
-		};
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		cue.release(BUS_OUT, false);
-		await Promise.allSettled([older, newer]);
-		await waitFor(() => cue.isHeld(DOCK), 'the correction to reach setSinkId');
-		cue.release(DOCK, false);
-		await new Promise((r) => setTimeout(r, 50));
-		assert.equal(cue.sinkCalls.filter((id) => id === DOCK).length, 2, 'the pick and one correction, no retry loop');
-		assert.equal(state.selected_output_device_id, DOCK);
-		assert.match(state.error ?? '', /CUE did not follow the last switch .*Pick the CUE device again/, 'the operator is told to pick again');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			let armed = false;
+			cue.afterLand = (id) => {
+				if (id === DOCK && !armed) {
+					armed = true;
+					cue.hold(DOCK);
+				}
+			};
+			cue.hold(BUS_OUT);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			cue.release(BUS_OUT, false);
+			await Promise.allSettled([older, newer]);
+			await waitFor(() => cue.isHeld(DOCK), 'the correction to reach setSinkId');
+			cue.release(DOCK, false);
+			await new Promise((r) => setTimeout(r, 50));
+			assert.equal(
+				cue.sinkCalls.filter((id) => id === DOCK).length,
+				2,
+				'the pick and one correction, no retry loop'
+			);
+			assert.equal(state.selected_output_device_id, DOCK);
+			assert.match(
+				state.error ?? '',
+				/CUE did not follow the last switch .*Pick the CUE device again/,
+				'the operator is told to pick again'
+			);
+		}
+	);
 });
 
 test("a retired mount's still-pending CUE pick does not hold up the new mount's correction (browser path)", async () => {
@@ -487,39 +565,56 @@ test("a retired mount's still-pending CUE pick does not hold up the new mount's 
 	const oldCue = browserCueContext();
 	const newCue = browserCueContext();
 	let made = 0;
-	await onBrowserPath(() => (made++ === 0 ? oldCue : newCue), async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		oldCue.hold(BUS_OUT);
-		const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
-		// /performance remounts while that pick is still pending.
-		hp.disposeHeadphoneMonitor();
-		assert.equal(hp.outputSwitchesPending().cue, false, "the retired mount's pick is not the new mount's pending work");
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(newCue.sinkId, PHONES, 'the new mount built its own cue context');
-		newCue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => newCue.isHeld(BUS_OUT), 'the older new-mount pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => newCue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		// The older pick fails; its rollback to the phones lands after the dock.
-		newCue.release(BUS_OUT, false);
-		await Promise.allSettled([older, newer]);
-		// Corrected while the retired mount's pick is still pending.
-		await waitFor(() => newCue.sinkId === DOCK && newCue.sinkCalls.at(-1) === DOCK, 'the new mount sink to come back to the dock');
-		assert.deepEqual(newCue.sinkCalls.slice(-3), [DOCK, PHONES, DOCK], 'the stale rollback landed, then the shown CUE was re-applied');
-		// The retired mount's pick settles last of all and changes nothing.
-		oldCue.release(BUS_OUT, true);
-		await retired.catch(() => {});
-		assert.equal(newCue.sinkId, DOCK);
-		assert.equal(state.selected_output_device_id, DOCK);
-		await waitFor(() => !hp.outputSwitchesPending().cue, 'the correction to settle, leaving no CUE work pending');
-		assert.equal(newCue.sinkId, DOCK);
-	});
+	await onBrowserPath(
+		() => (made++ === 0 ? oldCue : newCue),
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			oldCue.hold(BUS_OUT);
+			const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
+			// /performance remounts while that pick is still pending.
+			hp.disposeHeadphoneMonitor();
+			assert.equal(
+				hp.outputSwitchesPending().cue,
+				false,
+				"the retired mount's pick is not the new mount's pending work"
+			);
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			assert.equal(newCue.sinkId, PHONES, 'the new mount built its own cue context');
+			newCue.hold(BUS_OUT);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => newCue.isHeld(BUS_OUT), 'the older new-mount pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => newCue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			// The older pick fails; its rollback to the phones lands after the dock.
+			newCue.release(BUS_OUT, false);
+			await Promise.allSettled([older, newer]);
+			// Corrected while the retired mount's pick is still pending.
+			await waitFor(
+				() => newCue.sinkId === DOCK && newCue.sinkCalls.at(-1) === DOCK,
+				'the new mount sink to come back to the dock'
+			);
+			assert.deepEqual(
+				newCue.sinkCalls.slice(-3),
+				[DOCK, PHONES, DOCK],
+				'the stale rollback landed, then the shown CUE was re-applied'
+			);
+			// The retired mount's pick settles last of all and changes nothing.
+			oldCue.release(BUS_OUT, true);
+			await retired.catch(() => {});
+			assert.equal(newCue.sinkId, DOCK);
+			assert.equal(state.selected_output_device_id, DOCK);
+			await waitFor(
+				() => !hp.outputSwitchesPending().cue,
+				'the correction to settle, leaving no CUE work pending'
+			);
+			assert.equal(newCue.sinkId, DOCK);
+		}
+	);
 });
 
 test("control: a retired mount's CUE pick settling never releases the new mount's pending pick (browser path)", async () => {
@@ -527,27 +622,30 @@ test("control: a retired mount's CUE pick settling never releases the new mount'
 	const oldCue = browserCueContext();
 	const newCue = browserCueContext();
 	let made = 0;
-	await onBrowserPath(() => (made++ === 0 ? oldCue : newCue), async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		oldCue.hold(BUS_OUT);
-		const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
-		hp.disposeHeadphoneMonitor();
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		newCue.hold(DOCK);
-		const pick = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => newCue.isHeld(DOCK), 'the new mount pick to reach setSinkId');
-		oldCue.release(BUS_OUT, true);
-		await retired.catch(() => {});
-		assert.equal(hp.outputSwitchesPending().cue, true, "the new mount's pick is still switching");
-		newCue.release(DOCK, true);
-		await pick;
-		assert.equal(hp.outputSwitchesPending().cue, false);
-	});
+	await onBrowserPath(
+		() => (made++ === 0 ? oldCue : newCue),
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			oldCue.hold(BUS_OUT);
+			const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
+			hp.disposeHeadphoneMonitor();
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			newCue.hold(DOCK);
+			const pick = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => newCue.isHeld(DOCK), 'the new mount pick to reach setSinkId');
+			oldCue.release(BUS_OUT, true);
+			await retired.catch(() => {});
+			assert.equal(hp.outputSwitchesPending().cue, true, "the new mount's pick is still switching");
+			newCue.release(DOCK, true);
+			await pick;
+			assert.equal(hp.outputSwitchesPending().cue, false);
+		}
+	);
 });
 
 test("control: a retired mount's superseded CUE pick never re-applies the new mount's silenced CUE (browser path)", async () => {
@@ -555,35 +653,42 @@ test("control: a retired mount's superseded CUE pick never re-applies the new mo
 	const oldCue = browserCueContext();
 	const newCue = browserCueContext();
 	let made = 0;
-	await onBrowserPath(() => (made++ === 0 ? oldCue : newCue), async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		oldCue.hold(BUS_OUT);
-		const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
-		hp.disposeHeadphoneMonitor();
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		// The new mount's only pick fails and its rollback cannot restore: silenced.
-		newCue.hold(DOCK);
-		newCue.hold(PHONES);
-		const pick = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => newCue.isHeld(DOCK), 'the pick to reach setSinkId');
-		newCue.release(DOCK, false);
-		await waitFor(() => newCue.isHeld(PHONES), 'the rollback to reach setSinkId');
-		newCue.release(PHONES, false);
-		await assert.rejects(pick);
-		assert.equal(newCue.state, 'suspended');
-		const calls = newCue.sinkCalls.length;
-		// The retired mount's pick, superseded by the new mount's, settles last.
-		oldCue.release(BUS_OUT, true);
-		await retired.catch(() => {});
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(newCue.sinkCalls.length, calls, "the old mount's staleness corrects nothing on the new one");
-		assert.equal(newCue.state, 'suspended', 'the silenced CUE stays silent');
-	});
+	await onBrowserPath(
+		() => (made++ === 0 ? oldCue : newCue),
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			oldCue.hold(BUS_OUT);
+			const retired = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => oldCue.isHeld(BUS_OUT), 'the old mount pick to reach setSinkId');
+			hp.disposeHeadphoneMonitor();
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			// The new mount's only pick fails and its rollback cannot restore: silenced.
+			newCue.hold(DOCK);
+			newCue.hold(PHONES);
+			const pick = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => newCue.isHeld(DOCK), 'the pick to reach setSinkId');
+			newCue.release(DOCK, false);
+			await waitFor(() => newCue.isHeld(PHONES), 'the rollback to reach setSinkId');
+			newCue.release(PHONES, false);
+			await assert.rejects(pick);
+			assert.equal(newCue.state, 'suspended');
+			const calls = newCue.sinkCalls.length;
+			// The retired mount's pick, superseded by the new mount's, settles last.
+			oldCue.release(BUS_OUT, true);
+			await retired.catch(() => {});
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(
+				newCue.sinkCalls.length,
+				calls,
+				"the old mount's staleness corrects nothing on the new one"
+			);
+			assert.equal(newCue.state, 'suspended', 'the silenced CUE stays silent');
+		}
+	);
 });
 
 /** A browser room context whose setSinkId calls settle independently: `hold`
@@ -627,75 +732,84 @@ async function flushMicrotasks() {
 test("control: a newest pick's rollback silence that lands after its grace stays silenced (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		cue.hold(PHONES);
-		const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
-		cue.release(BUS_OUT, false);
-		await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(PHONES, false);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the rollback started silencing the cue');
-			cue.suspend = suspend;
-			mock.timers.tick(10_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			cue.hold(BUS_OUT);
+			cue.hold(PHONES);
+			const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
+			cue.release(BUS_OUT, false);
+			await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
+			const suspend = cue.suspend;
+			let finishSuspend;
+			cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
+			mock.timers.enable({ apis: ['setTimeout'] });
+			try {
+				cue.release(PHONES, false);
+				for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
+				assert.notEqual(finishSuspend, undefined, 'the rollback started silencing the cue');
+				cue.suspend = suspend;
+				mock.timers.tick(10_000);
+				await flushMicrotasks();
+			} finally {
+				mock.timers.reset();
+			}
+			await assert.rejects(pick);
+			const calls = cue.sinkCalls.length;
+			finishSuspend();
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(cue.state, 'suspended', 'the failed restore stays silenced');
+			assert.equal(cue.sinkCalls.length, calls, 'nothing re-applies the CUE over that silence');
 		}
-		await assert.rejects(pick);
-		const calls = cue.sinkCalls.length;
-		finishSuspend();
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(cue.state, 'suspended', 'the failed restore stays silenced');
-		assert.equal(cue.sinkCalls.length, calls, 'nothing re-applies the CUE over that silence');
-	});
+	);
 });
 
 test("a failed pick's rollback silence that lands after its timeout does not leave a newer CUE silent (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		cue.hold(PHONES);
-		const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
-		cue.release(BUS_OUT, false);
-		await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(PHONES, false);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the rollback started silencing the cue');
-			cue.suspend = suspend;
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			cue.hold(BUS_OUT);
+			cue.hold(PHONES);
+			const pick = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the pick to reach setSinkId');
+			cue.release(BUS_OUT, false);
+			await waitFor(() => cue.isHeld(PHONES), 'the rollback to reach setSinkId');
+			const suspend = cue.suspend;
+			let finishSuspend;
+			cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
+			mock.timers.enable({ apis: ['setTimeout'] });
+			try {
+				cue.release(PHONES, false);
+				for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
+				assert.notEqual(finishSuspend, undefined, 'the rollback started silencing the cue');
+				cue.suspend = suspend;
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+			} finally {
+				mock.timers.reset();
+			}
+			await assert.rejects(pick);
+			await hp.selectHeadphoneOutput(DOCK, source);
+			assert.equal(cue.state, 'running', 'precondition: the timed-out suspend has not landed');
+			finishSuspend();
+			await waitFor(
+				() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue,
+				'the new CUE to sound again'
+			);
+			assert.equal(state.selected_output_device_id, DOCK);
 		}
-		await assert.rejects(pick);
-		await hp.selectHeadphoneOutput(DOCK, source);
-		assert.equal(cue.state, 'running', 'precondition: the timed-out suspend has not landed');
-		finishSuspend();
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue, 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
+	);
 });
 
 test('a CUE pick a teardown retires rolls back nothing over the replacement mount', async () => {
@@ -712,7 +826,11 @@ test('a CUE pick a teardown retires rolls back nothing over the replacement moun
 	state.routes.cue = { state: 'selected', selected: true };
 	held[0].fail('open refused');
 	await assert.rejects(pick, /stale/);
-	assert.equal(state.selected_output_device_id, SPEAKERS, 'the stale pick must not roll the new CUE back');
+	assert.equal(
+		state.selected_output_device_id,
+		SPEAKERS,
+		'the stale pick must not roll the new CUE back'
+	);
 	assert.equal(state.active, true);
 	assert.equal(state.output_mode, 'two_outputs');
 	assert.equal(state.routes.cue.state, 'selected');
@@ -721,33 +839,44 @@ test('a CUE pick a teardown retires rolls back nothing over the replacement moun
 test('a correction never makes an inactive CUE sound (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		// No CUE yet: both picks fail, and the newest rolls back to an inactive CUE.
-		cue.hold(BUS_OUT);
-		cue.hold(DOCK);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
-		cue.release(BUS_OUT, false);
-		await waitFor(() => cue.isHeld(DOCK), 'the newer pick to reach setSinkId');
-		cue.release(DOCK, false);
-		await Promise.allSettled([older, newer]);
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(state.active, false, 'precondition: the CUE is not playing');
-		assert.equal(cue.state, 'suspended', 'an inactive CUE must stay silent');
-		assert.deepEqual(cue.sinkCalls, [BUS_OUT, DOCK], 'nothing re-applies a CUE that is not playing');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			// No CUE yet: both picks fail, and the newest rolls back to an inactive CUE.
+			cue.hold(BUS_OUT);
+			cue.hold(DOCK);
+			const older = hp.selectHeadphoneOutput(BUS_OUT, source);
+			await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
+			const newer = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkCalls.includes(DOCK), 'the newer pick to queue its setSinkId');
+			cue.release(BUS_OUT, false);
+			await waitFor(() => cue.isHeld(DOCK), 'the newer pick to reach setSinkId');
+			cue.release(DOCK, false);
+			await Promise.allSettled([older, newer]);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(state.active, false, 'precondition: the CUE is not playing');
+			assert.equal(cue.state, 'suspended', 'an inactive CUE must stay silent');
+			assert.deepEqual(
+				cue.sinkCalls,
+				[BUS_OUT, DOCK],
+				'nothing re-applies a CUE that is not playing'
+			);
+		}
+	);
 });
 
-test("a CUE pick that fails while an older one is still opening rolls back to the CUE last published", async () => {
+test('a CUE pick that fails while an older one is still opening rolls back to the CUE last published', async () => {
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
 	const DOCK = 'native:DockOut';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }, { id: DOCK, label: 'Dock' }];
+	state.outputs = [
+		...state.outputs,
+		{ id: BUS, label: 'Second USB Interface' },
+		{ id: DOCK, label: 'Dock' }
+	];
 	await hp.selectMasterOutput(SPEAKERS, source);
 	await hp.selectHeadphoneOutput(BUS, source);
 	holdTypes = ['open', 'open'];
@@ -757,7 +886,11 @@ test("a CUE pick that fails while an older one is still opening rolls back to th
 	await waitFor(() => held.length === 2, 'the newer pick to open its device');
 	held[1].fail('dock open refused');
 	await assert.rejects(newer);
-	assert.equal(state.selected_output_device_id, BUS, "the menu must not land on the older pick's unopened device");
+	assert.equal(
+		state.selected_output_device_id,
+		BUS,
+		"the menu must not land on the older pick's unopened device"
+	);
 	assert.equal(state.routes.cue.state, 'failed');
 	held[0].fail('usb open refused');
 	await older;
@@ -769,7 +902,11 @@ test('a CUE pick that fails after a newer pick landed, with an older one still o
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
 	const DOCK = 'native:DockOut';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }, { id: DOCK, label: 'Dock' }];
+	state.outputs = [
+		...state.outputs,
+		{ id: BUS, label: 'Second USB Interface' },
+		{ id: DOCK, label: 'Dock' }
+	];
 	await hp.selectMasterOutput(SPEAKERS, source);
 	holdTypes = ['open'];
 	const older = hp.selectHeadphoneOutput(USB, source);
@@ -791,7 +928,11 @@ test("a CUE pick on a new mount rolls back to that mount's CUE, never one the to
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
 	const DOCK = 'native:DockOut';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }, { id: DOCK, label: 'Dock' }];
+	state.outputs = [
+		...state.outputs,
+		{ id: BUS, label: 'Second USB Interface' },
+		{ id: DOCK, label: 'Dock' }
+	];
 	await hp.selectMasterOutput(SPEAKERS, source);
 	await hp.selectHeadphoneOutput(BUS, source);
 	holdTypes = ['open'];
@@ -826,27 +967,50 @@ function listOutputs(ids) {
 test('a remembered CUE a device change restores is pending output work until its sink lands (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_output_device_id, null, 'precondition: the unplugged CUE is cleared');
-		cue.hold(PHONES);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
-		assert.equal(state.selected_output_device_id, PHONES, 'precondition: the menu already shows the restored CUE');
-		assert.equal(hp.outputSwitchesPending().cue, true, 'the restore is pending until the sink lands');
-		state.liveness_verdict = null;
-		cue.release(PHONES, true);
-		await refresh;
-		assert.equal(hp.outputSwitchesPending().cue, false, 'control: a landed restore is no longer pending');
-		assert.equal(cue.sinkId, PHONES);
-		assert.equal(state.liveness_verdict, 'idle', 'control: a landed restore watches its output again');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			listOutputs([ROOM, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_output_device_id,
+				null,
+				'precondition: the unplugged CUE is cleared'
+			);
+			cue.hold(PHONES);
+			listOutputs([ROOM, PHONES, DOCK]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
+			assert.equal(
+				state.selected_output_device_id,
+				PHONES,
+				'precondition: the menu already shows the restored CUE'
+			);
+			assert.equal(
+				hp.outputSwitchesPending().cue,
+				true,
+				'the restore is pending until the sink lands'
+			);
+			state.liveness_verdict = null;
+			cue.release(PHONES, true);
+			await refresh;
+			assert.equal(
+				hp.outputSwitchesPending().cue,
+				false,
+				'control: a landed restore is no longer pending'
+			);
+			assert.equal(cue.sinkId, PHONES);
+			assert.equal(
+				state.liveness_verdict,
+				'idle',
+				'control: a landed restore watches its output again'
+			);
+		}
+	);
 });
 
 // [if] a device change moves MAIN while that sink move is still pending, the
@@ -854,24 +1018,39 @@ test('a remembered CUE a device change restores is pending output work until its
 test('a MAIN a device change re-pins is pending output work until its sink lands (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let landMain;
-		const mainCalls = [];
-		ctx.setSinkId = async (id) => {
-			mainCalls.push(id);
-			if (mainCalls.length > 1) await new Promise((resolve) => (landMain = resolve));
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => landMain !== undefined, 'the re-pinned MAIN to reach setSinkId');
-		assert.notEqual(state.selected_master_output_device_id, DOCK, 'precondition: MAIN moved off the unplugged dock');
-		assert.equal(hp.outputSwitchesPending().master, true, 'the re-pin is pending until the sink lands');
-		landMain();
-		await refresh;
-		assert.equal(hp.outputSwitchesPending().master, false, 'control: a landed re-pin is no longer pending');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let landMain;
+			const mainCalls = [];
+			ctx.setSinkId = async (id) => {
+				mainCalls.push(id);
+				if (mainCalls.length > 1) await new Promise((resolve) => (landMain = resolve));
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => landMain !== undefined, 'the re-pinned MAIN to reach setSinkId');
+			assert.notEqual(
+				state.selected_master_output_device_id,
+				DOCK,
+				'precondition: MAIN moved off the unplugged dock'
+			);
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				'the re-pin is pending until the sink lands'
+			);
+			landMain();
+			await refresh;
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				false,
+				'control: a landed re-pin is no longer pending'
+			);
+		}
+	);
 });
 
 // [if] a device change's MAIN re-pin has landed its sink and is reopening the
@@ -879,22 +1058,34 @@ test('a MAIN a device change re-pins is pending output work until its sink lands
 test('a MAIN re-pin stays pending output work through its room reopen (browser path, Codex/Sol P2 on #6835)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(DOCK, source);
-		const resume = ctx.resume;
-		let landResume;
-		ctx.resume = () => new Promise((resolve) => (landResume = () => resume.call(ctx).then(resolve)));
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => landResume !== undefined, "the re-pin's reopen to reach resume");
-		assert.equal(hp.outputSwitchesPending().master, true, 'MAIN is still switching while the room reopens');
-		landResume();
-		await refresh;
-		ctx.resume = resume;
-		assert.equal(hp.outputSwitchesPending().master, false, 'control: a settled reopen leaves nothing pending');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(DOCK, source);
+			const resume = ctx.resume;
+			let landResume;
+			ctx.resume = () =>
+				new Promise((resolve) => (landResume = () => resume.call(ctx).then(resolve)));
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => landResume !== undefined, "the re-pin's reopen to reach resume");
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				'MAIN is still switching while the room reopens'
+			);
+			landResume();
+			await refresh;
+			ctx.resume = resume;
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				false,
+				'control: a settled reopen leaves nothing pending'
+			);
+		}
+	);
 });
 
 // [if] a device change re-pins MAIN, the room is reopened like a pick's:
@@ -902,56 +1093,82 @@ test('a MAIN re-pin stays pending output work through its room reopen (browser p
 test('a MAIN a device change re-pins reopens the room, and a failed reopen shows the retry error (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		for (const fails of [false, true]) {
-			browserOutputs(state);
-			ctx.setSinkId = async () => {};
-			await hp.selectMasterOutput(DOCK, source);
-			state.error = null;
-			const suspendsBefore = ctx.suspends;
-			const resume = ctx.resume;
-			if (fails) ctx.resume = async () => { throw new Error('resume died'); };
-			listOutputs([ROOM, PHONES]);
-			try {
-				await hp.refreshHeadphoneOutputs(source);
-			} finally {
-				ctx.resume = resume;
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			for (const fails of [false, true]) {
+				browserOutputs(state);
+				ctx.setSinkId = async () => {};
+				await hp.selectMasterOutput(DOCK, source);
+				state.error = null;
+				const suspendsBefore = ctx.suspends;
+				const resume = ctx.resume;
+				if (fails)
+					ctx.resume = async () => {
+						throw new Error('resume died');
+					};
+				listOutputs([ROOM, PHONES]);
+				try {
+					await hp.refreshHeadphoneOutputs(source);
+				} finally {
+					ctx.resume = resume;
+				}
+				assert.notEqual(
+					state.selected_master_output_device_id,
+					DOCK,
+					'precondition: MAIN moved off the unplugged dock'
+				);
+				assert.equal(
+					ctx.suspends,
+					suspendsBefore + 1,
+					`fails=${fails}: the re-pin reopens the room once`
+				);
+				assert.equal(
+					state.routes.master.state,
+					'selected',
+					`fails=${fails}: the re-pinned MAIN is published`
+				);
+				if (fails) assert.match(state.error ?? '', /resume died.*Pick the device again/);
+				else assert.equal(state.error, null, 'control: a clean reopen shows no error');
+				await ctx.resume();
 			}
-			assert.notEqual(state.selected_master_output_device_id, DOCK, 'precondition: MAIN moved off the unplugged dock');
-			assert.equal(ctx.suspends, suspendsBefore + 1, `fails=${fails}: the re-pin reopens the room once`);
-			assert.equal(state.routes.master.state, 'selected', `fails=${fails}: the re-pinned MAIN is published`);
-			if (fails) assert.match(state.error ?? '', /resume died.*Pick the device again/);
-			else assert.equal(state.error, null, 'control: a clean reopen shows no error');
-			await ctx.resume();
 		}
-	});
+	);
 });
 
 // [if] a MAIN pick lands while a re-pin reopens the room, the re-pin's late
 // reopen failure must not overwrite that pick's result.
-test("control: a re-pin a MAIN pick supersedes during its reopen shows nothing (browser path)", async () => {
+test('control: a re-pin a MAIN pick supersedes during its reopen shows nothing (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(DOCK, source);
-		const resume = ctx.resume;
-		let failResume;
-		ctx.resume = () => new Promise((_, reject) => (failResume = () => reject(new Error('resume died'))));
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => failResume !== undefined, "the re-pin's reopen to reach resume");
-		ctx.resume = resume;
-		await hp.selectMasterOutput(PHONES, source);
-		assert.equal(state.error, null, 'precondition: the pick landed clean');
-		failResume();
-		await refresh;
-		assert.equal(state.selected_master_output_device_id, PHONES);
-		assert.equal(state.routes.master.state, 'selected');
-		assert.equal(state.error, null, "the superseded re-pin's reopen failure is not shown over the pick");
-		await ctx.resume();
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(DOCK, source);
+			const resume = ctx.resume;
+			let failResume;
+			ctx.resume = () =>
+				new Promise((_, reject) => (failResume = () => reject(new Error('resume died'))));
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => failResume !== undefined, "the re-pin's reopen to reach resume");
+			ctx.resume = resume;
+			await hp.selectMasterOutput(PHONES, source);
+			assert.equal(state.error, null, 'precondition: the pick landed clean');
+			failResume();
+			await refresh;
+			assert.equal(state.selected_master_output_device_id, PHONES);
+			assert.equal(state.routes.master.state, 'selected');
+			assert.equal(
+				state.error,
+				null,
+				"the superseded re-pin's reopen failure is not shown over the pick"
+			);
+			await ctx.resume();
+		}
+	);
 });
 
 // [if] a teardown retires a re-pin still in flight, its late landing must not
@@ -959,35 +1176,42 @@ test("control: a re-pin a MAIN pick supersedes during its reopen shows nothing (
 test("control: a retired mount's late re-pin never leaves the new mount's count negative (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		cue.hold(PHONES);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
-		hp.disposeHeadphoneMonitor();
-		assert.equal(hp.outputSwitchesPending().cue, false, 'a teardown drops the retired re-pin');
-		cue.release(PHONES, true);
-		await refresh.catch(() => {});
-		// The new mount's own restore must still read pending.
-		browserOutputs(state);
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(DOCK, source);
-		listOutputs([ROOM, PHONES]);
-		await hp.refreshHeadphoneOutputs(source);
-		cue.hold(DOCK);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const restore = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(DOCK), "the new mount's restore to reach setSinkId");
-		assert.equal(hp.outputSwitchesPending().cue, true, "the new mount's restore still reads pending");
-		cue.release(DOCK, true);
-		await restore;
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			listOutputs([ROOM, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			cue.hold(PHONES);
+			listOutputs([ROOM, PHONES, DOCK]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
+			hp.disposeHeadphoneMonitor();
+			assert.equal(hp.outputSwitchesPending().cue, false, 'a teardown drops the retired re-pin');
+			cue.release(PHONES, true);
+			await refresh.catch(() => {});
+			// The new mount's own restore must still read pending.
+			browserOutputs(state);
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(DOCK, source);
+			listOutputs([ROOM, PHONES]);
+			await hp.refreshHeadphoneOutputs(source);
+			cue.hold(DOCK);
+			listOutputs([ROOM, PHONES, DOCK]);
+			const restore = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => cue.isHeld(DOCK), "the new mount's restore to reach setSinkId");
+			assert.equal(
+				hp.outputSwitchesPending().cue,
+				true,
+				"the new mount's restore still reads pending"
+			);
+			cue.release(DOCK, true);
+			await restore;
+		}
+	);
 });
 
 // [if] a CUE pick lands while a device change's CUE restore is still pending,
@@ -1008,28 +1232,31 @@ test("a CUE pick made while a device change's restore is pending wins, and the l
 		}
 		return ordered(id);
 	};
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		cue.holdsPending = new Set([PHONES]);
-		cue.hold(PHONES);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(PHONES), 'the restore to reach setSinkId');
-		cue.holdsPending.clear();
-		const pick = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.sinkId === DOCK, 'the newer pick to land first');
-		cue.release(PHONES, true);
-		await Promise.allSettled([refresh, pick]);
-		await waitFor(() => !hp.outputSwitchesPending().cue, 'every CUE work unit to settle');
-		assert.equal(state.selected_output_device_id, DOCK, 'the menu keeps the newer pick');
-		assert.equal(cue.sinkId, DOCK, 'the sink follows the menu, not the late restore');
-		assert.equal(state.error, null);
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			listOutputs([ROOM, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			cue.holdsPending = new Set([PHONES]);
+			cue.hold(PHONES);
+			listOutputs([ROOM, PHONES, DOCK]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => cue.isHeld(PHONES), 'the restore to reach setSinkId');
+			cue.holdsPending.clear();
+			const pick = hp.selectHeadphoneOutput(DOCK, source);
+			await waitFor(() => cue.sinkId === DOCK, 'the newer pick to land first');
+			cue.release(PHONES, true);
+			await Promise.allSettled([refresh, pick]);
+			await waitFor(() => !hp.outputSwitchesPending().cue, 'every CUE work unit to settle');
+			assert.equal(state.selected_output_device_id, DOCK, 'the menu keeps the newer pick');
+			assert.equal(cue.sinkId, DOCK, 'the sink follows the menu, not the late restore');
+			assert.equal(state.error, null);
+		}
+	);
 });
 
 // [if] a MAIN pick lands while a device change's MAIN re-pin is still pending,
@@ -1037,36 +1264,43 @@ test("a CUE pick made while a device change's restore is pending wins, and the l
 test("a MAIN pick made while a device change's re-pin is pending wins, and the late re-pin is corrected (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const holds = [];
-		ctx.sinkId = '';
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => holds.push(() => { ctx.sinkId = id; resolve(); }));
-			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
-		const repinTarget = state.selected_master_output_device_id;
-		const picked = repinTarget === ROOM ? PHONES : ROOM;
-		await hp.selectMasterOutput(picked, source);
-		assert.equal(ctx.sinkId, picked, 'precondition: the newer pick landed first');
-		holds[0]();
-		await refresh;
-		await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
-		assert.equal(state.selected_master_output_device_id, picked);
-		assert.equal(ctx.sinkId, picked, 'the late re-pin is moved back to the MAIN shown');
-		assert.equal(state.routes.master.state, 'selected');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const holds = [];
+			ctx.sinkId = '';
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise((resolve) =>
+						holds.push(() => {
+							ctx.sinkId = id;
+							resolve();
+						})
+					);
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
+			const repinTarget = state.selected_master_output_device_id;
+			const picked = repinTarget === ROOM ? PHONES : ROOM;
+			await hp.selectMasterOutput(picked, source);
+			assert.equal(ctx.sinkId, picked, 'precondition: the newer pick landed first');
+			holds[0]();
+			await refresh;
+			await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
+			assert.equal(state.selected_master_output_device_id, picked);
+			assert.equal(ctx.sinkId, picked, 'the late re-pin is moved back to the MAIN shown');
+			assert.equal(state.routes.master.state, 'selected');
+		}
+	);
 });
-
 
 // [if] an older native CUE open lands after a newer pick's, the shell's CUE
 // must be put back on the device the menu shows, not left on the older one.
@@ -1124,73 +1358,99 @@ test('control: a stale native CUE pick that fails late sends no correction when 
 test("a vanished CUE's suspend that lands after its timeout does not leave a newer CUE silent (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(cue.state, 'running');
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		listOutputs([ROOM, DOCK]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		let refresh;
-		try {
-			refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the vanished CUE started its suspend');
-			cue.suspend = suspend;
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			assert.equal(cue.state, 'running');
+			const suspend = cue.suspend;
+			let finishSuspend;
+			cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
+			listOutputs([ROOM, DOCK]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			let refresh;
+			try {
+				refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
+				assert.notEqual(finishSuspend, undefined, 'the vanished CUE started its suspend');
+				cue.suspend = suspend;
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+			} finally {
+				mock.timers.reset();
+			}
+			await refresh;
+			assert.equal(
+				state.selected_output_device_id,
+				null,
+				'precondition: the vanished CUE is cleared'
+			);
+			await hp.selectHeadphoneOutput(DOCK, source);
+			assert.equal(cue.state, 'running', 'precondition: the timed-out suspend has not landed');
+			finishSuspend();
+			await waitFor(
+				() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue,
+				'the new CUE to sound again'
+			);
+			assert.equal(state.selected_output_device_id, DOCK);
 		}
-		await refresh;
-		assert.equal(state.selected_output_device_id, null, 'precondition: the vanished CUE is cleared');
-		await hp.selectHeadphoneOutput(DOCK, source);
-		assert.equal(cue.state, 'running', 'precondition: the timed-out suspend has not landed');
-		finishSuspend();
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue, 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
+	);
 });
 
 // [if] two device changes re-pin MAIN and the older re-pin lands after the
 // newer one, the sink must end on the MAIN the menu shows.
-test("an older device-change re-pin landing after a newer one is moved back to the MAIN shown (browser path)", async () => {
+test('an older device-change re-pin landing after a newer one is moved back to the MAIN shown (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const holds = [];
-		ctx.sinkId = '';
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => holds.push(() => { ctx.sinkId = id; resolve(); }));
-			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES]);
-		const older = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => holds.length === 1, 'the older re-pin to reach setSinkId');
-		assert.equal(state.selected_master_output_device_id, ROOM, 'precondition: the older re-pin moved MAIN to the room');
-		// The room unplugs in turn: a newer re-pin moves MAIN to other speakers.
-		const newerTarget = 'desk-speakers';
-		listOutputs([newerTarget, AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_master_output_device_id, newerTarget, 'precondition: the newer re-pin moved the menu');
-		assert.equal(ctx.sinkId, newerTarget, 'precondition: the newer re-pin landed first');
-		holds[0]();
-		await older;
-		await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
-		assert.equal(state.selected_master_output_device_id, newerTarget);
-		assert.equal(ctx.sinkId, newerTarget, 'the older re-pin is moved back to the MAIN shown');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const holds = [];
+			ctx.sinkId = '';
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise((resolve) =>
+						holds.push(() => {
+							ctx.sinkId = id;
+							resolve();
+						})
+					);
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES]);
+			const older = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => holds.length === 1, 'the older re-pin to reach setSinkId');
+			assert.equal(
+				state.selected_master_output_device_id,
+				ROOM,
+				'precondition: the older re-pin moved MAIN to the room'
+			);
+			// The room unplugs in turn: a newer re-pin moves MAIN to other speakers.
+			const newerTarget = 'desk-speakers';
+			listOutputs([newerTarget, AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_master_output_device_id,
+				newerTarget,
+				'precondition: the newer re-pin moved the menu'
+			);
+			assert.equal(ctx.sinkId, newerTarget, 'precondition: the newer re-pin landed first');
+			holds[0]();
+			await older;
+			await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
+			assert.equal(state.selected_master_output_device_id, newerTarget);
+			assert.equal(ctx.sinkId, newerTarget, 'the older re-pin is moved back to the MAIN shown');
+		}
+	);
 });
 
 // [if] one device change silences the vanished CUE and the next restores it
@@ -1198,27 +1458,33 @@ test("an older device-change re-pin landing after a newer one is moved back to t
 test("a CUE a device change restores while the earlier vanish's suspend is landing still sounds (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		listOutputs([ROOM, DOCK]);
-		const vanish = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => finishSuspend !== undefined, 'the vanished CUE to start its suspend');
-		cue.suspend = suspend;
-		listOutputs([ROOM, PHONES, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_output_device_id, PHONES, 'precondition: the CUE is restored');
-		assert.equal(state.active, true);
-		finishSuspend();
-		await vanish;
-		await waitFor(() => cue.state === 'running' && !hp.outputSwitchesPending().cue, 'the restored CUE to sound again');
-		assert.equal(cue.sinkId, PHONES);
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			const suspend = cue.suspend;
+			let finishSuspend;
+			cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
+			listOutputs([ROOM, DOCK]);
+			const vanish = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => finishSuspend !== undefined, 'the vanished CUE to start its suspend');
+			cue.suspend = suspend;
+			listOutputs([ROOM, PHONES, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(state.selected_output_device_id, PHONES, 'precondition: the CUE is restored');
+			assert.equal(state.active, true);
+			finishSuspend();
+			await vanish;
+			await waitFor(
+				() => cue.state === 'running' && !hp.outputSwitchesPending().cue,
+				'the restored CUE to sound again'
+			);
+			assert.equal(cue.sinkId, PHONES);
+		}
+	);
 });
 
 // [if] a slow device listing returns after a newer one, its snapshot must not
@@ -1226,50 +1492,81 @@ test("a CUE a device change restores while the earlier vanish's suspend is landi
 test('an older device listing that returns after a newer one is dropped (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const mainCalls = [];
-		ctx.setSinkId = async (id) => {
-			mainCalls.push(id);
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		mainCalls.length = 0;
-		const listing = (ids) => ids.map((id) => ({ kind: 'audiooutput', deviceId: id, label: id, groupId: id }));
-		let returnStale;
-		globalThis.navigator.mediaDevices.enumerateDevices = () => new Promise((resolve) => (returnStale = () => resolve(listing([ROOM, PHONES]))));
-		const older = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => returnStale !== undefined, 'the older listing to be requested');
-		listOutputs([ROOM, PHONES, DOCK, 'desk-speakers']);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_master_output_device_id, DOCK, 'precondition: the newer listing keeps MAIN');
-		assert.ok(state.outputs.some((output) => output.id === 'desk-speakers'), 'control: the newer listing is published');
-		returnStale();
-		await older;
-		assert.equal(state.selected_master_output_device_id, DOCK, 'the stale listing does not move MAIN');
-		assert.deepEqual(mainCalls, [], 'nor the sink');
-		assert.ok(state.outputs.some((output) => output.id === 'desk-speakers'), 'the newer listing stays published');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const mainCalls = [];
+			ctx.setSinkId = async (id) => {
+				mainCalls.push(id);
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			mainCalls.length = 0;
+			const listing = (ids) =>
+				ids.map((id) => ({ kind: 'audiooutput', deviceId: id, label: id, groupId: id }));
+			let returnStale;
+			globalThis.navigator.mediaDevices.enumerateDevices = () =>
+				new Promise((resolve) => (returnStale = () => resolve(listing([ROOM, PHONES]))));
+			const older = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => returnStale !== undefined, 'the older listing to be requested');
+			listOutputs([ROOM, PHONES, DOCK, 'desk-speakers']);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_master_output_device_id,
+				DOCK,
+				'precondition: the newer listing keeps MAIN'
+			);
+			assert.ok(
+				state.outputs.some((output) => output.id === 'desk-speakers'),
+				'control: the newer listing is published'
+			);
+			returnStale();
+			await older;
+			assert.equal(
+				state.selected_master_output_device_id,
+				DOCK,
+				'the stale listing does not move MAIN'
+			);
+			assert.deepEqual(mainCalls, [], 'nor the sink');
+			assert.ok(
+				state.outputs.some((output) => output.id === 'desk-speakers'),
+				'the newer listing stays published'
+			);
+		}
+	);
 });
 
 test('an older device listing that fails after a newer one succeeded shows no failure (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		let failStale;
-		globalThis.navigator.mediaDevices.enumerateDevices = () => new Promise((_, reject) => (failStale = () => reject(new Error('stale listing failed'))));
-		const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => failStale !== undefined, 'the older listing to be requested');
-		listOutputs([ROOM, PHONES, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		const access = state.device_access;
-		assert.notEqual(access.status, 'enumeration_failed', 'precondition: the newer listing succeeded');
-		failStale();
-		await older;
-		assert.equal(state.device_access, access, 'the stale failure is not published over the newer listing');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			let failStale;
+			globalThis.navigator.mediaDevices.enumerateDevices = () =>
+				new Promise((_, reject) => (failStale = () => reject(new Error('stale listing failed'))));
+			const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => failStale !== undefined, 'the older listing to be requested');
+			listOutputs([ROOM, PHONES, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			const access = state.device_access;
+			assert.notEqual(
+				access.status,
+				'enumeration_failed',
+				'precondition: the newer listing succeeded'
+			);
+			failStale();
+			await older;
+			assert.equal(
+				state.device_access,
+				access,
+				'the stale failure is not published over the newer listing'
+			);
+		}
+	);
 });
 
 // [if] no deck has built the live graph yet and a device change's MAIN re-pin
@@ -1278,51 +1575,72 @@ test('an older device listing that fails after a newer one succeeded shows no fa
 test("a MAIN Test with no live graph refuses while a device change's re-pin is pending (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let landMain;
-		const mainCalls = [];
-		ctx.setSinkId = async (id) => {
-			mainCalls.push(id);
-			await new Promise((resolve) => (landMain = resolve));
-		};
-		// A MAIN restored from saved settings, with no deck yet: nothing built the graph.
-		state.selected_master_output_device_id = DOCK;
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => landMain !== undefined, 'the re-pinned MAIN to reach setSinkId');
-		assert.equal(hp.liveCalibrationGraph().nodes, null, 'precondition: no deck built the live graph');
-		const opened = [];
-		const saved = globalThis.AudioContext;
-		globalThis.AudioContext = function () {
-			opened.push('ctx');
-			throw new Error('a short-lived Test context was opened');
-		};
-		try {
-			for (const bus of ['master', 'input']) {
-				await assert.rejects(hp.playIoTestBeeps(bus, state.selected_master_output_device_id), /MAIN is still switching/);
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let landMain;
+			const mainCalls = [];
+			ctx.setSinkId = async (id) => {
+				mainCalls.push(id);
+				await new Promise((resolve) => (landMain = resolve));
+			};
+			// A MAIN restored from saved settings, with no deck yet: nothing built the graph.
+			state.selected_master_output_device_id = DOCK;
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => landMain !== undefined, 'the re-pinned MAIN to reach setSinkId');
+			assert.equal(
+				hp.liveCalibrationGraph().nodes,
+				null,
+				'precondition: no deck built the live graph'
+			);
+			const opened = [];
+			const saved = globalThis.AudioContext;
+			globalThis.AudioContext = function () {
+				opened.push('ctx');
+				throw new Error('a short-lived Test context was opened');
+			};
+			try {
+				for (const bus of ['master', 'input']) {
+					await assert.rejects(
+						hp.playIoTestBeeps(bus, state.selected_master_output_device_id),
+						/MAIN is still switching/
+					);
+				}
+				assert.deepEqual(opened, [], 'no short-lived context opened');
+			} finally {
+				globalThis.AudioContext = saved;
 			}
-			assert.deepEqual(opened, [], 'no short-lived context opened');
-		} finally {
-			globalThis.AudioContext = saved;
+			landMain();
+			await refresh;
+			globalThis.AudioContext = function () {
+				opened.push('ctx');
+				throw new Error('control: a short-lived Test context was opened');
+			};
+			try {
+				await assert.rejects(
+					hp.playIoTestBeeps('master', state.selected_master_output_device_id),
+					/control: a short-lived Test context was opened/
+				);
+			} finally {
+				globalThis.AudioContext = saved;
+			}
 		}
-		landMain();
-		await refresh;
-		globalThis.AudioContext = function () {
-			opened.push('ctx');
-			throw new Error('control: a short-lived Test context was opened');
-		};
-		try {
-			await assert.rejects(hp.playIoTestBeeps('master', state.selected_master_output_device_id), /control: a short-lived Test context was opened/);
-		} finally {
-			globalThis.AudioContext = saved;
-		}
-	});
+	);
 });
 
 /** A shell output as `list` reports it. */
 function shellDevice(uid, name, isDefault) {
-	return { uid, name, channels: 2, transport: 'usb', is_default: isDefault, muted_by_jack: false, physical_uid: uid };
+	return {
+		uid,
+		name,
+		channels: 2,
+		transport: 'usb',
+		is_default: isDefault,
+		muted_by_jack: false,
+		physical_uid: uid
+	};
 }
 
 // [if] an older shell listing returned last and its room were kept, a CUE
@@ -1330,12 +1648,11 @@ function shellDevice(uid, name, isDefault) {
 // AUDFID-01: the room is only ever used to refuse that, never to pin MAIN.
 test("an older shell listing's room is dropped with it, so a CUE pick on the newer room is refused (native)", async () => {
 	const state = hp.mixerState.headphones;
-	const listing = (roomUid) =>
-		[
-			shellDevice('BuiltInSpeakerDevice', 'MacBook Pro Speakers', roomUid === 'BuiltInSpeakerDevice'),
-			shellDevice('UsbInterface', 'USB Interface', false),
-			shellDevice('SecondUsbInterface', 'Second USB Interface', roomUid === 'SecondUsbInterface')
-		];
+	const listing = (roomUid) => [
+		shellDevice('BuiltInSpeakerDevice', 'MacBook Pro Speakers', roomUid === 'BuiltInSpeakerDevice'),
+		shellDevice('UsbInterface', 'USB Interface', false),
+		shellDevice('SecondUsbInterface', 'Second USB Interface', roomUid === 'SecondUsbInterface')
+	];
 	nativeDevices = listing('BuiltInSpeakerDevice');
 	holdTypes = ['list'];
 	const older = hp.refreshHeadphoneOutputs(source);
@@ -1346,16 +1663,27 @@ test("an older shell listing's room is dropped with it, so a CUE pick on the new
 	await older;
 	state.selected_master_output_device_id = null;
 	const pins = setMasterUids.length;
-	await assert.rejects(hp.selectHeadphoneOutput('native:SecondUsbInterface', source), /MAIN and CUE are the same output/);
+	await assert.rejects(
+		hp.selectHeadphoneOutput('native:SecondUsbInterface', source),
+		/MAIN and CUE are the same output/
+	);
 	await hp.selectHeadphoneOutput('native:BuiltInSpeakerDevice', source);
-	assert.equal(state.selected_output_device_id, 'native:BuiltInSpeakerDevice', 'the older room is just another output now');
-	assert.equal(state.selected_master_output_device_id, null, 'MAIN is never auto-pinned to the room');
+	assert.equal(
+		state.selected_output_device_id,
+		'native:BuiltInSpeakerDevice',
+		'the older room is just another output now'
+	);
+	assert.equal(
+		state.selected_master_output_device_id,
+		null,
+		'MAIN is never auto-pinned to the room'
+	);
 	assert.equal(setMasterUids.length, pins, 'no hidden set_master');
 });
 
 // [if] a CUE pick in the Mac app auto-pinned MAIN to the macOS default, the
 // room would move with whatever grabbed the default (AUDFID-01).
-test("control: a CUE pick in the Mac app leaves an unpinned MAIN unpinned (native)", async () => {
+test('control: a CUE pick in the Mac app leaves an unpinned MAIN unpinned (native)', async () => {
 	const state = hp.mixerState.headphones;
 	nativeDevices = [
 		shellDevice('BuiltInSpeakerDevice', 'MacBook Pro Speakers', false),
@@ -1374,89 +1702,108 @@ test("control: a CUE pick in the Mac app leaves an unpinned MAIN unpinned (nativ
 // [if] a timed-out re-pin were forgotten, its move landing after a newer pick
 // would leave the room on a device the menu no longer shows, with no switch
 // pending to stop a Test beeping it.
-test("a device-change re-pin that lands after its timeout is moved back to the newer MAIN pick (browser path)", async () => {
+test('a device-change re-pin that lands after its timeout is moved back to the newer MAIN pick (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let finishRepin;
-		ctx.sinkId = '';
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => (finishRepin = () => { ctx.sinkId = id; resolve(); }));
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let finishRepin;
+			ctx.sinkId = '';
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise(
+						(resolve) =>
+							(finishRepin = () => {
+								ctx.sinkId = id;
+								resolve();
+							})
+					);
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			let refresh;
+			try {
+				refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
+				assert.notEqual(finishRepin, undefined, 'the re-pin reached setSinkId');
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+			} finally {
+				mock.timers.reset();
 			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		let refresh;
-		try {
-			refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishRepin, undefined, 'the re-pin reached setSinkId');
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
+			await refresh;
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				'the timed-out move still counts as MAIN switching'
+			);
+			await hp.selectMasterOutput(AUX, source);
+			assert.equal(ctx.sinkId, AUX, 'precondition: the newer pick landed first');
+			finishRepin();
+			await waitFor(
+				() => ctx.sinkId === AUX && !hp.outputSwitchesPending().master,
+				'the correction to settle'
+			);
+			assert.equal(state.selected_master_output_device_id, AUX);
+			assert.equal(ctx.sinkId, AUX, 'the late re-pin is moved back to the MAIN shown');
 		}
-		await refresh;
-		assert.equal(hp.outputSwitchesPending().master, true, 'the timed-out move still counts as MAIN switching');
-		await hp.selectMasterOutput(AUX, source);
-		assert.equal(ctx.sinkId, AUX, 'precondition: the newer pick landed first');
-		finishRepin();
-		await waitFor(() => ctx.sinkId === AUX && !hp.outputSwitchesPending().master, 'the correction to settle');
-		assert.equal(state.selected_master_output_device_id, AUX);
-		assert.equal(ctx.sinkId, AUX, 'the late re-pin is moved back to the MAIN shown');
-	});
+	);
 });
 
 // [if] the fix also moved a late move that landed on the MAIN shown, MAIN
 // would take a needless second move.
-test("a timed-out re-pin that lands on the MAIN still shown moves nothing more, and reopens the room (browser path)", async () => {
+test('a timed-out re-pin that lands on the MAIN still shown moves nothing more, and reopens the room (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let finishRepin;
-		const calls = [];
-		ctx.setSinkId = (id) => {
-			calls.push(id);
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => (finishRepin = resolve));
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let finishRepin;
+			const calls = [];
+			ctx.setSinkId = (id) => {
+				calls.push(id);
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise((resolve) => (finishRepin = resolve));
+				}
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			let refresh;
+			try {
+				refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+			} finally {
+				mock.timers.reset();
 			}
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		let refresh;
-		try {
-			refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
+			await refresh;
+			const sent = calls.length;
+			const shown = state.selected_master_output_device_id;
+			const suspendsBefore = ctx.suspends;
+			finishRepin();
+			await waitFor(() => !hp.outputSwitchesPending().master, 'the late move to settle');
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(state.selected_master_output_device_id, shown);
+			assert.equal(calls.length, sent, 'no correction move was sent');
+			// Codex P1 BLOCKING on #6835: the late move is still a repeated move, so
+			// the room is reopened once, not left `running` on a dead stream.
+			assert.equal(ctx.suspends, suspendsBefore + 1, 'the room is reopened after the late landing');
 		}
-		await refresh;
-		const sent = calls.length;
-		const shown = state.selected_master_output_device_id;
-		const suspendsBefore = ctx.suspends;
-		finishRepin();
-		await waitFor(() => !hp.outputSwitchesPending().master, 'the late move to settle');
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(state.selected_master_output_device_id, shown);
-		assert.equal(calls.length, sent, 'no correction move was sent');
-		// Codex P1 BLOCKING on #6835: the late move is still a repeated move, so
-		// the room is reopened once, not left `running` on a dead stream.
-		assert.equal(ctx.suspends, suspendsBefore + 1, 'the room is reopened after the late landing');
-	});
+	);
 });
 
 // [if] a MAIN move that never settles held MAIN switching forever, every Test
@@ -1466,69 +1813,92 @@ test("a timed-out re-pin that lands on the MAIN still shown moves nothing more, 
 test('a timed-out MAIN move that lands after its grace is announced as an output move (browser path, Codex P2 BLOCKING on #6835)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let finishRepin;
-		ctx.setSinkId = (id) =>
-			ctx.holdNext ? ((ctx.holdNext = false), new Promise((resolve) => (finishRepin = resolve))) : Promise.resolve(id);
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-			await refresh;
-			mock.timers.tick(10_000);
-			await flushMicrotasks();
-			assert.equal(hp.outputSwitchesPending().master, false, 'precondition: released after the grace');
-		} finally {
-			mock.timers.reset();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let finishRepin;
+			ctx.setSinkId = (id) =>
+				ctx.holdNext
+					? ((ctx.holdNext = false), new Promise((resolve) => (finishRepin = resolve)))
+					: Promise.resolve(id);
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			try {
+				const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				for (let i = 0; i < 50 && finishRepin === undefined; i++) await flushMicrotasks();
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+				await refresh;
+				mock.timers.tick(10_000);
+				await flushMicrotasks();
+				assert.equal(
+					hp.outputSwitchesPending().master,
+					false,
+					'precondition: released after the grace'
+				);
+			} finally {
+				mock.timers.reset();
+			}
+			let moves = 0;
+			const stop = hp.onOutputMoveStarted(() => (moves += 1));
+			try {
+				finishRepin();
+				await waitFor(() => moves > 0, 'the late landing to be announced');
+			} finally {
+				stop();
+			}
+			await waitFor(() => !hp.outputSwitchesPending().master, 'the reopen to settle');
 		}
-		let moves = 0;
-		const stop = hp.onOutputMoveStarted(() => (moves += 1));
-		try {
-			finishRepin();
-			await waitFor(() => moves > 0, 'the late landing to be announced');
-		} finally {
-			stop();
-		}
-		await waitFor(() => !hp.outputSwitchesPending().master, 'the reopen to settle');
-	});
+	);
 });
 
 test('a timed-out MAIN move that never settles stops counting as switching after the grace (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = (id) => (ctx.holdNext ? ((ctx.holdNext = false), new Promise(() => {})) : Promise.resolve(id));
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			await flushMicrotasks();
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-			await refresh;
-			assert.equal(hp.outputSwitchesPending().master, true, 'precondition: held past the operation timeout');
-			mock.timers.tick(10_000);
-			await flushMicrotasks();
-			assert.equal(hp.outputSwitchesPending().master, false, 'released after the grace');
-		} finally {
-			mock.timers.reset();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = (id) =>
+				ctx.holdNext ? ((ctx.holdNext = false), new Promise(() => {})) : Promise.resolve(id);
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			try {
+				const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				await flushMicrotasks();
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+				await refresh;
+				assert.equal(
+					hp.outputSwitchesPending().master,
+					true,
+					'precondition: held past the operation timeout'
+				);
+				mock.timers.tick(10_000);
+				await flushMicrotasks();
+				assert.equal(hp.outputSwitchesPending().master, false, 'released after the grace');
+			} finally {
+				mock.timers.reset();
+			}
 		}
-	});
+	);
 });
 
 /** A short-lived Test context whose pattern ends only when `endTone()` is
  * called or the Test is cut (a second stop). */
 function heldToneContext(state) {
-	const param = () => ({ value: 0, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {} });
+	const param = () => ({
+		value: 0,
+		cancelScheduledValues() {},
+		setValueAtTime() {},
+		linearRampToValueAtTime() {},
+		setTargetAtTime() {}
+	});
 	return class {
 		state = 'running';
 		currentTime = 0;
@@ -1563,26 +1933,36 @@ function heldToneContext(state) {
 test("a device change's MAIN re-pin cuts a Test that is sounding (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let landMove;
-		ctx.setSinkId = (id) => new Promise((resolve) => (landMove = () => { ctx.sinkId = id; resolve(); }));
-		state.selected_master_output_device_id = DOCK;
-		const tone = {};
-		globalThis.AudioContext = heldToneContext(tone);
-		let result = 'still playing';
-		const played = hp.playIoTestBeeps('master', DOCK).then((value) => (result = value));
-		await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
-		listOutputs([ROOM, PHONES]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => landMove !== undefined, 'the re-pin to start its move');
-		// Cut as the move starts, not by the Test's own end-of-pattern timer.
-		await waitFor(() => result !== 'still playing', 'the Test to be cut');
-		assert.equal(result, false, 'the Test is cut, not answered as played');
-		landMove();
-		await refresh;
-		await played;
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let landMove;
+			ctx.setSinkId = (id) =>
+				new Promise(
+					(resolve) =>
+						(landMove = () => {
+							ctx.sinkId = id;
+							resolve();
+						})
+				);
+			state.selected_master_output_device_id = DOCK;
+			const tone = {};
+			globalThis.AudioContext = heldToneContext(tone);
+			let result = 'still playing';
+			const played = hp.playIoTestBeeps('master', DOCK).then((value) => (result = value));
+			await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
+			listOutputs([ROOM, PHONES]);
+			const refresh = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => landMove !== undefined, 'the re-pin to start its move');
+			// Cut as the move starts, not by the Test's own end-of-pattern timer.
+			await waitFor(() => result !== 'still playing', 'the Test to be cut');
+			assert.equal(result, false, 'the Test is cut, not answered as played');
+			landMove();
+			await refresh;
+			await played;
+		}
+	);
 });
 
 // [if] the picked MAIN vanishes mid-Test and the device change finds no replacement (MAIN cleared, no re-pin)
@@ -1590,24 +1970,27 @@ test("a device change's MAIN re-pin cuts a Test that is sounding (browser path)"
 test('a device change that clears MAIN cuts a Test that is sounding (browser path, Codex P2 BLOCKING on #6835)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async (id) => {
-			ctx.sinkId = id;
-		};
-		state.selected_master_output_device_id = DOCK;
-		const tone = {};
-		globalThis.AudioContext = heldToneContext(tone);
-		let result = 'still playing';
-		const played = hp.playIoTestBeeps('master', DOCK).then((value) => (result = value));
-		await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
-		listOutputs([AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
-		await waitFor(() => result !== 'still playing', 'the Test to be cut');
-		assert.equal(result, false, 'the Test on the vanished MAIN is cut, not answered as played');
-		await played;
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async (id) => {
+				ctx.sinkId = id;
+			};
+			state.selected_master_output_device_id = DOCK;
+			const tone = {};
+			globalThis.AudioContext = heldToneContext(tone);
+			let result = 'still playing';
+			const played = hp.playIoTestBeeps('master', DOCK).then((value) => (result = value));
+			await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
+			listOutputs([AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
+			await waitFor(() => result !== 'still playing', 'the Test to be cut');
+			assert.equal(result, false, 'the Test on the vanished MAIN is cut, not answered as played');
+			await played;
+		}
+	);
 });
 
 // [if] the cut fired on every device change, a microphone plugged in mid-Test
@@ -1615,23 +1998,26 @@ test('a device change that clears MAIN cuts a Test that is sounding (browser pat
 test('control: a device change that moves no output leaves a sounding Test playing (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const moves = [];
-		ctx.setSinkId = async (id) => {
-			moves.push(id);
-		};
-		state.selected_master_output_device_id = DOCK;
-		const tone = {};
-		globalThis.AudioContext = heldToneContext(tone);
-		const played = hp.playIoTestBeeps('master', DOCK);
-		await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
-		listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.deepEqual(moves, [], 'precondition: nothing moved');
-		tone.endTone();
-		assert.equal(await played, true, 'the Test plays out');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const moves = [];
+			ctx.setSinkId = async (id) => {
+				moves.push(id);
+			};
+			state.selected_master_output_device_id = DOCK;
+			const tone = {};
+			globalThis.AudioContext = heldToneContext(tone);
+			const played = hp.playIoTestBeeps('master', DOCK);
+			await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
+			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.deepEqual(moves, [], 'precondition: nothing moved');
+			tone.endTone();
+			assert.equal(await played, true, 'the Test plays out');
+		}
+	);
 });
 
 // [if] a remount forgot where MAIN landed, a short-lived Test context would
@@ -1640,8 +2026,16 @@ test('a native MAIN Test with no live graph and no known landing refuses (native
 	const state = hp.mixerState.headphones;
 	await hp.selectMasterOutput(SPEAKERS, source);
 	hp.disposeHeadphoneMonitor();
-	assert.equal(state.selected_master_output_device_id, SPEAKERS, 'precondition: the menu keeps its pick');
-	assert.equal(hp.liveCalibrationGraph().nodes, null, 'precondition: the remount released the graph');
+	assert.equal(
+		state.selected_master_output_device_id,
+		SPEAKERS,
+		'precondition: the menu keeps its pick'
+	);
+	assert.equal(
+		hp.liveCalibrationGraph().nodes,
+		null,
+		'precondition: the remount released the graph'
+	);
 	const opened = [];
 	const saved = globalThis.AudioContext;
 	globalThis.AudioContext = function () {
@@ -1650,7 +2044,10 @@ test('a native MAIN Test with no live graph and no known landing refuses (native
 	};
 	try {
 		for (const bus of ['master', 'input']) {
-			await assert.rejects(hp.playIoTestBeeps(bus, SPEAKERS), /MAIN has not landed on the picked device/);
+			await assert.rejects(
+				hp.playIoTestBeeps(bus, SPEAKERS),
+				/MAIN has not landed on the picked device/
+			);
 		}
 		assert.deepEqual(opened, []);
 	} finally {
@@ -1665,8 +2062,24 @@ test('control: a native MAIN Test with no live graph plays once MAIN has landed 
 	hp.disposeHeadphoneMonitor();
 	state.selected_master_output_device_id = 'native:Vanished';
 	nativeDevices = [
-		{ uid: 'BuiltInSpeakerDevice', name: 'MacBook Pro Speakers', channels: 2, transport: 'builtin', is_default: false, muted_by_jack: false, physical_uid: 'BuiltInSpeakerDevice' },
-		{ uid: 'UsbInterface', name: 'USB Interface', channels: 2, transport: 'usb', is_default: true, muted_by_jack: false, physical_uid: 'UsbInterface' }
+		{
+			uid: 'BuiltInSpeakerDevice',
+			name: 'MacBook Pro Speakers',
+			channels: 2,
+			transport: 'builtin',
+			is_default: false,
+			muted_by_jack: false,
+			physical_uid: 'BuiltInSpeakerDevice'
+		},
+		{
+			uid: 'UsbInterface',
+			name: 'USB Interface',
+			channels: 2,
+			transport: 'usb',
+			is_default: true,
+			muted_by_jack: false,
+			physical_uid: 'UsbInterface'
+		}
 	];
 	await hp.refreshHeadphoneOutputs(source);
 	assert.equal(hp.liveCalibrationGraph().nodes, null, 'precondition: no deck built the live graph');
@@ -1679,7 +2092,10 @@ test('control: a native MAIN Test with no live graph plays once MAIN has landed 
 		throw new Error('control: a short-lived Test context was opened');
 	};
 	try {
-		await assert.rejects(hp.playIoTestBeeps('master', main), /control: a short-lived Test context was opened/);
+		await assert.rejects(
+			hp.playIoTestBeeps('master', main),
+			/control: a short-lived Test context was opened/
+		);
 		assert.deepEqual(opened, ['ctx']);
 	} finally {
 		globalThis.AudioContext = saved;
@@ -1691,47 +2107,62 @@ test('control: a native MAIN Test with no live graph plays once MAIN has landed 
 test("a retired mount's timed-out MAIN move does not read as the replacement's switch (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let finishRepin;
-		let hold;
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => (hold = resolve));
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let finishRepin;
+			let hold;
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise((resolve) => (hold = resolve));
+				}
+				return Promise.resolve(id);
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			mock.timers.enable({ apis: ['setTimeout'] });
+			try {
+				const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				for (let i = 0; i < 50 && hold === undefined; i++) await flushMicrotasks();
+				finishRepin = hold;
+				mock.timers.tick(5_000);
+				await flushMicrotasks();
+				await refresh;
+			} finally {
+				mock.timers.reset();
 			}
-			return Promise.resolve(id);
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			for (let i = 0; i < 50 && hold === undefined; i++) await flushMicrotasks();
-			finishRepin = hold;
-			mock.timers.tick(5_000);
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				'precondition: the timed-out move counts for its own mount'
+			);
+			hp.disposeHeadphoneMonitor();
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				false,
+				'the replacement mount reads no MAIN switch'
+			);
+			finishRepin();
 			await flushMicrotasks();
-			await refresh;
-		} finally {
-			mock.timers.reset();
+			assert.equal(hp.outputSwitchesPending().master, false);
+			// The count stays balanced: the replacement's own pending move still reads as switching.
+			hold = undefined;
+			ctx.holdNext = true;
+			browserOutputs(state);
+			const pick = hp.selectMasterOutput(AUX, source);
+			await waitFor(() => hold !== undefined, "the replacement's pick to reach setSinkId");
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				"the replacement's own move reads as switching"
+			);
+			hold();
+			await pick;
 		}
-		assert.equal(hp.outputSwitchesPending().master, true, 'precondition: the timed-out move counts for its own mount');
-		hp.disposeHeadphoneMonitor();
-		assert.equal(hp.outputSwitchesPending().master, false, 'the replacement mount reads no MAIN switch');
-		finishRepin();
-		await flushMicrotasks();
-		assert.equal(hp.outputSwitchesPending().master, false);
-		// The count stays balanced: the replacement's own pending move still reads as switching.
-		hold = undefined;
-		ctx.holdNext = true;
-		browserOutputs(state);
-		const pick = hp.selectMasterOutput(AUX, source);
-		await waitFor(() => hold !== undefined, "the replacement's pick to reach setSinkId");
-		assert.equal(hp.outputSwitchesPending().master, true, "the replacement's own move reads as switching");
-		hold();
-		await pick;
-	});
+	);
 });
 
 // [if] the landing outlived the shell's connection, a MAIN Test would trust a
@@ -1743,7 +2174,10 @@ test('a native disconnect forgets where MAIN landed, so a MAIN Test refuses (nat
 	ReplyWorker.last.onmessage({ data: { kind: 'closed', reason: 'shell quit' } });
 	assert.equal(hp.landedMasterSinkId(), null);
 	assert.equal(state.selected_master_output_device_id, SPEAKERS, 'the menu keeps its pick');
-	await assert.rejects(hp.playIoTestBeeps('master', SPEAKERS), /MAIN has not landed on the picked device/);
+	await assert.rejects(
+		hp.playIoTestBeeps('master', SPEAKERS),
+		/MAIN has not landed on the picked device/
+	);
 });
 
 // [if] the clear reused the restore's CUE serial, the restore landing after it
@@ -1751,28 +2185,43 @@ test('a native disconnect forgets where MAIN landed, so a MAIN Test refuses (nat
 test('a CUE restore that lands after a newer device change cleared it again publishes nothing (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_output_device_id, null, 'precondition: the unplugged CUE is cleared');
-		cue.hold(PHONES);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const restore = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		assert.equal(state.selected_output_device_id, null, 'precondition: the newer change cleared the CUE again');
-		assert.equal(state.active, false);
-		cue.release(PHONES, true);
-		await restore.catch((error) => error);
-		await waitFor(() => !hp.outputSwitchesPending().cue, 'the CUE work to settle');
-		assert.equal(state.selected_output_device_id, null, 'the late restore does not bring the CUE back');
-		assert.equal(state.active, false, 'the late restore does not switch the cleared CUE on');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async () => {};
+			await hp.selectMasterOutput(ROOM, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			listOutputs([ROOM, DOCK]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_output_device_id,
+				null,
+				'precondition: the unplugged CUE is cleared'
+			);
+			cue.hold(PHONES);
+			listOutputs([ROOM, PHONES, DOCK]);
+			const restore = hp.refreshHeadphoneOutputs(source);
+			await waitFor(() => cue.isHeld(PHONES), 'the restored CUE to reach setSinkId');
+			listOutputs([ROOM, DOCK]);
+			await hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			assert.equal(
+				state.selected_output_device_id,
+				null,
+				'precondition: the newer change cleared the CUE again'
+			);
+			assert.equal(state.active, false);
+			cue.release(PHONES, true);
+			await restore.catch((error) => error);
+			await waitFor(() => !hp.outputSwitchesPending().cue, 'the CUE work to settle');
+			assert.equal(
+				state.selected_output_device_id,
+				null,
+				'the late restore does not bring the CUE back'
+			);
+			assert.equal(state.active, false, 'the late restore does not switch the cleared CUE on');
+		}
+	);
 });
 
 // [if] the ordinary MAIN count survived a teardown, the replacement mount
@@ -1780,36 +2229,51 @@ test('a CUE restore that lands after a newer device change cleared it again publ
 test("a retired mount's MAIN move still inside its timeout does not read as the replacement's switch (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let hold;
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => (hold = resolve));
-			}
-			return Promise.resolve(id);
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		const old = hp.selectMasterOutput(AUX, source).catch((error) => error);
-		await waitFor(() => hold !== undefined, 'the pick to reach setSinkId');
-		assert.equal(hp.outputSwitchesPending().master, true, 'precondition: the pick counts for its own mount');
-		const finishOld = hold;
-		hp.disposeHeadphoneMonitor();
-		assert.equal(hp.outputSwitchesPending().master, false, 'the replacement mount reads no MAIN switch');
-		finishOld();
-		await old;
-		assert.equal(hp.outputSwitchesPending().master, false);
-		// The count stays balanced: the replacement's own pending move still reads as switching.
-		hold = undefined;
-		ctx.holdNext = true;
-		const pick = hp.selectMasterOutput(ROOM, source);
-		await waitFor(() => hold !== undefined, "the replacement's pick to reach setSinkId");
-		assert.equal(hp.outputSwitchesPending().master, true, "the replacement's own move reads as switching");
-		hold();
-		await pick;
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let hold;
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise((resolve) => (hold = resolve));
+				}
+				return Promise.resolve(id);
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			const old = hp.selectMasterOutput(AUX, source).catch((error) => error);
+			await waitFor(() => hold !== undefined, 'the pick to reach setSinkId');
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				'precondition: the pick counts for its own mount'
+			);
+			const finishOld = hold;
+			hp.disposeHeadphoneMonitor();
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				false,
+				'the replacement mount reads no MAIN switch'
+			);
+			finishOld();
+			await old;
+			assert.equal(hp.outputSwitchesPending().master, false);
+			// The count stays balanced: the replacement's own pending move still reads as switching.
+			hold = undefined;
+			ctx.holdNext = true;
+			const pick = hp.selectMasterOutput(ROOM, source);
+			await waitFor(() => hold !== undefined, "the replacement's pick to reach setSinkId");
+			assert.equal(
+				hp.outputSwitchesPending().master,
+				true,
+				"the replacement's own move reads as switching"
+			);
+			hold();
+			await pick;
+		}
+	);
 });
 
 // [if] an older device change re-pins MAIN and also plans to clear the vanished
@@ -1819,57 +2283,79 @@ test("a retired mount's MAIN move still inside its timeout does not read as the 
 test("an older device change's CUE clear does not run after a newer change restored the CUE (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		let hold;
-		ctx.setSinkId = (id) => {
-			if (ctx.holdNext) {
-				ctx.holdNext = false;
-				return new Promise((resolve) => (hold = () => { ctx.sinkId = id; resolve(); }));
-			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM]);
-		const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => hold !== undefined, "the older change's MAIN re-pin to reach setSinkId");
-		listOutputs([ROOM, PHONES]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_output_device_id, PHONES, 'precondition: the newer change restored the CUE');
-		assert.equal(state.active, true, 'precondition: the restored CUE is on');
-		hold();
-		await older;
-		await waitFor(() => !hp.outputSwitchesPending().cue && !hp.outputSwitchesPending().master, 'the output work to settle');
-		assert.equal(state.selected_output_device_id, PHONES);
-		assert.equal(state.active, true, 'the stale clear did not switch the restored CUE off');
-		assert.equal(cue.state, 'running', 'nor silence it');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			let hold;
+			ctx.setSinkId = (id) => {
+				if (ctx.holdNext) {
+					ctx.holdNext = false;
+					return new Promise(
+						(resolve) =>
+							(hold = () => {
+								ctx.sinkId = id;
+								resolve();
+							})
+					);
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM]);
+			const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => hold !== undefined, "the older change's MAIN re-pin to reach setSinkId");
+			listOutputs([ROOM, PHONES]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_output_device_id,
+				PHONES,
+				'precondition: the newer change restored the CUE'
+			);
+			assert.equal(state.active, true, 'precondition: the restored CUE is on');
+			hold();
+			await older;
+			await waitFor(
+				() => !hp.outputSwitchesPending().cue && !hp.outputSwitchesPending().master,
+				'the output work to settle'
+			);
+			assert.equal(state.selected_output_device_id, PHONES);
+			assert.equal(state.active, true, 'the stale clear did not switch the restored CUE off');
+			assert.equal(cue.state, 'running', 'nor silence it');
+		}
+	);
 });
 
 // [if] one device change re-pins MAIN and clears the vanished CUE, with no
 // newer change behind it, its CUE clear still runs (the opposite direction).
 // [then] the CUE is switched off and silenced.
-test("control: a lone device change that re-pins MAIN still clears the vanished CUE (browser path)", async () => {
+test('control: a lone device change that re-pins MAIN still clears the vanished CUE (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async (id) => {
-			ctx.sinkId = id;
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(state.active, true, 'precondition: the CUE is on');
-		listOutputs([ROOM]);
-		await hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => !hp.outputSwitchesPending().cue && !hp.outputSwitchesPending().master, 'the output work to settle');
-		assert.equal(ctx.sinkId, ROOM, 'precondition: MAIN was re-pinned');
-		assert.equal(state.active, false, 'the vanished CUE is switched off');
-		assert.notEqual(cue.state, 'running', 'and silenced');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			ctx.setSinkId = async (id) => {
+				ctx.sinkId = id;
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			await hp.selectHeadphoneOutput(PHONES, source);
+			assert.equal(state.active, true, 'precondition: the CUE is on');
+			listOutputs([ROOM]);
+			await hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(
+				() => !hp.outputSwitchesPending().cue && !hp.outputSwitchesPending().master,
+				'the output work to settle'
+			);
+			assert.equal(ctx.sinkId, ROOM, 'precondition: MAIN was re-pinned');
+			assert.equal(state.active, false, 'the vanished CUE is switched off');
+			assert.notEqual(cue.state, 'running', 'and silenced');
+		}
+	);
 });
 
 /** Pick `deviceId` for CUE with its native open held past the timeout. */
@@ -1894,7 +2380,11 @@ test('a native CUE open that lands after its timeout and a newer pick is reopene
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
 	const THIRD = 'native:ThirdUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }, { id: THIRD, label: 'Third USB Interface' }];
+	state.outputs = [
+		...state.outputs,
+		{ id: BUS, label: 'Second USB Interface' },
+		{ id: THIRD, label: 'Third USB Interface' }
+	];
 	await hp.selectMasterOutput(SPEAKERS, source);
 	await hp.selectHeadphoneOutput(USB, source);
 	await timedOutNativeOpen(BUS);
@@ -1944,7 +2434,10 @@ function holdNextRoomSinkMove() {
 		if (ctx.holdNext) {
 			ctx.holdNext = false;
 			return new Promise((resolve, reject) => {
-				hold.release = (ok) => (ok ? ((ctx.sinkId = id), resolve()) : reject(new Error('NotFoundError: the old room went away')));
+				hold.release = (ok) =>
+					ok
+						? ((ctx.sinkId = id), resolve())
+						: reject(new Error('NotFoundError: the old room went away'));
 			});
 		}
 		ctx.sinkId = id;
@@ -1957,31 +2450,46 @@ for (const lands of [true, false]) {
 	test(`a device change's MAIN re-pin that ${lands ? 'lands' : 'fails'} after a newer one cleared MAIN publishes nothing (browser path)`, async () => {
 		const state = hp.mixerState.headphones;
 		const cue = browserCueContext();
-		await onBrowserPath(() => cue, async () => {
-			browserOutputs(state);
-			const hold = holdNextRoomSinkMove();
-			await hp.selectMasterOutput(DOCK, source);
-			ctx.holdNext = true;
-			listOutputs([ROOM, PHONES, AUX]);
-			const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-			await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
-			// The newer listing has no room output to re-pin to: MAIN goes to the system default.
-			listOutputs([AUX]);
-			await hp.refreshHeadphoneOutputs(source);
-			assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
-			const suspendsBefore = ctx.suspends;
-			hold.release(lands);
-			assert.equal(await older, undefined, 'the older device change does not fail over the newer one');
-			await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-			assert.equal(state.selected_master_output_device_id, null);
-			assert.notEqual(state.routes.master.state, 'selected', 'the stale re-pin publishes no MAIN route');
-			assert.equal(state.error, null, 'nor shows its failure');
-			if (lands) assert.equal(ctx.sinkId, '', 'the sink goes back to the system default');
-			// That correction is a repeated move: the room is reopened after it (Codex P1 BLOCKING on #6835).
-			if (lands) await waitFor(() => ctx.suspends > suspendsBefore, 'the room to be reopened after the move back');
-			// Control: a move back to the default that lands leaves MAIN usable.
-			if (lands) assert.notEqual(state.routes.master.state, 'failed');
-		});
+		await onBrowserPath(
+			() => cue,
+			async () => {
+				browserOutputs(state);
+				const hold = holdNextRoomSinkMove();
+				await hp.selectMasterOutput(DOCK, source);
+				ctx.holdNext = true;
+				listOutputs([ROOM, PHONES, AUX]);
+				const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+				await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
+				// The newer listing has no room output to re-pin to: MAIN goes to the system default.
+				listOutputs([AUX]);
+				await hp.refreshHeadphoneOutputs(source);
+				assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
+				const suspendsBefore = ctx.suspends;
+				hold.release(lands);
+				assert.equal(
+					await older,
+					undefined,
+					'the older device change does not fail over the newer one'
+				);
+				await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
+				assert.equal(state.selected_master_output_device_id, null);
+				assert.notEqual(
+					state.routes.master.state,
+					'selected',
+					'the stale re-pin publishes no MAIN route'
+				);
+				assert.equal(state.error, null, 'nor shows its failure');
+				if (lands) assert.equal(ctx.sinkId, '', 'the sink goes back to the system default');
+				// That correction is a repeated move: the room is reopened after it (Codex P1 BLOCKING on #6835).
+				if (lands)
+					await waitFor(
+						() => ctx.suspends > suspendsBefore,
+						'the room to be reopened after the move back'
+					);
+				// Control: a move back to the default that lands leaves MAIN usable.
+				if (lands) assert.notEqual(state.routes.master.state, 'failed');
+			}
+		);
 	});
 }
 
@@ -1991,25 +2499,40 @@ for (const lands of [true, false]) {
 	test(`a MAIN pick whose move ${lands ? 'lands' : 'fails'} after a device change replaced MAIN is retired (browser path, Codex P1 BLOCKING on #6835)`, async () => {
 		const state = hp.mixerState.headphones;
 		const cue = browserCueContext();
-		await onBrowserPath(() => cue, async () => {
-			browserOutputs(state);
-			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
-			const hold = holdNextRoomSinkMove();
-			await hp.selectMasterOutput(AUX, source);
-			ctx.holdNext = true;
-			const pick = hp.selectMasterOutput(DOCK, source).catch((error) => error);
-			await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
-			// DOCK is unplugged: the device change moves MAIN to the room output.
-			listOutputs([ROOM, PHONES, AUX]);
-			await hp.refreshHeadphoneOutputs(source);
-			assert.equal(state.selected_master_output_device_id, ROOM, 'precondition: the device change replaced MAIN');
-			hold.release(lands);
-			assert.equal(await pick, undefined, 'the retired pick does not reject over the device change');
-			await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-			assert.equal(state.selected_master_output_device_id, ROOM, 'the vanished MAIN is not republished');
-			assert.notEqual(state.routes.master.state, 'failed', 'nor is the refreshed route failed');
-			assert.equal(ctx.sinkId, ROOM, 'the sink ends on the MAIN shown');
-		});
+		await onBrowserPath(
+			() => cue,
+			async () => {
+				browserOutputs(state);
+				listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
+				const hold = holdNextRoomSinkMove();
+				await hp.selectMasterOutput(AUX, source);
+				ctx.holdNext = true;
+				const pick = hp.selectMasterOutput(DOCK, source).catch((error) => error);
+				await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
+				// DOCK is unplugged: the device change moves MAIN to the room output.
+				listOutputs([ROOM, PHONES, AUX]);
+				await hp.refreshHeadphoneOutputs(source);
+				assert.equal(
+					state.selected_master_output_device_id,
+					ROOM,
+					'precondition: the device change replaced MAIN'
+				);
+				hold.release(lands);
+				assert.equal(
+					await pick,
+					undefined,
+					'the retired pick does not reject over the device change'
+				);
+				await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
+				assert.equal(
+					state.selected_master_output_device_id,
+					ROOM,
+					'the vanished MAIN is not republished'
+				);
+				assert.notEqual(state.routes.master.state, 'failed', 'nor is the refreshed route failed');
+				assert.equal(ctx.sinkId, ROOM, 'the sink ends on the MAIN shown');
+			}
+		);
 	});
 }
 
@@ -2018,23 +2541,33 @@ for (const lands of [true, false]) {
 test('a MAIN pick that lands after a device change cleared MAIN is moved back to the system default (browser path, Codex P1 BLOCKING on #6835)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
-		const hold = holdNextRoomSinkMove();
-		await hp.selectMasterOutput(AUX, source);
-		ctx.holdNext = true;
-		const pick = hp.selectMasterOutput(DOCK, source).catch((error) => error);
-		await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
-		listOutputs([AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_master_output_device_id, null, 'precondition: the device change cleared MAIN');
-		hold.release(true);
-		assert.equal(await pick, undefined);
-		await waitFor(() => !hp.outputSwitchesPending().master && ctx.sinkId === '', 'the sink back on the default');
-		assert.equal(state.selected_master_output_device_id, null);
-		assert.equal(state.routes.master.state, 'default');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
+			const hold = holdNextRoomSinkMove();
+			await hp.selectMasterOutput(AUX, source);
+			ctx.holdNext = true;
+			const pick = hp.selectMasterOutput(DOCK, source).catch((error) => error);
+			await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
+			listOutputs([AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(
+				state.selected_master_output_device_id,
+				null,
+				'precondition: the device change cleared MAIN'
+			);
+			hold.release(true);
+			assert.equal(await pick, undefined);
+			await waitFor(
+				() => !hp.outputSwitchesPending().master && ctx.sinkId === '',
+				'the sink back on the default'
+			);
+			assert.equal(state.selected_master_output_device_id, null);
+			assert.equal(state.routes.master.state, 'default');
+		}
+	);
 });
 
 for (const lands of [true, false]) {
@@ -2043,39 +2576,47 @@ for (const lands of [true, false]) {
 	test(`a correction back to an explicitly picked default that ${lands ? 'lands keeps MAIN selected' : 'fails marks MAIN failed'} (browser path, Codex P2 BLOCKING on #6835)`, async () => {
 		const state = hp.mixerState.headphones;
 		const cue = browserCueContext();
-		await onBrowserPath(() => cue, async () => {
-			state.outputs = ['default', ROOM, DOCK, AUX].map((id) => ({ id, label: id }));
-			listOutputs(['default', ROOM, DOCK, AUX]);
-			let releaseDock;
-			let failNextDefault = false;
-			ctx.sinkId = '';
-			ctx.setSinkId = (id) => {
-				if (id === DOCK) return new Promise((resolve) => (releaseDock = () => ((ctx.sinkId = id), resolve())));
-				if (id === '' && failNextDefault) {
-					failNextDefault = false;
-					return Promise.reject(new Error('NotAllowedError: default refused'));
+		await onBrowserPath(
+			() => cue,
+			async () => {
+				state.outputs = ['default', ROOM, DOCK, AUX].map((id) => ({ id, label: id }));
+				listOutputs(['default', ROOM, DOCK, AUX]);
+				let releaseDock;
+				let failNextDefault = false;
+				ctx.sinkId = '';
+				ctx.setSinkId = (id) => {
+					if (id === DOCK)
+						return new Promise((resolve) => (releaseDock = () => ((ctx.sinkId = id), resolve())));
+					if (id === '' && failNextDefault) {
+						failNextDefault = false;
+						return Promise.reject(new Error('NotAllowedError: default refused'));
+					}
+					ctx.sinkId = id;
+					return Promise.resolve();
+				};
+				await hp.selectMasterOutput(AUX, source);
+				const older = hp.selectMasterOutput(DOCK, source).catch((error) => error);
+				await waitFor(() => releaseDock !== undefined, 'the DOCK move to reach setSinkId');
+				await hp.selectMasterOutput('default', source);
+				assert.equal(ctx.sinkId, '', 'precondition: the default pick landed');
+				failNextDefault = !lands;
+				releaseDock();
+				await older;
+				await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
+				assert.equal(state.selected_master_output_device_id, 'default');
+				if (lands) {
+					assert.equal(ctx.sinkId, '', 'the late DOCK move is put back on the default');
+					assert.equal(state.routes.master.state, 'selected');
+				} else {
+					assert.equal(ctx.sinkId, DOCK, 'precondition: the sink is stranded on DOCK');
+					assert.equal(
+						state.routes.master.state,
+						'failed',
+						'MAIN is not reported on the default it left'
+					);
 				}
-				ctx.sinkId = id;
-				return Promise.resolve();
-			};
-			await hp.selectMasterOutput(AUX, source);
-			const older = hp.selectMasterOutput(DOCK, source).catch((error) => error);
-			await waitFor(() => releaseDock !== undefined, 'the DOCK move to reach setSinkId');
-			await hp.selectMasterOutput('default', source);
-			assert.equal(ctx.sinkId, '', 'precondition: the default pick landed');
-			failNextDefault = !lands;
-			releaseDock();
-			await older;
-			await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
-			assert.equal(state.selected_master_output_device_id, 'default');
-			if (lands) {
-				assert.equal(ctx.sinkId, '', 'the late DOCK move is put back on the default');
-				assert.equal(state.routes.master.state, 'selected');
-			} else {
-				assert.equal(ctx.sinkId, DOCK, 'precondition: the sink is stranded on DOCK');
-				assert.equal(state.routes.master.state, 'failed', 'MAIN is not reported on the default it left');
 			}
-		});
+		);
 	});
 }
 
@@ -2083,14 +2624,26 @@ for (const lands of [true, false]) {
 // [then] no set_master to a "default" device is sent: the shell's default is its pin (control)
 test('control: a MAIN pick that lands after a device change cleared MAIN sends no default move in the Mac app', async () => {
 	const state = hp.mixerState.headphones;
-	const device = (uid, name) => ({ uid, name, channels: 2, transport: 'usb', is_default: false, muted_by_jack: false, physical_uid: uid });
+	const device = (uid, name) => ({
+		uid,
+		name,
+		channels: 2,
+		transport: 'usb',
+		is_default: false,
+		muted_by_jack: false,
+		physical_uid: uid
+	});
 	await hp.selectMasterOutput(SPEAKERS, source);
 	holdTypes = ['set_master'];
 	const pick = hp.selectMasterOutput(USB, source).catch((error) => error);
 	await waitFor(() => held.length === 1, 'the pick to send set_master');
 	nativeDevices = [device('HdmiDisplay', 'HDMI')];
 	await hp.refreshHeadphoneOutputs(source);
-	assert.equal(state.selected_master_output_device_id, null, 'precondition: the device change cleared MAIN');
+	assert.equal(
+		state.selected_master_output_device_id,
+		null,
+		'precondition: the device change cleared MAIN'
+	);
 	const sent = setMasterUids.length;
 	held[0].ok();
 	await pick;
@@ -2106,31 +2659,39 @@ for (const lands of [true, false]) {
 	test(`a device change that clears MAIN moves the live room to the default, ${lands ? 'landing' : 'failing closed'} (browser path, Codex P2 BLOCKING on #6835)`, async () => {
 		const state = hp.mixerState.headphones;
 		const cue = browserCueContext();
-		await onBrowserPath(() => cue, async () => {
-			browserOutputs(state);
-			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
-			let refuseDefault = false;
-			ctx.sinkId = '';
-			ctx.setSinkId = (id) => {
-				if (id === '' && refuseDefault) return Promise.reject(new Error('NotAllowedError: default refused'));
-				ctx.sinkId = id;
-				return Promise.resolve();
-			};
-			await hp.selectMasterOutput(DOCK, source);
-			assert.equal(ctx.sinkId, DOCK, 'precondition: the room is on DOCK');
-			refuseDefault = !lands;
-			listOutputs([AUX]);
-			await hp.refreshHeadphoneOutputs(source);
-			assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
-			await waitFor(() => !hp.outputSwitchesPending().master, 'the move back to settle');
-			if (lands) {
-				assert.equal(ctx.sinkId, '', 'the room is on the system default');
-				assert.equal(state.routes.master.state, 'default');
-			} else {
-				assert.equal(ctx.sinkId, DOCK, 'precondition: the room is stranded on the vanished sink');
-				assert.equal(state.routes.master.state, 'failed', 'no Test answers for a default the room never reached');
+		await onBrowserPath(
+			() => cue,
+			async () => {
+				browserOutputs(state);
+				listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
+				let refuseDefault = false;
+				ctx.sinkId = '';
+				ctx.setSinkId = (id) => {
+					if (id === '' && refuseDefault)
+						return Promise.reject(new Error('NotAllowedError: default refused'));
+					ctx.sinkId = id;
+					return Promise.resolve();
+				};
+				await hp.selectMasterOutput(DOCK, source);
+				assert.equal(ctx.sinkId, DOCK, 'precondition: the room is on DOCK');
+				refuseDefault = !lands;
+				listOutputs([AUX]);
+				await hp.refreshHeadphoneOutputs(source);
+				assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN cleared');
+				await waitFor(() => !hp.outputSwitchesPending().master, 'the move back to settle');
+				if (lands) {
+					assert.equal(ctx.sinkId, '', 'the room is on the system default');
+					assert.equal(state.routes.master.state, 'default');
+				} else {
+					assert.equal(ctx.sinkId, DOCK, 'precondition: the room is stranded on the vanished sink');
+					assert.equal(
+						state.routes.master.state,
+						'failed',
+						'no Test answers for a default the room never reached'
+					);
+				}
 			}
-		});
+		);
 	});
 }
 
@@ -2139,31 +2700,42 @@ for (const lands of [true, false]) {
 test('control: a device change with MAIN already on the default moves nothing and leaves a Test playing (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const moves = [];
-		ctx.setSinkId = async (id) => {
-			moves.push(id);
-		};
-		hp.ensureHeadphoneGraph(ctx, ctx.createGain());
-		assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN on the default');
-		const tone = {};
-		const restore = beepOnLiveGraph(tone);
-		try {
-			const played = hp.playIoTestBeeps('master', null);
-			await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
-			// A device change that leaves no output to pin MAIN to (a microphone, say).
-			listOutputs([AUX]);
-			await hp.refreshHeadphoneOutputs(source);
-			assert.equal(state.selected_master_output_device_id, null, 'precondition: MAIN stays on the default');
-			await new Promise((r) => setTimeout(r, 10));
-			assert.deepEqual(moves, [], 'nothing is moved');
-			tone.endTone();
-			assert.equal(await played, true, 'the Test plays out');
-		} finally {
-			restore();
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const moves = [];
+			ctx.setSinkId = async (id) => {
+				moves.push(id);
+			};
+			hp.ensureHeadphoneGraph(ctx, ctx.createGain());
+			assert.equal(
+				state.selected_master_output_device_id,
+				null,
+				'precondition: MAIN on the default'
+			);
+			const tone = {};
+			const restore = beepOnLiveGraph(tone);
+			try {
+				const played = hp.playIoTestBeeps('master', null);
+				await waitFor(() => tone.endTone !== undefined, 'the Test to schedule its tones');
+				// A device change that leaves no output to pin MAIN to (a microphone, say).
+				listOutputs([AUX]);
+				await hp.refreshHeadphoneOutputs(source);
+				assert.equal(
+					state.selected_master_output_device_id,
+					null,
+					'precondition: MAIN stays on the default'
+				);
+				await new Promise((r) => setTimeout(r, 10));
+				assert.deepEqual(moves, [], 'nothing is moved');
+				tone.endTone();
+				assert.equal(await played, true, 'the Test plays out');
+			} finally {
+				restore();
+			}
 		}
-	});
+	);
 });
 
 // [if] a refresh that leaves MAIN alone lands after a failed room reopen
@@ -2171,93 +2743,117 @@ test('control: a device change with MAIN already on the default moves nothing an
 test("a refresh keeps a failed reopen's retry error until a reopen succeeds (browser path, Codex P2 BLOCKING on #6835)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		listOutputs([ROOM, PHONES, DOCK]);
-		ctx.setSinkId = async (id) => {
-			ctx.sinkId = id;
-		};
-		const resume = ctx.resume;
-		ctx.resume = async () => {
-			throw new Error('resume died');
-		};
-		try {
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			listOutputs([ROOM, PHONES, DOCK]);
+			ctx.setSinkId = async (id) => {
+				ctx.sinkId = id;
+			};
+			const resume = ctx.resume;
+			ctx.resume = async () => {
+				throw new Error('resume died');
+			};
+			try {
+				await hp.selectMasterOutput(DOCK, source);
+			} finally {
+				ctx.resume = resume;
+			}
+			assert.match(state.error ?? '', /Pick the device again/, 'precondition: the reopen failed');
+			listOutputs([ROOM, PHONES, DOCK, 'new-headset']);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.match(
+				state.error ?? '',
+				/resume died.*Pick the device again/,
+				'the refresh keeps the recovery instruction'
+			);
+			// Control: once a re-pick reopens the room, a refresh clears it again.
 			await hp.selectMasterOutput(DOCK, source);
-		} finally {
-			ctx.resume = resume;
+			assert.equal(state.error, null);
+			state.error = 'an earlier listing failed';
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(state.error, null, 'with no failed reopen a clean refresh clears an old error');
 		}
-		assert.match(state.error ?? '', /Pick the device again/, 'precondition: the reopen failed');
-		listOutputs([ROOM, PHONES, DOCK, 'new-headset']);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.match(state.error ?? '', /resume died.*Pick the device again/, 'the refresh keeps the recovery instruction');
-		// Control: once a re-pick reopens the room, a refresh clears it again.
-		await hp.selectMasterOutput(DOCK, source);
-		assert.equal(state.error, null);
-		state.error = 'an earlier listing failed';
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.error, null, 'with no failed reopen a clean refresh clears an old error');
-	});
+	);
 });
 
 // [if] a device change that keeps MAIN lands while a MAIN pick's move is pending [then] the pick still publishes its route (control)
 test('control: a MAIN pick survives a device change that keeps MAIN (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
-		const hold = holdNextRoomSinkMove();
-		await hp.selectMasterOutput(AUX, source);
-		ctx.holdNext = true;
-		const pick = hp.selectMasterOutput(DOCK, source);
-		await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
-		// An unrelated device appears; DOCK stays.
-		listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX, 'new-headset']);
-		await hp.refreshHeadphoneOutputs(source);
-		assert.equal(state.selected_master_output_device_id, DOCK);
-		hold.release(true);
-		await pick;
-		assert.equal(state.routes.master.state, 'selected', 'the pick still publishes its MAIN route');
-		assert.equal(savedMainId(), DOCK, 'and saves it');
-		assert.equal(ctx.sinkId, DOCK);
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX]);
+			const hold = holdNextRoomSinkMove();
+			await hp.selectMasterOutput(AUX, source);
+			ctx.holdNext = true;
+			const pick = hp.selectMasterOutput(DOCK, source);
+			await waitFor(() => hold.release !== undefined, 'the pick to reach setSinkId');
+			// An unrelated device appears; DOCK stays.
+			listOutputs([ROOM, PHONES, BUS_OUT, DOCK, AUX, 'new-headset']);
+			await hp.refreshHeadphoneOutputs(source);
+			assert.equal(state.selected_master_output_device_id, DOCK);
+			hold.release(true);
+			await pick;
+			assert.equal(
+				state.routes.master.state,
+				'selected',
+				'the pick still publishes its MAIN route'
+			);
+			assert.equal(savedMainId(), DOCK, 'and saves it');
+			assert.equal(ctx.sinkId, DOCK);
+		}
+	);
 });
 
 test("control: a lone device change's MAIN re-pin still publishes the MAIN route (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const hold = holdNextRoomSinkMove();
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
-		hold.release(true);
-		assert.equal(await refresh, undefined);
-		await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-		assert.equal(state.selected_master_output_device_id, ROOM);
-		assert.equal(state.routes.master.state, 'selected');
-		assert.equal(ctx.sinkId, ROOM);
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const hold = holdNextRoomSinkMove();
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
+			hold.release(true);
+			assert.equal(await refresh, undefined);
+			await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
+			assert.equal(state.selected_master_output_device_id, ROOM);
+			assert.equal(state.routes.master.state, 'selected');
+			assert.equal(ctx.sinkId, ROOM);
+		}
+	);
 });
 
 test("control: a lone device change's MAIN re-pin that fails still reports its failure (browser path)", async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const hold = holdNextRoomSinkMove();
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdNext = true;
-		listOutputs([ROOM, PHONES, AUX]);
-		const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
-		hold.release(false);
-		const failure = await refresh;
-		assert.match(String(failure ?? state.error), /old room went away/, 'the current re-pin failure is not swallowed');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const hold = holdNextRoomSinkMove();
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdNext = true;
+			listOutputs([ROOM, PHONES, AUX]);
+			const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => hold.release !== undefined, 'the re-pin to reach setSinkId');
+			hold.release(false);
+			const failure = await refresh;
+			assert.match(
+				String(failure ?? state.error),
+				/old room went away/,
+				'the current re-pin failure is not swallowed'
+			);
+		}
+	);
 });
 
 // [if] the move back to the system default after a stale re-pin fails (the sink may stay on the re-pin's device)
@@ -2265,74 +2861,91 @@ test("control: a lone device change's MAIN re-pin that fails still reports its f
 test('a move back to the system default that fails marks MAIN failed (browser path, Codex P2 BLOCKING on #6835)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const holds = [];
-		ctx.sinkId = '';
-		ctx.holdCount = 0;
-		ctx.setSinkId = (id) => {
-			if (ctx.holdCount > 0) {
-				ctx.holdCount -= 1;
-				return new Promise((resolve, reject) =>
-					holds.push((ok) => (ok ? ((ctx.sinkId = id), resolve()) : reject(new Error('NotAllowedError: default refused'))))
-				);
-			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		ctx.holdCount = 2;
-		listOutputs([ROOM, PHONES, AUX]);
-		const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
-		listOutputs([AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		holds[0](true);
-		await older;
-		await waitFor(() => holds.length === 2, 'the move back to the default to reach setSinkId');
-		assert.equal(ctx.sinkId, ROOM, 'precondition: the sink sits on the stale re-pin device');
-		holds[1](false);
-		await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-		assert.equal(state.selected_master_output_device_id, null);
-		assert.equal(state.routes.master.state, 'failed', 'MAIN is not reported on the default it never reached');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const holds = [];
+			ctx.sinkId = '';
+			ctx.holdCount = 0;
+			ctx.setSinkId = (id) => {
+				if (ctx.holdCount > 0) {
+					ctx.holdCount -= 1;
+					return new Promise((resolve, reject) =>
+						holds.push((ok) =>
+							ok
+								? ((ctx.sinkId = id), resolve())
+								: reject(new Error('NotAllowedError: default refused'))
+						)
+					);
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			ctx.holdCount = 2;
+			listOutputs([ROOM, PHONES, AUX]);
+			const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
+			listOutputs([AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			holds[0](true);
+			await older;
+			await waitFor(() => holds.length === 2, 'the move back to the default to reach setSinkId');
+			assert.equal(ctx.sinkId, ROOM, 'precondition: the sink sits on the stale re-pin device');
+			holds[1](false);
+			await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
+			assert.equal(state.selected_master_output_device_id, null);
+			assert.equal(
+				state.routes.master.state,
+				'failed',
+				'MAIN is not reported on the default it never reached'
+			);
+		}
+	);
 });
 
 test('a MAIN pick that lands while the move back to the system default is pending is moved back to (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const holds = [];
-		ctx.sinkId = '';
-		ctx.holdCount = 0;
-		ctx.setSinkId = (id) => {
-			if (ctx.holdCount > 0) {
-				ctx.holdCount -= 1;
-				return new Promise((resolve) => holds.push(() => ((ctx.sinkId = id), resolve())));
-			}
-			ctx.sinkId = id;
-			return Promise.resolve();
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		// Hold the re-pin, then the move back to the default it triggers.
-		ctx.holdCount = 2;
-		listOutputs([ROOM, PHONES, AUX]);
-		const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-		await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
-		listOutputs([AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		holds[0]();
-		await older;
-		await waitFor(() => holds.length === 2, 'the move back to the default to reach setSinkId');
-		listOutputs([ROOM, PHONES, AUX]);
-		await hp.selectMasterOutput(AUX, source);
-		assert.equal(ctx.sinkId, AUX, 'precondition: the pick landed first');
-		holds[1]();
-		await waitFor(() => ctx.sinkId === AUX && !hp.outputSwitchesPending().master, 'the correction to settle');
-		assert.equal(state.selected_master_output_device_id, AUX);
-		assert.equal(ctx.sinkId, AUX, 'the late default move is moved back to the MAIN picked');
-	});
+	await onBrowserPath(
+		() => cue,
+		async () => {
+			browserOutputs(state);
+			const holds = [];
+			ctx.sinkId = '';
+			ctx.holdCount = 0;
+			ctx.setSinkId = (id) => {
+				if (ctx.holdCount > 0) {
+					ctx.holdCount -= 1;
+					return new Promise((resolve) => holds.push(() => ((ctx.sinkId = id), resolve())));
+				}
+				ctx.sinkId = id;
+				return Promise.resolve();
+			};
+			await hp.selectMasterOutput(DOCK, source);
+			// Hold the re-pin, then the move back to the default it triggers.
+			ctx.holdCount = 2;
+			listOutputs([ROOM, PHONES, AUX]);
+			const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
+			await waitFor(() => holds.length === 1, 'the re-pin to reach setSinkId');
+			listOutputs([AUX]);
+			await hp.refreshHeadphoneOutputs(source);
+			holds[0]();
+			await older;
+			await waitFor(() => holds.length === 2, 'the move back to the default to reach setSinkId');
+			listOutputs([ROOM, PHONES, AUX]);
+			await hp.selectMasterOutput(AUX, source);
+			assert.equal(ctx.sinkId, AUX, 'precondition: the pick landed first');
+			holds[1]();
+			await waitFor(
+				() => ctx.sinkId === AUX && !hp.outputSwitchesPending().master,
+				'the correction to settle'
+			);
+			assert.equal(state.selected_master_output_device_id, AUX);
+			assert.equal(ctx.sinkId, AUX, 'the late default move is moved back to the MAIN picked');
+		}
+	);
 });
 
 /** The Mac app's Test beeps on the live room graph: give the room context a
@@ -2358,8 +2971,14 @@ for (const event of [
 		const restore = beepOnLiveGraph(tone);
 		try {
 			let result = 'still playing';
-			const played = hp.playIoTestBeeps('master', SPEAKERS).then((value) => (result = value), (error) => (result = error));
-			await waitFor(() => tone.endTone !== undefined || result !== 'still playing', 'the Test to schedule its tones');
+			const played = hp.playIoTestBeeps('master', SPEAKERS).then(
+				(value) => (result = value),
+				(error) => (result = error)
+			);
+			await waitFor(
+				() => tone.endTone !== undefined || result !== 'still playing',
+				'the Test to schedule its tones'
+			);
 			assert.equal(result, 'still playing', `precondition: the Test is sounding (${result})`);
 			ReplyWorker.last.onmessage({ data: { kind: 'message', payload: event } });
 			await waitFor(() => result !== 'still playing', 'the Test to be cut');
@@ -2391,9 +3010,15 @@ test('control: a shell stats event leaves a sounding Test playing', async () => 
 // The shell connection closing ends the sink client for this file's later
 // tests, so that edge and the cue bridge failure are pinned in the source.
 test('a shell disconnect or a failed cue bridge cuts a sounding Test', () => {
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
+	const source = readFileSync(
+		new URL('../../src/lib/player/headphones.ts', import.meta.url),
+		'utf8'
+	);
 	const bridge = source.slice(source.indexOf('export async function failCueBridge('));
-	assert.match(bridge.slice(0, 1500), /mixerState\.headphones\.active = false;\n\t_outputMoveStarted\(\);/);
+	assert.match(
+		bridge.slice(0, 1500),
+		/mixerState\.headphones\.active = false;\n\t_outputMoveStarted\(\);/
+	);
 	const closed = source.slice(source.indexOf("case 'disconnected':"));
 	assert.match(closed.slice(0, 600), /_landedMasterSinkId = null;\n\t\t\t_outputMoveStarted\(\);/);
 });

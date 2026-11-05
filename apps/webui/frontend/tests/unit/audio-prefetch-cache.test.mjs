@@ -180,10 +180,9 @@ test('a single over-budget buffer is never retained alongside anything else', as
 });
 
 test('LOW tier evicts on third track with 24 MiB byte cap', async () => {
-	const cache = await loadTypeScriptModule(
-		'tests/unit/fixtures/audio-prefetch-cache-tier.ts',
-		{ viteApiBase: origin }
-	);
+	const cache = await loadTypeScriptModule('tests/unit/fixtures/audio-prefetch-cache-tier.ts', {
+		viteApiBase: origin
+	});
 	cache.applyTier('LOW');
 	assert.equal(cache.MAX_AUDIO_PREFETCH_TRACKS(), 2);
 	for (const id of ['l1', 'l2', 'l3']) {
@@ -289,13 +288,21 @@ test('while the shed defers, the fetch pump never starts; once released, it does
 	cache.ensureAudioPrefetch('gated');
 	await new Promise((resolve) => setTimeout(resolve, 50));
 
-	assert.deepEqual(requests, ['audio-prefetch-cache-caps'], 'ensureAudioPrefetch must ask the shed, not fetch directly');
+	assert.deepEqual(
+		requests,
+		['audio-prefetch-cache-caps'],
+		'ensureAudioPrefetch must ask the shed, not fetch directly'
+	);
 	assert.equal(
 		requestHits.get('gated'),
 		undefined,
 		'the work effect (a real HTTP fetch) must be absent while the gate is closed'
 	);
-	assert.equal(cache.audioPrefetchStatus('gated'), 'loading', 'intent is recorded even though the fetch has not run');
+	assert.equal(
+		cache.audioPrefetchStatus('gated'),
+		'loading',
+		'intent is recorded even though the fetch has not run'
+	);
 
 	// Release: the drain callback the job registers in app-init.ts.
 	await cache.resumeAudioPrefetchOwedPump();
@@ -378,7 +385,11 @@ test('deckLoadAudio prefers the shared decode, and decodeDeckLoadAudio skips dec
 		decoded,
 		'if a previewed track is decoded again on deck load then hover warm saves only the fetch - broken'
 	);
-	assert.equal(fetches + decodes, 0, 'if a shared decode still fetches or decodes then the share is wasted work - broken');
+	assert.equal(
+		fetches + decodes,
+		0,
+		'if a shared decode still fetches or decodes then the share is wasted work - broken'
+	);
 	assert.deepEqual(hit.stats(hitBytes), { audioBytes: 0, audioPrefetchHit: 0, decodedShareHit: 1 });
 
 	// The context was rebuilt at another rate between choosing and decoding.
@@ -391,5 +402,9 @@ test('deckLoadAudio prefers the shared decode, and decodeDeckLoadAudio skips dec
 
 	const cold = cache.deckLoadAudio('sid-cold', 48_000, fetchBytes);
 	assert.equal(cold.fetchStage, 'fetchAudio');
-	assert.equal(cache.deckLoadAudio('sid-shared', null, fetchBytes).fetchStage, 'fetchAudio', 'no context means no share');
+	assert.equal(
+		cache.deckLoadAudio('sid-shared', null, fetchBytes).fetchStage,
+		'fetchAudio',
+		'no context means no share'
+	);
 });

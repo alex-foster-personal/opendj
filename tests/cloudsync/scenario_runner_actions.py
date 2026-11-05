@@ -13,6 +13,7 @@ stay acyclic (``python -m tests.cloudsync.scenario_runner`` re-imports
 ``scenario_runner`` under its real name, and a real cycle between two of its
 own submodules resolves one of them partially initialized).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -139,9 +140,7 @@ def _write_policy(
         if kind == "sync_policy":
             if asset_kind is None:
                 raise ScenarioError("sync_policy needs 'asset_kind'")
-            updated_at = _log_edit(
-                conn, "sync_policies", (origin, asset_kind), origin, updated_at
-            )
+            updated_at = _log_edit(conn, "sync_policies", (origin, asset_kind), origin, updated_at)
             conn.execute(
                 """
                 INSERT INTO sync_policies(
@@ -160,9 +159,7 @@ def _write_policy(
         elif kind == "playlist_pin":
             if playlist_id is None:
                 raise ScenarioError("playlist_pin needs 'playlist_id'")
-            updated_at = _log_edit(
-                conn, "playlist_pins", (origin, playlist_id), origin, updated_at
-            )
+            updated_at = _log_edit(conn, "playlist_pins", (origin, playlist_id), origin, updated_at)
             conn.execute(
                 """
                 INSERT INTO playlist_pins(
@@ -177,9 +174,7 @@ def _write_policy(
                 (origin, playlist_id, mode, updated_at, origin),
             )
         else:
-            raise ScenarioError(
-                f"policy kind must be 'sync_policy' or 'playlist_pin', got {kind!r}"
-            )
+            raise ScenarioError(f"policy kind must be 'sync_policy' or 'playlist_pin', got {kind!r}")
     finally:
         conn.close()
 
@@ -193,9 +188,7 @@ def _seed_policies(run: SimRun, entries: Sequence[Any]) -> None:
         updated_at = str(entry.get("updated_at") or run.next_tick())
         for machine in on:
             if kind == "sync_policy":
-                asset_kind = str(
-                    _require(entry, "asset_kind", where="seed.policies[sync_policy]")
-                )
+                asset_kind = str(_require(entry, "asset_kind", where="seed.policies[sync_policy]"))
                 _write_policy(
                     run,
                     str(machine),
@@ -206,9 +199,7 @@ def _seed_policies(run: SimRun, entries: Sequence[Any]) -> None:
                     updated_at=updated_at,
                 )
             elif kind == "playlist_pin":
-                playlist_id = str(
-                    _require(entry, "playlist_id", where="seed.policies[playlist_pin]")
-                )
+                playlist_id = str(_require(entry, "playlist_id", where="seed.policies[playlist_pin]"))
                 _write_policy(
                     run,
                     str(machine),
@@ -218,10 +209,7 @@ def _seed_policies(run: SimRun, entries: Sequence[Any]) -> None:
                     updated_at=updated_at,
                 )
             else:
-                raise ScenarioError(
-                    f"seed.policies[{kind}]: kind must be 'sync_policy' or "
-                    f"'playlist_pin'"
-                )
+                raise ScenarioError(f"seed.policies[{kind}]: kind must be 'sync_policy' or 'playlist_pin'")
 
 
 def _seed(run: SimRun) -> None:
@@ -244,13 +232,10 @@ def _edit_track(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     try:
         _validate_editable_columns(conn, "tracks", changes)
         origin = run.machine_ids[machine]
-        updated_at = _log_edit(
-            conn, "tracks", (stable_id,), origin, _stamp(args, run, machine)
-        )
+        updated_at = _log_edit(conn, "tracks", (stable_id,), origin, _stamp(args, run, machine))
         assignments = ", ".join(f"{col} = ?" for col in changes)
         cursor = conn.execute(
-            f"UPDATE tracks SET {assignments}, updated_at = ?, "
-            f"origin_device_id = ? WHERE stable_id = ?",
+            f"UPDATE tracks SET {assignments}, updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
             (*changes.values(), updated_at, origin, stable_id),
         )
         if cursor.rowcount == 0:
@@ -270,29 +255,23 @@ def _edit_playlist(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     conn = run.conn(machine)
     try:
         origin = run.machine_ids[machine]
-        updated_at = _log_edit(
-            conn, "playlists", (playlist_id,), origin, _stamp(args, run, machine)
-        )
+        updated_at = _log_edit(conn, "playlists", (playlist_id,), origin, _stamp(args, run, machine))
         if changes:
             _validate_editable_columns(conn, "playlists", changes)
             assignments = ", ".join(f"{col} = ?" for col in changes)
             cursor = conn.execute(
-                f"UPDATE playlists SET {assignments}, updated_at = ?, "
-                f"origin_device_id = ? WHERE playlist_id = ?",
+                f"UPDATE playlists SET {assignments}, updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (*changes.values(), updated_at, origin, playlist_id),
             )
         else:
             cursor = conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (updated_at, origin, playlist_id),
             )
         if cursor.rowcount == 0:
             raise ScenarioError(f"edit playlists: no row {playlist_id!r} -- seed it first")
         if members is not None:
-            conn.execute(
-                "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
-            )
+            conn.execute("DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,))
             for position, stable_id in enumerate(members):
                 conn.execute(
                     """
@@ -314,13 +293,22 @@ def _edit_policy(run: SimRun, machine: str, table: str, args: Mapping[str, Any])
     if table == "sync_policies":
         asset_kind = str(_require(args, "asset_kind", where="edit sync_policies"))
         _write_policy(
-            run, machine, kind="sync_policy", mode=mode, asset_kind=asset_kind,
-            cache_budget_mb=args.get("cache_budget_mb"), updated_at=updated_at,
+            run,
+            machine,
+            kind="sync_policy",
+            mode=mode,
+            asset_kind=asset_kind,
+            cache_budget_mb=args.get("cache_budget_mb"),
+            updated_at=updated_at,
         )
     else:
         playlist_id = str(_require(args, "playlist_id", where="edit playlist_pins"))
         _write_policy(
-            run, machine, kind="playlist_pin", mode=mode, playlist_id=playlist_id,
+            run,
+            machine,
+            kind="playlist_pin",
+            mode=mode,
+            playlist_id=playlist_id,
             updated_at=updated_at,
         )
 
@@ -328,9 +316,7 @@ def _edit_policy(run: SimRun, machine: str, table: str, args: Mapping[str, Any])
 def _apply_edit(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     table = str(_require(args, "table", where="edit"))
     if table not in _EDITABLE_TABLES:
-        raise ScenarioError(
-            f"edit: table {table!r} is not one of {sorted(_EDITABLE_TABLES)}"
-        )
+        raise ScenarioError(f"edit: table {table!r} is not one of {sorted(_EDITABLE_TABLES)}")
     if table == "tracks":
         _edit_track(run, machine, args)
     elif table == "playlists":
@@ -353,17 +339,13 @@ def _apply_reorder(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     _replace_members(run, machine, args, verb="reorder", allow_empty=False)
 
 
-def _replace_members(
-    run: SimRun, machine: str, args: Mapping[str, Any], *, verb: str, allow_empty: bool
-) -> None:
+def _replace_members(run: SimRun, machine: str, args: Mapping[str, Any], *, verb: str, allow_empty: bool) -> None:
     """Replace a playlist's whole member list, stamped on its playlist row."""
     _require(args, "playlist_id", where=verb)
     members = args.get("members")
     if allow_empty:
         if not isinstance(members, list):
-            raise ScenarioError(
-                f"{verb}: 'members' must be a list of stable_ids ([] empties the playlist)"
-            )
+            raise ScenarioError(f"{verb}: 'members' must be a list of stable_ids ([] empties the playlist)")
     elif not allow_empty:
         _require_nonempty_list(members, where=f"{verb}.members")
     if args.get("set"):
@@ -381,9 +363,7 @@ def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     expect_error = args.get("expect_error")
     if expect_error is not None:
         if expect_error != "transport" or "expect" in args:
-            raise ScenarioError(
-                "sync.expect_error must be 'transport' and cannot be combined with 'expect'"
-            )
+            raise ScenarioError("sync.expect_error must be 'transport' and cannot be combined with 'expect'")
         try:
             client.run_sync(
                 run.data_dirs[machine],
@@ -393,9 +373,7 @@ def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
             )
         except FaultInjected:
             return
-        raise ScenarioError(
-            "sync.expect_error was 'transport' but the sync completed: no armed fault fired"
-        )
+        raise ScenarioError("sync.expect_error was 'transport' but the sync completed: no armed fault fired")
     result = client.run_sync(
         run.data_dirs[machine],
         "http://hub.invalid",
@@ -408,10 +386,7 @@ def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     expect = _require_mapping(expect, where="sync.expect")
     for key, wanted in expect.items():
         if key not in _SYNC_RESULT_FIELDS:
-            raise ScenarioError(
-                f"sync.expect.{key} is not a SyncResult field "
-                f"({sorted(_SYNC_RESULT_FIELDS)})"
-            )
+            raise ScenarioError(f"sync.expect.{key} is not a SyncResult field ({sorted(_SYNC_RESULT_FIELDS)})")
         got = getattr(result, key)
         if got != wanted:
             raise ScenarioError(f"sync.expect.{key} wanted {wanted!r}, got {got!r}")
@@ -430,9 +405,7 @@ def _apply_partition(run: SimRun, machine: str, args: Mapping[str, Any]) -> None
 def _apply_assert_converged(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     table = str(_require(args, "table", where="assert_converged"))
     field_name = str(_require(args, "field", where="assert_converged"))
-    raw_pk = _require_mapping(
-        _require(args, "pk", where="assert_converged"), where="assert_converged.pk"
-    )
+    raw_pk = _require_mapping(_require(args, "pk", where="assert_converged"), where="assert_converged.pk")
     if "equals" not in args:
         raise ScenarioError("assert_converged needs 'equals'")
     wanted = args["equals"]
@@ -443,15 +416,11 @@ def _apply_assert_converged(run: SimRun, machine: str, args: Mapping[str, Any]) 
         if field_name not in columns:
             raise ScenarioError(f"{table} has no column {field_name!r}")
         predicate = " AND ".join(f"{column} = ?" for column in pk)
-        row = conn.execute(
-            f"SELECT {field_name} FROM {table} WHERE {predicate}", tuple(pk.values())
-        ).fetchone()
+        row = conn.execute(f"SELECT {field_name} FROM {table} WHERE {predicate}", tuple(pk.values())).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise ScenarioError(
-            f"no {table} row matches {pk} -- expected it to have arrived by this step"
-        )
+        raise ScenarioError(f"no {table} row matches {pk} -- expected it to have arrived by this step")
     got = row[0]
     if got != wanted:
         raise ScenarioError(f"{table}.{field_name} for {pk} is {got!r}, expected {wanted!r}")
@@ -486,8 +455,7 @@ def _apply_assert_digest(run: SimRun, machine: str, args: Mapping[str, Any]) -> 
         divergent = [table for table in tables if mine[table] != theirs[table]]
         if divergent:
             raise ScenarioError(
-                f"{machine} and {peer} disagree on {divergent} (a real sync "
-                f"would have raised SyncDigestMismatch here)"
+                f"{machine} and {peer} disagree on {divergent} (a real sync would have raised SyncDigestMismatch here)"
             )
 
 

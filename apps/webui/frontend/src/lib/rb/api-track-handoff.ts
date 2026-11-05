@@ -76,6 +76,7 @@ export function handoffButtonState(
 	}
 	const row = probe.find((entry) => entry.app === app);
 	if (!row) return { disabled: true, title: `The engine did not report ${app}` };
-	if (!row.available) return { disabled: true, title: row.reason ?? `${row.label} is not installed` };
+	if (!row.available)
+		return { disabled: true, title: row.reason ?? `${row.label} is not installed` };
 	return { disabled: false, title: `Open this file in ${row.label} (${HANDOFF_ROUTE_TITLE})` };
 }

@@ -45,9 +45,7 @@ export type PossibleDupDecision = 'accept' | 'reject';
 export async function ingestFolderToNewPlaylist(opts: {
 	files: File[];
 	folderName: string;
-	onPossibleDups?: (
-		rows: UploadFileResult[]
-	) => Promise<Map<string, PossibleDupDecision> | null>;
+	onPossibleDups?: (rows: UploadFileResult[]) => Promise<Map<string, PossibleDupDecision> | null>;
 	/** Called if a refresh queued behind a busy slot later fails to start.
 	 * Required: by then the drop has already reported success, so this is
 	 * the only place that failure can surface. */
@@ -196,9 +194,7 @@ export function batchNameFromFolder(folderName: string, now: Date = new Date()):
 
 async function _resolvePossibleDups(
 	upload: UploadOut,
-	onPossibleDups?: (
-		rows: UploadFileResult[]
-	) => Promise<Map<string, PossibleDupDecision> | null>
+	onPossibleDups?: (rows: UploadFileResult[]) => Promise<Map<string, PossibleDupDecision> | null>
 ): Promise<Map<string, PossibleDupDecision>> {
 	const held = upload.results.filter((r) => r.verdict === 'possible_duplicate');
 	if (held.length === 0) return new Map();

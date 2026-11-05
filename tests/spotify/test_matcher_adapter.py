@@ -1,4 +1,5 @@
 """Tests for apps.spotify.matcher_adapter."""
+
 from __future__ import annotations
 
 import json
@@ -91,7 +92,10 @@ class TestMatchSpotifyTracks:
         # No ISRC; title + artist + duration fire (0.55) but < 0.70 -> review.
         src = _sp("t1", isrc=None, name="Hello", artists=["Artist X"], duration_ms=180000)
         tgt = self._local(
-            isrc=None, title="Hello", artists=("artist x",), duration_ms=180500,
+            isrc=None,
+            title="Hello",
+            artists=("artist x",),
+            duration_ms=180500,
         )
         res = match_spotify_tracks([src], [tgt])
         assert len(res.review) == 1
@@ -100,7 +104,10 @@ class TestMatchSpotifyTracks:
     def test_two_signals_below_floor_is_unmatched(self) -> None:
         src = _sp("t1", isrc=None, name="Hello", artists=["X"], duration_ms=180000)
         tgt = self._local(
-            isrc=None, title="Hello", artists=("Y",), duration_ms=180500,
+            isrc=None,
+            title="Hello",
+            artists=("Y",),
+            duration_ms=180500,
         )
         res = match_spotify_tracks([src], [tgt])
         assert len(res.unmatched) == 1
@@ -114,10 +121,8 @@ class TestMatchSpotifyTracks:
 
     def test_duration_tolerance_is_symmetric(self) -> None:
         base = self._local(isrc=None, title="X", artists=("A",), duration_ms=100000)
-        src_ok = _sp("ok", isrc=None, name="X", artists=["A"],
-                     duration_ms=100000 + DURATION_TOLERANCE_MS - 1)
-        src_bad = _sp("bad", isrc=None, name="X", artists=["A"],
-                      duration_ms=100000 + DURATION_TOLERANCE_MS + 1)
+        src_ok = _sp("ok", isrc=None, name="X", artists=["A"], duration_ms=100000 + DURATION_TOLERANCE_MS - 1)
+        src_bad = _sp("bad", isrc=None, name="X", artists=["A"], duration_ms=100000 + DURATION_TOLERANCE_MS + 1)
         res = match_spotify_tracks([src_ok, src_bad], [base])
         pairs_by_id = {p.source.spotify_id: p for p in res.pairs}
         assert "duration" in pairs_by_id["ok"].signals
@@ -145,8 +150,20 @@ def test_load_local_tracks_from_sqlite(tmp_path) -> None:
     )
     conn.execute(
         "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("s1", "isrc", "Hello", json.dumps(["A", "B"]), "Alb", "USABC2500001",
-         200000, "/x.mp3", None, "2026-01-01", "2026-01-01", None),
+        (
+            "s1",
+            "isrc",
+            "Hello",
+            json.dumps(["A", "B"]),
+            "Alb",
+            "USABC2500001",
+            200000,
+            "/x.mp3",
+            None,
+            "2026-01-01",
+            "2026-01-01",
+            None,
+        ),
     )
     conn.execute(
         "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",

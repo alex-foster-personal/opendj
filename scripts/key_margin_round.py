@@ -8,8 +8,9 @@ Reads, never writes: one JSON line per track that has a tag key (a
 agreement and how many tracks each candidate ``MARGIN_THRESHOLD`` keeps. The
 tag key is MIK's or rekordbox's, so this measures agreement with the tool the
 user already trusts, not ground truth. Round 1 is logged in
-``specs/native-analysis-v1.md`` ("Key lane round 1").
+``(private path)`` ("Key lane round 1").
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,14 +44,16 @@ def measure(db: Path, limit: int) -> list[dict[str, Any]]:
         chroma = librosa.feature.chroma_cqt(y=samples, sr=rate)
         order = np.argsort(profiles.profile_correlations(chroma))[::-1]
         estimate = profiles.estimate_key_krumhansl(chroma)
-        out.append({
-            "stable_id": stable_id,
-            "tag": tag,
-            "own": canon.to_camelot(profiles.key_for_index(int(order[0]))),
-            "second": canon.to_camelot(profiles.key_for_index(int(order[1]))),
-            "confidence": round(float(estimate.confidence), 4),
-            "margin": round(float(estimate.margin), 5),
-        })
+        out.append(
+            {
+                "stable_id": stable_id,
+                "tag": tag,
+                "own": canon.to_camelot(profiles.key_for_index(int(order[0]))),
+                "second": canon.to_camelot(profiles.key_for_index(int(order[1]))),
+                "confidence": round(float(estimate.confidence), 4),
+                "margin": round(float(estimate.margin), 5),
+            }
+        )
         print(json.dumps(out[-1]), flush=True)
     return out
 
@@ -63,7 +66,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         kept = [row for row in rows if row["margin"] >= threshold]
         exact = sum(row["own"] == row["tag"] for row in kept)
         by_threshold[str(threshold)] = {
-            "kept": len(kept), "of": len(rows),
+            "kept": len(kept),
+            "of": len(rows),
             "exact_pct": round(100 * exact / len(kept), 1) if kept else None,
         }
     margins = sorted(row["margin"] for row in rows)

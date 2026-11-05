@@ -9,6 +9,7 @@ Every file under ``open-dj/conformance/corpus-0.2/`` must:
 
 This is the strawman section 0.2 gate: "10-track seed corpus round-trips".
 """
+
 from __future__ import annotations
 
 import json
@@ -27,18 +28,14 @@ def _corpus_files() -> list[Path]:
     return sorted(CORPUS_DIR.glob("*.open-dj.json"))
 
 
-CORPUS_PARAMS = [
-    pytest.param(p, id=p.stem) for p in _corpus_files()
-]
+CORPUS_PARAMS = [pytest.param(p, id=p.stem) for p in _corpus_files()]
 
 
 @pytest.mark.requirement("OPEN-01")
 def test_corpus_is_not_empty() -> None:
     """Guard against accidentally shipping no corpus."""
     files = _corpus_files()
-    assert len(files) >= 10, (
-        f"corpus-0.2 must have at least 10 cases; found {len(files)}"
-    )
+    assert len(files) >= 10, f"corpus-0.2 must have at least 10 cases; found {len(files)}"
 
 
 @pytest.mark.requirement("OPEN-02")
@@ -84,9 +81,7 @@ def test_corpus_has_schema_version_0_2(corpus_file: Path) -> None:
 @pytest.mark.requirement("OPEN-01")
 def test_case_01_classic_isrc_track_id_pinned() -> None:
     """case-01 is a regression-pin for the canonical ISRC -> sha1 path."""
-    doc = json.loads(
-        (CORPUS_DIR / "case-01-classic-isrc.open-dj.json").read_text("utf-8")
-    )
+    doc = json.loads((CORPUS_DIR / "case-01-classic-isrc.open-dj.json").read_text("utf-8"))
     track = doc["tracks"][0]
     assert track["track_id"] == "9bbb11637465090ce8135bcc3e66c0f00cf777fa"
     assert track["isrc"] == "GBCEN0900132"
@@ -95,9 +90,7 @@ def test_case_01_classic_isrc_track_id_pinned() -> None:
 @pytest.mark.requirement("OPEN-01")
 def test_case_13_has_two_play_orders() -> None:
     """Spec section 7.4: named play-orders are corpus case 13."""
-    doc = json.loads(
-        (CORPUS_DIR / "case-13-play-orders.open-dj.json").read_text("utf-8")
-    )
+    doc = json.loads((CORPUS_DIR / "case-13-play-orders.open-dj.json").read_text("utf-8"))
     pl = doc["playlists"][0]
     orders = pl.get("play_orders", [])
     assert len(orders) == 2

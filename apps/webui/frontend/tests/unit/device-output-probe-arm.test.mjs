@@ -58,7 +58,10 @@ describe('device output probe lazy install', () => {
 		assert.equal(mod.registeredDeviceOutputProbe(), null);
 		await settle();
 		const probe = mod.registeredDeviceOutputProbe();
-		assert.ok(probe, 'if the lazily imported probe never installs then device faults go undetected - broken');
+		assert.ok(
+			probe,
+			'if the lazily imported probe never installs then device faults go undetected - broken'
+		);
 		assert.equal(typeof probe.switchOutput, 'function');
 
 		// Installed AND wired: its publish lands in the bar's store.
@@ -104,7 +107,10 @@ describe('device output probe lazy install', () => {
 		mod.armAudioContextWatchdog(contextStandIn(), () => false);
 		await settle();
 		const second = mod.registeredDeviceOutputProbe();
-		assert.ok(second, 'if a re-armed graph gets no probe then only the first route visit is covered - broken');
+		assert.ok(
+			second,
+			'if a re-armed graph gets no probe then only the first route visit is covered - broken'
+		);
 		assert.notEqual(second, first);
 		mod.disarmContextInstrumentation();
 	});

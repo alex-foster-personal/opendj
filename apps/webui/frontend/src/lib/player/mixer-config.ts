@@ -66,15 +66,22 @@ function _assertFiniteMs(name: string, value: unknown): asserts value is number 
 	}
 }
 
-export function assertCueCalibrationRecord(record: unknown): asserts record is CueCalibrationRecord {
+export function assertCueCalibrationRecord(
+	record: unknown
+): asserts record is CueCalibrationRecord {
 	if (record === null || typeof record !== 'object') {
 		throw new TypeError(`last_calibration must be an object, got ${String(record)}`);
 	}
 	const candidate = record as Record<string, unknown>;
 	_assertFiniteMs('last_calibration.cue_latency_ms', candidate.cue_latency_ms);
 	_assertFiniteMs('last_calibration.master_latency_ms', candidate.master_latency_ms);
-	if (typeof candidate.measured_at !== 'string' || Number.isNaN(Date.parse(candidate.measured_at))) {
-		throw new TypeError(`last_calibration.measured_at must be an ISO-8601 string, got ${String(candidate.measured_at)}`);
+	if (
+		typeof candidate.measured_at !== 'string' ||
+		Number.isNaN(Date.parse(candidate.measured_at))
+	) {
+		throw new TypeError(
+			`last_calibration.measured_at must be an ISO-8601 string, got ${String(candidate.measured_at)}`
+		);
 	}
 	if (typeof candidate.cue_device_id !== 'string' || candidate.cue_device_id.trim() === '') {
 		throw new TypeError('last_calibration.cue_device_id must be a non-empty string');
@@ -139,7 +146,9 @@ export function loadMixerConfig(): MixerConfig {
 		alignment_mode: stored.alignment_mode ?? DEFAULT_MIXER_CONFIG.alignment_mode,
 		master_delay_ms: stored.master_delay_ms ?? DEFAULT_MIXER_CONFIG.master_delay_ms,
 		last_calibration:
-			stored.last_calibration === undefined ? DEFAULT_MIXER_CONFIG.last_calibration : stored.last_calibration,
+			stored.last_calibration === undefined
+				? DEFAULT_MIXER_CONFIG.last_calibration
+				: stored.last_calibration,
 		saved_outputs:
 			stored.saved_outputs === undefined
 				? { ...DEFAULT_MIXER_CONFIG.saved_outputs }

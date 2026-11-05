@@ -42,8 +42,7 @@ def test_generated_contract_globs_are_ignored_for_duplication() -> None:
         "correct contract file fails the gate that exists to defend it - broken"
     )
     assert "**/src/lib/api-types.ts" in ignored, (
-        "if the generated api-types.ts is scored for duplication then the same "
-        "restoration fails twice - broken"
+        "if the generated api-types.ts is scored for duplication then the same restoration fails twice - broken"
     )
     assert "**/tests/e2e/.spec_footprints.json" in ignored, (
         "if the generated e2e footprint map is scored for duplication then every "

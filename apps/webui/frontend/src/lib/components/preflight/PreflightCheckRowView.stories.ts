@@ -31,7 +31,8 @@ const meta = {
 		(story) => {
 			// The light colors are declared by PreflightScreen, the row's parent
 			// in the app; mirror its dark values so the lights show here too.
-			const root = typeof document !== 'undefined' ? document.getElementById('storybook-root') : null;
+			const root =
+				typeof document !== 'undefined' ? document.getElementById('storybook-root') : null;
 			if (root) {
 				root.style.setProperty('--preflight-ok', '#4ecb8c');
 				root.style.setProperty('--preflight-warn', '#e8a33d');
@@ -104,7 +105,10 @@ export const RunSetupBusy: Story = {
 
 /** Run setup refused with a reason. */
 export const RunSetupError: Story = {
-	args: { ...RunSetupOffered.args, setupError: 'The engine is not reachable yet; try again in a moment.' }
+	args: {
+		...RunSetupOffered.args,
+		setupError: 'The engine is not reachable yet; try again in a moment.'
+	}
 };
 
 /** The admin page's form of a row: raw label plus the status word. */

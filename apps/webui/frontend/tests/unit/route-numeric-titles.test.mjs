@@ -31,7 +31,10 @@ const ROUTES = {
 };
 
 const read = (route) =>
-	readFileSync(fileURLToPath(new URL(`../../src/routes/${route}/+page.svelte`, import.meta.url)), 'utf8');
+	readFileSync(
+		fileURLToPath(new URL(`../../src/routes/${route}/+page.svelte`, import.meta.url)),
+		'utf8'
+	);
 
 /** Expressions that render a number (or a number-derived string). */
 const NUMERIC_EXPR =
@@ -41,7 +44,9 @@ const VOID = new Set(['input', 'img', 'br', 'hr', 'meta', 'link', 'source', 'col
 
 /** The template only: drop <script> and <style> blocks, keep line numbers. */
 function templateOf(source) {
-	return source.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, (block) => block.replace(/[^\n]/g, ' '));
+	return source.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, (block) =>
+		block.replace(/[^\n]/g, ' ')
+	);
 }
 
 /** Read one `{...}` starting at i (balanced, string-aware); returns end index. */

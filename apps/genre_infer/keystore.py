@@ -92,4 +92,13 @@ def resolve(name: str, environ: Mapping[str, str] | None = None) -> str:
     return read(name) or ""
 
 
-__all__ = ["BUNDLE_ID", "KEYCHAIN_SERVICE", "KEYCHAIN_SERVICE_ENV", "KeystoreError", "available", "read", "resolve", "write"]
+__all__ = [
+    "BUNDLE_ID",
+    "KEYCHAIN_SERVICE",
+    "KEYCHAIN_SERVICE_ENV",
+    "KeystoreError",
+    "available",
+    "read",
+    "resolve",
+    "write",
+]

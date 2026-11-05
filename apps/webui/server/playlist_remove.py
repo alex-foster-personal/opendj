@@ -58,6 +58,14 @@ def apply_membership_snapshot(
     ).fetchall()
     live_ids = {r[0] for r in rows if r[1] is None}
     tombstone_ids = {r[0] for r in rows if r[1] is not None}
+    if not desired <= live_ids | tombstone_ids:
+        # A full replace in between (PUT /tracks, or undoing one) rewrote the
+        # membership rows, so the snapshot's item_ids no longer exist. Restore
+        # by track identity instead; tombstoning alone would empty the list.
+        return store.replace_memberships(
+            live.playlist_id, list(snap.items),
+            expected_etag=live.etag, record_edit=False,
+        )
     to_tombstone = list(live_ids - desired)
     to_restore = list(desired & tombstone_ids)
     writer: StateWriter = store._writer

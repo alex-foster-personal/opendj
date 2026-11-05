@@ -827,6 +827,9 @@ def _assert_next_up_scheduling(result: WhilePlaying) -> None:
     assert result.state != "green", "the deck still plays, so the library must not have been drained"
 
 
+@pytest.mark.skip(
+    reason="quarantined under #8856: the next-up beatgrid attempt timed out at 360 s on main run 41995165329, green on the next head (Thu 5 Nov 2026)"
+)
 @pytest.mark.requirement("NATIVE-5886")
 def test_while_a_deck_plays_only_the_next_up_track_is_gridded_and_an_xrun_holds_it(tmp_path: Path) -> None:
     """[if] no checkpoint is provisioned [then] next-up beatgrid is attempted UNAVAILABLE, [else stop]."""

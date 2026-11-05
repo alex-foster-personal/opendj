@@ -44,7 +44,10 @@ test('segment colour is the track table swatch (camelotKeyColor), skin variables
 		for (const mode of ['A', 'B']) {
 			assert.equal(mod.libraryKeySegmentFill(n, mode), color.camelotKeyColor(`${n}${mode}`));
 		}
-		assert.match(mod.libraryKeySegmentFill(n, 'B'), new RegExp(`^hsl\\(${color.camelotNumberHue(n)} `));
+		assert.match(
+			mod.libraryKeySegmentFill(n, 'B'),
+			new RegExp(`^hsl\\(${color.camelotNumberHue(n)} `)
+		);
 	}
 	assert.match(mod.libraryKeySegmentFill(8, 'B'), /var\(--rb-key-lightness-major/);
 	// A CSS fill style, not an SVG attribute, so the skin variables resolve.
@@ -154,38 +157,67 @@ test('BrowserPanel keeps key predicate through search fallbacks', () => {
 });
 
 test('library key filter popover uses viewport clamping and is reachable from BrowserPanel', () => {
-	assert.match(BROWSER_PANEL, /<LibraryKeyFilterPopover \{selectedRowKey\} decks=\{DECK_IDS\.map\(\(d\) => decks\[d\]\)\} \/>/);
+	assert.match(
+		BROWSER_PANEL,
+		/<LibraryKeyFilterPopover \{selectedRowKey\} decks=\{DECK_IDS\.map\(\(d\) => decks\[d\]\)\} \/>/
+	);
 	assert.match(BROWSER_PANEL, /applyLibraryFilters\(rows, uiPrefs\)/);
-	assert.match(BROWSER_PANEL, /selectedRowKeyIn\(pane\.selected_id, \[pane\.search_results, pane\.rows\]\)/);
+	assert.match(
+		BROWSER_PANEL,
+		/selectedRowKeyIn\(pane\.selected_id, \[pane\.search_results, pane\.rows\]\)/
+	);
 	assert.match(KEY_FILTER_POPOVER, /triggerFloatingAction/);
 	assert.match(KEY_FILTER_POPOVER, /aria-haspopup="dialog"/);
 });
 
 test('an agent write (ui_prefs event) re-reads the key filter into the open table', () => {
 	// $effect returns each unsubscribe, so leaving the page drops the listeners.
-	assert.match(KEY_FILTER_POPOVER, /\$effect\(\(\) => subscribeKind\('ui_prefs', rereadLibraryKeyFilter\)\)/);
+	assert.match(
+		KEY_FILTER_POPOVER,
+		/\$effect\(\(\) => subscribeKind\('ui_prefs', rereadLibraryKeyFilter\)\)/
+	);
 	// A reconnect only announces a resync; writes missed while offline are re-read then.
 	assert.match(KEY_FILTER_POPOVER, /\$effect\(\(\) => subscribeResync\(rereadLibraryKeyFilter\)\)/);
 	// Returning to the route re-reads; the first mount leaves it to boot hydration (Codex P2, #7743).
 	assert.match(KEY_FILTER_POPOVER, /<script lang="ts" module>[\s\S]*let mountedBefore = false;/);
-	assert.match(KEY_FILTER_POPOVER, /if \(mountedBefore\) rereadLibraryKeyFilter\(\);\s*mountedBefore = true;/);
+	assert.match(
+		KEY_FILTER_POPOVER,
+		/if \(mountedBefore\) rereadLibraryKeyFilter\(\);\s*mountedBefore = true;/
+	);
 	// A failed re-read stays visible on the trigger (Sol P1, #7743).
 	assert.match(KEY_FILTER_POPOVER, /class:sync-error=\{syncError !== null\}/);
-	assert.match(KEY_FILTER_POPOVER, /aria-label=\{syncError === null \? undefined : `\$\{triggerLabel\}: \$\{syncError\}`\}/);
+	assert.match(
+		KEY_FILTER_POPOVER,
+		/aria-label=\{syncError === null \? undefined : `\$\{triggerLabel\}: \$\{syncError\}`\}/
+	);
 	const prefs = readFileSync(join(FRONTEND_ROOT, 'src/lib/rb/prefs.svelte.ts'), 'utf8');
 	assert.match(prefs, /libraryKeyFilterSync\.error = `Key filter could not be re-read from disk/);
 	// Only the latest re-read may change the error (Sol P1, #7743).
-	assert.match(prefs, /if \(gen === _libraryKeyFilterRereadGen\) libraryKeyFilterSync\.error = null;/);
+	assert.match(
+		prefs,
+		/if \(gen === _libraryKeyFilterRereadGen\) libraryKeyFilterSync\.error = null;/
+	);
 	assert.match(prefs, /if \(gen !== _libraryKeyFilterRereadGen\) return;\s*const detail/);
 	// A failed PUT releases its unsaved mark and re-reads disk (Codex P2, #7743).
-	assert.match(prefs, /if \(_libraryKeyFilterUnsaved\.rev === writeRev\) \{\s*_libraryKeyFilterUnsaved\.rev = 0;\s*_libraryKeyFilterRereadDeferred = true;/);
+	assert.match(
+		prefs,
+		/if \(_libraryKeyFilterUnsaved\.rev === writeRev\) \{\s*_libraryKeyFilterUnsaved\.rev = 0;\s*_libraryKeyFilterRereadDeferred = true;/
+	);
 	// A re-read skipped for an unsaved local write runs again once that write settles.
-	assert.match(prefs, /_libraryKeyFilterRereadDeferred && _libraryKeyFilterUnsaved\.rev === 0[\s\S]*rereadLibraryKeyFilter\(\)/);
+	assert.match(
+		prefs,
+		/_libraryKeyFilterRereadDeferred && _libraryKeyFilterUnsaved\.rev === 0[\s\S]*rereadLibraryKeyFilter\(\)/
+	);
 });
 
 test('an older PUT acknowledgement never reverts a newer selection (Codex P2, #7743)', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/verified-pref-writes.ts');
-	const uiPrefs = { compatible_filter: {}, library_watcher_folders: [], library_key_filter: ['8A'], confirm: {} };
+	const uiPrefs = {
+		compatible_filter: {},
+		library_watcher_folders: [],
+		library_key_filter: ['8A'],
+		confirm: {}
+	};
 	const unsaved = { rev: 1 };
 	const puts = [];
 	let release = () => {};
@@ -230,15 +262,25 @@ test('a disk read superseded by a newer read or a local edit is dropped (Codex P
 	assert.equal(guard.isCurrent(guard.begin()), true);
 	const hydrate = readFileSync(join(FRONTEND_ROOT, 'src/lib/rb/prefs-hydrate.ts'), 'utf8');
 	assert.match(hydrate, /library_key_filter is missing from the response/);
-	assert.match(hydrate, /const token = guard\.begin\(\);[\s\S]*if \(!guard\.isCurrent\(token\)\) return;[\s\S]*?hydrateLibraryKeyFilter\(deps\.uiPrefs/);
+	assert.match(
+		hydrate,
+		/const token = guard\.begin\(\);[\s\S]*if \(!guard\.isCurrent\(token\)\) return;[\s\S]*?hydrateLibraryKeyFilter\(deps\.uiPrefs/
+	);
 });
 
 test('a malformed disk key filter throws instead of keeping the old selection (Sol P1, #7743)', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/verified-pref-writes.ts');
 	const uiPrefs = { library_key_filter: ['8A'] };
-	assert.throws(() => mod.hydrateLibraryKeyFilter(uiPrefs, { library_key_filter: ['8a'] }, () => false));
-	assert.throws(() => mod.hydrateLibraryKeyFilter(uiPrefs, { library_key_filter: 'x' }, () => true));
-	assert.throws(() => mod.hydrateLibraryKeyFilter(uiPrefs, {}, () => false), /missing from the response/);
+	assert.throws(() =>
+		mod.hydrateLibraryKeyFilter(uiPrefs, { library_key_filter: ['8a'] }, () => false)
+	);
+	assert.throws(() =>
+		mod.hydrateLibraryKeyFilter(uiPrefs, { library_key_filter: 'x' }, () => true)
+	);
+	assert.throws(
+		() => mod.hydrateLibraryKeyFilter(uiPrefs, {}, () => false),
+		/missing from the response/
+	);
 	assert.deepEqual(uiPrefs.library_key_filter, ['8A']);
 	mod.hydrateLibraryKeyFilter(uiPrefs, { library_key_filter: ['9A'] }, () => true);
 	assert.deepEqual(uiPrefs.library_key_filter, ['8A'], 'an unsaved local write wins');
@@ -257,10 +299,7 @@ test('the selected row key is found in search results, then in the rows a fallba
 });
 
 test('hydration skips library_key_filter while a disk write is pending', () => {
-	const verified = readFileSync(
-		join(FRONTEND_ROOT, 'src/lib/rb/verified-pref-writes.ts'),
-		'utf8'
-	);
+	const verified = readFileSync(join(FRONTEND_ROOT, 'src/lib/rb/verified-pref-writes.ts'), 'utf8');
 	assert.match(verified, /hydrateLibraryKeyFilter[\s\S]*isUnsaved/);
 });
 
@@ -319,10 +358,7 @@ test('agent-triggered key-filter re-read surfaces malformed disk state without c
 		prefs.uiPrefs.library_key_filter = ['8A'];
 		prefs.rereadLibraryKeyFilter();
 		await waitForSyncError(() => prefs.libraryKeyFilterSync.error, 'libraryKeyFilterSync.error');
-		assert.match(
-			prefs.libraryKeyFilterSync.error,
-			/Key filter could not be re-read from disk/
-		);
+		assert.match(prefs.libraryKeyFilterSync.error, /Key filter could not be re-read from disk/);
 		assert.match(
 			prefs.libraryKeyFilterSync.error,
 			/library_key_filter: invalid canonical code "8a"/

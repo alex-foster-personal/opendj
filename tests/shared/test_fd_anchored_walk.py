@@ -11,6 +11,7 @@ sol-review v1 P1 follow-up (removing a second by-name lookup the first cut of
 that fix introduced) -- so they belong together, separate from the rest of
 ``platform_paths``'s general path-resolution tests.
 """
+
 from __future__ import annotations
 
 import os
@@ -105,14 +106,11 @@ def test_fd_anchored_walk_catches_a_swap_that_lands_mid_resolution(
 
     monkeypatch.setattr(pp.os, "open", _open_that_races_the_leaf)
 
-    result = pp.resolve_asset_path(
-        "/PIONEER/USB/ANLZ0000.DAT", path_map=pp.PathMap(entries=())
-    )
+    result = pp.resolve_asset_path("/PIONEER/USB/ANLZ0000.DAT", path_map=pp.PathMap(entries=()))
 
     assert swap_state["done"], "the test never exercised the race window"
     assert result.resolved is None
     assert result.reason == "unsafe:share-symlink"
-
 
 
 @pytest.mark.skipif(
@@ -162,9 +160,7 @@ def test_fd_anchored_walk_tolerates_a_real_file_where_a_directory_was_expected(
     not_a_directory = real_first / "USB"
     not_a_directory.write_bytes(b"a real file, not a directory, not a symlink")
 
-    resolved = fd_anchored_walk.resolve_under_root(
-        root / "PIONEER" / "USB" / "ANLZ0000.DAT", root
-    )
+    resolved = fd_anchored_walk.resolve_under_root(root / "PIONEER" / "USB" / "ANLZ0000.DAT", root)
 
     assert resolved == not_a_directory.resolve() / "ANLZ0000.DAT"
 
@@ -319,9 +315,7 @@ def test_resolve_under_root_rejects_a_root_swapped_for_a_symlink_after_first_use
     real_target.write_bytes(b"legitimate")
 
     # First call: root is still the real directory -- establishes the anchor.
-    first = fd_anchored_walk.resolve_under_root(
-        root / "PIONEER" / "USB" / "ANLZ0000.DAT", root
-    )
+    first = fd_anchored_walk.resolve_under_root(root / "PIONEER" / "USB" / "ANLZ0000.DAT", root)
     assert first == real_target.resolve()
 
     # Swap the root itself (not a descendant -- the root) for a symlink
@@ -335,9 +329,7 @@ def test_resolve_under_root_rejects_a_root_swapped_for_a_symlink_after_first_use
     root.symlink_to(outside, target_is_directory=True)
 
     with pytest.raises(OSError):
-        fd_anchored_walk.resolve_under_root(
-            root / "PIONEER" / "USB" / "ANLZ0000.DAT", root
-        )
+        fd_anchored_walk.resolve_under_root(root / "PIONEER" / "USB" / "ANLZ0000.DAT", root)
 
 
 @pytest.mark.skipif(
@@ -366,12 +358,8 @@ def test_resolve_under_root_still_works_when_root_is_a_symlink_from_the_start(
     root = tmp_path / "share-symlink"
     root.symlink_to(real_dir, target_is_directory=True)
 
-    first = fd_anchored_walk.resolve_under_root(
-        root / "PIONEER" / "USB" / "ANLZ0000.DAT", root
-    )
-    second = fd_anchored_walk.resolve_under_root(
-        root / "PIONEER" / "USB" / "ANLZ0000.DAT", root
-    )
+    first = fd_anchored_walk.resolve_under_root(root / "PIONEER" / "USB" / "ANLZ0000.DAT", root)
+    second = fd_anchored_walk.resolve_under_root(root / "PIONEER" / "USB" / "ANLZ0000.DAT", root)
 
     assert first == leaf.resolve()
     assert second == leaf.resolve()
@@ -395,9 +383,7 @@ def test_contained_asset_path_root_identity_change_gets_a_distinct_reason_and_lo
     target.parent.mkdir(parents=True)
     target.write_bytes(b"dat")
     monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share")
 
     first = pp._contained_asset_path(mapped, target)
 
@@ -455,9 +441,7 @@ def test_reset_root_anchor_lets_the_next_call_re_anchor_instead_of_raising(
 
 
 @pytest.mark.skipif(pp.IS_WINDOWS, reason="symlink/rename fixtures are POSIX-only")
-def test_refresh_share_root_resets_the_identity_anchor(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_refresh_share_root_resets_the_identity_anchor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """[if] ``platform_paths.refresh_share_root`` runs between two asset
     resolutions (a deliberate library-mode/crate change) [then ⛔️]
     a root recreated in that window re-anchors instead of tripping
@@ -468,9 +452,7 @@ def test_refresh_share_root_resets_the_identity_anchor(
     target.parent.mkdir(parents=True)
     target.write_bytes(b"dat")
     monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share"
-    )
+    mapped = pp.MappedPath(original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share")
     pp._contained_asset_path(mapped, target)
 
     rebuilt = tmp_path / "share-rebuilt"

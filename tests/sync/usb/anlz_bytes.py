@@ -128,12 +128,9 @@ def pvdi(envelope: bytes) -> bytes:
 def pssi(phrases: list[tuple[int, int]], *, end_beat: int, masked: bool) -> bytes:
     """phrases = (start beat, kind). ``masked`` applies rekordbox's export XOR."""
     entries = b"".join(
-        struct.pack(">HHH6B3H4BH", i + 1, beat, kind, *([0] * 14))
-        for i, (beat, kind) in enumerate(phrases)
+        struct.pack(">HHH6B3H4BH", i + 1, beat, kind, *([0] * 14)) for i, (beat, kind) in enumerate(phrases)
     )
-    header_rest = struct.pack(
-        ">IHH6sH2sB1s", 24, len(phrases), 1, bytes(6), end_beat, bytes(2), 1, bytes(1)
-    )
+    header_rest = struct.pack(">IHH6sH2sB1s", 24, len(phrases), 1, bytes(6), end_beat, bytes(2), 1, bytes(1))
     tag = bytearray(_tag(b"PSSI", header_rest, entries))
     if masked:
         for index in range(len(tag) - 18):
@@ -141,9 +138,7 @@ def pssi(phrases: list[tuple[int, int]], *, end_beat: int, masked: bool) -> byte
     return bytes(tag)
 
 
-def write_track(
-    volume: Path, rel_dat: str, *, dat: bytes, ext: bytes | None = None, twoex: bytes | None = None
-) -> str:
+def write_track(volume: Path, rel_dat: str, *, dat: bytes, ext: bytes | None = None, twoex: bytes | None = None) -> str:
     """Write one track's files; returns the pdb-style analyze_path."""
     dat_path = volume / rel_dat
     dat_path.parent.mkdir(parents=True, exist_ok=True)

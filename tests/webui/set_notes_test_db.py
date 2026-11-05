@@ -1,4 +1,5 @@
 """Shared state.db setup for set-notes route and CLI tests."""
+
 from __future__ import annotations
 
 from pathlib import Path

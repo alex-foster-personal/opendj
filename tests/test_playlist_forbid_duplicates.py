@@ -2,6 +2,7 @@
 
 [if] forbid_duplicates is on, a dup is added/toggled/copied [then] API rejects it, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
@@ -41,9 +43,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -54,9 +61,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -69,13 +79,20 @@ def _create(client: TestClient, name: str = "Set") -> tuple[dict, str]:
     return r.json(), r.headers["ETag"]
 
 
-def _put(client: TestClient, pid: str, etag: str, ids: list[str]) -> str:
+def _put(client: TestClient, pid: str, etag: str, ids: list[str]) -> tuple[int, str | None, Response]:
     r = client.put(
         f"/api/v1/playlists/{pid}/tracks",
         json={"stable_ids": ids},
         headers={"If-Match": etag},
     )
     return r.status_code, r.headers.get("ETag"), r
+
+
+def _put_ok(client: TestClient, pid: str, etag: str, ids: list[str]) -> tuple[str, Response]:
+    status, next_etag, resp = _put(client, pid, etag, ids)
+    assert status == 200, resp.text
+    assert next_etag is not None
+    return next_etag, resp
 
 
 def _patch_flag(client: TestClient, pid: str, etag: str, on: bool) -> tuple[str, dict]:
@@ -110,13 +127,13 @@ def test_new_stable_ids_helpers() -> None:
 
 
 def test_default_allow_duplicate_memberships(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     """[if] duplicates are allowed [then] two independent rows are stored, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    status, etag, _put_r = _put(client, pid, etag, ["t-001"])
-    assert status == 200
+    etag, _put_r = _put_ok(client, pid, etag, ["t-001"])
     add = client.post(
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-001"]},
@@ -140,7 +157,7 @@ def test_flag_on_add_is_noop(client: TestClient, db_path: Path) -> None:
     """[if] forbid_duplicates is on [then] re-adding an existing track is a no-op, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    _, etag, _ = _put(client, pid, etag, ["t-001"])
+    etag, _ = _put_ok(client, pid, etag, ["t-001"])
     etag, _ = _patch_flag(client, pid, etag, True)
     before = dump_members(db_path, pid)
     old_etag = etag
@@ -157,7 +174,7 @@ def test_flag_on_mixed_batch(client: TestClient, db_path: Path) -> None:
     """[if] a mixed batch is added with the flag on [then] only new ids insert, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    _, etag, _ = _put(client, pid, etag, ["t-001"])
+    etag, _ = _put_ok(client, pid, etag, ["t-001"])
     etag, _ = _patch_flag(client, pid, etag, True)
     add = client.post(
         f"/api/v1/playlists/{pid}/items:add",
@@ -206,7 +223,7 @@ def test_toggle_does_not_collapse_extras(client: TestClient, db_path: Path) -> N
     """[if] duplicates exist before the flag turns on [then] both rows remain, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    _, etag, _ = _put(client, pid, etag, ["t-001"])
+    etag, _ = _put_ok(client, pid, etag, ["t-001"])
     add = client.post(
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-001"]},
@@ -223,7 +240,7 @@ def test_duplicate_playlist_copies_flag(client: TestClient, db_path: Path) -> No
     """[if] a flagged playlist is duplicated [then] the copy inherits forbid_duplicates, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    _, etag, _ = _put(client, pid, etag, ["t-001"])
+    etag, _ = _put_ok(client, pid, etag, ["t-001"])
     etag, _ = _patch_flag(client, pid, etag, True)
     dup = client.post(f"/api/v1/playlists/{pid}/duplicate")
     assert dup.status_code == 201, dup.text
@@ -294,7 +311,7 @@ def test_reverse_lookup_lists_playlist_once(client: TestClient, db_path: Path) -
     """[if] two memberships exist [then] reverse lookup lists the playlist once, [else stop]."""
     body, etag = _create(client)
     pid = body["playlist_id"]
-    _, etag, _ = _put(client, pid, etag, ["t-001"])
+    etag, _ = _put_ok(client, pid, etag, ["t-001"])
     client.post(f"/api/v1/playlists/{pid}/items:add", json={"stable_ids": ["t-001"]})
     r = client.get("/api/v1/tracks/t-001/playlists")
     assert r.status_code == 200

@@ -2,7 +2,7 @@
 
 Mini-PRD
 --------
-R1 ✔︎ Read data/reconcile/missing-by-playcount.csv (produced by
+R1 ✔︎ Read (private path) (produced by
      missing_by_playcount.py) and enrich each row with purchase deep-links,
      reusing SOURCE_TEMPLATES from apps.spotify.acquisition so the sheet and
      the in-repo acquisition queue can never drift apart.
@@ -18,6 +18,7 @@ Usage::
 
     uv run --no-sync python scripts/gap_sheet.py [--limit N] [--min-plays N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,9 +54,7 @@ def _require_gws() -> str:
 
 def _load_rows(csv_path: Path, min_plays: int, limit: int) -> list[dict[str, str]]:
     if not csv_path.exists():
-        sys.exit(
-            f"[ERROR] {csv_path} missing -- run scripts/missing_by_playcount.py first"
-        )
+        sys.exit(f"[ERROR] {csv_path} missing -- run scripts/missing_by_playcount.py first")
     with csv_path.open() as fh:
         rows = [r for r in csv.DictReader(fh) if int(r["plays"]) >= min_plays]
     return rows[:limit]
@@ -80,10 +79,7 @@ def _build_grid(rows: list[dict[str, str]]) -> list[list[str]]:
             r["status"],
         ]
         # HYPERLINK keeps the store name readable instead of a raw URL wall.
-        cells += [
-            f'=HYPERLINK("{url}","{name}")'
-            for url, name in zip(links, store_names, strict=True)
-        ]
+        cells += [f'=HYPERLINK("{url}","{name}")' for url, name in zip(links, store_names, strict=True)]
         grid.append(cells)
     return grid
 
@@ -106,9 +102,7 @@ def _create_sheet(exe: str, grid: list[list[str]]) -> str:
                                 "values": [
                                     {
                                         "userEnteredValue": (
-                                            {"formulaValue": c}
-                                            if c.startswith("=")
-                                            else {"stringValue": c}
+                                            {"formulaValue": c} if c.startswith("=") else {"stringValue": c}
                                         )
                                     }
                                     for c in row

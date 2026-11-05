@@ -43,7 +43,7 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -347,11 +347,11 @@ class _RepeatingIntercept:
         self.fires += 1
         self._during(self.fires)
 
-    def post(self, path: str, payload: Any) -> dict[str, Any]:
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._maybe_fire(path)
         return self._inner.post(path, payload)
 
-    def get(self, path: str, params: Any) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         self._maybe_fire(path)
         return self._inner.get(path, params)
 

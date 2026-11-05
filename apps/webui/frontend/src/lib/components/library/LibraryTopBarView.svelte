@@ -16,6 +16,10 @@
 		libraryCounts,
 		selectMode,
 		modeForHref,
+		addMusicLabel,
+		addMusicTitle,
+		addMusicBlocked,
+		onAddMusic,
 		cloudSyncChip
 	}: {
 		activeMode: AppMode;
@@ -28,6 +32,10 @@
 		libraryCounts: { tracks: number; playlists: number } | null;
 		selectMode: (event: MouseEvent, mode: (typeof APP_MODES)[number]) => void | Promise<void>;
 		modeForHref: (href: string) => (typeof APP_MODES)[number] | undefined;
+		addMusicLabel: string;
+		addMusicTitle: string;
+		addMusicBlocked: string | null;
+		onAddMusic: () => void;
 		cloudSyncChip: Snippet;
 	} = $props();
 
@@ -125,6 +133,18 @@
 	</button>
 
 	<span class="spacer"></span>
+
+	<button
+		type="button"
+		class="add-music"
+		class:prominent={libraryCounts !== null && libraryCounts.tracks === 0}
+		data-testid="library-add-music"
+		disabled={addMusicBlocked !== null}
+		title={addMusicBlocked ?? addMusicTitle}
+		onclick={() => onAddMusic()}
+	>
+		{addMusicLabel}
+	</button>
 
 	{#if libraryCounts}
 		<span class="readout" title="Tracks in the library database">{libraryCounts.tracks} tracks</span>
@@ -289,6 +309,29 @@
 	}
 	.spacer {
 		flex: 1;
+	}
+	.add-music {
+		display: flex;
+		align-items: center;
+		height: 20px;
+		padding: 2px 8px;
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text);
+		font: inherit;
+		font-size: var(--rb-fs-label);
+		line-height: 1;
+		cursor: pointer;
+	}
+	.add-music:disabled {
+		cursor: not-allowed;
+		color: var(--rb-text-dim);
+	}
+	.add-music.prominent {
+		border-color: var(--rb-accent);
+		color: var(--rb-accent);
+		background: color-mix(in srgb, var(--rb-accent) 12%, var(--rb-panel-raised));
 	}
 	.readout,
 	.selection-count {

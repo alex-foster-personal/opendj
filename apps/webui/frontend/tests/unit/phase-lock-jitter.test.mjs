@@ -124,9 +124,15 @@ test('a steady grid stored in 5 or 10 ms steps: no re-join, and trimming falls s
 	}));
 	for (const [index, row] of rows.entries()) {
 		const name = `grid ${JITTERED_SPECS[index].join('/')}`;
-		assert.ok(row.before.reseeks > 0, `${name}: the legacy lock re-joins (else nothing is under test)`);
+		assert.ok(
+			row.before.reseeks > 0,
+			`${name}: the legacy lock re-joins (else nothing is under test)`
+		);
 		assert.equal(row.after.reseeks, 0, `${name}: no re-join`);
-		assert.ok(row.after.trimTimeFrac < 0.1, `${name}: trimming ${(row.after.trimTimeFrac * 100).toFixed(1)}% of the time`);
+		assert.ok(
+			row.after.trimTimeFrac < 0.1,
+			`${name}: trimming ${(row.after.trimTimeFrac * 100).toFixed(1)}% of the time`
+		);
 		assert.ok(
 			row.after.trimTimeFrac < row.before.trimTimeFrac / 4,
 			`${name}: trimming ${row.after.trimTimeFrac} against ${row.before.trimTimeFrac} before`
@@ -137,8 +143,14 @@ test('a steady grid stored in 5 or 10 ms steps: no re-join, and trimming falls s
 			row.after.medianTruthErrMs <= row.before.medianTruthErrMs + pl.PHASE_LOCK_DEADBAND_MS,
 			`${name}: audio off by ${row.after.medianTruthErrMs} ms, was ${row.before.medianTruthErrMs}`
 		);
-		assert.ok(row.after.medianTruthErrMs < 3, `${name}: audio off by ${row.after.medianTruthErrMs} ms`);
-		assert.ok(row.after.p95TruthErrMs < 5, `${name}: audio p95 off by ${row.after.p95TruthErrMs} ms`);
+		assert.ok(
+			row.after.medianTruthErrMs < 3,
+			`${name}: audio off by ${row.after.medianTruthErrMs} ms`
+		);
+		assert.ok(
+			row.after.p95TruthErrMs < 5,
+			`${name}: audio p95 off by ${row.after.p95TruthErrMs} ms`
+		);
 		console.log(
 			`# ${name}: re-joins/min ${row.before.reseeksPerMin.toFixed(1)} -> ${row.after.reseeksPerMin.toFixed(1)}, ` +
 				`trimming ${(row.before.trimTimeFrac * 100).toFixed(0)}% -> ${(row.after.trimTimeFrac * 100).toFixed(1)}%, ` +
@@ -161,11 +173,16 @@ test('smoothedBeatTimes pulls a dithered grid toward the real beats and leaves t
 	for (const { stored, truth } of JITTERED) {
 		const smooth = pl.smoothedBeatTimes(stored);
 		assert.equal(smooth.length, stored.length);
-		const rms = (value) => Math.sqrt(truth.reduce((sum, beat, i) => sum + (value(i) - beat.t) ** 2, 0) / truth.length);
+		const rms = (value) =>
+			Math.sqrt(truth.reduce((sum, beat, i) => sum + (value(i) - beat.t) ** 2, 0) / truth.length);
 		const storedRms = rms((i) => stored[i].t);
 		const smoothRms = rms((i) => smooth[i]);
-		assert.ok(smoothRms < storedRms / 2, `rms off the real beat ${smoothRms} against ${storedRms} stored`);
-		for (let i = 1; i < smooth.length; i++) assert.ok(smooth[i] > smooth[i - 1], `beat ${i} not after beat ${i - 1}`);
+		assert.ok(
+			smoothRms < storedRms / 2,
+			`rms off the real beat ${smoothRms} against ${storedRms} stored`
+		);
+		for (let i = 1; i < smooth.length; i++)
+			assert.ok(smooth[i] > smooth[i - 1], `beat ${i} not after beat ${i - 1}`);
 	}
 	assert.throws(() => pl.smoothedBeatTimes(EVEN[0], 0), /half window/);
 });
@@ -223,7 +240,12 @@ for (const [label, bpmAt, changeEndsAtBeat, endBpm] of [
 ]) {
 	test(`a real tempo change is followed, without a seek: ${label}`, () => {
 		const { stored, truth, master } = variableTempo(bpmAt, 31);
-		const now = after({ followerBeats: stored, truthBeats: truth, masterBeats: master, trace: true });
+		const now = after({
+			followerBeats: stored,
+			truthBeats: truth,
+			masterBeats: master,
+			trace: true
+		});
 		assert.equal(now.reseeks, 0, 'followed by a tempo move, not a seek');
 		// The follower's native tempo ends above the master's, so it is slowed.
 		const wantedTempo = MASTER_BPM / endBpm;
@@ -237,12 +259,21 @@ for (const [label, bpmAt, changeEndsAtBeat, endBpm] of [
 				`base ${tick.base} at ${tick.masterSec.toFixed(1)} s, wanted ${wantedTempo} within 0.2%`
 			);
 		}
-		assert.ok(median(settled.map((tick) => Math.abs(tick.truthMs))) < 3, 'the audio is back on the beat');
+		assert.ok(
+			median(settled.map((tick) => Math.abs(tick.truthMs))) < 3,
+			'the audio is back on the beat'
+		);
 		const worst = Math.max(...now.trace.map((tick) => Math.abs(tick.truthMs)));
-		assert.ok(worst < 25, `the audio is never more than ${worst.toFixed(1)} ms off through the change`);
+		assert.ok(
+			worst < 25,
+			`the audio is never more than ${worst.toFixed(1)} ms off through the change`
+		);
 		// What the change does to the lock as it was: it cannot follow, so it seeks.
 		const was = beforeChange({ followerBeats: stored, truthBeats: truth, masterBeats: master });
-		assert.ok(was.reseeks > 0, 'the legacy lock re-joins on this grid (else nothing is under test)');
+		assert.ok(
+			was.reseeks > 0,
+			'the legacy lock re-joins on this grid (else nothing is under test)'
+		);
 		console.log(
 			`# ${label}: re-joins ${was.reseeks} -> ${now.reseeks}; time trimming ` +
 				`${(was.trimTimeFrac * 100).toFixed(1)}% -> ${(now.trimTimeFrac * 100).toFixed(1)}%; ` +
@@ -257,7 +288,9 @@ test('the base follows the local tempo only with an uneven grid, and stays in th
 	const period = (stored[stored.length - 1].t - stored[0].t) / (stored.length - 1);
 	const master = evenGrid(period, 600);
 	const at = (extra) =>
-		pl.phaseLockDecision(decisionInput(master, stored, master[100].t + 0.01, stored[100].t + 0.01, extra));
+		pl.phaseLockDecision(
+			decisionInput(master, stored, master[100].t + 0.01, stored[100].t + 0.01, extra)
+		);
 	// A base 1% off the grids' own ratio is moved to it.
 	const moved = at({ followerBaseTempo: 1.01 });
 	assert.ok(Math.abs(moved.base - 1) < 0.002, `base moved to ${moved.base}`);
@@ -269,12 +302,18 @@ test('the base follows the local tempo only with an uneven grid, and stays in th
 	// And on steady music the base is retuned a few times a minute, not every tick.
 	const steady = after({ followerBeats: stored });
 	console.log(`# steady jittered grid: base moves ${steady.baseMovesPerMin.toFixed(1)}/min`);
-	assert.ok(steady.baseMovesPerMin < 120, `base moved ${steady.baseMovesPerMin}/min on steady music`);
+	assert.ok(
+		steady.baseMovesPerMin < 120,
+		`base moved ${steady.baseMovesPerMin}/min on steady music`
+	);
 	// Two follower beats per master beat: twice the tempo, not half.
 	const double = at({ followerBaseTempo: 1, normalization: 2 });
 	assert.equal(double.base, 1.08, 'a 2x local tempo is held at the top of the +-8% range');
 	const half = pl.phaseLockDecision(
-		decisionInput(evenGrid(period / 2, 1200), stored, 20, stored[40].t, { normalization: 0.5, followerBaseTempo: 1.01 })
+		decisionInput(evenGrid(period / 2, 1200), stored, 20, stored[40].t, {
+			normalization: 0.5,
+			followerBaseTempo: 1.01
+		})
 	);
 	assert.ok(Math.abs(half.base - 1) < 0.002, `half-time lock base ${half.base}`);
 });
@@ -282,25 +321,41 @@ test('the base follows the local tempo only with an uneven grid, and stays in th
 // ------------------------------------------------------- the DJ's own offset
 
 test('an offset the DJ dialed in is held: not trimmed back, not re-joined', () => {
-	for (const [name, follower] of [['even', EVEN[1]], ['jittered', JITTERED[1].stored]]) {
+	for (const [name, follower] of [
+		['even', EVEN[1]],
+		['jittered', JITTERED[1].stored]
+	]) {
 		for (const displaceMs of [8, -8, 30]) {
 			const events = [{ atSec: 20, displaceMs, registered: true }];
 			const held = after({ followerBeats: follower, events, trace: true });
 			const rest = held.trace.filter((tick) => tick.masterSec > 21);
 			assert.equal(held.reseeks, 0, `${name} ${displaceMs} ms: not re-joined`);
 			if (name === 'even') {
-				assert.ok(rest.every((tick) => tick.action === 'base'), `${name} ${displaceMs} ms: never trimmed`);
+				assert.ok(
+					rest.every((tick) => tick.action === 'base'),
+					`${name} ${displaceMs} ms: never trimmed`
+				);
 			}
 			const standing = median(rest.map((tick) => tick.storedMs));
-			assert.ok(Math.abs(standing - displaceMs) < 3, `${name}: stands ${standing.toFixed(1)} ms off, dialed ${displaceMs}`);
+			assert.ok(
+				Math.abs(standing - displaceMs) < 3,
+				`${name}: stands ${standing.toFixed(1)} ms off, dialed ${displaceMs}`
+			);
 			// The same displacement the DJ did NOT dial in is an error, and is corrected.
-			const corrected = after({ followerBeats: follower, events: [{ ...events[0], registered: false }], trace: true });
+			const corrected = after({
+				followerBeats: follower,
+				events: [{ ...events[0], registered: false }],
+				trace: true
+			});
 			const end = corrected.trace.slice(-300);
 			assert.ok(
 				Math.abs(median(end.map((tick) => tick.storedMs))) < 3,
 				`${name} ${displaceMs} ms unregistered: pulled back onto the beat`
 			);
-			assert.ok(corrected.trimTimeFrac > 0 || corrected.reseeks > 0, `${name}: the lock acted on it`);
+			assert.ok(
+				corrected.trimTimeFrac > 0 || corrected.reseeks > 0,
+				`${name}: the lock acted on it`
+			);
 		}
 	}
 });
@@ -310,7 +365,10 @@ test('the held offset wraps like the phase does, and a malformed one throws', ()
 	const beatMs = (master[1].t - master[0].t) * 1000;
 	const input = (userOffsetMs) => decisionInput(master, master, 60, 60 + 0.004, { userOffsetMs });
 	assert.ok(Math.abs(pl.phaseErrorMs(input(4)) - 0) < 1e-6);
-	assert.ok(Math.abs(pl.phaseErrorMs(input(4 + beatMs)) - 0) < 1e-6, 'a whole beat of offset is no offset');
+	assert.ok(
+		Math.abs(pl.phaseErrorMs(input(4 + beatMs)) - 0) < 1e-6,
+		'a whole beat of offset is no offset'
+	);
 	assert.ok(Math.abs(pl.phaseErrorMs(input(0)) - 4) < 1e-6);
 	assert.throws(() => pl.phaseLockDecision(input(Number.NaN)), /user offset/);
 });
@@ -318,12 +376,26 @@ test('the held offset wraps like the phase does, and a malformed one throws', ()
 // --------------------------------------------- re-joins: rare and deliberate
 
 test('a genuine large offset is re-joined exactly once', () => {
-	for (const [name, follower] of [['even', EVEN[1]], ['jittered', JITTERED[1].stored]]) {
+	for (const [name, follower] of [
+		['even', EVEN[1]],
+		['jittered', JITTERED[1].stored]
+	]) {
 		for (const displaceMs of [60, -60, 140]) {
-			const result = after({ followerBeats: follower, events: [{ atSec: 30, displaceMs, registered: false }], trace: true });
-			assert.equal(result.reseeks, 1, `${name} ${displaceMs} ms: one re-join, got ${result.reseeks}`);
+			const result = after({
+				followerBeats: follower,
+				events: [{ atSec: 30, displaceMs, registered: false }],
+				trace: true
+			});
+			assert.equal(
+				result.reseeks,
+				1,
+				`${name} ${displaceMs} ms: one re-join, got ${result.reseeks}`
+			);
 			const at = result.trace.find((tick) => tick.action === 'reseek');
-			assert.ok(at.masterSec - 30 < 0.2, `${name}: re-joined ${(at.masterSec - 30).toFixed(2)} s after the offset`);
+			assert.ok(
+				at.masterSec - 30 < 0.2,
+				`${name}: re-joined ${(at.masterSec - 30).toFixed(2)} s after the offset`
+			);
 			const end = result.trace.slice(-300);
 			assert.ok(Math.abs(median(end.map((tick) => tick.lockMs))) < 2, `${name}: back in phase`);
 		}
@@ -338,12 +410,17 @@ test('an offset the cap can walk back before the next re-join is allowed is trim
 	assert.ok(now.capTimeFrac > 0, 'the trim ran at its cap');
 	const sixSecondsOn = now.trace.find((tick) => tick.masterSec >= 8);
 	assert.ok(Math.abs(sixSecondsOn.lockMs) < 5, `error ${sixSecondsOn.lockMs} ms six seconds on`);
-	assert.equal(beforeChange({ followerBeats: EVEN[1], events }).reseeks, 1, 'the legacy lock seeks here');
+	assert.equal(
+		beforeChange({ followerBeats: EVEN[1], events }).reseeks,
+		1,
+		'the legacy lock seeks here'
+	);
 });
 
 test('re-join gates: confirmed over consecutive ticks, and never inside the minimum interval', () => {
 	const master = EVEN[2];
-	const off = (ms, extra) => pl.phaseLockDecision(decisionInput(master, master, 60, 60 + ms / 1000, extra));
+	const off = (ms, extra) =>
+		pl.phaseLockDecision(decisionInput(master, master, 60, 60 + ms / 1000, extra));
 	const confirm = pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS;
 	const interval = pl.PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC;
 	// One reading past the line never seeks, however old the join.
@@ -382,7 +459,10 @@ test('a grid edited in place is re-read, not served from the cache', () => {
 	const input = decisionInput(master, follower, 50.1, 50.1);
 	assert.ok(Math.abs(pl.phaseErrorMs(input)) < 1e-6);
 	for (const beat of follower) beat.t += 0.006; // the whole grid shifted 6 ms later
-	assert.ok(Math.abs(pl.phaseErrorMs(input) + 6) < 1e-6, `shifted grid reads ${pl.phaseErrorMs(input)} ms`);
+	assert.ok(
+		Math.abs(pl.phaseErrorMs(input) + 6) < 1e-6,
+		`shifted grid reads ${pl.phaseErrorMs(input)} ms`
+	);
 	// And an even grid that BECOMES uneven is smoothed from then on.
 	const stored = JITTERED[0].stored;
 	for (let i = 0; i < follower.length; i++) follower[i].t = stored[i].t;

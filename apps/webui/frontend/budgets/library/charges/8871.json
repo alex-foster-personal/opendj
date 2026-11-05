@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 324293,
+  "measured_with_pr": 324394,
+  "sha": "23873c36c3",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #8871 carries the practice skin registration from stacked PR #8909 (merged into this branch Thu 5 Nov 2026 13:39Z), so its charge moves here under the per-PR rule: the practice-ddj-flx4 UiSkin entry, label, wave look, glyph, layout preset and Settings option ride on the initial library load. Measured then: one local vite build each of 23873c36c3 and the registration merged with it, +101 B gzip; CI on #8909 measured 198 B over the limit; CI on #8871 at dafecdf2d7 measured +177 B over main (324662 -> 324839); ceiled to KiB plus 1 KiB",
+  "payback": "none planned; each registered skin adds a list entry to the initial load"
+}

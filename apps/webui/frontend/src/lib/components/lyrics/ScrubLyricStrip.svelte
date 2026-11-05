@@ -57,10 +57,9 @@
 		{title}
 		aria-hidden="true"
 	>
-		{#each words as rw (rw.idx)}<span class="w" data-role={rw.role}>{rw.text}</span>{#if rw.gapAfter}<span
-				class="gap-dot"
-				title="the pointer is in this gap"
-			></span>{/if}{' '}{/each}
+		{#each words as rw (rw.idx)}<span class="w" data-role={rw.role}>{rw.text}</span
+			>{#if rw.gapAfter}<span class="gap-dot" title="the pointer is in this gap"
+				></span>{/if}{' '}{/each}
 	</div>
 {/if}
 

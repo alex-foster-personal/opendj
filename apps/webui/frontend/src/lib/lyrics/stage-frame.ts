@@ -437,7 +437,8 @@ export function buildFrame(
 	const nextIndex = anchor.lineIndex === null ? anchor.upcomingLineIndex : anchor.lineIndex + 1;
 	const next = _buildFrameLine(score, nextIndex, ms);
 
-	const activeWord = anchor.timedWordIndex === null ? null : score.timedWords[anchor.timedWordIndex];
+	const activeWord =
+		anchor.timedWordIndex === null ? null : score.timedWords[anchor.timedWordIndex];
 	const lineSpan =
 		current === null || current.start_ms === null || current.end_ms === null
 			? 0

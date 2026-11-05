@@ -498,3 +498,32 @@ test('the performance route mounts the chip in the browser bottom bar', async ()
 	assert.ok(mount > 0, 'the bottom bar mounts the build identity');
 	assert.ok(mount < grip, 'the chip sits before the grip in the tray');
 });
+
+// INSTALL-44: the badge names the long-lived line a build carries, as a colour.
+// - if the badge shows no colour for a stamped build then set-rc and genre-keys look alike -> broken
+test('the lineage badge names the colour and says what it blends', () => {
+	assert.equal(mod.lineageBadge({ kind: 'loading' }), null);
+	assert.equal(mod.lineageBadge({ kind: 'ok', value: ENGINE_OK }), null);
+	const teal = mod.lineageBadge({
+		kind: 'ok',
+		value: {
+			...ENGINE_OK,
+			lineage: {
+				color_name: 'teal',
+				color_hex: '#008080',
+				lines: ['af--set-rc', 'af--b2b-link'],
+				line_shares: { 'af--set-rc': 1, 'af--b2b-link': 0.5 },
+				unresolved_lines: [],
+				previous_git_sha_full: '143a5b1702f5e341042d7ddd29df737083eb90d9',
+				descends_from_previous: false,
+				missing_commits: 12,
+				missing_from: 'af--set-rc'
+			}
+		}
+	});
+	assert.equal(teal.name, 'teal');
+	assert.equal(teal.hex, '#008080');
+	assert.match(teal.title, /blend of af--set-rc \+ af--b2b-link until they merge/);
+	assert.match(teal.title, /af--b2b-link 50%/);
+	assert.match(teal.title, /NOT descend .* missing 12 commits from af--set-rc/);
+});

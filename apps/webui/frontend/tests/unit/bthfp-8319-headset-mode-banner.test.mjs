@@ -9,7 +9,12 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
-const device = (name, transport, rate) => ({ device_id: 1, name, transport, nominal_sample_rate_hz: rate });
+const device = (name, transport, rate) => ({
+	device_id: 1,
+	name,
+	transport,
+	nominal_sample_rate_hz: rate
+});
 const report = (verdict, output, input = device('USB MICROPHONE', 'usb', 48000)) => ({
 	supported: verdict !== 'unsupported',
 	verdict,
@@ -23,7 +28,9 @@ before(async () => {
 });
 
 test('call mode names the headphones and gives the Option-click and Settings fix', () => {
-	const w = mod.headsetModeWarning(report('headset_mode', device('af-sony-fun', 'bluetooth', 16000)));
+	const w = mod.headsetModeWarning(
+		report('headset_mode', device('af-sony-fun', 'bluetooth', 16000))
+	);
 	assert.match(w.text, /^af-sony-fun switched to headset \(call\) mode/);
 	assert.match(w.text, /Option-click the sound icon in the menu bar/);
 	assert.match(w.text, /System Settings > Sound/);
@@ -44,7 +51,10 @@ test('an unnamed device still reads as a sentence', () => {
 
 test('clear, unsupported and missing reports render nothing', () => {
 	assert.equal(mod.headsetModeWarning(null), null);
-	assert.equal(mod.headsetModeWarning(report('clear', device('af-sony-fun', 'bluetooth', 44100))), null);
+	assert.equal(
+		mod.headsetModeWarning(report('clear', device('af-sony-fun', 'bluetooth', 44100))),
+		null
+	);
 	assert.equal(mod.headsetModeWarning(report('unsupported', null, null)), null);
 	// A supported flag with no output is not trusted as a warning either.
 	assert.equal(mod.headsetModeWarning({ ...report('headset_mode', null), supported: true }), null);
@@ -53,8 +63,12 @@ test('clear, unsupported and missing reports render nothing', () => {
 test('dismissal is keyed to the state, so a later flip shows again', () => {
 	const sony = device('af-sony-fun', 'bluetooth', 44100);
 	const selected = mod.headsetModeWarning(report('mic_selected', sony, sony));
-	const flipped = mod.headsetModeWarning(report('headset_mode', device('af-sony-fun', 'bluetooth', 16000)));
-	const other = mod.headsetModeWarning(report('mic_selected', device('AirPods', 'bluetooth', 48000)));
+	const flipped = mod.headsetModeWarning(
+		report('headset_mode', device('af-sony-fun', 'bluetooth', 16000))
+	);
+	const other = mod.headsetModeWarning(
+		report('mic_selected', device('AirPods', 'bluetooth', 48000))
+	);
 	assert.notEqual(selected.key, flipped.key);
 	assert.notEqual(selected.key, other.key);
 });
@@ -79,10 +93,15 @@ test('a dismissal ends with its episode: clear then the same flip warns again', 
 	assert.notEqual(mod.bluetoothHeadsetMode.dismissedKey, null, 'same episode stays dismissed');
 	await mod.refreshBluetoothHeadsetMode(async () => ({ ok: false, status: 503 }));
 	assert.notEqual(mod.bluetoothHeadsetMode.dismissedKey, null, 'a failed read is not a recovery');
-	await mod.refreshBluetoothHeadsetMode(serve(report('clear', device('af-sony-fun', 'bluetooth', 44100))));
+	await mod.refreshBluetoothHeadsetMode(
+		serve(report('clear', device('af-sony-fun', 'bluetooth', 44100)))
+	);
 	assert.equal(mod.bluetoothHeadsetMode.dismissedKey, null, 'recovery ends the dismissal');
 	await mod.refreshBluetoothHeadsetMode(serve(flipped));
-	assert.notEqual(mod.headsetModeWarning(mod.bluetoothHeadsetMode.report).key, mod.bluetoothHeadsetMode.dismissedKey);
+	assert.notEqual(
+		mod.headsetModeWarning(mod.bluetoothHeadsetMode.report).key,
+		mod.bluetoothHeadsetMode.dismissedKey
+	);
 });
 
 test('the poll asks the configured daemon for the headset-mode route', async () => {

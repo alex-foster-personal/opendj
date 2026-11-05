@@ -1,4 +1,5 @@
 """Tests for apps.spotify.url_parse."""
+
 from __future__ import annotations
 
 import pytest
@@ -20,17 +21,13 @@ class TestParsePlaylistIdentifier:
         assert parse_playlist_identifier(f"https://open.spotify.com/playlist/{_ID}") == _ID
 
     def test_url_with_si_tracking(self) -> None:
-        assert parse_playlist_identifier(
-            f"https://open.spotify.com/playlist/{_ID}?si=abc123def"
-        ) == _ID
+        assert parse_playlist_identifier(f"https://open.spotify.com/playlist/{_ID}?si=abc123def") == _ID
 
     def test_http_scheme(self) -> None:
         assert parse_playlist_identifier(f"http://open.spotify.com/playlist/{_ID}") == _ID
 
     def test_embed_url(self) -> None:
-        assert parse_playlist_identifier(
-            f"https://open.spotify.com/embed/playlist/{_ID}"
-        ) == _ID
+        assert parse_playlist_identifier(f"https://open.spotify.com/embed/playlist/{_ID}") == _ID
 
     def test_spotify_uri(self) -> None:
         assert parse_playlist_identifier(f"spotify:playlist:{_ID}") == _ID

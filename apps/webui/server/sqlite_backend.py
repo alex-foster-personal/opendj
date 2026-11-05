@@ -45,6 +45,7 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -94,6 +95,13 @@ from .backend import (
     tag_cas_conflicts,
 )
 from .etag import compute_etag, strip_quotes
+from .inbox_playlist import (
+    INBOX_PLAYLIST_ID,
+    inbox_updated_at_from_conn,
+    make_inbox,
+    unfiled_ids_from_conn,
+    with_inbox,
+)
 from .pairings_sqlite import (
     count_http_pairings,
     create_http_pairing,
@@ -139,8 +147,10 @@ def read_tracks_schema_version(
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
         ).fetchone() is not None
+        # Name-based presence: SQLite rewrites CREATE TABLE (drops IF NOT EXISTS);
+        # stored-SQL whitespace must not hide a versioned schema_meta table.
         has_meta = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='schema_meta'"
         ).fetchone() is not None
         version = (
             conn.execute(
@@ -185,8 +195,10 @@ def _tracks_table_missing_schema_meta(path: Path) -> bool:
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
         ).fetchone() is not None
+        # Name-based presence: SQLite rewrites CREATE TABLE (drops IF NOT EXISTS);
+        # stored-SQL whitespace must not hide a versioned schema_meta table.
         has_meta = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='schema_meta'"
         ).fetchone() is not None
         return has_tracks and not has_meta
     finally:
@@ -884,7 +896,9 @@ class SqliteBackend:
                     "COALESCE(order_key, printf('%08d', position)), position"
                 ):
                     members.setdefault(pid, []).append(sid)
-        return [
+            unfiled = unfiled_ids_from_conn(conn)
+            updated = inbox_updated_at_from_conn(conn, unfiled)
+        stored = [
             Playlist(
                 playlist_id=r["playlist_id"], name=r["name"],
                 vendor=r["vendor"], vendor_pl_id=r["vendor_pl_id"],
@@ -894,12 +908,17 @@ class SqliteBackend:
             )
             for r in rows
         ]
+        return with_inbox(stored, unfiled, updated_at=updated)
 
     def get_playlist(self, playlist_id: str) -> Playlist:
         with self._ro() as conn:
             if not self._table_exists(conn, "playlists"):
                 _warn_fallback_once("get_playlist", "no playlists table")
                 return self._fallback.get_playlist(playlist_id)
+            if playlist_id == INBOX_PLAYLIST_ID:
+                unfiled = unfiled_ids_from_conn(conn)
+                updated = inbox_updated_at_from_conn(conn, unfiled)
+                return make_inbox(items=unfiled, updated_at=updated)
             row = read_playlist_header(conn, playlist_id)
             member_rows = []
             if self._table_exists(conn, "playlist_memberships"):
@@ -923,6 +942,17 @@ class SqliteBackend:
                 _warn_fallback_once("get_playlist_page", "no playlists table")
                 return self._fallback.get_playlist_page(
                     playlist_id, limit=limit, offset=offset,
+                )
+            if playlist_id == INBOX_PLAYLIST_ID:
+                unfiled = unfiled_ids_from_conn(conn)
+                updated = inbox_updated_at_from_conn(conn, unfiled)
+                pl = make_inbox(items=unfiled, updated_at=updated)
+                window = slice(offset, offset + limit)
+                return PlaylistPage(
+                    playlist=replace(
+                        pl, items=pl.items[window], item_ids=pl.item_ids[window],
+                    ),
+                    total=len(pl.items),
                 )
             return read_playlist_page(conn, playlist_id, limit=limit, offset=offset)
 
@@ -1087,9 +1117,9 @@ class SqliteBackend:
         """Atomically compare-and-swap and persist every requested update.
 
         The complete ETag preflight and all mutations happen inside one
-        SQLite writer transaction. ``StateWriter`` uses nested SAVEPOINTs,
-        which compose with this outer transaction and therefore cannot leave
-        earlier rows committed when a later write fails.
+        ``StateWriter.transaction``. Nested ``_tx`` SAVEPOINTs compose with
+        that unit, so a later write failure cannot leave earlier rows
+        committed, and bus events flush only after COMMIT.
         """
         if not updates:
             return []
@@ -1101,82 +1131,80 @@ class SqliteBackend:
             conn = _state_db.open_rw(self._path)
             conn.row_factory = sqlite3.Row
             try:
-                conn.execute("BEGIN IMMEDIATE")
-                current_rows: list[Track] = []
-                conflicts: list[dict[str, str]] = []
-                for update in updates:
-                    row = conn.execute(
-                        "SELECT stable_id, stable_id_tier, title, artists_json, album, isrc, "
-                        "duration_ms, file_path, content_hash, created_at, updated_at "
-                        "FROM tracks WHERE stable_id = ?",
-                        (update.stable_id,),
-                    ).fetchone()
-                    if row is None:
-                        raise NotFoundError(f"track not found: {update.stable_id}")
-                    fields = _fetch_fields(conn, [update.stable_id])
-                    current = _row_to_track(row, fields.get(update.stable_id, {}))
-                    current_rows.append(current)
-                    current_etag = compute_etag(current.stable_id, current.updated_at, current.selection_tag)
-                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag) or tag_cas_conflicts(
-                        update, current
-                    ):
-                        conflicts.append({
-                            "stable_id": update.stable_id,
-                            "current_etag": current_etag,
-                        })
-                if conflicts:
-                    raise BatchConflictError(conflicts)
-
-                writes = [
-                    _field_writes(current, update.patch)
-                    for current, update in zip(current_rows, updates, strict=False)
-                ]
-                identity_patches = [
-                    identity_patch(
-                        update.patch, allow_blank_title=update.allow_blank_title,
-                        allow_blank_artist_members=update.allow_blank_artist_members)
-                    for update in updates
-                ]
-                now = datetime.now(UTC).isoformat()
-                if mutation_guard is not None:
-                    mutation_guard()
-                with StateWriter(conn, actor=source) as writer:  # identity writes carry no per-field source
-                    for current, update, field_writes, identity in zip(
-                        current_rows, updates, writes, identity_patches, strict=False,
-                    ):
-                        for field_name, value in field_writes.items():
-                            writer.set_field(
-                                update.stable_id, field_name, value,
-                                source=source, modified_at=now, confidence=1.0,
-                            )
-                        if identity:
+                with StateWriter(conn, actor=source) as writer, writer.transaction():
+                        current_rows: list[Track] = []
+                        conflicts: list[dict[str, str]] = []
+                        for update in updates:
                             row = conn.execute(
-                                "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                                "duration_ms, file_path, content_hash, audio_hash FROM tracks "
-                                "WHERE stable_id = ? AND deleted_at IS NULL",
-                                (current.stable_id,),
+                                "SELECT stable_id, stable_id_tier, title, artists_json, album, isrc, "
+                                "duration_ms, file_path, content_hash, created_at, updated_at "
+                                "FROM tracks WHERE stable_id = ?",
+                                (update.stable_id,),
                             ).fetchone()
                             if row is None:
-                                raise NotFoundError(
-                                    f"track not found: {current.stable_id}"
+                                raise NotFoundError(f"track not found: {update.stable_id}")
+                            fields = _fetch_fields(conn, [update.stable_id])
+                            current = _row_to_track(row, fields.get(update.stable_id, {}))
+                            current_rows.append(current)
+                            current_etag = compute_etag(current.stable_id, current.updated_at, current.selection_tag)
+                            if strip_quotes(current_etag) != strip_quotes(update.expected_etag) or tag_cas_conflicts(
+                                update, current
+                            ):
+                                conflicts.append({
+                                    "stable_id": update.stable_id,
+                                    "current_etag": current_etag,
+                                })
+                        if conflicts:
+                            raise BatchConflictError(conflicts)
+
+                        writes = [
+                            _field_writes(current, update.patch)
+                            for current, update in zip(current_rows, updates, strict=False)
+                        ]
+                        identity_patches = [
+                            identity_patch(
+                                update.patch, allow_blank_title=update.allow_blank_title,
+                                allow_blank_artist_members=update.allow_blank_artist_members)
+                            for update in updates
+                        ]
+                        now = datetime.now(UTC).isoformat()
+                        if mutation_guard is not None:
+                            mutation_guard()
+                        for current, update, field_writes, identity in zip(
+                            current_rows, updates, writes, identity_patches, strict=False,
+                        ):
+                            for field_name, value in field_writes.items():
+                                writer.set_field(
+                                    update.stable_id, field_name, value,
+                                    source=source, modified_at=now, confidence=1.0,
                                 )
-                            writer.upsert_track(
-                                stable_id=current.stable_id,
-                                stable_id_tier=row["stable_id_tier"],
-                                title=identity.get("title", row["title"]),
-                                artists=identity.get("artists", artists_from_json(row["artists_json"])),
-                                album=row["album"],
-                                isrc=row["isrc"],
-                                duration_ms=row["duration_ms"],
-                                file_path=identity.get("file_path", row["file_path"]),
-                                content_hash=row["content_hash"],
-                                audio_hash=row["audio_hash"],
-                            )
-                if applied_state is not None:
-                    applied_state.update(_applied_state_in_txn(conn, [u.stable_id for u in updates]))
-                if mutation_guard is not None:
-                    mutation_guard()
-                conn.execute("COMMIT")
+                            if identity:
+                                row = conn.execute(
+                                    "SELECT stable_id_tier, title, artists_json, album, isrc, "
+                                    "duration_ms, file_path, content_hash, audio_hash FROM tracks "
+                                    "WHERE stable_id = ? AND deleted_at IS NULL",
+                                    (current.stable_id,),
+                                ).fetchone()
+                                if row is None:
+                                    raise NotFoundError(
+                                        f"track not found: {current.stable_id}"
+                                    )
+                                writer.upsert_track(
+                                    stable_id=current.stable_id,
+                                    stable_id_tier=row["stable_id_tier"],
+                                    title=identity.get("title", row["title"]),
+                                    artists=identity.get("artists", artists_from_json(row["artists_json"])),
+                                    album=row["album"],
+                                    isrc=row["isrc"],
+                                    duration_ms=row["duration_ms"],
+                                    file_path=identity.get("file_path", row["file_path"]),
+                                    content_hash=row["content_hash"],
+                                    audio_hash=row["audio_hash"],
+                                )
+                        if applied_state is not None:
+                            applied_state.update(_applied_state_in_txn(conn, [u.stable_id for u in updates]))
+                        if mutation_guard is not None:
+                            mutation_guard()
             except Exception:
                 if conn.in_transaction:
                     conn.execute("ROLLBACK")
@@ -1197,63 +1225,62 @@ class SqliteBackend:
     ) -> int:
         """Atomically rename or delete every current member of a tag.
 
-        Discovery occurs only after ``BEGIN IMMEDIATE`` has acquired the
-        SQLite writer lock. The discovered ETags are then prechecked before
-        any field write, so a tag added between an HTTP request arriving and
-        this transaction acquiring the lock is part of the same sweep.
+        Discovery occurs only after ``StateWriter.transaction`` has acquired
+        the SQLite writer lock. The discovered ETags are then prechecked
+        before any field write, so a tag added between an HTTP request
+        arriving and this transaction acquiring the lock is part of the
+        same sweep.
         """
         with self._write_lock:
             conn = _state_db.open_rw(self._path)
             conn.row_factory = sqlite3.Row
             try:
-                conn.execute("BEGIN IMMEDIATE")
-                rows = list(conn.execute(
-                    "SELECT stable_id, title, artists_json, album, duration_ms, "
-                    "file_path, created_at, updated_at FROM tracks "
-                    "WHERE deleted_at IS NULL ORDER BY stable_id",
-                ))
-                fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
-                tracks = [
-                    _row_to_track(row, fields_by_id.get(row["stable_id"], {}))
-                    for row in rows
-                ]
-                catalog_revision = compute_mytag_catalog_revision(tracks)
-                members = [track for track in tracks if old_name in track.tags]
-                if (catalog_revision != expected_catalog_revision
-                        or len(members) != expected_track_count):
-                    raise MyTagScopeConflictError(catalog_revision, len(members))
-                if (new_name is not None
-                        and any(new_name in track.tags for track in tracks)
-                        and not confirm_merge):
-                    raise MyTagMergeConfirmationRequiredError(new_name)
-                updates = [
-                    TrackUpdate(
-                        track.stable_id,
-                        {"tags_remove": [old_name]} if new_name is None else {
-                            "tags_add": [new_name], "tags_remove": [old_name],
-                        },
-                        compute_etag(track.stable_id, track.updated_at, track.selection_tag),
-                    )
-                    for track in members
-                ]
-
-                conflicts: list[dict[str, str]] = []
-                for track, update in zip(members, updates, strict=False):
-                    current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
-                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
-                        conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
-                if conflicts:
-                    raise BatchConflictError(conflicts)
-
-                now = datetime.now(UTC).isoformat()
-                with StateWriter(conn, actor="webui") as writer:
-                    for track, update in zip(members, updates, strict=False):
-                        for field_name, value in _field_writes(track, update.patch).items():
-                            writer.set_field(
-                                update.stable_id, field_name, value,
-                                source=source, modified_at=now, confidence=1.0,
+                with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                        rows = list(conn.execute(
+                            "SELECT stable_id, title, artists_json, album, duration_ms, "
+                            "file_path, created_at, updated_at FROM tracks "
+                            "WHERE deleted_at IS NULL ORDER BY stable_id",
+                        ))
+                        fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
+                        tracks = [
+                            _row_to_track(row, fields_by_id.get(row["stable_id"], {}))
+                            for row in rows
+                        ]
+                        catalog_revision = compute_mytag_catalog_revision(tracks)
+                        members = [track for track in tracks if old_name in track.tags]
+                        if (catalog_revision != expected_catalog_revision
+                                or len(members) != expected_track_count):
+                            raise MyTagScopeConflictError(catalog_revision, len(members))
+                        if (new_name is not None
+                                and any(new_name in track.tags for track in tracks)
+                                and not confirm_merge):
+                            raise MyTagMergeConfirmationRequiredError(new_name)
+                        updates = [
+                            TrackUpdate(
+                                track.stable_id,
+                                {"tags_remove": [old_name]} if new_name is None else {
+                                    "tags_add": [new_name], "tags_remove": [old_name],
+                                },
+                                compute_etag(track.stable_id, track.updated_at, track.selection_tag),
                             )
-                conn.execute("COMMIT")
+                            for track in members
+                        ]
+
+                        conflicts: list[dict[str, str]] = []
+                        for track, update in zip(members, updates, strict=False):
+                            current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
+                            if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                                conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
+                        if conflicts:
+                            raise BatchConflictError(conflicts)
+
+                        now = datetime.now(UTC).isoformat()
+                        for track, update in zip(members, updates, strict=False):
+                            for field_name, value in _field_writes(track, update.patch).items():
+                                writer.set_field(
+                                    update.stable_id, field_name, value,
+                                    source=source, modified_at=now, confidence=1.0,
+                                )
             except Exception:
                 if conn.in_transaction:
                     conn.execute("ROLLBACK")

@@ -10,6 +10,7 @@ state stays rbx so shipping NATIVE-01 does not sneak a promotion.
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import ast
@@ -38,9 +39,7 @@ pytestmark = pytest.mark.requirement("NATIVE-01")
 
 STABLE_ID = "sid-native01-gate"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ANALYSIS_SOURCE_UI = (
-    REPO_ROOT / "apps/webui/frontend/src/lib/rb/analysis-source.svelte.ts"
-)
+ANALYSIS_SOURCE_UI = REPO_ROOT / "apps/webui/frontend/src/lib/rb/analysis-source.svelte.ts"
 
 
 def _state_db_path(db: sqlite3.Connection, tmp_path: Path) -> Path:
@@ -51,10 +50,7 @@ def _rekordbox_payload(stable_id: str = STABLE_ID) -> dict[str, Any]:
     """A 4-beat rekordbox grid at 100 BPM from t=1.0 (distinct from the 128 BPM fixture)."""
     bpm = 100.0
     interval = 60.0 / bpm
-    beats = [
-        {"n": i, "bpm": bpm, "t": round(1.0 + (i - 1) * interval, 3)}
-        for i in range(1, 5)
-    ]
+    beats = [{"n": i, "bpm": bpm, "t": round(1.0 + (i - 1) * interval, 3)} for i in range(1, 5)]
     return {
         "stable_id": stable_id,
         "beatgrid": {
@@ -81,9 +77,9 @@ def _write_own_ok_record(db: sqlite3.Connection, stable_id: str = STABLE_ID) -> 
     return payload
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # A. Promotion has not happened
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_beatgrid_persisted_default_is_still_rbx_on_a_fresh_store(
@@ -117,9 +113,9 @@ def test_an_own_record_is_not_served_while_the_default_stays_rbx(
     assert rekordbox_times != own_times[: len(rekordbox_times)]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # B. Re-verify the four landed guarantees
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_own_toggle_serves_own_beats_not_the_rekordbox_grid(
@@ -214,9 +210,9 @@ def test_ok_with_empty_beats_is_a_contract_violation() -> None:
         validate_lane_result("beatgrid", result)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # C. F-guard still wired
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_fixed_tempo_f_guard_is_still_wired() -> None:
@@ -231,9 +227,9 @@ def test_fixed_tempo_f_guard_is_still_wired() -> None:
     assert shift.is_regression is True
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # D. No production path seeds beatgrid=own
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def test_no_apps_call_set_default_beatgrid_own() -> None:

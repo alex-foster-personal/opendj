@@ -91,7 +91,11 @@ test('a load answered after a change is queued never publishes its stale partner
 		release();
 		await inFlight;
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		assert.equal(graph.partners.size, 0, 'the pre-change answer does not publish before the debounced reload');
+		assert.equal(
+			graph.partners.size,
+			0,
+			'the pre-change answer does not publish before the debounced reload'
+		);
 		await settle();
 	} finally {
 		globalThis.fetch = stubbed;

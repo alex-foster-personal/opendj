@@ -378,7 +378,11 @@ test('armAutoPlayNext engages phase-aligned beat_loop on downbeat, not raw loop'
 		assert.equal(await transition.armAutoPlayNext(), true);
 		const loop = transition.deckStates[1].loop;
 		assert.ok(loop !== null);
-		assert.equal(loop.beat_length, 8, 'beat_loop path sets beat_length; raw loop engage leaves it null');
+		assert.equal(
+			loop.beat_length,
+			8,
+			'beat_loop path sets beat_length; raw loop engage leaves it null'
+		);
 		const expectedRange = loops.exactBeatLoopRangeMs(beats, midBarMs, plan.beats, plan.start_ms);
 		assert.equal(loop.in_ms, expectedRange.in_ms);
 		assert.equal(loop.out_ms, expectedRange.out_ms);

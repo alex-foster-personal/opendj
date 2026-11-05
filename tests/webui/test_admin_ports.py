@@ -6,6 +6,7 @@ Regression lines:
 - if claim_ports is invoked from the GET handler then broken (registry rewrite)
 - if a build with no Git worktree raw-500s instead of naming the reason then broken (issue #2786)
 """
+
 from __future__ import annotations
 
 import pytest

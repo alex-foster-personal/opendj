@@ -86,6 +86,11 @@ test('pack:dir:win stamps build-identity, then builds an unsigned Windows dir', 
 	assert.match(script, /-c\.win\.signExecutable=false/);
 });
 
+test('pack:dir:win refuses an empty payload before electron-builder runs', () => {
+	const script = pkg.scripts['pack:dir:win'];
+	assert.ok(script.indexOf('require-payload') !== -1 && script.indexOf('require-payload') < script.indexOf('electron-builder'));
+});
+
 test('pack:dir:win uses no POSIX-only env prefix, because pnpm runs it through cmd.exe on Windows', () => {
 	assert.doesNotMatch(pkg.scripts['pack:dir:win'], /(^|&&)\s*[A-Z_]+=\S+\s/);
 });

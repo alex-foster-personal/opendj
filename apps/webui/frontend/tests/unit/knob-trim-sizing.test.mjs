@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
@@ -12,7 +13,9 @@ const EXPECTED_TRIM_SIZE = 24;
 test('Knob compiles with one caption-inclusive interactive wrapper whose text stays unscaled', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/Knob.svelte', 'utf8');
 	assert.doesNotThrow(() => compile(src, { filename: 'Knob.svelte', generate: 'server' }));
-	assert.match(src, /--knob-caption-size: 8px/);
+	// COLORFX-10: 8px unless the caption would overflow its knob column (then 7px, see knob-caption-fit.ts).
+	assert.match(src, /--knob-caption-size: \$\{caption\.fontPx\}px/);
+	assert.match(readFileSync('src/lib/rb/knob-caption-fit.ts', 'utf8'), /FULL_FONT_PX: 8,/);
 	assert.match(src, /--knob-caption-gap: 1px/);
 	assert.doesNotMatch(src, /const scale = size \/ KNOB_BASE_SIZE/);
 	assert.doesNotMatch(src, /--knob-caption-size: \$\{8 \* scale\}px/);
@@ -78,20 +81,21 @@ test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', asy
 		'LESS_TRIM_SIZE must actually be smaller than MORE mode TRIM_SIZE, or LESS saves no height'
 	);
 
-	const dialKnobTag = (dial) =>
-		new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label=\\{${dial}\\.label\\}(?:(?!/>)[\\s\\S])*?/>`);
-	for (const [label, dial, band] of [
-		['HI', 'hiDial', 'high'],
-		['MID', 'midDial', 'mid'],
-		['LOW', 'lowDial', 'low']
+	// The three EQ dials are explicit <Knob> elements (the dialView/hiDial
+	// derivations were replaced when the S button added stem dials beside them).
+	// Each must still drive its own EQ band: knobId, caption, bound value and oneq band agree.
+	const eqKnobTag = (band) =>
+		new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?knobId=\\{knobId\\(deckId, '${band}'\\)\\}(?:(?!/>)[\\s\\S])*?/>`);
+	for (const [label, value, band] of [
+		['HI', 'eqHigh', 'high'],
+		['MID', 'eqMid', 'mid'],
+		['LOW', 'eqLow', 'low']
 	]) {
-		assert.match(
-			src,
-			new RegExp(`const ${dial} = \\$derived\\.by\\(\\(\\) => dialView\\('${band}', eq\\w+, '${label}',`),
-			`${dial} must be the ${label} EQ band dial`
-		);
-		const knobLine = src.match(dialKnobTag(dial));
+		const knobLine = src.match(eqKnobTag(band));
 		assert.ok(knobLine, `${label} Knob element not found`);
+		assert.match(knobLine[0], new RegExp(`label="${label}"`), `${band} knob must be captioned ${label}`);
+		assert.match(knobLine[0], new RegExp(`value=\\{${value}\\}`), `${label} must show the ${value} prop`);
+		assert.match(knobLine[0], new RegExp(`oneq\\('${band}', value\\)`), `${label} must write the ${band} EQ band`);
 		assert.match(knobLine[0], /size=\{eqSize\}/, `${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`);
 	}
 	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : EQ_SIZE\);/);

@@ -1,4 +1,5 @@
 """Import contract for play-order event helpers without Phase 5 state."""
+
 from __future__ import annotations
 
 import json

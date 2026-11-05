@@ -78,8 +78,7 @@ def _option(uv_tool: dict, options: dict, spec: tuple) -> str | None:
         same = (
             spelled is not None
             and recorded is not None
-            and _stamp(spelled, f"[tool.uv] {spelled_key}")
-            == _stamp(recorded, f"uv.lock options {recorded_key}")
+            and _stamp(spelled, f"[tool.uv] {spelled_key}") == _stamp(recorded, f"uv.lock options {recorded_key}")
         )
         if spelled is not None:
             _stamp(spelled, f"[tool.uv] {spelled_key}")
@@ -87,14 +86,9 @@ def _option(uv_tool: dict, options: dict, spec: tuple) -> str | None:
             _stamp(recorded, f"uv.lock options {recorded_key}")
     else:
         if spelled not in allowed:
-            raise Unknown(
-                f"[tool.uv] {spelled_key} = {spelled!r} is not one of {allowed}; {IGNORED}"
-            )
+            raise Unknown(f"[tool.uv] {spelled_key} = {spelled!r} is not one of {allowed}; {IGNORED}")
         if recorded not in allowed:
-            raise Unknown(
-                f"uv.lock options {recorded_key} = {recorded!r} is not one of {allowed}; "
-                "uv rejects the file"
-            )
+            raise Unknown(f"uv.lock options {recorded_key} = {recorded!r} is not one of {allowed}; uv rejects the file")
         same = spelled == recorded
     if same:
         return None
@@ -171,30 +165,16 @@ def settings_delta(
         # uv records a repeated or equivalent requirement ONCE (`six<2` beside `six<2.0`,
         # or beside itself under a `python_version` marker uv canonicalizes), and reads a
         # lock that repeats one (round 45): both sides are compared as sets by meaning.
-        want = _once(
-            spelled(text)
-            for text in toml_strings(tool.get(spelled_key, []), f"[tool.uv] {spelled_key}")
-        )
+        want = _once(spelled(text) for text in toml_strings(tool.get(spelled_key, []), f"[tool.uv] {spelled_key}"))
         have = _once(
             recorded(entry)
-            for entry in toml_list(
-                manifest.get(recorded_key, []), f"uv.lock manifest {recorded_key}"
-            )
-            if isinstance(entry, dict)
-            or _refuse(f"uv.lock manifest {recorded_key} record {entry!r} is not a table")
+            for entry in toml_list(manifest.get(recorded_key, []), f"uv.lock manifest {recorded_key}")
+            if isinstance(entry, dict) or _refuse(f"uv.lock manifest {recorded_key} record {entry!r} is not a table")
         )
         missing, extra = pair_by_meaning(want - have, have - want)
-        lines.extend(
-            f"  [tool.uv] {spelled_key}: not in uv.lock manifest: {fmt_key(k)}"
-            for k in sorted(missing)
-        )
-        lines.extend(
-            f"  [tool.uv] {spelled_key}: in uv.lock manifest only: {fmt_key(k)}"
-            for k in sorted(extra)
-        )
-    want_sets = _conflicts(
-        tool.get("conflicts", []), "[tool.uv] conflicts", project, recorded=False
-    )
+        lines.extend(f"  [tool.uv] {spelled_key}: not in uv.lock manifest: {fmt_key(k)}" for k in sorted(missing))
+        lines.extend(f"  [tool.uv] {spelled_key}: in uv.lock manifest only: {fmt_key(k)}" for k in sorted(extra))
+    want_sets = _conflicts(tool.get("conflicts", []), "[tool.uv] conflicts", project, recorded=False)
     have_sets = _conflicts(lock.get("conflicts", []), "uv.lock conflicts", project, recorded=True)
     if want_sets != have_sets:
         lines.append(f"  [tool.uv] conflicts: pyproject.toml {want_sets!r}, uv.lock {have_sets!r}")
@@ -235,9 +215,7 @@ def refuse_unscoped_sources(pyproject: dict[str, object], sources: dict[str, obj
     extras = project.get("optional-dependencies", {}) if isinstance(project, dict) else {}
     groups = pyproject.get("dependency-groups", {})
     if not isinstance(extras, dict):
-        raise Unknown(
-            f"[project] optional-dependencies = {extras!r} is not a table; uv rejects the file"
-        )
+        raise Unknown(f"[project] optional-dependencies = {extras!r} is not a table; uv rejects the file")
     if not isinstance(groups, dict):
         raise Unknown(f"[dependency-groups] = {groups!r} is not a table; uv rejects the file")
     for name, source in sources.items():

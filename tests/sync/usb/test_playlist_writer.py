@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.playlist_writer."""
+
 from __future__ import annotations
 
 import pytest
@@ -26,9 +27,7 @@ conflict_policy: canonical-wins
 def test_basic_write(drive_root, fixture_canonical) -> None:
     profile = _profile_with_file_mode("m3u8")
     by_pl = group_by_playlist(fixture_canonical)
-    written = write_m3u8s(
-        profile=profile, tracks_by_playlist=by_pl, drive_root=drive_root
-    )
+    written = write_m3u8s(profile=profile, tracks_by_playlist=by_pl, drive_root=drive_root)
     assert len(written) == 2
     warmup = drive_root / PLAYLISTS_DIRNAME / "Warmup.m3u8"
     assert warmup.exists()

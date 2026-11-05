@@ -42,6 +42,7 @@ Requirements (mini-PRD):
     [if] status is asked [then] HTTP, CLI and MCP read the same document
     [if] a rerun names a playlist or batch [then] its failures and cached cover misses are forgotten and it is enriched again
 """
+
 from __future__ import annotations
 
 import json
@@ -72,8 +73,7 @@ LANE_BACKENDS: dict[str, str] = {
 }
 LaneState = Literal["done", "pending", "failed", "declined", "placeholder", "unavailable", "absent", "suggested"]
 #: States after which a lane will not change without a rerun or a fix.
-SETTLED: frozenset[str] = frozenset(
-    {"done", "failed", "declined", "placeholder", "unavailable", "absent", "suggested"})
+SETTLED: frozenset[str] = frozenset({"done", "failed", "declined", "placeholder", "unavailable", "absent", "suggested"})
 ArtworkStage = Literal["waiting", "queued"]
 MAX_BATCHES: int = 50
 TICK_INTERVAL_S: float = 5.0
@@ -117,9 +117,9 @@ class LaneFacts:
     drain_running: bool = True
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # pure policy
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def essential_states(ids: Sequence[str], facts: LaneFacts) -> dict[str, dict[str, tuple[str, str | None]]]:
     """sid -> lane -> (state, reason) for the essential lanes."""
     out: dict[str, dict[str, tuple[str, str | None]]] = {}
@@ -165,7 +165,9 @@ def batch_settled(states: Mapping[str, Mapping[str, tuple[str, str | None]]]) ->
     return all(state in SETTLED for lanes in states.values() for state, _r in lanes.values())
 
 
-def lane_counts(rows: Mapping[str, Mapping[str, tuple[str, str | None]]], lanes: Sequence[str]) -> dict[str, dict[str, int]]:
+def lane_counts(
+    rows: Mapping[str, Mapping[str, tuple[str, str | None]]], lanes: Sequence[str]
+) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {lane: {} for lane in lanes}
     for per_lane in rows.values():
         for lane in lanes:
@@ -184,31 +186,48 @@ def capability_warnings(
     """What cannot run here and why, each naming where to fix it (ENRICH-08)."""
     warnings: list[EnrichWarning] = []
     if not drain_running:
-        warnings.append(EnrichWarning(
-            "analysis", "ANALYSIS_DRAIN_OFF",
-            "Waveform, BPM/beatgrid, key and loudness are not being filled in: the background analysis is off.",
-            "Start Open DJ without MUSIC_DJ_AHEAD_ANALYSIS=off."))
+        warnings.append(
+            EnrichWarning(
+                "analysis",
+                "ANALYSIS_DRAIN_OFF",
+                "Waveform, BPM/beatgrid, key and loudness are not being filled in: the background analysis is off.",
+                "Start Open DJ without MUSIC_DJ_AHEAD_ANALYSIS=off.",
+            )
+        )
     for lane, reason in sorted(unavailable.items()):
-        warnings.append(EnrichWarning(
-            lane, "LANE_UNAVAILABLE", f"{lane} analysis cannot run on this computer: {reason}",
-            "Fix the named cause, then press Retry on the enrich card."))
+        warnings.append(
+            EnrichWarning(
+                lane,
+                "LANE_UNAVAILABLE",
+                f"{lane} analysis cannot run on this computer: {reason}",
+                "Fix the named cause, then press Retry on the enrich card.",
+            )
+        )
     if not artwork_online:
-        warnings.append(EnrichWarning(
-            ARTWORK_LANE, "ARTWORK_ONLINE_OFF",
-            "Missing covers are not looked up online (MusicBrainz / Cover Art Archive): online lookup is off.",
-            "Remove ODJ_ARTWORK_ONLINE=0 from the environment Open DJ starts with, then restart it."))
+        warnings.append(
+            EnrichWarning(
+                ARTWORK_LANE,
+                "ARTWORK_ONLINE_OFF",
+                "Missing covers are not looked up online (MusicBrainz / Cover Art Archive): online lookup is off.",
+                "Remove ODJ_ARTWORK_ONLINE=0 from the environment Open DJ starts with, then restart it.",
+            )
+        )
     if ai_missing_keys:
-        warnings.append(EnrichWarning(
-            "genre", "AI_GENRE_KEYS_MISSING",
-            f"AI genre tagging cannot run: {', '.join(ai_missing_keys)} not set.",
-            "Set them in the environment Open DJ starts with; Settings > Genre inference lists them.",
-            "info"))
+        warnings.append(
+            EnrichWarning(
+                "genre",
+                "AI_GENRE_KEYS_MISSING",
+                f"AI genre tagging cannot run: {', '.join(ai_missing_keys)} not set.",
+                "Set them in the environment Open DJ starts with; Settings > Genre inference lists them.",
+                "info",
+            )
+        )
     return warnings
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # coordinator
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @dataclass
 class EnrichmentSources:
     """The coordinator's view of the engine, injected so tests need no engine."""
@@ -229,8 +248,9 @@ class EnrichmentSources:
 
 
 class EnrichmentCoordinator:
-    def __init__(self, sources: EnrichmentSources, *, covers: CoverBackfill | None = None,
-                 clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self, sources: EnrichmentSources, *, covers: CoverBackfill | None = None, clock: Callable[[], float] = time.time
+    ) -> None:
         self._src = sources
         self._clock = clock
         self._covers = covers or CoverBackfill(on_outcome=self._record_cover)
@@ -299,8 +319,11 @@ class EnrichmentCoordinator:
             with self._lock:
                 batch.artwork = "queued"
                 self._save()
-            log.info("ingest enrichment: batch %s essentials settled, %d cover lookups queued",
-                     batch.batch_id, len(batch.stable_ids))
+            log.info(
+                "ingest enrichment: batch %s essentials settled, %d cover lookups queued",
+                batch.batch_id,
+                len(batch.stable_ids),
+            )
             released.append(batch.batch_id)
         return released
 
@@ -313,8 +336,9 @@ class EnrichmentCoordinator:
         for warning in warnings:
             if (warning.lane, warning.code) not in self._warned:
                 self._warned.add((warning.lane, warning.code))
-                log.warning("ingest enrichment: %s [%s] %s Fix: %s",
-                            warning.lane, warning.code, warning.message, warning.fix)
+                log.warning(
+                    "ingest enrichment: %s [%s] %s Fix: %s", warning.lane, warning.code, warning.message, warning.fix
+                )
         return warnings
 
     # --- reads ------------------------------------------------------------------
@@ -346,8 +370,9 @@ class EnrichmentCoordinator:
             "registered_at": batch.registered_at,
             "tracks": len(batch.stable_ids),
             "artwork_stage": batch.artwork,
-            "essentials_settled": batch_settled({sid: {k: v for k, v in lanes.items() if k != ARTWORK_LANE}
-                                                 for sid, lanes in rows.items()}),
+            "essentials_settled": batch_settled(
+                {sid: {k: v for k, v in lanes.items() if k != ARTWORK_LANE} for sid, lanes in rows.items()}
+            ),
             "lanes": lane_counts(rows, LANE_PRIORITY),
         }
         if with_tracks:
@@ -414,8 +439,7 @@ class EnrichmentCoordinator:
         if path is None:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        body = json.dumps({"watermark": self._watermark,
-                           "batches": [asdict(b) for b in self._batches.values()]})
+        body = json.dumps({"watermark": self._watermark, "batches": [asdict(b) for b in self._batches.values()]})
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(body)
@@ -447,9 +471,9 @@ class EnrichmentCoordinator:
                 log.exception("ingest enrichment tick failed")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # engine wiring: real sources
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 PLACEHOLDER_SQL = (
     "SELECT DISTINCT stable_id FROM analysis WHERE backend = ? AND backend_version = ? "
     "AND json_extract(record_json, '$.lanes.beatgrid.status') = 'ok' "
@@ -510,12 +534,16 @@ def new_track_rows(conn_factory: Callable[[], sqlite3.Connection], after_rowid: 
 def playlist_member_ids(conn_factory: Callable[[], sqlite3.Connection], playlist_id: str) -> list[str]:
     conn = conn_factory()
     try:
-        if conn.execute("SELECT 1 FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
-                        (playlist_id,)).fetchone() is None:
+        if (
+            conn.execute(
+                "SELECT 1 FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL", (playlist_id,)
+            ).fetchone()
+            is None
+        ):
             raise KeyError(playlist_id)
         rows = conn.execute(
-            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL "
-            "ORDER BY position", (playlist_id,),
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
+            (playlist_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -588,18 +616,20 @@ def build_for_app(app: Any) -> EnrichmentCoordinator:
         if running is not None:
             running.retry_failed_for(ids)
 
-    return EnrichmentCoordinator(EnrichmentSources(
-        facts_fn=facts,
-        new_rows_fn=lambda mark: new_track_rows(open_ro, mark),
-        playlist_ids_fn=lambda pid: playlist_member_ids(open_ro, pid),
-        warnings_fn=warnings,
-        playing_fn=DeckGate(lambda: getattr(app.state, "ui_mirror", None)),
-        prioritize_fn=prioritize,
-        retry_fn=retry,
-        forget_misses_fn=forget_misses,
-        # An app built with no state.db path (unit-test apps) keeps its batches in memory only.
-        store_path=None if state_db is None else Path(state_db).parent / STORE_FILENAME,
-    ))
+    return EnrichmentCoordinator(
+        EnrichmentSources(
+            facts_fn=facts,
+            new_rows_fn=lambda mark: new_track_rows(open_ro, mark),
+            playlist_ids_fn=lambda pid: playlist_member_ids(open_ro, pid),
+            warnings_fn=warnings,
+            playing_fn=DeckGate(lambda: getattr(app.state, "ui_mirror", None)),
+            prioritize_fn=prioritize,
+            retry_fn=retry,
+            forget_misses_fn=forget_misses,
+            # An app built with no state.db path (unit-test apps) keeps its batches in memory only.
+            store_path=None if state_db is None else Path(state_db).parent / STORE_FILENAME,
+        )
+    )
 
 
 def coordinator_for(app: Any) -> EnrichmentCoordinator:

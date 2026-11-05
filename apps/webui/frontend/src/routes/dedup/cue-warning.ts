@@ -1,9 +1,6 @@
 import type { ClusterMember } from './types';
 
-export function mergeCueWarning(
-	members: ClusterMember[],
-	survivorId: string
-): string | null {
+export function mergeCueWarning(members: ClusterMember[], survivorId: string): string | null {
 	const survivor = members.find((member) => member.stable_id === survivorId);
 	if (survivor === undefined) {
 		return null;

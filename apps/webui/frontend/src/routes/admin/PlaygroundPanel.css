@@ -1,0 +1,110 @@
+/* PlaygroundPanel layout rules, @imported by PlaygroundPanel.svelte's
+   <style>. Svelte does NOT scope an imported stylesheet: Vite inlines it as
+   global CSS. Every rule here is therefore rooted at .playground-panel, or it
+   restyles every admin page (and every other route once the playground chunk
+   has loaded). tests/unit/playground-panel-css-scope.test.mjs holds the
+   rooting.
+   Supersedes: PlaygroundPanel.svelte <style> (the 101-line block at lines
+   158-260). */
+
+.playground-panel .panel {
+	max-width: 1180px;
+	margin-bottom: 1.5rem;
+}
+.playground-panel h3 {
+	font-size: 1rem;
+	color: var(--accent);
+	margin: 0 0 0.25rem 0;
+}
+.playground-panel .sub {
+	color: var(--muted);
+	font-size: 0.85rem;
+	margin: 0 0 0.5rem 0;
+	max-width: 90ch;
+}
+.playground-panel .fatal {
+	background: var(--danger);
+	color: #fff;
+	padding: 1rem 1.25rem;
+	border-radius: 8px;
+	font-weight: 600;
+	white-space: pre-wrap;
+	line-height: 1.5;
+	margin: 0.5rem 0;
+}
+.playground-panel code {
+	background: var(--chip-bg);
+	padding: 0.05rem 0.35rem;
+	border-radius: 4px;
+}
+.playground-panel label {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	font-size: 0.85rem;
+	margin-bottom: 0.75rem;
+}
+.playground-panel .form-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 0.75rem;
+	margin-bottom: 0.75rem;
+}
+.playground-panel .grow {
+	flex: 1 1 16rem;
+}
+.playground-panel input,
+.playground-panel select,
+.playground-panel textarea,
+.playground-panel button {
+	font: inherit;
+}
+.playground-panel input,
+.playground-panel select,
+.playground-panel textarea {
+	background: var(--chip-bg);
+	border: 1px solid var(--border, #1c222c);
+	border-radius: 6px;
+	padding: 0.4rem 0.6rem;
+	color: var(--fg);
+}
+.playground-panel textarea {
+	width: 100%;
+	min-height: 5rem;
+	resize: vertical;
+}
+.playground-panel button {
+	padding: 0.45rem 0.9rem;
+	border-radius: 6px;
+	border: 1px solid var(--border, #1c222c);
+	background: var(--chip-bg);
+	color: var(--accent);
+	cursor: pointer;
+}
+.playground-panel button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.playground-panel .result pre {
+	background: var(--chip-bg);
+	padding: 0.75rem;
+	border-radius: 6px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.playground-panel table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.85rem;
+}
+.playground-panel th,
+.playground-panel td {
+	border: 1px solid var(--border, #1c222c);
+	padding: 0.35rem 0.5rem;
+	text-align: left;
+}
+.playground-panel th {
+	background: var(--chip-bg);
+}

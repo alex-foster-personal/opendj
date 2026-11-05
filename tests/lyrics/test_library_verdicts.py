@@ -73,9 +73,7 @@ requires_mp3_loader = pytest.mark.skipif(
         "by their own container), which must merge before this suite is green"
     ),
 )
-requires_ffmpeg = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH"
-)
+requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH")
 #: mode-000 only blocks reads for a NON-root process -- root bypasses
 #: filesystem permission checks entirely (the kernel, not this project's
 #: code, decides that), so any fixture built on ``os.chmod(0o000)`` cannot
@@ -107,9 +105,9 @@ def data_dir(tmp_path: Path) -> Path:
     return path
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # fixtures: real ffmpeg-rendered MP3 stem bundles
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _render_mp3(path: Path, *, silent: bool) -> None:
     source = (
         f"anullsrc=r={SR}:cl=stereo:d={DURATION_S}"
@@ -118,9 +116,21 @@ def _render_mp3(path: Path, *, silent: bool) -> None:
     )
     subprocess.run(
         [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", source,
-            "-ac", "2", "-codec:a", "libmp3lame", "-b:a", "128k",
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            source,
+            "-ac",
+            "2",
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
             str(path),
         ],
         check=True,
@@ -146,22 +156,36 @@ def _render_segmented_mp3(path: Path) -> None:
     """
     subprocess.run(
         [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", f"anullsrc=r={SR}:cl=stereo:d={_LEAD_SILENCE_S}",
-            "-f", "lavfi", "-i",
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=r={SR}:cl=stereo:d={_LEAD_SILENCE_S}",
+            "-f",
+            "lavfi",
+            "-i",
             f"sine=frequency=440:duration={_TONE_S}:sample_rate={SR}",
-            "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[out]",
-            "-map", "[out]",
-            "-ac", "2", "-codec:a", "libmp3lame", "-b:a", "128k",
+            "-filter_complex",
+            "[0:a][1:a]concat=n=2:v=0:a=1[out]",
+            "-map",
+            "[out]",
+            "-ac",
+            "2",
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
             str(path),
         ],
         check=True,
     )
 
 
-def _write_bundle(
-    root: Path, stable_id: str, *, vocal_loud: bool, source_sha256: str = "a" * 64
-) -> Path:
+def _write_bundle(root: Path, stable_id: str, *, vocal_loud: bool, source_sha256: str = "a" * 64) -> Path:
     """A demucs4 v1 bundle: vocals loud/silent, the other three parts the
     opposite, so coverage lands unambiguously on one side of both bands
     (NO_LYRICS_MAX_COVERAGE 12.5 / SPARSE_MAX_COVERAGE 25.0). The loud-vocal
@@ -206,7 +230,11 @@ def _write_corrupt_bundle(root: Path, stable_id: str) -> Path:
 
 
 def _write_wav_bundle(
-    root: Path, stable_id: str, *, duration_s: float = 1.0, sr: int = 8000,
+    root: Path,
+    stable_id: str,
+    *,
+    duration_s: float = 1.0,
+    sr: int = 8000,
     source_sha256: str = "a" * 64,
 ) -> Path:
     """A stdlib-only (``wave`` module) v1 bundle: silence in every part.
@@ -258,7 +286,7 @@ def _write_bundle_dir_stub(root: Path, stable_id: str) -> Path:
     return bundle_dir
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @requires_ffmpeg
@@ -313,12 +341,8 @@ def test_backfill_skips_a_human_override_and_reports_it(conn, data_dir) -> None:
     an otherwise-refreshed computed verdict."""
     seed_track(conn, "sid-override-001")
     _write_bundle(_stems_root(data_dir), "sid-override-001", vocal_loud=False)
-    library_verdicts.backfill_verdicts(
-        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
-    )
-    store.set_override(
-        conn, stable_id="sid-override-001", override="vocal", note="I heard singing"
-    )
+    library_verdicts.backfill_verdicts(conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False)
+    store.set_override(conn, stable_id="sid-override-001", override="vocal", note="I heard singing")
     original = store.get_verdict(conn, "sid-override-001")
     assert original is not None
 
@@ -327,7 +351,9 @@ def test_backfill_skips_a_human_override_and_reports_it(conn, data_dir) -> None:
     # override if the guarantee ever broke.
     shutil.rmtree(_stems_root(data_dir) / "sid-override-001")
     _write_bundle(
-        _stems_root(data_dir), "sid-override-001", vocal_loud=False,
+        _stems_root(data_dir),
+        "sid-override-001",
+        vocal_loud=False,
         source_sha256="c" * 64,
     )
     report = library_verdicts.backfill_verdicts(
@@ -459,9 +485,7 @@ def test_backfill_never_clobbers_an_overridden_row(conn, data_dir) -> None:
         computed_at="2026-09-01T00:00:00.000000+00:00",
         resurrect=False,
     )
-    store.set_override(
-        conn, stable_id="sid-has-override-001", override="vocal", note="I heard singing"
-    )
+    store.set_override(conn, stable_id="sid-has-override-001", override="vocal", note="I heard singing")
     before = store.get_verdict(conn, "sid-has-override-001")
     assert before is not None
 
@@ -470,9 +494,7 @@ def test_backfill_never_clobbers_an_overridden_row(conn, data_dir) -> None:
     )
 
     assert report.processed == ()
-    assert report.skipped.get(library_verdicts.SKIP_HAS_OVERRIDE) == (
-        "sid-has-override-001",
-    )
+    assert report.skipped.get(library_verdicts.SKIP_HAS_OVERRIDE) == ("sid-has-override-001",)
     verdict = store.get_verdict(conn, "sid-has-override-001")
     assert verdict is not None
     assert verdict.verdict == before.verdict
@@ -517,9 +539,7 @@ def test_backfill_never_clobbers_a_row_from_another_producer(conn, data_dir) -> 
     )
 
     assert report.processed == ()
-    assert report.skipped.get(library_verdicts.SKIP_HAS_OTHER_SOURCE) == (
-        "sid-other-source-001",
-    )
+    assert report.skipped.get(library_verdicts.SKIP_HAS_OTHER_SOURCE) == ("sid-other-source-001",)
     verdict = store.get_verdict(conn, "sid-other-source-001")
     assert verdict is not None
     assert verdict.verdict == before.verdict
@@ -559,18 +579,20 @@ def test_a_replaced_bundle_forces_recompute(conn, data_dir) -> None:
     """The resumability key is the BUNDLE's source hash, not just presence."""
     seed_track(conn, "sid-replaced-001")
     _write_bundle(
-        _stems_root(data_dir), "sid-replaced-001", vocal_loud=True,
+        _stems_root(data_dir),
+        "sid-replaced-001",
+        vocal_loud=True,
         source_sha256="1" * 64,
     )
-    library_verdicts.backfill_verdicts(
-        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
-    )
+    library_verdicts.backfill_verdicts(conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False)
     first_verdict = store.get_verdict(conn, "sid-replaced-001")
     assert first_verdict is not None and first_verdict.verdict == "vocal"
 
     shutil.rmtree(_stems_root(data_dir) / "sid-replaced-001")
     _write_bundle(
-        _stems_root(data_dir), "sid-replaced-001", vocal_loud=False,
+        _stems_root(data_dir),
+        "sid-replaced-001",
+        vocal_loud=False,
         source_sha256="2" * 64,
     )
     report = library_verdicts.backfill_verdicts(
@@ -583,11 +605,11 @@ def test_a_replaced_bundle_forces_recompute(conn, data_dir) -> None:
     assert second_verdict.verdict == "no-lyrics"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # freshness key: the STEMS' own identity, not merely the source track's.
 # Fast, stdlib-only (a WAV bundle + a matching vocal-cache entry per
 # generation avoids both ffmpeg and a real soundfile decode).
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _mutate_manifest_model_version(bundle_dir: Path, new_version: str) -> None:
     manifest_path = bundle_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -595,9 +617,7 @@ def _mutate_manifest_model_version(bundle_dir: Path, new_version: str) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def _rewrite_part_with_new_duration(
-    bundle_dir: Path, part: str, *, duration_s: float, sr: int
-) -> None:
+def _rewrite_part_with_new_duration(bundle_dir: Path, part: str, *, duration_s: float, sr: int) -> None:
     n_frames = int(duration_s * sr)
     path = bundle_dir / f"{part}.wav"
     mtime_before_ns = path.stat().st_mtime_ns
@@ -614,9 +634,7 @@ def _rewrite_part_with_new_duration(
     os.utime(path, ns=(later_ns, later_ns))
 
 
-def _seed_matching_cache(
-    data_dir: Path, stable_id: str, bundle: StemBundle, *, coverage_pct: float
-) -> None:
+def _seed_matching_cache(data_dir: Path, stable_id: str, bundle: StemBundle, *, coverage_pct: float) -> None:
     cache_path = vcache.cache_path(data_dir, stable_id)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
@@ -718,9 +736,7 @@ def test_freshness_recomputes_after_a_part_file_change(conn, data_dir) -> None:
         conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
     )
 
-    assert second.processed == ("sid-fresh-part-001",), (
-        "a repaired part must force a recompute, not skip as up-to-date"
-    )
+    assert second.processed == ("sid-fresh-part-001",), "a repaired part must force a recompute, not skip as up-to-date"
     assert store.get_verdict(conn, "sid-fresh-part-001").coverage_pct == 88.0
 
 
@@ -748,7 +764,7 @@ def test_freshness_skips_an_unchanged_bundle(conn, data_dir) -> None:
     assert second.skipped.get(library_verdicts.SKIP_UP_TO_DATE) == ("sid-fresh-unchanged-001",)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # post-load filesystem faults (Sol review round 6, PR #2611): after
 # load_stem_bundle succeeds, _bundle_source_label / _cached_coverage_pct
 # re-stat the manifest and every part file a SECOND time (see
@@ -766,7 +782,7 @@ def test_freshness_skips_an_unchanged_bundle(conn, data_dir) -> None:
 # verdicts are built from (_classify_loaded_bundle, _write_candidate)
 # directly, with the real mutation performed in between, proving the SAME
 # production code the orchestration calls internally.
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_classify_loaded_bundle_reports_a_vanished_part_as_a_failure(data_dir) -> None:
     """P1 BLOCKING fix (Sol review round 6, PR #2611, library_verdicts.py
     _scan_candidate / _bundle_source_label): a part removed after a real,
@@ -789,8 +805,7 @@ def test_classify_loaded_bundle_reports_a_vanished_part_as_a_failure(data_dir) -
 
 @pytest.mark.skipif(
     _RUNNING_AS_ROOT,
-    reason="root bypasses filesystem permission checks; mode 000 cannot "
-    "produce a real permission failure under root",
+    reason="root bypasses filesystem permission checks; mode 000 cannot produce a real permission failure under root",
 )
 def test_classify_loaded_bundle_reports_an_unreadable_bundle_dir_as_a_failure(
     data_dir,
@@ -804,9 +819,7 @@ def test_classify_loaded_bundle_reports_an_unreadable_bundle_dir_as_a_failure(
     bundle = load_stem_bundle("sid-unreadable-scan-001", stems_dir=stems_root)
     bundle_dir.chmod(0o000)
     try:
-        outcome = library_verdicts._classify_loaded_bundle(
-            "sid-unreadable-scan-001", None, bundle
-        )
+        outcome = library_verdicts._classify_loaded_bundle("sid-unreadable-scan-001", None, bundle)
     finally:
         # Restore so pytest's tmp_path teardown can remove it.
         bundle_dir.chmod(0o755)
@@ -835,9 +848,7 @@ def test_cached_coverage_pct_raises_when_a_part_vanishes_after_load(data_dir) ->
         library_verdicts._cached_coverage_pct(data_dir, "sid-vanish-cache-001", bundle)
 
 
-def test_write_candidate_reports_a_vanished_part_as_a_failure_not_an_abort(
-    conn, data_dir
-) -> None:
+def test_write_candidate_reports_a_vanished_part_as_a_failure_not_an_abort(conn, data_dir) -> None:
     """End-to-end proof for the write-phase seam ``backfill_verdicts`` calls
     internally: given a candidate whose bundle was scanned and cached
     successfully, then a real part vanishes before the write step runs,
@@ -851,9 +862,7 @@ def test_write_candidate_reports_a_vanished_part_as_a_failure_not_an_abort(
     _seed_matching_cache(data_dir, "sid-vanish-write-001", bundle, coverage_pct=17.0)
     (bundle_dir / "bass.wav").unlink()  # real fault, landing AFTER the scan already succeeded
 
-    outcome = library_verdicts._write_candidate(
-        conn, data_dir, "sid-vanish-write-001", bundle, expected_source
-    )
+    outcome = library_verdicts._write_candidate(conn, data_dir, "sid-vanish-write-001", bundle, expected_source)
 
     assert outcome.fail_reason is not None
     assert outcome.race_lost is False
@@ -900,9 +909,7 @@ def test_write_candidate_refuses_a_bundle_replaced_after_the_scan(conn, data_dir
 
 
 @pytest.mark.requirement("STEM-58")
-@pytest.mark.parametrize(
-    "path", ["cached", pytest.param("derived", marks=pytest.mark.requires_audio_stack)]
-)
+@pytest.mark.parametrize("path", ["cached", pytest.param("derived", marks=pytest.mark.requires_audio_stack)])
 def test_the_verdict_is_written_before_a_waiting_swap_can_land(conn, data_dir, tmp_path, monkeypatch, path) -> None:
     """[if] a swap can land between the last generation check and the verdict upsert [then] fail, [else stop].
 
@@ -1067,9 +1074,7 @@ def test_coverage_refuses_a_bundle_swapped_out_and_back_mid_decode(data_dir, tmp
     assert library_verdicts._bundle_source_label(bundle) == source, "control: the identity is A's again"
 
 
-def test_backfill_continues_past_one_candidates_real_filesystem_fault(
-    conn, data_dir
-) -> None:
+def test_backfill_continues_past_one_candidates_real_filesystem_fault(conn, data_dir) -> None:
     """Full-orchestration proof that a real post-load filesystem fault on
     ONE candidate is reported as a FAILURE by name while a SIBLING candidate
     is computed normally in the SAME run -- driven through
@@ -1086,9 +1091,7 @@ def test_backfill_continues_past_one_candidates_real_filesystem_fault(
     stems_root = _stems_root(data_dir)
     demucs_root, roformer_root = library_verdicts._bundle_roots(data_dir)
 
-    victim_dir = _write_wav_bundle(
-        stems_root, "sid-vanish-sibling-victim-001", source_sha256="5" * 64
-    )
+    victim_dir = _write_wav_bundle(stems_root, "sid-vanish-sibling-victim-001", source_sha256="5" * 64)
     _write_wav_bundle(stems_root, "sid-vanish-sibling-ok-001", source_sha256="6" * 64)
 
     # Scan phase: both candidates load and classify successfully for real,
@@ -1113,12 +1116,8 @@ def test_backfill_continues_past_one_candidates_real_filesystem_fault(
     # exactly as a real prior ``from-stems`` run would have left one -- this
     # is what routes the write phase through the vulnerable bundle-identity
     # comparison instead of a real (soundfile-dependent) decode.
-    _seed_matching_cache(
-        data_dir, "sid-vanish-sibling-victim-001", victim_outcome.attempt[1], coverage_pct=71.0
-    )
-    _seed_matching_cache(
-        data_dir, "sid-vanish-sibling-ok-001", ok_outcome.attempt[1], coverage_pct=63.0
-    )
+    _seed_matching_cache(data_dir, "sid-vanish-sibling-victim-001", victim_outcome.attempt[1], coverage_pct=71.0)
+    _seed_matching_cache(data_dir, "sid-vanish-sibling-ok-001", ok_outcome.attempt[1], coverage_pct=63.0)
 
     # The real fault: the victim's part vanishes AFTER its scan already
     # succeeded, before the write phase reaches it.
@@ -1126,9 +1125,7 @@ def test_backfill_continues_past_one_candidates_real_filesystem_fault(
 
     # Write phase: same call backfill_verdicts's own write loop makes, for
     # each scanned candidate in turn.
-    victim_write = library_verdicts._write_candidate(
-        conn, data_dir, *victim_outcome.attempt
-    )
+    victim_write = library_verdicts._write_candidate(conn, data_dir, *victim_outcome.attempt)
     ok_write = library_verdicts._write_candidate(conn, data_dir, *ok_outcome.attempt)
 
     assert victim_write.fail_reason is not None, "the victim must be a FAILURE, not silent"
@@ -1141,10 +1138,10 @@ def test_backfill_continues_past_one_candidates_real_filesystem_fault(
     assert ok_verdict.coverage_pct == 63.0
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # vocal-cache identity guard: fast, stdlib-only (no ffmpeg / no soundfile),
 # so these run in every environment including this repo's dev-only venv.
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_cached_coverage_pct_reuses_a_matching_bundle_identity(data_dir) -> None:
     """A cache entry stamped with THIS bundle's own layout + source hash is
     the shape the coverage-reuse fast path is allowed to serve."""
@@ -1206,10 +1203,7 @@ def test_cached_coverage_pct_rejects_a_replaced_bundle(data_dir) -> None:
         ),
         encoding="utf-8",
     )
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle) is None
 
     # Case 2: legacy entry, no identity fields at all -- duration matches,
     # nothing else does.
@@ -1224,10 +1218,7 @@ def test_cached_coverage_pct_rejects_a_replaced_bundle(data_dir) -> None:
         ),
         encoding="utf-8",
     )
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle) is None
 
 
 def test_cached_coverage_pct_rejects_a_lookalike_generation(data_dir) -> None:
@@ -1320,54 +1311,33 @@ def test_cached_coverage_pct_rejects_non_finite_and_out_of_range_values(data_dir
 
     # NaN coverage_pct (duration otherwise valid and matching).
     cache_path.write_text(_entry("NaN", real_duration), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # Infinity duration_s (coverage_pct otherwise valid).
     cache_path.write_text(_entry(10.0, "Infinity"), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # -Infinity duration_s too.
     cache_path.write_text(_entry(10.0, "-Infinity"), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # coverage_pct out of the valid [0, 100] range, otherwise well-formed.
     cache_path.write_text(_entry(150.0, real_duration), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # A negative coverage_pct is equally out of range.
     cache_path.write_text(_entry(-1.0, real_duration), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # duration_s <= 0 is nonsensical for a real bundle.
     cache_path.write_text(_entry(10.0, 0), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        is None
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) is None
 
     # Opposite-direction control: a fully valid, finite, in-range entry
     # (identical shape to the rejected ones above, minus the defect) is
     # still reused.
     cache_path.write_text(_entry(10.0, real_duration), encoding="utf-8")
-    assert (
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle)
-        == 10.0
-    )
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-nonfinite-001", bundle) == 10.0
 
 
 def test_cached_coverage_pct_raises_on_a_present_but_corrupt_cache_entry(data_dir) -> None:
@@ -1391,8 +1361,7 @@ def test_cached_coverage_pct_raises_on_a_present_but_corrupt_cache_entry(data_di
 
 @pytest.mark.skipif(
     _RUNNING_AS_ROOT,
-    reason="root bypasses filesystem permission checks; mode 000 cannot "
-    "produce a real permission failure under root",
+    reason="root bypasses filesystem permission checks; mode 000 cannot produce a real permission failure under root",
 )
 def test_cached_coverage_pct_raises_on_a_permission_denied_cache_file(data_dir) -> None:
     """P1 BLOCKING fix (Sol review round 5, PR #2611): the round-4 test for
@@ -1436,9 +1405,7 @@ def test_cached_coverage_pct_raises_when_a_directory_sits_at_the_cache_path(
         library_verdicts._cached_coverage_pct(data_dir, "sid-cache-isdir-001", bundle)
 
 
-def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(
-    conn, data_dir
-) -> None:
+def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(conn, data_dir) -> None:
     """End-to-end control, proving the PRESENCE of the good thing per the
     project's verification rule: the backfill itself must surface a
     present-but-corrupt cache entry as a FAILURE line an operator can see,
@@ -1463,12 +1430,9 @@ def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(
 
 @pytest.mark.skipif(
     _RUNNING_AS_ROOT,
-    reason="root bypasses filesystem permission checks; mode 000 cannot "
-    "produce a real permission failure under root",
+    reason="root bypasses filesystem permission checks; mode 000 cannot produce a real permission failure under root",
 )
-def test_backfill_reports_a_permission_denied_cache_file_as_a_failure(
-    conn, data_dir
-) -> None:
+def test_backfill_reports_a_permission_denied_cache_file_as_a_failure(conn, data_dir) -> None:
     """End-to-end control for the permission-denied unit test above: the
     backfill itself must surface it as a FAILURE, not a silent re-derive."""
     seed_track(conn, "sid-cache-denied-backfill-001")
@@ -1491,9 +1455,7 @@ def test_backfill_reports_a_permission_denied_cache_file_as_a_failure(
     assert store.get_verdict(conn, "sid-cache-denied-backfill-001") is None
 
 
-def test_backfill_reports_a_directory_at_the_cache_path_as_a_failure(
-    conn, data_dir
-) -> None:
+def test_backfill_reports_a_directory_at_the_cache_path_as_a_failure(conn, data_dir) -> None:
     """End-to-end control for the directory-at-path unit test above: the
     backfill itself must surface it as a FAILURE, not a silent re-derive."""
     seed_track(conn, "sid-cache-isdir-backfill-001")
@@ -1512,9 +1474,7 @@ def test_backfill_reports_a_directory_at_the_cache_path_as_a_failure(
     assert store.get_verdict(conn, "sid-cache-isdir-backfill-001") is None
 
 
-def test_backfill_reuses_a_readable_cache_entry_as_the_opposite_direction_control(
-    conn, data_dir
-) -> None:
+def test_backfill_reuses_a_readable_cache_entry_as_the_opposite_direction_control(conn, data_dir) -> None:
     """Opposite-direction control for the two tests above: a present,
     READABLE, compatible cache entry must still be reused and processed
     normally -- the fix must not turn every cache hit into a failure."""
@@ -1605,13 +1565,11 @@ def test_stale_vocal_cache_from_a_replaced_bundle_is_not_reused(conn, data_dir) 
     assert verdict.verdict == "no-lyrics", "stale generation-1 cache must not mask generation 2"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # backfill vs. a concurrent word-data write: fast, stdlib-only (a WAV bundle
 # plus a matching vocal-cache entry means no ffmpeg/soundfile decode either).
-#-----------------------------------------------------------------------------
-def test_backfill_never_clobbers_a_word_row_written_during_the_race(
-    conn, data_dir
-) -> None:
+# -----------------------------------------------------------------------------
+def test_backfill_never_clobbers_a_word_row_written_during_the_race(conn, data_dir) -> None:
     """P1 BLOCKING fix (Devin review, PR #2611, library_verdicts.py:304),
     strengthened by a Sol follow-up review at 8d2dc8ddb9, then REWRITTEN for
     a Sol round-6 review (PR #2611): the earlier version of this test drove
@@ -1686,9 +1644,7 @@ def test_backfill_never_clobbers_a_word_row_written_during_the_race(
     # write loop makes for each scanned candidate.
     write_outcome = library_verdicts._write_candidate(conn, data_dir, *scan_outcome.attempt)
 
-    assert write_outcome.race_lost is True, (
-        "a race loss must be detected, not silently written over"
-    )
+    assert write_outcome.race_lost is True, "a race loss must be detected, not silently written over"
     assert write_outcome.fail_reason is None
     verdict = store.get_verdict(conn, "sid-race-001")
     assert verdict is not None
@@ -1764,9 +1720,7 @@ def test_backfill_never_clobbers_a_row_overridden_during_the_race(conn, data_dir
 
     write_outcome = library_verdicts._write_candidate(conn, data_dir, *scan_outcome.attempt)
 
-    assert write_outcome.race_lost is True, (
-        "a race loss must be detected, not silently written over"
-    )
+    assert write_outcome.race_lost is True, "a race loss must be detected, not silently written over"
     assert write_outcome.fail_reason is None
     verdict = store.get_verdict(conn, "sid-override-race-001")
     assert verdict is not None
@@ -1854,9 +1808,7 @@ def test_limit_caps_the_computed_set_not_the_skips(conn, data_dir) -> None:
         json.dumps({"tracks": [{"stable_id": "sid-limit-reserved"}]}), encoding="utf-8"
     )
 
-    report = library_verdicts.backfill_verdicts(
-        conn, data_dir=data_dir, dry_run=False, limit=1, include_reserved=False
-    )
+    report = library_verdicts.backfill_verdicts(conn, data_dir=data_dir, dry_run=False, limit=1, include_reserved=False)
 
     assert len(report.processed) == 1
     assert report.skipped.get(library_verdicts.SKIP_RESERVED) == ("sid-limit-reserved",)
@@ -1879,9 +1831,7 @@ def test_reserved_ids_policy_matches_the_hydration_loader(tmp_path: Path) -> Non
     from apps.cloud import stem_hydration
 
     data_dir = tmp_path / "data"
-    assert library_verdicts.load_reserved_ids(data_dir) == stem_hydration.load_reserved_ids(
-        data_dir
-    )
+    assert library_verdicts.load_reserved_ids(data_dir) == stem_hydration.load_reserved_ids(data_dir)
     (data_dir / "state").mkdir(parents=True)
     (data_dir / "state" / library_verdicts.RESERVED_FILENAME).write_text(
         '{"tracks": [{"stable_id": "a"}, {"stable_id": "b"}]}', encoding="utf-8"
@@ -1928,6 +1878,4 @@ def test_reserved_ids_loads_ids_from_a_present_file(tmp_path: Path) -> None:
 
 def test_negative_limit_is_rejected(conn, data_dir) -> None:
     with pytest.raises(ValueError, match="limit"):
-        library_verdicts.backfill_verdicts(
-            conn, data_dir=data_dir, dry_run=False, limit=-1, include_reserved=False
-        )
+        library_verdicts.backfill_verdicts(conn, data_dir=data_dir, dry_run=False, limit=-1, include_reserved=False)

@@ -25,7 +25,9 @@ function lightClasses(html) {
 	const found = [];
 	for (const match of html.matchAll(/class="([^"]*)"/g)) {
 		for (const token of match[1].split(/\s+/)) {
-			if (token.startsWith('light-')) { found.push(token); }
+			if (token.startsWith('light-')) {
+				found.push(token);
+			}
 		}
 	}
 	return found;

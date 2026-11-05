@@ -216,9 +216,7 @@ def test_track_lyrics_words_include_lines(client: TestClient) -> None:
     assert line_rows[0]["text"] == "one two three"
     assert line_rows[0]["n_red"] == 1 and line_rows[0]["n_judged"] == 3
     assert line_rows[0]["band"] in ("good", "uncertain", "bad", "unjudged")
-    assert client.get(
-        "/api/v1/tracks/aaa/lyrics/words", params={"include": "bogus"}
-    ).status_code == 422
+    assert client.get("/api/v1/tracks/aaa/lyrics/words", params={"include": "bogus"}).status_code == 422
 
 
 def test_lyrics_config_roundtrip_and_validation(client: TestClient) -> None:
@@ -236,16 +234,12 @@ def test_lyrics_config_roundtrip_and_validation(client: TestClient) -> None:
     assert client.get("/api/v1/lyrics/config").json()["source_order"] == reordered
     partial = client.put("/api/v1/lyrics/config", json={"source_order": order[:2]})
     assert partial.status_code == 422
-    unknown = client.put(
-        "/api/v1/lyrics/config", json={"source_order": [*order, "spotify magic"]}
-    )
+    unknown = client.put("/api/v1/lyrics/config", json={"source_order": [*order, "spotify magic"]})
     assert unknown.status_code == 422
 
 
 def test_lyric_jobs_queue_validates_and_lists(client: TestClient) -> None:
-    bad_kind = client.post(
-        "/api/v1/lyrics/jobs", json={"kind": "teleport", "stable_ids": ["aaa"]}
-    )
+    bad_kind = client.post("/api/v1/lyrics/jobs", json={"kind": "teleport", "stable_ids": ["aaa"]})
     assert bad_kind.status_code == 422
     too_many = client.post(
         "/api/v1/lyrics/jobs",
@@ -253,9 +247,7 @@ def test_lyric_jobs_queue_validates_and_lists(client: TestClient) -> None:
     )
     assert too_many.status_code == 422
     assert too_many.json()["detail"] == "at most 500 tracks per job"
-    bad_track = client.post(
-        "/api/v1/lyrics/jobs", json={"kind": "stems", "stable_ids": ["nope"]}
-    )
+    bad_track = client.post("/api/v1/lyrics/jobs", json={"kind": "stems", "stable_ids": ["nope"]})
     assert bad_track.status_code == 422
     made = client.post(
         "/api/v1/lyrics/jobs",
@@ -301,9 +293,7 @@ def test_purge_dry_run(client: TestClient) -> None:
     assert response.json()["rows_tombstoned"] == 0
 
 
-def test_all_tracks_listing_carries_lyrics_and_remix_flag(
-    db_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_all_tracks_listing_carries_lyrics_and_remix_flag(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rb_config, "STATE_DB", db_path)
     client = TestClient(
         create_app(

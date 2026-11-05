@@ -193,7 +193,10 @@ export function pasteToastMessage(
 ): string {
 	const verb = moved ? 'Moved' : 'Pasted';
 	const noun = added === 1 ? '1 track' : `${added} tracks`;
-	const head = added === 0 ? `Nothing new to paste into "${playlistName}"` : `${verb} ${noun} into "${playlistName}"`;
+	const head =
+		added === 0
+			? `Nothing new to paste into "${playlistName}"`
+			: `${verb} ${noun} into "${playlistName}"`;
 	if (already === 0) return head;
 	return `${head} (${already} already there)`;
 }

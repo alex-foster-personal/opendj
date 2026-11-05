@@ -35,6 +35,7 @@ Regression lines:
     proof
   - [if] the engine misses the OAuth id/secret [then] item I fails naming both, never value, [else stop]
 """
+
 from __future__ import annotations
 
 import os
@@ -113,11 +114,11 @@ def _fake_doppler(tmp_path: Path, *, client_id: str, client_secret: str) -> Path
         f'    OPENDJ_GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_ID) echo "{client_id}" ;;\n'
         "    OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET|GOOGLE_OAUTH_CLIENT_SECRET)\n"
         f'      echo "{client_secret}" ;;\n'
-        '    *) exit 1 ;;\n'
+        "    *) exit 1 ;;\n"
         "  esac\n"
         "  exit 0\n"
         "fi\n"
-        'exit 1\n',
+        "exit 1\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -232,12 +233,9 @@ def test_preflight_still_launches_when_bash_and_doppler_share_a_directory(
     # did: drop every PATH entry holding a `doppler` executable. This test
     # is specifically about that surgery colliding with bash, so it
     # reproduces the surgery on purpose rather than using MDT_DOPPLER_BIN.
-    kept = [
-        part for part in env["PATH"].split(os.pathsep) if part and not (Path(part) / "doppler").exists()
-    ]
+    kept = [part for part in env["PATH"].split(os.pathsep) if part and not (Path(part) / "doppler").exists()]
     assert not any((Path(p) / "bash").exists() for p in kept), (
-        "fixture is invalid: bash is still reachable after hiding doppler, "
-        "so this run would not exercise the collision"
+        "fixture is invalid: bash is still reachable after hiding doppler, so this run would not exercise the collision"
     )
     env["PATH"] = os.pathsep.join(kept)
 
@@ -258,6 +256,5 @@ def test_preflight_still_launches_when_bash_and_doppler_share_a_directory(
     )
 
     assert "No such file or directory" not in result.stderr, (
-        "hiding doppler must not also hide the script's own interpreter: "
-        f"{result.stderr}"
+        f"hiding doppler must not also hide the script's own interpreter: {result.stderr}"
     )

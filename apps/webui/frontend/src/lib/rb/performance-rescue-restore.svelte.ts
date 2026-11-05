@@ -14,10 +14,7 @@ import {
 	type RescueResumeTarget
 } from '$lib/rb/performance-rescue-math';
 import type { RescueSnapshot } from '$lib/rb/rescue-snapshot';
-import type {
-	PerformanceCommand,
-	PerformanceState
-} from '$lib/rb/performance-ipc.svelte';
+import type { PerformanceCommand, PerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import type { ReloadResumeOffer } from '$lib/rb/reload-resume';
 

@@ -23,9 +23,7 @@ from scripts.review_gh import TriageError
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def _commit(root: Path, rel: str, text: str) -> str:

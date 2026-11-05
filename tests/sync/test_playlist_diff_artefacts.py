@@ -1,4 +1,5 @@
 """SYNC-03: artefact writers (markdown + CSV + JSON) + CLI smoke."""
+
 from __future__ import annotations
 
 import csv
@@ -68,7 +69,9 @@ def _fixture_plan() -> PlaylistPlan:
         "t3": ("Track Three", "C"),
     }
     return build_plan(
-        rb, djay, matches,
+        rb,
+        djay,
+        matches,
         rb_track_titles=titles,
         generated_at="2026-04-17T00:00:00Z",
     )
@@ -88,9 +91,17 @@ def test_plan_json_has_stable_schema(tmp_path: Path) -> None:
 
     # Each playlist entry has the documented fields.
     required = {
-        "rb_id", "rb_name", "op", "djay_uuid", "djay_name_current",
-        "target_members", "djay_current_members", "adds", "removes",
-        "reordered", "unmatched_rb",
+        "rb_id",
+        "rb_name",
+        "op",
+        "djay_uuid",
+        "djay_name_current",
+        "target_members",
+        "djay_current_members",
+        "adds",
+        "removes",
+        "reordered",
+        "unmatched_rb",
     }
     for pl in doc["playlists"]:
         assert required <= set(pl.keys())
@@ -145,8 +156,14 @@ def test_patch_csv_columns_are_stable(tmp_path: Path) -> None:
     with out.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         expected = [
-            "op", "playlist_name", "playlist_rb_id", "playlist_djay_uuid",
-            "track_rb_id", "track_djay_uuid", "new_track_no", "reason",
+            "op",
+            "playlist_name",
+            "playlist_rb_id",
+            "playlist_djay_uuid",
+            "track_rb_id",
+            "track_djay_uuid",
+            "new_track_no",
+            "reason",
         ]
         assert reader.fieldnames == expected
 
@@ -233,6 +250,7 @@ def test_out_dir_outside_repo_is_rejected(tmp_path: Path) -> None:
 @pytest.mark.requirement("SYNC-03")
 def test_path_under_repo_guard_trusts_project_root(tmp_path: Path) -> None:
     from apps.shared import paths
+
     assert _path_under_repo(paths.DATA_DIR / "sync")
     assert not _path_under_repo(Path("/etc"))
 
@@ -241,6 +259,7 @@ def test_path_under_repo_guard_trusts_project_root(tmp_path: Path) -> None:
 def test_missing_matches_returns_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """With no matches.csv the CLI must exit 2 with a hint on stderr."""
     from apps.shared import paths
+
     # Provide fake DB paths that never get opened because matches check fails first.
     # Force out-dir to repo-local to pass the safety rail.
     repo_out = paths.DATA_DIR / "sync" / "_test_scratch"
@@ -262,9 +281,12 @@ def test_missing_matches_returns_exit_2(tmp_path: Path, monkeypatch: pytest.Monk
     # Point matches at a non-existent file.
     rc = pd.main(
         [
-            "--out-dir", str(repo_out),
-            "--matches", str(tmp_path / "nope.csv"),
-            "--djay-db", str(tmp_path / "fake.db"),
+            "--out-dir",
+            str(repo_out),
+            "--matches",
+            str(tmp_path / "nope.csv"),
+            "--djay-db",
+            str(tmp_path / "fake.db"),
         ]
     )
     assert rc == 2

@@ -30,6 +30,12 @@ test('a forced election (master stopped, played out, unloaded) runs even during 
 
 test('every automatic election in the engine goes through the hold, with the live plan status', async () => {
 	const source = await readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
-	const body = source.slice(source.indexOf('function _electPlayingMaster('), source.indexOf('function _electPlayingMaster(') + 400);
-	assert.match(body, /automaticElectionHeld\(\{ locked: _masterMode === 'locked', force: options\?\.force === true, planOwnsDecks: autoPlayYieldsNow\(\) \}\)/);
+	const body = source.slice(
+		source.indexOf('function _electPlayingMaster('),
+		source.indexOf('function _electPlayingMaster(') + 400
+	);
+	assert.match(
+		body,
+		/automaticElectionHeld\(\{ locked: _masterMode === 'locked', force: options\?\.force === true, planOwnsDecks: autoPlayYieldsNow\(\) \}\)/
+	);
 });

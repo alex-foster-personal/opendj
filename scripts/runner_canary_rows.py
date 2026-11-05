@@ -4,7 +4,7 @@
 turns each run's jobs into `ShardRow`s. It decides what a job's outcome is (green, red,
 infra, dropped, ours, pending), which vendor shards a gate-passed run owed, and counts every
 owed shard GitHub never created as a lost job. Decision record:
-docs/decisions/ADR-NEW-runner-canary.md.
+(private path).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ BASELINE_SIDE = "self-hosted"
 GATE_JOB = "canary: budget gate"
 # The annotation a passing budget gate leaves on its own job, naming the vendors whose shards
 # the run owes (scripts/runner_canary_budget.py GateDecision.planned_vendors_notice; the two
-# spellings are pinned equal by tests/scripts/test_runner_canary_rows.py).
+# spellings are pinned equal by (private path)).
 PLANNED_VENDORS_TITLE = "runner-canary planned vendors"
 #: The annotation GitHub writes for a failed run step, carrying its exit code. The pytest
 #: step exits with pytest's own code (ci.yml and the canary share it), so only 1, pytest's
@@ -96,9 +96,7 @@ def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: in
     if conclusion == "success":
         return "green"
     if conclusion == "failure":
-        pytest_step = next(
-            (s for s in job.get("steps") or [] if s.get("name") == pytest_step_name), None
-        )
+        pytest_step = next((s for s in job.get("steps") or [] if s.get("name") == pytest_step_name), None)
         if pytest_step is not None and pytest_step.get("conclusion") == "failure":
             return "red" if _pytest_exit_code(job) == TESTS_FAILED else "infra"
         return "infra"
@@ -147,18 +145,14 @@ def planned_vendors(run: dict[str, Any]) -> list[str]:
     return [v for v in (notes[0].get("message") or "").split(",") if v]
 
 
-def missing_shard_rows(
-    run: dict[str, Any], observed: list[ShardRow], shard_count: int
-) -> list[ShardRow]:
+def missing_shard_rows(run: dict[str, Any], observed: list[ShardRow], shard_count: int) -> list[ShardRow]:
     """Every shard a gate-passed run owes that GitHub returned no job for. Once the run has
     finished, each is a lost job: infra, never started, so it waits forever (Sol P1 on
     b9db90801). While the run is still going, a job not yet created is pending."""
     planned = planned_vendors(run)
     stray = sorted({r.vendor for r in observed} - set(planned))
     if stray:
-        raise ReadFailed(
-            f"canary run {run['id']} has shards for {stray}, which its budget gate did not plan"
-        )
+        raise ReadFailed(f"canary run {run['id']} has shards for {stray}, which its budget gate did not plan")
     seen = {(r.vendor, r.shard) for r in observed}
     created = _required_ts(run["created_at"])
     outcome: Outcome = "infra" if run["status"] == "completed" else "pending"

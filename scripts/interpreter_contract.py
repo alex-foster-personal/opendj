@@ -54,15 +54,12 @@ def read_requires_python(pyproject_path: Path) -> str:
     """Return the raw ``requires-python`` specifier declared by the project."""
     if not pyproject_path.is_file():
         raise InterpreterContractError(
-            f"no pyproject.toml at {pyproject_path}, so the interpreter floor is "
-            "unknown and cannot be checked"
+            f"no pyproject.toml at {pyproject_path}, so the interpreter floor is unknown and cannot be checked"
         )
     text = pyproject_path.read_text(encoding="utf-8")
     match = REQUIRES_PYTHON_PATTERN.search(text)
     if match is None:
-        raise InterpreterContractError(
-            f"{pyproject_path} declares no requires-python, so there is no floor to enforce"
-        )
+        raise InterpreterContractError(f"{pyproject_path} declares no requires-python, so there is no floor to enforce")
     return match.group(1).strip()
 
 

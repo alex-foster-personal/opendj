@@ -2,6 +2,7 @@
 
 [if] the hub sqlite cannot take a push write [then] the spoke gets 507 SYNC_HUB_STORAGE and the fence stays put, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -85,9 +86,7 @@ def _track_title_on_hub(hub_dir: Path, stable_id: str) -> str | None:
         conn.close()
 
 
-def _cap_hub_pages(
-    monkeypatch: pytest.MonkeyPatch, hub_dir: Path, hub: TestClientTransport
-) -> int:
+def _cap_hub_pages(monkeypatch: pytest.MonkeyPatch, hub_dir: Path, hub: TestClientTransport) -> int:
     hub_db_path = client.state_db_path(hub_dir).resolve()
     real_open_rw = state_db.open_rw
     # Leaving WAL needs the database to itself; the running hub's keeper

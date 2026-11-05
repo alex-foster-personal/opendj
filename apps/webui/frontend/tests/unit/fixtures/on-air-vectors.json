@@ -1,0 +1,138 @@
+{
+	"_comment": "LINKAIR-01 conformance vectors: the engine rule (apps/b2b_session/on_air.py) and the page's instant local tag (link-turn.ts) must both give on_air for every case. gain = fader x the page crossfader law, precomputed.",
+	"epsilon": 0.0001,
+	"cases": [
+		{
+			"name": "fader up, THRU, joined, speakers on",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 1.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": true
+		},
+		{
+			"name": "nothing loaded",
+			"loaded": false,
+			"fader": 1.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 1.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": false
+		},
+		{
+			"name": "fader down",
+			"loaded": true,
+			"fader": 0.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 0.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": false
+		},
+		{
+			"name": "side A, crossfader fully at B",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "A",
+			"crossfader": 1.0,
+			"gain": 0.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": false
+		},
+		{
+			"name": "side B, crossfader fully at B",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "B",
+			"crossfader": 1.0,
+			"gain": 1.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": true
+		},
+		{
+			"name": "side A, crossfader centre",
+			"loaded": true,
+			"fader": 0.8,
+			"assign": "A",
+			"crossfader": 0.5,
+			"gain": 0.565685425,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": true
+		},
+		{
+			"name": "LINK not joined (a solo set)",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 1.0,
+			"link_joined": false,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": false
+		},
+		{
+			"name": "Speakers unknown (muted)",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 1.0,
+			"link_joined": true,
+			"speakers_known": false,
+			"speakers_on": false,
+			"on_air": false
+		},
+		{
+			"name": "Speakers off",
+			"loaded": true,
+			"fader": 1.0,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 1.0,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": false,
+			"on_air": false
+		},
+		{
+			"name": "gain just under the epsilon",
+			"loaded": true,
+			"fader": 9e-05,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 9e-05,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": false
+		},
+		{
+			"name": "gain at the epsilon",
+			"loaded": true,
+			"fader": 0.0001,
+			"assign": "THRU",
+			"crossfader": 0.5,
+			"gain": 0.0001,
+			"link_joined": true,
+			"speakers_known": true,
+			"speakers_on": true,
+			"on_air": true
+		}
+	]
+}

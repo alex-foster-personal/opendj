@@ -54,9 +54,7 @@ def test_the_plain_copy_name_is_the_same_one_everywhere() -> None:
 
 
 # ----- plaintext detection ------------------------------------------------
-def test_a_real_sqlite_file_reads_as_plaintext(
-    data_dir: Path, rb_plain_db_path: Path
-) -> None:
+def test_a_real_sqlite_file_reads_as_plaintext(data_dir: Path, rb_plain_db_path: Path) -> None:
     assert detect.is_plain_sqlite(_with_plain_copy(data_dir, rb_plain_db_path)) is True
 
 
@@ -81,9 +79,7 @@ def test_probe_reports_a_missing_path_instead_of_raising(
     assert probe.path.endswith("absent.db")
 
 
-def test_probe_reports_size_and_mtime_for_a_real_file(
-    data_dir: Path, rb_plain_db_path: Path
-) -> None:
+def test_probe_reports_size_and_mtime_for_a_real_file(data_dir: Path, rb_plain_db_path: Path) -> None:
     probe = detect.probe(_with_plain_copy(data_dir, rb_plain_db_path))
     assert probe.exists is True
     assert probe.size_bytes == rb_plain_db_path.stat().st_size
@@ -92,7 +88,8 @@ def test_probe_reports_size_and_mtime_for_a_real_file(
 
 # ----- source selection ---------------------------------------------------
 def test_an_existing_plain_copy_is_preferred_over_the_live_db(
-    data_dir: Path, rb_plain_db_path: Path,
+    data_dir: Path,
+    rb_plain_db_path: Path,
 ) -> None:
     plain = _with_plain_copy(data_dir, rb_plain_db_path)
     found = detect.detect_rekordbox(data_dir)
@@ -106,9 +103,7 @@ def test_no_rekordbox_anywhere_is_its_own_blocker(
     """An empty machine names rekordbox_not_found, not a generic failure."""
     empty = tmp_path / "no-rekordbox-here"
     empty.mkdir()
-    monkeypatch.setattr(
-        "apps.shared.platform_paths.rekordbox_app_dir", lambda: empty
-    )
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: empty)
     found = detect.detect_rekordbox(data_dir)
     assert found.installed is False
     assert found.import_source is None
@@ -116,7 +111,9 @@ def test_no_rekordbox_anywhere_is_its_own_blocker(
 
 
 def test_a_missing_share_dir_is_reported_separately(
-    data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     rb_plain_db_path: Path,
 ) -> None:
     """No share dir means no waveforms. It is not the same as no library."""
@@ -131,14 +128,10 @@ def test_a_missing_share_dir_is_reported_separately(
     assert detect.CODE_REKORDBOX_NOT_FOUND not in found.blockers
 
 
-def test_an_encrypted_source_without_a_key_is_a_key_blocker(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_encrypted_source_without_a_key_is_a_key_blocker(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     working = data_dir / detect.WORKING_COPY_NAME
     working.write_bytes(b"\x00ciphertext" * 32)
-    monkeypatch.setattr(
-        detect, "key_status", lambda: (False, "no key on this machine")
-    )
+    monkeypatch.setattr(detect, "key_status", lambda: (False, "no key on this machine"))
     found = detect.detect_rekordbox(data_dir)
     assert found.import_source_encrypted is True
     assert detect.CODE_KEY_UNAVAILABLE in found.blockers
@@ -146,7 +139,8 @@ def test_an_encrypted_source_without_a_key_is_a_key_blocker(
 
 # ----- no side effects ----------------------------------------------------
 def test_detection_does_not_touch_the_files_it_reports(
-    data_dir: Path, rb_plain_db_path: Path,
+    data_dir: Path,
+    rb_plain_db_path: Path,
 ) -> None:
     """The whole promise of the detect step, asserted rather than assumed."""
     plain = _with_plain_copy(data_dir, rb_plain_db_path)
@@ -160,9 +154,7 @@ def test_detection_does_not_touch_the_files_it_reports(
     assert after.st_size == before.st_size
     assert plain.read_bytes() == contents_before
     # Nothing was created alongside it either: no state dir, no snapshot.
-    assert sorted(p.name for p in data_dir.iterdir()) == [
-        detect.PLAIN_COPY_NAME
-    ]
+    assert sorted(p.name for p in data_dir.iterdir()) == [detect.PLAIN_COPY_NAME]
 
 
 # ----- library counts -----------------------------------------------------

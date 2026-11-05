@@ -2,7 +2,7 @@
 
 That repository's `push` trigger on `canary/**` then runs
 `.github/workflows/runner-canary.yml` there, for the vendors whose config `target_repo`
-it is. Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config:
+it is. Decision record: (private path). Config:
 ci/runner-canary.json.
 
 Targets:
@@ -162,10 +162,7 @@ def require_origin_is_source(origin_url: str, config: dict, what: str) -> None:
 def require_token(env: dict[str, str]) -> str:
     token = env.get(TOKEN_ENV, "")
     if not token.strip():
-        raise MirrorRefused(
-            f"{TOKEN_ENV} is missing or empty; "
-            "export a token with contents write on the mirror only"
-        )
+        raise MirrorRefused(f"{TOKEN_ENV} is missing or empty; export a token with contents write on the mirror only")
     return token
 
 
@@ -202,7 +199,7 @@ def check_default_branch(branch: str | None, repo: str) -> None:
             f"{repo} has no default branch yet. The first branch pushed to an empty repository "
             "becomes its default, and the default branch runs every schedule and workflow_run "
             "workflow; bootstrap a workflow-free default branch first "
-            "(docs/decisions/ADR-NEW-runner-canary.md, 'Mirror bootstrap')"
+            "((private path), 'Mirror bootstrap')"
         )
     if branch.startswith(CANARY_PREFIX):
         raise MirrorRefused(
@@ -254,11 +251,7 @@ def _git(
 
     Every call runs with NO_CONFIGURED_PROGRAMS unless `checkout_programs` is set, which
     only the source target's own push does: safe is the default, hooks the exception."""
-    switches = (
-        []
-        if checkout_programs
-        else [a for k, v in NO_CONFIGURED_PROGRAMS for a in ("-c", f"{k}={v}")]
-    )
+    switches = [] if checkout_programs else [a for k, v in NO_CONFIGURED_PROGRAMS for a in ("-c", f"{k}={v}")]
     try:
         return subprocess.run(
             ["git", *switches, *args],
@@ -280,14 +273,9 @@ def url_rewrite_rules() -> list[tuple[str, str]]:
     listed = _git(["config", "-z", "--get-regexp", REWRITE_RULES_RE])
     if listed.returncode not in (0, 1):  # 1 is git's "no such key": no rules
         raise MirrorRefused(
-            f"cannot read git's url rewrite rules: git config exit {listed.returncode}: "
-            f"{listed.stderr.strip()}"
+            f"cannot read git's url rewrite rules: git config exit {listed.returncode}: {listed.stderr.strip()}"
         )
-    return [
-        (key, prefix)
-        for key, _, prefix in (entry.partition("\n") for entry in listed.stdout.split("\0"))
-        if key
-    ]
+    return [(key, prefix) for key, _, prefix in (entry.partition("\n") for entry in listed.stdout.split("\0")) if key]
 
 
 def require_no_rewrite(url: str) -> None:
@@ -307,8 +295,7 @@ def origin_fetch_url() -> str:
     urls = _git(["config", "--get-all", "remote.origin.url"]).stdout.split()
     if len(urls) != 1:
         raise MirrorRefused(
-            f"origin has {len(urls)} fetch URLs {urls}; exactly one, the source repository, "
-            "is required"
+            f"origin has {len(urls)} fetch URLs {urls}; exactly one, the source repository, is required"
         )
     return urls[0]
 
@@ -325,8 +312,7 @@ def source_main_commits(url: str) -> set[str]:
         cloned = _git(["-C", scratch, *clone, "--single-branch", "--branch", "main", url, "."])
         if cloned.returncode != 0:
             raise MirrorRefused(
-                f"cannot fetch main from {url}: git clone exit {cloned.returncode}: "
-                f"{cloned.stderr.strip()}"
+                f"cannot fetch main from {url}: git clone exit {cloned.returncode}: {cloned.stderr.strip()}"
             )
         listed = _git(["-C", scratch, "rev-list", SOURCE_MAIN_BRANCH])
         if listed.returncode != 0:
@@ -341,17 +327,13 @@ def require_on_source_main(sha: str, config: dict) -> None:
     require_origin_is_source(url, config, "fetch URL")
     require_no_rewrite(url)
     if sha not in source_main_commits(url):
-        raise MirrorRefused(
-            f"{sha} is not on the source repository's main; only main SHAs are mirrored"
-        )
+        raise MirrorRefused(f"{sha} is not on the source repository's main; only main SHAs are mirrored")
 
 
 def read_default_branch(repo: str, url: str, auth: dict[str, str]) -> str | None:
     listing = _git(["ls-remote", "--symref", url], auth=auth)
     if listing.returncode != 0:
-        raise MirrorRefused(
-            f"cannot read {repo}: git ls-remote exit {listing.returncode}: {listing.stderr.strip()}"
-        )
+        raise MirrorRefused(f"cannot read {repo}: git ls-remote exit {listing.returncode}: {listing.stderr.strip()}")
     return default_branch_from_ls_remote(listing.stdout)
 
 
@@ -375,7 +357,7 @@ def _mirror_destination(config: dict) -> tuple[str, str, dict[str, str]]:
     """(repo, url, auth header env for the mirror's network calls)."""
     token = require_token(dict(os.environ))
     # The mirror's owner and its distinctness from the source are config invariants,
-    # pinned by tests/scripts/test_runner_canary_budget.py.
+    # pinned by (private path).
     repo = config["mirror_repository"]
     return repo, remote_urls_of(repo, config)[0], auth_env(token)
 
@@ -387,9 +369,7 @@ def origin_push_url() -> str:
     """
     pushurls = _git(["config", "--get-all", "remote.origin.pushurl"]).stdout.split()
     if len(pushurls) > 1:
-        raise MirrorRefused(
-            f"origin has {len(pushurls)} push URLs {pushurls}; git would push to all of them"
-        )
+        raise MirrorRefused(f"origin has {len(pushurls)} push URLs {pushurls}; git would push to all of them")
     if pushurls:
         return pushurls[0]
     url = _git(["config", "--get", "remote.origin.url"])

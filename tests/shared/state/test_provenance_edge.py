@@ -5,6 +5,7 @@ additional edge paths: byte-stable JSON encoding of the ``value``
 column, history ordering with interleaved sources, and the
 ``to_open_dj_track`` projection when only identity facts exist.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -69,8 +70,7 @@ def test_write_field_canonicalises_dict_value_bytes(
     )
     assert changed is False
     history_rows = state_conn.execute(
-        "SELECT COUNT(*) FROM track_field_history "
-        "WHERE stable_id = ? AND field_name = ?",
+        "SELECT COUNT(*) FROM track_field_history WHERE stable_id = ? AND field_name = ?",
         (TRACK_ID, "beatgrid"),
     ).fetchone()[0]
     assert history_rows == 0
@@ -82,18 +82,30 @@ def test_read_history_orders_mixed_sources_newest_first(
     _insert_track(state_conn)
     # Three writes, strictly increasing modified_at, from different sources.
     prov.write_field(
-        state_conn, stable_id=TRACK_ID, field_name="key",
-        value="8A", source="mik", modified_at=TS_A,
+        state_conn,
+        stable_id=TRACK_ID,
+        field_name="key",
+        value="8A",
+        source="mik",
+        modified_at=TS_A,
         now="2026-03-01T10:00:00+00:00",
     )
     prov.write_field(
-        state_conn, stable_id=TRACK_ID, field_name="key",
-        value="9A", source="rekordbox", modified_at=TS_B,
+        state_conn,
+        stable_id=TRACK_ID,
+        field_name="key",
+        value="9A",
+        source="rekordbox",
+        modified_at=TS_B,
         now="2026-03-02T10:00:00+00:00",
     )
     prov.write_field(
-        state_conn, stable_id=TRACK_ID, field_name="key",
-        value="8A", source="manual", modified_at=TS_C,
+        state_conn,
+        stable_id=TRACK_ID,
+        field_name="key",
+        value="8A",
+        source="manual",
+        modified_at=TS_C,
         now="2026-03-03T10:00:00+00:00",
     )
     current = prov.read_field(state_conn, TRACK_ID, "key")
@@ -147,19 +159,27 @@ def test_write_field_accepts_explicit_now_for_deterministic_history(
     _insert_track(state_conn)
     frozen_now = "2026-03-05T12:00:00+00:00"
     prov.write_field(
-        state_conn, stable_id=TRACK_ID, field_name="energy",
-        value=0.7, source="mik", modified_at=TS_A, now=frozen_now,
+        state_conn,
+        stable_id=TRACK_ID,
+        field_name="energy",
+        value=0.7,
+        source="mik",
+        modified_at=TS_A,
+        now=frozen_now,
     )
     prov.write_field(
-        state_conn, stable_id=TRACK_ID, field_name="energy",
-        value=0.8, source="mik", modified_at=TS_B, now=frozen_now,
+        state_conn,
+        stable_id=TRACK_ID,
+        field_name="energy",
+        value=0.8,
+        source="mik",
+        modified_at=TS_B,
+        now=frozen_now,
     )
     # Both prior rows land in history under the same superseded_at clock
     # tick; the append-only schema must preserve both.
     rows = state_conn.execute(
-        "SELECT superseded_at FROM track_field_history "
-        "WHERE stable_id = ? AND field_name = ? "
-        "ORDER BY id",
+        "SELECT superseded_at FROM track_field_history WHERE stable_id = ? AND field_name = ? ORDER BY id",
         (TRACK_ID, "energy"),
     ).fetchall()
     # Exactly one history row after two writes (first write persists in
@@ -169,6 +189,4 @@ def test_write_field_accepts_explicit_now_for_deterministic_history(
     # same instant, fixed-width microseconds, so string comparison orders
     # timestamps the way instants order.
     assert rows[0][0] == sync_stamp.to_canonical(frozen_now)
-    assert sync_stamp.parse_canonical(rows[0][0]) == sync_stamp.parse_canonical(
-        frozen_now
-    )
+    assert sync_stamp.parse_canonical(rows[0][0]) == sync_stamp.parse_canonical(frozen_now)

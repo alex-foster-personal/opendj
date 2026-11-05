@@ -78,9 +78,7 @@ def check_ci_health_watchdog(log_path: Path, repo: Path, now: datetime) -> Check
             classification="sink-absent",
             detail=f"watchdog log absent at {log_path}, so 0 runs were readable",
             window=window,
-            remediation=(
-                "install the launchd job, see the `ci-health` recipe comment in the justfile"
-            ),
+            remediation=("install the launchd job, see the `ci-health` recipe comment in the justfile"),
         )
     lines = _read_lines(log_path)
     newest, verdict = _newest_watchdog_run(lines)

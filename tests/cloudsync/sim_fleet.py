@@ -32,7 +32,7 @@ compare again.
 
 Envelope: a write whose stamp is at or below the version its own spoke
 already holds is SKIPPED and counted, never made. That write is the logged
-P2 skew wedge (``.planning/debt/1993.md``): the hub rejects it and the spoke
+P2 skew wedge (``(private path)``): the hub rejects it and the spoke
 raises ``SyncDigestMismatch`` on every retry, pending an owner decision on
 a skew tolerance. :class:`UnguardedFleetSim` lifts the guard, and the
 positive control in ``test_sim_property`` shows the simulation finds the
@@ -187,9 +187,7 @@ class FleetSim(RuleBasedStateMachine):
         return True
 
     def _sync(self, machine: str, transport: FaultTransport) -> client.SyncResult:
-        result = client.run_sync(
-            self.run.data_dirs[machine], "http://hub.invalid", transport=transport, name=machine
-        )
+        result = client.run_sync(self.run.data_dirs[machine], "http://hub.invalid", transport=transport, name=machine)
         assert result.quarantined == 0 and not result.digest_inconclusive, (
             f"{machine} synced with a quarantine or an inconclusive digest: {result}"
         )
@@ -197,18 +195,14 @@ class FleetSim(RuleBasedStateMachine):
         # every version this spoke holds is now acknowledged by the hub.
         for row, version in self._versions(machine).items():
             self.acked_on_hub[row] = max(self.acked_on_hub.get(row, version.key), version.key)
-        self._count(
-            "sync: completed" + (" after hub restore" if result.hub_restore_detected else "")
-        )
+        self._count("sync: completed" + (" after hub restore" if result.hub_restore_detected else ""))
         return result
 
     def _partitioned_sync(self, machine: str) -> None:
         transport = FaultTransport(self.run.hub_transport)
         transport.fail_before_send(path="hello")
         try:
-            client.run_sync(
-                self.run.data_dirs[machine], "http://hub.invalid", transport=transport, name=machine
-            )
+            client.run_sync(self.run.data_dirs[machine], "http://hub.invalid", transport=transport, name=machine)
         except FaultInjected:
             self._count("sync: refused while partitioned")
             return
@@ -365,8 +359,7 @@ class FleetSim(RuleBasedStateMachine):
             self._count(f"fence test: push lost ({mode})")
             return
         raise AssertionError(
-            f"{machine} held changelog entries above its push fence, yet its sync sent "
-            f"no /push: {transport.calls}"
+            f"{machine} held changelog entries above its push fence, yet its sync sent no /push: {transport.calls}"
         )
 
     @rule(spoke=SPOKE)
@@ -448,11 +441,7 @@ class FleetSim(RuleBasedStateMachine):
             )
         self._check_fences(views)
         pairs = [(machine, stable_id) for machine in self.spokes for stable_id in TRACK_IDS]
-        self.tombstoned = [
-            pair
-            for pair in pairs
-            if views[pair[0]].versions[(TRACKS, pair[1])].content[1] is not None
-        ]
+        self.tombstoned = [pair for pair in pairs if views[pair[0]].versions[(TRACKS, pair[1])].content[1] is not None]
         self.live = [pair for pair in pairs if pair not in self.tombstoned]
 
     def _check_fences(self, views: dict[str, MachineView]) -> None:
@@ -553,13 +542,9 @@ class FleetSim(RuleBasedStateMachine):
 
     def _compare(self, stage: str) -> None:
         """Two-sided parity on every digest table, and every machine holds the winners."""
-        digests = {
-            machine: self._read(machine, protocol.sync_digest) for machine in (HUB, *self.spokes)
-        }
+        digests = {machine: self._read(machine, protocol.sync_digest) for machine in (HUB, *self.spokes)}
         hub = digests[HUB]
-        assert set(hub.tables) == set(protocol.DIGEST_TABLES), (
-            f"hub digest tables {sorted(hub.tables)} {stage}"
-        )
+        assert set(hub.tables) == set(protocol.DIGEST_TABLES), f"hub digest tables {sorted(hub.tables)} {stage}"
         for machine in self.spokes:
             mine = digests[machine]
             assert not mine.quarantined and not hub.quarantined, (
@@ -570,14 +555,8 @@ class FleetSim(RuleBasedStateMachine):
         expected = {row: self.oracle.winner(row) for row in self.oracle.rows()}
         for machine in (HUB, *self.spokes):
             held = self._versions(machine)
-            wrong = {
-                row: (held.get(row), want)
-                for row, want in expected.items()
-                if held.get(row) != want
-            }
-            assert set(held) == set(expected) and not wrong, (
-                f"{machine} does not hold the LWW winners {stage}: {wrong}"
-            )
+            wrong = {row: (held.get(row), want) for row, want in expected.items() if held.get(row) != want}
+            assert set(held) == set(expected) and not wrong, f"{machine} does not hold the LWW winners {stage}: {wrong}"
         self._count(f"compared: fleet matches the oracle {stage}")
 
 

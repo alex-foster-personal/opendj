@@ -8,7 +8,11 @@
  * decodes (`decode_pcm`).
  */
 
-import { PcmBatcher, type NativeCueWorkerMessage, type NativeCueWorkerRequest } from './cue-native-sink';
+import {
+	PcmBatcher,
+	type NativeCueWorkerMessage,
+	type NativeCueWorkerRequest
+} from './cue-native-sink';
 
 let socket: WebSocket | null = null;
 let pcmPort: MessagePort | null = null;
@@ -34,7 +38,10 @@ function connect(url: string, token: string): void {
 	};
 	ws.onclose = (event: CloseEvent) => {
 		socket = null;
-		reply({ kind: 'closed', reason: `socket closed (${event.code}${event.reason ? `: ${event.reason}` : ''})` });
+		reply({
+			kind: 'closed',
+			reason: `socket closed (${event.code}${event.reason ? `: ${event.reason}` : ''})`
+		});
 	};
 	ws.onerror = () => {
 		// onclose follows with the code; this only marks that it was an error.

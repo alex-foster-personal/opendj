@@ -113,11 +113,13 @@ def test_agent_in_tier_and_context_are_optional_and_validated() -> None:
     """[if] old clients break or bad chips pass [then] the additive contract is not additive."""
     bare = AgentIn.model_validate({"messages": [{"role": "user", "content": "hi"}]})
     assert (bare.tier, bare.context) == (None, [])
-    full = AgentIn.model_validate({
-        "messages": [{"role": "user", "content": "hi"}],
-        "tier": "think",
-        "context": [{"kind": "deck", "id": "2", "label": "Deck 2"}],
-    })
+    full = AgentIn.model_validate(
+        {
+            "messages": [{"role": "user", "content": "hi"}],
+            "tier": "think",
+            "context": [{"kind": "deck", "id": "2", "label": "Deck 2"}],
+        }
+    )
     assert full.tier == "think" and full.context == [ContextRef(kind="deck", id="2", label="Deck 2")]
     with pytest.raises(ValidationError):
         ContextRef.model_validate({"kind": "folder", "id": "x", "label": "x"})
@@ -157,10 +159,7 @@ def test_events_encode_one_line_and_round_trip_by_type() -> None:
     lines = encode_event(ConfirmEvent(call=call, reason="changes output level")) + encode_event(
         DoneEvent(reason="needs_confirmation")
     )
-    decoded = [
-        TypeAdapter(AgentEvent).validate_python(json.loads(line))
-        for line in lines.decode("utf-8").splitlines()
-    ]
+    decoded = [TypeAdapter(AgentEvent).validate_python(json.loads(line)) for line in lines.decode("utf-8").splitlines()]
     assert [type(event).__name__ for event in decoded] == ["ConfirmEvent", "DoneEvent"]
     assert decoded[0].call == call
 

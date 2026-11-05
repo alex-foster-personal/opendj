@@ -152,7 +152,6 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         vcache.cache_path(data, "cached"), entry_result, media / "cached.mp3"
     )
 
-    monkeypatch.setattr(vocals_routes, "DATA_DIR", data)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", data / "master.plain.db")
     monkeypatch.setattr(rb_config, "STATE_DB", data / "state" / "state.db")
     monkeypatch.setattr(rb_config, "VOCAL_CACHE_DIR", vcache.cache_dir(data))

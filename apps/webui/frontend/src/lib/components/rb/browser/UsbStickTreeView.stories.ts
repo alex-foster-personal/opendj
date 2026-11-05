@@ -67,7 +67,11 @@ export const Reading: Story = { args: { view: { status: 'loading' } } };
 /** The read failed: the headline shows, the full message is in the hover title. */
 export const Error: Story = {
 	args: {
-		view: { status: 'error', code: 'USB_STICK_NOT_MOUNTED', message: 'the volume is no longer mounted' },
+		view: {
+			status: 'error',
+			code: 'USB_STICK_NOT_MOUNTED',
+			message: 'the volume is no longer mounted'
+		},
 		errorHeadline: 'Stick removed'
 	}
 };

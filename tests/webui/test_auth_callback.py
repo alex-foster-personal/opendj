@@ -45,14 +45,10 @@ def client(state_db_path: Path) -> Iterator[TestClient]:
 @pytest.fixture(autouse=True)
 def _fake_oauth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENDJ_GOOGLE_OAUTH_CLIENT_ID", FAKE_CONFIG.client_id)
-    monkeypatch.setenv(
-        "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET", FAKE_CONFIG.client_secret
-    )
+    monkeypatch.setenv("OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET", FAKE_CONFIG.client_secret)
 
 
-def _start_login(
-    client: TestClient, return_to: str | None = None
-) -> dict[str, str]:
+def _start_login(client: TestClient, return_to: str | None = None) -> dict[str, str]:
     body: dict[str, str] = {"origin": _ORIGIN}
     if return_to is not None:
         body["return_to"] = return_to
@@ -181,9 +177,7 @@ def test_auth_me_same_cookie_same_identity_on_shared_backend(
         "/\tevil",
     ],
 )
-def test_login_rejects_or_sanitizes_an_open_redirect_return_to(
-    client: TestClient, return_to: str
-) -> None:
+def test_login_rejects_or_sanitizes_an_open_redirect_return_to(client: TestClient, return_to: str) -> None:
     login = _start_login(client, return_to=return_to)
     with patch(
         "apps.webui.server.routes.auth.exchange_code",

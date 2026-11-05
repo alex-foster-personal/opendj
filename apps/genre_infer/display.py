@@ -1,6 +1,6 @@
 """What the library listing needs to show one genre per row (GENRE-04): one read per request.
 
-:func:`load_for_rows` reads the configured precedence and the ``ok`` findings of
+:func:`read_for_rows` reads the configured precedence and the ``ok`` findings of
 the providers in it for the rows being built, in one query per 500 ids. A
 state.db without the genre tables (never inferred, or a read-only copy) yields
 no findings and the default precedence, so rows fall back to the library tag.
@@ -44,7 +44,10 @@ class RowGenres:
         )
 
 
-def _read(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> RowGenres:
+def read_for_rows(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> RowGenres:
+    """Read the row projection from an existing SQLite snapshot."""
+    if not stable_ids:
+        return RowGenres()
     grp = groups.load(conn)
     typed = groups.user_genres(conn, grp, stable_ids)
     if not findings.has_schema(conn):
@@ -61,9 +64,9 @@ def load_for_rows(state_db_path: Path, stable_ids: Sequence[str]) -> RowGenres:
         return RowGenres()
     conn = state_db.open_ro(state_db_path)
     try:
-        return _read(conn, stable_ids)
+        return read_for_rows(conn, stable_ids)
     finally:
         conn.close()
 
 
-__all__ = ["RowGenres", "load_for_rows"]
+__all__ = ["RowGenres", "load_for_rows", "read_for_rows"]

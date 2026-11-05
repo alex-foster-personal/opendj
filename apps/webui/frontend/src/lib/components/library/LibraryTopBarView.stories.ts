@@ -32,6 +32,10 @@ const meta = {
 		libraryCounts: { tracks: 8355, playlists: 214 },
 		selectMode: fn(),
 		modeForHref: (href: string) => APP_MODES.find((mode) => mode.href === href),
+		addMusicLabel: 'Add music',
+		addMusicTitle: 'Open the library import wizard.',
+		addMusicBlocked: null,
+		onAddMusic: fn(),
 		cloudSyncChip: chip
 	}
 } satisfies Meta<typeof LibraryTopBarView>;
@@ -47,6 +51,9 @@ export const WithSelection: Story = { args: { selectedCount: 42 } };
 
 /** Health has not answered yet: no library counts. */
 export const CountsPending: Story = { args: { libraryCounts: null } };
+
+/** Zero tracks: Add music is visually prominent. */
+export const ZeroTracks: Story = { args: { libraryCounts: { tracks: 0, playlists: 0 } } };
 
 /** Every mode the picker offers, with the first one active. */
 export const OtherMode: Story = { args: { activeMode: APP_MODES[0] } };

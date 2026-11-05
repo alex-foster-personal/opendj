@@ -104,7 +104,5 @@ def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
             _unavailable("no libclang here, so bindgen cannot build signalsmith-stretch")
         if features and NO_ALSA in result.stderr:
             _unavailable("no ALSA development files here, so the device feature cannot build")
-        pytest.fail(
-            f"cargo build of odj-audio exited {result.returncode}:\n{result.stderr[-4000:]}"
-        )
+        pytest.fail(f"cargo build of odj-audio exited {result.returncode}:\n{result.stderr[-4000:]}")
     return target / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")

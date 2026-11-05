@@ -252,9 +252,7 @@ def test_match_requires_one_process_instead_of_selecting_table_order(
         ProcessRow(pid=202, ppid=1, pgid=202, command="Chrome Renderer :9448"),
     ]
     monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.process_table", lambda: rows)
-    monkeypatch.setattr(
-        "scripts.diagnostics.opendj_performance_probe.DarwinProcessMetrics", lambda: None
-    )
+    monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.DarwinProcessMetrics", lambda: None)
     probe = OpenDJProbe(None, (), match="Chrome Renderer")
 
     with pytest.raises(Exception, match="candidate PIDs: 101, 202"):
@@ -285,9 +283,7 @@ def test_trend_exits_distinctly_when_no_engine_port_was_ever_sampled(
     assert "engine port" in printed["client_error_posted"]["error"]
 
 
-def test_trend_exits_one_when_the_red_report_is_accepted(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_trend_exits_one_when_the_red_report_is_accepted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Control: the same RED window with a live sink keeps the RED exit of 1.
 
     This is what stops the test above from passing because every trend now
@@ -316,9 +312,7 @@ def test_trend_exits_one_when_the_red_report_is_accepted(
         (["--bundle-id", "com.opendj.desktop"], "--bundle-id"),
     ],
 )
-def test_trend_rejects_a_sampling_selector_it_cannot_apply(
-    tmp_path: Path, selector: list[str], expected: str
-) -> None:
+def test_trend_rejects_a_sampling_selector_it_cannot_apply(tmp_path: Path, selector: list[str], expected: str) -> None:
     """An accepted-but-ignored selector computed a verdict over other processes."""
 
     with pytest.raises(SystemExit) as raised:

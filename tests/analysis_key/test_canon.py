@@ -8,6 +8,7 @@ correct Open Key number is Camelot + 5 (mod 12, 1-indexed), which for 8A gives
 minor, not just A, because the underlying bug was a whole-table rotation, not
 a single wrong entry.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -162,7 +163,7 @@ def test_from_rekordbox_scale_name_rejects_malformed_string() -> None:
         from_rekordbox_scale_name("")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # canonical_key_text: ONE parse for a key stored in any notation (operator
 # report, Sat 24 Oct 2026: the library mixed "8A" and "Am"). Every spelling
 # below is one seen in a real operator library (track_fields.key), or a
@@ -172,27 +173,55 @@ from apps.analysis_key.canon import canonical_key_text  # noqa: E402
 
 STORED_SPELLINGS = [
     # rekordbox ScaleName, spelled minors (all observed)
-    ("Gm", "6A"), ("Dm", "7A"), ("Fm", "4A"), ("F#m", "11A"), ("Em", "9A"),
-    ("Am", "8A"), ("Bm", "10A"), ("Cm", "5A"), ("Abm", "1A"), ("Dbm", "12A"),
-    ("Ebm", "2A"), ("Bbm", "3A"),
+    ("Gm", "6A"),
+    ("Dm", "7A"),
+    ("Fm", "4A"),
+    ("F#m", "11A"),
+    ("Em", "9A"),
+    ("Am", "8A"),
+    ("Bm", "10A"),
+    ("Cm", "5A"),
+    ("Abm", "1A"),
+    ("Dbm", "12A"),
+    ("Ebm", "2A"),
+    ("Bbm", "3A"),
     # rekordbox ScaleName, spelled majors (all observed)
-    ("C", "8B"), ("D", "10B"), ("E", "12B"), ("A", "11B"), ("Ab", "4B"),
-    ("F", "7B"), ("Eb", "5B"), ("Db", "3B"), ("F#", "2B"), ("G", "9B"),
-    ("B", "1B"), ("Bb", "6B"), ("Fmaj", "7B"),
+    ("C", "8B"),
+    ("D", "10B"),
+    ("E", "12B"),
+    ("A", "11B"),
+    ("Ab", "4B"),
+    ("F", "7B"),
+    ("Eb", "5B"),
+    ("Db", "3B"),
+    ("F#", "2B"),
+    ("G", "9B"),
+    ("B", "1B"),
+    ("Bb", "6B"),
+    ("Fmaj", "7B"),
     # Camelot (rekordbox, MIK, our own lanes)
-    ("8A", "8A"), ("12B", "12B"), ("1a", "1A"), (" 8A ", "8A"),
+    ("8A", "8A"),
+    ("12B", "12B"),
+    ("1a", "1A"),
+    (" 8A ", "8A"),
     # Open Key (Traktor, MIK)
-    ("1m", "8A"), ("12d", "7B"), ("6m", "1A"),
+    ("1m", "8A"),
+    ("12d", "7B"),
+    ("6m", "1A"),
     # sharps and flats, Unicode accidentals, min/maj spelled out (ID3 TKEY)
-    ("G#m", "1A"), ("C#m", "12A"), ("Gb", "2B"), ("E\u266dm", "2A"),
-    ("A minor", "8A"), ("A min", "8A"), ("Bbmaj", "6B"), ("C# major", "3B"),
+    ("G#m", "1A"),
+    ("C#m", "12A"),
+    ("Gb", "2B"),
+    ("E\u266dm", "2A"),
+    ("A minor", "8A"),
+    ("A min", "8A"),
+    ("Bbmaj", "6B"),
+    ("C# major", "3B"),
 ]
 
 
 @pytest.mark.parametrize(("stored", "camelot"), STORED_SPELLINGS)
-def test_canonical_key_text_serves_every_observed_spelling_as_camelot(
-    stored: str, camelot: str
-) -> None:
+def test_canonical_key_text_serves_every_observed_spelling_as_camelot(stored: str, camelot: str) -> None:
     """[if] a stored spelling serves a different Camelot than its key [then] rows mix, [else stop]."""
     assert canonical_key_text(stored) == camelot
 

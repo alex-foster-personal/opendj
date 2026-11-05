@@ -13,6 +13,7 @@ is not uploaded again, a file with ``deleted_at`` set is not deleted again.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -139,10 +140,7 @@ _TRACK_COLUMNS = (
     "stable_id, state, restore_mode, offloaded_at, restored_at, expires_at, "
     "last_played_at, bytes_offloaded, error, updated_at"
 )
-_FILE_COLUMNS = (
-    "stable_id, role, local_path, sha256, size_bytes, object_key, verified_by, "
-    "verified_at, deleted_at"
-)
+_FILE_COLUMNS = "stable_id, role, local_path, sha256, size_bytes, object_key, verified_by, verified_at, deleted_at"
 
 
 def _track(row: tuple) -> TrackOffload:
@@ -154,9 +152,7 @@ def _file(row: tuple) -> OffloadFile:
 
 
 def get_track(conn: sqlite3.Connection, stable_id: str) -> TrackOffload | None:
-    row = conn.execute(
-        f"SELECT {_TRACK_COLUMNS} FROM offload_tracks WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute(f"SELECT {_TRACK_COLUMNS} FROM offload_tracks WHERE stable_id = ?", (stable_id,)).fetchone()
     return _track(row) if row is not None else None
 
 
@@ -166,9 +162,7 @@ def get_tracks(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str,
     for start in range(0, len(ids), 500):
         batch = ids[start : start + 500]
         marks = ",".join("?" * len(batch))
-        for row in conn.execute(
-            f"SELECT {_TRACK_COLUMNS} FROM offload_tracks WHERE stable_id IN ({marks})", batch
-        ):
+        for row in conn.execute(f"SELECT {_TRACK_COLUMNS} FROM offload_tracks WHERE stable_id IN ({marks})", batch):
             out[row[0]] = _track(row)
     return out
 
@@ -214,8 +208,15 @@ def set_state(
     """Upsert the track row into ``state``; ``fields`` name other columns to set."""
     if state not in OFFLOAD_STATES:
         raise OffloadLedgerError(f"unknown offload state {state!r}")
-    allowed = {"restore_mode", "offloaded_at", "restored_at", "expires_at",
-               "last_played_at", "bytes_offloaded", "error"}
+    allowed = {
+        "restore_mode",
+        "offloaded_at",
+        "restored_at",
+        "expires_at",
+        "last_played_at",
+        "bytes_offloaded",
+        "error",
+    }
     unknown = set(fields) - allowed
     if unknown:
         raise OffloadLedgerError(f"unknown ledger columns {sorted(unknown)}")
@@ -262,8 +263,7 @@ def mark_verified(conn: sqlite3.Connection, stable_id: str, local_path: Path, ho
 
 def mark_deleted(conn: sqlite3.Connection, stable_id: str, local_path: Path, now: datetime) -> None:
     conn.execute(
-        "UPDATE offload_files SET deleted_at = ? WHERE stable_id = ? AND local_path = ? "
-        "AND verified_at IS NOT NULL",
+        "UPDATE offload_files SET deleted_at = ? WHERE stable_id = ? AND local_path = ? AND verified_at IS NOT NULL",
         (iso(now), stable_id, str(local_path)),
     )
 

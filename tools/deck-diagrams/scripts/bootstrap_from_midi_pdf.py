@@ -9,6 +9,7 @@ Usage:
     --id ddj-flx4 --model DDJ-FLX4 \
     --pdf docs/controller/reference/DDJ-FLX4_MIDI_Message_List_E1.pdf
 """
+
 from __future__ import annotations
 
 import argparse

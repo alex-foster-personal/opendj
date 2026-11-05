@@ -182,8 +182,8 @@ function parityMismatches(painter) {
 
 test('CHROME-18 if the Settings preview uses different band colors than the deck row for any design x palette pair then they have drifted', () => {
 	const pairs = [...everyPair()];
-	// Control: 4 designs x (3 concrete palettes + Auto under 3 skins). A zero would mean the loop never ran.
-	assert.equal(pairs.length, 4 * (3 + 3));
+	// Control: 4 designs x (3 concrete palettes + Auto under 4 skins). A zero would mean the loop never ran.
+	assert.equal(pairs.length, 4 * (3 + 4) + 4);
 	for (const { design, pref, skinId, choice, c } of pairs) {
 		const deck = deckColors(design, c);
 		const expected = design === 'tri-band' || design === 'blocks' ? [c.low, c.mid, c.high] : [c.mono];
@@ -207,7 +207,7 @@ test('CHROME-18 if blocks in the mono palette paints one flat color then the Got
 test('CHROME-18 mutation check: the pre-W15 painter (blocks in one color) fails the parity check', () => {
 	const mismatches = parityMismatches(prePaint);
 	const blocks = mismatches.filter((m) => m.startsWith('blocks x '));
-	assert.equal(blocks.length, 6, `every blocks pair must be caught on the pre-fix source, got:\n${mismatches.join('\n')}`);
+	assert.equal(blocks.length, 8, `every blocks pair must be caught on the pre-fix source, got:\n${mismatches.join('\n')}`);
 	assert.ok(
 		blocks.some((m) => m.startsWith('blocks x auto@mono-dev')),
 		'the reported case (Gothic: blocks + Mono) is among them'

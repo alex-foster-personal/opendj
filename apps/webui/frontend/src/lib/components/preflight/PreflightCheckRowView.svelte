@@ -48,12 +48,10 @@
 	} = $props();
 
 	const displayLabel = $derived(
-		labelOverride ??
-			(mode === 'boot' && check.user_label ? check.user_label : check.label)
+		labelOverride ?? (mode === 'boot' && check.user_label ? check.user_label : check.label)
 	);
 	const displayDetail = $derived(
-		detailOverride ??
-			(mode === 'boot' && check.user_detail ? check.user_detail : check.detail)
+		detailOverride ?? (mode === 'boot' && check.user_detail ? check.user_detail : check.detail)
 	);
 	const displayRemediation = $derived(
 		mode === 'boot' && check.user_remediation ? check.user_remediation : check.remediation

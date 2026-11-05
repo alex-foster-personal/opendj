@@ -35,11 +35,11 @@ from typing import Any
 import pytest
 
 from apps.engine_core.__main__ import HUB_MACHINE_NAME_ENV
+from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, hub_deploy
-from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV
 from tests.waits import wait_for_external_state
 
 pytestmark = pytest.mark.requirement("CAT-04")
@@ -151,9 +151,7 @@ def _answers_health(hub: BootedHub) -> bool:
     this hub exits, which `_boot` then retries as a lost port race.
     """
     if hub.proc.poll() is not None:
-        raise AssertionError(
-            f"hub exited {hub.proc.returncode}: {hub.log_path.read_text()[-2000:]}"
-        )
+        raise AssertionError(f"hub exited {hub.proc.returncode}: {hub.log_path.read_text()[-2000:]}")
     boot_id = _logged_boot_id(hub)
     if boot_id is None:
         return False
@@ -370,10 +368,7 @@ def test_status_recipe_probe_reports_ok_for_the_booted_hub(
     payload = json.loads(result.stdout.splitlines()[0])
     assert payload["verdict"] == "OK"
     assert payload["is_hub"] is True
-    assert (
-        payload["hub_machine_id"]
-        == machine_identity.machine_id_path(hub.data_dir).read_text().strip()
-    )
+    assert payload["hub_machine_id"] == machine_identity.machine_id_path(hub.data_dir).read_text().strip()
     assert payload["schema_version"] == state_schema.SCHEMA_VERSION
 
 
@@ -383,10 +378,7 @@ def test_hello_to_the_booted_hub_returns_is_hub_true(booted_hubs: dict[str, Boot
     answer: dict[str, Any] = _hello(hub.url, "pytest-spoke-0001", "pytest-spoke")
     hub_row = next(m for m in answer["machines"] if m["machine_id"] == answer["hub_machine_id"])
     assert hub_row["is_hub"] is True
-    assert (
-        answer["hub_machine_id"]
-        == machine_identity.machine_id_path(hub.data_dir).read_text().strip()
-    )
+    assert answer["hub_machine_id"] == machine_identity.machine_id_path(hub.data_dir).read_text().strip()
     spoke_row = next(m for m in answer["machines"] if m["machine_id"] == "pytest-spoke-0001")
     assert spoke_row["is_hub"] is False
 
@@ -511,9 +503,7 @@ def test_rendered_systemd_unit_runs_the_booted_argv(tmp_path: Path) -> None:
     expected = hub_deploy.hub_serve_argv(uv=inputs.uv, data_dir=inputs.data_dir, port=inputs.port)
     (exec_start,) = _systemd_key(service, "ExecStart")
     assert _systemd_argv(exec_start) == expected
-    env = dict(
-        shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment")
-    )
+    env = dict(shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment"))
     assert env == hub_deploy.HUB_ENV
     assert env[machine_identity.IS_HUB_ENV] == "1"  # presence: the unit starts a HUB
     assert _systemd_key(units["opendj-hub-backup.timer"], "OnCalendar") == ["*-*-* 03:30:00 UTC"]
@@ -597,11 +587,7 @@ def test_rendered_units_pass_the_service_manager_lint(tool: str, tmp_path: Path)
     for name, text in hub_deploy.render_units(kind, _inputs(tmp_path)).items():
         (out_dir / name).write_text(text)
         paths.append(str(out_dir / name))
-    argv = (
-        ["plutil", "-lint", *paths]
-        if tool == "plutil"
-        else ["systemd-analyze", "--user", "verify", *paths]
-    )
+    argv = ["plutil", "-lint", *paths] if tool == "plutil" else ["systemd-analyze", "--user", "verify", *paths]
     result = subprocess.run(argv, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -687,9 +673,7 @@ def test_default_machine_name_when_no_flag_or_env(booted_hubs: dict[str, BootedH
 def test_hub_refuses_a_data_dir_it_does_not_own(bad_dir: str) -> None:
     """if the hub command accepts the desktop app's or a release's data dir then broken"""
     with pytest.raises(hub_deploy.HubDeployError):
-        hub_deploy.hub_serve_argv(
-            uv="/opt/uv", data_dir=Path(bad_dir), port=hub_deploy.CFG.HUB_PORT
-        )
+        hub_deploy.hub_serve_argv(uv="/opt/uv", data_dir=Path(bad_dir), port=hub_deploy.CFG.HUB_PORT)
 
 
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
@@ -744,16 +728,12 @@ def test_serve_r2_wraps_serve_unit_argv(kind: str, tmp_path: Path) -> None:
     if kind == "systemd":
         (exec_start,) = _systemd_key(units[hub_name], "ExecStart")
         assert _systemd_argv(exec_start) == expected
-        default_backup = hub_deploy.render_units("systemd", _inputs(tmp_path))[
-            "opendj-hub-backup.service"
-        ]
+        default_backup = hub_deploy.render_units("systemd", _inputs(tmp_path))["opendj-hub-backup.service"]
         assert units["opendj-hub-backup.service"] == default_backup
     else:
         hub = plistlib.loads(units[hub_name].encode())
         assert hub["ProgramArguments"] == expected
-        default_backup = hub_deploy.render_units("launchd", _inputs(tmp_path))[
-            "com.opendj.hub-backup.plist"
-        ]
+        default_backup = hub_deploy.render_units("launchd", _inputs(tmp_path))["com.opendj.hub-backup.plist"]
         assert units["com.opendj.hub-backup.plist"] == default_backup
 
 
@@ -839,18 +819,13 @@ PROBE_HOST = "probe.example-tailnet.ts.net"
 
 @pytest.mark.requirement("CLOUDSYNC-18")
 @pytest.mark.parametrize("kind", ["systemd", "launchd"])
-def test_rendered_serve_unit_sets_allowed_hosts_when_opted_in(
-    kind: str, tmp_path: Path
-) -> None:
+def test_rendered_serve_unit_sets_allowed_hosts_when_opted_in(kind: str, tmp_path: Path) -> None:
     """if opted-in render lacks MUSIC_DJ_ALLOWED_HOSTS on the serve unit then broken"""
     inputs = _inputs(tmp_path, allowed_hosts=ALLOWED_HOST)
     units = hub_deploy.render_units(kind, inputs)
     hub_name = "opendj-hub.service" if kind == "systemd" else "com.opendj.hub.plist"
     if kind == "systemd":
-        env = dict(
-            shlex.split(value)[0].split("=", 1)
-            for value in _systemd_key(units[hub_name], "Environment")
-        )
+        env = dict(shlex.split(value)[0].split("=", 1) for value in _systemd_key(units[hub_name], "Environment"))
         backup_text = units["opendj-hub-backup.service"]
     else:
         hub = plistlib.loads(units[hub_name].encode())
@@ -871,9 +846,7 @@ def test_rendered_serve_unit_normalizes_multi_host_allowed_hosts(tmp_path: Path)
     raw = f" {ALLOWED_HOST} , other.example-tailnet.ts.net "
     inputs = _inputs(tmp_path, allowed_hosts=raw)
     service = hub_deploy.render_units("systemd", inputs)["opendj-hub.service"]
-    env = dict(
-        shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment")
-    )
+    env = dict(shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment"))
     assert env[ALLOWED_HOSTS_ENV] == f"{ALLOWED_HOST},other.example-tailnet.ts.net"
 
 
@@ -961,9 +934,7 @@ def test_probe_allowed_host_ok_with_matching_env(tmp_path: Path) -> None:
 @pytest.mark.requirement("CLOUDSYNC-18")
 def test_probe_allowed_host_unknown_on_closed_port() -> None:
     """if allowlist probe reads OK against a closed port then broken"""
-    probe = hub_deploy.probe_allowed_host(
-        f"http://127.0.0.1:{_free_loopback_port()}", PROBE_HOST
-    )
+    probe = hub_deploy.probe_allowed_host(f"http://127.0.0.1:{_free_loopback_port()}", PROBE_HOST)
     assert probe.verdict == "UNKNOWN"
     assert probe.verdict != "OK"
 
@@ -1042,9 +1013,7 @@ def test_hub_service_env_matches_rendered_serve_unit(tmp_path: Path) -> None:
     inputs = _inputs(tmp_path, allowed_hosts=ALLOWED_HOST)
     expected = hub_deploy.hub_service_env(allowed_hosts=ALLOWED_HOST)
     service = hub_deploy.render_units("systemd", inputs)["opendj-hub.service"]
-    env = dict(
-        shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment")
-    )
+    env = dict(shlex.split(value)[0].split("=", 1) for value in _systemd_key(service, "Environment"))
     assert env == expected
     assert ALLOWED_HOSTS_ENV in env
 
@@ -1092,6 +1061,7 @@ def test_only_a_bind_collision_counts_as_a_lost_port_race(tmp_path: Path) -> Non
 
 def test_health_from_another_process_on_the_port_is_not_this_hub(tmp_path: Path) -> None:
     """if a 200 from whatever holds the port counts as the hub booting then broken"""
+
     class _Impostor(http.server.BaseHTTPRequestHandler):
         boot_id = "someone-else"
         raw: bytes | None = None

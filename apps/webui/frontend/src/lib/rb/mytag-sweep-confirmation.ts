@@ -9,7 +9,7 @@ export interface MyTagSweepConfirmation {
 export function formatMyTagSweepConfirmation(details: MyTagSweepConfirmation): string {
 	const scope = `"${details.tagName}" from ${details.affectedTrackCount} track(s)`;
 	if (details.action === 'delete') {
-		return `Delete ${scope}? This cannot be undone.`;
+		return `Delete ${scope}? ⌘Z undoes it.`;
 	}
 	if (details.destinationName === undefined) {
 		throw new Error('rename confirmation requires destinationName');

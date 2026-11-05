@@ -93,6 +93,8 @@ class CoverageCache:
         self._measured_at = 0.0
         self._measuring = False
         self._refresh_error: str | None = None
+        self._generation = 0
+        self._inflight_generation: int | None = None
 
     #-------------------------------------------------------------------------
     def measure(self, compute: Compute) -> Reading:
@@ -102,15 +104,26 @@ class CoverageCache:
             self._store(fields)
             return self._just_measured()
 
+    def invalidate(self) -> None:
+        """Drop the cached snapshot so the next peek starts a fresh measurement."""
+        with self._changed:
+            self._generation += 1
+            self._fields = None
+            self._measured_at = 0.0
+            self._refresh_error = None
+            self._changed.notify_all()
+
     def read(self, compute: Compute) -> Reading:
         """The last measurement at once; measure only when there is none."""
         with self._changed:
             while self._fields is None and self._measuring:
                 self._changed.wait()
             if self._fields is not None:
-                if not self._measuring and self._age() > self._max_age_s:
+                if self._age() > self._max_age_s and self._inflight_generation != self._generation:
+                    gen = self._generation
+                    self._inflight_generation = gen
                     self._measuring = True
-                    self._spawn(lambda: self._refresh(compute))
+                    self._spawn(lambda: self._refresh(compute, started_generation=gen))
                 return self._reading()
             self._measuring = True
         try:
@@ -133,10 +146,12 @@ class CoverageCache:
         measurement starts one refresh behind the reader (at most one runs).
         """
         with self._changed:
-            if not self._measuring and (self._fields is None or self._age() > self._max_age_s):
+            needs = self._fields is None or self._age() > self._max_age_s
+            if needs and self._inflight_generation != self._generation:
+                gen = self._generation
+                self._inflight_generation = gen
                 self._measuring = True
-                start_thread = self._spawn
-                start_thread(lambda: self._refresh(compute))
+                self._spawn(lambda: self._refresh(compute, started_generation=gen))
             return None if self._fields is None else self._reading()
 
     @property
@@ -146,7 +161,7 @@ class CoverageCache:
             return self._refresh_error
 
     #-------------------------------------------------------------------------
-    def _refresh(self, compute: Compute) -> None:
+    def _refresh(self, compute: Compute, *, started_generation: int) -> None:
         if self._background_gate is not None:
             self._background_gate()
         try:
@@ -154,13 +169,18 @@ class CoverageCache:
         except Exception as error:  # reported in refresh_error, and the next read retries
             logger.exception("background coverage refresh failed")
             with self._changed:
-                self._measuring = False
-                self._refresh_error = f"{type(error).__name__}: {error}"
+                if self._inflight_generation == started_generation:
+                    self._measuring = False
+                    self._inflight_generation = None
+                    self._refresh_error = f"{type(error).__name__}: {error}"
                 self._changed.notify_all()
             return
         with self._changed:
-            self._measuring = False
-            self._store(fields)
+            if started_generation == self._generation:
+                self._store(fields)
+            if self._inflight_generation == started_generation:
+                self._measuring = False
+                self._inflight_generation = None
             self._changed.notify_all()
 
     def _store(self, fields: Fields) -> None:

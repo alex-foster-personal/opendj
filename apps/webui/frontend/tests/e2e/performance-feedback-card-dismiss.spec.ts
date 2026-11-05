@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-const SEED_TEXT = 'comment pins re-opened later must close on a real column resize (seeded by performance-feedback-card-dismiss.spec.ts)';
+const SEED_TEXT =
+	'comment pins re-opened later must close on a real column resize (seeded by performance-feedback-card-dismiss.spec.ts)';
 
 const REPLY_SEED_TEXT =
 	'comment pins can take a follow-up on the same marker (seeded by performance-feedback-card-dismiss.spec.ts)';
@@ -40,7 +41,10 @@ test('reopened comment card accepts a follow-up that survives reload', async ({ 
 		await card.getByRole('button', { name: 'Add follow-up comment', exact: true }).click();
 		await expect(card.locator('.fb-note').filter({ hasText: followUp })).toHaveCount(1);
 		const listed = await page.request.get('/api/v1/feedback/comments');
-		const pins = (await listed.json()).comments as Array<{ id: string; replies?: Array<{ text: string }> }>;
+		const pins = (await listed.json()).comments as Array<{
+			id: string;
+			replies?: Array<{ text: string }>;
+		}>;
 		expect(pins).toHaveLength(1);
 		expect(pins[0].replies?.some((r) => r.text === followUp)).toBe(true);
 		await page.reload({ waitUntil: 'domcontentloaded' });
@@ -50,9 +54,11 @@ test('reopened comment card accepts a follow-up that survives reload', async ({ 
 		const fixed = await page.request.patch(`/api/v1/feedback/comments/${seededId}`, {
 			data: { status: 'fixed' }
 		});
-		if (!fixed.ok()) throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${fixed.status()}`);
+		if (!fixed.ok())
+			throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${fixed.status()}`);
 		const archived = await page.request.post(`/api/v1/feedback/comments/${seededId}/archive`);
-		if (!archived.ok()) throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
+		if (!archived.ok())
+			throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
 	}
 });
 
@@ -81,9 +87,11 @@ test('reopened comment card closes on a real column resize pointerdown', async (
 		const patched = await page.request.patch(`/api/v1/feedback/comments/${seededId}`, {
 			data: { status: 'fixed' }
 		});
-		if (!patched.ok()) throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${patched.status()}`);
+		if (!patched.ok())
+			throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${patched.status()}`);
 		const archived = await page.request.post(`/api/v1/feedback/comments/${seededId}/archive`);
-		if (!archived.ok()) throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
+		if (!archived.ok())
+			throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
 	}
 });
 
@@ -119,8 +127,18 @@ async function runScenario(page: import('@playwright/test').Page): Promise<void>
 			const x = rect.x + rect.width / 2;
 			const y = rect.y + rect.height / 2;
 			const centreOnScreen = x >= 0 && x <= viewportWidth && y >= 0 && y <= viewportHeight;
-			if (rect.width > 0 && rect.height > 0 && centreOnScreen && handle.contains(document.elementFromPoint(x, y))) {
-				return { x, y, index, columnWidth: (handle.parentElement as HTMLElement).getBoundingClientRect().width };
+			if (
+				rect.width > 0 &&
+				rect.height > 0 &&
+				centreOnScreen &&
+				handle.contains(document.elementFromPoint(x, y))
+			) {
+				return {
+					x,
+					y,
+					index,
+					columnWidth: (handle.parentElement as HTMLElement).getBoundingClientRect().width
+				};
 			}
 		}
 		return null;

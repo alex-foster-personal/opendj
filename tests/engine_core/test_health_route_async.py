@@ -32,6 +32,7 @@ one real line and watching this test go red, as was done on demon-llama for
 this change (and matches how the companion fix's own commit message
 describes its guard: "red before, green after").
 """
+
 from __future__ import annotations
 
 import json
@@ -109,8 +110,7 @@ def _run_probe(probe: str, data_dir: Path) -> dict:
         timeout=60,
     )
     assert result.returncode == 0, (
-        f"probe subprocess exited {result.returncode}\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        f"probe subprocess exited {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
     return json.loads(result.stdout.strip().splitlines()[-1])
 

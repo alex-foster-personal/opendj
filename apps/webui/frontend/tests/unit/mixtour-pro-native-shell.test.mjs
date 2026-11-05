@@ -40,12 +40,26 @@ test('installed-shell MIDI is a bounded CoreMIDI transport into the shared runti
 });
 
 test('remote shell authority exposes only the bounded MIDI commands and event listener', async () => {
-	const [buildScript, capabilityText] = await Promise.all([
+	const [buildScript, capabilityText, updaterText] = await Promise.all([
 		read('../../desktop/src-tauri/build.rs'),
-		read('../../desktop/src-tauri/capabilities/midi.json')
+		read('../../desktop/src-tauri/capabilities/midi.json'),
+		read('../../desktop/src-tauri/capabilities/updater.json')
 	]);
 	const capability = JSON.parse(capabilityText);
-	assert.match(buildScript, /commands\(&\["native_midi_snapshot", "native_midi_send"\]\)/);
+	// The app command list is exactly the two MIDI commands plus INSTALL-40's
+	// install_local_update (loopback-only manifest, signature-verified install).
+	// Any further command widens the remote-origin authority and must fail here.
+	assert.match(
+		buildScript,
+		/commands\(&\[\s*"native_midi_snapshot",\s*"native_midi_send",\s*"install_local_update",?\s*\]\)/
+	);
+	// install_local_update is granted by the updater capability alone, never by MIDI.
+	assert.deepEqual(JSON.parse(updaterText).permissions, [
+		'updater:default',
+		'process:allow-restart',
+		'process:allow-exit',
+		'allow-install-local-update'
+	]);
 	assert.deepEqual(capability.permissions, [
 		'allow-native-midi-snapshot',
 		'allow-native-midi-send',

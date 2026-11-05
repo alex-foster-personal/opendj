@@ -70,9 +70,7 @@ def fetch_one(base_url: str, fixture: dict[str, object], cache_dir: Path) -> Fet
         )
 
     if status != 200:
-        return FetchResult(
-            fixture_id, stable_id, "MISSING", None, len(body), content_type, None, f"HTTP {status}"
-        )
+        return FetchResult(fixture_id, stable_id, "MISSING", None, len(body), content_type, None, f"HTTP {status}")
     if len(body) < MIN_PLAUSIBLE_BODY_BYTES:
         # An evicted iCloud stub serves an empty or near-empty body rather than
         # erroring, so a 200 is not on its own evidence that audio exists.
@@ -104,9 +102,7 @@ def fetch_one(base_url: str, fixture: dict[str, object], cache_dir: Path) -> Fet
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--base-url", required=True, help="lane daemon base URL, e.g. http://127.0.0.1:8685"
-    )
+    parser.add_argument("--base-url", required=True, help="lane daemon base URL, e.g. http://127.0.0.1:8685")
     parser.add_argument("--fixtures", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)

@@ -87,6 +87,15 @@ export function install(
 			now: () => performance.now(),
 			onUpdate: (merged) => setAudioOutputHealth(merged),
 			onToast: (message) => pushToast(message, 'error'),
+			// AUDIO-DEVICE-05: a Bluetooth main output that stops delivering is
+			// reconnected (or prompted) by the speaker-link runtime, loaded here
+			// lazily so it stays out of the first-paint chunk too.
+			onNotDelivering: (device) => {
+				void import('./speaker-link.svelte').then((link) => {
+					link.noteMainOutputTransport(device?.default_device_transport ?? null);
+					link.reportSpeakerLinkStall('shell', device?.default_device_transport ?? null);
+				});
+			},
 			addDeviceChangeListener: (fn) => {
 				const media =
 					typeof navigator !== 'undefined' && navigator.mediaDevices

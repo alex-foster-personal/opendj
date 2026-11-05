@@ -1,8 +1,8 @@
 """Round 2 hardening: findings 1/7a, 3 and 2, as permanent tests.
 
 Every test here is one reproduction sketch from
-``.planning/cloudsync-round1-adversarial.md`` turned into a regression, and
-the fix it guards is specified in ``specs/design_decision_08.md``. The
+``(private path)`` turned into a regression, and
+the fix it guards is specified in ``(private path)``. The
 mapping, so a failure names the defect it just let back in:
 
 - finding 1 / 7a  -> two machines minting a ``track_locations`` row for the
@@ -35,6 +35,7 @@ quality-gate ratchet: this file crossed 600 lines). The round 2 findings
 :mod:`tests.cloudsync.test_hub_sync_round3_settling` -- both of which import
 ``_changelog_pks`` and ``_locations`` from this module.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -122,10 +123,7 @@ def _locations(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
     """Every location row as ``(location_id, machine_id, file_path)``."""
     return [
         (str(row[0]), str(row[1]), str(row[2]))
-        for row in conn.execute(
-            "SELECT location_id, machine_id, file_path FROM track_locations "
-            "ORDER BY location_id"
-        )
+        for row in conn.execute("SELECT location_id, machine_id, file_path FROM track_locations ORDER BY location_id")
     ]
 
 
@@ -208,9 +206,9 @@ def test_two_machines_holding_one_file_both_sync(
     conn_b = _open(spoke_b)
     try:
         assert len(_locations(conn_b)) == 2, "B did not receive A's row"
-        assert locations.list_location_paths(conn_b, ["trk-1"]) == {
-            "trk-1": ["/Music/a.mp3"]
-        }, "B counted A's file as locally present"
+        assert locations.list_location_paths(conn_b, ["trk-1"]) == {"trk-1": ["/Music/a.mp3"]}, (
+            "B counted A's file as locally present"
+        )
     finally:
         conn_b.close()
 
@@ -251,9 +249,7 @@ def test_a_relocated_location_id_merges_instead_of_wedging(
     conn_a = _open(spoke_a)
     try:
         conn_a.execute("DELETE FROM track_locations WHERE location_id = ?", ("a" * 32,))
-        conn_a.execute(
-            "DELETE FROM local_changelog WHERE table_name = 'track_locations'"
-        )
+        conn_a.execute("DELETE FROM local_changelog WHERE table_name = 'track_locations'")
         _insert_location(
             conn_a,
             location_id="c" * 32,
@@ -272,9 +268,9 @@ def test_a_relocated_location_id_merges_instead_of_wedging(
     hub_conn = _open(hub_dir)
     try:
         assert [row[0] for row in _locations(hub_conn)] == ["c" * 32]
-        assert protocol.encode_row_pk(("a" * 32,)) not in _changelog_pks(
-            hub_conn, "track_locations"
-        ), "the superseded row still has a changelog entry; every pull 409s"
+        assert protocol.encode_row_pk(("a" * 32,)) not in _changelog_pks(hub_conn, "track_locations"), (
+            "the superseded row still has a changelog entry; every pull 409s"
+        )
     finally:
         hub_conn.close()
 
@@ -306,34 +302,24 @@ def test_a_duplicate_natural_key_tie_respects_apply_authority(
             origin=_DEV_A,
         )
         columns = protocol.table_columns(conn, "track_locations")
-        stored = conn.execute(
-            f"SELECT {', '.join(columns)} FROM track_locations"
-        ).fetchone()
+        stored = conn.execute(f"SELECT {', '.join(columns)} FROM track_locations").fetchone()
         values = dict(protocol.canonical_row("track_locations", columns, stored))
 
         lower = dict(values, location_id="a" * 32)
         engine.hub_apply(
             conn,
-            [
-                protocol.RowChange(
-                    table="track_locations", pk=("a" * 32,), values=lower
-                )
-            ],
+            [protocol.RowChange(table="track_locations", pk=("a" * 32,), values=lower)],
         )
         assert [row[0] for row in _locations(conn)] == ["a" * 32]
 
         higher = dict(values, location_id="d" * 32)
         engine.hub_apply(
             conn,
-            [
-                protocol.RowChange(
-                    table="track_locations", pk=("d" * 32,), values=higher
-                )
-            ],
+            [protocol.RowChange(table="track_locations", pk=("d" * 32,), values=higher)],
         )
-        assert [row[0] for row in _locations(conn)] == [
-            "a" * 32
-        ], "the higher key won on a tie; two peers would disagree"
+        assert [row[0] for row in _locations(conn)] == ["a" * 32], (
+            "the higher key won on a tie; two peers would disagree"
+        )
 
         conn.execute("DELETE FROM track_locations")
         _insert_location(
@@ -347,19 +333,11 @@ def test_a_duplicate_natural_key_tie_respects_apply_authority(
         )
         engine.spoke_apply(
             conn,
-            [
-                protocol.RowChange(
-                    table="track_locations", pk=("a" * 32,), values=lower
-                )
-            ],
+            [protocol.RowChange(table="track_locations", pk=("a" * 32,), values=lower)],
         )
         engine.spoke_apply(
             conn,
-            [
-                protocol.RowChange(
-                    table="track_locations", pk=("d" * 32,), values=higher
-                )
-            ],
+            [protocol.RowChange(table="track_locations", pk=("d" * 32,), values=higher)],
         )
         assert [row[0] for row in _locations(conn)] == ["d" * 32]
     finally:
@@ -382,9 +360,7 @@ def test_a_peer_with_a_skewed_clock_cannot_swallow_a_local_edit(
     _seed_common_track((spoke_a, spoke_b), "seed")
     conn_b = _open(spoke_b)
     try:
-        _insert_track(
-            conn_b, "skew", title="future row", updated_at=_T_SKEWED, origin=_DEV_B
-        )
+        _insert_track(conn_b, "skew", title="future row", updated_at=_T_SKEWED, origin=_DEV_B)
     finally:
         conn_b.close()
 
@@ -393,9 +369,7 @@ def test_a_peer_with_a_skewed_clock_cannot_swallow_a_local_edit(
 
     conn_a = _open(spoke_a)
     try:
-        _set_track_title(
-            conn_a, "seed", title="ordinary edit on A", updated_at=_T3, origin=_DEV_A
-        )
+        _set_track_title(conn_a, "seed", title="ordinary edit on A", updated_at=_T3, origin=_DEV_A)
     finally:
         conn_a.close()
 
@@ -414,9 +388,7 @@ def test_a_peer_with_a_skewed_clock_cannot_swallow_a_local_edit(
         hub_conn.close()
 
 
-def test_an_unstamped_edit_is_never_silently_offered(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_an_unstamped_edit_is_never_silently_offered(hub: _TestClientTransport, spoke_a: Path) -> None:
     """The fence's other edge: a raw write is invisible to the push.
 
     ADR 08 consequence 2 accepts this explicitly -- the stamp helper is a
@@ -476,8 +448,7 @@ def test_a_membership_write_is_offered_as_its_playlist_row(
             (stamped, _DEV_A),
         )
         conn_a.execute(
-            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-            "WHERE playlist_id = 'pl-1'",
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = 'pl-1'",
             (stamped, _DEV_A),
         )
     finally:
@@ -517,9 +488,7 @@ def test_the_three_broken_orderings_now_compare_as_instants() -> None:
     "bad",
     ["not-a-timestamp", "2026-08-30T10:00:00", "", "2026-13-01T00:00:00+00:00"],
 )
-def test_an_unorderable_updated_at_is_refused_with_422(
-    hub: _TestClientTransport, spoke_a: Path, bad: str
-) -> None:
+def test_an_unorderable_updated_at_is_refused_with_422(hub: _TestClientTransport, spoke_a: Path, bad: str) -> None:
     """A naive or unparseable stamp is a 422, not a row in the table."""
     result = _sync(spoke_a, hub, "spoke-a")
     with pytest.raises(client.SyncTransportError) as excinfo:
@@ -570,9 +539,7 @@ def test_a_differently_spelled_equal_instant_does_not_win(
     hub_conn = _open(hub_dir)
     try:
         columns = protocol.table_columns(hub_conn, "tracks")
-        row = hub_conn.execute(
-            f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = 'trk-1'"
-        ).fetchone()
+        row = hub_conn.execute(f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = 'trk-1'").fetchone()
     finally:
         hub_conn.close()
     values = dict(protocol.canonical_row("tracks", columns, row))

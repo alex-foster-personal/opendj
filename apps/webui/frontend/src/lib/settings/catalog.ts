@@ -22,6 +22,7 @@ import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
+import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
 import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
 import {
 	PIN_VISIBLE_DAYS_DEFAULT,
@@ -85,6 +86,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			defaultValue: PIN_VISIBLE_DAYS_DEFAULT,
 			unit: ' days'
 		}
+	},
+	{
+		id: 'library_sidebar_art',
+		label: 'Playlist art in the sidebar',
+		group: 'library',
+		keywords: ['thumbnail', 'cover', 'artwork', 'mosaic', 'spotify', 'tiles', 'grid', 'image'],
+		title: 'Show a cover tile beside each playlist in the sidebar',
+		detail:
+			'Each playlist row shows a 48 px tile: a 2x2 mosaic of its first four different covers, its one cover, or a note when it has no art. Works in every skin. Default on.',
+		implemented: true,
+		control: { kind: 'boolean' }
 	},
 	{
 		id: 'hide_broken_links',
@@ -340,6 +352,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	AUTO_GAIN_ENABLED_SETTING,
 	AUTO_GAIN_TARGET_SETTING,
 	SHOW_SECTIONS_SETTING,
+	SPEAKER_AUTO_RECOVER_SETTING,
 	...TEMPO_LANE_SETTINGS,
 	{
 		id: 'show_stems',
@@ -403,6 +416,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 				{ value: 'less', label: 'Less (2 deck)' }
 			]
 		}
+	},
+	{
+		id: 'mixer_stems',
+		label: 'Mixer stem dials (S)',
+		group: 'performance',
+		keywords: ['stem', 'stems', 'mixer', 'vocal', 'inst', 'bass', 'drums', 'dial', 'knob', 's button'],
+		title: 'Stem level dials beside the EQ on every channel with stems',
+		detail:
+			'The S button left of MORE/LESS. On: each channel whose track has stems shows VOCAL, INST and BASS dials beside HI, MID and LOW, and DRUMS beside FILTER, and the mixer widens 20%. Channels without stems are unchanged. Same as the mixer_stems performance command.',
+		implemented: true,
+		control: { kind: 'boolean' }
 	},
 	{
 		id: 'feature_icon_single_click',
@@ -508,7 +532,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		],
 		title: 'Multiplier for a trackpad two-finger scroll, which emits many events where a mouse emits one detent',
 		detail:
-			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse", and the shipped default is 3x less sensitive, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts. Same controls and same persistence as the mouse factor.',
+			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse". The shipped 1/3 value is an initial starting estimate, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts; tune it for your hardware. Same controls and same persistence as the mouse factor.',
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},

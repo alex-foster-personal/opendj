@@ -64,7 +64,11 @@ const _changeCache = new WeakMap<AnlzWaveform, Map<string, Int32Array>>();
 /** Detail-point indices where the painted level steps up by a moderate amount
  * or more. Pure in the band data; memoized per waveform object and norm, so it
  * still runs once per track load. */
-export function changePointsFor(waveform: AnlzWaveform, durationS: number, norm: ChangeLevelNorm): Int32Array {
+export function changePointsFor(
+	waveform: AnlzWaveform,
+	durationS: number,
+	norm: ChangeLevelNorm
+): Int32Array {
 	let byNorm = _changeCache.get(waveform);
 	if (byNorm === undefined) {
 		byNorm = new Map();
@@ -82,12 +86,20 @@ export function changePointsFor(waveform: AnlzWaveform, durationS: number, norm:
  * finite and positive, or a divisor that is not: render.ts only paints rows
  * with both, so anything else is an upstream defect, not a track without
  * changes. */
-export function detectChangePoints(bands: AnlzWaveform['detail'], durationS: number, norm: ChangeLevelNorm): Int32Array {
+export function detectChangePoints(
+	bands: AnlzWaveform['detail'],
+	durationS: number,
+	norm: ChangeLevelNorm
+): Int32Array {
 	if (!Number.isFinite(durationS) || durationS <= 0) {
-		throw new RangeError(`detectChangePoints: duration must be finite and positive, got ${durationS}`);
+		throw new RangeError(
+			`detectChangePoints: duration must be finite and positive, got ${durationS}`
+		);
 	}
 	if (!Number.isFinite(norm.divisor) || norm.divisor <= 0) {
-		throw new RangeError(`detectChangePoints: divisor must be finite and positive, got ${norm.divisor}`);
+		throw new RangeError(
+			`detectChangePoints: divisor must be finite and positive, got ${norm.divisor}`
+		);
 	}
 	const n = bands.low.length;
 	if (n < 2) return new Int32Array(0);
@@ -235,8 +247,16 @@ export function rowBlockEdges(
 	barPhaseUntrusted = false,
 	stride?: number
 ): Int32Array {
-	const changes = changeAnchorsPx(changePointsFor(waveform, durationS, norm), waveform.detail.low.length, widthPx);
-	return snappedBlockEdges(widthPx, changes, beatAnchorsPx(beats, pxPerS, barPhaseUntrusted, stride));
+	const changes = changeAnchorsPx(
+		changePointsFor(waveform, durationS, norm),
+		waveform.detail.low.length,
+		widthPx
+	);
+	return snappedBlockEdges(
+		widthPx,
+		changes,
+		beatAnchorsPx(beats, pxPerS, barPhaseUntrusted, stride)
+	);
 }
 
 const _beatsIds = new WeakMap<readonly AnlzBeat[], number>();

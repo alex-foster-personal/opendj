@@ -8,6 +8,7 @@ test('defaults to STANDARD pending host', async () => {
 	assert.equal(mod.resolvedTier(), 'STANDARD');
 	assert.equal(mod.prefetchTrackCap(), 4);
 	assert.equal(mod.anlzEntryCap(), 32);
+	assert.equal(mod.tierOnNowLabel(), 'On now: Standard (pending host)');
 });
 
 test('explicit LOW override applies caps immediately', async () => {
@@ -17,13 +18,40 @@ test('explicit LOW override applies caps immediately', async () => {
 	assert.equal(mod.prefetchByteCap(), 24 * 1024 * 1024);
 	assert.equal(mod.anlzEntryCap(), 8);
 	assert.match(mod.tierHoverSuffix(), /Active tier: LOW/);
+	assert.equal(mod.tierOnNowLabel(), 'On now: Low (Override)');
 });
 
 test('503 leaves STANDARD with named reason', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/perf-tier.ts');
-	mod.setResolvedTier('STANDARD', 'pending-host', null, null, 'tier unavailable: host_info_unavailable');
+	mod.setResolvedTier(
+		'STANDARD',
+		'pending-host',
+		null,
+		null,
+		'tier unavailable: host_info_unavailable'
+	);
 	assert.equal(mod.resolvedTier(), 'STANDARD');
 	assert.match(mod.tierHoverSuffix(), /host_info_unavailable/);
+	assert.equal(mod.tierOnNowLabel(), 'On now: Standard (pending host)');
+});
+
+test('tierOnNowLabel covers every resolved-tier and source pair', async () => {
+	const mod = await loadTypeScriptModule('src/lib/rb/perf-tier.ts');
+	const cases = [
+		['LOW', 'auto', 'On now: Low (Auto)'],
+		['STANDARD', 'auto', 'On now: Standard (Auto)'],
+		['HIGH', 'auto', 'On now: High (Auto)'],
+		['LOW', 'override', 'On now: Low (Override)'],
+		['STANDARD', 'override', 'On now: Standard (Override)'],
+		['HIGH', 'override', 'On now: High (Override)'],
+		['STANDARD', 'pending-host', 'On now: Standard (pending host)'],
+		['LOW', 'pending-host', 'On now: Low (pending host)'],
+		['HIGH', 'pending-host', 'On now: High (pending host)']
+	];
+	for (const [tier, source, label] of cases) {
+		mod.setResolvedTier(tier, source);
+		assert.equal(mod.tierOnNowLabel(), label, `${tier} ${source}`);
+	}
 });
 
 //-----------------------------------------------------------------------------
@@ -55,32 +83,46 @@ async function _withPerfTierResponse(status, body, run) {
 
 // if fetchPerfTier accepts a 200 with no tier then setResolvedTier stores undefined as the active tier
 test('a 200 whose body has no tier rejects loudly, naming the body, and leaves the tier untouched', async () => {
-	await _withPerfTierResponse(200, { source: 'auto', auto_tier: null, override: 'auto' }, async (client) => {
-		await assert.rejects(client.fetchPerfTier(), (error) => {
-			assert.ok(error instanceof Error);
-			assert.match(error.message, /no valid tier/);
-			assert.match(error.message, /LOW, STANDARD, HIGH/);
-			assert.match(error.message, /"source":"auto"/);
-			return true;
-		});
-		assert.equal(client.resolvedTier(), 'STANDARD');
-		assert.equal(client.resolvedTierSource(), 'pending-host');
-	});
+	await _withPerfTierResponse(
+		200,
+		{ source: 'auto', auto_tier: null, override: 'auto' },
+		async (client) => {
+			await assert.rejects(client.fetchPerfTier(), (error) => {
+				assert.ok(error instanceof Error);
+				assert.match(error.message, /no valid tier/);
+				assert.match(error.message, /LOW, STANDARD, HIGH/);
+				assert.match(error.message, /"source":"auto"/);
+				return true;
+			});
+			assert.equal(client.resolvedTier(), 'STANDARD');
+			assert.equal(client.resolvedTierSource(), 'pending-host');
+		}
+	);
 });
 
 // if fetchPerfTier accepts an unknown tier name then activeScalers() returns undefined caps
 test('a 200 whose tier is not a known tier name rejects loudly', async () => {
-	await _withPerfTierResponse(200, { tier: 'ULTRA', source: 'auto', auto_tier: 'ULTRA', override: 'auto' }, async (client) => {
-		await assert.rejects(client.fetchPerfTier(), /no valid tier.*"tier":"ULTRA"/);
-		assert.equal(client.resolvedTier(), 'STANDARD');
-	});
+	await _withPerfTierResponse(
+		200,
+		{ tier: 'ULTRA', source: 'auto', auto_tier: 'ULTRA', override: 'auto' },
+		async (client) => {
+			await assert.rejects(client.fetchPerfTier(), /no valid tier.*"tier":"ULTRA"/);
+			assert.equal(client.resolvedTier(), 'STANDARD');
+		}
+	);
 });
 
 // if the validation also refuses real tiers then a healthy engine never resolves its tier
 test('control: a 200 carrying a valid tier still resolves it', async () => {
 	await _withPerfTierResponse(
 		200,
-		{ tier: 'HIGH', source: 'auto', auto_tier: 'HIGH', override: 'auto', host: { logical_cpus: 16, ram_bytes: 64 * 1024 ** 3 } },
+		{
+			tier: 'HIGH',
+			source: 'auto',
+			auto_tier: 'HIGH',
+			override: 'auto',
+			host: { logical_cpus: 16, ram_bytes: 64 * 1024 ** 3 }
+		},
 		async (client) => {
 			await client.fetchPerfTier();
 			assert.equal(client.resolvedTier(), 'HIGH');

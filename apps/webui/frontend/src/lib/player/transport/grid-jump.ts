@@ -77,8 +77,13 @@ function nearestIndex(times: readonly number[], t: number): number {
  * Landing points as 0-based bar indices: bar 0, then every `stepBars`, with a
  * stop at each section start a step would cross (the Cmd K `grid()` rule).
  */
-export function gridJumpPoints(barCount: number, sectionBars: readonly number[], stepBars: number): number[] {
-	if (!Number.isInteger(stepBars) || stepBars < 1) throw new RangeError(`stepBars must be a positive integer; got ${stepBars}`);
+export function gridJumpPoints(
+	barCount: number,
+	sectionBars: readonly number[],
+	stepBars: number
+): number[] {
+	if (!Number.isInteger(stepBars) || stepBars < 1)
+		throw new RangeError(`stepBars must be a positive integer; got ${stepBars}`);
 	const points = [0];
 	let at = 0;
 	while (at < barCount - 1) {
@@ -94,10 +99,13 @@ export function gridJumpPoints(barCount: number, sectionBars: readonly number[],
 export function planGridJump(input: GridJumpInput): GridJumpPlan {
 	const { beats, anchorMs, direction, stepBars, playing } = input;
 	validateBeatGrid(beats);
-	if (direction !== 1 && direction !== -1) throw new RangeError(`direction must be 1 or -1; got ${direction}`);
-	if (!Number.isFinite(anchorMs) || anchorMs < 0) throw new RangeError(`anchorMs must be finite and >= 0; got ${anchorMs}`);
+	if (direction !== 1 && direction !== -1)
+		throw new RangeError(`direction must be 1 or -1; got ${direction}`);
+	if (!Number.isFinite(anchorMs) || anchorMs < 0)
+		throw new RangeError(`anchorMs must be finite and >= 0; got ${anchorMs}`);
 	const downbeats = downbeatIndices(beats);
-	if (downbeats.length < 2) return { kind: 'refused', reason: 'track has no bar grid - snapped jump unavailable' };
+	if (downbeats.length < 2)
+		return { kind: 'refused', reason: 'track has no bar grid - snapped jump unavailable' };
 	const anchorSec = anchorMs / 1000;
 	const position = gridBeatPosition(beats, anchorSec);
 	if (position === null && anchorSec < beats[0].t && direction === 1) {
@@ -105,7 +113,11 @@ export function planGridJump(input: GridJumpInput): GridJumpPlan {
 		// grid, which a whole-beat jump cannot express, so it is an exact seek.
 		return { kind: 'seek', targetMs: beats[downbeats[0]].t * 1000, targetBar: 1 };
 	}
-	if (position === null) return { kind: 'refused', reason: 'playhead is outside the beatgrid - snapped jump unavailable' };
+	if (position === null)
+		return {
+			kind: 'refused',
+			reason: 'playhead is outside the beatgrid - snapped jump unavailable'
+		};
 
 	const times = beats.map((b) => b.t);
 	// The beat the move counts from: a playing deck keeps its phase from the
@@ -116,7 +128,11 @@ export function planGridJump(input: GridJumpInput): GridJumpPlan {
 	for (let i = 0; i < downbeats.length && downbeats[i] <= anchorBeat; i++) bar = i;
 
 	const downbeatTimes = downbeats.map((i) => times[i]);
-	const sectionBars = [...new Set(input.sectionStartsSec.filter(Number.isFinite).map((s) => nearestIndex(downbeatTimes, s)))];
+	const sectionBars = [
+		...new Set(
+			input.sectionStartsSec.filter(Number.isFinite).map((s) => nearestIndex(downbeatTimes, s))
+		)
+	];
 	const points = gridJumpPoints(downbeats.length, sectionBars, stepBars);
 
 	let target: number | null;
@@ -136,6 +152,10 @@ export function planGridJump(input: GridJumpInput): GridJumpPlan {
 	const from = playing && bar >= 0 ? downbeats[bar] : anchorBeat;
 	const deltaBeats = downbeats[target] - from;
 	if (deltaBeats === 0) return { kind: 'refused', reason: `already at bar ${target + 1}` };
-	return { kind: 'jump', deltaBeats, targetBar: target + 1, sectionStart: sectionBars.includes(target) };
+	return {
+		kind: 'jump',
+		deltaBeats,
+		targetBar: target + 1,
+		sectionStart: sectionBars.includes(target)
+	};
 }
-

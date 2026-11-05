@@ -12,10 +12,10 @@ modules are verbatim moves of the map's targets 10-12:
 
 Leaving ``apps.webui`` is what closes the ``engine_core <-> webui`` package
 cycle recorded in ``ops/quality/baseline.json``: :mod:`.reversal` provisions
-the hot-cue sidecar through the one DDL home in
-``apps.engine_core.store.schema`` (map defect D2), while the engine chassis
-imports ``apps.webui`` to compose the legacy app. With the importer sitting in
-``apps.adapters`` the edge no longer closes a loop.
+the hot-cue sidecar through the one DDL home in :mod:`.sidecar_schema`
+(map defect D2; ``apps.engine_core.store.schema`` re-exports), while the
+engine chassis imports ``apps.webui`` to compose the legacy app. With the
+importer sitting in ``apps.adapters`` the edge no longer closes a loop.
 
 Connections are injected, never resolved here: every entry point takes a
 zero-argument factory, so this package carries no path constant and no

@@ -79,7 +79,12 @@ function harness({
 	let scheduledSec = 0;
 	let captureOpens = 0;
 	let released = null;
-	const gate = gateAt === null ? null : new Promise((resolve) => { released = resolve; });
+	const gate =
+		gateAt === null
+			? null
+			: new Promise((resolve) => {
+					released = resolve;
+				});
 	const stepsSeen = [];
 	const calibration = {
 		step: 'idle',
@@ -94,7 +99,13 @@ function harness({
 	let verifyAttempt = 0;
 	let pendingVerifyMasterLag = null;
 	const liveStep = () => (stepSource === null ? calibration.step : stepSource());
-	const mic = { stopped: 0, stop() { this.stopped += 1; calls.push('mic:stop'); } };
+	const mic = {
+		stopped: 0,
+		stop() {
+			this.stopped += 1;
+			calls.push('mic:stop');
+		}
+	};
 	const effects = {
 		sampleRate: () => SAMPLE_RATE,
 		async getUserMedia() {
@@ -119,12 +130,17 @@ function harness({
 			signals.push(signal);
 			if (gateAt !== null && liveStep() === gateAt) {
 				await new Promise((resolve, reject) => {
-					signal.addEventListener('abort', () => { calls.push('play:stopped'); reject(new Error('chirp aborted')); });
+					signal.addEventListener('abort', () => {
+						calls.push('play:stopped');
+						reject(new Error('chirp aborted'));
+					});
 					gate.then(resolve);
 				});
 			}
 			const audible =
-				hearAt[target] !== null && gain >= hearAt[target] && !(purpose === 'verify' && deafDuringVerify === target);
+				hearAt[target] !== null &&
+				gain >= hearAt[target] &&
+				!(purpose === 'verify' && deafDuringVerify === target);
 			let capture;
 			if (audible) {
 				const lag = lags[target][runs[target]];
@@ -172,15 +188,26 @@ function harness({
 			const startedAtSec = clockSec;
 			const samples = new Promise((resolve, reject) => {
 				pendingCapture = { resolve, startedAtSec };
-				signal.addEventListener('abort', () => { calls.push('record:stopped'); reject(new Error('record aborted')); });
+				signal.addEventListener('abort', () => {
+					calls.push('record:stopped');
+					reject(new Error('record aborted'));
+				});
 			});
 			samples.catch(() => undefined);
 			return { startedAtSec, samples };
 		},
 		contextTimeSec: () => clockSec,
-		async sleep(ms) { calls.push(`sleep:${ms}`); clockSec += ms / 1000; },
-		async pauseDecks() { calls.push(`pause:${playing.join(',')}`); return [...playing]; },
-		async resumeDecks(decks) { calls.push(`resume:${decks.join(',')}`); },
+		async sleep(ms) {
+			calls.push(`sleep:${ms}`);
+			clockSec += ms / 1000;
+		},
+		async pauseDecks() {
+			calls.push(`pause:${playing.join(',')}`);
+			return [...playing];
+		},
+		async resumeDecks(decks) {
+			calls.push(`resume:${decks.join(',')}`);
+		},
 		now: () => Date.UTC(2026, 8, 15, 20, 0, 0),
 		persist(result) {
 			calls.push('persist');
@@ -198,7 +225,18 @@ function harness({
 		alignmentMode: () => mode,
 		deviceIds: () => ({ cue: 'bt-1', master: 'lg-hdmi' })
 	};
-	return { effects, calls, signals, calibration, mic, stepsSeen, gains, hearAt, release: () => released?.(), appliedDelays: () => ({ ...appliedDelays }) };
+	return {
+		effects,
+		calls,
+		signals,
+		calibration,
+		mic,
+		stepsSeen,
+		gains,
+		hearAt,
+		release: () => released?.(),
+		appliedDelays: () => ({ ...appliedDelays })
+	};
 }
 
 async function settle() {
@@ -224,8 +262,11 @@ describe('createCueAlignController', () => {
 		assert.equal(h.calibration.cue_latency_ms, 900);
 		assert.equal(h.calibration.offset_ms, 700);
 		assert.equal(h.calibration.error, null);
-		assert.equal(h.calibration.verify_residual_ms, 0,
-			'if verification passes then the residual is carried on the applied state - broken');
+		assert.equal(
+			h.calibration.verify_residual_ms,
+			0,
+			'if verification passes then the residual is carried on the applied state - broken'
+		);
 		assert.deepEqual(h.effects.persisted, {
 			head_delay_ms: 0,
 			master_delay_ms: 700,
@@ -237,13 +278,39 @@ describe('createCueAlignController', () => {
 				master_device_id: 'lg-hdmi'
 			}
 		});
-		assert.equal(h.calls.filter((c) => c === 'play:master:measure').length, 4, 'one ramp chirp and three paired master captures');
-		assert.equal(h.calls.filter((c) => c === 'play:cue:measure').length, 4, 'one ramp chirp and three paired cue captures');
-		assert.equal(h.calls.filter((c) => c === 'play:master:verify').length, 1, 'one verifying master chirp');
-		assert.equal(h.calls.filter((c) => c === 'play:cue:verify').length, 1, 'one verifying cue chirp');
-		assert.ok(h.calls.indexOf('pause:1,3') < h.calls.indexOf('play:master:measure'), 'if decks are not paused before the first chirp then the room mix buries the measurement - broken');
-		assert.ok(h.calls.indexOf('resume:1,3') > h.calls.lastIndexOf('play:cue:verify'), 'decks resume after the last chirp');
-		assert.equal(h.mic.stopped, 1, 'if the mic stream is left open then the tally light stays on after the modal closes - broken');
+		assert.equal(
+			h.calls.filter((c) => c === 'play:master:measure').length,
+			4,
+			'one ramp chirp and three paired master captures'
+		);
+		assert.equal(
+			h.calls.filter((c) => c === 'play:cue:measure').length,
+			4,
+			'one ramp chirp and three paired cue captures'
+		);
+		assert.equal(
+			h.calls.filter((c) => c === 'play:master:verify').length,
+			1,
+			'one verifying master chirp'
+		);
+		assert.equal(
+			h.calls.filter((c) => c === 'play:cue:verify').length,
+			1,
+			'one verifying cue chirp'
+		);
+		assert.ok(
+			h.calls.indexOf('pause:1,3') < h.calls.indexOf('play:master:measure'),
+			'if decks are not paused before the first chirp then the room mix buries the measurement - broken'
+		);
+		assert.ok(
+			h.calls.indexOf('resume:1,3') > h.calls.lastIndexOf('play:cue:verify'),
+			'decks resume after the last chirp'
+		);
+		assert.equal(
+			h.mic.stopped,
+			1,
+			'if the mic stream is left open then the tally light stays on after the modal closes - broken'
+		);
 		assert.equal(h.calls.filter((c) => c === 'persist').length, 1);
 	});
 
@@ -252,17 +319,35 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /The mic could not hear the speakers even at full chirp level \(best peak 0\.\d+, needs 0\.35\)/,
-			'if the failure does not carry the measured peak then the operator cannot tell "too quiet" from "broken" - broken');
-		assert.match(h.calibration.error, /Turn the macOS output volume up, or move the laptop closer to the speakers\./,
-			'a bus heard faintly under noise is a volume problem and must be reported as one');
-		assert.deepEqual(h.gains.master, [...cueLatency.CUE_LATENCY_GAIN_STEPS],
-			'if the ramp gives up before full level then a bus that only needed more gain is failed - broken');
-		assert.equal(h.calibration.diagnostics.failure, 'weak_correlation',
-			'a bus heard only as noise is a correlation failure, not a dead input');
+		assert.match(
+			h.calibration.error,
+			/The mic could not hear the speakers even at full chirp level \(best peak 0\.\d+, needs 0\.35\)/,
+			'if the failure does not carry the measured peak then the operator cannot tell "too quiet" from "broken" - broken'
+		);
+		assert.match(
+			h.calibration.error,
+			/Turn the macOS output volume up, or move the laptop closer to the speakers\./,
+			'a bus heard faintly under noise is a volume problem and must be reported as one'
+		);
+		assert.deepEqual(
+			h.gains.master,
+			[...cueLatency.CUE_LATENCY_GAIN_STEPS],
+			'if the ramp gives up before full level then a bus that only needed more gain is failed - broken'
+		);
+		assert.equal(
+			h.calibration.diagnostics.failure,
+			'weak_correlation',
+			'a bus heard only as noise is a correlation failure, not a dead input'
+		);
 		assert.equal(h.calibration.master_latency_ms, null);
-		assert.ok(!h.calls.includes('play:cue:measure'), 'a failed speaker check must not go on to chirp the phones');
-		assert.ok(h.calls.includes('resume:1,3'), 'if a failed check leaves the decks paused then calibration stopped the set - broken');
+		assert.ok(
+			!h.calls.includes('play:cue:measure'),
+			'a failed speaker check must not go on to chirp the phones'
+		);
+		assert.ok(
+			h.calls.includes('resume:1,3'),
+			'if a failed check leaves the decks paused then calibration stopped the set - broken'
+		);
 		assert.equal(h.mic.stopped, 1);
 		assert.ok(!h.calls.includes('persist'));
 	});
@@ -272,8 +357,15 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /The mic could not hear the headphones even at full chirp level/);
-		assert.equal(h.calibration.master_latency_ms, 200, 'the passing master check is kept for the report');
+		assert.match(
+			h.calibration.error,
+			/The mic could not hear the headphones even at full chirp level/
+		);
+		assert.equal(
+			h.calibration.master_latency_ms,
+			200,
+			'the passing master check is kept for the report'
+		);
 		assert.ok(h.calls.includes('resume:1,3'));
 		assert.ok(!h.calls.includes('persist'));
 	});
@@ -284,25 +376,47 @@ describe('createCueAlignController', () => {
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
 		assert.match(h.calibration.error, /best peak 0\.00/);
-		assert.match(h.calibration.error, /Nothing at all reached the microphone, so this is not a volume problem\./,
-			'if a dead acoustic path is reported as "turn it up" then the operator raises the volume of a device nobody is listening to - broken');
-		assert.match(h.calibration.error, /the room output really is the speakers and not a headphone jack/,
-			'the exact fault seen in the field: MASTER pointed at an unplugged jack, so no level could ever have helped');
-		assert.equal(h.calibration.diagnostics.failure, 'no_input_signal',
-			'if a digitally silent capture is not classed as no input then the IO panel blames the room - broken');
+		assert.match(
+			h.calibration.error,
+			/Nothing at all reached the microphone, so this is not a volume problem\./,
+			'if a dead acoustic path is reported as "turn it up" then the operator raises the volume of a device nobody is listening to - broken'
+		);
+		assert.match(
+			h.calibration.error,
+			/the room output really is the speakers and not a headphone jack/,
+			'the exact fault seen in the field: MASTER pointed at an unplugged jack, so no level could ever have helped'
+		);
+		assert.equal(
+			h.calibration.diagnostics.failure,
+			'no_input_signal',
+			'if a digitally silent capture is not classed as no input then the IO panel blames the room - broken'
+		);
 	});
 
 	test('a bus audible only above 0.5: stage one climbs to 0.5, stops there, and stage two reuses it', async () => {
 		const h = harness({ hear: { cue: 0.5 } });
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'applied', 'a cue bus that simply needed more level must calibrate, not fail');
-		assert.deepEqual(h.gains.cue, [0.15, 0.3, 0.5, 0.5, 0.5, 0.5, 0.5],
-			'if stage two does not reuse the rung stage one found then the three paired captures are inaudible again - broken');
-		assert.deepEqual(h.gains.master, [0.15, 0.15, 0.15, 0.15, 0.15],
-			'a bus heard on the first rung must never be chirped louder than it needs');
-		assert.equal(h.calibration.cue_latency_ms, 900,
-			'the chirp that ended the ramp is run one, so a level find must not throw its measurement away');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'a cue bus that simply needed more level must calibrate, not fail'
+		);
+		assert.deepEqual(
+			h.gains.cue,
+			[0.15, 0.3, 0.5, 0.5, 0.5, 0.5, 0.5],
+			'if stage two does not reuse the rung stage one found then the three paired captures are inaudible again - broken'
+		);
+		assert.deepEqual(
+			h.gains.master,
+			[0.15, 0.15, 0.15, 0.15, 0.15],
+			'a bus heard on the first rung must never be chirped louder than it needs'
+		);
+		assert.equal(
+			h.calibration.cue_latency_ms,
+			900,
+			'the chirp that ended the ramp is run one, so a level find must not throw its measurement away'
+		);
 	});
 
 	test('the probe observer reports every rung, every stage-two confirm, and the best peak so far', async () => {
@@ -315,9 +429,15 @@ describe('createCueAlignController', () => {
 		// Three ramp rungs, then the three stage-two captures at the rung it chose:
 		// the bar stays live through stage two instead of freezing on the ramp.
 		assert.deepEqual(cueRungs, [0.15, 0.3, 0.5, 0.5, 0.5, 0.5, 0.5]);
-		assert.ok(seen.some((p) => p.peak === null), 'each rung is announced before it plays, or the bar only moves after the fact');
+		assert.ok(
+			seen.some((p) => p.peak === null),
+			'each rung is announced before it plays, or the bar only moves after the fact'
+		);
 		const last = seen[seen.length - 1];
-		assert.ok(last.best >= last.threshold, 'the final report of a successful ramp must show the threshold met');
+		assert.ok(
+			last.best >= last.threshold,
+			'the final report of a successful ramp must show the threshold met'
+		);
 		assert.ok(seen.every((p) => p.threshold === 0.35));
 	});
 
@@ -333,8 +453,11 @@ describe('createCueAlignController', () => {
 			{ gain: 0.3, lagMs: 300 },
 			'if the FIRST marginal rung were taken then a louder, better one measured right after it is thrown away - broken'
 		);
-		assert.equal(cueAlign.chooseLevelRung([at(0.15, 0.1), at(1, 0.34)]), null,
-			'0.34 is below the refusal line and must not be accepted just because it was the best of a bad ramp');
+		assert.equal(
+			cueAlign.chooseLevelRung([at(0.15, 0.1), at(1, 0.34)]),
+			null,
+			'0.34 is below the refusal line and must not be accepted just because it was the best of a bad ramp'
+		);
 		assert.equal(cueAlign.chooseLevelRung([]), null);
 	});
 
@@ -355,10 +478,16 @@ describe('createCueAlignController', () => {
 		};
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'applied',
-			'if one short capture refuses the whole run then a cup shifting for a moment costs the operator the entire calibration - broken');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'if one short capture refuses the whole run then a cup shifting for a moment costs the operator the entire calibration - broken'
+		);
 		assert.ok(h.gains.cue.includes(1), 'the retry must go to full level, not creep up one rung');
-		assert.ok(!h.gains.cue.includes(0.75), 'if the retry stops at the next rung then a marginal room is refused a level it could have used - broken');
+		assert.ok(
+			!h.gains.cue.includes(0.75),
+			'if the retry stops at the next rung then a marginal room is refused a level it could have used - broken'
+		);
 	});
 
 	test('three runs spreading more than 10 ms: failed as unstable, nothing applied', async () => {
@@ -366,12 +495,21 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /^measurement unstable \(spread 15 ms\): the headphones latency itself changed between runs/,
-			'if the unstable error does not name the measured reason then every cause reads as the same failure - broken');
-		assert.doesNotMatch(h.calibration.error, /less room noise/,
-			'pin 9a722fd1: a quiet room with clearly heard chirps must not be told to reduce room noise - broken');
-		assert.match(h.calibration.error, /\(speakers 200, 200, 200 ms; headphones 900, 915, 900 ms\)/,
-			'if the unstable error hides the per-bus lags then nobody can tell which bus wandered - broken');
+		assert.match(
+			h.calibration.error,
+			/^measurement unstable \(spread 15 ms\): the headphones latency itself changed between runs/,
+			'if the unstable error does not name the measured reason then every cause reads as the same failure - broken'
+		);
+		assert.doesNotMatch(
+			h.calibration.error,
+			/less room noise/,
+			'pin 9a722fd1: a quiet room with clearly heard chirps must not be told to reduce room noise - broken'
+		);
+		assert.match(
+			h.calibration.error,
+			/\(speakers 200, 200, 200 ms; headphones 900, 915, 900 ms\)/,
+			'if the unstable error hides the per-bus lags then nobody can tell which bus wandered - broken'
+		);
 		assert.deepEqual(h.calibration.diagnostics, {
 			probe: 'chirp',
 			alternate_probe: 'unavailable',
@@ -380,7 +518,10 @@ describe('createCueAlignController', () => {
 			cue_measurements_ms: [900, 915, 900],
 			spread_ms: 15
 		});
-		assert.ok(!h.calls.includes('persist'), 'if an unstable measurement is applied then a noisy room writes a wrong room delay - broken');
+		assert.ok(
+			!h.calls.includes('persist'),
+			'if an unstable measurement is applied then a noisy room writes a wrong room delay - broken'
+		);
 		assert.ok(h.calls.includes('resume:1,3'));
 	});
 
@@ -391,7 +532,11 @@ describe('createCueAlignController', () => {
 		assert.equal(h.calibration.step, 'applied');
 		assert.equal(h.calibration.master_latency_ms, 205);
 		assert.equal(h.calibration.cue_latency_ms, 910);
-		assert.equal(h.calibration.offset_ms, 705, 'offsets 700, 705, 705: the applied offset is their median');
+		assert.equal(
+			h.calibration.offset_ms,
+			705,
+			'offsets 700, 705, 705: the applied offset is their median'
+		);
 	});
 
 	test('a drift common to both buses is accepted, because it cancels in the offset', async () => {
@@ -401,8 +546,11 @@ describe('createCueAlignController', () => {
 		const h = harness({ lags: { master: [140, 151, 159, 165], cue: [180, 190, 195, 201] } });
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'applied',
-			'if a mic-side drift both buses share refuses the run then calibration fails on a stable offset - broken');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'if a mic-side drift both buses share refuses the run then calibration fails on a stable offset - broken'
+		);
 		assert.equal(h.calibration.offset_ms, 36);
 	});
 
@@ -411,17 +559,34 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		const run = controller.run({ interactive: false });
 		for (let i = 0; i < 200 && h.calibration.step !== 'measuring'; i += 1) await settle();
-		assert.equal(h.calibration.step, 'measuring', 'the harness must actually be parked mid-measurement, or this test proves nothing');
+		assert.equal(
+			h.calibration.step,
+			'measuring',
+			'the harness must actually be parked mid-measurement, or this test proves nothing'
+		);
 		controller.abort();
 		await run;
 		assert.equal(h.calibration.step, 'idle');
 		assert.equal(h.calibration.error, null);
-		assert.ok(h.signals.every((signal) => signal.aborted), 'if the abort signal is not raised then a chirp keeps playing into the phones after the modal closed - broken');
+		assert.ok(
+			h.signals.every((signal) => signal.aborted),
+			'if the abort signal is not raised then a chirp keeps playing into the phones after the modal closed - broken'
+		);
 		assert.ok(h.calls.includes('play:stopped'));
 		assert.ok(h.calls.includes('record:stopped'));
-		assert.equal(h.mic.stopped, 1, 'if the mic is not stopped on abort then the tally light stays on - broken');
-		assert.ok(h.calls.includes('resume:1,3'), 'if abort does not resume the decks it paused then closing the modal stops the set - broken');
-		assert.ok(!h.calls.includes('persist'), 'if abort persists a partial result then mixer-config changes on a cancelled run - broken');
+		assert.equal(
+			h.mic.stopped,
+			1,
+			'if the mic is not stopped on abort then the tally light stays on - broken'
+		);
+		assert.ok(
+			h.calls.includes('resume:1,3'),
+			'if abort does not resume the decks it paused then closing the modal stops the set - broken'
+		);
+		assert.ok(
+			!h.calls.includes('persist'),
+			'if abort persists a partial result then mixer-config changes on a cancelled run - broken'
+		);
 		assert.equal(controller.running(), false);
 	});
 
@@ -432,15 +597,25 @@ describe('createCueAlignController', () => {
 		for (let i = 0; i < 200 && h.calibration.step !== 'mic_check_cue'; i += 1) await settle();
 		assert.equal(h.calibration.step, 'mic_check_cue');
 		await settle();
-		assert.ok(!h.calls.includes('play:cue:measure'), 'if the cue chirp fires before Continue then the ear cup is not on the mic yet - broken');
+		assert.ok(
+			!h.calls.includes('play:cue:measure'),
+			'if the cue chirp fires before Continue then the ear cup is not on the mic yet - broken'
+		);
 		controller.continueCueCheck();
 		await run;
 		assert.equal(h.calibration.step, 'applied');
 
 		const headless = harness();
-		const headlessController = cueAlign.createCueAlignController(headless.effects, headless.calibration);
+		const headlessController = cueAlign.createCueAlignController(
+			headless.effects,
+			headless.calibration
+		);
 		await headlessController.run({ interactive: false });
-		assert.equal(headless.calibration.step, 'applied', 'headless must run to completion with nobody pressing Continue');
+		assert.equal(
+			headless.calibration.step,
+			'applied',
+			'headless must run to completion with nobody pressing Continue'
+		);
 	});
 
 	test('getUserMedia denied: failed with the browser message, no deck was paused', async () => {
@@ -448,8 +623,14 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /Microphone access failed: NotAllowedError: Permission denied/);
-		assert.ok(!h.calls.some((c) => c.startsWith('pause:')), 'if decks are paused before the mic is granted then a denied prompt stops the set for nothing - broken');
+		assert.match(
+			h.calibration.error,
+			/Microphone access failed: NotAllowedError: Permission denied/
+		);
+		assert.ok(
+			!h.calls.some((c) => c.startsWith('pause:')),
+			'if decks are paused before the mic is granted then a denied prompt stops the set for nothing - broken'
+		);
 		assert.ok(!h.calls.some((c) => c.startsWith('resume:')));
 	});
 
@@ -463,7 +644,11 @@ describe('createCueAlignController', () => {
 		await run;
 		assert.equal(h.calibration.step, 'applied');
 		controller.abort();
-		assert.equal(h.calibration.step, 'applied', 'abort after completion must not erase the applied result');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'abort after completion must not erase the applied result'
+		);
 	});
 
 	test('a failed run resets to a fresh state on the next run', async () => {
@@ -481,10 +666,16 @@ describe('createCueAlignController', () => {
 		const h = harness({ verifyResiduals: [0] });
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'applied',
-			'if verification residual is 0 ms then the run must finish applied - broken');
-		assert.equal(h.calibration.verify_residual_ms, 0,
-			'if verification passes then verify_residual_ms is recorded - broken');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'if verification residual is 0 ms then the run must finish applied - broken'
+		);
+		assert.equal(
+			h.calibration.verify_residual_ms,
+			0,
+			'if verification passes then verify_residual_ms is recorded - broken'
+		);
 	});
 
 	test('verification inside tolerance on the first attempt passes without a retry', async () => {
@@ -493,13 +684,21 @@ describe('createCueAlignController', () => {
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'applied');
 		assert.equal(h.calibration.verify_residual_ms, 5);
-		assert.equal(h.calls.filter((c) => c === 'play:master:verify').length, 1,
-			'if the first verification is inside tolerance then only one verify pair runs - broken');
-		assert.equal(h.calls.filter((c) => c.startsWith('setDelays:')).length, 1,
-			'if the first verification passes then only the provisional apply sets delays, with no adjustment - broken');
+		assert.equal(
+			h.calls.filter((c) => c === 'play:master:verify').length,
+			1,
+			'if the first verification is inside tolerance then only one verify pair runs - broken'
+		);
+		assert.equal(
+			h.calls.filter((c) => c.startsWith('setDelays:')).length,
+			1,
+			'if the first verification passes then only the provisional apply sets delays, with no adjustment - broken'
+		);
 		assert.equal(h.calls.filter((c) => c === 'persist').length, 1);
-		assert.ok(h.calls.lastIndexOf('persist') > h.calls.lastIndexOf('play:cue:verify'),
-			'if the plan is persisted before verification finishes then a failed or cancelled run leaves it in storage - broken');
+		assert.ok(
+			h.calls.lastIndexOf('persist') > h.calls.lastIndexOf('play:cue:verify'),
+			'if the plan is persisted before verification finishes then a failed or cancelled run leaves it in storage - broken'
+		);
 	});
 
 	test('verification outside tolerance triggers exactly one retry', async () => {
@@ -508,19 +707,36 @@ describe('createCueAlignController', () => {
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'applied');
 		assert.equal(h.calibration.verify_residual_ms, 2);
-		assert.equal(h.calls.filter((c) => c === 'play:master:verify').length, 2,
-			'if the first verification fails then exactly one retry pair runs, not more - broken');
-		assert.equal(h.calls.filter((c) => c.startsWith('setDelays:')).length, 2,
-			'if the first verification fails then the plan is adjusted once (after the provisional apply) before the second try - broken');
+		assert.equal(
+			h.calls.filter((c) => c === 'play:master:verify').length,
+			2,
+			'if the first verification fails then exactly one retry pair runs, not more - broken'
+		);
+		assert.equal(
+			h.calls.filter((c) => c.startsWith('setDelays:')).length,
+			2,
+			'if the first verification fails then the plan is adjusted once (after the provisional apply) before the second try - broken'
+		);
 		const stored = h.effects.persisted.record;
-		assert.equal(stored.cue_latency_ms - stored.master_latency_ms, h.calibration.offset_ms,
-			'if the stored record does not carry the corrected offset then a later mode change re-applies the uncorrected one - broken');
-		assert.equal(h.calibration.cue_latency_ms - h.calibration.master_latency_ms, h.calibration.offset_ms,
-			'if the live cue latency is not corrected with the offset then the modal and GET /headphones report contradictory figures - broken');
+		assert.equal(
+			stored.cue_latency_ms - stored.master_latency_ms,
+			h.calibration.offset_ms,
+			'if the stored record does not carry the corrected offset then a later mode change re-applies the uncorrected one - broken'
+		);
+		assert.equal(
+			h.calibration.cue_latency_ms - h.calibration.master_latency_ms,
+			h.calibration.offset_ms,
+			'if the live cue latency is not corrected with the offset then the modal and GET /headphones report contradictory figures - broken'
+		);
 		const baseline = harness({ verifyResiduals: [0] });
-		await cueAlign.createCueAlignController(baseline.effects, baseline.calibration).run({ interactive: false });
-		assert.equal(h.calibration.offset_ms, baseline.calibration.offset_ms + 15,
-			'if the retry does not move the stored offset by the first residual then the correction is lost - broken');
+		await cueAlign
+			.createCueAlignController(baseline.effects, baseline.calibration)
+			.run({ interactive: false });
+		assert.equal(
+			h.calibration.offset_ms,
+			baseline.calibration.offset_ms + 15,
+			'if the retry does not move the stored offset by the first residual then the correction is lost - broken'
+		);
 	});
 
 	test('two failed verifications revert both delays, fail, and do not persist after revert', async () => {
@@ -530,14 +746,26 @@ describe('createCueAlignController', () => {
 		});
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'failed',
-			'if both verification attempts fail then the run ends failed - broken');
-		assert.match(h.calibration.error, /the fix did not hold after verification \(attempt 1: 15 ms off, attempt 2: 20 ms off\)/,
-			'if verification fails twice then both residuals are reported - broken');
-		assert.deepEqual(h.appliedDelays(), { head_delay_ms: 12, master_delay_ms: 34 },
-			'if verification fails twice then both HEAD DELAY and ROOM delay revert to pre-run values - broken');
-		assert.equal(h.calls.filter((c) => c === 'persist').length, 0,
-			'if verification fails twice then nothing from the failed run reaches storage - broken');
+		assert.equal(
+			h.calibration.step,
+			'failed',
+			'if both verification attempts fail then the run ends failed - broken'
+		);
+		assert.match(
+			h.calibration.error,
+			/the fix did not hold after verification \(attempt 1: 15 ms off, attempt 2: 20 ms off\)/,
+			'if verification fails twice then both residuals are reported - broken'
+		);
+		assert.deepEqual(
+			h.appliedDelays(),
+			{ head_delay_ms: 12, master_delay_ms: 34 },
+			'if verification fails twice then both HEAD DELAY and ROOM delay revert to pre-run values - broken'
+		);
+		assert.equal(
+			h.calls.filter((c) => c === 'persist').length,
+			0,
+			'if verification fails twice then nothing from the failed run reaches storage - broken'
+		);
 		assert.ok(h.calls.includes('resume:1,3'));
 	});
 
@@ -548,26 +776,44 @@ describe('createCueAlignController', () => {
 		});
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'applied',
-			'if verification expects zero residual from a plan that deliberately delays nothing then headphones_only can never save - broken');
+		assert.equal(
+			h.calibration.step,
+			'applied',
+			'if verification expects zero residual from a plan that deliberately delays nothing then headphones_only can never save - broken'
+		);
 		assert.equal(h.calibration.offset_ms, 30);
-		assert.equal(h.calls.filter((c) => c === 'play:master:verify').length, 1,
-			'if the intended residual triggers a retry then the retry chases a gap the mode chose to leave - broken');
+		assert.equal(
+			h.calls.filter((c) => c === 'play:master:verify').length,
+			1,
+			'if the intended residual triggers a retry then the retry chases a gap the mode chose to leave - broken'
+		);
 		const stored = h.effects.persisted;
-		assert.equal(stored.record.cue_latency_ms - stored.record.master_latency_ms, 30,
-			'if the stored offset is not the measured one then switching mode later cannot reuse it - broken');
+		assert.equal(
+			stored.record.cue_latency_ms - stored.record.master_latency_ms,
+			30,
+			'if the stored offset is not the measured one then switching mode later cannot reuse it - broken'
+		);
 		assert.deepEqual([stored.head_delay_ms, stored.master_delay_ms], [0, 0]);
 	});
 
 	test('a verification chirp below the peak threshold fails the run instead of trusting a noise lag', async () => {
-		const h = harness({ deafDuringVerify: 'cue', preRunDelays: { head_delay_ms: 7, master_delay_ms: 9 } });
+		const h = harness({
+			deafDuringVerify: 'cue',
+			preRunDelays: { head_delay_ms: 7, master_delay_ms: 9 }
+		});
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.equal(h.calibration.step, 'failed',
-			'if an unheard verification chirp is scored then noise can pass or drive a bogus correction - broken');
+		assert.equal(
+			h.calibration.step,
+			'failed',
+			'if an unheard verification chirp is scored then noise can pass or drive a bogus correction - broken'
+		);
 		assert.match(h.calibration.error, /verification could not hear the headphones/);
-		assert.deepEqual(h.appliedDelays(), { head_delay_ms: 7, master_delay_ms: 9 },
-			'if a failed verification leaves the provisional delays applied then a failed run changes the mix - broken');
+		assert.deepEqual(
+			h.appliedDelays(),
+			{ head_delay_ms: 7, master_delay_ms: 9 },
+			'if a failed verification leaves the provisional delays applied then a failed run changes the mix - broken'
+		);
 		assert.equal(h.calls.filter((c) => c === 'persist').length, 0);
 		assert.ok(h.calls.includes('resume:1,3'));
 	});
@@ -576,47 +822,96 @@ describe('createCueAlignController', () => {
 		const h = harness();
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
-		assert.ok(h.calls.includes('play:master:verify'), 'if verify never chirps master then the loop is hollow - broken');
-		assert.ok(h.calls.includes('play:cue:verify'), 'if verify never chirps cue then the loop is hollow - broken');
+		assert.ok(
+			h.calls.includes('play:master:verify'),
+			'if verify never chirps master then the loop is hollow - broken'
+		);
+		assert.ok(
+			h.calls.includes('play:cue:verify'),
+			'if verify never chirps cue then the loop is hollow - broken'
+		);
 		const calibrationAudio = await loadTypeScriptModule('src/lib/player/cue-align-audio.ts');
-		assert.equal(calibrationAudio.cueAlignChirpTargetKey('master', 'verify'), 'masterDelayInput',
-			'if master verify chirps destination then ROOM delay is bypassed; if it chirps the mute gain then a muted room fails verification - broken');
-		assert.equal(calibrationAudio.cueAlignChirpTargetKey('cue', 'verify'), 'headDelayInput',
-			'if cue verify chirps bridgeInput then HEAD DELAY is bypassed; if it chirps cueMix then MIX at full MASTER silences it - broken');
-		const source = readFileSync(new URL('../../src/lib/player/cue-align-audio.ts', import.meta.url), 'utf8');
-		assert.match(source, /key === 'headDelayInput'\)[\s\S]*?return nodes\.delay;/,
-			'if the cue verify chirp is not fed straight into HEAD DELAY then the user MIX and LEVEL gains can silence it - broken');
-		assert.match(source, /key === 'masterDelayInput'\)[\s\S]*?masterDelayNode\(\)/,
-			'if the master verify chirp is not fed straight into ROOM delay then master mute can silence it - broken');
-		assert.match(source, /setDelays\(delays\) \{\s*applyUnsavedAlignmentDelays\(delays\);/,
-			'if provisional delays go through the persisting setters then a reload mid-verification keeps an unverified plan - broken');
-		assert.match(source, /startedAtSec: event\.playbackTime/,
-			'if the capture is stamped with currentTime at callback time then main-thread jitter becomes measured latency - broken');
+		assert.equal(
+			calibrationAudio.cueAlignChirpTargetKey('master', 'verify'),
+			'masterDelayInput',
+			'if master verify chirps destination then ROOM delay is bypassed; if it chirps the mute gain then a muted room fails verification - broken'
+		);
+		assert.equal(
+			calibrationAudio.cueAlignChirpTargetKey('cue', 'verify'),
+			'headDelayInput',
+			'if cue verify chirps bridgeInput then HEAD DELAY is bypassed; if it chirps cueMix then MIX at full MASTER silences it - broken'
+		);
+		const source = readFileSync(
+			new URL('../../src/lib/player/cue-align-audio.ts', import.meta.url),
+			'utf8'
+		);
+		assert.match(
+			source,
+			/key === 'headDelayInput'\)[\s\S]*?return nodes\.delay;/,
+			'if the cue verify chirp is not fed straight into HEAD DELAY then the user MIX and LEVEL gains can silence it - broken'
+		);
+		assert.match(
+			source,
+			/key === 'masterDelayInput'\)[\s\S]*?masterDelayNode\(\)/,
+			'if the master verify chirp is not fed straight into ROOM delay then master mute can silence it - broken'
+		);
+		assert.match(
+			source,
+			/setDelays\(delays\) \{\s*applyUnsavedAlignmentDelays\(delays\);/,
+			'if provisional delays go through the persisting setters then a reload mid-verification keeps an unverified plan - broken'
+		);
+		assert.match(
+			source,
+			/startedAtSec: event\.playbackTime/,
+			'if the capture is stamped with currentTime at callback time then main-thread jitter becomes measured latency - broken'
+		);
 		assert.doesNotMatch(source, /startedAtSec: ctx\.currentTime/);
 		assert.equal(calibrationAudio.cueAlignChirpTargetKey('master', 'measure'), 'destination');
 		assert.equal(calibrationAudio.cueAlignChirpTargetKey('cue', 'measure'), 'bridgeInput');
 	});
 
 	test('abort during verifying restores pre-run delays and resumes the decks', async () => {
-		const h = harness({ gateAt: 'verifying', preRunDelays: { head_delay_ms: 11, master_delay_ms: 22 } });
+		const h = harness({
+			gateAt: 'verifying',
+			preRunDelays: { head_delay_ms: 11, master_delay_ms: 22 }
+		});
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		const run = controller.run({ interactive: false });
 		for (let i = 0; i < 200 && h.calibration.step !== 'verifying'; i += 1) await settle();
-		assert.equal(h.calibration.step, 'verifying', 'the harness must actually be parked mid-verification, or this test proves nothing');
+		assert.equal(
+			h.calibration.step,
+			'verifying',
+			'the harness must actually be parked mid-verification, or this test proves nothing'
+		);
 		controller.abort();
 		await run;
 		assert.equal(h.calibration.step, 'idle');
 		assert.equal(h.calibration.error, null);
-		assert.deepEqual(h.appliedDelays(), { head_delay_ms: 11, master_delay_ms: 22 },
-			'if abort during verifying leaves the applied delays in place then a cancelled run changes the mix - broken');
-		assert.ok(h.signals.every((signal) => signal.aborted),
-			'if the abort signal is not raised then a chirp keeps playing into the phones after the modal closed - broken');
+		assert.deepEqual(
+			h.appliedDelays(),
+			{ head_delay_ms: 11, master_delay_ms: 22 },
+			'if abort during verifying leaves the applied delays in place then a cancelled run changes the mix - broken'
+		);
+		assert.ok(
+			h.signals.every((signal) => signal.aborted),
+			'if the abort signal is not raised then a chirp keeps playing into the phones after the modal closed - broken'
+		);
 		assert.ok(h.calls.includes('play:stopped'));
 		assert.ok(h.calls.includes('record:stopped'));
-		assert.equal(h.mic.stopped, 1, 'if the mic is not stopped on abort then the tally light stays on - broken');
-		assert.ok(h.calls.includes('resume:1,3'), 'if abort does not resume the decks it paused then closing the modal stops the set - broken');
-		assert.equal(h.calls.filter((c) => c === 'persist').length, 0,
-			'if a run cancelled during verifying reaches storage then a later mode change re-applies an unverified result - broken');
+		assert.equal(
+			h.mic.stopped,
+			1,
+			'if the mic is not stopped on abort then the tally light stays on - broken'
+		);
+		assert.ok(
+			h.calls.includes('resume:1,3'),
+			'if abort does not resume the decks it paused then closing the modal stops the set - broken'
+		);
+		assert.equal(
+			h.calls.filter((c) => c === 'persist').length,
+			0,
+			'if a run cancelled during verifying reaches storage then a later mode change re-applies an unverified result - broken'
+		);
 		assert.equal(controller.running(), false);
 	});
 });
@@ -650,10 +945,18 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 			assert.equal(before, 'idle');
 			await ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate' });
 			const after = ipc.queryPerformanceState().mixer.headphones;
-			assert.equal(after.calibration.step, 'applied', 'if the IPC command does not drive the same machine then GET /headphones never sees the step move - broken');
+			assert.equal(
+				after.calibration.step,
+				'applied',
+				'if the IPC command does not drive the same machine then GET /headphones never sees the step move - broken'
+			);
 			assert.equal(after.calibration.offset_ms, 700);
 			assert.equal(after.master_delay_ms, 700);
-			assert.deepEqual(h.stepsSeen.slice(0, 2), ['mic_check_master', 'mic_check_cue'], 'the steps the page publishes while the chirps play');
+			assert.deepEqual(
+				h.stepsSeen.slice(0, 2),
+				['mic_check_master', 'mic_check_cue'],
+				'the steps the page publishes while the chirps play'
+			);
 			// Everything after the two mic checks is either the stage-one/two
 			// measurement chirps or the post-apply verification chirp; both are
 			// real steps the page can render, unlike a bare 'idle' or 'applied'.
@@ -664,27 +967,49 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 		}
 	});
 
-	test('the live stage-one probe reaches queryPerformanceState, in the read model\'s snake_case', async () => {
+	test("the live stage-one probe reaches queryPerformanceState, in the read model's snake_case", async () => {
 		const h = harness({ gateAt: 'measuring', stepSource: mirroredStep });
 		const seen = [];
 		h.effects.onProbe = (probe) => seen.push(probe);
 		session.overrideCueAlignEffects(() => h.effects);
 		const uninstall = ipc.installPerformanceBrowserIpc();
 		try {
-			assert.equal(ipc.queryPerformanceState().mixer.headphones.calibration.probe, null, 'no run, no probe');
+			assert.equal(
+				ipc.queryPerformanceState().mixer.headphones.calibration.probe,
+				null,
+				'no run, no probe'
+			);
 			const run = ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate' });
-			for (let i = 0; i < 200 && ipc.queryPerformanceState().mixer.headphones.calibration.step !== 'measuring'; i += 1) await settle();
-			assert.ok(seen.length > 0, 'the harness must actually publish probes, or the next assertion proves nothing');
+			for (
+				let i = 0;
+				i < 200 && ipc.queryPerformanceState().mixer.headphones.calibration.step !== 'measuring';
+				i += 1
+			)
+				await settle();
+			assert.ok(
+				seen.length > 0,
+				'the harness must actually publish probes, or the next assertion proves nothing'
+			);
 			const last = seen[seen.length - 1];
 			assert.deepEqual(
 				{ ...ipc.queryPerformanceState().mixer.headphones.calibration.probe },
-				{ bus: last.bus, gain: last.gain, peak: last.peak, lag_ms: last.lagMs, best: last.best, threshold: last.threshold },
+				{
+					bus: last.bus,
+					gain: last.gain,
+					peak: last.peak,
+					lag_ms: last.lagMs,
+					best: last.best,
+					threshold: last.threshold
+				},
 				'if the probe the modal draws is not in queryPerformanceState then an agent drives the ear-cup step blind - broken'
 			);
 			await ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate_abort' });
 			await run;
-			assert.equal(ipc.queryPerformanceState().mixer.headphones.calibration.probe, null,
-				'if the probe outlives its run then an agent reads a stale level as live - broken');
+			assert.equal(
+				ipc.queryPerformanceState().mixer.headphones.calibration.probe,
+				null,
+				'if the probe outlives its run then an agent reads a stale level as live - broken'
+			);
 		} finally {
 			session.overrideCueAlignEffects(null);
 			uninstall();
@@ -697,7 +1022,12 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 		const uninstall = ipc.installPerformanceBrowserIpc();
 		try {
 			const run = ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate' });
-			for (let i = 0; i < 200 && ipc.queryPerformanceState().mixer.headphones.calibration.step !== 'measuring'; i += 1) await settle();
+			for (
+				let i = 0;
+				i < 200 && ipc.queryPerformanceState().mixer.headphones.calibration.step !== 'measuring';
+				i += 1
+			)
+				await settle();
 			assert.equal(ipc.queryPerformanceState().mixer.headphones.calibration.step, 'measuring');
 			await ipc.dispatchPerformanceCommand({ type: 'headphone_calibrate_abort' });
 			await run;

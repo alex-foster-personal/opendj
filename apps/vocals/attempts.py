@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.shared.state.stable_id_paths import confined_stable_id_json_path
+
 ATTEMPTS_DIRNAME: str = "vocal-attempts"
 ATTEMPT_SCHEMA: int = 1
 REASON_MAX_CHARS: int = 4000
@@ -50,11 +52,11 @@ def attempts_dir(data_dir: Path) -> Path:
 
 
 def attempt_path(data_dir: Path, stable_id: str) -> Path:
-    root = attempts_dir(data_dir).resolve()
-    path = (root / f"{stable_id}.json").resolve()
-    if path.parent != root:
-        raise ValueError(f"stable_id escapes vocal-attempts directory: {stable_id!r}")
-    return path
+    return confined_stable_id_json_path(
+        attempts_dir(data_dir),
+        stable_id,
+        directory_name=ATTEMPTS_DIRNAME,
+    )
 
 
 def record_failure(data_dir: Path, stable_id: str, error: BaseException) -> FailedAttempt:

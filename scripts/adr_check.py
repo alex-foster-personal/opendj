@@ -59,7 +59,12 @@ from scripts.adr_pr_lookup import (
     pr_view,
     trunk_batch_members,
 )
-from scripts.adr_ref_freshness import DEFAULT_GATED_DIR, check_ref_freshness, emit_gate_result
+from scripts.adr_ref_freshness import (
+    DEFAULT_GATED_DIR,
+    check_ref_freshness,
+    emit_gate_result,
+    git_rev_parse,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ADR_DIR = REPO_ROOT / "docs" / "decisions"
@@ -430,22 +435,6 @@ def git_commit_body(base: str, repo_root: Path) -> str:
             f"git log {base}..HEAD failed rc={proc.returncode}: {proc.stderr.strip()}"
         )
     return proc.stdout
-
-
-def git_rev_parse(ref: str, repo_root: Path) -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", ref],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}"
-        )
-    return proc.stdout.strip()
 
 
 def _resolve_changed_paths(

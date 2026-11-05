@@ -4,6 +4,7 @@ Regression line:
   - if MDT_DATA_DIR is set and paths.DATA_DIR ignores it then broken
     (worktrees silently read their own empty data/ instead of the primary's)
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -20,7 +21,10 @@ def _data_dir_with_env(value: str | None) -> str:
         env["MDT_DATA_DIR"] = value
     return subprocess.run(
         [sys.executable, "-c", code],
-        capture_output=True, text=True, env=env, check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
     ).stdout.strip()
 
 

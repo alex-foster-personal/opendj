@@ -8,6 +8,7 @@ under the 600-line ratchet.
 [if] a candidate probe swallows operational errors or lies on 3.14 [then]
 fail, [else stop].
 """
+
 from __future__ import annotations
 
 import errno
@@ -21,9 +22,7 @@ from tests.platform_capabilities import posix_permission_denial_supported
 
 from . import real_library
 
-_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
-    os.name, getattr(os, "geteuid", None)
-)
+_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(os.name, getattr(os, "geteuid", None))
 
 
 def _walled_off(directory: Path) -> Path:
@@ -64,15 +63,10 @@ def test_an_unreadable_candidate_resolves_as_absent_instead_of_raising(
         readable = tmp_path / "readable.db"
         readable.write_bytes(b"")
 
-        assert (
-            real_library.first_available((unreachable, readable), unreachable)
-            == readable
-        )
+        assert real_library.first_available((unreachable, readable), unreachable) == readable
         assert real_library.library_is_available(readable)
         assert not real_library.library_is_available(unreachable)
-        assert (
-            real_library.first_available((unreachable,), unreachable) == unreachable
-        )
+        assert real_library.first_available((unreachable,), unreachable) == unreachable
     finally:
         walled.chmod(0o755)
 

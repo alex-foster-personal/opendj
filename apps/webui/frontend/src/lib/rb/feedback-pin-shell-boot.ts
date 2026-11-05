@@ -33,7 +33,9 @@ async function loadFeedbackPinShell(): Promise<FeedbackPinShell> {
 		import('$lib/components/rb/FeedbackPinLayer.svelte').then(({ default: c }) => c),
 		import('$lib/components/rb/FeedbackPinShellButton.svelte').then(({ default: c }) => c),
 		import('$lib/components/rb/FeedbackDock.svelte').then(({ default: c }) => c),
-		import('$lib/rb/comment-pin-hotkeys').then(({ installCommentPinHotkeys }) => installCommentPinHotkeys)
+		import('$lib/rb/comment-pin-hotkeys').then(
+			({ installCommentPinHotkeys }) => installCommentPinHotkeys
+		)
 	]);
 	return { layer, shellButton, dock, installCommentPinHotkeys };
 }

@@ -108,11 +108,7 @@ async function measureAtGains(page: import('@playwright/test').Page, gains: numb
 				gain.gain.setValueAtTime(value, ctx.currentTime);
 				// The oscillator runs at amplitude 1.0, so the gain IS the peak.
 				const tol = Math.max(0.02, value * 0.1);
-				await waitForPeak(
-					(peak) => Math.abs(peak - value) <= tol,
-					`a peak near ${value}`,
-					15_000
-				);
+				await waitForPeak((peak) => Math.abs(peak - value) <= tol, `a peak near ${value}`, 15_000);
 				readings.push(latestPeak ?? -1);
 			}
 			osc.stop();
@@ -184,7 +180,9 @@ test('a silent tap posts nothing, so idle decks cost no main-thread work', async
 					outputChannelCount: [1],
 					processorOptions: { reportIntervalS: 0.02 }
 				});
-				node.port.onmessage = () => { n += 1; };
+				node.port.onmessage = () => {
+					n += 1;
+				};
 				silent.connect(node);
 				node.connect(sink);
 			}
@@ -369,8 +367,10 @@ test('the production master meter reads a real level and moves with the master g
 	// +/-0.2 dB at each end, so this range bites hard while staying honest about
 	// what a decaying meter can be pinned to.
 	const delta = readings[0] - readings[1];
-	expect(delta, `master gain change did not move the production reading (${readings})`)
-		.toBeGreaterThan(11.4);
+	expect(
+		delta,
+		`master gain change did not move the production reading (${readings})`
+	).toBeGreaterThan(11.4);
 	expect(delta, `master gain change overshot (${readings})`).toBeLessThan(12.6);
 });
 
@@ -379,10 +379,10 @@ test('the production master meter floors on silence, and reads silent once relea
 }) => {
 	await pageWithMasterMeterModule(page);
 	const { readings, afterRelease } = await productionMasterReadingsAtGains(page, [0.5, 0]);
-	const floor = await page.evaluate(
-		() => window.__masterMeterHarness!.SILENT_METER_READING.db
+	const floor = await page.evaluate(() => window.__masterMeterHarness!.SILENT_METER_READING.db);
+	expect(readings[1], 'a silent master bus must decay to the floor').toBeLessThanOrEqual(
+		floor + 0.5
 	);
-	expect(readings[1], 'a silent master bus must decay to the floor').toBeLessThanOrEqual(floor + 0.5);
 	expect(afterRelease, 'a released tap must read the shared silent value').toBe(floor);
 });
 

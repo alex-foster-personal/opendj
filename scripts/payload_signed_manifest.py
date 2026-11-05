@@ -60,8 +60,10 @@ def refresh_payload_manifest(payload_dir: Path) -> dict[str, Any]:
     if body["schema"] != MANIFEST_SCHEMA or body.get("kind") != MANIFEST_KIND:
         raise ValueError("unsupported payload manifest schema or kind")
     source_sha = body["identity"]["git_sha_full"]
-    if not isinstance(source_sha, str) or len(source_sha) != 40 or any(
-        character not in "0123456789abcdef" for character in source_sha
+    if (
+        not isinstance(source_sha, str)
+        or len(source_sha) != 40
+        or any(character not in "0123456789abcdef" for character in source_sha)
     ):
         raise ValueError("payload identity must declare its full source SHA")
     if "hash_provenance" in body:
@@ -83,12 +85,8 @@ def refresh_payload_manifest(payload_dir: Path) -> dict[str, Any]:
         "beatgrid_runner_site_bytes": body["beatgrid_runner"]["bytes"]["site"],
     }
     _refresh_output_probe(body, payload_dir, before)
-    body["sha256"] = {
-        name: sha256_tree(payload_dir / name) for name in ("runtime", "pylib", "app")
-    }
-    body["bytes"] = {
-        name: tree_bytes(payload_dir / name) for name in ("runtime", "pylib", "app")
-    }
+    body["sha256"] = {name: sha256_tree(payload_dir / name) for name in ("runtime", "pylib", "app")}
+    body["bytes"] = {name: tree_bytes(payload_dir / name) for name in ("runtime", "pylib", "app")}
     # The builder writes the manifest last: its total excludes that file.
     # Retain this scope after refresh, avoiding a self-referential byte count.
     body["bytes"]["total"] = tree_bytes(payload_dir) - manifest_path.stat().st_size
@@ -105,8 +103,13 @@ def refresh_payload_manifest(payload_dir: Path) -> dict[str, Any]:
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="\n", dir=payload_dir,
-            prefix=".manifest-refresh-", suffix=".tmp", delete=False,
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=payload_dir,
+            prefix=".manifest-refresh-",
+            suffix=".tmp",
+            delete=False,
         ) as handle:
             temporary = Path(handle.name)
             handle.write(encoded)

@@ -16,6 +16,7 @@ Regression lines:
   - if the launcher does not export the bundled config path, a payload
     that staged the file still boots with an empty env
 """
+
 from __future__ import annotations
 
 import json

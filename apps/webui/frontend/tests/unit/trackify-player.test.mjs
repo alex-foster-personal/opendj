@@ -69,8 +69,8 @@ describe('TrackifyPlayer now-playing view (PERFMODE-6635)', () => {
 	});
 
 	it('shows real artwork or the gray slate, never a fabricated cover', () => {
-		assert.match(source, /artworkUrl\(deck\.stable_id, 'm'\)/);
-		assert.match(source, /onerror=\{\(\) => \(artFailed = true\)\}/);
+		assert.match(source, /artworkUrl\(sid, 'm'\)/);
+		assert.match(source, /onerror=\{\(\) => coverFailed\(sid\)\}/);
 		assert.match(source, /data-testid="trackify-artwork-slate"/);
 	});
 

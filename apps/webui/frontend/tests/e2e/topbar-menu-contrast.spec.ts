@@ -23,7 +23,7 @@
 // requirement: UX-MENU-01
 import { expect, test, type Page } from '@playwright/test';
 
-const SKINS = ['default', 'mono-dev', 'light'] as const;
+const SKINS = ['default', 'mono-dev', 'light', 'green-room'] as const;
 const MENUS = [
 	{
 		name: 'AutoPlay',

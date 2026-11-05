@@ -125,13 +125,19 @@ describe('the routes use these outcomes', () => {
 		// One in-flight lookup per id, so a stale failure cannot overwrite a newer label.
 		assert.match(src, /!inflight\.has\(id\)\)/);
 		assert.match(src, /finally \{\s*inflight\.delete\(id\);/);
-		assert.match(src, /\{@render trackCell\(p\.from_stable_id\)\}[\s\S]*\{@render trackCell\(p\.to_stable_id\)\}/);
+		assert.match(
+			src,
+			/\{@render trackCell\(p\.from_stable_id\)\}[\s\S]*\{@render trackCell\(p\.to_stable_id\)\}/
+		);
 	});
 
 	it('/track settles to not-found or an error instead of loading forever', () => {
 		const src = read('src/routes/track/[stable_id]/+page.svelte');
 		assert.match(src, /catch \(exc\) \{\s*loadError = routeLoadError\(exc\);/);
-		assert.match(src, /\{:else if loadError !== null\}[\s\S]*Track not found[\s\S]*\{:else\}\s*<p>Loading\.\.\.<\/p>/);
+		assert.match(
+			src,
+			/\{:else if loadError !== null\}[\s\S]*Track not found[\s\S]*\{:else\}\s*<p>Loading\.\.\.<\/p>/
+		);
 	});
 
 	it('/track saves notes on blur only when they changed, and shows a failed save', () => {

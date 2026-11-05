@@ -54,8 +54,7 @@ def _stored_bundle(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return [
         dict(zip(columns, row, strict=True))
         for row in conn.execute(
-            f"SELECT {', '.join(columns)} FROM playlist_memberships "
-            "WHERE playlist_id = ? ORDER BY position",
+            f"SELECT {', '.join(columns)} FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
             (PLAYLIST,),
         )
     ]
@@ -108,8 +107,7 @@ def _replace_unconditionally(conn: sqlite3.Connection, members: list[dict[str, A
         if member["stable_id"] in stored_tracks:
             columns = list(member)
             conn.execute(
-                f"INSERT INTO playlist_memberships ({', '.join(columns)}) "
-                f"VALUES ({', '.join('?' for _ in columns)})",
+                f"INSERT INTO playlist_memberships ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
                 tuple(member.values()),
             )
 
@@ -167,9 +165,7 @@ def _one_changed(bundle: list[dict[str, Any]], how: str) -> list[dict[str, Any]]
     return changed
 
 
-@pytest.mark.parametrize(
-    "how", ["stamp", "origin", "position", "value type", "one fewer", "tombstone", "track"]
-)
+@pytest.mark.parametrize("how", ["stamp", "origin", "position", "value type", "one fewer", "tombstone", "track"])
 def test_a_bundle_that_differs_in_one_member_is_replaced(tmp_path: Path, how: str) -> None:
     print("if a bundle that differs in one member is skipped as unchanged, then broken")
     conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
@@ -196,9 +192,7 @@ def test_a_stored_member_the_incoming_bundle_lacks_is_removed(tmp_path: Path) ->
         conn.close()
 
 
-def _random_case(
-    rng: random.Random, stored: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _random_case(rng: random.Random, stored: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """A stored bundle and an incoming one, each possibly edited from the fixture's."""
     edits: list[Callable[[list[dict[str, Any]]], list[dict[str, Any]]]] = [
         lambda b: b,
@@ -229,9 +223,7 @@ def test_the_table_ends_as_the_unconditional_replace_leaves_it(tmp_path: Path, s
         reference.close()
 
 
-def test_an_unknown_track_is_still_skipped_and_warned_about(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_an_unknown_track_is_still_skipped_and_warned_about(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     print("if an unchanged bundle hides the warning about an unknown track, then broken")
     conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
     try:

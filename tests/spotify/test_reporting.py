@@ -1,4 +1,5 @@
 """Tests for apps.spotify.reporting."""
+
 from __future__ import annotations
 
 import csv
@@ -26,6 +27,7 @@ from tests.spotify.builders import (
 @pytest.mark.requirement("CAT-01")
 def test_build_report_dir_uses_timestamp(tmp_path: Path) -> None:
     from datetime import datetime
+
     ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
     paths = build_report_dir("pl123", root=tmp_path, timestamp=ts)
     assert paths.root.name == "import-pl123-20260417T120000Z"
@@ -58,9 +60,13 @@ def test_to_acquire_csv_has_all_5_source_cols(tmp_path: Path) -> None:
     write_to_acquire_csv(playlist, entries, out)
     rows = list(csv.DictReader(out.read_text().splitlines()))
     assert len(rows) == 1
-    for col in ("suggested_source_beatport", "suggested_source_bandcamp",
-                "suggested_source_qobuz", "suggested_source_apple",
-                "suggested_source_discogs"):
+    for col in (
+        "suggested_source_beatport",
+        "suggested_source_bandcamp",
+        "suggested_source_qobuz",
+        "suggested_source_apple",
+        "suggested_source_discogs",
+    ):
         assert rows[0][col].startswith("https://"), col
 
 
@@ -76,9 +82,7 @@ def test_write_all_reports_produces_four_files(tmp_path: Path) -> None:
         "matched",
     )
     paths = build_report_dir("pl123", root=tmp_path)
-    write_all_reports(playlist, MatchResult(pairs=[pair]), paths,
-                      include_timestamp=False, runtime_seconds=0.1)
-    for p in (paths.matches_csv, paths.to_acquire_csv,
-              paths.to_acquire_md, paths.summary_md):
+    write_all_reports(playlist, MatchResult(pairs=[pair]), paths, include_timestamp=False, runtime_seconds=0.1)
+    for p in (paths.matches_csv, paths.to_acquire_csv, paths.to_acquire_md, paths.summary_md):
         assert p.exists()
     assert "Match rate: 100.0%" in paths.summary_md.read_text()

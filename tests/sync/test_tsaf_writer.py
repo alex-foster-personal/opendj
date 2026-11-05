@@ -1,4 +1,5 @@
 """Round-trip + invariant tests for :mod:`apps.sync.tsaf_writer` (SYNC-06)."""
+
 from __future__ import annotations
 
 import pytest
@@ -85,11 +86,7 @@ class TestRoundTrip:
     def test_delta_constrained_to_minus_plus_or_zero(self) -> None:
         """|len(out) - len(blob)| is always in {-2, 0, +2}."""
         for rating_before in [0, 3, 5]:
-            blob = (
-                _blob_with_rating(rating_before)
-                if rating_before
-                else _blob_no_rating()
-            )
+            blob = _blob_with_rating(rating_before) if rating_before else _blob_no_rating()
             for rating_after in [0, 1, 4, 5]:
                 out = write_rating_to_tsaf(blob, rating_after)
                 delta = len(out) - len(blob)

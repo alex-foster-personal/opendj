@@ -91,7 +91,7 @@ def blocked_line(summary: Mapping[str, Any]) -> str:
     """The human verdict for one refusal, ending with the override to send."""
     title = summary.get("title") or summary.get("stable_id") or "a track"
     line = (
-        f"deck {summary['deck']} is playing \"{title}\" at "
+        f'deck {summary["deck"]} is playing "{title}" at '
         f"{format_position(summary.get('position_ms'))} "
         f"({', '.join(summary['active_state']) or 'active'}); nothing was loaded."
     )
@@ -103,7 +103,7 @@ def blocked_line(summary: Mapping[str, Any]) -> str:
 def replaced_line(replaced: Mapping[str, Any]) -> str:
     title = replaced.get("title") or replaced.get("stable_id") or "a track"
     return (
-        f"replaced playing deck {replaced.get('deck')}: stopped \"{title}\" at "
+        f'replaced playing deck {replaced.get("deck")}: stopped "{title}" at '
         f"{format_position(replaced.get('position_ms'))}"
     )
 

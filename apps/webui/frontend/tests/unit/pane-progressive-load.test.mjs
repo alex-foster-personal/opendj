@@ -19,9 +19,7 @@ let contract;
 let progressive;
 
 before(async () => {
-	contract = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/pane-contract.svelte.ts'
-	);
+	contract = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 	progressive = await loadTypeScriptModule(
 		'src/lib/components/rb/browser/pane-progressive-load.ts'
 	);
@@ -58,7 +56,13 @@ test('publishFirstPage and appendRows do not reset selected_id or scroll_top', (
 	p.select('a');
 	p.rememberScroll(88);
 
-	assert.equal(progressive.publishFirstPage(p, seq, [_row({ stable_id: 'a' }), _row({ stable_id: 'b', order: 2 })]), true);
+	assert.equal(
+		progressive.publishFirstPage(p, seq, [
+			_row({ stable_id: 'a' }),
+			_row({ stable_id: 'b', order: 2 })
+		]),
+		true
+	);
 	assert.equal(p.selected_id, 'a');
 	assert.equal(p.scroll_top, 88);
 
@@ -69,7 +73,7 @@ test('publishFirstPage and appendRows do not reset selected_id or scroll_top', (
 	assert.equal(p.loading, false);
 });
 
-test('stale seq appendRows does not mutate a newer load\'s rows', () => {
+test("stale seq appendRows does not mutate a newer load's rows", () => {
 	const p = contract.createPaneStore();
 	const stale = p.beginLoad('all', 'All Tracks');
 	assert.equal(progressive.publishFirstPage(p, stale, [_row({ stable_id: 'old' })]), true);

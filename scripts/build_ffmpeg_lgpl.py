@@ -53,6 +53,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared.hashing import sha256_file_hex
+
 # ----- pins -------------------------------------------------------------------
 
 
@@ -84,13 +86,19 @@ SOXR = Source(
 )
 
 MACOS_MIN = "12.0"
-CACHE_ROOT = Path(
-    os.environ.get("MDT_FFMPEG_BUILD_CACHE", Path.home() / "Library/Caches/opendj-ffmpeg-build")
-)
+CACHE_ROOT = Path(os.environ.get("MDT_FFMPEG_BUILD_CACHE", Path.home() / "Library/Caches/opendj-ffmpeg-build"))
 
 DECODERS = (
-    "mp3", "mp3float", "aac", "aac_latm", "alac", "flac", "vorbis", "opus",
-    "wavpack", "pcm_*",
+    "mp3",
+    "mp3float",
+    "aac",
+    "aac_latm",
+    "alac",
+    "flac",
+    "vorbis",
+    "opus",
+    "wavpack",
+    "pcm_*",
 )
 DEMUXERS = ("mp3", "mov", "flac", "wav", "aiff", "ogg", "matroska", "aac", "caf", "w64", "wv")
 PARSERS = ("mpegaudio", "aac", "aac_latm", "flac", "vorbis", "opus")
@@ -98,8 +106,23 @@ PARSERS = ("mpegaudio", "aac", "aac_latm", "flac", "vorbis", "opus")
 # its own (aformat/anull/aresample/format/null) and the sine source the
 # fingerprint's resampler positive control runs (pcm_fingerprint.require_resampler).
 FILTERS = (
-    "aresample", "aformat", "asplit", "lowpass", "highpass", "bandpass", "equalizer",
-    "amerge", "pan", "ebur128", "astats", "volume", "anull", "atrim", "format", "null", "trim",
+    "aresample",
+    "aformat",
+    "asplit",
+    "lowpass",
+    "highpass",
+    "bandpass",
+    "equalizer",
+    "amerge",
+    "pan",
+    "ebur128",
+    "astats",
+    "volume",
+    "anull",
+    "atrim",
+    "format",
+    "null",
+    "trim",
     "sine",
 )
 # Configure names, not -f names: the -f s16le muxer is pcm_s16le_muxer.
@@ -228,10 +251,22 @@ def verify_lgpl_binary(binary: Path) -> dict[str, str]:
 #: The fingerprint's resampler positive control (pcm_fingerprint.require_resampler):
 #: lavfi sine -> soxr at precision 28 -> raw s16le on stdout.
 _SOXR_SMOKE = [
-    "-nostdin", "-v", "error",
-    "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1:sample_rate=48000",
-    "-ac", "1", "-af", "aresample=44100:resampler=soxr:precision=28",
-    "-f", "s16le", "-acodec", "pcm_s16le", "-",
+    "-nostdin",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=0.1:sample_rate=48000",
+    "-ac",
+    "1",
+    "-af",
+    "aresample=44100:resampler=soxr:precision=28",
+    "-f",
+    "s16le",
+    "-acodec",
+    "pcm_s16le",
+    "-",
 ]
 
 
@@ -240,20 +275,11 @@ def _require_canonical_decode(binary: Path) -> None:
     result = subprocess.run([str(binary), *_SOXR_SMOKE], capture_output=True, check=False, timeout=30)
     if result.returncode != 0 or not result.stdout:
         raise FfmpegBuildError(
-            f"{binary} cannot run the canonical soxr -> s16le chain: "
-            f"{result.stderr.decode(errors='replace')[-500:]}"
+            f"{binary} cannot run the canonical soxr -> s16le chain: {result.stderr.decode(errors='replace')[-500:]}"
         )
 
 
 # ----- build ------------------------------------------------------------------
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def fetch_verified(source: Source, src_dir: Path) -> Path:
@@ -265,11 +291,9 @@ def fetch_verified(source: Source, src_dir: Path) -> Path:
         with urllib.request.urlopen(source.url, timeout=120) as response, partial.open("wb") as out:
             shutil.copyfileobj(response, out)
         partial.rename(tarball)
-    actual = _sha256(tarball)
+    actual = sha256_file_hex(tarball)
     if actual != source.sha256:
-        raise FfmpegBuildError(
-            f"{tarball} sha256 {actual} != pinned {source.sha256}; refusing to build"
-        )
+        raise FfmpegBuildError(f"{tarball} sha256 {actual} != pinned {source.sha256}; refusing to build")
     return tarball
 
 
@@ -309,7 +333,8 @@ def build_soxr(tarball: Path, work: Path, prefix: Path, log: Path) -> None:
     build.mkdir()
     _sh(
         [
-            "cmake", "..",
+            "cmake",
+            "..",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DCMAKE_INSTALL_PREFIX={prefix}",
             f"-DCMAKE_OSX_DEPLOYMENT_TARGET={MACOS_MIN}",
@@ -321,7 +346,8 @@ def build_soxr(tarball: Path, work: Path, prefix: Path, log: Path) -> None:
             "-DWITH_OPENMP=OFF",
             "-DWITH_LSR_BINDINGS=OFF",
         ],
-        build, log,
+        build,
+        log,
     )
     _sh(["make", f"-j{_jobs()}"], build, log)
     _sh(["make", "install"], build, log)

@@ -1,4 +1,5 @@
 """SYNC-03: RB playlist hierarchy flattener."""
+
 from __future__ import annotations
 
 import pytest

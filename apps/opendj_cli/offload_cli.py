@@ -17,6 +17,7 @@ operation until it ends and exits non-zero unless it finished ``done``.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -109,8 +110,12 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
         with httpx.Client(timeout=REQUEST_TIMEOUT_S) as client:
             response = client.request(method, f"{base}{path}", json=body)
             if not response.is_success:
-                return _fail(as_json, "request_failed",
-                             f"{method} {path} returned {response.status_code}: {response.text}", EXIT_FAILED)
+                return _fail(
+                    as_json,
+                    "request_failed",
+                    f"{method} {path} returned {response.status_code}: {response.text}",
+                    EXIT_FAILED,
+                )
             payload = response.json()
             if args.wait and isinstance(payload, dict) and "op_id" in payload:
                 while payload["state"] in ("queued", "running"):

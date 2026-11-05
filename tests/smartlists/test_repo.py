@@ -1,4 +1,5 @@
 """SMART-01/02 -- SmartlistsRepo CRUD tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -40,7 +41,8 @@ def test_create_rejects_bad_order_by(smartlists_repo: SmartlistsRepo) -> None:
 def test_create_validates_rule(smartlists_repo: SmartlistsRepo) -> None:
     with pytest.raises(SmartlistRuleError):
         smartlists_repo.create(
-            "x", {"field": "mystery", "op": "=", "value": 1},
+            "x",
+            {"field": "mystery", "op": "=", "value": 1},
         )
 
 
@@ -69,7 +71,9 @@ def test_update_rule_refreshes_referenced_fields(
     row = smartlists_repo.create("x", _rule())
     new_rule = {"field": "energy", "op": ">=", "value": 7}
     updated = smartlists_repo.update_rule(
-        row.id, new_rule, expected_revision=smartlist_revision(row),
+        row.id,
+        new_rule,
+        expected_revision=smartlist_revision(row),
     )
     assert updated.referenced_fields == frozenset({"energy"})
 
@@ -86,7 +90,8 @@ def test_update_rule_rejects_stale_revision_without_mutating_any_field(
         order_by="energy desc",
     )
     before = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
 
     with pytest.raises(SmartlistRevisionConflict) as raised:
@@ -99,7 +104,8 @@ def test_update_rule_rejects_stale_revision_without_mutating_any_field(
 
     assert raised.value.current_revision == smartlist_revision(current)
     after = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     assert after == before
 
@@ -111,7 +117,8 @@ def test_update_rule_rolls_back_if_persisted_readback_fails(
     """The update and returned readback are one SQLite transaction."""
     row = smartlists_repo.create("readback", _rule())
     before = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     statements: list[str] = []
     smartlists_repo.conn.set_trace_callback(statements.append)
@@ -139,7 +146,8 @@ def test_update_rule_rolls_back_if_persisted_readback_fails(
     assert statements[-1] == "ROLLBACK"
     assert smartlists_repo.conn.in_transaction is False
     after = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     assert after == before
 
@@ -159,7 +167,8 @@ def test_update_rule_validates_complete_replacement_before_transaction(
 ) -> None:
     row = smartlists_repo.create("validated", _rule())
     before = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     statements: list[str] = []
     smartlists_repo.conn.set_trace_callback(statements.append)
@@ -174,7 +183,8 @@ def test_update_rule_validates_complete_replacement_before_transaction(
 
     assert not any(statement.startswith("BEGIN") for statement in statements)
     after = smartlists_repo.conn.execute(
-        "SELECT * FROM smartlists WHERE id=?", (row.id,),
+        "SELECT * FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     assert after == before
 
@@ -210,7 +220,8 @@ def test_delete_tombstones_and_rewrites_name(smartlists_repo: SmartlistsRepo) ->
     assert smartlists_repo.delete(row.id) is True
     assert smartlists_repo.get_by_id(row.id) is None
     raw = smartlists_repo.conn.execute(
-        "SELECT name, deleted_at FROM smartlists WHERE id=?", (row.id,),
+        "SELECT name, deleted_at FROM smartlists WHERE id=?",
+        (row.id,),
     ).fetchone()
     assert raw[1] is not None
     assert "__deleted__" in raw[0]

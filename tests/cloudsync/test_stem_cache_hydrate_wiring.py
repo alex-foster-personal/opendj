@@ -7,6 +7,7 @@
 * [if] a hydrate runs outside the engine (a worker that cannot see the
   engine's decks) [then] it evicts nothing (Codex on #4974, 7ee2306e4).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -66,9 +67,7 @@ def test_hydrate_one_enforces_the_disk_budget_after_it_lands(
 
 
 @pytest.mark.requirement("STEM-39")
-def test_hydrate_one_gives_back_only_what_it_took(
-    tmp_path: Path, fake_s3, cfg, monkeypatch: pytest.MonkeyPatch
-):
+def test_hydrate_one_gives_back_only_what_it_took(tmp_path: Path, fake_s3, cfg, monkeypatch: pytest.MonkeyPatch):
     """[if] a hydrate lands on a large backlog [then] it evicts about one bundle's worth, not the backlog, [else stop].
 
     A deck is waiting on it and the timer owns the rest.
@@ -111,9 +110,7 @@ def test_hydrate_one_gives_back_only_what_it_took(
 
 
 @pytest.mark.requirement("STEM-42")
-def test_a_hydrate_outside_the_engine_evicts_nothing(
-    tmp_path: Path, fake_s3, cfg, monkeypatch: pytest.MonkeyPatch
-):
+def test_a_hydrate_outside_the_engine_evicts_nothing(tmp_path: Path, fake_s3, cfg, monkeypatch: pytest.MonkeyPatch):
     """[if] a worker process hydrates on a low disk [then] no bundle is evicted, since a deck in the engine may hold it, [else stop].
 
     MUTATION TARGET: pass ``max_evict_bytes=total`` regardless of

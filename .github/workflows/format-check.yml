@@ -1,0 +1,175 @@
+name: Format check
+
+# "format check (changed files)", issue #4456 part 9 ((private path)).
+#
+# Runs the ratified formatters in check mode on ONLY the files a pull request
+# changes: `ruff format --check` (ruff from ops/quality/requirements.txt),
+# `prettier --check` (apps/webui/frontend's pinned copy, from that directory) and
+# `shfmt -l -i 4 -ci` (the pinned shfmt, installed sha256-checked into
+# ~/.local/bin by scripts/format_proof_shell.py when a runner lacks it). A file
+# that was already unformatted on main is SKIPPED with a notice: that is the
+# part 6 backlog, and pre-existing debt never fails a PR. The logic lives in
+# scripts/format_check_changed.py ((private path));
+# `just fmt-changed` runs the same check locally and `just fmt-changed --write`
+# is the fix.
+#
+# ADVISORY, by ruling (main core, Thu 5 Nov 2026): this job is not a `ci gate`
+# input and not a required check, and lives in its own workflow so the gate
+# wiring never sees it. Format is enforced at pre-push and by the opt-in
+# format-on-edit hook. Making it gate is a Fleet-AF rails change, taken only
+# after its false-red rate is measured (the spec's promotion note).
+#
+# Not a test: it runs no pytest, so the per-run test budget (ci/test-budget.yml)
+# does not price it.
+
+on:
+  pull_request:
+
+concurrency:
+  group: format-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Self-hosted runners are shared, so this workflow honours the same hygiene
+# contract as every other persistent-workspace workflow (issue #1338).
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  format-check:
+    name: format check (changed files)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 8
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 2
+        with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      # The checkout is the PR merge commit, so HEAD^1 is main as merged against.
+      # prettier needs node_modules only when a frontend source changed.
+      - name: Does the PR change a frontend source
+        id: scope
+        run: |
+          set -euo pipefail
+          # Captured first: `grep -q` exiting early would SIGPIPE git, and pipefail would read that as no match.
+          # --no-renames: rename detection reads blobs, which a partial-clone workspace fetches lazily with
+          # no credentials here (persist-credentials: false). A renamed source still shows as its new path (A).
+          changed=$(git diff --name-only --no-renames --diff-filter=AMRC HEAD^1 HEAD -- apps/webui/frontend)
+          if grep -Eq '\.(ts|tsx|mts|cts|js|mjs|cjs|svelte)$' <<<"$changed"; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Order matters: corepack must run BEFORE setup-node so a `pnpm` shim exists
+      # when setup-node resolves the store (same as ci.yml's frontend job).
+      - name: Enable pinned pnpm
+        if: steps.scope.outputs.frontend == 'true'
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.11.0 --activate
+
+      - name: Setup Node
+        if: steps.scope.outputs.frontend == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          # Hosted runners only: a self-hosted store persists and is shared
+          # (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Install the pinned prettier (frontend node_modules)
+        if: steps.scope.outputs.frontend == 'true'
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Reused self-hosted workspaces can be partial clones, so rename detection and the base
+      # side (HEAD^1's blobs) are fetched lazily from the promisor remote. persist-credentials:
+      # false leaves that fetch no credentials ("could not read Username", agentbox-6, #8960).
+      # Hand git the read-only job token for this step only, through GIT_CONFIG_* env, the
+      # pattern pr-body-gates.yml uses, so nothing is written to .git/config.
+      - name: Format check (changed files)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          python -m scripts.format_check_changed --base HEAD^1

@@ -58,8 +58,11 @@
 
 <span class="react-island" data-react-island bind:this={host}></span>
 {#if failure !== null}
-	<span class="react-island-failed" role="alert" data-react-island-failed title={`React twin failed to load: ${failure}`}
-		>React control failed to load</span
+	<span
+		class="react-island-failed"
+		role="alert"
+		data-react-island-failed
+		title={`React twin failed to load: ${failure}`}>React control failed to load</span
 	>
 {/if}
 

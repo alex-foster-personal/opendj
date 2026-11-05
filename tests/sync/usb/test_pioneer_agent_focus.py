@@ -9,6 +9,7 @@ imports.
 
 Requirement: CAT-06 -- Rekordbox 7 USB export automation prototype.
 """
+
 from __future__ import annotations
 
 import io
@@ -83,7 +84,10 @@ class TestWindowIsolatedCapture:
         assert meta["window_id"] == 42
         assert meta["owner_name"] == "rekordbox"
         assert meta["window_bounds"] == {
-            "x": 100.0, "y": 200.0, "w": 1600.0, "h": 1000.0,
+            "x": 100.0,
+            "y": 200.0,
+            "w": 1600.0,
+            "h": 1000.0,
         }
         assert meta["downsample_width"] == 800
         assert meta["downsample_height"] == 500
@@ -186,9 +190,7 @@ class TestClickGuard:
             "backing_scale": 1.0,
         }
         act._last_scaled = (200, 150)
-        result = act.execute_action(
-            {"action": "left_click", "coordinate": [500, 500]}
-        )
+        result = act.execute_action({"action": "left_click", "coordinate": [500, 500]})
         assert result["ok"] is False
         assert "outside" in result["error"].lower()
         assert "rekordbox" in result["error"].lower()
@@ -217,15 +219,11 @@ class TestClickGuard:
             "backing_scale": 1.0,
         }
         act._last_scaled = (200, 150)
-        result = act.execute_action(
-            {"action": "left_click", "coordinate": [100, 75]}
-        )
+        result = act.execute_action({"action": "left_click", "coordinate": [100, 75]})
         assert result["ok"] is True
         assert result.get("skipped") is True
 
-    def test_actuator_rejects_click_when_focus_enforcement_fails(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_actuator_rejects_click_when_focus_enforcement_fails(self, tmp_path: Path, monkeypatch) -> None:
         """P1 BLOCKING (PR #549 review): ``execute_action`` used to discard
         ``ensure_frontmost``'s return value and dispatch ``cliclick``
         regardless - if Rekordbox quit or crashed between the screenshot
@@ -264,14 +262,10 @@ class TestClickGuard:
             "backing_scale": 1.0,
         }
         act._last_scaled = (200, 150)
-        result = act.execute_action(
-            {"action": "left_click", "coordinate": [100, 75]}
-        )
+        result = act.execute_action({"action": "left_click", "coordinate": [100, 75]})
         assert result["ok"] is False
         assert "frontmost" in result["error"].lower()
-        assert cliclick_calls == [], (
-            f"cliclick dispatched {cliclick_calls} despite failed focus check"
-        )
+        assert cliclick_calls == [], f"cliclick dispatched {cliclick_calls} despite failed focus check"
 
     @pytest.mark.parametrize(
         "action_payload",
@@ -346,12 +340,8 @@ class TestClickGuard:
         result = act.execute_action(action_payload)
         assert result["ok"] is False
         assert "frontmost" in result["error"].lower()
-        assert cliclick_calls == [], (
-            f"cliclick dispatched {cliclick_calls} despite failed focus check"
-        )
-        assert osascript_calls == [], (
-            f"osascript dispatched {osascript_calls} despite failed focus check"
-        )
+        assert cliclick_calls == [], f"cliclick dispatched {cliclick_calls} despite failed focus check"
+        assert osascript_calls == [], f"osascript dispatched {osascript_calls} despite failed focus check"
 
 
 class TestEnsureFrontmost:
@@ -503,9 +493,7 @@ class TestQuitApp:
     """
 
     @staticmethod
-    def _run(
-        states: list[bool], *, max_wait_s: float, poll_s: float
-    ) -> tuple[bool, int]:
+    def _run(states: list[bool], *, max_wait_s: float, poll_s: float) -> tuple[bool, int]:
         seq = iter(states)
         calls = {"quit": 0}
 

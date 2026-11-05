@@ -76,6 +76,12 @@ import {
 	type SectionOverlayPrefsState
 } from './section-overlay-prefs';
 import {
+	SPEAKER_LINK_PREF_DEFAULTS,
+	makeSpeakerLinkSetters,
+	validateSpeakerLinkPrefFields,
+	type SpeakerLinkPrefsState
+} from './speaker-link-prefs';
+import {
 	TEMPO_LANE_PREF_DEFAULTS,
 	makeTempoLaneSetters,
 	validateTempoLanePrefFields,
@@ -222,6 +228,7 @@ export interface RbUiPrefs
 		TopbarViewPrefsState,
 		DeckDefaultPrefs,
 		SectionOverlayPrefsState,
+		SpeakerLinkPrefsState,
 		TempoLanePrefsState,
 		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
@@ -230,6 +237,10 @@ export interface RbUiPrefs
 	hide_broken_links: boolean;
 	/** Track-table row height: compact = current tight rows; cosy = taller. */
 	library_density: LibraryDensity;
+	/** Sort inside each playlist section instead of hiding the sections (D7). */
+	sort_within_sections: boolean;
+	/** Section ids shown collapsed on this machine. */
+	collapsed_sections: string[];
 	/** How every key cell is written (keys are stored as canonical Camelot). */
 	key_notation: KeyNotation;
 	/** LIBUX-54: track-table columns hidden from the header chooser, in table order. */
@@ -318,6 +329,10 @@ export interface RbUiPrefs
 	pin_visible_days: number;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** Mixer S button (the maintainer, Mon 2 Nov 2026): stem level dials VOCAL/INST/BASS
+	 * beside HI/MID/LOW and DRUMS beside FILTER, on every channel whose track
+	 * has stems; the mixer column widens 20% while on. Default off. */
+	mixer_stems: boolean;
 	/** DECKUX-5917b: hovering a deck, wavestack row or mixer strip highlights its linked panels. Default on. */
 	deck_hover_link: boolean;
 	/** Compatible-filter range knobs (LIBUX-32). */
@@ -406,6 +421,8 @@ const DEFAULTS: RbUiPrefs = {
 	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
 	hide_broken_links: false,
 	library_density: 'compact',
+	sort_within_sections: false,
+	collapsed_sections: [],
 	key_notation: DEFAULT_KEY_NOTATION,
 	library_hidden_columns: [],
 	beat_sync_max: true,
@@ -431,6 +448,7 @@ const DEFAULTS: RbUiPrefs = {
 	show_agent_pins: true,
 	pin_visible_days: PIN_VISIBLE_DAYS_DEFAULT,
 	show_stems: false,
+	mixer_stems: false,
 	deck_hover_link: true,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_key_filter: [],
@@ -456,6 +474,7 @@ const DEFAULTS: RbUiPrefs = {
 	horizontal_wheel_knob: 'filter',
 	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
 	...SECTION_OVERLAY_PREF_DEFAULTS,
+	...SPEAKER_LINK_PREF_DEFAULTS,
 	...TEMPO_LANE_PREF_DEFAULTS,
 	...WAVE_ZOOM_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
@@ -791,6 +810,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.mixer_stems !== undefined && typeof parsed.mixer_stems !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (mixer_stems is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.deck_hover_link !== undefined && typeof parsed.deck_hover_link !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (deck_hover_link is not a boolean) - ` +
@@ -921,6 +946,10 @@ function _assembleLoadedPrefs(
 		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
 		hide_broken_links: library.hide_broken_links,
 		library_density: library.library_density ?? DEFAULTS.library_density,
+		sort_within_sections: parsed.sort_within_sections === true,
+		collapsed_sections: Array.isArray(parsed.collapsed_sections)
+			? parsed.collapsed_sections
+			: DEFAULTS.collapsed_sections,
 		key_notation: library.key_notation ?? DEFAULTS.key_notation,
 		library_hidden_columns: library.library_hidden_columns ?? DEFAULTS.library_hidden_columns,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
@@ -951,6 +980,7 @@ function _assembleLoadedPrefs(
 			? parsed.pin_visible_days
 			: DEFAULTS.pin_visible_days,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		...skinLook,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
@@ -973,6 +1003,8 @@ function _assembleLoadedPrefs(
 				: validateDragSensitivity(parsed.drag_sensitivity, STORAGE_KEY),
 		...SECTION_OVERLAY_PREF_DEFAULTS,
 		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
+		...SPEAKER_LINK_PREF_DEFAULTS,
+		...validateSpeakerLinkPrefFields(parsed, STORAGE_KEY),
 		...TEMPO_LANE_PREF_DEFAULTS,
 		...validateTempoLanePrefFields(parsed, STORAGE_KEY),
 		...WAVE_ZOOM_PREF_DEFAULTS,
@@ -1115,6 +1147,16 @@ export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain 
 	_persist,
 	(patch) => void _syncDiskPrefs(patch)
 );
+export function setSortWithinSections(next: boolean): void {
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'sort_within_sections', next);
+}
+
+export function setSectionCollapsed(sectionId: string, collapsed: boolean): void {
+	const rest = uiPrefs.collapsed_sections.filter((id) => id !== sectionId);
+	const next = collapsed ? [...rest, sectionId] : rest;
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'collapsed_sections', next);
+}
+
 export function setLibraryDensity(next: LibraryDensity): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
 }
@@ -1282,6 +1324,13 @@ export const { setShowSections, toggleShowSections } = makeSectionOverlaySetters
 	(patch) => void _syncDiskPrefs(patch)
 );
 
+/** AUDIO-DEVICE-06: auto-reconnect a stalled Bluetooth main speaker (default auto). */
+export const { setSpeakerAutoRecover } = makeSpeakerLinkSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
 /** Tempo-change lane (PR #8342): lane visibility and curve scale (default on, fixed_10). */
 export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
 	uiPrefs,
@@ -1311,6 +1360,14 @@ export function setShowStems(next: boolean): void {
 	uiPrefs.show_stems = next;
 	_persist();
 	void _syncDiskPrefs({ show_stems: next });
+}
+
+/** The mixer's S button and the `mixer_stems` command. Saved in this browser,
+ * the same store the MORE/LESS layout reads first. */
+export function setMixerStems(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError(`mixer_stems must be boolean, got ${String(next)}`);
+	uiPrefs.mixer_stems = next;
+	_persist();
 }
 
 export function setDeckHoverLink(next: boolean): void {

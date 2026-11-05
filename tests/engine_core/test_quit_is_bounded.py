@@ -38,6 +38,7 @@ Regression lines:
     another way is still alive when the engine exits, then the shell SIGKILLs
     it as left behind (alpha.1, quitting mid-analysis) -> broken
 """
+
 from __future__ import annotations
 
 import http.client
@@ -71,9 +72,7 @@ pytestmark = [
 ]
 #: Only the cases that deliver a real SIGTERM to a process are POSIX-only;
 #: the stop-window cases use threads and monotonic time and run everywhere.
-posix_sigterm = pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX SIGTERM delivery to the engine process"
-)
+posix_sigterm = pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM delivery to the engine process")
 
 REPO = Path(__file__).resolve().parents[2]
 #: The user-visible target from the W43 order: a quit inside 3 s.
@@ -96,8 +95,13 @@ def _boot(tmp_path: Path, entry: list[str] | None = None) -> tuple[subprocess.Po
     log = (tmp_path / "engine.log").open("w")
     proc = subprocess.Popen(
         [
-            sys.executable, *(entry or ["-m", "apps.engine_core"]), "serve",
-            "--data-dir", str(data_dir), "--port", str(port),
+            sys.executable,
+            *(entry or ["-m", "apps.engine_core"]),
+            "serve",
+            "--data-dir",
+            str(data_dir),
+            "--port",
+            str(port),
         ],
         cwd=REPO,
         # Launched the way the desktop shell launches it (engine.rs), whose
@@ -223,7 +227,8 @@ def test_a_pending_agent_order_answers_engine_quitting_on_a_quit(tmp_path: Path)
         _open_page(port)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
         conn.request(
-            "POST", "/api/v1/commands",
+            "POST",
+            "/api/v1/commands",
             body=json.dumps({"single": {"type": "play", "deck": 1, "playing": True}}),
             headers={"Content-Type": "application/json"},
         )
@@ -371,9 +376,7 @@ def test_the_watchdog_ends_a_wedged_quit_and_reaps_its_children() -> None:
         took = time.monotonic() - started
         # Its own deadline, not just the 3 s target: the reap is budgeted
         # inside it, so a child that ignores SIGTERM costs nothing extra.
-        assert took < QUIT_DEADLINE_S + 0.2, (
-            f"the watchdog took {took:.2f}s, past its {QUIT_DEADLINE_S}s deadline"
-        )
+        assert took < QUIT_DEADLINE_S + 0.2, f"the watchdog took {took:.2f}s, past its {QUIT_DEADLINE_S}s deadline"
         assert took >= QUIT_DEADLINE_S - REAP_BUDGET_S - 0.2, (
             f"exited after {took:.1f}s, before the watchdog's reap could start, so the "
             "teardown was not wedged and this case proves nothing (the control)"
@@ -507,8 +510,7 @@ def test_the_watchdog_bounds_a_quit_while_the_event_loop_is_blocked() -> None:
             proc.wait(timeout=QUIT_WITHIN_S + 3)
         except subprocess.TimeoutExpired:
             raise AssertionError(
-                "a blocked event loop kept the engine alive past SIGTERM: "
-                "the watchdog was never armed"
+                "a blocked event loop kept the engine alive past SIGTERM: the watchdog was never armed"
             ) from None
         took = time.monotonic() - started
         assert took < QUIT_DEADLINE_S + 0.2, f"took {took:.2f}s"

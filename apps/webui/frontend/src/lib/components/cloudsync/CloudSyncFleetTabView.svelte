@@ -40,7 +40,11 @@
 
 <section aria-label="CloudSync fleet" data-testid="cloudsync-fleet">
 	<div class="head">
-		<button type="button" title="Re-read the fleet from this machine's state DB" onclick={() => onRefresh()}>
+		<button
+			type="button"
+			title="Re-read the fleet from this machine's state DB"
+			onclick={() => onRefresh()}
+		>
 			Refresh
 		</button>
 	</div>
@@ -53,7 +57,9 @@
 			<span title="Machines enrolled to an owner through a redeemed grant or credential">
 				owned {fleet.owned}
 			</span>
-			<span title="Machines seen in the registry with no enrollment record (OBSERVE mode lets them sync)">
+			<span
+				title="Machines seen in the registry with no enrollment record (OBSERVE mode lets them sync)"
+			>
 				unowned {fleet.unowned}
 			</span>
 			<span title="Machines enrolled by a different hub than the one this DB syncs with">
@@ -142,7 +148,11 @@
 						title="Single-use enrollment token; only its hash is stored on the hub"
 						value={grant.token}
 					/>
-					<button type="button" title="Copy the token to the clipboard" onclick={() => onCopyToken()}>
+					<button
+						type="button"
+						title="Copy the token to the clipboard"
+						onclick={() => onCopyToken()}
+					>
 						{copyState === 'copied' ? 'Copied' : 'Copy'}
 					</button>
 				</div>

@@ -13,7 +13,9 @@ const src = readFileSync(
 );
 
 function openingEffect() {
-	const m = src.match(/\$effect\(\(\) => \{\n\t\tif \(!settingsOverlay\.open\) \{[\s\S]*?searchEl\?\.focus\(\)\);\n\t\}\);/);
+	const m = src.match(
+		/\$effect\(\(\) => \{\n\t\tif \(!settingsOverlay\.open\) \{[\s\S]*?searchEl\?\.focus\(\)\);\n\t\}\);/
+	);
 	assert.ok(m, 'the opening effect must exist');
 	return m[0];
 }
@@ -39,5 +41,9 @@ test('a drag-sensitivity change re-seeds the rows from its own tracked effect (c
 		src,
 		/\$effect\(\(\) => \{\n\t\tvoid dragSensitivity\.base;\n\t\tvoid dragSensitivity\.falloffPx;\n\t\tnumberDraft = _seedNumbers\(\);\n\t\}\);/
 	);
-	assert.doesNotMatch(openingEffect(), /dragSensitivity\./, 'the opening effect must not track drag sensitivity');
+	assert.doesNotMatch(
+		openingEffect(),
+		/dragSensitivity\./,
+		'the opening effect must not track drag sensitivity'
+	);
 });

@@ -10,6 +10,7 @@ The two cases must NOT be collapsed:
 
 [if] a MIK song matches a track or none [then] load() writes fields/stages unmatched, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -58,9 +59,7 @@ def test_no_verdict_file_writes_nothing_at_all(
     state_conn: sqlite3.Connection, add_track, make_mik_store, data_dir: Path
 ) -> None:
     add_track("a" * 40, file_path="/Users/user/x.mp3")
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]}]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]}])
     plan, gate = _load(state_conn, store, data_dir)
     assert gate.file_present is False
     assert plan.field_writes == []
@@ -117,9 +116,7 @@ def test_absent_audio_keeps_its_analysis_in_track_fields(
     add_track("a" * 40, file_path="/Users/old/gone.mp3")
     avail.refresh(state_conn)
     assert (
-        state_conn.execute(
-            "SELECT state FROM track_availability WHERE stable_id = ?", ("a" * 40,)
-        ).fetchone()[0]
+        state_conn.execute("SELECT state FROM track_availability WHERE stable_id = ?", ("a" * 40,)).fetchone()[0]
         == "absent"
     )
     store = make_mik_store(
@@ -137,8 +134,7 @@ def test_absent_audio_keeps_its_analysis_in_track_fields(
     # Analysis lives in ONE place, keyed by stable_id.
     assert (
         state_conn.execute(
-            "SELECT value_json FROM track_fields WHERE stable_id = ? AND "
-            "field_name = 'energy'",
+            "SELECT value_json FROM track_fields WHERE stable_id = ? AND field_name = 'energy'",
             ("a" * 40,),
         ).fetchone()[0]
         == "7"
@@ -152,20 +148,10 @@ def test_absent_audio_keeps_its_analysis_in_track_fields(
     )
     # And it is impossible to confuse with playable data: the safe views exclude it.
     assert state_conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 0
-    assert (
-        state_conn.execute("SELECT COUNT(*) FROM track_fields_available").fetchone()[0]
-        == 0
-    )
-    assert (
-        state_conn.execute("SELECT COUNT(*) FROM tracks_unavailable").fetchone()[0] == 1
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_fields_available").fetchone()[0] == 0
+    assert state_conn.execute("SELECT COUNT(*) FROM tracks_unavailable").fetchone()[0] == 1
     # Nothing was duplicated into the staging table.
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM unmatched_source_analysis"
-        ).fetchone()[0]
-        == 0
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM unmatched_source_analysis").fetchone()[0] == 0
 
 
 # --------------------------------------- case (b): no track row to hang it on
@@ -192,12 +178,7 @@ def test_unmatched_analysis_never_reaches_track_fields(
     assert {row.field_name for row in plan.staged} == set(loader.GATED_FIELDS)
     loader.apply_plan(state_conn, plan)
     assert state_conn.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0] == 0
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_energy_segments"
-        ).fetchone()[0]
-        == 0
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_energy_segments").fetchone()[0] == 0
     rows = state_conn.execute(
         "SELECT field_name, unmatched_reason, title, artist, source_path, "
         "promoted_stable_id FROM unmatched_source_analysis ORDER BY field_name"
@@ -215,9 +196,7 @@ def test_staged_series_keeps_milliseconds(
     state_conn: sqlite3.Connection, make_mik_store, data_dir: Path, write_verdicts
 ) -> None:
     write_verdicts({"energy_segments": "passed"})
-    store = make_mik_store(
-        [{"path": "/none/x.mp3", "confidence": 0.9, "segments": [(60.4, 14.9, 8)]}]
-    )
+    store = make_mik_store([{"path": "/none/x.mp3", "confidence": 0.9, "segments": [(60.4, 14.9, 8)]}])
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
     value = state_conn.execute(
@@ -301,9 +280,7 @@ def test_promoted_row_is_not_reclaimed_by_a_later_match(
         ("a" * 40,),
     )
     state_conn.commit()
-    store = make_mik_store(
-        [{"path": "/Users/old/rematched.mp3", "pk": 1, "confidence": 0.9}]
-    )
+    store = make_mik_store([{"path": "/Users/old/rematched.mp3", "pk": 1, "confidence": 0.9}])
     plan, _gate = _load(state_conn, store, data_dir)
     written = {write.field_name for write in plan.field_writes if write.stable_id == "b" * 40}
     assert "energy" not in written

@@ -48,6 +48,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -109,11 +110,13 @@ def load_window(track_dir: Path) -> tuple[torch.Tensor, dict[str, torch.Tensor],
         if stem_rate != rate:
             raise RuntimeError(
                 f"{track_dir.name}: true {stem} is {stem_rate} Hz, mixture is {rate} Hz "
-                "(refusing to resample a reference stem)")
+                "(refusing to resample a reference stem)"
+            )
         if audio.shape[-1] != mix.shape[-1]:
             raise RuntimeError(
                 f"{track_dir.name}: true {stem} is {audio.shape[-1]} samples, mixture is "
-                f"{mix.shape[-1]} -- the window is not sample-aligned")
+                f"{mix.shape[-1]} -- the window is not sample-aligned"
+            )
         truth[stem] = audio
     return mix, truth, rate
 
@@ -121,8 +124,7 @@ def load_window(track_dir: Path) -> tuple[torch.Tensor, dict[str, torch.Tensor],
 # ----- separation -------------------------------------------------------------
 
 
-def separate(model_name: str, mix: torch.Tensor, device: str
-             ) -> tuple[dict[str, torch.Tensor], float]:
+def separate(model_name: str, mix: torch.Tensor, device: str) -> tuple[dict[str, torch.Tensor], float]:
     model = get_model(model_name)
     model.eval()
     missing = [s for s in STEMS if s not in model.sources]
@@ -130,12 +132,19 @@ def separate(model_name: str, mix: torch.Tensor, device: str
         raise RuntimeError(f"{model_name} has no sources {missing}, cannot emit 4 stems")
     start = time.perf_counter()
     with torch.no_grad():
-        out = apply_model(model, mix.unsqueeze(0), overlap=OVERLAP, shifts=SHIFTS,
-                          split=True, progress=False, device=device, num_workers=0)[0]
+        out = apply_model(
+            model,
+            mix.unsqueeze(0),
+            overlap=OVERLAP,
+            shifts=SHIFTS,
+            split=True,
+            progress=False,
+            device=device,
+            num_workers=0,
+        )[0]
     infer_s = time.perf_counter() - start
     if out.shape[0] != len(model.sources):
-        raise RuntimeError(
-            f"{model_name} returned {out.shape[0]} sources, expected {len(model.sources)}")
+        raise RuntimeError(f"{model_name} returned {out.shape[0]} sources, expected {len(model.sources)}")
     return {s: out[model.sources.index(s)].cpu() for s in STEMS}, infer_s
 
 
@@ -149,15 +158,19 @@ def main() -> None:
     parser.add_argument("--json-out", required=True, type=Path)
     parser.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
     parser.add_argument(
-        "--cell-cache", type=Path, default=None,
+        "--cell-cache",
+        type=Path,
+        default=None,
         help="JSONL appended after EVERY (track, model) cell and re-read on "
-             "startup. EARNED THE HARD WAY: the first run of this script wrote "
-             "its JSON only at the end, was killed on cell 15 of 15, and left "
-             "14 finished measurements alive nowhere but a log. Recovering a "
-             "number from a log is the near miss this project has already "
-             "banked once; a cell is persisted the moment it exists instead.")
-    parser.add_argument("--track", action="append", default=None,
-                        help="repeatable; default is every dir under --tracks-dir")
+        "startup. EARNED THE HARD WAY: the first run of this script wrote "
+        "its JSON only at the end, was killed on cell 15 of 15, and left "
+        "14 finished measurements alive nowhere but a log. Recovering a "
+        "number from a log is the near miss this project has already "
+        "banked once; a cell is persisted the moment it exists instead.",
+    )
+    parser.add_argument(
+        "--track", action="append", default=None, help="repeatable; default is every dir under --tracks-dir"
+    )
     args = parser.parse_args()
 
     flags = gate_flags(args.gate_json)
@@ -191,8 +204,7 @@ def main() -> None:
     for track_dir in track_dirs:
         track = track_dir.name
         if track not in flags:
-            raise RuntimeError(
-                f"{track} has no row in {args.gate_json}; its window was never gated")
+            raise RuntimeError(f"{track} has no row in {args.gate_json}; its window was never gated")
         mix, truth, rate = load_window(track_dir)
         duration_s = mix.shape[-1] / rate
         truth_mono = {s: _mono(t) for s, t in truth.items()}
@@ -213,33 +225,45 @@ def main() -> None:
                     estimate = stems[stem]
                     if estimate.shape[-1] != mix.shape[-1]:
                         raise RuntimeError(
-                            f"{model} {stem} is {estimate.shape[-1]} samples, mixture is "
-                            f"{mix.shape[-1]}")
+                            f"{model} {stem} is {estimate.shape[-1]} samples, mixture is {mix.shape[-1]}"
+                        )
                     scores[stem] = _si_sdr_db(truth_mono[stem], _mono(estimate))
             missing = [s for s in STEMS if s not in scores]
             if missing:
                 raise RuntimeError(f"{track}/{model} has no score for {missing}")
             cube[track][model] = scores
-            timings.append({
-                "track": track, "model": model,
-                "infer_s": round(infer_s, 2),
-                "s_per_audio_minute": round(infer_s / (duration_s / 60.0), 2),
-                "from_cache": cached is not None,
-            })
+            timings.append(
+                {
+                    "track": track,
+                    "model": model,
+                    "infer_s": round(infer_s, 2),
+                    "s_per_audio_minute": round(infer_s / (duration_s / 60.0), 2),
+                    "from_cache": cached is not None,
+                }
+            )
             if args.cell_cache and cached is None:
                 with args.cell_cache.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps({
-                        "track": track, "model": model, "device": args.device,
-                        "infer_s": round(infer_s, 2), "si_sdr": scores,
-                        "measured_at": datetime.now(UTC).isoformat(
-                            timespec="seconds")}) + "\n")
+                    handle.write(
+                        json.dumps(
+                            {
+                                "track": track,
+                                "model": model,
+                                "device": args.device,
+                                "infer_s": round(infer_s, 2),
+                                "si_sdr": scores,
+                                "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                            }
+                        )
+                        + "\n"
+                    )
             print("      " + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS), flush=True)
 
     payload = {
         "question": (
             "Does the per-stem model inversion in ladder_4stem_all.json (plain htdemucs "
             "wins bass by 0.775 dB, hdemucs_mmi wins vocals by 0.790) hold across tracks, "
-            "and where does the never-scored htdemucs_ft land per stem?"),
+            "and where does the never-scored htdemucs_ft land per stem?"
+        ),
         "dataset": "MUSDB18-HQ test",
         "reference_kind": "TRUE MUSDB18-HQ stem",
         "window_length_s": 60.0,
@@ -262,8 +286,7 @@ def main() -> None:
     width = max(len(t) for t in cube) + 2
     for stem in STEMS:
         print(f"\n=== {stem} (SI-SDR dB vs TRUE stem, 60s window) ===")
-        print("track".ljust(width) + "".join(m.rjust(14) for m in MODELS)
-              + "         floor  gated")
+        print("track".ljust(width) + "".join(m.rjust(14) for m in MODELS) + "         floor  gated")
         for track in sorted(cube):
             row = track.ljust(width)
             row += "".join(f"{cube[track][m][stem]:14.3f}" for m in MODELS)

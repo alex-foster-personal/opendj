@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 
 from apps.open_dj import SCHEMA_VERSION
 from apps.open_dj.adapters._base import ExportResult
 from apps.open_dj.id import compute_track_id_with_tier
-from apps.open_dj.provenance import wrap
+from apps.open_dj.provenance import utc_mtime, wrap
 
 name = "djay"
 
@@ -55,6 +55,7 @@ class DjayTrackInput:
     fingerprint: str | None = None
     cue_points: list[dict] | None = None
     content_hash_hex: str | None = None
+    source_modified_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -84,22 +85,15 @@ def build_library(
     playlists: Iterable[DjayPlaylistInput] = (),
     *,
     include_cues: bool = True,
-    modified_at: datetime | None = None,
 ) -> ExportResult:
     """Build a v0.2 library document from djay-side inputs.
 
-    ``modified_at`` stamps the ``bpm``/``key``/``rating`` provenance
-    envelopes. djay's ``MediaLibrary.db`` (read via
-    :mod:`apps.shared.djay_db`) exposes no per-track last-modified column
-    today, unlike rekordbox's DjmdContent.updated_at, so there is no
-    source timestamp to prefer here. Rather than have ``_build_track``
-    reach for the wall clock per call (which is what silently broke
-    determinism in the sibling rekordbox adapter -- OPEN-02), this is an
-    explicit, required-when-needed parameter: the caller decides what
-    "modified" means for this export and that choice is visible at the
-    call site. :func:`export_library` (the live-DB entry point) passes
-    ``datetime.now(UTC)`` once, here, rather than letting it leak into
-    the per-field wrap() calls.
+    Each input track that carries bpm/key/rating must set
+    ``source_modified_at``. :func:`export_library` fills that field from
+    the ``MediaLibrary.db`` file mtime. djay exposes no per-track
+    last-modified column (unlike rekordbox's DjmdContent.updated_at), so
+    the library-file mtime is the source time: stable for an unchanged
+    library, and a true if coarse stamp of when the source last changed.
     """
     tracks_out: list[dict] = []
     warnings: list[str] = []
@@ -108,7 +102,7 @@ def build_library(
 
     for t in tracks:
         try:
-            track_dict, cues = _build_track(t, include_cues=include_cues, modified_at=modified_at)
+            track_dict, cues = _build_track(t, include_cues=include_cues)
         except ValueError as exc:
             warnings.append(f"track {t.uuid}: {exc}")
             continue
@@ -145,7 +139,7 @@ def build_library(
     )
 
 
-def _build_track(t: DjayTrackInput, *, include_cues: bool, modified_at: datetime | None) -> tuple[dict, int]:
+def _build_track(t: DjayTrackInput, *, include_cues: bool) -> tuple[dict, int]:
     duration_ms = int((t.duration_s or 0) * 1000)
     track_id, tier = compute_track_id_with_tier(
         {
@@ -181,7 +175,7 @@ def _build_track(t: DjayTrackInput, *, include_cues: bool, modified_at: datetime
         track["isrc"] = normalised
     if t.size_bytes is not None:
         track["size_bytes"] = int(t.size_bytes)
-    _apply_provenance_fields(track, t, modified_at=modified_at)
+    _apply_provenance_fields(track, t)
     if include_cues and t.cue_points:
         track["cue_points"] = [dict(c) for c in t.cue_points]
     if tier == "inferred":
@@ -194,17 +188,17 @@ def _build_track(t: DjayTrackInput, *, include_cues: bool, modified_at: datetime
     return track, cues
 
 
-def _apply_provenance_fields(track: dict, t: DjayTrackInput, *, modified_at: datetime | None) -> None:
+def _apply_provenance_fields(track: dict, t: DjayTrackInput) -> None:
     """Wrap ``bpm``/``key``/``rating`` in a ``ProvenanceValue`` stamped
-    from the explicit ``modified_at`` clock -- see ``build_library``'s
-    docstring for why djay has no per-track source timestamp to prefer.
-    Split out of ``_build_track`` to keep that function's branching
-    under the repo's cyclomatic-complexity ratchet.
+    from the track's ``source_modified_at`` (library-file mtime). Split
+    out of ``_build_track`` to keep that function's branching under the
+    repo's cyclomatic-complexity ratchet.
     """
     has_rating = t.rating is not None and t.rating > 0
     if t.bpm is None and not t.key and not has_rating:
         return
-    if modified_at is None:
+    source_modified_at = t.source_modified_at
+    if source_modified_at is None:
         # RuntimeError, not ValueError: build_library() catches
         # ValueError per-track to skip malformed rows and keep exporting
         # the rest. A missing provenance timestamp is a caller/config
@@ -212,18 +206,21 @@ def _apply_provenance_fields(track: dict, t: DjayTrackInput, *, modified_at: dat
         # to a buried warning would silently ship a wrong-by-construction
         # export.
         raise RuntimeError(
-            f"track {t.uuid}: bpm/key/rating is set but no modified_at "
-            "was passed to build_library(). djay exposes no per-track "
-            "source timestamp, so this is an explicit clock the caller "
-            "must supply -- it must not be guessed as the wall clock "
-            "inside this function."
+            f"track {t.uuid}: bpm/key/rating is set but source_modified_at "
+            "is missing. Stamp it from the MediaLibrary.db file mtime "
+            "rather than the wall clock."
+        )
+    if source_modified_at.tzinfo is None:
+        raise RuntimeError(
+            f"track {t.uuid}: source_modified_at ({source_modified_at!r}) is naive. "
+            "Pass an aware UTC datetime from utc_mtime()."
         )
     if t.bpm is not None:
-        track["bpm"] = wrap(float(t.bpm), source="djay", modified_at=modified_at)
+        track["bpm"] = wrap(float(t.bpm), source="djay", modified_at=source_modified_at)
     if t.key:
-        track["key"] = wrap(t.key, source="djay", modified_at=modified_at)
+        track["key"] = wrap(t.key, source="djay", modified_at=source_modified_at)
     if has_rating and t.rating is not None:
-        track["rating"] = wrap(int(t.rating), source="djay", modified_at=modified_at)
+        track["rating"] = wrap(int(t.rating), source="djay", modified_at=source_modified_at)
 
 
 def _content_hash(t: DjayTrackInput, duration_ms: int) -> tuple[str, bool]:
@@ -249,7 +246,13 @@ def export_library(
     # connection via ``_connect_ro`` (``mode=ro&immutable=1``) so the
     # adapter preserves those PRAGMAs. Do not call ``sqlite3.connect``
     # directly here or the RO guarantee is silently dropped.
-    tracks = [from_djaytrack(t) for t in djay_db.iter_tracks(source_path)]
+    # Stat the real MediaLibrary.db (this path is not snapshotted) so
+    # provenance modified_at is the source file mtime, not export time.
+    stamp = utc_mtime(source_path)
+    tracks = [
+        replace(from_djaytrack(t), source_modified_at=stamp)
+        for t in djay_db.iter_tracks(source_path)
+    ]
     playlists = [
         DjayPlaylistInput(
             uuid=p.uuid,
@@ -260,10 +263,7 @@ def export_library(
         for p in djay_db.iter_playlists(source_path)
     ]
 
-    # See build_library's docstring: djay has no per-track source
-    # timestamp, so "now, once, at the live-export boundary" is the
-    # explicit snapshot-time stamp for this run.
-    result = build_library(tracks, playlists, include_cues=include_cues, modified_at=datetime.now(UTC))
+    result = build_library(tracks, playlists, include_cues=include_cues)
 
     if out_path is not None:
         from apps.open_dj.canon import to_canonical_bytes

@@ -16,9 +16,7 @@ from apps.lyrics.asr_match import match_words, normalize_word
 def test_normalize_word() -> None:
     assert normalize_word("Fire!") == "fire", "if edge punctuation survives then broken"
     assert normalize_word("«Oui,»") == "oui", "if unicode edge punctuation survives then broken"
-    assert normalize_word("l'hiver") == "l'hiver", (
-        "if internal apostrophes get stripped then broken"
-    )
+    assert normalize_word("l'hiver") == "l'hiver", "if internal apostrophes get stripped then broken"
 
 
 def test_match_words_hand_checked() -> None:

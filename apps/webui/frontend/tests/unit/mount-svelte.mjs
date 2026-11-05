@@ -43,7 +43,7 @@ const svelteComponentPlugin = {
  * bundle - the same reason `openAccountOverlay()` must live in the same
  * bundle as the component that reads `accountOverlay.open`.
  */
-export async function bundleSvelteEntry(entrySource) {
+export async function bundleSvelteEntry(entrySource, extraDefine = {}) {
 	const result = await build({
 		stdin: { contents: entrySource, resolveDir: FRONTEND_ROOT, loader: 'ts' },
 		absWorkingDir: FRONTEND_ROOT,
@@ -51,7 +51,9 @@ export async function bundleSvelteEntry(entrySource) {
 		bundle: true,
 		define: {
 			$state: 'globalThis.__musicDjToolsTestState',
-			'import.meta.env.VITE_API_BASE': JSON.stringify('https://store-build.example.test')
+			'import.meta.env.VITE_API_BASE': JSON.stringify('https://store-build.example.test'),
+			// A component that reads another build-time env var names it here.
+			...extraDefine
 		},
 		format: 'esm',
 		logLevel: 'silent',

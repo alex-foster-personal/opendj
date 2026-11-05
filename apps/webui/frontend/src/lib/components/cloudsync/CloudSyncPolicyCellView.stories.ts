@@ -51,7 +51,8 @@ export const Unset: Story = {
 	args: {
 		mode: 'unset',
 		budgetEditable: false,
-		budgetTitle: 'No policy is stored for this cell. Pick a mode first; a budget applies only in cached mode.',
+		budgetTitle:
+			'No policy is stored for this cell. Pick a mode first; a budget applies only in cached mode.',
 		budgetValue: ''
 	}
 };

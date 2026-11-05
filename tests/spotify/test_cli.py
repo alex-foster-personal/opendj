@@ -1,4 +1,5 @@
 """CLI surface tests for apps.spotify.__main__."""
+
 from __future__ import annotations
 
 import io
@@ -47,7 +48,8 @@ def test_cli_import_live_without_flag_refuses(capsys: pytest.CaptureFixture) -> 
 
 @pytest.mark.requirement("CAT-01")
 def test_cli_rematch_with_no_pending(
-    capsys: pytest.CaptureFixture, state_db_path: Path,
+    capsys: pytest.CaptureFixture,
+    state_db_path: Path,
 ) -> None:
     rc = cli_main(["rematch", "--playlist-id", "37i9dQZF1DXcBWIGoYBM5M"])
     assert rc == 0
@@ -58,12 +60,14 @@ def test_cli_rematch_with_no_pending(
 def test_cli_rematch_live_without_flag_refuses(
     capsys: pytest.CaptureFixture,
 ) -> None:
-    rc = cli_main([
-        "rematch",
-        "--playlist-id",
-        "37i9dQZF1DXcBWIGoYBM5M",
-        "--live",
-    ])
+    rc = cli_main(
+        [
+            "rematch",
+            "--playlist-id",
+            "37i9dQZF1DXcBWIGoYBM5M",
+            "--live",
+        ]
+    )
     assert rc == 3
     assert "i-understand-the-risks" in capsys.readouterr().err
 
@@ -76,13 +80,15 @@ def test_cli_rematch_live_typed_confirm_mismatch_refuses(
 ) -> None:
     """Typing the wrong playlist id at the confirm prompt must abort the live write."""
     monkeypatch.setattr("sys.stdin", io.StringIO("wrong-id\n"))
-    rc = cli_main([
-        "rematch",
-        "--playlist-id",
-        "37i9dQZF1DXcBWIGoYBM5M",
-        "--live",
-        "--i-understand-the-risks",
-    ])
+    rc = cli_main(
+        [
+            "rematch",
+            "--playlist-id",
+            "37i9dQZF1DXcBWIGoYBM5M",
+            "--live",
+            "--i-understand-the-risks",
+        ]
+    )
     assert rc == 3
     err = capsys.readouterr().err
     assert "typed confirmation mismatch" in err
@@ -96,13 +102,15 @@ def test_cli_rematch_live_eof_at_prompt_refuses(
 ) -> None:
     """EOF at the typed-confirm prompt must abort rather than proceed."""
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    rc = cli_main([
-        "rematch",
-        "--playlist-id",
-        "37i9dQZF1DXcBWIGoYBM5M",
-        "--live",
-        "--i-understand-the-risks",
-    ])
+    rc = cli_main(
+        [
+            "rematch",
+            "--playlist-id",
+            "37i9dQZF1DXcBWIGoYBM5M",
+            "--live",
+            "--i-understand-the-risks",
+        ]
+    )
     assert rc == 3
     assert "aborted" in capsys.readouterr().err
 
@@ -121,9 +129,7 @@ def test_cli_import_default_max_tracks_is_safe() -> None:
     args = parser.parse_args(["import", "37i9dQZF1DXcBWIGoYBM5M"])
 
     # Must not default to "unlimited" (None) or 0.
-    assert args.max_tracks is not None, (
-        "default --max-tracks must not be None (unlimited); got None"
-    )
+    assert args.max_tracks is not None, "default --max-tracks must not be None (unlimited); got None"
     assert isinstance(args.max_tracks, int) and args.max_tracks > 0, (
         f"default --max-tracks must be a positive int; got {args.max_tracks!r}"
     )
@@ -135,13 +141,8 @@ def test_cli_import_default_max_tracks_is_safe() -> None:
     )
 
     # Explicit opt-outs remain available.
-    assert parser.parse_args(
-        ["import", "id", "--unlimited"]
-    ).unlimited is True
-    assert parser.parse_args(
-        ["import", "id", "--max-tracks", "0"]
-    ).max_tracks == 0
-
+    assert parser.parse_args(["import", "id", "--unlimited"]).unlimited is True
+    assert parser.parse_args(["import", "id", "--max-tracks", "0"]).max_tracks == 0
 
 
 @pytest.mark.requirement("SPOT-6555")

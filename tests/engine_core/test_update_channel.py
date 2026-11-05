@@ -121,6 +121,8 @@ def _manifest(version: str, *, notes: str = "", key: str = KEY) -> dict[str, obj
 
 
 ELECTRON_ENDPOINT: str = f"{UPDATE_FEED_URL}/latest-mac.yml"
+#: The Tauri bridge feed one release also writes; the Tauri-format cases name it explicitly.
+TAURI_ENDPOINT: str = f"{UPDATE_FEED_URL}/latest.json"
 
 
 def _electron_feed(version: str, *, notes: str = "", zip_suffix: str = "-arm64-mac.zip") -> dict[str, object]:
@@ -150,29 +152,32 @@ def _json_ok(body: object):
 
 
 # ----- the endpoint cannot drift from the shell ---------------------------
+@pytest.mark.requirement("ELECTRON-8807")
 def test_endpoint_matches_the_shell_configuration() -> None:
+    """[if] the Tauri updater endpoint is not the latest.json in this check's feed directory [then] fail, [else stop]."""
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     endpoints = conf["plugins"]["updater"]["endpoints"]
-    assert endpoints[0] == UPDATE_ENDPOINT, (
-        "the engine check and the Tauri updater must read ONE channel; "
-        f"conf={endpoints[0]!r} module={UPDATE_ENDPOINT!r}"
+    assert endpoints[0] == TAURI_ENDPOINT, (
+        "the Tauri updater must read the latest.json in the directory this check reads; "
+        f"conf={endpoints[0]!r} module dir={UPDATE_FEED_URL!r}"
     )
 
 
+@pytest.mark.requirement("ELECTRON-8807")
 def test_the_feed_directory_matches_the_electron_shell() -> None:
-    """The Electron updater installs from the directory this check reads; they cannot drift."""
+    """[if] the shell and this check read different directories, or the check reads anything but latest-mac.yml [then] fail, [else stop]."""
     updater_ts = (REPO_ROOT / "apps/desktop/electron/src/updater.ts").read_text(encoding="utf-8")
     match = re.search(r"export const UPDATE_FEED_URL = '([^']+)';", updater_ts)
     assert match is not None, "updater.ts no longer declares UPDATE_FEED_URL"
     assert match.group(1) == UPDATE_FEED_URL, (
         f"updater.ts={match.group(1)!r} module={UPDATE_FEED_URL!r}"
     )
-    assert f"{UPDATE_FEED_URL}/latest.json" == UPDATE_ENDPOINT
+    assert f"{UPDATE_FEED_URL}/latest-mac.yml" == UPDATE_ENDPOINT
 
 
 def test_the_feed_override_moves_the_whole_directory() -> None:
     assert update_endpoint({}) == UPDATE_ENDPOINT
-    assert update_endpoint({FEED_URL_ENV: "https://proof-feed.invalid/feed/"}) == "https://proof-feed.invalid/feed/latest.json"
+    assert update_endpoint({FEED_URL_ENV: "https://proof-feed.invalid/feed/"}) == "https://proof-feed.invalid/feed/latest-mac.yml"
     assert update_endpoint({FEED_URL_ENV: "  "}) == UPDATE_ENDPOINT
 
 
@@ -182,13 +187,13 @@ def test_the_check_reads_the_override_feed(monkeypatch) -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        return httpx.Response(200, json=_manifest("9.9.9"))
+        return httpx.Response(200, text=yaml.safe_dump(_electron_feed("9.9.9")))
 
     with _client(handler) as client:
         result = resolve_update_check(_identity(), client=client, key=KEY)
-    assert seen == ["https://proof-feed.invalid/feed/latest.json"]
+    assert seen == ["https://proof-feed.invalid/feed/latest-mac.yml"]
     assert result.status == "update-available" and result.available_version == "9.9.9"
-    assert result.endpoint == "https://proof-feed.invalid/feed/latest.json"
+    assert result.endpoint == "https://proof-feed.invalid/feed/latest-mac.yml"
 
 
 def test_a_malformed_override_is_a_named_fault(monkeypatch) -> None:
@@ -251,11 +256,15 @@ def test_an_electron_feed_without_files_or_as_non_yaml_is_malformed() -> None:
     assert result.status == "manifest-malformed" and "not YAML" in (result.detail or "")
 
 
+@pytest.mark.requirement("ELECTRON-8807")
 def test_endpoint_uses_the_public_release_host() -> None:
-    """An unauthenticated updater cannot read assets from the private repo."""
+    """[if] the default endpoint leaves the public host's latest-mac.yml [then] fail, [else stop].
+
+    An unauthenticated updater cannot read assets from the private repo.
+    """
     assert UPDATE_ENDPOINT == (
         "https://github.com/alex-foster-personal/issue-assets"
-        "/releases/latest/download/latest.json"
+        "/releases/latest/download/latest-mac.yml"
     )
 
 
@@ -323,7 +332,7 @@ def test_the_checkout_identity_orders_a_future_release_as_newer() -> None:
 def test_the_same_release_is_up_to_date() -> None:
     notes = f"built from {RUNNING_SHA_FULL}"
     with _client(_json_ok(_manifest(RUNNING_VERSION, notes=notes))) as client:
-        result = resolve_update_check(_identity(), client=client, key=KEY)
+        result = resolve_update_check(_identity(), client=client, endpoint=TAURI_ENDPOINT, key=KEY)
     assert result.status == "up-to-date"
     assert result.same_version_different_build is False
 
@@ -333,7 +342,7 @@ def test_the_same_version_from_a_different_build_is_surfaced() -> None:
     with _client(
         _json_ok(_manifest(RUNNING_VERSION, notes="built from cafe1234"))
     ) as client:
-        result = resolve_update_check(_identity(), client=client, key=KEY)
+        result = resolve_update_check(_identity(), client=client, endpoint=TAURI_ENDPOINT, key=KEY)
     assert result.status == "up-to-date"
     assert result.same_version_different_build is True
 
@@ -366,7 +375,7 @@ def test_a_non_json_body_is_malformed() -> None:
 def test_a_manifest_without_this_platform_is_unsupported() -> None:
     body = _manifest("0.2.0", key="windows-x86_64")
     with _client(_json_ok(body)) as client:
-        result = resolve_update_check(_identity(), client=client, key=KEY)
+        result = resolve_update_check(_identity(), client=client, endpoint=TAURI_ENDPOINT, key=KEY)
     assert result.status == "platform-unsupported"
     assert "windows-x86_64" in (result.detail or "")
 
@@ -375,7 +384,7 @@ def test_a_platform_entry_without_a_signature_is_refused() -> None:
     body = _manifest("0.2.0")
     body["platforms"][KEY].pop("signature")  # type: ignore[index]
     with _client(_json_ok(body)) as client:
-        result = resolve_update_check(_identity(), client=client, key=KEY)
+        result = resolve_update_check(_identity(), client=client, endpoint=TAURI_ENDPOINT, key=KEY)
     assert result.status == "manifest-malformed"
     assert "signature" in (result.detail or "")
 
@@ -419,7 +428,7 @@ def _route_response(monkeypatch, handler, *, identity: BuildIdentity | None = No
 
 
 def test_the_route_answers_200_when_the_channel_answered(monkeypatch) -> None:
-    response = _route_response(monkeypatch, _json_ok(_manifest(RUNNING_VERSION)))
+    response = _route_response(monkeypatch, _feed_ok(_electron_feed(RUNNING_VERSION)))
     assert response.status_code == 200
     assert response.json()["status"] == "up-to-date"
 

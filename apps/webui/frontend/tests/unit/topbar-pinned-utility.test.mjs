@@ -21,12 +21,18 @@ test('settings button is pinned, not in the evictable utility tier', () => {
 });
 
 test('theme toggle is pinned, not in the evictable utility tier', () => {
-	const m = /<button[^>]*class="(tb-icon theme-toggle[^"]*)"[^>]*onclick=\{toggleTheme\}/s.exec(src) ?? /<button\s+type="button"\s+class="(tb-icon theme-toggle[^"]*)"/s.exec(src);
+	const m =
+		/<button[^>]*class="(tb-icon theme-toggle[^"]*)"[^>]*onclick=\{toggleTheme\}/s.exec(src) ??
+		/<button\s+type="button"\s+class="(tb-icon theme-toggle[^"]*)"/s.exec(src);
 	assert.ok(m, 'control: the theme toggle button is found');
 	assert.match(m[1], /topbar-slot-pinned/);
 });
 
 test('no responsive rule hides the pinned slot', () => {
 	assert.doesNotMatch(style, /\.topbar-slot-pinned[^{]*\{[^}]*display:\s*none/);
-	assert.match(style, /\.rb-topbar \.topbar-slot-utility,/, 'control: the info icon stays evictable');
+	assert.match(
+		style,
+		/\.rb-topbar \.topbar-slot-utility,/,
+		'control: the info icon stays evictable'
+	);
 });

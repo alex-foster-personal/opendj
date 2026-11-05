@@ -23,9 +23,7 @@ _MD_AUTOLINK_RE = re.compile(r"<([^>]+)>")
 _GITHUB_REPO_RE = re.compile(r"https://github\.com/([^/\s)]+)/([^/\s)]+)")
 _VERSION_TOKEN_RE = re.compile(r"\bv\d+(?:\.\d+)*\b", re.IGNORECASE)
 _CORPUS_DIR_RE = re.compile(r"conformance/corpus-[^\s/`)\]]+")
-_CORPUS_CITE_RE = re.compile(
-    r"(?:conformance/corpus-[^\s/`)\]]+|tests/fixtures/conformance/?)"
-)
+_CORPUS_CITE_RE = re.compile(r"(?:conformance/corpus-[^\s/`)\]]+|tests/fixtures/conformance/?)")
 _NAMING_AUTHORITY_RE = re.compile(r"naming authority|not a fetchable location", re.IGNORECASE)
 _SERATO_FUTURE_RE = re.compile(r"adds Serato", re.IGNORECASE)
 
@@ -52,9 +50,7 @@ _SKIP_DIR_NAMES = frozenset(
 )
 
 
-def _surface_file_matches(
-    path: Path, *, suffix: str | None, name_match: str | None
-) -> bool:
+def _surface_file_matches(path: Path, *, suffix: str | None, name_match: str | None) -> bool:
     if suffix is not None and path.suffix != suffix:
         return False
     if name_match is not None and not fnmatch.fnmatch(path.name, name_match):
@@ -121,10 +117,7 @@ def _iter_surface_files(
     if listed is None:
         listed = _walk_surface_files(surface_root)
     matched = [
-        path
-        for path in listed
-        if path.is_file()
-        and _surface_file_matches(path, suffix=suffix, name_match=name_match)
+        path for path in listed if path.is_file() and _surface_file_matches(path, suffix=suffix, name_match=name_match)
     ]
     return sorted(matched)
 
@@ -156,9 +149,7 @@ def _should_skip_href(href: str) -> bool:
     return lowered.startswith(("http://", "https://", "mailto:"))
 
 
-def _collect_relative_links(
-    surface_root: Path, repo_root: Path
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _collect_relative_links(surface_root: Path, repo_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     escapes: list[dict[str, Any]] = []
     dangling: list[dict[str, Any]] = []
     md_files = _iter_markdown_files(surface_root, repo_root)
@@ -207,6 +198,7 @@ def _surface_markdown_text(surface_root: Path, repo_root: Path) -> str:
 
 
 # ----- probes ------------------------------------------------------------------
+
 
 def xref_integrity(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
     if not surface_root.is_dir():
@@ -338,9 +330,7 @@ def version_drift(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
                         "detail": f"README advertises {readme_version} not reflected in CHANGELOG",
                     }
                 )
-    schema_files = _iter_surface_files(
-        surface_root, repo_root, name_match="open-dj.schema.json"
-    )
+    schema_files = _iter_surface_files(surface_root, repo_root, name_match="open-dj.schema.json")
     if readme_version and schema_files:
         for schema_path in schema_files:
             schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
@@ -374,9 +364,7 @@ _SEED_UNRESOLVED_ID_HOSTS = frozenset({"open-dj.org"})
 def schema_id_policy(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
     if not surface_root.is_dir():
         return []
-    disclaimer_present = bool(
-        _NAMING_AUTHORITY_RE.search(_surface_markdown_text(surface_root, repo_root))
-    )
+    disclaimer_present = bool(_NAMING_AUTHORITY_RE.search(_surface_markdown_text(surface_root, repo_root)))
     findings: list[dict[str, Any]] = []
     for json_path in _iter_surface_files(surface_root, repo_root, suffix=".json"):
         try:
@@ -425,9 +413,7 @@ def source_of_truth_unique(surface_root: Path, repo_root: Path) -> list[dict[str
     for corpus_dir in surface_root.glob("conformance/corpus-*"):
         if corpus_dir.is_dir():
             roots.add(_normalize_corpus_root(_repo_relative(corpus_dir, repo_root)))
-    for case_file in _iter_surface_files(
-        surface_root, repo_root, name_match="case-*.open-dj.json"
-    ):
+    for case_file in _iter_surface_files(surface_root, repo_root, name_match="case-*.open-dj.json"):
         roots.add(_normalize_corpus_root(_repo_relative(case_file.parent, repo_root)))
     for md_path in _iter_markdown_files(surface_root, repo_root):
         text = md_path.read_text(encoding="utf-8", errors="replace")
@@ -476,9 +462,7 @@ def format_doc_beside_parser(surface_root: Path, repo_root: Path) -> list[dict[s
     if not surface_root.is_dir():
         return []
     findings: list[dict[str, Any]] = []
-    vendor_dirs = sorted(
-        p for p in surface_root.iterdir() if p.is_dir() and not p.name.startswith("_")
-    )
+    vendor_dirs = sorted(p for p in surface_root.iterdir() if p.is_dir() and not p.name.startswith("_"))
     if not vendor_dirs:
         return [
             {

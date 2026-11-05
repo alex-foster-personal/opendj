@@ -119,15 +119,25 @@ test('a rejected MIX click does not flip the remembered direction', () => {
 	assert.deepEqual(request, { value: 1, direction: -1 });
 	// The command is rejected, so MIX is still 2/3 at the next click.
 	const direction = committedMixDirection(1, request, 2 * third);
-	assert.equal(direction, 1,
-		'if a rejected click still reverses the direction then the next accepted click jumps to 1/3 instead of 1 - broken');
+	assert.equal(
+		direction,
+		1,
+		'if a rejected click still reverses the direction then the next accepted click jumps to 1/3 instead of 1 - broken'
+	);
 	assert.equal(stepHeadphoneMix(2 * third, direction).value, 1);
 });
 
 test('an accepted MIX click commits its direction', () => {
 	const third = HEADPHONE_MIX_STEP;
 	const request = stepHeadphoneMix(2 * third, 1);
-	assert.equal(committedMixDirection(1, request, 1), -1,
-		'if an accepted step at the top does not reverse then MIX sticks at 1 - broken');
-	assert.equal(committedMixDirection(-1, null, third), -1, 'no pending request keeps the committed direction');
+	assert.equal(
+		committedMixDirection(1, request, 1),
+		-1,
+		'if an accepted step at the top does not reverse then MIX sticks at 1 - broken'
+	);
+	assert.equal(
+		committedMixDirection(-1, null, third),
+		-1,
+		'no pending request keeps the committed direction'
+	);
 });

@@ -5,9 +5,7 @@
 import type { AutoPlayDeckSnap } from '$lib/rb/auto-play';
 
 export type AutoPlaySilenceRecoveryPlan =
-	| { action: 'idle-ok' }
-	| { action: 'recover' }
-	| { action: 'disarm-ok' };
+	{ action: 'idle-ok' } | { action: 'recover' } | { action: 'disarm-ok' };
 
 let _recoveringFromSilence = false;
 

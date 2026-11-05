@@ -40,7 +40,11 @@ test('af7cc3d4d321 pairing snapshot stays frozen after live deck and EQ changes'
 			deck.title = `Track ${deckId}`;
 			deck.position_ms = deckId * 1000;
 			deck.anlz = null;
-			Object.assign(pairing.mixerState.channels[deckId], { eq_low: 0.2, eq_mid: 0.5, eq_high: 0.8 });
+			Object.assign(pairing.mixerState.channels[deckId], {
+				eq_low: 0.2,
+				eq_mid: 0.5,
+				eq_high: 0.8
+			});
 		}
 		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		const frozenPosition = pairing.queryPerformanceState().pairing_snapshot.decks[0].position_ms;

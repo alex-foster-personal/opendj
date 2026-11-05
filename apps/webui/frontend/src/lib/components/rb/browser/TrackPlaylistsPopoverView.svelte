@@ -71,7 +71,9 @@
 		<button type="button" role="menuitem" disabled>Not in any playlist</button>
 	{:else}
 		{#each hits as hit (hit.playlist_id)}
-			<button type="button" role="menuitem" onclick={() => onselect(hit.playlist_id)}>{hit.name}</button>
+			<button type="button" role="menuitem" onclick={() => onselect(hit.playlist_id)}
+				>{hit.name}</button
+			>
 		{/each}
 	{/if}
 </div>

@@ -69,7 +69,9 @@ def _refuse_symlink(root: Path, rel: str) -> None:
     for part in Path(rel).parts:
         path = path / part
         if path.is_symlink():
-            raise SystemExit(f"{rel}: {path.relative_to(root).as_posix()} is a symlink; plugins ship regular files only")
+            raise SystemExit(
+                f"{rel}: {path.relative_to(root).as_posix()} is a symlink; plugins ship regular files only"
+            )
 
 
 def _payload_files(root: Path) -> list[str]:
@@ -233,21 +235,38 @@ def _listing(listings: Path, plugin_id: str, out_dir: Path) -> dict:
         path = f"media/{plugin_id}/{digest}.{ext}"
         (out_dir / path).parent.mkdir(parents=True, exist_ok=True)
         (out_dir / path).write_bytes(data)
-        shots.append({"path": path, "sha256": digest, "size": len(data), "width": width,
-                      "height": height, "alt": shot["alt"], "theme": shot["theme"]})
+        shots.append(
+            {
+                "path": path,
+                "sha256": digest,
+                "size": len(data),
+                "width": width,
+                "height": height,
+                "alt": shot["alt"],
+                "theme": shot["theme"],
+            }
+        )
     return {**raw, "screenshots": shots}
 
 
 def cmd_index(
-    channel: str, archives: list[Path], key: Path, key_id: str, base_url: str,
-    out_dir: Path, blocklist: Path | None, listings: Path,
+    channel: str,
+    archives: list[Path],
+    key: Path,
+    key_id: str,
+    base_url: str,
+    out_dir: Path,
+    blocklist: Path | None,
+    listings: Path,
 ) -> int:
     checked = []
     for archive in archives:  # all of them before anything is written or signed, one held at a time
         size = archive.stat().st_size
         if size > MAX_ARCHIVE_BYTES:  # never read whole: clients stop downloading at the cap
-            raise SystemExit(f"{archive}: every client would refuse it (too-large): it is {size} bytes; "
-                             f"clients download at most {MAX_ARCHIVE_BYTES}")
+            raise SystemExit(
+                f"{archive}: every client would refuse it (too-large): it is {size} bytes; "
+                f"clients download at most {MAX_ARCHIVE_BYTES}"
+            )
         data = archive.read_bytes()
         try:
             checked.append((archive, check_archive(data), hashlib.sha256(data).hexdigest(), len(data)))
@@ -256,13 +275,15 @@ def cmd_index(
         del data
     rows = []
     for archive, manifest, digest, size in checked:
-        rows.append({
-            "manifest": manifest.to_wire(),
-            "archive_url": f"{base_url.rstrip('/')}/{archive.name}",
-            "archive_sha256": digest,
-            "archive_size": size,
-            "listing": _listing(listings, manifest.plugin_id, out_dir),
-        })
+        rows.append(
+            {
+                "manifest": manifest.to_wire(),
+                "archive_url": f"{base_url.rstrip('/')}/{archive.name}",
+                "archive_sha256": digest,
+                "archive_size": size,
+                "listing": _listing(listings, manifest.plugin_id, out_dir),
+            }
+        )
     body = {
         "schema": INDEX_SCHEMA,
         "channel": channel,
@@ -312,8 +333,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hash(args.plugin_dir)
     if args.cmd == "pack":
         return cmd_pack(args.plugin_dir, args.out)
-    return cmd_index(args.channel, args.archives, args.key, args.key_id, args.base_url,
-                     args.out, args.blocklist, args.listings)
+    return cmd_index(
+        args.channel, args.archives, args.key, args.key_id, args.base_url, args.out, args.blocklist, args.listings
+    )
 
 
 if __name__ == "__main__":

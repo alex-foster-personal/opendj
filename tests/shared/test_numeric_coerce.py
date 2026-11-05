@@ -1,4 +1,5 @@
 """Regression tests for apps.shared.numeric_coerce.coerce_optional."""
+
 from __future__ import annotations
 
 import math

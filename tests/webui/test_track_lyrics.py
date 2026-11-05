@@ -101,9 +101,7 @@ def test_read_lyrics_fails_when_the_app_has_no_configured_state_path(
 
 
 def test_openapi_declares_the_agent_native_lyrics_read_route() -> None:
-    operation = create_app(mount_frontend=False).openapi()["paths"][
-        "/api/v1/tracks/{stable_id}/lyrics"
-    ]["get"]
+    operation = create_app(mount_frontend=False).openapi()["paths"]["/api/v1/tracks/{stable_id}/lyrics"]["get"]
 
     assert operation["responses"]["404"]["content"]["application/json"]["schema"]["$ref"] == (
         "#/components/schemas/LyricsUnavailableOut"

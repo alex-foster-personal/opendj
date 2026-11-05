@@ -14,11 +14,13 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from apps.analysis_key import key_guess
 from apps.cloud import stem_index
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.shared import audio_quality
 from apps.shared.events import publish
+from apps.shared.mik_tags import MikTagValues
 from apps.shared.non_music import is_non_music
 from apps.shared.paths import STATE_DB
 from apps.shared.state import db as state_db
@@ -32,10 +34,9 @@ from apps.shared.state.writer_tracks import (
 )
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
-from .. import boot_grace, rb_vendor
+from .. import boot_grace, mik_tag_cache, rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state, get_write_state
-from ..shell_output_health import data_dir_from_state_db
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
@@ -51,8 +52,9 @@ from ..models import (
     TrackPlaylistOut,
     TracksPage,
 )
-from ..rb_vendor_pkg.track_rows import _artwork_facts
+from ..rb_vendor_pkg.track_rows import KEY_WIRE_FIELDS, _artwork_facts, key_chain_for_track
 from ..reveal_path import RevealPathError, reveal_track_path
+from ..shell_output_health import data_dir_from_state_db
 from ..track_loudness import track_loudness
 from .ingest_job import valid_lyrics_ids
 
@@ -342,6 +344,10 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "energy_reason": row["energy_reason"],
         "key_status": row["key_status"],
         "key_reason": row["key_reason"],
+        "source_flags": row["source_flags"],
+        "key_guess": row["key_guess"],
+        "key_guess_confidence": row["key_guess_confidence"],
+        "key_source": row["key_source"],
         "bpm_status": row["bpm_status"],
         "bpm_reason": row["bpm_reason"],
         # The four bpm provenance keys are the only optional builder keys:
@@ -353,12 +359,17 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "bpm_method": row.get("bpm_method"),
         "bpm_confidence": row.get("bpm_confidence"),
         "bpm_confidence_error": row.get("bpm_confidence_error"),
+        # GRID-OCTAVE-02: only rows whose tempo disagrees with Mixed In Key carry these.
+        "bpm_disputed": row.get("bpm_disputed", False),
+        "bpm_alternatives": row.get("bpm_alternatives", []),
+        "bpm_pick": row.get("bpm_pick"),
         "loudness_status": row["loudness_status"],
         "loudness_reason": row["loudness_reason"],
         # AGENT-31: the loudness block is served by the single-track read only.
         "loudness": None,
         "lyrics": row["lyrics"],
         "grid_quality": row["grid_quality"],
+        "analysis_hints": row["analysis_hints"],
         "is_remix": bool(row["is_remix"]),
         "is_radio_edit": bool(row["is_radio_edit"]),
         "genre": row["genre"],
@@ -786,36 +797,38 @@ def _run_track_lifecycle(
         )
     conn = state_db.open_rw(db_path)
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        with StateWriter(conn, actor="webui") as writer:
-            if action == "remove":
-                result = writer.remove_from_library(stable_id)
-            elif action == "undelete":
-                result = writer.undelete_track(stable_id)
-            else:
-                raise AssertionError(f"unknown track lifecycle action: {action}")
-        conn.commit()
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                if action == "remove":
+                    result = writer.remove_from_library(stable_id)
+                elif action == "undelete":
+                    result = writer.undelete_track(stable_id)
+                else:
+                    raise AssertionError(f"unknown track lifecycle action: {action}")
         return result
     except TrackNotFoundError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise HTTPException(
             status_code=404,
             detail={"error": "not_found", "message": str(exc)},
         ) from exc
     except TrackAlreadyRemovedError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise HTTPException(
             status_code=409,
             detail={"error": "already_removed", "message": str(exc)},
         ) from exc
     except TrackNotRemovedError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise HTTPException(
             status_code=409,
             detail={"error": "not_removed", "message": str(exc)},
         ) from exc
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise
     finally:
         conn.close()
@@ -893,7 +906,29 @@ def get_track(
         artwork_available=artwork_available,
     )
     out.loudness = loudness_block(state_db_path, stable_id)
+    # KEY-FALLBACK-01: Mixed In Key's tag stands in for a missing key or BPM.
+    mik = mik_tag_cache.mik_values(state_db_path, {stable_id: track.file_path}, read_missing=True).get(stable_id)
+    resolved = deck_key_fields(track, has_rb_mapping=has_rb_mapping, state_db_path=state_db_path, mik=mik)
+    for name, value in resolved.items():
+        setattr(out, name, value)
+    if out.bpm is None and mik is not None and mik.bpm is not None:
+        out.bpm = mik.bpm
     return out
+
+
+def deck_key_fields(
+    track: Track, *, has_rb_mapping: bool, state_db_path: Path, mik: MikTagValues | None
+) -> dict[str, Any]:
+    """DECK-KEY-01: the key the deck loads, resolved exactly as the library row resolves it.
+
+    One resolver (``key_chain_for_track``) for both, so a Mixed In Key or guessed
+    key the row shows can never load onto the deck as blank or with another source.
+    """
+    guess = key_guess.load_key_guesses(
+        state_db_path, [track.stable_id], backend=key_guess.KEY_BACKEND, version=key_guess.KEY_VERSION
+    ).get(track.stable_id)
+    chain = key_chain_for_track(track, has_rb_mapping=has_rb_mapping, mik=mik, guess=guess)
+    return {name: chain[name] for name in KEY_WIRE_FIELDS}
 
 
 def loudness_block(state_db_path: Path, stable_id: str) -> TrackLoudnessOut:

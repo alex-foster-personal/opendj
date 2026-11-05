@@ -36,9 +36,5 @@ def pool_label_json(name: str) -> str:
 def seats(pool: str) -> list[str]:
     names: list[str] = []
     for host in document()["hosts"]:
-        names.extend(
-            runner["name"]
-            for runner in host["runners"]
-            if pool in runner.get("pools", [])
-        )
+        names.extend(runner["name"] for runner in host["runners"] if pool in runner.get("pools", []))
     return names

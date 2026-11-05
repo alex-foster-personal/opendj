@@ -10,6 +10,7 @@ Regression one-liners:
   - if a leading ID3v2 tag, or two, hides the first frame then broken
   - if a non-MP3 or a missing rekordbox file reads a lead-in then broken
 """
+
 from __future__ import annotations
 
 import shutil

@@ -184,9 +184,7 @@ def test_still_running_job_with_null_conclusion_is_incomplete_not_ok() -> None:
         ("stale", LABEL_STALE),
     ],
 )
-def test_other_github_conclusions_are_named_and_excluded_from_ok(
-    conclusion: str, expected_label: str
-) -> None:
+def test_other_github_conclusions_are_named_and_excluded_from_ok(conclusion: str, expected_label: str) -> None:
     """every other GitHub-defined conclusion is named by itself, never OK."""
     job: dict[str, object] = {"name": "gate", "conclusion": conclusion, "steps": []}
 
@@ -346,7 +344,4 @@ def test_main_tallies_every_new_branch_correctly(
     assert exit_code == EXIT_OK
     # real_failures = REAL-FAILURE (job 3) + TIMED-OUT (job 4); excluded = CANCELLED
     # (job 6) + ACTION-REQUIRED (job 7) -- neither is folded into ok or skipped.
-    assert (
-        "CI_ZERO_STEP_TRIAGE pr=42 head=cafefeed runs=1 no_runner=1 real_failures=2 "
-        "ok=1 skipped=1 excluded=2" in out
-    )
+    assert "CI_ZERO_STEP_TRIAGE pr=42 head=cafefeed runs=1 no_runner=1 real_failures=2 ok=1 skipped=1 excluded=2" in out

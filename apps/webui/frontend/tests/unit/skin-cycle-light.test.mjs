@@ -1,5 +1,5 @@
 // requirement: CHROME-12, CHROME-13
-// [if] the top-bar skin button is clicked [then] it walks default -> Gothic -> Light and wraps, persists through ui_skin, and its tooltip names current and next, [else stop].
+// [if] the top-bar skin button is clicked [then] it walks default -> Gothic -> Light -> Green Room and wraps, persists through ui_skin, and its tooltip names current and next, [else stop].
 // [if] the light skin is declared [then] it defines every token mono-dev and the base palette define and its text pairs meet AA, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -38,25 +38,27 @@ function installBrowser(store = new Map()) {
 	return store;
 }
 
-test('if the skin cycle order is not default, Gothic, Light and wrapping then the button skips or strands a skin', () => {
-	assert.deepEqual([...skin.UI_SKIN_CHOICES], ['default', 'mono-dev', 'light']);
+test('if the skin cycle order is not default, Gothic, Light, Green Room, Practice deck and wrapping then the button skips or strands a skin', () => {
+	assert.deepEqual([...skin.UI_SKIN_CHOICES], ['default', 'mono-dev', 'light', 'green-room', 'practice-ddj-flx4']);
 	assert.equal(skin.nextUiSkin('default'), 'mono-dev');
 	assert.equal(skin.nextUiSkin('mono-dev'), 'light');
-	assert.equal(skin.nextUiSkin('light'), 'default');
+	assert.equal(skin.nextUiSkin('light'), 'green-room');
+	assert.equal(skin.nextUiSkin('green-room'), 'practice-ddj-flx4');
+	assert.equal(skin.nextUiSkin('practice-ddj-flx4'), 'default');
 	let s = 'default';
 	const seen = [];
-	for (let i = 0; i < 6; i += 1) {
+	for (let i = 0; i < 10; i += 1) {
 		s = skin.nextUiSkin(s);
 		seen.push(s);
 	}
-	assert.deepEqual(seen, ['mono-dev', 'light', 'default', 'mono-dev', 'light', 'default']);
-	assert.throws(() => skin.nextUiSkin('neon'), /ui_skin must be default\|mono-dev\|light/);
+	assert.deepEqual(seen, ['mono-dev', 'light', 'green-room', 'practice-ddj-flx4', 'default', 'mono-dev', 'light', 'green-room', 'practice-ddj-flx4', 'default']);
+	assert.throws(() => skin.nextUiSkin('neon'), /ui_skin must be default\|mono-dev\|light\|green-room\|practice-ddj-flx4/);
 });
 
 test('if the tooltip does not name the current skin and the next one then the button reads as a mystery toggle', () => {
 	assert.equal(skin.skinCycleTitle('default'), 'Skin: Default. Click for Gothic');
 	assert.equal(skin.skinCycleTitle('mono-dev'), 'Skin: Gothic. Click for Light');
-	assert.equal(skin.skinCycleTitle('light'), 'Skin: Light. Click for Default');
+	assert.equal(skin.skinCycleTitle('light'), 'Skin: Light. Click for Green Room');
 });
 
 test('if light is not a parseable skin then set_skin and the ui_skin setting cannot reach it (agent parity)', () => {
@@ -82,6 +84,11 @@ test('if cycleUiSkin does not persist ui_skin and apply data-skin then the choic
 	assert.equal(prefs.cycleUiSkin(), 'light');
 	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'light');
 	assert.equal(globalThis.document.documentElement.dataset.skin, 'light');
+	assert.equal(prefs.cycleUiSkin(), 'green-room');
+	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'green-room');
+	assert.equal(globalThis.document.documentElement.dataset.skin, 'green-room');
+	assert.equal(prefs.cycleUiSkin(), 'practice-ddj-flx4');
+	assert.equal(globalThis.document.documentElement.dataset.skin, 'practice-ddj-flx4');
 	assert.equal(prefs.cycleUiSkin(), 'default');
 	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'default');
 	assert.equal('skin' in globalThis.document.documentElement.dataset, false);
@@ -99,7 +106,7 @@ test('if a stored light skin is not restored on boot then persistence only works
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 	assert.equal(prefs.uiPrefs.ui_skin, 'light');
 	assert.equal(globalThis.document.documentElement.dataset.skin, 'light');
-	assert.equal(prefs.cycleUiSkin(), 'default');
+	assert.equal(prefs.cycleUiSkin(), 'green-room');
 });
 
 test('if the top-bar button still toggles the theme then it does not cycle skins', () => {

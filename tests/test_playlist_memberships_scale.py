@@ -1,4 +1,5 @@
 """500-membership fixture: O(1) add, tombstone remove, slice move, bulk cap."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -28,9 +29,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for sid in TRACK_IDS + EXTRA_IDS + ["t-extra"]:
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=sid, artists=["Artist"], album=None,
-                isrc=None, duration_ms=180_000, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=sid,
+                artists=["Artist"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -41,9 +47,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -100,10 +109,7 @@ def _store_conn(client: TestClient) -> sqlite3.Connection:
 
 def _install_write_counter(client: TestClient) -> None:
     conn = _store_conn(client)
-    conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS _membership_writes "
-        "(op TEXT, cnt INTEGER DEFAULT 0)"
-    )
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _membership_writes (op TEXT, cnt INTEGER DEFAULT 0)")
     conn.execute("DELETE FROM _membership_writes")
     conn.execute("DROP TRIGGER IF EXISTS _count_membership_inserts")
     conn.execute("DROP TRIGGER IF EXISTS _count_membership_updates")
@@ -127,9 +133,7 @@ def _install_write_counter(client: TestClient) -> None:
 
 def _write_counts(client: TestClient) -> dict[str, int]:
     conn = _store_conn(client)
-    rows = conn.execute(
-        "SELECT op, COUNT(*) FROM _membership_writes GROUP BY op"
-    ).fetchall()
+    rows = conn.execute("SELECT op, COUNT(*) FROM _membership_writes GROUP BY op").fetchall()
     return {op: cnt for op, cnt in rows}
 
 
@@ -306,18 +310,14 @@ def test_readd_after_remove(client: TestClient, db_path: Path) -> None:
     target = live[0]
     r_rm = client.delete(f"/api/v1/playlists/{pid}/items/{target[0]}")
     assert r_rm.status_code == 200, r_rm.text
-    tombstone = next(
-        row for row in _dump_all(db_path, pid) if row[0] == target[0]
-    )
+    tombstone = next(row for row in _dump_all(db_path, pid) if row[0] == target[0])
     assert tombstone[6] is not None
     r_add = client.post(
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-000"]},
     )
     assert r_add.status_code == 200, r_add.text
-    new_rows = [
-        row for row in _ordered_live(db_path, pid) if row[1] == "t-000"
-    ]
+    new_rows = [row for row in _ordered_live(db_path, pid) if row[1] == "t-000"]
     assert len(new_rows) == 1
     assert new_rows[0][0] != target[0]
     assert tombstone in _dump_all(db_path, pid)

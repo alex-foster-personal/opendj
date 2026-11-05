@@ -48,7 +48,9 @@ async function _findCueTrack(request: APIRequestContext): Promise<CueTrack | nul
 	let cursor: string | null = null;
 	do {
 		const cursorParam = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
-		const listing = await request.get(`${API_BASE}/api/v1/tracks?limit=1000&available=true${cursorParam}`);
+		const listing = await request.get(
+			`${API_BASE}/api/v1/tracks?limit=1000&available=true${cursorParam}`
+		);
 		expect(listing.ok(), 'real available-track listing must succeed').toBeTruthy();
 		const rows = (await listing.json()) as { items: TrackRow[]; next_cursor: string | null };
 		for (const row of rows.items) {
@@ -67,7 +69,6 @@ async function _findCueTrack(request: APIRequestContext): Promise<CueTrack | nul
 		cursor = rows.next_cursor;
 	} while (cursor !== null);
 	return null;
-
 }
 
 async function _redPixelCount(page: Page, expectedXRatio: number): Promise<number> {
@@ -79,9 +80,14 @@ async function _redPixelCount(page: Page, expectedXRatio: number): Promise<numbe
 		const expectedX = Math.round(canvas.width * ratio);
 		let count = 0;
 		for (let y = 0; y < Math.min(12, canvas.height); y += 1) {
-			for (let x = Math.max(0, expectedX - 8); x <= Math.min(canvas.width - 1, expectedX + 8); x += 1) {
+			for (
+				let x = Math.max(0, expectedX - 8);
+				x <= Math.min(canvas.width - 1, expectedX + 8);
+				x += 1
+			) {
 				const i = (y * canvas.width + x) * 4;
-				if (pixels[i] > 150 && pixels[i] > pixels[i + 1] * 2 && pixels[i] > pixels[i + 2] * 2) count += 1;
+				if (pixels[i] > 150 && pixels[i] > pixels[i + 1] * 2 && pixels[i] > pixels[i + 2] * 2)
+					count += 1;
 			}
 		}
 		return count;
@@ -97,9 +103,14 @@ function _expectedCueXRatio(cueMs: number, seekMs: number): number {
 	return 0.5 - (seekMs - cueMs) / 1000 / WAVE_WINDOW_S;
 }
 
-test('cue-laden track renders red waveform triangles and strip cue letters', async ({ page, request }, testInfo: TestInfo) => {
+test('cue-laden track renders red waveform triangles and strip cue letters', async ({
+	page,
+	request
+}, testInfo: TestInfo) => {
 	if (IS_GENERATED_FIXTURE) {
-		throw new Error('cue-marker-qa.real-library.spec.ts requires PERFORMANCE_E2E_FIXTURE=0 and a real library');
+		throw new Error(
+			'cue-marker-qa.real-library.spec.ts requires PERFORMANCE_E2E_FIXTURE=0 and a real library'
+		);
 	}
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
@@ -110,20 +121,35 @@ test('cue-laden track renders red waveform triangles and strip cue letters', asy
 	await _dispatch(page, { type: 'load', deck: 1, stable_id: track.stable_id });
 	const redCue = track.cues.find((cue) => cue.kind === 'memory');
 	if (redCue === undefined) throw new Error('cue track lost its discovered memory cue');
-	const letterCues = track.cues.filter((cue) => cue.slot !== null && !(cue.is_loop && cue.out_ms !== null));
-	await expect(page.locator('[data-testid="deck-cue-letter-1"]')).toHaveCount(
-		letterCues.length
+	const letterCues = track.cues.filter(
+		(cue) => cue.slot !== null && !(cue.is_loop && cue.out_ms !== null)
 	);
+	await expect(page.locator('[data-testid="deck-cue-letter-1"]')).toHaveCount(letterCues.length);
 	const seekMs = _seekOffsetMs(redCue.in_ms, track.duration_ms);
 	await _dispatch(page, { type: 'seek', deck: 1, position_ms: seekMs });
 	const expectedXRatio = _expectedCueXRatio(redCue.in_ms, seekMs);
 	await expect
-		.poll(() => _redPixelCount(page, expectedXRatio), { message: 'memory cue must paint red waveform pixels near its expected position' })
+		.poll(() => _redPixelCount(page, expectedXRatio), {
+			message: 'memory cue must paint red waveform pixels near its expected position'
+		})
 		.toBeGreaterThan(0);
 
 	await testInfo.attach('cue-marker-qa.json', {
-		body: JSON.stringify({ stable_id: track.stable_id, cues: track.cues, seek_ms: seekMs, expected_x_ratio: expectedXRatio, red_pixels: await _redPixelCount(page, expectedXRatio) }, null, 2),
+		body: JSON.stringify(
+			{
+				stable_id: track.stable_id,
+				cues: track.cues,
+				seek_ms: seekMs,
+				expected_x_ratio: expectedXRatio,
+				red_pixels: await _redPixelCount(page, expectedXRatio)
+			},
+			null,
+			2
+		),
 		contentType: 'application/json'
 	});
-	await testInfo.attach('cue-marker-qa.png', { body: await page.screenshot(), contentType: 'image/png' });
+	await testInfo.attach('cue-marker-qa.png', {
+		body: await page.screenshot(),
+		contentType: 'image/png'
+	});
 });

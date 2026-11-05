@@ -32,13 +32,11 @@ def test_webkit_watch_loop_serves_vite_production_build_after_each_save() -> Non
     recipe = _recipe("webui-webkit-watch")
 
     assert "pnpm build --watch" in recipe, (
-        "if the watch loop uses vite dev then untransformed packages can hide a shipped-build "
-        "failure - broken"
+        "if the watch loop uses vite dev then untransformed packages can hide a shipped-build failure - broken"
     )
     assert "MDT_FRONTEND_BUILD_DIR" in recipe
     assert "apps/webui/frontend/build" in recipe
     assert "just webui-backend" in recipe
     assert 'grep -q "built in"' in recipe, (
-        "if the engine starts before the watcher's initial production build then it can mount a "
-        "stale bundle - broken"
+        "if the engine starts before the watcher's initial production build then it can mount a stale bundle - broken"
     )

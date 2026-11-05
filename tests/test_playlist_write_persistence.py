@@ -5,6 +5,7 @@ Regression one-liners:
   * if duplicate does not persist membership order after reopen then broken
   * if delete does not survive reopen (row still readable) then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -34,9 +35,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -47,11 +53,7 @@ def db_path(tmp_path: Path) -> Path:
 def _event_kinds(db_path: Path) -> list[str]:
     conn = sqlite3.connect(str(db_path))
     try:
-        return [
-            row[0] for row in conn.execute(
-                "SELECT kind FROM events ORDER BY id"
-            )
-        ]
+        return [row[0] for row in conn.execute("SELECT kind FROM events ORDER BY id")]
     finally:
         conn.close()
 
@@ -66,7 +68,7 @@ def test_create_survives_store_reopen(db_path: Path) -> None:
         store.close()
 
     kinds_after = _event_kinds(db_path)
-    assert "playlist.insert" in kinds_after[len(kinds_before):]
+    assert "playlist.insert" in kinds_after[len(kinds_before) :]
 
     store2 = PlaylistStore(db_path)
     try:
@@ -83,7 +85,9 @@ def test_duplicate_survives_reopen_preserves_order(db_path: Path) -> None:
         source = store.create_playlist("Peak Hour")
         source_id = source.playlist_id
         store.replace_memberships(
-            source_id, ["t-002", "t-001"], expected_etag=source.etag,
+            source_id,
+            ["t-002", "t-001"],
+            expected_etag=source.etag,
         )
         copy = store.duplicate_playlist(source_id)
         copy_id = copy.playlist_id
@@ -126,9 +130,12 @@ def test_delete_survives_reopen(db_path: Path) -> None:
     assert "playlist.delete" in _event_kinds(db_path)
 
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as client:
         assert client.get(f"/api/v1/playlists/{playlist_id}").status_code == 404

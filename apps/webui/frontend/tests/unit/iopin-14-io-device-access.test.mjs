@@ -347,11 +347,12 @@ test('if enumeration rejects then the state is enumeration_failed with the cause
 test('if enumeration hangs then the state is timeout, distinct from a rejection', async (t) => {
 	t.mock.timers.enable({ apis: ['setTimeout'] });
 	installNavigator({ enumerateDevices: () => new Promise(() => {}) });
-	const pending = assert.rejects(() => headphones.refreshHeadphoneOutputs(), /timed out/);
+	const pending = headphones.refreshHeadphoneOutputs();
 	t.mock.timers.tick(60_000);
 	await pending;
 	assert.equal(hp().device_access.status, 'timeout');
 	assert.equal(hp().device_access.action, 'retry');
+	assert.match(hp().error ?? '', /timed out/);
 	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 });
 

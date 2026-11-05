@@ -3,6 +3,7 @@
 Skipped when mkdocs / mkdocs-material are not installed (local dev,
 test-only venvs). CI installs them via `requirements-docs.txt`.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -17,9 +18,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="module")
 def mkdocs_available():
     pytest.importorskip("mkdocs", reason="mkdocs not installed; skipping strict build")
-    pytest.importorskip(
-        "material", reason="mkdocs-material not installed; skipping strict build"
-    )
+    pytest.importorskip("material", reason="mkdocs-material not installed; skipping strict build")
     if shutil.which("mkdocs") is None:
         pytest.skip("mkdocs executable not on PATH")
     return True
@@ -40,9 +39,5 @@ def test_mkdocs_build_strict(mkdocs_available, tmp_path):
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, (
-        "mkdocs build --strict failed\n"
-        f"stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"mkdocs build --strict failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     assert (site_dir / "index.html").is_file(), "site/index.html not produced"

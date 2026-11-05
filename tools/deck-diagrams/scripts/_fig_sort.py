@@ -1,4 +1,5 @@
 """Shared sort keys for plate fig ids across deck-diagram scripts."""
+
 from __future__ import annotations
 
 

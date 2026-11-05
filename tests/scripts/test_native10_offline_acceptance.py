@@ -17,6 +17,7 @@ Regression lines:
   - if a key without bar-synchronous segments passes then beatgrid can be missing unnoticed
   - if a nonzero drain exit passes then a crashed drain counts as a result
 """
+
 from __future__ import annotations
 
 import json
@@ -37,8 +38,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 IDS = ["sid_a", "sid_b"]
 
 BEATGRID_OK = {"status": "ok", "payload": {"beats": [i * 0.5 for i in range(64)], "bpm": 120.0}}
-KEY_OK = {"status": "ok", "payload": {"camelot": "4A", "openkey": "9m", "segments": {
-    "status": "ok", "segments": [{"start_bar": 0, "end_bar": 16, "key_camelot": "4A"}]}}}
+KEY_OK = {
+    "status": "ok",
+    "payload": {
+        "camelot": "4A",
+        "openkey": "9m",
+        "segments": {"status": "ok", "segments": [{"start_bar": 0, "end_bar": 16, "key_camelot": "4A"}]},
+    },
+}
 KEY_NO_TONAL = {"status": "failed", "reason": "no_tonal_center: ambiguous_margin", "payload": {}}
 
 
@@ -48,14 +55,12 @@ def _db(tmp_path: Path, lane: str, blocks: dict[str, dict[str, Any]]) -> Path:
         conn.execute("CREATE TABLE analysis (stable_id TEXT, backend TEXT, record_json TEXT)")
         conn.executemany(
             "INSERT INTO analysis VALUES (?, ?, ?)",
-            [(sid, f"own_{lane}.backfill", json.dumps({"lanes": {lane: block}}))
-             for sid, block in blocks.items()],
+            [(sid, f"own_{lane}.backfill", json.dumps({"lanes": {lane: block}})) for sid, block in blocks.items()],
         )
     return db
 
 
-def _judge(tmp_path: Path, lane: str, blocks: dict[str, dict[str, Any]],
-           drain_exit: int = 0) -> LaneVerdict:
+def _judge(tmp_path: Path, lane: str, blocks: dict[str, dict[str, Any]], drain_exit: int = 0) -> LaneVerdict:
     verdict = LaneVerdict(lane=lane, tracks_total=len(IDS), drain_exit=drain_exit)
     return judge_lane(_db(tmp_path, lane, blocks), verdict, IDS)
 
@@ -92,15 +97,16 @@ def test_lane_without_outcomes_admits_none(tmp_path: Path) -> None:
 
 
 def test_key_without_segments_fails(tmp_path: Path) -> None:
-    unsegmented = {"status": "ok", "payload": {"camelot": "4A", "segments": {
-        "status": "missing", "reason": "no_own_downbeats", "segments": []}}}
+    unsegmented = {
+        "status": "ok",
+        "payload": {"camelot": "4A", "segments": {"status": "missing", "reason": "no_own_downbeats", "segments": []}},
+    }
     verdict = _judge(tmp_path, "key", {"sid_a": unsegmented, "sid_b": KEY_NO_TONAL})
     assert not verdict.passed
 
 
 def test_nonzero_drain_exit_fails(tmp_path: Path) -> None:
-    verdict = _judge(tmp_path, "beatgrid", {"sid_a": BEATGRID_OK, "sid_b": BEATGRID_OK},
-                     drain_exit=2)
+    verdict = _judge(tmp_path, "beatgrid", {"sid_a": BEATGRID_OK, "sid_b": BEATGRID_OK}, drain_exit=2)
     assert verdict.tracks_ok == 2
     assert not verdict.passed
 
@@ -114,9 +120,23 @@ def test_installed_payload_backfills_offline(tmp_path: Path) -> None:
     work = tmp_path / "work"
     work.mkdir()
     proc = subprocess.run(
-        [sys.executable, "-m", "scripts.native10_offline_acceptance",
-         "--payload", os.environ["NATIVE10_PAYLOAD"], "--library", os.environ["NATIVE10_LIBRARY"],
-         "--work", str(work), "--ffmpeg", os.environ["NATIVE10_FFMPEG"]],
-        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=7200, check=False,
+        [
+            sys.executable,
+            "-m",
+            "scripts.native10_offline_acceptance",
+            "--payload",
+            os.environ["NATIVE10_PAYLOAD"],
+            "--library",
+            os.environ["NATIVE10_LIBRARY"],
+            "--work",
+            str(work),
+            "--ffmpeg",
+            os.environ["NATIVE10_FFMPEG"],
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=7200,
+        check=False,
     )
     assert proc.returncode == 0, f"exit {proc.returncode}\n{proc.stderr[-4000:]}"

@@ -40,7 +40,8 @@ export type PlaylistTreeProps = {
 	 * that hasn't wired deck/pane context yet). */
 	deckLoadedPlaylistIds?: ReadonlySet<string>;
 	multiPanePlaylistIds?: ReadonlySet<string>;
-	onselect: (node: PlaylistNode) => void;
+	/** Cmd/Ctrl+click passes newTab: open the list in a new browser tab. */
+	onselect: (node: PlaylistNode, opts?: { newTab?: boolean }) => void;
 	/** Optional until the browser integrator wires smartlist selection
 	 * into BrowserPanel; absent = smartlist rows render inert. */
 	onselectsmartlist?: (smartlist: SmartlistSummary) => void;

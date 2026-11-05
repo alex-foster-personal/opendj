@@ -96,9 +96,7 @@ def test_a_failed_run_reaches_the_observer_with_its_failed_row(
     store.close()
 
 
-def test_a_succeeded_run_reaches_the_observer_as_succeeded(
-    tmp_path: Path, seen: list[dict[str, Any]]
-) -> None:
+def test_a_succeeded_run_reaches_the_observer_as_succeeded(tmp_path: Path, seen: list[dict[str, Any]]) -> None:
     store = _store(tmp_path)
     final = _run(store, "exit0")
     assert final["status"] == "succeeded", final
@@ -106,9 +104,7 @@ def test_a_succeeded_run_reaches_the_observer_as_succeeded(
     store.close()
 
 
-def test_a_cancelled_run_never_reaches_the_observer(
-    tmp_path: Path, seen: list[dict[str, Any]]
-) -> None:
+def test_a_cancelled_run_never_reaches_the_observer(tmp_path: Path, seen: list[dict[str, Any]]) -> None:
     store = _store(tmp_path)
 
     async def drive() -> dict[str, Any]:

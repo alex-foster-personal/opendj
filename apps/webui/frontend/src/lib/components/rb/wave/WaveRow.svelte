@@ -11,7 +11,7 @@
 		queryWaveformSeekArmed,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import { hasTrustedBeatGrid } from '$lib/player/grid-features';
+	import { effectiveQuantize, hasTrustedBeatGrid } from '$lib/player/grid-features';
 	import {
 		beatgridFallbackGate,
 		paintAnlzForRow,
@@ -64,10 +64,10 @@
 	import {
 		createLatestSeekDispatcher,
 		snapWaveTargetMs,
-		waveClickTargetMs,
+		waveClickSeekMs,
 		waveDragTargetMs,
-		waveSnapModeFromModifiers,
-		type WaveSnapMode
+		waveSeekCommand,
+		waveSnapModeFromModifiers
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
 	import LyricLanes from './LyricLanes.svelte';
@@ -180,9 +180,11 @@
 	});
 
 
-	// Scrub-target snapping (pin a705aebfbeae) reads this deck's own beatgrid,
-	// not the master's - each waveform snaps to its own track's downbeats.
-	const scrubBeats = $derived(paintAnlz?.beatgrid.beats ?? null);
+	// Scrub-target snapping (WAVE-SEEK-01) reads this deck's own beatgrid, the
+	// one the engine quantizes with (deck.anlz), not the master's, and only when
+	// the deck's quantize is on: then it lands on the NEAREST beat.
+	const scrubBeats = $derived(deck.anlz?.beatgrid.beats ?? null);
+	const scrubQuantize = $derived(effectiveQuantize(deck));
 
 	const masterDeck = $derived(DECK_IDS.find((d) => getDeckState(d).is_master) ?? null);
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
@@ -472,7 +474,7 @@
 	const _paintScheduleState = initPaintScheduleState();
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
-		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
+		await runPerformanceCommandFromUi(waveSeekCommand(deckId, positionMs));
 	});
 
 	/** Mirrors this row's gesture target into the shared registry, so follower rows
@@ -780,20 +782,21 @@
 			durationMs: scrubDurationMs,
 			windowSeconds: _zoomView(scrubOriginPositionMs).windowS * deck.pitch
 		});
-		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
+		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers, scrubQuantize));
 	}
 
 	function _clickTarget(clientX: number, modifiers: { shiftKey: boolean; metaKey: boolean }): number {
-		const raw = waveClickTargetMs({
+		return waveClickSeekMs({
 			centerPositionMs: scrubOriginPositionMs,
 			pointerX: clientX - scrubLeftPx,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
 			...((view) => ({ windowSeconds: view.windowS * deck.pitch, playheadFrac: view.frac }))(
 				_zoomView(scrubOriginPositionMs)
-			)
+			),
+			beats: scrubBeats,
+			mode: waveSnapModeFromModifiers(modifiers, scrubQuantize)
 		});
-		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
 
 	function _clearGesture(): void {
@@ -822,7 +825,9 @@
 		canvas.setPointerCapture(event.pointerId);
 		scrubPointerId = event.pointerId;
 		scrubOriginClientX = event.clientX;
-		scrubOriginPositionMs = deck.position_ms;
+		// The time painted under the playhead column, so a click maps through the
+		// picture the DJ sees, not a published position that lags it while playing.
+		scrubOriginPositionMs = _paintPositionMs();
 		scrubDurationMs = deck.duration_ms;
 		scrubLeftPx = rect.left;
 		scrubWidthPx = rect.width;
@@ -831,14 +836,8 @@
 		scrubFrozenWindowS = _zoomView(_paintPositionMs()).windowS;
 		setWaveZoomScrubWindowS(deckId, scrubFrozenWindowS);
 		seeking = true;
-		const snapOnDown = waveSnapModeFromModifiers(event);
-		const deferBeatSyncSeek =
-			snapOnDown === 'downbeat' && deck.playing && uiPrefs.beat_sync_max;
-		// SPIKE-PERF: jump the painted window under the pointer immediately,
-		// except BeatSyncMax deferred seeks (ghost cursor until arm fires).
-		if (!deferBeatSyncSeek) {
-			_setScrubPreview(_clickTarget(event.clientX, event));
-		}
+		// SPIKE-PERF: jump the painted window under the pointer immediately.
+		_setScrubPreview(_clickTarget(event.clientX, event));
 	}
 
 	async function onPointerMove(event: PointerEvent): Promise<void> {
@@ -853,23 +852,14 @@
 		if (!seeking || event.pointerId !== scrubPointerId) return;
 		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
-			const snap: WaveSnapMode = waveSnapModeFromModifiers(event);
+			// WAVE-SEEK-01: a click lands where it was made, like a CDJ needle
+			// search; no deferred bar launch, no bar or phrase snap.
 			const targetMs = scrubMoved
 				? _dragTarget(event.clientX, event)
 				: _clickTarget(event.clientX, event);
-			if (!scrubMoved && snap === 'downbeat' && deck.playing && uiPrefs.beat_sync_max) {
-				_setScrubPreview(null);
-				await runPerformanceCommandFromUi({
-					type: 'waveform_seek',
-					deck: deckId,
-					position_ms: targetMs,
-					snap
-				});
-			} else {
-				_setScrubPreview(targetMs);
-				await seekDispatcher.request(targetMs);
-				if (scrubDispatchError !== null) throw scrubDispatchError;
-			}
+			_setScrubPreview(targetMs);
+			await seekDispatcher.request(targetMs);
+			if (scrubDispatchError !== null) throw scrubDispatchError;
 		} finally {
 			_clearGesture();
 			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);

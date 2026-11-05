@@ -10,6 +10,7 @@ Covers:
                                   session and trips abort on mismatch
   * ``_verify_rb_rating`` / ``_verify_djay_rating`` helpers
 """
+
 from __future__ import annotations
 
 import csv
@@ -77,9 +78,7 @@ def test_dry_run_summary_counts_resolutions(capsys):
 
 
 def test_summarise_plan_keys():
-    counts = _summarise_plan(
-        [{"resolution": "accept_rb"}, {"resolution": "accept_rb"}]
-    )
+    counts = _summarise_plan([{"resolution": "accept_rb"}, {"resolution": "accept_rb"}])
     assert counts == {"accept_rb": 2}
 
 
@@ -203,7 +202,9 @@ class TestLiveRunRBRails:
         ]
 
     def test_pgrep_gate_blocks_writes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"SQLite fake rb")
@@ -218,7 +219,8 @@ class TestLiveRunRBRails:
         # open_db should never be reached, but guard anyway.
         db = _FakeRBDB({"10": _FakeContent("10", rating=0)})
         monkeypatch.setattr(
-            "apps.shared.rekordbox_db.open_db", lambda _p: db,
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: db,
         )
 
         with pytest.raises(SafetyAbort, match="Rekordbox is running"):
@@ -232,7 +234,9 @@ class TestLiveRunRBRails:
         assert db.commits == 0
 
     def test_backup_file_created_before_write(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"original rb bytes 123")
@@ -240,11 +244,13 @@ class TestLiveRunRBRails:
         djay_db.write_bytes(b"djay bytes")
 
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         db = _FakeRBDB({"10": _FakeContent("10", rating=0)})
         monkeypatch.setattr(
-            "apps.shared.rekordbox_db.open_db", lambda _p: db,
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: db,
         )
 
         rc = live_run(
@@ -259,7 +265,9 @@ class TestLiveRunRBRails:
         assert backups[0].read_bytes() == b"original rb bytes 123"
 
     def test_verify_fail_aborts_batch(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb")
@@ -267,7 +275,8 @@ class TestLiveRunRBRails:
         djay_db.write_bytes(b"djay")
 
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         # Fake DB whose Rating field does NOT update despite the write.
         row = _FakeContent("10", rating=0)
@@ -284,15 +293,19 @@ class TestLiveRunRBRails:
         # Monkey-patch _write_rb_rating so the write "succeeds" but the
         # backing row never actually changes -> verifier returns False.
         def _fake_write_rb(
-            db_: Any, content_id: str, rating: int,
+            db_: Any,
+            content_id: str,
+            rating: int,
         ) -> bool:
             return True  # pretend write ok, but row.Rating stays 0
 
         monkeypatch.setattr(
-            "apps.sync.apply_ratings._write_rb_rating", _fake_write_rb,
+            "apps.sync.apply_ratings._write_rb_rating",
+            _fake_write_rb,
         )
         monkeypatch.setattr(
-            "apps.shared.rekordbox_db.open_db", lambda _p: frozen,
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: frozen,
         )
 
         with pytest.raises(SafetyAbort, match="verify_readback failed"):
@@ -308,7 +321,9 @@ class TestMainLiveFlagGating:
     """Typed-confirm rail via the ``--i-understand-the-risks`` CLI flag."""
 
     def test_main_live_without_risks_flag_refused_in_safety_layer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = _make_diff(
             tmp_path,
@@ -325,7 +340,8 @@ class TestMainLiveFlagGating:
             ],
         )
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         monkeypatch.setattr(
             "apps.shared.rekordbox_db.open_db",
@@ -355,35 +371,29 @@ class TestLiveDbPathHelpers:
         fixtures = {
             name: tmp_path / f"{name.lower()}.db"
             for name in (
-                "REKORDBOX_LIVE_DB", "REKORDBOX_WORKING_DB",
-                "DJAY_LIVE_DB", "DJAY_WORKING_DB",
+                "REKORDBOX_LIVE_DB",
+                "REKORDBOX_WORKING_DB",
+                "DJAY_LIVE_DB",
+                "DJAY_WORKING_DB",
             )
         }
         for name, target in fixtures.items():
             monkeypatch.setattr(paths, name, target)
         return fixtures
 
-    def test_rb_live_flag_returns_live_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rb_live_flag_returns_live_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_rb_db_path(True) == fixtures["REKORDBOX_LIVE_DB"]
 
-    def test_rb_default_returns_working_copy(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rb_default_returns_working_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_rb_db_path(False) == fixtures["REKORDBOX_WORKING_DB"]
 
-    def test_djay_live_flag_returns_live_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_djay_live_flag_returns_live_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_djay_db_path(True) == fixtures["DJAY_LIVE_DB"]
 
-    def test_djay_default_returns_working_copy(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_djay_default_returns_working_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_djay_db_path(False) == fixtures["DJAY_WORKING_DB"]
 
@@ -394,7 +404,9 @@ class TestMainLiveRoutesToLiveDbPaths:
     """
 
     def test_main_live_forwards_live_db_paths_to_live_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Temp paths that stand in for the user's real LIVE DBs; we patch
         # the module-level constants so _live_*_db_path resolves to these.
@@ -408,7 +420,8 @@ class TestMainLiveRoutesToLiveDbPaths:
 
         # Rail 1: pgrep -> nothing is running.
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         # Typed-confirm rail: --i-understand-the-risks sets flag_ok=True,
         # so require_typed_confirm is bypassed in LiveWriteSession. Still,
@@ -416,14 +429,16 @@ class TestMainLiveRoutesToLiveDbPaths:
         captured: dict[str, Any] = {}
 
         def _fake_live_run(
-            rows: list[dict], **kwargs: Any,
+            rows: list[dict],
+            **kwargs: Any,
         ) -> int:
             captured["rows"] = rows
             captured["kwargs"] = kwargs
             return 0
 
         monkeypatch.setattr(
-            "apps.sync.apply_ratings.live_run", _fake_live_run,
+            "apps.sync.apply_ratings.live_run",
+            _fake_live_run,
         )
 
         path = _make_diff(
@@ -442,7 +457,8 @@ class TestMainLiveRoutesToLiveDbPaths:
         )
         rc = main(
             [
-                "--diff-csv", str(path),
+                "--diff-csv",
+                str(path),
                 "--live",
                 "--i-understand-the-risks",
             ]
@@ -452,7 +468,9 @@ class TestMainLiveRoutesToLiveDbPaths:
         assert captured["kwargs"]["djay_db_path"] == fake_djay_live
 
     def test_main_non_live_dry_run_does_not_reach_live_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Complementary check: without --live, live_run must not be called
         # (dry-run only); this guards against regressions in the branch.
@@ -463,7 +481,8 @@ class TestMainLiveRoutesToLiveDbPaths:
             return 0
 
         monkeypatch.setattr(
-            "apps.sync.apply_ratings.live_run", _boom,
+            "apps.sync.apply_ratings.live_run",
+            _boom,
         )
         path = _make_diff(tmp_path, [])
         assert main(["--diff-csv", str(path)]) == 0

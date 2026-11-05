@@ -56,7 +56,10 @@ class OffloadOps {
 	 * engine may still finish the work; the rows reload either way), never a
 	 * line stuck at "running" (Sentry and Codex on #8601).
 	 */
-	async follow(op: OffloadOperation, onUpdate?: (op: OffloadOperation) => void): Promise<OffloadOperation> {
+	async follow(
+		op: OffloadOperation,
+		onUpdate?: (op: OffloadOperation) => void
+	): Promise<OffloadOperation> {
 		let current = op;
 		let failures = 0;
 		this.#put(current);
@@ -78,12 +81,20 @@ class OffloadOps {
 		return current;
 	}
 
-	async #run(start: () => Promise<OffloadOperation>, quiet = false): Promise<OffloadOperation | null> {
+	async #run(
+		start: () => Promise<OffloadOperation>,
+		quiet = false
+	): Promise<OffloadOperation | null> {
 		let op: OffloadOperation;
 		try {
 			op = await start();
 		} catch (error) {
-			pushToast(`cloud offload refused: ${error instanceof Error ? error.message : String(error)}`, 'error', undefined, error);
+			pushToast(
+				`cloud offload refused: ${error instanceof Error ? error.message : String(error)}`,
+				'error',
+				undefined,
+				error
+			);
 			return null;
 		}
 		const final = await this.follow(op);
@@ -114,7 +125,12 @@ class OffloadOps {
 		try {
 			this.#put(await cancelOperation(opId));
 		} catch (error) {
-			pushToast(`cancel failed: ${error instanceof Error ? error.message : String(error)}`, 'error', undefined, error);
+			pushToast(
+				`cancel failed: ${error instanceof Error ? error.message : String(error)}`,
+				'error',
+				undefined,
+				error
+			);
 		}
 	}
 
@@ -127,7 +143,12 @@ class OffloadOps {
 		try {
 			op = await restoreTracks([stableId], 'temporary');
 		} catch (error) {
-			pushToast(`cannot load: the cloud download did not start (${error instanceof Error ? error.message : String(error)})`, 'error', undefined, error);
+			pushToast(
+				`cannot load: the cloud download did not start (${error instanceof Error ? error.message : String(error)})`,
+				'error',
+				undefined,
+				error
+			);
 			return false;
 		}
 		this.deckDownloads = { ...this.deckDownloads, [deck]: { stableId, op } };
@@ -137,7 +158,10 @@ class OffloadOps {
 			});
 			const result = final.results[stableId];
 			if (final.state !== 'done' || result === undefined || result.error !== null) {
-				pushToast(`cannot load: cloud download ${final.state} (${result?.message ?? result?.error ?? final.error ?? 'no result'})`, 'error');
+				pushToast(
+					`cannot load: cloud download ${final.state} (${result?.message ?? result?.error ?? final.error ?? 'no result'})`,
+					'error'
+				);
 				return false;
 			}
 			return true;
@@ -171,7 +195,10 @@ export async function ensureLocalBeforeLoad(deck: DeckId, stableId: string): Pro
 	try {
 		state = (await getTrackOffloadStates([stableId]))[stableId]?.state;
 	} catch (error) {
-		console.warn(`cloud offload: state of ${stableId} unreadable, loading without a restore`, error);
+		console.warn(
+			`cloud offload: state of ${stableId} unreadable, loading without a restore`,
+			error
+		);
 		return;
 	}
 	if (state !== 'offloaded' && state !== 'restoring') return;

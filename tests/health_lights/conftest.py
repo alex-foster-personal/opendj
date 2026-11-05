@@ -1,4 +1,5 @@
 """Shared app fixture: real state.db, real routers, tmp artifact dirs."""
+
 from __future__ import annotations
 
 import sqlite3

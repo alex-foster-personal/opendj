@@ -54,9 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ORPHAN_GRACE_S: float = 10.0
 
 
-def _poll_until(
-    predicate: Callable[[], bool], *, deadline_s: float, poll_s: float = 0.05
-) -> bool:
+def _poll_until(predicate: Callable[[], bool], *, deadline_s: float, poll_s: float = 0.05) -> bool:
     """First True from `predicate` before `deadline_s`; False once it elapses.
 
     The bounded poll for this module's liveness control. A control that checks
@@ -71,6 +69,7 @@ def _poll_until(
             return True
         time.sleep(poll_s)
     return predicate()
+
 
 # A whole engine, in its own process, holding one live worker. The test
 # SIGKILLs THIS, which is the only way to produce a genuinely orphaned worker
@@ -154,9 +153,7 @@ def _spawn_orphan() -> subprocess.Popen[bytes]:
     )
 
 
-def _start_engine(
-    db_path: Path, ready: Path
-) -> tuple[subprocess.Popen[str], dict]:
+def _start_engine(db_path: Path, ready: Path) -> tuple[subprocess.Popen[str], dict]:
     """Boot a real engine process and wait for it to be holding a worker."""
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO_ROOT)
@@ -173,15 +170,11 @@ def _start_engine(
     if not line:
         engine.kill()
         assert engine.stderr is not None
-        raise AssertionError(
-            f"engine never reported a running worker: {engine.stderr.read()}"
-        )
+        raise AssertionError(f"engine never reported a running worker: {engine.stderr.read()}")
     return engine, json.loads(line)
 
 
-def _await_worker_ready(
-    engine: subprocess.Popen[str], ready: Path, timeout_s: float = 60.0
-) -> None:
+def _await_worker_ready(engine: subprocess.Popen[str], ready: Path, timeout_s: float = 60.0) -> None:
     """Block until the worker is past the one write the engine's death breaks.
 
     THE PRECONDITION THIS EXISTS TO MAKE TRUE. ``worker_pgid`` is written the
@@ -203,10 +196,7 @@ def _await_worker_ready(
     while not ready.exists():
         if engine.poll() is not None:
             assert engine.stderr is not None
-            raise AssertionError(
-                "engine died before its worker was ready: "
-                f"{engine.stderr.read()}"
-            )
+            raise AssertionError(f"engine died before its worker was ready: {engine.stderr.read()}")
         if time.monotonic() >= deadline:
             engine.kill()
             raise AssertionError(
@@ -266,9 +256,7 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
         # allocated while its last member is a zombie, so process_group_exists
         # answers yes for a group that is already a corpse, and polling it would
         # establish the premise against a dead orphan.
-        if not _poll_until(
-            lambda: _why_not_live(pgid) is None, deadline_s=ORPHAN_GRACE_S
-        ):
+        if not _poll_until(lambda: _why_not_live(pgid) is None, deadline_s=ORPHAN_GRACE_S):
             pytest.skip(
                 f"UNKNOWN, not a pass: orphaned worker group {pgid} never had a "
                 f"live member within {ORPHAN_GRACE_S:.0f}s of the engine's "
@@ -290,9 +278,7 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
         # because on a loaded box the reap can still be in flight when recovery
         # returns (issue #1156); the assertion below is what goes red if the
         # reap genuinely lied.
-        _poll_until(
-            lambda: not group_has_live_member(pgid), deadline_s=ORPHAN_GRACE_S
-        )
+        _poll_until(lambda: not group_has_live_member(pgid), deadline_s=ORPHAN_GRACE_S)
         assert not group_has_live_member(pgid), row["error"]
 
         # A second recovery pass has nothing left to do: the row is now owned
@@ -320,9 +306,9 @@ def test_liveness_poll_waits_for_a_process_group_that_appears_late() -> None:
         time.sleep(600)
         os._exit(0)  # pragma: no cover - only the parent reaches here
     try:
-        assert _poll_until(
-            lambda: process_group_exists(child), deadline_s=ORPHAN_GRACE_S
-        ), "the poll never saw the late process group"
+        assert _poll_until(lambda: process_group_exists(child), deadline_s=ORPHAN_GRACE_S), (
+            "the poll never saw the late process group"
+        )
     finally:
         # Signal the child BY PID, not by group: until the child calls setsid
         # it is still in OUR group and killpg(child) is ESRCH, which would

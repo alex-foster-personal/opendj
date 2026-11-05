@@ -21,6 +21,7 @@ out loud.** The contract status is ``passed`` so the existing gate in
 ``passed_single_source``. Nobody reading the file in six months should be able
 to mistake a one-sided check for cross-validation.
 """
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -119,11 +120,7 @@ def _hypotheses(values: list[float], lengths: list[float]) -> dict[str, float]:
         return ordered[-1][0]
 
     mean = sum(values) / len(values)
-    weighted_mean = (
-        sum(v * length for v, length in zip(values, lengths, strict=True)) / total
-        if total
-        else mean
-    )
+    weighted_mean = sum(v * length for v, length in zip(values, lengths, strict=True)) / total if total else mean
     return {
         "max": max(values),
         "min": min(values),
@@ -206,23 +203,15 @@ def audit_scalar_against_series(
     for segment in segments:
         per_track.setdefault(segment.song_pk, []).append(segment)
 
-    both = sorted(
-        pk
-        for pk, value in scalar_by_track.items()
-        if value is not None and pk in per_track
-    )
+    both = sorted(pk for pk, value in scalar_by_track.items() if value is not None and pk in per_track)
     above, below, hits = _scalar_series_hits(both, scalar_by_track, per_track)
 
     audit = SeriesConsistency(
         tracks_with_both=len(both),
         scalar_without_series=sum(
-            1
-            for pk, value in scalar_by_track.items()
-            if value is not None and pk not in per_track
+            1 for pk, value in scalar_by_track.items() if value is not None and pk not in per_track
         ),
-        series_without_scalar=sum(
-            1 for pk in per_track if scalar_by_track.get(pk) is None
-        ),
+        series_without_scalar=sum(1 for pk in per_track if scalar_by_track.get(pk) is None),
         scalar_above_series_max=above,
         scalar_below_series_min=below,
         hypothesis_exact_match=dict(hits.most_common()),
@@ -279,15 +268,9 @@ class SingleSourceVerdict:
             "left": None,
             "right": self.probe.as_dict(),
             "agreement": None,
-            "agreement_omitted_because": (
-                "a field with a single source cannot have an agreement rate"
-            ),
+            "agreement_omitted_because": ("a field with a single source cannot have an agreement rate"),
             "structure": None if self.structure is None else self.structure.as_dict(),
-            "series_consistency": (
-                None
-                if self.series_consistency is None
-                else self.series_consistency.as_dict()
-            ),
+            "series_consistency": (None if self.series_consistency is None else self.series_consistency.as_dict()),
             "disagreement_signatures": {},
             "systematic_offsets": [],
             "mapping_bugs": [],
@@ -320,9 +303,7 @@ def _single_source_early_verdict(
     if series_consistency is not None and not series_consistency.sound:
         verdict.status = FAILED
         verdict.suite_status = SUITE_MAPPING_BUG
-        reasons.extend(
-            f"SCALAR-VS-SERIES VIOLATION: {v}" for v in series_consistency.violations
-        )
+        reasons.extend(f"SCALAR-VS-SERIES VIOLATION: {v}" for v in series_consistency.violations)
         return True
 
     if not probe.comparable:
@@ -352,8 +333,7 @@ def _single_source_early_verdict(
     if probe.present < CFG.min_comparable:
         verdict.suite_status = SUITE_THIN
         reasons.append(
-            f"UNTESTED: only {probe.present} values, below the "
-            f"{CFG.min_comparable} needed for the probe to be evidence"
+            f"UNTESTED: only {probe.present} values, below the {CFG.min_comparable} needed for the probe to be evidence"
         )
         return True
 
@@ -383,9 +363,7 @@ def decide_single_source(
         series_consistency=series_consistency,
     )
 
-    if _single_source_early_verdict(
-        spec, probe, structure, series_consistency, verdict, reasons
-    ):
+    if _single_source_early_verdict(spec, probe, structure, series_consistency, verdict, reasons):
         return verdict
 
     verdict.status = PASSED

@@ -5,6 +5,7 @@ slot and free tags. Routes are the ways through a playlist's components; a set
 saves one. Same verbs as ``python -m apps.shared.playlist_sets component`` and
 ``routes``.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -107,9 +108,7 @@ def _store_errors() -> Iterator[None]:
             detail={"error": "component_in_use", "message": str(exc), "set_ids": exc.set_ids},
         ) from exc
     except sqlite3.IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"error": "conflict"}
-        ) from None
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "conflict"}) from None
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -181,9 +180,7 @@ def create_playlist_component(
     conn = _open_conn(request)
     try:
         with _store_errors():
-            cid = create_component(
-                conn, playlist_id, body.name, body.slot, body.stable_ids, tags=body.tags
-            )
+            cid = create_component(conn, playlist_id, body.name, body.slot, body.stable_ids, tags=body.tags)
         _publish_changed(conn, playlist_id, cid)
         return _to_out(load_component(conn, cid))
     finally:

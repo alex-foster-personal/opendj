@@ -27,7 +27,9 @@
 	import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
-	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
+	import { drawStripPreviewBands, TEMPO_LANE_COLORS } from '../deck/strip-waveform-render';
+	import type { TempoCurveData } from '../wave/tempo-marks';
+	import { drawRowStripTempo } from './row-strip-tempo';
 	import {
 		drawLoopCueBands,
 		drawPhraseMarkers,
@@ -57,6 +59,8 @@
 		previewing = false,
 		onstop,
 		stable_id = null,
+		tempo = null,
+		tempoTitle = null,
 		enabled = true
 	}: {
 		strip: PreviewStripData | null;
@@ -83,6 +87,10 @@
 		previewing?: boolean;
 		onstop?: () => void;
 		stable_id?: string | null;
+		/** Stored tempo curve from row-assets (issue #7879); null paints nothing (steady or not judged). */
+		tempo?: TempoCurveData | null;
+		/** The daemon's BPM Stability sentence for this track, joined to the hover title. */
+		tempoTitle?: string | null;
 		enabled?: boolean;
 	} = $props();
 
@@ -112,7 +120,11 @@
 	);
 	let hoverX: number | null = $state(null);
 
-	const title: string | null = $derived(vocalsStatusTitle(vocals));
+	const vocalsTitle: string | null = $derived(vocalsStatusTitle(vocals));
+	// Issue #7879: the daemon's tempo sentence joins the hover only when a curve is drawn.
+	const title: string | null = $derived(
+		[vocalsTitle, tempo !== null ? tempoTitle : null].filter((part) => part !== null).join(' · ') || null
+	);
 
 	$effect(() => {
 		dpr = window.devicePixelRatio || 1;
@@ -130,7 +142,7 @@
 			const bandColors = resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 			// STRUCT-05: the section painter loads on first use with the pref on;
 			// reading it here re-runs this effect when it lands.
-			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors, sectionsApiFor(uiPrefs.show_sections));
+			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors, tempo, sectionsApiFor(uiPrefs.show_sections));
 		}
 	});
 
@@ -143,6 +155,7 @@
 		ratio: number,
 		design: WaveformDesign,
 		bandColors: WaveBandColors,
+		tempoCurve: TempoCurveData | null,
 		sectionsApi: SectionsApi | null
 	): void {
 		el.width = W * ratio;
@@ -176,6 +189,11 @@
 				ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_H);
 			}
 			ctx.globalAlpha = 1;
+		}
+		// Tempo curve (issue #7879): the deck strip's curve (issue #8339), scaled to
+		// this 14 px strip: a band a third tall just under the vocal bar, no icons.
+		if (tempoCurve !== null && durMs !== null && durMs > 0) {
+			drawRowStripTempo(ctx, tempoCurve, durMs, W, H, VOCAL_BAR_H, TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)]);
 		}
 		if (markerAnlz !== null && durMs !== null && durMs > 0) {
 			const palette = readPalette(el);

@@ -1,8 +1,8 @@
 """Write the BEATMAP-01 bar-phase gate artifact from the committed round-1 raw arm.
 
-Converts every subset90 row of `ops/beatbench/round-1/raw-beatgrid_lane_t050.json`
+Converts every subset90 row of `(private path)`
 with the served lane builder (`lane_payload.build_beatgrid_lane`, raw mode) and
-records what `tests/analysis_beatgrid/test_beatmap01_gate.py` checks: the ok
+records what `(private path)` checks: the ok
 count and failure buckets, and the served bar-1 agreement with rekordbox on
 the fixed-tempo ok rows. Round 3 wrote the same shape by hand; this is the
 generator, so a later round re-derives the numbers instead of re-typing them.
@@ -12,7 +12,7 @@ measured value may replace a higher floor is a review decision the PR makes
 in words; this script only measures.
 
 Usage:
-  python -m scripts.beatbench.bar_phase_gate --out ops/beatbench/round-6/bar-phase-gate.json
+  python -m scripts.beatbench.bar_phase_gate --out (private path)
 """
 
 from __future__ import annotations
@@ -66,9 +66,7 @@ def measure() -> dict[str, Any]:
         start, end = fixture["score_start_s"], fixture["score_end_s"]
         offset = fixture["window_start_s"]
         ref_in = window_slice([b[1] for b in fixture["ref_beats"]], start, end)
-        pulse = evaluate_pulse(
-            row["beats"], row.get("activation_peak"), row.get("downbeats"), threshold=threshold
-        )
+        pulse = evaluate_pulse(row["beats"], row.get("activation_peak"), row.get("downbeats"), threshold=threshold)
         ungated = [] if pulse.no_trackable_pulse or row.get("error") else row["beats"]
         cand_in = window_slice([t + offset for t in ungated], start, end)
         cell["f"].append(score_positions(ref_in, cand_in).f_measure)  # type: ignore[union-attr]
@@ -77,9 +75,7 @@ def measure() -> dict[str, Any]:
             continue
         cell["n_ok"] += 1  # type: ignore[operator]
         ref_db = window_slice([b[1] for b in fixture["ref_beats"] if b[0] == 1], start, end)
-        cand_db = window_slice(
-            [b["t"] + offset for b in lane.payload["beats"] if b["n"] == 1], start, end
-        )
+        cand_db = window_slice([b["t"] + offset for b in lane.payload["beats"] if b["n"] == 1], start, end)
         scored = score_downbeats(ref_db, cand_db)
         if scored.agreement is not None:
             cell["downbeat"].append(scored.agreement)  # type: ignore[union-attr]

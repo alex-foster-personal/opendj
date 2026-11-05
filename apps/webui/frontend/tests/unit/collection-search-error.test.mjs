@@ -26,9 +26,7 @@ function stripComments(src) {
 let contract;
 
 before(async () => {
-	contract = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/pane-contract.svelte.ts'
-	);
+	contract = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 });
 
 // REQ: LIBMX-06
@@ -71,7 +69,11 @@ test('search_error lifecycle on PaneStore', () => {
 test('BrowserPanel persists search_error on failed whole-collection search', () => {
 	const src = stripComments(readFileSync(browserPanelPath, 'utf8'));
 
-	assert.match(src, /active\.search_error\s*=\s*null/, 'non-empty search start clears search_error');
+	assert.match(
+		src,
+		/active\.search_error\s*=\s*null/,
+		'non-empty search start clears search_error'
+	);
 	assert.match(
 		src,
 		/active\.search_error\s*=\s*String\(exc\)/,

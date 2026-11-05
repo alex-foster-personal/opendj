@@ -2,6 +2,7 @@
 
 [if] play-it is invoked with pin flags [then] they parse into the goal and unsatisfiable pins exit 2, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -19,26 +20,39 @@ pytestmark = pytest.mark.requirement("SET-04")
 @pytest.fixture
 def tracks_json(tmp_path: Path) -> Path:
     path = tmp_path / "tracks.json"
-    path.write_text(json.dumps([
-        {"stable_id": "A", "artist": "A", "bpm": 120.0, "key_camelot": "8A", "energy": 5},
-        {"stable_id": "B", "artist": "B", "bpm": 124.0, "key_camelot": "9A", "energy": 6},
-        {"stable_id": "C", "artist": "C", "bpm": 126.0, "key_camelot": "10A", "energy": 7},
-    ]))
+    path.write_text(
+        json.dumps(
+            [
+                {"stable_id": "A", "artist": "A", "bpm": 120.0, "key_camelot": "8A", "energy": 5},
+                {"stable_id": "B", "artist": "B", "bpm": 124.0, "key_camelot": "9A", "energy": 6},
+                {"stable_id": "C", "artist": "C", "bpm": 126.0, "key_camelot": "10A", "energy": 7},
+            ]
+        )
+    )
     return path
 
 
 def test_parser_accepts_pin_flags(tracks_json: Path) -> None:
     parser = cli._build_parser()
-    args = parser.parse_args([
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-        "--peak-pin", "A",
-        "--peak-pin", "B",
-        "--opener-pin", "A",
-        "--closer-pin", "C",
-    ])
+    args = parser.parse_args(
+        [
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+            "--peak-pin",
+            "A",
+            "--peak-pin",
+            "B",
+            "--opener-pin",
+            "A",
+            "--closer-pin",
+            "C",
+        ]
+    )
     assert args.peak_pins == ["A", "B"]
     assert args.opener_pins == ["A"]
     assert args.closer_pin == "C"
@@ -54,14 +68,21 @@ def test_pin_unsatisfiable_returns_exit_two(
         raise PinUnsatisfiableError("pin_not_in_playlist", missing=("Z",))
 
     monkeypatch.setattr(cli, "play_it", _raise)
-    rc = cli.main([
-        "--db", str(tmp_path / "state.db"),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-        "--peak-pin", "Z",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(tmp_path / "state.db"),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+            "--peak-pin",
+            "Z",
+        ]
+    )
     assert rc == 2
     err = capsys.readouterr().err
     assert "pin_not_in_playlist" in err
@@ -86,16 +107,25 @@ def test_play_it_forwards_pins_to_goal(
         return 1, result
 
     monkeypatch.setattr(cli, "play_it", _fake_play_it)
-    rc = cli.main([
-        "--db", str(tmp_path / "state.db"),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-        "--peak-pin", "B",
-        "--opener-pin", "A",
-        "--closer-pin", "C",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(tmp_path / "state.db"),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+            "--peak-pin",
+            "B",
+            "--opener-pin",
+            "A",
+            "--closer-pin",
+            "C",
+        ]
+    )
     assert rc == 0
     goal = captured["goal"]
     assert goal.peak_pins == ("B",)

@@ -36,7 +36,7 @@ def _argv_reaching_uv(tmp_path: Path, *extra: str) -> list[str]:
     clone = tmp_path / "clone"
     (clone / "scripts").mkdir(parents=True)
     shutil.copy2(BENCH_RUN, clone / "scripts/bench_run.sh")
-    bundle = clone / "data/bench" / LANE / "v1"
+    bundle = clone / "(private path)" / LANE / "v1"
     bundle.mkdir(parents=True)
     (bundle / "BUNDLE_ID").write_text("probe\n", encoding="utf-8")
     bin_dir = tmp_path / "bin"
@@ -48,7 +48,10 @@ def _argv_reaching_uv(tmp_path: Path, *extra: str) -> list[str]:
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
     subprocess.run(
         ["bash", str(clone / "scripts/bench_run.sh"), LANE, CANDIDATE, "v1", *extra],
-        env=env, check=True, capture_output=True, text=True,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     return argv_log.read_text(encoding="utf-8").splitlines()
 

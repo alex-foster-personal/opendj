@@ -3,3 +3,4 @@
 self-hosted-runner:
   labels:
     - airgap-mac   # the offline MacBook (fleet-af ci--hosts/airgap-mac, ADR-0024); (private path)
+    - linux-light  # the light Linux pool; .github/workflows/main-hourly-selected.yml (the hourly selected run on main)

@@ -24,16 +24,22 @@ Requirements (mini-PRD):
       ⛔️ a query per id
   ✔︎ ✅ 🎯 upsert_many(): one transaction per batch.
     [if] a row exists for the id [then] it is replaced ⛔️ a duplicate row
+  ✔︎ ✅ 🎯 tempo_stability table (issue #7879): the scan's tempo-stability
+    verdict per track, beside its grid verdict, so library rows read it with
+    one bulk query and never fetch `/anlz`.
+    [if] a store predates the table [then] reads find no tempo row (blank
+      column) ⛔️ a 500, or "steady" for an unscanned track
 
 -Claude
 """
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Iterator, Sequence
-from dataclasses import astuple, dataclass, fields
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from apps.adapters.rekordbox import config
 from apps.analysis_beatgrid.grid_quality import (
@@ -43,7 +49,9 @@ from apps.analysis_beatgrid.grid_quality import (
     grid_quality_message,
     unknown_quality,
 )
-from apps.webui.server.sqlite_sidecar_store import upsert_many_sidecar
+from apps.analysis_beatgrid.tempo_stability import Verdict
+from apps.analysis_beatgrid.tempo_stability_label import tempo_label
+from apps.webui.server.sqlite_sidecar_store import bind_upsert_many
 
 STORE_FILENAME = "grid-quality.db"
 _SQL_CHUNK = 500
@@ -68,6 +76,45 @@ CREATE TABLE IF NOT EXISTS grid_quality (
     computed_at           TEXT NOT NULL
 )
 """
+
+
+_TEMPO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tempo_stability (
+    stable_id          TEXT PRIMARY KEY,
+    grid_version       TEXT NOT NULL,
+    rule_version       TEXT NOT NULL,
+    verdict            TEXT,
+    nominal_bpm        REAL,
+    largest_change_pct REAL,
+    change_count       INTEGER,
+    segments_json      TEXT NOT NULL,
+    computed_at        TEXT NOT NULL
+)
+"""
+
+
+@dataclass(frozen=True)
+class StoredTempoStability:
+    """One stored tempo-stability verdict (issue #7879). `verdict` None means the
+    grid could not be judged (no grid, unreadable, fewer than two beats): the
+    column is blank, never `steady`. Field order is the table's column order."""
+
+    stable_id: str
+    grid_version: str
+    rule_version: str
+    verdict: str | None
+    nominal_bpm: float | None
+    largest_change_pct: float | None
+    change_count: int | None
+    #: JSON list of `TempoSegment` dicts; "[]" when steady or not judged.
+    segments_json: str
+    computed_at: str
+
+    def segments(self) -> list[dict[str, Any]]:
+        value = json.loads(self.segments_json)
+        if not isinstance(value, list):
+            raise TypeError(f"tempo_stability.segments_json for {self.stable_id} is not a list")
+        return value
 
 
 @dataclass(frozen=True)
@@ -122,8 +169,8 @@ def _chunked(ids: Sequence[str]) -> Iterator[Sequence[str]]:
         yield ids[start : start + _SQL_CHUNK]
 
 
-def _has_table(conn: sqlite3.Connection) -> bool:
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='grid_quality'").fetchone() is not None
+def _has_table(conn: sqlite3.Connection, table: str = "grid_quality") -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 
 
 def read_many(stable_ids: Sequence[str]) -> dict[str, StoredGridQuality]:
@@ -156,17 +203,76 @@ def read_many(stable_ids: Sequence[str]) -> dict[str, StoredGridQuality]:
         conn.close()
 
 
-def upsert_many(rows: Sequence[StoredGridQuality]) -> None:
-    """Replace the stored verdict for each row's track, in one transaction."""
-    if not rows:
-        return
-    upsert_many_sidecar(
-        store_path(),
-        _SCHEMA,
-        "grid_quality",
-        _COLUMNS,
-        [astuple(row) for row in rows],
+upsert_many: Callable[[Sequence[StoredGridQuality]], None] = bind_upsert_many(
+    store_path, _SCHEMA, "grid_quality", _COLUMNS
+)
+
+_TEMPO_COLUMNS = tuple(field.name for field in fields(StoredTempoStability))
+_TEMPO_SELECT = f"SELECT {', '.join(_TEMPO_COLUMNS)} FROM tempo_stability"
+
+upsert_tempo_many: Callable[[Sequence[StoredTempoStability]], None] = bind_upsert_many(
+    store_path, _TEMPO_SCHEMA, "tempo_stability", _TEMPO_COLUMNS
+)
+
+
+def read_tempo_many(stable_ids: Sequence[str]) -> dict[str, StoredTempoStability]:
+    """Stored tempo verdicts for `stable_ids`; ids never scanned are absent."""
+    ids = list(dict.fromkeys(stable_ids))
+    path = store_path()
+    if not ids or not path.is_file():
+        return {}
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        if not _has_table(conn, "tempo_stability"):
+            return {}
+        found: dict[str, StoredTempoStability] = {}
+        for chunk in _chunked(ids):
+            placeholders = ",".join("?" * len(chunk))
+            for row in conn.execute(f"{_TEMPO_SELECT} WHERE stable_id IN ({placeholders})", tuple(chunk)):
+                stored = StoredTempoStability(*row)
+                found[stored.stable_id] = stored
+        return found
+    finally:
+        conn.close()
+
+
+def tempo_row_payload(stored: StoredTempoStability | None, grid_message: str) -> dict[str, Any] | None:
+    """The BPM Stability column's block on a track row (issue #7879), or None
+    when the track's tempo was never judged (the column is blank). Pure
+    formatting of the stored verdict; segments ride row-assets, not here."""
+    if stored is None or stored.verdict is None:
+        return None
+    if stored.largest_change_pct is None or stored.change_count is None:
+        raise ValueError(f"tempo verdict for {stored.stable_id} lacks its numbers")
+    verdict = cast(Verdict, stored.verdict)
+    label = tempo_label(
+        verdict,
+        stored.largest_change_pct,
+        stored.change_count,
+        [segment["kind"] for segment in stored.segments()],
+        grid_message,
     )
+    return {
+        "verdict": verdict,
+        "largest_change_pct": stored.largest_change_pct,
+        "change_count": stored.change_count,
+        "text": label.text,
+        "tone": label.tone,
+        "title": label.title,
+    }
+
+
+def tempo_curve_payload(stored: StoredTempoStability | None) -> dict[str, Any] | None:
+    """The row strip's tempo curve (row-assets `tempo`): None when not judged or
+    steady, so a steady track paints nothing."""
+    if stored is None or stored.verdict is None or stored.verdict == "steady":
+        return None
+    return {
+        "verdict": stored.verdict,
+        "nominal_bpm": stored.nominal_bpm,
+        "largest_change_pct": stored.largest_change_pct,
+        "segments": stored.segments(),
+    }
 
 
 def row_payload(stored: StoredGridQuality | None, *, dismissed: bool) -> dict[str, Any]:
@@ -187,8 +293,13 @@ def row_payload(stored: StoredGridQuality | None, *, dismissed: bool) -> dict[st
 __all__ = [
     "STORE_FILENAME",
     "StoredGridQuality",
+    "StoredTempoStability",
     "read_many",
+    "read_tempo_many",
     "row_payload",
     "store_path",
+    "tempo_curve_payload",
+    "tempo_row_payload",
     "upsert_many",
+    "upsert_tempo_many",
 ]

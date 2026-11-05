@@ -72,9 +72,7 @@ def _read_comments(path: Path) -> list[dict[str, Any]]:
 def _require_stable_sources(feedback_dir: Path, before: list[tuple[Path, bytes]]) -> None:
     """Refuse a projection that cannot speak for one stable feedback generation."""
     if _source_snapshot(feedback_dir) != before:
-        raise ValueError(
-            f"feedback source changed during export: {feedback_dir}; refusing incomplete pin ledger"
-        )
+        raise ValueError(f"feedback source changed during export: {feedback_dir}; refusing incomplete pin ledger")
 
 
 def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
@@ -93,11 +91,7 @@ def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
             raise TypeError(f"feedback source {source} has a pin with invalid {field}")
     for field in ("x_pct", "y_pct"):
         value = pin.get(field)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise TypeError(f"feedback source {source} has a pin with invalid {field}")
     replies = pin.get("replies")
     if replies is not None:
@@ -108,9 +102,7 @@ def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
                 raise TypeError(f"feedback source {source} has a pin with invalid replies entry")
             for field in ("id", "author", "text", "created_at"):
                 if not isinstance(reply.get(field), str):
-                    raise TypeError(
-                        f"feedback source {source} has a pin reply with invalid {field}"
-                    )
+                    raise TypeError(f"feedback source {source} has a pin reply with invalid {field}")
     build = pin.get("build")
     if not isinstance(build, dict):
         raise TypeError(f"feedback source {source} has a pin with invalid build")
@@ -129,9 +121,7 @@ def read_pins(feedback_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
             _validate_pin(source, pin)
             pin_id = pin["id"]
             if pin_id in seen:
-                raise ValueError(
-                    f"feedback source contains duplicate pin id {pin_id!r}; refusing to lose one"
-                )
+                raise ValueError(f"feedback source contains duplicate pin id {pin_id!r}; refusing to lose one")
             seen.add(pin_id)
             pins.append((source, pin))
     _require_stable_sources(feedback_dir, before)
@@ -151,13 +141,15 @@ def export_rows(feedback_dir: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for source, pin in read_pins(feedback_dir):
         row = dict(pin)
-        row.update({
-            "tool": "opendj-feedback-pin",
-            "ssid": pin["id"],
-            "source": _published_source(source),
-            "at": pin["created_at"],
-            "text": pin["text"],
-        })
+        row.update(
+            {
+                "tool": "opendj-feedback-pin",
+                "ssid": pin["id"],
+                "source": _published_source(source),
+                "at": pin["created_at"],
+                "text": pin["text"],
+            }
+        )
         rows.append(row)
     return sorted(rows, key=lambda row: (row["at"], row["ssid"]), reverse=True)
 
@@ -186,9 +178,7 @@ def _write_export(target: Path, feedback_dir: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         try:
-            existing = [
-                json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()
-            ]
+            existing = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
         except (OSError, json.JSONDecodeError) as exc:
             raise ValueError(f"cannot read existing pin ledger {target}: {exc}") from exc
         existing_ids: set[str] = set()
@@ -200,8 +190,7 @@ def _write_export(target: Path, feedback_dir: Path) -> Path:
         missing = existing_ids - fresh_ids
         if missing:
             raise ValueError(
-                f"feedback source omits {len(missing)} pin(s) already in {target}; "
-                "refusing regressing export"
+                f"feedback source omits {len(missing)} pin(s) already in {target}; refusing regressing export"
             )
     content = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
     if not target.exists() or target.read_text(encoding="utf-8") != content:

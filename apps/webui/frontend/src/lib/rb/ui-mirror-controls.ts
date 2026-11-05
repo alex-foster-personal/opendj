@@ -38,7 +38,9 @@ export function controlAvailability(element: Element): 'available' | 'inert' {
 }
 
 /** One mirror entry per selected control; duplicates are suffixed, never dropped. */
-export function buildControlsMap(elements: Iterable<Element>): Record<string, 'available' | 'inert'> {
+export function buildControlsMap(
+	elements: Iterable<Element>
+): Record<string, 'available' | 'inert'> {
 	const controls: Record<string, 'available' | 'inert'> = {};
 	const used = new Set<string>();
 	let index = 0;

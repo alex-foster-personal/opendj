@@ -12,9 +12,9 @@ import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-/** A cue context that behaves like Chrome without mic permission: the
- * "default" pseudo-id is not found, "" and real ids land. */
-function chromeWithoutPermission({ failResume = false } = {}) {
+/** Call-recording cue context: accepts every id. Chromium's NotFoundError on
+ * `"default"` without permission is tests/e2e/cueout-27-default-sink-id.spec.ts. */
+function recordingCueContext({ failResume = false } = {}) {
 	const calls = [];
 	return {
 		calls,
@@ -22,11 +22,6 @@ function chromeWithoutPermission({ failResume = false } = {}) {
 		sinkId: 'old-phones',
 		async setSinkId(id) {
 			calls.push(`sink:${id}`);
-			if (id === 'default') {
-				const error = new Error('device default is not found');
-				error.name = 'NotFoundError';
-				throw error;
-			}
 			this.sinkId = id;
 		},
 		async resume() {
@@ -50,22 +45,22 @@ test('"default" is sent to setSinkId as the empty string, real ids pass through'
 
 test('picking the default output for cue lands without mic permission', async () => {
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
-	const ctx = chromeWithoutPermission();
+	const ctx = recordingCueContext();
 	const holder = { cueDeviceId: 'old-phones' };
 	await headphones.applyCueSinkTransaction(ctx, 'default', holder);
 	assert.deepEqual(ctx.calls, ['sink:', 'resume'],
-		'if "default" reaches setSinkId then a browser without mic permission throws NotFoundError and toasts - broken');
+		'if "default" reaches setSinkId then applyCueSinkTransaction forgot browserSinkId - broken');
 	assert.equal(ctx.state, 'running');
 	assert.equal(holder.cueDeviceId, 'default', 'the holder keeps the id the device list shows');
 });
 
 test('restoring a previous default cue output also sends the empty string', async () => {
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
-	const ctx = chromeWithoutPermission({ failResume: true });
+	const ctx = recordingCueContext({ failResume: true });
 	const holder = { cueDeviceId: 'default' };
 	await assert.rejects(headphones.applyCueSinkTransaction(ctx, 'bt-1', holder), /resume refused/);
 	assert.deepEqual(ctx.calls, ['sink:bt-1', 'resume', 'sink:'],
-		'if the restore sends "default" then it fails and the cue context is silenced instead of restored - broken');
+		'if the restore sends "default" then applyCueSinkTransaction forgot browserSinkId - broken');
 	assert.equal(holder.cueDeviceId, 'default');
 });
 

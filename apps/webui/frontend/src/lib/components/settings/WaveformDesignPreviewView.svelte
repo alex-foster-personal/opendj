@@ -1,23 +1,23 @@
 <script lang="ts">
 	// Props-only half of WaveformDesignPreview: the container resolves the
-	// effective design and palette from prefs and loads the sample; this file
-	// measures the canvas and paints it. Types come from the painter's own
-	// signature, so the view adds no importer to anlz-types.ts.
-	import { paintWaveformPreview } from '$lib/settings/waveform-preview-paint';
-
-	type PaintArgs = Parameters<typeof paintWaveformPreview>;
+	// effective design and palette from prefs, loads the sample, and injects
+	// the painter so this file never imports waveform-preview-paint (Storybook
+	// presentational rule).
+	import type { WaveformPreviewPaintFn } from '$lib/settings/waveform-preview-paint';
 
 	let {
+		paint,
 		active,
 		palette,
 		colors,
 		sample,
 		label = 'Waveform design preview'
 	}: {
-		active: PaintArgs[3];
+		paint: WaveformPreviewPaintFn;
+		active: Parameters<WaveformPreviewPaintFn>[3];
 		palette: string;
-		colors: PaintArgs[4];
-		sample: PaintArgs[5];
+		colors: Parameters<WaveformPreviewPaintFn>[4];
+		sample: Parameters<WaveformPreviewPaintFn>[5];
 		label?: string;
 	} = $props();
 
@@ -49,7 +49,7 @@
 		el.width = Math.round(cssWidth * dpr);
 		el.height = Math.round(PREVIEW_HEIGHT_PX * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		paintWaveformPreview(ctx, cssWidth, PREVIEW_HEIGHT_PX, active, colors, sample);
+		paint(ctx, cssWidth, PREVIEW_HEIGHT_PX, active, colors, sample);
 	});
 </script>
 

@@ -2,6 +2,7 @@
 
 Ties to INFRA-02 (shared modules usable across apps).
 """
+
 from __future__ import annotations
 
 import os
@@ -66,9 +67,7 @@ def test_audio_extensions_all_lowercase_with_dot() -> None:
 
 
 @pytest.mark.requirement("INFRA-02")
-def test_copy_live_dbs_is_idempotent_and_handles_missing_djay(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_copy_live_dbs_is_idempotent_and_handles_missing_djay(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Calling ``copy_live_dbs`` twice doesn't raise; missing djay → ``None``.
 
     We redirect all path constants into ``tmp_path`` so no real live DB is
@@ -97,9 +96,7 @@ def test_copy_live_dbs_is_idempotent_and_handles_missing_djay(
 
 
 @pytest.mark.requirement("INFRA-02")
-def test_copy_live_dbs_returns_none_for_both_when_both_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_copy_live_dbs_returns_none_for_both_when_both_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Both missing → dict with both values ``None`` (no exception)."""
     monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", tmp_path / "no-rb.db")
     monkeypatch.setattr(paths, "DJAY_LIVE_DB", tmp_path / "no-djay.db")

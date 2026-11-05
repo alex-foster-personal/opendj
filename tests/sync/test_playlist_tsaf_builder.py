@@ -1,4 +1,5 @@
 """SYNC-03: TSAF playlist-blob builder + page-data packer tests."""
+
 from __future__ import annotations
 
 import struct

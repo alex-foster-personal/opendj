@@ -40,3 +40,5 @@ export function paintWaveformPreview(
 	if (sample === null) return;
 	drawWaveBands(ctx, sample, w, h, c, design, 0);
 }
+
+export type WaveformPreviewPaintFn = typeof paintWaveformPreview;

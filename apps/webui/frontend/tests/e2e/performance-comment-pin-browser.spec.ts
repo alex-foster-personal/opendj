@@ -15,8 +15,10 @@ test('Enter respects a directly focused deck target and playlist row', async ({ 
 	await row.click();
 	const stableId = await row.getAttribute('data-stable-id');
 	expect(stableId, 'the filtered real library must expose a loadable track').toBeTruthy();
-	const loadsBefore = await page.evaluate(() =>
-		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	const loadsBefore = await page.evaluate(
+		() =>
+			window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load')
+				.length
 	);
 	const selectedRow = page.locator(`[data-testid="track-row"][data-stable-id="${stableId}"]`);
 	await expect(selectedRow).toBeVisible();
@@ -24,27 +26,47 @@ test('Enter respects a directly focused deck target and playlist row', async ({ 
 	await deckTarget.focus();
 	await expect(deckTarget).toBeFocused();
 	await page.keyboard.press('Enter');
-	await expect.poll(() => page.evaluate(() =>
-		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
-	)).toBe(loadsBefore + 1);
-	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id)).toBe(stableId);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					window
+						.musicDjToolsPerformance!.query()
+						.history.filter((command) => command.type === 'load').length
+			)
+		)
+		.toBe(loadsBefore + 1);
+	await expect
+		.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id))
+		.toBe(stableId);
 
 	const playlist = page.getByTestId('playlist-row').first();
 	await expect(playlist).toBeVisible();
 	await playlist.focus();
-	const loadsAtPlaylist = await page.evaluate(() =>
-		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
+	const loadsAtPlaylist = await page.evaluate(
+		() =>
+			window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load')
+				.length
 	);
 	await page.keyboard.press('Enter');
 	await page.keyboard.press('Enter');
 	await expect(playlist).toBeFocused();
-	await expect.poll(() => page.evaluate(() =>
-		window.musicDjToolsPerformance!.query().history.filter((command) => command.type === 'load').length
-	)).toBe(loadsAtPlaylist);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					window
+						.musicDjToolsPerformance!.query()
+						.history.filter((command) => command.type === 'load').length
+			)
+		)
+		.toBe(loadsAtPlaylist);
 });
 
 // IOPIN-01: exercise real keyboard/DOM focus and production browse adapter.
-test('browser selection scrolls, MIDI reclaims tracks, and sliders keep arrows', async ({ page }) => {
+test('browser selection scrolls, MIDI reclaims tracks, and sliders keep arrows', async ({
+	page
+}) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	const rows = page.getByTestId('track-row');
@@ -88,12 +110,17 @@ test('browser selection scrolls, MIDI reclaims tracks, and sliders keep arrows',
 	await page.keyboard.press('Enter');
 	await page.keyboard.press('Enter');
 	await expect(masterMute).toBeFocused();
-	expect(await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id)).toBeNull();
+	expect(
+		await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id)
+	).toBeNull();
 });
 
-test('BPM borders follow a real decoded master instead of permanent column tint', async ({ page }) => {
+test('BPM borders follow a real decoded master instead of permanent column tint', async ({
+	page
+}) => {
 	const stableId = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK;
-	if (!stableId) throw new Error('Set PERFORMANCE_E2E_MIXTOUR_TRACK to an analyzed real library track');
+	if (!stableId)
+		throw new Error('Set PERFORMANCE_E2E_MIXTOUR_TRACK to an analyzed real library track');
 	await page.goto('/performance?muted=1');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await page.evaluate(async (stable_id) => {
@@ -101,18 +128,26 @@ test('BPM borders follow a real decoded master instead of permanent column tint'
 		await ipc.dispatch({ type: 'load', deck: 1, stable_id });
 		await ipc.dispatch({ type: 'master', deck: 1 });
 	}, stableId);
-	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].bpm)).toBeGreaterThan(0);
+	await expect
+		.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].bpm))
+		.toBeGreaterThan(0);
 	const cells = page.locator('td.c-bpm.bpm-compatible');
 	await expect(cells.first()).toBeVisible();
 	const data = await page.evaluate(() => {
 		const state = window.musicDjToolsPerformance!.query();
 		const master = state.decks[1].effective_bpm!;
 		return Array.from(document.querySelectorAll('td.c-bpm')).map((cell) => ({
-			bpm: Number(cell.textContent?.trim()), compatible: cell.classList.contains('bpm-compatible'),
-			delta: Math.min(...[master, master / 2, master * 2].map((ref) => Math.abs(Number(cell.textContent?.trim()) - ref)))
+			bpm: Number(cell.textContent?.trim()),
+			compatible: cell.classList.contains('bpm-compatible'),
+			delta: Math.min(
+				...[master, master / 2, master * 2].map((ref) =>
+					Math.abs(Number(cell.textContent?.trim()) - ref)
+				)
+			)
 		}));
 	});
 	expect(data.length).toBeGreaterThan(3);
-	for (const cell of data.filter((cell) => cell.bpm > 0)) expect(cell.compatible).toBe(cell.delta < 8);
+	for (const cell of data.filter((cell) => cell.bpm > 0))
+		expect(cell.compatible).toBe(cell.delta < 8);
 	await page.evaluate(() => window.musicDjToolsPerformance!.dispatch({ type: 'unload', deck: 1 }));
 });

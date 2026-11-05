@@ -1,4 +1,5 @@
 """Tests for apps.shared.hashing."""
+
 from __future__ import annotations
 
 import hashlib
@@ -94,9 +95,7 @@ class TestHashCacheConnLeak:
             with pytest.raises(RuntimeError, match="schema fail"):
                 HashCache(cache_db)
             assert spy is not None
-            assert spy.close_called, (
-                "conn.close() was never called after _ensure_schema failure"
-            )
+            assert spy.close_called, "conn.close() was never called after _ensure_schema failure"
 
     def test_no_journal_left_after_init_failure(self, tmp_path) -> None:
         """if HashCache.__init__ fails then no WAL journal file remains"""

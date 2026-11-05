@@ -8,6 +8,7 @@ Regression line:
   - if a sandboxed engine receives an ingest upload then no file is written
     outside its MDT_DATA_DIR tree
 """
+
 from __future__ import annotations
 
 import json
@@ -100,14 +101,11 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
 def test_upload_stages_under_data_dir_inbox(probe: dict) -> None:
     assert probe["status"] == 200
     assert probe["ingest_inbox"] == probe["expected_inbox"]
-    assert probe["staged_under_inbox"], (
-        f"no staged files under inbox; found {probe['staged_under_inbox']}"
-    )
+    assert probe["staged_under_inbox"], f"no staged files under inbox; found {probe['staged_under_inbox']}"
 
 
 @pytest.mark.requires_audio_stack
 def test_upload_writes_nothing_under_fake_home_music(probe: dict) -> None:
     assert probe["under_fake_home_music"] == [], (
-        "sandboxed ingest upload escaped MDT_DATA_DIR into fake HOME/Music: "
-        f"{probe['under_fake_home_music']}"
+        f"sandboxed ingest upload escaped MDT_DATA_DIR into fake HOME/Music: {probe['under_fake_home_music']}"
     )

@@ -205,13 +205,8 @@ def test_a_real_change_survives_a_stronger_jitter_split() -> None:
     """
     result = detect_tempo_changes(_jitter_step_then_tempo_step())
 
-    assert result.static_grid_untrusted is True, (
-        "a real tempo change was hidden by a stronger jitter split"
-    )
-    material = [
-        m for m in result.markers
-        if abs(m.bpm_after - m.bpm_before) / m.bpm_before >= 0.01
-    ]
+    assert result.static_grid_untrusted is True, "a real tempo change was hidden by a stronger jitter split"
+    material = [m for m in result.markers if abs(m.bpm_after - m.bpm_before) / m.bpm_before >= 0.01]
     assert material, f"no material marker among {[round(m.at_s, 1) for m in result.markers]}"
     assert any(m.bpm_after > m.bpm_before for m in material)
 
@@ -228,10 +223,7 @@ def test_a_jitter_only_change_still_reports_nothing() -> None:
 
     result = detect_tempo_changes(sorted(clean + noisy + more))
 
-    material = [
-        m for m in result.markers
-        if abs(m.bpm_after - m.bpm_before) / m.bpm_before >= 0.01
-    ]
+    material = [m for m in result.markers if abs(m.bpm_after - m.bpm_before) / m.bpm_before >= 0.01]
     assert not material, f"variance-only change produced a tempo marker: {material}"
 
 
@@ -258,10 +250,7 @@ def _reproducing_track() -> list[float]:
 
 
 def _immaterial(markers) -> list:
-    return [
-        m for m in markers
-        if abs(m.bpm_after - m.bpm_before) / m.bpm_before < 0.01
-    ]
+    return [m for m in markers if abs(m.bpm_after - m.bpm_before) / m.bpm_before < 0.01]
 
 
 def test_no_published_marker_violates_the_materiality_floor() -> None:
@@ -279,12 +268,8 @@ def test_no_published_marker_violates_the_materiality_floor() -> None:
     """
     result = detect_tempo_changes(_reproducing_track())
 
-    assert not _immaterial(result.markers), (
-        "published markers below the 1 percent floor: "
-        + str([
-            (m.at_s, m.bpm_before, m.bpm_after, m.confidence)
-            for m in _immaterial(result.markers)
-        ])
+    assert not _immaterial(result.markers), "published markers below the 1 percent floor: " + str(
+        [(m.at_s, m.bpm_before, m.bpm_after, m.confidence) for m in _immaterial(result.markers)]
     )
 
 
@@ -297,9 +282,7 @@ def test_the_reproducing_track_still_reports_its_real_changes() -> None:
     result = detect_tempo_changes(_reproducing_track())
 
     assert result.static_grid_untrusted is True
-    assert len(result.markers) >= 2, (
-        f"a six-section track collapsed to {len(result.markers)} marker(s)"
-    )
+    assert len(result.markers) >= 2, f"a six-section track collapsed to {len(result.markers)} marker(s)"
 
 
 def test_the_materiality_invariant_holds_across_several_arrangements() -> None:
@@ -346,11 +329,7 @@ def _final_gain_and_penalty(beats: list[float], segments, index: int) -> tuple[f
     lo, split = segments[index][0], segments[index][1]
     hi = segments[index + 1][1]
     penalty = BIC_PENALTY_MULTIPLIER * math.log(hi - lo)
-    gain = (
-        _segment_cost(intervals, lo, hi)
-        - _segment_cost(intervals, lo, split)
-        - _segment_cost(intervals, split, hi)
-    )
+    gain = _segment_cost(intervals, lo, hi) - _segment_cost(intervals, lo, split) - _segment_cost(intervals, split, hi)
     return gain, penalty
 
 

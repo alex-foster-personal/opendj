@@ -1,4 +1,5 @@
 """Safety regressions for immutable, native-ID playlist writeback plans."""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +15,7 @@ from apps.smartlists.playlist_writeback import (
     VendorPlaylist,
     WritebackBackup,
     WritebackConflict,
+    WritebackPlan,
     WritebackService,
     WritebackTarget,
     WritebackUnavailable,
@@ -28,7 +30,9 @@ pytestmark = [pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 
 
 def _revision(target_id: str, members: list[str]) -> str:
-    return hashlib.sha256(json.dumps({"target_id": target_id, "members": members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps({"target_id": target_id, "members": members}, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 @dataclass
@@ -44,21 +48,44 @@ class _FakeVendorWriter:
     source: list[str] = field(default_factory=lambda: ["a", "b"])
 
     def list_playlists(self) -> list[VendorPlaylist]:
-        return [VendorPlaylist(playlist_id=playlist_id, name=name) for playlist_id, (name, _members) in self.playlists.items()]
+        return [
+            VendorPlaylist(playlist_id=playlist_id, name=name)
+            for playlist_id, (name, _members) in self.playlists.items()
+        ]
+
     def read_members_by_id(self, playlist_id: str) -> list[str]:
         return list(self.playlists[playlist_id][1])
-    def apply_with_backup_by_id(self, playlist_id: str, stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str, source_transaction) -> tuple[WritebackBackup, str]:
+
+    def apply_with_backup_by_id(
+        self,
+        playlist_id: str,
+        stable_members: list[str],
+        expected_target_revision: str,
+        expected_mapping_revision: str,
+        source_transaction,
+    ) -> tuple[WritebackBackup, str]:
         with source_transaction():
             if _revision(playlist_id, self.read_members_by_id(playlist_id)) != expected_target_revision:
                 raise WritebackConflict("target revision changed before transaction")
             if self.before_boundary_check is not None:
                 self.before_boundary_check()
-            rows = self.state_conn.execute(
-                "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ("
-                + ",".join("?" * len(set(stable_members))) + ")",
-                (self.vendor, *dict.fromkeys(stable_members)),
-            ).fetchall() if stable_members else []
-            mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            rows = (
+                self.state_conn.execute(
+                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ("
+                    + ",".join("?" * len(set(stable_members)))
+                    + ")",
+                    (self.vendor, *dict.fromkeys(stable_members)),
+                ).fetchall()
+                if stable_members
+                else []
+            )
+            mapping_revision = hashlib.sha256(
+                json.dumps(
+                    sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
             if mapping_revision != expected_mapping_revision:
                 raise WritebackConflict("mapping changed inside vendor transaction")
             native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in rows}
@@ -76,6 +103,7 @@ class _FakeVendorWriter:
             post_revision = _revision(playlist_id, self.read_members_by_id(playlist_id))
             self.reversals[backup_id] = (self.target_path, playlist_id, preimage, post_revision)
             return backup, post_revision
+
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str:
         if _revision(target_id, self.read_members_by_id(target_id)) != expected_target_revision:
             raise WritebackConflict("target revision conflict")
@@ -91,7 +119,10 @@ class _FakeVendorWriter:
 def state_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE track_vendor_ids (stable_id TEXT, vendor TEXT, vendor_id TEXT)")
-    conn.executemany("INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)", [(item, f"rb-{item}") for item in ("a", "b", "c", "d")])
+    conn.executemany(
+        "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)",
+        [(item, f"rb-{item}") for item in ("a", "b", "c", "d")],
+    )
     yield conn
     conn.close()
 
@@ -106,6 +137,7 @@ def service(writer: _FakeVendorWriter) -> WritebackService:
     def factory(vendor, mode, target_path):
         assert vendor == "rekordbox" and mode == "live" and target_path == writer.target_path
         return nullcontext(writer)
+
     return WritebackService(
         writer_factory=factory,
         source_members_reader=lambda _playlist_id: list(writer.source),
@@ -113,19 +145,31 @@ def service(writer: _FakeVendorWriter) -> WritebackService:
     )
 
 
-def _plan(service: WritebackService, writer: _FakeVendorWriter, desired_ids: list[str] | None = None) -> object:
+def _plan(service: WritebackService, writer: _FakeVendorWriter, desired_ids: list[str] | None = None) -> WritebackPlan:
     desired = desired_ids or ["a", "b"]
     writer.source = list(desired)
     return service.plan(
-        vendor="rekordbox", source_playlist_id="source", desired_ids=desired,
-        target_mode="live", target_path="/fixture/live.db", target_id="one",
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=desired,
+        target_mode="live",
+        target_path="/fixture/live.db",
+        target_id="one",
     )
 
 
 def test_duplicate_names_require_and_apply_the_selected_native_id(service, writer) -> None:
     plan = _plan(service, writer)
     assert plan.target_id == "one" and plan.target_name == "Set"
-    result = service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    result = service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
+    )
     assert writer.playlists["one"][1] == ["a", "b"]
     assert writer.playlists["two"][1] == ["b"]
     assert result.backup_id == "backup-1"
@@ -134,7 +178,15 @@ def test_duplicate_names_require_and_apply_the_selected_native_id(service, write
 def test_apply_rebuilds_the_selected_target_in_exact_source_order(service, writer) -> None:
     writer.playlists["one"] = ("Set", ["a", "b", "c"])
     plan = _plan(service, writer, ["a", "c", "d"])
-    service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "c", "d"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "c", "d"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
+    )
     assert writer.playlists["one"][1] == ["a", "c", "d"]
 
 
@@ -142,7 +194,15 @@ def test_plan_token_rejects_concurrent_target_membership_before_backup(service, 
     plan = _plan(service, writer)
     writer.playlists["one"] = ("Set", ["a", "c", "d"])
     with pytest.raises(WritebackConflict, match="stale"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "b"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+            confirmed=True,
+        )
     assert writer.playlists["one"][1] == ["a", "c", "d"]
     assert not writer.reversals
 
@@ -150,7 +210,15 @@ def test_plan_token_rejects_concurrent_target_membership_before_backup(service, 
 def test_plan_token_rejects_concurrent_source_membership(service, writer) -> None:
     plan = _plan(service, writer)
     with pytest.raises(WritebackConflict, match="stale"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "c"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "c"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+            confirmed=True,
+        )
 
 
 def test_vendor_boundary_rejects_source_edit_interleaved_after_plan(writer) -> None:
@@ -163,7 +231,15 @@ def test_vendor_boundary_rejects_source_edit_interleaved_after_plan(writer) -> N
     plan = _plan(service, writer)
     source[:] = ["a", "c"]
     with pytest.raises(WritebackConflict, match="source changed"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "b"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+            confirmed=True,
+        )
     assert writer.playlists["one"][1] == ["a", "c"]
     assert not writer.reversals
 
@@ -174,7 +250,15 @@ def test_vendor_boundary_rejects_mapping_remap_inside_vendor_transaction(service
         "UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"
     )
     with pytest.raises(WritebackConflict, match="mapping changed"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "b"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+            confirmed=True,
+        )
     assert writer.playlists["one"][1] == ["a", "c"]
     assert not writer.reversals
 
@@ -182,10 +266,22 @@ def test_vendor_boundary_rejects_mapping_remap_inside_vendor_transaction(service
 def test_vendor_boundary_derives_native_occurrences_from_the_checked_mapping_rows(service, writer) -> None:
     plan = _plan(service, writer)
     writer.before_boundary_check = lambda: (
-        writer.state_conn.execute("UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"),
-        writer.state_conn.execute("UPDATE track_vendor_ids SET vendor_id = 'rb-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"),
+        writer.state_conn.execute(
+            "UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"
+        ),
+        writer.state_conn.execute(
+            "UPDATE track_vendor_ids SET vendor_id = 'rb-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"
+        ),
     )
-    service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
+    )
     assert ("native", "one", ["rb-a", "rb-b"]) in writer.calls
 
 
@@ -193,7 +289,15 @@ def test_live_apply_refuses_missing_source_ownership(service, writer) -> None:
     plan = _plan(service, writer)
     service._source_lock_factory = None
     with pytest.raises(WritebackUnavailable, match="ownership lock"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "b"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+            confirmed=True,
+        )
 
 
 def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) -> None:
@@ -206,12 +310,16 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
             "INSERT INTO tracks (stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'inferred', 't', 't')",
             [("a",), ("b",), ("c",)],
         )
-        conn.execute("INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
-        conn.executemany(
-            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('source', ?, ?)", [("a", 0), ("b", 1)],
+        conn.execute(
+            "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')"
         )
         conn.executemany(
-            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)", [("a", "rb-a"), ("b", "rb-b"), ("c", "rb-c")],
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('source', ?, ?)",
+            [("a", 0), ("b", 1)],
+        )
+        conn.executemany(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)",
+            [("a", "rb-a"), ("b", "rb-b"), ("c", "rb-c")],
         )
     state_conn = sqlite3.connect(state_path, isolation_level=None)
     writer = _FakeVendorWriter("rekordbox", state_conn, {"one": ("Set", ["a", "c"]), "two": ("Set", ["b"])})
@@ -222,8 +330,12 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
         source_lock_factory=backend.hold_writeback_source_lock,
     )
     plan = service.plan(
-        vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"],
-        target_mode="live", target_path="/fixture/live.db", target_id="one",
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target_mode="live",
+        target_path="/fixture/live.db",
+        target_id="one",
     )
     rejected: list[str] = []
 
@@ -238,7 +350,15 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
             contender.close()
 
     writer.after_mapping_check = mutate_after_mapping_cas
-    service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
+    )
     assert rejected == ["source", "mapping"]
     assert ("native", "one", ["rb-a", "rb-b"]) in writer.calls
     assert backend.get_playlist("source").items == ["a", "b"]
@@ -247,7 +367,8 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
 
 
 def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """The production writer and source lock share one custom state DB."""
     from apps.shared.state import db as state_db
@@ -269,7 +390,9 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
                 [(stable_id, f"{prefix}-{stable_id}") for stable_id in ("a", "b", "c")],
             )
             if path == state_path:
-                conn.execute("INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
+                conn.execute(
+                    "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')"
+                )
                 conn.executemany(
                     "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('source', ?, ?)",
                     [("a", 0), ("b", 1)],
@@ -303,7 +426,10 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
         mapping_path = mapping_conn.execute("PRAGMA database_list").fetchone()[2]
         mapping_paths.append(Path(mapping_path).resolve())
         writer = _FakeVendorWriter(
-            "djay", mapping_conn, shared_playlists, target_path=Path(djay_db_path or target_path),
+            "djay",
+            mapping_conn,
+            shared_playlists,
+            target_path=Path(djay_db_path or target_path),
             after_mapping_check=reject_custom_state_remap,
         )
         built_writers.append(writer)
@@ -313,13 +439,21 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
     backend = SqliteBackend(state_path)
     service = get_writeback_service(backend)
     plan = service.plan(
-        vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
-        target_mode="live", target_path=str(target_path), target_id="one",
+        vendor="djay",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target_mode="live",
+        target_path=str(target_path),
+        target_id="one",
     )
     service.apply(
-        vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
+        vendor="djay",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
         target=WritebackTarget("live", str(target_path), "one"),
-        plan_token=plan.plan_token, dry_run=False, confirmed=True,
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
     )
 
     assert set(mapping_paths) == {state_path.resolve()}
@@ -331,34 +465,64 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
 
 def test_dry_run_is_non_mutating_and_confirmation_is_required(service, writer) -> None:
     plan = _plan(service, writer)
-    result = service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token)
+    result = service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+    )
     assert result.dry_run and not writer.calls
     with pytest.raises(WritebackConflict, match="confirmed"):
-        service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False)
+        service.apply(
+            vendor="rekordbox",
+            source_playlist_id="source",
+            desired_ids=["a", "b"],
+            target=WritebackTarget("live", "/fixture/live.db", "one"),
+            plan_token=plan.plan_token,
+            dry_run=False,
+        )
 
 
 def test_backup_is_taken_from_the_exact_target_and_rollback_is_cas_protected(service, writer) -> None:
     plan = _plan(service, writer)
-    applied = service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target=WritebackTarget("live", "/fixture/live.db", "one"), plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    applied = service.apply(
+        vendor="rekordbox",
+        source_playlist_id="source",
+        desired_ids=["a", "b"],
+        target=WritebackTarget("live", "/fixture/live.db", "one"),
+        plan_token=plan.plan_token,
+        dry_run=False,
+        confirmed=True,
+    )
     assert ("backup", Path("/fixture/live.db")) in writer.calls
     writer.playlists["two"] = ("Set", ["b", "d"])
     reverted = service.rollback(
-        vendor="rekordbox", target_mode="live", target_path="/fixture/live.db", target_id="one",
-        backup_id=applied.backup_id or "", expected_target_revision=applied.target_revision or "",
+        vendor="rekordbox",
+        target_mode="live",
+        target_path="/fixture/live.db",
+        target_id="one",
+        backup_id=applied.backup_id or "",
+        expected_target_revision=applied.target_revision or "",
         confirmed=True,
     )
     assert reverted.rolled_back and writer.playlists["one"][1] == ["a", "c"]
     assert writer.playlists["two"][1] == ["b", "d"]
     with pytest.raises(WritebackConflict):
         service.rollback(
-            vendor="rekordbox", target_mode="live", target_path="/fixture/live.db", target_id="one",
-            backup_id=applied.backup_id or "", expected_target_revision=applied.target_revision or "",
+            vendor="rekordbox",
+            target_mode="live",
+            target_path="/fixture/live.db",
+            target_id="one",
+            backup_id=applied.backup_id or "",
+            expected_target_revision=applied.target_revision or "",
             confirmed=True,
         )
 
 
 def test_wrong_target_path_is_refused_by_production_factory(monkeypatch, tmp_path) -> None:
     from apps.smartlists import playlist_writeback as module
+
     monkeypatch.setattr(module.paths, "REKORDBOX_LIVE_DB", tmp_path / "live.db")
     with (
         pytest.raises(ValueError, match="refusing target"),
@@ -381,7 +545,8 @@ def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path)
 
 
 def test_production_factory_opens_the_checked_target_not_the_requested_link(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """A link to the live target passes the check; the writer must open what was checked,
     so retargeting the link after the check cannot redirect the write. The real
@@ -411,7 +576,8 @@ def _assert_connection_closed(connection: sqlite3.Connection) -> None:
 
 
 def test_service_closes_real_bound_mapping_connection_after_success(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """A successful request releases its exact backend-owned mapping DB."""
     from apps.shared.state import db as state_db
@@ -447,9 +613,10 @@ def test_service_closes_real_bound_mapping_connection_after_success(
             opened_connections.append(writer.state_conn)
             mapping_path = writer.state_conn.execute("PRAGMA database_list").fetchone()[2]
             mapping_paths.append(Path(mapping_path).resolve())
-            assert writer.state_conn.execute(
-                "SELECT vendor_id FROM track_vendor_ids WHERE stable_id = 'a'"
-            ).fetchone()[0] == "custom-a"
+            assert (
+                writer.state_conn.execute("SELECT vendor_id FROM track_vendor_ids WHERE stable_id = 'a'").fetchone()[0]
+                == "custom-a"
+            )
             yield writer
 
     service = WritebackService(writer_factory=observing_factory)
@@ -462,7 +629,8 @@ def test_service_closes_real_bound_mapping_connection_after_success(
 
 
 def test_service_closes_real_bound_mapping_connection_after_exception(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """A vendor read failure releases mapping state without relying on GC."""
     from apps.shared.state import db as state_db
@@ -488,7 +656,9 @@ def test_service_closes_real_bound_mapping_connection_after_exception(
     service = WritebackService(writer_factory=observing_factory)
     with pytest.raises(sqlite3.OperationalError, match="no such table: database2"):
         service.targets(
-            vendor="djay", target_mode="live", target_path=str(target_path),
+            vendor="djay",
+            target_mode="live",
+            target_path=str(target_path),
         )
 
     assert len(opened_connections) == 1

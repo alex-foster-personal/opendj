@@ -1,4 +1,5 @@
 """Open the state DB and run one additive schema migration hook."""
+
 from __future__ import annotations
 
 import sqlite3

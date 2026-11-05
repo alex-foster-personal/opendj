@@ -76,7 +76,8 @@ def _run_gate(
     monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
     monkeypatch.setattr(qg, "_resolve_base", _fail if fail_if_called else lambda: resolve)
     monkeypatch.setattr(
-        qg, "_measure_owners_at_base",
+        qg,
+        "_measure_owners_at_base",
         _fail if fail_if_called else _measure,
     )
 
@@ -92,12 +93,14 @@ def test_base_main_already_over_at_same_value_is_INHERITED_and_passes(
 ) -> None:
     """If main is already at 50 and this run is 50 then it is not this change."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=50.0, base_values={_METRIC_KEY: 50.0},
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        base_values={_METRIC_KEY: 50.0},
         resolve=(_BASE_SHORT, ""),
     )
     assert code == 0, (
-        "if the merge-base main is already at this run's value then the gate "
-        f"must pass, but it exited {code}\n{out}"
+        f"if the merge-base main is already at this run's value then the gate must pass, but it exited {code}\n{out}"
     )
     assert "INHERITED" in out, (
         "if main is already over at the same value then the line must print "
@@ -116,30 +119,31 @@ def test_making_an_already_over_metric_worse_stays_a_hard_regression(
 ) -> None:
     """If main is at 50 and this run is 51 then 51 is this change's fault."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=51.0, base_values={_METRIC_KEY: 50.0},
+        capsys,
+        monkeypatch,
+        metric_value=51.0,
+        base_values={_METRIC_KEY: 50.0},
         resolve=(_BASE_SHORT, ""),
     )
     assert code == 1, (
-        "if this run is above main's already-over value then the gate must "
-        f"fail, but it exited {code}\n{out}"
+        f"if this run is above main's already-over value then the gate must fail, but it exited {code}\n{out}"
     )
     assert "FAIL: 1 metric(s) got worse." in out
     assert "INHERITED" not in out, (
-        "a run that made an already-over metric worse must stay a REGRESSION, "
-        f"not be relabeled INHERITED\n{out}"
+        f"a run that made an already-over metric worse must stay a REGRESSION, not be relabeled INHERITED\n{out}"
     )
     assert "this change is worse than main" in out, (
-        "the run must say why the metric stayed a regression: it is worse than "
-        f"what main measures\n{out}"
+        f"the run must say why the metric stayed a regression: it is worse than what main measures\n{out}"
     )
 
 
-def test_a_clean_base_stays_a_regression(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_clean_base_stays_a_regression(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """If main is under the allowance and this run crossed it, the run is red."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=50.0, base_values={_METRIC_KEY: 49.0},
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        base_values={_METRIC_KEY: 49.0},
         resolve=(_BASE_SHORT, ""),
     )
     assert code == 1, (
@@ -155,7 +159,10 @@ def test_a_green_run_never_pays_for_the_merge_base_re_measure(
 ) -> None:
     """If nothing regressed, the base scan must not run at all (Q-11 cost)."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=_ALLOWANCE, fail_if_called=True,
+        capsys,
+        monkeypatch,
+        metric_value=_ALLOWANCE,
+        fail_if_called=True,
     )
     assert code == 0
     assert "PASS: nothing got worse." in out
@@ -169,25 +176,22 @@ def test_unmeasurable_merge_base_reports_unknown_not_regression(
 ) -> None:
     """[if] merge-base cannot be measured [then] UNKNOWN exit 2, [else stop]."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=50.0, measure_error="the base tree has no apps/ to scan",
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        measure_error="the base tree has no apps/ to scan",
     )
     assert code == 2, (
-        "if the merge-base main cannot be measured then the gate must exit 2 "
-        f"(UNKNOWN), but it exited {code}\n{out}"
+        f"if the merge-base main cannot be measured then the gate must exit 2 (UNKNOWN), but it exited {code}\n{out}"
     )
-    assert "UNKNOWN: base_compare:" in out, (
-        "the run must report base_compare as UNKNOWN rather than a verdict\n"
-        f"{out}"
-    )
+    assert "UNKNOWN: base_compare:" in out, f"the run must report base_compare as UNKNOWN rather than a verdict\n{out}"
     assert "REGRESSION" not in out, (
-        "inheritance-eligible metrics must not print REGRESSION when the base "
-        f"compare is undecidable\n{out}"
+        f"inheritance-eligible metrics must not print REGRESSION when the base compare is undecidable\n{out}"
     )
     assert "FAIL:" not in out
     assert "INHERITED" not in out
     assert "cannot re-measure fake on merge-base main" in out, (
-        "the run must say why it could not classify the metric rather than "
-        f"passing silently\n{out}"
+        f"the run must say why it could not classify the metric rather than passing silently\n{out}"
     )
 
 
@@ -223,9 +227,7 @@ def test_hard_zero_regression_still_fails_when_base_compare_unknown(
         return None, "worktree add failed"
 
     monkeypatch.setattr(qg, "EVALUATORS", (qg.Evaluator("fake", "fake title", _fake_eval),))
-    monkeypatch.setattr(
-        qg, "_load_baseline", lambda: {hard_zero: 0.0, _METRIC_KEY: _ALLOWANCE}
-    )
+    monkeypatch.setattr(qg, "_load_baseline", lambda: {hard_zero: 0.0, _METRIC_KEY: _ALLOWANCE})
     monkeypatch.setattr(qg, "_load_slack", dict)
     monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
     monkeypatch.setattr(qg, "_resolve_base", lambda: (_BASE_SHORT, ""))
@@ -262,7 +264,10 @@ def test_head_is_on_main_so_there_is_nothing_to_inherit_from(
 ) -> None:
     """A push-to-main run is the detector: it must never relabel its own red."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=50.0, base_values={_METRIC_KEY: 50.0},
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        base_values={_METRIC_KEY: 50.0},
         resolve=(None, "HEAD is itself on main; there is no other main to inherit from"),
     )
     assert code == 1, (
@@ -280,7 +285,10 @@ def test_a_metric_missing_from_the_base_measurement_stays_a_regression(
 ) -> None:
     """If the base run did not report the metric, do not guess it was inherited."""
     code, out = _run_gate(
-        capsys, monkeypatch, metric_value=50.0, base_values={},
+        capsys,
+        monkeypatch,
+        metric_value=50.0,
+        base_values={},
         resolve=(_BASE_SHORT, ""),
     )
     assert code == 1
@@ -322,7 +330,4 @@ def test_the_INHERITED_block_names_the_metric_value_and_main() -> None:
     m = _m(50.0)
     line1, line2 = qg._inherited_block(m, 50.0, _BASE_SHORT, {_METRIC_KEY: _ALLOWANCE})
     assert line1 == f"INHERITED  {_METRIC_KEY}: 50 > 49 allowed"
-    assert line2 == (
-        f"          main ({_BASE_SHORT}) is ALSO at 50 - this is a trunk "
-        "regression, not yours"
-    )
+    assert line2 == (f"          main ({_BASE_SHORT}) is ALSO at 50 - this is a trunk regression, not yours")

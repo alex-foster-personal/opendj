@@ -122,7 +122,11 @@ test('releaseGigRuntime still disposes the engine and restores mute after a stem
 
 	const decoder = {
 		ready: Promise.resolve(),
-		decodeFile: async () => ({ channelData: [new Float32Array(1)], samplesDecoded: 1, sampleRate: 44100 }),
+		decodeFile: async () => ({
+			channelData: [new Float32Array(1)],
+			samplesDecoded: 1,
+			sampleRate: 44100
+		}),
 		reset: async () => {},
 		free: async () => {
 			throw new Error('stem worker unreachable');
@@ -147,7 +151,11 @@ test('releaseGigRuntime still disposes the engine and restores mute after a stem
 		/stem worker unreachable/,
 		'the stem-pool failure must still propagate, not be swallowed'
 	);
-	assert.equal(disposed, true, 'disposeEngine() must still run despite the earlier stem-pool failure');
+	assert.equal(
+		disposed,
+		true,
+		'disposeEngine() must still run despite the earlier stem-pool failure'
+	);
 	assert.equal(
 		onDisposedCalled,
 		true,
@@ -250,7 +258,11 @@ test('gigRuntimeReleaseSettled waits out an in-flight release, failed or not (Co
 	assert.equal(typeof finishDispose, 'function', 'the release never reached disposeEngine()');
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.equal(settled, false, 'the barrier settled while the Gig teardown was still disposing');
-	assert.equal(runtime.gigRuntimeReleasePending(), true, 'a disposing release must read as pending');
+	assert.equal(
+		runtime.gigRuntimeReleasePending(),
+		true,
+		'a disposing release must read as pending'
+	);
 	finishDispose();
 	await release;
 	await barrier;
@@ -305,9 +317,17 @@ test('LIBWS-06: the rescue hold outlives the consumed exit marker until released
 	assert.equal(runtime.libraryRescueHold.held(), false);
 	runtime.markLibraryModeExit();
 	runtime.consumeLibraryModeExitFlag();
-	assert.equal(runtime.libraryRescueHold.held(), true, 'the first session restore consumes only the exit marker');
+	assert.equal(
+		runtime.libraryRescueHold.held(),
+		true,
+		'the first session restore consumes only the exit marker'
+	);
 	assert.equal(runtime.libraryRescueHold.handoff('?d2=t1'), true, 'a Load to deck hand-off');
-	assert.equal(runtime.libraryRescueHold.handoff(''), false, 'RESCUE-02: a plain return is no hand-off');
+	assert.equal(
+		runtime.libraryRescueHold.handoff(''),
+		false,
+		'RESCUE-02: a plain return is no hand-off'
+	);
 	runtime.libraryRescueHold.release();
 	assert.equal(runtime.libraryRescueHold.held(), false);
 	assert.equal(runtime.libraryRescueHold.handoff('?d2=t1'), false, 'no hold, no hand-off');

@@ -31,6 +31,7 @@ Regression lines:
 
 [if] the probe returns a verdict it did not measure [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import ast
@@ -276,8 +277,7 @@ def test_the_expected_source_values_are_the_engine_s_own_literals() -> None:
     body = source[start : source.index("\n}\n", start)]
     emitted = set(re.findall(r"source: [^\n]*?'(\w+)' : '(\w+)'", body)[0])
     assert set(probe._SOURCE_FOR.values()) == emitted, (
-        f"the probe expects {sorted(probe._SOURCE_FOR.values())} but deckTransportClock "
-        f"emits {sorted(emitted)}"
+        f"the probe expects {sorted(probe._SOURCE_FOR.values())} but deckTransportClock emits {sorted(emitted)}"
     )
 
 

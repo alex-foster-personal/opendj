@@ -6,13 +6,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-const SOURCE = new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url);
+const SOURCE = new URL(
+	'../../src/lib/components/rb/mixer/HeadphoneCluster.svelte',
+	import.meta.url
+);
 
 test('CALIBRATE stays inside I/O but outside the two_outputs-only section', () => {
 	const source = readFileSync(SOURCE, 'utf8');
 	assert.match(source, /\{#if ioSurface\.open\}[\s\S]*?class="hp-panel"/);
-	assert.match(source, /\{#if headphoneState\.output_mode === 'two_outputs'\}[\s\S]*?<\/section>\s*\{\/if\}\s*<section class="hp-section hp-calibration-section"/,
-		'CALIBRATE must be rendered after the two_outputs-only section, still within I/O');
+	assert.match(
+		source,
+		/\{#if headphoneState\.output_mode === 'two_outputs'\}[\s\S]*?<\/section>\s*\{\/if\}\s*<section class="hp-section hp-calibration-section"/,
+		'CALIBRATE must be rendered after the two_outputs-only section, still within I/O'
+	);
 	assert.match(source, /aria-label="CALIBRATE CUE ALIGNMENT"/);
-	assert.match(source, /disabled=\{!calibrateEnabled\}/, 'it stays disabled until a cue device is selected');
+	assert.match(
+		source,
+		/disabled=\{!calibrateEnabled\}/,
+		'it stays disabled until a cue device is selected'
+	);
 });

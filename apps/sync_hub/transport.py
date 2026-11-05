@@ -15,6 +15,7 @@ batch can take tens of seconds on a large library, and Tailscale serve may
 close idle proxy connections around the same horizon. Hello, pull and digest
 keep the shorter default.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,9 +45,7 @@ class SyncTransportError(RuntimeError):
     must read as "not a declared refusal", never as any particular one.
     """
 
-    def __init__(
-        self, message: str, *, status_code: int | None = None, code: str | None = None
-    ) -> None:
+    def __init__(self, message: str, *, status_code: int | None = None, code: str | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
@@ -63,9 +62,7 @@ def _detail_code(body: str) -> str | None:
     return code if isinstance(code, str) else None
 
 
-def refused(
-    label: str, status_code: int, body: str, *, elapsed_s: float | None = None
-) -> SyncTransportError:
+def refused(label: str, status_code: int, body: str, *, elapsed_s: float | None = None) -> SyncTransportError:
     """The error for a non-2xx answer. Shared by every :class:`HubTransport`."""
     suffix = f" (after {elapsed_s:.1f}s)" if elapsed_s is not None else ""
     return SyncTransportError(
@@ -117,10 +114,7 @@ def _classify_http_failure(lower: str, elapsed: float | None) -> TransportFailur
             "proxy_or_hub_timeout",
             elapsed,
             with_elapsed="the hub or proxy closed the connection (502, after {elapsed:.0f}s)",
-            without_elapsed=(
-                "the hub or proxy closed the connection "
-                "(502; may be Tailscale serve or client timeout)"
-            ),
+            without_elapsed=("the hub or proxy closed the connection (502; may be Tailscale serve or client timeout)"),
         )
     if re.search(r"http 5\d\d", lower):
         code = re.search(r"http (\d{3})", lower)
@@ -222,9 +216,7 @@ class HubTransport(Protocol):
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """POST JSON to ``path``; return the decoded JSON body."""
 
-    def get(
-        self, path: str, params: Mapping[str, str | Sequence[str]]
-    ) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         """GET ``path`` with query ``params``; return the decoded JSON body."""
 
 
@@ -248,21 +240,15 @@ class HttpTransport:
         self._base = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._push_timeout_s = push_timeout_s
-        self._auth: dict[str, str] = (
-            {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
-        )
+        self._auth: dict[str, str] = {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
 
-    def _url(
-        self, path: str, params: Mapping[str, str | Sequence[str]] | None = None
-    ) -> str:
+    def _url(self, path: str, params: Mapping[str, str | Sequence[str]] | None = None) -> str:
         url = f"{self._base}{path}"
         if params:
             url = f"{url}?{urllib.parse.urlencode(dict(params), doseq=True)}"
         return url
 
-    def _send(
-        self, request: urllib.request.Request, *, timeout_s: float | None = None
-    ) -> dict[str, Any]:
+    def _send(self, request: urllib.request.Request, *, timeout_s: float | None = None) -> dict[str, Any]:
         effective = timeout_s if timeout_s is not None else self._timeout_s
         started = time.monotonic()
         try:
@@ -284,12 +270,10 @@ class HttpTransport:
             reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
             if _os_error_is_timeout(exc):
                 raise SyncTransportError(
-                    f"{request.get_method()} {request.full_url} client timeout "
-                    f"after {elapsed:.1f}s: {reason}"
+                    f"{request.get_method()} {request.full_url} client timeout after {elapsed:.1f}s: {reason}"
                 ) from exc
             raise SyncTransportError(
-                f"{request.get_method()} {request.full_url} failed after "
-                f"{elapsed:.1f}s: {reason}"
+                f"{request.get_method()} {request.full_url} failed after {elapsed:.1f}s: {reason}"
             ) from exc
         return _decode(body, request.full_url)
 
@@ -302,12 +286,8 @@ class HttpTransport:
         )
         return self._send(request, timeout_s=self._push_timeout_s)
 
-    def get(
-        self, path: str, params: Mapping[str, str | Sequence[str]]
-    ) -> dict[str, Any]:
-        request = urllib.request.Request(
-            self._url(path, params), headers=dict(self._auth), method="GET"
-        )
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
+        request = urllib.request.Request(self._url(path, params), headers=dict(self._auth), method="GET")
         return self._send(request)
 
 

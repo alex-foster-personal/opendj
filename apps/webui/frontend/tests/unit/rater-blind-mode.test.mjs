@@ -71,10 +71,7 @@ class El {
 		return this.attributes[name] ?? null;
 	}
 	getContext() {
-		return new Proxy(
-			{},
-			{ get: (_t, prop) => (prop === 'canvas' ? this : () => undefined) }
-		);
+		return new Proxy({}, { get: (_t, prop) => (prop === 'canvas' ? this : () => undefined) });
 	}
 	getBoundingClientRect() {
 		return { left: 0, top: 0, width: 100, height: 20 };
@@ -100,7 +97,9 @@ class El {
 			this.innerHTML ?? ''
 		];
 		for (const child of this.children) {
-			parts.push(typeof child.visibleText === 'function' ? child.visibleText() : String(child.text ?? ''));
+			parts.push(
+				typeof child.visibleText === 'function' ? child.visibleText() : String(child.text ?? '')
+			);
 		}
 		return parts.join('  ');
 	}
@@ -200,7 +199,13 @@ const ARMS = [
 	arm('roformer2_bs', 'model=roformer2 overlap=0.25', 7)
 ];
 
-const MANIFEST = { track: 'demo-track', mode: 'four-stem', blind_default: true, stems: STEMS, arms: ARMS };
+const MANIFEST = {
+	track: 'demo-track',
+	mode: 'four-stem',
+	blind_default: true,
+	stems: STEMS,
+	arms: ARMS
+};
 
 before(() => {
 	source = raterSource();
@@ -305,9 +310,9 @@ test('the identity that survives blind mode is machine-readable only, and is rec
 	assert.equal(
 		leaked.length,
 		1,
-		'exactly one arm id should appear in this card\'s machine-readable attributes; ' +
+		"exactly one arm id should appear in this card's machine-readable attributes; " +
 			`got ${leaked.length}, so either the leak was closed (update this test and the ` +
-			'scoreboard) or a card now carries OTHER arms\' ids too'
+			"scoreboard) or a card now carries OTHER arms' ids too"
 	);
 	assert.ok(
 		!card.visibleText().includes(leaked[0].id),
@@ -334,7 +339,13 @@ test('with blind mode OFF the identities are deliberately shown', () => {
 test('blind mode shuffles the arms so the order does not leak the ranking', () => {
 	const ranked = rater.state.ranked.map((a) => a.id);
 	const seen = new Set();
-	for (let i = 0; i < 200; i++) seen.add(rater.shuffled(rater.state.ranked).map((a) => a.id).join('|'));
+	for (let i = 0; i < 200; i++)
+		seen.add(
+			rater
+				.shuffled(rater.state.ranked)
+				.map((a) => a.id)
+				.join('|')
+		);
 
 	assert.ok(
 		seen.size > 1,
@@ -345,7 +356,11 @@ test('blind mode shuffles the arms so the order does not leak the ranking', () =
 		`only ${seen.size} distinct orders over 200 draws for 3 arms - the shuffle is degenerate`
 	);
 	for (const order of seen) {
-		assert.equal(order.split('|').length, ranked.length, 'the shuffle dropped or duplicated an arm');
+		assert.equal(
+			order.split('|').length,
+			ranked.length,
+			'the shuffle dropped or duplicated an arm'
+		);
 		assert.deepEqual(
 			order.split('|').slice().sort(),
 			ranked.slice().sort(),
@@ -386,7 +401,10 @@ test('blind letters are positional, not tied to an arm', () => {
 		}
 	}
 	for (const [id, letters] of letterFor) {
-		assert.ok(letters.size > 1, `arm ${id} always gets letter ${[...letters]} - the letter IS the id`);
+		assert.ok(
+			letters.size > 1,
+			`arm ${id} always gets letter ${[...letters]} - the letter IS the id`
+		);
 	}
 });
 
@@ -439,7 +457,8 @@ test('blind mode withholds the machine-vs-human table until every stem is scored
 
 test('one unrated stem is still enough to keep the comparison hidden', () => {
 	const ratings = {};
-	for (const a of ARMS) for (const g of STEMS) ratings[rater.cellKey(a.id, g.stem)] = { human_score: 7 };
+	for (const a of ARMS)
+		for (const g of STEMS) ratings[rater.cellKey(a.id, g.stem)] = { human_score: 7 };
 	// Take exactly one back.
 	delete ratings[rater.cellKey(ARMS[2].id, STEMS[1].stem)];
 
@@ -456,14 +475,18 @@ test('one unrated stem is still enough to keep the comparison hidden', () => {
 
 test('the comparison unlocks once every stem of every arm is scored', () => {
 	const ratings = {};
-	for (const a of ARMS) for (const g of STEMS) ratings[rater.cellKey(a.id, g.stem)] = { human_score: 7 };
+	for (const a of ARMS)
+		for (const g of STEMS) ratings[rater.cellKey(a.id, g.stem)] = { human_score: 7 };
 
 	const complete = bootRater({ ratings });
 	const body = new El('div');
 	complete.fillFourStemSummary(body);
 
 	const visible = body.visibleText();
-	assert.ok(!/still to go/.test(visible), 'the comparison never unlocks, so blind mode is a dead end');
+	assert.ok(
+		!/still to go/.test(visible),
+		'the comparison never unlocks, so blind mode is a dead end'
+	);
 	assert.match(visible, /SI-SDR|si_sdr|mean/i, 'the unlocked table shows no machine comparison');
 });
 

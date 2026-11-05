@@ -67,5 +67,8 @@ def test_row_assets_answer_what_the_listing_row_carries(probe) -> None:
     assert probe["assets"]["status"] == 200
     assert sorted(answer["assets"]) == sorted(ASKED), "an id that is not a track is absent"
     for sid in ASKED:
-        assert answer["assets"][sid] == {field: rows[sid][field] for field in ASSET_FIELDS}
+        expected = {field: rows[sid][field] for field in ASSET_FIELDS}
+        # The row strip tempo curve (12042582bb) rides the listing row inside grid_quality.
+        expected["tempo"] = rows[sid]["grid_quality"]["tempo"]
+        assert answer["assets"][sid] == expected
     assert any(answer["assets"][sid]["preview_b64"] is not None for sid in ASKED)

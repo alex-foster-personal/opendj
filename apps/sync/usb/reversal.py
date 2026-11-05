@@ -20,11 +20,11 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import shlex
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared.posix_shell import resolve_posix_bash
 from apps.sync.usb.copy import CopyResult
 
 
@@ -108,29 +108,12 @@ class ReversalLog:
         os.chmod(self.path, 0o755)
 
 
-def _bash_executable() -> str | None:
-    """Locate the bash that ``verify_syntax`` runs.
-
-    POSIX: bare ``bash`` from PATH. Windows: ``subprocess`` resolves a bare
-    ``bash`` to the System32 WSL launcher ahead of PATH, which hangs or exits
-    1 with empty stderr for valid scripts, so Git for Windows' bash is located
-    next to ``git.exe`` instead. ``None`` when no Git install is found.
-    """
-    if os.name != "nt":
-        return "bash"
-    git = shutil.which("git")
-    if git is None:
-        return None
-    for ancestor in Path(git).resolve().parents:
-        candidate = ancestor / "bin" / "bash.exe"
-        if candidate.is_file():
-            return str(candidate)
-    return None
-
-
 def verify_syntax(path: Path) -> tuple[bool, str]:
-    """Run ``bash -n`` on ``path``. Returns (ok, stderr)."""
-    bash = _bash_executable()
+    """Run ``bash -n`` on ``path`` with a resolved POSIX bash. Returns (ok, stderr).
+
+    Never a bare ``"bash"`` argv0: see :mod:`apps.shared.posix_shell`.
+    """
+    bash = resolve_posix_bash()
     if bash is None:
         return False, "bash not available"
     try:

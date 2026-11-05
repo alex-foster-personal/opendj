@@ -9,6 +9,7 @@ as ``scripts/stems_modal_worker.py`` so the engine can publish
 Run directly:
   python scripts/stems_hydrate_worker.py --stable-id <id> [--data-dir DIR]
 """
+
 from __future__ import annotations
 
 import argparse

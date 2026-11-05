@@ -7,6 +7,7 @@ Runs on every host with sqlcipher3 (CI included): the export is built by
 host is needed. Real-stick parity stays with the fixture-backed modules
 (test_pioneer_writer_onelibrary.py, test_pioneer_export_workflow.py).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -38,9 +39,7 @@ from tests.sync.usb.onelibrary_synth import SYNTH_TRACKS, build_synthetic_onelib
 
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
-    pytest.mark.skipif(
-        not SQLCIPHER_AVAILABLE, reason=f"sqlcipher3 unavailable: {SQLCIPHER_IMPORT_ERROR}"
-    ),
+    pytest.mark.skipif(not SQLCIPHER_AVAILABLE, reason=f"sqlcipher3 unavailable: {SQLCIPHER_IMPORT_ERROR}"),
 ]
 
 
@@ -105,9 +104,7 @@ def test_rows_use_short_snake_case_keys(synth: Path) -> None:
     assert track["file_name"] == "three.mp3"
     assert track["artist_id"] == 1 and "original_artist_id" in track
     assert "dj_comment" in track and "djComment" not in track
-    assert playlist == {
-        "id": 3, "seq": 1, "name": "Child", "image_id": 0, "attribute": 0, "parent_id": 2
-    }
+    assert playlist == {"id": 3, "seq": 1, "name": "Child", "image_id": 0, "attribute": 0, "parent_id": 2}
 
 
 def test_playlist_contents_follow_sequence_order(synth: Path) -> None:
@@ -135,13 +132,9 @@ def test_append_never_repeats_a_sibling_sequence_number(synth: Path) -> None:
         child = db.create_playlist("Appended child", parent_id=2)
         db.create_playlist_content(1, 5)
     assert (top["seq"], child["seq"]) == (3, 2)
-    top_seqs = _sibling_seqs(
-        synth, 'SELECT "sequenceNo" FROM playlist WHERE playlist_id_parent = ? ORDER BY 1', 0
-    )
+    top_seqs = _sibling_seqs(synth, 'SELECT "sequenceNo" FROM playlist WHERE playlist_id_parent = ? ORDER BY 1', 0)
     assert top_seqs == [1, 2, 3]
-    member_seqs = _sibling_seqs(
-        synth, 'SELECT "sequenceNo" FROM playlist_content WHERE playlist_id = ? ORDER BY 1', 1
-    )
+    member_seqs = _sibling_seqs(synth, 'SELECT "sequenceNo" FROM playlist_content WHERE playlist_id = ? ORDER BY 1', 1)
     assert member_seqs == [1, 2, 3]
 
 
@@ -152,9 +145,9 @@ def test_insert_at_position_shifts_later_siblings(synth: Path) -> None:
         assert [c["id"] for c in db.get_playlist_contents(1)] == [5, 3, 1]
         first = db.create_playlist("First", seq=1)
         assert first["seq"] == 1
-        names = [p["name"] for p in sorted(
-            (p for p in db.get_playlists() if p["parent_id"] == 0), key=lambda p: p["seq"]
-        )]
+        names = [
+            p["name"] for p in sorted((p for p in db.get_playlists() if p["parent_id"] == 0), key=lambda p: p["seq"])
+        ]
     assert names == ["First", "Existing", "Folder"]
 
 
@@ -192,8 +185,7 @@ def test_writer_round_trips_overlays_and_playlists(synth: Path, tmp_path: Path) 
         template_path=synth,
         output_path=output,
         track_updates=[
-            TrackUpdate(id=2, title="Edited é 🎧", rating=4, bpmx100=12345,
-                        dj_comment="cue at drop", color_id=1),
+            TrackUpdate(id=2, title="Edited é 🎧", rating=4, bpmx100=12345, dj_comment="cue at drop", color_id=1),
         ],
         playlists=[
             PlaylistSpec(name="Set A", track_ids=(5, 2, 4)),
@@ -230,8 +222,7 @@ def test_writer_carries_pending_wal_pages(synth: Path, tmp_path: Path) -> None:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA wal_autocheckpoint = 0")
     conn.execute(
-        'INSERT INTO playlist ("sequenceNo", name, attribute, playlist_id_parent) '
-        "VALUES (3, 'Only in WAL', 0, 0)"
+        "INSERT INTO playlist (\"sequenceNo\", name, attribute, playlist_id_parent) VALUES (3, 'Only in WAL', 0, 0)"
     )
     conn.commit()
     snapshot = tmp_path / "snap"
@@ -269,9 +260,7 @@ def test_differ_snapshot_counts_tables(synth: Path) -> None:
 def test_loudness_sidecar_joins_by_file_name(synth: Path) -> None:
     """With rbox this probe always failed (its row .get() needed a default)."""
     conn = _raw(synth)
-    conn.execute(
-        "CREATE TABLE odjAnalysisScalar (ContentID INTEGER, field TEXT, value TEXT)"
-    )
+    conn.execute("CREATE TABLE odjAnalysisScalar (ContentID INTEGER, field TEXT, value TEXT)")
     conn.execute("INSERT INTO odjAnalysisScalar VALUES (3, 'loudness_lufs', '-8.5')")
     conn.commit()
     conn.close()

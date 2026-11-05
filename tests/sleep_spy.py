@@ -22,6 +22,7 @@ tests in tests/webui/test_queue_user.py now do.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import threading
@@ -31,9 +32,7 @@ from collections.abc import Callable
 import pytest
 
 
-def spy_on_own_thread_sleep(
-    monkeypatch: pytest.MonkeyPatch, on_own_thread: Callable[[float], None]
-) -> None:
+def spy_on_own_thread_sleep(monkeypatch: pytest.MonkeyPatch, on_own_thread: Callable[[float], None]) -> None:
     """Route ``time.sleep`` calls from the CALLING thread to ``on_own_thread``.
 
     Calls from any other thread still sleep for real, so a background loop

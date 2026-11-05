@@ -8,8 +8,9 @@ the 600-line file ceiling, along the seam that was already there.
 Four reviewers, four vocabularies, one model. Copilot states a bare P-level
 and verdict as plain text leading its headline. Codex states a P-level in a
 shields badge and (since Mon 31 Aug 2026) an explicit BLOCKING verdict. Devin
-states neither: it ships a JSON envelope in an HTML comment plus a headline
-colour. CodeRabbit is governed but has emitted no threads here yet.
+ships a JSON envelope in an HTML comment plus a headline colour, with an
+optional emoji-prefixed P-level and verdict on later threads. CodeRabbit is
+governed but has emitted no threads here yet.
 
 Acceptance tests live in (private path) and run
 against real captured payloads pinned by checksum.
@@ -73,8 +74,9 @@ _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
 # discriminator Codex asked for on PR #1671: Devin opens its headlines with a
 # SEMANTIC emoji, `🟡 **Blocking I/O stalls the event loop**`, and
 # swallowing every leading non-word character exposed ordinary prose at offset
-# zero and invented a verdict from it. An emoji is followed by a space; a
-# wrapper is not.
+# zero and invented a verdict from it. An emoji plus whitespace is a
+# presentation marker only when a P-level follows (PR #4270's "🟡 P2
+# BLOCKING", PR #4154's "🔍 P2 NON-BLOCKING"); emoji-plus-prose stays unmarked.
 #
 # NON- is matched inside the SAME anchored alternation and is never tested as a
 # separate substring. "BLOCKING" occurs inside "NON-BLOCKING" at offset 4, so an
@@ -97,13 +99,13 @@ _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
 # (Sol P1, PR #4449). Whatever follows the P-level must still BE the verdict:
 # "P2 Avoid blocking I/O" is prose, not a verdict.
 _BLOCKING = re.compile(
-    r"^\s*(?:[^\w\s]*P[0-3][^\w\s]*\s*)?(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE
+    r"^\s*(?:(?:[^\w\s]+\s+)?[^\w\s]*P[0-3][^\w\s]*\s*)?(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE
 )
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
 
-# Devin carries no P-level. It ships a machine-readable envelope instead:
+# Devin severity comes from its machine-readable envelope and headline colour:
 #   <!-- devin-review-comment {"id": "BUG_...", "kind": "bug"} -->
 #   🟡 **Dirty checkouts are modified**
 # Measured over this repo's whole review corpus (107 Devin threads, Mon 31 Aug
@@ -113,6 +115,8 @@ _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
 #   bug + red    -> P1   a defect claim Devin rates high
 #   bug + yellow -> P2   a defect claim Devin rates moderate
 #   analysis     -> INFO an observation, never a defect claim
+# Later threads may also carry an emoji-prefixed P-level and verdict. The
+# envelope still determines severity; _blocking reads the explicit verdict.
 # The debt-log reply has a fixed opening by policy, which is what makes the
 # "no blocker may be debt-logged" rule mechanically checkable.
 # Anchored to the start of ONE REPLY, because the policy defines this as the

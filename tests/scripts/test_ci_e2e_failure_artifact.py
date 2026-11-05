@@ -46,8 +46,7 @@ def _declared_paths() -> list[str]:
     uploads = [
         step
         for step in doc["jobs"]["gate"]["steps"]
-        if "r2-artifact" in (step.get("uses") or "")
-        and (step.get("with") or {}).get("name") == "e2e-gate-failures"
+        if "r2-artifact" in (step.get("uses") or "") and (step.get("with") or {}).get("name") == "e2e-gate-failures"
     ]
     assert len(uploads) == 1, "exactly one e2e-gate-failures upload"
     return uploads[0]["with"]["path"].split()

@@ -54,11 +54,15 @@ export const MENU_COMMANDS = {
 	'mixer.filter': ipc('filter'),
 	'mixer.channel_cue': ipc('channel_cue'),
 	'mixer.assign': ipc('assign'),
+	// ANIM-01..03: a dial animation is an AGENT-03 ramp order on the command bus.
+	'mixer.animate': http('POST', '/api/v1/commands', 'opendj animate <deck> <control> "<expr>"'),
 	// Feedback pins (vocal-lane Fix / add comment, FB-12).
 	'feedback.comment': http('POST', '/api/v1/feedback/comments'),
 	// Tracks.
 	'track.add_to_playlist': http('POST', '/api/v1/playlists/{playlist_id}/items:add'),
 	'track.edit': http('PATCH', '/api/v1/tracks/{stable_id}'),
+	// LIBUX-56: the Comment cell editor saves through the same PATCH.
+	'track.comment': http('PATCH', '/api/v1/tracks/{stable_id}', 'opendj track comment <stable_id> set <text>'),
 	'track.relocate': http('POST', '/api/v1/relocate/{stable_id}/apply'),
 	'track.reveal': http('POST', '/api/v1/tracks/{stable_id}:reveal'),
 	'track.playlists': http('GET', '/api/v1/tracks/{stable_id}/playlists'),
@@ -76,6 +80,9 @@ export const MENU_COMMANDS = {
 	'track.library_job': http('POST', '/api/v1/library-jobs/enqueue'),
 	'track.stems.generate': http('POST', '/api/v1/stems/generate'),
 	'track.remove_from_library': http('POST', '/api/v1/tracks/{stable_id}:remove'),
+	'work.link_many': http('POST', '/api/v1/works:link'),
+	'work.edit': http('PATCH', '/api/v1/tracks/{stable_id}/classical'),
+	'work.link_candidates': http('GET', '/api/v1/works/link-candidates'),
 	// OFFLOAD (spec e8da14b8): upload, verify, delete local; restore 24 h or for good.
 	'track.offload': http('POST', '/api/v1/offload/tracks', 'opendj offload tracks <stable_id>...'),
 	'track.offload_restore': http(
@@ -91,6 +98,12 @@ export const MENU_COMMANDS = {
 	),
 	// PAIR-10: a loose pair (no snapshot) of exactly two selected rows.
 	'track.pair': http('POST', '/api/v1/pairings'),
+	// LIBUX-8679: toggle "Skip in set" on a playlist row.
+	'set.skip': http(
+		'PUT',
+		'/api/v1/playlists/{playlist_id}/set-skips/{stable_id}',
+		'opendj set skip <playlist_id> <stable_id> [off]'
+	),
 	// Playlists and smartlists.
 	'playlist.create': http('POST', '/api/v1/playlists'),
 	'playlist.update': http('PATCH', '/api/v1/playlists/{playlist_id}'),
@@ -98,6 +111,9 @@ export const MENU_COMMANDS = {
 	'playlist.duplicate': http('POST', '/api/v1/playlists/{playlist_id}/duplicate'),
 	'playlist.remove_items': http('POST', '/api/v1/playlists/{playlist_id}/items:remove'),
 	'playlist.select': ipc('browser_select_playlist'),
+	'section.add': http('POST', '/api/v1/sections', 'opendj api POST /api/v1/sections'),
+	'section.update': http('PATCH', '/api/v1/sections/{section_id}', 'opendj api PATCH /api/v1/sections/{id}'),
+	'section.delete': http('DELETE', '/api/v1/sections/{section_id}', 'opendj api DELETE /api/v1/sections/{id}'),
 	'playlist_tree.order': http('PUT', '/api/v1/playlist-tree/order'),
 	'smartlist.create': http('POST', '/api/v1/smartlists'),
 	'smartlist.update': http('PUT', '/api/v1/smartlists/{smartlist_id}'),

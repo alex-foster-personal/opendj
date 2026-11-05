@@ -34,9 +34,7 @@ def check_diagnostics_probe(probe_dir: Path, now: datetime) -> CheckResult:
         )
     newest = max(samples, key=lambda path: path.stat().st_mtime)
     age = _age_hours(_mtime(newest), now)
-    detail = (
-        f"newest of {len(samples)} sample files is {_describe_age(age)} ({newest.name})"
-    )
+    detail = f"newest of {len(samples)} sample files is {_describe_age(age)} ({newest.name})"
     if age > PROBE_MAX_SAMPLE_AGE_HOURS:
         return CheckResult(
             check="diagnostics-probe",

@@ -35,7 +35,8 @@ class NormalisedCue:
     name
         Cue comment / label, or ``None``.
     loop_length_msec
-        Only set when ``kind == "loop"``.
+        Set for ``kind == "loop"`` and for a hot loop (``kind == "hot"`` with
+        an end, HOTCUE-LOOP-01); ``None`` for a point cue.
     """
 
     position_msec: int

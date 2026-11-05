@@ -13,6 +13,8 @@ import type { Page } from '@playwright/test';
 export async function stubUiMirrorRoutes(page: Page): Promise<void> {
 	await page.route('**/api/v1/state/ui-mirror', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/state/ui-mirror/lease', (route) =>
-		route.fulfill({ json: { held: false, holder: null, holder_playing: null, holder_yieldable: null } })
+		route.fulfill({
+			json: { held: false, holder: null, holder_playing: null, holder_yieldable: null }
+		})
 	);
 }

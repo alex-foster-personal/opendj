@@ -8,6 +8,7 @@ must be registered in ``_REQUIRES_SAFETY_SESSION`` AND must accept a
 ``safety_session`` parameter, so writes cannot silently bypass the safety rails
 in ``apps/sync``.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -40,8 +41,7 @@ def test_every_listed_function_takes_safety_session() -> None:
         assert callable(fn), f"{name!r} listed but not defined in djay_db"
         params = inspect.signature(fn).parameters
         assert "safety_session" in params, (
-            f"{name!r} is in _REQUIRES_SAFETY_SESSION but does not accept a "
-            f"'safety_session' parameter"
+            f"{name!r} is in _REQUIRES_SAFETY_SESSION but does not accept a 'safety_session' parameter"
         )
 
 

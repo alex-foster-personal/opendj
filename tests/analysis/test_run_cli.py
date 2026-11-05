@@ -1,4 +1,5 @@
 """``apps.analysis.run`` CLI tests (META-01)."""
+
 from __future__ import annotations
 
 import json
@@ -35,9 +36,13 @@ class _MockBackend:
             backend=cls.name,
             backend_version=cls.version,
             analyzed_at=datetime.now(UTC),
-            duration_s=42.0, sample_rate=44100,
-            bpm=123.4, bpm_confidence=0.9,
-            key_camelot="8A", key_openkey="8m", key_confidence=0.9,
+            duration_s=42.0,
+            sample_rate=44100,
+            bpm=123.4,
+            bpm_confidence=0.9,
+            key_camelot="8A",
+            key_openkey="8m",
+            key_confidence=0.9,
             energy=7,
         )
 
@@ -45,6 +50,7 @@ class _MockBackend:
 @pytest.fixture()
 def mock_backend(monkeypatch: pytest.MonkeyPatch) -> type[_MockBackend]:
     from apps.analysis import backends
+
     _MockBackend.analyze_calls = 0
     monkeypatch.setitem(backends.BACKENDS, "mock", _MockBackend)
     return _MockBackend
@@ -133,9 +139,7 @@ def test_build_queue_skips_missing_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-01")
-def test_run_dry_run_no_writes(
-    tmp_path: Path, mock_backend: type[_MockBackend]
-) -> None:
+def test_run_dry_run_no_writes(tmp_path: Path, mock_backend: type[_MockBackend]) -> None:
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"x" * 100)
     db = tmp_path / "state.db"
@@ -145,9 +149,7 @@ def test_run_dry_run_no_writes(
 
 
 @pytest.mark.requirement("META-01")
-def test_run_persists_and_is_idempotent(
-    tmp_path: Path, mock_backend: type[_MockBackend]
-) -> None:
+def test_run_persists_and_is_idempotent(tmp_path: Path, mock_backend: type[_MockBackend]) -> None:
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"x" * 100)
     db = tmp_path / "state.db"
@@ -161,20 +163,17 @@ def test_run_persists_and_is_idempotent(
 
     with sqlite3.connect(str(db)) as conn:
         n_rows = conn.execute("SELECT COUNT(*) FROM analysis").fetchone()[0]
-        n_evt = conn.execute(
-            "SELECT COUNT(*) FROM analysis_events WHERE event_type='analyze'"
-        ).fetchone()[0]
+        n_evt = conn.execute("SELECT COUNT(*) FROM analysis_events WHERE event_type='analyze'").fetchone()[0]
     assert n_rows == 1
     assert n_evt == 1
 
 
 @pytest.mark.requirement("META-01")
-def test_run_main_argparse(
-    tmp_path: Path, mock_backend: type[_MockBackend], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_main_argparse(tmp_path: Path, mock_backend: type[_MockBackend], monkeypatch: pytest.MonkeyPatch) -> None:
     audio = tmp_path / "b.wav"
     audio.write_bytes(b"x" * 100)
     from apps.shared import paths as _p
+
     monkeypatch.setattr(_p, "STATE_DB", tmp_path / "state.db")
     rc = run_mod.main(["--backend", "mock", "--dry-run", "--files", str(audio)])
     assert rc == 0
@@ -244,17 +243,19 @@ class _StartMethodBackend:
             backend=cls.name,
             backend_version=cls.version,
             analyzed_at=datetime.now(UTC),
-            duration_s=1.0, sample_rate=44100,
-            bpm=120.0, bpm_confidence=1.0,
-            key_camelot="1A", key_openkey=multiprocessing.get_start_method(), key_confidence=1.0,
+            duration_s=1.0,
+            sample_rate=44100,
+            bpm=120.0,
+            bpm_confidence=1.0,
+            key_camelot="1A",
+            key_openkey=multiprocessing.get_start_method(),
+            key_confidence=1.0,
             energy=1,
         )
 
 
 @pytest.mark.requirement("META-01")
-def test_parallel_workers_are_spawned_not_forked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_parallel_workers_are_spawned_not_forked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """if the pool forks then a worker inherits librosa/numba/OpenBLAS thread and
     JIT state from the parent and can die with "segfault at 0 ip 0" (#1316);
     a spawned worker reports "spawn" from inside itself, and a forked one
@@ -268,9 +269,7 @@ def test_parallel_workers_are_spawned_not_forked(
         audio.write_bytes(b"0")
         refs.append(run_mod.TrackRef(stable_id=f"sid{i:05d}", path=audio))
     db = tmp_path / "state.db"
-    summary = run_mod.run(
-        refs, backend_name="start-method", workers=2, only_missing=False, db_path=db
-    )
+    summary = run_mod.run(refs, backend_name="start-method", workers=2, only_missing=False, db_path=db)
     assert summary.failed == 0, summary.errors
     con = sqlite3.connect(db)
     try:
@@ -286,12 +285,7 @@ def test_candidates_json_falls_through_to_the_next_path(tmp_path: Path) -> None:
     """[if] first candidate is corrupt [then] analysis lands on stable id, [else stop]."""
     import shutil
 
-    fixture = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "phase7-dedup"
-        / "src-128.mp3"
-    )
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
     good = tmp_path / "good.mp3"
     corrupt = tmp_path / "corrupt-first.mp3"
     shutil.copyfile(fixture, good)
@@ -320,12 +314,7 @@ def test_candidates_json_reports_one_failure_when_every_copy_is_unreadable(
     tmp_path: Path,
 ) -> None:
     """[if] every candidate is corrupt [then] one failed stable id exits, [else stop]."""
-    fixture = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "phase7-dedup"
-        / "src-128.mp3"
-    )
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
     first = tmp_path / "corrupt-a.mp3"
     second = tmp_path / "corrupt-b.mp3"
     first.write_bytes(fixture.read_bytes()[:128])

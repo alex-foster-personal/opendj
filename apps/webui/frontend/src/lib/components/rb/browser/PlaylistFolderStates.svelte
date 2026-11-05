@@ -22,10 +22,17 @@
 {#if nodeCount === 0 && playlistsLoading}
 	<div class="row child rb-inert" data-testid="playlists-loading">Loading playlists...</div>
 {:else if nodeCount === 0 && playlistsError !== null}
-	<div class="row child rb-inert" data-testid="playlists-error" title={playlistsError}>Playlist load failed</div>
+	<div class="row child rb-inert" data-testid="playlists-error" title={playlistsError}>
+		Playlist load failed
+	</div>
 {:else if nodeCount === 0 && hiddenBrokenPlaylistCount === 0}
 	{#if oncreate}
-		<button type="button" class="row child empty-cta" data-testid="playlists-empty-cta" onclick={oncreate}>
+		<button
+			type="button"
+			class="row child empty-cta"
+			data-testid="playlists-empty-cta"
+			onclick={oncreate}
+		>
 			+ Create your first playlist
 		</button>
 	{:else}

@@ -2,7 +2,7 @@
 """JSONL progress stream for the Modal vocal farm, plus its reducer.
 
 ONE stream, two readers. The farm appends a line per state change to
-``data/state/farm-logs/<run-id>.jsonl``; the Rich dashboard
+``(private path)/<run-id>.jsonl``; the Rich dashboard
 (``scripts/farm_dashboard.py``) renders that file, and an agent tails the
 same file with ``tail -f``. Neither reader gets a private channel, so what
 a human sees on screen and what an agent parses can never disagree.
@@ -34,6 +34,7 @@ Requirements (mini-PRD):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -46,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA: int = 1
-LOG_DIR: str = "farm-logs"  # under data/state/
+LOG_DIR: str = "farm-logs"  # under (private path)/
 
 # Below this the elapsed window is too short to divide by: a burst of events
 # landing in the same instant would otherwise report a five-figure rate, which
@@ -61,14 +62,14 @@ STAGES: tuple[str, ...] = ("feed_stall", "gpu", "stems", "written")
 
 EVENT_TYPES: frozenset[str] = frozenset(
     {
-        "run_start",   # {tracks, preset, dest, max_containers, source_bytes}
+        "run_start",  # {tracks, preset, dest, max_containers, source_bytes}
         "feed_stall",  # {stable_id, bytes, s}  feeder stall, NOT wire transfer
-        "gpu",         # {stable_id, separate_s, container_s, coverage_pct, regions}
+        "gpu",  # {stable_id, separate_s, container_s, coverage_pct, regions}
         "stems_queued",  # {stable_id, bytes}   accepted for transfer
-        "stems",       # {stable_id, bytes, s, dest}  transfer complete
-        "written",     # {stable_id, regions}
-        "failed",      # {stable_id, stage, error}
-        "run_end",     # {written, failed, wall_s, container_s, usd}
+        "stems",  # {stable_id, bytes, s, dest}  transfer complete
+        "written",  # {stable_id, regions}
+        "failed",  # {stable_id, stage, error}
+        "run_end",  # {written, failed, wall_s, container_s, usd}
     }
 )
 
@@ -103,12 +104,9 @@ class ProgressLog:
 
     def emit(self, event: str, **fields: Any) -> None:
         if event not in EVENT_TYPES:
-            raise ValueError(
-                f"unknown farm event {event!r}; known: {sorted(EVENT_TYPES)}"
-            )
+            raise ValueError(f"unknown farm event {event!r}; known: {sorted(EVENT_TYPES)}")
         line = json.dumps(
-            {"ts": time.time(), "run_id": self.run_id, "schema": SCHEMA,
-             "event": event, **fields},
+            {"ts": time.time(), "run_id": self.run_id, "schema": SCHEMA, "event": event, **fields},
             separators=(",", ":"),
         )
         with self._lock:
@@ -127,6 +125,7 @@ class ProgressLog:
 
 
 # ----- reading -----------------------------------------------------------------
+
 
 def read_events(path: Path) -> list[dict[str, Any]]:
     """Every complete event in the file. A trailing partial line is dropped.
@@ -174,6 +173,7 @@ def follow_events(path: Path, poll_s: float = 0.25) -> Iterator[dict[str, Any]]:
 
 # ----- reduction ---------------------------------------------------------------
 
+
 @dataclass
 class FarmState:
     """Events reduced to what a reader needs to judge the run.
@@ -192,12 +192,8 @@ class FarmState:
     source_bytes: int = 0
 
     done: dict[str, int] = field(default_factory=lambda: {s: 0 for s in STAGES})
-    bytes_done: dict[str, int] = field(
-        default_factory=lambda: {"feed_stall": 0, "stems": 0}
-    )
-    seconds_in: dict[str, float] = field(
-        default_factory=lambda: {"feed_stall": 0.0, "stems": 0.0}
-    )
+    bytes_done: dict[str, int] = field(default_factory=lambda: {"feed_stall": 0, "stems": 0})
+    seconds_in: dict[str, float] = field(default_factory=lambda: {"feed_stall": 0.0, "stems": 0.0})
     stems_queued: int = 0
     container_s: float = 0.0
     separate_s: float = 0.0
@@ -254,8 +250,7 @@ class FarmState:
                 self.failed_at[stage] += 1
         elif kind == "run_end":
             self.ended = True
-            self.final = {k: v for k, v in event.items()
-                          if k not in ("ts", "run_id", "schema", "event")}
+            self.final = {k: v for k, v in event.items() if k not in ("ts", "run_id", "schema", "event")}
 
     # ----- derive
     @property
@@ -283,16 +278,12 @@ class FarmState:
         exactly what a reader would misread as a stalled transfer.
         """
         if stage == "feed_stall":
-            return max(0, self.tracks - self.done["feed_stall"]
-                       - self.failed_at["feed_stall"])
+            return max(0, self.tracks - self.done["feed_stall"] - self.failed_at["feed_stall"])
         if stage == "gpu":
-            return max(0, self.done["feed_stall"] - self.done["gpu"]
-                       - self.failed_at["gpu"])
+            return max(0, self.done["feed_stall"] - self.done["gpu"] - self.failed_at["gpu"])
         if stage == "stems":
-            return max(0, self.stems_queued - self.done["stems"]
-                       - self.failed_at["stems"])
-        return max(0, self.done["gpu"] - self.done["written"]
-                   - self.failed_at["stems"] - self.failed_at["written"])
+            return max(0, self.stems_queued - self.done["stems"] - self.failed_at["stems"])
+        return max(0, self.done["gpu"] - self.done["written"] - self.failed_at["stems"] - self.failed_at["written"])
 
     @property
     def tracks_per_min(self) -> float:
@@ -369,23 +360,16 @@ def snapshot_text(state: FarmState, usd_per_s: float) -> str:
     lines = [header]
     for stage in STAGES:
         lines.append(
-            f"  {stage:<8} done={state.done[stage]:>4}/{state.tracks:<4} "
-            f"in_flight={state.in_flight(stage):>3}"
+            f"  {stage:<8} done={state.done[stage]:>4}/{state.tracks:<4} in_flight={state.in_flight(stage):>3}"
         )
     lines.append(
         f"  rate     {state.tracks_per_min:.1f} tracks/min  "
         f"upload={state.mb_per_s('upload'):.1f} MB/s  "
         f"stems={state.mb_per_s('stems'):.1f} MB/s  binding={state.binding}"
     )
-    lines.append(
-        f"  cost     ${state.usd(usd_per_s):.2f} gpu-time  "
-        f"eta={_hms(state.eta_s)}  failed={state.failed}"
-    )
+    lines.append(f"  cost     ${state.usd(usd_per_s):.2f} gpu-time  eta={_hms(state.eta_s)}  failed={state.failed}")
     for failure in state.failures[-5:]:
-        lines.append(
-            f"  FAIL     {failure['stable_id']} at {failure['stage']}: "
-            f"{failure['error'][:80]}"
-        )
+        lines.append(f"  FAIL     {failure['stable_id']} at {failure['stage']}: {failure['error'][:80]}")
     return "\n".join(lines)
 
 

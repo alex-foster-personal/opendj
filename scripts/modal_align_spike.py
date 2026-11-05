@@ -30,14 +30,14 @@ Requirements
 
 Usage:
   uv run --with modal python scripts/modal_align_spike.py align \
-      --audio-dir data/datasets/jamendolyrics-vocals \
+      --audio-dir (private path) \
       --audio-template "{name}-vocals.mp3,{name}-vocals.flac" \
-      --pred-dir data/state/lyrics-eval/round2-modal-parity \
+      --pred-dir (private path) \
       --star-frequency segment
   uv run --with modal python scripts/modal_align_spike.py parity \
-      --audio-dir data/datasets/jamendolyrics-vocals \
+      --audio-dir (private path) \
       --audio-template "{name}-vocals.mp3,{name}-vocals.flac" \
-      --against data/state/lyrics-eval/round2-mms-vocals-starseg \
+      --against (private path) \
       --star-frequency segment --limit 3
 Then score: uv run --no-sync python -m apps.lyrics score --pred <pred_dir>
 
@@ -63,7 +63,7 @@ DATASET_DIR: Path = REPO_ROOT / "data" / "datasets" / "jamendolyrics"
 
 GPU_KIND: str = "T4"  # MMS-300M is small; T4 is the cheapest cuda tier and plenty
 TASK_TIMEOUT_S: int = 600
-# R6 wall target (specs/karaoke-lyrics-operational-plan.md section 12): ~100
+# R6 wall target ((private path) section 12): ~100
 # stem-ready tracks in <= 5 min end-to-end, so the starmap fan-out below must
 # be allowed enough containers that alignment is never a serial job loop.
 MAX_CONTAINERS: int = 20
@@ -72,7 +72,10 @@ STAR_TOKEN: str = "<star>"
 PARITY_TOL_S: float = 0.02
 PARITY_MIN_MATCH: float = 0.99
 LANG_TO_ISO639_3: dict[str, str] = {
-    "English": "eng", "German": "deu", "Spanish": "spa", "French": "fra",
+    "English": "eng",
+    "German": "deu",
+    "Spanish": "spa",
+    "French": "fra",
 }
 # Same pin as scripts/spike_align_jamendo.py -- the two MUST move together or
 # parity between local and Modal rounds stops meaning anything.
@@ -159,9 +162,10 @@ class AlignWorker:
         t0 = time.perf_counter()
         try:
             proc = subprocess.run(
-                ["ffmpeg", "-v", "error", "-i", "pipe:0",
-                 "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"],
-                input=audio_bytes, capture_output=True, check=False,
+                ["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"],
+                input=audio_bytes,
+                capture_output=True,
+                check=False,
             )
             if proc.returncode != 0:
                 raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode()[:500]}")
@@ -171,7 +175,9 @@ class AlignWorker:
             waveform = torch.from_numpy(audio).to(self.model.dtype).to(self.model.device)
             emissions, stride = generate_emissions(self.model, waveform, batch_size=batch_size)
             tokens_starred, text_starred = preprocess_text(
-                " ".join(words), romanize=True, language=language_iso,
+                " ".join(words),
+                romanize=True,
+                language=language_iso,
                 star_frequency=star_frequency,
             )
             runs = self.nonlex.detect_nonlexical_runs(words) if non_lexical_stars else []
@@ -185,23 +191,17 @@ class AlignWorker:
             stamps = [s for s in stamps if s["text"] != STAR_TOKEN]
             notes: list[str] = []
             if runs:
-                out_words, notes = self.nonlex.interpolate_run_words(
-                    words, stamps, runs, audio.size / SAMPLE_RATE
-                )
-                notes.append(f"{len(runs)} run(s), "
-                             f"{sum(len(r) for r in runs)} words starred + interpolated")
+                out_words, notes = self.nonlex.interpolate_run_words(words, stamps, runs, audio.size / SAMPLE_RATE)
+                notes.append(f"{len(runs)} run(s), {sum(len(r) for r in runs)} words starred + interpolated")
             else:
                 if len(stamps) != len(words):
-                    raise RuntimeError(
-                        f"aligner returned {len(stamps)} words for {len(words)} reference words"
-                    )
+                    raise RuntimeError(f"aligner returned {len(stamps)} words for {len(words)} reference words")
                 out_words = [
                     {"word": w, "start_s": s["start"], "end_s": s["end"], "score": s["score"]}
                     for w, s in zip(words, stamps, strict=True)
                 ]
         except Exception as exc:
-            return {"name": name, "error": f"{type(exc).__name__}: {exc}",
-                    "gpu_s": time.perf_counter() - t0}
+            return {"name": name, "error": f"{type(exc).__name__}: {exc}", "gpu_s": time.perf_counter() - t0}
         return {
             "name": name,
             "error": None,
@@ -227,9 +227,7 @@ def _load_words(name: str) -> list[str]:
     return [w for w in raw.split("\n") if w.strip()]
 
 
-def _resolve_audio_path(
-    audio_dir: Path, audio_template: str, name: str, *, missing_ok: bool
-) -> Path | None:
+def _resolve_audio_path(audio_dir: Path, audio_template: str, name: str, *, missing_ok: bool) -> Path | None:
     """Mirror of the local spike's resolver: exactly one candidate must exist;
     >1 is always fatal, 0 is fatal unless missing_ok (returns None to skip)."""
     candidates = [audio_dir / t.strip().format(name=name) for t in audio_template.split(",")]
@@ -281,22 +279,22 @@ def _build_jobs(
             skipped += 1
             print(f"[SKIP] {name} (exists)")
             continue
-        audio_path = _resolve_audio_path(
-            args.audio_dir, args.audio_template, name, missing_ok=args.skip_missing_audio
-        )
+        audio_path = _resolve_audio_path(args.audio_dir, args.audio_template, name, missing_ok=args.skip_missing_audio)
         if audio_path is None:
             missing += 1
             print(f"[SKIP-MISSING] {name} (no audio yet)")
             continue
-        jobs.append((
-            name,
-            audio_path.resolve().read_bytes(),
-            _load_words(name),
-            LANG_TO_ISO639_3[row["Language"]],
-            args.star_frequency,
-            args.batch_size,
-            args.non_lexical_stars,
-        ))
+        jobs.append(
+            (
+                name,
+                audio_path.resolve().read_bytes(),
+                _load_words(name),
+                LANG_TO_ISO639_3[row["Language"]],
+                args.star_frequency,
+                args.batch_size,
+                args.non_lexical_stars,
+            )
+        )
     return jobs, skipped, missing
 
 
@@ -324,22 +322,23 @@ def cmd_align(args: argparse.Namespace) -> int:
                 continue
             _print_notes(result)
             out_path = args.pred_dir / f"{result['name']}.json"
-            out_path.write_text(
-                json.dumps({"words": result["words"]}, ensure_ascii=False), encoding="utf-8"
-            )
+            out_path.write_text(json.dumps({"words": result["words"]}, ensure_ascii=False), encoding="utf-8")
             done += 1
-            print(f"[OK] {done + failed}/{len(jobs)} {result['name']}: "
-                  f"{len(result['words'])} words in {result['gpu_s']:.1f}s gpu")
-    print(f"[DONE] aligned {done}, failed {failed}, missing-audio {missing}, "
-          f"wall {time.monotonic() - t_run:.0f}s -> {args.pred_dir}")
+            print(
+                f"[OK] {done + failed}/{len(jobs)} {result['name']}: "
+                f"{len(result['words'])} words in {result['gpu_s']:.1f}s gpu"
+            )
+    print(
+        f"[DONE] aligned {done}, failed {failed}, missing-audio {missing}, "
+        f"wall {time.monotonic() - t_run:.0f}s -> {args.pred_dir}"
+    )
     return 1 if (failed or missing) else 0
 
 
 def cmd_parity(args: argparse.Namespace) -> int:
     """Align N songs on Modal and compare onsets against an existing local run."""
     against: Path = args.against
-    rows = [r for r in _select_rows(args)
-            if (against / f"{Path(r['Filepath']).stem}.json").is_file()]
+    rows = [r for r in _select_rows(args) if (against / f"{Path(r['Filepath']).stem}.json").is_file()]
     if not rows:
         raise SystemExit(f"[ERROR] no songs in {against} overlap the selection")
     args.pred_dir = args.against  # unused for writing; keeps _build_jobs happy
@@ -364,12 +363,15 @@ def cmd_parity(args: argparse.Namespace) -> int:
             song_matched = sum(abs(a - b) <= PARITY_TOL_S for a, b in pairs)
             total += len(pairs)
             matched += song_matched
-            print(f"[..] {result['name']}: {song_matched}/{len(pairs)} onsets within "
-                  f"{PARITY_TOL_S * 1000:.0f}ms of local")
+            print(
+                f"[..] {result['name']}: {song_matched}/{len(pairs)} onsets within {PARITY_TOL_S * 1000:.0f}ms of local"
+            )
     rate = matched / total
     verdict = "PASS" if rate >= PARITY_MIN_MATCH else "FAIL"
-    print(f"[{verdict}] parity {matched}/{total} = {rate:.2%} "
-          f"(threshold {PARITY_MIN_MATCH:.0%} within {PARITY_TOL_S * 1000:.0f}ms)")
+    print(
+        f"[{verdict}] parity {matched}/{total} = {rate:.2%} "
+        f"(threshold {PARITY_MIN_MATCH:.0%} within {PARITY_TOL_S * 1000:.0f}ms)"
+    )
     return 0 if verdict == "PASS" else 1
 
 
@@ -405,10 +407,17 @@ def cmd_align_files(args: argparse.Namespace) -> int:
             missing += 1
             print(f"[SKIP-MISSING] {name} (no stem yet)")
             continue
-        jobs.append((
-            name, existing[0].read_bytes(), entry["words"], entry["language_iso"],
-            args.star_frequency, args.batch_size, args.non_lexical_stars,
-        ))
+        jobs.append(
+            (
+                name,
+                existing[0].read_bytes(),
+                entry["words"],
+                entry["language_iso"],
+                args.star_frequency,
+                args.batch_size,
+                args.non_lexical_stars,
+            )
+        )
     if not jobs:
         print("[DONE] nothing to align")
         return 1 if missing else 0
@@ -427,27 +436,42 @@ def cmd_align_files(args: argparse.Namespace) -> int:
                 json.dumps({"words": result["words"]}, ensure_ascii=False), encoding="utf-8"
             )
             done += 1
-            print(f"[OK] {done + failed}/{len(jobs)} {result['name']}: "
-                  f"{len(result['words'])} words in {result['gpu_s']:.1f}s gpu")
-    print(f"[DONE] aligned {done}, failed {failed}, missing-stem {missing}, "
-          f"wall {time.monotonic() - t_run:.0f}s -> {args.pred_dir}")
+            print(
+                f"[OK] {done + failed}/{len(jobs)} {result['name']}: "
+                f"{len(result['words'])} words in {result['gpu_s']:.1f}s gpu"
+            )
+    print(
+        f"[DONE] aligned {done}, failed {failed}, missing-stem {missing}, "
+        f"wall {time.monotonic() - t_run:.0f}s -> {args.pred_dir}"
+    )
     return 1 if (failed or missing) else 0
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--audio-dir", type=Path, default=DATASET_DIR / "mp3")
-    parser.add_argument("--audio-template", type=str, default="{name}.mp3",
-                        help="comma-separated candidates, exactly ONE must exist per song")
+    parser.add_argument(
+        "--audio-template",
+        type=str,
+        default="{name}.mp3",
+        help="comma-separated candidates, exactly ONE must exist per song",
+    )
     parser.add_argument("--languages", type=str, default=None)
     parser.add_argument("--song", type=str, default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--star-frequency", choices=("edges", "segment"), default="segment",
-                        help="segment (round-2 default) unless reproducing rounds 0-1")
-    parser.add_argument("--non-lexical-stars", action="store_true",
-                        help="round 4b: star out detected vocalization runs "
-                             "(apps/lyrics/nonlexical.py) and interpolate their "
-                             "timings from the anchored neighbour words")
+    parser.add_argument(
+        "--star-frequency",
+        choices=("edges", "segment"),
+        default="segment",
+        help="segment (round-2 default) unless reproducing rounds 0-1",
+    )
+    parser.add_argument(
+        "--non-lexical-stars",
+        action="store_true",
+        help="round 4b: star out detected vocalization runs "
+        "(apps/lyrics/nonlexical.py) and interpolate their "
+        "timings from the anchored neighbour words",
+    )
     parser.add_argument("--skip-missing-audio", action="store_true")
     parser.add_argument("--force", action="store_true")
 
@@ -462,14 +486,11 @@ def main() -> int:
     align.set_defaults(func=cmd_align)
 
     parity = sub.add_parser("parity", help="compare a Modal run against a local pred dir")
-    parity.add_argument("--against", type=Path, required=True,
-                        help="local prediction dir to compare onsets against")
+    parity.add_argument("--against", type=Path, required=True, help="local prediction dir to compare onsets against")
     _add_common_args(parity)
     parity.set_defaults(func=cmd_parity)
 
-    align_files = sub.add_parser(
-        "align-files", help="align arbitrary tracks from a jobs manifest JSON"
-    )
+    align_files = sub.add_parser("align-files", help="align arbitrary tracks from a jobs manifest JSON")
     align_files.add_argument("--jobs", type=Path, required=True)
     align_files.add_argument("--pred-dir", type=Path, required=True)
     align_files.add_argument("--batch-size", type=int, default=4)

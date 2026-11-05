@@ -23,7 +23,11 @@ async function dispatch(page: Page, message: Record<string, unknown>): Promise<v
 
 /** 120 BPM over a minute, on the anlz payload the deck reads: the plan runner refuses a deck with no downbeats. */
 async function serveBeatgrid(page: Page): Promise<void> {
-	const beats = Array.from({ length: 120 }, (_, index) => ({ n: (index % 4) + 1, bpm: 120, t: index * 0.5 }));
+	const beats = Array.from({ length: 120 }, (_, index) => ({
+		n: (index % 4) + 1,
+		bpm: 120,
+		t: index * 0.5
+	}));
 	await page.route('**/api/v1/tracks/*/anlz*', async (route) => {
 		const response = await route.fetch();
 		const json = (await response.json()) as { beatgrid?: Record<string, unknown> };
@@ -55,7 +59,14 @@ function plannedAnswer(out: string, incoming: string): Record<string, unknown> {
 		order: { plan },
 		reason: 'intent smooth: crossfade over 8 bars, M 0.40',
 		intent: 'smooth',
-		pick: { candidate: 'c1', style: 'crossfade', bars: 8, score: 0.4, out_start_bar: 12, rationale: 'e2e' },
+		pick: {
+			candidate: 'c1',
+			style: 'crossfade',
+			bars: 8,
+			score: 0.4,
+			out_start_bar: 12,
+			rationale: 'e2e'
+		},
 		out_bar_now: 1,
 		considered: 3,
 		rendered: 3,
@@ -66,17 +77,23 @@ function plannedAnswer(out: string, incoming: string): Record<string, unknown> {
 	};
 }
 
-test('arming runs the planner order, and with no order the readout says the fixed loop ran', async ({ page }) => {
+test('arming runs the planner order, and with no order the readout says the fixed loop ran', async ({
+	page
+}) => {
 	await serveBeatgrid(page);
 	await page.goto('/performance');
-	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, { timeout: 180_000 });
+	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, {
+		timeout: 180_000
+	});
 	const [out, incoming] = await loadedTracks(page);
 	await dispatch(page, { type: 'load', deck: 1, stable_id: out });
 	await dispatch(page, { type: 'load', deck: 2, stable_id: incoming });
 	await expect
 		.poll(() =>
 			page.evaluate(() => {
-				const state = window.musicDjToolsPerformance?.query() as { decks: Record<number, { beatgrid: unknown[] }> };
+				const state = window.musicDjToolsPerformance?.query() as {
+					decks: Record<number, { beatgrid: unknown[] }>;
+				};
 				return state.decks[1].beatgrid.length;
 			})
 		)
@@ -84,7 +101,9 @@ test('arming runs the planner order, and with no order the readout says the fixe
 	await dispatch(page, { type: 'play', deck: 1, playing: true });
 	await dispatch(page, { type: 'master', deck: 1 });
 
-	await page.route('**/api/v1/dj/transition/plan', (route) => route.fulfill({ json: plannedAnswer(out, incoming) }));
+	await page.route('**/api/v1/dj/transition/plan', (route) =>
+		route.fulfill({ json: plannedAnswer(out, incoming) })
+	);
 	await dispatch(page, { type: 'auto_play_next_arm' });
 	await expect(page.locator(READOUT)).toHaveText('plan: crossfade 8');
 	await dispatch(page, { type: 'auto_play_next_cancel' });
@@ -99,14 +118,19 @@ test('arming runs the planner order, and with no order the readout says the fixe
 	await expect(page.locator(READOUT)).toHaveText('fixed loop');
 });
 
-test('right-click "Transition out around here" asks for a plan at the click into the chosen deck (AGENT-50)', async ({ page }) => {
+test('right-click "Transition out around here" asks for a plan at the click into the chosen deck (AGENT-50)', async ({
+	page
+}) => {
 	await serveBeatgrid(page);
 	await page.goto('/performance');
-	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, { timeout: 180_000 });
+	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, undefined, {
+		timeout: 180_000
+	});
 	const [out, incoming] = await loadedTracks(page);
 	await dispatch(page, { type: 'load', deck: 1, stable_id: out });
 	await dispatch(page, { type: 'load', deck: 2, stable_id: incoming });
-	const durationOf = () => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].duration_ms ?? 0);
+	const durationOf = () =>
+		page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].duration_ms ?? 0);
 	await expect.poll(durationOf).toBeGreaterThan(0);
 	await dispatch(page, { type: 'play', deck: 1, playing: true });
 	await dispatch(page, { type: 'master', deck: 1 });

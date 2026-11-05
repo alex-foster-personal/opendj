@@ -16,7 +16,9 @@ export function scheduledStartSec(at: number | undefined, now: number): number {
 	if (at === undefined) return now;
 	if (!Number.isFinite(at)) throw new RangeError(`at_context_sec ${at} is not a time`);
 	if (at - now > MAX_SCHEDULE_AHEAD_S) {
-		throw new RangeError(`at_context_sec ${at} is ${(at - now).toFixed(3)} s ahead; at most ${MAX_SCHEDULE_AHEAD_S} s is allowed`);
+		throw new RangeError(
+			`at_context_sec ${at} is ${(at - now).toFixed(3)} s ahead; at most ${MAX_SCHEDULE_AHEAD_S} s is allowed`
+		);
 	}
 	return Math.max(at, now);
 }
@@ -46,7 +48,12 @@ export class DeferredMirrorWrites {
 		private readonly contextNowSec: () => number | null
 	) {}
 
-	write(key: string, atContextSec: number | null, apply: () => void, onCancel: () => void = () => {}): void {
+	write(
+		key: string,
+		atContextSec: number | null,
+		apply: () => void,
+		onCancel: () => void = () => {}
+	): void {
 		if (atContextSec === null) {
 			this.cancel(key);
 			apply();
@@ -130,17 +137,26 @@ export class ScheduledSteps {
 
 	constructor(
 		private readonly contextNowSec: () => number | null,
-		setTimer: (callback: () => void, ms: number) => unknown = (callback, ms) => setTimeout(callback, ms),
-		clearTimer: (handle: unknown) => void = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+		setTimer: (callback: () => void, ms: number) => unknown = (callback, ms) =>
+			setTimeout(callback, ms),
+		clearTimer: (handle: unknown) => void = (handle) =>
+			clearTimeout(handle as ReturnType<typeof setTimeout>)
 	) {
 		this.#writes = new DeferredMirrorWrites(setTimer, clearTimer, contextNowSec);
 	}
 
 	/** Start `applyAudio` at the step's (bounded) time, and `applyMirror` once the audio clock reaches it. */
-	schedule(stepId: string, key: string, atContextSec: number, applyAudio: (startSec: number) => void, applyMirror: () => void): void {
+	schedule(
+		stepId: string,
+		key: string,
+		atContextSec: number,
+		applyAudio: (startSec: number) => void,
+		applyMirror: () => void
+	): void {
 		if (stepId === '') throw new TypeError('a scheduled step needs a step id');
 		// An id is unique while its step waits; a finished one (landed, cancelled, lost) may be scheduled again.
-		if (this.#states.get(stepId) === 'waiting') throw new Error(`step ${stepId} is already scheduled and waiting`);
+		if (this.#states.get(stepId) === 'waiting')
+			throw new Error(`step ${stepId} is already scheduled and waiting`);
 		const now = this.contextNowSec();
 		if (now === null) throw new Error('audio graph not initialised');
 		const start = scheduledStartSec(atContextSec, now);
@@ -149,7 +165,9 @@ export class ScheduledSteps {
 		// Steps on one control are scheduled in time order; anything else is refused, never half-applied.
 		const latest = this.#writes.latestWaiting(key);
 		if (latest !== null && start < latest) {
-			throw new RangeError(`${key}: a step at ${start.toFixed(3)} s is earlier than one still waiting at ${latest.toFixed(3)} s`);
+			throw new RangeError(
+				`${key}: a step at ${start.toFixed(3)} s is earlier than one still waiting at ${latest.toFixed(3)} s`
+			);
 		}
 		applyAudio(start);
 		this.#states.set(stepId, 'waiting');
@@ -172,7 +190,8 @@ export class ScheduledSteps {
 	/** A plain set on `key`: cancels its waiting steps and, when there were any, the param's automation. */
 	cancelPlain(key: string, param: AudioParam | null): void {
 		const now = this.contextNowSec();
-		if (this.#writes.cancel(key) && param !== null && now !== null) param.cancelScheduledValues(now);
+		if (this.#writes.cancel(key) && param !== null && now !== null)
+			param.cancelScheduledValues(now);
 	}
 
 	/** The engine session ends (dispose or a graph rebuild): every waiting step is `lost`; finished states are kept, so a

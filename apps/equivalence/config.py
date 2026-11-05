@@ -223,10 +223,7 @@ FIELD_PAIRS: tuple[FieldPair, ...] = (
         left=_RB_BPM,
         right=_MIK_BPM,
         tolerance=1.0,
-        tolerance_note=(
-            "1.0 BPM, matching the MIK-AUDIT 'agree within 1.0' figure so the "
-            "two numbers are comparable"
-        ),
+        tolerance_note=("1.0 BPM, matching the MIK-AUDIT 'agree within 1.0' figure so the two numbers are comparable"),
     ),
     # NOTE, Tue 28 Jul 2026: ``energy`` and ``loudness`` used to be declared
     # here as cross-source pairs with an ``absent`` left side, so both reported
@@ -386,9 +383,7 @@ class _Cfg:
     # Paths (resolved against --data-dir at runtime).
     data_dir: Path = Path("data")
     rekordbox_db: Path = Path("(private path)")
-    mik_db: Path = (
-        Path.home() / "Library/Application Support/Mixedinkey/Collection10.mikdb"
-    )
+    mik_db: Path = Path.home() / "Library/Application Support/Mixedinkey/Collection10.mikdb"
 
     # Outputs.
     verdicts_name: str = "equivalence-verdicts.json"

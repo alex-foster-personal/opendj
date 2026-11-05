@@ -2,13 +2,16 @@
 
 [if] wrap() stamps any time but the caller's modified_at [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
-from apps.open_dj.provenance import wrap
+from apps.open_dj.provenance import utc_mtime, wrap
 
 _FIXED = datetime(2026, 2, 2, 9, 0, 0, tzinfo=UTC)
 
@@ -71,6 +74,18 @@ def test_wrap_rejects_unknown_source() -> None:
 
 @pytest.mark.requirement("OPEN-01")
 def test_wrap_accepts_all_enum_sources() -> None:
-    for src in ["mik", "rekordbox", "djay", "serato", "traktor",
-                "open-dj-tool", "manual", "inferred"]:
+    for src in ["mik", "rekordbox", "djay", "serato", "traktor", "open-dj-tool", "manual", "inferred"]:
         wrap(1, source=src, modified_at=_FIXED)
+
+
+@pytest.mark.requirement("OPEN-02")
+def test_utc_mtime_is_aware_utc_and_wraps_to_z(tmp_path: Path) -> None:
+    path = tmp_path / "library.db"
+    path.write_bytes(b"x")
+    pin = datetime(2024, 3, 1, 8, 0, 0, tzinfo=UTC)
+    os.utime(path, (pin.timestamp(), pin.timestamp()))
+    stamp = utc_mtime(path)
+    assert stamp.tzinfo is not None
+    assert stamp.utcoffset() is not None and stamp.utcoffset().total_seconds() == 0
+    out = wrap(128.0, source="djay", modified_at=stamp)
+    assert out["modified_at"] == "2024-03-01T08:00:00Z"

@@ -8,11 +8,14 @@
  *     [if] a 400px-wide waveform moves right by 100px [then] audio moves earlier by 6s
  *   ✔︎ A release target cannot disappear behind an in-flight seek.
  *     [if] movement and release arrive during a pending seek [then] the final release is dispatched
- *   ✔︎ A scrub target snaps to the nearest downbeat by default (pin a705aebfbeae).
- *     [if] no modifier is held and a beatgrid is loaded [then] the target lands on a real downbeat
+ *   ✔︎ ✅ 🎯 WAVE-SEEK-01: a click lands on the spot under the pointer, like a CDJ needle
+ *     search; with the deck's quantize on it snaps to the NEAREST beat, never a bar or phrase.
+ *     [if] quantize is off and no modifier is held [then] the target is the raw position
+ *     [if] quantize is on [then] the target is a real beat within half a beat of the click
+ *     [if] the deck's quantize grid is 2 bars or phrase [then] the seek still lands within half a beat (sent exact)
  *   ✔︎ Shift restores exact click-anywhere behaviour.
  *     [if] shiftKey is held [then] the target is the raw, unsnapped position
- *   ✔︎ Cmd+Shift snaps to the nearest individual beat instead of a downbeat.
+ *   ✔︎ Cmd+Shift snaps to the nearest individual beat, quantize on or off.
  *     [if] shiftKey and metaKey are both held [then] the target lands on any real beat
  */
 
@@ -25,19 +28,34 @@ import {
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { playheadCenterX } from './wave-playhead-render';
 
-/** 'downbeat' (default): nearest bar downbeat. 'beat': nearest real beat
- * (Cmd+Shift). 'exact': the raw, unsnapped position (Shift alone). */
+/** 'beat': nearest real beat. 'exact': the raw, unsnapped position.
+ * 'downbeat': nearest bar downbeat, kept for snapWaveTargetMs callers; a
+ * waveform click no longer picks it (WAVE-SEEK-01). */
 export type WaveSnapMode = 'downbeat' | 'beat' | 'exact';
 
-/** Cmd+Shift takes priority over plain Shift so a DJ never loses the "snap
- * to individual beats" reading by also holding the plain-Shift modifier. */
-export function waveSnapModeFromModifiers(modifiers: {
-	shiftKey: boolean;
-	metaKey: boolean;
-}): WaveSnapMode {
+/** WAVE-SEEK-01 (supersedes pin a705aebfbeae's downbeat default): a plain
+ * click follows the deck's quantize, snapping to the NEAREST beat only when it
+ * is on, as rekordbox and a CDJ do. Cmd+Shift takes priority over plain Shift
+ * so a DJ never loses the "snap to individual beats" reading by also holding
+ * the plain-Shift modifier. */
+export function waveSnapModeFromModifiers(
+	modifiers: { shiftKey: boolean; metaKey: boolean },
+	quantizeOn: boolean
+): WaveSnapMode {
 	if (modifiers.shiftKey && modifiers.metaKey) return 'beat';
 	if (modifiers.shiftKey) return 'exact';
-	return 'downbeat';
+	return quantizeOn ? 'beat' : 'exact';
+}
+
+/** The engine command for a waveform seek. The target is already snapped here,
+ * so it goes as exact: the deck's own quantize grid (1, 4, 8 beats or phrase)
+ * would otherwise re-snap it up to a phrase away (WAVE-SEEK-01). Same `seek`
+ * verb an agent drives through the performance IPC. */
+export function waveSeekCommand<D>(
+	deck: D,
+	positionMs: number
+): { type: 'seek'; deck: D; position_ms: number; exact: true } {
+	return { type: 'seek', deck, position_ms: positionMs, exact: true };
 }
 
 /**
@@ -128,6 +146,24 @@ export function waveClickTargetMs(target: WaveClickTarget): number {
 	const playheadX = playheadCenterX(target.widthPx, target.playheadFrac);
 	const offsetMs = ((target.pointerX - playheadX) / pixelsPerSecond) * 1000;
 	return _clampToTrack(target.centerPositionMs + offsetMs, target.durationMs);
+}
+
+type WaveSnapInput = { beats: readonly AnlzBeat[] | null | undefined; mode: WaveSnapMode };
+
+/** Zoomed waveform click: the time under the pointer, then the snap. */
+export function waveClickSeekMs(target: WaveClickTarget & WaveSnapInput): number {
+	return snapWaveTargetMs(waveClickTargetMs(target), target.beats, target.mode);
+}
+
+/** Overview strip click: proportional to the whole track, then the snap. */
+export function overviewSeekMs(
+	target: { pointerX: number; widthPx: number; durationMs: number } & WaveSnapInput
+): number {
+	_assertPositive('widthPx', target.widthPx);
+	_assertPositive('durationMs', target.durationMs);
+	_assertFinite('pointerX', target.pointerX);
+	const ratio = Math.min(1, Math.max(0, target.pointerX / target.widthPx));
+	return snapWaveTargetMs(ratio * target.durationMs, target.beats, target.mode);
 }
 
 export function waveDragTargetMs(target: WaveDragTarget): number {

@@ -25,10 +25,22 @@ test('every classed inline svg in TrackTable has an explicit width', () => {
 	const classed = tags
 		.map((attrs) => ({ cls: /class="([\w-]+)"/.exec(attrs)?.[1], attrs }))
 		.filter((t) => t.cls);
-	assert.ok(classed.some((t) => t.cls === 'plays-icon'), 'control: the plays header glyph is found');
-	assert.ok(classed.some((t) => t.cls === 'autoplay-icon'), 'control: an attribute-sized svg is found');
+	assert.ok(
+		classed.some((t) => t.cls === 'plays-icon'),
+		'control: the plays header glyph is found'
+	);
+	assert.ok(
+		classed.some((t) => t.cls === 'autoplay-icon'),
+		'control: an attribute-sized svg is found'
+	);
 	const unsized = [
-		...new Set(classed.filter((t) => !/\swidth="/.test(t.attrs) && !hasSizedRule(t.cls)).map((t) => t.cls))
+		...new Set(
+			classed.filter((t) => !/\swidth="/.test(t.attrs) && !hasSizedRule(t.cls)).map((t) => t.cls)
+		)
 	];
-	assert.deepEqual(unsized, [], `unsized svg classes stretch to their flex parent: ${unsized.join(', ')}`);
+	assert.deepEqual(
+		unsized,
+		[],
+		`unsized svg classes stretch to their flex parent: ${unsized.join(', ')}`
+	);
 });

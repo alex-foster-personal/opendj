@@ -32,8 +32,14 @@ test('if a non-boolean is accepted then a missing shell flag hides the decision'
 
 // Live state at 13:44Z: master bus rms 0.0365 (deck 2 playing) in the Mac app.
 test('if the Mac app opens a microphone while MAIN carries the set then the Bluetooth MAIN can drop to SCO and go silent', () => {
-	assert.equal(micOpenRefusal({ macAppWebview: true, masterRms: 0.036465689407801524 }), MIC_WHILE_ROOM_PLAYS_REFUSAL);
-	assert.equal(micOpenRefusal({ macAppWebview: true, masterRms: ROOM_PLAYING_RMS_FLOOR }), MIC_WHILE_ROOM_PLAYS_REFUSAL);
+	assert.equal(
+		micOpenRefusal({ macAppWebview: true, masterRms: 0.036465689407801524 }),
+		MIC_WHILE_ROOM_PLAYS_REFUSAL
+	);
+	assert.equal(
+		micOpenRefusal({ macAppWebview: true, masterRms: ROOM_PLAYING_RMS_FLOOR }),
+		MIC_WHILE_ROOM_PLAYS_REFUSAL
+	);
 });
 
 test('if an idle Mac app or any browser is refused the microphone then the AUDIO IN Test and calibration regressed', () => {
@@ -48,11 +54,17 @@ test('if a malformed level is accepted then a broken meter silently opens the mi
 });
 
 test('if startInputLevelWatch reaches getUserMedia before the refusal then the guard is bypassed', () => {
-	const audio = readFileSync(new URL('../../src/lib/player/io-device-test-audio.ts', import.meta.url), 'utf8');
+	const audio = readFileSync(
+		new URL('../../src/lib/player/io-device-test-audio.ts', import.meta.url),
+		'utf8'
+	);
 	const body = audio.slice(audio.indexOf('export async function startInputLevelWatch('));
 	const gate = body.indexOf('assertMicOpenAllowedNow();');
 	const open = body.indexOf('navigator.mediaDevices.getUserMedia(');
 	assert.ok(gate > 0 && open > 0 && gate < open, 'refusal must come before the microphone opens');
 	const helper = audio.slice(audio.indexOf('export function assertMicOpenAllowedNow('));
-	assert.match(helper.slice(0, helper.indexOf('\n}\n')), /micOpenRefusal\(\{\s*macAppWebview: nativeCueSinkAvailable\(\)/);
+	assert.match(
+		helper.slice(0, helper.indexOf('\n}\n')),
+		/micOpenRefusal\(\{\s*macAppWebview: nativeCueSinkAvailable\(\)/
+	);
 });

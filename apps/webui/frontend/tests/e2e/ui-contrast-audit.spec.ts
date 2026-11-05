@@ -687,6 +687,40 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	).toContain('canvas-painted text');
 	expect(canvases.some((u) => u.el.endsWith('canvas.probe-canvas-shape'))).toBe(false);
 	expect(canvases.some((u) => u.why.includes('tracker not installed'))).toBe(false);
+
+	// Two hosts with identical inner markup must get distinct allowlist keys (#5808).
+	await page.evaluate(() => {
+		const host = document.createElement('div');
+		host.setAttribute('data-contrast-probe', '');
+		host.style.cssText = 'position:fixed;left:0;top:360px;z-index:99999;background:#101010;padding:4px';
+		for (const [comp, text] of [
+			['alpha', 'ca'],
+			['beta', 'cb'],
+		] as const) {
+			const root = document.createElement('div');
+			root.setAttribute('data-component', comp);
+			const row = document.createElement('div');
+			row.className = 'row';
+			const span = document.createElement('span');
+			span.className = 'count';
+			span.style.cssText = 'color:#333333;font-size:12px';
+			span.textContent = text;
+			row.appendChild(span);
+			root.appendChild(row);
+			host.appendChild(root);
+		}
+		document.body.appendChild(host);
+	});
+	const identityProbes = (await _audit(page)).probes;
+	const ca = identityProbes.find((p) => p.text === 'ca');
+	const cb = identityProbes.find((p) => p.text === 'cb');
+	expect(ca, 'alpha probe was measured').toBeTruthy();
+	expect(cb, 'beta probe was measured').toBeTruthy();
+	expect(ca!.el, 'identical inner markup must not share one key').not.toBe(cb!.el);
+	expect(ca!.el.endsWith('span.count')).toBe(true);
+	expect(cb!.el.endsWith('span.count')).toBe(true);
+	expect(ca!.el).toContain('data-component="alpha"');
+	expect(cb!.el).toContain('data-component="beta"');
 });
 
 test('controls: text over a drawn svg is measured against its rendered pixels', async ({ page }) => {

@@ -35,8 +35,7 @@ gate = _load_gate()
 
 
 def _tag_exists(tag: str) -> bool:
-    return subprocess.run(["git", "-C", str(REPO), "rev-parse", "--verify", tag],
-                          capture_output=True).returncode == 0
+    return subprocess.run(["git", "-C", str(REPO), "rev-parse", "--verify", tag], capture_output=True).returncode == 0
 
 
 # -----------------------------------------------------------------------------
@@ -63,7 +62,7 @@ def test_is_test_classification(path: str, expected: bool) -> None:
     [
         ("apps/webui/server/app.py", True),
         ("scripts/merge_gate.py", True),
-        ("tests/test_foo.py", False),          # tests are not "source" for this gate
+        ("tests/test_foo.py", False),  # tests are not "source" for this gate
         ("docs/architecture.md", False),
         ("README.md", False),
     ],

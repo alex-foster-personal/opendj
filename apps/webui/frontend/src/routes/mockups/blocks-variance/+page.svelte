@@ -45,10 +45,12 @@
 			return;
 		}
 		const [anlz, track] = await Promise.all([fetchAnlz(sid), fetchTrackBypassingHttpCache(sid)]);
-		if (track.duration_ms === null || track.duration_ms === undefined) throw new Error('track has no duration_ms');
+		if (track.duration_ms === null || track.duration_ms === undefined)
+			throw new Error('track has no duration_ms');
 		let durationMs: number;
 		if (durMode === 'track') durationMs = track.duration_ms;
-		else if (durMode === 'points') durationMs = (anlz.waveform.detail.length / PWV7_POINTS_PER_S) * 1000;
+		else if (durMode === 'points')
+			durationMs = (anlz.waveform.detail.length / PWV7_POINTS_PER_S) * 1000;
 		else throw new Error(`dur must be track|points, got ${durMode}`);
 		title = `${track.artist} - ${track.title} @ ${tS}s, duration ${durationMs.toFixed(0)}ms (${durMode})`;
 		const palette = readPalette(root);
@@ -86,7 +88,14 @@
 			drawWaveRow(ctx, { ...frame, positionMs: tS * 1000 + 16 }); // warm: cache hit
 			const warm = performance.now() - t1;
 			paintMs[variant] = `cold ${cold.toFixed(1)}ms / warm ${warm.toFixed(2)}ms`;
-			const visible = blockHeights(anlz.waveform.detail, Math.ceil((durationMs / 1000) * pxPerS), norms, variant, bpb, curve);
+			const visible = blockHeights(
+				anlz.waveform.detail,
+				Math.ceil((durationMs / 1000) * pxPerS),
+				norms,
+				variant,
+				bpb,
+				curve
+			);
 			scores[variant] = adjacentBlockVariance(visible).toFixed(4);
 		});
 	});
@@ -99,8 +108,14 @@
 		<div class="row">
 			<div class="label">
 				<b>{variant}</b>
-				<span title="Mean squared difference between adjacent block heights over the whole track; higher = individual beats read better">adjVar {scores[variant] ?? '...'}</span>
-				<span title="drawWaveRow time: cold builds the cached band image, warm is a scrolled frame on the cache">{paintMs[variant] ?? ''}</span>
+				<span
+					title="Mean squared difference between adjacent block heights over the whole track; higher = individual beats read better"
+					>adjVar {scores[variant] ?? '...'}</span
+				>
+				<span
+					title="drawWaveRow time: cold builds the cached band image, warm is a scrolled frame on the cache"
+					>{paintMs[variant] ?? ''}</span
+				>
 			</div>
 			<canvas bind:this={canvases[i]} style="width:{WIDTH}px;height:{rowH}px"></canvas>
 		</div>

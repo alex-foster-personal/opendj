@@ -118,10 +118,9 @@ describe('countVisibleTrackRows', () => {
 		// consistently WITHIN the container's own frame, so a check against
 		// the container alone would wrongly pass this as "visible".
 		const offscreenContainer = fakeElement({ rowRect: rect({ top: -2000, bottom: -1600 }) });
-		const rows = [
-			rect({ top: -2000, bottom: -1960 }),
-			rect({ top: -1960, bottom: -1920 })
-		].map((r) => fakeElement({ rowRect: r, container: offscreenContainer }));
+		const rows = [rect({ top: -2000, bottom: -1960 }), rect({ top: -1960, bottom: -1920 })].map(
+			(r) => fakeElement({ rowRect: r, container: offscreenContainer })
+		);
 		install(rows);
 		assert.equal(mod.countVisibleTrackRows(), 0);
 	});

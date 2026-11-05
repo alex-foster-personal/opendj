@@ -146,9 +146,9 @@ def test_repo_built_at_is_engine_start_instant() -> None:
 
 
 @pytest.mark.requirement("INSTALL-07")
-def test_repo_checkout_carries_the_tauri_app_version() -> None:
+def test_repo_checkout_carries_the_app_package_version() -> None:
     expected = json.loads(
-        (REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(
+        (REPO_ROOT / "apps/desktop/electron/package.json").read_text(
             encoding="utf-8"
         )
     )["version"]
@@ -265,3 +265,41 @@ def test_the_repo_path_serves_a_z_suffixed_timestamp() -> None:
     assert info.source == "repo"
     assert info.built_at_utc.endswith("Z")
     assert "+" not in info.built_at_utc
+
+
+# ----- lineage (INSTALL-44) ------------------------------------------------
+LINEAGE: dict[str, object] = {
+    "color_name": "teal",
+    "color_hex": "#008080",
+    "lines": ["af--set-rc", "af--b2b-link"],
+    "line_shares": {"af--set-rc": 1.0, "af--b2b-link": 0.5},
+    "unresolved_lines": [],
+    "previous_git_sha_full": "143a5b1702f5e341042d7ddd29df737083eb90d9",
+    "descends_from_previous": False,
+    "missing_commits": 12,
+    "missing_from": "af--set-rc",
+}
+
+
+@pytest.mark.requirement("INSTALL-44")
+def test_build_info_serves_the_stamped_lineage(tmp_path: Path) -> None:
+    """[if] the manifest stamps lineage [then] /build-info serves it verbatim; an old one says why not, else stop."""
+    path = _manifest(tmp_path / "new", {**GOOD_IDENTITY, "lineage": LINEAGE})
+    for client in _client({MANIFEST_ENV: str(path)}):
+        body = client.get(BUILD_INFO_PATH).json()
+    assert body["lineage"] == LINEAGE
+    assert body["lineage_unavailable"] is None
+    old = resolve_build_info({MANIFEST_ENV: str(_manifest(tmp_path / "old", GOOD_IDENTITY))}, REPO_ROOT)
+    assert old.lineage is None
+    assert "predates the lineage stamp" in (old.lineage_unavailable or "")
+    shallow = _manifest(tmp_path / "ci", {**GOOD_IDENTITY, "lineage": None, "lineage_unavailable": "the trunk 'main' ref is not in this clone"})
+    assert "not in this clone" in (resolve_build_info({MANIFEST_ENV: str(shallow)}, REPO_ROOT).lineage_unavailable or "")
+
+
+@pytest.mark.requirement("INSTALL-44")
+def test_a_checkout_computes_its_lineage_from_live_git() -> None:
+    info = resolve_build_info({}, REPO_ROOT)
+    assert (info.lineage is None) != (info.lineage_unavailable is None)
+    if info.lineage is not None:
+        assert info.lineage.color_name in {"white", "cerulean", "yellow", "teal", "orange", "magenta", "violet", "red", "indigo"}
+        assert info.lineage.descends_from_previous is None

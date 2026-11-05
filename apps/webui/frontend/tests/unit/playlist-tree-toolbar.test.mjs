@@ -28,6 +28,7 @@ test('Deck applies the mirror class: decks 2+4 follow the right pref, decks 1+3 
 	assert.match(deck, /mirror-main-row/);
 	assert.match(
 		deck,
-		/class:mirror-main-row=\{\(deckId === 2 \|\| deckId === 4\) \? uiPrefs\.deck_right_mirror : uiPrefs\.deck_left_mirror\}/
+		/\(deckId === 2 \|\| deckId === 4\) \? uiPrefs\.deck_right_mirror : uiPrefs\.deck_left_mirror/
 	);
+	assert.match(deck, /class:mirror-main-row=\{mirrored\}/);
 });

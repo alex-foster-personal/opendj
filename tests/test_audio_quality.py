@@ -3,6 +3,7 @@
 One line of intent per test. Sizes are computed from the target kbps so the
 boundary tests sit exactly on the cutoff rather than near it.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,12 +28,19 @@ def _write(tmp_path: Path, name: str, size: int) -> str:
 
 
 # ----- boundaries ------------------------------------------------------------
-@pytest.mark.parametrize("kbps,expected", [
-    (127, "naughty_step"), (128, "lounge"),
-    (191, "lounge"), (192, "house_party"),
-    (255, "house_party"), (256, "club"),
-    (319, "club"), (320, "warehouse"),
-])
+@pytest.mark.parametrize(
+    "kbps,expected",
+    [
+        (127, "naughty_step"),
+        (128, "lounge"),
+        (191, "lounge"),
+        (192, "house_party"),
+        (255, "house_party"),
+        (256, "club"),
+        (319, "club"),
+        (320, "warehouse"),
+    ],
+)
 def test_lossy_cutoffs_land_on_the_right_rung(kbps, expected):
     """If a bitrate sits on a cutoff then it takes the HIGHER rung."""
     q = classify("x.mp3", DURATION_MS, _bytes_for(kbps))
@@ -107,6 +115,11 @@ def test_ladder_is_the_six_rungs_ascending():
     rungs = ladder()
     assert [r["rank"] for r in rungs] == [0, 1, 2, 3, 4, 5]
     assert [r["key"] for r in rungs] == [
-        "naughty_step", "lounge", "house_party", "club", "warehouse", "stadium",
+        "naughty_step",
+        "lounge",
+        "house_party",
+        "club",
+        "warehouse",
+        "stadium",
     ]
     assert len(rungs) == len(audio_quality.VENUES)

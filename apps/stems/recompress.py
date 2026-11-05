@@ -96,6 +96,7 @@ from apps.stems.artifacts import (
 )
 from apps.stems.bundle_lock import (
     SwapBackupStuckError,
+    _rename_durably,
     beside_stem_root,
     bundle_lock,
     data_dir_of_bundle,
@@ -770,15 +771,6 @@ def _write_swap_journal(bundle_dir: Path, backup_dir: Path) -> Path:
     tmp.replace(journal)
     _fsync_dir(journal.parent)
     return journal
-
-
-def _rename_durably(source: Path, destination: Path) -> None:
-    """Rename ``source`` to ``destination`` and flush both parents, so the move
-    is on disk before anything that relies on it (Codex P1 on #6821)."""
-    source.rename(destination)
-    _fsync_dir(destination.parent)
-    if source.parent != destination.parent:
-        _fsync_dir(source.parent)
 
 
 def _remove_journal(journal: Path) -> None:

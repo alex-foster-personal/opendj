@@ -3,6 +3,7 @@
 Uses :class:`apps.cloud.lock.FakeS3Client` (no network) and a deterministic
 clock so TTL expiry is testable without sleeping.
 """
+
 from __future__ import annotations
 
 import threading
@@ -152,9 +153,7 @@ def test_race_only_one_acquire_succeeds():
         except Exception as exc:  # pragma: no cover - defensive
             errors.append(exc)
 
-    threads = [
-        threading.Thread(target=worker, args=(f"host-{i}",)) for i in range(5)
-    ]
+    threads = [threading.Thread(target=worker, args=(f"host-{i}",)) for i in range(5)]
     for t in threads:
         t.start()
     for t in threads:
@@ -178,6 +177,7 @@ def test_corrupt_lock_object_is_overwritten():
     # Because FakeS3 indexes by body hash, the stored etag is wrong. Manually
     # fix so the test reflects real S3 behaviour.
     import hashlib
+
     real_etag = '"' + hashlib.sha1(body).hexdigest() + '"'
     s3._store[("test-state", LOCK_KEY)] = (body, real_etag)  # type: ignore[attr-defined]
     result = lock.try_acquire()

@@ -160,16 +160,10 @@ class Key:
 # never blindly upper-cased.
 _CAMELOT_RE: Final = re.compile(r"^(1[0-2]|[1-9])\s*([AaBb])$")
 _OPEN_KEY_RE: Final = re.compile(r"^(1[0-2]|[1-9])\s*([dm])$")
-_MUSICAL_RE: Final = re.compile(
-    r"^([A-Ga-g])\s*([#b])?\s*(m|min|minor|maj|major|M|Min|Maj|Minor|Major)?$"
-)
+_MUSICAL_RE: Final = re.compile(r"^([A-Ga-g])\s*([#b])?\s*(m|min|minor|maj|major|M|Min|Maj|Minor|Major)?$")
 
-_MINOR_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {"m", "min", "minor", "Min", "Minor"}
-)
-_MAJOR_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {"", "maj", "major", "M", "Maj", "Major"}
-)
+_MINOR_SUFFIXES: Final[frozenset[str]] = frozenset({"m", "min", "minor", "Min", "Minor"})
+_MAJOR_SUFFIXES: Final[frozenset[str]] = frozenset({"", "maj", "major", "M", "Maj", "Major"})
 
 # Sentinels MEASURED in the real columns, per notation. Deliberately short:
 # an invented sentinel would turn a genuinely unmapped value into MISSING and
@@ -190,9 +184,7 @@ KEY_UNITS: Final[tuple[str, ...]] = tuple(sorted(KEY_SENTINELS))
 # (``apps.equivalence.compare``). Kept beside the normaliser regexes so the
 # two cannot drift apart silently.
 _CAMELOT_FORM_RE: Final = re.compile(r"^\s*(1[0-2]|[1-9])\s*[AaBb]\s*$")
-_MUSICAL_FORM_RE: Final = re.compile(
-    r"^\s*[A-Ga-g][#b♭♯]?\s*(m|min|minor|maj|major|M)?\s*$"
-)
+_MUSICAL_FORM_RE: Final = re.compile(r"^\s*[A-Ga-g][#b♭♯]?\s*(m|min|minor|maj|major|M)?\s*$")
 
 
 def raw_notation_form(value: Any, kind: str) -> str:
@@ -209,10 +201,7 @@ def raw_notation_form(value: Any, kind: str) -> str:
 
 def pair_notation_form(left_raw: Any, right_raw: Any, kind: str) -> str:
     """Both sides' raw notation families, for cluster subset coverage."""
-    return (
-        f"rb={raw_notation_form(left_raw, kind)}"
-        f"|mik={raw_notation_form(right_raw, kind)}"
-    )
+    return f"rb={raw_notation_form(left_raw, kind)}|mik={raw_notation_form(right_raw, kind)}"
 
 
 def _clean(value: Any) -> str:
@@ -234,9 +223,7 @@ def _prepass_to_harmonic_spelling(text: str, unit: str, raw: Any) -> str:
     if unit == "open_key":
         open_key = _OPEN_KEY_RE.match(text)
         if not open_key:
-            raise NormaliseError(
-                "key", unit, raw, "not open-key notation (expected 1d..12m)"
-            )
+            raise NormaliseError("key", unit, raw, "not open-key notation (expected 1d..12m)")
         number = (int(open_key.group(1)) - 1 + _OPEN_KEY_TO_CAMELOT_OFFSET) % 12 + 1
         return f"{number}{'A' if open_key.group(2) == 'm' else 'B'}"
 
@@ -251,9 +238,7 @@ def _prepass_to_harmonic_spelling(text: str, unit: str, raw: Any) -> str:
             elif suffix in _MAJOR_SUFFIXES:
                 mode_suffix = ""
             else:  # unreachable while the regex and the sets agree
-                raise NormaliseError(
-                    "key", unit, raw, f"unrecognised mode suffix {suffix!r}"
-                )
+                raise NormaliseError("key", unit, raw, f"unrecognised mode suffix {suffix!r}")
             return f"{note}{accidental}{mode_suffix}"
 
     raise NormaliseError("key", unit, raw, f"no {unit} rule matches {text!r}")
@@ -284,8 +269,7 @@ def normalise_key(value: Any, unit: str) -> Key | _Missing:
             "key",
             unit,
             value,
-            f"apps.shared.harmonic rejected the pre-passed spelling "
-            f"{spelling!r}: {exc}",
+            f"apps.shared.harmonic rejected the pre-passed spelling {spelling!r}: {exc}",
         ) from exc
 
 
@@ -297,17 +281,10 @@ def _normalise_pitch_class_pair(value: Any) -> Key | _Missing:
         try:
             return Key(int(pitch), str(mode))
         except (TypeError, ValueError) as exc:
-            raise NormaliseError(
-                "key", "pitch_class_and_mode", value, str(exc)
-            ) from exc
-    if (
-        isinstance(value, str)
-        and _clean(value) in KEY_SENTINELS["pitch_class_and_mode"]
-    ):
+            raise NormaliseError("key", "pitch_class_and_mode", value, str(exc)) from exc
+    if isinstance(value, str) and _clean(value) in KEY_SENTINELS["pitch_class_and_mode"]:
         return MISSING
-    raise NormaliseError(
-        "key", "pitch_class_and_mode", value, "expected Key or (pitch_class, mode)"
-    )
+    raise NormaliseError("key", "pitch_class_and_mode", value, "expected Key or (pitch_class, mode)")
 
 
 # ----------------------------------------------------------- numeric units
@@ -391,9 +368,7 @@ def normalise_rating_popm(value: Any) -> float | _Missing:
     if value is None:
         return MISSING
     if isinstance(value, bool):
-        raise NormaliseError(
-            "rating", "rekordbox_popm_0_255", value, "bool is not a rating"
-        )
+        raise NormaliseError("rating", "rekordbox_popm_0_255", value, "bool is not a rating")
     try:
         as_int = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -401,16 +376,13 @@ def normalise_rating_popm(value: Any) -> float | _Missing:
         # the whole reason it exists: without this the escaping exception is an
         # OverflowError, not a NormaliseError, so a caller that handles only
         # NormaliseError crashes instead of recording an unmapped value.
-        raise NormaliseError(
-            "rating", "rekordbox_popm_0_255", value, "not an integer"
-        ) from exc
+        raise NormaliseError("rating", "rekordbox_popm_0_255", value, "not an integer") from exc
     if as_int not in _POPM_STEPS:
         raise NormaliseError(
             "rating",
             "rekordbox_popm_0_255",
             value,
-            "not one of the 0/51/102/153/204/255 steps; a linear 0-255 read "
-            "would silently invent half-stars",
+            "not one of the 0/51/102/153/204/255 steps; a linear 0-255 read would silently invent half-stars",
         )
     return float(_POPM_STEPS[as_int])
 
@@ -442,9 +414,7 @@ def _numeric_scale_factor(kind: str, unit: str, value: Any) -> float:
     """Resolves the scale factor for (kind, unit), split out of
     ``normalise_numeric`` to keep it under the complexity ceiling."""
     if unit in ABSENT_UNITS:
-        raise NormaliseError(
-            kind, unit, value, "the source has no such column; nothing to normalise"
-        )
+        raise NormaliseError(kind, unit, value, "the source has no such column; nothing to normalise")
     if unit in UNDECIDABLE_UNITS:
         raise NormaliseError(
             kind,
@@ -504,9 +474,7 @@ def normalise_numeric(value: Any, kind: str, unit: str) -> float | _Missing:
     return validated * factor
 
 
-def normalise_time(
-    value: Any, unit: str, *, bpm: float | None = None
-) -> float | _Missing:
+def normalise_time(value: Any, unit: str, *, bpm: float | None = None) -> float | _Missing:
     """A time base -> milliseconds. ``beats`` needs a positive BPM or raises."""
     if unit == "beats":
         if value is None:
@@ -606,9 +574,7 @@ REGISTERED_UNITS: Final[dict[str, tuple[str, ...]]] = {
     "energy": tuple(sorted(NUMERIC_UNITS["energy"])),
     "loudness": tuple(sorted(NUMERIC_UNITS["loudness"])),
     "duration": tuple(sorted(NUMERIC_UNITS["duration"])),
-    "rating": (
-        *sorted(NUMERIC_UNITS["rating"]), "rekordbox_popm_0_255", "linear_0_255"
-    ),
+    "rating": (*sorted(NUMERIC_UNITS["rating"]), "rekordbox_popm_0_255", "linear_0_255"),
     "count": tuple(sorted(NUMERIC_UNITS["count"])),
     "time": (*sorted(NUMERIC_UNITS["time"]), "beats"),
 }

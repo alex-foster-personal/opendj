@@ -60,7 +60,8 @@ def test_no_key_is_minted_below_a_floor_key(floor: str) -> None:
 @pytest.mark.requirement("LIBM-132")
 @pytest.mark.parametrize(("left", "right"), [("00000004", "00000004"), ("00000005", "00000004")])
 def test_neighbors_sharing_or_inverting_a_key_raise_precision_exhausted(
-    left: str, right: str,
+    left: str,
+    right: str,
 ) -> None:
     """[if] the neighbors leave no gap [then] callers get PrecisionExhausted to renumber, [else stop]."""
     with pytest.raises(PrecisionExhausted):
@@ -88,10 +89,12 @@ def test_ten_thousand_head_inserts_keep_keys_at_eight_characters() -> None:
 
 @pytest.mark.requirement("LIBM-132")
 @pytest.mark.parametrize(
-    ("left", "right"), [("0100001", "01000011"), ("", "01000000"), ("01", "01V")],
+    ("left", "right"),
+    [("0100001", "01000011"), ("", "01000000"), ("01", "01V")],
 )
 def test_a_key_between_a_prefix_and_its_extension_sorts_between_them(
-    left: str, right: str,
+    left: str,
+    right: str,
 ) -> None:
     """[if] left is a prefix of right [then] the new key sorts strictly between, [else stop]."""
     key = between(left, right)

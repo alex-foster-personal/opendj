@@ -29,7 +29,9 @@
 	);
 
 	let activeDiff = $derived(
-		rbDjayDiff?.computed ? rbDjayDiff.diff : detail?.diff ?? { rb_only: [], djay_only: [], both: [], conflicts: [] }
+		rbDjayDiff?.computed
+			? rbDjayDiff.diff
+			: (detail?.diff ?? { rb_only: [], djay_only: [], both: [], conflicts: [] })
 	);
 
 	onMount(async () => {
@@ -58,10 +60,14 @@
 {#if detail}
 	<a href="/">&larr; back</a>
 	<h2>{detail.name}</h2>
-	<p style="color: var(--muted);">Review the current playlist and preview a PLAY IT reorder before applying it.</p>
-	<p><a href={`/playlist/${detail.playlist_id}/writeback`}>Write back to rekordbox / djay &rarr;</a></p>
+	<p style="color: var(--muted);">
+		Review the current playlist and preview a PLAY IT reorder before applying it.
+	</p>
+	<p>
+		<a href={`/playlist/${detail.playlist_id}/writeback`}>Write back to rekordbox / djay &rarr;</a>
+	</p>
 	{#if playlistId}
-		<PlayItPanel playlistId={playlistId} />
+		<PlayItPanel {playlistId} />
 	{/if}
 
 	<section style="margin-top: 1.5rem;">
@@ -86,15 +92,21 @@
 		<div class="diff-columns">
 			<div>
 				<h3>RB only</h3>
-				<ul>{#each activeDiff.rb_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+				<ul>
+					{#each activeDiff.rb_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}
+				</ul>
 			</div>
 			<div>
 				<h3>Both</h3>
-				<ul>{#each activeDiff.both as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+				<ul>
+					{#each activeDiff.both as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}
+				</ul>
 			</div>
 			<div>
 				<h3>djay only</h3>
-				<ul>{#each activeDiff.djay_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+				<ul>
+					{#each activeDiff.djay_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}
+				</ul>
 			</div>
 		</div>
 		{#if activeDiff.conflicts.length > 0}

@@ -1,4 +1,5 @@
 """Runtime policy module tests (issue #284, POLICY-01)."""
+
 from __future__ import annotations
 
 import os

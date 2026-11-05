@@ -45,6 +45,7 @@ The resolver is intentionally small and has zero test-framework
 dependency: it can be imported from anywhere in the repo, not only
 under pytest.
 """
+
 from __future__ import annotations
 
 import json
@@ -111,9 +112,7 @@ def _read_extern_marker(marker: Path) -> str:
         if not line or line.startswith("#"):
             continue
         return line
-    raise FixtureNotAvailable(
-        f"Marker file is empty (no subpath line): {marker}"
-    )
+    raise FixtureNotAvailable(f"Marker file is empty (no subpath line): {marker}")
 
 
 def fixture_path(name: str) -> Path:
@@ -131,9 +130,7 @@ def fixture_path(name: str) -> Path:
         When no resolution strategy matches the name.
     """
     if not name or "/" in name or "\\" in name or name.startswith("."):
-        raise ValueError(
-            f"Invalid fixture name {name!r}: must be a single path component."
-        )
+        raise ValueError(f"Invalid fixture name {name!r}: must be a single path component.")
 
     direct = FIXTURES_ROOT / name
     # 1. Plain directory (not a symlink).
@@ -171,9 +168,7 @@ def fixture_path(name: str) -> Path:
 
     # 4. Symlink exists but its target is missing, and no marker matched.
     if direct.is_symlink():
-        raise FixtureNotAvailable(
-            f"Symlinked fixture target missing: {direct} -> {direct.resolve()}"
-        )
+        raise FixtureNotAvailable(f"Symlinked fixture target missing: {direct} -> {direct.resolve()}")
 
     raise FileNotFoundError(
         f"Fixture {name!r} not found under {FIXTURES_ROOT}. "
@@ -218,9 +213,7 @@ def verify_fixture_contract(name: str, root: Path) -> None:
             "carries the same key."
         )
     expected_files: dict[str, str] = contract["files"]
-    actual_paths = {
-        path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
-    }
+    actual_paths = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
     expected_names = set(expected_files)
     missing = sorted(expected_names - actual_paths)
     extra = sorted(actual_paths - expected_names)
@@ -232,9 +225,7 @@ def verify_fixture_contract(name: str, root: Path) -> None:
             "must fail closed rather than be accepted unchanged."
         )
     mismatched = sorted(
-        relpath
-        for relpath, expected_digest in expected_files.items()
-        if sha256_file(root / relpath) != expected_digest
+        relpath for relpath, expected_digest in expected_files.items() if sha256_file(root / relpath) != expected_digest
     )
     if mismatched:
         raise FixtureContractMismatch(

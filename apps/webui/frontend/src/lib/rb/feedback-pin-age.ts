@@ -30,7 +30,11 @@ export function pinAgeDays(createdAt: string, nowMs: number): number | null {
 }
 
 /** 0 (or any non-positive count) keeps every pin. Older than the count is hidden. */
-export function isPinWithinVisibleDays(createdAt: string, visibleDays: number, nowMs: number): boolean {
+export function isPinWithinVisibleDays(
+	createdAt: string,
+	visibleDays: number,
+	nowMs: number
+): boolean {
 	if (!(visibleDays > 0)) return true;
 	const age = pinAgeDays(createdAt, nowMs);
 	if (age === null) return true;

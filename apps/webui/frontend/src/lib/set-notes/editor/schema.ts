@@ -17,7 +17,9 @@ export type NoteTarget =
 /** A stable id may not contain ':', '|', brackets, parentheses, a backslash or
  * whitespace, which keeps both token forms unambiguous without escapes. */
 export const STABLE_ID = String.raw`[^\s:|\[\]()\\]+`;
-const HREF_RE = new RegExp(String.raw`^(?:(track):(${STABLE_ID})|(stem):(${STABLE_ID}):([a-z]+)|(https?://[^\s()]+))$`);
+const HREF_RE = new RegExp(
+	String.raw`^(?:(track):(${STABLE_ID})|(stem):(${STABLE_ID}):([a-z]+)|(https?://[^\s()]+))$`
+);
 
 export function parseHref(href: string): NoteTarget | null {
 	const m = HREF_RE.exec(href);
@@ -50,7 +52,12 @@ function _hrefAttrs(href: string | null, httpOnly: boolean): { href: string } | 
 export const noteSchema = new Schema({
 	nodes: {
 		doc: { content: 'block+' },
-		paragraph: { group: 'block', content: 'inline*', parseDOM: [{ tag: 'p' }], toDOM: () => block('p') },
+		paragraph: {
+			group: 'block',
+			content: 'inline*',
+			parseDOM: [{ tag: 'p' }],
+			toDOM: () => block('p')
+		},
 		heading: {
 			group: 'block',
 			content: 'inline*',
@@ -59,8 +66,18 @@ export const noteSchema = new Schema({
 			parseDOM: [1, 2, 3].map((level) => ({ tag: `h${level}`, attrs: { level } })),
 			toDOM: (node) => block(`h${node.attrs.level}`)
 		},
-		bullet_list: { group: 'block', content: 'list_item+', parseDOM: [{ tag: 'ul' }], toDOM: () => block('ul') },
-		list_item: { content: 'paragraph block*', defining: true, parseDOM: [{ tag: 'li' }], toDOM: () => block('li') },
+		bullet_list: {
+			group: 'block',
+			content: 'list_item+',
+			parseDOM: [{ tag: 'ul' }],
+			toDOM: () => block('ul')
+		},
+		list_item: {
+			content: 'paragraph block*',
+			defining: true,
+			parseDOM: [{ tag: 'li' }],
+			toDOM: () => block('li')
+		},
 		text: { group: 'inline' },
 		track_ref: {
 			group: 'inline',
@@ -101,11 +118,18 @@ export const noteSchema = new Schema({
 			attrs: { href: {} },
 			inclusive: false,
 			parseDOM: [
-				{ tag: 'a[data-href]', getAttrs: (dom) => _hrefAttrs(dom.getAttribute('data-href'), false) },
+				{
+					tag: 'a[data-href]',
+					getAttrs: (dom) => _hrefAttrs(dom.getAttribute('data-href'), false)
+				},
 				{ tag: 'a[href]', getAttrs: (dom) => _hrefAttrs(dom.getAttribute('href'), true) }
 			],
 			// No href attribute: the editor decides what a click does, never the browser.
-			toDOM: (mark) => ['a', { class: 'sn-link', 'data-href': mark.attrs.href, 'data-testid': 'set-notes-link' }, 0]
+			toDOM: (mark) => [
+				'a',
+				{ class: 'sn-link', 'data-href': mark.attrs.href, 'data-testid': 'set-notes-link' },
+				0
+			]
 		}
 	}
 });

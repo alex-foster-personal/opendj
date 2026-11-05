@@ -25,7 +25,11 @@ test('if default controls do not read as neutral then every stem track keeps pla
 });
 
 test('if a touched control still reads as neutral then the touch is heard on the original file, i.e. lost', () => {
-	for (const [field, value] of [['muted', true], ['solo', true], ['gain', 0.51]]) {
+	for (const [field, value] of [
+		['muted', true],
+		['solo', true],
+		['gain', 0.51]
+	]) {
 		const controls = m.createDefaultStemControls();
 		controls.drums[field] = value;
 		assert.equal(m.deckPlaysOriginalFile(controls), false, `${field}=${value}`);
@@ -34,8 +38,14 @@ test('if a touched control still reads as neutral then the touch is heard on the
 });
 
 test('if EQ off flat reads as stem-neutral for the fidelity guard then the guard compares a shaped master to the raw file', () => {
-	assert.equal(m.stemControlsNeutral(ready(m.createDefaultStemControls()), { ...FLAT, eq_high: 0.3 }), false);
-	assert.equal(m.stemControlsNeutral({ status: 'unavailable', controls: m.createDefaultStemControls() }, FLAT), true);
+	assert.equal(
+		m.stemControlsNeutral(ready(m.createDefaultStemControls()), { ...FLAT, eq_high: 0.3 }),
+		false
+	);
+	assert.equal(
+		m.stemControlsNeutral({ status: 'unavailable', controls: m.createDefaultStemControls() }, FLAT),
+		true
+	);
 	assert.equal(m.channelEqIsFlat({ ...FLAT, eq_low: 0.5000001 }), false);
 });
 
@@ -49,7 +59,12 @@ function fakeParam(log, name) {
 test('if the engage crossfade is under 10 ms or the ramps use different windows then the switch can click', () => {
 	assert.ok(m.STEM_ENGAGE_CROSSFADE_SEC >= 0.01);
 	const log = [];
-	const window = m.scheduleStemEngageCrossfade(fakeParam(log, 'in'), fakeParam(log, 'out'), 12.5, m.STEM_ENGAGE_CROSSFADE_SEC);
+	const window = m.scheduleStemEngageCrossfade(
+		fakeParam(log, 'in'),
+		fakeParam(log, 'out'),
+		12.5,
+		m.STEM_ENGAGE_CROSSFADE_SEC
+	);
 	const end = 12.5 + m.STEM_ENGAGE_CROSSFADE_SEC;
 	assert.deepEqual(log, [
 		['in', 'set', 0, 12.5],
@@ -58,8 +73,14 @@ test('if the engage crossfade is under 10 ms or the ramps use different windows 
 		['out', 'ramp', 0, end]
 	]);
 	assert.deepEqual(window, { startSec: 12.5, endSec: end });
-	assert.throws(() => m.scheduleStemEngageCrossfade(fakeParam([], 'in'), null, 1, 0.005), RangeError);
-	assert.throws(() => m.scheduleStemEngageCrossfade(fakeParam([], 'in'), null, Number.NaN, 0.02), RangeError);
+	assert.throws(
+		() => m.scheduleStemEngageCrossfade(fakeParam([], 'in'), null, 1, 0.005),
+		RangeError
+	);
+	assert.throws(
+		() => m.scheduleStemEngageCrossfade(fakeParam([], 'in'), null, Number.NaN, 0.02),
+		RangeError
+	);
 });
 
 function heldDeck() {
@@ -107,12 +128,24 @@ test('if a touch on stems already engaged re-engages them then every press re-ru
 });
 
 test('if the engine lands a neutral bundle instead of holding it, or the engage skips the crossfade, then stems play by default again', () => {
-	const engine = readFileSync(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url), 'utf8');
-	assert.match(engine, /crossfadeSec: STEM_ENGAGE_CROSSFADE_SEC,\n\t\tcreateGain: \(\) => ctx\.createGain\(\)/);
+	const engine = readFileSync(
+		new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(
+		engine,
+		/crossfadeSec: STEM_ENGAGE_CROSSFADE_SEC,\n\t\tcreateGain: \(\) => ctx\.createGain\(\)/
+	);
 	const hold = engine.slice(engine.indexOf('function _holdNeutralStems('));
 	assert.match(hold.slice(0, 600), /playback: 'original'/);
 	const engage = engine.slice(engine.indexOf('function _engageHeldNeutralStems('));
-	assert.match(engage.slice(0, 1200), /_landStems\(deck, \{ token: held\.token, processor: held\.processor, state \}, ctx, stale\)/);
+	assert.match(
+		engage.slice(0, 1200),
+		/_landStems\(deck, \{ token: held\.token, processor: held\.processor, state \}, ctx, stale\)/
+	);
 	assert.match(engage.slice(0, 1200), /playback: 'stems'/);
-	assert.match(engine, /heldStems: \(d: DeckId\) => _rt\[d\]\.heldNeutralStems\?\.processor \?\? null/);
+	assert.match(
+		engine,
+		/heldStems: \(d: DeckId\) => _rt\[d\]\.heldNeutralStems\?\.processor \?\? null/
+	);
 });

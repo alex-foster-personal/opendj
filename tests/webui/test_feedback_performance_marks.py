@@ -99,9 +99,7 @@ def test_performance_marks_read_a_pre_990_record_missing_filter(tmp_path: Path) 
     feedback_dir.mkdir(parents=True)
     legacy_mark = _mark(1)
     del legacy_mark["mixer"]["channels"][0]["filter"]
-    (feedback_dir / "performance-marks.json").write_text(
-        json.dumps({"marks": [legacy_mark]}), encoding="utf-8"
-    )
+    (feedback_dir / "performance-marks.json").write_text(json.dumps({"marks": [legacy_mark]}), encoding="utf-8")
 
     with _app(data_dir) as client:
         read_back = client.get("/api/v1/feedback/performance-marks")
@@ -138,9 +136,7 @@ def test_performance_marks_round_trip_eq_and_loop(tmp_path: Path) -> None:
 def test_performance_marks_keep_the_newest_four_hundred(tmp_path: Path) -> None:
     with _app(tmp_path / "data") as client:
         for timestamp in range(401):
-            response = client.post(
-                "/api/v1/feedback/performance-marks", json=_mark(timestamp)
-            )
+            response = client.post("/api/v1/feedback/performance-marks", json=_mark(timestamp))
             assert response.status_code == 201
         summary = client.get("/api/v1/feedback/performance-marks").json()
     assert summary["count"] == 400

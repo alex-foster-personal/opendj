@@ -18,6 +18,7 @@ from apps.shared.rekordbox_writeback import (
     require_writeback_enabled,
     writeback_enabled,
 )
+from apps.sync.diff_csv import load_diff_rows
 from apps.sync.playlist_apply import PlaylistApplyError, _load_plan
 
 SYNC_DIR = paths.DATA_DIR / "sync"
@@ -450,7 +451,7 @@ def run_cues_apply(
     from apps.sync import apply_cues  # noqa: PLC0415
 
     resolved_csv = diff_csv or (SYNC_DIR / "cue-diff.csv")
-    rows = apply_cues._load_cue_diff(resolved_csv)
+    rows = load_diff_rows(resolved_csv)
     if live and not i_understand_the_risks:
         raise RbDjaySyncError(
             "live cue apply requires i_understand_the_risks=true",
@@ -505,7 +506,7 @@ def run_analysis_apply(
     from apps.sync import apply_analysis  # noqa: PLC0415
 
     resolved_csv = diff_csv or (SYNC_DIR / "analysis-diff.csv")
-    rows = apply_analysis._load_diff(resolved_csv)
+    rows = load_diff_rows(resolved_csv)
     if live and not i_understand_the_risks:
         raise RbDjaySyncError(
             "live analysis apply requires i_understand_the_risks=true",
@@ -555,7 +556,7 @@ def run_ratings_apply(
     from apps.sync import apply_ratings  # noqa: PLC0415
 
     resolved_csv = diff_csv or (SYNC_DIR / "ratings-diff.csv")
-    rows = apply_ratings._load_ratings_diff(resolved_csv)
+    rows = load_diff_rows(resolved_csv)
     if live and not i_understand_the_risks:
         raise RbDjaySyncError(
             "live ratings apply requires i_understand_the_risks=true",

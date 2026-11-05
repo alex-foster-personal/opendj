@@ -71,10 +71,16 @@ export function resultMatchesSelection(
 	result: WritebackResultBinding,
 	selection: WritebackSelection | null
 ): boolean {
-	return selection !== null && result.vendor === selection.vendor && result.target_id === selection.target_id;
+	return (
+		selection !== null &&
+		result.vendor === selection.vendor &&
+		result.target_id === selection.target_id
+	);
 }
 
-export function writebackPlanMutation(plan: WritebackPlanChange): 'noop' | 'reorder' | 'membership' {
+export function writebackPlanMutation(
+	plan: WritebackPlanChange
+): 'noop' | 'reorder' | 'membership' {
 	if (plan.ordered_match) return 'noop';
 	if (plan.added.length === 0 && plan.removed.length === 0) return 'reorder';
 	return 'membership';
@@ -86,5 +92,11 @@ export function canRollbackWriteback(
 	result: WritebackResultBinding | null,
 	selection: WritebackSelection | null
 ): boolean {
-	return confirmed && plan !== null && result !== null && planMatchesSelection(plan, selection) && resultMatchesSelection(result, selection);
+	return (
+		confirmed &&
+		plan !== null &&
+		result !== null &&
+		planMatchesSelection(plan, selection) &&
+		resultMatchesSelection(result, selection)
+	);
 }

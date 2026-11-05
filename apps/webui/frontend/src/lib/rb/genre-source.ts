@@ -32,7 +32,8 @@ export function genreCellTitle(
  * when the configured precedence leaves out the library tag and nothing in it
  * has a genre. (private path) pins the two strings together.
  */
-export const GENRE_REASON_LIBRARY_TAG_HIDDEN = 'the genre precedence leaves out the library tag, and no source in it has a genre';
+export const GENRE_REASON_LIBRARY_TAG_HIDDEN =
+	'the genre precedence leaves out the library tag, and no source in it has a genre';
 
 /** The genre a row shows: the listing's choice, else rekordbox's lazily loaded tag unless the precedence hides it. */
 export function listingGenre(row: {

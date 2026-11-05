@@ -2,6 +2,7 @@
 
 [if] a playlist is deleted then POST :undelete [then] it reappears in the live list with original memberships intact, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3

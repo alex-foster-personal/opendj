@@ -131,7 +131,10 @@ interface ManualChunkMeta {
 }
 
 /** Rollup `output.manualChunks`: the closures are computed once per module graph. */
-export function bootManualChunks(): (moduleId: string, meta: ManualChunkMeta) => string | undefined {
+export function bootManualChunks(): (
+	moduleId: string,
+	meta: ManualChunkMeta
+) => string | undefined {
 	const chunksByGraph = new WeakMap<ManualChunkMeta['getModuleInfo'], Map<string, BootChunkName>>();
 	return (moduleId, meta) => {
 		let chunkByModuleId = chunksByGraph.get(meta.getModuleInfo);
@@ -148,12 +151,23 @@ export function bootManualChunks(): (moduleId: string, meta: ManualChunkMeta) =>
 		// These views are all fetched when the drawer first mounts. Keep
 		// their shared UI code together without pulling its runtime
 		// dependencies into another surface (onlyExplicitManualChunks).
-		if (/\/src\/lib\/components\/rb\/(?:MidiPanel|midi\/(?:MidiDeviceList|MidiLearnLog|MidiLearnLogRows|MidiLearnLogPopout))\.svelte$/.test(moduleId)) {
+		if (
+			/\/src\/lib\/components\/rb\/(?:MidiPanel|midi\/(?:MidiDeviceList|MidiLearnLog|MidiLearnLogRows|MidiLearnLogPopout))\.svelte$/.test(
+				moduleId
+			)
+		) {
 			return 'midi-drawer-ui';
 		}
 		// The deferred feedback shell loads its three roots together.
 		// Only exclusive child views/helpers join them; route-shared widget stays separate.
-		if (/\/src\/lib\/rb\/feedback-pin-(?:draft-restore|draft-persist|anchor-highlight|placement|position)\.ts$/.test(moduleId) || /\/src\/lib\/components\/rb\/(?:FeedbackPinLayer|FeedbackPinShellButton|FeedbackDock|FeedbackSupportPanel|FeedbackPinDraftBubble|FeedbackPinCard|feedback\/FeedbackPinMarkers)\.svelte$/.test(moduleId)) {
+		if (
+			/\/src\/lib\/rb\/feedback-pin-(?:draft-restore|draft-persist|anchor-highlight|placement|position)\.ts$/.test(
+				moduleId
+			) ||
+			/\/src\/lib\/components\/rb\/(?:FeedbackPinLayer|FeedbackPinShellButton|FeedbackDock|FeedbackSupportPanel|FeedbackPinDraftBubble|FeedbackPinCard|feedback\/FeedbackPinMarkers)\.svelte$/.test(
+				moduleId
+			)
+		) {
 			return 'feedback-shell-ui';
 		}
 		return undefined;

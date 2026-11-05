@@ -17,6 +17,7 @@ Regression one-liners:
   - if a re-pointed symlinked share root is served before the re-anchor call then broken
   - if the re-anchor call does not bring a re-pointed symlinked share root back then broken
 """
+
 from __future__ import annotations
 
 import os
@@ -34,9 +35,7 @@ from tests.webui.test_row_assets_degrade import MALFORMED, bad_pvdi_header
 
 pytestmark = [
     pytest.mark.requirement("LIBM-137"),
-    pytest.mark.skipif(
-        not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED, reason="needs the fd-anchored walk"
-    ),
+    pytest.mark.skipif(not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED, reason="needs the fd-anchored walk"),
 ]
 
 LEVEL, OTHER_LEVEL = 5, 9
@@ -102,8 +101,7 @@ def _seed(root: Path) -> tuple[Path, Path]:
             "rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
         )
         master.execute(
-            "CREATE TABLE djmdGenre (ID TEXT PRIMARY KEY, Name TEXT, "
-            "rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
+            "CREATE TABLE djmdGenre (ID TEXT PRIMARY KEY, Name TEXT, rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
         )
         master.executemany(
             "INSERT INTO djmdContent (ID, ImagePath, AnalysisDataPath, DJPlayCount) VALUES (?, ?, ?, 0)",
@@ -168,9 +166,7 @@ def test_a_page_with_malformed_analysis_files_answers_with_those_rows_degraded(
 
 
 @pytest.mark.parametrize("request_name", ["cold", "warm", "lyrics_cache_is_a_file"])
-def test_the_neighbors_of_a_malformed_row_are_intact(
-    degraded: dict[str, Any], request_name: str
-) -> None:
+def test_the_neighbors_of_a_malformed_row_are_intact(degraded: dict[str, Any], request_name: str) -> None:
     rows = _by_row(degraded[request_name])
     for i in HEALTHY:
         assert rows[i]["preview_b64"] == _expected_preview(LEVEL), f"row {i}"
@@ -182,9 +178,7 @@ def test_a_warm_page_says_what_the_cold_page_said(degraded: dict[str, Any]) -> N
     assert _by_row(degraded["warm"]) == _by_row(degraded["cold"])
 
 
-def test_a_lyrics_cache_path_that_is_a_file_is_no_lyrics_not_a_failed_page(
-    degraded: dict[str, Any]
-) -> None:
+def test_a_lyrics_cache_path_that_is_a_file_is_no_lyrics_not_a_failed_page(degraded: dict[str, Any]) -> None:
     rows = _by_row(degraded["lyrics_cache_is_a_file"])
     assert {row["lyrics_available"] for row in rows.values()} == {False}
     assert degraded["one_track"]["body"]["lyrics_available"] is False

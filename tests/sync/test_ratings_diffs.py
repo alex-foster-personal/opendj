@@ -1,4 +1,5 @@
 """Unit tests for :mod:`apps.sync.ratings` direction policy (SYNC-06)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

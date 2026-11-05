@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 // IOPIN-08: real decoded audio + production graph, not physical audibility proof.
-test('I/O meters observe real audio and CUE volume rather than invented activity', async ({ page }) => {
+test('I/O meters observe real audio and CUE volume rather than invented activity', async ({
+	page
+}) => {
 	const track = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK;
 	if (!track) throw new Error('Set PERFORMANCE_E2E_MIXTOUR_TRACK to a real analyzed track');
 	await page.goto('/performance?muted=1');
@@ -11,9 +13,13 @@ test('I/O meters observe real audio and CUE volume rather than invented activity
 		await ipc.dispatch({ type: 'master_volume', value: 0.1 });
 		await ipc.dispatch({ type: 'load', deck: 1, stable_id });
 		await ipc.dispatch({ type: 'headphone_outputs_refresh' });
-		const cueOutput = ipc.query().mixer.headphones.outputs.find((output) => output.id.trim() !== '');
+		const cueOutput = ipc
+			.query()
+			.mixer.headphones.outputs.find((output) => output.id.trim() !== '');
 		if (cueOutput === undefined) {
-			throw new Error('UNAVAILABLE: browser exposed no selectable audio output for the real CUE monitor');
+			throw new Error(
+				'UNAVAILABLE: browser exposed no selectable audio output for the real CUE monitor'
+			);
 		}
 		await ipc.dispatch({ type: 'headphone_output_select', device_id: cueOutput.id });
 		if (!ipc.query().mixer.headphones.active) {
@@ -24,10 +30,13 @@ test('I/O meters observe real audio and CUE volume rather than invented activity
 		await ipc.dispatch({ type: 'headphone_level', value: 0 });
 		await ipc.dispatch({ type: 'play', deck: 1, playing: true });
 	}, track);
-	const signals = () => page.evaluate(() => window.musicDjToolsPerformance!.query().mixer.headphones.signals);
+	const signals = () =>
+		page.evaluate(() => window.musicDjToolsPerformance!.query().mixer.headphones.signals);
 	await expect.poll(async () => (await signals()).master.rms ?? 0).toBeGreaterThan(0.0001);
 	await expect.poll(async () => (await signals()).cue.rms).toBe(0);
-	await page.evaluate(() => window.musicDjToolsPerformance!.dispatch({ type: 'headphone_level', value: 0.5 }));
+	await page.evaluate(() =>
+		window.musicDjToolsPerformance!.dispatch({ type: 'headphone_level', value: 0.5 })
+	);
 	await expect.poll(async () => (await signals()).cue.rms ?? 0).toBeGreaterThan(0.0001);
 	const measured = await signals();
 	expect(measured.master.physical_output_proven).toBe(false);

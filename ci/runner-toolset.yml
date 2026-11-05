@@ -239,11 +239,11 @@ entries:
     notes: "docs.yml publishes the site with `npx wrangler@4.148.0 pages deploy` (ADR-0125)"
   - name: pnpm
     kind: toolchain
-    version: "11.9.0"
+    version: "11.11.0"
     source: "repo:apps/**/package.json (packageManager)"
     provides: [pnpm]
     needed_by: [e2e, frontend]
-    install: "as the runner user: corepack enable && corepack prepare pnpm@11.9.0 --activate"
+    install: "as the runner user: corepack enable && corepack prepare pnpm@11.11.0 --activate"
     verify: "pnpm --version"
   - name: rustup
     kind: toolchain

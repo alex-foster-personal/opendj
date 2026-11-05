@@ -2,6 +2,7 @@
 
 [if] delete_playlist tombstones a playlist and live memberships [then] undelete_playlist restores only those memberships at original positions, [else stop].
 """
+
 from __future__ import annotations
 
 import inspect
@@ -65,32 +66,33 @@ def test_delete_stamps_shared_tombstone(
     _seed_track(writer, track_old)
     pid = compute_playlist_id("webui", "shared-tombstone")
     writer.insert_playlist(
-        playlist_id=pid, name="shared", vendor="webui", vendor_pl_id="shared",
+        playlist_id=pid,
+        name="shared",
+        vendor="webui",
+        vendor_pl_id="shared",
     )
     writer.set_playlist_memberships(pid, [track_a, track_b, track_old])
     old_deleted_at = "2026-09-10T00:00:00+00:00"
     state_conn.execute(
-        "UPDATE playlist_memberships SET deleted_at = ? "
-        "WHERE playlist_id = ? AND stable_id = ?",
+        "UPDATE playlist_memberships SET deleted_at = ? WHERE playlist_id = ? AND stable_id = ?",
         (old_deleted_at, pid, track_old),
     )
 
     assert writer.delete_playlist(pid) is True
     playlist_row = state_conn.execute(
-        "SELECT deleted_at FROM playlists WHERE playlist_id = ?", (pid,),
+        "SELECT deleted_at FROM playlists WHERE playlist_id = ?",
+        (pid,),
     ).fetchone()
     assert playlist_row[0] is not None
     tombstone_ts = playlist_row[0]
     for stable_id in (track_a, track_b):
         row = state_conn.execute(
-            "SELECT deleted_at FROM playlist_memberships "
-            "WHERE playlist_id = ? AND stable_id = ?",
+            "SELECT deleted_at FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ?",
             (pid, stable_id),
         ).fetchone()
         assert row[0] == tombstone_ts
     old_row = state_conn.execute(
-        "SELECT deleted_at FROM playlist_memberships "
-        "WHERE playlist_id = ? AND stable_id = ?",
+        "SELECT deleted_at FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ?",
         (pid, track_old),
     ).fetchone()
     assert old_row[0] == old_deleted_at
@@ -111,13 +113,15 @@ def test_undelete_restores_only_matching_memberships(
     _seed_track(writer, track_old)
     pid = compute_playlist_id("webui", "undelete-match")
     writer.insert_playlist(
-        playlist_id=pid, name="match", vendor="webui", vendor_pl_id="match",
+        playlist_id=pid,
+        name="match",
+        vendor="webui",
+        vendor_pl_id="match",
     )
     writer.set_playlist_memberships(pid, [track_a, track_b, track_old])
     old_deleted_at = "2026-09-10T00:00:00+00:00"
     state_conn.execute(
-        "UPDATE playlist_memberships SET deleted_at = ? "
-        "WHERE playlist_id = ? AND stable_id = ?",
+        "UPDATE playlist_memberships SET deleted_at = ? WHERE playlist_id = ? AND stable_id = ?",
         (old_deleted_at, pid, track_old),
     )
     before_live = state_conn.execute(
@@ -139,8 +143,7 @@ def test_undelete_restores_only_matching_memberships(
     writer.undelete_playlist(pid)
 
     after_live = state_conn.execute(
-        "SELECT stable_id FROM playlist_memberships "
-        "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY order_key",
+        "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY order_key",
         (pid,),
     ).fetchall()
     assert [row[0] for row in after_live] == [row[1] for row in before_live]
@@ -152,8 +155,7 @@ def test_undelete_restores_only_matching_memberships(
         ).fetchone()
         assert row == (stable_id, position, order_key, None)
     old_row = state_conn.execute(
-        "SELECT deleted_at FROM playlist_memberships "
-        "WHERE playlist_id = ? AND stable_id = ?",
+        "SELECT deleted_at FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ?",
         (pid, track_old),
     ).fetchone()
     assert old_row[0] == old_deleted_at
@@ -166,7 +168,10 @@ def test_undelete_error_cases(writer: StateWriter) -> None:
     with pytest.raises(PlaylistNotFoundError):
         writer.undelete_playlist(pid)
     writer.insert_playlist(
-        playlist_id=pid, name="live", vendor="webui", vendor_pl_id="live",
+        playlist_id=pid,
+        name="live",
+        vendor="webui",
+        vendor_pl_id="live",
     )
     with pytest.raises(PlaylistNotDeletedError):
         writer.undelete_playlist(pid)
@@ -185,7 +190,10 @@ def test_delete_and_undelete_never_hard_delete(
     _seed_track(writer, track_id)
     pid = compute_playlist_id("webui", "no-hard-delete")
     writer.insert_playlist(
-        playlist_id=pid, name="counts", vendor="webui", vendor_pl_id="counts",
+        playlist_id=pid,
+        name="counts",
+        vendor="webui",
+        vendor_pl_id="counts",
     )
     writer.set_playlist_memberships(pid, [track_id])
     before_playlists = state_conn.execute("SELECT COUNT(*) FROM playlists").fetchone()[0]
@@ -197,9 +205,12 @@ def test_delete_and_undelete_never_hard_delete(
     writer.undelete_playlist(pid)
 
     assert state_conn.execute("SELECT COUNT(*) FROM playlists").fetchone()[0] == before_playlists
-    assert state_conn.execute(
-        "SELECT COUNT(*) FROM playlist_memberships",
-    ).fetchone()[0] == before_members
+    assert (
+        state_conn.execute(
+            "SELECT COUNT(*) FROM playlist_memberships",
+        ).fetchone()[0]
+        == before_members
+    )
 
 
 def test_delete_and_undelete_source_has_no_hard_deletes() -> None:

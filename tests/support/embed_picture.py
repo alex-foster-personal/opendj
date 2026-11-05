@@ -4,6 +4,7 @@ mutagen is GPL and is not a product dependency. These helpers build the
 bytes tinytag already reads: an ID3v2.3 APIC tag, a RIFF ``id3 `` chunk,
 and a FLAC METADATA_BLOCK_PICTURE.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -16,13 +17,7 @@ def syncsafe(n: int) -> bytes:
 
 def apic_frame(image: bytes, *, mime: str, desc: str = "cover", picture_type: int = 3) -> bytes:
     body = (
-        b"\x00"
-        + mime.encode("latin-1")
-        + b"\x00"
-        + bytes((picture_type,))
-        + desc.encode("latin-1")
-        + b"\x00"
-        + image
+        b"\x00" + mime.encode("latin-1") + b"\x00" + bytes((picture_type,)) + desc.encode("latin-1") + b"\x00" + image
     )
     return b"APIC" + len(body).to_bytes(4, "big") + b"\x00\x00" + body
 
@@ -105,13 +100,22 @@ def embed_m4a_cover(src: Path, dst: Path, image: bytes) -> None:
     cover.write_bytes(image)
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", str(src),
-            "-i", str(cover),
-            "-map", "0",
-            "-map", "1",
-            "-c", "copy",
-            "-disposition:v:0", "attached_pic",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-i",
+            str(cover),
+            "-map",
+            "0",
+            "-map",
+            "1",
+            "-c",
+            "copy",
+            "-disposition:v:0",
+            "attached_pic",
             str(dst),
         ],
         check=True,

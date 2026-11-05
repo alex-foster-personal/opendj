@@ -128,9 +128,7 @@ def validate_snapshot(snapshot: WaitSnapshot) -> None:
 
 def _denom_note(availability: Availability | None, extra: str) -> str:
     if availability is None:
-        return (
-            f"denominator=present withheld (no state.db; not the tracks row count); {extra}"
-        )
+        return f"denominator=present withheld (no state.db; not the tracks row count); {extra}"
     checked = availability.checked_at
     if availability.awaiting_volume:
         base = (
@@ -291,12 +289,8 @@ def capture_snapshot(
     resolved = availability
     if resolved is None:
         resolved = probe_availability(data_dir / "state" / "state.db", now)
-    stems_window = publication_window(
-        _mtime_jsons(data_dir / "state" / "vocal-cache", require_container_s=True)
-    )
-    lyrics_window = publication_window(
-        _mtime_jsons(data_dir / "state" / "lyrics-cache", require_container_s=False)
-    )
+    stems_window = publication_window(_mtime_jsons(data_dir / "state" / "vocal-cache", require_container_s=True))
+    lyrics_window = publication_window(_mtime_jsons(data_dir / "state" / "lyrics-cache", require_container_s=False))
     stems_wall, stems_rate = _rate_figures(
         wall_kpi="stems_per_track_wall_s",
         rate_kpi="stems_queue_throughput_per_h",
@@ -343,9 +337,7 @@ def capture_snapshot(
             lyrics_side.read_index_meta(data_dir / "state" / "lyrics-index.db"),
         )
         if eta_s is None:
-            lyrics_eta = _withheld(
-                "lyrics_library_eta_s", capture_id, _denom_note(resolved, extra)
-            )
+            lyrics_eta = _withheld("lyrics_library_eta_s", capture_id, _denom_note(resolved, extra))
         else:
             lyrics_eta = _numeric(
                 "lyrics_library_eta_s",
@@ -413,10 +405,7 @@ def append_ledger_rows(
 
 
 def _print_table(snapshot: WaitSnapshot) -> None:
-    print(
-        f"capture_id={snapshot.capture_id} machine={snapshot.machine} "
-        f"checked_at={snapshot.checked_at}"
-    )
+    print(f"capture_id={snapshot.capture_id} machine={snapshot.machine} checked_at={snapshot.checked_at}")
     width = max(len(name) for name in KPI_NAMES)
     for figure in snapshot.figures:
         shown = "withheld" if figure.value is None else figure.value
@@ -437,9 +426,7 @@ def main(argv: list[str] | None = None) -> int:
     machine = args.machine or socket.gethostname()
     capture_id = args.capture_id or f"issue-1704-{machine}-{now.replace(':', '').replace('+', 'p')}"
     try:
-        snapshot = capture_snapshot(
-            Path(args.data_dir), capture_id=capture_id, machine=machine, now=now
-        )
+        snapshot = capture_snapshot(Path(args.data_dir), capture_id=capture_id, machine=machine, now=now)
     except InstrumentError as exc:
         print(f"[library-wait] broken instrument: {exc}", file=sys.stderr)
         return 1
@@ -460,9 +447,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.append is not None:
         try:
-            append_ledger_rows(
-                Path(args.append), snapshot.figures, date=now[:10], machine=machine
-            )
+            append_ledger_rows(Path(args.append), snapshot.figures, date=now[:10], machine=machine)
         except InstrumentError as exc:
             print(f"[library-wait] ledger refuse: {exc}", file=sys.stderr)
             return 1

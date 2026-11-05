@@ -62,15 +62,16 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.reconcile.contract import RelocateQuery
-from apps.shared import fs_residency, paths
+from apps.shared import audio_files, fs_residency, paths
 from apps.shared.events import publish
 from apps.shared.platform_paths import is_unplayable_path
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.shared.same_recording import SameRecordingUnverifiable, check_same_recording
 
 from .. import rb_vendor
 from ..backend import StateBackend, Track
 from ..deps import get_read_state, get_write_state
-from ..etag import compute_etag, strip_quotes
+from ..etag import require_current_etag
 
 router = APIRouter(prefix="/relocate", tags=["relocate"])
 _REKORDBOX_WRITE_LOCK = threading.Lock()
@@ -111,6 +112,12 @@ class RelocateApplyIn(BaseModel):
     confirm: bool = Field(
         description="Must be true. Explicit safety gate -- this writes to "
                     "the live rekordbox database or the state layer."
+    )
+    allow_different_recording: bool = Field(
+        default=False,
+        description="Adopt a candidate whose length differs from the track by more than "
+                    "1 %, or whose length cannot be read. Off by default: a length "
+                    "mismatch usually means a different recording (RECON-07).",
     )
 
 
@@ -154,21 +161,6 @@ def _resolve_original_path(stable_id: str, track: Track) -> tuple[str | None, st
     if not _is_local(folder):
         return None, vendor_id
     return folder, vendor_id
-
-
-def _require_current_etag(track: Track, if_match: str | None) -> None:
-    """Reject a relocate based on a stale track view before selecting a target."""
-    if not if_match:
-        raise HTTPException(status_code=428, detail={
-            "code": "PRECONDITION_REQUIRED",
-            "message": "POST /relocate/{stable_id}/apply requires If-Match",
-        })
-    current = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
-    if strip_quotes(current) != strip_quotes(if_match):
-        raise HTTPException(status_code=409, detail={
-            "code": "RELOCATE_ETAG_CONFLICT",
-            "message": "track changed since candidates were selected; refresh and choose again",
-        })
 
 
 def _identity_token(stat_result: os.stat_result) -> str:
@@ -290,6 +282,33 @@ def _assert_candidate_path_identity(
         raise HTTPException(status_code=409, detail={
             "code": "RELOCATE_CANDIDATE_CHANGED",
             "message": "candidate changed during apply; no location was persisted",
+        })
+
+
+def _assert_same_recording(track: Track, candidate: CandidateFile) -> None:
+    """Refuse a candidate that is not the same recording (RECON-07).
+
+    Runs after the candidate's identity token is pinned; any later change to
+    the file fails the mutation guard, so the length read here is the length
+    of the file that gets adopted.
+    """
+    metadata = audio_files.read_metadata(Path(candidate.path))
+    try:
+        verdict = check_same_recording(
+            track.duration_ms / 1000 if track.duration_ms else None,
+            metadata.duration_s if metadata else None,
+        )
+    except SameRecordingUnverifiable as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "RELOCATE_SAME_RECORDING_UNVERIFIABLE",
+            "message": f"{exc}; pass allow_different_recording to adopt it anyway",
+        }) from exc
+    if not verdict.same:
+        raise HTTPException(status_code=409, detail={
+            "code": "RELOCATE_DIFFERENT_RECORDING",
+            "message": f"{verdict.reason}; pass allow_different_recording to adopt it anyway",
+            "expected_s": verdict.expected_s,
+            "candidate_s": verdict.candidate_s,
         })
 
 
@@ -550,7 +569,13 @@ def apply_relocate(
         })
 
     track = backend.get_track(stable_id)  # NotFoundError -> 404
-    _require_current_etag(track, if_match)
+    require_current_etag(
+        track,
+        if_match,
+        precondition_message="POST /relocate/{stable_id}/apply requires If-Match",
+        conflict_code="RELOCATE_ETAG_CONFLICT",
+        conflict_message="track changed since candidates were selected; refresh and choose again",
+    )
     original_path, vendor_id = _resolve_original_path(stable_id, track)
     if original_path is None or original_path != body.expected_original_path:
         raise HTTPException(status_code=409, detail={
@@ -566,6 +591,8 @@ def apply_relocate(
         body.new_path, body.expected_candidate_identity,
     )
     os.close(descriptor)
+    if not body.allow_different_recording:
+        _assert_same_recording(track, candidate)
     from apps.reconcile.http import build_service
 
     current_candidates = build_service().find_relocate_candidates(

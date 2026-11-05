@@ -15,6 +15,7 @@ Regression one-liners:
   - if a v2.4 unsynchronised frame is not decoded then broken
   - if a v2.2 tag is silently rewritten instead of refused then broken
 """
+
 from __future__ import annotations
 
 import struct
@@ -38,7 +39,10 @@ def _tag(path: Path) -> id3v2.Id3Tag:
 def _decodes(path: Path) -> bool:
     result = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
-        capture_output=True, text=True, timeout=60, check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
     return result.returncode == 0 and not result.stderr.strip()
 
@@ -77,7 +81,7 @@ def test_a_file_with_no_tag_gets_one_and_keeps_its_audio(tmp_path: Path) -> None
     mp3 = ta.make_untagged_audio(tmp_path, "mp3-v23")
     raw = mp3.read_bytes()
     if raw[:3] == b"ID3":  # ffmpeg may still emit an empty tag; strip it for this case
-        raw = raw[_tag(mp3).original_size:]
+        raw = raw[_tag(mp3).original_size :]
         mp3.write_bytes(raw)
     assert id3v2.read_tag(mp3) is None
     tag = id3v2.load_or_new(mp3)
@@ -135,9 +139,7 @@ def test_popm_rating_round_trips(tmp_path: Path) -> None:
     assert _tag(mp3).popm_rating() == 204
 
 
-def test_a_failed_write_leaves_the_original_file_intact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_failed_write_leaves_the_original_file_intact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] writing fails midway [then] the original file is byte-identical, [else stop]."""
     mp3 = ta.make_tagged_audio(tmp_path, "mp3-v23")
     before = mp3.read_bytes()
@@ -556,7 +558,9 @@ def test_a_malformed_geob_is_a_counted_loss_for_strict_and_empty_for_lenient(tmp
         (3, b"\x00\x00\x00\x0a" + b"\x00" * 10, "does not set the CRC flag"),
     ],
 )
-def test_an_extended_header_with_an_invalid_field_is_an_id3_error(tmp_path: Path, version: int, body: bytes, match: str) -> None:
+def test_an_extended_header_with_an_invalid_field_is_an_id3_error(
+    tmp_path: Path, version: int, body: bytes, match: str
+) -> None:
     """[if] an extended header's fixed fields are invalid for its version [then] Id3Error, not an empty tag, [else stop]."""
     mp3 = tmp_path / f"ext_field_v{version}.mp3"
     mp3.write_bytes(_raw_tag(version, body, flags=0x40) + b"\xff\xfb\x90\x00" * 4)
@@ -573,7 +577,9 @@ def test_an_extended_header_with_an_invalid_field_is_an_id3_error(tmp_path: Path
         (b"\x00\x00\x00\x07\x01\x00\x01", "flags account for 6"),
     ],
 )
-def test_a_v24_extended_header_with_a_truncated_flag_payload_is_an_id3_error(tmp_path: Path, body: bytes, match: str) -> None:
+def test_a_v24_extended_header_with_a_truncated_flag_payload_is_an_id3_error(
+    tmp_path: Path, body: bytes, match: str
+) -> None:
     """[if] a v2.4 extended header sets a flag whose length byte or payload is missing or wrong [then] Id3Error, not an empty tag, [else stop]."""
     mp3 = tmp_path / "ext_flag_payload.mp3"
     mp3.write_bytes(_raw_tag(4, body, flags=0x40) + b"\xff\xfb\x90\x00" * 4)
@@ -600,7 +606,9 @@ def test_a_v24_extended_header_crc_payload_with_a_high_bit_is_an_id3_error(tmp_p
 
 def test_a_v24_extended_header_crc_payload_wider_than_32_bits_is_an_id3_error(tmp_path: Path) -> None:
     """[if] a v2.4 extended header's CRC payload needs more than 32 bits [then] Id3Error, not a clean tag, [else stop]."""
-    body = b"\x00\x00\x00\x0c\x01\x20\x05" + b"\x10\x00\x00\x00\x00"  # the top byte's 0x10 is 2**32, one bit past a CRC-32
+    body = (
+        b"\x00\x00\x00\x0c\x01\x20\x05" + b"\x10\x00\x00\x00\x00"
+    )  # the top byte's 0x10 is 2**32, one bit past a CRC-32
     mp3 = tmp_path / "ext_crc_too_wide.mp3"
     mp3.write_bytes(_raw_tag(4, body, flags=0x40) + b"\xff\xfb\x90\x00" * 4)
     with pytest.raises(id3v2.Id3Error, match="wider than a 32-bit CRC"):
@@ -608,7 +616,9 @@ def test_a_v24_extended_header_crc_payload_wider_than_32_bits_is_an_id3_error(tm
 
 
 @pytest.mark.parametrize(("version", "declared"), [(3, 0), (3, 1), (3, 5), (4, 0), (4, 1), (4, 5)])
-def test_an_extended_header_too_small_for_its_version_is_an_id3_error(tmp_path: Path, version: int, declared: int) -> None:
+def test_an_extended_header_too_small_for_its_version_is_an_id3_error(
+    tmp_path: Path, version: int, declared: int
+) -> None:
     """[if] an extended header declares fewer bytes than its version's minimum [then] Id3Error, not an empty tag, [else stop]."""
     size = struct.pack(">I", declared) if version == 3 else bytes([0, 0, 0, declared])
     body = size + b"\x00" * 6
@@ -647,7 +657,9 @@ def test_a_v24_frame_with_the_same_text_encoding_still_decodes(tmp_path: Path) -
     body = b"\x03" + b"application/octet-stream\x00" + b"f\x00" + b"\x00" + b"payload"
     assert id3v2._decode_geob(body, 4)[1] == "f"
     assert id3v2._decode_geob(body)[1] == "f"
-    frame = b"GEOB" + bytes([0, 0, 0, len(body)]) + b"\x00\x00" + body  # the size is syncsafe, and small enough to need no high bits
+    frame = (
+        b"GEOB" + bytes([0, 0, 0, len(body)]) + b"\x00\x00" + body
+    )  # the size is syncsafe, and small enough to need no high bits
     mp3 = tmp_path / "v24_utf8_geob.mp3"
     mp3.write_bytes(_raw_tag(4, frame) + b"\xff\xfb\x90\x00" * 4)
     assert [g[1] for g in _tag(mp3).geob()] == ["f"]

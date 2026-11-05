@@ -40,10 +40,7 @@ test('a well-formed response parses to generated + metrics intact', () => {
 });
 
 test('a non-object response is refused', () => {
-	assert.throws(
-		() => qualityApi.parseQualityRatchet('not an object'),
-		/response is not an object/
-	);
+	assert.throws(() => qualityApi.parseQualityRatchet('not an object'), /response is not an object/);
 });
 
 test('a non-object metrics map is refused', () => {
@@ -69,10 +66,7 @@ test('a non-numeric metric value is refused rather than rendering as a junk row'
 });
 
 test('a missing generated field is refused', () => {
-	assert.throws(
-		() => qualityApi.parseQualityRatchet({ metrics: {} }),
-		/generated is not a string/
-	);
+	assert.throws(() => qualityApi.parseQualityRatchet({ metrics: {} }), /generated is not a string/);
 });
 
 test('an HTTP failure surfaces the status and body, never an empty section', async () => {

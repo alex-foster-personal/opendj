@@ -48,8 +48,7 @@ const ALIAS_DEF = `type ${ALIAS} = {
 
 `;
 
-const OP_START =
-	/^    (post_[A-Za-z0-9_]+_api_v1_performance_headphones_[A-Za-z0-9_]+_post): \{/gm;
+const OP_START = /^    (post_[A-Za-z0-9_]+_api_v1_performance_headphones_[A-Za-z0-9_]+_post): \{/gm;
 
 function blockAt(text, openIdx) {
 	let depth = 0;

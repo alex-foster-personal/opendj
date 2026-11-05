@@ -405,10 +405,10 @@ class _RepairObservingTransport:
     bundle_pulls: int = 0
     bundle_row_pks: tuple[tuple[str, ...], ...] = ()
 
-    def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         return self.inner.post(path, payload)
 
-    def get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         bundle = params.get("bundle_stable_ids")
         payload = self.inner.get(path, params)
         if bundle:

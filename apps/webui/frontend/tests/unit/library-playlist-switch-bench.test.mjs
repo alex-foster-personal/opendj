@@ -18,11 +18,7 @@ const COMMITTED_FIXTURE_PATH = join(
 	'fixtures',
 	'library-playlist-switch-bench.json'
 );
-const DEFAULT_OUT_PATH = join(
-	FRONTEND_ROOT,
-	'test-results',
-	'library-playlist-switch-bench.json'
-);
+const DEFAULT_OUT_PATH = join(FRONTEND_ROOT, 'test-results', 'library-playlist-switch-bench.json');
 const isRegressionChild = process.env.PLAYLIST_SWITCH_BENCH_REGRESSION_CHILD === '1';
 
 test('bench thresholds are shared between stats helper and fixture', () => {
@@ -32,9 +28,7 @@ test('bench thresholds are shared between stats helper and fixture', () => {
 
 test('e2e default output path is not the committed fixture', () => {
 	const specSource = readFileSync(
-		fileURLToPath(
-			new URL('../e2e/library-playlist-switch-latency.spec.ts', import.meta.url)
-		),
+		fileURLToPath(new URL('../e2e/library-playlist-switch-latency.spec.ts', import.meta.url)),
 		'utf8'
 	);
 	assert.match(specSource, /DEFAULT_OUT_PATH = join\([\s\S]*?'test-results'/);
@@ -114,17 +108,24 @@ if (!isRegressionChild) {
 			mkdirSync(dirname(destination), { recursive: true });
 			copyFileSync(join(FRONTEND_ROOT, relativePath), destination);
 		}
-		const disposableFixture = join(disposableRoot, 'tests/fixtures/library-playlist-switch-bench.json');
+		const disposableFixture = join(
+			disposableRoot,
+			'tests/fixtures/library-playlist-switch-bench.json'
+		);
 		writeFileSync(disposableFixture, `${JSON.stringify(poisoned, null, 2)}\n`);
 		try {
-			execFileSync(process.execPath, ['--test', 'tests/unit/library-playlist-switch-bench.test.mjs'], {
-				cwd: disposableRoot,
-				stdio: 'pipe',
-				env: {
-					...process.env,
-					PLAYLIST_SWITCH_BENCH_REGRESSION_CHILD: '1'
+			execFileSync(
+				process.execPath,
+				['--test', 'tests/unit/library-playlist-switch-bench.test.mjs'],
+				{
+					cwd: disposableRoot,
+					stdio: 'pipe',
+					env: {
+						...process.env,
+						PLAYLIST_SWITCH_BENCH_REGRESSION_CHILD: '1'
+					}
 				}
-			});
+			);
 		} finally {
 			rmSync(disposableRoot, { recursive: true, force: true });
 		}

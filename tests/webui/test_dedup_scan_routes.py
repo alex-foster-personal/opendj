@@ -6,6 +6,7 @@ Regression one-liners:
   - if a second POST while a scan runs starts another one then broken
   - if a failed scan reports as done, or cannot be started again, then broken
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,7 +25,9 @@ def app_client():
     from apps.webui.server.app import create_app
 
     app = create_app(
-        backend=InMemoryBackend(), bind_host="127.0.0.1", hostname="test-host",
+        backend=InMemoryBackend(),
+        bind_host="127.0.0.1",
+        hostname="test-host",
         lock_status_fn=lambda: None,
     )
     with TestClient(app) as c:

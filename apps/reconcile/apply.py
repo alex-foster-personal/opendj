@@ -2,7 +2,7 @@
 
 Entry points::
 
-    # Dry-run: prints preview + writes data/reconcile/patch.json (safe).
+    # Dry-run: prints preview + writes (private path) (safe).
     python -m apps.reconcile.apply --dry-run
 
     # Live (cautious, 1–3 IDs): writes to the live master.db. Requires all
@@ -11,11 +11,15 @@ Entry points::
         --tracks 12345,67890
 
     # Live (bulk): applies EVERY triple-validated row from located.csv that
-    # is still broken in the current audit (data/rb_missing_files.csv).
+    # is still broken in the current audit ((private path)).
     # Additional confirmation prompt requires typing "apply N updates".
     python -m apps.reconcile.apply --live --bulk --i-understand-the-risks
 
 Safety rails for ``--live --tracks`` (all must pass or we abort):
+  0. Library-integrity gate: refuse the write when more than
+     ``--integrity-threshold`` of Rekordbox tracks do not resolve to
+     files on disk, unless ``--allow-broken`` is passed (and then
+     record the override in the reversal script).
   1. Typed confirmation prompt ("yes I understand").
   2. Refuse to run if Rekordbox is open (pgrep -if rekordbox).
   3. Timestamped backup of master.db before any write.
@@ -53,7 +57,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apps.reconcile import locate as _locate
-from apps.shared import paths
+from apps.shared import library_integrity, paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 console = Console(width=120)
@@ -71,6 +75,11 @@ DEFAULT_BROKEN_CSV: Path = paths.DATA_DIR / "rb_missing_files.csv"
 CONFIRMATION_PHRASE = "yes i understand"
 MAX_LIVE_TRACKS = 3
 BULK_PROGRESS_EVERY = 10
+DEFAULT_INTEGRITY_THRESHOLD: float = library_integrity.DEFAULT_THRESHOLD
+
+
+class ApplyError(RuntimeError):
+    """Raised by the apply pipeline on an abortable integrity refusal."""
 
 
 @dataclass(slots=True)
@@ -189,6 +198,64 @@ def _rekordbox_running() -> bool:
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
+def _live_integrity_report() -> library_integrity.IntegrityReport:
+    """Classify every Rekordbox track against the filesystem. Read-only."""
+    return library_integrity.live_report()
+
+
+def _integrity_gate(
+    report: library_integrity.IntegrityReport,
+    *,
+    allow_broken: bool,
+    threshold: float = DEFAULT_INTEGRITY_THRESHOLD,
+) -> str | None:
+    """Rail 0. Refuse to write when the source library is mostly broken.
+
+    Runs from ``main`` before ``_run_live`` / ``_run_bulk``, so a broken
+    library costs nothing but the read. Returns None on a healthy library
+    (silent no-op), or the override note when ``allow_broken`` let a
+    failing library through.
+    """
+    try:
+        library_integrity.assert_healthy(report, threshold=threshold)
+    except library_integrity.LibraryIntegrityError as exc:
+        if not allow_broken:
+            raise ApplyError(
+                f"library integrity gate refused the write: {exc} "
+                "Fix the locations (python -m apps.reconcile.relink) or pass "
+                "--allow-broken to write anyway."
+            ) from exc
+        return (
+            "--allow-broken override: applied over a library where "
+            f"{report.broken}/{report.with_path} tracks "
+            f"({report.broken_ratio:.1%}) do not resolve on disk "
+            f"(threshold {threshold:.1%})."
+        )
+    return None
+
+
+def _live_gate_from_args(args: argparse.Namespace) -> tuple[int, str | None]:
+    """Rail 0 for live CLI paths. ``(0, override)`` proceeds; else abort exit code."""
+    try:
+        integrity_override = _integrity_gate(
+            _live_integrity_report(),
+            allow_broken=args.allow_broken,
+            threshold=args.integrity_threshold,
+        )
+    except ApplyError as exc:
+        console.print(f"[red]ABORT:[/red] {exc}")
+        return 9, None
+    except ValueError as exc:
+        console.print(f"[red]ABORT:[/red] {exc}")
+        return 2, None
+    except FileNotFoundError as exc:
+        console.print(f"[red]ABORT:[/red] {exc}")
+        return 2, None
+    if integrity_override is not None:
+        console.print(f"[yellow]{integrity_override}[/yellow]")
+    return 0, integrity_override
+
+
 def _confirm() -> bool:
     console.print(
         "[bold red]LIVE MODE.[/bold red] This will modify the live "
@@ -279,11 +346,17 @@ def _write_reversal_script(
     backup: Path,
     backup_dir: Path,
     ts: str,
+    integrity_override: str | None = None,
 ) -> Path:
     out = backup_dir / f"reverse-{ts}.py"
     # Build a tiny self-contained script: no imports from this project, so it
     # still runs if the repo is moved/deleted.
     originals = [{"id": u.id, "old_path": u.old_path} for u in updates]
+    integrity_line = (
+        integrity_override
+        if integrity_override
+        else "gate passed; no override was used."
+    )
     body = f'''#!/usr/bin/env python3
 """Auto-generated reversal for reconcile apply run {ts}.
 
@@ -291,6 +364,8 @@ Restores the original FolderPath values for the IDs below. If this script
 itself fails, you can always fall back to:
 
     cp "{backup.as_posix()}" "{paths.REKORDBOX_LIVE_DB.as_posix()}"
+
+Library integrity: {integrity_line}
 """
 from __future__ import annotations
 
@@ -427,10 +502,59 @@ def _apply_updates_strict(updates: list[Update]) -> list[tuple[Update, str]]:
     return errors
 
 
+def _bulk_abort_before_backup(
+    all_updates: list[Update],
+    broken_csv: Path,
+    updates: list[Update],
+    expected_count: int,
+) -> int | None:
+    """Pre-backup bulk rails. None means proceed."""
+    if _rekordbox_running():
+        console.print(
+            "[red]ABORT:[/red] Rekordbox is running. Quit Rekordbox "
+            "completely (check the menu bar too) and retry. I will NOT "
+            "auto-kill it."
+        )
+        return 3
+
+    missing = _preflight_fs_check(updates)
+    if missing:
+        console.print(
+            f"[red]ABORT:[/red] pre-flight filesystem check failed — "
+            f"{len(missing)} candidate paths do not exist on disk:"
+        )
+        for u in missing[:10]:
+            console.print(f"  ✗ {u.id}: {u.new_path}")
+        if len(missing) > 10:
+            console.print(f"  ... and {len(missing) - 10} more")
+        return 7
+
+    if not _confirm():
+        console.print("[yellow]Confirmation not given. Aborting.[/yellow]")
+        return 4
+
+    if not _confirm_bulk_count(expected_count):
+        console.print(
+            "[yellow]Count confirmation mismatch. Aborting.[/yellow]"
+        )
+        return 4
+
+    current_broken = _load_broken_ids(broken_csv)
+    current = _select_bulk_updates(all_updates, current_broken)
+    if len(current) != expected_count:
+        console.print(
+            f"[red]ABORT:[/red] actionable count drifted during prompt "
+            f"({expected_count} → {len(current)}). Re-run to re-confirm."
+        )
+        return 8
+    return None
+
+
 def _run_bulk(
     all_updates: list[Update],
     broken_csv: Path,
     backup_dir: Path,
+    integrity_override: str | None = None,
 ) -> int:
     # Selection.
     broken_ids = _load_broken_ids(broken_csv)
@@ -445,50 +569,11 @@ def _run_bulk(
 
     _print_preview(updates, f"BULK LIVE — about to write {expected_count} rows")
 
-    # Rail 2: is Rekordbox running?
-    if _rekordbox_running():
-        console.print(
-            "[red]ABORT:[/red] Rekordbox is running. Quit Rekordbox "
-            "completely (check the menu bar too) and retry. I will NOT "
-            "auto-kill it."
-        )
-        return 3
-
-    # Extra rail (b): pre-flight FS check BEFORE any backup or prompt.
-    missing = _preflight_fs_check(updates)
-    if missing:
-        console.print(
-            f"[red]ABORT:[/red] pre-flight filesystem check failed — "
-            f"{len(missing)} candidate paths do not exist on disk:"
-        )
-        for u in missing[:10]:
-            console.print(f"  ✗ {u.id}: {u.new_path}")
-        if len(missing) > 10:
-            console.print(f"  ... and {len(missing) - 10} more")
-        return 7
-
-    # Rail 1: typed "yes i understand".
-    if not _confirm():
-        console.print("[yellow]Confirmation not given. Aborting.[/yellow]")
-        return 4
-
-    # Extra rail (c): count-confirmation.
-    if not _confirm_bulk_count(expected_count):
-        console.print(
-            "[yellow]Count confirmation mismatch. Aborting.[/yellow]"
-        )
-        return 4
-
-    # Race check: re-derive the actionable set right before backup. If the
-    # count moved between prompt and commit, bail loud.
-    current_broken = _load_broken_ids(broken_csv)
-    current = _select_bulk_updates(all_updates, current_broken)
-    if len(current) != expected_count:
-        console.print(
-            f"[red]ABORT:[/red] actionable count drifted during prompt "
-            f"({expected_count} → {len(current)}). Re-run to re-confirm."
-        )
-        return 8
+    abort_rc = _bulk_abort_before_backup(
+        all_updates, broken_csv, updates, expected_count
+    )
+    if abort_rc is not None:
+        return abort_rc
 
     # Rail 3: backup.
     ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -518,7 +603,9 @@ def _run_bulk(
 
     # Rail 6: reversal script (covers the full batch regardless of per-row
     # verify failures, so the user can always roll back).
-    rev = _write_reversal_script(updates, backup, backup_dir, ts)
+    rev = _write_reversal_script(
+        updates, backup, backup_dir, ts, integrity_override=integrity_override
+    )
     console.print(f"[green]Reversal script → {rev}[/green]")
     console.print(f"[green]Full DB backup → {backup}[/green]")
 
@@ -564,7 +651,11 @@ def _run_dry_run(updates: list[Update], patch_out: Path) -> int:
     return 0
 
 
-def _run_live(updates: list[Update], backup_dir: Path) -> int:
+def _run_live(
+    updates: list[Update],
+    backup_dir: Path,
+    integrity_override: str | None = None,
+) -> int:
     if not updates:
         console.print("[yellow]No updates to apply. Exiting.[/yellow]")
         return 1
@@ -616,7 +707,9 @@ def _run_live(updates: list[Update], backup_dir: Path) -> int:
         return 6
 
     # Safety rail 6: reversal script.
-    rev = _write_reversal_script(updates, backup, backup_dir, ts)
+    rev = _write_reversal_script(
+        updates, backup, backup_dir, ts, integrity_override=integrity_override
+    )
     console.print(f"[green]Reversal script → {rev}[/green]")
     console.print(f"[green]Full DB backup → {backup}[/green]")
 
@@ -679,40 +772,73 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BROKEN_CSV,
         help="path to current rb_missing_files.csv (bulk-mode selection)",
     )
+    p.add_argument(
+        "--allow-broken",
+        action="store_true",
+        default=False,
+        help=(
+            "proceed even when the library-integrity gate fails, i.e. when "
+            "more than --integrity-threshold of Rekordbox tracks do not "
+            "resolve to files on disk. The override is recorded in the "
+            "reversal script."
+        ),
+    )
+    p.add_argument(
+        "--integrity-threshold",
+        type=float,
+        default=DEFAULT_INTEGRITY_THRESHOLD,
+        help=(
+            "max share of non-resolving Rekordbox tracks tolerated before a "
+            f"live write is refused (default {DEFAULT_INTEGRITY_THRESHOLD})."
+        ),
+    )
     return p
+
+
+def _bulk_cli_flag_errors(args: argparse.Namespace) -> int | None:
+    """Return an exit code when --bulk was combined with forbidden flags."""
+    if args.dry_run:
+        console.print(
+            "[red]--bulk is mutually exclusive with --dry-run.[/red] "
+            "Aborting."
+        )
+        return 2
+    if args.tracks:
+        console.print(
+            "[red]--bulk is mutually exclusive with --tracks.[/red] "
+            "Aborting."
+        )
+        return 2
+    if not args.live:
+        console.print("[red]--bulk requires --live.[/red] Aborting.")
+        return 2
+    if not args.i_understand_the_risks:
+        console.print(
+            "[red]--bulk requires --i-understand-the-risks.[/red] "
+            "Aborting."
+        )
+        return 2
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    # --bulk mutual exclusivity.
     if args.bulk:
-        if args.dry_run:
-            console.print(
-                "[red]--bulk is mutually exclusive with --dry-run.[/red] "
-                "Aborting."
-            )
-            return 2
-        if args.tracks:
-            console.print(
-                "[red]--bulk is mutually exclusive with --tracks.[/red] "
-                "Aborting."
-            )
-            return 2
-        if not args.live:
-            console.print(
-                "[red]--bulk requires --live.[/red] Aborting."
-            )
-            return 2
-        if not args.i_understand_the_risks:
-            console.print(
-                "[red]--bulk requires --i-understand-the-risks.[/red] "
-                "Aborting."
-            )
-            return 2
+        flag_err = _bulk_cli_flag_errors(args)
+        if flag_err is not None:
+            return flag_err
+        gate_rc, integrity_override = _live_gate_from_args(args)
+        if gate_rc != 0:
+            return gate_rc
         all_updates = _load_updates(args.input)
-        return _run_bulk(all_updates, args.broken_csv, args.backup_dir)
+        return _run_bulk(
+            all_updates,
+            args.broken_csv,
+            args.backup_dir,
+            integrity_override=integrity_override,
+        )
 
     # No flags? Show help.
     if not args.dry_run and not args.live:
@@ -740,7 +866,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"={MAX_LIVE_TRACKS}. Use `--bulk` for larger batches."
             )
             return 2
-        return _run_live(updates, args.backup_dir)
+        gate_rc, integrity_override = _live_gate_from_args(args)
+        if gate_rc != 0:
+            return gate_rc
+        return _run_live(
+            updates, args.backup_dir, integrity_override=integrity_override
+        )
 
     # Dry run (default).
     return _run_dry_run(updates, args.patch_out)

@@ -39,7 +39,16 @@ class FakeWorkletNode {
 	report({ judging }) {
 		assert.ok(this.port.onmessage, 'control: the sentinel listens on its port');
 		this.port.onmessage({
-			data: { xruns: 0, parked: 0, callbacks: 690, worst_gap_ms: 3, window_ms: 2000, threshold_ms: 9.7, clock: 'audio', judging }
+			data: {
+				xruns: 0,
+				parked: 0,
+				callbacks: 690,
+				worst_gap_ms: 3,
+				window_ms: 2000,
+				threshold_ms: 9.7,
+				clock: 'audio',
+				judging
+			}
 		});
 	}
 	fire(type) {
@@ -67,17 +76,32 @@ async function loadSentinel() {
 
 test('before any install the detector is unarmed, and the count is still published', async () => {
 	const sentinel = await loadSentinel();
-	assert.deepEqual(sentinel.readXrunSentinelMirror(), { ...sentinel.readXrunSessionCounter(), detector: 'unarmed' });
+	assert.deepEqual(sentinel.readXrunSentinelMirror(), {
+		...sentinel.readXrunSessionCounter(),
+		detector: 'unarmed'
+	});
 	assert.equal(sentinel.readXrunSentinelMirror().xruns, 0);
 });
 
 test('an installed node stays unarmed until its worklet reports that warmup is over', async () => {
 	const sentinel = await loadSentinel();
 	await sentinel.installXrunSentinel(fakeContext());
-	assert.equal(sentinel.readXrunSentinelMirror().detector, 'unarmed', 'installed is not judging yet');
+	assert.equal(
+		sentinel.readXrunSentinelMirror().detector,
+		'unarmed',
+		'installed is not judging yet'
+	);
 	FakeWorkletNode.last.report({ judging: false });
-	assert.equal(sentinel.readXrunSentinelMirror().detector, 'unarmed', 'a warmup window arms nothing');
-	assert.equal(sentinel.readXrunSentinelMirror().reports, 1, 'control: the warmup report was folded');
+	assert.equal(
+		sentinel.readXrunSentinelMirror().detector,
+		'unarmed',
+		'a warmup window arms nothing'
+	);
+	assert.equal(
+		sentinel.readXrunSentinelMirror().reports,
+		1,
+		'control: the warmup report was folded'
+	);
 });
 
 test('control: a healthy install publishes armed once its worklet is judging', async () => {
@@ -112,11 +136,24 @@ test('a judging report from a replaced node does not arm the node installed now'
 	const oldOnMessage = oldNode.port.onmessage;
 	await sentinel.installXrunSentinel(fakeContext());
 	oldOnMessage({
-		data: { xruns: 0, parked: 0, callbacks: 690, worst_gap_ms: 3, window_ms: 2000, threshold_ms: 9.7, clock: 'audio', judging: true }
+		data: {
+			xruns: 0,
+			parked: 0,
+			callbacks: 690,
+			worst_gap_ms: 3,
+			window_ms: 2000,
+			threshold_ms: 9.7,
+			clock: 'audio',
+			judging: true
+		}
 	});
 	assert.equal(sentinel.readXrunSentinelMirror().detector, 'unarmed');
 	FakeWorkletNode.last.report({ judging: true });
-	assert.equal(sentinel.readXrunSentinelMirror().detector, 'armed', 'control: the current node still arms');
+	assert.equal(
+		sentinel.readXrunSentinelMirror().detector,
+		'armed',
+		'control: the current node still arms'
+	);
 });
 
 test('an install that rejects publishes failed, and still rejects to its caller', async () => {
@@ -191,11 +228,15 @@ test('a flush acknowledgement that says judging arms too, and one that does not 
 	node.port.postMessage = (message) => posted.push(message);
 	globalThis.window ??= globalThis;
 	const early = sentinel.flushXrunSessionCounter();
-	node.port.onmessage({ data: { kind: 'xrun-flush-ack', requestId: posted[0].requestId, judging: false } });
+	node.port.onmessage({
+		data: { kind: 'xrun-flush-ack', requestId: posted[0].requestId, judging: false }
+	});
 	await assert.rejects(early, /has not completed cadence warmup/);
 	assert.equal(sentinel.readXrunSentinelMirror().detector, 'unarmed');
 	const late = sentinel.flushXrunSessionCounter();
-	node.port.onmessage({ data: { kind: 'xrun-flush-ack', requestId: posted[1].requestId, judging: true } });
+	node.port.onmessage({
+		data: { kind: 'xrun-flush-ack', requestId: posted[1].requestId, judging: true }
+	});
 	await late;
 	assert.equal(sentinel.readXrunSentinelMirror().detector, 'armed');
 });
@@ -234,7 +275,11 @@ test('an older install that resolves after a newer one does not replace the newe
 	old.release();
 	await oldInstall;
 	assert.equal(made.length, 1, 'the superseded context got a node of its own');
-	assert.equal(sentinel.readXrunSentinelMirror().detector, 'armed', 'the late install reset the armed detector');
+	assert.equal(
+		sentinel.readXrunSentinelMirror().detector,
+		'armed',
+		'the late install reset the armed detector'
+	);
 	// The node on the current context is still the one that arms and fails.
 	armedNode.fire('processorerror');
 	assert.equal(sentinel.readXrunSentinelMirror().detector, 'failed');
@@ -274,7 +319,11 @@ test('CONTROL: a single install still arms, and a superseded install that reject
 	const pendingInstall = sentinel.installXrunSentinel(pending.ctx);
 	rejectOld(new Error('old context closed mid-install'));
 	await assert.rejects(oldInstall);
-	assert.equal(sentinel.readXrunSentinelMirror().detector, 'unarmed', 'a superseded failure marked the detector failed');
+	assert.equal(
+		sentinel.readXrunSentinelMirror().detector,
+		'unarmed',
+		'a superseded failure marked the detector failed'
+	);
 	pending.release();
 	await pendingInstall;
 	made.at(-1).report({ judging: true });
@@ -282,7 +331,9 @@ test('CONTROL: a single install still arms, and a superseded install that reject
 	// And the latest install's own rejection still publishes failed.
 	sentinel.detachXrunSentinel();
 	await assert.rejects(
-		sentinel.installXrunSentinel(fakeContext({ addModule: async () => Promise.reject(new Error('refused')) }))
+		sentinel.installXrunSentinel(
+			fakeContext({ addModule: async () => Promise.reject(new Error('refused')) })
+		)
 	);
 	assert.equal(sentinel.readXrunSentinelMirror().detector, 'failed');
 });

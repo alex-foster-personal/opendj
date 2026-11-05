@@ -1,4 +1,5 @@
 """Tests for apps.spotify.rematch."""
+
 from __future__ import annotations
 
 import json
@@ -32,27 +33,36 @@ def state_conn(tmp_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _insert_track(conn: sqlite3.Connection, sid: str, isrc: str | None,
-                  title="Song", artists=("Artist",), duration_ms=200000) -> None:
+def _insert_track(
+    conn: sqlite3.Connection, sid: str, isrc: str | None, title="Song", artists=("Artist",), duration_ms=200000
+) -> None:
     conn.execute(
         """INSERT INTO tracks
            (stable_id, stable_id_tier, title, artists_json, album, isrc,
             duration_ms, file_path, content_hash, created_at, updated_at)
            VALUES (?, ?, ?, ?, 'alb', ?, ?, NULL, NULL, '2026', '2026')""",
-        (sid, "isrc" if isrc else "inferred", title, json.dumps(list(artists)),
-         isrc, duration_ms),
+        (sid, "isrc" if isrc else "inferred", title, json.dumps(list(artists)), isrc, duration_ms),
     )
 
 
 def _seed_unmatched_playlist(conn: sqlite3.Connection, pid="pl123") -> str:
     src = SpotifyTrack(
-        spotify_id="t1", spotify_uri="spotify:track:t1",
-        isrc="USABC2500001", title="Hello", artists=("Artist",),
-        album="A", duration_ms=200000, is_local=False,
+        spotify_id="t1",
+        spotify_uri="spotify:track:t1",
+        isrc="USABC2500001",
+        title="Hello",
+        artists=("Artist",),
+        album="A",
+        duration_ms=200000,
+        is_local=False,
     )
     result = MatchResult(pairs=[MatchedPair(src, None, 0.0, (), "unmatched")])
     playlist = SpotifyPlaylist(
-        id=pid, name="P", snapshot_id="s1", owner="o", description="",
+        id=pid,
+        name="P",
+        snapshot_id="s1",
+        owner="o",
+        description="",
         tracks=(src,),
     )
     write_playlist_and_pending(
@@ -110,7 +120,9 @@ def test_rematch_rotates_playlist_revision_and_rejects_stale_replace(
 
         with pytest.raises(ConflictError) as raised:
             store.replace_memberships(
-                playlist_id, ["s1", "s1"], expected_etag=stale_etag,
+                playlist_id,
+                ["s1", "s1"],
+                expected_etag=stale_etag,
             )
 
         assert raised.value.current["items"] == ["s1"]
@@ -130,7 +142,8 @@ def test_rename_after_rematch_cannot_restore_a_stale_playlist_revision(
     try:
         stale_etag = store.get_playlist_row(playlist_id).etag
         stale_updated_at = state_conn.execute(
-            "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
+            "SELECT updated_at FROM playlists WHERE playlist_id = ?",
+            (playlist_id,),
         ).fetchone()[0]
         rematch_playlist(state_conn, playlist_id, live=True)
         rematched = store.get_playlist_row(playlist_id)
@@ -142,7 +155,9 @@ def test_rename_after_rematch_cannot_restore_a_stale_playlist_revision(
     store = PlaylistStore(db_path, clock=lambda: stale_time)
     try:
         renamed = store.rename_playlist(
-            playlist_id, "Renamed", expected_etag=rematched.etag,
+            playlist_id,
+            "Renamed",
+            expected_etag=rematched.etag,
         )
         assert renamed.etag != stale_etag
 
@@ -199,8 +214,7 @@ def test_a_resolved_purchase_is_stamped_and_logged(state_conn: sqlite3.Connectio
     assert outcome.resolved_count == 1
 
     members = state_conn.execute(
-        "SELECT updated_at, origin_device_id FROM playlist_memberships "
-        "WHERE playlist_id = ?",
+        "SELECT updated_at, origin_device_id FROM playlist_memberships WHERE playlist_id = ?",
         (playlist_id,),
     ).fetchall()
     assert members and all(u and o for u, o in members)
@@ -212,11 +226,7 @@ def test_a_resolved_purchase_is_stamped_and_logged(state_conn: sqlite3.Connectio
     assert playlist[0] and playlist[1]
     assert sync_stamp.to_canonical(playlist[0]) == playlist[0]
 
-    logged = dict(
-        state_conn.execute(
-            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
-        ).fetchall()
-    )
+    logged = dict(state_conn.execute("SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name").fetchall())
     # Two of each: the Spotify playlist AND its linked ODJ twin are both
     # promoted and bumped (the twin is the user-facing browser playlist), so
     # both must reach the hub. One track_vendor_ids: the resolved purchase's
@@ -249,11 +259,5 @@ def test_a_resolved_purchase_is_not_re_offered_on_a_second_rematch(
     second = rematch_playlist(state_conn, playlist_id, live=True)
     assert second.resolved_count == 0
 
-    logged = dict(
-        state_conn.execute(
-            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
-        ).fetchall()
-    )
-    assert logged == {}, (
-        "a rematch that resolved nothing must not re-offer any row to the hub"
-    )
+    logged = dict(state_conn.execute("SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name").fetchall())
+    assert logged == {}, "a rematch that resolved nothing must not re-offer any row to the hub"

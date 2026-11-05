@@ -49,9 +49,7 @@ def _check_trunk_verified(
     trunk = [
         run
         for run in runs
-        if run.head_branch == default_branch
-        and run.event == "push"
-        and run.name == GATING_WORKFLOW_NAME
+        if run.head_branch == default_branch and run.event == "push" and run.name == GATING_WORKFLOW_NAME
     ]
     if not trunk:
         # Not a pass. If the gating workflow has been renamed or has stopped running on
@@ -78,11 +76,7 @@ def _check_trunk_verified(
     # Keep the one-argument form when no shared cache was supplied so the check remains a
     # standalone unit. The watchdog supplies the cache and avoids re-fetching a run that
     # failure-rate or metrics already inspected.
-    jobs = (
-        fetch_run_jobs(newest.run_id)
-        if job_payloads is None
-        else fetch_run_jobs(newest.run_id, job_payloads)
-    )
+    jobs = fetch_run_jobs(newest.run_id) if job_payloads is None else fetch_run_jobs(newest.run_id, job_payloads)
     sha = newest.head_sha[:8]
     if not jobs:
         raise PreconditionError(f"run {newest.run_id} reports no jobs at all")

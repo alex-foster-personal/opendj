@@ -18,6 +18,7 @@ Regression one-liners:
   * if reorder does not persist through a re-read then broken
   * if a mutation against a stale GET-sourced etag does not 409 then broken
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -45,9 +46,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -61,9 +67,12 @@ def client(db_path: Path) -> Iterator[TestClient]:
     # create_app now (merged base branch) -- no manual include_router or
     # close_store needed, the app lifespan handles the latter.
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -91,6 +100,7 @@ def _put_tracks(client: TestClient, pid: str, etag: str, stable_ids: list[str]):
 
 
 # --- GET etag contract -------------------------------------------------
+
 
 def test_get_playlist_etag_matches_computed_value(client: TestClient) -> None:
     pid = _create(client, "Etag Check")
@@ -126,6 +136,7 @@ def test_get_playlist_etag_rotates_after_membership_change(client: TestClient) -
 
 
 # --- add / remove / reorder as the frontend performs them ---------------
+
 
 def test_add_tracks_appends_preserving_existing_order(client: TestClient) -> None:
     pid = _create(client, "Warmup")
@@ -176,7 +187,10 @@ def test_reorder_drag_moves_track_and_persists(client: TestClient) -> None:
     reread, _ = _get_with_etag(client, pid)
     assert reread["items"] == ["t-004", "t-001", "t-002", "t-003"]
     assert [t["stable_id"] for t in reread["tracks"]] == [
-        "t-004", "t-001", "t-002", "t-003",
+        "t-004",
+        "t-001",
+        "t-002",
+        "t-003",
     ]
 
 

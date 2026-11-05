@@ -25,7 +25,15 @@ let access;
 let replaced;
 
 function fakePort(id, name, type = 'input') {
-	return { id, name, manufacturer: 'Reloop', state: 'connected', type, onmidimessage: null, send() {} };
+	return {
+		id,
+		name,
+		manufacturer: 'Reloop',
+		state: 'connected',
+		type,
+		onmidimessage: null,
+		send() {}
+	};
 }
 
 function fakeAccess() {
@@ -47,7 +55,11 @@ function fakeAccess() {
 /** A browser window at `search`, optionally hosted by the Electron preload. */
 function installWindow(search, { electron }) {
 	replaced = [];
-	const location = { href: `${PAGE}${search}`, search, replace: (url) => replaced.push(String(url)) };
+	const location = {
+		href: `${PAGE}${search}`,
+		search,
+		replace: (url) => replaced.push(String(url))
+	};
 	globalThis.window = { location };
 	if (electron) globalThis.opendjShell = { kind: 'electron', version: 1 };
 	else delete globalThis.opendjShell;
@@ -55,7 +67,9 @@ function installWindow(search, { electron }) {
 
 before(async () => {
 	webmidi = await loadTypeScriptModule('src/lib/rb/midi/webmidi.svelte.ts');
-	({ RELOOP_MIXTOUR_PRO_MAP: mixtourMap } = await loadTypeScriptModule('src/lib/rb/midi/maps/reloop-mixtour-pro.ts'));
+	({ RELOOP_MIXTOUR_PRO_MAP: mixtourMap } = await loadTypeScriptModule(
+		'src/lib/rb/midi/maps/reloop-mixtour-pro.ts'
+	));
 });
 
 beforeEach(() => {
@@ -80,7 +94,11 @@ test('EL-17-F11: Electron with a Mixtour Pro at boot leaves for djio exactly onc
 	access.inputs.set('in-mx', fakePort('in-mx', 'Reloop Mixtour Pro'));
 	await webmidi.initMidi();
 	await webmidi.initMidi();
-	assert.deepEqual(replaced, [`${PAGE}?djio=${DJIO}`], 'if Electron skips the topology step then master and cue share outputs 1/2 - broken');
+	assert.deepEqual(
+		replaced,
+		[`${PAGE}?djio=${DJIO}`],
+		'if Electron skips the topology step then master and cue share outputs 1/2 - broken'
+	);
 });
 
 test('EL-17-F11: a Mixtour plugged in after boot redirects once and the leaving page lets go of WebMIDI', async () => {
@@ -89,11 +107,19 @@ test('EL-17-F11: a Mixtour plugged in after boot redirects once and the leaving 
 	assert.deepEqual(replaced, [], 'nothing connected at boot, nothing to redirect for');
 	const input = access.plug('Reloop Mixtour Pro');
 	assert.deepEqual(replaced, [`${PAGE}?djio=${DJIO}`]);
-	assert.equal(input.onmidimessage, null, 'if the leaving page keeps its handler then presses dispatch on a page being torn down - broken');
+	assert.equal(
+		input.onmidimessage,
+		null,
+		'if the leaving page keeps its handler then presses dispatch on a page being torn down - broken'
+	);
 	assert.equal(access.onstatechange, null);
 	access.inputs.set('in-other', fakePort('in-other', 'Reloop Mixtour Pro'));
 	await webmidi.initMidi();
-	assert.equal(replaced.length, 1, 'if a later rescan re-issues replace() the reload can loop - broken');
+	assert.equal(
+		replaced.length,
+		1,
+		'if a later rescan re-issues replace() the reload can loop - broken'
+	);
 });
 
 test('EL-17-F11 control: a browser tab keeps its page; the redirect is the installed shell contract only', async () => {

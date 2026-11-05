@@ -115,12 +115,22 @@ describe('access helpers', () => {
 	it('folds on the stored verdict alone, whatever the access state', () => {
 		// The daemon already answers a blocked stick as music; access is never
 		// a second way into the list (that is how blocked drives leaked in).
-		const base = { id: 'vol:X', name: 'X', first_seen: 1, last_seen: 2, present: true, is_music: false };
+		const base = {
+			id: 'vol:X',
+			name: 'X',
+			first_seen: 1,
+			last_seen: 2,
+			present: true,
+			is_music: false
+		};
 		assert.equal(usb.isActiveUsbRow({ ...base, access: 'denied' }), false);
 		assert.equal(usb.isFoldedUsbRow({ ...base, access: 'denied' }), true);
 		assert.equal(usb.isActiveUsbRow({ ...base, is_music: true, access: 'denied' }), true);
 		// Forgetting still wins over a blocked state.
-		assert.equal(usb.isActiveUsbRow({ ...base, is_music: true, access: 'pending', forgotten: true }), false);
+		assert.equal(
+			usb.isActiveUsbRow({ ...base, is_music: true, access: 'pending', forgotten: true }),
+			false
+		);
 	});
 
 	it('offers no Import while access is blocked', () => {
@@ -230,26 +240,66 @@ test('a daemon that does not report access gets no invented value', async () => 
 
 test('a fresh listing that omits the bus clears the USB bus a past one named (Sol P1 on 091295d344)', async () => {
 	await poll([readableStick('vol:BUS', { protocol: 'USB' })]);
-	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'USB' })]);
+	await poll([
+		apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'USB' })
+	]);
 	assert.equal(known('vol:BUS').protocol, 'USB', 'control: a listing that names USB keeps it');
 	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true })]);
-	assert.equal(known('vol:BUS').protocol, null, 'if a listing with no bus keeps the old USB bus then broken');
-	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'Secure Digital' })]);
-	assert.equal(known('vol:BUS').protocol, 'Secure Digital', 'a listing that names another bus replaces it');
+	assert.equal(
+		known('vol:BUS').protocol,
+		null,
+		'if a listing with no bus keeps the old USB bus then broken'
+	);
+	await poll([
+		apiVolume('vol:BUS', {
+			role: 'usb_stick',
+			kind: 'rekordbox',
+			is_music: true,
+			protocol: 'Secure Digital'
+		})
+	]);
+	assert.equal(
+		known('vol:BUS').protocol,
+		'Secure Digital',
+		'a listing that names another bus replaces it'
+	);
 });
 
 test('a fresh listing that omits the mount clears the mount a past one named (Sol P1 4398465000)', async () => {
-	const stick = (extra) => apiVolume('vol:MNT', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'USB', ...extra });
+	const stick = (extra) =>
+		apiVolume('vol:MNT', {
+			role: 'usb_stick',
+			kind: 'rekordbox',
+			is_music: true,
+			protocol: 'USB',
+			...extra
+		});
 	await poll([stick({ mount_path: '/Volumes/GIG-A' })]);
 	await poll([stick({ mount_path: '/Volumes/GIG-A' })]);
-	assert.equal(known('vol:MNT').mount_path, '/Volumes/GIG-A', 'control: a listing that names the mount keeps it');
+	assert.equal(
+		known('vol:MNT').mount_path,
+		'/Volumes/GIG-A',
+		'control: a listing that names the mount keeps it'
+	);
 	await poll([stick({ mount_path: null })]);
-	assert.equal(known('vol:MNT').mount_path, undefined, 'if a listing with a null mount keeps the old path then broken');
+	assert.equal(
+		known('vol:MNT').mount_path,
+		undefined,
+		'if a listing with a null mount keeps the old path then broken'
+	);
 	await poll([stick({ mount_path: '/Volumes/GIG-A 1' })]);
-	assert.equal(known('vol:MNT').mount_path, '/Volumes/GIG-A 1', 'a listing that names another mount replaces it');
+	assert.equal(
+		known('vol:MNT').mount_path,
+		'/Volumes/GIG-A 1',
+		'a listing that names another mount replaces it'
+	);
 	const { mount_path: _dropped, ...omitted } = stick({});
 	await poll([omitted]);
-	assert.equal(known('vol:MNT').mount_path, undefined, 'if a listing that omits the mount keeps the old path then broken');
+	assert.equal(
+		known('vol:MNT').mount_path,
+		undefined,
+		'if a listing that omits the mount keeps the old path then broken'
+	);
 });
 
 // Sol P2, PR #6223: a read note describes the stick as it was read, so it
@@ -259,7 +309,11 @@ test('a removed stick loses its read note; a stick still present keeps its own',
 	usb.noteUsbLibraryRead('vol:NOTE-GONE', { state: 'ok', trackCount: 12 });
 	usb.noteUsbLibraryRead('vol:NOTE-KEPT', { state: 'ok', trackCount: 7 });
 	await poll([readableStick('vol:NOTE-KEPT')]);
-	assert.equal('vol:NOTE-GONE' in usb.usbTracker.readNotes, false, 'the removed stick kept its note');
+	assert.equal(
+		'vol:NOTE-GONE' in usb.usbTracker.readNotes,
+		false,
+		'the removed stick kept its note'
+	);
 	assert.deepEqual(usb.usbTracker.readNotes['vol:NOTE-KEPT'], { state: 'ok', trackCount: 7 });
 	await poll([readableStick('vol:NOTE-GONE'), readableStick('vol:NOTE-KEPT')]);
 	assert.equal('vol:NOTE-GONE' in usb.usbTracker.readNotes, false, 'a replug showed the old read');

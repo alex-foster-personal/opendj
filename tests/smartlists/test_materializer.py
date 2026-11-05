@@ -1,4 +1,5 @@
 """SMART-02 -- Materializer + FakeWriter integration tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -16,16 +17,20 @@ def rule_house():
 
 @pytest.fixture
 def seeded(fixture_library):
-    fixture_library.add_many([
-        {"stable_id": "a", "fields": {"genre": "House"}},
-        {"stable_id": "b", "fields": {"genre": "House"}},
-        {"stable_id": "c", "fields": {"genre": "Techno"}},
-    ])
+    fixture_library.add_many(
+        [
+            {"stable_id": "a", "fields": {"genre": "House"}},
+            {"stable_id": "b", "fields": {"genre": "House"}},
+            {"stable_id": "c", "fields": {"genre": "Techno"}},
+        ]
+    )
     return fixture_library
 
 
 def test_dry_run_produces_result_without_writes(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
     rb = FakeWriter(vendor="rekordbox")
@@ -41,7 +46,9 @@ def test_dry_run_produces_result_without_writes(
 
 
 def test_live_run_creates_playlist_on_each_writer(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
     rb = FakeWriter(vendor="rekordbox")
@@ -55,7 +62,9 @@ def test_live_run_creates_playlist_on_each_writer(
 
 
 def test_idempotent_second_run_noop(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
     rb = FakeWriter(vendor="rekordbox")
@@ -64,12 +73,14 @@ def test_idempotent_second_run_noop(
     first_calls = list(rb.calls)
     second = mat.materialize(row.id, dry_run=False, live=True)
     assert second.added_tracks == [] and second.removed_tracks == []
-    new_calls = rb.calls[len(first_calls):]
+    new_calls = rb.calls[len(first_calls) :]
     assert all(c[0] in ("exists", "diff") for c in new_calls)
 
 
 def test_diff_applied_on_subsequent_run(
-    fixture_library, smartlists_repo, rule_house,
+    fixture_library,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     fixture_library.add_track("a")
     fixture_library.add_field("a", "genre", "House")
@@ -85,11 +96,12 @@ def test_diff_applied_on_subsequent_run(
 
 
 def test_collision_on_first_run_blocks_without_force(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
-    rb = FakeWriter(vendor="rekordbox",
-                    playlists={"[SL] House": ["pre-existing"]})
+    rb = FakeWriter(vendor="rekordbox", playlists={"[SL] House": ["pre-existing"]})
     mat = Materializer(smartlists_repo, [rb])
     result = mat.materialize(row.id, dry_run=False, live=True)
     assert not result.ok
@@ -97,14 +109,18 @@ def test_collision_on_first_run_blocks_without_force(
 
 
 def test_collision_force_adopt(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
-    rb = FakeWriter(vendor="rekordbox",
-                    playlists={"[SL] House": ["pre-existing"]})
+    rb = FakeWriter(vendor="rekordbox", playlists={"[SL] House": ["pre-existing"]})
     mat = Materializer(smartlists_repo, [rb])
     result = mat.materialize(
-        row.id, dry_run=False, live=True, force_adopt=True,
+        row.id,
+        dry_run=False,
+        live=True,
+        force_adopt=True,
     )
     assert result.ok
     assert result.adopted_existing is True
@@ -115,7 +131,9 @@ def test_collision_force_adopt(
 
 
 def test_writer_error_is_isolated(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
     rb = FakeWriter(vendor="rekordbox")
@@ -130,11 +148,14 @@ def test_writer_error_is_isolated(
 
 
 def test_materialize_all_sequential(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     smartlists_repo.create("h1", rule_house)
     smartlists_repo.create(
-        "high-energy", {"field": "energy", "op": ">=", "value": 8},
+        "high-energy",
+        {"field": "energy", "op": ">=", "value": 8},
     )
     rb = FakeWriter(vendor="rekordbox")
     mat = Materializer(smartlists_repo, [rb])
@@ -145,7 +166,9 @@ def test_materialize_all_sequential(
 
 
 def test_no_writer_still_returns_diff(
-    seeded, smartlists_repo, rule_house,
+    seeded,
+    smartlists_repo,
+    rule_house,
 ) -> None:
     row = smartlists_repo.create("House", rule_house)
     mat = Materializer(smartlists_repo, [])

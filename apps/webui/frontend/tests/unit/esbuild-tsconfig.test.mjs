@@ -27,9 +27,23 @@ test('an empty tsconfig.json does not break a build given TSCONFIG_RAW; without 
 	const dir = mkdtempSync(join(tmpdir(), 'esbuild-tsconfig-'));
 	try {
 		writeFileSync(join(dir, 'tsconfig.json'), '');
-		writeFileSync(join(dir, 'entry.ts'), 'export class A { x = 1 }\nexport const n: number = new A().x;\n');
-		const options = { absWorkingDir: dir, entryPoints: ['entry.ts'], bundle: true, write: false, format: 'esm', logLevel: 'silent' };
-		await assert.rejects(unpinnedBuild(options), /tsconfig\.json:1:0: ERROR: Unexpected end of file in JSON/, 'control: the CI failure, reproduced');
+		writeFileSync(
+			join(dir, 'entry.ts'),
+			'export class A { x = 1 }\nexport const n: number = new A().x;\n'
+		);
+		const options = {
+			absWorkingDir: dir,
+			entryPoints: ['entry.ts'],
+			bundle: true,
+			write: false,
+			format: 'esm',
+			logLevel: 'silent'
+		};
+		await assert.rejects(
+			unpinnedBuild(options),
+			/tsconfig\.json:1:0: ERROR: Unexpected end of file in JSON/,
+			'control: the CI failure, reproduced'
+		);
 		const result = await build(options);
 		assert.match(result.outputFiles[0].text, /n = new A\(\)\.x/);
 		assert.throws(() => build({ ...options, tsconfigRaw: {} }), /tsconfigRaw is pinned here/);
@@ -61,7 +75,10 @@ function* sourceFiles(dir) {
 function unpinnedEsbuildReferences(source) {
 	let safe = 0;
 	for (const match of source.matchAll(SAFE_IMPORT)) {
-		const names = match[1].split(',').map((name) => name.trim()).filter(Boolean);
+		const names = match[1]
+			.split(',')
+			.map((name) => name.trim())
+			.filter(Boolean);
 		if (names.every((name) => SAFE_NAMES.has(name))) safe += 1;
 	}
 	return (source.match(ANY_ESBUILD)?.length ?? 0) - safe;
@@ -75,13 +92,13 @@ test('the reference scan counts every import shape that could build unpinned (co
 		"import * as esbuild from 'esbuild';",
 		"import esbuild from 'esbuild';",
 		"const { build } = await import('esbuild');",
-		"const esbuild = require(\"esbuild\");",
+		'const esbuild = require("esbuild");',
 		"export { build } from 'esbuild';"
 	]) {
 		assert.equal(unpinnedEsbuildReferences(shape), 1, shape);
 	}
 	assert.equal(unpinnedEsbuildReferences("import { transformSync } from 'esbuild';"), 0);
-	assert.equal(unpinnedEsbuildReferences("import {\n\ttransform\n} from \"esbuild\";"), 0);
+	assert.equal(unpinnedEsbuildReferences('import {\n\ttransform\n} from "esbuild";'), 0);
 });
 
 test('nothing under tests/unit builds with esbuild except through the pinned build', () => {
@@ -128,7 +145,18 @@ test('TSCONFIG_RAW matches the tsconfig chain on every option it sets', () => {
 	}
 	// esbuild also acts on these; each is pinned exactly when the chain sets it
 	// (jsx: the React twins, REACT-01), so dropping a pin fails here too.
-	for (const key of ['useDefineForClassFields', 'experimentalDecorators', 'preserveValueImports', 'importsNotUsedAsValues', 'jsx', 'alwaysStrict']) {
-		assert.equal(TSCONFIG_RAW.compilerOptions[key], effective[key], `the chain sets ${key} to ${effective[key]}; pin the same in TSCONFIG_RAW`);
+	for (const key of [
+		'useDefineForClassFields',
+		'experimentalDecorators',
+		'preserveValueImports',
+		'importsNotUsedAsValues',
+		'jsx',
+		'alwaysStrict'
+	]) {
+		assert.equal(
+			TSCONFIG_RAW.compilerOptions[key],
+			effective[key],
+			`the chain sets ${key} to ${effective[key]}; pin the same in TSCONFIG_RAW`
+		);
 	}
 });

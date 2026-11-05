@@ -7,6 +7,7 @@ must survive ``apply_own_overlays`` with beatgrid=own, waveform=own, or both.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -60,7 +61,10 @@ def _pssi_phrases() -> tuple[list[dict[str, Any]], list[float]]:
     phrases = anlz_mod._phrases_payload({"PSSI": pssi}, times)
     assert phrases
     assert {key for row in phrases for key in row} >= {
-        "start_s", "end_s", "kind", "mood",
+        "start_s",
+        "end_s",
+        "kind",
+        "mood",
     }
     return phrases, times
 
@@ -76,10 +80,7 @@ def _rekordbox_waveform_stub() -> dict[str, Any]:
 def _payload_with_pssi_phrases(phrases: list[dict[str, Any]]) -> dict[str, Any]:
     payload = empty_anlz_payload(STABLE_ID, 400)
     grid = anlz_mod._beatgrid_payload({})[0]
-    grid["beats"] = [
-        {"n": (index % 4) + 1, "bpm": 125.0, "t": round(0.48 * index, 3)}
-        for index in range(64)
-    ]
+    grid["beats"] = [{"n": (index % 4) + 1, "bpm": 125.0, "t": round(0.48 * index, 3)} for index in range(64)]
     grid["beat_count"] = len(grid["beats"])
     payload["beatgrid"] = grid
     payload["waveform"] = _rekordbox_waveform_stub()

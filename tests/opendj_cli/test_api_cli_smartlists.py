@@ -3,6 +3,7 @@
 [if] an agent wants to create a smartlist from a script [then] one documented opendj invocation does it, [else stop]
 [if] opendj --help (or its verb listing) is inspected [then] smartlist operations appear alongside other library verbs, [else stop]
 """
+
 from __future__ import annotations
 
 import json
@@ -58,7 +59,8 @@ def library_daemon(tmp_path: Path) -> Iterator[tuple[str, Path]]:
 
 
 def _patch_backend(
-    monkeypatch: pytest.MonkeyPatch, base_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
 ) -> None:
     monkeypatch.setattr(
         api_cli,
@@ -74,10 +76,15 @@ def test_api_post_creates_smartlist(
 ) -> None:
     base_url, _db = library_daemon
     _patch_backend(monkeypatch, base_url)
-    code = main([
-        "api", "POST", "/api/v1/smartlists",
-        "--json", json.dumps({"name": "CLI House", "rule": _BPM_RULE}),
-    ])
+    code = main(
+        [
+            "api",
+            "POST",
+            "/api/v1/smartlists",
+            "--json",
+            json.dumps({"name": "CLI House", "rule": _BPM_RULE}),
+        ]
+    )
     assert code == api_cli.EXIT_OK
     created = json.loads(capsys.readouterr().out)
     assert created["name"] == "CLI House"
@@ -142,20 +149,32 @@ def test_api_put_smartlist_with_if_match(
     smartlist_id = create.json()["id"]
     etag = create.headers["etag"]
 
-    put_code = main([
-        "api", "PUT", f"/api/v1/smartlists/{smartlist_id}",
-        "-H", f"If-Match: {etag}",
-        "--json", json.dumps({"rule": _ENERGY_RULE}),
-    ])
+    put_code = main(
+        [
+            "api",
+            "PUT",
+            f"/api/v1/smartlists/{smartlist_id}",
+            "-H",
+            f"If-Match: {etag}",
+            "--json",
+            json.dumps({"rule": _ENERGY_RULE}),
+        ]
+    )
     assert put_code == api_cli.EXIT_OK
     updated = json.loads(capsys.readouterr().out)
     assert updated["rule"] == _ENERGY_RULE
 
-    stale_code = main([
-        "api", "PUT", f"/api/v1/smartlists/{smartlist_id}",
-        "-H", f"If-Match: {etag}",
-        "--json", json.dumps({"rule": _BPM_RULE}),
-    ])
+    stale_code = main(
+        [
+            "api",
+            "PUT",
+            f"/api/v1/smartlists/{smartlist_id}",
+            "-H",
+            f"If-Match: {etag}",
+            "--json",
+            json.dumps({"rule": _BPM_RULE}),
+        ]
+    )
     assert stale_code == api_cli.EXIT_CONFLICT
 
 

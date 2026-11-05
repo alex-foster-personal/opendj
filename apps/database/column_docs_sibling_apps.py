@@ -35,9 +35,7 @@ from __future__ import annotations
 
 SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
     "set_notes": {
-        "scope": (
-            "Primary key. 'scratch', 'playlist:<id>' or 'playlist_set:<int>'."
-        ),
+        "scope": ("Primary key. 'scratch', 'playlist:<id>' or 'playlist_set:<int>'."),
         "body_md": "The note as markdown; track links are track:<stable_id> URIs.",
         "x": "Saved pad left edge in CSS pixels, NULL until first moved.",
         "y": "Saved pad top edge in CSS pixels, NULL until first moved.",
@@ -71,10 +69,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "captured: explicit Capture, learned from play, or suggested."
         ),
         "notes": "Optional free-text note on the pairing. NULL when unset.",
-        "snapshot_json": (
-            "Optional JSON snapshot of open-time deck state at capture. "
-            "NULL when the client sent none."
-        ),
+        "snapshot_json": ("Optional JSON snapshot of open-time deck state at capture. NULL when the client sent none."),
         "created_at": "RFC 3339 UTC timestamp the HTTP pairing row was created.",
         "updated_at": "RFC 3339 UTC timestamp the HTTP pairing row was last written.",
         "graph_owner_stamp": (
@@ -126,8 +121,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "analyzed_at keeps its original value."
         ),
         "duration_s": (
-            "Audio duration analyzed, in SECONDS. Different unit from "
-            "tracks.duration_ms, which is milliseconds."
+            "Audio duration analyzed, in SECONDS. Different unit from tracks.duration_ms, which is milliseconds."
         ),
         "sample_rate": "Sample rate of the audio as analyzed, in Hz (e.g. 44100).",
         "bpm": "Estimated tempo in beats per minute.",
@@ -136,8 +130,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "constraint enforces a range; observed values fall in 0 to 1."
         ),
         "key_camelot": (
-            "Estimated musical key in Camelot wheel notation (e.g. '8B'), "
-            "for DJ software that uses that convention."
+            "Estimated musical key in Camelot wheel notation (e.g. '8B'), for DJ software that uses that convention."
         ),
         "key_openkey": (
             "The same estimated key in Open Key / Traktor notation (e.g. "
@@ -231,10 +224,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "normalized artist reference."
         ),
         "album": "Album name as reported by Spotify; NULL if Spotify returned none.",
-        "duration_ms": (
-            "Track duration in milliseconds as reported by Spotify; NULL if "
-            "unavailable."
-        ),
+        "duration_ms": ("Track duration in milliseconds as reported by Spotify; NULL if unavailable."),
         "suggested_sources_json": (
             "JSON object with exactly the 5 fixed keys in "
             "apps.spotify.acquisition.SOURCE_KEYS "
@@ -292,8 +282,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "unchanged playlist, unless force=True."
         ),
         "track_count": (
-            "Total tracks in the playlist at the moment of this import, "
-            "equal to matched_count + pending_count."
+            "Total tracks in the playlist at the moment of this import, equal to matched_count + pending_count."
         ),
         "matched_count": (
             "How many of those tracks matched an existing local track at "
@@ -314,12 +303,10 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
     "playlist_sets": {
         "id": "Surrogate primary key for one SET-05 performance set.",
         "playlist_id": (
-            "Parent playlist this set belongs to. NOT FK-enforced; keyed by "
-            "opaque playlist_id like play_orders."
+            "Parent playlist this set belongs to. NOT FK-enforced; keyed by opaque playlist_id like play_orders."
         ),
         "name": (
-            "Human-readable set name, UNIQUE per playlist. Shown in the "
-            "library browser tab strip with play_count."
+            "Human-readable set name, UNIQUE per playlist. Shown in the library browser tab strip with play_count."
         ),
         "play_count": (
             "Denormalized performance count. Only incremented by "
@@ -330,9 +317,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "from_play_order was supplied. Not FK-enforced."
         ),
         "created_at": "RFC 3339 UTC timestamp when the set was created.",
-        "updated_at": (
-            "RFC 3339 UTC timestamp of the last set mutation or run record."
-        ),
+        "updated_at": ("RFC 3339 UTC timestamp of the last set mutation or run record."),
     },
     "playlist_set_entries": {
         "id": "Surrogate primary key for one entry row.",
@@ -343,17 +328,11 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
     "playlist_set_runs": {
         "id": "Surrogate primary key for one run record.",
         "set_id": "FK -> playlist_sets(id), ON DELETE CASCADE.",
-        "kind": (
-            "Run kind: 'practice' or 'performance'. Only 'performance' "
-            "increments playlist_sets.play_count."
-        ),
+        "kind": ("Run kind: 'practice' or 'performance'. Only 'performance' increments playlist_sets.play_count."),
         "created_at": "RFC 3339 UTC timestamp when the run was recorded.",
     },
     "playlist_sets_schema_meta": {
-        "version": (
-            "Applied playlist_sets schema version. Primary key, one row per "
-            "completed migration step."
-        ),
+        "version": ("Applied playlist_sets schema version. Primary key, one row per completed migration step."),
         "applied_at": "RFC 3339 UTC timestamp when this version was applied.",
     },
     "playlist_component_slots": {
@@ -385,8 +364,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "set_id": "FK -> playlist_sets(id), ON DELETE CASCADE.",
         "position": "0-based place of this component on the set's route.",
         "component_id": (
-            "FK -> playlist_components(id), ON DELETE RESTRICT; may name a "
-            "component from another playlist."
+            "FK -> playlist_components(id), ON DELETE RESTRICT; may name a component from another playlist."
         ),
     },
     "playlist_set_run_entries": {

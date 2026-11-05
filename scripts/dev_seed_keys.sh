@@ -15,20 +15,35 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP=""
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --app) APP="$2"; shift 2 ;;
-    *) echo "[ERROR] unknown argument $1" >&2; exit 2 ;;
-  esac
+    case "$1" in
+        --app)
+            APP="$2"
+            shift 2
+            ;;
+        *)
+            echo "[ERROR] unknown argument $1" >&2
+            exit 2
+            ;;
+    esac
 done
-[ -n "$APP" ] || { echo "[ERROR] --app <path to .app> is required" >&2; exit 2; }
+[ -n "$APP" ] || {
+    echo "[ERROR] --app <path to .app> is required" >&2
+    exit 2
+}
 manifest="$APP/Contents/Resources/payload/manifest.json"
-[ -f "$manifest" ] || { echo "[ERROR] no payload manifest at $manifest" >&2; exit 2; }
+[ -f "$manifest" ] || {
+    echo "[ERROR] no payload manifest at $manifest" >&2
+    exit 2
+}
 channel=$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("identity") or {}).get("release_channel",""))' "$manifest")
 if [ "$channel" != "local-unnotarized" ]; then
-  echo "[ERROR] refusing to seed keys: $APP is release_channel=${channel:-<none>}, not a local-unnotarized dev build" >&2
-  exit 3
+    echo "[ERROR] refusing to seed keys: $APP is release_channel=${channel:-<none>}, not a local-unnotarized dev build" >&2
+    exit 3
 fi
-command -v doppler >/dev/null || { echo "[ERROR] doppler CLI not found; cannot read dev keys" >&2; exit 3; }
+command -v doppler >/dev/null || {
+    echo "[ERROR] doppler CLI not found; cannot read dev keys" >&2
+    exit 3
+}
 doppler run -p general -c dev_personal -- bash -c '
   set -euo pipefail
   for k in OPENROUTER_API_KEY SERPER_API_KEY; do

@@ -22,9 +22,7 @@ def test_calibrate_mirrors_the_page_calibration_state() -> None:
     calibration, and a headless calibrate returns the applied state."""
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
             await _open_page(client)
             before = await client.get("/api/v1/performance/headphones")
             fake = asyncio.create_task(_fake_page(client))
@@ -66,9 +64,7 @@ def test_headphones_carries_the_live_stage_one_probe() -> None:
     }
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
             await _open_page(client, headphones=headphones)
             response = await client.get("/api/v1/performance/headphones")
         assert response.status_code == 200

@@ -122,9 +122,7 @@ def test_reviewed_license_mailboxes_are_counted_exempt_on_the_published_tree() -
 
 
 @pytest.mark.parametrize("rel", sorted(UPSTREAM_LICENSE_MAILBOX_BLOBS))
-def test_byte_identical_published_blob_is_exempt_in_a_disposable_index(
-    tmp_path: Path, rel: str
-) -> None:
+def test_byte_identical_published_blob_is_exempt_in_a_disposable_index(tmp_path: Path, rel: str) -> None:
     raw = _published_blob(rel)
     root = _repo(tmp_path)
     _stage(root, rel, raw)

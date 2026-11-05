@@ -52,9 +52,7 @@ MAX_SCREENSHOTS: int = 8
 MAX_SCREENSHOT_PIXELS: int = 4096 * 4096
 MEDIA_TYPES: dict[str, str] = {"png": "image/png", "webp": "image/webp"}
 
-_LISTING_KEYS = frozenset(
-    {"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"}
-)
+_LISTING_KEYS = frozenset({"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"})
 _SHOT_KEYS = frozenset({"path", "sha256", "size", "width", "height", "alt", "theme"})
 
 
@@ -78,8 +76,13 @@ class Screenshot:
 
     def to_wire(self) -> dict[str, Any]:
         return {
-            "path": self.path, "sha256": self.sha256, "size": self.size,
-            "width": self.width, "height": self.height, "alt": self.alt, "theme": self.theme,
+            "path": self.path,
+            "sha256": self.sha256,
+            "size": self.size,
+            "width": self.width,
+            "height": self.height,
+            "alt": self.alt,
+            "theme": self.theme,
         }
 
 
@@ -142,9 +145,7 @@ def _screenshot(raw: Any, plugin_id: str) -> Screenshot:
     path = raw["path"]
     allowed = {f"media/{plugin_id}/{sha}.{ext}" for ext in MEDIA_TYPES}
     if path not in allowed:
-        raise ListingError(
-            f"screenshot path {path!r} must be media/{plugin_id}/<sha256>.png or .webp"
-        )
+        raise ListingError(f"screenshot path {path!r} must be media/{plugin_id}/<sha256>.png or .webp")
     size = _positive_int(raw, "size")
     if size > MAX_SCREENSHOT_BYTES:
         raise ListingError(f"screenshot {path} is {size} bytes; the limit is {MAX_SCREENSHOT_BYTES}")
@@ -152,9 +153,13 @@ def _screenshot(raw: Any, plugin_id: str) -> Screenshot:
     if theme not in SCREENSHOT_THEMES:
         raise ListingError(f"screenshot 'theme' must be one of {list(SCREENSHOT_THEMES)}")
     return Screenshot(
-        path=path, sha256=sha, size=size,
-        width=_positive_int(raw, "width"), height=_positive_int(raw, "height"),
-        alt=_text(raw, "alt", 200), theme=theme,
+        path=path,
+        sha256=sha,
+        size=size,
+        width=_positive_int(raw, "width"),
+        height=_positive_int(raw, "height"),
+        alt=_text(raw, "alt", 200),
+        theme=theme,
     )
 
 
@@ -197,11 +202,11 @@ def _png_chunks(data: bytes) -> list[tuple[bytes, bytes]]:
     while pos < len(data):
         if pos + 12 > len(data):
             raise ListingError("the PNG ends inside a chunk header")
-        (length,) = struct.unpack(">I", data[pos:pos + 4])
-        kind, body, end = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length], pos + 12 + length
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        kind, body, end = data[pos + 4 : pos + 8], data[pos + 8 : pos + 8 + length], pos + 12 + length
         if end > len(data):
             raise ListingError(f"the PNG {kind!r} chunk runs past the end of the file")
-        if zlib.crc32(kind + body) != struct.unpack(">I", data[end - 4:end])[0]:
+        if zlib.crc32(kind + body) != struct.unpack(">I", data[end - 4 : end])[0]:
             raise ListingError(f"the PNG {kind!r} chunk fails its CRC")
         chunks.append((kind, body))
         pos = end
@@ -261,7 +266,7 @@ def _check_webp(data: bytes) -> None:
     while pos < len(data):
         if pos + 8 > len(data):
             raise ListingError("the WebP ends inside a chunk header")
-        size = int.from_bytes(data[pos + 4:pos + 8], "little")
+        size = int.from_bytes(data[pos + 4 : pos + 8], "little")
         pos += 8 + size + (size & 1)
         if pos > len(data):
             raise ListingError("a WebP chunk runs past the end of the file")
@@ -311,8 +316,8 @@ def _webp_size(data: bytes) -> tuple[int, int]:
     if chunk not in _WEBP_HEADERS:
         raise ListingError("a screenshot must be a PNG or WebP image")
     least, at, signature = _WEBP_HEADERS[chunk]
-    body = data[20:20 + int.from_bytes(data[16:20], "little")]
-    if len(body) < least or body[at:at + len(signature)] != signature:
+    body = data[20 : 20 + int.from_bytes(data[16:20], "little")]
+    if len(body) < least or body[at : at + len(signature)] != signature:
         raise ListingError(f"the WebP {chunk.decode().strip()} header is truncated or damaged")
     if chunk == b"VP8X":
         return 1 + int.from_bytes(body[4:7], "little"), 1 + int.from_bytes(body[7:10], "little")

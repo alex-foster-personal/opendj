@@ -20,7 +20,9 @@
 {#if !enabled}
 	<p>The transition try-er is off (build flag <code>dj.tryer</code>).</p>
 {:else if outId === null || inId === null}
-	<p role="alert">Name both tracks: <code>/tryer?out=&lt;stable_id&gt;&amp;in=&lt;stable_id&gt;</code>.</p>
+	<p role="alert">
+		Name both tracks: <code>/tryer?out=&lt;stable_id&gt;&amp;in=&lt;stable_id&gt;</code>.
+	</p>
 {:else if !Number.isInteger(n) || !Number.isInteger(contextBars)}
 	<p role="alert">n and context_bars must be whole numbers.</p>
 {:else}

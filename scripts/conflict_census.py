@@ -27,6 +27,10 @@ REQUIREMENTS
       [if every PR resolves then the run exits 0]
       [if the computed and uncomputed counts do not sum to the PR count then
        the run raises rather than printing]
+      [if the listed open-PR count differs from GitHub totalCount then the
+       run exits 1, rather than printing a smaller denominator]
+      [if --limit is an explicit sample then listed may be below totalCount
+       and the run says it is a sample]
   R-3 Pin main once, by sha, before measuring anything.             [done, run]
       [if main moves mid-run then every PR is still measured against the one
        pinned sha, so the histogram is internally consistent]
@@ -37,11 +41,13 @@ first run of this census silently computed 11 of 42 PRs because the rest died
 on `refusing to merge unrelated histories`. An 11-PR histogram looks exactly
 like a 42-PR one.
 """
+
 from __future__ import annotations
 
 import argparse
 import collections
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -55,10 +61,9 @@ DEEPEN_HINT: str = "git fetch --deepen=900 origin main"
 
 # ------------------------------------------------------------------ git
 
+
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
 
 
 def _pinned_main() -> str:
@@ -93,16 +98,71 @@ def _conflicting_paths(main_sha: str, head_sha: str) -> tuple[list[str] | None, 
 
 # ------------------------------------------------------------------ census
 
-def _dirty_prs(limit: int) -> tuple[list[dict[str, object]], int]:
-    res = subprocess.run(
-        ["gh", "pr", "list", "--repo", REPO_SLUG, "--state", "open",
-         "--limit", str(limit), "--json", "number,headRefOid,mergeStateStatus,title"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
-    )
-    if res.returncode != 0:
-        raise SystemExit(f"gh pr list failed: {res.stderr.strip()[:200]}")
-    prs = json.loads(res.stdout)
-    return [p for p in prs if p["mergeStateStatus"] == "DIRTY"], len(prs)
+
+# Page size is hardcoded: GitHub 502s this repo when mergeStateStatus is
+# fetched at 100-PR pages. A $first variable would let a caller bump it.
+_OPEN_PR_QUERY = """query($owner: String!, $repo: String!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: OPEN, first: 25, after: $cursor) {
+      totalCount
+      pageInfo { hasNextPage endCursor }
+      nodes { number title mergeStateStatus headRefOid }
+    }
+  }
+}"""
+_GH_GRAPHQL_ATTEMPTS = 3
+
+
+def _gh_graphql(query: str, **variables: object) -> dict:
+    args = ["gh", "api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        args += ["-F" if isinstance(value, int) else "-f", f"{key}={value}"]
+    last_stderr = ""
+    for attempt in range(_GH_GRAPHQL_ATTEMPTS):
+        res = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            last_stderr = res.stderr.strip()
+            if re.search(r"HTTP 5\d\d", last_stderr) and attempt < _GH_GRAPHQL_ATTEMPTS - 1:
+                continue
+            raise SystemExit(f"gh api graphql failed: {last_stderr[:200]}")
+        payload = json.loads(res.stdout)
+        if payload.get("errors"):
+            raise SystemExit(f"gh api graphql failed: {str(payload['errors'])[:200]}")
+        try:
+            return payload["data"]["repository"]
+        except (KeyError, TypeError) as exc:
+            raise SystemExit("gh api graphql failed: missing repository data") from exc
+    raise SystemExit(f"gh api graphql failed: {last_stderr[:200]}")
+
+
+def _dirty_prs(limit: int | None) -> tuple[list[dict[str, object]], int, int]:
+    owner, repo = REPO_SLUG.split("/", 1)
+    nodes: list[dict[str, object]] = []
+    total_count: int | None = None
+    cursor: str | None = None
+    while True:
+        variables: dict[str, object] = {"owner": owner, "repo": repo}
+        if cursor:
+            variables["cursor"] = cursor
+        block = _gh_graphql(_OPEN_PR_QUERY, **variables)["pullRequests"]
+        page_total = int(block["totalCount"])
+        if total_count is None:
+            total_count = page_total
+        elif page_total != total_count:
+            raise SystemExit(f"open-PR totalCount moved underfoot: was {total_count}, now {page_total}")
+        nodes.extend(block["nodes"])
+        if limit is not None and len(nodes) >= limit:
+            nodes = nodes[:limit]
+            break
+        if not block["pageInfo"]["hasNextPage"]:
+            break
+        cursor = block["pageInfo"]["endCursor"]
+    assert total_count is not None  # one page always runs
+    listed = len(nodes)
+    expected = total_count if limit is None else min(limit, total_count)
+    if listed != expected:
+        raise SystemExit(f"listed {listed} open PRs but GitHub totalCount is {total_count}")
+    return [p for p in nodes if p["mergeStateStatus"] == "DIRTY"], listed, total_count
 
 
 def _fetch_head(number: int) -> None:
@@ -112,12 +172,19 @@ def _fetch_head(number: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--json", type=Path, help="write the histogram and per-PR map here")
-    ap.add_argument("--limit", type=int, default=200, help="open PRs to consider")
+    ap.add_argument("--limit", type=int, default=None, help="sample at most N open PRs (default: all open PRs)")
     args = ap.parse_args(argv)
 
     main_sha = _pinned_main()
-    dirty, total_open = _dirty_prs(args.limit)
-    print(f"{len(dirty)} DIRTY of {total_open} open PRs, measured against main {main_sha[:9]}")
+    dirty, listed, total_count = _dirty_prs(args.limit)
+    if args.limit is not None and listed < total_count:
+        print(
+            f"{len(dirty)} DIRTY of {listed} listed PRs "
+            f"(sample --limit {args.limit} of totalCount {total_count}), "
+            f"measured against main {main_sha[:9]}"
+        )
+    else:
+        print(f"{len(dirty)} DIRTY of {total_count} open PRs, measured against main {main_sha[:9]}")
 
     hist: collections.Counter[str] = collections.Counter()
     per_pr: dict[int, list[str]] = {}
@@ -139,8 +206,10 @@ def main(argv: list[str] | None = None) -> int:
         raise AssertionError("census bug: computed + uncomputed != DIRTY PRs")
 
     pairs = sum(hist.values())
-    print(f"\ncomputed {len(per_pr)}, uncomputed {len(uncomputed)}; "
-          f"{pairs} (file, PR) conflict pairs over {len(hist)} distinct files")
+    print(
+        f"\ncomputed {len(per_pr)}, uncomputed {len(uncomputed)}; "
+        f"{pairs} (file, PR) conflict pairs over {len(hist)} distinct files"
+    )
     if hist:
         print("\nfile                                                        PRs blocked")
         for path, count in hist.most_common(20):
@@ -151,14 +220,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(solo)} PRs conflict on exactly ONE file (cheap rebases): {sorted(solo)}")
 
     if args.json:
-        args.json.write_text(json.dumps(
-            {"main": main_sha, "hist": dict(hist), "per_pr": per_pr,
-             "uncomputed": uncomputed}, indent=1) + "\n")
+        args.json.write_text(
+            json.dumps({"main": main_sha, "hist": dict(hist), "per_pr": per_pr, "uncomputed": uncomputed}, indent=1)
+            + "\n"
+        )
         print(f"\nwritten to {args.json.resolve()}")
 
     if uncomputed:
-        print(f"\n{len(uncomputed)} PR(s) could NOT be measured. The numbers above "
-              f"exclude them, so treat them as a sample, not a census:", file=sys.stderr)
+        print(
+            f"\n{len(uncomputed)} PR(s) could NOT be measured. The numbers above "
+            f"exclude them, so treat them as a sample, not a census:",
+            file=sys.stderr,
+        )
         for number, why in uncomputed:
             print(f"  #{number}: {why}", file=sys.stderr)
         if any("unrelated histories" in why for _, why in uncomputed):

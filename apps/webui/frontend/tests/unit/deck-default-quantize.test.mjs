@@ -34,7 +34,8 @@ async function load(initial) {
 test('with no stored pref every deck starts with Quantize on', async () => {
 	const { mod } = await load();
 	assert.equal(mod.uiPrefs.deck_default_quantize, true);
-	for (const deck of [1, 2, 3, 4]) assert.equal(mod.deckStates[deck].quantize_enabled, true, `deck ${deck}`);
+	for (const deck of [1, 2, 3, 4])
+		assert.equal(mod.deckStates[deck].quantize_enabled, true, `deck ${deck}`);
 	assert.equal(mod._emptyDeckState(1).quantize_enabled, true);
 });
 
@@ -43,8 +44,13 @@ test('a stored off pref seeds the four page-load decks and every ejected deck wi
 		[STORAGE_KEY]: JSON.stringify({ hide_broken_links: false, deck_default_quantize: false })
 	});
 	assert.equal(mod.uiPrefs.deck_default_quantize, false, 'control: the stored pref was read');
-	for (const deck of [1, 2, 3, 4]) assert.equal(mod.deckStates[deck].quantize_enabled, false, `deck ${deck}`);
-	assert.equal(mod._emptyDeckState(2).quantize_enabled, false, 'the eject/dispose reset follows the pref');
+	for (const deck of [1, 2, 3, 4])
+		assert.equal(mod.deckStates[deck].quantize_enabled, false, `deck ${deck}`);
+	assert.equal(
+		mod._emptyDeckState(2).quantize_enabled,
+		false,
+		'the eject/dispose reset follows the pref'
+	);
 });
 
 test('changing the pref updates empty decks only, persists locally, and reads back through apply', async () => {
@@ -56,13 +62,19 @@ test('changing the pref updates empty decks only, persists locally, and reads ba
 	mod.applySettingChange('deck_default_quantize', false);
 	assert.equal(mod.readSettingValue('deck_default_quantize'), false);
 	assert.equal(mod.deckStates[1].quantize_enabled, true, 'a loaded deck keeps its own Q');
-	for (const deck of [2, 3, 4]) assert.equal(mod.deckStates[deck].quantize_enabled, false, `empty deck ${deck}`);
+	for (const deck of [2, 3, 4])
+		assert.equal(mod.deckStates[deck].quantize_enabled, false, `empty deck ${deck}`);
 	assert.equal(mod._emptyDeckState(1).quantize_enabled, false);
-	assert.equal(JSON.parse(store.get(STORAGE_KEY)).deck_default_quantize, false, 'persisted to the local blob');
+	assert.equal(
+		JSON.parse(store.get(STORAGE_KEY)).deck_default_quantize,
+		false,
+		'persisted to the local blob'
+	);
 
 	// Opposite direction: turning it back on re-enables the empty decks.
 	mod.setDeckDefaultQuantize(true);
-	for (const deck of [2, 3, 4]) assert.equal(mod.deckStates[deck].quantize_enabled, true, `empty deck ${deck}`);
+	for (const deck of [2, 3, 4])
+		assert.equal(mod.deckStates[deck].quantize_enabled, true, `empty deck ${deck}`);
 	assert.equal(mod._emptyDeckState(1).quantize_enabled, true);
 });
 
@@ -71,7 +83,10 @@ test('a non-boolean value is refused rather than seeding a deck with it', async 
 	assert.throws(() => mod.setDeckDefaultQuantize('no'), /deck_default_quantize must be a boolean/);
 	assert.equal(mod.uiPrefs.deck_default_quantize, true);
 	await assert.rejects(
-		() => load({ [STORAGE_KEY]: JSON.stringify({ hide_broken_links: false, deck_default_quantize: 'off' }) }),
+		() =>
+			load({
+				[STORAGE_KEY]: JSON.stringify({ hide_broken_links: false, deck_default_quantize: 'off' })
+			}),
 		/deck_default_quantize is not a boolean/
 	);
 });

@@ -109,6 +109,13 @@ export interface RbMeta {
 	quality: TrackQuality;
 }
 
+/** SRCFLAG-01..03: one flag-only finding about a track's source file (server: SourceFlagOut). */
+export interface SourceFlag {
+	code: 'length_mismatch' | 'stems_other_recording' | 'hardlinked_write';
+	severity: 'warning' | 'info';
+	message: string;
+}
+
 /** One hydrated row in the browser track list. Field order mirrors the
  * screenshot columns (SCREENSHOT-SPEC 5c). */
 export interface TrackRow {
@@ -127,6 +134,13 @@ export interface TrackRow {
 	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected' | 'too_short' | 'no_pulse';
 	bpm_reason?: string | null;
 	key_reason?: string | null;
+	/** SRCFLAG-01..03: flag-only findings about the source file, from the last source-flags scan. */
+	source_flags?: SourceFlag[];
+	/** KEY-GUESS-01: a declined key's best candidate (key stays null), shown dimmed as "8A?". */
+	key_guess?: string | null;
+	key_guess_confidence?: number | null;
+	/** KEY-FALLBACK-01: own | rekordbox | file_tag | mik_tag | guess. */
+	key_source?: string | null;
 	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	/** B column - BPM; null renders empty. */

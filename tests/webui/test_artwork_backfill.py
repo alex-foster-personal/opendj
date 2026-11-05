@@ -14,6 +14,7 @@ Regression one-liners:
   - [if] a full queue raises instead of logging the dropped id [then] broken, [else stop].
   - [if] one failing lookup stops the worker for the rest [then] broken, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -96,12 +97,18 @@ def test_title_artist_only_track_is_looked_up_and_cached(library, monkeypatch) -
     insert, _audio, cache_dir = library
     insert("Aria", ["ASCO"])
     cover = _jpeg()
-    recording = {"title": "Aria", "length": 207_000, "artist-credit": [{"name": "ASCO"}],
-                 "releases": [{"id": "r1", "release-group": {"id": "rg-1"}}]}
-    http = RecordingHttp({
-        art.MB_URL: (200, json.dumps({"recordings": [recording]}).encode()),
-        art.CAA_URL.format(rg="rg-1"): (200, cover),
-    })
+    recording = {
+        "title": "Aria",
+        "length": 207_000,
+        "artist-credit": [{"name": "ASCO"}],
+        "releases": [{"id": "r1", "release-group": {"id": "rg-1"}}],
+    }
+    http = RecordingHttp(
+        {
+            art.MB_URL: (200, json.dumps({"recordings": [recording]}).encode()),
+            art.CAA_URL.format(rg="rg-1"): (200, cover),
+        }
+    )
     monkeypatch.setattr(art, "_HTTP", http)
     assert artwork_backfill.cover_outcome(SID).status == "found"
     assert art.ArtworkCache(cache_dir).get(SID) == (cover, "image/jpeg")

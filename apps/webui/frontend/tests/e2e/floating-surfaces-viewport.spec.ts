@@ -179,6 +179,11 @@ test('library key hover card flips below and stays inside the viewport inset fro
 		(el, inset) => {
 			const cell = el as HTMLElement;
 			const rect = cell.getBoundingClientRect();
+			// Keep the laid-out size: a fixed td sizes to its content, and a
+			// failed/missing key cell is empty (KEY-CELL-01), so it would collapse
+			// to zero height and never be hoverable.
+			cell.style.width = `${rect.width}px`;
+			cell.style.height = `${rect.height}px`;
 			cell.style.position = 'fixed';
 			cell.style.left = `${window.innerWidth - rect.width - inset}px`;
 			cell.style.top = `${inset}px`;

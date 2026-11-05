@@ -59,8 +59,10 @@ def symlink_or_skip(link: Path, target: Path, target_is_directory: bool = False)
     except OSError as exc:
         if sys.platform != "win32":
             raise
-        pytest.skip(f"this Windows account cannot create symlinks (Developer Mode or "
-                    f"SeCreateSymbolicLinkPrivilege needed): {exc}")
+        pytest.skip(
+            f"this Windows account cannot create symlinks (Developer Mode or "
+            f"SeCreateSymbolicLinkPrivilege needed): {exc}"
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -80,9 +82,11 @@ def restore_apps_path(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     apps.__path__[:] = before
     for name in [n for n in sys.modules if n.startswith("apps.plugtest_")]:
         del sys.modules[name]
+
+
 BASE = "https://store.example.test/index"
 
-_ROUTER_SRC = '''\
+_ROUTER_SRC = """\
 from fastapi import APIRouter
 
 router = APIRouter(prefix="{prefix}")
@@ -91,16 +95,16 @@ router = APIRouter(prefix="{prefix}")
 @router.get("{route}")
 def ping() -> dict[str, str]:
     return {{"pong": "{plugin_id}"}}
-{extra}'''
+{extra}"""
 
-_EXTRA_ROUTE_SRC = '''
+_EXTRA_ROUTE_SRC = """
 
 @router.{method}("{path}")
 def extra_{n}() -> dict[str, str]:
     return {{"extra": "{n}"}}
-'''
+"""
 
-_PLUGIN_SRC = '''\
+_PLUGIN_SRC = """\
 STARTED = []
 
 
@@ -115,7 +119,7 @@ def _start(host):
 
     host.include_router(router)
     host.on_startup(lambda: _start(host))
-'''
+"""
 
 
 def sha(data: bytes) -> str:
@@ -154,6 +158,7 @@ class BuiltPlugin:
 
 def png_bytes(width: int = 4, height: int = 3, shade: int = 40) -> bytes:
     """A real, decodable PNG (8-bit gray), so media checks see a true image."""
+
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
@@ -174,10 +179,17 @@ def listing_for(plugin_id: str, *, status: str = "stable", shots: int = 1) -> tu
         data = png_bytes(shade=40 + n)
         path = f"media/{plugin_id}/{sha(data)}.png"
         media[path] = data
-        screenshots.append({
-            "path": path, "sha256": sha(data), "size": len(data), "width": 4, "height": 3,
-            "alt": f"Screenshot {n + 1}", "theme": "dark" if n % 2 == 0 else "light",
-        })
+        screenshots.append(
+            {
+                "path": path,
+                "sha256": sha(data),
+                "size": len(data),
+                "width": 4,
+                "height": 3,
+                "alt": f"Screenshot {n + 1}",
+                "theme": "dark" if n % 2 == 0 else "light",
+            }
+        )
     listing = {
         "tagline": "Does one useful thing.",
         "problem": "Without it you cannot do the useful thing.",
@@ -230,18 +242,25 @@ def module_plugin(
     elif sys_exit == "startup":
         plugin_src = plugin_src.replace("STARTED.append(host.plugin_id)", "raise SystemExit(3)", 1)
     if late_raw_route:
-        plugin_src = plugin_src.replace("    host.include_router(router)\n", (
-            "    host.include_router(router)\n"
-            "    from starlette.responses import PlainTextResponse\n"
-            f"    router.add_route('{prefix}/late', lambda _request: PlainTextResponse('x'))\n"
-        ), 1)
+        plugin_src = plugin_src.replace(
+            "    host.include_router(router)\n",
+            (
+                "    host.include_router(router)\n"
+                "    from starlette.responses import PlainTextResponse\n"
+                f"    router.add_route('{prefix}/late', lambda _request: PlainTextResponse('x'))\n"
+            ),
+            1,
+        )
     files = {
         f"python/apps/{package}/__init__.py": b"",
         f"python/apps/{package}/plugin.py": plugin_src.encode(),
         f"python/apps/{package}/routes.py": _ROUTER_SRC.format(
-            prefix=route_prefix or prefix, plugin_id=plugin_id, route=route,
-            extra="".join(_EXTRA_ROUTE_SRC.format(method=m, path=pth, n=i)
-                          for i, (m, pth) in enumerate(extra_routes or [])),
+            prefix=route_prefix or prefix,
+            plugin_id=plugin_id,
+            route=route,
+            extra="".join(
+                _EXTRA_ROUTE_SRC.format(method=m, path=pth, n=i) for i, (m, pth) in enumerate(extra_routes or [])
+            ),
         ).encode(),
     }
     if bad_schema:
@@ -292,10 +311,18 @@ def data_plugin(plugin_id: str = "opendj.test-data") -> BuiltPlugin:
     """A data-only plugin: files, no code."""
     files = {"(private path)": b'{"controls": []}\n'}
     manifest: dict[str, Any] = {
-        "schema": 1, "id": plugin_id, "name": "Test Data", "version": "1.0.0",
-        "summary": "A data plugin used by the plugin store tests.", "publisher": "Open DJ",
-        "trust": "first-party", "kind": "data", "tier": 0, "channel": "stable",
-        "license": "Apache-2.0", "permissions": [],
+        "schema": 1,
+        "id": plugin_id,
+        "name": "Test Data",
+        "version": "1.0.0",
+        "summary": "A data plugin used by the plugin store tests.",
+        "publisher": "Open DJ",
+        "trust": "first-party",
+        "kind": "data",
+        "tier": 0,
+        "channel": "stable",
+        "license": "Apache-2.0",
+        "permissions": [],
         "files": {rel: sha(data) for rel, data in files.items()},
     }
     listing, media = listing_for(plugin_id)
@@ -322,8 +349,7 @@ def self_signed(directory: Path) -> tuple[Path, Path]:
     cert_path, key_path = directory / "cert.pem", directory / "key.pem"
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     key_path.write_bytes(
-        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                          serialization.NoEncryption())
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
     )
     return cert_path, key_path
 
@@ -419,13 +445,19 @@ class LocalStore:
         """The production fetcher, with this store's public origin resolved to the local server."""
         server = _store_server()
         if url.startswith(PUBLIC_ORIGIN + "/"):
-            url = (server.dead_origin if self.offline else server.origin) + url[len(PUBLIC_ORIGIN):]
+            url = (server.dead_origin if self.offline else server.origin) + url[len(PUBLIC_ORIGIN) :]
         server.active = self
         return http_fetch(url, max_bytes=max_bytes)
 
-    def publish(self, channel: str, plugins: list[BuiltPlugin], blocklist: list[dict] | None = None,
-                *, sign_with: Ed25519PrivateKey | None = None,
-                generated_at: str | None = NEXT_STAMP) -> bytes:
+    def publish(
+        self,
+        channel: str,
+        plugins: list[BuiltPlugin],
+        blocklist: list[dict] | None = None,
+        *,
+        sign_with: Ed25519PrivateKey | None = None,
+        generated_at: str | None = NEXT_STAMP,
+    ) -> bytes:
         rows = []
         for plugin in plugins:
             archive = plugin.archive()
@@ -433,17 +465,24 @@ class LocalStore:
             self.blobs[url] = archive
             for path, data in plugin.media.items():
                 self.blobs[f"{self.base}/{path}"] = data
-            rows.append({
-                "manifest": plugin.manifest,
-                "archive_url": url,
-                "archive_sha256": sha(archive),
-                "archive_size": len(archive),
-                "listing": plugin.listing,
-            })
-        index = json.dumps({
-            "schema": 1, "channel": channel, "generated_at": self._stamp(generated_at),
-            "plugins": rows, "blocklist": blocklist or [],
-        }).encode()
+            rows.append(
+                {
+                    "manifest": plugin.manifest,
+                    "archive_url": url,
+                    "archive_sha256": sha(archive),
+                    "archive_size": len(archive),
+                    "listing": plugin.listing,
+                }
+            )
+        index = json.dumps(
+            {
+                "schema": 1,
+                "channel": channel,
+                "generated_at": self._stamp(generated_at),
+                "plugins": rows,
+                "blocklist": blocklist or [],
+            }
+        ).encode()
         self.blobs[f"{self.base}/{channel}.json"] = index
         self.blobs[f"{self.base}/{channel}.json.sig"] = sign(index, sign_with or self.key, KEY_ID)
         return index

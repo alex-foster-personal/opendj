@@ -61,9 +61,7 @@ def _make_venv(where: Path) -> tuple[Path, Path]:
     return python, Path(purelib)
 
 
-def _plant_dist_info(
-    site: Path, name: str = "music-dj-tools", direct_url: dict | None = None
-) -> Path:
+def _plant_dist_info(site: Path, name: str = "music-dj-tools", direct_url: dict | None = None) -> Path:
     dist_info = site / "music_dj_tools-0.0.0.dist-info"
     dist_info.mkdir()
     (dist_info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 0.0.0\n")
@@ -99,9 +97,7 @@ def outside_venv(tmp_path: Path) -> tuple[Path, Path]:
 # positive controls: the guard fires
 
 
-def test_planted_dist_info_fails_naming_its_path(
-    outside_venv: tuple[Path, Path], workspace: Path
-) -> None:
+def test_planted_dist_info_fails_naming_its_path(outside_venv: tuple[Path, Path], workspace: Path) -> None:
     python, site = outside_venv
     dist_info = _plant_dist_info(site)
     result = _run_guard(python, workspace)
@@ -110,9 +106,7 @@ def test_planted_dist_info_fails_naming_its_path(
     assert "outside the checkout" in result.stderr
 
 
-def test_unnormalized_project_name_still_fires(
-    outside_venv: tuple[Path, Path], workspace: Path
-) -> None:
+def test_unnormalized_project_name_still_fires(outside_venv: tuple[Path, Path], workspace: Path) -> None:
     python, site = outside_venv
     _plant_dist_info(site, name="Music_DJ.Tools")
     assert _run_guard(python, workspace).returncode == 1
@@ -161,18 +155,14 @@ def test_venv_inside_workspace_holding_the_project_passes(workspace: Path) -> No
     assert result.returncode == 0, result.stderr
 
 
-def test_editable_install_pointing_into_workspace_passes(
-    outside_venv: tuple[Path, Path], workspace: Path
-) -> None:
+def test_editable_install_pointing_into_workspace_passes(outside_venv: tuple[Path, Path], workspace: Path) -> None:
     python, site = outside_venv
     _plant_dist_info(site, direct_url={"url": workspace.as_uri(), "dir_info": {"editable": True}})
     result = _run_guard(python, workspace)
     assert result.returncode == 0, result.stderr
 
 
-def test_non_editable_direct_url_into_workspace_still_fails(
-    outside_venv: tuple[Path, Path], workspace: Path
-) -> None:
+def test_non_editable_direct_url_into_workspace_still_fails(outside_venv: tuple[Path, Path], workspace: Path) -> None:
     """The observed shape: a wheel built in the checkout's dist/ and installed
     into the shared interpreter. Its direct_url points INTO the workspace, but
     it is an archive copy, not an editable link, so it must still fire."""
@@ -189,10 +179,7 @@ def test_non_editable_direct_url_into_workspace_still_fails(
 def test_top_level_imports_match_pyproject() -> None:
     pyproject = tomllib.loads((REPO / "pyproject.toml").read_text())
     tool = pyproject["tool"]
-    packages = {
-        pattern.split(".")[0].rstrip("*")
-        for pattern in tool["setuptools"]["packages"]["find"]["include"]
-    }
+    packages = {pattern.split(".")[0].rstrip("*") for pattern in tool["setuptools"]["packages"]["find"]["include"]}
     ext_modules = {ext["target"].split(".")[0] for ext in tool["setuptools-rust"]["ext-modules"]}
     assert set(guard.TOP_LEVEL_IMPORTS) == packages | ext_modules
     assert pyproject["project"]["name"] == guard.PROJECT_DIST_NAME
@@ -209,18 +196,14 @@ def test_runner_preflight_fails_when_python3_on_path_is_shadowed(
         "GITHUB_WORKSPACE": str(workspace),
         "PATH": f"{python.parent}{os.pathsep}{env['PATH']}",
     }
-    result = subprocess.run(
-        [str(PREFLIGHT), "sh"], env=env, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([str(PREFLIGHT), "sh"], env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "agbox3-test" in result.stderr
     assert "music_dj_tools-0.0.0.dist-info" in result.stderr
     assert dist_info.name in result.stderr
 
 
-def test_runner_preflight_passes_when_python_on_path_is_clean(
-    outside_venv: tuple[Path, Path], workspace: Path
-) -> None:
+def test_runner_preflight_passes_when_python_on_path_is_clean(outside_venv: tuple[Path, Path], workspace: Path) -> None:
     python, _ = outside_venv
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "VIRTUAL_ENV")}
     env |= {
@@ -228,9 +211,7 @@ def test_runner_preflight_passes_when_python_on_path_is_clean(
         "GITHUB_WORKSPACE": str(workspace),
         "PATH": f"{python.parent}{os.pathsep}{env['PATH']}",
     }
-    result = subprocess.run(
-        [str(PREFLIGHT), "sh"], env=env, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run([str(PREFLIGHT), "sh"], env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"[stale-install-guard] ok: {python}" in result.stdout
 

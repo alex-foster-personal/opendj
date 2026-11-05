@@ -1,4 +1,4 @@
-import { pinStatus, type LifecyclePin, type PinStatus } from "./feedback";
+import { pinStatus, type LifecyclePin, type PinStatus } from './feedback';
 
 /**
  * The reply convention that marks a pin PARTIALLY fixed (pin 58a16ac781db,
@@ -41,15 +41,15 @@ const PARTIAL_NOTE_PREFIX = /^partial:/i;
 const REMAINING_WORK_REF = /(#\d+|https?:\/\/\S+)/;
 
 export function isPartialNote(note: string | null | undefined): boolean {
-  if (!note) return false;
-  const trimmed = note.trim();
-  return PARTIAL_NOTE_PREFIX.test(trimmed) && REMAINING_WORK_REF.test(trimmed);
+	if (!note) return false;
+	const trimmed = note.trim();
+	return PARTIAL_NOTE_PREFIX.test(trimmed) && REMAINING_WORK_REF.test(trimmed);
 }
 
 /** The four states a pin's MARKER can render as: every `PinStatus`, plus the
  * derived `partial` overlay. Never persisted - always recomputed from
  * `status` and `agent_note`. */
-export type PinVisualState = PinStatus | "partial";
+export type PinVisualState = PinStatus | 'partial';
 
 /**
  * What FeedbackPinMarkers should draw. Identical to `pinStatus()` except an
@@ -61,9 +61,9 @@ export type PinVisualState = PinStatus | "partial";
  * not regress an already-done pin's marker.
  */
 export function pinVisualState(pin: LifecyclePin): PinVisualState {
-  const status = pinStatus(pin);
-  if ((status === "open" || status === "issued") && isPartialNote(pin.agent_note)) {
-    return "partial";
-  }
-  return status;
+	const status = pinStatus(pin);
+	if ((status === 'open' || status === 'issued') && isPartialNote(pin.agent_note)) {
+		return 'partial';
+	}
+	return status;
 }

@@ -102,7 +102,12 @@ def _mb_fold(text: str) -> str:
 
 
 def _mb_base(text: str) -> str:
-    text = re.sub(r"\s*\b(?:feat\.?|ft\.?|featuring)\s.*$", "", re.sub(r"\s*[(\[][^)\]]*[)\]]", "", _MB_VERSION.sub("", text)), flags=re.I)
+    text = re.sub(
+        r"\s*\b(?:feat\.?|ft\.?|featuring)\s.*$",
+        "",
+        re.sub(r"\s*[(\[][^)\]]*[)\]]", "", _MB_VERSION.sub("", text)),
+        flags=re.I,
+    )
     return _mb_fold(text)
 
 
@@ -120,7 +125,11 @@ def _passes(case: dict[str, Any], verdict: Verdict) -> bool:
     if case["expected_status"] == "tags_only":
         return status != "unknown" and _scoped(case, verdict.tags) == _scoped(case, case["expected_tags"])
     if case["expected_status"] == "title_only":
-        return not case.get("mb_disputed") and status not in ("not_music", "unknown", "project") and _mb_agrees(case, title)
+        return (
+            not case.get("mb_disputed")
+            and status not in ("not_music", "unknown", "project")
+            and _mb_agrees(case, title)
+        )
     if case["expected_status"] == "not_project":
         return status not in ("project", "unknown")
     if case["expected_status"] in ("not_music", "project"):
@@ -151,7 +160,13 @@ def _auto_writes(case: dict[str, Any], track: Track, verdict: Verdict) -> bool:
 
 
 def _wrong_auto_apply(
-    case: dict[str, Any], artist: str, title: str, status: str, tags: tuple[str, ...] = (), *, auto_writes: bool = True,
+    case: dict[str, Any],
+    artist: str,
+    title: str,
+    status: str,
+    tags: tuple[str, ...] = (),
+    *,
+    auto_writes: bool = True,
 ) -> bool:
     """The costly failure: the pipeline would AUTOMATICALLY write something the label says is wrong."""
     if status not in AUTO_WRITE_STATUSES or not auto_writes:
@@ -214,7 +229,9 @@ def _refuse_to_overwrite_sheet_labels(sheet_id: str, rows: list[dict[str, Any]])
             )
         for col in LABEL_COLS:
             if cells.get(col, "") and cells[col] != str(local[col]):
-                raise SystemExit(f"[ERROR] sheet label {col} of {cells['id']} differs from this run; --pull first, nothing written")
+                raise SystemExit(
+                    f"[ERROR] sheet label {col} of {cells['id']} differs from this run; --pull first, nothing written"
+                )
 
 
 def pull_labels(sheet_id: str, *, cases_path: Path = CASES, candidate_path: Path = CANDIDATE) -> int:
@@ -273,7 +290,11 @@ def _fixture_sha256(path: Path) -> str:
 
 def write_manifest(sets_dir: Path, pin_file: Path) -> int:
     """Pin the version and sha256 of every fixture set in sets_dir. Returns the number pinned."""
-    pinned = {path.name: _fixture_sha256(path) for path in sorted(sets_dir.glob("*.json")) if path != pin_file and path.stem in SETS}
+    pinned = {
+        path.name: _fixture_sha256(path)
+        for path in sorted(sets_dir.glob("*.json"))
+        if path != pin_file and path.stem in SETS
+    }
     manifest = {"version": MANIFEST_VERSION, "sha256": pinned}
     pin_file.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8", newline="\n")
     return len(pinned)
@@ -283,17 +304,23 @@ def verify_fixture(path: Path, manifest_path: Path = MANIFEST) -> bytes:
     """Return the fixture's bytes only if the manifest pins them: unknown version, unpinned file or hash mismatch
     exits before anything is scored. The bytes returned are the bytes hashed, so a swap between check and use is moot."""
     if not manifest_path.is_file():
-        raise SystemExit(f"[ERROR] fixture manifest missing at {manifest_path}; run --rewrite-manifest after reviewing the fixtures")
+        raise SystemExit(
+            f"[ERROR] fixture manifest missing at {manifest_path}; run --rewrite-manifest after reviewing the fixtures"
+        )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("version") != MANIFEST_VERSION:
         raise SystemExit(f"[ERROR] fixture manifest version {manifest.get('version')!r} is not {MANIFEST_VERSION}")
     pinned = manifest["sha256"].get(path.name)
     if pinned is None:
-        raise SystemExit(f"[ERROR] {path.name} is not pinned in {manifest_path.name}; refusing to score an unpinned fixture")
+        raise SystemExit(
+            f"[ERROR] {path.name} is not pinned in {manifest_path.name}; refusing to score an unpinned fixture"
+        )
     raw = path.read_bytes()
     actual = hashlib.sha256(raw).hexdigest()
     if actual != pinned:
-        raise SystemExit(f"[ERROR] {path.name} sha256 {actual[:12]} != pinned {pinned[:12]}; refusing to score a changed fixture")
+        raise SystemExit(
+            f"[ERROR] {path.name} sha256 {actual[:12]} != pinned {pinned[:12]}; refusing to score a changed fixture"
+        )
     return raw
 
 
@@ -305,7 +332,9 @@ def _load_set(name: str, manifest_path: Path = MANIFEST) -> tuple[list[dict[str,
     owner alias list the set needs (exported as the per-user env var for that set only)."""
     path = FIXTURES / f"{name}.json"
     if not path.exists():
-        raise SystemExit(f"[ERROR] fixture set {name!r} not found at {path}; the owner-library sets are private (set MDT_TITLE_FIX_FIXTURES)")
+        raise SystemExit(
+            f"[ERROR] fixture set {name!r} not found at {path}; the owner-library sets are private (set MDT_TITLE_FIX_FIXTURES)"
+        )
     data = json.loads(verify_fixture(path, manifest_path).decode("utf-8"))
     if isinstance(data, list):
         return data, {}
@@ -342,7 +371,9 @@ def _regex_only_verdict(track: Track) -> Verdict:
 def _score_row(case: dict[str, Any], track: Track, verdict: Verdict) -> dict[str, Any]:
     passed = _passes(case, verdict)
     auto_writes = _auto_writes(case, track, verdict)
-    wrong = _wrong_auto_apply(case, verdict.artist, verdict.title, verdict.status, verdict.tags, auto_writes=auto_writes)
+    wrong = _wrong_auto_apply(
+        case, verdict.artist, verdict.title, verdict.status, verdict.tags, auto_writes=auto_writes
+    )
     tags = _scoped(case, verdict.tags)
     want_tags = case.get("expected_tags")
     row = verdict_row(track, verdict)
@@ -472,14 +503,24 @@ def main() -> int:
     parser.add_argument("--sheet", help="spreadsheet id to push results to")
     parser.add_argument("--csv", type=Path, help="also write the result rows to this CSV")
     parser.add_argument("--pull", help="spreadsheet id to pull labels from into a candidate file, then exit")
-    parser.add_argument("--rewrite-manifest", action="store_true", help="re-pin the fixture sha256 manifest after a reviewed change, then exit")
-    parser.add_argument("--accept-pulled", action="store_true", help="promote the reviewed pulled candidate to cases.json")
+    parser.add_argument(
+        "--rewrite-manifest",
+        action="store_true",
+        help="re-pin the fixture sha256 manifest after a reviewed change, then exit",
+    )
+    parser.add_argument(
+        "--accept-pulled", action="store_true", help="promote the reviewed pulled candidate to cases.json"
+    )
     args = parser.parse_args()
     if args.pull:
-        print(f"[OK] pulled {pull_labels(args.pull)} label edits into {CANDIDATE.name}; review the diff, then --accept-pulled")
+        print(
+            f"[OK] pulled {pull_labels(args.pull)} label edits into {CANDIDATE.name}; review the diff, then --accept-pulled"
+        )
         return 0
     if args.accept_pulled:
-        print(f"[OK] promoted {accept_and_repin(CASES, CANDIDATE, FIXTURES, MANIFEST)} label edits into {CASES.name} and re-pinned {MANIFEST.name}")
+        print(
+            f"[OK] promoted {accept_and_repin(CASES, CANDIDATE, FIXTURES, MANIFEST)} label edits into {CASES.name} and re-pinned {MANIFEST.name}"
+        )
         return 0
     if args.rewrite_manifest:
         print(f"[OK] pinned {write_manifest(FIXTURES, MANIFEST)} fixture sets in {MANIFEST.name}")

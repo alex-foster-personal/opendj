@@ -6,6 +6,7 @@
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -135,17 +136,11 @@ def test_process_alive_before_baseline_is_not_a_leak() -> None:
 
 def test_exempt_cmdline_matches_helpers_not_sleep_or_spawn_main() -> None:
     """[if] exempt strings or sleep/spawn_main are misclassified [then] broken, [else stop]."""
-    assert _exempt_cmdline(
-        ("python", "-c", "from multiprocessing.resource_tracker import main")
-    )
+    assert _exempt_cmdline(("python", "-c", "from multiprocessing.resource_tracker import main"))
     assert _exempt_cmdline(("python", "-c", "from multiprocessing.forkserver import main"))
-    assert _exempt_cmdline(
-        ("python", "-c", "import sys;exec(eval(sys.stdin.readline()))")
-    )
+    assert _exempt_cmdline(("python", "-c", "import sys;exec(eval(sys.stdin.readline()))"))
     assert not _exempt_cmdline(("sleep", "30"))
-    assert not _exempt_cmdline(
-        ("python", "-c", "from multiprocessing.spawn import spawn_main")
-    )
+    assert not _exempt_cmdline(("python", "-c", "from multiprocessing.spawn import spawn_main"))
 
 
 def test_zombie_child_is_not_reported() -> None:

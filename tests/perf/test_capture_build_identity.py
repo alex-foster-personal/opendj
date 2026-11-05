@@ -191,9 +191,9 @@ def _serve_engine(
     """
     health_body = json.dumps({"status": "ok"}).encode("utf-8")
     served_pid = pid if pid is not None else os.getpid()
-    build_info_body = json.dumps(
-        {"git_sha_full": git_sha_full, "git_dirty": git_dirty, "pid": served_pid}
-    ).encode("utf-8")
+    build_info_body = json.dumps({"git_sha_full": git_sha_full, "git_dirty": git_dirty, "pid": served_pid}).encode(
+        "utf-8"
+    )
 
     class _Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -240,9 +240,7 @@ def test_read_engine_pid_refuses_a_response_with_no_usable_pid() -> None:
         server.server_close()
 
 
-def _serve_frontend(
-    *, version: str | None, vite_dev: bool
-) -> tuple[http.server.ThreadingHTTPServer, str]:
+def _serve_frontend(*, version: str | None, vite_dev: bool) -> tuple[http.server.ThreadingHTTPServer, str]:
     """A real loopback server standing in for a frontend origin, with NO /api
     route at all -- unlike vite-dev, a static frontend server never proxies
     anything, so this stands in for the topology

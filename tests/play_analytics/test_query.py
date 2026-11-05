@@ -127,9 +127,7 @@ def test_query_supports_explicit_shared_state_event_table(analytics_db: Path) ->
         ),
     ],
 )
-def test_query_rejects_malformed_timestamps(
-    analytics_db: Path, sql: str, expected: str
-) -> None:
+def test_query_rejects_malformed_timestamps(analytics_db: Path, sql: str, expected: str) -> None:
     with sqlite3.connect(analytics_db) as connection:
         connection.execute(sql)
 

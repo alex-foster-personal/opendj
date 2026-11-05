@@ -4,13 +4,14 @@ The fingerprint compare is the strongest "same-audio-different-encoding"
 signal but it's expensive (~1 track/s on M2) and requires ``fpcalc`` +
 ``libchromaprint`` to be installed system-wide. Per Phase 2 CONTEXT D4 we:
 
-* Cache fingerprints in ``data/sync/fingerprints.sqlite`` keyed by absolute
+* Cache fingerprints in ``(private path)`` keyed by absolute
   path, and only re-fingerprint if the cached row is missing or stale.
 * Degrade silently (5-signal matching) when the native backend is absent.
   One :mod:`warnings` emission per process so logs stay clean.
 * Only invoke :func:`compare_pair` for candidates that scored < 3 signals
   on the cheap checks; :mod:`apps.sync.matcher` wires that up.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -65,10 +66,7 @@ class FingerprintCache:
             )"""
         )
         # Additive migration for pre-P02-F2 caches that lack mtime/size.
-        existing_cols = {
-            row[1]
-            for row in self._con.execute("PRAGMA table_info(fingerprints)").fetchall()
-        }
+        existing_cols = {row[1] for row in self._con.execute("PRAGMA table_info(fingerprints)").fetchall()}
         if "mtime" not in existing_cols:
             self._con.execute("ALTER TABLE fingerprints ADD COLUMN mtime REAL")
         if "size" not in existing_cols:
@@ -100,8 +98,7 @@ class FingerprintCache:
 
     def _lookup(self, path: str) -> tuple[float, str] | None:
         row = self._con.execute(
-            "SELECT duration, fingerprint, mtime, size "
-            "FROM fingerprints WHERE path = ?",
+            "SELECT duration, fingerprint, mtime, size FROM fingerprints WHERE path = ?",
             (path,),
         ).fetchone()
         if row is None:
@@ -114,9 +111,7 @@ class FingerprintCache:
         # basis for invalidation, keep entry.
         if current is not None and cached_mtime is not None and cached_size is not None:
             if current[0] != float(cached_mtime) or current[1] != int(cached_size):
-                self._con.execute(
-                    "DELETE FROM fingerprints WHERE path = ?", (path,)
-                )
+                self._con.execute("DELETE FROM fingerprints WHERE path = ?", (path,))
                 self._con.commit()
                 return None
         return float(duration or 0.0), fingerprint or ""
@@ -142,9 +137,7 @@ class FingerprintCache:
         )
         self._con.commit()
 
-    def get_or_compute(
-        self, audio_path: Path | None
-    ) -> tuple[float, str] | None:
+    def get_or_compute(self, audio_path: Path | None) -> tuple[float, str] | None:
         """Return ``(duration, fingerprint)`` for ``audio_path`` or ``None``.
 
         Cache hit returns the stored tuple (even if the fingerprint is an
@@ -205,18 +198,14 @@ class FingerprintCache:
         try:
             import acoustid
 
-            score = acoustid.compare_fingerprints(
-                (dur_a, str_a), (dur_b, str_b)
-            )
+            score = acoustid.compare_fingerprints((dur_a, str_a), (dur_b, str_b))
             return float(score)
         except Exception:
             return None
 
     # -- matcher integration ----------------------------------------------
 
-    def compare_pair_tracks(
-        self, rb: Any, dj: Any, *, threshold: float = DEFAULT_FP_THRESHOLD
-    ) -> Signal:
+    def compare_pair_tracks(self, rb: Any, dj: Any, *, threshold: float = DEFAULT_FP_THRESHOLD) -> Signal:
         """Return a ``chromaprint`` :class:`apps.sync.matcher.Signal`.
 
         Matches the signature expected by
@@ -257,8 +246,7 @@ def _warn_backend_missing() -> None:
         return
     _BACKEND_WARNED = True
     warnings.warn(
-        "chromaprint/fpcalc backend missing; matcher degrades to 5 signals. "
-        "Install with `brew install chromaprint`.",
+        "chromaprint/fpcalc backend missing; matcher degrades to 5 signals. Install with `brew install chromaprint`.",
         RuntimeWarning,
         stacklevel=2,
     )

@@ -55,30 +55,58 @@ test('an installed row offers update before enable or disable', () => {
 });
 
 test('pending changes say they apply at the next start, never now', () => {
-	assert.match(statusLine(row({ pending: 'enable', installed_version: '1.0.0' })), /next time Open DJ starts/);
-	assert.match(statusLine(row({ pending: 'disable', installed_version: '1.0.0' })), /Turns off next time/);
+	assert.match(
+		statusLine(row({ pending: 'enable', installed_version: '1.0.0' })),
+		/next time Open DJ starts/
+	);
+	assert.match(
+		statusLine(row({ pending: 'disable', installed_version: '1.0.0' })),
+		/Turns off next time/
+	);
 	assert.match(statusLine(row({ pending: 'disable' })), /Removed/);
 });
 
 test('a load failure shows its status and the server detail verbatim', () => {
-	const line = statusLine(row({ installed_version: '1.0.0', enabled: true, load_status: 'tampered', load_detail: 'x changed after install' }));
+	const line = statusLine(
+		row({
+			installed_version: '1.0.0',
+			enabled: true,
+			load_status: 'tampered',
+			load_detail: 'x changed after install'
+		})
+	);
 	assert.equal(line, 'Did not load (tampered): x changed after install');
-	assert.equal(statusLine(row({ installed_version: '1.0.0', enabled: true, load_status: 'loaded' })), 'Running');
+	assert.equal(
+		statusLine(row({ installed_version: '1.0.0', enabled: true, load_status: 'loaded' })),
+		'Running'
+	);
 });
 
 test('a data plugin nothing reads yet says so instead of Running', () => {
-	const line = statusLine(row({ kind: 'data', installed_version: '1.0.0', enabled: true, load_status: 'no-consumer' }));
+	const line = statusLine(
+		row({ kind: 'data', installed_version: '1.0.0', enabled: true, load_status: 'no-consumer' })
+	);
 	assert.equal(line, 'Installed - nothing in Open DJ uses this yet');
 });
 
 test('a store plugin held off for want of a verified catalog says how to recover', () => {
-	const line = statusLine(row({ installed_version: '1.0.0', enabled: true, load_status: 'no-catalog', load_detail: 'x' }));
-	assert.equal(line, 'Off until the store can be checked - refresh the store, then restart Open DJ');
+	const line = statusLine(
+		row({ installed_version: '1.0.0', enabled: true, load_status: 'no-catalog', load_detail: 'x' })
+	);
+	assert.equal(
+		line,
+		'Off until the store can be checked - refresh the store, then restart Open DJ'
+	);
 });
 
 test('badges mark labs, third-party terms and unsigned sideloads', () => {
 	assert.deepEqual(badges(row()), ['Open DJ']);
-	assert.deepEqual(badges(row({ channel: 'labs', tier: 2, source: 'sideload' })), ['Open DJ', 'Labs', 'Third-party terms', 'Unsigned']);
+	assert.deepEqual(badges(row({ channel: 'labs', tier: 2, source: 'sideload' })), [
+		'Open DJ',
+		'Labs',
+		'Third-party terms',
+		'Unsigned'
+	]);
 	assert.deepEqual(badges(row({ trust: 'third-party', kind: 'data' })), ['Community']);
 });
 
@@ -86,8 +114,14 @@ test('screenshots for the current skin come first, then neutral, then the other 
 	/** if a light-skin user's thumbnail is a dark screenshot while a light one exists then broken */
 	const shot = (url, theme) => ({ url, theme, width: 4, height: 3, alt: url });
 	const shots = [shot('d1', 'dark'), shot('a1', 'any'), shot('l1', 'light'), shot('d2', 'dark')];
-	assert.deepEqual(screenshotsFor(shots, 'light').map((s) => s.url), ['l1', 'a1', 'd1', 'd2']);
-	assert.deepEqual(screenshotsFor(shots, 'dark').map((s) => s.url), ['d1', 'd2', 'a1', 'l1']);
+	assert.deepEqual(
+		screenshotsFor(shots, 'light').map((s) => s.url),
+		['l1', 'a1', 'd1', 'd2']
+	);
+	assert.deepEqual(
+		screenshotsFor(shots, 'dark').map((s) => s.url),
+		['d1', 'd2', 'a1', 'l1']
+	);
 	assert.equal(shots[0].url, 'd1', 'the listing order itself is left alone');
 });
 
@@ -96,7 +130,10 @@ test('one image listed for both themes shows once, so gallery keys stay unique (
 	const shot = (url, theme) => ({ url, theme, width: 4, height: 3, alt: `${url} ${theme}` });
 	const shots = [shot('same', 'dark'), shot('same', 'light'), shot('other', 'any')];
 	const light = screenshotsFor(shots, 'light');
-	assert.deepEqual(light.map((s) => s.url), ['same', 'other']);
+	assert.deepEqual(
+		light.map((s) => s.url),
+		['same', 'other']
+	);
 	assert.equal(light[0].theme, 'light', 'the copy tagged for this theme is the one kept');
 	assert.equal(screenshotsFor(shots, 'dark')[0].theme, 'dark');
 });
@@ -110,7 +147,15 @@ test('only a non-stable listing status gets a badge', () => {
 });
 
 test('sideload is offered only for a previewed build, and with terms only once accepted (Codex on PR #6522)', () => {
-	const preview = { plugin_id: 'opendj.x', name: 'X', version: '1.0.0', channel: 'labs', permissions: [], notice: null, manifest_sha256: 'a'.repeat(64) };
+	const preview = {
+		plugin_id: 'opendj.x',
+		name: 'X',
+		version: '1.0.0',
+		channel: 'labs',
+		permissions: [],
+		notice: null,
+		manifest_sha256: 'a'.repeat(64)
+	};
 	assert.equal(canSideload(null, true), false, 'nothing previewed: nothing to consent to');
 	assert.equal(canSideload(preview, false), true, 'no terms to accept');
 	const withTerms = { ...preview, notice: 'Third-party terms.' };
@@ -146,8 +191,14 @@ test('hiding labs keeps installed labs modules and their Uninstall on the page',
 		{ plugin_id: 'opendj.on', installed_version: '1.0.0' },
 		{ plugin_id: 'opendj.off', installed_version: null }
 	];
-	assert.deepEqual(labsShown(rows, false).map((r) => r.plugin_id), ['opendj.on']);
-	assert.deepEqual(labsShown(rows, true).map((r) => r.plugin_id), ['opendj.on', 'opendj.off']); // control
+	assert.deepEqual(
+		labsShown(rows, false).map((r) => r.plugin_id),
+		['opendj.on']
+	);
+	assert.deepEqual(
+		labsShown(rows, true).map((r) => r.plugin_id),
+		['opendj.on', 'opendj.off']
+	); // control
 });
 
 test('the update confirmation says update and never promises a disabled module turns on', () => {

@@ -27,7 +27,13 @@ afterEach(() => {
 
 /** A Web Audio context whose beeps end at once; records every one it opens. */
 function beepingContext(opened) {
-	const param = () => ({ value: 0, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {} });
+	const param = () => ({
+		value: 0,
+		cancelScheduledValues() {},
+		setValueAtTime() {},
+		linearRampToValueAtTime() {},
+		setTargetAtTime() {}
+	});
 	return class {
 		state = 'running';
 		currentTime = 0;
@@ -65,7 +71,9 @@ test('an agent MAIN Test plays the beeps and answers with the device it used', a
 	const uninstall = entry.installPerformanceBrowserIpc();
 	try {
 		const result = await run({ type: 'io_device_test', bus: 'master' });
-		assert.deepEqual(result.steps, [{ status: 'succeeded', result: { bus: 'master', device_id: null } }]);
+		assert.deepEqual(result.steps, [
+			{ status: 'succeeded', result: { bus: 'master', device_id: null } }
+		]);
 		assert.equal(opened.length, 1, 'one short-lived test context');
 		assert.equal(opened[0].state, 'closed');
 	} finally {
@@ -128,9 +136,15 @@ test('agent Tests hold the headphone scope: a second waits for the first, then b
 		const first = run({ type: 'io_device_test', bus: 'master' });
 		await settle(() => release !== undefined);
 		let secondDone = false;
-		const second = run({ type: 'io_device_test', bus: 'master' }).then((r) => ((secondDone = true), r));
+		const second = run({ type: 'io_device_test', bus: 'master' }).then(
+			(r) => ((secondDone = true), r)
+		);
 		await settle(() => false);
-		assert.equal(opened.length, 1, 'the second Test has not opened audio while the first holds the scope');
+		assert.equal(
+			opened.length,
+			1,
+			'the second Test has not opened audio while the first holds the scope'
+		);
 		assert.equal(secondDone, false);
 		release();
 		assert.equal((await first).steps[0].status, 'succeeded');
@@ -170,7 +184,11 @@ test('a preset waits for an agent Test in flight, and a route torn down mid-Test
 		uninstall = () => {};
 		release();
 		const torn = await test2;
-		assert.equal(torn.steps[0].status, 'failed', 'a Test whose route tore down never answers as played');
+		assert.equal(
+			torn.steps[0].status,
+			'failed',
+			'a Test whose route tore down never answers as played'
+		);
 	} finally {
 		uninstall();
 	}
@@ -260,14 +278,17 @@ test('an agent AUDIO IN Test opens the picked microphone and answers with the le
 	entry.mixerState.headphones.selected_input_device_id = 'mic-under-test';
 	const asked = [];
 	try {
-		await withMicrophone({ open: (constraints, stream) => (asked.push(constraints), stream), raf: true }, async (stopped) => {
-			const result = await run({ type: 'io_device_test', bus: 'input' });
-			assert.equal(result.steps[0].status, 'succeeded', result.steps[0].error);
-			assert.equal(result.steps[0].result.input_device_id, 'mic-under-test');
-			assert.ok(Math.abs(result.steps[0].result.input_peak_rms - 0.25) < 1e-6);
-			assert.deepEqual(asked[0].audio.deviceId, { exact: 'mic-under-test' });
-			assert.deepEqual(stopped, ['track'], 'the microphone closes when the Test ends');
-		});
+		await withMicrophone(
+			{ open: (constraints, stream) => (asked.push(constraints), stream), raf: true },
+			async (stopped) => {
+				const result = await run({ type: 'io_device_test', bus: 'input' });
+				assert.equal(result.steps[0].status, 'succeeded', result.steps[0].error);
+				assert.equal(result.steps[0].result.input_device_id, 'mic-under-test');
+				assert.ok(Math.abs(result.steps[0].result.input_peak_rms - 0.25) < 1e-6);
+				assert.deepEqual(asked[0].audio.deviceId, { exact: 'mic-under-test' });
+				assert.deepEqual(stopped, ['track'], 'the microphone closes when the Test ends');
+			}
+		);
 	} finally {
 		uninstall();
 	}
@@ -280,12 +301,20 @@ test('an agent AUDIO IN Test fails when the microphone cannot open or no level i
 	const uninstall = entry.installPerformanceBrowserIpc();
 	entry.mixerState.headphones.selected_input_device_id = 'mic-under-test';
 	try {
-		await withMicrophone({ open: () => { throw new Error('NotFoundError: mic unplugged'); }, raf: true }, async () => {
-			const result = await run({ type: 'io_device_test', bus: 'input' });
-			assert.equal(result.steps[0].status, 'failed');
-			assert.match(result.steps[0].error, /mic unplugged/);
-			assert.equal(opened.length, 0, 'no beeps play for a microphone that did not open');
-		});
+		await withMicrophone(
+			{
+				open: () => {
+					throw new Error('NotFoundError: mic unplugged');
+				},
+				raf: true
+			},
+			async () => {
+				const result = await run({ type: 'io_device_test', bus: 'input' });
+				assert.equal(result.steps[0].status, 'failed');
+				assert.match(result.steps[0].error, /mic unplugged/);
+				assert.equal(opened.length, 0, 'no beeps play for a microphone that did not open');
+			}
+		);
 		await withMicrophone({ open: (_c, stream) => stream, raf: false }, async (stopped) => {
 			const result = await run({ type: 'io_device_test', bus: 'input' });
 			assert.equal(result.steps[0].status, 'failed');
@@ -307,7 +336,10 @@ test('an agent AUDIO IN Test fails when the microphone stops sending audio mid-T
 	globalThis.AudioContext = class extends Base {
 		createAnalyser() {
 			// One frame reads a level, then the device goes away.
-			return { fftSize: 256, getFloatTimeDomainData: (buf) => (buf.fill(0.25), (track.readyState = 'ended')) };
+			return {
+				fftSize: 256,
+				getFloatTimeDomainData: (buf) => (buf.fill(0.25), (track.readyState = 'ended'))
+			};
 		}
 	};
 	const uninstall = entry.installPerformanceBrowserIpc();
@@ -315,7 +347,11 @@ test('an agent AUDIO IN Test fails when the microphone stops sending audio mid-T
 	try {
 		await withMicrophone({ open: () => ({ getTracks: () => [track] }), raf: true }, async () => {
 			const result = await run({ type: 'io_device_test', bus: 'input' });
-			assert.equal(result.steps[0].status, 'failed', 'a level read before the microphone went away is no pass');
+			assert.equal(
+				result.steps[0].status,
+				'failed',
+				'a level read before the microphone went away is no pass'
+			);
 			assert.match(result.steps[0].error, /stopped sending audio/);
 		});
 	} finally {
@@ -332,7 +368,10 @@ test('a route torn down while an AUDIO IN Test waits on the mic prompt fails it 
 	let grant;
 	try {
 		await withMicrophone(
-			{ open: (_c, stream) => new Promise((resolve) => (grant = () => resolve(stream))), raf: true },
+			{
+				open: (_c, stream) => new Promise((resolve) => (grant = () => resolve(stream))),
+				raf: true
+			},
 			async (stopped) => {
 				const pending = run({ type: 'io_device_test', bus: 'input' });
 				await settle(() => grant !== undefined);
@@ -343,7 +382,10 @@ test('a route torn down while an AUDIO IN Test waits on the mic prompt fails it 
 				const torn = await pending;
 				assert.equal(torn.steps[0].status, 'failed');
 				assert.match(torn.steps[0].error, /performance view closed/);
-				assert.ok(Date.now() - startedAt < 1000, 'the open gave up at teardown, not at its 30 s bound');
+				assert.ok(
+					Date.now() - startedAt < 1000,
+					'the open gave up at teardown, not at its 30 s bound'
+				);
 				// The next mount's Test gets the headphone scope at once.
 				const next = await run({ type: 'io_device_test', bus: 'master' });
 				assert.equal(next.steps[0].status, 'succeeded', next.steps[0].error);
@@ -351,7 +393,11 @@ test('a route torn down while an AUDIO IN Test waits on the mic prompt fails it 
 				grant();
 				await settle(() => stopped.length > 0);
 				assert.deepEqual(stopped, ['track'], 'a grant landing after teardown is stopped');
-				assert.equal(opened.length, 1, 'no meter context opened for the late grant, only the next Test');
+				assert.equal(
+					opened.length,
+					1,
+					'no meter context opened for the late grant, only the next Test'
+				);
 			}
 		);
 	} finally {
@@ -401,7 +447,10 @@ test('an agent Test whose route remounts while its code loads fails and sounds n
 		uninstall = entry.installPerformanceBrowserIpc();
 		const result = await order;
 		assert.equal(result.steps[0].status, 'failed');
-		assert.match(result.steps[0].error ?? JSON.stringify(result.steps[0]), /changed before the Test sounded/);
+		assert.match(
+			result.steps[0].error ?? JSON.stringify(result.steps[0]),
+			/changed before the Test sounded/
+		);
 		assert.equal(opened.length, 0, 'nothing sounded on the replacement route');
 	} finally {
 		uninstall();
@@ -438,7 +487,11 @@ test('a Test started while a torn-down agent Test is still fading out is never c
 		uninstall = () => {};
 		const replacement = await entry.playIoTestBeeps('master', null);
 		assert.equal(replacement, true, 'the new Test played out, uncut by the stale one');
-		assert.equal((await stale).steps[0].status, 'failed', 'the torn-down Test still never answers as played');
+		assert.equal(
+			(await stale).steps[0].status,
+			'failed',
+			'the torn-down Test still never answers as played'
+		);
 	} finally {
 		uninstall();
 	}
@@ -461,7 +514,10 @@ test('an agent AUDIO IN Test resolves MAIN after the microphone opens, not befor
 	let grant;
 	try {
 		await withMicrophone(
-			{ open: (_c, stream) => new Promise((resolve) => (grant = () => resolve(stream))), raf: true },
+			{
+				open: (_c, stream) => new Promise((resolve) => (grant = () => resolve(stream))),
+				raf: true
+			},
 			async () => {
 				const pending = run({ type: 'io_device_test', bus: 'input' });
 				await settle(() => grant !== undefined);
@@ -471,8 +527,16 @@ test('an agent AUDIO IN Test resolves MAIN after the microphone opens, not befor
 				grant();
 				const result = await pending;
 				assert.equal(result.steps[0].status, 'succeeded', result.steps[0].error);
-				assert.equal(result.steps[0].result.device_id, 'room-b', 'it answers for the MAIN shown once the microphone opened');
-				assert.deepEqual(sinks, ['room-b'], 'and beeps there, never the MAIN it read before the prompt');
+				assert.equal(
+					result.steps[0].result.device_id,
+					'room-b',
+					'it answers for the MAIN shown once the microphone opened'
+				);
+				assert.deepEqual(
+					sinks,
+					['room-b'],
+					'and beeps there, never the MAIN it read before the prompt'
+				);
 			}
 		);
 	} finally {

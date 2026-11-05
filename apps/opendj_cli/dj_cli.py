@@ -45,6 +45,7 @@ from apps.opendj_cli import (
     EXIT_UNCONFIRMED,
     dj_pair_cli,
     dj_try_cli,
+    dj_why_cli,
 )
 from apps.opendj_cli.dj_service import AMEND_ACTIONS, DjError, DjService
 from apps.opendj_cli.origin import (
@@ -119,7 +120,7 @@ def _parser() -> _Parser:
     show.add_argument("--as", dest="view", choices=("score", "grid", "json"), default="score")
     set_plan = tools.add_parser("set-plan", help="plan a whole set: a transition for each neighbor pair")
     set_plan.add_argument("stable_ids", nargs="+", help="the running order")
-    set_plan.add_argument("--intent", help='free text, as for propose')
+    set_plan.add_argument("--intent", help="free text, as for propose")
     set_plan.add_argument("--first-deck", type=int)
     set_plan.add_argument("--name")
     set_next = tools.add_parser("set-next", help="perform the set's transition that is due now")
@@ -132,6 +133,10 @@ def _parser() -> _Parser:
         "pair-transition",
         help="the saved transition for two tracks; see opendj dj pair-transition --help",
         add_help=False,
+    )
+    tools.add_parser("why", help="why AutoPlay chose its last track; see opendj dj why --help", add_help=False)
+    tools.add_parser(
+        "verdict", help="good, meh or bad on the transition that ran; see opendj dj verdict --help", add_help=False
     )
     tools.add_parser("autoplay-decision", help="AutoPlay's next decision: its window, track and plan")
     tools.add_parser("autoplay-decide", help="have AutoPlay decide now rather than at its target")
@@ -213,7 +218,9 @@ def _call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
         raise AssertionError(f"{tool} is answered offline in run()")
     if tool in ("validate", "schedule"):
         plan = _read_plan(args.plan)
-        return (lambda service: service.validate(plan)) if tool == "validate" else (lambda service: service.schedule(plan))
+        return (
+            (lambda service: service.validate(plan)) if tool == "validate" else (lambda service: service.schedule(plan))
+        )
     return lambda service: service.amend(args.plan_id, args.action, args.bars)
 
 
@@ -253,12 +260,24 @@ def _show_set(planned: SetPlan, view: str) -> int:
         _emit(planned.to_json())
         return EXIT_CONFIRMED
     try:
-        text = print_set_score(planned) if view == "score" else "\n".join(render_grid(plan) for plan in planned.transitions)
+        text = (
+            print_set_score(planned)
+            if view == "score"
+            else "\n".join(render_grid(plan) for plan in planned.transitions)
+        )
     except ScoreError as error:
         _emit({"error": "plan_invalid", "message": str(error)})
         return _exit_for("plan_invalid")
     sys.stdout.write(text)
     return EXIT_CONFIRMED
+
+
+_OWN_PARSERS: dict[str, Callable[[Sequence[str], Path | None], int]] = {
+    "try": lambda rest, lock: dj_try_cli.run(rest[1:], lock=lock),
+    "pair-transition": lambda rest, lock: dj_pair_cli.run(rest[1:], lock=lock),
+    "why": lambda rest, lock: dj_why_cli.run(rest, lock=lock),
+    "verdict": lambda rest, lock: dj_why_cli.run(rest, lock=lock),
+}
 
 
 def run(
@@ -268,10 +287,9 @@ def run(
     service_factory: Callable[[Path | None], DjService] | None = None,
 ) -> int:
     """Run one ``opendj dj`` tool; ``service_factory`` is the tests' seam."""
-    if rest and rest[0] == "try":  # its own parser: options plus pick/undo actions
-        return dj_try_cli.run(rest[1:], lock=lock)
-    if rest and rest[0] == "pair-transition":
-        return dj_pair_cli.run(rest[1:], lock=lock)
+    # try, pair-transition, why and verdict have their own parsers (try: options plus pick/undo actions).
+    if rest and rest[0] in _OWN_PARSERS:
+        return _OWN_PARSERS[rest[0]](rest, lock)
     try:
         args = _parser().parse_args(list(rest))
         if args.tool == "show":

@@ -97,7 +97,9 @@ test('set notes pad: tap toggle, @ search, right-click link, save, deck load, co
 		.poll(async () => (await (await request.get('/api/v1/set-notes/scratch')).json()).body_md, {
 			timeout: 10_000
 		})
-		.toMatch(/^# Opener\n- start with \[@webkit-fixture-\u2026\]\(track:[^)]+\) then \*\*peak\*\* \[webkit\]\(track:[^)]+\)$/);
+		.toMatch(
+			/^# Opener\n- start with \[@webkit-fixture-\u2026\]\(track:[^)]+\) then \*\*peak\*\* \[webkit\]\(track:[^)]+\)$/
+		);
 	const saved = await (await request.get('/api/v1/set-notes/scratch')).json();
 	const stableId = /\[@[^\]]+\]\(track:([^)]+)\)/.exec(saved.body_md)![1];
 	const deckId = (deck: 1 | 2) =>
@@ -123,7 +125,9 @@ test('set notes pad: tap toggle, @ search, right-click link, save, deck load, co
 
 	// The digit typed above autosaves as its own rev; settle it before pinning the current rev.
 	await expect
-		.poll(async () => (await (await request.get('/api/v1/set-notes/scratch')).json()).rev, { timeout: 10_000 })
+		.poll(async () => (await (await request.get('/api/v1/set-notes/scratch')).json()).rev, {
+			timeout: 10_000
+		})
 		.toBeGreaterThan(saved.rev);
 	const settled = await (await request.get('/api/v1/set-notes/scratch')).json();
 
@@ -158,7 +162,9 @@ test('set notes pad: tap toggle, @ search, right-click link, save, deck load, co
 	await expect(chips.first()).toHaveText('Ghost');
 	await expect(chips.first()).toHaveClass(/sn-missing/);
 	await chips.first().hover();
-	await expect(page.getByTestId('set-notes-tip')).toHaveText('No track no-such-track in this library');
+	await expect(page.getByTestId('set-notes-tip')).toHaveText(
+		'No track no-such-track in this library'
+	);
 
 	// Shift-select across two songs: they are compared beside the pad, not in the note.
 	await expect(page.getByTestId('set-notes-compare')).toHaveCount(0);
@@ -192,7 +198,11 @@ test('set notes pad: tap toggle, @ search, right-click link, save, deck load, co
 		})
 		.toBe(true);
 	const after = await (await request.get('/api/v1/set-notes/scratch')).json();
-	expect({ x: after.x, w: after.w, rev: after.rev }).toEqual({ x: before.x, w: before.w, rev: before.rev });
+	expect({ x: after.x, w: after.w, rev: after.rev }).toEqual({
+		x: before.x,
+		w: before.w,
+		rev: before.rev
+	});
 	await page.keyboard.press('ControlRight');
 	await expect(pad(page)).toBeHidden();
 

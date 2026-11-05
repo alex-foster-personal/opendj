@@ -32,7 +32,14 @@ test('no Svelte file places {@const} directly under <td>', () => {
 // needs its own {#if row} wrapper.
 test('TrackTable cloudView {@const} sits directly under the row {#each}, never under <td>', () => {
 	const text = readFileSync(join(SRC, 'lib/components/rb/browser/TrackTable.svelte'), 'utf8');
-	assert.match(text, /\{#each visibleRows as row, i \([^\n]*\)\}\s*\{@const cloudView = trackCloudView\(/);
+	assert.match(
+		text,
+		/\{#each visibleRows as row, i \([^\n]*\)\}\s*\{@const cloudView = trackCloudView\(/
+	);
 	assert.doesNotMatch(text, /<td class="c-cloud">\s*\{@const cloudView/);
-	assert.match(text, /<td class="c-cloud">\s*\{#if cloudView\.showIcon\}/, 'the cloud cell must read the hoisted cloudView');
+	assert.match(
+		text,
+		/<td class="c-cloud">\s*\{#if cloudView\.showIcon\}/,
+		'the cloud cell must read the hoisted cloudView'
+	);
 });

@@ -176,9 +176,7 @@ def merged_note(existing: str | None, pr_number: int, sha: str | None) -> str:
 def _configured_bases(extra_urls: list[str]) -> list[str]:
     """Daemons the operator named (worktree dev port, explicit --url): a miss
     is a failure, not a skip."""
-    return [f"http://127.0.0.1:{port}" for port in _env_ports()] + [
-        u.rstrip("/") for u in extra_urls
-    ]
+    return [f"http://127.0.0.1:{port}" for port in _env_ports()] + [u.rstrip("/") for u in extra_urls]
 
 
 # ----- the shell around them ---------------------------------------------
@@ -202,9 +200,7 @@ def _gh_repo() -> str:
     return result.stdout.strip()
 
 
-def _mark_on_daemon(
-    daemon: Target, pr_number: int, refs: PinRefs, this_repo: str, dry_run: bool
-) -> int:
+def _mark_on_daemon(daemon: Target, pr_number: int, refs: PinRefs, this_repo: str, dry_run: bool) -> int:
     """Mark every pin this PR merged on ONE daemon. Returns how many it marked."""
     comments = daemon.request("GET", "/api/v1/feedback/comments")["comments"]
 
@@ -231,9 +227,7 @@ def _mark_on_daemon(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("pr_number", type=int, help="the MERGED pull request number")
-    parser.add_argument(
-        "--url", action="append", default=[], help="extra daemon, beside the auto-discovered ones"
-    )
+    parser.add_argument("--url", action="append", default=[], help="extra daemon, beside the auto-discovered ones")
     parser.add_argument("--skip-silver", action="store_true", help="do not reach silver via ssh")
     parser.add_argument("--body", help="read the PR body from this file instead of gh")
     parser.add_argument("--dry-run", action="store_true", help="print, patch nothing")
@@ -271,10 +265,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if failed or unreachable:
         n = len(failed) + len(unreachable)
-        print(
-            f"[ERROR] {n} daemon(s) unreachable or unreadable; "
-            f"re-run: just pin-merged {args.pr_number}"
-        )
+        print(f"[ERROR] {n} daemon(s) unreachable or unreadable; re-run: just pin-merged {args.pr_number}")
         return 1
     if not marked:
         print(f"[OK] PR #{args.pr_number} matched no open pin on any reachable daemon")

@@ -2,6 +2,7 @@
 
 [if] a set note is read or written over HTTP [then] 404/rev/409/422 hold, [else stop].
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -39,8 +40,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 def _put(client: TestClient, scope: str, base_rev: int, body: str = "# Set"):
     return client.put(
         f"/api/v1/set-notes/{scope}",
-        json={"body_md": body, "x": 10, "y": 20, "w": 300, "h": 200,
-              "visible": True, "base_rev": base_rev},
+        json={"body_md": body, "x": 10, "y": 20, "w": 300, "h": 200, "visible": True, "base_rev": base_rev},
     )
 
 

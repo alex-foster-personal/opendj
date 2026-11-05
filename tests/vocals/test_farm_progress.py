@@ -13,6 +13,7 @@ Single-line intent, in the repo's regression style:
   - if a bounded queue stops applying backpressure then a slow uplink becomes an OOM
   - if the bifrost2 dir parsers mis-read sizes then the archive verify is meaningless
 """
+
 from __future__ import annotations
 
 import time
@@ -36,40 +37,64 @@ L4_USD_PER_S = 0.80 / 3600
 def _run_events(tracks: int = 6) -> list[dict]:
     """A whole synthetic run: one gpu failure, one stems failure, rest clean."""
     events: list[dict] = [
-        {"event": "run_start", "ts": 0.0, "run_id": "t", "tracks": tracks,
-         "preset": "htdemucs-ov0.1", "dest": "r2", "max_containers": 10,
-         "source_bytes": tracks * 9_000_000},
+        {
+            "event": "run_start",
+            "ts": 0.0,
+            "run_id": "t",
+            "tracks": tracks,
+            "preset": "htdemucs-ov0.1",
+            "dest": "r2",
+            "max_containers": 10,
+            "source_bytes": tracks * 9_000_000,
+        },
     ]
     clock = 0.0
     for index in range(tracks):
         stable_id = f"trk{index}"
         clock += 1.0
-        events.append({"event": "feed_stall", "ts": clock, "stable_id": stable_id,
-                       "bytes": 9_000_000, "s": 0.3})
+        events.append({"event": "feed_stall", "ts": clock, "stable_id": stable_id, "bytes": 9_000_000, "s": 0.3})
         if index == 1:
-            events.append({"event": "failed", "ts": clock, "stable_id": stable_id,
-                           "stage": "gpu", "error": "ffprobe blew up"})
+            events.append(
+                {"event": "failed", "ts": clock, "stable_id": stable_id, "stage": "gpu", "error": "ffprobe blew up"}
+            )
             continue
-        events.append({"event": "gpu", "ts": clock, "stable_id": stable_id,
-                       "separate_s": 20.0, "container_s": 30.0,
-                       "coverage_pct": 50.0, "regions": 12})
-        events.append({"event": "stems_queued", "ts": clock,
-                       "stable_id": stable_id, "bytes": 74_000_000})
+        events.append(
+            {
+                "event": "gpu",
+                "ts": clock,
+                "stable_id": stable_id,
+                "separate_s": 20.0,
+                "container_s": 30.0,
+                "coverage_pct": 50.0,
+                "regions": 12,
+            }
+        )
+        events.append({"event": "stems_queued", "ts": clock, "stable_id": stable_id, "bytes": 74_000_000})
         if index == 3:
-            events.append({"event": "failed", "ts": clock, "stable_id": stable_id,
-                           "stage": "stems", "error": "503 SlowDown"})
+            events.append(
+                {"event": "failed", "ts": clock, "stable_id": stable_id, "stage": "stems", "error": "503 SlowDown"}
+            )
             continue
-        events.append({"event": "stems", "ts": clock, "stable_id": stable_id,
-                       "bytes": 74_000_000, "s": 1.0, "dest": "r2"})
-        events.append({"event": "written", "ts": clock, "stable_id": stable_id,
-                       "regions": 12})
-    events.append({"event": "run_end", "ts": clock, "written": tracks - 2,
-                   "failed": 2, "wall_s": clock, "container_s": 30.0 * (tracks - 1),
-                   "usd": 0.1})
+        events.append(
+            {"event": "stems", "ts": clock, "stable_id": stable_id, "bytes": 74_000_000, "s": 1.0, "dest": "r2"}
+        )
+        events.append({"event": "written", "ts": clock, "stable_id": stable_id, "regions": 12})
+    events.append(
+        {
+            "event": "run_end",
+            "ts": clock,
+            "written": tracks - 2,
+            "failed": 2,
+            "wall_s": clock,
+            "container_s": 30.0 * (tracks - 1),
+            "usd": 0.1,
+        }
+    )
     return events
 
 
 # ----- stream contract --------------------------------------------------------
+
 
 def test_unknown_event_is_rejected_on_emit(tmp_path: Path) -> None:
     log = ProgressLog(tmp_path / "run.jsonl", "run")
@@ -117,6 +142,7 @@ def test_concurrent_emitters_do_not_interleave(tmp_path: Path) -> None:
 
 
 # ----- reducer arithmetic -----------------------------------------------------
+
 
 def test_in_flight_settles_to_zero_after_a_complete_run() -> None:
     state = reduce_events(_run_events())
@@ -181,6 +207,7 @@ def test_every_event_the_farm_emits_is_a_known_type() -> None:
 
 # ----- the async claim --------------------------------------------------------
 
+
 class _SlowFakeStore:
     """Stands in for bifrost2 at a fixed, known transfer cost."""
 
@@ -208,8 +235,8 @@ def test_publish_queue_overlaps_transfer_with_the_result_loop(
     import scripts.modal_vocal_farm as farm
 
     tracks = 6
-    gpu_gap = 0.10      # time between results arriving from Modal
-    transfer = 0.10     # time one bundle takes to push
+    gpu_gap = 0.10  # time between results arriving from Modal
+    transfer = 0.10  # time one bundle takes to push
     workers = 2
 
     pushed: list[str] = []
@@ -231,7 +258,7 @@ def test_publish_queue_overlaps_transfer_with_the_result_loop(
     queue.drain()
     elapsed = time.perf_counter() - started
 
-    serial = tracks * (gpu_gap + transfer)   # 1.20s, the old inline shape
+    serial = tracks * (gpu_gap + transfer)  # 1.20s, the old inline shape
     assert len(pushed) == tracks
     assert elapsed < serial * 0.85, (
         f"queued publishing took {elapsed:.2f}s; the inline shape it replaces "
@@ -282,8 +309,7 @@ def test_publish_queue_is_bounded_so_ram_cannot_run_away(
     submit_elapsed = time.perf_counter() - started
     queue.drain()
     assert submit_elapsed > release, (
-        "submitting 4 bundles into a depth-1 queue returned instantly, so the "
-        "queue is not applying backpressure"
+        "submitting 4 bundles into a depth-1 queue returned instantly, so the queue is not applying backpressure"
     )
 
 

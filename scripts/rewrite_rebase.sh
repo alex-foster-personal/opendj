@@ -21,8 +21,12 @@
 #      the diff is not a re-point, it is a different change.
 set -euo pipefail
 
-branch="${1:?branch}"; map="${2:?commit-map path}"
-[[ -f "$map" ]] || { echo "[ERROR] commit-map not found: $map" >&2; exit 2; }
+branch="${1:?branch}"
+map="${2:?commit-map path}"
+[[ -f "$map" ]] || {
+    echo "[ERROR] commit-map not found: $map" >&2
+    exit 2
+}
 
 # Paths removed by the rewrite. Keep in step with issue #911 step 3.
 EXCISED_RE='^(\.planning/bifrost2-handoff/|tests/fixtures/rekordbox/|tests/fixtures/rb-usb-export/|tests/fixtures/rb-usb-export-onetera-20260805/|docs/controller/reference/|docs/threads/|handoffs/|\.planning/(MAINTAINER-QUEUE\.md|MERGE-QUEUE\.md|todos/|strategy-brain/|seeds/)|tools/deck-diagrams/devices/[^/]+/(source/|midi-list-page-))'
@@ -37,17 +41,24 @@ map_new() { awk -v o="$1" '$1==o{print $2; exit}' "$map"; }
 # mapped ancestor was one of those.
 old_base=""
 while read -r sha; do
-  new="$(map_new "$sha")"
-  if [[ -n "$new" && "$new" != 0000000000000000000000000000000000000000 ]]; then old_base="$sha"; break; fi
+    new="$(map_new "$sha")"
+    if [[ -n "$new" && "$new" != 0000000000000000000000000000000000000000 ]]; then
+        old_base="$sha"
+        break
+    fi
 done < <(git rev-list --first-parent "$branch" | head -500)
-[[ -n "$old_base" ]] || { echo "[ERROR] no ancestor of $branch is in the commit-map; is this branch already rewritten?" >&2; exit 2; }
+[[ -n "$old_base" ]] || {
+    echo "[ERROR] no ancestor of $branch is in the commit-map; is this branch already rewritten?" >&2
+    exit 2
+}
 new_base="$(map_new "$old_base")"
 
 # 2. refuse branches that touch excised paths.
 touched="$(git diff --name-only "$old_base" "$branch" | grep -E "$EXCISED_RE" || true)"
 if [[ -n "$touched" ]]; then
-  echo "[ERROR] $branch modifies excised paths; run filter-repo on it, do not rebase:" >&2
-  echo "$touched" | sed 's/^/    /' >&2; exit 3
+    echo "[ERROR] $branch modifies excised paths; run filter-repo on it, do not rebase:" >&2
+    echo "$touched" | sed 's/^/    /' >&2
+    exit 3
 fi
 
 # 3. the re-point, with the pre-image kept for the proof.
@@ -58,6 +69,7 @@ git rebase --quiet --onto "$new_base" "$old_base" "$branch"
 # 4. proof: identical patch against the new base.
 after="$(git diff "$new_base" "$branch" | git hash-object --stdin)"
 if [[ "$before" != "$after" ]]; then
-  echo "[ERROR] patch changed during rebase ($before -> $after); inspect before pushing" >&2; exit 4
+    echo "[ERROR] patch changed during rebase ($before -> $after); inspect before pushing" >&2
+    exit 4
 fi
 echo "[OK] $branch re-pointed; patch byte-identical (blob $before). Push with: git push --force-with-lease origin $branch"

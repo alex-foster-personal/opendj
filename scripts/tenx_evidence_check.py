@@ -83,11 +83,7 @@ def check(title: str, body: str) -> Verdict:
     if evidence is None:
         problems.append("missing '## 10x Evidence' section")
     elif evidence is not None:
-        problems.extend(
-            f"10x Evidence has no '{key}:' line"
-            for key in EVIDENCE_KEYS
-            if _field(evidence, key) is None
-        )
+        problems.extend(f"10x Evidence has no '{key}:' line" for key in EVIDENCE_KEYS if _field(evidence, key) is None)
         ratio_text = _field(evidence, "Ratio")
         ratio = _ratio(ratio_text) if ratio_text else None
         if ratio_text and ratio is None:
@@ -100,11 +96,7 @@ def check(title: str, body: str) -> Verdict:
     elif workings is not None:
         if _field(workings, "Card") is None:
             problems.append("10x Workings has no 'Card:' line linking the hunt card")
-        lines = [
-            ln
-            for ln in workings.splitlines()
-            if ln.strip() and not re.match(r"^\s*[-*]?\s*\**Card\**\s*:", ln)
-        ]
+        lines = [ln for ln in workings.splitlines() if ln.strip() and not re.match(r"^\s*[-*]?\s*\**Card\**\s*:", ln)]
         if not lines:
             problems.append("10x Workings shows no working beyond the card link")
     return Verdict(not problems, problems)

@@ -43,9 +43,7 @@ ROWS: dict[str, dict[str, float]] = {
 def build(staged: Path) -> list[dict]:
     """Stage a loudness bundle-shaped fixture set and return its fixture rows."""
     staged.mkdir(parents=True, exist_ok=True)
-    (staged / "loudness-truth.json").write_text(
-        json.dumps({"schema": 1, "loudness": ROWS}, indent=1), encoding="utf-8"
-    )
+    (staged / "loudness-truth.json").write_text(json.dumps({"schema": 1, "loudness": ROWS}, indent=1), encoding="utf-8")
     return [{"stable_id": stable_id} for stable_id in ROWS]
 
 
@@ -56,13 +54,8 @@ def manifest_extra(fixtures: list[dict]) -> dict:
         "reads": {
             "truth": "loudness-truth.json",
             "checksums": "SHA256SUMS",
-            "scorer": (
-                "apps/analysis_bench/scorers/loudness_lane.py "
-                "(version stamped in every artifact)"
-            ),
+            "scorer": ("apps/analysis_bench/scorers/loudness_lane.py (version stamped in every artifact)"),
         },
-        "synthetic": (
-            "hand-built LUFS/dBTP pairs, NOT a substitute for a real pyloudnorm corpus"
-        ),
+        "synthetic": ("hand-built LUFS/dBTP pairs, NOT a substitute for a real pyloudnorm corpus"),
         "fixtures": fixtures,
     }

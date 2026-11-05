@@ -63,20 +63,20 @@ sandboxed_jit_probe_identity() {
         return 0
     fi
     case "$payload_identity" in
-    "Apple Distribution:"* | "3rd Party Mac Developer Application:"* | "Mac App Distribution:"*)
-        identities="$(security find-identity -v -p codesigning 2>/dev/null)" || identities=""
-        # -m1 rather than `| head -1`: under pipefail an early head exit can
-        # SIGPIPE grep and turn a match into a failed pipeline.
-        dev="$(grep -m1 -oE '"(Apple Development|Mac Developer): [^"]*"' <<<"$identities" | tr -d '"')" || dev=""
-        if [ -n "$dev" ]; then
-            printf '%s\t%s\n' "$dev" "an Apple Development identity from the keychain, because '$payload_identity' is a store distribution identity and distribution-signed code can refuse to launch locally"
-        else
-            printf -- '-\t%s\n' "ad-hoc, because '$payload_identity' is a store distribution identity and the keychain holds no Apple Development identity"
-        fi
-        ;;
-    *)
-        printf '%s\t%s\n' "$payload_identity" "the payload's own identity, which is not a store distribution identity and runs locally"
-        ;;
+        "Apple Distribution:"* | "3rd Party Mac Developer Application:"* | "Mac App Distribution:"*)
+            identities="$(security find-identity -v -p codesigning 2>/dev/null)" || identities=""
+            # -m1 rather than `| head -1`: under pipefail an early head exit can
+            # SIGPIPE grep and turn a match into a failed pipeline.
+            dev="$(grep -m1 -oE '"(Apple Development|Mac Developer): [^"]*"' <<<"$identities" | tr -d '"')" || dev=""
+            if [ -n "$dev" ]; then
+                printf '%s\t%s\n' "$dev" "an Apple Development identity from the keychain, because '$payload_identity' is a store distribution identity and distribution-signed code can refuse to launch locally"
+            else
+                printf -- '-\t%s\n' "ad-hoc, because '$payload_identity' is a store distribution identity and the keychain holds no Apple Development identity"
+            fi
+            ;;
+        *)
+            printf '%s\t%s\n' "$payload_identity" "the payload's own identity, which is not a store distribution identity and runs locally"
+            ;;
     esac
 }
 
@@ -86,17 +86,32 @@ sandboxed_jit_probe_identity() {
 prove_sandboxed_engine_can_jit() {
     local payload="$1" payload_identity="$2" entitlements="$3" inherit_entitlements="$4" workdir="$5"
     local probe="$workdir/JitProbe.app" out rc=0 key identity why resolved
-    [ -x "$payload/runtime/bin/python3" ] || { echo "[ERROR] no interpreter at $payload/runtime/bin/python3" >&2; return 1; }
-    [ -f "$entitlements" ] || { echo "[ERROR] no app entitlements at $entitlements" >&2; return 1; }
-    [ -f "$inherit_entitlements" ] || { echo "[ERROR] no inherit entitlements at $inherit_entitlements" >&2; return 1; }
+    [ -x "$payload/runtime/bin/python3" ] || {
+        echo "[ERROR] no interpreter at $payload/runtime/bin/python3" >&2
+        return 1
+    }
+    [ -f "$entitlements" ] || {
+        echo "[ERROR] no app entitlements at $entitlements" >&2
+        return 1
+    }
+    [ -f "$inherit_entitlements" ] || {
+        echo "[ERROR] no inherit entitlements at $inherit_entitlements" >&2
+        return 1
+    }
     resolved="$(sandboxed_jit_probe_identity "$payload_identity")"
     identity="${resolved%%$'\t'*}"
     why="${resolved#*$'\t'}"
-    [ -n "$identity" ] || { echo "[ERROR] no identity resolved for the JIT probe (payload signed as '$payload_identity')" >&2; return 1; }
+    [ -n "$identity" ] || {
+        echo "[ERROR] no identity resolved for the JIT probe (payload signed as '$payload_identity')" >&2
+        return 1
+    }
     echo "[OK]      JIT probe signs as '$identity': $why"
     rm -rf "$probe"
     mkdir -p "$probe/Contents/MacOS" "$probe/Contents/Resources"
-    clang -O2 -o "$probe/Contents/MacOS/jitprobe" "$SANDBOXED_JIT_PROBE_SOURCE" || { echo "[ERROR] could not compile $SANDBOXED_JIT_PROBE_SOURCE" >&2; return 1; }
+    clang -O2 -o "$probe/Contents/MacOS/jitprobe" "$SANDBOXED_JIT_PROBE_SOURCE" || {
+        echo "[ERROR] could not compile $SANDBOXED_JIT_PROBE_SOURCE" >&2
+        return 1
+    }
     /usr/bin/plutil -create xml1 "$probe/Contents/Info.plist"
     /usr/bin/plutil -insert CFBundleIdentifier -string com.opendj.jitprobe "$probe/Contents/Info.plist"
     /usr/bin/plutil -insert CFBundleExecutable -string jitprobe "$probe/Contents/Info.plist"
@@ -110,11 +125,14 @@ prove_sandboxed_engine_can_jit() {
         # carries the store payload's signing shape under an identity that
         # launches. Copy-on-write: the shipped payload is untouched.
         macho_files "$probe/Contents/Resources/payload" | xargs -0 -n 1 \
-            codesign --force --sign "$identity" --entitlements "$inherit_entitlements" \
-            || { echo "[ERROR] could not re-sign the payload clone as '$identity'" >&2; return 1; }
+            codesign --force --sign "$identity" --entitlements "$inherit_entitlements" ||
+            {
+                echo "[ERROR] could not re-sign the payload clone as '$identity'" >&2
+                return 1
+            }
         echo "[OK]      re-signed the payload clone as '$identity' (the shipped payload keeps its '$payload_identity' signatures)"
     fi
-    cat > "$probe/Contents/Resources/jitprobe.sh" <<'PROBE'
+    cat >"$probe/Contents/Resources/jitprobe.sh" <<'PROBE'
 #!/bin/sh
 set -eu
 payload="$(cd "$(dirname "$0")" && pwd)/payload"
@@ -127,7 +145,10 @@ PROBE
     cp "$entitlements" "$probe_entitlements"
     for key in "${SANDBOXED_JIT_PROFILE_KEYS[@]}"; do
         if /usr/libexec/PlistBuddy -c "Print :$key" "$probe_entitlements" >/dev/null 2>&1; then
-            /usr/libexec/PlistBuddy -c "Delete :$key" "$probe_entitlements" >/dev/null || { echo "[ERROR] could not drop $key from the probe entitlements" >&2; return 1; }
+            /usr/libexec/PlistBuddy -c "Delete :$key" "$probe_entitlements" >/dev/null || {
+                echo "[ERROR] could not drop $key from the probe entitlements" >&2
+                return 1
+            }
         fi
     done
     local sandbox_value
@@ -137,7 +158,10 @@ PROBE
         return 1
     }
     codesign --force --options runtime --sign "$identity" \
-        --entitlements "$probe_entitlements" "$probe" || { echo "[ERROR] could not sign the probe parent" >&2; return 1; }
+        --entitlements "$probe_entitlements" "$probe" || {
+        echo "[ERROR] could not sign the probe parent" >&2
+        return 1
+    }
     out=$(env -i HOME="$HOME" PATH=/usr/bin:/bin "$probe/Contents/MacOS/jitprobe" 2>&1) || rc=$?
     rm -rf "$probe"
     sandboxed_jit_verdict "$out" "$rc"

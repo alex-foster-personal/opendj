@@ -7,9 +7,9 @@
  * dir and the overlay never comes back. That was the whole story, so there was
  * NO way back into setup from inside a running app. This module is the way
  * back, and it is deliberately one module rather than one copy per entry
- * point: the Cmd+, settings overlay, the /admin Setup tab and the /settings
- * page all call `runSetup`, so three buttons cannot drift into three
- * different behaviours.
+ * point: the Cmd+, settings overlay, the /admin Setup tab, the /settings
+ * page and the Library workspace top bar all call `runSetup`, so four buttons
+ * cannot drift into four different behaviours.
  *
  * WHY RE-ARM RATHER THAN JUST NAVIGATE. The dismissal lives engine-side (in
  * the data directory), not in this tab. Navigating to /setup without clearing
@@ -72,6 +72,13 @@ export const RUN_SETUP_LABEL = 'Run setup';
 
 /** Primary boot-gate CTA for empty libraries (issue #2722). */
 export const IMPORT_MUSIC_LABEL = 'Import your music';
+
+/** Library workspace top bar (issue #2457 / FLOW-15). */
+export const ADD_MUSIC_LABEL = 'Add music';
+
+/** Hover for the Library chrome door; no route jargon. */
+export const ADD_MUSIC_TITLE =
+	'Open the library import wizard. Clears a previous skip so you can import again.';
 
 /**
  * The hover explanation, per the house rule that a control says what it does

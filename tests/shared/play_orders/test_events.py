@@ -1,4 +1,5 @@
 """Tests for apps.shared.play_orders.events (PLAY-01 wire to Phase 5)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,10 +32,7 @@ def test_emit_writes_to_phase5_events_table(tmp_path: Path) -> None:
     finally:
         po_events.set_event_bus(None)
 
-    rows = conn.execute(
-        "SELECT kind, actor, payload_json FROM events "
-        "WHERE kind = 'play_order_changed'"
-    ).fetchall()
+    rows = conn.execute("SELECT kind, actor, payload_json FROM events WHERE kind = 'play_order_changed'").fetchall()
     conn.close()
 
     assert len(rows) == 1
@@ -42,6 +40,7 @@ def test_emit_writes_to_phase5_events_table(tmp_path: Path) -> None:
     assert rows[0][1] == "play_orders"
     # payload_json is a deterministic JSON string we can parse + compare.
     import json as _json
+
     assert _json.loads(rows[0][2]) == {
         "action": "created",
         "name": "PLAY IT",
@@ -80,6 +79,7 @@ def test_emit_is_best_effort_when_events_table_missing(tmp_path: Path) -> None:
     """Caller that opens a bare sqlite3 file without Phase 5 migrations
     should not see the call raise."""
     import sqlite3
+
     conn = sqlite3.connect(str(tmp_path / "bare.db"))
     try:
         # No 'events' table -- expected drop + one-time log.

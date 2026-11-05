@@ -7,6 +7,7 @@ Covers:
       - rail 2 (timestamped backup)
       - rail 4 (post-write verify via ``_verify_rb_field``)
 """
+
 from __future__ import annotations
 
 import csv
@@ -188,19 +189,28 @@ class TestVerifyRBField:
     def test_bpm_mismatch(self) -> None:
         row = _FakeContent("5", bpm=12000)
         assert not _verify_rb_field(
-            _FakeRBDB({"5": row}), "5", "bpm", 128.0,
+            _FakeRBDB({"5": row}),
+            "5",
+            "bpm",
+            128.0,
         )
 
     def test_color_label_is_not_a_synced_field(self) -> None:
         row = _FakeContent("5", color_id=3)
         assert not _verify_rb_field(
-            _FakeRBDB({"5": row}), "5", "color_index", 3,
+            _FakeRBDB({"5": row}),
+            "5",
+            "color_index",
+            3,
         )
 
     def test_unknown_field_returns_false(self) -> None:
         row = _FakeContent("5")
         assert not _verify_rb_field(
-            _FakeRBDB({"5": row}), "5", "tags", "x",
+            _FakeRBDB({"5": row}),
+            "5",
+            "tags",
+            "x",
         )
 
     def test_missing_row_returns_false(self) -> None:
@@ -225,7 +235,9 @@ class TestAnalysisLiveRBRails:
         ]
 
     def test_pgrep_aborts(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb")
@@ -251,14 +263,17 @@ class TestAnalysisLiveRBRails:
             )
 
     def test_backup_created(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb-original")
         djay_db = tmp_path / "ml.db"
         djay_db.write_bytes(b"dj")
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _n: False,
+            "apps.sync.safety._is_running",
+            lambda _n: False,
         )
         monkeypatch.setattr(
             "apps.shared.rekordbox_db.open_db",
@@ -277,19 +292,23 @@ class TestAnalysisLiveRBRails:
         assert list(rb_db.parent.glob("master.db.bak.*"))
 
     def test_verify_fail_aborts(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb")
         djay_db = tmp_path / "ml.db"
         djay_db.write_bytes(b"dj")
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _n: False,
+            "apps.sync.safety._is_running",
+            lambda _n: False,
         )
         row = _FakeContent("5", bpm=0)
         db = _FakeRBDB({"5": row})
         monkeypatch.setattr(
-            "apps.shared.rekordbox_db.open_db", lambda _p: db,
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: db,
         )
         # Force the writer to report success while the row stays unchanged.
         monkeypatch.setattr(
@@ -326,35 +345,29 @@ class TestLiveDbPathHelpers:
         fixtures = {
             name: tmp_path / f"{name.lower()}.db"
             for name in (
-                "REKORDBOX_LIVE_DB", "REKORDBOX_WORKING_DB",
-                "DJAY_LIVE_DB", "DJAY_WORKING_DB",
+                "REKORDBOX_LIVE_DB",
+                "REKORDBOX_WORKING_DB",
+                "DJAY_LIVE_DB",
+                "DJAY_WORKING_DB",
             )
         }
         for name, target in fixtures.items():
             monkeypatch.setattr(paths, name, target)
         return fixtures
 
-    def test_rb_live_flag_returns_live_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rb_live_flag_returns_live_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_rb_db_path(True) == fixtures["REKORDBOX_LIVE_DB"]
 
-    def test_rb_default_returns_working_copy(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rb_default_returns_working_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_rb_db_path(False) == fixtures["REKORDBOX_WORKING_DB"]
 
-    def test_djay_live_flag_returns_live_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_djay_live_flag_returns_live_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_djay_db_path(True) == fixtures["DJAY_LIVE_DB"]
 
-    def test_djay_default_returns_working_copy(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_djay_default_returns_working_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fixtures = self._redirect(monkeypatch, tmp_path)
         assert _live_djay_db_path(False) == fixtures["DJAY_WORKING_DB"]
 
@@ -366,7 +379,9 @@ class TestMainLiveRoutesToLiveDbPaths:
     """
 
     def test_main_live_routes_to_live_db_paths(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         fake_rb_live = tmp_path / "fake_rb_live.db"
         fake_rb_live.write_bytes(b"rb-live")
@@ -384,7 +399,8 @@ class TestMainLiveRoutesToLiveDbPaths:
             return 0
 
         monkeypatch.setattr(
-            "apps.sync.apply_analysis.live_run", _fake_live_run,
+            "apps.sync.apply_analysis.live_run",
+            _fake_live_run,
         )
 
         path = _make_diff(
@@ -403,7 +419,8 @@ class TestMainLiveRoutesToLiveDbPaths:
         )
         rc = main(
             [
-                "--diff-csv", str(path),
+                "--diff-csv",
+                str(path),
                 "--live",
                 "--i-understand-the-risks",
             ]
@@ -473,20 +490,15 @@ class TestWritebackDryRun:
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
 
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12000, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12000, 'k1')")
         rb_conn.commit()
         rb_conn.close()
 
@@ -509,29 +521,29 @@ class TestWritebackDryRun:
         )
         monkeypatch.setattr(
             "apps.sync.apply_analysis._run_writeback_live",
-            lambda **_k: (_ for _ in ()).throw(
-                AssertionError("_run_writeback_live called")
-            ),
+            lambda **_k: (_ for _ in ()).throw(AssertionError("_run_writeback_live called")),
         )
         monkeypatch.setattr(
             "apps.shared.paths.copy_live_dbs",
-            lambda *_a, **_k: (_ for _ in ()).throw(
-                AssertionError("copy_live_dbs called")
-            ),
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("copy_live_dbs called")),
         )
         monkeypatch.setattr(
             "apps.shared.rekordbox_writeback.require_writeback_enabled",
-            lambda *_a, **_k: (_ for _ in ()).throw(
-                AssertionError("require_writeback_enabled called")
-            ),
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("require_writeback_enabled called")),
         )
 
-        rc = main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ])
+        rc = main(
+            [
+                "--state-db",
+                str(state_path),
+                "--rb-db",
+                str(rb_path),
+                "--lanes",
+                "key",
+                "--fields",
+                "key",
+            ]
+        )
         assert rc == 0
         assert _sha256(state_path) == state_hash
         assert _sha256(rb_path) == rb_hash
@@ -540,9 +552,7 @@ class TestWritebackDryRun:
         assert rb_connects
         assert all("mode=ro" in a for a in rb_connects)
 
-    def test_buckets_and_denominator(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_buckets_and_denominator(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
@@ -553,12 +563,10 @@ class TestWritebackDryRun:
             [("t1", "rb-1"), ("t2", "rb-2")],
         )
         state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
         )
         state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t3', 'key', '9A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t3', 'key', '9A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
@@ -571,17 +579,21 @@ class TestWritebackDryRun:
         rb_conn.commit()
         rb_conn.close()
 
-        rc = main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ])
+        rc = main(
+            [
+                "--state-db",
+                str(state_path),
+                "--rb-db",
+                str(rb_path),
+                "--lanes",
+                "key",
+                "--fields",
+                "key",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
-        label = (
-            "tracks resolvable in rekordbox that carry an own value for a promoted lane"
-        )
+        label = "tracks resolvable in rekordbox that carry an own value for a promoted lane"
         assert label in out
         assert "denominator: 1" in out
         assert "writable" in out
@@ -596,73 +608,72 @@ class TestWritebackDryRun:
         assert "t2" in out and "no-own-value" in out
         assert "t3" in out and "unmatched" in out
 
-    def test_bpm_x100_boundary(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_bpm_x100_boundary(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'bpm', 129.0, 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'bpm', 129.0, 'ok')"
         )
         state_conn.commit()
         state_conn.close()
 
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         rb_conn.close()
 
-        rc = main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "beatgrid",
-            "--fields", "bpm",
-        ])
+        rc = main(
+            [
+                "--state-db",
+                str(state_path),
+                "--rb-db",
+                str(rb_path),
+                "--lanes",
+                "beatgrid",
+                "--fields",
+                "bpm",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
         assert "128.00" in out
         assert "12800" not in out
         assert "+1.00" in out
 
-    def test_tracks_filter_accepts_vendor_id_writable(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_tracks_filter_accepts_vendor_id_writable(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '8A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
 
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12000, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12000, 'k1')")
         rb_conn.commit()
         rb_conn.close()
 
-        rc = main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "key",
-            "--fields", "key",
-            "--tracks", "rb-1",
-        ])
+        rc = main(
+            [
+                "--state-db",
+                str(state_path),
+                "--rb-db",
+                str(rb_path),
+                "--lanes",
+                "key",
+                "--fields",
+                "key",
+                "--tracks",
+                "rb-1",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
         assert "denominator: 1" in out
@@ -676,12 +687,9 @@ class TestWritebackDryRun:
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-gone', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-gone', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'bpm', 128.0, 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'bpm', 128.0, 'ok')"
         )
         state_conn.commit()
         state_conn.close()
@@ -690,13 +698,20 @@ class TestWritebackDryRun:
         rb_conn.commit()
         rb_conn.close()
 
-        rc = main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "beatgrid",
-            "--fields", "bpm",
-            "--tracks", "rb-gone",
-        ])
+        rc = main(
+            [
+                "--state-db",
+                str(state_path),
+                "--rb-db",
+                str(rb_path),
+                "--lanes",
+                "beatgrid",
+                "--fields",
+                "bpm",
+                "--tracks",
+                "rb-gone",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
         assert "denominator: 0" in out
@@ -704,25 +719,22 @@ class TestWritebackDryRun:
         assert "t1" in out and "unmatched" in out
 
     def test_main_with_no_flags_is_writeback_dry_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'bpm', 128.0, 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'bpm', 128.0, 'ok')"
         )
         state_conn.commit()
         state_conn.close()
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         rb_conn.close()
 
@@ -817,10 +829,19 @@ def _seed_own_grid(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            stable_id, record.backend, record.backend_version, now,
-            record.duration_s, record.sample_rate, record.bpm,
-            record.bpm_confidence, record.key_camelot, record.key_openkey,
-            record.key_confidence, record.energy, record.energy_source,
+            stable_id,
+            record.backend,
+            record.backend_version,
+            now,
+            record.duration_s,
+            record.sample_rate,
+            record.bpm,
+            record.bpm_confidence,
+            record.key_camelot,
+            record.key_openkey,
+            record.key_confidence,
+            record.energy,
+            record.energy_source,
             record_json,
         ),
     )
@@ -837,7 +858,8 @@ def _seed_own_grid(
 
 
 def _pin_reversal_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     from apps.sync import analysis_writeback
 
@@ -870,21 +892,15 @@ def _analysis_preimage_path(
                     continue
                 if Path(str(snap["dat_path"])).resolve() == resolved:
                     return path
-        raise AssertionError(
-            f"no analysis_preimages.json names pqtz dat_path {dat_path}"
-        )
+        raise AssertionError(f"no analysis_preimages.json names pqtz dat_path {dat_path}")
     if content_id is not None:
         for path in matches:
             snapshots = json.loads(path.read_text(encoding="utf-8"))
             for snap in snapshots:
                 if str(snap.get("content_id")) == content_id:
                     return path
-        raise AssertionError(
-            f"no analysis_preimages.json names content_id {content_id}"
-        )
-    assert len(matches) == 1, (
-        f"expected one analysis_preimages.json under {reversal}, got {matches}"
-    )
+        raise AssertionError(f"no analysis_preimages.json names content_id {content_id}")
+    assert len(matches) == 1, f"expected one analysis_preimages.json under {reversal}, got {matches}"
     return matches[0]
 
 
@@ -925,29 +941,24 @@ def _key_camelot(conn: sqlite3.Connection, content_id: str) -> str:
 
 class TestWritebackLive:
     def test_key_write_readback_and_undo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
 
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-2', 12000, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-2', 12000, 'k1')")
         rb_conn.commit()
         rb_conn.close()
         _stamp_writeback(state_path, rb_path, ("key",), ("key",))
@@ -955,24 +966,31 @@ class TestWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
         reversal = _pin_reversal_root(tmp_path, monkeypatch)
 
-        assert main([
-            "--live",
-            "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "key",
+                    "--fields",
+                    "key",
+                ]
+            )
+            == 0
+        )
 
         conn = sqlite3.connect(str(rb_path))
         assert _key_camelot(conn, "rb-1") == "9A"
-        k1_scale = conn.execute(
-            "SELECT ScaleName FROM djmdKey WHERE ID = 'k1'"
-        ).fetchone()[0]
+        k1_scale = conn.execute("SELECT ScaleName FROM djmdKey WHERE ID = 'k1'").fetchone()[0]
         assert k1_scale == "Am"
         assert _key_camelot(conn, "rb-2") == "8A"
         preimage_path = _analysis_preimage_path(reversal, content_id="rb-1")
@@ -980,23 +998,21 @@ class TestWritebackLive:
 
         assert main(["--undo", str(preimage_path)]) == 0
         conn = sqlite3.connect(str(rb_path))
-        row = conn.execute(
-            "SELECT KeyID FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()
+        row = conn.execute("SELECT KeyID FROM djmdContent WHERE ID = 'rb-1'").fetchone()
         assert row[0] == "k1"
         assert _key_camelot(conn, "rb-1") == "8A"
         conn.close()
 
     def test_loudness_write_readback_and_undo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "loudness", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
             "INSERT INTO analysis_projection "
             "(stable_id, field, value, status) "
@@ -1031,30 +1047,35 @@ class TestWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
         reversal = _pin_reversal_root(tmp_path, monkeypatch)
 
-        assert main([
-            "--live",
-            "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "loudness",
-            "--fields", "loudness_lufs,loudness_dbtp",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "loudness",
+                    "--fields",
+                    "loudness_lufs,loudness_dbtp",
+                ]
+            )
+            == 0
+        )
 
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT Commnt FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == "user comment"
+        assert conn.execute("SELECT Commnt FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == "user comment"
         lufs = conn.execute(
-            "SELECT value FROM odjAnalysisScalar "
-            "WHERE ContentID = 'rb-1' AND field = 'loudness_lufs'"
+            "SELECT value FROM odjAnalysisScalar WHERE ContentID = 'rb-1' AND field = 'loudness_lufs'"
         ).fetchone()[0]
         dbtp = conn.execute(
-            "SELECT value FROM odjAnalysisScalar "
-            "WHERE ContentID = 'rb-1' AND field = 'loudness_dbtp'"
+            "SELECT value FROM odjAnalysisScalar WHERE ContentID = 'rb-1' AND field = 'loudness_dbtp'"
         ).fetchone()[0]
         assert abs(float(lufs) - (-8.2)) < 1e-6
         assert abs(float(dbtp) - (-0.5)) < 1e-6
@@ -1063,31 +1084,27 @@ class TestWritebackLive:
 
         assert main(["--undo", str(preimage_path)]) == 0
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT COUNT(*) FROM odjAnalysisScalar WHERE ContentID = 'rb-1'"
-        ).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM odjAnalysisScalar WHERE ContentID = 'rb-1'").fetchone()[0] == 0
         conn.close()
 
     def test_writeback_live_refuses_when_rekordbox_running(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         rb_conn.close()
         rb_hash = _sha256(rb_path)
@@ -1096,44 +1113,47 @@ class TestWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr(
             "apps.sync.safety._is_running",
             lambda name: name == "Rekordbox",
         )
 
-        rc = main([
-            "--live",
-            "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ])
+        rc = main(
+            [
+                "--live",
+                "--i-understand-the-risks",
+                "--state-db",
+                str(state_path),
+                "--lanes",
+                "key",
+                "--fields",
+                "key",
+            ]
+        )
         assert rc == 3
         assert "Rekordbox is running" in capsys.readouterr().err
         assert _sha256(rb_path) == rb_hash
 
     def test_verify_mismatch_restores_preimage(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         rb_conn.close()
         _stamp_writeback(state_path, rb_path, ("key",), ("key",))
@@ -1141,7 +1161,8 @@ class TestWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
 
@@ -1155,43 +1176,44 @@ class TestWritebackLive:
             return real_verify(conn, content_id, field, value)
 
         monkeypatch.setattr(
-            "apps.sync.analysis_writeback.verify_scalar", _fail_verify,
+            "apps.sync.analysis_writeback.verify_scalar",
+            _fail_verify,
         )
 
-        rc = main([
-            "--live",
-            "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ])
+        rc = main(
+            [
+                "--live",
+                "--i-understand-the-risks",
+                "--state-db",
+                str(state_path),
+                "--lanes",
+                "key",
+                "--fields",
+                "key",
+            ]
+        )
         assert rc == 3
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT KeyID FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == "k1"
+        assert conn.execute("SELECT KeyID FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == "k1"
         conn.close()
 
     def test_key_write_leaves_bpm_x100(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_path = tmp_path / "state.db"
         rb_path = tmp_path / "rb.db"
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "key", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'key', '9A', 'ok')"
         )
         state_conn.commit()
         state_conn.close()
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         rb_conn.close()
         _stamp_writeback(state_path, rb_path, ("key",), ("key",))
@@ -1199,22 +1221,29 @@ class TestWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
 
-        assert main([
-            "--live",
-            "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "key",
-            "--fields", "key",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "key",
+                    "--fields",
+                    "key",
+                ]
+            )
+            == 0
+        )
 
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == 12800
+        assert conn.execute("SELECT BPM FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == 12800
         conn.close()
 
 
@@ -1230,7 +1259,9 @@ class TestPqtzWritebackLive:
         ]
 
     def test_promoted_one_anchor_write_readback(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from pyrekordbox.anlz import AnlzFile
 
@@ -1247,16 +1278,13 @@ class TestPqtzWritebackLive:
         build_minimal_dat(dat_path, seed)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.commit()
         state_conn.close()
         _seed_own_grid(state_path, "t1", self._beats())
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
@@ -1265,20 +1293,34 @@ class TestPqtzWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 0
+        )
         own_beats = self._beats()
         pqtz = AnlzFile.parse_file(dat_path).get_tag("PQTZ")
         assert served_beats_from_pqtz_tag(pqtz) == served_beats_from_own(own_beats)
 
     def test_multi_anchor_refuses_write(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
     ) -> None:
         from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
@@ -1289,9 +1331,7 @@ class TestPqtzWritebackLive:
         dat_hash = _sha256(dat_path)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.commit()
         state_conn.close()
         changes: tuple[dict[str, object], ...] = (
@@ -1299,39 +1339,64 @@ class TestPqtzWritebackLive:
             {"at_s": 20.0, "bpm_before": 130.0, "bpm_after": 132.0, "confidence": 1.0},
         )
         _seed_own_grid(
-            state_path, "t1", self._beats(bpm=128.0), tempo_changes=changes,
+            state_path,
+            "t1",
+            self._beats(bpm=128.0),
+            tempo_changes=changes,
         )
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
         rb_conn.close()
-        assert main([
-            "--state-db", str(state_path),
-            "--rb-db", str(rb_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--state-db",
+                    str(state_path),
+                    "--rb-db",
+                    str(rb_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 0
+        )
         out = capsys.readouterr().out
         assert "dynamic" in out
         _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 0
+        )
         assert _sha256(dat_path) == dat_hash
 
     def test_bpm_x100_boundary_separate_from_pqtz(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
@@ -1342,20 +1407,16 @@ class TestPqtzWritebackLive:
         dat_hash = _sha256(dat_path)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
-        state_conn.execute(
-            "INSERT INTO analysis_projection "
-            "(stable_id, field, value, status) VALUES ('t1', 'bpm', 129.0, 'ok')"
+            "INSERT INTO analysis_projection (stable_id, field, value, status) VALUES ('t1', 'bpm', 129.0, 'ok')"
         )
         state_conn.commit()
         state_conn.close()
         _seed_own_grid(state_path, "t1", self._beats(bpm=129.0), bpm=129.0)
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
@@ -1364,41 +1425,71 @@ class TestPqtzWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "bpm,pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "bpm,pqtz",
+                ]
+            )
+            == 0
+        )
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == 12900
+        assert conn.execute("SELECT BPM FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == 12900
         conn.close()
         _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 0
+        )
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == 12900
+        assert conn.execute("SELECT BPM FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == 12900
         conn.close()
         dat_hash_after_pqtz = _sha256(dat_path)
         _stamp_writeback(state_path, rb_path, ("beatgrid",), ("bpm",))
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "bpm",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "bpm",
+                ]
+            )
+            == 0
+        )
         assert _sha256(dat_path) == dat_hash_after_pqtz
 
     def test_running_refuses_dat_unchanged(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
     ) -> None:
         from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
@@ -1409,16 +1500,13 @@ class TestPqtzWritebackLive:
         dat_hash = _sha256(dat_path)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.commit()
         state_conn.close()
         _seed_own_grid(state_path, "t1", self._beats())
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
@@ -1427,17 +1515,28 @@ class TestPqtzWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr(
             "apps.sync.safety._is_running",
             lambda name: name == "Rekordbox",
         )
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 3
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 3
+        )
         assert "Rekordbox is running" in capsys.readouterr().err
         assert _sha256(dat_path) == dat_hash
 
@@ -1459,7 +1558,9 @@ class TestPqtzWritebackLive:
         assert _sha256(dat_path) == seed_hash
 
     def test_verify_mismatch_restores_dat(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
@@ -1470,16 +1571,13 @@ class TestPqtzWritebackLive:
         seed_hash = _sha256(dat_path)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.commit()
         state_conn.close()
         _seed_own_grid(state_path, "t1", self._beats())
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
@@ -1488,21 +1586,35 @@ class TestPqtzWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
         monkeypatch.setattr(
-            "apps.sync.analysis_writeback_pqtz.verify_pqtz", lambda *_a: False,
+            "apps.sync.analysis_writeback_pqtz.verify_pqtz",
+            lambda *_a: False,
         )
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 3
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 3
+        )
         assert _sha256(dat_path) == seed_hash
 
     def test_undo_restores_original_pqtz(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
@@ -1513,16 +1625,13 @@ class TestPqtzWritebackLive:
         seed_hash = _sha256(dat_path)
         state_conn = _write_state_db(state_path)
         selection.set_default(state_conn, "beatgrid", "own")
-        state_conn.execute(
-            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
-        )
+        state_conn.execute("INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)")
         state_conn.commit()
         state_conn.close()
         _seed_own_grid(state_path, "t1", self._beats())
         rb_conn = _write_rb_db(rb_path)
         rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
-            "VALUES ('rb-1', 12800, 'k1', ?)",
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) VALUES ('rb-1', 12800, 'k1', ?)",
             (str(dat_path),),
         )
         rb_conn.commit()
@@ -1531,22 +1640,31 @@ class TestPqtzWritebackLive:
         monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
         monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
         monkeypatch.setattr(
-            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+            "apps.sync.apply_analysis._live_rb_db_path",
+            lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
         reversal = _pin_reversal_root(tmp_path, monkeypatch)
-        assert main([
-            "--live", "--i-understand-the-risks",
-            "--state-db", str(state_path),
-            "--lanes", "beatgrid", "--fields", "pqtz",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--live",
+                    "--i-understand-the-risks",
+                    "--state-db",
+                    str(state_path),
+                    "--lanes",
+                    "beatgrid",
+                    "--fields",
+                    "pqtz",
+                ]
+            )
+            == 0
+        )
         preimage_path = _analysis_preimage_path(reversal, dat_path=dat_path)
         assert main(["--undo", str(preimage_path)]) == 0
         assert _sha256(dat_path) == seed_hash
         conn = sqlite3.connect(str(rb_path))
-        assert conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
-        ).fetchone()[0] == 12800
+        assert conn.execute("SELECT BPM FROM djmdContent WHERE ID = 'rb-1'").fetchone()[0] == 12800
         conn.close()
 
 
@@ -1556,9 +1674,7 @@ class TestVerifyRBFieldScalars:
 
         rb_path = tmp_path / "rb.db"
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         write_scalar(rb_conn, "rb-1", "key", "9A", {})
         rb_conn.commit()
@@ -1569,9 +1685,7 @@ class TestVerifyRBFieldScalars:
 
         rb_path = tmp_path / "rb.db"
         rb_conn = _write_rb_db(rb_path)
-        rb_conn.execute(
-            "INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')"
-        )
+        rb_conn.execute("INSERT INTO djmdContent(ID, BPM, KeyID) VALUES ('rb-1', 12800, 'k1')")
         rb_conn.commit()
         write_scalar(rb_conn, "rb-1", "loudness_lufs", -8.2, {})
         rb_conn.commit()

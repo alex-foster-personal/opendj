@@ -1,0 +1,13 @@
+{
+  "note": "playlists card grid route (/playlists), lazy",
+  "order": 60,
+  "attribution": {
+    "markers": [
+      "Every playlist as a card with its art"
+    ]
+  },
+  "limit": 3072,
+  "measured": 1042,
+  "measured_on": "Wed 4 Nov 2026",
+  "baseline_sha": "f3b6aa3ed6"
+}

@@ -29,9 +29,7 @@ from apps.opendj_cli.mcp_safety import SafetyRefusal, validate_api_path
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
 from apps.webui.port_config import PortConfigError, resolve_ports
 
-HTTP_METHODS = frozenset(
-    {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-)
+HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 
 REQUEST_TIMEOUT_S = 60.0
 
@@ -176,8 +174,7 @@ def _fail_structured(
 
 def _fail_unreachable(base_url: str, port: int, error: BaseException) -> int:
     print(
-        f"opendj api: daemon not reachable at port {port} ({base_url}): "
-        f"{type(error).__name__}: {error}",
+        f"opendj api: daemon not reachable at port {port} ({base_url}): {type(error).__name__}: {error}",
         file=sys.stderr,
     )
     return EXIT_FAILED
@@ -231,7 +228,11 @@ def _parse_request(rest: Sequence[str]) -> _ParsedRequest:
             continue
         raise UsageError(f"unexpected argument {token!r}")
     return _ParsedRequest(
-        method, path, json_body, tuple(fields), tuple(extra_headers),
+        method,
+        path,
+        json_body,
+        tuple(fields),
+        tuple(extra_headers),
     )
 
 

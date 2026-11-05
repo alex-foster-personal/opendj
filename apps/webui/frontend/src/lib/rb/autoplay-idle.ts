@@ -130,10 +130,7 @@ export function shouldRaiseAutoPlaySilentStall(input: {
 	return input.now_ms - input.idle_since_ms >= AUTO_PLAY_SILENT_STALL_MS;
 }
 
-export function clearAutoPlayChartedOrder(
-	clearKey: () => void,
-	publishEmpty: () => void
-): void {
+export function clearAutoPlayChartedOrder(clearKey: () => void, publishEmpty: () => void): void {
 	clearKey();
 	publishEmpty();
 }

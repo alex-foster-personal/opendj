@@ -1,8 +1,10 @@
 /**
  * The stems progress gate: a REAL engine, a REAL job, a REAL browser.
  *
- * The only substitution anywhere in this run is the Modal call itself, through
- * the worker's declared MDT_STEMS_SEPARATOR seam. Everything between the
+ * The substitutions in this run are the Modal call itself, through the
+ * worker's declared MDT_STEMS_SEPARATOR seam, and MDT_STEMS_TRANSPORT=direct.
+ * Direct is required because the default relay path falls through to the
+ * local worker, which ignores the separator. Everything between the
  * button and the bundle -- enqueue over HTTP, the runner's fork, the stdout
  * progress protocol, library.changed, the WS hub, the jobs store, the TopBar
  * component -- is production code.
@@ -25,6 +27,9 @@
  *   [if] either port is already bound [then ⛔️] the run starts.
  *   [if] the separator seam is unset [then] the run would bill a real GPU, so
  *     it is set here rather than left to the environment.
+ *   [if] MDT_STEMS_TRANSPORT is unset [then] an unconfigured relay falls
+ *     through to the local worker, which ignores the separator, so it is
+ *     set to direct here.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
@@ -48,9 +53,12 @@ const engineEnv = {
 	...process.env,
 	MDT_DATA_DIR: dataDir,
 	MDT_LIBRARY_MODE: 'local',
-	// THE ONLY SUBSTITUTION. Set here so the suite cannot accidentally run
-	// against the real GPU because somebody forgot to export it.
-	MDT_STEMS_SEPARATOR: 'tests.stems.modal_separator_double:separate'
+	// Separator seam: set here so the suite cannot accidentally run against
+	// the real GPU because somebody forgot to export it.
+	MDT_STEMS_SEPARATOR: 'tests.stems.modal_separator_double:separate',
+	// Direct transport: the default relay path falls through to the local
+	// worker, which ignores the separator seam above.
+	MDT_STEMS_TRANSPORT: 'direct'
 };
 
 export default defineConfig({

@@ -34,23 +34,17 @@ _UNREACHABLE = (
 )
 _DIGEST = "SyncDigestMismatch: tracks differ after settling (2 rows)"
 #: A reachable hub answering with a server error, not an unreachable one.
-_HUB_5XX = (
-    "POST https://hub.example-tailnet.ts.net:8871/api/v1/sync/push -> HTTP 500:  (after 2.0s)"
-)
+_HUB_5XX = "POST https://hub.example-tailnet.ts.net:8871/api/v1/sync/push -> HTTP 500:  (after 2.0s)"
 
 
 def _configured(data_dir: Path) -> None:
-    sync_config.write_config(
-        data_dir, sync_config.CloudSyncConfig(enabled=True, hub_url=_HUB, machine_name=None)
-    )
+    sync_config.write_config(data_dir, sync_config.CloudSyncConfig(enabled=True, hub_url=_HUB, machine_name=None))
 
 
 def _journal_error(data_dir: Path, message: str) -> None:
     sync_status.write_result(
         data_dir,
-        sync_status.SyncResult(
-            finished_at=_NOW.isoformat(), status="error", message=message, pushed=0, pulled=0
-        ),
+        sync_status.SyncResult(finished_at=_NOW.isoformat(), status="error", message=message, pushed=0, pulled=0),
     )
 
 

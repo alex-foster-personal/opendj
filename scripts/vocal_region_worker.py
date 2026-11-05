@@ -93,7 +93,7 @@ ADAPT_MARGIN: float = 0.08
 DRIFT_ABS_TOL_S: float = 0.5
 DRIFT_REL_TOL: float = 0.005
 
-SCHEMA: int = 2
+SCHEMA: int = 3
 SOURCE: str = "demucs-htdemucs"
 _ACCELERATOR_FAILURE_MARKERS: dict[str, tuple[str, ...]] = {
     "cuda": ("cuda", "cudnn", "out of memory"),

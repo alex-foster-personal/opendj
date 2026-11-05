@@ -57,6 +57,8 @@ export interface MenuContextByKind {
 	'playlists-root': Record<string, never>;
 	playlist: { forbidDuplicates: boolean };
 	'playlist-folder': Record<string, never>;
+	/** A divider in the track table. `editable`: the open list can be changed. */
+	'playlist-section': { editable: boolean };
 	smartlist: Record<string, never>;
 	/** Taglists, autolists, Missing Tracks, Recently Deleted, stick trees.
 	 * `stick` is true only inside a plugged-in USB stick's tree (USBEXP-04). */
@@ -84,6 +86,8 @@ export interface MenuContextByKind {
 		cue: boolean;
 		assign: 'A' | 'B' | 'THRU';
 	};
+	/** ANIM-01: one dial or fader (EQ, TRIM, FILTER, stem dial, channel fader, crossfader). */
+	'mixer-control': { animating: boolean };
 	/** Right-click on nothing in particular inside the performance page. */
 	'perf-empty': Record<string, never>;
 }
@@ -98,6 +102,7 @@ export type MenuTarget =
 	| { kind: 'playlists-root' }
 	| { kind: 'playlist' }
 	| { kind: 'playlist-folder' }
+	| { kind: 'playlist-section' }
 	| { kind: 'smartlist' }
 	| { kind: 'tree-readonly' }
 	| { kind: 'library-source' }
@@ -105,6 +110,8 @@ export type MenuTarget =
 	| { kind: 'hot-cue'; deck: DeckNumber; slot: CueSlot }
 	| { kind: 'waveform'; deck: DeckNumber }
 	| { kind: 'mixer-channel'; deck: DeckNumber }
+	/** `label` is the control's caption (EQ LOW, FADER, CROSSFADER). */
+	| { kind: 'mixer-control'; label: string }
 	| { kind: 'perf-empty' };
 
 type TargetOf<K extends MenuTargetKind> = Extract<MenuTarget, { kind: K }>;
@@ -204,7 +211,18 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		when: writable
 	},
 	{ id: 'find-replace', label: 'Find/replace', command: 'track.edit', when: writable },
+	{ id: 'add-tag', label: 'Add tag...', command: 'track.edit', when: writable },
 	{ id: 'mytag', label: 'My Tag editor', command: 'track.edit', when: writable },
+	{
+		// LIBUX-56: opens the row's Comment cell editor (double-click the cell does the same).
+		id: 'edit-comment',
+		label: 'Edit comment',
+		command: 'track.comment',
+		when: writable,
+		disabledWhen: oneTrackOnly,
+		title: () => 'opendj track comment {stable_id} set <text>',
+		testId: () => 'context-menu-edit-comment'
+	},
 	{
 		id: 'relocate',
 		label: 'Relocate',
@@ -299,10 +317,30 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		testId: () => 'context-menu-pair'
 	},
 	{
+		id: 'insert-section',
+		label: 'Insert section above',
+		command: 'section.add',
+		when: (ctx, target) => ctx.source === 'playlist' && target.count === 1
+	},
+	{
+		// LIBUX-8679: a backup track stays in the set, dimmed, out of the total.
+		id: 'set-skip',
+		label: 'Skip in set (toggle, Cmd/Ctrl+Shift+X)',
+		command: 'set.skip',
+		when: (ctx) => ctx.source === 'playlist'
+	},
+	{
 		id: 'remove-playlist',
 		label: 'Remove from playlist',
 		command: 'playlist.remove_items',
 		when: (ctx) => ctx.source === 'playlist'
+	},
+	{ id: 'work-edit', label: 'Work...', command: 'work.edit', when: writable },
+	{
+		id: 'link-version',
+		label: (target) => (target.count > 1 ? 'Link as versions' : 'Link a version...'),
+		command: 'work.link_many',
+		when: writable
 	},
 	{
 		id: 'remove-library',
@@ -401,6 +439,16 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 		...newItems<'playlist-folder'>(),
 		{ id: 'rename', label: 'Rename', command: 'playlist.update' },
 		{ id: 'delete', label: 'Delete', command: 'playlist.delete' }
+	],
+	'playlist-section': [
+		{ id: 'rename', label: 'Rename…', command: 'section.update', when: (ctx) => ctx.editable },
+		{
+			id: 'insert-section-above',
+			label: 'Insert section above',
+			command: 'section.add',
+			when: (ctx) => ctx.editable
+		},
+		{ id: 'remove-divider', label: 'Remove divider', command: 'section.delete', when: (ctx) => ctx.editable }
 	],
 	smartlist: [
 		...newItems<'smartlist'>(),
@@ -550,6 +598,22 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 				checked: (ctx) => ctx.assign === assign
 			})
 		)
+	],
+	'mixer-control': [
+		{
+			id: 'animate',
+			label: (target) => `Animate ${target.label}...`,
+			command: 'mixer.animate',
+			title: () => 'opendj animate <deck> <control> "<to> --over <duration>" (MCP animate_control)',
+			testId: () => 'quick-draw-animate'
+		},
+		{
+			id: 'animate-stop',
+			label: 'Stop animation',
+			command: 'mixer.animate',
+			when: (ctx) => ctx.animating,
+			testId: () => 'quick-draw-animate-stop'
+		}
 	],
 	'perf-empty': []
 };

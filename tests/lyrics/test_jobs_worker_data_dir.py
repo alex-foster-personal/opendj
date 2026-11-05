@@ -44,10 +44,7 @@ def _write_wav(path: Path, seconds: float = 0.5, sample_rate: int = 8000) -> Non
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
         wav.writeframes(
-            b"".join(
-                int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2
-                for i in range(frames)
-            )
+            b"".join(int(3000 * math.sin(i / 20)).to_bytes(2, "little", signed=True) * 2 for i in range(frames))
         )
 
 
@@ -100,7 +97,8 @@ def _seed_state(tmp_path: Path, stable_ids: list[str]):
 
 
 def test_jobs_worker_subprocess_uses_state_dir_outside_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     use_local_mode(monkeypatch)
     monkeypatch.delenv("MDT_DATA_DIR", raising=False)
@@ -142,10 +140,7 @@ def test_jobs_worker_subprocess_uses_state_dir_outside_repo(
     except StageBlocked:
         pass
 
-    metadata_cmds = [
-        cmd for cmd in recorded_cmds
-        if any("lyrics_crate_metadata.py" in p for p in cmd)
-    ]
+    metadata_cmds = [cmd for cmd in recorded_cmds if any("lyrics_crate_metadata.py" in p for p in cmd)]
     assert metadata_cmds, "metadata stage must run"
     meta = metadata_cmds[0]
     assert "--state-dir" in meta
@@ -157,7 +152,8 @@ def test_jobs_worker_subprocess_uses_state_dir_outside_repo(
 
 
 def test_run_batch_refuses_missing_r2_before_subprocess(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     use_cloud_mode(monkeypatch)
     for var in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
@@ -189,7 +185,8 @@ def test_run_batch_refuses_missing_r2_before_subprocess(
 
 
 def test_lane_stems_hydrates_indexed_bundle_before_modal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     use_local_mode(monkeypatch)
     state_dir, paths = _seed_state(tmp_path, ["sid-a"])
@@ -229,9 +226,7 @@ def test_lane_stems_hydrates_indexed_bundle_before_modal(
         manifest_written["done"] = True
         return HydrationOutcome(stable_id, "hydrated")
 
-    monkeypatch.setattr(
-        "apps.lyrics.batch.resolve_stem_hydration_source", fake_source
-    )
+    monkeypatch.setattr("apps.lyrics.batch.resolve_stem_hydration_source", fake_source)
     monkeypatch.setattr("apps.lyrics.batch.hydrate_one", fake_hydrate)
 
     corpus = "tbatch"

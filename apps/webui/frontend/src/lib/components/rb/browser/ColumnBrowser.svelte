@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import { truncationTip } from '$lib/ui/truncation-tip';
 	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	// Column view (browser-surface unit, Miller-column lane, PlaylistTree's
 	// long-inert 'Column View' tab). Self-contained like PlaylistTree's
@@ -219,7 +220,7 @@
 									if (e.key === 'Enter') _selectTrack(row);
 								}}
 							>
-								<span class="name" title={row.title ?? ''}>{row.title ?? ''}</span>
+								<span class="name" data-custom-tip="" use:truncationTip>{row.title ?? ''}</span>
 							</div>
 						{/each}
 					{/snippet}

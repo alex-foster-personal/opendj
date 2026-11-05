@@ -90,9 +90,7 @@ test('nameMatch covers DDJ-FLX4 port names only ([PDF] USB name)', () => {
 
 test('play/cue/shift per deck on channels 1-2 ([PDF] 1-1/1-2/1-3)', () => {
 	for (const deck of DECKS) {
-		const play = theBinding(
-			(b) => b.action.type === 'deck_play_toggle' && b.action.deck === deck
-		);
+		const play = theBinding((b) => b.action.type === 'deck_play_toggle' && b.action.deck === deck);
 		assert.deepEqual(play.source, { ch: deck, kind: 'note', id: 0x0b });
 		const cue = theBinding((b) => b.action.type === 'deck_cue' && b.action.deck === deck);
 		assert.deepEqual(cue.source, { ch: deck, kind: 'note', id: 0x0c });
@@ -180,9 +178,13 @@ test('CFX filter per deck CC 23/24 on global ch 7 ([PDF] 3-5, hardware-confirmed
 });
 
 test('crossfader ch7 CC 31, master ch7 CC 8 ([PDF] 3-8/3-1)', () => {
-	const xf = theBinding((b) => b.action.type === 'mixer_global' && b.action.target === 'crossfader');
+	const xf = theBinding(
+		(b) => b.action.type === 'mixer_global' && b.action.target === 'crossfader'
+	);
 	assert.deepEqual(xf.source, { ch: 7, kind: 'cc', id: 0x1f });
-	const master = theBinding((b) => b.action.type === 'mixer_global' && b.action.target === 'master');
+	const master = theBinding(
+		(b) => b.action.type === 'mixer_global' && b.action.target === 'master'
+	);
 	assert.deepEqual(master.source, { ch: 7, kind: 'cc', id: 0x08 });
 });
 

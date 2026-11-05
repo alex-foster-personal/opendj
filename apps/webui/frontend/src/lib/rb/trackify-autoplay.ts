@@ -6,11 +6,7 @@
  */
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 import { pickNextStableId } from '$lib/rb/auto-play-chain';
-import {
-	remainingMs,
-	tempoBoundsFromPitchRange,
-	type AutoPlayDeckSnap
-} from '$lib/rb/auto-play';
+import { remainingMs, tempoBoundsFromPitchRange, type AutoPlayDeckSnap } from '$lib/rb/auto-play';
 
 /** Failed load must quarantine and advance within this wall-time budget. */
 export const TRACKIFY_LOAD_SKIP_DEADLINE_MS = 2000;

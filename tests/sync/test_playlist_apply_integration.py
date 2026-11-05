@@ -4,6 +4,7 @@ We build a tiny stand-in DB inside ``tmp_path`` with the two schemas
 :mod:`apps.sync.playlist_apply` touches so integration tests run without
 needing a captured live fixture.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,7 +55,7 @@ def _make_djay_fixture(db_path: Path, tracks: list[str]) -> dict[str, int]:
         )
         first = tracks[0]
         con.execute(
-            'INSERT INTO view_mediaItemPlaylistView_page '
+            "INSERT INTO view_mediaItemPlaylistView_page "
             '(pageKey, "group", prevPageKey, count, data) '
             "VALUES (?, ?, NULL, ?, ?)",
             (
@@ -82,8 +83,7 @@ def _plan_fixture(tmp_path: Path, tracks: list[str]) -> Path:
                 "djay_uuid": "warm-uuid-000000000000000000000000",
                 "djay_name_current": "Warmup",
                 "target_members": [
-                    {"track_no": i, "rb_id": f"rb-{i}", "djay_uuid": u}
-                    for i, u in enumerate(tracks, start=1)
+                    {"track_no": i, "rb_id": f"rb-{i}", "djay_uuid": u} for i, u in enumerate(tracks, start=1)
                 ],
                 "djay_current_members": [tracks[0]],
                 "adds": [{"track_no": 2, "rb_id": "rb-2", "djay_uuid": tracks[1]}],
@@ -97,9 +97,7 @@ def _plan_fixture(tmp_path: Path, tracks: list[str]) -> Path:
                 "op": "create",
                 "djay_uuid": None,
                 "djay_name_current": None,
-                "target_members": [
-                    {"track_no": 1, "rb_id": "rb-1", "djay_uuid": tracks[0]}
-                ],
+                "target_members": [{"track_no": 1, "rb_id": "rb-1", "djay_uuid": tracks[0]}],
                 "djay_current_members": [],
                 "adds": [{"track_no": 1, "rb_id": "rb-1", "djay_uuid": tracks[0]}],
                 "removes": [],
@@ -189,9 +187,7 @@ def test_apply_create_op_inserts_new_playlist_row(apply_fixture) -> None:
     pa.apply_plan(plan, db_path=db_path)
     con = sqlite3.connect(db_path)
     try:
-        rows = con.execute(
-            "SELECT data FROM database2 WHERE collection='mediaItemPlaylists'"
-        ).fetchall()
+        rows = con.execute("SELECT data FROM database2 WHERE collection='mediaItemPlaylists'").fetchall()
     finally:
         con.close()
     names = [ptsaf.parse_playlist_blob(r[0]).get("name") for r in rows]
@@ -232,9 +228,7 @@ def test_apply_is_idempotent_when_rerun(apply_fixture) -> None:
 
 
 @pytest.mark.requirement("SYNC-03")
-def test_dry_run_does_not_open_rw_connection(
-    apply_fixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dry_run_does_not_open_rw_connection(apply_fixture, monkeypatch: pytest.MonkeyPatch) -> None:
     db_path, plan_path, _ = apply_fixture
 
     calls: list[str] = []

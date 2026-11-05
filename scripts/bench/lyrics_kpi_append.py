@@ -25,6 +25,7 @@ Acceptance (one-line, house format):
   AFTER writing, so the regression is recorded AND the pipeline goes red.
 - [if] no --set at all [then] exit non-zero (an empty snapshot is noise).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,10 +60,7 @@ def _trend_table(ledger: dict) -> str:
     head = "kpi".ljust(28) + "".join(s["label"][:16].rjust(18) for s in rows)
     lines = [head, "-" * len(head)]
     for key in keys:
-        cells = "".join(
-            ("-" if s["values"].get(key) is None else f"{s['values'][key]:g}").rjust(18)
-            for s in rows
-        )
+        cells = "".join(("-" if s["values"].get(key) is None else f"{s['values'][key]:g}").rjust(18) for s in rows)
         lines.append(key.ljust(28) + cells)
     return "\n".join(lines)
 

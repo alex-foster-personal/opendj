@@ -14,6 +14,7 @@ export function routeSetToFollow(
 	selectedId: number | null,
 	setIds: readonly number[]
 ): number | null {
-	if (routeSetId === null || routeSetId === previousRouteSetId || routeSetId === selectedId) return null;
+	if (routeSetId === null || routeSetId === previousRouteSetId || routeSetId === selectedId)
+		return null;
 	return setIds.includes(routeSetId) ? routeSetId : null;
 }

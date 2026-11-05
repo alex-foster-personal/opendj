@@ -18,7 +18,9 @@ import { before, test } from 'node:test';
 
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 
-const LAYER = fileURLToPath(new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url));
+const LAYER = fileURLToPath(
+	new URL('../../src/lib/components/rb/FeedbackPinLayer.svelte', import.meta.url)
+);
 
 const ENTRY = [
 	"export { default as Markers } from '$lib/components/rb/feedback/FeedbackPinMarkers.svelte';",
@@ -62,18 +64,37 @@ test('a pin with no resolved position draws at its stored percentages, unmarked'
 
 test('a pin re-placed on a nearby anchor draws at its px point with a tier and fallback mark', () => {
 	const positions = new Map([
-		['p1', { tier: 'anchor', fallback: true, via: '[data-testid="mixer"]', x: 580, y: 130, x_pct: 58, y_pct: 16.25 }]
+		[
+			'p1',
+			{
+				tier: 'anchor',
+				fallback: true,
+				via: '[data-testid="mixer"]',
+				x: 580,
+				y: 130,
+				x_pct: 58,
+				y_pct: 16.25
+			}
+		]
 	]);
 	const html = render([pin()], positions);
 	assert.match(html, /left:580px;top:130px/);
 	assert.match(html, /data-pin-tier="anchor"/);
 	assert.match(html, /data-pin-id="p1"/);
 	assert.match(html, /fb-pos-fallback/);
-	assert.match(html, /placed via \[data-testid=&quot;mixer&quot;\]|placed via \[data-testid="mixer"\]/);
+	assert.match(
+		html,
+		/placed via \[data-testid=&quot;mixer&quot;\]|placed via \[data-testid="mixer"\]/
+	);
 });
 
 test('a pin on its own element is drawn there without the fallback mark', () => {
-	const positions = new Map([['p1', { tier: 'element', fallback: false, via: '#deck-a', x: 200, y: 250, x_pct: 20, y_pct: 31.25 }]]);
+	const positions = new Map([
+		[
+			'p1',
+			{ tier: 'element', fallback: false, via: '#deck-a', x: 200, y: 250, x_pct: 20, y_pct: 31.25 }
+		]
+	]);
 	const html = render([pin()], positions);
 	assert.match(html, /left:200px;top:250px/);
 	assert.match(html, /data-pin-tier="element"/);

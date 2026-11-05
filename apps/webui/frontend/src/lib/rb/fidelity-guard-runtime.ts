@@ -47,7 +47,9 @@ export function createFidelityGuard(deps: FidelityGuardDeps): FidelityGuard {
 		tick(): FidelityVerdict {
 			const sample = deps.sample();
 			const verdict: FidelityVerdict =
-				'skip' in sample ? { kind: 'skip', reason: sample.skip } : compareFidelity(fidelityStats(sample.master), fidelityStats(sample.source));
+				'skip' in sample
+					? { kind: 'skip', reason: sample.skip }
+					: compareFidelity(fidelityStats(sample.master), fidelityStats(sample.source));
 			const step = stepFidelityEpisode(episode, verdict);
 			episode = step.state;
 			if (step.fire !== null) {
@@ -58,7 +60,12 @@ export function createFidelityGuard(deps: FidelityGuardDeps): FidelityGuard {
 				verdict.kind === 'skip' ? 'skipped' : episode.firing !== null ? 'degraded' : 'ok';
 			deps.publish({
 				status,
-				reason: verdict.kind === 'ok' ? null : verdict.kind === 'skip' ? verdict.reason : (episode.firing ?? verdict.reason),
+				reason:
+					verdict.kind === 'ok'
+						? null
+						: verdict.kind === 'skip'
+							? verdict.reason
+							: (episode.firing ?? verdict.reason),
 				checked_at_ms: deps.now()
 			});
 			return verdict;

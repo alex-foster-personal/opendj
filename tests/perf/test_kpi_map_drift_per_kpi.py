@@ -55,9 +55,7 @@ def test_per_kpi_drift_now_fails_closed_on_an_unverifiable_required_threshold() 
     }
     findings = threshold_drift(kpi_map)
     assert any(
-        "library_filter_dropped_keystrokes_per_session breaking" in f
-        and "999" in f
-        and "no comparable number" in f
+        "library_filter_dropped_keystrokes_per_session breaking" in f and "999" in f and "no comparable number" in f
         for f in findings
     )
 
@@ -172,9 +170,7 @@ def test_per_kpi_drift_fires_when_a_required_entrys_own_direction_disagrees() ->
         }
     }
     findings = threshold_drift(kpi_map)
-    assert any(
-        "input_to_audible_ms_p99 lower_is_better" in f and "False" in f for f in findings
-    )
+    assert any("input_to_audible_ms_p99 lower_is_better" in f and "False" in f for f in findings)
     assert not any("visual_feedback_ms_p95 lower_is_better" in f for f in findings)
 
 

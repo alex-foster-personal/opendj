@@ -49,6 +49,7 @@ def default_lock_path(environ: Mapping[str, str] | None = None) -> Path:
     """The packaged app's lock for this OS; raises where the data dir cannot be resolved."""
     return engine_data_dir(env=environ) / LOCK_FILE_NAME
 
+
 _LOCK_READ_ATTEMPTS = 5
 _LOCK_READ_RETRY_S = 0.01
 
@@ -131,9 +132,7 @@ def _lock_document(resolved: Path) -> dict[str, Any]:
         try:
             raw = resolved.read_text(encoding="utf-8")
         except OSError as error:
-            raise EngineNotRunning(
-                f"engine lock file {resolved} could not be read: {error}", resolved
-            ) from error
+            raise EngineNotRunning(f"engine lock file {resolved} could not be read: {error}", resolved) from error
         payload = _parse_lock_object(raw)
         if payload is not None:
             return payload
@@ -141,8 +140,7 @@ def _lock_document(resolved: Path) -> dict[str, Any]:
         if attempt + 1 < _LOCK_READ_ATTEMPTS:
             time.sleep(_LOCK_READ_RETRY_S)
     raise EngineNotRunning(
-        f"engine lock file {resolved} is not valid JSON, so its port cannot be "
-        f"trusted: {last_error}",
+        f"engine lock file {resolved} is not valid JSON, so its port cannot be trusted: {last_error}",
         resolved,
     ) from last_error
 
@@ -159,9 +157,7 @@ def _lock_port(payload: Mapping[str, Any], resolved: Path) -> int:
     return port
 
 
-def resolve_origin(
-    path: Path | None = None, environ: Mapping[str, str] | None = None
-) -> EngineOrigin:
+def resolve_origin(path: Path | None = None, environ: Mapping[str, str] | None = None) -> EngineOrigin:
     """Read the lock file into an origin, or refuse naming that file."""
     resolved = lock_path(environ) if path is None else path
     payload = _lock_document(resolved)
@@ -255,9 +251,7 @@ def verify_engine_identity(origin: EngineOrigin) -> None:
         )
 
 
-def resolve_verified_origin(
-    path: Path | None = None, environ: Mapping[str, str] | None = None
-) -> EngineOrigin:
+def resolve_verified_origin(path: Path | None = None, environ: Mapping[str, str] | None = None) -> EngineOrigin:
     """Read the lock file and verify the named engine is the one listening."""
     origin = resolve_origin(path, environ)
     verify_engine_identity(origin)

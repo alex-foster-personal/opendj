@@ -45,10 +45,15 @@ test('autolists: smartlist scroll height and rows stay inside the window at 720p
 			if (scroll === null || smartRow === null) {
 				throw new Error('missing autolists elements');
 			}
-			return { windowBottom: window.innerHeight, rowBottom: smartRow.getBoundingClientRect().bottom };
+			return {
+				windowBottom: window.innerHeight,
+				rowBottom: smartRow.getBoundingClientRect().bottom
+			};
 		});
 		expect(geometry.windowBottom, 'the 720p viewport this test sets').toBe(720);
-		expect(geometry.rowBottom, 'smartlist row bottom edge').toBeLessThanOrEqual(geometry.windowBottom);
+		expect(geometry.rowBottom, 'smartlist row bottom edge').toBeLessThanOrEqual(
+			geometry.windowBottom
+		);
 
 		const hit = await row.evaluate((el) => {
 			const box = el.getBoundingClientRect();

@@ -84,3 +84,10 @@ it('the BPM hover never claims an exact BPM the cell calls missing (review P2, P
 	);
 	assert.match(table, /hasUsableBpm\(row\.bpm\) \? ` Exact BPM:/, 'TrackTable hover checks only for null');
 });
+
+// KEY-FALLBACK-01: if a Mixed In Key BPM is hidden because our own lane failed or has not run then broken
+it('bpmCellText: a fallback BPM shows even when our own lane failed or is missing', () => {
+	assert.deepEqual(cell.bpmCellText({ bpm: 124.0, bpm_status: 'failed' }), { text: '124.0', kind: 'value' });
+	assert.deepEqual(cell.bpmCellText({ bpm: 95.5, bpm_status: 'missing' }), { text: '95.5', kind: 'value' });
+	assert.equal(cell.bpmCellText({ bpm: null, bpm_status: 'missing' }).kind, 'not-analyzed');
+});

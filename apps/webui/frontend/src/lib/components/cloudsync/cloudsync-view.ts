@@ -49,10 +49,7 @@ export type PolicyCellMode = SyncMode | typeof UNSET;
  * have no production caller yet, so a stored mode syncs but changes nothing on
  * disk. Those columns are marked inert, never hidden.
  */
-export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = [
-	'audio',
-	'karaoke_words'
-];
+export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = ['audio', 'karaoke_words'];
 
 export function isRuntimeWired(kind: AssetKind): boolean {
 	return RUNTIME_WIRED_ASSET_KINDS.includes(kind);
@@ -77,7 +74,8 @@ export function policyCellView(policy: SyncPolicy | undefined): PolicyCellView {
 		return {
 			mode: UNSET,
 			budgetEditable: false,
-			budgetTitle: 'No policy is stored for this cell. Pick a mode first; a budget applies only in cached mode.'
+			budgetTitle:
+				'No policy is stored for this cell. Pick a mode first; a budget applies only in cached mode.'
 		};
 	}
 	if (policy.mode !== 'cached') {
@@ -95,8 +93,7 @@ export function policyCellView(policy: SyncPolicy | undefined): PolicyCellView {
 }
 
 export type PolicyPutDecision =
-	| { kind: 'put'; body: SyncPolicyPutBody }
-	| { kind: 'refuse'; reason: string };
+	{ kind: 'put'; body: SyncPolicyPutBody } | { kind: 'refuse'; reason: string };
 
 function isSyncMode(raw: string): raw is SyncMode {
 	return (SYNC_MODES as ReadonlyArray<string>).includes(raw);
@@ -194,7 +191,8 @@ export function policyBudgetChange(
 	if (existing === undefined) {
 		return {
 			kind: 'refuse',
-			reason: 'This cell has no stored policy. Pick a mode first; an unset cell is never saved as stream.'
+			reason:
+				'This cell has no stored policy. Pick a mode first; an unset cell is never saved as stream.'
 		};
 	}
 	if (existing.mode !== 'cached') {
@@ -315,7 +313,11 @@ export function chipFullLabel(status: CloudSyncStatus | null): string {
 /** LESSV-03: the chip's glyphs for a status. Every state shows the cloud; a
  * working sync (ok) shows ONLY the cloud plus a tick, in white, and every other
  * state keeps its text label, because those are the ones that need reading. */
-export function chipGlyphs(status: CloudSyncStatus | null): { cloud: true; tick: boolean; text: boolean } {
+export function chipGlyphs(status: CloudSyncStatus | null): {
+	cloud: true;
+	tick: boolean;
+	text: boolean;
+} {
 	const ok = chipState(status) === 'ok';
 	return { cloud: true, tick: ok, text: !ok };
 }
@@ -442,7 +444,11 @@ function buildErrorPresentation(
 
 /** Plain-word summary for a thrown sync error; raw text stays in details only. */
 export function presentCloudSyncError(error: unknown): CloudSyncErrorPresentation {
-	return buildErrorPresentation(errorMessage(error), readApiErrorStatus(error), readApiErrorCode(error));
+	return buildErrorPresentation(
+		errorMessage(error),
+		readApiErrorStatus(error),
+		readApiErrorCode(error)
+	);
 }
 
 /** Plain-word summary for a journaled sync result row or chip last_result. */
@@ -572,9 +578,12 @@ export function syncRuntimeGateReason(
 export const FORCE_SYNC_LABEL =
 	"Force sync (oDJ won't sync during performance unless this is clicked)";
 
-export type SyncNowDecision = { kind: 'post'; body: SyncRunBody } | { kind: 'refuse'; reason: string };
+export type SyncNowDecision =
+	{ kind: 'post'; body: SyncRunBody } | { kind: 'refuse'; reason: string };
 
-function syncHubUrlDecision(config: CloudSyncConfigOut | null): SyncNowDecision | { hubUrl: string } {
+function syncHubUrlDecision(
+	config: CloudSyncConfigOut | null
+): SyncNowDecision | { hubUrl: string } {
 	if (config === null) {
 		return { kind: 'refuse', reason: 'CloudSync config has not loaded yet.' };
 	}
@@ -625,20 +634,25 @@ export interface ConfigFormFields {
 }
 
 export type ConfigPutDecision =
-	| { kind: 'put'; body: CloudSyncConfigBody }
-	| { kind: 'refuse'; reason: string };
+	{ kind: 'put'; body: CloudSyncConfigBody } | { kind: 'refuse'; reason: string };
 
 /** Mirrors apps.sync_hub.config.CloudSyncConfig so a bad form never round-trips. */
 export function configPutBody(form: ConfigFormFields): ConfigPutDecision {
 	const hubUrl = form.hubUrl.trim() === '' ? null : form.hubUrl.trim();
 	const machineName = form.machineName.trim() === '' ? null : form.machineName.trim();
 	if (hubUrl !== null && !/^https?:\/\/[^/\s]+/.test(hubUrl)) {
-		return { kind: 'refuse', reason: `Hub URL must be an http(s) URL with a host, got ${JSON.stringify(hubUrl)}.` };
+		return {
+			kind: 'refuse',
+			reason: `Hub URL must be an http(s) URL with a host, got ${JSON.stringify(hubUrl)}.`
+		};
 	}
 	if (form.enabled && hubUrl === null) {
 		return { kind: 'refuse', reason: 'Enabling CloudSync needs a hub URL.' };
 	}
-	return { kind: 'put', body: { enabled: form.enabled, hub_url: hubUrl, machine_name: machineName } };
+	return {
+		kind: 'put',
+		body: { enabled: form.enabled, hub_url: hubUrl, machine_name: machineName }
+	};
 }
 
 export function formFromConfig(config: CloudSyncConfigOut): ConfigFormFields {
@@ -708,7 +722,12 @@ export function plainSyncFailureCause(rawMessage: string): string {
 	) {
 		return 'the hub address could not be found (DNS lookup failed)';
 	}
-	if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('403') || msg.includes('forbidden')) {
+	if (
+		msg.includes('401') ||
+		msg.includes('unauthorized') ||
+		msg.includes('403') ||
+		msg.includes('forbidden')
+	) {
 		return 'the hub rejected the sign-in';
 	}
 	return 'the last sync attempt failed';
@@ -850,8 +869,7 @@ export const ENROLL_COMMAND_HINT =
 	'python -m apps.sync_hub enroll --data-dir <its data dir> --hub <this hub url> --name <its name> --grant-file -';
 
 export type GrantRequestDecision =
-	| { kind: 'post'; body: GrantRequest }
-	| { kind: 'refuse'; reason: string };
+	{ kind: 'post'; body: GrantRequest } | { kind: 'refuse'; reason: string };
 
 /** The grant form's body. Refuses an empty or obviously malformed email. */
 export function grantRequest(rawEmail: string): GrantRequestDecision {

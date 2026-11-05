@@ -17,18 +17,23 @@ import pytest
 
 from apps.loudness.scan import LoudnessError, LoudnessScan, _parse_summary, scan_file
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None, reason="apps.loudness measures with real ffmpeg"
-)
+pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="apps.loudness measures with real ffmpeg")
 
 
 def _sine(path: Path, amplitude: float, seconds: int = 5) -> Path:
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-nostats", "-y",
-            "-f", "lavfi",
-            "-i", f"aevalsrc={amplitude}*sin(2*PI*1000*t):d={seconds}:s=48000",
-            "-c:a", "pcm_s16le", str(path),
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"aevalsrc={amplitude}*sin(2*PI*1000*t):d={seconds}:s=48000",
+            "-c:a",
+            "pcm_s16le",
+            str(path),
         ],
         check=True,
         capture_output=True,
@@ -92,8 +97,7 @@ def test_summary_wins_over_running_lines() -> None:
 
 # if gain is not clamped then applying it drives true peak over the ceiling
 def test_gain_clamped_by_peak_ceiling() -> None:
-    scan = LoudnessScan(Path("x"), integrated_lufs=-30.0, loudness_range_lu=5.0,
-                        true_peak_dbtp=-2.0)
+    scan = LoudnessScan(Path("x"), integrated_lufs=-30.0, loudness_range_lu=5.0, true_peak_dbtp=-2.0)
     gain, clamped = scan.gain_db(target_lufs=-14.0, ceiling_dbtp=-1.0)
     assert clamped is True
     assert gain == pytest.approx(1.0)  # only 1 dB of peak headroom exists
@@ -101,8 +105,7 @@ def test_gain_clamped_by_peak_ceiling() -> None:
 
 # if a track with headroom reports clamped then the clamp is unconditional
 def test_gain_unclamped_when_headroom_allows() -> None:
-    scan = LoudnessScan(Path("x"), integrated_lufs=-20.0, loudness_range_lu=5.0,
-                        true_peak_dbtp=-12.0)
+    scan = LoudnessScan(Path("x"), integrated_lufs=-20.0, loudness_range_lu=5.0, true_peak_dbtp=-12.0)
     gain, clamped = scan.gain_db(target_lufs=-14.0, ceiling_dbtp=-1.0)
     assert clamped is False
     assert gain == pytest.approx(6.0)
@@ -150,9 +153,7 @@ def test_require_ffmpeg_honors_mdt_ffmpeg_with_no_ffmpeg_on_path(
 
 
 @pytest.mark.requirement("NATIVE-10")
-def test_require_ffmpeg_still_fails_loudly_with_neither(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_require_ffmpeg_still_fails_loudly_with_neither(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] neither MDT_FFMPEG nor PATH has ffmpeg [then] a named error, [else stop]."""
     from apps.loudness.scan import require_ffmpeg
 

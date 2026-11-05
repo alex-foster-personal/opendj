@@ -22,7 +22,6 @@ Safety, all enforced here (fail-fast, explicit error, file untouched):
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 import sqlite3
@@ -34,6 +33,7 @@ from typing import Any
 import psutil
 
 from apps.shared import flac_meta, id3v2, mp4_meta, ogg_comment
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.tag_writer import read_tags
 
 from . import findings, store
@@ -55,14 +55,6 @@ class WriteResult:
     previous_genre: str | None
     written_genre: str
     backup_path: str
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _running_blocker(apps: tuple[str, ...]) -> str | None:
@@ -145,9 +137,9 @@ def _verified_backup(path: Path, backup_dir: Path) -> Path:
     through a temporary file and renamed, so a crash never leaves half of one.
     """
     backup_dir.mkdir(parents=True, exist_ok=True)
-    digest = _sha256(path)
+    digest = sha256_file_hex(path)
     backup = backup_dir / f"{digest}{path.suffix.lower()}"
-    if not backup.exists() or _sha256(backup) != digest:
+    if not backup.exists() or sha256_file_hex(backup) != digest:
         _atomic_copy(path, backup)
     return backup
 
@@ -194,7 +186,7 @@ def write_genre(
                 provider,
                 str(backup),
                 datetime.now(UTC).isoformat(timespec="seconds"),
-                _sha256(staged),
+                sha256_file_hex(staged),
             ),
         )
         conn.commit()
@@ -237,7 +229,7 @@ def undo(conn: sqlite3.Connection, write_id: int, *, blocking_apps: tuple[str, .
     path, backup = Path(path_s), Path(backup_s)
     if not backup.is_file():
         raise TagWriteRefused(f"backup {backup} is gone; cannot undo write {write_id}")
-    current = _sha256(path) if path.is_file() else None
+    current = sha256_file_hex(path) if path.is_file() else None
     if current is not None and current == backup.stem:
         # The write was journaled but never renamed into place (a crash between
         # the two): the file already holds the original bytes.

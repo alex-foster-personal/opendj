@@ -1,4 +1,5 @@
 """Smoke tests for the audit CLI ``apps.audit.match_rb_djay`` (SYNC-02)."""
+
 from __future__ import annotations
 
 import csv
@@ -78,9 +79,7 @@ def test_run_writes_csv_with_expected_columns(tmp_path: Path) -> None:
 
 def test_run_with_no_tracks_produces_empty_csv(tmp_path: Path) -> None:
     out_dir = tmp_path / "out"
-    result = match_rb_djay.run(
-        out_dir=out_dir, use_fingerprint=False, rb_tracks=[], dj_tracks=[]
-    )
+    result = match_rb_djay.run(out_dir=out_dir, use_fingerprint=False, rb_tracks=[], dj_tracks=[])
     csv_path = out_dir / "matches.csv"
     assert csv_path.exists()
     with csv_path.open(newline="", encoding="utf-8") as fp:
@@ -93,7 +92,5 @@ def test_run_with_no_tracks_produces_empty_csv(tmp_path: Path) -> None:
 def test_no_fingerprint_flag_skips_cache_init(tmp_path: Path) -> None:
     """`--no-fingerprint` should not attempt to create the sqlite cache."""
     out_dir = tmp_path / "out"
-    match_rb_djay.run(
-        out_dir=out_dir, use_fingerprint=False, rb_tracks=[], dj_tracks=[]
-    )
+    match_rb_djay.run(out_dir=out_dir, use_fingerprint=False, rb_tracks=[], dj_tracks=[])
     assert not (out_dir / "fingerprints.sqlite").exists()

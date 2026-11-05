@@ -35,9 +35,9 @@ from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import StateWriter
 
-from ..backend import StateBackend, Track
+from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
-from ..etag import compute_etag, strip_quotes
+from ..etag import require_current_etag
 from .relocate import CandidateFile, _mutate_with_candidate_guard, _open_candidate_file
 
 router = APIRouter(prefix="/tracks", tags=["track-locations"])
@@ -63,20 +63,6 @@ class TrackLocationAddIn(BaseModel):
 
 
 # ----- helpers ---------------------------------------------------------------
-
-def _require_current_etag(track: Track, if_match: str | None) -> None:
-    if not if_match:
-        raise HTTPException(status_code=428, detail={
-            "code": "PRECONDITION_REQUIRED",
-            "message": "track location writes require If-Match (the track ETag)",
-        })
-    current = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
-    if strip_quotes(current) != strip_quotes(if_match):
-        raise HTTPException(status_code=409, detail={
-            "code": "TRACK_ETAG_CONFLICT",
-            "message": "track changed since it was read; refresh and retry",
-        })
-
 
 def _open_state(request: Request) -> sqlite3.Connection:
     db_path = Path(request.app.state.state_db_path)
@@ -135,7 +121,13 @@ def add_track_location(
             "message": "confirm must be true to attach a location",
         })
     track = backend.get_track(stable_id)  # NotFoundError -> 404
-    _require_current_etag(track, if_match)
+    require_current_etag(
+        track,
+        if_match,
+        precondition_message="track location writes require If-Match (the track ETag)",
+        conflict_code="TRACK_ETAG_CONFLICT",
+        conflict_message="track changed since it was read; refresh and retry",
+    )
     candidate, descriptor = _open_candidate_file(body.file_path)
     os.close(descriptor)
     conn = _open_state(request)
@@ -172,7 +164,13 @@ def remove_track_location(
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> Response:
     track = backend.get_track(stable_id)  # NotFoundError -> 404
-    _require_current_etag(track, if_match)
+    require_current_etag(
+        track,
+        if_match,
+        precondition_message="track location writes require If-Match (the track ETag)",
+        conflict_code="TRACK_ETAG_CONFLICT",
+        conflict_message="track changed since it was read; refresh and retry",
+    )
     conn = _open_state(request)
     try:
         with StateWriter(conn, actor="webui") as writer:

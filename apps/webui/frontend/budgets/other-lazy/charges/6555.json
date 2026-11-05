@@ -1,9 +1,0 @@
-{
-  "bytes": 8192,
-  "measured_main": 471843,
-  "measured_with_pr": 478537,
-  "sha": "0c6b89991c",
-  "date": "Tue 3 Nov 2026",
-  "reason": "PR #6555 Spotify side player: account playlists, Connect and Client ID flow, the docked-player controls and the panel's container and view split, all deferred with the Spotify source panel; one clean local vite build each, main 0ab59208b5 471,843 and main + this PR 0c6b89991c 478,537 (+6,694 B), ceiled to KiB plus 1 KiB jitter => 8192 B",
-  "payback": "none planned; the panel loads only when the Spotify source is opened"
-}

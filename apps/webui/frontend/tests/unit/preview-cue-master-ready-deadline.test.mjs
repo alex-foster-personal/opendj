@@ -18,7 +18,10 @@ test('if preview-cue-library waits less than two watchdog recovery windows for t
 	const { MASTER_READY_TIMEOUT_MS, watchdogRecoveryWindowMs: liveWindowFn } =
 		await loadTypeScriptModule(MASTER_READY);
 
-	const oneWindowMs = watchdogRecoveryWindowMs(CONTEXT_RESUME_BACKOFF_MS, AUDIO_CONTEXT_IO_TIMEOUT_MS);
+	const oneWindowMs = watchdogRecoveryWindowMs(
+		CONTEXT_RESUME_BACKOFF_MS,
+		AUDIO_CONTEXT_IO_TIMEOUT_MS
+	);
 	assert.equal(
 		liveWindowFn(),
 		oneWindowMs,
@@ -50,7 +53,10 @@ test('if MASTER_READY_TIMEOUT_MS collapses to the bare one-window value then bro
 	const { CONTEXT_RESUME_BACKOFF_MS } = await loadTypeScriptModule(WATCHDOG);
 	const { AUDIO_CONTEXT_IO_TIMEOUT_MS } = await loadTypeScriptModule(IO_TIMEOUT);
 	const { MASTER_READY_TIMEOUT_MS } = await loadTypeScriptModule(MASTER_READY);
-	const oneWindowMs = watchdogRecoveryWindowMs(CONTEXT_RESUME_BACKOFF_MS, AUDIO_CONTEXT_IO_TIMEOUT_MS);
+	const oneWindowMs = watchdogRecoveryWindowMs(
+		CONTEXT_RESUME_BACKOFF_MS,
+		AUDIO_CONTEXT_IO_TIMEOUT_MS
+	);
 	assert.ok(
 		MASTER_READY_TIMEOUT_MS > oneWindowMs,
 		'the deadline must exceed a single recovery window, not just equal it'

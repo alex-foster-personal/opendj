@@ -1,4 +1,5 @@
 """Read-only HTTP contract for imported Spotify pending tracks."""
+
 from __future__ import annotations
 
 import json
@@ -78,15 +79,25 @@ def _insert_pending(
         "duration_ms, suggested_sources_json, status, added_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            "spotify:pl123", position, f"spotify:track:{position}",
-            "USABC2500001", f"Track {position}", "Artist", "Album", 123000,
-            json.dumps(sources if sources is not None else {
-                "beatport": "https://www.beatport.com/search?q=track",
-                "bandcamp": "https://bandcamp.com/search?q=track",
-                "qobuz": "https://www.qobuz.com/us-en/search?q=track",
-                "apple_music": "https://music.apple.com/us/search?term=track",
-                "discogs": "https://www.discogs.com/search?q=track",
-            }),
+            "spotify:pl123",
+            position,
+            f"spotify:track:{position}",
+            "USABC2500001",
+            f"Track {position}",
+            "Artist",
+            "Album",
+            123000,
+            json.dumps(
+                sources
+                if sources is not None
+                else {
+                    "beatport": "https://www.beatport.com/search?q=track",
+                    "bandcamp": "https://bandcamp.com/search?q=track",
+                    "qobuz": "https://www.qobuz.com/us-en/search?q=track",
+                    "apple_music": "https://music.apple.com/us/search?term=track",
+                    "discogs": "https://www.discogs.com/search?q=track",
+                }
+            ),
             status,
             "2026-07-22T00:00:00Z",
         ),
@@ -135,13 +146,12 @@ def test_get_pending_tracks_accepts_valid_source_keys_in_any_json_order(
             "discogs": "https://www.discogs.com/search?q=track",
         }
         _insert_pending(
-            conn, position=0,
+            conn,
+            position=0,
             sources=dict(reversed(list(canonical_sources.items()))),
         )
 
-        response = client.get(
-            "/api/v1/spotify/playlists/spotify:pl123/pending-tracks"
-        )
+        response = client.get("/api/v1/spotify/playlists/spotify:pl123/pending-tracks")
 
         assert response.status_code == 200
         assert response.json()[0]["suggested_sources"] == canonical_sources
@@ -151,9 +161,17 @@ def test_get_pending_tracks_accepts_valid_source_keys_in_any_json_order(
 
 
 @pytest.mark.requirement("CAT-01")
-@pytest.mark.parametrize("playlist", [None, Playlist(
-    playlist_id="pl-001", name="Local Playlist", vendor="rekordbox",
-)])
+@pytest.mark.parametrize(
+    "playlist",
+    [
+        None,
+        Playlist(
+            playlist_id="pl-001",
+            name="Local Playlist",
+            vendor="rekordbox",
+        ),
+    ],
+)
 def test_get_pending_tracks_rejects_missing_or_non_spotify_playlist(
     tmp_path: Path,
     playlist: Playlist | None,
@@ -174,20 +192,16 @@ def test_get_pending_tracks_fails_when_auxiliary_table_is_absent(
     tmp_path: Path,
 ) -> None:
     client, conn = _make_client(
-        tmp_path, playlist=_spotify_playlist(), with_pending_table=False,
+        tmp_path,
+        playlist=_spotify_playlist(),
+        with_pending_table=False,
     )
     try:
-        response = client.get(
-            "/api/v1/spotify/playlists/spotify:pl123/pending-tracks"
-        )
+        response = client.get("/api/v1/spotify/playlists/spotify:pl123/pending-tracks")
 
         assert response.status_code == 500
         assert response.json()["detail"]["code"] == "PENDING_TRACKS_TABLE_MISSING"
-        tables = {
-            row[0] for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "pending_tracks" not in tables
     finally:
         client.close()
@@ -195,17 +209,20 @@ def test_get_pending_tracks_fails_when_auxiliary_table_is_absent(
 
 
 @pytest.mark.requirement("CAT-01")
-@pytest.mark.parametrize("sources", [
-    {"beatport": "https://www.beatport.com/search?q=track"},
-    {
-        "beatport": "https://www.beatport.com/search?q=track",
-        "bandcamp": "https://bandcamp.com/search?q=track",
-        "qobuz": "https://www.qobuz.com/us-en/search?q=track",
-        "apple_music": "https://music.apple.com/us/search?term=track",
-        "discogs": 7,
-    },
-    "not-a-json-object",
-])
+@pytest.mark.parametrize(
+    "sources",
+    [
+        {"beatport": "https://www.beatport.com/search?q=track"},
+        {
+            "beatport": "https://www.beatport.com/search?q=track",
+            "bandcamp": "https://bandcamp.com/search?q=track",
+            "qobuz": "https://www.qobuz.com/us-en/search?q=track",
+            "apple_music": "https://music.apple.com/us/search?term=track",
+            "discogs": 7,
+        },
+        "not-a-json-object",
+    ],
+)
 def test_get_pending_tracks_fails_for_malformed_persisted_sources(
     tmp_path: Path,
     sources: object,
@@ -214,15 +231,14 @@ def test_get_pending_tracks_fails_for_malformed_persisted_sources(
     try:
         _insert_pending(conn, position=0, sources=sources)
 
-        response = client.get(
-            "/api/v1/spotify/playlists/spotify:pl123/pending-tracks"
-        )
+        response = client.get("/api/v1/spotify/playlists/spotify:pl123/pending-tracks")
 
         assert response.status_code == 500
         assert response.json()["detail"]["code"] == "MALFORMED_PENDING_TRACK"
     finally:
         client.close()
         conn.close()
+
 
 pytestmark = pytest.mark.rb_parity
 
@@ -241,7 +257,14 @@ def test_production_app_registers_account_playlists() -> None:
     assert "/api/v1/spotify/account/connect" in paths
 
 
-def _real_opener(tmp_path: Path, *, api_base: str | None = None, token_url: str | None = None, signed_in: bool = True, expires_in: int = 3600):
+def _real_opener(
+    tmp_path: Path,
+    *,
+    api_base: str | None = None,
+    token_url: str | None = None,
+    signed_in: bool = True,
+    expires_in: int = 3600,
+):
     """The production opener on a token cache in tmp_path, aimed at loopback Spotify."""
     from apps.spotify import account
     from tests.spotify.spotify_loopback import write_token
@@ -267,9 +290,11 @@ def test_account_playlists_lists_every_page(tmp_path: Path) -> None:
     from tests.spotify.spotify_loopback import WebApi, playlist
 
     with WebApi([playlist(i) for i in range(75)] + [playlist(900, owner="friend")]) as api:
-        body = _account_client(_real_opener(tmp_path, api_base=api.api_base)).get(
-            "/api/v1/spotify/account/playlists"
-        ).json()
+        body = (
+            _account_client(_real_opener(tmp_path, api_base=api.api_base))
+            .get("/api/v1/spotify/account/playlists")
+            .json()
+        )
     assert body["connected"] is True
     assert body["user_id"] == "me"
     assert body["total_reported"] == 76
@@ -342,8 +367,8 @@ def test_a_damaged_client_id_file_is_a_500_not_a_setup_prompt(tmp_path: Path) ->
 @pytest.mark.requirement("SPOT-6555")
 def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> None:
     """[if] a fresh install has no env id and no saved id [then] the panel can
-    save one and Connect starts with it, [else] sign-in can never bootstrap
-   ."""
+     save one and Connect starts with it, [else] sign-in can never bootstrap
+    ."""
     from http.server import HTTPServer
 
     from apps.spotify import account
@@ -354,9 +379,7 @@ def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> N
     token = tmp_path / "token.json"
     app = FastAPI()
     app.state.spotify_client_id_path = cid
-    app.state.spotify_account_opener = lambda: account.open_account_client(
-        env={}, token_path=token, client_id_path=cid
-    )
+    app.state.spotify_account_opener = lambda: account.open_account_client(env={}, token_path=token, client_id_path=cid)
 
     def factory(_addr: tuple[str, int], handler: type) -> HTTPServer:
         return HTTPServer(("127.0.0.1", 0), handler)
@@ -387,9 +410,17 @@ def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> N
 
 def _playlist_out(**extra: object) -> dict[str, object]:
     return {
-        "spotify_id": "aaa", "name": "Invented aaa", "owner_id": "me", "owner_name": None,
-        "owned": True, "collaborative": False, "public": None, "track_count": 3,
-        "image_url": None, "open_url": "https://open.spotify.com/playlist/aaa", "snapshot_id": None,
+        "spotify_id": "aaa",
+        "name": "Invented aaa",
+        "owner_id": "me",
+        "owner_name": None,
+        "owned": True,
+        "collaborative": False,
+        "public": None,
+        "track_count": 3,
+        "image_url": None,
+        "open_url": "https://open.spotify.com/playlist/aaa",
+        "snapshot_id": None,
         **extra,
     }
 
@@ -399,8 +430,13 @@ def test_the_listing_model_refuses_what_the_engine_never_returns() -> None:
 
     The engine always produces these; the response model is the contract, so
     a one-sided change fails here instead of reaching the panel."""
-    good = {"connected": True, "user_id": "me", "display_name": None, "total_reported": 1,
-            "playlists": [_playlist_out()]}
+    good = {
+        "connected": True,
+        "user_id": "me",
+        "display_name": None,
+        "total_reported": 1,
+        "playlists": [_playlist_out()],
+    }
     # Controls: a complete listing, an empty account, and a disconnected answer.
     assert AccountPlaylistsOut(**good).total_reported == 1
     assert AccountPlaylistsOut(**{**good, "total_reported": 0, "playlists": []}).total_reported == 0
@@ -409,7 +445,9 @@ def test_the_listing_model_refuses_what_the_engine_never_returns() -> None:
         is None
     )
     assert AccountPlaylistsOut(**{**good, "playlists": [_playlist_out(track_count=0)]}).playlists[0].track_count == 0
-    assert AccountPlaylistsOut(**{**good, "playlists": [_playlist_out(track_count=None)]}).playlists[0].track_count is None
+    assert (
+        AccountPlaylistsOut(**{**good, "playlists": [_playlist_out(track_count=None)]}).playlists[0].track_count is None
+    )
     for _label, body in [
         ("null total", {**good, "total_reported": None}),
         ("missing total", {k: v for k, v in good.items() if k != "total_reported"}),
@@ -422,14 +460,22 @@ def test_the_listing_model_refuses_what_the_engine_never_returns() -> None:
         ("missing playlists", {k: v for k, v in good.items() if k != "playlists"}),
         ("disconnected without playlists", {"connected": False, "reason": "not_signed_in", "message": "x"}),
         # Sol P1 on #6555: a disconnected answer carries no rows and no account fields.
-        ("disconnected with playlists", {"connected": False, "reason": "not_signed_in", "message": "x",
-                                         "playlists": [_playlist_out()]}),
-        ("disconnected with user", {"connected": False, "reason": "not_signed_in", "message": "x",
-                                    "user_id": "me", "playlists": []}),
-        ("disconnected with display name", {"connected": False, "reason": "not_signed_in", "message": "x",
-                                            "display_name": "Me", "playlists": []}),
-        ("disconnected with total", {"connected": False, "reason": "not_signed_in", "message": "x",
-                                     "total_reported": 0, "playlists": []}),
+        (
+            "disconnected with playlists",
+            {"connected": False, "reason": "not_signed_in", "message": "x", "playlists": [_playlist_out()]},
+        ),
+        (
+            "disconnected with user",
+            {"connected": False, "reason": "not_signed_in", "message": "x", "user_id": "me", "playlists": []},
+        ),
+        (
+            "disconnected with display name",
+            {"connected": False, "reason": "not_signed_in", "message": "x", "display_name": "Me", "playlists": []},
+        ),
+        (
+            "disconnected with total",
+            {"connected": False, "reason": "not_signed_in", "message": "x", "total_reported": 0, "playlists": []},
+        ),
         ("negative track count", {**good, "playlists": [_playlist_out(track_count=-1)]}),
         # Strict: nothing is coerced into a field's type.
         ("string total", {**good, "total_reported": "1"}),
@@ -443,12 +489,27 @@ def test_the_listing_model_refuses_what_the_engine_never_returns() -> None:
         ("int name", {**good, "playlists": [_playlist_out(name=7)]}),
         # The id is base-62 and the URL is the one built from it.
         # Its URL matches, so only the id check can refuse it.
-        ("uri id", {**good, "playlists": [_playlist_out(
-            spotify_id="spotify:playlist:aaa", open_url="https://open.spotify.com/playlist/spotify:playlist:aaa")]}),
-        ("another playlist's url", {**good, "playlists": [_playlist_out(open_url="https://open.spotify.com/playlist/bbb")]}),
+        (
+            "uri id",
+            {
+                **good,
+                "playlists": [
+                    _playlist_out(
+                        spotify_id="spotify:playlist:aaa",
+                        open_url="https://open.spotify.com/playlist/spotify:playlist:aaa",
+                    )
+                ],
+            },
+        ),
+        (
+            "another playlist's url",
+            {**good, "playlists": [_playlist_out(open_url="https://open.spotify.com/playlist/bbb")]},
+        ),
         ("album url", {**good, "playlists": [_playlist_out(open_url="https://open.spotify.com/album/aaa")]}),
-        ("trailing slash url", {**good, "playlists": [_playlist_out(open_url="https://open.spotify.com/playlist/aaa/")]}),
+        (
+            "trailing slash url",
+            {**good, "playlists": [_playlist_out(open_url="https://open.spotify.com/playlist/aaa/")]},
+        ),
     ]:
         with pytest.raises(ValidationError):
             AccountPlaylistsOut(**body)  # type: ignore[arg-type]
-

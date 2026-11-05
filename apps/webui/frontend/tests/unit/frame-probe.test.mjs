@@ -42,7 +42,10 @@ test('the probe is off unless the URL or localStorage asks for it', () => {
 	assert.equal(probe.frameProbeRequested('?perfprobe=0', empty), false);
 	assert.equal(probe.frameProbeRequested('?perfprobe=1', empty), true);
 	assert.equal(probe.frameProbeRequested('?x=2&perfprobe=1', null), true);
-	assert.equal(probe.frameProbeRequested('', { getItem: (k) => (k === 'mdt.perfProbe' ? '1' : null) }), true);
+	assert.equal(
+		probe.frameProbeRequested('', { getItem: (k) => (k === 'mdt.perfProbe' ? '1' : null) }),
+		true
+	);
 	assert.equal(
 		probe.frameProbeRequested('', {
 			getItem() {

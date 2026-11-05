@@ -195,9 +195,7 @@ def test_a_rewrite_of_the_origin_fetch_url_is_refused(world) -> None:
     impostor_url = _impostor_with_side_history(world)
     gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
     source_url = repo_url(world, CONFIG["source_repository"])
-    gitconfig.write_text(
-        gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {source_url}\n'
-    )
+    gitconfig.write_text(gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {source_url}\n')
     result = run_mirror_script(world, world["off_main"])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "would rewrite" in result.stdout
@@ -229,9 +227,7 @@ def test_no_local_origin_main_is_needed_because_main_is_fetched_fresh(world) -> 
 def test_the_retired_mirror_override_is_refused_by_name_not_ignored(world) -> None:
     """Codex P1 on #4472: an override let a push land where the budget gate read zero."""
     bootstrap_default_branch(world)
-    result = run_mirror_script(
-        world, world["on_main"], CANARY_MIRROR_REPO=CONFIG["mirror_repository"]
-    )
+    result = run_mirror_script(world, world["on_main"], CANARY_MIRROR_REPO=CONFIG["mirror_repository"])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "CANARY_MIRROR_REPO is no longer honored" in result.stdout
     assert set(refs_in(world)) == {"refs/heads/main"}

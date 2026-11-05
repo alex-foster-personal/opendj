@@ -1,9 +1,0 @@
-{
-  "bytes": 5120,
-  "measured_main": 481654,
-  "measured_with_pr": 485616,
-  "sha": "13d77240b0",
-  "date": "Tue 3 Nov 2026",
-  "reason": "PR #6529 Backstage shell: the grouped Backstage nav and its deferred chrome land in the deferred shell (CI job 125904778849 measured 485616 on 69dbee89d8 against the 482304 limit)",
-  "payback": "once Backstage is the default and the flat sidebar list is dropped, this charge is retired"
-}

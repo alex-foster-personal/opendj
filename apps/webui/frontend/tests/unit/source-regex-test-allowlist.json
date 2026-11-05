@@ -178,10 +178,6 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
-			"file": "cloudsync-status-chip.test.mjs",
-			"reason": "pre-existing (ratchet seed 2026-10-07)"
-		},
-		{
 			"file": "cloudsync-view.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -718,6 +714,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "library-tags.test.mjs",
+			"reason": "wiring checks: TrackContextMenu hosts the tag dialogs, MyTagEditorModal never calls the non-undoable tag routes, and TagCell keeps its italic middle-dot style; rendering these needs the live tag store and context menu, and a CSS rule is not visible in SSR output"
+		},
+		{
 			"file": "libux-07-remote-glyph.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -792,10 +792,6 @@
 		{
 			"file": "musical-column-fit.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
-		},
-		{
-			"file": "native-grid-marker.test.mjs",
-			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
 			"file": "output-menu-explainer-placement.test.mjs",
@@ -1014,6 +1010,10 @@
 			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
 		},
 		{
+			"file": "playground-panel-css-scope.test.mjs",
+			"reason": "#7502: CSS-scope lock for PlaygroundPanel.css; Svelte does not scope @import so the test reads source to pin the @import, the .playground-panel root, and that max-width: 1180px left the svelte file. An SSR render emits markup but not imported CSS selectors."
+		},
+		{
 			"file": "playlist-count-alignment.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1222,10 +1222,6 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
-			"file": "stem-hold.test.mjs",
-			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
-		},
-		{
 			"file": "stem-separate.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
@@ -1394,6 +1390,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "track-table-deck-load-scroll.test.mjs",
+			"reason": "issue #2606 / LIBUX-2606 wiring pin: TrackTable must import browse-scroll helpers and must not assign scrollTop from loadedIds or masterStableId in $effect; scroll-window acceptance is covered by extracted module tests in the same file"
+		},
+		{
 			"file": "track-table-energy-column.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1432,6 +1432,10 @@
 		{
 			"file": "transport-visual-feedback.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "ui-mirror-deck-load-error.test.mjs",
+			"reason": "Issue #2339: source-scan BrowserPanel _loadOntoDeck and recordDeckLoadRefusal wiring without mounting the full browser panel."
 		},
 		{
 			"file": "ui-chrome-no-emoji.test.mjs",
@@ -1562,8 +1566,48 @@
 			"reason": "#8304: pins the production-build branch of BrowserPanel (pageServedByEngine from import.meta.env.DEV picks the App UI dot and skips the dev-server ping); DEV is fixed when the module is compiled, so an SSR render in the unit runner only ever takes the dev branch"
 		},
 		{
-			"file": "native-grid-contrast.test.mjs",
-			"reason": "checks the contrast colours declared in the StripWaveform style block against theme.css tokens (F08/GB-6838); the values live in CSS, which a rendered body does not expose"
+			"file": "artwork-cover.test.mjs",
+			"reason": "LIBM-185: pins that nine img sites carry data-expected-resource-error, call the shared coverFailed/coverVisible helpers and keep no private failed flag; a markup attribute and call-site contract across Mixer, TrackTable, dedup and others that an SSR render of one component cannot see, and the retry logic itself is tested on the extracted helper in the same file"
+		},
+		{
+			"file": "color-fx-menu-gesture.test.mjs",
+			"reason": "Pins the Knob/ChannelStrip pointer wiring (capture-phase document listener, ontap on release, no native select) and the caption CSS (ellipsis, max-width, 8px size); the CSS is scoped style text and the handlers need real pointer events, neither of which an SSR render runs, and the press classifier itself is tested as an exported function in the same file"
+		},
+		{
+			"file": "deck-mirror-layout.test.mjs",
+			"reason": "Pins the Deck and DeckHeader mirror CSS (row-reverse scoped to the mirror class, no scaleX or rtl flip); scoped style rules are not in SSR output and Deck needs the whole engine context to render, so the layout contract can only be read from source until a browser layout test exists"
+		},
+		{
+			"file": "libux-8626-undo-history.test.mjs",
+			"reason": "Two pins read LibrarySourceTabs (hover-intent handlers, popover not pointer-events: none) and BrowserPanel (removes rows in place, never _loadPane); event handlers and CSS do not run in an SSR render and BrowserPanel is too large to render in a unit test; the history rows, jump parsing and removeRowsInPlace logic are tested as exported functions in the same file"
+		},
+		{
+			"file": "libux-8676-undo-restore-toasts.test.mjs",
+			"reason": "Pins TrackTable row-press and dragend wiring, the multi-select load-box hiding CSS, the 200ms remove/restore animation CSS and BrowserPanel toast wiring; handlers and scoped CSS do not run in an SSR render and TrackTable and BrowserPanel are too heavy to render in a unit test; the inverse-row and restore logic is tested as exported functions in the same file"
+		},
+		{
+			"file": "track-load-reset-now.test.mjs",
+			"reason": "One test pins TrackLoadResetPanel (testid, resetDeckNowCommand dispatch, secondary-button CSS with no accent) and that Deck and ChannelStrip toggle the panel; the click dispatch and scoped CSS are not exercised by an SSR render, while the command parsing and dispatch are tested through the real performance-ipc module in the same file"
+		},
+		{
+			"file": "key-bpm-cell-no-status-word.test.mjs",
+			"reason": "KEY-CELL-01: pins the empty key/BPM status spans in TrackTable markup and the key hover card note binding; the status spans are only reached for a failed row inside the virtualised table, which an SSR render of TrackTable does not populate"
+		},
+		{
+			"file": "key-guess-hover-card.test.mjs",
+			"reason": "KEY-GUESS-01: pins that the key-guess span carries no title= and that keyCellTitle writes the best-guess line into the hover card note; the note is a prop bound on hover, which an SSR render never triggers"
+		},
+		{
+			"file": "playlist-row-01-undo-popover-click.test.mjs",
+			"reason": "PLAYLIST-ROW-01: pins the LibrarySourceTabs undo button focus handlers (keyboard focus opens history, mouse focus does not, hover intent still does); focus and pointer handlers do not run in an SSR render"
+		},
+		{
+			"file": "hot-cue-loop.test.mjs",
+			"reason": "HOTCUE-LOOP-01 (Wed 4 Nov 2026): behaviour runs the real IPC and engine; one wiring check scans HotCueBank.svelte, the controller pads and the engine for the loop-aware save, which rendering one pad cannot show across all three paths"
+		},
+		{
+			"file": "key-sync-follow-master.test.mjs",
+			"reason": "DECKUX-34 / DECK-KEY-01 (Wed 4 Nov 2026): behaviour runs the real engine; the DeckHeader and TempoEditModal reads check the key readout binding a server render has no deck state for"
 		}
 	]
 }

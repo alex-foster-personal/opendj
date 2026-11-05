@@ -72,6 +72,9 @@ export interface XrunReport {
 
 export interface XrunSessionCounter {
 	xruns: number;
+	/** XRUNHOLD-01: xruns from windows whose worst gap clears the clock's own
+	 * resolution. Only these pause background analysis; `xruns` is unchanged. */
+	hold_xruns: number;
 	parked: number;
 	reports: number;
 	callbacks: number;
@@ -88,6 +91,7 @@ const EMPTY_XRUN_TALLY: Readonly<XrunTally> = Object.freeze({
 
 export const EMPTY_XRUN_SESSION: Readonly<XrunSessionCounter> = Object.freeze({
 	xruns: 0,
+	hold_xruns: 0,
 	parked: 0,
 	reports: 0,
 	callbacks: 0,
@@ -265,12 +269,31 @@ export function isXrunReport(value: unknown): value is XrunReport {
 	return typeof row.clock === 'string' && row.clock.length > 0;
 }
 
+/** Resolution of the worklet's wall clock, by the name the report carries. `date`
+ * (Date.now) ticks in whole milliseconds; any other clock is treated as exact. */
+export function clockResolutionMs(clock: string): number {
+	return clock === 'date' ? 1 : 0;
+}
+
+/**
+ * XRUNHOLD-01 (silver, Wed 4 Nov 2026): a window whose worst gap is within the
+ * clock's resolution of the threshold is not evidence of a late callback. At
+ * 44.1 kHz a healthy 256-frame period is 5.8 ms; Date.now() reads it as 6 ms,
+ * over a 5.5 ms threshold, so 44 of 57 reports that evening were rounding and
+ * each one paused background analysis for a minute. Such a window still counts
+ * as `xruns` (the live-audio signal is untouched); it just never holds analysis.
+ */
+export function xrunReportHoldsAnalysis(report: Pick<XrunReport, 'xruns' | 'worst_gap_ms' | 'threshold_ms' | 'clock'>): boolean {
+	return report.xruns > 0 && report.worst_gap_ms >= report.threshold_ms + clockResolutionMs(report.clock);
+}
+
 export function foldXrunReport(
 	counter: Readonly<XrunSessionCounter>,
 	report: XrunReport
 ): XrunSessionCounter {
 	return {
 		xruns: counter.xruns + report.xruns,
+		hold_xruns: counter.hold_xruns + (xrunReportHoldsAnalysis(report) ? report.xruns : 0),
 		parked: counter.parked + report.parked,
 		reports: counter.reports + 1,
 		callbacks: counter.callbacks + report.callbacks,

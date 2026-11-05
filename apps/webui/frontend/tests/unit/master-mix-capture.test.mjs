@@ -24,7 +24,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://master-mix.example.test';
 const ENGINE_STUB = fileURLToPath(new URL('./fixtures/master-mix-engine-stub.ts', import.meta.url));
-const RUST_MODE_STUB = fileURLToPath(new URL('./fixtures/master-mix-rust-mode-stub.ts', import.meta.url));
+const RUST_MODE_STUB = fileURLToPath(
+	new URL('./fixtures/master-mix-rust-mode-stub.ts', import.meta.url)
+);
 
 // --------------------------------------------------------------------------
 // the worklet, under a faked AudioWorkletGlobalScope
@@ -57,8 +59,14 @@ function installWorkletScope() {
 	let registered = null;
 	globalThis.registerProcessor = (name, ctor) => (registered = { name, ctor });
 	// eslint-disable-next-line no-new-func -- the point is to run the shipped text
-	new Function('Int16Array', readFrontendSource('src/lib/sets/master-capture-processor.js'))(Counting);
-	assert.equal(registered?.name, 'mdt-master-capture', 'if it stops registering, every test below drives nothing');
+	new Function('Int16Array', readFrontendSource('src/lib/sets/master-capture-processor.js'))(
+		Counting
+	);
+	assert.equal(
+		registered?.name,
+		'mdt-master-capture',
+		'if it stops registering, every test below drives nothing'
+	);
 	return registered.ctor;
 }
 
@@ -75,7 +83,10 @@ before(() => {
 });
 
 test('the worklet refuses a chunk size it cannot honour', () => {
-	assert.throws(() => new Processor({ processorOptions: { chunkFrames: 64 } }), /chunkFrames >= 128/);
+	assert.throws(
+		() => new Processor({ processorOptions: { chunkFrames: 64 } }),
+		/chunkFrames >= 128/
+	);
 	assert.throws(() => new Processor({ processorOptions: {} }), /chunkFrames/);
 });
 
@@ -179,7 +190,8 @@ class FakePort {
 	}
 	postMessage(message) {
 		this.sent.push(message);
-		if (message.flush) queueMicrotask(() => this.listeners.forEach((l) => l({ data: { flushed: true } })));
+		if (message.flush)
+			queueMicrotask(() => this.listeners.forEach((l) => l({ data: { flushed: true } })));
 	}
 	addEventListener(_type, listener) {
 		this.listeners.push(listener);
@@ -231,7 +243,10 @@ async function settle() {
 before(async () => {
 	capture = await loadTypeScriptModule('tests/unit/fixtures/master-mix-capture-entry.ts', {
 		viteApiBase: API_BASE,
-		alias: { '$lib/rb/audio-engine.svelte': ENGINE_STUB, '$lib/audio-engine/rust-mode.svelte': RUST_MODE_STUB }
+		alias: {
+			'$lib/rb/audio-engine.svelte': ENGINE_STUB,
+			'$lib/audio-engine/rust-mode.svelte': RUST_MODE_STUB
+		}
 	});
 });
 
@@ -240,7 +255,12 @@ test('chunks post in order, as raw PCM, to the session with stream, seq and rate
 	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
 	const posts = [];
 	const post = async (url, init) => {
-		posts.push({ url, method: init.method, type: init.headers['content-type'], bytes: init.body.byteLength });
+		posts.push({
+			url,
+			method: init.method,
+			type: init.headers['content-type'],
+			bytes: init.body.byteLength
+		});
 		return new Response(null, { status: 204 });
 	};
 	const handle = await capture.startMasterMixCapture('2026-10-06T03-00-00', assert.fail, post);
@@ -256,19 +276,29 @@ test('chunks post in order, as raw PCM, to the session with stream, seq and rate
 	// Exactly what was posted: the daemon checks the WAV against this count.
 	assert.equal(stats.frames_sent, 48000);
 	assert.equal(stats.chunks_sent, 2);
-	assert.equal(stats.frames_sent * 4, posts.reduce((n, p) => n + p.bytes, 0));
+	assert.equal(
+		stats.frames_sent * 4,
+		posts.reduce((n, p) => n + p.bytes, 0)
+	);
 	assert.ok(stats.tap_started_ms > 0 && stats.tap_stopped_ms >= stats.tap_started_ms);
 	assert.equal(globalThis.__mdtMasterMix.frames_sent, 48000);
 	const urls = posts.map((p) => new URL(p.url));
 	assert.deepEqual(
-		urls.map((u) => [u.origin + u.pathname, u.searchParams.get('seq'), u.searchParams.get('sample_rate')]),
+		urls.map((u) => [
+			u.origin + u.pathname,
+			u.searchParams.get('seq'),
+			u.searchParams.get('sample_rate')
+		]),
 		[
 			[`${API_BASE}/api/sets/recorder/2026-10-06T03-00-00/master-pcm`, '0', '48000'],
 			[`${API_BASE}/api/sets/recorder/2026-10-06T03-00-00/master-pcm`, '1', '48000']
 		]
 	);
 	assert.equal(new Set(urls.map((u) => u.searchParams.get('stream'))).size, 1);
-	assert.deepEqual(posts.map((p) => [p.method, p.type, p.bytes]), Array(2).fill(['POST', 'application/octet-stream', 96000]));
+	assert.deepEqual(
+		posts.map((p) => [p.method, p.type, p.bytes]),
+		Array(2).fill(['POST', 'application/octet-stream', 96000])
+	);
 	// Each posted buffer goes back to the worklet's pool, and stop flushed it.
 	assert.equal(worklet.port.sent.filter((m) => m.reuse).length, 2);
 	assert.ok(worklet.port.sent.some((m) => m.flush === true));
@@ -304,18 +334,25 @@ test('a backlog the daemon cannot drain fails the tap instead of buffering forev
 	const failures = [];
 	const post = () => new Promise(() => {});
 	await capture.startMasterMixCapture('S', (why) => failures.push(why), post);
-	for (let i = 0; i <= capture.MAX_QUEUED_CHUNKS + 1; i += 1) graph.worklets[0].port.emit(chunk(10));
+	for (let i = 0; i <= capture.MAX_QUEUED_CHUNKS + 1; i += 1)
+		graph.worklets[0].port.emit(chunk(10));
 	assert.equal(failures.length, 1);
 	assert.match(failures[0], /fell .* behind the master mix/);
 });
 
 test('no master bus, or a context that will not run, rejects the start and attaches nothing', async () => {
 	capture.setMasterMixTapPoint(null);
-	await assert.rejects(capture.startMasterMixCapture('S', assert.fail, assert.fail), /no master bus/);
+	await assert.rejects(
+		capture.startMasterMixCapture('S', assert.fail, assert.fail),
+		/no master bus/
+	);
 	const graph = fakeGraph();
 	graph.context.state = 'suspended';
 	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
-	await assert.rejects(capture.startMasterMixCapture('S', assert.fail, assert.fail), /will not run \(suspended\)/);
+	await assert.rejects(
+		capture.startMasterMixCapture('S', assert.fail, assert.fail),
+		/will not run \(suspended\)/
+	);
 	assert.equal(graph.worklets.length, 0);
 });
 
@@ -337,7 +374,12 @@ test('a chunk in flight at a clean stop is dropped quietly: no failure, the tap 
 			status: 200,
 			headers: { 'content-type': 'application/json' }
 		});
-	await capture.startMasterMixCapture('S', (why) => failures.push(why), post, () => (ended += 1));
+	await capture.startMasterMixCapture(
+		'S',
+		(why) => failures.push(why),
+		post,
+		() => (ended += 1)
+	);
 	const [worklet] = graph.worklets;
 	worklet.port.emit(chunk(100));
 	await settle();
@@ -348,7 +390,11 @@ test('a chunk in flight at a clean stop is dropped quietly: no failure, the tap 
 	const loud = fakeGraph();
 	capture.setMasterMixTapPoint({ context: loud.context, node: loud.node });
 	const loudFailures = [];
-	await capture.startMasterMixCapture('S', (why) => loudFailures.push(why), async () => new Response('{}', { status: 200 }));
+	await capture.startMasterMixCapture(
+		'S',
+		(why) => loudFailures.push(why),
+		async () => new Response('{}', { status: 200 })
+	);
 	loud.worklets[0].port.emit(chunk(100));
 	await settle();
 	assert.equal(loudFailures.length, 1);
@@ -375,7 +421,10 @@ test('the page runs one tap per recording, however many times it is asked (order
 
 test('a master start is pushed to the leader page as an agent order the executor handles', () => {
 	const orders = readFrontendSource('src/lib/rb/agent-orders.ts');
-	assert.match(orders, /if \(order\.type === 'record_master_tap'\) await _recordMasterTap\(order\)/);
+	assert.match(
+		orders,
+		/if \(order\.type === 'record_master_tap'\) await _recordMasterTap\(order\)/
+	);
 	assert.match(orders, /ensureMasterMixCapture\(command\.session_id\)/);
 	const rail = readFrontendSource('src/lib/components/rb/browser/PerformanceRecorderRail.svelte');
 	assert.match(rail, /m\.ensureMasterMixCapture\(id,/);
@@ -391,7 +440,9 @@ test('a dropped answer during a stop ends the tap with no second post', async ()
 	const post = async (url) => {
 		posted.push(new URL(url).searchParams.get('seq'));
 		await gate;
-		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), {
+			status: 200
+		});
 	};
 	const handle = await capture.startMasterMixCapture('S', assert.fail, post);
 	const [worklet] = graph.worklets;
@@ -428,7 +479,9 @@ test('a slow first attach starts ONE tap, never a second (the orphan that re-pos
 	const posted = [];
 	const post = async (url) => {
 		posted.push(new URL(url).searchParams.get('seq'));
-		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), {
+			status: 200
+		});
 	};
 	const starting = capture.startMasterMixCapture('S', assert.fail, post);
 	// Longer than the 1 s rebuild watch: the old code started a second tap here.
@@ -441,7 +494,8 @@ test('a slow first attach starts ONE tap, never a second (the orphan that re-pos
 	// TERMINAL. Every later chunk the worklet emits is never posted.
 	for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
 	await settle();
-	for (const worklet of graph.worklets) for (let i = 0; i < 5; i += 1) worklet.port.emit(chunk(100));
+	for (const worklet of graph.worklets)
+		for (let i = 0; i < 5; i += 1) worklet.port.emit(chunk(100));
 	for (let i = 0; i < 5; i += 1) await settle();
 	assert.deepEqual(posted, ['0'], 'zero retries after recording_stopped');
 });
@@ -462,9 +516,16 @@ test('a start the recorder cancelled while the tap was attaching never posts a c
 		for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
 		await settle();
 		assert.deepEqual(posted, [], 'zero chunks posted after the cancel');
-		assert.equal(graph.worklets.every((w) => w.port.onmessage === null), true, 'no live worklet');
+		assert.equal(
+			graph.worklets.every((w) => w.port.onmessage === null),
+			true,
+			'no live worklet'
+		);
 		// A tap order for it that arrives even later never starts at all.
-		await assert.rejects(capture.ensureMasterMixCapture('C1'), (error) => error instanceof capture.MasterMixCancelled);
+		await assert.rejects(
+			capture.ensureMasterMixCapture('C1'),
+			(error) => error instanceof capture.MasterMixCancelled
+		);
 	} finally {
 		globalThis.fetch = realFetch;
 	}
@@ -501,7 +562,9 @@ test('a dropped answer is terminal even with chunks queued behind it: zero retri
 	const post = async (url) => {
 		posted.push(new URL(url).searchParams.get('seq'));
 		if (posted.length === 1) await first.promise;
-		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), {
+			status: 200
+		});
 	};
 	const ended = [];
 	await capture.startMasterMixCapture('S', assert.fail, post, () => ended.push(true));
@@ -520,5 +583,9 @@ test('the REC rail stays quiet when the daemon cancels the tap, and still toasts
 	const quiet = rail.indexOf('error instanceof m.MasterMixCancelled');
 	const toast = rail.indexOf('REC failed: the master mix could not be recorded');
 	assert.ok(quiet > 0 && toast > quiet, 'the cancel is filtered before the failure toast');
-	assert.match(rail.slice(quiet, toast), /return;\s*}\s*throw error;/, 'anything that is not a cancel still reaches the toast');
+	assert.match(
+		rail.slice(quiet, toast),
+		/return;\s*}\s*throw error;/,
+		'anything that is not a cancel still reaches the toast'
+	);
 });

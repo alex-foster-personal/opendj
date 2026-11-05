@@ -53,7 +53,9 @@ const UNNAMED = new Set([
 	'rescue_resume',
 	'rescue_stop_all',
 	// DECKUX-6794: behind a default-off flag, so the preview's help text has no feature to name yet.
-	'grid_jump'
+	'grid_jump',
+	// DECKMOVE-01: an artwork right-click action, refused by name with its own error; the native port is a follow-up.
+	'deck_move'
 ]);
 
 function detail() {

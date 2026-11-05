@@ -64,7 +64,10 @@ test('LATENCY-02 planQuantizedLaunch skips a beat 1 inside the processor lead', 
 		followerPositionSec: 0.3
 	});
 	assert.equal(plan.kind, 'armed');
-	assert.ok(plan.launchAtContextSec >= 12, 'too-close beat 1 is skipped for the following downbeat');
+	assert.ok(
+		plan.launchAtContextSec >= 12,
+		'too-close beat 1 is skipped for the following downbeat'
+	);
 });
 
 // REQ: LATENCY-02

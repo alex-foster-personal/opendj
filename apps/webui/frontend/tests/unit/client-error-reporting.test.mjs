@@ -126,7 +126,9 @@ test('a typed daemon code leads the reported message once (OBS-5422)', async () 
 		});
 	};
 	const coded = Object.assign(new Error('Track not found'), { code: 'TRACK_NOT_FOUND' });
-	const already = Object.assign(new Error('TRACK_NOT_FOUND: Track not found'), { code: 'TRACK_NOT_FOUND' });
+	const already = Object.assign(new Error('TRACK_NOT_FOUND: Track not found'), {
+		code: 'TRACK_NOT_FOUND'
+	});
 	reporting.reportClientError(coded, { source: 'typed-a' }, 'ui-error');
 	reporting.reportClientError(already, { source: 'typed-b' }, 'ui-error');
 	reporting.reportClientError(new Error('plain'), { source: 'typed-c' }, 'ui-error');

@@ -6,7 +6,9 @@ interface BrowserMirror {
 	selected_row: string | null;
 }
 
-async function fetchBrowserMirror(page: import('@playwright/test').Page): Promise<BrowserMirror | null> {
+async function fetchBrowserMirror(
+	page: import('@playwright/test').Page
+): Promise<BrowserMirror | null> {
 	return page.evaluate(async () => {
 		const response = await fetch('/api/v1/state/ui-mirror');
 		if (!response.ok) return null;
@@ -26,7 +28,9 @@ test('ui-mirror publishes live browser search, sort, and selected row', async ({
 
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
 	await expect
-		.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.version ?? null), { timeout: 60_000 })
+		.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.version ?? null), {
+			timeout: 60_000
+		})
 		.toBe(1);
 
 	await page.getByRole('button', { name: /all tracks/i }).click();
@@ -35,39 +39,51 @@ test('ui-mirror publishes live browser search, sort, and selected row', async ({
 	const stableId = await trackRow.getAttribute('data-stable-id');
 	expect(stableId, 'fixture library must expose a track row').toBeTruthy();
 
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 30_000 }).toMatchObject({
-		search: null,
-		sort: null,
-		selected_row: null
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 30_000 })
+		.toMatchObject({
+			search: null,
+			sort: null,
+			selected_row: null
+		});
 
 	const searchText = 'mirror-probe';
 	const search = page.locator('.rb-search input');
 	await search.fill(searchText);
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 15_000 }).toMatchObject({
-		search: searchText
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 15_000 })
+		.toMatchObject({
+			search: searchText
+		});
 
 	await search.fill('');
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 15_000 }).toMatchObject({
-		search: null
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 15_000 })
+		.toMatchObject({
+			search: null
+		});
 
 	const titleHeader = page.locator('th.h-title.sortable');
 	await titleHeader.click();
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 15_000 }).toMatchObject({
-		sort: { key: 'title', direction: 'asc' }
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 15_000 })
+		.toMatchObject({
+			sort: { key: 'title', direction: 'asc' }
+		});
 
 	await titleHeader.click();
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 15_000 }).toMatchObject({
-		sort: { key: 'title', direction: 'desc' }
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 15_000 })
+		.toMatchObject({
+			sort: { key: 'title', direction: 'desc' }
+		});
 
 	const rowToSelect = page.locator(`[data-testid="track-row"][data-stable-id="${stableId}"]`);
 	await expect(rowToSelect).toBeVisible({ timeout: 15_000 });
 	await rowToSelect.click();
-	await expect.poll(() => fetchBrowserMirror(page), { timeout: 15_000 }).toMatchObject({
-		selected_row: stableId
-	});
+	await expect
+		.poll(() => fetchBrowserMirror(page), { timeout: 15_000 })
+		.toMatchObject({
+			selected_row: stableId
+		});
 });

@@ -53,16 +53,24 @@ test('onMount sends the coverage request before _init(), and _init() no longer s
 		/void _loadIngestCoverage\(\);\s*void _init\(\);/,
 		'the cached coverage read must leave at mount, ahead of the listing'
 	);
-	const initBody = src.match(/async function _init\(\): Promise<void> \{[\s\S]*?\n\t\}\n/)?.[0] ?? '';
+	const initBody =
+		src.match(/async function _init\(\): Promise<void> \{[\s\S]*?\n\t\}\n/)?.[0] ?? '';
 	assert.ok(initBody.length > 200, 'control: the _init() body was found');
-	assert.match(initBody, /void _loadReconcileSummary\(\);/, 'control: the probe sees calls in _init()');
+	assert.match(
+		initBody,
+		/void _loadReconcileSummary\(\);/,
+		'control: the probe sees calls in _init()'
+	);
 	assert.doesNotMatch(initBody, /_loadIngestCoverage/);
 });
 
 test('the Library light names loaded and total rows while the listing is in flight', () => {
 	const dot = dots.libraryHealthDot(null, 8355, 2, null, null, { loaded: 3000, total: 8355 });
 	assert.equal(dot.state, 'loading');
-	assert.equal(dot.detail, 'loading 3000 of 8355 tracks; which are on this machine is checked next');
+	assert.equal(
+		dot.detail,
+		'loading 3000 of 8355 tracks; which are on this machine is checked next'
+	);
 });
 
 test('before the total is known the Library light names the rows received', () => {
@@ -76,7 +84,10 @@ test('with no listing in flight the wording is the earlier one', () => {
 		dots.libraryHealthDot(null, 8355, 2, null, null, null).detail,
 		'checking which tracks are on this machine'
 	);
-	assert.equal(dots.libraryHealthDot(null, 8355, 2, null, null).detail, 'checking which tracks are on this machine');
+	assert.equal(
+		dots.libraryHealthDot(null, 8355, 2, null, null).detail,
+		'checking which tracks are on this machine'
+	);
 });
 
 test('overshoot control: load progress never replaces a verdict, an unknown or an error', () => {

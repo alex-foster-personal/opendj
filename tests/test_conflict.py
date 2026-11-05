@@ -1,4 +1,5 @@
 """Phase 4 SYNC-05/06: conflict resolver tests."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -59,18 +60,14 @@ def test_outside_window_defaults_to_rb():
 def test_prefer_rb_when_rb_older_is_conflict():
     now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=1)
-    res = resolve_conflict(
-        "rating", 5, 3, rb_modified_at=older, djay_modified_at=now, prefer="rb"
-    )
+    res = resolve_conflict("rating", 5, 3, rb_modified_at=older, djay_modified_at=now, prefer="rb")
     assert res == "conflict"
 
 
 def test_prefer_djay_when_djay_older_is_conflict():
     now = datetime(2026, 4, 17, tzinfo=UTC)
     older = now - timedelta(days=1)
-    res = resolve_conflict(
-        "rating", 5, 3, rb_modified_at=now, djay_modified_at=older, prefer="djay"
-    )
+    res = resolve_conflict("rating", 5, 3, rb_modified_at=now, djay_modified_at=older, prefer="djay")
     assert res == "conflict"
 
 
@@ -122,9 +119,7 @@ def test_window_boundary_eight_days_out():
 
 def test_rating_both_nonzero_newest_tie():
     now = datetime(2026, 4, 17, tzinfo=UTC)
-    res = resolve_conflict(
-        "rating", 5, 3, rb_modified_at=now, djay_modified_at=now, prefer="newest"
-    )
+    res = resolve_conflict("rating", 5, 3, rb_modified_at=now, djay_modified_at=now, prefer="newest")
     assert res == "conflict"
 
 
@@ -180,10 +175,7 @@ def test_resolve_conflict_input_returns_explicit_decisions():
         == "accept_djay"
     )
     # An empty side accepts the populated one before any timestamp rule runs.
-    assert (
-        resolve_conflict_input(ConflictInput(field="bpm", rb_value=None, djay_value=128.0))
-        == "accept_djay"
-    )
+    assert resolve_conflict_input(ConflictInput(field="bpm", rb_value=None, djay_value=128.0)) == "accept_djay"
     # Outside the window prefer="newest" falls back to rb unless djay is newer.
     assert (
         resolve_conflict_input(

@@ -24,7 +24,11 @@ function _fakeWindow() {
 }
 
 /** A GET /api/v1/ui-prefs body always carries these keys. */
-const REQUIRED_PREFS = { key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [] };
+const REQUIRED_PREFS = {
+	key_notation: 'camelot',
+	library_hidden_columns: [],
+	library_key_filter: []
+};
 
 function _respondWith(body, seen) {
 	globalThis.fetch = async (request) => {
@@ -61,7 +65,11 @@ test('a value changed over HTTP hydrates into the panel pref', async () => {
 	_fakeWindow();
 	_respondWith({ spotify_shrink_main_for_player: false }, []);
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
-	prefs.uiPrefs.spotify_library = { pinned_ids: ['p'], recent_ids: [], shrink_main_for_player: true };
+	prefs.uiPrefs.spotify_library = {
+		pinned_ids: ['p'],
+		recent_ids: [],
+		shrink_main_for_player: true
+	};
 	await prefs.hydrateConfirmPrefsFromDisk();
 	assert.deepEqual(prefs.uiPrefs.spotify_library, {
 		pinned_ids: ['p'],

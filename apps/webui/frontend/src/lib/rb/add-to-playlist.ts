@@ -1,7 +1,6 @@
-/** Compose helper for the add-to-playlist picker (LIBM-95). */
-
 import type { PlaylistNode } from '$lib/rb/library-types';
 import { addPlaylistItems } from '$lib/rb/playlist-write';
+import { isInboxPlaylistId } from '$lib/components/rb/browser/inbox-id';
 
 export const PLAYLIST_PICKER_SEARCH_THRESHOLD = 15;
 
@@ -21,7 +20,7 @@ export function addToPlaylistToastMessage(count: number, playlistName: string): 
 }
 
 export function writablePlaylistNodes(nodes: readonly PlaylistNode[]): PlaylistNode[] {
-	return nodes.filter((n) => n.kind === 'playlist');
+	return nodes.filter((n) => n.kind === 'playlist' && !isInboxPlaylistId(n.playlist_id));
 }
 
 export function filterPlaylistsByName(nodes: readonly PlaylistNode[], query: string): PlaylistNode[] {

@@ -103,7 +103,9 @@ export function manifestMismatches(recorded, observed) {
 		}
 	}
 	for (const leftover of byPart.keys()) {
-		problems.push(`part ${String(leftover)} is pinned by the manifest but was not decoded by this run`);
+		problems.push(
+			`part ${String(leftover)} is pinned by the manifest but was not decoded by this run`
+		);
 	}
 	return problems;
 }

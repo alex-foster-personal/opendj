@@ -39,7 +39,10 @@ async function enterLessMode(
 	await page.goto('/performance');
 	// Scoped and exact: the enrich card's own "Less" (collapse) button also
 	// matches a loose name, and appears only while the library is enriching.
-	await page.locator('.deck-layout-toggle').getByRole('button', { name: 'LESS', exact: true }).click();
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: 'LESS', exact: true })
+		.click();
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
 	// Scoped to `.rb-deck` specifically (not the bare `[data-deck='3']`
 	// attribute selector, which also matches WaveRow's own row div - that
@@ -68,7 +71,10 @@ test('performance LESS mode: channel 1/2 faders and level meters stay fully insi
 		const fader = page.locator(`[data-testid="channel-${deck}-fader"]`);
 		await expect(fader).toBeAttached();
 		const faderBox = await fader.boundingBox();
-		expect(faderBox, `channel ${deck} fader must have a real box (not display:none)`).not.toBeNull();
+		expect(
+			faderBox,
+			`channel ${deck} fader must have a real box (not display:none)`
+		).not.toBeNull();
 		// A clipped-but-present element still returns a bounding box from
 		// getBoundingClientRect - it just extends past its overflow:hidden
 		// ancestor. Assert it is fully CONTAINED in the mixer's visible box,
@@ -150,9 +156,10 @@ test('performance: the MORE/LESS toggle is compact, not oversized chrome pushing
 	const box = await toggle.boundingBox();
 	expect(box).not.toBeNull();
 	// Was ~22px (padding-bottom 4 + ~18px buttons) before pin 246b0f5.
-	expect(box!.height, `MORE/LESS toggle height (${box!.height}) must be compact`).toBeLessThanOrEqual(
-		18
-	);
+	expect(
+		box!.height,
+		`MORE/LESS toggle height (${box!.height}) must be compact`
+	).toBeLessThanOrEqual(18);
 });
 
 // Pin 2917b0eca218 - the maintainer, live on /performance: "in LESS (2 deck) - channel
@@ -415,7 +422,9 @@ test('performance LESS mode: no control in a collapsed strip can take focus', as
 			for (const element of focusable) {
 				element.focus();
 				if (document.activeElement === element) {
-					stolen.push(element.getAttribute('data-knob-id') ?? (element.className || element.tagName));
+					stolen.push(
+						element.getAttribute('data-knob-id') ?? (element.className || element.tagName)
+					);
 				}
 			}
 			(document.activeElement as HTMLElement | null)?.blur();
@@ -446,4 +455,3 @@ test('performance LESS mode: no control in a collapsed strip can take focus', as
 		expect(reachable, `channel ${deck} FILTER must still be keyboard reachable in LESS`).toBe(true);
 	}
 });
-

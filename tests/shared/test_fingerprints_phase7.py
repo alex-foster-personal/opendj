@@ -6,6 +6,7 @@ real-format fingerprints. The decoder is held to recorded ``fpcalc``
 output; the real engine is exercised in
 ``tests/dedup/test_engine_fingerprint_real.py``.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -90,11 +91,15 @@ def fake_backend(monkeypatch):
 def fake_backend_missing(monkeypatch):
     fake = _FakeAcoustid(backend_ok=False)
     # Mimic acoustid package surface by exposing NoBackendError class.
-    fake_mod = type("acoustid", (), {
-        "NoBackendError": _FakeAcoustid.NoBackendError,
-        "FingerprintGenerationError": _FakeAcoustid.FingerprintGenerationError,
-        "fingerprint_file": fake.fingerprint_file,
-    })
+    fake_mod = type(
+        "acoustid",
+        (),
+        {
+            "NoBackendError": _FakeAcoustid.NoBackendError,
+            "FingerprintGenerationError": _FakeAcoustid.FingerprintGenerationError,
+            "fingerprint_file": fake.fingerprint_file,
+        },
+    )
     monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
     monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: fake_mod)
     return fake
@@ -130,9 +135,7 @@ def test_fpcalc_missing_raises(tmp_path, fake_backend_missing) -> None:
 
 
 @pytest.mark.requirement("META-09")
-def test_an_engine_build_without_fingerprint_falls_back_to_fpcalc(
-    tmp_path: Path, fake_backend, monkeypatch
-) -> None:
+def test_an_engine_build_without_fingerprint_falls_back_to_fpcalc(tmp_path: Path, fake_backend, monkeypatch) -> None:
     """[if] the engine build predates the fingerprint command [then] fpcalc still answers, [else stop]."""
     old = tmp_path / "odj-audio"
     old.write_text("#!/bin/sh\necho 'unknown command fingerprint' >&2\nexit 2\n")
@@ -290,15 +293,49 @@ FPCALC_CLICK_PLAIN = (
     "GQAUAA"
 )
 FPCALC_CLICK_RAW = [
-    896416015, 931014943, 930952511, 930951999, 939340607,
-    939356991, 938275647, 938258927, 904692143, 896381375,
-    896382399, 896383423, 896383423, 896399807, 896350719,
-    896416015, 896416015, 931014943, 930952511, 930951487,
-    939340607, 939356991, 938275135, 904704495, 904692143,
-    896381375, 896382399, 896383423, 896383423, 896399807,
-    896350719, 896416015, 896416015, 931014943, 930952511,
-    930951487, 939340607, 939340607, 938225983, 938225967,
-    904662311, 627964279, 627964279,
+    896416015,
+    931014943,
+    930952511,
+    930951999,
+    939340607,
+    939356991,
+    938275647,
+    938258927,
+    904692143,
+    896381375,
+    896382399,
+    896383423,
+    896383423,
+    896399807,
+    896350719,
+    896416015,
+    896416015,
+    931014943,
+    930952511,
+    930951487,
+    939340607,
+    939356991,
+    938275135,
+    904704495,
+    904692143,
+    896381375,
+    896382399,
+    896383423,
+    896383423,
+    896399807,
+    896350719,
+    896416015,
+    896416015,
+    931014943,
+    930952511,
+    930951487,
+    939340607,
+    939340607,
+    938225983,
+    938225967,
+    904662311,
+    627964279,
+    627964279,
 ]
 
 

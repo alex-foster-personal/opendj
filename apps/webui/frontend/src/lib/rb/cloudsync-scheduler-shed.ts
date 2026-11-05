@@ -22,10 +22,7 @@ function _xrunWindowElevated(readXruns: () => number): boolean {
 	return readXruns() - _xrunsAtPreviousArm > S1_XRUN_DELTA_MAX;
 }
 
-function _shouldRequestCloudsyncShed(
-	shed: BackgroundDemandShed,
-	readXruns: () => number
-): boolean {
+function _shouldRequestCloudsyncShed(shed: BackgroundDemandShed, readXruns: () => number): boolean {
 	if (!anyDeckPlaying()) return false;
 	if (!pressureIsElevated(readMachinePressure()) && !_xrunWindowElevated(readXruns)) {
 		return false;

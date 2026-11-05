@@ -2,7 +2,7 @@
 	/**
 	 * /progress-tree - canonical feature-progress ledger viewer.
 	 *
-	 * Renders GET /api/v1/progress (backed by data/progress-tree.yaml):
+	 * Renders GET /api/v1/progress (backed by (private path)):
 	 * sticky header with per-status rollup chips that double as status
 	 * filter toggles, effort toggles, text filter; collapsible areas of
 	 * node rows; footer with meta.updated + file git provenance.
@@ -54,9 +54,7 @@
 	let activeTab = $state<Tab>('tree');
 
 	/** Flat list of every node across all areas (graph input + expand-all). */
-	const allNodes = $derived<ProgressNode[]>(
-		(data?.areas ?? []).flatMap((area) => area.nodes)
-	);
+	const allNodes = $derived<ProgressNode[]>((data?.areas ?? []).flatMap((area) => area.nodes));
 
 	/** node id -> ids of nodes that declare it as a dep ("blocks: ..."). */
 	const reverseDeps = $derived(buildReverseDeps(allNodes));
@@ -231,9 +229,7 @@
 		// Make sure the target is actually rendered: expand its area and,
 		// if filters hide it, clear them before scrolling.
 		if (collapsedAreas.has(areaId)) toggleArea(areaId);
-		const target = data?.areas
-			.find((a) => a.id === areaId)
-			?.nodes.find((n) => n.id === nodeId);
+		const target = data?.areas.find((a) => a.id === areaId)?.nodes.find((n) => n.id === nodeId);
 		if (target !== undefined && !nodeMatches(target)) resetFilters();
 		await tick();
 		const el = document.getElementById(`pt-node-${nodeId}`);
@@ -252,140 +248,144 @@
 </svelte:head>
 
 <div class="pt-page">
-{#if ledgerRefusal === null && error}
-	<div class="error-banner">
-		Progress ledger error: {error}
-		{#if data}
-			<span class="stale-note">(showing last successful fetch)</span>
-		{/if}
-	</div>
-{/if}
+	{#if ledgerRefusal === null && error}
+		<div class="error-banner">
+			Progress ledger error: {error}
+			{#if data}
+				<span class="stale-note">(showing last successful fetch)</span>
+			{/if}
+		</div>
+	{/if}
 
-{#if ledgerRefusal !== null}
-	<!-- INERT: no request was made and no refresh timer is running. -->
-	<section class="pt-inert" aria-label="Progress ledger unavailable">
-		<h2>Progress tree</h2>
-		<p class="inert-note" title={ledgerRefusal}>{ledgerRefusal}</p>
-		<p class="inert-detail">
-			The fan-out ledger lives on the legacy daemon. Nothing was fetched for this page, so
-			there is no ledger data to show and no stale data to mistake for live.
-			<code>data/progress-tree.yaml</code>
-		</p>
-	</section>
-{:else if data}
-	<div class="pt-header">
-		<div class="header-row">
+	{#if ledgerRefusal !== null}
+		<!-- INERT: no request was made and no refresh timer is running. -->
+		<section class="pt-inert" aria-label="Progress ledger unavailable">
 			<h2>Progress tree</h2>
-			<span class="branch">branch: {data.meta.branch}</span>
-			<div class="tabs" role="tablist">
-				<button
-					class="tab"
-					class:active={activeTab === 'tree'}
-					role="tab"
-					aria-selected={activeTab === 'tree'}
-					onclick={() => setTab('tree')}
-				>
-					Tree
-				</button>
-				<button
-					class="tab"
-					class:active={activeTab === 'graph'}
-					role="tab"
-					aria-selected={activeTab === 'graph'}
-					onclick={() => setTab('graph')}
-				>
-					Graph
-				</button>
+			<p class="inert-note" title={ledgerRefusal}>{ledgerRefusal}</p>
+			<p class="inert-detail">
+				The fan-out ledger lives on the legacy daemon. Nothing was fetched for this page, so there
+				is no ledger data to show and no stale data to mistake for live.
+				<code>(private path)</code>
+			</p>
+		</section>
+	{:else if data}
+		<div class="pt-header">
+			<div class="header-row">
+				<h2>Progress tree</h2>
+				<span class="branch">branch: {data.meta.branch}</span>
+				<div class="tabs" role="tablist">
+					<button
+						class="tab"
+						class:active={activeTab === 'tree'}
+						role="tab"
+						aria-selected={activeTab === 'tree'}
+						onclick={() => setTab('tree')}
+					>
+						Tree
+					</button>
+					<button
+						class="tab"
+						class:active={activeTab === 'graph'}
+						role="tab"
+						aria-selected={activeTab === 'graph'}
+						onclick={() => setTab('graph')}
+					>
+						Graph
+					</button>
+				</div>
+			</div>
+			<div class="filter-row">
+				{#each STATUSES as status (status)}
+					<button
+						class="rollup-chip {status}"
+						class:off={!statusFilter.has(status)}
+						onclick={() => toggleStatus(status)}
+						title="toggle {status} nodes"
+					>
+						{status} <strong>{statusCounts[status]}</strong>
+					</button>
+				{/each}
+				<span class="sep"></span>
+				{#each EFFORTS as effort (effort)}
+					<button
+						class="effort-toggle"
+						class:off={!effortFilter.has(effort)}
+						onclick={() => toggleEffort(effort)}
+						title="toggle effort {effort}"
+					>
+						{effort}
+					</button>
+				{/each}
+				<span class="sep"></span>
+				{#each TIERS as tier (tier)}
+					<button
+						class="tier-toggle"
+						class:off={!tierFilter.has(tier)}
+						style="--tier: {TIER_META[tier].color}"
+						onclick={() => toggleTier(tier)}
+						title="show only where a node can be built: toggle {TIER_META[tier].label} nodes"
+					>
+						<TierIcon buildable={{ tier, reason: '' }} size={13} />
+						{TIER_META[tier].label} <strong>{tierCounts[tier]}</strong>
+					</button>
+				{/each}
+				<input
+					type="search"
+					placeholder="filter by id / title / reuse / notes"
+					bind:value={textFilter}
+				/>
+				{#if filtersActive}
+					<button class="reset" onclick={resetFilters}>reset</button>
+				{/if}
+				{#if activeTab === 'tree'}
+					<span class="sep"></span>
+					<button class="expand-ctl" onclick={expandAll}>expand all</button>
+					<button class="expand-ctl" onclick={collapseAll}>collapse all</button>
+				{/if}
 			</div>
 		</div>
-		<div class="filter-row">
-			{#each STATUSES as status (status)}
-				<button
-					class="rollup-chip {status}"
-					class:off={!statusFilter.has(status)}
-					onclick={() => toggleStatus(status)}
-					title="toggle {status} nodes"
-				>
-					{status} <strong>{statusCounts[status]}</strong>
-				</button>
-			{/each}
-			<span class="sep"></span>
-			{#each EFFORTS as effort (effort)}
-				<button
-					class="effort-toggle"
-					class:off={!effortFilter.has(effort)}
-					onclick={() => toggleEffort(effort)}
-					title="toggle effort {effort}"
-				>
-					{effort}
-				</button>
-			{/each}
-			<span class="sep"></span>
-			{#each TIERS as tier (tier)}
-				<button
-					class="tier-toggle"
-					class:off={!tierFilter.has(tier)}
-					style="--tier: {TIER_META[tier].color}"
-					onclick={() => toggleTier(tier)}
-					title="show only where a node can be built: toggle {TIER_META[tier].label} nodes"
-				>
-					<TierIcon buildable={{ tier, reason: '' }} size={13} />
-					{TIER_META[tier].label} <strong>{tierCounts[tier]}</strong>
-				</button>
-			{/each}
-			<input type="search" placeholder="filter by id / title / reuse / notes" bind:value={textFilter} />
-			{#if filtersActive}
-				<button class="reset" onclick={resetFilters}>reset</button>
-			{/if}
-			{#if activeTab === 'tree'}
-				<span class="sep"></span>
-				<button class="expand-ctl" onclick={expandAll}>expand all</button>
-				<button class="expand-ctl" onclick={collapseAll}>collapse all</button>
-			{/if}
-		</div>
-	</div>
 
-	{#if data.areas.length === 0}
-		<p class="empty">Ledger is empty: no areas in data/progress-tree.yaml yet.</p>
-	{:else if activeTab === 'tree'}
-		{#each data.areas as area (area.id)}
-			<AreaSection
-				{area}
-				visibleNodes={area.nodes.filter(nodeMatches)}
-				collapsed={collapsedAreas.has(area.id)}
-				convention={data.meta.convention}
-				{expandedNodes}
-				{reverseDeps}
-				onToggle={toggleArea}
-				onToggleExpand={toggleExpand}
-				onJump={(id) => void jumpToNode(id)}
-			/>
-		{/each}
-	{:else}
-		<DepGraph
+		{#if data.areas.length === 0}
+			<p class="empty">Ledger is empty: no areas in (private path) yet.</p>
+		{:else if activeTab === 'tree'}
+			{#each data.areas as area (area.id)}
+				<AreaSection
+					{area}
+					visibleNodes={area.nodes.filter(nodeMatches)}
+					collapsed={collapsedAreas.has(area.id)}
+					convention={data.meta.convention}
+					{expandedNodes}
+					{reverseDeps}
+					onToggle={toggleArea}
+					onToggleExpand={toggleExpand}
+					onJump={(id) => void jumpToNode(id)}
+				/>
+			{/each}
+		{:else}
+			<DepGraph
 				nodes={allNodes}
 				{tierFilter}
 				{tierCounts}
 				onToggleTier={toggleTier}
 				onViewInTree={(id) => void viewInTree(id)}
 			/>
-	{/if}
-
-	<footer class="pt-footer" title={data.meta.convention}>
-		<span>updated {data.meta.updated}</span>
-		{#if data.file_git.last_sha !== null}
-			<span>
-				file {data.file_git.last_sha.slice(0, 7)} by {data.file_git.last_author} on
-				{data.file_git.last_date}
-			</span>
-		{:else}
-			<span>file has no committed git history yet</span>
 		{/if}
-		<code>data/progress-tree.yaml</code>
-	</footer>
-{:else if !error}
-	<p class="empty">Loading progress tree from the configured daemon...</p>
-{/if}
+
+		<footer class="pt-footer" title={data.meta.convention}>
+			<span>updated {data.meta.updated}</span>
+			{#if data.file_git.last_sha !== null}
+				<span>
+					file {data.file_git.last_sha.slice(0, 7)} by {data.file_git.last_author} on
+					{data.file_git.last_date}
+				</span>
+			{:else}
+				<span>file has no committed git history yet</span>
+			{/if}
+			<code>(private path)</code>
+		</footer>
+	{:else if !error}
+		<p class="empty">Loading progress tree from the configured daemon...</p>
+	{/if}
 </div>
 
 <style>

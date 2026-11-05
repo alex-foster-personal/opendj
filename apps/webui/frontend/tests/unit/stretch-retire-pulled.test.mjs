@@ -105,14 +105,29 @@ test('MEM-6A: dispose leaves the audible bus before it first yields, and only th
 
 	const disposing = processor.dispose();
 	// Synchronous, before any await resolves.
-	assert.equal(deckBus.inputs.size, 0, 'if a retiring node still feeds the deck bus then it can be heard - broken');
+	assert.equal(
+		deckBus.inputs.size,
+		0,
+		'if a retiring node still feeds the deck bus then it can be heard - broken'
+	);
 	const pulledBy = [...fake.node.outputs];
 	assert.equal(pulledBy.length, 1);
-	assert.equal(pulledBy[0].gain.value, 0, 'if the node is pulled by anything but a gain-0 sink then retirement is audible - broken');
-	assert.ok(pulledBy[0].outputs.has(ctx.destination), 'the muted sink must be rendered (into the destination) or nothing pulls the node');
+	assert.equal(
+		pulledBy[0].gain.value,
+		0,
+		'if the node is pulled by anything but a gain-0 sink then retirement is audible - broken'
+	);
+	assert.ok(
+		pulledBy[0].outputs.has(ctx.destination),
+		'the muted sink must be rendered (into the destination) or nothing pulls the node'
+	);
 
 	await disposing;
-	assert.equal(fake.node.outputs.size, 0, 'if a disposed node is left connected then it stays pulled for ever - broken');
+	assert.equal(
+		fake.node.outputs.size,
+		0,
+		'if a disposed node is left connected then it stays pulled for ever - broken'
+	);
 	assert.ok(fake.portClosed());
 });
 
@@ -126,7 +141,10 @@ test('MEM-6A: the dispose command lands while the node is still pulled, and it s
 		fake.events.includes('rpc:dispose(pulled=true)'),
 		`if the node is disconnected before the dispose command then process() never runs again and WebKit never frees the processor - broken (${fake.events.join(' ')})`
 	);
-	assert.ok(fake.released(), 'if the node is disconnected before 3 render quanta pass after the ack then the processor is never released - broken');
+	assert.ok(
+		fake.released(),
+		'if the node is disconnected before 3 render quanta pass after the ack then the processor is never released - broken'
+	);
 });
 
 test('MEM-6A: a dropped ack still ends with nothing on the sink, across repeated load/eject cycles', async () => {
@@ -148,9 +166,17 @@ test('MEM-6A: a dropped ack still ends with nothing on the sink, across repeated
 			})
 		);
 		const sink = adapter.stretchRetirementSink(ctx);
-		assert.equal(sink.inputs.size, 0, 'if a node whose ack never came stays on the sink then it is pulled for ever - broken');
+		assert.equal(
+			sink.inputs.size,
+			0,
+			'if a node whose ack never came stays on the sink then it is pulled for ever - broken'
+		);
 		for (const fake of cycles) assert.ok(fake.portClosed());
-		assert.equal(warnings.filter((l) => /release not confirmed/.test(l)).length, 3, 'each unconfirmed release logs exactly one line');
+		assert.equal(
+			warnings.filter((l) => /release not confirmed/.test(l)).length,
+			3,
+			'each unconfirmed release logs exactly one line'
+		);
 	} finally {
 		console.warn = realWarn;
 	}
@@ -180,7 +206,11 @@ test('MEM-6A: one muted sink per context, created once', async () => {
 		const processor = new adapter.StretchDeckProcessor(a, fake.node, { onProcessorError() {} });
 		await processor.dispose();
 	}
-	assert.equal(a.gainsCreated(), 1, 'if every dispose makes its own sink then sinks accumulate - broken');
+	assert.equal(
+		a.gainsCreated(),
+		1,
+		'if every dispose makes its own sink then sinks accumulate - broken'
+	);
 	assert.notEqual(adapter.stretchRetirementSink(a), adapter.stretchRetirementSink(b));
 	assert.equal(b.gainsCreated(), 1);
 	assert.equal(adapter.stretchRetirementSink(a).gain.value, 0);
@@ -199,10 +229,17 @@ test('MEM-6A shape: only dispose() routes to the muted sink, so a live deck node
 	const src = readSource('src/lib/rb/stretch-adapter.ts');
 	const uses = src.split('stretchRetirementSink(').length - 1;
 	// one definition + one call, and the call sits inside dispose()
-	assert.equal(uses, 2, 'if the sink is reachable from anywhere but dispose() then a playing deck could be muted into it - broken');
+	assert.equal(
+		uses,
+		2,
+		'if the sink is reachable from anywhere but dispose() then a playing deck could be muted into it - broken'
+	);
 	const disposeAt = src.indexOf('async dispose(): Promise<void>');
 	const callAt = src.indexOf('stretchRetirementSink(this.#context)');
 	const nextMethodAt = src.indexOf('async load(', disposeAt);
 	assert.ok(disposeAt > 0 && callAt > disposeAt && callAt < nextMethodAt);
-	assert.ok(src.indexOf('this.#disposed = true;', disposeAt) < callAt, 'the sink is only reached after the processor is marked disposed');
+	assert.ok(
+		src.indexOf('this.#disposed = true;', disposeAt) < callAt,
+		'the sink is only reached after the processor is marked disposed'
+	);
 });

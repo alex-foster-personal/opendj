@@ -1,7 +1,7 @@
 """Beatgrid-issue sidecar cache (browser Err column diagnostic).
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C8 (lines 1417-1510 on
-``af--t4-design``), per ``.planning/t3b-decomposition-map.md`` target #14
+``af--t4-design``), per ``(private path)`` target #14
 (``store/caches/beatgrid_issue_cache.py``, budget 120 lines). rb_vendor.py
 re-exports ``cached_beatgrid_issue`` (public, in ``__all__``) plus the four
 private helpers so ``build_anlz_payload`` (C9, still in rb_vendor.py -- S1's
@@ -28,10 +28,9 @@ domain package, and importing it from ``apps.adapters`` would break the
 ``webui-is-the-top-layer`` contract. It is pure (stdlib + typing only), so
 the move is cheap -- it is just not T3b's move to make.
 
-The per-path write lock is a private duplicate of the pattern in
-``anlz_cache.py`` (which served both C7 and C8 through one shared dict
-before the split); see that module's docstring for why splitting it is
-behavior-preserving. ``beatgrid_diagnostics`` is imported directly (not via
+The per-path write lock uses its own ``KeyedLocks`` instance from
+``apps.shared.keyed_lock`` (see ``anlz_cache.py`` for why the two caches stay
+isolated). ``beatgrid_diagnostics`` is imported directly (not via
 ``rb_vendor.beatgrid_diagnostics``) because nothing monkeypatches it on the
 rb_vendor module -- it is only ever used, never stubbed, in the current test
 suite.
@@ -50,21 +49,16 @@ from typing import Any
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.models import RbContent
 from apps.adapters.rekordbox.paths import resolve_asset_path
+from apps.shared.keyed_lock import KeyedLocks
 from apps.webui.server import beatgrid_diagnostics
 
 log = logging.getLogger(__name__)
 
-_BEATGRID_ISSUE_CACHE_LOCKS_GUARD = threading.Lock()
-_BEATGRID_ISSUE_CACHE_LOCKS: dict[Path, threading.Lock] = {}
+_BEATGRID_ISSUE_CACHE_LOCKS = KeyedLocks()
 
 
 def _cache_lock(path: Path) -> threading.Lock:
-    with _BEATGRID_ISSUE_CACHE_LOCKS_GUARD:
-        lock = _BEATGRID_ISSUE_CACHE_LOCKS.get(path)
-        if lock is None:
-            lock = threading.Lock()
-            _BEATGRID_ISSUE_CACHE_LOCKS[path] = lock
-        return lock
+    return _BEATGRID_ISSUE_CACHE_LOCKS.lock_for(path)
 
 
 def _beatgrid_issue_cache_path(stable_id: str) -> Path:

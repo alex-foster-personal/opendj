@@ -46,9 +46,7 @@ def _read_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
-def _log_files(
-    log_dirs: tuple[Path, ...], prefix: str, days: int, now: datetime
-) -> tuple[list[Path], list[Path]]:
+def _log_files(log_dirs: tuple[Path, ...], prefix: str, days: int, now: datetime) -> tuple[list[Path], list[Path]]:
     """Daily logs inside the window, plus the log roots that exist at all.
 
     The date comes from the filename, which is how apps/webui/server/client_logs.py names

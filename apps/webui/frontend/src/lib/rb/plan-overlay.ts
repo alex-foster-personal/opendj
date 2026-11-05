@@ -63,7 +63,12 @@ export interface PlanOverlayInput {
 	/** A knob moved after preparation, so `channels` outranks the values the plan prepared. */
 	liveKnobs: boolean;
 	clock: { stable_id: string | null; position_ms: number; downbeats: readonly number[] };
-	incoming: { stable_id: string | null; position_ms: number; downbeats: readonly number[]; playing: boolean } | null;
+	incoming: {
+		stable_id: string | null;
+		position_ms: number;
+		downbeats: readonly number[];
+		playing: boolean;
+	} | null;
 	/** Incoming grid bars per clock bar at the live tempos, or null when a deck reports none. */
 	gridBarsPerClockBar: number | null;
 }
@@ -97,14 +102,20 @@ function _moves(events: readonly OverlayEvent[], deck: number, knob: PlanKnob): 
 	return events.flatMap((event) => {
 		const command = 'ramp' in event ? event.ramp.command : event.command;
 		if (command.deck !== deck || _knobOf(command) !== knob) return [];
-		if ('ramp' in event) return [{ at: event.at_bar, to: event.ramp.to, over: event.ramp.over_bars }];
+		if ('ramp' in event)
+			return [{ at: event.at_bar, to: event.ramp.to, over: event.ramp.over_bars }];
 		return [{ at: event.at_bar, to: command.value as number, over: 0 }];
 	});
 }
 
 /** A knob's plan-bar breakpoints as the executor moves it: a ramp runs from the value it finds, and a later move on
  *  the same knob replaces a ramp still under way (`_fire`, apps/autodj/plan.py `_lane_value`). */
-function _breakpoints(moves: readonly KnobMove[], start: number, fromBar: number, toBar: number): Point[] {
+function _breakpoints(
+	moves: readonly KnobMove[],
+	start: number,
+	fromBar: number,
+	toBar: number
+): Point[] {
 	const points: Point[] = [[Math.min(fromBar, moves[0]?.at ?? fromBar), start]];
 	let value = start;
 	let ramp: (KnobMove & { from: number }) | null = null;
@@ -130,10 +141,18 @@ function _breakpoints(moves: readonly KnobMove[], start: number, fromBar: number
 	return points;
 }
 
-function _startValue({ order, channels, liveKnobs }: PlanOverlayInput, deck: number, knob: PlanKnob): number {
-	const prepared = liveKnobs ? undefined : order.prepare.findLast((command) => command.deck === deck && _knobOf(command) === knob);
-	const value = prepared === undefined ? (channels[deck] as Record<string, unknown>)?.[knob] : prepared.value;
-	if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`no ${knob} value for deck ${deck}`);
+function _startValue(
+	{ order, channels, liveKnobs }: PlanOverlayInput,
+	deck: number,
+	knob: PlanKnob
+): number {
+	const prepared = liveKnobs
+		? undefined
+		: order.prepare.findLast((command) => command.deck === deck && _knobOf(command) === knob);
+	const value =
+		prepared === undefined ? (channels[deck] as Record<string, unknown>)?.[knob] : prepared.value;
+	if (typeof value !== 'number' || !Number.isFinite(value))
+		throw new Error(`no ${knob} value for deck ${deck}`);
 	return value;
 }
 
@@ -149,7 +168,9 @@ function _deckCurves(
 		if (moves.length === 0 && !ALWAYS_DRAWN.has(name)) return [];
 		const bars = _breakpoints(moves, _startValue(input, deck, name), fromBar, toBar);
 		const [segment] = segmentsWithin(bars, [[fromBar, toBar]]);
-		return [{ name, points: segment.map(([bar, value]) => [barToMs(bar), value] as [number, number]) }];
+		return [
+			{ name, points: segment.map(([bar, value]) => [barToMs(bar), value] as [number, number]) }
+		];
 	});
 }
 
@@ -158,7 +179,11 @@ function _deckCurves(
 /** The plan bar a deck's stop fires at, else the plan's end. */
 function _stopBar(order: PlanOverlayInput['order'], deck: number): number {
 	const stop = order.events.find(
-		(event) => 'command' in event && event.command.type === 'play' && event.command.deck === deck && event.command.playing === false
+		(event) =>
+			'command' in event &&
+			event.command.type === 'play' &&
+			event.command.deck === deck &&
+			event.command.playing === false
 	);
 	return stop === undefined ? order.bars : Math.min(stop.at_bar, order.bars);
 }
@@ -167,7 +192,11 @@ function _stopBar(order: PlanOverlayInput['order'], deck: number): number {
  *  (apps/autodj/plan.py `play_start_bar`), so a play dispatched exactly on a bar starts one bar later. */
 function _launchBar(order: PlanOverlayInput['order'], deck: number): number {
 	const play = order.events.find(
-		(event) => 'command' in event && event.command.type === 'play' && event.command.deck === deck && event.command.playing === true
+		(event) =>
+			'command' in event &&
+			event.command.type === 'play' &&
+			event.command.deck === deck &&
+			event.command.playing === true
 	);
 	return play === undefined ? 0 : Math.floor(play.at_bar) + 1;
 }
@@ -182,15 +211,24 @@ function _plannedBar(input: PlanOverlayInput): number | null {
 }
 
 function _hasTempoMoves(order: PlanOverlayInput['order']): boolean {
-	return order.events.some((event) => ('ramp' in event ? event.ramp.command : event.command).type === 'tempo');
+	return order.events.some(
+		(event) => ('ramp' in event ? event.ramp.command : event.command).type === 'tempo'
+	);
 }
 
 /** Read the incoming deck against the plan, from a single pair of playhead samples; null when it cannot be placed. */
 export function incomingAlignment(input: PlanOverlayInput): IncomingAlignment | null {
 	const { order, clock, incoming, gridBarsPerClockBar: ratio } = input;
-	if (order.incoming === null || incoming === null || incoming.stable_id !== order.incoming.stable_id) return null;
+	if (
+		order.incoming === null ||
+		incoming === null ||
+		incoming.stable_id !== order.incoming.stable_id
+	)
+		return null;
 	if (incoming.downbeats.length < 2 || clock.downbeats.length < 2 || ratio === null) return null;
-	const anchorBar = incoming.playing ? barAt(clock.downbeats, clock.position_ms) - order.start_bar : _launchBar(order, order.incoming.deck);
+	const anchorBar = incoming.playing
+		? barAt(clock.downbeats, clock.position_ms) - order.start_bar
+		: _launchBar(order, order.incoming.deck);
 	const origin_bar = barAt(incoming.downbeats, incoming.position_ms) - anchorBar * ratio;
 	const barToMs = (bar: number) => msAtBar(incoming.downbeats, origin_bar + bar * ratio);
 	return {
@@ -203,7 +241,10 @@ export function incomingAlignment(input: PlanOverlayInput): IncomingAlignment | 
 }
 
 /** Whether the geometry must be rebuilt: called per executor tick, so it answers without allocating. */
-export function alignmentChanged(drawn: IncomingAlignment | null, live: IncomingAlignment | null): boolean {
+export function alignmentChanged(
+	drawn: IncomingAlignment | null,
+	live: IncomingAlignment | null
+): boolean {
 	if (drawn === null || live === null) return drawn !== live;
 	return (
 		drawn.stable_id !== live.stable_id ||
@@ -215,14 +256,24 @@ export function alignmentChanged(drawn: IncomingAlignment | null, live: Incoming
 // ------------------------------------------------------------------ build ---
 
 function _rounded(curve: PlanCurve): PlanCurve {
-	const points = curve.points.map(([ms, value]) => [Math.round(ms * 10) / 10, Math.round(value * 10_000) / 10_000] as [number, number]);
+	const points = curve.points.map(
+		([ms, value]) =>
+			[Math.round(ms * 10) / 10, Math.round(value * 10_000) / 10_000] as [number, number]
+	);
 	return { name: curve.name, points };
 }
 
 function _clockDeck(input: PlanOverlayInput): PlanDeckOverlay {
 	const { order, clock } = input;
 	const { deck, stable_id } = order.clock;
-	const blank = { deck, role: 'clock' as const, stable_id, start_ms: null, end_ms: null, curves: [] };
+	const blank = {
+		deck,
+		role: 'clock' as const,
+		stable_id,
+		start_ms: null,
+		end_ms: null,
+		curves: []
+	};
 	if (clock.stable_id !== stable_id) return { ...blank, unavailable: 'track_changed' };
 	if (clock.downbeats.length < 2) return { ...blank, unavailable: 'no_grid' };
 	const barToMs = (bar: number) => msAtBar(clock.downbeats, order.start_bar + bar);
@@ -242,13 +293,25 @@ function _incomingUnavailable(input: PlanOverlayInput): string {
 	return gridBarsPerClockBar === null ? 'no_tempo' : 'no_grid';
 }
 
-function _incomingDeck(input: PlanOverlayInput, alignment: IncomingAlignment | null): PlanDeckOverlay | null {
+function _incomingDeck(
+	input: PlanOverlayInput,
+	alignment: IncomingAlignment | null
+): PlanDeckOverlay | null {
 	const { order, incoming } = input;
 	if (order.incoming === null) return null;
 	const { deck, stable_id } = order.incoming;
-	const blank = { deck, role: 'incoming' as const, stable_id, start_ms: null, end_ms: null, curves: [] };
-	if (alignment === null || incoming === null) return { ...blank, unavailable: _incomingUnavailable(input) };
-	const barToMs = (bar: number) => msAtBar(incoming.downbeats, alignment.origin_bar + bar * alignment.ratio);
+	const blank = {
+		deck,
+		role: 'incoming' as const,
+		stable_id,
+		start_ms: null,
+		end_ms: null,
+		curves: []
+	};
+	if (alignment === null || incoming === null)
+		return { ...blank, unavailable: _incomingUnavailable(input) };
+	const barToMs = (bar: number) =>
+		msAtBar(incoming.downbeats, alignment.origin_bar + bar * alignment.ratio);
 	const fromBar = _launchBar(order, deck);
 	const toBar = _stopBar(order, deck);
 	return {
@@ -260,7 +323,10 @@ function _incomingDeck(input: PlanOverlayInput, alignment: IncomingAlignment | n
 	};
 }
 
-function _anchorMoved(input: PlanOverlayInput, alignment: IncomingAlignment | null): PlanOverlay['anchor_moved'] {
+function _anchorMoved(
+	input: PlanOverlayInput,
+	alignment: IncomingAlignment | null
+): PlanOverlay['anchor_moved'] {
 	const { order, incoming } = input;
 	if (alignment === null || order.incoming === null) return null;
 	// Past the launch a plan's own tempo moves change the ratio, so a drift there is the plan, not a move.
@@ -277,14 +343,33 @@ function _anchorMoved(input: PlanOverlayInput, alignment: IncomingAlignment | nu
 /** What a pending plan publishes when its geometry cannot be built: never null, which means no plan is pending. */
 export function failedPlanOverlay(order: PlanOverlayInput['order']): PlanOverlay {
 	const blank = { start_ms: null, end_ms: null, curves: [], unavailable: 'build_failed' };
-	const clock: PlanDeckOverlay = { ...blank, deck: order.clock.deck, role: 'clock', stable_id: order.clock.stable_id };
+	const clock: PlanDeckOverlay = {
+		...blank,
+		deck: order.clock.deck,
+		role: 'clock',
+		stable_id: order.clock.stable_id
+	};
 	const incoming: PlanDeckOverlay | null =
-		order.incoming === null ? null : { ...blank, deck: order.incoming.deck, role: 'incoming', stable_id: order.incoming.stable_id };
-	return { bars: order.bars, decks: incoming === null ? [clock] : [clock, incoming], anchor_moved: null };
+		order.incoming === null
+			? null
+			: {
+					...blank,
+					deck: order.incoming.deck,
+					role: 'incoming',
+					stable_id: order.incoming.stable_id
+				};
+	return {
+		bars: order.bars,
+		decks: incoming === null ? [clock] : [clock, incoming],
+		anchor_moved: null
+	};
 }
 
 /** The whole overlay, read from the live decks; `alignment` is passed when the caller has just read it. */
-export function buildPlanOverlay(input: PlanOverlayInput, alignment = incomingAlignment(input)): PlanOverlay {
+export function buildPlanOverlay(
+	input: PlanOverlayInput,
+	alignment = incomingAlignment(input)
+): PlanOverlay {
 	const incoming = _incomingDeck(input, alignment);
 	return {
 		bars: input.order.bars,

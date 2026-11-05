@@ -40,7 +40,7 @@ macho_files() {
     find "$root" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0 |
         while IFS= read -r -d '' f; do
             case "$(file -b "$f" 2>/dev/null)" in
-            Mach-O*) printf '%s\0' "$f" ;;
+                Mach-O*) printf '%s\0' "$f" ;;
             esac
         done
 }

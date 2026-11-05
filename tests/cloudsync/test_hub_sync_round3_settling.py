@@ -6,7 +6,7 @@ quality-gate ratchet: that file crossed 600 lines). N4/A4, N5 and 4a's hub
 blast radius stayed there; nothing here is imported back from it.
 
 Every test here is one reproduction sketch from
-``.planning/cloudsync-round2-adversarial.md``. The mapping, so a failure
+``(private path)``. The mapping, so a failure
 names the defect it just let back in:
 
 - 6b / N7  -> the digest compare was unfenced in both directions: a third
@@ -26,10 +26,11 @@ Acceptance criteria, one test each:
 - if a rotated token does not produce exactly one re-offer, the restore
   runbook has no signal -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +126,7 @@ class _InterceptingTransport:
         self._maybe_fire(path)
         return self._inner.post(path, payload)
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         self._maybe_fire(path)
         return self._inner.get(path, params)
 
@@ -156,9 +157,7 @@ def test_a_third_machine_pushing_in_the_gap_is_not_a_divergence(
         before="/digest",
         during=lambda: _sync(spoke_b, hub, "spoke-b"),
     )
-    result = client.run_sync(
-        spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
-    )
+    result = client.run_sync(spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a")
 
     assert intercepted.fired, "the third machine never pushed; probe is void"
     assert result.rounds == 2, "the spoke did not settle before judging"
@@ -187,9 +186,7 @@ def test_a_local_write_during_the_round_trip_is_not_a_divergence(
     def _write_mid_sync() -> None:
         conn = _open(spoke_a)
         try:
-            _insert_track(
-                conn, "trk-mid", title="typed mid-sync", updated_at=_T2, origin=_DEV_A
-            )
+            _insert_track(conn, "trk-mid", title="typed mid-sync", updated_at=_T2, origin=_DEV_A)
         finally:
             conn.close()
 
@@ -197,9 +194,7 @@ def test_a_local_write_during_the_round_trip_is_not_a_divergence(
     # this write is exactly the one the daemon takes from the webui while a
     # sync is in flight.
     intercepted = _InterceptingTransport(hub, before="/pull", during=_write_mid_sync)
-    result = client.run_sync(
-        spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
-    )
+    result = client.run_sync(spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a")
 
     assert intercepted.fired, "the mid-sync write never happened; probe is void"
     assert result.rounds == 2
@@ -212,9 +207,7 @@ def test_a_local_write_during_the_round_trip_is_not_a_divergence(
         hub_conn.close()
 
 
-def test_a_real_divergence_still_raises_after_settling(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_a_real_divergence_still_raises_after_settling(hub: _TestClientTransport, spoke_a: Path) -> None:
     """The settle must not become a repair pass that hides a real bug.
 
     A raw write that bypasses the stamp helper is invisible to the fence
@@ -234,13 +227,9 @@ def test_a_real_divergence_still_raises_after_settling(
         finally:
             conn.close()
 
-    intercepted = _InterceptingTransport(
-        hub, before="/pull", during=_bypass_the_writer
-    )
+    intercepted = _InterceptingTransport(hub, before="/pull", during=_bypass_the_writer)
     with pytest.raises(client.SyncDigestMismatch) as excinfo:
-        client.run_sync(
-            spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
-        )
+        client.run_sync(spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a")
     assert "round(s)" in str(excinfo.value)
 
 
@@ -250,9 +239,7 @@ def test_a_real_divergence_still_raises_after_settling(
 def _changelog(conn: sqlite3.Connection, table: str) -> list[tuple[int, str, str]]:
     return [
         (int(row[0]), str(row[1]), str(row[2]))
-        for row in conn.execute(
-            f"SELECT seq, table_name, row_pk FROM {table} ORDER BY seq"
-        )
+        for row in conn.execute(f"SELECT seq, table_name, row_pk FROM {table} ORDER BY seq")
     ]
 
 
@@ -297,9 +284,9 @@ def test_a_changelog_prune_is_not_mistaken_for_a_restore(
     assert max(seq for seq, _, _ in after) == max(seq for seq, _, _ in before), (
         "the prune lowered MAX(seq); that is indistinguishable from a restore"
     )
-    assert {(table, pk) for _, table, pk in after} == {
-        (table, pk) for _, table, pk in before
-    }, "the prune dropped a row's ONLY entry; that row can never be pulled again"
+    assert {(table, pk) for _, table, pk in after} == {(table, pk) for _, table, pk in before}, (
+        "the prune dropped a row's ONLY entry; that row can never be pulled again"
+    )
 
     quiet = _sync(spoke_a, hub, "spoke-a")
     assert quiet.hub_restore_detected is False, "a prune was read as a restore"
@@ -338,15 +325,15 @@ def test_prune_keeps_entries_inside_the_retention_window(
         assert len(_changelog(hub_conn, "hub_changelog")) == 2, (
             "the probe needs one superseded entry to be about anything"
         )
-        assert (
-            engine.prune_changelog(hub_conn, keep_days=3650.0, keep_rows=0) == 0
-        ), "an entry inside the day window was pruned"
-        assert (
-            engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=10_000) == 0
-        ), "an entry inside the row window was pruned"
-        assert (
-            engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0, now=_T3) == 0
-        ), "an entry newer than the supplied cutoff was pruned"
+        assert engine.prune_changelog(hub_conn, keep_days=3650.0, keep_rows=0) == 0, (
+            "an entry inside the day window was pruned"
+        )
+        assert engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=10_000) == 0, (
+            "an entry inside the row window was pruned"
+        )
+        assert engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0, now=_T3) == 0, (
+            "an entry newer than the supplied cutoff was pruned"
+        )
         # Not vacuous: with both bounds open, the superseded entry does go.
         assert engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0) == 1
         with pytest.raises(engine.SyncApplyError):

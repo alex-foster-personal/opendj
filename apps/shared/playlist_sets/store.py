@@ -8,6 +8,7 @@ Since SET-6586 a set may instead name a route: an ordered list of components
 (``components.py``). Its entries then resolve live from those components, and
 every run freezes what it resolved to, so history stays exact after an edit.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -33,8 +34,7 @@ RunKind = Literal["practice", "performance"]
 _VALID_RUN_KINDS = frozenset({"practice", "performance"})
 
 _PLAYLIST_SET_ROW_SELECT = (
-    "SELECT id, playlist_id, name, play_count, source_play_order_id, "
-    "       created_at, updated_at "
+    "SELECT id, playlist_id, name, play_count, source_play_order_id,        created_at, updated_at "
 )
 
 
@@ -81,9 +81,7 @@ def _normalize_name(name: str) -> str:
     return trimmed
 
 
-def _snapshot_membership(
-    conn: sqlite3.Connection, playlist_id: str
-) -> list[tuple[str, int]]:
+def _snapshot_membership(conn: sqlite3.Connection, playlist_id: str) -> list[tuple[str, int]]:
     try:
         rows = conn.execute(
             "SELECT stable_id, position FROM playlist_memberships "
@@ -105,29 +103,22 @@ def _snapshot_play_order(
 ) -> tuple[list[tuple[str, int]], int | None]:
     po = load_play_order(conn, playlist_id, play_order_name)
     if po.id is None:
-        raise LookupError(
-            f"play-order (playlist_id={playlist_id!r}, "
-            f"name={play_order_name!r}) does not exist"
-        )
+        raise LookupError(f"play-order (playlist_id={playlist_id!r}, name={play_order_name!r}) does not exist")
     entries = [(e.stable_id, e.position) for e in po.entries]
     return entries, po.id
 
 
-def _insert_entries(
-    conn: sqlite3.Connection, set_id: int, entries: list[tuple[str, int]]
-) -> None:
+def _insert_entries(conn: sqlite3.Connection, set_id: int, entries: list[tuple[str, int]]) -> None:
     for stable_id, position in entries:
         conn.execute(
-            "INSERT INTO playlist_set_entries(set_id, stable_id, position) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO playlist_set_entries(set_id, stable_id, position) VALUES (?, ?, ?)",
             (set_id, stable_id, position),
         )
 
 
 def _insert_parts(conn: sqlite3.Connection, set_id: int, parts: list[int]) -> None:
     conn.executemany(
-        "INSERT INTO playlist_set_parts(set_id, position, component_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_set_parts(set_id, position, component_id) VALUES (?, ?, ?)",
         [(set_id, i, cid) for i, cid in enumerate(parts)],
     )
 
@@ -159,9 +150,7 @@ def create_playlist_set(
             _refuse_saved_route(conn, playlist_id, route, None)
             entries: list[tuple[str, int]] = []
         elif from_play_order and from_play_order != DEFAULT_ORDER_NAME:
-            entries, source_play_order_id = _snapshot_play_order(
-                conn, playlist_id, from_play_order
-            )
+            entries, source_play_order_id = _snapshot_play_order(conn, playlist_id, from_play_order)
         else:
             entries = _snapshot_membership(conn, playlist_id)
 
@@ -175,40 +164,27 @@ def create_playlist_set(
         set_id = int(cur.lastrowid)
         _insert_entries(conn, set_id, entries)
         _insert_parts(conn, set_id, route)
-        emit_playlist_set_changed(
-            conn, playlist_id=playlist_id, set_id=set_id, action="created"
-        )
+        emit_playlist_set_changed(conn, playlist_id=playlist_id, set_id=set_id, action="created")
     return set_id
 
 
 def _load_entries(conn: sqlite3.Connection, set_id: int) -> list[PlaylistSetEntry]:
     parts = set_parts(conn, set_id)
     if parts:
-        return [
-            PlaylistSetEntry(stable_id=sid, position=i)
-            for i, (sid, _cid) in enumerate(resolve_parts(conn, parts))
-        ]
+        return [PlaylistSetEntry(stable_id=sid, position=i) for i, (sid, _cid) in enumerate(resolve_parts(conn, parts))]
     rows = conn.execute(
-        "SELECT stable_id, position FROM playlist_set_entries "
-        "WHERE set_id=? ORDER BY position ASC",
+        "SELECT stable_id, position FROM playlist_set_entries WHERE set_id=? ORDER BY position ASC",
         (set_id,),
     ).fetchall()
-    return [
-        PlaylistSetEntry(stable_id=sid, position=pos)
-        for sid, pos in _stable_position_pairs(rows)
-    ]
+    return [PlaylistSetEntry(stable_id=sid, position=pos) for sid, pos in _stable_position_pairs(rows)]
 
 
 def _load_runs(conn: sqlite3.Connection, set_id: int) -> list[PlaylistSetRun]:
     rows = conn.execute(
-        "SELECT id, kind, created_at FROM playlist_set_runs "
-        "WHERE set_id=? ORDER BY id ASC",
+        "SELECT id, kind, created_at FROM playlist_set_runs WHERE set_id=? ORDER BY id ASC",
         (set_id,),
     ).fetchall()
-    return [
-        PlaylistSetRun(id=int(r[0]), kind=str(r[1]), created_at=str(r[2]))
-        for r in rows
-    ]
+    return [PlaylistSetRun(id=int(r[0]), kind=str(r[1]), created_at=str(r[2])) for r in rows]
 
 
 def _row_to_set(
@@ -225,18 +201,14 @@ def _row_to_set(
         play_count=int(play_count),
         entries=entries,
         runs=runs,
-        source_play_order_id=(
-            None if source_po_id is None else int(source_po_id)
-        ),
+        source_play_order_id=(None if source_po_id is None else int(source_po_id)),
         parts=parts,
         created_at=str(created_at),
         updated_at=str(updated_at),
     )
 
 
-def load_playlist_set(
-    conn: sqlite3.Connection, set_id: int, *, include_runs: bool = False
-) -> PlaylistSet:
+def load_playlist_set(conn: sqlite3.Connection, set_id: int, *, include_runs: bool = False) -> PlaylistSet:
     apply_playlist_set_migrations(conn)
     row = conn.execute(
         f"{_PLAYLIST_SET_ROW_SELECT}FROM playlist_sets WHERE id=?",
@@ -252,8 +224,7 @@ def load_playlist_set(
 def list_playlist_sets(conn: sqlite3.Connection, playlist_id: str) -> list[PlaylistSet]:
     apply_playlist_set_migrations(conn)
     rows = conn.execute(
-        f"{_PLAYLIST_SET_ROW_SELECT}FROM playlist_sets WHERE playlist_id=? "
-        "ORDER BY name ASC",
+        f"{_PLAYLIST_SET_ROW_SELECT}FROM playlist_sets WHERE playlist_id=? ORDER BY name ASC",
         (playlist_id,),
     ).fetchall()
     result: list[PlaylistSet] = []
@@ -280,9 +251,7 @@ def _freeze_unfrozen_runs(conn: sqlite3.Connection, set_id: int) -> None:
     )
 
 
-def update_set_parts(
-    conn: sqlite3.Connection, set_id: int, parts: Sequence[int]
-) -> PlaylistSet:
+def update_set_parts(conn: sqlite3.Connection, set_id: int, parts: Sequence[int]) -> PlaylistSet:
     """Replace a set's route (SET-6586). Past runs keep what they played."""
     with write_unit(conn):
         ps = load_playlist_set(conn, set_id)
@@ -293,31 +262,23 @@ def update_set_parts(
         conn.execute("DELETE FROM playlist_set_entries WHERE set_id=?", (set_id,))
         conn.execute("DELETE FROM playlist_set_parts WHERE set_id=?", (set_id,))
         _insert_parts(conn, set_id, route)
-        conn.execute(
-            "UPDATE playlist_sets SET updated_at=? WHERE id=?", (_now_iso(), set_id)
-        )
+        conn.execute("UPDATE playlist_sets SET updated_at=? WHERE id=?", (_now_iso(), set_id))
     return load_playlist_set(conn, set_id)
 
 
 def _check_live_pick(conn: sqlite3.Connection, ps: PlaylistSet, played: list[int]) -> None:
     """A live pick swaps components within the set's own slots, nothing else."""
     if not ps.parts:
-        raise ValueError(
-            f"set {ps.id} has no route, so there is no fork to pick at; "
-            "record it without played parts"
-        )
+        raise ValueError(f"set {ps.id} has no route, so there is no fork to pick at; record it without played parts")
     route_slots = [load_component(conn, cid).slot for cid in ps.parts]
     played_slots = [load_component(conn, cid).slot for cid in played]
     if played_slots != route_slots:
         raise ValueError(
-            f"played parts must fill set {ps.id}'s slots {route_slots}, "
-            f"one component each; got {played_slots}"
+            f"played parts must fill set {ps.id}'s slots {route_slots}, one component each; got {played_slots}"
         )
 
 
-def _refuse_saved_route(
-    conn: sqlite3.Connection, playlist_id: str, route: list[int], set_id: int | None
-) -> None:
+def _refuse_saved_route(conn: sqlite3.Connection, playlist_id: str, route: list[int], set_id: int | None) -> None:
     existing = find_set_for_route(conn, playlist_id, route)
     if existing is not None and existing != set_id:
         raise ValueError(f"set {existing} on this playlist already plays that route")
@@ -335,16 +296,13 @@ def _played_tracks(
     return [(e.stable_id, None) for e in ps.entries]
 
 
-def load_run_entries(
-    conn: sqlite3.Connection, run_id: int
-) -> list[tuple[str, int | None]]:
+def load_run_entries(conn: sqlite3.Connection, run_id: int) -> list[tuple[str, int | None]]:
     """What a run played, frozen at record time: (stable_id, component_id)."""
     apply_playlist_set_migrations(conn)
     return [
         (str(r[0]), None if r[1] is None else int(r[1]))
         for r in conn.execute(
-            "SELECT stable_id, component_id FROM playlist_set_run_entries "
-            "WHERE run_id=? ORDER BY position ASC",
+            "SELECT stable_id, component_id FROM playlist_set_run_entries WHERE run_id=? ORDER BY position ASC",
             (run_id,),
         )
     ]
@@ -378,14 +336,12 @@ def record_run(
             raise RuntimeError("run insert returned no row id")
         run_id = cur.lastrowid
         conn.executemany(
-            "INSERT INTO playlist_set_run_entries(run_id, position, stable_id, component_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO playlist_set_run_entries(run_id, position, stable_id, component_id) VALUES (?, ?, ?, ?)",
             [(run_id, i, sid, cid) for i, (sid, cid) in enumerate(played)],
         )
         if kind == "performance":
             conn.execute(
-                "UPDATE playlist_sets SET play_count = play_count + 1, "
-                "updated_at=? WHERE id=?",
+                "UPDATE playlist_sets SET play_count = play_count + 1, updated_at=? WHERE id=?",
                 (now, set_id),
             )
             action = "performed"

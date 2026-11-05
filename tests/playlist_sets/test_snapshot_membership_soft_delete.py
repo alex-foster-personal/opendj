@@ -5,6 +5,7 @@
      is swallowed into an empty snapshot instead of raising [then] broken --
      a real absent table is the only case this function may treat as empty.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -42,10 +43,7 @@ def test_a_schema_mismatch_raises_rather_than_reads_empty(
     """A missing column must fail loudly, unlike a genuinely absent table."""
     conn = sqlite3.connect(tmp_path / "bare.db")
     try:
-        conn.execute(
-            "CREATE TABLE playlist_memberships(playlist_id TEXT, "
-            "stable_id TEXT, position INTEGER)"
-        )
+        conn.execute("CREATE TABLE playlist_memberships(playlist_id TEXT, stable_id TEXT, position INTEGER)")
         with pytest.raises(sqlite3.OperationalError, match="deleted_at"):
             _snapshot_membership(conn, "pl1")
     finally:

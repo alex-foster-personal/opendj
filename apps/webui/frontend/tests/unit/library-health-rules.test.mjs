@@ -70,7 +70,13 @@ test('Library health is green when every track expected on this machine resolves
 
 // REQ: HEALTH-01
 test('overshoot control: a link that should resolve on this machine and does not keeps the dot amber', () => {
-	const dot = dots.libraryHealthDot(null, 10005, 2, availability({ present: 2468, broken_here: 3 }), null);
+	const dot = dots.libraryHealthDot(
+		null,
+		10005,
+		2,
+		availability({ present: 2468, broken_here: 3 }),
+		null
+	);
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /2468 of 2471 tracks expected on this machine resolve/);
 	assert.match(dot.detail, /3 broken links here/);
@@ -98,14 +104,31 @@ test('Library health is loading, not a verdict, before the first summary lands',
 });
 
 test('an empty expected-here set is grey: there is nothing to be green about', () => {
-	const dot = dots.libraryHealthDot(null, 40, 1, availability({ total: 40, present: 0, off_machine: 40, awaiting_volume: 0, streaming: 0, pathless: 0 }), null);
+	const dot = dots.libraryHealthDot(
+		null,
+		40,
+		1,
+		availability({
+			total: 40,
+			present: 0,
+			off_machine: 40,
+			awaiting_volume: 0,
+			streaming: 0,
+			pathless: 0
+		}),
+		null
+	);
 	assert.equal(dot.state, 'unavailable');
 	assert.match(dot.detail, /no tracks are expected on this machine/);
 });
 
 // REQ: HEALTH-04
 test('a coverage dot is green when nothing is pending: done and terminal both count as finished', () => {
-	const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 900, terminal: 84 }), 'lyrics');
+	const dot = dots.coverageDot(
+		'Lyrics completion',
+		coverage('lyrics', { done: 900, terminal: 84 }),
+		'lyrics'
+	);
 	assert.equal(dot.state, 'complete');
 	assert.match(dot.detail, /900 done/);
 	assert.match(dot.detail, /84 no lyrics available/);
@@ -115,14 +138,22 @@ test('a coverage dot is green when nothing is pending: done and terminal both co
 
 // REQ: HEALTH-04
 test('overshoot control: one pending track keeps a coverage dot amber', () => {
-	const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 900, terminal: 84, pending: 1 }), 'lyrics');
+	const dot = dots.coverageDot(
+		'Lyrics completion',
+		coverage('lyrics', { done: 900, terminal: 84, pending: 1 }),
+		'lyrics'
+	);
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /1 pending/);
 });
 
 // REQ: HEALTH-04
 test('a terminally failed job keeps the dot amber and is counted on its own', () => {
-	const dot = dots.coverageDot('Vocals completion', coverage('vocals', { done: 10, failed: 2 }), 'vocals');
+	const dot = dots.coverageDot(
+		'Vocals completion',
+		coverage('vocals', { done: 10, failed: 2 }),
+		'vocals'
+	);
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /2 failed/);
 });
@@ -131,7 +162,11 @@ test('a terminally failed job keeps the dot amber and is counted on its own', ()
 test('evicted stems are done: the Stems dot is green and the hover splits local from in cloud', () => {
 	const dot = dots.coverageDot(
 		'Stems completion',
-		coverage('stems', { done: 1139, terminal: 45 }, { local: { stems: 602 }, in_cloud: { stems: 537 } }),
+		coverage(
+			'stems',
+			{ done: 1139, terminal: 45 },
+			{ local: { stems: 602 }, in_cloud: { stems: 537 } }
+		),
 		'stems'
 	);
 	assert.equal(dot.state, 'complete');
@@ -154,14 +189,20 @@ test('overshoot control: a track in neither place keeps the Stems dot amber besi
 
 // REQ: HEALTH-07
 test('an unreadable cloud index with tracks lacking local stems is grey: not amber, not green', () => {
-	const unreadable = { state: 'unknown', reason: 'the R2 stem index cache cannot be read: bad JSON' };
+	const unreadable = {
+		state: 'unknown',
+		reason: 'the R2 stem index cache cannot be read: bad JSON'
+	};
 	const dot = dots.coverageDot(
 		'Stems completion',
 		coverage('stems', { done: 602, pending: 582 }, { stems_index: unreadable }),
 		'stems'
 	);
 	assert.equal(dot.state, 'unavailable');
-	assert.match(dot.detail, /^unknown - 582 tracks have no local stems and the cloud stem index could not be read/);
+	assert.match(
+		dot.detail,
+		/^unknown - 582 tracks have no local stems and the cloud stem index could not be read/
+	);
 	assert.match(dot.detail, /cannot be read: bad JSON/);
 	assert.match(dot.detail, /602 local of 1184 present tracks/);
 	// Control the other way: with nothing pending the verdict does not depend
@@ -204,10 +245,14 @@ test('vocals hover separates a stem download from a stem render', () => {
 	assert.doesNotMatch(dot.detail, /waiting on stems/);
 	const unread = dots.coverageDot(
 		'Vocals completion',
-		coverage('vocals', { done: 1, pending: 3 }, {
-			waiting_on_stems: 3,
-			stems_index: { state: 'unknown', reason: 'not fetched' }
-		}),
+		coverage(
+			'vocals',
+			{ done: 1, pending: 3 },
+			{
+				waiting_on_stems: 3,
+				stems_index: { state: 'unknown', reason: 'not fetched' }
+			}
+		),
 		'vocals'
 	);
 	assert.equal(unread.state, 'incomplete', 'pending vocals are pending whatever the index says');
@@ -216,7 +261,11 @@ test('vocals hover separates a stem download from a stem render', () => {
 
 // REQ: HEALTH-04
 test('stems and vocals name their terminal state and what is waiting on the farm', () => {
-	const stems = dots.coverageDot('Stems completion', coverage('stems', { done: 5, terminal: 1, pending: 3 }), 'stems');
+	const stems = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 5, terminal: 1, pending: 3 }),
+		'stems'
+	);
 	assert.match(stems.detail, /1 no stems source/);
 	assert.match(stems.detail, /3 pending/);
 	const vocals = dots.coverageDot(
@@ -228,7 +277,11 @@ test('stems and vocals name their terminal state and what is waiting on the farm
 });
 
 test('a corrupt cache entry is still a visible error, never a quiet amber', () => {
-	const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 2, pending: 1, corrupt: 1 }), 'lyrics');
+	const dot = dots.coverageDot(
+		'Lyrics completion',
+		coverage('lyrics', { done: 2, pending: 1, corrupt: 1 }),
+		'lyrics'
+	);
 	assert.equal(dot.state, 'error');
 	assert.match(dot.detail, /^1 corrupt entry/);
 });
@@ -301,7 +354,11 @@ test('an older measurement keeps its verdict and states its age', () => {
 test('a failed refresh turns the dot grey instead of quoting the old counts as current', () => {
 	const dot = dots.coverageDot(
 		'Stems completion',
-		coverage('stems', { done: 5 }, { age_s: 90, refresh_error: 'RuntimeError: state.db is locked' }),
+		coverage(
+			'stems',
+			{ done: 5 },
+			{ age_s: 90, refresh_error: 'RuntimeError: state.db is locked' }
+		),
 		'stems'
 	);
 	assert.equal(dot.state, 'unavailable');
@@ -312,8 +369,17 @@ test('a failed refresh turns the dot grey instead of quoting the old counts as c
 
 // REQ: HEALTH-12
 test('a response that does not say how old it is renders grey, not a verdict', () => {
-	for (const broken of [{ age_s: undefined }, { age_s: -1 }, { age_s: 'now' }, { refreshing: undefined }]) {
-		const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 5 }, broken), 'lyrics');
+	for (const broken of [
+		{ age_s: undefined },
+		{ age_s: -1 },
+		{ age_s: 'now' },
+		{ refreshing: undefined }
+	]) {
+		const dot = dots.coverageDot(
+			'Lyrics completion',
+			coverage('lyrics', { done: 5 }, broken),
+			'lyrics'
+		);
 		assert.equal(dot.state, 'unavailable', JSON.stringify(broken));
 		assert.match(dot.detail, /^unknown - /);
 	}
@@ -338,10 +404,16 @@ test('the lights re-ask soon while a refresh runs, back off, and then stand down
 		[3000, 3000, 6000, 12000, 24000, null, null]
 	);
 	// Settled: nothing to re-ask until the regular refetch.
-	assert.equal(dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: null }, 0), null);
+	assert.equal(
+		dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: null }, 0),
+		null
+	);
 	// A refresh that failed, and a request that failed, are both worth one
 	// early retry rather than a full minute of grey.
-	assert.equal(dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: 'x' }, 0), 3000);
+	assert.equal(
+		dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: 'x' }, 0),
+		3000
+	);
 	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 0), 3000);
 	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 5), null);
 });

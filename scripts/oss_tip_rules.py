@@ -225,9 +225,7 @@ _RETINA_ASSET_EXTENSIONS = (
     "tiff",
     "pdf",
 )
-_RETINA_ASSET_DOMAIN = re.compile(
-    r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE
-)
+_RETINA_ASSET_DOMAIN = re.compile(r"^\d+x\.(?:" + "|".join(_RETINA_ASSET_EXTENSIONS) + r")$", re.IGNORECASE)
 
 # A systemd UNIT TYPE is not a mail TLD. `systemctl list-timers` renders the unit it
 # activates as `<unit>@<instance>.<type>`, so recording one verbatim reads as an address
@@ -569,10 +567,7 @@ def _is_reserved_mail_domain(domain: str) -> bool:
         return True
     # The reserved second-level names, and hosts under them, but NOT every
     # domain that happens to carry the label somewhere.
-    return any(
-        lowered == reserved or lowered.endswith(f".{reserved}")
-        for reserved in _RESERVED_MAIL_DOMAINS
-    )
+    return any(lowered == reserved or lowered.endswith(f".{reserved}") for reserved in _RESERVED_MAIL_DOMAINS)
 
 
 def _is_reportable_mailbox(address: str) -> bool:

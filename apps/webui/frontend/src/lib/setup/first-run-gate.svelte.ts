@@ -38,9 +38,7 @@ export async function runFirstRunGate(
 	}
 }
 
-export function retryFirstRunGate(
-	options: { timeoutMs?: number } = {}
-): Promise<boolean | null> {
+export function retryFirstRunGate(options: { timeoutMs?: number } = {}): Promise<boolean | null> {
 	return runFirstRunGate(options);
 }
 

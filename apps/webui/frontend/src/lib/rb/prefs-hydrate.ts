@@ -19,10 +19,12 @@ import { GIG_HELPER_PREFS, type GigHelperPref } from './gig-helper-prefs';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
+import { parseSpeakerAutoRecover, type SpeakerAutoRecoverPref } from './speaker-link-prefs';
 import { parseTempoLaneScale, type TempoLaneScale } from './tempo-lane-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
 import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
+import { hydrateSidebarArtFromDisk } from './library-sidebar-art.svelte';
 import {
 	hydrateWheelSensitivityFromDisk,
 	type WheelSensitivityDisk
@@ -49,6 +51,8 @@ export type LibraryDensity = 'compact' | 'cosy';
 export type LibraryBrowserDiskPrefKey =
 	| 'hide_broken_links'
 	| 'library_density'
+	| 'sort_within_sections'
+	| 'collapsed_sections'
 	| 'key_notation'
 	| 'library_hidden_columns'
 	| 'next_only_filter'
@@ -97,6 +101,7 @@ export type DiskPrefsPatch = {
 	show_stems?: boolean;
 	deck_hover_link?: boolean;
 	show_sections?: boolean;
+	speaker_auto_recover?: SpeakerAutoRecoverPref;
 	show_tempo_lane?: boolean;
 	tempo_lane_scale?: TempoLaneScale;
 	jog_radial_waveform?: boolean;
@@ -125,6 +130,8 @@ export type DiskPrefsPatch = {
 	deck_default_quantize?: boolean;
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
+	sort_within_sections?: boolean;
+	collapsed_sections?: string[];
 	key_notation?: KeyNotation;
 	library_hidden_columns?: HideableColumn[];
 	next_only_filter?: boolean;
@@ -134,6 +141,7 @@ export type DiskPrefsPatch = {
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
 	spotify_shrink_main_for_player?: boolean;
+	library_sidebar_art?: boolean;
 	deck_right_mirror?: boolean;
 	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
@@ -196,6 +204,7 @@ export interface PrefsHydrateTarget {
 	show_stems: boolean;
 	deck_hover_link: boolean;
 	show_sections: boolean;
+	speaker_auto_recover: SpeakerAutoRecoverPref;
 	show_tempo_lane: boolean;
 	tempo_lane_scale: TempoLaneScale;
 	jog_radial_waveform: boolean;
@@ -227,6 +236,8 @@ export interface PrefsHydrateTarget {
 	deck_default_quantize: boolean;
 	hide_broken_links: boolean;
 	library_density: LibraryDensity;
+	sort_within_sections: boolean;
+	collapsed_sections: string[];
 	key_notation: KeyNotation;
 	library_hidden_columns: HideableColumn[];
 	next_only_filter: boolean;
@@ -428,6 +439,10 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
+		const speakerAutoRecover = parseSpeakerAutoRecover(body.speaker_auto_recover);
+		if (speakerAutoRecover !== undefined) {
+			uiPrefs.speaker_auto_recover = speakerAutoRecover;
+		}
 		if (typeof body.show_tempo_lane === 'boolean') {
 			uiPrefs.show_tempo_lane = body.show_tempo_lane;
 		}
@@ -555,6 +570,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (body.library_density === 'compact' || body.library_density === 'cosy') {
 			uiPrefs.library_density = body.library_density;
 		}
+		if (typeof body.sort_within_sections === 'boolean') {
+			uiPrefs.sort_within_sections = body.sort_within_sections;
+		}
+		if (Array.isArray(body.collapsed_sections)) {
+			uiPrefs.collapsed_sections = body.collapsed_sections;
+		}
 		// The contract requires a valid key_notation (review P1, PR #7483).
 		// A missing or invalid one fails hydration: it is recorded here and
 		// thrown once the rest of this response has hydrated, so one bad
@@ -577,6 +598,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		}
 		hydrateWheelSensitivityFromDisk(body);
 		hydrateMidiEnabledFromDisk(body);
+		hydrateSidebarArtFromDisk(body);
 		if (typeof body.master_muted === 'boolean') {
 			hydrateMasterMutedFromDisk(body.master_muted);
 		}

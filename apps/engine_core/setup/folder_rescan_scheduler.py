@@ -35,8 +35,6 @@ import datetime as _dt
 import json
 import logging
 import time
-
-from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -45,6 +43,7 @@ from typing import Any, Literal
 
 from apps.engine_core.setup import detect
 from apps.engine_core.setup import record as setup_record
+from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest.folder_rescan import FolderRescanReport, reconcile_folders
@@ -260,16 +259,13 @@ class FolderRescanScheduler:
                     and time.monotonic() >= self._next_due
                 ):
                     in_flight = asyncio.create_task(asyncio.to_thread(self.run_round, roots))
-                await self._sleep(self._cfg.BEAT_INTERVAL_S)
+                await sleep_until_stop(self._stopping, self._cfg.BEAT_INTERVAL_S)
         finally:
             if in_flight is not None:
                 await self._drain(in_flight)
 
     def _stopped(self) -> bool:
         return self._stopping is not None and self._stopping.is_set()
-
-    async def _sleep(self, seconds: float) -> None:
-        await sleep_until_stop(self._stopping, seconds)
 
     async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
         try:

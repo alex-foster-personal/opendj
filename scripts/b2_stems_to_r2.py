@@ -82,6 +82,7 @@ Run (R2_* come from Doppler; boto3 is inline, so no repo venv needed):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -154,20 +155,21 @@ def key_for_digest(content_sha256: str) -> str:
     return asset_object_key(content_sha256)
 
 
-#----- bifrost2 side ----------------------------------------------------------
+# ----- bifrost2 side ----------------------------------------------------------
+
 
 def _ssh(remote_cmd: str, timeout: int = 120) -> str:
     """Run a POSIX one-liner on bifrost2, return stdout, raise on failure."""
     ssh_host = store_ssh_host()
     done = subprocess.run(
         ["ssh", *SSH_OPTS, ssh_host, remote_cmd],
-        text=True, capture_output=True, timeout=timeout, check=False,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
     )
     if done.returncode != 0:
-        raise RuntimeError(
-            f"bifrost2 command failed ({done.returncode}): {remote_cmd}\n"
-            f"{done.stderr.strip()}"
-        )
+        raise RuntimeError(f"bifrost2 command failed ({done.returncode}): {remote_cmd}\n{done.stderr.strip()}")
     return done.stdout
 
 
@@ -195,9 +197,7 @@ def list_bifrost2_bundles(preset: str | None = None) -> list[Bundle]:
             preset_name = preset
         else:
             preset_name, stable_id, filename = parts[0], parts[1], "/".join(parts[2:])
-        bundle = grouped.setdefault(
-            (preset_name, stable_id), Bundle(preset_name, stable_id)
-        )
+        bundle = grouped.setdefault((preset_name, stable_id), Bundle(preset_name, stable_id))
         bundle.files[filename] = int(size_text)
     return [grouped[k] for k in sorted(grouped)]
 
@@ -208,9 +208,7 @@ def parse_remote_digests(output: str) -> dict[str, str]:
     for line in output.splitlines():
         digest, separator, path = line.partition("  ")
         if not separator or not path:
-            raise RuntimeError(
-                f"invalid sha256sum output from {store_ssh_host()}: {line!r}"
-            )
+            raise RuntimeError(f"invalid sha256sum output from {store_ssh_host()}: {line!r}")
         key_for_digest(digest)
         digests[path] = digest
     return digests
@@ -240,9 +238,7 @@ def _batch_paths(paths: list[str], budget_bytes: int) -> list[list[str]]:
     return batches
 
 
-def _merged_digests(
-    paths: list[str], per_batch: list[dict[str, str]]
-) -> dict[str, str]:
+def _merged_digests(paths: list[str], per_batch: list[dict[str, str]]) -> dict[str, str]:
     """Merge already-parsed per-batch digest dicts, confirming every
     requested path was hashed by some batch.
 
@@ -277,7 +273,8 @@ def remote_digests(paths: list[str]) -> dict[str, str]:
     return _merged_digests(paths, per_batch)
 
 
-#----- R2 side ----------------------------------------------------------------
+# ----- R2 side ----------------------------------------------------------------
+
 
 def r2_client() -> Any:
     """S3 client for R2. Fails naming the missing key rather than surfacing a
@@ -321,15 +318,14 @@ def list_r2_sizes(client: Any, bucket: str, preset: str | None = None) -> dict[s
     _ = preset
     prefix = "assets/"
     sizes: dict[str, int] = {}
-    for page in client.get_paginator("list_objects_v2").paginate(
-        Bucket=bucket, Prefix=prefix
-    ):
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
         for item in page.get("Contents", []):
             sizes[item["Key"]] = item["Size"]
     return sizes
 
 
-#----- transfer ---------------------------------------------------------------
+# ----- transfer ---------------------------------------------------------------
+
 
 def _assert_no_secrets(payload: str) -> None:
     """Guard the design invariant: bifrost2 receives URLs, never credentials.
@@ -346,9 +342,7 @@ def _assert_no_secrets(payload: str) -> None:
             )
 
 
-def upload_batch(
-    client: Any, bucket: str, jobs: list[tuple[str, str]], parallelism: int
-) -> dict[str, int]:
+def upload_batch(client: Any, bucket: str, jobs: list[tuple[str, str]], parallelism: int) -> dict[str, int]:
     """PUT each (remote_path, key) from bifrost2 straight to R2.
 
     Returns {key: http_status}. The URLs are streamed over stdin rather than
@@ -362,8 +356,7 @@ def upload_batch(
         # guard against a future layout change, not a live case.
         if " " in remote_path:
             raise RuntimeError(
-                f"remote path contains a space, which the batched upload "
-                f"cannot express: {remote_path!r}"
+                f"remote path contains a space, which the batched upload cannot express: {remote_path!r}"
             )
         url = client.generate_presigned_url(
             "put_object",
@@ -382,16 +375,20 @@ def upload_batch(
     # answer in a way that breaks a streamed upload.
     remote_cmd = (
         f"xargs -d '\\n' -P {parallelism} -n 1 bash -c "
-        "'p=\"${0%% *}\"; r=\"${0#* }\"; d=\"${r%% *}\"; u=\"${r#* }\"; "
-        "[ \"$(sha256sum \"$p\" | cut -d \" \" -f1)\" = \"$d\" ] || "
-        "{ echo \"409 $p\"; exit 0; }; "
-        "code=$(curl -sS -o /dev/null -w \"%{http_code}\" -X PUT "
-        "-T \"$p\" -H \"Expect:\" \"$u\"); echo \"$code $p\"'"
+        '\'p="${0%% *}"; r="${0#* }"; d="${r%% *}"; u="${r#* }"; '
+        '[ "$(sha256sum "$p" | cut -d " " -f1)" = "$d" ] || '
+        '{ echo "409 $p"; exit 0; }; '
+        'code=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT '
+        '-T "$p" -H "Expect:" "$u"); echo "$code $p"\''
     )
     ssh_host = store_ssh_host()
     done = subprocess.run(
         ["ssh", *SSH_OPTS, ssh_host, remote_cmd],
-        input=payload, text=True, capture_output=True, timeout=3600, check=False,
+        input=payload,
+        text=True,
+        capture_output=True,
+        timeout=3600,
+        check=False,
     )
     if done.returncode != 0:
         raise RuntimeError(f"remote upload failed: {done.stderr.strip()}")
@@ -406,25 +403,24 @@ def upload_batch(
     return statuses
 
 
-#----- cli --------------------------------------------------------------------
+# ----- cli --------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="uv run scripts/b2_stems_to_r2.py",
         description="Backfill bifrost2 stem bundles into Cloudflare R2",
     )
-    parser.add_argument("--preset", default=None,
-                        help="limit to one preset tag (default: every preset)")
+    parser.add_argument("--preset", default=None, help="limit to one preset tag (default: every preset)")
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--limit", type=int, default=0,
-                        help="cap bundles this run (0 = all outstanding)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="report the outstanding set; needs no credentials")
+    parser.add_argument("--limit", type=int, default=0, help="cap bundles this run (0 = all outstanding)")
+    parser.add_argument("--dry-run", action="store_true", help="report the outstanding set; needs no credentials")
     parser.add_argument("--parallelism", type=int, default=UPLOAD_PARALLELISM)
     parser.add_argument(
-        "--include-incomplete", action="store_true",
+        "--include-incomplete",
+        action="store_true",
         help="publish bundles missing stems or a manifest. Off by default: a "
-             "partial bundle in R2 reads as complete to every consumer.",
+        "partial bundle in R2 reads as complete to every consumer.",
     )
     return parser
 
@@ -432,17 +428,14 @@ def build_parser() -> argparse.ArgumentParser:
 def _report_inventory(bundles: list[Bundle], skipped: list[Bundle]) -> None:
     per_preset = collections.Counter(b.preset for b in bundles)
     total_gb = sum(b.total_bytes for b in bundles) / 1e9
-    print(f"bifrost2: {len(bundles)} publishable bundles, {total_gb:.2f} GB, "
-          f"across {len(per_preset)} presets")
+    print(f"bifrost2: {len(bundles)} publishable bundles, {total_gb:.2f} GB, across {len(per_preset)} presets")
     for preset, count in sorted(per_preset.items()):
         size = sum(b.total_bytes for b in bundles if b.preset == preset) / 1e9
         print(f"  {preset:26s} {count:4d} bundles  {size:6.2f} GB")
     if skipped:
-        print(f"\nSKIPPED {len(skipped)} incomplete bundle(s) "
-              "(pass --include-incomplete to publish anyway):")
+        print(f"\nSKIPPED {len(skipped)} incomplete bundle(s) (pass --include-incomplete to publish anyway):")
         for bundle in skipped:
-            print(f"  {bundle.preset}/{bundle.stable_id}: "
-                  f"has {sorted(bundle.files)}")
+            print(f"  {bundle.preset}/{bundle.stable_id}: has {sorted(bundle.files)}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -459,8 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     _report_inventory(bundles, skipped)
 
     if args.dry_run:
-        print("\n--dry-run: inspected bifrost2 only, contacted no credentials "
-              "and uploaded nothing.")
+        print("\n--dry-run: inspected bifrost2 only, contacted no credentials and uploaded nothing.")
         return 0
 
     client = r2_client()
@@ -468,7 +460,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sources = [
         f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{filename}"
-        for bundle in bundles for filename in sorted(bundle.files)
+        for bundle in bundles
+        for filename in sorted(bundle.files)
     ]
     digests = remote_digests(sources)
     source_sizes = {
@@ -478,26 +471,20 @@ def main(argv: list[str] | None = None) -> int:
     }
     # Every planned source independent of whether THIS run uploads it: an
     # already-present object still needs its mapping journaled exactly once.
-    planned_mappings = [
-        (legacy_key(path), key_for_digest(digests[path]), size)
-        for path, size in source_sizes.items()
-    ]
+    planned_mappings = [(legacy_key(path), key_for_digest(digests[path]), size) for path, size in source_sizes.items()]
     already_journaled = journaled_mappings(JOURNAL)
 
     jobs: list[tuple[str, str]] = []
     for bundle in bundles:
         for filename, size in sorted(bundle.files.items()):
-            remote_path = (
-                f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{filename}"
-            )
+            remote_path = f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{filename}"
             key = key_for_digest(digests[remote_path])
             if present.get(key) == size:
                 continue  # already there, byte-for-byte
             jobs.append((remote_path, key))
 
     already = sum(len(b.files) for b in bundles) - len(jobs)
-    print(f"\nr2 already holds {already} matching objects; "
-          f"{len(jobs)} to upload")
+    print(f"\nr2 already holds {already} matching objects; {len(jobs)} to upload")
     if not jobs:
         journal_new_mappings(JOURNAL, planned_mappings, present, already_journaled, args.bucket)
         print("nothing to do: R2 is caught up")
@@ -510,8 +497,14 @@ def main(argv: list[str] | None = None) -> int:
 
     statuses = upload_batch(client, args.bucket, jobs, args.parallelism)
     return _finish_upload(
-        args, client, jobs, digests, source_sizes, planned_mappings,
-        already_journaled, statuses,
+        args,
+        client,
+        jobs,
+        digests,
+        source_sizes,
+        planned_mappings,
+        already_journaled,
+        statuses,
     )
 
 
@@ -544,15 +537,9 @@ def _finish_upload(
     # truncated PUT can still answer 200.
     after = list_r2_sizes(client, args.bucket, args.preset)
     expected = {key: source_sizes[path] for path, key in jobs}
-    mismatched = {
-        key: (size, after.get(key))
-        for key, size in expected.items()
-        if after.get(key) != size
-    }
+    mismatched = {key: (size, after.get(key)) for key, size in expected.items() if after.get(key) != size}
 
-    journal_new_mappings(
-        JOURNAL, planned_mappings, after, already_journaled, args.bucket, swapped_legacy_keys
-    )
+    journal_new_mappings(JOURNAL, planned_mappings, after, already_journaled, args.bucket, swapped_legacy_keys)
 
     if failed or missing or mismatched or swapped:
         for key, code in sorted(failed.items()):
@@ -560,17 +547,17 @@ def _finish_upload(
         for key in missing:
             print(f"  no status reported for {key}", file=sys.stderr)
         for key, (want, got) in sorted(mismatched.items()):
-            print(f"  size mismatch {key}: bifrost2 {want}, r2 {got}",
-                  file=sys.stderr)
+            print(f"  size mismatch {key}: bifrost2 {want}, r2 {got}", file=sys.stderr)
         for remote_path in swapped:
             print(f"  source changed during upload: {remote_path}", file=sys.stderr)
-        print("\nre-run to retry: the outstanding set is recomputed from the "
-              "two listings, so only the failures remain.", file=sys.stderr)
+        print(
+            "\nre-run to retry: the outstanding set is recomputed from the two listings, so only the failures remain.",
+            file=sys.stderr,
+        )
         return 1
 
     verified_gb = sum(expected.values()) / 1e9
-    print(f"verified {len(expected)} objects ({verified_gb:.2f} GB) match "
-          f"bifrost2 byte-for-byte")
+    print(f"verified {len(expected)} objects ({verified_gb:.2f} GB) match bifrost2 byte-for-byte")
     return 0
 
 

@@ -11,6 +11,8 @@
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { summarizeSelection } from '$lib/library/inspector-summary';
 	import { shownKey } from '$lib/rb/key-notation';
+	import { artworkUrl } from '$lib/rb/artwork-url';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import TrackInspectorView from './TrackInspectorView.svelte';
 
 	type Patch = { rating?: number; tags_add?: string[]; tags_remove?: string[]; notes?: string };
@@ -35,7 +37,6 @@
 	/** Why the last save failed, shown inline until the next save or selection. */
 	let saveError = $state<string | null>(null);
 	let tempoAnchor = $state<{ x: number; y: number } | null>(null);
-	let artFailed = $state(false);
 
 	let loadSeq = 0;
 	$effect(() => {
@@ -56,7 +57,6 @@
 		playlists = null;
 		playlistsError = null;
 		tempoAnchor = null;
-		artFailed = false;
 		if (sid === null) return;
 		getTrack(sid).then(
 			(res) => {
@@ -165,6 +165,13 @@
 		newTag = '';
 		void applyPatch({ tags_add: [tag] });
 	}
+
+	/** LIBM-185: the shared cover retry decides whether the cover shows and with which URL. */
+	const artworkSrc = $derived(
+		single !== null && single.artwork_available === true && coverVisible(single.stable_id)
+			? coverSrc(artworkUrl(single.stable_id, 'm'), single.stable_id)
+			: null
+	);
 </script>
 
 <TrackInspectorView
@@ -173,16 +180,21 @@
 	{summary}
 	{single}
 	keyShown={single === null ? null : shownKey(single.key)}
+	{artworkSrc}
+	onArtworkLoad={() => {
+		if (single !== null) coverLoaded(single.stable_id);
+	}}
+	onArtworkError={() => {
+		if (single !== null) coverFailed(single.stable_id);
+	}}
 	{track}
 	{loadError}
 	{saveError}
 	{playlists}
 	{playlistsError}
-	{artFailed}
 	bind:newTag
 	{applyPatch}
 	{addTag}
-	onArtError={() => (artFailed = true)}
 	onTempoPref={(x, y) => (tempoAnchor = { x, y })}
 />
 

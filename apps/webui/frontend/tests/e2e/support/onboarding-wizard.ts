@@ -10,7 +10,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 /** Time-to-wizard budget for a cold first open, in ms. Measured first (see
- * specs/onboarding-gauntlet.md, round 0), then set with headroom for a loaded
+ * (private path), round 0), then set with headroom for a loaded
  * CI host. Ratchets with the experiment rounds, never silently. */
 export const TIME_TO_WIZARD_BUDGET_MS = 15_000;
 
@@ -40,22 +40,33 @@ export interface SetupStatus {
 	dismissed: boolean;
 	dev_mode: boolean;
 	should_show_wizard: boolean;
-	last_import: { kind: string; tracks_written?: number; files_seen?: number; files_rejected_unplayable?: number } | null;
+	last_import: {
+		kind: string;
+		tracks_written?: number;
+		files_seen?: number;
+		files_rejected_unplayable?: number;
+	} | null;
 }
 
 export async function readSetupStatus(origin: string): Promise<SetupStatus> {
 	const response = await fetch(`${origin}/api/v1/setup/status`);
-	if (!response.ok) throw new Error(`GET /api/v1/setup/status -> ${response.status}: ${await response.text()}`);
+	if (!response.ok)
+		throw new Error(`GET /api/v1/setup/status -> ${response.status}: ${await response.text()}`);
 	return (await response.json()) as SetupStatus;
 }
 
 export async function readJob(origin: string, jobId: string): Promise<JobRow> {
 	const response = await fetch(`${origin}/api/v1/jobs/${jobId}`);
-	if (!response.ok) throw new Error(`GET /api/v1/jobs/${jobId} -> ${response.status}: ${await response.text()}`);
+	if (!response.ok)
+		throw new Error(`GET /api/v1/jobs/${jobId} -> ${response.status}: ${await response.text()}`);
 	return (await response.json()) as JobRow;
 }
 
-export async function waitForTerminalJob(origin: string, jobId: string, timeoutMs = IMPORT_BUDGET_MS): Promise<JobRow> {
+export async function waitForTerminalJob(
+	origin: string,
+	jobId: string,
+	timeoutMs = IMPORT_BUDGET_MS
+): Promise<JobRow> {
 	const deadline = Date.now() + timeoutMs;
 	let last: JobRow | null = null;
 	while (Date.now() < deadline) {
@@ -63,7 +74,9 @@ export async function waitForTerminalJob(origin: string, jobId: string, timeoutM
 		if (TERMINAL.has(last.status)) return last;
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
-	throw new Error(`job ${jobId} not terminal after ${timeoutMs} ms; last row ${JSON.stringify(last)}`);
+	throw new Error(
+		`job ${jobId} not terminal after ${timeoutMs} ms; last row ${JSON.stringify(last)}`
+	);
 }
 
 /** Open the app as a new user does and return how long the wizard took. */
@@ -88,7 +101,10 @@ export interface PackagedTriggerLanding {
  * mocked: every held request continues to the real engine once the wizard is
  * visible. Times out red if the packaged trigger never opens the wizard.
  */
-export async function landWithOnlyThePackagedTrigger(page: Page, origin: string): Promise<PackagedTriggerLanding> {
+export async function landWithOnlyThePackagedTrigger(
+	page: Page,
+	origin: string
+): Promise<PackagedTriggerLanding> {
 	const isPreflight = (url: URL): boolean => url.pathname === '/api/v1/preflight';
 	let release!: () => void;
 	const wizardUp = new Promise<void>((resolve) => (release = resolve));
@@ -124,7 +140,9 @@ export async function chooseFolderBranch(page: Page): Promise<Locator> {
 export async function checkFolder(page: Page, folder: string): Promise<Record<string, unknown>> {
 	const dialog = setupDialog(page);
 	await dialog.getByLabel('Folder to import').fill(folder);
-	const scanned = page.waitForResponse((response) => response.url().includes('/api/v1/setup/detect/folder'));
+	const scanned = page.waitForResponse((response) =>
+		response.url().includes('/api/v1/setup/detect/folder')
+	);
 	await dialog.getByRole('button', { name: 'Check this folder' }).click();
 	const response = await scanned;
 	expect(response.ok(), `detect/folder answered ${response.status()}`).toBe(true);
@@ -134,10 +152,15 @@ export async function checkFolder(page: Page, folder: string): Promise<Record<st
 /** Press "Import this folder"; returns the job id the engine accepted. */
 export async function startFolderImport(page: Page): Promise<string> {
 	const dialog = setupDialog(page);
-	const queued = page.waitForResponse((response) => response.url().includes('/api/v1/setup/import/folder'));
+	const queued = page.waitForResponse((response) =>
+		response.url().includes('/api/v1/setup/import/folder')
+	);
 	await dialog.getByRole('button', { name: /^Import (this folder|these folders)$/ }).click();
 	const response = await queued;
-	expect(response.status(), `import/folder answered ${response.status()}: ${await response.text()}`).toBe(202);
+	expect(
+		response.status(),
+		`import/folder answered ${response.status()}: ${await response.text()}`
+	).toBe(202);
 	const body = (await response.json()) as { id: string };
 	await expect(dialog.getByRole('heading', { name: 'Importing' })).toBeVisible();
 	return body.id;
@@ -146,7 +169,9 @@ export async function startFolderImport(page: Page): Promise<string> {
 /** From the progress step to the Done step, declining stems on the way. */
 export async function continueToDone(page: Page): Promise<Locator> {
 	const dialog = setupDialog(page);
-	await expect(dialog.getByText('Import finished', { exact: false }).first()).toBeVisible({ timeout: IMPORT_BUDGET_MS });
+	await expect(dialog.getByText('Import finished', { exact: false }).first()).toBeVisible({
+		timeout: IMPORT_BUDGET_MS
+	});
 	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
 	await expect(dialog.getByRole('heading', { name: 'Stems analysis' })).toBeVisible();
 	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -163,7 +188,9 @@ export async function minimiseWizard(page: Page): Promise<void> {
 /** The library rows the user can see in All Tracks. */
 export async function allTracksRowCount(page: Page, expected: number): Promise<void> {
 	await page.getByText('All Tracks', { exact: true }).first().click();
-	await expect(page.locator('[data-testid="track-row"]')).toHaveCount(expected, { timeout: 30_000 });
+	await expect(page.locator('[data-testid="track-row"]')).toHaveCount(expected, {
+		timeout: 30_000
+	});
 }
 
 /** Every escape the folder step must keep offering, whatever the scan said. */

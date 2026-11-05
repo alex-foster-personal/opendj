@@ -57,7 +57,9 @@ export const ELECTRON_BINARY_ENV = 'OPENDJ_E2E_ELECTRON_BINARY';
 function required(name: string): string {
 	const value = process.env[name];
 	if (value === undefined || value.trim() === '') {
-		throw new Error(`${name} is not set; run this suite through playwright.electron-shell.config.ts`);
+		throw new Error(
+			`${name} is not set; run this suite through playwright.electron-shell.config.ts`
+		);
 	}
 	return value;
 }
@@ -105,7 +107,10 @@ async function launchShell(origin: string): Promise<{ app: ElectronApplication; 
 	// the shell's handoff, prefs and deck load, not the device path, so the profile
 	// starts on Web Audio, written where the shell persists the choice.
 	mkdirSync(env.OPENDJ_SHELL_DATA_DIR, { recursive: true });
-	writeFileSync(join(env.OPENDJ_SHELL_DATA_DIR, 'audio-engine-choice.json'), JSON.stringify({ choice: 'webaudio' }));
+	writeFileSync(
+		join(env.OPENDJ_SHELL_DATA_DIR, 'audio-engine-choice.json'),
+		JSON.stringify({ choice: 'webaudio' })
+	);
 	// Electron derives userData (localStorage, the single-instance lock) from
 	// these, so each launch is a fresh profile and never the user's own.
 	env.HOME = join(scratch, 'home');
@@ -134,7 +139,8 @@ const electronTest = base.extend<ElectronFixtures>({
 				.context()
 				.tracing.stop(failed ? { path: tracePath } : undefined)
 				.catch(() => undefined);
-			if (failed) await testInfo.attach('electron-trace', { path: tracePath }).catch(() => undefined);
+			if (failed)
+				await testInfo.attach('electron-trace', { path: tracePath }).catch(() => undefined);
 			// exit through the shell's own path; close() alone would wait on the
 			// page's quit gate, which a test may have left armed.
 			await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
@@ -160,4 +166,5 @@ const electronTest = base.extend<ElectronFixtures>({
 	}
 });
 
-export const test: typeof base = process.env[SHELL_ENV] === 'electron' ? (electronTest as unknown as typeof base) : base;
+export const test: typeof base =
+	process.env[SHELL_ENV] === 'electron' ? (electronTest as unknown as typeof base) : base;

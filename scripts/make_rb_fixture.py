@@ -7,7 +7,7 @@ pyrekordbox key for decryption.
 
 Pipeline::
 
-    data/master.db.copy  (encrypted)
+    (private path)  (encrypted)
         │
         │  apps.shared.rekordbox_db.decrypt_to_plain() -- the one
         │  ATTACH ... KEY '' + sqlcipher_export('plain') routine, shared
@@ -32,6 +32,7 @@ Rekordbox must have been run at least once on this machine so
 we stop and drop a README at ``tests/fixtures/rekordbox/README.md``
 documenting the blocker.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -104,9 +105,7 @@ def _select_ids(plain_db: Path) -> tuple[list[str], dict[str, int]]:
         coverage: dict[str, int] = {k: 0 for k in TARGET_COMPOSITION}
 
         def _take(sql: str, params: tuple, bucket: str, n: int) -> None:
-            rows = cur.execute(
-                sql + f" LIMIT {n * 3}", params
-            ).fetchall()  # fetch a bit more in case some collide
+            rows = cur.execute(sql + f" LIMIT {n * 3}", params).fetchall()  # fetch a bit more in case some collide
             for (rid,) in rows:
                 rid = str(rid)
                 if rid in chosen:
@@ -118,9 +117,7 @@ def _select_ids(plain_db: Path) -> tuple[list[str], dict[str, int]]:
 
         # 1. Known broken IDs from the pre-Phase-1 audit (if present in DB).
         for bid in _known_broken_ids(TARGET_COMPOSITION["broken_links"]):
-            r = cur.execute(
-                "SELECT ID FROM djmdContent WHERE ID = ?", (bid,)
-            ).fetchone()
+            r = cur.execute("SELECT ID FROM djmdContent WHERE ID = ?", (bid,)).fetchone()
             if r and str(r[0]) not in chosen:
                 chosen.append(str(r[0]))
                 coverage["broken_links"] += 1
@@ -190,8 +187,7 @@ def _select_ids(plain_db: Path) -> tuple[list[str], dict[str, int]]:
 
         # 9. Normal, healthy tracks — FolderPath looks like a real file path.
         _take(
-            "SELECT ID FROM djmdContent WHERE FolderPath LIKE '/%' "
-            "AND ArtistID IS NOT NULL AND AlbumID IS NOT NULL",
+            "SELECT ID FROM djmdContent WHERE FolderPath LIKE '/%' AND ArtistID IS NOT NULL AND AlbumID IS NOT NULL",
             (),
             "normal",
             TARGET_COMPOSITION["normal"],
@@ -199,9 +195,7 @@ def _select_ids(plain_db: Path) -> tuple[list[str], dict[str, int]]:
 
         # 10. Filler — any remaining rows to pad to ~50.
         remaining = TARGET_COMPOSITION["filler"]
-        for (rid,) in cur.execute(
-            "SELECT ID FROM djmdContent ORDER BY ID LIMIT 500"
-        ):
+        for (rid,) in cur.execute("SELECT ID FROM djmdContent ORDER BY ID LIMIT 500"):
             if len(chosen) >= sum(TARGET_COMPOSITION.values()):
                 break
             if str(rid) not in chosen:
@@ -221,18 +215,14 @@ def _select_ids(plain_db: Path) -> tuple[list[str], dict[str, int]]:
 def _tables_with_column(con: sqlite3.Connection, column: str) -> list[str]:
     """Return every table (excluding views) that has ``column``."""
     out: list[str] = []
-    for (name,) in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    ):
+    for (name,) in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"):
         cols = con.execute(f'PRAGMA table_info("{name}")').fetchall()
         if any(c[1] == column for c in cols):
             out.append(name)
     return out
 
 
-def _select_playlist_ids_for(
-    con: sqlite3.Connection, content_ids: Iterable[str], max_playlists: int = 3
-) -> list[str]:
+def _select_playlist_ids_for(con: sqlite3.Connection, content_ids: Iterable[str], max_playlists: int = 3) -> list[str]:
     """Pick up to ``max_playlists`` playlists that reference any retained ID."""
     ids_placeholder = ",".join("?" for _ in content_ids)
     rows = con.execute(
@@ -271,26 +261,16 @@ def _prune(plain_db: Path, keep_ids: list[str]) -> dict[str, int]:
         # 2. Cascade-delete every table referencing ContentID.
         content_tables = _tables_with_column(con, "ContentID")
         for t in content_tables:
-            cur.execute(
-                f'DELETE FROM "{t}" WHERE ContentID NOT IN (SELECT id FROM keep_content)'
-            )
+            cur.execute(f'DELETE FROM "{t}" WHERE ContentID NOT IN (SELECT id FROM keep_content)')
 
         # 3. Delete djmdContent rows we're not keeping.
-        cur.execute(
-            'DELETE FROM djmdContent WHERE ID NOT IN (SELECT id FROM keep_content)'
-        )
+        cur.execute("DELETE FROM djmdContent WHERE ID NOT IN (SELECT id FROM keep_content)")
 
         # 4. Prune playlists: keep only those we chose + ensure djmdSongPlaylist
         #    refs are intersected with kept playlists too.
-        cur.execute(
-            'DELETE FROM djmdSongPlaylist WHERE PlaylistID NOT IN '
-            '(SELECT id FROM keep_playlists)'
-        )
+        cur.execute("DELETE FROM djmdSongPlaylist WHERE PlaylistID NOT IN (SELECT id FROM keep_playlists)")
         # djmdPlaylist itself: keep chosen playlists + any parent chain.
-        cur.execute(
-            'DELETE FROM djmdPlaylist WHERE ID NOT IN '
-            '(SELECT id FROM keep_playlists)'
-        )
+        cur.execute("DELETE FROM djmdPlaylist WHERE ID NOT IN (SELECT id FROM keep_playlists)")
 
         # 5. Orphan cleanup: for every other ContentID-less table that has
         #    a PlaylistID column, prune to kept playlists too.
@@ -298,10 +278,7 @@ def _prune(plain_db: Path, keep_ids: list[str]) -> dict[str, int]:
             if t in ("djmdSongPlaylist", "djmdPlaylist"):
                 continue
             try:
-                cur.execute(
-                    f'DELETE FROM "{t}" WHERE PlaylistID NOT IN '
-                    f'(SELECT id FROM keep_playlists)'
-                )
+                cur.execute(f'DELETE FROM "{t}" WHERE PlaylistID NOT IN (SELECT id FROM keep_playlists)')
             except sqlite3.Error:
                 pass
 
@@ -318,7 +295,7 @@ def _prune(plain_db: Path, keep_ids: list[str]) -> dict[str, int]:
             try:
                 cur.execute(
                     f'DELETE FROM "{lookup}" WHERE ID NOT IN '
-                    f'(SELECT DISTINCT {fk} FROM djmdContent WHERE {fk} IS NOT NULL)'
+                    f"(SELECT DISTINCT {fk} FROM djmdContent WHERE {fk} IS NOT NULL)"
                 )
             except sqlite3.Error:
                 pass  # table may not exist on older schemas
@@ -328,8 +305,7 @@ def _prune(plain_db: Path, keep_ids: list[str]) -> dict[str, int]:
 
         # Collect final counts for the summary.
         counts: dict[str, int] = {}
-        for t in ("djmdContent", "djmdSongPlaylist", "djmdPlaylist",
-                  "djmdArtist", "djmdAlbum", "djmdGenre", "djmdKey"):
+        for t in ("djmdContent", "djmdSongPlaylist", "djmdPlaylist", "djmdArtist", "djmdAlbum", "djmdGenre", "djmdKey"):
             try:
                 counts[t] = cur.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]
             except sqlite3.Error:
@@ -380,7 +356,7 @@ fixture only.
 
 ## Safety rails
 
-- We always decrypt from a copy (`data/master.db.copy`) — the live
+- We always decrypt from a copy (`(private path)`) — the live
   `~/Library/Pioneer/rekordbox/master.db` is never touched.
 - The decrypted fixture is written to a temp file first, then pruned and
   VACUUMed into `master.plain.db`.
@@ -404,15 +380,14 @@ def main(argv: list[str] | None = None) -> int:
         description="Build tests/fixtures/rekordbox/master.plain.db",
     )
     p.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Overwrite existing fixture if present.",
     )
     args = p.parse_args(argv)
 
     if PLAIN_OUT.exists() and not args.force:
-        return _fatal(
-            f"{PLAIN_OUT} already exists. Pass --force to regenerate."
-        )
+        return _fatal(f"{PLAIN_OUT} already exists. Pass --force to regenerate.")
 
     if not SRC_ENCRYPTED.exists():
         # Try refreshing from live.
@@ -420,10 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         result = paths.copy_live_dbs()
         if result.get("rekordbox") is None:
             _write_readme()
-            return _fatal(
-                "Live Rekordbox DB not found. Fixture not generated. "
-                f"See {README_OUT} for the blocker."
-            )
+            return _fatal(f"Live Rekordbox DB not found. Fixture not generated. See {README_OUT} for the blocker.")
 
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[1/5] decrypting {SRC_ENCRYPTED.name} → {PLAIN_TMP.name}")
@@ -431,10 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         rekordbox_db.decrypt_to_plain(SRC_ENCRYPTED, PLAIN_TMP)
     except Exception as exc:
         _write_readme()
-        return _fatal(
-            f"SQLCipher decrypt failed: {exc!r}\n"
-            f"See {README_OUT} for regen instructions + blocker notes."
-        )
+        return _fatal(f"SQLCipher decrypt failed: {exc!r}\nSee {README_OUT} for regen instructions + blocker notes.")
 
     print(f"[2/5] selecting ~{sum(TARGET_COMPOSITION.values())} edge-case IDs")
     ids, coverage = _select_ids(PLAIN_TMP)

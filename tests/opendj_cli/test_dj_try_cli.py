@@ -90,6 +90,17 @@ def test_pick_without_an_etag_is_a_usage_error(capsys: pytest.CaptureFixture[str
 
 
 @pytest.mark.requirement("TRYER-11")
+def test_pick_and_undo_docstring_names_required_etag() -> None:
+    """[if] pick or undo copied from module docstring [then] includes --etag ETAG and names show as source, [else stop]."""
+    doc = dj_try_cli.__doc__ or ""
+    assert "opendj dj try pick JOB CANDIDATE --etag ETAG [--json]" in doc
+    assert "opendj dj try undo JOB --etag ETAG [--json]" in doc
+    assert "Read ``--etag`` from ``opendj dj try show JOB``." in doc
+    assert "opendj dj try pick JOB CANDIDATE [--json]" not in doc
+    assert "opendj dj try undo JOB [--json]" not in doc
+
+
+@pytest.mark.requirement("TRYER-11")
 def test_dj_cli_routes_try_and_rejects_missing_pair(capsys: pytest.CaptureFixture[str]) -> None:
     """[if] ``opendj dj try`` lacks --out [then] it exits 1 with a usage document before any engine call, [else stop]."""
     code = dj_run(["try", "--in", "x"], lock=None)

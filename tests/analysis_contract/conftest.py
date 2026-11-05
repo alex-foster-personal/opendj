@@ -5,12 +5,13 @@ does ``pytest.importorskip("soundfile")`` at MODULE level, so a venv without
 the analysis extra skips the entire directory and pytest still exits 0 with
 "no tests ran". The fast CI lane also passes ``--ignore=tests/analysis``.
 Either would turn every test below into a check that cannot fail, which is
-exactly what `.claude/rules/verification.md` forbids. These tests need no
+exactly what `(private path)` forbids. These tests need no
 audio stack at all -- they are pure dataclass, SQL and selection logic -- so
 they live where they actually run.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -53,7 +54,9 @@ _DEPENDS_ON_BEATGRID = {
 
 
 def beatgrid_payload(
-    bpm: float = 128.0, tempo_changes: int = 0, grid_span_s: float = _FIXTURE_GRID_SPAN_S,
+    bpm: float = 128.0,
+    tempo_changes: int = 0,
+    grid_span_s: float = _FIXTURE_GRID_SPAN_S,
 ) -> dict[str, Any]:
     """A beatgrid payload with a real 1-2-3-4 cadence spanning ``[0, grid_span_s]``.
 
@@ -85,10 +88,7 @@ def beatgrid_payload(
     # `tempo_changes` interior beats evenly across the grid (never the first
     # or last -- the boundary tests exercise those directly) keeps this
     # fixture a payload the contract actually accepts.
-    marker_indices = [
-        round((i + 1) * (len(beats) - 1) / (tempo_changes + 1))
-        for i in range(tempo_changes)
-    ]
+    marker_indices = [round((i + 1) * (len(beats) - 1) / (tempo_changes + 1)) for i in range(tempo_changes)]
     return {
         "beats": beats,
         "bpm": bpm,
@@ -96,8 +96,7 @@ def beatgrid_payload(
         "octave_reason": "beat interval admits only one octave in 60..200",
         "first_downbeat_s": 0.0,
         "tempo_changes": [
-            {"at_s": beats[idx]["t"], "bpm_before": bpm, "bpm_after": bpm * 1.03,
-             "confidence": 0.8}
+            {"at_s": beats[idx]["t"], "bpm_before": bpm, "bpm_after": bpm * 1.03, "confidence": 0.8}
             for idx in marker_indices
         ],
         "static_grid_untrusted": tempo_changes > 0,
@@ -126,9 +125,12 @@ def key_payload(camelot: str = "8A", segments: int = 1) -> dict[str, Any]:
             "reason": None,
             "segments": [
                 {
-                    "start_bar": i * 16, "end_bar": (i + 1) * 16,
-                    "start_s": i * 30.0, "end_s": (i + 1) * 30.0,
-                    "key_camelot": camelot, "key_openkey": "1m",
+                    "start_bar": i * 16,
+                    "end_bar": (i + 1) * 16,
+                    "start_s": i * 30.0,
+                    "end_s": (i + 1) * 30.0,
+                    "key_camelot": camelot,
+                    "key_openkey": "1m",
                     "confidence": 0.7,
                 }
                 for i in range(segments)

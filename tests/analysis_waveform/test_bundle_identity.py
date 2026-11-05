@@ -2,7 +2,7 @@
 
 Codex P1 BLOCKING (PR #1536, thread on ``scripts/build_waveform_bundle.py:274``):
 ``--sample-size``, ``--seed``, or a changed library let the builder overwrite
-``data/bench/waveform/v1`` with a DIFFERENT truth set while
+``(private path)`` with a DIFFERENT truth set while
 ``score.verify_bundle()`` accepted any self-consistent bundle merely named
 ``waveform/v1``, so two rounds could claim "the same fixture" while scoring
 different tracks. The fix is an identity derived from the truth itself (seed,
@@ -47,9 +47,7 @@ from scripts import build_waveform_bundle as bwb
 pytestmark = pytest.mark.requirement("NATIVE-06")
 
 
-def _tracks(
-    ids_and_hashes: dict[str, str], *, payload_hashes: dict[str, str] | None = None
-) -> list[dict[str, str]]:
+def _tracks(ids_and_hashes: dict[str, str], *, payload_hashes: dict[str, str] | None = None) -> list[dict[str, str]]:
     payload_hashes = payload_hashes or {}
     return [
         {
@@ -89,22 +87,14 @@ def test_a_different_sample_size_changes_the_id() -> None:
 def test_a_different_truth_hash_changes_the_id() -> None:
     """The case the P1 named directly: same seed and size, a different draw
     (or a library that changed underneath an unchanged seed/size pair)."""
-    baseline = bwb.compute_bundle_id(
-        seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:aaa"})
-    )
-    changed = bwb.compute_bundle_id(
-        seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:different"})
-    )
+    baseline = bwb.compute_bundle_id(seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:aaa"}))
+    changed = bwb.compute_bundle_id(seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:different"}))
     assert baseline != changed
 
 
 def test_a_different_stable_id_set_changes_the_id() -> None:
-    baseline = bwb.compute_bundle_id(
-        seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:aaa"})
-    )
-    changed = bwb.compute_bundle_id(
-        seed=20260908, sample_size=1, tracks=_tracks({"z": "sha256:aaa"})
-    )
+    baseline = bwb.compute_bundle_id(seed=20260908, sample_size=1, tracks=_tracks({"a": "sha256:aaa"}))
+    changed = bwb.compute_bundle_id(seed=20260908, sample_size=1, tracks=_tracks({"z": "sha256:aaa"}))
     assert baseline != changed
 
 
@@ -190,9 +180,7 @@ def test_a_new_version_writes_a_different_directory() -> None:
 
 
 def test_several_tracks_under_one_directory_share_that_root() -> None:
-    root = bwb._common_audio_root(
-        ["/library/DJ Music/a.mp3", "/library/DJ Music/sub/b.mp3", "/library/DJ Music/c.mp3"]
-    )
+    root = bwb._common_audio_root(["/library/DJ Music/a.mp3", "/library/DJ Music/sub/b.mp3", "/library/DJ Music/c.mp3"])
     assert root == Path("/library/DJ Music")
 
 

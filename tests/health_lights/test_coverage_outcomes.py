@@ -7,6 +7,7 @@ Regression lines:
 
 [if] an unchanged failure retries before its backoff or past the attempt cap [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,7 +40,7 @@ def test_failures_back_off_exponentially_then_go_terminal(store: co.OutcomeStore
     third = store.record_failure("lyrics", "a", "sig", "boom", now=3000.0)
     assert third.attempts == co.MAX_ATTEMPTS
     assert co.is_failed_terminal(third, "sig") is True
-    assert co.may_attempt(third, "sig", now=10**12) is False   # never again, unchanged
+    assert co.may_attempt(third, "sig", now=10**12) is False  # never again, unchanged
 
 
 def test_a_changed_signature_re_arms_a_terminal_failure(store: co.OutcomeStore) -> None:
@@ -84,9 +85,7 @@ def test_a_terminal_failure_counts_as_failed_at_once(store: co.OutcomeStore) -> 
 @pytest.mark.requirement("ENRICH-04")
 def test_record_failures_writes_many_in_one_pass(store: co.OutcomeStore) -> None:
     store.record_failure("stems", "a", "sig-a", "earlier", now=1.0)
-    recorded = store.record_failures(
-        "stems", [("a", "sig-a"), ("b", "sig-b")], "boom", now=2.0, terminal=True
-    )
+    recorded = store.record_failures("stems", [("a", "sig-a"), ("b", "sig-b")], "boom", now=2.0, terminal=True)
     assert [(o.stable_id, o.attempts) for o in recorded] == [("a", co.MAX_ATTEMPTS), ("b", co.MAX_ATTEMPTS)]
     assert set(store.load()) == {("stems", "a"), ("stems", "b")}
     assert store.record_failures("stems", [], "boom", now=3.0) == []

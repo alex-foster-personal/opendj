@@ -28,6 +28,7 @@ through :func:`apps.shared.state.sync_stamp.stamp_and_log`. That is not
 ceremony -- the push fence reads that changelog, so a fixture that skipped it
 would test a spoke whose edits are invisible to its own push.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -137,9 +138,7 @@ def _open(data_dir: Path) -> sqlite3.Connection:
     return state_db.open_rw(client.state_db_path(data_dir))
 
 
-def _sync(
-    data_dir: Path, hub: _TestClientTransport, name: str
-) -> client.SyncResult:
+def _sync(data_dir: Path, hub: _TestClientTransport, name: str) -> client.SyncResult:
     return client.run_sync(data_dir, "http://hub.invalid", transport=hub, name=name)
 
 
@@ -155,9 +154,7 @@ def _log(
     What every in-repo writer now does (ADR 08 points 2 and 3). Returns the
     canonical stamp the row must store.
     """
-    return sync_stamp.stamp_and_log(
-        conn, table, row_pk, origin, now=updated_at
-    ).updated_at
+    return sync_stamp.stamp_and_log(conn, table, row_pk, origin, now=updated_at).updated_at
 
 
 def _insert_track(
@@ -202,28 +199,22 @@ def _set_track_title(
     with sync_stamp.stamped_transaction(conn):
         stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
         conn.execute(
-            "UPDATE tracks SET title = ?, updated_at = ?, origin_device_id = ? "
-            "WHERE stable_id = ?",
+            "UPDATE tracks SET title = ?, updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
             (title, stamped, origin, stable_id),
         )
 
 
-def _soft_delete_track(
-    conn: sqlite3.Connection, stable_id: str, *, deleted_at: str, origin: str
-) -> None:
+def _soft_delete_track(conn: sqlite3.Connection, stable_id: str, *, deleted_at: str, origin: str) -> None:
     with sync_stamp.stamped_transaction(conn):
         stamped = _log(conn, "tracks", (stable_id,), origin, deleted_at)
         conn.execute(
-            "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
-            "origin_device_id = ? WHERE stable_id = ?",
+            "UPDATE tracks SET deleted_at = ?, updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
             (stamped, stamped, origin, stable_id),
         )
 
 
 def _track_title(conn: sqlite3.Connection, stable_id: str) -> str | None:
-    row = conn.execute(
-        "SELECT title FROM tracks WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute("SELECT title FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()
     return None if row is None else row[0]
 
 
@@ -260,9 +251,7 @@ def _set_members(
     """Replace membership locally AND stamp the playlist, as a writer must."""
     with sync_stamp.stamped_transaction(conn):
         stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
-        conn.execute(
-            "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
-        )
+        conn.execute("DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,))
         for position, stable_id in enumerate(stable_ids):
             conn.execute(
                 """
@@ -274,8 +263,7 @@ def _set_members(
                 (playlist_id, stable_id, position, stamped, origin),
             )
         conn.execute(
-            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-            "WHERE playlist_id = ?",
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
             (stamped, origin, playlist_id),
         )
 
@@ -284,8 +272,7 @@ def _members(conn: sqlite3.Connection, playlist_id: str) -> tuple[str, ...]:
     return tuple(
         str(row[0])
         for row in conn.execute(
-            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? "
-            "ORDER BY position",
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
             (playlist_id,),
         )
     )
@@ -296,9 +283,7 @@ def _seed_common_track(data_dirs: tuple[Path, ...], stable_id: str) -> None:
     for data_dir in data_dirs:
         conn = _open(data_dir)
         try:
-            _insert_track(
-                conn, stable_id, title="original", updated_at=_T0, origin=_DEV_A
-            )
+            _insert_track(conn, stable_id, title="original", updated_at=_T0, origin=_DEV_A)
         finally:
             conn.close()
 
@@ -306,16 +291,12 @@ def _seed_common_track(data_dirs: tuple[Path, ...], stable_id: str) -> None:
 # ----- tests ---------------------------------------------------------------
 
 
-def test_edit_converges_across_two_spokes(
-    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
-) -> None:
+def test_edit_converges_across_two_spokes(hub: _TestClientTransport, spoke_a: Path, spoke_b: Path) -> None:
     """A's edit reaches B through the hub."""
     _seed_common_track((spoke_a, spoke_b), "trk-1")
     conn_a = _open(spoke_a)
     try:
-        _set_track_title(
-            conn_a, "trk-1", title="edited on A", updated_at=_T1, origin=_DEV_A
-        )
+        _set_track_title(conn_a, "trk-1", title="edited on A", updated_at=_T1, origin=_DEV_A)
     finally:
         conn_a.close()
 
@@ -342,24 +323,16 @@ def test_later_updated_at_wins_and_ties_break_on_device_id(
     conn_a = _open(spoke_a)
     try:
         # A edits later in wall-clock terms; A must win regardless of order.
-        _set_track_title(
-            conn_a, "trk-late", title="A at T2", updated_at=_T2, origin=_DEV_A
-        )
+        _set_track_title(conn_a, "trk-late", title="A at T2", updated_at=_T2, origin=_DEV_A)
         # Identical stamps: the greater device id must win, and _DEV_B > _DEV_A.
-        _set_track_title(
-            conn_a, "trk-tie", title="A at T1", updated_at=_T1, origin=_DEV_A
-        )
+        _set_track_title(conn_a, "trk-tie", title="A at T1", updated_at=_T1, origin=_DEV_A)
     finally:
         conn_a.close()
 
     conn_b = _open(spoke_b)
     try:
-        _set_track_title(
-            conn_b, "trk-late", title="B at T1", updated_at=_T1, origin=_DEV_B
-        )
-        _set_track_title(
-            conn_b, "trk-tie", title="B at T1", updated_at=_T1, origin=_DEV_B
-        )
+        _set_track_title(conn_b, "trk-late", title="B at T1", updated_at=_T1, origin=_DEV_B)
+        _set_track_title(conn_b, "trk-tie", title="B at T1", updated_at=_T1, origin=_DEV_B)
     finally:
         conn_b.close()
 
@@ -377,9 +350,7 @@ def test_later_updated_at_wins_and_ties_break_on_device_id(
             conn.close()
 
 
-def test_tombstone_propagates(
-    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
-) -> None:
+def test_tombstone_propagates(hub: _TestClientTransport, spoke_a: Path, spoke_b: Path) -> None:
     """A soft delete on A becomes a soft delete on B (ADR 04 c4)."""
     _seed_common_track((spoke_a, spoke_b), "trk-dead")
     _sync(spoke_a, hub, "spoke-a")
@@ -396,30 +367,22 @@ def test_tombstone_propagates(
 
     conn_b = _open(spoke_b)
     try:
-        row = conn_b.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-dead",)
-        ).fetchone()
+        row = conn_b.execute("SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-dead",)).fetchone()
         assert row is not None, "tombstone hard-deleted the row instead"
         assert row[0] == _T2
     finally:
         conn_b.close()
 
 
-def test_playlist_membership_is_replaced_wholesale(
-    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
-) -> None:
+def test_playlist_membership_is_replaced_wholesale(hub: _TestClientTransport, spoke_a: Path, spoke_b: Path) -> None:
     """A membership edit replaces the peer's list, never merges into it."""
     _seed_common_track((spoke_a, spoke_b), "trk-1")
     _seed_common_track((spoke_a, spoke_b), "trk-2")
 
     conn_a = _open(spoke_a)
     try:
-        _insert_playlist(
-            conn_a, "pl-1", name="OLTF", updated_at=_T1, origin=_DEV_A
-        )
-        _set_members(
-            conn_a, "pl-1", ("trk-1", "trk-2"), updated_at=_T1, origin=_DEV_A
-        )
+        _insert_playlist(conn_a, "pl-1", name="OLTF", updated_at=_T1, origin=_DEV_A)
+        _set_members(conn_a, "pl-1", ("trk-1", "trk-2"), updated_at=_T1, origin=_DEV_A)
     finally:
         conn_a.close()
 
@@ -435,12 +398,8 @@ def test_playlist_membership_is_replaced_wholesale(
     # A drops trk-1, adds a brand new trk-3, and reorders.
     conn_a = _open(spoke_a)
     try:
-        _insert_track(
-            conn_a, "trk-3", title="new on A", updated_at=_T2, origin=_DEV_A
-        )
-        _set_members(
-            conn_a, "pl-1", ("trk-3", "trk-2"), updated_at=_T2, origin=_DEV_A
-        )
+        _insert_track(conn_a, "trk-3", title="new on A", updated_at=_T2, origin=_DEV_A)
+        _set_members(conn_a, "pl-1", ("trk-3", "trk-2"), updated_at=_T2, origin=_DEV_A)
     finally:
         conn_a.close()
 
@@ -454,9 +413,7 @@ def test_playlist_membership_is_replaced_wholesale(
         conn_b.close()
 
 
-def test_resync_is_a_no_op(
-    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
-) -> None:
+def test_resync_is_a_no_op(hub: _TestClientTransport, hub_dir: Path, spoke_a: Path) -> None:
     """The watermark holds: an immediate second sync changes nothing."""
     _seed_common_track((spoke_a,), "trk-1")
     first = _sync(spoke_a, hub, "spoke-a")
@@ -480,9 +437,7 @@ def test_resync_is_a_no_op(
         hub_conn.close()
 
 
-def test_digest_mismatch_raises(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_digest_mismatch_raises(hub: _TestClientTransport, spoke_a: Path) -> None:
     """An edit that forgets to stamp ``updated_at`` is caught, not merged."""
     _seed_common_track((spoke_a,), "trk-1")
     _sync(spoke_a, hub, "spoke-a")
@@ -503,9 +458,7 @@ def test_digest_mismatch_raises(
     assert "tracks" in str(excinfo.value)
 
 
-def test_legacy_null_updated_at_loses_to_a_real_edit(
-    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
-) -> None:
+def test_legacy_null_updated_at_loses_to_a_real_edit(hub: _TestClientTransport, spoke_a: Path, spoke_b: Path) -> None:
     """A pre-v6 row (NULL ``updated_at``) syncs as epoch-old (ADR 04 c7)."""
     _seed_common_track((spoke_a, spoke_b), "trk-1")
 
@@ -552,8 +505,7 @@ def test_legacy_null_updated_at_loses_to_a_real_edit(
         conn = _open(data_dir)
         try:
             row = conn.execute(
-                "SELECT value_json, updated_at FROM track_fields "
-                "WHERE stable_id = 'trk-1' AND field_name = 'bpm'"
+                "SELECT value_json, updated_at FROM track_fields WHERE stable_id = 'trk-1' AND field_name = 'bpm'"
             ).fetchone()
             assert row is not None, data_dir.name
             assert row[0] == "128.0", data_dir.name

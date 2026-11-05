@@ -104,9 +104,7 @@ function _pickNext(feed: readonly AutoPlayTrackRow[], deck: TrackifyDeckSnap): s
 function _withLoadDeadline<T>(promise: Promise<T>): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		const timer = setTimeout(() => {
-			reject(
-				new Error(`Trackify load did not settle within ${TRACKIFY_LOAD_SKIP_DEADLINE_MS}ms`)
-			);
+			reject(new Error(`Trackify load did not settle within ${TRACKIFY_LOAD_SKIP_DEADLINE_MS}ms`));
 		}, TRACKIFY_LOAD_SKIP_DEADLINE_MS);
 		promise.then(
 			(value) => {
@@ -229,16 +227,24 @@ async function _dispatchLoadSequence(
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
-		await dispatchPerformanceCommand({
-			type: 'load',
-			deck,
-			stable_id: nextId,
-			stems: false,
-			suppressCommandErrorToast: true
-		}, undefined, 'autoplay-handoff');
+		await dispatchPerformanceCommand(
+			{
+				type: 'load',
+				deck,
+				stable_id: nextId,
+				stems: false,
+				suppressCommandErrorToast: true
+			},
+			undefined,
+			'autoplay-handoff'
+		);
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
-	await dispatchPerformanceCommand({ type: 'play', deck, playing: true }, undefined, 'autoplay-handoff');
+	await dispatchPerformanceCommand(
+		{ type: 'play', deck, playing: true },
+		undefined,
+		'autoplay-handoff'
+	);
 	if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 }
 

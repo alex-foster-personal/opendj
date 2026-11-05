@@ -6,6 +6,7 @@ Usage:
   uv run python tools/deck-diagrams/scripts/batch_build_all.py --limit 20
   uv run python tools/deck-diagrams/scripts/batch_build_all.py --ids ddj-rev5,ddj-800
 """
+
 from __future__ import annotations
 
 import argparse

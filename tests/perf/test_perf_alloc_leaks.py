@@ -93,9 +93,7 @@ def test_a_leak_measurement_that_did_run_still_succeeds(
         f"leaks produced no summary for a process we own: {result.stdout!r}"
     )
     assert "UNKNOWN" not in result.stdout
-    assert result.returncode == 0, (
-        f"a leak check that DID measure was reported as unavailable: {result.stderr!r}"
-    )
+    assert result.returncode == 0, f"a leak check that DID measure was reported as unavailable: {result.stderr!r}"
 
 
 def test_the_shipped_script_accumulates_and_exits_on_an_unavailable_leak_check() -> None:

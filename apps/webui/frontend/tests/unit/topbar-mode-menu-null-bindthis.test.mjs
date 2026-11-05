@@ -17,7 +17,9 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { compile } from 'svelte/compiler';
 
-const filename = fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url));
+const filename = fileURLToPath(
+	new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)
+);
 const source = readFileSync(filename, 'utf8');
 
 /** Extract `function NAME(...) { ... }` verbatim, keeping a leading `async`
@@ -44,7 +46,11 @@ function extractFunction(name) {
  * supplies `modePickerEl` / `autoPlayWrapEl` to it. */
 function runExtracted(fnName, boundVarName, boundValue, ...args) {
 	const stripped = transformSync(extractFunction(fnName), { loader: 'ts' }).code;
-	const harness = new Function(boundVarName, 'callArgs', `${stripped}\nreturn ${fnName}(...callArgs);`);
+	const harness = new Function(
+		boundVarName,
+		'callArgs',
+		`${stripped}\nreturn ${fnName}(...callArgs);`
+	);
 	return harness(boundValue, args);
 }
 
@@ -78,6 +84,12 @@ test('_dismissModeMenuOnOutsidePointer still dismisses on a genuine outside poin
 	globalThis.Node = globalThis.Node ?? class {};
 	const outsideTarget = new globalThis.Node();
 	const modePickerEl = { open: true, contains: () => false };
-	runExtracted('_dismissModeMenuOnOutsidePointer', 'modePickerEl', modePickerEl, { target: outsideTarget });
-	assert.equal(modePickerEl.open, false, 'a real outside pointerdown must still close the open menu');
+	runExtracted('_dismissModeMenuOnOutsidePointer', 'modePickerEl', modePickerEl, {
+		target: outsideTarget
+	});
+	assert.equal(
+		modePickerEl.open,
+		false,
+		'a real outside pointerdown must still close the open menu'
+	);
 });

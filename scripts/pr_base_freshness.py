@@ -117,9 +117,7 @@ def exceeds_threshold(result: Measurement, *, max_age_hours: int) -> bool:
 def _run(*command: str) -> str:
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"command failed ({result.returncode}): {' '.join(command)}\n{result.stderr.strip()}"
-        )
+        raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}\n{result.stderr.strip()}")
     return result.stdout
 
 
@@ -137,9 +135,7 @@ def parse_rows(text: str) -> list[Mapping[str, object]]:
     return rows
 
 
-def collect_commits(
-    rows: Sequence[Mapping[str, object]], *, main_ref: str
-) -> dict[str, tuple[str, int]]:
+def collect_commits(rows: Sequence[Mapping[str, object]], *, main_ref: str) -> dict[str, tuple[str, int]]:
     """Each base's commit time and how many commits ``main_ref`` is ahead of it."""
     commits: dict[str, tuple[str, int]] = {}
     for row in rows:

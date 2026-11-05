@@ -46,6 +46,8 @@
  *   on once the job is over [then] stop.
  * control [if] a hovered mouse click's 409 opens it a second time or runs a
  *   second timer [then] stop.
+ * Terminal waits poll GET /ingest/refresh/status until phase is done|error
+ * (#5764), then the popover's .pop-phase line is still asserted on a short deadline.
  */
 // requirement: CHROME-10
 import { expect, test, type APIRequestContext, type APIResponse, type Page, type Route } from '@playwright/test';
@@ -73,12 +75,56 @@ function watchWire(page: Page): Wire {
 	return wire;
 }
 
+type RefreshSnap = {
+	running: boolean;
+	phase: string;
+	started_at: number | null;
+	finished_at: number | null;
+	error: string | null;
+};
+
+function logRefreshProgress(tag: string, snap: RefreshSnap | null, waitedMs: number): void {
+	const engineMs =
+		snap?.started_at != null && snap?.finished_at != null
+			? Math.round((snap.finished_at - snap.started_at) * 1000)
+			: null;
+	console.log(
+		`[refresh-progress] ${tag} phase=${snap?.phase ?? 'none'} running=${snap?.running ?? 'none'} ` +
+			`started_at=${snap?.started_at ?? 'null'} finished_at=${snap?.finished_at ?? 'null'} ` +
+			`engine_ms=${engineMs} waited_ms=${waitedMs}`
+	);
+}
+
 async function waitIdle(request: APIRequestContext, timeout = 30_000): Promise<void> {
 	await expect
 		.poll(async () => ((await (await request.get(STATUS)).json()) as { running: boolean }).running, {
 			timeout
 		})
 		.toBe(false);
+}
+
+/** Poll the engine until the current refresh job is terminal (done|error).
+ * Returns that payload. Logs duration on both the success path and the
+ * timeout path (#5764). Not a pre-start gate: idle-with-no-job is not terminal. */
+async function waitTerminal(request: APIRequestContext, timeout = 60_000): Promise<RefreshSnap> {
+	const t0 = Date.now();
+	let last: RefreshSnap | null = null;
+	try {
+		await expect
+			.poll(
+				async () => {
+					last = (await (await request.get(STATUS)).json()) as RefreshSnap;
+					return last.running === false && (last.phase === 'done' || last.phase === 'error');
+				},
+				{ timeout }
+			)
+			.toBe(true);
+	} catch (err) {
+		logRefreshProgress('TIMEOUT waiting for terminal job', last, Date.now() - t0);
+		throw err;
+	}
+	logRefreshProgress('engine ended the run', last!, Date.now() - t0);
+	return last!;
 }
 
 /** Order one real analysis CLI run on a fixture track, through the same
@@ -200,7 +246,8 @@ async function expectStaysDismissed(page: Page, request: APIRequestContext, wire
 	expect(wire.config.length, 'nothing opened the popover again').toBe(1);
 	// The run is still followed while it lasts: its done toast comes only
 	// from the status polling.
-	await expect.poll(() => runEndToastCount(page), { timeout: 30_000 }).toBe(1);
+	await waitTerminal(request);
+	await expect.poll(() => runEndToastCount(page), { timeout: 5_000 }).toBe(1);
 	await expect(pop).toBeHidden();
 	await expectPollingStops(page, request, wire);
 }
@@ -282,7 +329,8 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		// and the run's terminal phase is what it shows.
 		const settledAt = wire.status.length;
 		await expect.poll(() => wire.status.length, { timeout: 5_000 }).toBeGreaterThan(settledAt);
-		await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 30_000 });
+		await waitTerminal(request);
+		await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 5_000 });
 		expect(wire.config.length, 'opened once, as a hover opens it').toBe(1);
 
 		await btn.press('Escape');
@@ -378,11 +426,10 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			await first.route.fulfill({ response: r1 }); // the page follows the run
 			passThrough = true;
 			for (const p of parked.splice(0)) await p.route.continue();
-			await waitIdle(request);
+			const ended = await waitTerminal(request);
+			expect(ended.finished_at, 'the run the page followed has ended').not.toBeNull();
 			// The run's end reaches the page by its polling: one toast.
-			await expect.poll(toasts, { timeout: 30_000 }).toBe(1);
-			const endedAt = ((await (await request.get(STATUS)).json()) as Snap).finished_at;
-			expect(endedAt, 'the run the page followed has ended').not.toBeNull();
+			await expect.poll(toasts, { timeout: 5_000 }).toBe(1);
 
 			// Now the other overlapping poll's answer arrives: an earlier running
 			// status of that same run.
@@ -406,10 +453,9 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		request
 	}) => {
 		test.fixme(true, 'browser-runner teardown race (page/context/request disposed), see #7968');
-		// The real sweep's length depends on the runner's load (#5764), and the
-		// suite's 30 s test budget also had to cover three page loads and up to
-		// 200 status reads. The budget is the run's, so it is set here, and the
-		// end is read from the engine before the page is asked to show it.
+		// The real sweep's length depends on the runner's load (#5764). The budget
+		// is the run's, so it is set here. waitTerminal polls the engine (180 s cap)
+		// until phase is done|error; the page then has 5 s to apply .pop-phase.
 		test.setTimeout(240_000);
 		// The overshoot of the ordering above is dropping a snapshot of the run
 		// already shown; mid-run progress (log, step count, badges) would then
@@ -475,13 +521,10 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			});
 			await release();
 			await page.unroute(matcher);
-			// First the engine's own end of the run, bounded by the measured
-			// run length rather than a guess about the page; then the page,
-			// which polls every second while the popover is open, has 30 s to
-			// apply the terminal phase and raise the run-end toast under test.
-			const endWait = Date.now();
-			await waitIdle(request, 180_000);
-			console.log(`[refresh-progress] the engine ended the run ${Date.now() - endWait} ms after release`);
+			// waitTerminal (#5764) logs engine_ms/waited_ms; then the page, which polls
+			// every second while the popover is open, has 5 s to apply the terminal
+			// phase and raise the run-end toast under test.
+			const ended = await waitTerminal(request, 180_000);
 			// The run is still followed to its end: the polled terminal phase is
 			// applied, and the page raised exactly one run-end toast for it. Read
 			// from the toast record, not the tray, so the 5 s on-screen life of the
@@ -492,7 +535,7 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			// not seen" from "never raised".
 			const pop = page.getByTestId('refresh-analysis-pop');
 			try {
-				await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 30_000 });
+				await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 5_000 });
 				await expect
 					.poll(async () => (await runEndToastIds(page)).filter((id) => !endToastsBefore.has(id)).length, {
 						timeout: 5_000
@@ -502,7 +545,11 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 				await test.info().attach('perf-ring-and-wire.json', {
 					contentType: 'application/json',
 					body: JSON.stringify(
-						{ wire, ring: await page.evaluate(() => (window as PerfRingWindow).__mdtPerfLog?.() ?? null) },
+						{
+							wire,
+							status: ended,
+							ring: await page.evaluate(() => (window as PerfRingWindow).__mdtPerfLog?.() ?? null)
+						},
 						null,
 						2
 					)
@@ -614,7 +661,8 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		await drain();
 		// The engine's own end raises the done toast once its answer is released
 		// (or, if the run is still going, once a later real poll delivers it).
-		await expect.poll(() => runEndToastCount(page), { timeout: 30_000 }).toBe(1);
+		await waitTerminal(request);
+		await expect.poll(() => runEndToastCount(page), { timeout: 5_000 }).toBe(1);
 		await page.unroute(statusMatcher);
 		await expectPollingStops(page, request, wire);
 	});

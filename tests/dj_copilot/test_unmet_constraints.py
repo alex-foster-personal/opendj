@@ -1,4 +1,5 @@
 """Shape of the UnmetConstraint surface (PLAY-02)."""
+
 from __future__ import annotations
 
 import pytest
@@ -9,9 +10,7 @@ pytestmark = pytest.mark.requirement("PLAY-02")
 
 
 def test_fields() -> None:
-    uc = UnmetConstraint(
-        kind="bpm_window", position=3, detail={"delta_pct": 11.5, "stable_id": "x"}
-    )
+    uc = UnmetConstraint(kind="bpm_window", position=3, detail={"delta_pct": 11.5, "stable_id": "x"})
     assert uc.kind == "bpm_window"
     assert uc.position == 3
     assert uc.detail["delta_pct"] == 11.5

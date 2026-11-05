@@ -130,6 +130,9 @@ describe('preview cue policy', () => {
 	});
 
 	it('an unknown output mode throws rather than defaulting to a route', () => {
-		assert.throws(() => previewCueVerdict({ ...HEALTHY, output_mode: 'quadraphonic' }), /output mode/);
+		assert.throws(
+			() => previewCueVerdict({ ...HEALTHY, output_mode: 'quadraphonic' }),
+			/output mode/
+		);
 	});
 });

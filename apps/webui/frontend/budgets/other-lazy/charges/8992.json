@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 473296,
+  "measured_with_pr": 473551,
+  "sha": "8a57a67402",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #8992 is tests-only (CUEOUT-27 Chromium e2e, unit call-recorder, ledger checkout); product sources are unchanged. CI on run 42088885481 rebuilt the merge base (no published measurement) then measured other-lazy 473296 -> 473551, +255 B gzip, above the 128 B PR-delta noise floor. other-lazy is 137 emitted files so vite gzip/chunk-hash noise exceeded that floor. Ceiled to KiB plus 1 KiB.",
+  "payback": "none planned; no product source grew"
+}

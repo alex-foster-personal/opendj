@@ -3,6 +3,7 @@
 Creates a Phase 5 state DB with migrations applied and a ``PairingsRepo``
 bound to a fresh connection per test.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -32,6 +33,7 @@ def state_conn(tmp_path: Path):
     # tests). Phase 08 tables then come from ensure_phase08_tables.
     try:  # pragma: no cover - exercised indirectly via migration tests
         from apps.shared.state import schema as state_schema
+
         state_schema.apply_migrations(conn)
     except Exception:
         pass

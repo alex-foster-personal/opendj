@@ -64,9 +64,7 @@ def test_ui_prefs_defaults_include_the_six_lyric_prefs(prefs_client: TestClient)
 
 
 @pytest.mark.parametrize("key", sorted(LYRIC_WRITES))
-def test_ui_prefs_lyric_key_round_trips_to_disk(
-    prefs_client: TestClient, tmp_path: Path, key: str
-) -> None:
+def test_ui_prefs_lyric_key_round_trips_to_disk(prefs_client: TestClient, tmp_path: Path, key: str) -> None:
     value = LYRIC_WRITES[key]
     r = prefs_client.put("/api/v1/ui-prefs", json={key: value})
     assert r.status_code == 200
@@ -99,9 +97,7 @@ def test_ui_prefs_rejects_a_non_boolean_lyric_toggle(prefs_client: TestClient) -
     assert r.status_code == 422
 
 
-def test_ui_prefs_reads_a_blob_written_before_the_lyric_keys_existed(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_ui_prefs_reads_a_blob_written_before_the_lyric_keys_existed(prefs_client: TestClient, tmp_path: Path) -> None:
     path = tmp_path / "data" / "state" / "ui-prefs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"theme": "dark", "confirm": {}}) + "\n", encoding="utf-8")
@@ -110,9 +106,7 @@ def test_ui_prefs_reads_a_blob_written_before_the_lyric_keys_existed(
         assert body[key] == want, f"{key} must default for a pre-existing blob"
 
 
-def test_ui_prefs_refuses_a_wrong_typed_lyric_key_on_disk(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_ui_prefs_refuses_a_wrong_typed_lyric_key_on_disk(prefs_client: TestClient, tmp_path: Path) -> None:
     path = tmp_path / "data" / "state" / "ui-prefs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"lyrics_global": "yes"}) + "\n", encoding="utf-8")

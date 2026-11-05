@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const src = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)),
+	fileURLToPath(
+		new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)
+	),
 	'utf8'
 );
 

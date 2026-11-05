@@ -29,39 +29,39 @@ do_sync=false
 lock=""
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --sync)
-      do_sync=true
-      shift
-      ;;
-    --lock)
-      lock="${2:?--lock requires a pylock.toml path}"
-      shift 2
-      ;;
-    -*)
-      echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
-      exit 2
-      ;;
-    *)
-      if [[ -z "$want" ]]; then
-        want="$1"
-        shift
-      else
-        echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
-        exit 2
-      fi
-      ;;
-  esac
+    case "$1" in
+        --sync)
+            do_sync=true
+            shift
+            ;;
+        --lock)
+            lock="${2:?--lock requires a pylock.toml path}"
+            shift 2
+            ;;
+        -*)
+            echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
+            exit 2
+            ;;
+        *)
+            if [[ -z "$want" ]]; then
+                want="$1"
+                shift
+            else
+                echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
+                exit 2
+            fi
+            ;;
+    esac
 done
 
 [[ -n "$want" ]] || {
-  echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
-  exit 2
+    echo "usage: scripts/ci_venv.sh <python-version> [--sync] [--lock <pylock.toml>]" >&2
+    exit 2
 }
 
 if [ -n "$lock" ] && [ ! -f "$lock" ]; then
-  echo "[venv] lock not found: $lock (compile it with: python -m scripts.ci_lock compile)" >&2
-  exit 2
+    echo "[venv] lock not found: $lock (compile it with: python -m scripts.ci_lock compile)" >&2
+    exit 2
 fi
 
 venv=.venv
@@ -74,43 +74,43 @@ want_version="$(python_version "$base")"
 
 reused=false
 if [ ! -e "$venv" ]; then
-  reason="missing"
+    reason="missing"
 elif ! have_version="$(python_version "$venv/bin/python" 2>&1)"; then
-  reason="interpreter does not run: $have_version"
+    reason="interpreter does not run: $have_version"
 elif [ "$have_version" != "$want_version" ]; then
-  reason="python $have_version, want $want_version"
+    reason="python $have_version, want $want_version"
 else
-  reused=true
-  echo "[venv] reusing $venv (python $have_version)"
+    reused=true
+    echo "[venv] reusing $venv (python $have_version)"
 fi
 
 if ! $reused; then
-  echo "[venv] recreating $venv ($reason) from $base"
-  # rm first, not `uv venv --clear`: uv refuses to clear a directory that is not
-  # a virtualenv, so a half-written .venv (no pyvenv.cfg) would fail the job
-  # instead of being replaced.
-  rm -rf -- "$venv"
-  uv venv --python "$base" "$venv"
+    echo "[venv] recreating $venv ($reason) from $base"
+    # rm first, not `uv venv --clear`: uv refuses to clear a directory that is not
+    # a virtualenv, so a half-written .venv (no pyvenv.cfg) would fail the job
+    # instead of being replaced.
+    rm -rf -- "$venv"
+    uv venv --python "$base" "$venv"
 fi
 
 if $do_sync; then
-  echo "[venv] syncing dependencies"
-  uv sync --exact --python "$venv/bin/python"
+    echo "[venv] syncing dependencies"
+    uv sync --exact --python "$venv/bin/python"
 fi
 
 if [ -n "$lock" ]; then
-  # pylock support is a uv preview feature; opting in names that on purpose.
-  lock_sync=(uv pip sync --preview-features pylock --python "$venv/bin/python" "$lock")
-  echo "[venv] syncing exactly from $lock (offline, warm cache)"
-  if ! "${lock_sync[@]}" --offline; then
-    # A cold cache (new runner, bumped pin). The fetch below downloads the files
-    # the lock names, verified by hash, and never resolves the lock itself. The
-    # one exception is scripts/ci_lock.py SOURCE_BUILDS (no wheel): building
-    # them resolves their isolated build dependencies from the index, once per
-    # runner, after which the built wheel is cached and the offline sync above
-    # covers them. Announced so a runner that keeps missing is visible;
-    # UV_OFFLINE=1 makes a miss fail instead.
-    echo "::warning title=CI venv cache miss::the uv cache lacks files $lock pins; fetching them by locked URL and hash (a SOURCE_BUILDS package also resolves its build deps; issue #4252)" >&2
-    "${lock_sync[@]}"
-  fi
+    # pylock support is a uv preview feature; opting in names that on purpose.
+    lock_sync=(uv pip sync --preview-features pylock --python "$venv/bin/python" "$lock")
+    echo "[venv] syncing exactly from $lock (offline, warm cache)"
+    if ! "${lock_sync[@]}" --offline; then
+        # A cold cache (new runner, bumped pin). The fetch below downloads the files
+        # the lock names, verified by hash, and never resolves the lock itself. The
+        # one exception is scripts/ci_lock.py SOURCE_BUILDS (no wheel): building
+        # them resolves their isolated build dependencies from the index, once per
+        # runner, after which the built wheel is cached and the offline sync above
+        # covers them. Announced so a runner that keeps missing is visible;
+        # UV_OFFLINE=1 makes a miss fail instead.
+        echo "::warning title=CI venv cache miss::the uv cache lacks files $lock pins; fetching them by locked URL and hash (a SOURCE_BUILDS package also resolves its build deps; issue #4252)" >&2
+        "${lock_sync[@]}"
+    fi
 fi

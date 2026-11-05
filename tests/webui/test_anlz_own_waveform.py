@@ -9,6 +9,7 @@ PSSI phrase preservation when switching waveform to own is covered in
 
 -Cursor
 """
+
 from __future__ import annotations
 
 import math
@@ -115,9 +116,7 @@ def test_unset_toggle_leaves_rekordbox_waveform_byte_identical(state_db: Path) -
 
 @pytest.mark.requires_ffmpeg
 @pytest.mark.requires_canonical_decode
-def test_own_ok_record_serves_tri_from_the_store(
-    tmp_path: Path, state_db: Path
-) -> None:
+def test_own_ok_record_serves_tri_from_the_store(tmp_path: Path, state_db: Path) -> None:
     audio = tmp_path / "tone.wav"
     _write_sine_wav(audio, seconds=2.0)
     record = OwnWaveformBackfillBackend.analyze(audio, STABLE_ID)
@@ -143,9 +142,7 @@ def test_own_ok_record_serves_tri_from_the_store(
 
 @pytest.mark.requires_ffmpeg
 @pytest.mark.requires_canonical_decode
-def test_own_failed_record_serves_not_decoded_without_synthesized_peaks(
-    tmp_path: Path, state_db: Path
-) -> None:
+def test_own_failed_record_serves_not_decoded_without_synthesized_peaks(tmp_path: Path, state_db: Path) -> None:
     source = tmp_path / "garbage.wav"
     source.write_bytes(b"this is not a RIFF header" * 4096)
     record = OwnWaveformBackfillBackend.analyze(source, STABLE_ID)
@@ -177,9 +174,7 @@ def test_own_without_a_row_stays_missing(state_db: Path) -> None:
 
 @pytest.mark.requires_ffmpeg
 @pytest.mark.requires_canonical_decode
-def test_pssi_phrases_survive_own_ok_record_from_the_producer(
-    tmp_path: Path, state_db: Path
-) -> None:
+def test_pssi_phrases_survive_own_ok_record_from_the_producer(tmp_path: Path, state_db: Path) -> None:
     audio = tmp_path / "tone.wav"
     _write_sine_wav(audio, seconds=2.0)
     record = OwnWaveformBackfillBackend.analyze(audio, STABLE_ID)

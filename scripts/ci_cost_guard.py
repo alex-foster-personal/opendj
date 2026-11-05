@@ -141,8 +141,7 @@ def render_markdown(
         f"- Run: [{_escape_cell(run_id)}]({run_url})",
         f"- Estimated gross hosted-runner cost: **${result['total_cost']:.3f}**",
         f"- Alert threshold: **>${threshold:.2f}**",
-        "- Billing basis: each job duration rounded up to a whole minute; "
-        "account discounts excluded.",
+        "- Billing basis: each job duration rounded up to a whole minute; account discounts excluded.",
         "",
         "## Job cost breakdown",
         "",
@@ -213,9 +212,7 @@ def fetch_jobs(repository: str, run_id: str, attempt: str, token: str) -> list[d
         page += 1
 
 
-def select_sink_failures(
-    runs: Iterable[dict[str, Any]], sink_workflows: set[str], since: str
-) -> list[dict[str, Any]]:
+def select_sink_failures(runs: Iterable[dict[str, Any]], sink_workflows: set[str], since: str) -> list[dict[str, Any]]:
     """Failed runs of the sink's workflows completed at or after `since`, every event.
 
     The error sink rides this pass (RUN-COUNT round 3): the listing is the one the pass
@@ -264,9 +261,7 @@ def earlier_failed_attempts(
     return failed
 
 
-def reruns_no_pass_listed(
-    reconciled: Iterable[dict[str, Any]], lookback: timedelta
-) -> list[dict[str, Any]]:
+def reruns_no_pass_listed(reconciled: Iterable[dict[str, Any]], lookback: timedelta) -> list[dict[str, Any]]:
     """The reconciled re-runs whose latest attempt completed `lookback` or more after the
     run was created: the only ones no plain pass could have listed.
 
@@ -275,11 +270,7 @@ def reruns_no_pass_listed(
     listed when it completed (its earlier attempts too). Everything else a reconcile
     lists, a plain pass already posted.
     """
-    return [
-        run
-        for run in reconciled
-        if parse_time(run["updated_at"]) - parse_time(run["created_at"]) >= lookback
-    ]
+    return [run for run in reconciled if parse_time(run["updated_at"]) - parse_time(run["created_at"]) >= lookback]
 
 
 def sink_failure_records(

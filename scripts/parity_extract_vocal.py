@@ -27,9 +27,7 @@ def _refuse_master(master: Path, *, allow_tiny: bool) -> None:
     if master.stat().st_size == 0:
         raise SystemExit(f"error: master db is empty (0 bytes): {master}")
     if not allow_tiny and master.resolve() == _TINY_FIXTURE.resolve():
-        raise SystemExit(
-            "error: refusing pruned fixture master.plain.db; pass --allow-tiny for tests"
-        )
+        raise SystemExit("error: refusing pruned fixture master.plain.db; pass --allow-tiny for tests")
 
 
 def _decode_rb_regions(twoex: Path) -> list[dict[str, float]]:
@@ -38,10 +36,7 @@ def _decode_rb_regions(twoex: Path) -> list[dict[str, float]]:
         return []
     fps, envelope = decoded
     regions = _vocal_regions(envelope, fps)
-    return [
-        {"start_s": float(item["start_s"]), "end_s": float(item["end_s"])}
-        for item in regions
-    ]
+    return [{"start_s": float(item["start_s"]), "end_s": float(item["end_s"])} for item in regions]
 
 
 def extract_vocal_row(
@@ -140,9 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     data_dir = args.data_dir
     master = args.master or (data_dir / "master.plain.db")
     if args.state and args.state != (data_dir / "state" / "state.db"):
-        raise SystemExit(
-            "error: --state override is not supported; set --data-dir instead"
-        )
+        raise SystemExit("error: --state override is not supported; set --data-dir instead")
 
     payload = extract_library(
         data_dir=data_dir,

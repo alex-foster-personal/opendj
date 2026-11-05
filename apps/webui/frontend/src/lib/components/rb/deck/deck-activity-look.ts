@@ -46,7 +46,6 @@ export function deckActivityLook(input: DeckActivityInput): DeckActivityLook {
 		!input.audible &&
 		!input.transportPending &&
 		!input.commandPending;
-	const pausedLong =
-		input.pausedForMs !== null && input.pausedForMs >= DECK_PAUSE_DIM_AFTER_MS;
+	const pausedLong = input.pausedForMs !== null && input.pausedForMs >= DECK_PAUSE_DIM_AFTER_MS;
 	return { dim: finished || pausedLong, looping };
 }

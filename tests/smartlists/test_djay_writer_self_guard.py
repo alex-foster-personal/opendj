@@ -20,6 +20,7 @@ We never launch djay or Rekordbox; we monkeypatch
 fixture DB is a throwaway sqlite file in ``tmp_path`` — the guard short-
 circuits before any DB interaction so no schema is required.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -43,10 +44,7 @@ def _tmp_djay_db(tmp_path: Path) -> Path:
 @pytest.fixture
 def _tmp_state_conn() -> sqlite3.Connection:
     con = sqlite3.connect(":memory:")
-    con.executescript(
-        "CREATE TABLE track_vendor_ids "
-        "(stable_id TEXT, vendor TEXT, vendor_id TEXT);"
-    )
+    con.executescript("CREATE TABLE track_vendor_ids (stable_id TEXT, vendor TEXT, vendor_id TEXT);")
     return con
 
 
@@ -57,12 +55,8 @@ def test_djay_writer_refuses_without_safety_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """create_playlist + simulated running djay + no session => refuse."""
-    monkeypatch.setattr(
-        _safety, "_is_running", lambda name: name == "djay Pro"
-    )
-    w = DjayPlaylistWriter(
-        djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn
-    )
+    monkeypatch.setattr(_safety, "_is_running", lambda name: name == "djay Pro")
+    w = DjayPlaylistWriter(djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn)
     assert w.safety_session is None
     with pytest.raises(PlaylistApplyError, match="self-guard"):
         w.create_playlist("[SL] Blocked", ["sid-1", "sid-2"])
@@ -75,12 +69,8 @@ def test_djay_writer_refuses_when_rekordbox_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Guard also trips when Rekordbox is alive (paranoia rail)."""
-    monkeypatch.setattr(
-        _safety, "_is_running", lambda name: name == "Rekordbox"
-    )
-    w = DjayPlaylistWriter(
-        djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn
-    )
+    monkeypatch.setattr(_safety, "_is_running", lambda name: name == "Rekordbox")
+    w = DjayPlaylistWriter(djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn)
     with pytest.raises(PlaylistApplyError, match="self-guard"):
         w.create_playlist("[SL] Blocked", ["sid-1", "sid-2"])
 
@@ -105,9 +95,7 @@ def test_djay_writer_bypasses_guard_when_safety_session_set(
     try:
         w.create_playlist("[SL] Allowed", ["sid-1"])
     except PlaylistApplyError as exc:
-        assert "self-guard" not in str(exc), (
-            f"guard should have been skipped, got: {exc}"
-        )
+        assert "self-guard" not in str(exc), f"guard should have been skipped, got: {exc}"
     except Exception:
         # Any other failure (missing mapping, missing schema) is OK —
         # confirms we passed the guard.
@@ -122,8 +110,6 @@ def test_djay_writer_guard_is_noop_when_processes_quit(
 ) -> None:
     """Normal path: no DJ app running => guard silently passes."""
     monkeypatch.setattr(_safety, "_is_running", lambda _n: False)
-    w = DjayPlaylistWriter(
-        djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn
-    )
+    w = DjayPlaylistWriter(djay_db_path=_tmp_djay_db, state_conn=_tmp_state_conn)
     # Explicit call: must not raise.
     w._assert_safe_to_write()

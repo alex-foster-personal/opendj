@@ -97,7 +97,7 @@ export function setResolvedTier(
 	_faultReason = faultReason;
 	if (host !== undefined) {
 		_hostCpus = host?.logical_cpus ?? null;
-		_hostRamGiB = host ? Math.round(host.ram_bytes / (1024 ** 3)) : null;
+		_hostRamGiB = host ? Math.round(host.ram_bytes / 1024 ** 3) : null;
 	}
 }
 
@@ -131,20 +131,22 @@ export function stemDecodeEagerness(): 'mix-only' | 'mix-first' | 'eager' {
 
 export function tierHoverSuffix(): string {
 	const autoPart =
-		_source === 'override'
-			? 'Override'
-			: _source === 'auto'
-				? 'Auto'
-				: 'Pending host';
+		_source === 'override' ? 'Override' : _source === 'auto' ? 'Auto' : 'Pending host';
 	const hostPart =
-		_hostCpus !== null && _hostRamGiB !== null
-			? `; ${_hostCpus} cpus, ${_hostRamGiB} GiB`
-			: '';
+		_hostCpus !== null && _hostRamGiB !== null ? `; ${_hostCpus} cpus, ${_hostRamGiB} GiB` : '';
 	const faultPart = _faultReason ? `. ${_faultReason}` : '';
 	return (
 		`Active tier: ${_tier} (${autoPart}${hostPart}). ` +
 		`Budgets stay; caches shrink on Low.${faultPart}`
 	);
+}
+
+/** Settings overlay copy for the Performance tier row (PERFMODE-9037). */
+export function tierOnNowLabel(): string {
+	const tierName = _tier === 'LOW' ? 'Low' : _tier === 'HIGH' ? 'High' : 'Standard';
+	const sourceName =
+		_source === 'override' ? 'Override' : _source === 'auto' ? 'Auto' : 'pending host';
+	return `On now: ${tierName} (${sourceName})`;
 }
 
 export function tierLabelForHover(): string {

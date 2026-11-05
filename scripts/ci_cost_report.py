@@ -91,10 +91,8 @@ def render_report(
         f"# CI spend ledger -- {repository}",
         "",
         f"- Month: **{month}**",
-        f"- Coverage: **{coverage.priced} of {coverage.server_total} runs priced "
-        f"({coverage.pct:.0f}%)**",
-        f"- Allowance used: **{used:.0f} / {allowance_limit} min "
-        f"({pct:.1f}%)**{floor} -> **{state}**",
+        f"- Coverage: **{coverage.priced} of {coverage.server_total} runs priced ({coverage.pct:.0f}%)**",
+        f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)**{floor} -> **{state}**",
         f"- Gross cash at overage rates: **${_sum(mtd, 'cost_usd'):.2f}**",
         f"- Burned on cancelled/refused runs: **{wasted:.0f} min** "
         f"({(wasted / used * 100) if used else 0:.1f}% of spend)",
@@ -225,14 +223,12 @@ def render_billing_report(
         lines += [
             f"- Verdict: **{state}** ({ledger.unknown_reason})",
             "",
-            "> **UNTRUSTED:** No allowance figure is quoted below because the "
-            "billing feed is incomplete or stale.",
+            "> **UNTRUSTED:** No allowance figure is quoted below because the billing feed is incomplete or stale.",
             "",
         ]
     elif ledger.hosted_violations:
         lines += [
-            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** "
-            f"-> **{state}**",
+            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** -> **{state}**",
             f"- Net billed (hosted SKUs): **${ledger.net_usd:.2f}**",
             "",
             "> **HOSTED BILLING AFTER CUTOVER:** GitHub-hosted Actions minutes "
@@ -241,18 +237,14 @@ def render_billing_report(
             "",
         ]
         for violation in ledger.hosted_violations:
-            lines.append(
-                f"- **{violation.day}** `{violation.sku}` net **${violation.net_usd:.2f}**"
-            )
+            lines.append(f"- **{violation.day}** `{violation.sku}` net **${violation.net_usd:.2f}**")
         lines.append("")
     else:
         lines += [
-            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** "
-            f"-> **{state}**",
+            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** -> **{state}**",
             f"- Net billed (this repo): **${ledger.net_usd:.2f}**",
             "",
-            "Allowance minutes apply Linux 1x, Windows 2x, macOS 10x to the "
-            "billing quantity for each Actions SKU.",
+            "Allowance minutes apply Linux 1x, Windows 2x, macOS 10x to the billing quantity for each Actions SKU.",
             "",
         ]
 
@@ -284,9 +276,7 @@ def render_billing_report(
         "complete": ledger.is_trusted and not ledger.unknown_reason,
         "api_calls": ledger.api_calls,
         "unknown_reason": ledger.unknown_reason,
-        "hosted_violations": [
-            {"day": v.day, "sku": v.sku, "net_usd": v.net_usd} for v in ledger.hosted_violations
-        ],
+        "hosted_violations": [{"day": v.day, "sku": v.sku, "net_usd": v.net_usd} for v in ledger.hosted_violations],
         "source": "billing_usage",
     }
     return "\n".join(lines), summary

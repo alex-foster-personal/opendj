@@ -307,10 +307,7 @@ test('rememberSpotifyRecent persists prepend and skips rewrite when already firs
 	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, ['pl-1']);
 
 	prefs.rememberSpotifyRecent('pl-2');
-	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, [
-		'pl-2',
-		'pl-1'
-	]);
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, ['pl-2', 'pl-1']);
 
 	store.set(STORAGE_KEY, 'SENTINEL-NOT-REWRITTEN');
 	prefs.rememberSpotifyRecent('pl-2');
@@ -385,16 +382,13 @@ test('a playlist open in 2+ pane tabs gets the darker multi tint', async () => {
 
 test('multi tint outranks deck tint when both apply, and the selected row takes neither', async () => {
 	const contract = await _loadContract();
-	const both = { deckLoadedPlaylistIds: new Set(['pl-1']), multiPanePlaylistIds: new Set(['pl-1']) };
-	assert.equal(
-		contract.playlistTintOf({ playlist_id: 'pl-1', selected: false, ...both }),
-		'multi'
-	);
+	const both = {
+		deckLoadedPlaylistIds: new Set(['pl-1']),
+		multiPanePlaylistIds: new Set(['pl-1'])
+	};
+	assert.equal(contract.playlistTintOf({ playlist_id: 'pl-1', selected: false, ...both }), 'multi');
 	// the selected-colour precedence: selection always wins over both tints
-	assert.equal(
-		contract.playlistTintOf({ playlist_id: 'pl-1', selected: true, ...both }),
-		'none'
-	);
+	assert.equal(contract.playlistTintOf({ playlist_id: 'pl-1', selected: true, ...both }), 'none');
 });
 
 test('All Tracks and blank panes never count toward playlist deck membership or open counts', async () => {

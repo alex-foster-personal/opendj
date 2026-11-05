@@ -98,7 +98,8 @@ import {
 	failedDeckLoadMessage,
 	recordDeckLoad,
 	rethrowLibraryTrackLookupError,
-	reportDeckLoadFailure
+	reportDeckLoadFailure,
+	warnShortDurationOnLoad
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import { awaitPresentedStop, bindAudioEngineSilenceProbes, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor, presentationTickFailure } from '$lib/rb/engine-clock-reports';
@@ -262,6 +263,7 @@ import {
 	pitchRanges
 } from '$lib/player/state.svelte';
 import { attachMasterMuteNode, isMasterMuted, setMasterMuted } from '$lib/player/master-mute.svelte';
+import { handoverCurves } from './deck-move';
 import {
 	acquireHeadphoneOutput as acquireMonitorOutput,
 	applyHeadphoneMix,
@@ -294,11 +296,17 @@ import {
 	deriveKeySyncStatus,
 	deriveKeySyncTargetManualShift,
 	effectiveCamelotKey,
+	isKeySyncMode,
+	keySyncKey,
+	keySyncKeyIsGuess,
+	keySyncLeaderDeck,
+	keySyncModeMismatch,
+	keyShiftLadder,
 	masterTempoSemitones,
 	parseCamelotKey,
 	refineKeySyncStatus
 } from '$lib/player/key/camelot';
-import type { CamelotKey, KeySyncStatus } from '$lib/player/key/camelot';
+import type { CamelotKey, KeyLadderRow, KeySyncMode, KeySyncStatus } from '$lib/player/key/camelot';
 import {
 	disarmSafetyLoopOnExplicitExit,
 	exactBeatLoopRangeMs,
@@ -391,7 +399,7 @@ export {
 	masterTempoSemitones,
 	parseCamelotKey
 };
-export type { CamelotKey };
+export type { CamelotKey, KeyLadderRow, KeySyncMode };
 export {
 	keySyncEffectiveAudibleSemitones,
 	keySyncManualShiftBaseline,
@@ -618,7 +626,10 @@ export function deckPcmEstimatedBytes(): number {
 	return estimateDeckPcmBytes(
 		DECK_IDS.map((deck) => ({
 			audioBuffer: _rt[deck].audioBuffer,
-			stemsReady: deckStates[deck].stems.status === 'ready'
+			stemsReady: deckStates[deck].stems.status === 'ready',
+			mixWorkletCopy:
+				_rt[deck].audioBuffer !== null && deckStates[deck].stems.playback !== 'stems',
+			pendingStemUpgrade: _rt[deck].pendingStemUpgrade !== null
 		}))
 	);
 }
@@ -1058,7 +1069,8 @@ function _applyCrossfader(): void {
 }
 
 /** Listener-facing KEY SYNC plan for UI, agents and the follow pass, from the
- * exact control and presented-audio sources, never a possibly stale deck field. */
+ * exact control and presented-audio sources, never a possibly stale deck field.
+ * `masterDeck` is the LEADER: the deck's KEY SYNC target, else MASTER (KEYSYNC-01). */
 export interface KeySyncPreview {
 	masterDeck: DeckId;
 	targetManualShiftSemitones: number;
@@ -1070,18 +1082,33 @@ export function keySyncStatus(deck: DeckId): KeySyncStatus {
 	return refineKeySyncStatus(deriveKeySyncStatus(deck, deckStates), keySyncPreview(deck)?.deltaSemitones ?? null);
 }
 
+/** KEYSYNC-01 ladder: every shift -6..+6 for `deck` against `target`'s
+ * audible key, or null when either deck has no loaded parseable key. Shared
+ * by the chevron menu and the agent snapshot (`key_options`). */
+export function keyShiftOptions(deck: DeckId, target: DeckId): KeyLadderRow[] | null {
+	if (deck === target) throw new RangeError(`key options: deck ${deck} cannot target itself`);
+	const source = deckStates[deck];
+	const leader = deckStates[target];
+	const leaderKey = effectiveCamelotKey(keySyncKey(leader), leader.key_shift_semitones);
+	if (source.stable_id === null || leader.stable_id === null || parseCamelotKey(keySyncKey(source)) === null || parseCamelotKey(leaderKey) === null) return null;
+	return keyShiftLadder(keySyncKey(source), leaderKey);
+}
+
 /** Return null only when an input or output-presented plan is unavailable. */
 export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	if (!DECK_IDS.includes(deck)) throw new RangeError(`KEY SYNC deck must be within 1..4, got ${deck}`);
-	const masterDeck = _masterDeck;
-	if (masterDeck === null || masterDeck === deck) return null;
 	const source = deckStates[deck];
+	const masterDeck = source.key_sync_target ?? _masterDeck;
+	if (masterDeck === null || masterDeck === deck) return null;
 	const master = deckStates[masterDeck];
+	const sourceKey = keySyncKey(source);
+	const masterKey = keySyncKey(master);
 	if (
 		source.stable_id === null ||
 		master.stable_id === null ||
-		parseCamelotKey(source.key) === null ||
-		parseCamelotKey(master.key) === null
+		parseCamelotKey(sourceKey) === null ||
+		parseCamelotKey(masterKey) === null ||
+		keySyncModeMismatch(sourceKey, masterKey, source.key_sync_mode)
 	) {
 		return null;
 	}
@@ -1089,7 +1116,7 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	const masterInput = _keySyncSource(masterDeck);
 	if (!keySyncPreviewAvailable(sourceInput) || !keySyncPreviewAvailable(masterInput)) return null;
 	const baseline = keySyncManualShiftBaseline(sourceInput);
-	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(source.key, master.key, keySyncEffectiveAudibleSemitones(sourceInput), keySyncEffectiveAudibleSemitones(masterInput), baseline);
+	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(sourceKey, masterKey, keySyncEffectiveAudibleSemitones(sourceInput), keySyncEffectiveAudibleSemitones(masterInput), baseline, source.key_sync_mode);
 	return { masterDeck, targetManualShiftSemitones, deltaSemitones: targetManualShiftSemitones - baseline };
 }
 
@@ -2036,6 +2063,76 @@ export function deckMasterAtContextSec(
 	return { positionSec: _projectPositionAt(deck, when), tempoRatio: _tempoAt(deck, when) };
 }
 
+/** DECKMOVE-01 deck move: the instant each deck's fader handover automation ends (0 = none). */
+const _handoverUntilSec: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+/**
+ * DECKMOVE-01 deck move: start a paused, loaded `deck` on the audio clock at the
+ * position `source` itself will be at on that instant. The position is read
+ * through the source's own segment schedule inside the scheduler, so it is
+ * exact for the instant the schedule actually lands (a loop wrap or a queued
+ * seek included), never a rAF mirror plus a timer. Returns that instant.
+ */
+export async function startDeckAlignedTo(deck: DeckId, source: DeckId): Promise<number> {
+	const { st } = _requireLoaded(deck, 'startDeckAlignedTo');
+	_requireLoaded(source, 'startDeckAlignedTo');
+	if (!deckStates[source].playing) throw new Error(`startDeckAlignedTo: source deck ${source} is not playing`);
+	if (st.playing) throw new Error(`startDeckAlignedTo: deck ${deck} is already playing`);
+	const ctx = await _resumeContext();
+	const when = Math.max(safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck)), _futureScheduleTime(source));
+	let startedAt: number | null = null;
+	await _schedulePress(deck, when, (effectiveWhen) => {
+		startedAt = effectiveWhen;
+		return _projectPositionAt(source, effectiveWhen);
+	}, true, undefined);
+	if (startedAt === null) throw new Error(`startDeckAlignedTo: deck ${deck} schedule never resolved its start instant`);
+	return startedAt;
+}
+
+/** DECKMOVE-01: a handover whose start the await chain already passed begins this far ahead of now. */
+const HANDOVER_LATE_LEAD_SEC = 0.01;
+
+/**
+ * DECKMOVE-01 deck move: fader automation on both channels from `startSec`, the
+ * source falling from `level` to 0 while the target rises from 0 to `level`
+ * (deck-move.ts handoverCurves: amplitudes sum to `level`, no bump on the
+ * identical, sample-aligned audio). A zero duration is a cut. The decks are
+ * already phase-locked, so a start the await chain has passed moves to just
+ * ahead of now instead of failing half-way; returns the instant it starts.
+ */
+export function scheduleDeckHandover(from: DeckId, to: DeckId, startSec: number, durationSec: number, level: number): number {
+	assertUnitRange('scheduleDeckHandover level', level);
+	if (_ctx === null) throw new Error('scheduleDeckHandover: audio graph not initialised');
+	const source = _rt[from].nodes, target = _rt[to].nodes;
+	if (source === null || target === null) throw new Error(`no_audio_param: deck ${source === null ? from : to} has no fader to hand over`);
+	if (!(durationSec >= 0) || !Number.isFinite(startSec)) {
+		throw new RangeError(`scheduleDeckHandover: start ${startSec} must be finite and duration ${durationSec} >= 0`);
+	}
+	const at = Math.max(startSec, _ctx.currentTime + HANDOVER_LATE_LEAD_SEC);
+	source.fader.gain.cancelScheduledValues(at);
+	target.fader.gain.cancelScheduledValues(at);
+	if (durationSec === 0) {
+		source.fader.gain.setValueAtTime(0, at);
+		target.fader.gain.setValueAtTime(level, at);
+	} else {
+		const curves = handoverCurves(level);
+		source.fader.gain.setValueCurveAtTime(curves.source, at, durationSec);
+		target.fader.gain.setValueCurveAtTime(curves.target, at, durationSec);
+	}
+	_handoverUntilSec[from] = _handoverUntilSec[to] = at + durationSec;
+	return at;
+}
+
+/** Resolve once the audio clock reaches `sec` (cleanup gating only; audio is already scheduled). */
+export async function waitForContextSec(sec: number, pollMs = 20): Promise<void> {
+	if (_ctx === null) throw new Error('waitForContextSec: audio graph not initialised');
+	const ctx = _ctx;
+	while (ctx.currentTime < sec) {
+		if (ctx.state === 'closed' || _ctx !== ctx) throw new Error('waitForContextSec: the audio context ended before the handover finished');
+		await new Promise((resolve) => setTimeout(resolve, pollMs));
+	}
+}
+
 /** Render/control-clock position in seconds, with manual loop wrap. This is
  * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
@@ -2221,6 +2318,8 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.rating = null;
 	st.bpm = null;
 	st.key = null;
+	st.key_guess = null;
+	st.key_source = null;
 	st.key_shift_semitones = 0;
 	st.key_sync_enabled = false;
 	st.duration_ms = null;
@@ -3072,10 +3171,13 @@ async function _upgradeDeckStems(
 	}
 }
 
-/** STEM-4806. `load` bumps the token before it knows it will publish, which ends the stem upgrade of the track already on the deck for good. A load that FAILS leaves that track there, so start its upgrade again. Only `loading` is owed work; a settled answer is never redone. */
-function _restartStrandedStemUpgrade(deck: DeckId, st = deckStates[deck], rt = _rt[deck]): void {
+/** STEM-4806, PARITY-4832. `load` bumps the token before it knows it will publish, which ends the stem and grid upgrades of the track already on the deck for good. A load that FAILS leaves that track there, so start them again. Only unsettled work is owed: stems still `loading`, a grid not yet settled gridless (`upgradeDeckBeatgrid` returns at once on a deck that has one). A settled answer is never redone. */
+function _restartStrandedUpgrades(deck: DeckId, st = deckStates[deck], rt = _rt[deck]): void {
 	if (st.stable_id !== null && st.stems.status === 'loading' && rt.audioBuffer !== null && _ctx !== null) void _upgradeDeckStems(deck, st.stable_id, rt.loadToken, _ctx, rt.audioBuffer);
+	if (st.stable_id !== null && !_beatgridResyncPorts.hasSettledGridless(deck)) void _upgradeDeckBeatgrid(deck, st.stable_id, st, rt, rt.loadToken);
 }
+/** PARITY-10: the deferred grid upgrade, stale once another load takes `token`, exactly as _upgradeDeckStems is; its settlement re-checks the same predicate. Errors are handled inside, no unhandled rejection. */
+const _upgradeDeckBeatgrid = (deck: DeckId, stableId: string, st: DeckState, rt: _DeckRuntime, token: number): Promise<void> => upgradeDeckBeatgrid(deck, stableId, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken));
 export const upgradeDeckStemsForTest = (deck: DeckId, stableId: string, mixBuffer: AudioBuffer): Promise<void> => _upgradeDeckStems(deck, stableId, _rt[deck].loadToken, _ctx as AudioContext, mixBuffer); // Test seam (PERFMODE-15): the lazy stem upgrade exactly as `load` and the graph rebuild run it (node has no context)
 
 /** CUEOUT-15: build and resume the graph for a non-deck source (the library
@@ -3333,10 +3435,10 @@ class RbAudioEngine implements AudioEngine {
 			// RbApiError's message already reads `CODE: detail`; the title falls back to this load's own getTrack request.
 			const msg = await failedDeckLoadMessage(exc, track?.title ?? trackRequest, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			if (token !== rt.loadToken) throw exc;
-			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
-			_restartStrandedStemUpgrade(deck);
+			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
+			_restartStrandedUpgrades(deck);
 			throw exc;
 		}
 		if (
@@ -3412,12 +3514,13 @@ class RbAudioEngine implements AudioEngine {
 			st.artist = candidateTrack.artist ?? null;
 			st.rating = candidateTrack.rating ?? null;
 			st.key = candidateTrack.key ?? null;
+			st.key_guess = candidateTrack.key_guess ?? null;
+			st.key_source = candidateTrack.key_source ?? null; // DECK-KEY-01: the row's key_source
+			_queueKeySyncFollow(); // KEYSYNC-01: a follower targeting this deck re-follows its new key
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
 			rt.metadataDurationMs = candidateTrack.duration_ms ?? null;
-			// Re-reads the shared cache rather than trusting `candidateAnlz` -
-			// see `resolvePublishedAnlz`'s own doc for the race this guards.
 			const latestAnlzEntry = getAnlzEntry(stable_id);
 			const usableAnlz = isAnlzEntryUsable(latestAnlzEntry) ? (latestAnlzEntry.data as AnlzWithVocals) : null;
 			const latestAnlzError = latestAnlzEntry?.status === 'error' ? latestAnlzEntry.code : null;
@@ -3459,7 +3562,7 @@ class RbAudioEngine implements AudioEngine {
 			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
 			stages.total = perfMs();
 			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
-			if (token === rt.loadToken) _restartStrandedStemUpgrade(deck); // same rule as the catch above: a superseded load leaves this to its successor
+			if (token === rt.loadToken) _restartStrandedUpgrades(deck); // same rule as the catch above: a superseded load leaves this to its successor
 			throw exc;
 		});
 		stages.total = perfMs();
@@ -3468,15 +3571,13 @@ class RbAudioEngine implements AudioEngine {
 		st.last_load_stages = { ...stages };
 		if (rt.loadToken === token && st.stable_id === stable_id) applyTrackLoadChannelReset(mixerState.channels[deck], { setFader: (v) => this.setFader(deck, v), setTrim: (v) => this.setTrim(deck, v), setFilter: (v) => this.setFilter(deck, v), setEq: (band, v) => this.setEq(deck, band, v) }); // DECKGAP-7691: only for the load that won
 		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
-		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
-		// deck can play; the stem bundle lands afterwards and moves st.stems off
-		// `loading` on its own. Errors are handled inside, so no rejection can
-		// escape into an unhandled promise.
+		warnShortDurationOnLoad(deck, candidateTrack, candidateAnlz, candidateBuffer);
+		// LAZY-STEMS, PARITY-10: deliberately NOT awaited. `load` resolves as soon
+		// as the deck can play; the stem bundle (moving st.stems off `loading`) and
+		// the grid land afterwards on their own. Errors are handled inside, so no rejection escapes.
 		if (loadCtx === null) throw new Error('load: audio context was never resolved');
-		if (loadStems) {
-			void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
-		}
-			void upgradeDeckBeatgrid(deck, stable_id, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken)); // PARITY-10: same deferral for the grid as _upgradeDeckStems above; errors are handled inside, no unhandled rejection
+		if (loadStems) void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		void _upgradeDeckBeatgrid(deck, stable_id, st, rt, token);
 	}
 
 	/** Re-read hot cues + display loop after a SAVE/CLEAR, without touching
@@ -3513,7 +3614,8 @@ class RbAudioEngine implements AudioEngine {
 			st.anlz = rawAnlz(fresh);
 			st.hot_cues = _hotCuesFromSlots(slots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
-			st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
+			// A cue save mid-loop must not drop the loop that is playing (HOTCUE-LOOP-01).
+			st.loop = st.loop !== null && st.loop.engaged ? st.loop : displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
 		};
 		const current = generation === currentAnlzFetchGeneration() && revision === anlzTrackRevision(stableId);
 		if (current && anlzMatchesConfirmedSource(initialFresh)) install(initialFresh);
@@ -4276,10 +4378,31 @@ class RbAudioEngine implements AudioEngine {
 		await _setDeckKeyShift(deck, next);
 	}
 
-	async setKeySync(deck: DeckId, enabled: boolean): Promise<void> {
+	/** KEYSYNC-01 ladder pick or reset: put the deck at an absolute key shift
+	 * (0 = original key). Key lock goes on as for KEY SYNC; the follow is
+	 * disarmed so it cannot undo the pick. */
+	async setKeyShift(deck: DeckId, semitones: number): Promise<void> {
+		_assertKeyShift(semitones);
+		const { st } = _requireLoaded(deck, 'setKeyShift');
+		if (!st.master_tempo_enabled) {
+			await this.setMasterTempo(deck, true);
+			pushToast(`Key shift deck ${deck}: Master Tempo (key lock) turned on`, 'info');
+		}
+		_disarmKeySync(deck);
+		if (_desiredKeyShiftSemitones(deck) !== semitones) await _setDeckKeyShift(deck, semitones);
+	}
+
+	/** KEYSYNC-01: `mode` and `target` (a deck, or 'master') update the deck's
+	 * KEY SYNC settings; omitted, the deck keeps its current ones (exact, MASTER). */
+	async setKeySync(deck: DeckId, enabled: boolean, options: { mode?: KeySyncMode; target?: DeckId | 'master' } = {}): Promise<void> {
 		if (typeof enabled !== 'boolean') throw new TypeError('setKeySync: enabled must be boolean');
 		const st = deckStates[deck];
 		const rt = _rt[deck];
+		if (options.mode !== undefined && !isKeySyncMode(options.mode)) throw new RangeError(`setKeySync: mode must be exact, relative or compatible, got ${String(options.mode)}`);
+		if (options.target !== undefined && options.target !== 'master' && !DECK_IDS.includes(options.target)) throw new RangeError(`setKeySync: target must be a deck 1..4 or master, got ${String(options.target)}`);
+		if (options.target === deck) throw new RangeError(`KEY SYNC deck ${deck} cannot follow itself`);
+		if (options.mode !== undefined) st.key_sync_mode = options.mode;
+		if (options.target !== undefined) st.key_sync_target = options.target === 'master' ? null : options.target;
 		if (!enabled) {
 			st.key_sync_enabled = false;
 			const baseline = rt.keySyncBaselineSemitones;
@@ -4290,11 +4413,18 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		_requireLoaded(deck, 'setKeySync');
-		if (_masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
+		if (st.key_sync_target === null && _masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
+		if (!st.master_tempo_enabled) { // KEYSYNC-01: a transposed deck needs key lock, or tempo moves its key again
+			await this.setMasterTempo(deck, true);
+			pushToast(`KEY SYNC deck ${deck}: Master Tempo (key lock) turned on`, 'info');
+		}
 		if (!st.key_sync_enabled) { // re-enabling keeps the operator's ORIGINAL baseline
 			rt.keySyncBaselineSemitones = keySyncManualShiftBaseline(_keySyncSource(deck));
 			st.key_sync_enabled = true;
 		}
+		const leader = keySyncLeaderDeck(deck, deckStates);
+		const guessed = [deck, leader].filter((id): id is DeckId => id !== null && keySyncKeyIsGuess(deckStates[id]));
+		if (guessed.length > 0) pushToast(`KEY SYNC deck ${deck} uses a guessed key (${guessed.map((id) => `deck ${id} ${deckStates[id].key_guess}?`).join(', ')})`, 'warn');
 		// No usable master (restore runs before election) stays ARMED; the follow pass applies it later.
 		if (deriveKeySyncStatus(deck, deckStates) === 'following') await _applyKeySyncFollow(deck).catch((error: unknown) => { _disarmKeySync(deck); throw error; });
 	}
@@ -4550,6 +4680,8 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].fader = value;
 		const nodes = _rt[deck].nodes;
 		_steps.cancelPlain(`fader:${deck}`, nodes === null ? null : nodes.fader.gain); // a plain set wins over a waiting step
+		// A hand on the fader during a deck-move handover wins: drop the curve first (a curve and a target may not overlap).
+		if (nodes !== null && _ctx !== null && _ctx.currentTime < _handoverUntilSec[deck]) { nodes.fader.gain.cancelScheduledValues(0); _handoverUntilSec[deck] = 0; }
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 		_maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(FADER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);

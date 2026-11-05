@@ -4,6 +4,7 @@ Source commit: d63e18037b6c396459cc34130a1f1c755ddcabd3
 Purpose: parity witness for issue #381 / MIK-AUDIT section 3
 Not imported by production code.
 """
+
 from __future__ import annotations
 
 import struct
@@ -39,11 +40,7 @@ def legacy_decode_bookmark_path(blob: bytes | None) -> str | None:
     absolute = [s for s in records if s.startswith("/") and len(s) > 1]
     if absolute:
         return unicodedata.normalize("NFC", max(absolute, key=len))
-    components = [
-        s
-        for s in records
-        if s and "/" not in s and not s.startswith("NSURL") and s != "Macintosh HD"
-    ]
+    components = [s for s in records if s and "/" not in s and not s.startswith("NSURL") and s != "Macintosh HD"]
     if not components:
         return None
     return unicodedata.normalize("NFC", "/" + "/".join(components))

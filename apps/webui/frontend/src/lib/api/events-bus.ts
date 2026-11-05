@@ -72,7 +72,9 @@ export const LIBRARY_KINDS = [
 	'cloudsync_playlist_pin',
 	'tags',
 	'works',
-	'undo'
+	'set_target',
+	'undo',
+	'source_flags'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];

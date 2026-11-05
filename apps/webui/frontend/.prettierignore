@@ -1,0 +1,34 @@
+# Prettier formats only this app's ts, js, mjs and svelte sources (issue #4456,
+# (private path)). Markdown, YAML, JSON and HTML stay unformatted, as do
+# CSS and MDX, which the ratified config does not cover.
+*.md
+*.mdx
+*.yaml
+*.yml
+*.json
+*.html
+*.css
+*.webmanifest
+
+# Generated: rewritten by `pnpm api:gen` and the camelot rules generator.
+src/lib/api-types.ts
+src/lib/player/key/camelot-rules.generated.ts
+design-system/cards/_generated/
+
+# Bundle-budget data, read and rewritten by scripts/bundle-budget.mjs.
+budgets/
+
+# Test inputs, read as text or bytes by the tests that own them.
+tests/**/fixtures/
+
+# Vendored patches and build or tool output.
+patches/
+build/
+.svelte-kit/
+node_modules/
+storybook-static/
+storybook-static-react/
+story-parity/
+.storybook/msw/
+test-results/
+playwright-report/

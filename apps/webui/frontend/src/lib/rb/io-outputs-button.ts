@@ -34,8 +34,12 @@ type OutputsSlice = Pick<
  * explicit choice counts as set, because each is a deliberate routing act.
  * Read from existing HeadphoneState only; no device enumeration happens here.
  */
-export function outputsUnset(state: Pick<OutputsSlice, 'selected_master_output_device_id' | 'selected_output_device_id'>): boolean {
-	return state.selected_master_output_device_id === null && state.selected_output_device_id === null;
+export function outputsUnset(
+	state: Pick<OutputsSlice, 'selected_master_output_device_id' | 'selected_output_device_id'>
+): boolean {
+	return (
+		state.selected_master_output_device_id === null && state.selected_output_device_id === null
+	);
 }
 
 /** Pulse and glow red only while unset AND not yet clicked this session. */
@@ -88,12 +92,16 @@ export interface IoHoverSummary {
 
 /** Compact hover: one sentence, which devices are in use, and the call to action. */
 export function ioHoverSummary(state: OutputsSlice): IoHoverSummary {
-	const master = _label(state.outputs, state.selected_master_output_device_id) ?? 'OS default output';
+	const master =
+		_label(state.outputs, state.selected_master_output_device_id) ?? 'OS default output';
 	const cue = _label(state.outputs, state.selected_output_device_id);
 	const input = _label(state.inputs, state.selected_input_device_id);
 	const devices = [`MAIN: ${master}`];
 	if (state.output_mode === 'split_cable') devices.push('CUE: right leg of MAIN (split cable)');
-	else devices.push(`CUE: ${cue ?? (state.output_mode === 'practice' ? 'blended into MAIN (practice)' : 'none')}`);
+	else
+		devices.push(
+			`CUE: ${cue ?? (state.output_mode === 'practice' ? 'blended into MAIN (practice)' : 'none')}`
+		);
 	if (input !== null) devices.push(`IN: ${input}`);
 	return { sentence: IO_HOVER_SENTENCE, devices, cta: IO_HOVER_CTA };
 }

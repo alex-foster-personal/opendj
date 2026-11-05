@@ -8,8 +8,15 @@ name: PERFBATCH Gate
 #
 # 1. ABSENT on the PRs it exists for if it lived in ci.yml. ci.yml's
 #    pull_request paths filter excludes **.md, docs/**, specs/**, so a
-#    docs-only measurement PR would schedule no check. There is NO paths
-#    filter here, deliberately.
+#    docs-only measurement PR would schedule no check. The paths filter
+#    below is the gate's OWN trigger instead (CI fan-out, Thu 5 Nov 2026):
+#    the [pipeline] prefixes of scripts/perf/perfbatch_policy.toml plus the
+#    gate's own files. A PR that touches none of them always passes
+#    (`verdict` returns measurement-only before it reads the body), so the
+#    filter drops only runs whose answer is already known to be green; before
+#    it, every PR head spent a linux-light seat on that answer.
+#    (private path)
+#    pins every policy prefix to a line here, so the two lists cannot drift.
 #
 # 2. STALE relative to the metadata it reads. Title and body change with no
 #    new head SHA. `edited` is in the list below; the other three are
@@ -21,6 +28,24 @@ name: PERFBATCH Gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+    paths:
+      # [pipeline] prefixes, scripts/perf/perfbatch_policy.toml (a directory prefix gets /**)
+      - "apps/stems/**"
+      - "apps/lyrics/**"
+      - "scripts/stems_modal_worker.py"
+      - "scripts/stems_relay_app.py"
+      - "scripts/stems_local_worker.py"
+      - "scripts/stem_bundle_worker.py"
+      - "scripts/stem_farm_runner.py"
+      - "scripts/stem_farm_watch_pull_down.sh"
+      - "scripts/modal_vocal_farm.py"
+      - "scripts/modal_demucs_ab.py"
+      - "apps/webui/server/lyric_index_autostart.py"
+      - "apps/webui/frontend/src/lib/components/rb/wave/lyrics-fetch.svelte.ts"
+      # The gate itself, so a change to it runs it
+      - "scripts/perf/perfbatch_gate.py"
+      - "scripts/perf/perfbatch_policy.toml"
+      - ".github/workflows/perfbatch-gate.yml"
 
 concurrency:
   group: perfbatch-gate-${{ github.event.pull_request.number }}

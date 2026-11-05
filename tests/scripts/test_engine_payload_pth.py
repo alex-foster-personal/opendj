@@ -39,9 +39,7 @@ def _fake_payload_runtime(tmp_path: Path) -> Path:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"could not create fake payload venv:\n{result.stderr}"
-        )
+        raise RuntimeError(f"could not create fake payload venv:\n{result.stderr}")
     return payload
 
 
@@ -54,16 +52,9 @@ def _site_packages(payload: Path) -> Path:
 def test_runtime_prune_list_drops_distutils_precedence_pth() -> None:
     """[if] _distutils_hack is pruned [then] its .pth is pruned right after it, [else stop]."""
     assert "lib/python3.*/site-packages/_distutils_hack" in RUNTIME_PRUNE_RELATIVE
-    assert (
-        "lib/python3.*/site-packages/distutils-precedence.pth"
-        in RUNTIME_PRUNE_RELATIVE
-    )
-    hack_index = RUNTIME_PRUNE_RELATIVE.index(
-        "lib/python3.*/site-packages/_distutils_hack"
-    )
-    pth_index = RUNTIME_PRUNE_RELATIVE.index(
-        "lib/python3.*/site-packages/distutils-precedence.pth"
-    )
+    assert "lib/python3.*/site-packages/distutils-precedence.pth" in RUNTIME_PRUNE_RELATIVE
+    hack_index = RUNTIME_PRUNE_RELATIVE.index("lib/python3.*/site-packages/_distutils_hack")
+    pth_index = RUNTIME_PRUNE_RELATIVE.index("lib/python3.*/site-packages/distutils-precedence.pth")
     assert pth_index == hack_index + 1
 
 

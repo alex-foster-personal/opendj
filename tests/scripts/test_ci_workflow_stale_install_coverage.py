@@ -110,7 +110,7 @@ HERMETIC_ARGS = re.compile(r"^\s+-I -S(?:\s|$)")
 #: enumeration must find them, or it is walking the wrong files and every pass is
 #: vacuous.
 REVIEW_NAMED_JOBS = (
-    "adr-check.yml:gate",
+    "pr-body-gates.yml:adr",
     "lockfile-check.yml:lock-metadata",
     "periodic-checks.yml:perf-bench",
 )
@@ -308,26 +308,26 @@ def test_removing_a_guard_goes_red(key: str) -> None:
 
 
 def test_an_unguarded_job_moved_to_a_hosted_runner_is_not_flagged() -> None:
-    mutated = _without_guard(_workflows(), "adr-check.yml:gate")
-    mutated["adr-check.yml"]["jobs"]["gate"]["runs-on"] = "ubuntu-latest"
-    assert "adr-check.yml:gate" not in violations(mutated)
+    mutated = _without_guard(_workflows(), "pr-body-gates.yml:adr")
+    mutated["pr-body-gates.yml"]["jobs"]["adr"]["runs-on"] = "ubuntu-latest"
+    assert "pr-body-gates.yml:adr" not in violations(mutated)
 
 
 def test_a_guard_before_setup_python_goes_red() -> None:
     mutated = copy.deepcopy(_workflows())
-    steps = mutated["adr-check.yml"]["jobs"]["gate"]["steps"]
+    steps = mutated["pr-body-gates.yml"]["jobs"]["adr"]["steps"]
     guard = next(i for i, step in enumerate(steps) if _is_guard(step))
     setup = next(i for i, step in enumerate(steps) if _is_setup(step))
     steps.insert(setup, steps.pop(guard))
-    assert violations(mutated)["adr-check.yml:gate"]
+    assert violations(mutated)["pr-body-gates.yml:adr"]
 
 
 def test_a_continue_on_error_guard_does_not_count() -> None:
     mutated = copy.deepcopy(_workflows())
-    for step in mutated["adr-check.yml"]["jobs"]["gate"]["steps"]:
+    for step in mutated["pr-body-gates.yml"]["jobs"]["adr"]["steps"]:
         if _is_guard(step):
             step["continue-on-error"] = True
-    assert "adr-check.yml:gate" in violations(mutated)
+    assert "pr-body-gates.yml:adr" in violations(mutated)
 
 
 # ---------------------------------------------------------------------------

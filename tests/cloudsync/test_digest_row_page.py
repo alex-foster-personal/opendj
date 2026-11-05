@@ -87,15 +87,11 @@ def _seed_membership_page_fixture(
     _set_members(conn, playlist_id, stable_ids, updated_at=_T0, origin=_DEV_A)
 
 
-def _collect_all_pages(
-    conn: sqlite3.Connection, table: str, *, page_size: int
-) -> list[tuple[str, ...]]:
+def _collect_all_pages(conn: sqlite3.Connection, table: str, *, page_size: int) -> list[tuple[str, ...]]:
     collected: list[tuple[str, ...]] = []
     cursor: str | None = None
     while True:
-        page, next_cursor = digest_diff.hub_sync_row_page(
-            conn, table, cursor=cursor, limit=page_size
-        )
+        page, next_cursor = digest_diff.hub_sync_row_page(conn, table, cursor=cursor, limit=page_size)
         collected.extend(row.pk for row in page)
         if next_cursor is None:
             break
@@ -128,22 +124,14 @@ def test_membership_page_resumes_strictly_after_cursor(tmp_path: Path) -> None:
     try:
         _seed_membership_page_fixture(conn, _PL_A, 146)
         conn.commit()
-        page1, cursor1 = digest_diff.hub_sync_row_page(
-            conn, "playlist_memberships", cursor=None, limit=50
-        )
+        page1, cursor1 = digest_diff.hub_sync_row_page(conn, "playlist_memberships", cursor=None, limit=50)
         assert int(page1[-1].pk[1]) == 49
-        page2, _ = digest_diff.hub_sync_row_page(
-            conn, "playlist_memberships", cursor=cursor1, limit=50
-        )
+        page2, _ = digest_diff.hub_sync_row_page(conn, "playlist_memberships", cursor=cursor1, limit=50)
         assert int(page2[0].pk[1]) == 50
 
-        page_to_99, cursor_99 = digest_diff.hub_sync_row_page(
-            conn, "playlist_memberships", cursor=None, limit=100
-        )
+        page_to_99, cursor_99 = digest_diff.hub_sync_row_page(conn, "playlist_memberships", cursor=None, limit=100)
         assert int(page_to_99[-1].pk[1]) == 99
-        page_after_99, _ = digest_diff.hub_sync_row_page(
-            conn, "playlist_memberships", cursor=cursor_99, limit=10
-        )
+        page_after_99, _ = digest_diff.hub_sync_row_page(conn, "playlist_memberships", cursor=cursor_99, limit=10)
         assert int(page_after_99[0].pk[1]) == 100
     finally:
         conn.close()
@@ -161,9 +149,7 @@ def test_membership_page_seeks_from_cursor_not_row_zero(tmp_path: Path) -> None:
         cursor_pk = (_PL_A, "499")
         cursor = protocol.encode_row_pk(cursor_pk)
         counting_conn = _CountingConnection(conn, "playlist_memberships")
-        page, _ = digest_diff.hub_sync_row_page(
-            counting_conn, "playlist_memberships", cursor=cursor, limit=50
-        )
+        page, _ = digest_diff.hub_sync_row_page(counting_conn, "playlist_memberships", cursor=cursor, limit=50)
         assert counting_conn.counter.count <= 50
         assert all(pk[0] != _PL_A for pk in (row.pk for row in page))
         assert page
@@ -195,9 +181,7 @@ def test_rows_endpoint_paginates_memberships_through_digit_boundary(
         _sync(spoke, transport, "spoke-a")
         conn = _open(spoke)
         try:
-            machine_id = conn.execute("SELECT machine_id FROM machines LIMIT 1").fetchone()[
-                0
-            ]
+            machine_id = conn.execute("SELECT machine_id FROM machines LIMIT 1").fetchone()[0]
         finally:
             conn.close()
 

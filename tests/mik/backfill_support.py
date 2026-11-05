@@ -4,6 +4,7 @@ Shared by the planner, route and MCP tool tests: real audio-shaped files under
 a mounted root, real ``tracks`` + ``track_availability`` rows whose stored
 paths sit under a home directory, exactly the shape the sources map joins.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,7 +62,9 @@ class Lib:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(f"audio {letter}".encode())
         stable_id = sid(letter)
-        self.add_track(stable_id, title=title or letter, artist=artist or letter, file_path=stored or f"/Users/old/{rel}")
+        self.add_track(
+            stable_id, title=title or letter, artist=artist or letter, file_path=stored or f"/Users/old/{rel}"
+        )
         self.conn.execute("UPDATE tracks SET duration_ms = ? WHERE stable_id = ?", (duration_ms, stable_id))
         self.conn.execute(
             "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",

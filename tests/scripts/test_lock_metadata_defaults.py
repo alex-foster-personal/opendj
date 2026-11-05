@@ -76,9 +76,7 @@ def test_a_platform_marker_matches_the_sys_platform_form_uv_records(tmp_path: Pa
     code, message = _run(tmp_path, spelled, recorded)
     assert (code, message) == (EXIT_OK, message)
     # The table is uv's, not PEP 508's: a pair it does not list stays a real marker.
-    code, message = _run(
-        tmp_path, spelled.replace("sys_platform == 'linux'", "sys_platform == 'android'"), recorded
-    )
+    code, message = _run(tmp_path, spelled.replace("sys_platform == 'linux'", "sys_platform == 'android'"), recorded)
     assert code == EXIT_STALE
     assert "os_name == 'nt' and sys_platform == 'android'" in message
 

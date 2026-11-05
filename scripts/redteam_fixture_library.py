@@ -129,10 +129,7 @@ def _seed_master_db(path: Path, wav_paths: list[Path]) -> None:
         conn.executescript(REKORDBOX_SCHEMA_PATH.read_text())
         conn.executemany(
             "INSERT INTO djmdGenre (ID, Name, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            [
-                (genre_id, name, REKORDBOX_TIMESTAMP, REKORDBOX_TIMESTAMP)
-                for genre_id, name in FIXTURE_GENRES
-            ],
+            [(genre_id, name, REKORDBOX_TIMESTAMP, REKORDBOX_TIMESTAMP) for genre_id, name in FIXTURE_GENRES],
         )
         rows = [
             (

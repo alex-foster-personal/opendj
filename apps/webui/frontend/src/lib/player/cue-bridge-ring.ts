@@ -11,8 +11,7 @@ export const CUE_BRIDGE_TARGET_FRAMES = 2048;
  * frame per callback, inaudible as a click compared with a block-sized jump. */
 export const CUE_BRIDGE_DRIFT_BAND_FRAMES = CUE_BRIDGE_RENDER_QUANTUM;
 
-export const CUE_BRIDGE_RING_CAPACITY =
-	CUE_BRIDGE_TARGET_FRAMES + CUE_BRIDGE_DRIFT_BAND_FRAMES * 4;
+export const CUE_BRIDGE_RING_CAPACITY = CUE_BRIDGE_TARGET_FRAMES + CUE_BRIDGE_DRIFT_BAND_FRAMES * 4;
 
 export type CueBridgePullResult = {
 	fill: number;

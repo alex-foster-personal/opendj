@@ -45,7 +45,8 @@ export function sha256Hex(text: string): string {
 		}
 		let [a, b, c, d, e, f, g, hh] = h;
 		for (let i = 0; i < 64; i++) {
-			const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+			const t1 =
+				(hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
 			const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
 			hh = g;
 			g = f;

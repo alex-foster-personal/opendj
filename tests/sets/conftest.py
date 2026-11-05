@@ -1,4 +1,5 @@
 """Shared fixtures for Phase 12 set-recording tests."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -17,7 +18,7 @@ from apps.sets.state import SetsState
 
 @pytest.fixture
 def sets_root(tmp_path: Path) -> Path:
-    """Isolated data/sets-like directory per test."""
+    """Isolated (private path) directory per test."""
     root = tmp_path / "sets"
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -191,14 +192,12 @@ def make_rb_history_fixture(path: Path, items: list[dict]) -> None:
             """
         )
         conn.execute(
-            "INSERT INTO djmdPlaylist(ID, Name, Attribute, updated_at)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO djmdPlaylist(ID, Name, Attribute, updated_at) VALUES (?, ?, ?, ?)",
             ("hist-1", "HISTORY 2026-04-17", 1, "2026-04-17T20:00:00Z"),
         )
         for i, it in enumerate(items, start=1):
             conn.execute(
-                "INSERT INTO djmdSongPlaylist(ID, PlaylistID, ContentID, TrackNo)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO djmdSongPlaylist(ID, PlaylistID, ContentID, TrackNo) VALUES (?, ?, ?, ?)",
                 (f"sp-{i}", "hist-1", it["content_id"], i),
             )
         conn.commit()

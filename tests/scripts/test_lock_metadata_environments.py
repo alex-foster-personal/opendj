@@ -26,17 +26,11 @@ DARWIN = "sys_platform == 'darwin'"
 REQUIRES = 'requires-python = ">=3.11"\n'
 
 
-def _pair(
-    environments: str | None, markers: str | None, key: str = "environments"
-) -> tuple[str, str]:
+def _pair(environments: str | None, markers: str | None, key: str = "environments") -> tuple[str, str]:
     recorded_key = "supported-markers" if key == "environments" else "required-markers"
-    pyproject = UNMARKED_PYPROJECT + (
-        "" if environments is None else f"[tool.uv]\n{key} = {environments}\n"
-    )
+    pyproject = UNMARKED_PYPROJECT + ("" if environments is None else f"[tool.uv]\n{key} = {environments}\n")
     assert UNMARKED_LOCK.count(REQUIRES) == 1
-    lock = UNMARKED_LOCK.replace(
-        REQUIRES, REQUIRES + ("" if markers is None else f"{recorded_key} = {markers}\n")
-    )
+    lock = UNMARKED_LOCK.replace(REQUIRES, REQUIRES + ("" if markers is None else f"{recorded_key} = {markers}\n"))
     return pyproject, lock
 
 

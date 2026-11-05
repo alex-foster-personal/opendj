@@ -32,6 +32,7 @@ Regression lines:
 
 [if] the ui-mirror drops or reshapes audio_health [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import re
@@ -111,8 +112,7 @@ def test_a_fault_older_than_the_toast_lifetime_survives_the_round_trip() -> None
                 "toasts": [],
                 "audio_health": {
                     "recent_faults": [
-                        {"t": "x", "kind": "audio-output-dead", "message": "m",
-                         "age_ms": thirteen_minutes}
+                        {"t": "x", "kind": "audio-output-dead", "message": "m", "age_ms": thirteen_minutes}
                     ]
                 },
             },
@@ -130,7 +130,7 @@ def test_frontend_still_builds_an_audio_health_block() -> None:
     Matched as a KEY, not a substring. Found by mutation: `"audio_health" in
     body` passed against a mutation renaming the key to `audio_health_REMOVED`,
     because the longer identifier still contains the shorter one. A substring
-    matching a longer identifier is listed in .claude/rules/verification.md as
+    matching a longer identifier is listed in (private path) as
     a way a true positive answers the wrong question, and it made this test
     unable to detect the very removal it exists to catch.
     """
@@ -140,8 +140,7 @@ def test_frontend_still_builds_an_audio_health_block() -> None:
         "key means an agent reading the mirror gets no audio health at all"
     )
     assert re.search(r"\bbuildAudioHealthMirror\s*\(", body), (
-        "ui-mirror.ts must CALL the fold; a hand-rolled inline block would drift "
-        "from the tested one"
+        "ui-mirror.ts must CALL the fold; a hand-rolled inline block would drift from the tested one"
     )
     assert HEALTH_FOLD.is_file(), f"{HEALTH_FOLD.name} is where the tested logic lives"
 

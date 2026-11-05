@@ -8,6 +8,7 @@ back on the SDK's never-initialised NonRecordingClient.
 
 -Claude
 """
+
 from __future__ import annotations
 
 

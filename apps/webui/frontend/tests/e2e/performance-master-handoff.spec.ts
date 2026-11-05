@@ -63,7 +63,9 @@ async function _dispatch(page: Page, command: PerformanceCommand): Promise<Perfo
 
 async function _idleState(page: Page): Promise<PerformanceState> {
 	await _waitForIpc(page);
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.query().command_pending === false);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance?.query().command_pending === false
+	);
 	return _query(page);
 }
 
@@ -154,7 +156,10 @@ test.describe('Beat Sync MASTER handoff (DECKUX-17)', () => {
 		expect(state.master_deck).toBe(2);
 	});
 
-	test('fader-down cue deck does not steal master from an on-air deck', async ({ page, request }) => {
+	test('fader-down cue deck does not steal master from an on-air deck', async ({
+		page,
+		request
+	}) => {
 		const [masterTrack, followerTrack] = await _realSyncPair(request);
 		await _gotoPerformance(page);
 		await _loadPair(page, masterTrack, followerTrack);
@@ -166,7 +171,10 @@ test.describe('Beat Sync MASTER handoff (DECKUX-17)', () => {
 		expect(state.master_deck).toBe(2);
 	});
 
-	test('locked master survives another deck starting play until unlock', async ({ page, request }) => {
+	test('locked master survives another deck starting play until unlock', async ({
+		page,
+		request
+	}) => {
 		const [masterTrack, followerTrack] = await _realSyncPair(request);
 		await _gotoPerformance(page);
 		await _loadPair(page, masterTrack, followerTrack);

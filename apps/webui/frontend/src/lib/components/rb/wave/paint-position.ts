@@ -54,7 +54,10 @@ export function shouldSkipRepaint(
 		state.lastVisualInputs === null ||
 		visualInputs.some((value, index) => !Object.is(value, state.lastVisualInputs?.[index]));
 	const skip =
-		!force && !visualsChanged && state.lastScrollPx !== null && Math.abs(scrollPx - state.lastScrollPx) < 1;
+		!force &&
+		!visualsChanged &&
+		state.lastScrollPx !== null &&
+		Math.abs(scrollPx - state.lastScrollPx) < 1;
 	if (!skip) {
 		state.lastScrollPx = scrollPx;
 		state.lastVisualInputs = visualInputs;

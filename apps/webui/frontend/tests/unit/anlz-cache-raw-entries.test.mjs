@@ -34,8 +34,18 @@ function payload(points) {
 	return {
 		stable_id: 'b9',
 		points,
-		waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: BINS, low: band(), mid: band(), high: band() } },
-		beatgrid: { beat_count: 2, beats: [{ ms: 0, bpm: 120 }, { ms: 500, bpm: 120 }] },
+		waveform: {
+			kind: 'mono',
+			preview: { length: 0, low: [], mid: [], high: [] },
+			detail: { length: BINS, low: band(), mid: band(), high: band() }
+		},
+		beatgrid: {
+			beat_count: 2,
+			beats: [
+				{ ms: 0, bpm: 120 },
+				{ ms: 500, bpm: 120 }
+			]
+		},
 		cues: [],
 		phrases: [],
 		local_waveform: { status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 },
@@ -56,18 +66,30 @@ const isProxied = (value) => {
 
 test('a cached payload is stored raw: no signal per waveform bin', async () => {
 	const live = await loadRuneModule(ENTRY);
-	globalThis.fetch = async () => new Response(JSON.stringify(payload(BINS)), { status: 200, headers: { 'content-type': 'application/json' } });
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify(payload(BINS)), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
 	live.ensureAnlz('raw-track');
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	const entry = live.getAnlzEntry('raw-track');
 	assert.equal(entry.status, 'ready');
-	assert.equal(isProxied(entry.data), false, 'a proxied payload grows ~100k signals per track (B9)');
+	assert.equal(
+		isProxied(entry.data),
+		false,
+		'a proxied payload grows ~100k signals per track (B9)'
+	);
 	assert.equal(isProxied(entry.data.waveform.detail.low), false);
 });
 
 test('mutation control: the same payload through a deep $state IS proxied', async () => {
 	const live = await loadRuneModule(ENTRY);
-	assert.equal(isProxied(live.throughDeepState('k', payload(BINS))), true, 'else the check above proves nothing');
+	assert.equal(
+		isProxied(live.throughDeepState('k', payload(BINS))),
+		true,
+		'else the check above proves nothing'
+	);
 });
 
 test('re-analysing a track refreshes its waveform: a replaced entry reaches a live reader', async () => {

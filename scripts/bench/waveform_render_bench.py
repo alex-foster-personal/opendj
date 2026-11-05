@@ -13,7 +13,7 @@ Run::
 
     uv run --no-sync python scripts/bench/waveform_render_bench.py
 
-Acceptance tests: tests/scripts/test_waveform_render_bench.py
+Acceptance tests: (private path)
 """
 
 from __future__ import annotations
@@ -46,9 +46,7 @@ WARMUP = 3
 THREADS = 4
 THREAD_CALLS = 12
 THREAD_ROUNDS = 5
-DEFAULT_OUT = (
-    REPO_ROOT / "apps/webui/frontend/tests/e2e/fixtures/waveform-render.json"
-)
+DEFAULT_OUT = REPO_ROOT / "apps/webui/frontend/tests/e2e/fixtures/waveform-render.json"
 
 
 def _host_identity() -> str:
@@ -86,10 +84,7 @@ def _fixture_bands() -> dict[str, np.ndarray]:
     for index, name in enumerate(("low", "mid", "high")):
         base = float(index + 1)
         bands[name] = np.array(
-            [
-                min(1.0, (base + (offset % 17) * 0.73 + (offset // 17) * 0.11) / 127.0)
-                for offset in range(BAND_LENGTH)
-            ],
+            [min(1.0, (base + (offset % 17) * 0.73 + (offset // 17) * 0.11) / 127.0) for offset in range(BAND_LENGTH)],
             dtype=np.float64,
         )
     return bands

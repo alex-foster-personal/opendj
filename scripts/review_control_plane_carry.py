@@ -59,7 +59,9 @@ def debt_only_carry(
     of submitted reviews, newest first. A candidate that cannot be fetched is `unknown`, never a carry.
     """
     candidates = tuple(
-        sorted({str(r["commit_id"]) for r in reviews if str(r["state"]).upper() in SUBMITTED_REVIEW_STATES} - {head_sha})
+        sorted(
+            {str(r["commit_id"]) for r in reviews if str(r["state"]).upper() in SUBMITTED_REVIEW_STATES} - {head_sha}
+        )
     )
     if not candidates:
         return _NO_CARRY

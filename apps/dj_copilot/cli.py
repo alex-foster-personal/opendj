@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -23,11 +22,6 @@ from .play_it import InsufficientDataError, play_it
 from .session_context import PlayedTrack, SessionContext, load_session_context
 from .set_goal import SetGoal
 from .suggester import suggest_next
-
-
-def _open_conn(db: Path) -> sqlite3.Connection:
-    """Open via :func:`open_rw_migrated` with play-order schema on top."""
-    return open_rw_migrated(db, apply_play_order_migrations)
 
 
 def _load_tracks_from_json(path: Path) -> list[TrackFeature]:
@@ -100,7 +94,7 @@ def _cmd_play_it(args: argparse.Namespace) -> int:
         print(f"error: failed to load tracks-json: {exc}", file=sys.stderr)
         return 2
 
-    conn = _open_conn(args.db)
+    conn = open_rw_migrated(args.db, apply_play_order_migrations)
     try:
         try:
             po_id, result = play_it(
@@ -188,7 +182,7 @@ def _cmd_suggest_next(args: argparse.Namespace) -> int:
                 captured_at=now,
             )
 
-    conn = _open_conn(args.db)
+    conn = open_rw_migrated(args.db, apply_play_order_migrations)
     try:
         if context is None:
             # Honor --source: auto/phase12/rekordbox_history/djay_history

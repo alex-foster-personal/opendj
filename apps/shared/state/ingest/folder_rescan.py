@@ -39,7 +39,6 @@ from typing import Any
 
 from apps.shared import audio_files, fs_access
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots, path_is_under_root
-from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state.ingest.folder import (
     MAX_ANALYSIS_DROPS_PER_CYCLE,
@@ -285,19 +284,14 @@ def _apply_tombstones_and_writes(
 ) -> None:
     """The one transactional step: tombstone, then write, in one write unit.
 
-    :func:`apps.shared.state.db.write_unit` rather than a bare transaction
-    because ``writer`` may already be inside an outer one
-    (``writer_tracks.py``'s own nested-``_tx()`` contract); when it is not,
-    the unit takes the writer lock up front (STATE-15), since the engine's
-    other writers commit concurrently.
+    :meth:`StateWriter.transaction` takes the writer lock up front
+    (STATE-15) and flushes queued bus events only after COMMIT.
 
     ``refreshes`` are paths that still exist but whose mtime moved. They are
     written onto the existing row. An unchanged hash is an expected no-op,
     not the path-mismatch warning reserved for brand new candidates.
     """
-    conn = writer.raw_conn
-    savepoint = "folder_rescan_reconcile"
-    with state_db.write_unit(conn, savepoint):
+    with writer._join_or_begin():
         for stable_id in tombstones:
             writer.remove_from_library(stable_id, reason=DELETED_FILE_MISSING)
         report.tracks_removed = len(tombstones)

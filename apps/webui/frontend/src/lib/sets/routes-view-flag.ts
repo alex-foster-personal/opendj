@@ -5,7 +5,9 @@ import { buildFlags } from '$lib/api/store-build.svelte';
 
 export const SET_ROUTES_VIEW_FLAG_ID = 'sets.routes_view';
 
-export function routesViewEnabledIn(flags: readonly { flag_id: string; enabled: boolean }[]): boolean {
+export function routesViewEnabledIn(
+	flags: readonly { flag_id: string; enabled: boolean }[]
+): boolean {
 	return flags.find((flag) => flag.flag_id === SET_ROUTES_VIEW_FLAG_ID)?.enabled === true;
 }
 

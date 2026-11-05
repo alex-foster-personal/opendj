@@ -1,4 +1,5 @@
 """Tests for ``apps.dedup.apply``."""
+
 from __future__ import annotations
 
 import hashlib
@@ -101,9 +102,7 @@ def test_dry_run_plan_csv_shape(tmp_path: Path, tmp_rb_db: Path) -> None:
 
 
 @pytest.mark.requirement("META-03")
-def test_cautious_live_rewrites_one_row(
-    tmp_path: Path, tmp_rb_db: Path, monkeypatch
-) -> None:
+def test_cautious_live_rewrites_one_row(tmp_path: Path, tmp_rb_db: Path, monkeypatch) -> None:
     import pyrekordbox.db6.database as rb_db_mod
 
     monkeypatch.setattr(rb_db_mod, "get_rekordbox_pid", lambda: 0)
@@ -194,9 +193,7 @@ def test_confirm_refused_aborts(tmp_path: Path, tmp_rb_db: Path, monkeypatch) ->
 
 
 @pytest.mark.requirement("META-03")
-def test_reversal_script_generated(
-    tmp_path: Path, tmp_rb_db: Path, monkeypatch
-) -> None:
+def test_reversal_script_generated(tmp_path: Path, tmp_rb_db: Path, monkeypatch) -> None:
     import pyrekordbox.db6.database as rb_db_mod
 
     monkeypatch.setattr(rb_db_mod, "get_rekordbox_pid", lambda: 0)
@@ -234,10 +231,14 @@ def test_cli_live_requires_i_understand(tmp_path: Path, tmp_rb_db: Path, capsys)
     _seed_cluster(dedup_db, canonical="/a.mp3", alias="/b.mp3")
     rc = apply_mod.main(
         [
-            "--db", str(dedup_db),
-            "--rb-db", str(tmp_rb_db),
-            "--plan-csv", str(tmp_path / "plan.csv"),
-            "--plan-md", str(tmp_path / "plan.md"),
+            "--db",
+            str(dedup_db),
+            "--rb-db",
+            str(tmp_rb_db),
+            "--plan-csv",
+            str(tmp_path / "plan.csv"),
+            "--plan-md",
+            str(tmp_path / "plan.md"),
             "--live",
         ]
     )
@@ -251,10 +252,14 @@ def test_cli_dry_run_smoke(tmp_path: Path, tmp_rb_db: Path, capsys) -> None:
     _seed_cluster(dedup_db, canonical="/a.mp3", alias="/b.mp3")
     rc = apply_mod.main(
         [
-            "--db", str(dedup_db),
-            "--rb-db", str(tmp_rb_db),
-            "--plan-csv", str(tmp_path / "plan.csv"),
-            "--plan-md", str(tmp_path / "plan.md"),
+            "--db",
+            str(dedup_db),
+            "--rb-db",
+            str(tmp_rb_db),
+            "--plan-csv",
+            str(tmp_path / "plan.csv"),
+            "--plan-md",
+            str(tmp_path / "plan.md"),
         ]
     )
     assert rc == 0
@@ -262,9 +267,7 @@ def test_cli_dry_run_smoke(tmp_path: Path, tmp_rb_db: Path, capsys) -> None:
 
 
 @pytest.mark.requirement("META-03")
-def test_reversal_script_written_before_write(
-    tmp_path: Path, tmp_rb_db: Path, monkeypatch
-) -> None:
+def test_reversal_script_written_before_write(tmp_path: Path, tmp_rb_db: Path, monkeypatch) -> None:
     """P0 regression (adversarial #3, HIGH): the reversal script MUST
     exist on disk BEFORE ``_apply_rewrites_live`` runs. Pre-fix the
     script was only emitted after verify, so a crash mid-write left
@@ -276,9 +279,7 @@ def test_reversal_script_written_before_write(
 
     dedup_db = tmp_path / "phase7.sqlite"
     conn = sqlite3.connect(tmp_rb_db)
-    row = conn.execute(
-        "SELECT ID, FolderPath FROM djmdContent LIMIT 1"
-    ).fetchone()
+    row = conn.execute("SELECT ID, FolderPath FROM djmdContent LIMIT 1").fetchone()
     conn.close()
     if row is None:
         pytest.skip("rb fixture empty")
@@ -299,9 +300,7 @@ def test_reversal_script_written_before_write(
         # operator at the instant the live write begins. This is what
         # the adversarial review requires: a crash at this point must
         # leave a reversal path behind.
-        reversal_snapshot["seen_at_write_time"] = sorted(
-            backup_dir.glob("reverse-dedup-*.sh")
-        )
+        reversal_snapshot["seen_at_write_time"] = sorted(backup_dir.glob("reverse-dedup-*.sh"))
         raise RuntimeError("simulated mid-write crash")
 
     monkeypatch.setattr(apply_mod, "_apply_rewrites_live", _exploding_apply)
@@ -324,9 +323,7 @@ def test_reversal_script_written_before_write(
     # script was already on disk. The post-crash filesystem therefore
     # gives the operator a recovery path.
     scripts_at_crash = reversal_snapshot["seen_at_write_time"]
-    assert len(scripts_at_crash) == 1, (
-        f"expected reversal script to exist BEFORE write; found {scripts_at_crash}"
-    )
+    assert len(scripts_at_crash) == 1, f"expected reversal script to exist BEFORE write; found {scripts_at_crash}"
     script = scripts_at_crash[0]
     body = script.read_text()
     assert "cp -v" in body

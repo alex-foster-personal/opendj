@@ -78,7 +78,9 @@ def _verified_schema_bytes() -> bytes:
     data = _SCHEMA_PATH.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
     if digest != manifest.get("sha256"):
-        raise RuntimeError(f"Spotify schema fixture sha256 {digest} does not match its MANIFEST {manifest.get('sha256')}")
+        raise RuntimeError(
+            f"Spotify schema fixture sha256 {digest} does not match its MANIFEST {manifest.get('sha256')}"
+        )
     return data
 
 
@@ -88,7 +90,10 @@ _SPEC = _openapi_to_json_schema(json.loads(_verified_schema_bytes()))
 def spotify_schema_errors(name: str, body: Any) -> list[str]:
     """Every way ``body`` breaks Spotify's published ``name`` schema."""
     schema = {**_SPEC, "$ref": f"#/components/schemas/{name}"}
-    return [f"{name}: {'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in Draft7Validator(schema).iter_errors(body)]
+    return [
+        f"{name}: {'/'.join(map(str, e.path)) or '<root>'}: {e.message}"
+        for e in Draft7Validator(schema).iter_errors(body)
+    ]
 
 
 def playlist(n: int, *, owner: str = "me", key: str = "items") -> dict[str, Any]:
@@ -248,7 +253,11 @@ class WebApi(_Server):
                 else:
                     items = api.playlists[offset : offset + size]
                 more = endless or empty_next or offset + len(items) < len(api.playlists)
-                nxt = f"{api.base}/v1/me/playlists?offset={offset + len(items) + next_skip}&limit={limit}" if more else None
+                nxt = (
+                    f"{api.base}/v1/me/playlists?offset={offset + len(items) + next_skip}&limit={limit}"
+                    if more
+                    else None
+                )
                 body = {
                     "href": f"{api.base}/v1/me/playlists?offset={offset}&limit={limit}",
                     "items": items,
@@ -322,11 +331,17 @@ def closed_port_url() -> str:
 
 def write_token(path: Path, *, scope: str = DEFAULT_SCOPES, expires_in: int = 3600) -> None:
     """A spotipy token cache file, as a past sign-in leaves it."""
-    path.write_text(json.dumps({
-        "access_token": "BQcached-access",
-        "token_type": "Bearer",
-        "expires_in": expires_in,
-        "refresh_token": "AQcached-refresh",
-        "scope": scope,
-        "expires_at": int(time.time()) + expires_in,
-    }), encoding="utf-8", newline="\n")
+    path.write_text(
+        json.dumps(
+            {
+                "access_token": "BQcached-access",
+                "token_type": "Bearer",
+                "expires_in": expires_in,
+                "refresh_token": "AQcached-refresh",
+                "scope": scope,
+                "expires_at": int(time.time()) + expires_in,
+            }
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )

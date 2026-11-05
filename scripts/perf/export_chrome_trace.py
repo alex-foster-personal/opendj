@@ -132,9 +132,7 @@ def _metadata_events(deck_tids: set[int]) -> list[dict[str, Any]]:
     return events
 
 
-def build_trace(
-    frontend: list[dict[str, Any]], native: list[dict[str, Any]]
-) -> dict[str, Any]:
+def build_trace(frontend: list[dict[str, Any]], native: list[dict[str, Any]]) -> dict[str, Any]:
     """Normalize both streams onto one origin and wrap them in the object form.
 
     The object form (rather than a bare array) is what carries process and
@@ -143,9 +141,7 @@ def build_trace(
 
     timed = [event for event in frontend + native if "ts" in event]
     if not timed:
-        raise TraceRefused(
-            "no timestamped events from any source, so there is nothing to trace"
-        )
+        raise TraceRefused("no timestamped events from any source, so there is nothing to trace")
     origin_us = min(event["ts"] for event in timed)
     for event in timed:
         event["ts"] -= origin_us
@@ -156,13 +152,8 @@ def build_trace(
         "otherData": {
             "producer": "scripts/perf/export_chrome_trace.py",
             "trace_origin_epoch_us": origin_us,
-            "trace_origin_utc": datetime.fromtimestamp(
-                origin_us / 1_000_000, tz=UTC
-            ).isoformat(),
-            "timebase": (
-                "both sources stamp UTC wall clock; a deck-load span starts at "
-                "row.t minus stages.total"
-            ),
+            "trace_origin_utc": datetime.fromtimestamp(origin_us / 1_000_000, tz=UTC).isoformat(),
+            "timebase": ("both sources stamp UTC wall clock; a deck-load span starts at row.t minus stages.total"),
         },
     }
 
@@ -171,9 +162,7 @@ def build_trace(
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--localstorage", type=Path, help="WKWebView localstorage.sqlite3")
     parser.add_argument("--perf-log", type=Path, help="JSON dump of the ring")
     parser.add_argument(
@@ -216,8 +205,7 @@ def _find_and_report(root: Path) -> int:
         print(f"          {store}")
     if found == 0:
         print(
-            "[ERROR] none of them hold a perf ring. Open the app, load a deck, "
-            "then re-run.",
+            "[ERROR] none of them hold a perf ring. Open the app, load a deck, then re-run.",
             file=sys.stderr,
         )
         return 4
@@ -226,9 +214,7 @@ def _find_and_report(root: Path) -> int:
 
 def _load_frontend(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict]:
     if args.localstorage is not None:
-        return frontend_events(
-            read_localstorage_perf_log(args.localstorage), str(args.localstorage)
-        )
+        return frontend_events(read_localstorage_perf_log(args.localstorage), str(args.localstorage))
     return frontend_events(read_json_perf_log(args.perf_log), str(args.perf_log))
 
 
@@ -401,10 +387,7 @@ def _overlap_warning(
         elif frontend_empty and not native_empty:
             empty_layer = "the frontend ring contributed no events"
         else:
-            empty_layer = (
-                "neither the frontend ring nor the probe log at "
-                f"{path} contributed usable events"
-            )
+            empty_layer = f"neither the frontend ring nor the probe log at {path} contributed usable events"
         return (
             f"[WARN] native and frontend layers are NOT comparable: {empty_layer} -- "
             "confirm the app was actually running while it captured."

@@ -1,4 +1,5 @@
 """Dependency tests: lock-by-peer + read-still-works semantics (CAT-05)."""
+
 from __future__ import annotations
 
 import pytest
@@ -40,8 +41,11 @@ def test_lock_probe_failures_deny_writes(seed_backend):
         raise RuntimeError("R2 unreachable")
 
     app = create_app(
-        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=boom, syncthing_status_fn=lambda: None,
+        backend=seed_backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=boom,
+        syncthing_status_fn=lambda: None,
     )
     with TestClient(app) as c:
         # Reads still work — degraded mode, not full outage.
@@ -53,5 +57,6 @@ def test_lock_probe_failures_deny_writes(seed_backend):
         )
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "lock_probe_failed"
+
 
 pytestmark = pytest.mark.rb_parity

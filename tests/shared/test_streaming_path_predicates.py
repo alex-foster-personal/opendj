@@ -13,6 +13,7 @@ which of the two questions that site is actually asking:
 If a future refactor collapses these into one predicate, exactly one of the
 two blocks below fails, naming the data it would have corrupted.
 """
+
 from __future__ import annotations
 
 import pytest

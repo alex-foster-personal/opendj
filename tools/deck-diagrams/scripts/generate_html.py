@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate overlay.html + deck.html from layout.json (offline, no build)."""
+
 from __future__ import annotations
 
 import json
@@ -84,13 +85,7 @@ DECK_EXTRA = """
 
 def _esc(s: object) -> str:
     """Escape attribute values so labels like 'CALL >' cannot break the tag."""
-    return (
-        str(s)
-        .replace("&", "&amp;")
-        .replace('"', "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return str(s).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _ctrl_style(c: dict) -> str:

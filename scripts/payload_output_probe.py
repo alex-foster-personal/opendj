@@ -2,12 +2,13 @@
 
 The Electron shell does not link CoreAudio. On macOS it answers
 ``/api/v1/audio/output-health`` and ``/api/v1/audio/switch-output`` by running
-``<payload>/bin/odj-output-probe probe|switch``
+``<payload>/bin/odj-output-probe probe|switch|list``
 (``apps/desktop/electron/src/output-health.ts``), and without the helper it
 can only answer the ADR-0125 ``unknown`` verdict. The helper is the
-``odj-output-probe`` bin target of the Tauri shell crate
-(``apps/desktop/src-tauri/src/bin/odj-output-probe.rs``), which includes
-``output_health.rs`` in place.
+``odj-output-probe`` bin target of its own crate,
+``apps/desktop/native/odj-output-probe``, whose library the Tauri shell links
+for the same CoreAudio work in process. It builds without the Tauri crate, so
+deleting ``apps/desktop/src-tauri`` does not take the helper with it.
 
 macOS only: the helper exists to call CoreAudio, and the Electron shell
 answers ``unknown`` off darwin without looking for it. Off darwin the build
@@ -22,7 +23,6 @@ file-size ratchet, like scripts/payload_ffmpeg.py.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -30,20 +30,10 @@ from pathlib import Path
 
 OUTPUT_PROBE_RELATIVE: str = "bin/odj-output-probe"
 OUTPUT_PROBE_BIN: str = "odj-output-probe"
-OUTPUT_PROBE_CRATE: str = "apps/desktop/src-tauri"
-
-# The crate has no Cargo features to narrow the build, and its build.rs runs
-# tauri-build for every bin target. tauri-build copies every file under the
-# ``bundle.resources`` map (``payload``) into the target dir and fails when
-# ``apps/desktop/src-tauri/payload`` is absent, which it is when the payload is
-# staged elsewhere (the Electron stage, apps/desktop/electron/out/payload-stage).
-# The helper reads no resources, so this override (a JSON merge patch
-# tauri-build applies from TAURI_CONFIG) empties the list for this build only:
-# no dependence on that directory and no copy of a half-built payload.
-NO_RESOURCES_TAURI_CONFIG: str = json.dumps({"bundle": {"resources": []}})
+OUTPUT_PROBE_CRATE: str = "apps/desktop/native/odj-output-probe"
 
 # What the helper prints for an argv it does not know, before it touches any
-# device (odj-output-probe.rs ``USAGE``). The gate below reads it to prove the
+# device (``src/main.rs`` ``USAGE``). The gate below reads it to prove the
 # staged file is this helper and that it runs.
 USAGE_MARKER: str = "usage: odj-output-probe"
 USAGE_EXIT_CODE: int = 2
@@ -124,7 +114,6 @@ def stage_output_probe(repo_root: Path, payload_dir: Path, platform: str = sys.p
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "TAURI_CONFIG": NO_RESOURCES_TAURI_CONFIG},
     )
     if result.returncode != 0:
         raise PayloadBuildError(f"cargo build of {OUTPUT_PROBE_BIN} failed:\n{result.stderr}")

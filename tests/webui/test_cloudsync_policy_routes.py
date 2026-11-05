@@ -94,15 +94,13 @@ def test_policy_delete_tombstone_reaches_the_hub_and_the_digest_converges(
     # Raises SyncDigestMismatch if the two sides disagree after the tombstone.
     result = sync_client.run_sync(spoke_dir, HUB_URL, transport=hub)
     assert result.pushed >= 1
-    assert _hub_rows(
-        tmp_path, "SELECT machine_id, asset_kind, deleted_at IS NOT NULL FROM sync_policies"
-    ) == [(me, "audio", 1)]
+    assert _hub_rows(tmp_path, "SELECT machine_id, asset_kind, deleted_at IS NOT NULL FROM sync_policies") == [
+        (me, "audio", 1)
+    ]
     assert sync_client.run_sync(spoke_dir, HUB_URL, transport=hub).pushed == 0
 
 
-def test_unpin_via_apply_tombstone_reaches_the_hub(
-    spoke_dir: Path, hub: TestClientTransport, tmp_path: Path
-) -> None:
+def test_unpin_via_apply_tombstone_reaches_the_hub(spoke_dir: Path, hub: TestClientTransport, tmp_path: Path) -> None:
     """if unpinning through POST /apply does not tombstone the pin on the hub then broken"""
     me = local_id(spoke_dir)
     sync_client.run_sync(spoke_dir, HUB_URL, transport=hub)
@@ -116,15 +114,11 @@ def test_unpin_via_apply_tombstone_reaches_the_hub(
         )
         sync_client.run_sync(spoke_dir, HUB_URL, transport=hub)
         unpin = {"removed_pins": [{"machine_id": me, "playlist_id": PLAYLIST_ID}]}
-        applied = http.post(
-            "/api/v1/cloudsync/policies/apply", json={"changes": unpin, "dry_run": False}
-        )
+        applied = http.post("/api/v1/cloudsync/policies/apply", json={"changes": unpin, "dry_run": False})
         assert applied.status_code == 200, applied.text
         assert applied.json()["written"] is True
     sync_client.run_sync(spoke_dir, HUB_URL, transport=hub)
-    assert _hub_rows(tmp_path, "SELECT playlist_id, deleted_at IS NOT NULL FROM playlist_pins") == [
-        (PLAYLIST_ID, 1)
-    ]
+    assert _hub_rows(tmp_path, "SELECT playlist_id, deleted_at IS NOT NULL FROM playlist_pins") == [(PLAYLIST_ID, 1)]
 
 
 def test_delete_of_a_missing_cell_is_404_and_writes_nothing(spoke_dir: Path) -> None:
@@ -195,8 +189,7 @@ def _stored_audio_cell(data_dir: Path, machine_id: str) -> tuple[Any, ...]:
     try:
         return tuple(
             conn.execute(
-                "SELECT mode, cache_budget_mb FROM sync_policies "
-                "WHERE machine_id = ? AND asset_kind = 'audio'",
+                "SELECT mode, cache_budget_mb FROM sync_policies WHERE machine_id = ? AND asset_kind = 'audio'",
                 (machine_id,),
             ).fetchone()
         )

@@ -1,9 +1,10 @@
 <script lang="ts">
 	// Props-only half of LibraryPreviewBar (LIBWS-04): the container picks the
 	// focused row from the Library selection and passes the overview strip in
-	// as a snippet, since PreviewStrip is itself a container.
+	// as a snippet, since PreviewStrip is itself a container. The cover retry
+	// state (artwork-cover.svelte) is global, so the container resolves it into
+	// artworkSrc and the load/error callbacks; this half stays props-only.
 	import type { Snippet } from 'svelte';
-	import { artworkUrl } from '$lib/rb/artwork-url';
 	import { formatDuration } from '$lib/library/inspector-summary';
 
 	type PreviewPlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
@@ -30,6 +31,9 @@
 		previewStatus,
 		otherPreviewStatus,
 		keyLabel,
+		artworkSrc,
+		onArtworkLoad,
+		onArtworkError,
 		onPlay,
 		onStop,
 		previewStrip
@@ -43,17 +47,16 @@
 		previewStatus: PreviewPlayerStatus;
 		otherPreviewStatus: PreviewPlayerStatus;
 		keyLabel: string;
+		/** The cover URL to draw, or null while there is no cover or a retry is pending. */
+		artworkSrc: string | null;
+		onArtworkLoad: () => void;
+		onArtworkError: () => void;
 		onPlay: () => void;
 		onStop: () => void;
 		/** The focused row's overview strip; rendered only while a row is focused. */
 		previewStrip: Snippet;
 	} = $props();
 
-	let artFailed = $state(false);
-	$effect(() => {
-		void row?.stable_id;
-		artFailed = false;
-	});
 </script>
 
 <section class="library-preview rb-panel" data-testid="library-preview-bar">
@@ -111,13 +114,15 @@
 		<p class="empty" data-testid="library-preview-empty">Select a track to preview its details.</p>
 	{:else}
 		<div class="art">
-			{#if row.artwork_available === true && !artFailed}
+			{#if artworkSrc !== null}
 				<img
-					src={artworkUrl(row.stable_id, 's')}
+					src={artworkSrc}
 					alt=""
 					width="36"
 					height="36"
-					onerror={() => (artFailed = true)}
+					data-expected-resource-error
+					onload={onArtworkLoad}
+					onerror={onArtworkError}
 				/>
 			{/if}
 		</div>

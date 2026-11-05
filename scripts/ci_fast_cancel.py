@@ -153,8 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_UNKNOWN
     if verdict == "NONE":
-        print(f"{LINE_PREFIX} no failing test identity in the log (infra-class death?); "
-              "cancelling nothing")
+        print(f"{LINE_PREFIX} no failing test identity in the log (infra-class death?); cancelling nothing")
         return 0
     if verdict == "KNOWN":
         print(f"{LINE_PREFIX} every failure is already red on main; cancelling nothing:")

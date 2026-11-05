@@ -60,6 +60,7 @@ export function loadMenuRegistry(onFailure: MenuLoadFailureReporter): void {
 /** Fetch the registry when the browser is idle, so a right-click finds it warm. */
 export function preloadMenuRegistry(): void {
 	if (loaded !== null || pending !== null) return;
-	if (typeof requestIdleCallback === 'function') requestIdleCallback(fetchRegistry, { timeout: 2000 });
+	if (typeof requestIdleCallback === 'function')
+		requestIdleCallback(fetchRegistry, { timeout: 2000 });
 	else setTimeout(fetchRegistry, 0);
 }

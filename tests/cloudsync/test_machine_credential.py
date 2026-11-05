@@ -285,18 +285,16 @@ def test_enroll_returns_the_credential_once_and_the_hub_keeps_only_its_hash(
     credential = first["sync_credential"]
     assert isinstance(credential, str) and credential.startswith(CREDENTIAL_PREFIX)
     stored = read_hub(enroll_hub_dir, "machine_credentials")
-    assert [row["credential_sha256"] for row in stored] == [
-        hashlib.sha256(credential.encode("utf-8")).hexdigest()
-    ]
+    assert [row["credential_sha256"] for row in stored] == [hashlib.sha256(credential.encode("utf-8")).hexdigest()]
     assert credential not in repr(stored)
 
     replay = http_enroll(transport, enroll_spoke_dir, name="spoke-a", token=token)
     assert replay["created"] is False and replay["sync_credential"] is None
     assert read_hub(enroll_hub_dir, "machine_credentials") == stored
 
-    rotated = http_enroll(
-        transport, enroll_spoke_dir, name="spoke-a", token=mint_grant(enroll_hub_dir)
-    )["sync_credential"]
+    rotated = http_enroll(transport, enroll_spoke_dir, name="spoke-a", token=mint_grant(enroll_hub_dir))[
+        "sync_credential"
+    ]
     assert rotated is not None and rotated != credential, "a FRESH grant rotates"
     monkeypatch.setenv(MODE_ENV, "enforce")
     old = _call(hub_http, "status", enroll_spoke_dir, "spoke-a", f"Bearer {credential}")

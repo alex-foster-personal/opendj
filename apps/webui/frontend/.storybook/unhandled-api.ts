@@ -29,6 +29,8 @@ export function failOnUnhandledApi(): void {
 		throw new Error(`story made API request(s) no handler answers: ${requests.join(', ')}`);
 	}
 	if (drifted.length > 0) {
-		throw new Error(`story's API request(s) drifted from the recorded replay: ${drifted.join('; ')}`);
+		throw new Error(
+			`story's API request(s) drifted from the recorded replay: ${drifted.join('; ')}`
+		);
 	}
 }

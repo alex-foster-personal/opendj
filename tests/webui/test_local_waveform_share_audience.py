@@ -6,6 +6,7 @@ that file under the repo's 600-line file-size gate; no behavior moved.
 Regression one-liner:
   - if a Share listener's peaks come from the wrong (non-Warehouse-windowed) audio file then broken
 """
+
 from __future__ import annotations
 
 import math
@@ -52,10 +53,17 @@ def _encode_low_bitrate_mp3(wav_path: Path, mp3_path: Path) -> None:
     assert ffmpeg is not None, "the requires_ffmpeg marker guarantees ffmpeg is on PATH"
     subprocess.run(
         [
-            ffmpeg, "-y", "-i", str(wav_path),
-            "-b:a", "96k", str(mp3_path),
+            ffmpeg,
+            "-y",
+            "-i",
+            str(wav_path),
+            "-b:a",
+            "96k",
+            str(mp3_path),
         ],
-        check=True, capture_output=True, timeout=30,
+        check=True,
+        capture_output=True,
+        timeout=30,
     )
 
 
@@ -92,7 +100,9 @@ def test_share_audience_decodes_the_file_that_audience_actually_hears(
             file_path=str(master),
         )
         writer.upsert_track_location(
-            stable_id=LOCAL_SID, kind="local", file_path=str(radio_mp3),
+            stable_id=LOCAL_SID,
+            kind="local",
+            file_path=str(radio_mp3),
         )
         writer.close()
     finally:
@@ -101,6 +111,4 @@ def test_share_audience_decodes_the_file_that_audience_actually_hears(
     local_peaks = local_waveform.ensure_local_peaks(LOCAL_SID, share=False)
     share_peaks = local_waveform.ensure_local_peaks(LOCAL_SID, share=True)
     assert int(local_peaks.max()) > 0, "local audience must decode the loud master"
-    assert int(share_peaks.max()) == 0, (
-        "share audience must decode the windowed-down alternate, not the master"
-    )
+    assert int(share_peaks.max()) == 0, "share audience must decode the windowed-down alternate, not the master"

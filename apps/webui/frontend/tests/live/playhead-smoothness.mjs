@@ -29,14 +29,18 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { writeFileSync } from 'node:fs';
 
-const [portArg, label = 'run', splitArg = '0', backend = 'http://127.0.0.1:8728'] = process.argv.slice(2);
+const [portArg, label = 'run', splitArg = '0', backend = 'http://127.0.0.1:8728'] =
+	process.argv.slice(2);
 const PORT = Number(portArg);
 const SPLIT = splitArg === '1';
 const MASTER = '66b83341e26c955be715f46bf6c8f9f67722fb33'; // Adieu, 126 bpm
 const FOLLOWER = 'fafa16b3781d1058fbd0c301a5c9c12cd0c2c915'; // Along Came Polly, 124 bpm
 const SETTLE_MS = 6000;
 const MEASURE_MS = 15000;
-if (!Number.isInteger(PORT)) throw new Error('usage: node tests/live/playhead-smoothness.mjs <port> <label> [split] [backend]');
+if (!Number.isInteger(PORT))
+	throw new Error(
+		'usage: node tests/live/playhead-smoothness.mjs <port> <label> [split] [backend]'
+	);
 
 const percentile = (values, p) => {
 	if (values.length === 0) return null;
@@ -75,7 +79,12 @@ function scoreSeries(frames, key, rate, steadyMaxDt) {
 }
 
 const server = await createServer({
-	server: { port: PORT, strictPort: true, host: '127.0.0.1', proxy: { '/api': { target: backend, changeOrigin: true, ws: true } } },
+	server: {
+		port: PORT,
+		strictPort: true,
+		host: '127.0.0.1',
+		proxy: { '/api': { target: backend, changeOrigin: true, ws: true } }
+	},
 	logLevel: 'error'
 });
 await server.listen();
@@ -89,8 +98,13 @@ try {
 	await page.addInitScript(() => {
 		globalThis.__mdtPlayheadTrace = {};
 	});
-	await page.goto(`http://127.0.0.1:${PORT}/performance`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, { timeout: 180_000 });
+	await page.goto(`http://127.0.0.1:${PORT}/performance`, {
+		waitUntil: 'domcontentloaded',
+		timeout: 180_000
+	});
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
+		timeout: 180_000
+	});
 	const ipc = (cmd) => page.evaluate((c) => window.musicDjToolsPerformance.dispatch(c), cmd);
 	const waitLoaded = (d, id) =>
 		page.waitForFunction(
@@ -103,7 +117,12 @@ try {
 		);
 	if (SPLIT) {
 		const ui = await page.evaluate(() => window.musicDjToolsPerformance.query().ui);
-		await ipc({ type: 'set_skin', ui_skin: ui.ui_skin, wave_palette: ui.wave_palette, wave_split_master: 'on' });
+		await ipc({
+			type: 'set_skin',
+			ui_skin: ui.ui_skin,
+			wave_palette: ui.wave_palette,
+			wave_split_master: 'on'
+		});
 	}
 	await ipc({ type: 'load', deck: 1, stable_id: MASTER });
 	await waitLoaded(1, MASTER);
@@ -117,7 +136,12 @@ try {
 	const deckState = (d) =>
 		page.evaluate((d) => {
 			const s = window.musicDjToolsPerformance.query().decks[d];
-			return { playing: s.playing, pos: Math.round(s.position_ms), pitch: s.pitch, sync: s.beat_sync_enabled ?? null };
+			return {
+				playing: s.playing,
+				pos: Math.round(s.position_ms),
+				pitch: s.pitch,
+				sync: s.beat_sync_enabled ?? null
+			};
 		}, d);
 	out.before = { 1: await deckState(1), 2: await deckState(2) };
 	const { sampled: frames, rafTicks } = await page.evaluate(
@@ -127,7 +151,10 @@ try {
 				const sampled = [];
 				const channel = new MessageChannel();
 				let lastFrameT = null; // a message delayed past the next frame reads THAT frame's values, so pair with the latest frame
-				channel.port1.onmessage = () => { if (sampled.length === 0 || sampled[sampled.length - 1].t !== lastFrameT) sampled.push({ t: lastFrameT, v: { ...trace } }); };
+				channel.port1.onmessage = () => {
+					if (sampled.length === 0 || sampled[sampled.length - 1].t !== lastFrameT)
+						sampled.push({ t: lastFrameT, v: { ...trace } });
+				};
 				const t0 = performance.now();
 				let rafTicks = 0;
 				const tick = (t) => {
@@ -153,14 +180,35 @@ try {
 		interval_max_ms: round(Math.max(...intervals))
 	};
 	const keys = [...new Set(frames.flatMap((f) => Object.keys(f.v)))].sort();
-	const expected = ['wave:1', 'wave:2', 'jog:1', 'jog:2', 'overview:1', 'overview:2', ...(SPLIT ? ['wave-partner:1'] : [])];
+	const expected = [
+		'wave:1',
+		'wave:2',
+		'jog:1',
+		'jog:2',
+		'overview:1',
+		'overview:2',
+		...(SPLIT ? ['wave-partner:1'] : [])
+	];
 	const missing = expected.filter((k) => !keys.includes(k));
 	out.elements = {};
-	const elementKeys = keys.filter((k) => !k.startsWith('event:') && !k.startsWith('age:') && ['1', '2'].includes(k.split(':')[1]));
-	out.sample_age_ms = Object.fromEntries(['age:1', 'age:2'].filter((k) => keys.includes(k)).map((k) => {
-		const ages = frames.map((f) => f.v[k]).filter((a) => a !== undefined);
-		return [k, { p50: round(percentile(ages, 0.5)), p95: round(percentile(ages, 0.95)), max: round(Math.max(...ages)) }];
-	}));
+	const elementKeys = keys.filter(
+		(k) => !k.startsWith('event:') && !k.startsWith('age:') && ['1', '2'].includes(k.split(':')[1])
+	);
+	out.sample_age_ms = Object.fromEntries(
+		['age:1', 'age:2']
+			.filter((k) => keys.includes(k))
+			.map((k) => {
+				const ages = frames.map((f) => f.v[k]).filter((a) => a !== undefined);
+				return [
+					k,
+					{
+						p50: round(percentile(ages, 0.5)),
+						p95: round(percentile(ages, 0.95)),
+						max: round(Math.max(...ages))
+					}
+				];
+			})
+	);
 	for (const key of elementKeys) {
 		const deck = Number(key.split(':')[1]);
 		const rate = (out.before[deck].pitch + out.after[deck].pitch) / 2;
@@ -168,8 +216,12 @@ try {
 	}
 	const first = frames[0].v;
 	const last = frames[frames.length - 1].v;
-	out.events = Object.fromEntries(keys.filter((k) => k.startsWith('event:')).map((k) => [k, (last[k] ?? 0) - (first[k] ?? 0)]));
-	out.events_per_min = Object.fromEntries(Object.entries(out.events).map(([k, n]) => [k, round(n / (seconds / 60))]));
+	out.events = Object.fromEntries(
+		keys.filter((k) => k.startsWith('event:')).map((k) => [k, (last[k] ?? 0) - (first[k] ?? 0)])
+	);
+	out.events_per_min = Object.fromEntries(
+		Object.entries(out.events).map(([k, n]) => [k, round(n / (seconds / 60))])
+	);
 	out.page_errors = errors.slice(0, 5);
 	const unprepared = [];
 	for (const d of [1, 2]) {

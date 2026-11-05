@@ -6,32 +6,24 @@
 	// MyTag feature (ID3-level tag unification lives in apps/tags, out of
 	// scope here).
 	import { onMount } from 'svelte';
-	import {
-		assignMyTags,
-		deleteMyTag,
-		editSuiteConflictRows,
-		listMyTags,
-		renameMyTag,
-		type MyTagSummary
-	} from '$lib/rb/api-edit-suite';
+	import { deleteTag, listMyTags, renameTag, type MyTagSummary } from '$lib/rb/api-edit-suite';
+	import { RbApiError } from '$lib/rb/api-rb-error';
+	import { applyTagChange } from '$lib/rb/library-tags.svelte';
 	import { runConfirmedMyTagSweep } from '$lib/rb/mytag-sweep-confirmation';
 	import { pushToast } from '$lib/stores.svelte';
 	import EditSuiteModal from './EditSuiteModal.svelte';
 
 	let {
 		stableIds,
-		etags,
 		onclose,
 		onapplied
 	}: {
 		stableIds: string[];
-		etags: Record<string, string>;
 		onclose: () => void;
 		onapplied: () => void;
 	} = $props();
 
 	let tags = $state<MyTagSummary[]>([]);
-	let catalogRevision = $state('');
 	let loading = $state(true);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -48,7 +40,6 @@
 		try {
 			const catalog = await listMyTags();
 			tags = catalog.tags;
-			catalogRevision = catalog.catalog_revision;
 		} catch (exc) {
 			error = String(exc);
 		} finally {
@@ -67,35 +58,11 @@
 			return;
 		}
 		const sourceName = renameTarget;
-		const sourceTag = tags.find((tag) => tag.name === sourceName);
-		if (sourceTag === undefined || catalogRevision === '') {
-			error = 'catalog scope is unavailable - refresh before renaming';
-			return;
-		}
 		const destinationName = renameValue.trim();
-		const destinationExists = tags.some((tag) => tag.name === destinationName);
 		busy = true;
 		try {
-			const result = await runConfirmedMyTagSweep(
-				{
-					action: 'rename',
-					tagName: sourceName,
-					affectedTrackCount: sourceTag.track_count,
-					destinationName,
-					requiresMergeConsent: destinationExists
-				},
-				window.confirm,
-				async () =>
-					renameMyTag({
-						old_name: sourceName,
-						new_name: destinationName,
-						expected_catalog_revision: catalogRevision,
-						expected_track_count: sourceTag.track_count,
-						confirm_merge: destinationExists
-					})
-			);
-			if (result === null) return;
-			pushToast(`renamed "${sourceName}" -> "${destinationName}" on ${result.tracks_updated} track(s)`, 'info');
+			if (!(await _renameOfferingMerge(sourceName, destinationName))) return;
+			pushToast(`renamed "${sourceName}" -> "${destinationName}". ⌘Z undoes it.`, 'info');
 			renameTarget = null;
 			await _refresh();
 		} catch (exc) {
@@ -105,9 +72,22 @@
 		}
 	}
 
+	/** R-TAG-5: the server says a name is taken, with its count; only then ask to merge. */
+	async function _renameOfferingMerge(name: string, newName: string): Promise<boolean> {
+		try {
+			await renameTag(name, newName, false);
+			return true;
+		} catch (exc) {
+			if (!(exc instanceof RbApiError) || exc.code !== 'CONFLICT') throw exc;
+			if (!window.confirm(`${exc.message}. Merge "${name}" into it? ⌘Z undoes it.`)) return false;
+			await renameTag(name, newName, true);
+			return true;
+		}
+	}
+
 	async function removeTagEverywhere(name: string): Promise<void> {
 		const sourceTag = tags.find((tag) => tag.name === name);
-		if (sourceTag === undefined || catalogRevision === '') {
+		if (sourceTag === undefined) {
 			error = 'catalog scope is unavailable - refresh before deleting';
 			return;
 		}
@@ -116,15 +96,10 @@
 			const result = await runConfirmedMyTagSweep(
 				{ action: 'delete', tagName: name, affectedTrackCount: sourceTag.track_count },
 				window.confirm,
-				async () =>
-					deleteMyTag({
-						name,
-						expected_catalog_revision: catalogRevision,
-						expected_track_count: sourceTag.track_count
-					})
+				async () => deleteTag(name)
 			);
 			if (result === null) return;
-			pushToast(`removed "${name}" from ${result.tracks_updated} track(s)`, 'info');
+			pushToast(`removed "${name}". ⌘Z undoes it.`, 'info');
 			await _refresh();
 		} catch (exc) {
 			pushToast(`delete failed: ${String(exc)}`, 'error');
@@ -150,23 +125,11 @@
 		busy = true;
 		error = null;
 		try {
-			const res = await assignMyTags({
-				stable_ids: stableIds,
-				expected_etags: etags,
-				add,
-				remove
-			});
-			pushToast(`MyTags updated on ${res.applied_count} track(s)`, 'info');
+			await applyTagChange({ stable_ids: stableIds, add, remove });
+			pushToast(`MyTags updated on ${stableIds.length} track(s). ⌘Z undoes it.`, 'info');
 			onapplied();
 		} catch (exc) {
-			// STATE-09: same row-level 409 detail as bulk-edit/find-replace
-			// (STATE-07/08) - name which rows blocked the assign instead of a
-			// bare "conflict: Conflict".
-			const conflicts = editSuiteConflictRows(exc);
-			error =
-				conflicts !== null
-					? `${conflicts.length} of ${stableIds.length} track(s) changed elsewhere since this selection was made - reload and try again`
-					: String(exc);
+			error = String(exc);
 			pushToast(`assign failed: ${error}`, 'error');
 		} finally {
 			busy = false;

@@ -13,13 +13,19 @@ import type { RuleAst } from './rule-form';
 export type SmartlistOut = components['schemas']['SmartlistSummary'];
 
 export class SmartlistApiError extends Error {
-	constructor(public status: number, message: string) {
+	constructor(
+		public status: number,
+		message: string
+	) {
 		super(message);
 	}
 }
 
 export class SmartlistConflictError extends Error {
-	constructor(public current: SmartlistOut, public etag: string) {
+	constructor(
+		public current: SmartlistOut,
+		public etag: string
+	) {
 		super('Smartlist If-Match mismatch');
 	}
 }
@@ -38,9 +44,11 @@ export async function listSmartlists(): Promise<SmartlistOut[]> {
 
 /** Create a smartlist through the same HTTP path the editor then saves with.
  * The returned object is server-persisted readback, never an optimistic copy. */
-export async function createSmartlist(
-	body: { name: string; rule: RuleAst; order_by?: string }
-): Promise<{ smartlist: SmartlistOut; etag: string }> {
+export async function createSmartlist(body: {
+	name: string;
+	rule: RuleAst;
+	order_by?: string;
+}): Promise<{ smartlist: SmartlistOut; etag: string }> {
 	let call: { data?: SmartlistOut; response: Response };
 	try {
 		call = await api.POST('/api/v1/smartlists', {
@@ -69,9 +77,7 @@ function requiredSmartlistEtag(response: Response): string {
 	return etag;
 }
 
-export async function getSmartlist(
-	id: string
-): Promise<{ smartlist: SmartlistOut; etag: string }> {
+export async function getSmartlist(id: string): Promise<{ smartlist: SmartlistOut; etag: string }> {
 	let call: { data?: SmartlistOut; response: Response };
 	try {
 		call = await api.GET('/api/v1/smartlists/{smartlist_id}', {

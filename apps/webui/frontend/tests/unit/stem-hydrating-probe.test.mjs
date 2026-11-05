@@ -228,7 +228,10 @@ test('[if] a stick track asks for hydration [then] it is refused before any requ
 		requests.push(String(url));
 		return Response.json({ state: 'fetching' });
 	};
-	await assert.rejects(retry.requestStemHydration('usb-abc', recording), /stem hydrate refused for stick track usb-abc/);
+	await assert.rejects(
+		retry.requestStemHydration('usb-abc', recording),
+		/stem hydrate refused for stick track usb-abc/
+	);
 	assert.deepEqual(requests, []);
 	await retry.requestStemHydration('abc', recording);
 	assert.equal(requests.length, 1);

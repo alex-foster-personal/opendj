@@ -43,6 +43,7 @@
 		formatAge,
 		copyBuildIdentityToClipboard,
 		formatStamp,
+		lineageBadge,
 		readShellBuild,
 		shortLabel,
 		UNKNOWN,
@@ -52,6 +53,7 @@
 		type SideState
 	} from '$lib/rb/build-identity';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import RestartToUpdate from './RestartToUpdate.svelte';
 	import {
 		applyUpdate,
 		canApplyHere,
@@ -70,6 +72,7 @@
 	let copyNote = $state<string | null>(null);
 
 	const drift = $derived(describeDrift(shell, engine));
+	const lineage = $derived(lineageBadge(engine));
 	const engineStamp = $derived(engine.kind === 'ok' ? formatStamp(engine.value.built_at_utc) : null);
 	const shellStamp = $derived(shell.kind === 'ok' ? formatStamp(shell.value.built_at_utc) : null);
 	const channel = $derived(
@@ -198,6 +201,8 @@
 	class:fault={engine.kind === 'fault' || shell.kind === 'fault'}
 	class:drifted={drift === 'drifted'}
 >
+	<!-- INSTALL-40: "Restart to update" when an agent flagged a local build. -->
+	<RestartToUpdate />
 	<button
 		type="button"
 		class="summary"
@@ -217,6 +222,12 @@
 		     place that decides what the compact label says. The span goes
 		     amber as a whole when it carries DIRTY: a dirty build must not be
 		     able to pass for a clean one at a glance. -->
+		{#if lineage !== null}
+			<!-- INSTALL-44: which long-lived line this build carries. -->
+			<span class="lineage" data-testid="build-lineage" title={lineage.title}>
+				<span class="swatch" style:background-color={lineage.hex} aria-hidden="true"></span>{lineage.name}
+			</span>
+		{/if}
 		<span
 			class="sha"
 			class:dirty={engine.kind === 'ok' && engine.value.git_dirty}
@@ -448,6 +459,8 @@
 	   tray decides the row and this decides its own end of it. */
 	.build-identity {
 		position: relative;
+		display: flex;
+		align-items: baseline;
 		margin-left: auto;
 		z-index: 60;
 		max-width: min(38rem, calc(100vw - 1rem));
@@ -478,6 +491,19 @@
 	}
 	.sha {
 		letter-spacing: 0.02em;
+	}
+	.lineage {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25em;
+		font-weight: 700;
+	}
+	.swatch {
+		display: inline-block;
+		width: 0.7em;
+		height: 0.7em;
+		border: 1px solid var(--fg, #ccc);
+		border-radius: 50%;
 	}
 	.when {
 		/* opacity 0.72 on --muted composites under AA: default #747d88 on

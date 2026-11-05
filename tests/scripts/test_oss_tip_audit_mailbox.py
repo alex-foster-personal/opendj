@@ -148,9 +148,7 @@ def test_only_the_reserved_example_domains_are_reserved(tmp_path: Path) -> None:
     ]
     path = _write(tmp_path, "domains.md", "\n".join([real, also_real, *fixtures]) + "\n")
     result = audit_paths(tmp_path, [path])
-    assert [f.match for f in result.findings] == [real, also_real], [
-        f.render() for f in result.findings
-    ]
+    assert [f.match for f in result.findings] == [real, also_real], [f.render() for f in result.findings]
 
 
 def test_a_mailbox_at_a_unicode_domain_is_still_a_mailbox(tmp_path: Path) -> None:
@@ -174,9 +172,7 @@ def test_a_mailbox_at_a_unicode_domain_is_still_a_mailbox(tmp_path: Path) -> Non
         "\n".join([idn, other_script, ascii_real, reserved, version]) + "\n",
     )
     result = audit_paths(tmp_path, [path])
-    assert [f.match for f in result.findings] == [idn, other_script, ascii_real], [
-        f.render() for f in result.findings
-    ]
+    assert [f.match for f in result.findings] == [idn, other_script, ascii_real], [f.render() for f in result.findings]
 
 
 def test_a_quoted_mailbox_local_part_is_still_a_mailbox(tmp_path: Path) -> None:
@@ -202,9 +198,7 @@ def test_a_numeric_domain_is_not_assumed_to_be_a_version(tmp_path: Path) -> None
     enumerated = "signalsmith-stretch" + "@" + "1.3.2" + ".patch"
     path = _write(tmp_path, "domains.md", f"{numeric_label}\n{all_numeric}\n{enumerated}\n")
     result = audit_paths(tmp_path, [path])
-    assert [f.match for f in result.findings] == [numeric_label, all_numeric], [
-        f.render() for f in result.findings
-    ]
+    assert [f.match for f in result.findings] == [numeric_label, all_numeric], [f.render() for f in result.findings]
 
 
 def test_a_local_part_of_atext_punctuation_is_still_a_mailbox(tmp_path: Path) -> None:
@@ -216,9 +210,7 @@ def test_a_local_part_of_atext_punctuation_is_still_a_mailbox(tmp_path: Path) ->
     tilde = "user" + "~" + "@" + "private-domain" + ".com"
     path = _write(tmp_path, "atext.md", f"{bang}\n{tilde}\n")
     result = audit_paths(tmp_path, [path])
-    assert [f.match for f in result.findings] == [bang, tilde], [
-        f.render() for f in result.findings
-    ]
+    assert [f.match for f in result.findings] == [bang, tilde], [f.render() for f in result.findings]
 
 
 def test_delimiters_are_not_absorbed_into_a_token(tmp_path: Path) -> None:
@@ -359,10 +351,7 @@ def test_retina_asset_names_are_not_mailboxes(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
         "desktop_icons_fixture.py",
-        "expected = {\n"
-        + f"{iconset_lines}\n"
-        + "}\n"
-        + "".join(f"# {x}\n" for x in accepted + fires),
+        "expected = {\n" + f"{iconset_lines}\n" + "}\n" + "".join(f"# {x}\n" for x in accepted + fires),
     )
 
     result = audit_paths(tmp_path, [path])
@@ -375,6 +364,5 @@ def test_retina_asset_names_are_not_mailboxes(tmp_path: Path) -> None:
         assert name not in matches, f"{name} is an asset filename, not a mailbox"
     for address in fires:
         assert address in matches, (
-            f"{address} stopped firing -- the rule was loosened past the point "
-            "where a real mailbox can still exist"
+            f"{address} stopped firing -- the rule was loosened past the point where a real mailbox can still exist"
         )

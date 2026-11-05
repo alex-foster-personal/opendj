@@ -136,7 +136,9 @@ test('signal present but outputLatencyDead is false is never a verdict', () => {
 
 test('outputLatencyDead with the mixer ALSO silent is never a verdict', () => {
 	const mod = _watchdog();
-	const { verdicts } = runSamples(heldFor(2_000, { playing: true, masterRms: 0, outputLatencyDead: true }));
+	const { verdicts } = runSamples(
+		heldFor(2_000, { playing: true, masterRms: 0, outputLatencyDead: true })
+	);
 	assert.equal(
 		verdicts.length,
 		0,
@@ -169,7 +171,11 @@ test('outputLatencyDead with nothing playing is never a verdict', () => {
 
 test('recovery resets the report: a second outage is a second verdict', () => {
 	const mod = _watchdog();
-	const outage = heldFor(500, { playing: true, masterRms: mod.SILENCE_RMS_FLOOR * 100, outputLatencyDead: true });
+	const outage = heldFor(500, {
+		playing: true,
+		masterRms: mod.SILENCE_RMS_FLOOR * 100,
+		outputLatencyDead: true
+	});
 	const recovered = heldFor(500, {
 		playing: true,
 		masterRms: mod.SILENCE_RMS_FLOOR * 100,
@@ -187,7 +193,11 @@ test('recovery resets the report: a second outage is a second verdict', () => {
 test('one outage is one verdict, not one per sample', () => {
 	const mod = _watchdog();
 	const { verdicts } = runSamples(
-		heldFor(5_000, { playing: true, masterRms: mod.SILENCE_RMS_FLOOR * 100, outputLatencyDead: true })
+		heldFor(5_000, {
+			playing: true,
+			masterRms: mod.SILENCE_RMS_FLOOR * 100,
+			outputLatencyDead: true
+		})
 	);
 	assert.equal(
 		verdicts.length,
@@ -221,7 +231,11 @@ test('live stays device-unreachable for the whole outage, not just the crossing 
 
 test('a momentary quiet frame mid-outage does not re-arm the report (P2, PR #1693)', () => {
 	const mod = _watchdog();
-	const deadLoud = { playing: true, masterRms: mod.SILENCE_RMS_FLOOR * 100, outputLatencyDead: true };
+	const deadLoud = {
+		playing: true,
+		masterRms: mod.SILENCE_RMS_FLOOR * 100,
+		outputLatencyDead: true
+	};
 	const deadQuiet = { playing: true, masterRms: 0, outputLatencyDead: true };
 	const { verdicts, state } = runSamples([deadLoud, deadLoud, deadQuiet, deadLoud, deadLoud]);
 	assert.equal(

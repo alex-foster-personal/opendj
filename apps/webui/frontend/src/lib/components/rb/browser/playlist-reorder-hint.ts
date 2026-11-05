@@ -22,7 +22,12 @@ const SORT_LABELS: Readonly<Record<SortKey, string>> = {
 	genre: 'Genre',
 	lyrics: 'Lyrics',
 	grid: 'Grid',
-	autoplay: 'AutoPlay rank'
+	autoplay: 'AutoPlay rank',
+	work: 'Work',
+	composer: 'Composer',
+	ensemble: 'Conductor / Ensemble',
+	label: 'Label',
+	year: 'Year'
 };
 
 /** Why an editable playlist pane cannot be drag-reordered right now, or

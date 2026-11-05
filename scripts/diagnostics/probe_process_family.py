@@ -45,9 +45,7 @@ WEBKIT_ROLES = {
 # Roles that are re-derived from scratch every sample. Only the roles OUTSIDE
 # this set are remembered across samples, because those are the ones that can
 # outlive their shell and turn into the orphans the probe is looking for.
-WEBKIT_AND_SHELL_ROLES = frozenset(
-    {"desktop-shell", "webkit-other", *WEBKIT_ROLES.values()}
-)
+WEBKIT_AND_SHELL_ROLES = frozenset({"desktop-shell", "webkit-other", *WEBKIT_ROLES.values()})
 
 BUILD_IDENTITY_FIELDS = frozenset(
     {
@@ -224,9 +222,7 @@ def suspected_orphans(
     return [found[pid] for pid in sorted(found)]
 
 
-def _other_shell_starts(
-    rows: list[ProcessRow], native: DarwinProcessMetrics, shell: ProcessRow
-) -> list[float]:
+def _other_shell_starts(rows: list[ProcessRow], native: DarwinProcessMetrics, shell: ProcessRow) -> list[float]:
     """Start times of every OTHER live Open DJ shell, for the contest check below."""
 
     starts: list[float] = []
@@ -278,10 +274,7 @@ def _is_contested(start: float, other_shell_starts: list[float]) -> bool:
     be refused (Codex P1/BLOCKING, #705, resolve_role.py:98).
     """
 
-    return any(
-        0 <= start - other_start <= WEBKIT_ASSOCIATION_WINDOW_SECONDS
-        for other_start in other_shell_starts
-    )
+    return any(0 <= start - other_start <= WEBKIT_ASSOCIATION_WINDOW_SECONDS for other_start in other_shell_starts)
 
 
 def _webkit_cluster(
@@ -337,7 +330,7 @@ def associate_process_family(
     )
     # A SECOND webkit-webcontent candidate INSIDE the cluster window is not,
     # by itself, proof of a second app: the locked production capture at
-    # tests/fixtures/perf/MANIFEST.json ("probe-samples.jsonl") shows one real
+    # (private path) ("probe-samples.jsonl") shows one real
     # Open DJ family legitimately holding two webkit-webcontent PIDs in the
     # same cluster at once, so "one WKWebView" does not mean "one WebContent
     # process" and counting webcontent PIDs cannot stand in for counting

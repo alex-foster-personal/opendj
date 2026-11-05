@@ -20,6 +20,7 @@
 	import { classifyToastError } from '$lib/toast-error-classification';
 	import { formatToastPresentation } from '$lib/toast-presentation';
 	import { buildToastReport, writeToastReport } from '$lib/toast-report';
+	import type { DeckBannerTone } from '$lib/rb/deck-banner-policy';
 
 	// Presentational: the parent owns the deck identity, the id and the dismiss
 	// action. `deckId` is a plain number here because it is only stamped into
@@ -30,12 +31,21 @@
 	// which the error is showing and the id has not landed yet. Rendering
 	// nothing for that frame is correct; rendering a placeholder that looks
 	// like an id would be a search that leads nowhere.
+	// `tone` (DECKUX-LABEL-02): 'expected' is a self-resolving condition the
+	// parent clears on a timer; it is drawn neutral, not as a fault.
 	let {
 		deckId,
 		error,
 		errorId,
+		tone,
 		onDismiss
-	}: { deckId: number; error: string; errorId: string | null; onDismiss: () => void } = $props();
+	}: {
+		deckId: number;
+		error: string;
+		errorId: string | null;
+		tone: DeckBannerTone;
+		onDismiss: () => void;
+	} = $props();
 
 	const diagnostic = $derived(
 		classifyToastError({
@@ -102,7 +112,9 @@
 
 <div
 	class="deck-error"
-	role="alert"
+	class:expected={tone === 'expected'}
+	role={tone === 'expected' ? 'status' : 'alert'}
+	data-deck-banner-tone={tone}
 	data-performance-error={deckId}
 	data-performance-error-id={errorId}
 	title={errorId === null
@@ -147,6 +159,12 @@
 		background: rgba(30, 5, 5, 0.94);
 		color: #ff8e87;
 		font-size: var(--rb-fs-label);
+	}
+
+	.deck-error.expected {
+		border-color: var(--rb-border);
+		background: rgba(20, 20, 24, 0.94);
+		color: var(--rb-text-dim);
 	}
 
 	.deck-error-body {

@@ -84,9 +84,7 @@ def _run_worker_in_child(audio: Path, env: dict[str, str]) -> dict[str, Any]:
         check=False,
     )
     lines = [line for line in proc.stdout.splitlines() if line.strip()]
-    assert proc.returncode == 0 and lines, (
-        f"child did not report (exit {proc.returncode}); stderr:\n{proc.stderr}"
-    )
+    assert proc.returncode == 0 and lines, f"child did not report (exit {proc.returncode}); stderr:\n{proc.stderr}"
     return json.loads(lines[-1])
 
 
@@ -228,9 +226,7 @@ def test_non_wav_without_ffmpeg_passes_the_preflight_when_odj_audio_resolves(
     vocals_cli.preflight_worker(MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": str(engine)})
     # Control: the same environment with the engine gone is refused.
     with pytest.raises(vocals_cli.WorkerUnavailableError, match="ODJ_AUDIO_BIN"):
-        vocals_cli.preflight_worker(
-            MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)}
-        )
+        vocals_cli.preflight_worker(MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)})
 
 
 def test_wav_without_ffmpeg_still_reaches_the_worker(tmp_path: Path) -> None:
@@ -256,16 +252,11 @@ def test_non_wav_with_mdt_ffmpeg_passes_the_decoder_preflight(tmp_path: Path) ->
 
     vocals_cli.preflight_worker(MP3_FIXTURE, {**environ, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)})
     with pytest.raises(vocals_cli.WorkerUnavailableError):
-        vocals_cli.preflight_worker(
-            MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)}
-        )
+        vocals_cli.preflight_worker(MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)})
 
 
 def test_payload_launcher_exports_vocal_runtime_contract() -> None:
     from scripts.build_engine_payload import LAUNCHER_TEMPLATE
 
-    assert "MDT_VOCAL_WORKER_PYTHON=\"$payload/runtime/bin/python3\"" in LAUNCHER_TEMPLATE
-    assert (
-        "MDT_VOCAL_WORKER_SCRIPT=\"$payload/app/scripts/vocal_region_worker.py\""
-        in LAUNCHER_TEMPLATE
-    )
+    assert 'MDT_VOCAL_WORKER_PYTHON="$payload/runtime/bin/python3"' in LAUNCHER_TEMPLATE
+    assert 'MDT_VOCAL_WORKER_SCRIPT="$payload/app/scripts/vocal_region_worker.py"' in LAUNCHER_TEMPLATE

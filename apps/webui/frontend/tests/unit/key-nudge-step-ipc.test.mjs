@@ -18,13 +18,24 @@ before(async () => {
 
 test('the command parses one known step and has no deck queue scope', () => {
 	for (const step of ['semitone', 'tone', 'scale', 'camelot']) {
-		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step }), { type: 'key_nudge_step', step });
+		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step }), {
+			type: 'key_nudge_step',
+			step
+		});
 	}
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'key_nudge_step', step: 'tone' }), null);
 	// Controls: an unknown step, a missing one, or an extra key is refused.
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step: 'octave' }), /key_nudge_step step must be one of/);
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step' }), /key_nudge_step step must be one of/);
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step: 'tone', deck: 1 }));
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step: 'octave' }),
+		/key_nudge_step step must be one of/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step' }),
+		/key_nudge_step step must be one of/
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'key_nudge_step', step: 'tone', deck: 1 })
+	);
 });
 
 test('dispatching the command changes the step and query state shows it', async () => {
@@ -32,7 +43,11 @@ test('dispatching the command changes the step and query state shows it', async 
 	if (!hadWindow) globalThis.window = {};
 	const uninstall = app.installPerformanceBrowserIpc();
 	try {
-		assert.equal(app.queryPerformanceState().ui.key_nudge_step, 'semitone', 'semitone is the default');
+		assert.equal(
+			app.queryPerformanceState().ui.key_nudge_step,
+			'semitone',
+			'semitone is the default'
+		);
 		await app.dispatchPerformanceCommand({ type: 'key_nudge_step', step: 'camelot' });
 		assert.equal(app.queryPerformanceState().ui.key_nudge_step, 'camelot');
 		assert.equal(app.readKeyNudgeStep(), 'camelot');
@@ -47,7 +62,10 @@ test('dispatching the command changes the step and query state shows it', async 
 
 test('the header step buttons dispatch the command and read the shared step, never set it locally', async () => {
 	const header = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');
-	assert.match(header, /onclick=\{\(\) => void runPerformanceCommandFromUi\(\{ type: 'key_nudge_step', step: step\.id \}\)\}/);
+	assert.match(
+		header,
+		/onclick=\{\(\) => void runPerformanceCommandFromUi\(\{ type: 'key_nudge_step', step: step\.id \}\)\}/
+	);
 	assert.doesNotMatch(header, /onclick=\{\(\) => \(keyNudgeStep = /);
 	assert.match(header, /subscribeKeyNudgeStep\(\(step\) => \{\s*keyNudgeStep = step;/);
 });

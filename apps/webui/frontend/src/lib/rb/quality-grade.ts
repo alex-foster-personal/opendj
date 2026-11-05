@@ -44,7 +44,9 @@ function _summary(grade: TrackQualityGrade): string {
 		? `${grade.letter} -- ${GRADE_MEANINGS[grade.letter]}`
 		: `${grade.letter} (not checked yet) -- from bitrate and format only`;
 	if (!grade.checked) return head;
-	const issues = grade.issues.length ? grade.issues.map((key) => key.replaceAll('_', ' ')).join(', ') : 'none found';
+	const issues = grade.issues.length
+		? grade.issues.map((key) => key.replaceAll('_', ' ')).join(', ')
+		: 'none found';
 	return `${head}\nIssues: ${issues}`;
 }
 

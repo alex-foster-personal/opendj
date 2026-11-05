@@ -52,8 +52,7 @@ def test_imports_without_soundfile(module: str) -> None:
         text=True,
     )
     assert proc.returncode == 0, (
-        f"{module} cannot import without soundfile.\n"
-        f"stdout={proc.stdout}\nstderr={proc.stderr}"
+        f"{module} cannot import without soundfile.\nstdout={proc.stdout}\nstderr={proc.stderr}"
     )
     assert "OK" in proc.stdout
 

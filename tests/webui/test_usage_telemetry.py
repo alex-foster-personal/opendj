@@ -16,10 +16,7 @@ from apps.webui.server.usage_telemetry import IN_USE_WINDOW_SECONDS, UsageStore
 
 # Real user agents. The shell's was captured on Wed 19 Aug 2026 from the
 # installed Open DJ.app 0.1.0 pointed at a loopback probe engine.
-SHELL_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/605.1.15 (KHTML, like Gecko)"
-)
+SHELL_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
 CHROME_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
@@ -213,9 +210,7 @@ def test_telemetry_endpoints_do_not_count_as_app_usage() -> None:
     with _client() as client:
         _heartbeat(client)
         client.get("/api/v1/telemetry/clients", headers={"user-agent": SHELL_UA})
-        passive = client.get(
-            "/api/v1/telemetry/clients", headers={"user-agent": SHELL_UA}
-        ).json()["passive_activity"]
+        passive = client.get("/api/v1/telemetry/clients", headers={"user-agent": SHELL_UA}).json()["passive_activity"]
 
     assert passive["last_request_at"] is None
 
@@ -247,5 +242,6 @@ def test_passive_seconds_since_last_request_uses_the_injected_clock() -> None:
 
     assert passive["seconds_since_last_request"] == 12.0
     assert passive["by_surface"]["desktop-shell"]["seconds_since_request"] == 12.0
+
 
 pytestmark = pytest.mark.rb_parity

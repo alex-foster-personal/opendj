@@ -119,107 +119,112 @@ interface TitlePaint {
 }
 
 async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
-	return await page.locator('.wave-track-name').first().evaluate((node): TitlePaint => {
-		const leaf = node.querySelector(':scope > span') ?? node;
-		const channels = (value: string): number[] | null => {
-			// Only rgb()/rgba(). Chromium normally flattens color-mix() before
-			// serializing, but `.rb-waverow.deck-focus` IS declared as
-			// `color-mix(in srgb, rgba(255,255,255,0.08) 50%, var(--rb-bg))`
-			// (WaveRow.svelte), and a digit scrape of an UNRESOLVED color-mix
-			// string harvests a percentage and two colours' channels as
-			// though they were one colour - a number about nothing, silently.
-			// Returning null instead makes the caller report no backdrop,
-			// which the assertions treat as a hard failure. Blinded review.
-			if (!/^rgba?\(/.test(value)) return null;
-			const parts = value.match(/[\d.]+/g);
-			if (parts === null || parts.length < 3) return null;
-			return parts.map(Number);
-		};
-		const alphaOf = (value: string): number => {
-			const parsed = channels(value);
-			if (parsed === null) return 0;
-			return parsed.length >= 4 ? parsed[3] : 1;
-		};
+	return await page
+		.locator('.wave-track-name')
+		.first()
+		.evaluate((node): TitlePaint => {
+			const leaf = node.querySelector(':scope > span') ?? node;
+			const channels = (value: string): number[] | null => {
+				// Only rgb()/rgba(). Chromium normally flattens color-mix() before
+				// serializing, but `.rb-waverow.deck-focus` IS declared as
+				// `color-mix(in srgb, rgba(255,255,255,0.08) 50%, var(--rb-bg))`
+				// (WaveRow.svelte), and a digit scrape of an UNRESOLVED color-mix
+				// string harvests a percentage and two colours' channels as
+				// though they were one colour - a number about nothing, silently.
+				// Returning null instead makes the caller report no backdrop,
+				// which the assertions treat as a hard failure. Blinded review.
+				if (!/^rgba?\(/.test(value)) return null;
+				const parts = value.match(/[\d.]+/g);
+				if (parts === null || parts.length < 3) return null;
+				return parts.map(Number);
+			};
+			const alphaOf = (value: string): number => {
+				const parsed = channels(value);
+				if (parsed === null) return 0;
+				return parsed.length >= 4 ? parsed[3] : 1;
+			};
 
-		// Both tokens through a real probe, so this compares the same rgb()
-		// values the compositor uses rather than string-matching theme.css.
-		const scope = node.closest('.perf-root') ?? document.body;
-		const probe = document.createElement('span');
-		scope.appendChild(probe);
-		const resolve = (token: string): string => {
-			probe.style.color = `var(${token})`;
-			return getComputedStyle(probe).color;
-		};
-		const dim = resolve('--rb-text-dim');
-		const primary = resolve('--rb-text');
-		probe.remove();
+			// Both tokens through a real probe, so this compares the same rgb()
+			// values the compositor uses rather than string-matching theme.css.
+			const scope = node.closest('.perf-root') ?? document.body;
+			const probe = document.createElement('span');
+			scope.appendChild(probe);
+			const resolve = (token: string): string => {
+				probe.style.color = `var(${token})`;
+				return getComputedStyle(probe).color;
+			};
+			const dim = resolve('--rb-text-dim');
+			const primary = resolve('--rb-text');
+			probe.remove();
 
-		const painted = getComputedStyle(leaf).color;
-		const paintedChannels = channels(painted);
-		let alpha = alphaOf(painted);
-		let backdrop: [number, number, number] | null = null;
-		const blockers: string[] = [];
-		let element: Element | null = leaf;
-		while (element !== null) {
-			const style = getComputedStyle(element);
-			const name = element.className === '' ? element.tagName : String(element.className);
-			if (style.filter !== 'none') blockers.push(`${name}: filter ${style.filter}`);
-			if (style.mixBlendMode !== 'normal') {
-				blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
-			}
-			// `display: contents` returns a computed background and opacity from
-			// `getComputedStyle` while generating no box and painting nothing.
-			// Treating one as the backdrop would report a colour that is never
-			// on screen, so it is skipped for paint purposes entirely - its
-			// opacity has no effect either. Blinded review.
-			const paints = style.display !== 'contents';
-			if (backdrop === null && paints) {
-				if (style.backgroundImage !== 'none') {
-					blockers.push(`${name}: background-image ${style.backgroundImage}`);
+			const painted = getComputedStyle(leaf).color;
+			const paintedChannels = channels(painted);
+			let alpha = alphaOf(painted);
+			let backdrop: [number, number, number] | null = null;
+			const blockers: string[] = [];
+			let element: Element | null = leaf;
+			while (element !== null) {
+				const style = getComputedStyle(element);
+				const name = element.className === '' ? element.tagName : String(element.className);
+				if (style.filter !== 'none') blockers.push(`${name}: filter ${style.filter}`);
+				if (style.mixBlendMode !== 'normal') {
+					blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
 				}
-				const bg = channels(style.backgroundColor);
-				const bgAlpha = alphaOf(style.backgroundColor);
-				if (bg !== null && bgAlpha === 1) {
-					backdrop = [bg[0], bg[1], bg[2]];
-					// Opacity at and above the backdrop dims text and surface
-					// alike, so it stops counting here. The BLOCKER scan does
-					// not stop with it: a filter or mix-blend-mode on an
-					// ancestor ABOVE this element (`.perf-root` carries the
-					// app shell's own rules) re-composites the "opaque"
-					// backdrop against whatever is behind it, so a contrast
-					// ratio measured against this token would again be a
-					// number about nothing. Blinded review, Thu 10 Sep 2026.
-				} else if (bg === null) {
-					// Unparseable and therefore undecidable: an unresolved
-					// color-mix() may well paint. Falling through to the
-					// opacity branch would drop a real layer and report a
-					// ratio that is too FLATTERING, with nothing red to show
-					// for it. Blocking is the honest answer. Blinded review.
-					blockers.push(`${name}: unparseable background ${style.backgroundColor}`);
-				} else if (bgAlpha > 0) {
-					// Translucent: a genuine compositing layer this helper does
-					// not blend. Same reasoning - a silently optimistic ratio is
-					// the failure this file exists to prevent. A hovered
-					// `.rb-waverow.secondary.deck-focus` is exactly this case.
-					blockers.push(`${name}: translucent background ${style.backgroundColor}`);
-				} else {
+				// `display: contents` returns a computed background and opacity from
+				// `getComputedStyle` while generating no box and painting nothing.
+				// Treating one as the backdrop would report a colour that is never
+				// on screen, so it is skipped for paint purposes entirely - its
+				// opacity has no effect either. Blinded review.
+				const paints = style.display !== 'contents';
+				if (backdrop === null && paints) {
+					if (style.backgroundImage !== 'none') {
+						blockers.push(`${name}: background-image ${style.backgroundImage}`);
+					}
+					const bg = channels(style.backgroundColor);
+					const bgAlpha = alphaOf(style.backgroundColor);
+					if (bg !== null && bgAlpha === 1) {
+						backdrop = [bg[0], bg[1], bg[2]];
+						// Opacity at and above the backdrop dims text and surface
+						// alike, so it stops counting here. The BLOCKER scan does
+						// not stop with it: a filter or mix-blend-mode on an
+						// ancestor ABOVE this element (`.perf-root` carries the
+						// app shell's own rules) re-composites the "opaque"
+						// backdrop against whatever is behind it, so a contrast
+						// ratio measured against this token would again be a
+						// number about nothing. Blinded review, Thu 10 Sep 2026.
+					} else if (bg === null) {
+						// Unparseable and therefore undecidable: an unresolved
+						// color-mix() may well paint. Falling through to the
+						// opacity branch would drop a real layer and report a
+						// ratio that is too FLATTERING, with nothing red to show
+						// for it. Blocking is the honest answer. Blinded review.
+						blockers.push(`${name}: unparseable background ${style.backgroundColor}`);
+					} else if (bgAlpha > 0) {
+						// Translucent: a genuine compositing layer this helper does
+						// not blend. Same reasoning - a silently optimistic ratio is
+						// the failure this file exists to prevent. A hovered
+						// `.rb-waverow.secondary.deck-focus` is exactly this case.
+						blockers.push(`${name}: translucent background ${style.backgroundColor}`);
+					} else {
+						alpha *= Number(style.opacity);
+					}
+				} else if (backdrop === null) {
 					alpha *= Number(style.opacity);
 				}
-			} else if (backdrop === null) {
-				alpha *= Number(style.opacity);
+				element = element.parentElement;
 			}
-			element = element.parentElement;
-		}
 
-		const composited: [number, number, number] | null =
-			paintedChannels === null || backdrop === null
-				? null
-				: [0, 1, 2].map(
-						(i) => paintedChannels[i] * alpha + backdrop![i] * (1 - alpha)
-					) as [number, number, number];
+			const composited: [number, number, number] | null =
+				paintedChannels === null || backdrop === null
+					? null
+					: ([0, 1, 2].map((i) => paintedChannels[i] * alpha + backdrop![i] * (1 - alpha)) as [
+							number,
+							number,
+							number
+						]);
 
-		return { painted, dim, primary, effectiveAlpha: alpha, backdrop, composited, blockers };
-	});
+			return { painted, dim, primary, effectiveAlpha: alpha, backdrop, composited, blockers };
+		});
 }
 
 // REQ: DECKUX-40
@@ -252,13 +257,14 @@ test('the painted title clears the 4.5:1 AA floor against what is actually behin
 	const luminance = (rgb: [number, number, number]): number => {
 		const [r, g, b] = rgb
 			.map((channel) => channel / 255)
-			.map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+			.map((channel) =>
+				channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+			);
 		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	};
-	const [lighter, darker] = [
-		luminance(measured.composited!),
-		luminance(measured.backdrop!)
-	].sort((left, right) => right - left);
+	const [lighter, darker] = [luminance(measured.composited!), luminance(measured.backdrop!)].sort(
+		(left, right) => right - left
+	);
 	const ratio = (lighter + 0.05) / (darker + 0.05);
 	expect(
 		ratio,
@@ -274,17 +280,20 @@ test('a long title is clipped by its column and fades out at the edge', async ({
 	request
 }) => {
 	await _deckOneLoaded(page, request);
-	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
-		const parent = node.parentElement;
-		if (parent === null) throw new Error('the track name must have a container');
-		const style = getComputedStyle(node);
-		return {
-			width: node.getBoundingClientRect().width,
-			containerWidth: parent.getBoundingClientRect().width,
-			overflow: style.overflow,
-			mask: style.maskImage || style.webkitMaskImage
-		};
-	});
+	const measured = await page
+		.locator('.wave-track-name')
+		.first()
+		.evaluate((node) => {
+			const parent = node.parentElement;
+			if (parent === null) throw new Error('the track name must have a container');
+			const style = getComputedStyle(node);
+			return {
+				width: node.getBoundingClientRect().width,
+				containerWidth: parent.getBoundingClientRect().width,
+				overflow: style.overflow,
+				mask: style.maskImage || style.webkitMaskImage
+			};
+		});
 	expect(measured.containerWidth, 'the text column must have a real width').toBeGreaterThan(10);
 	expect(measured.width).toBeLessThanOrEqual(measured.containerWidth + 1);
 	expect(measured.overflow, 'clipping is what makes the hover scrub meaningful').toBe('hidden');

@@ -1,28 +1,51 @@
 import { expect, test } from '@playwright/test';
 
 // requirement: LIBUX-34, STANDALONE-03
-// [if] All Tracks lists a fixture row with no beatgrid [then] the BPM hover
-// names why the cell is empty [else stop].
-// The root fixture (deckload_fixture.build) writes no bpm and no beatgrid.
-// Serving bpm_status=missing used to be hidden, so the hover led with
-// "Beat grid: own-analysis" from the placeholder source. The empty cell now
-// says why. A row that really has a method still leads with "Beat grid:"
-// (bpm-cell-title unit).
+// [if] All Tracks lists one fixture row with an own beatgrid record [then] the BPM
+// hover shows Beat grid provenance [else stop]. Other rows stay missing controls.
 
-test('All Tracks BPM hover names why an empty cell is empty', async ({ page }) => {
+const MISSING_BPM_TITLE =
+	'no own analysis record for this lane yet Double-click, or right-click and choose Edit, to change it.';
+
+type BpmRowSnapshot = {
+	stableId: string;
+	title: string;
+	text: string;
+};
+
+async function snapshotBpmRows(page: import('@playwright/test').Page): Promise<BpmRowSnapshot[]> {
+	const rows = page.locator('[data-testid="track-row"]');
+	await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+	return rows.evaluateAll((rowEls) =>
+		rowEls.map((row) => {
+			const stableId = row.getAttribute('data-stable-id') ?? '';
+			const cell = row.querySelector('td.c-bpm');
+			return {
+				stableId,
+				title: cell?.getAttribute('title') ?? '',
+				text: (cell?.textContent ?? '').trim()
+			};
+		})
+	);
+}
+
+test('All Tracks BPM hover shows beatgrid provenance on the seeded row', async ({ page }) => {
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await page.getByText('All Tracks', { exact: true }).first().click();
-	const cells = page.locator('[data-testid="track-row"] td.c-bpm');
-	await expect(cells.first()).toBeVisible({ timeout: 30_000 });
-	const titles = await cells.evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
-	expect(titles.length).toBeGreaterThan(0);
-	// LIBPG-7694: the cell is now editable, so its hover adds the edit hint after the reason.
-	for (const title of titles) {
-		expect(title).toBe(
-			'no own analysis record for this lane yet Double-click, or right-click and choose Edit, to change it.'
-		);
+
+	const snapshots = await snapshotBpmRows(page);
+	expect(snapshots.length).toBeGreaterThan(0);
+
+	const gridRows = snapshots.filter((row) => row.title.includes('Beat grid: own beatgrid.backfill.'));
+	expect(gridRows).toHaveLength(1);
+	const gridRow = gridRows[0]!;
+	expect(gridRow.title).toContain('Confidence: 95%.');
+	expect(gridRow.text).toBe('121.9');
+
+	for (const row of snapshots) {
+		if (row.stableId === gridRow.stableId) continue;
+		expect(row.title).toBe(MISSING_BPM_TITLE);
+		expect(row.text).toBe('');
 	}
-	const labels = await cells.evaluateAll((els) => els.map((el) => (el.textContent ?? '').trim()));
-	for (const label of labels) expect(label).toBe('missing');
 });

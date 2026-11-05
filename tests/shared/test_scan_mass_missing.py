@@ -129,16 +129,12 @@ def test_ingest_folder_empty_after_populate_refuses_and_keeps_rows(
     try:
         first = folder_ingest.ingest_folder(writer, [root], dry_run=False)
         assert first.tracks_inserted == 2
-        before = list(
-            conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id")
-        )
+        before = list(conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id"))
         _empty(root)
         with pytest.raises(MassMissingError, match="2") as caught:
             folder_ingest.ingest_folder(writer, [root], dry_run=False)
         assert str(root) in str(caught.value)
-        after = list(
-            conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id")
-        )
+        after = list(conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id"))
         assert after == before
         assert all(row[2] is None for row in after)
     finally:
@@ -160,9 +156,7 @@ def test_ingest_folder_allow_mass_missing_writes_nothing_on_empty(
         _empty(root)
         report = folder_ingest.ingest_folder(writer, [root], dry_run=False, allow_mass_missing=True)
         assert report.files_seen == 0
-        n, deleted = conn.execute(
-            "SELECT COUNT(*), SUM(deleted_at IS NOT NULL) FROM tracks"
-        ).fetchone()
+        n, deleted = conn.execute("SELECT COUNT(*), SUM(deleted_at IS NOT NULL) FROM tracks").fetchone()
         assert n == 1
         assert not deleted
     finally:
@@ -193,19 +187,13 @@ def test_availability_empty_after_populate_refuses_and_keeps_rows(
         first = avail.refresh(conn, now="2026-09-11T01:00:00+00:00")
         assert first.counts.get("present") == 2
         before = list(
-            conn.execute(
-                "SELECT stable_id, state, checked_path, checked_at "
-                "FROM track_availability ORDER BY stable_id"
-            )
+            conn.execute("SELECT stable_id, state, checked_path, checked_at FROM track_availability ORDER BY stable_id")
         )
         _empty(root)
         with pytest.raises(MassMissingError, match="library"):
             avail.refresh(conn, now="2026-09-11T02:00:00+00:00")
         after = list(
-            conn.execute(
-                "SELECT stable_id, state, checked_path, checked_at "
-                "FROM track_availability ORDER BY stable_id"
-            )
+            conn.execute("SELECT stable_id, state, checked_path, checked_at FROM track_availability ORDER BY stable_id")
         )
         assert after == before
         assert {row[1] for row in after} == {"present"}

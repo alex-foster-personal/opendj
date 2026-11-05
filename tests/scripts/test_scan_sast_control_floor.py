@@ -140,9 +140,7 @@ def test_unmerged_control_file_does_not_raise_the_control_floor(tmp_path: Path) 
     git(repo, "checkout", "-q", trunk)
     (repo / conflicted).write_text(original + "# trunk edit\n", encoding="utf-8")
     git(repo, "commit", "-qam", "trunk edit")
-    merge = subprocess.run(
-        ["git", "-C", str(repo), "merge", "side"], capture_output=True, text=True, check=False
-    )
+    merge = subprocess.run(["git", "-C", str(repo), "merge", "side"], capture_output=True, text=True, check=False)
     assert merge.returncode != 0, merge.stdout
     # Parseable source in the working tree; the index keeps all three conflict stages.
     git(repo, "checkout", "--ours", "--", conflicted)

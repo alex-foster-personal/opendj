@@ -94,6 +94,12 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
     'chunks/wqs.js',
     `export const q="Open every setting in the Settings overlay";${_pad(sizes['wave-quick-settings'] ?? 64, 5)}`,
   );
+  // ARTTHUMB-8728d: the /playlists card grid route, found by its heading title.
+  write('chunks/plgrid.js', `export const g="Every playlist as a card with its art";${_pad(sizes['playlists-grid'] ?? 64, 6)}`);
+  // SKINLAYOUT-8869: the three-panel library extras, found by their data-surface marker.
+  write('chunks/threepanel.js', `export const t="three-panel library layout";${_pad(sizes['three-panel-layout'] ?? 64, 7)}`);
+  // SKIN-8871B: the /practice/<device> replica route, found by its resolver's error text.
+  write('chunks/practice.js', `export const p="neither binds nor hints";${_pad(sizes['practice-replica'] ?? 64, 7)}`);
   write('chunks/error-template.js', 'export default()=>"err";');
 
   write('entry/start.AAAAAAAA.js', 'import"../chunks/shared.js";');
@@ -110,7 +116,7 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
   write('nodes/0.CCCCCCCC.js', 'import"../chunks/shared.js";import("../chunks/mount.js");import("../chunks/editor.js");'); // root layout
   write('nodes/1.CCCCCCCC.js', 'import"../chunks/shared.js";'); // error node
   write('nodes/2.CCCCCCCC.js', 'import"../chunks/lib.js";'); // route "/"
-  write('nodes/3.CCCCCCCC.js', 'import"../chunks/other.js";'); // route "/sets"
+  write('nodes/3.CCCCCCCC.js', 'import"../chunks/other.js";import("../chunks/plgrid.js");import("../chunks/practice.js");import("../chunks/threepanel.js");'); // route "/sets"
   write(`nodes/6.CCCCCCCC.js`, `import"../chunks/perf.js";import("../chunks/wqs.js");${extras.perfBody ?? ''}`); // "/performance"
 
   for (const [rel, body] of Object.entries(extras.files ?? {})) write(rel, body);
@@ -145,12 +151,21 @@ function _run(root, budgetsDir) {
 // plus 1 KiB). They were the bundle-budget.mjs limits on main 7837e09617, Tue 3 Nov 2026,
 // carried over unchanged; the dated raises behind them are in budgets/<surface>/HISTORY.md.
 const EXPECTED_BASE = {
-  library: 315392,
-  performance: 361472,
+  // Rebaselined Thu 5 Nov 2026 (preventive, main 20a77a0b3e, CI measured 324631 B, 99.4% of its ceiling): measured plus 2%, ceiled to KiB.
+  library: 331776,
+  // Rebaselined Thu 5 Nov 2026 (preventive, main 86084188b4, CI measured 399251 B, 98.7% of its ceiling): measured plus 2%, ceiled to KiB.
+  performance: 407552,
   'set-notes-editor': 81920,
   'ai-sidebar': 36864,
   'wave-quick-settings': 19456,
-  'other-lazy': 482304,
+  // ARTTHUMB-8728d (issue #8592): /playlists card grid, measured 1042 B Wed 4 Nov 2026, ceiled to KiB plus 1 KiB.
+  'playlists-grid': 3072,
+  // SKINLAYOUT-8869: Now Playing panel and Playing on strip, measured 15762 B Thu 5 Nov 2026 (with the shared chunks it reaches first), ceiled to KiB plus 1 KiB.
+  'three-panel-layout': 17408,
+  // SKIN-8871B: /practice/<device> replica route, measured 15986 B Thu 5 Nov 2026, ceiled to KiB plus 1 KiB.
+  'practice-replica': 17408,
+  // Rebaselined Thu 5 Nov 2026 (preventive, main 86084188b4, CI measured 485775 B, 97.2% of its ceiling): measured plus 2%, ceiled to KiB.
+  'other-lazy': 495616,
 };
 
 test('every base limit is pinned, and every surface on disk has a pin', () => {
@@ -160,16 +175,6 @@ test('every base limit is pinned, and every surface on disk has a pin', () => {
     EXPECTED_BASE,
     'a base moves only on a rebaseline, with this pin; growth is a charge file',
   );
-});
-
-test('other-lazy enforces base plus PR #8342 tempo curve charge (2048 of it)', () => {
-  const budget = loadBudgets().find((b) => b.name === 'other-lazy');
-  assert.ok(budget, 'other-lazy surface must exist under budgets/');
-  // Pins #8342's own charge, not the whole list: other PRs add their own
-  // charge files beside it (budgets/README.md), and the sum is checked below.
-  const tempo = budget.charges.find((c) => c.id === '8342');
-  assert.ok(tempo, 'Mon 2 Nov headroom and #7896 bytes live in base/HISTORY; #8342 growth is its own charge');
-  assert.equal(tempo.bytes, 2048, 'the tempo curve charge must not move without updating charges/8342.json');
 });
 
 test('every surface enforces base plus the sum of its charges, and every charge is well formed', () => {
@@ -287,7 +292,7 @@ test('a clean build passes and every emitted chunk is charged to a budget', () =
   const { code, out } = _run(_fixture());
   assert.equal(code, 0, out);
   assert.match(out, /all bundle budgets satisfied/);
-  assert.match(out, /coverage: 16 of 16 emitted JS files charged to a budget/);
+  assert.match(out, /coverage: 19 of 19 emitted JS files charged to a budget/);
 });
 
 test('dynamic imports are budget boundaries, so the shell does not pull every route into library', () => {
@@ -385,7 +390,7 @@ test('a URL-loaded AudioWorklet is charged to the surface whose code names it', 
     }),
   );
   assert.equal(clean.code, 0, clean.out);
-  assert.match(clean.out, /coverage: 17 of 17 emitted JS files charged to a budget/);
+  assert.match(clean.out, /coverage: 20 of 20 emitted JS files charged to a budget/);
 
   // The same worklet with nobody naming it must fail, so attribution is real
   // and not a blanket pass for anything sitting in assets/.
@@ -406,5 +411,152 @@ test('WAVEQS-8348d the quick-settings popover chunk is charged to its own wave-q
   const { code, out } = _run(_fixture({ sizes: { 'wave-quick-settings': _limitOf('wave-quick-settings') + 8000 } }));
   assert.equal(code, 1, `expected a non-zero exit\n${out}`);
   assert.match(out, /budget "wave-quick-settings" exceeded/);
+  assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
+});
+
+test('SKINLAYOUT-8869 the three-panel extras are charged to their own three-panel-layout bucket, not other-lazy', () => {
+  const { code, out } = _run(_fixture({ sizes: { 'three-panel-layout': _limitOf('three-panel-layout') + 8000 } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /budget "three-panel-layout" exceeded/);
+  assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
+});
+
+// ------------------------------------------- PR delta vs main (ADR-NEW-bundle-budget-pr-delta) ---
+
+function _runArgs(root, budgetsDir, extra) {
+  try {
+    const stdout = execFileSync('node', [GATE, '--root', root, '--budgets', budgetsDir, ...extra], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    return { code: 0, out: stdout };
+  } catch (error) {
+    return { code: error.status, out: `${error.stdout ?? ''}${error.stderr ?? ''}` };
+  }
+}
+
+function _measure(root, budgetsDir, sha) {
+  const file = join(mkdtempSync(join(tmpdir(), 'bundle-measure-')), 'measure.json');
+  const done = _runArgs(root, budgetsDir, ['--report-only', '--measure', file, '--sha', sha]);
+  assert.equal(done.code, 0, done.out);
+  return file;
+}
+
+test('--measure writes the measurement with its sha, and --report-only never fails on a ceiling', () => {
+  const build = _fixture({ sizes: { library: 25000 } });
+  const file = _measure(build, _budgets(), SHA);
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.sha, SHA);
+  assert.ok(written.totals.library.bytes > 20480, 'the fixture must be over its base to prove report-only');
+  // The same build without --report-only is the nightly reading: over the ceiling fails.
+  const nightly = _run(build, _budgets());
+  assert.equal(nightly.code, 1, nightly.out);
+  assert.match(nightly.out, /budget "library" exceeded/);
+});
+
+test('a PR is charged by its own delta: no growth passes even when main itself is over the ceiling', () => {
+  const main = _fixture({ sizes: { library: 25000 } });
+  const baseline = _measure(main, _budgets(), SHA);
+  const pr = _fixture({ sizes: { library: 25000 } });
+  const done = _runArgs(pr, _budgets(), ['--baseline', baseline, '--own', '9001,af--branch']);
+  assert.equal(done.code, 0, done.out);
+  assert.match(done.out, /library .* delta\s+0 .*\[ok\]/);
+  assert.match(done.out, /::warning title=bundle budget ceiling::"library"/);
+});
+
+test('a PR that grows a surface fails on its own delta without a charge, and passes with its own charge', () => {
+  const main = _fixture({ sizes: { library: 10000 } });
+  const baseline = _measure(main, _budgets(), SHA);
+  const pr = _fixture({ sizes: { library: 12500 } });
+  const bare = _runArgs(pr, _budgets(), ['--baseline', baseline, '--own', '9001']);
+  assert.equal(bare.code, 1, bare.out);
+  assert.match(bare.out, /budget "library" grows by \d+ bytes gzip over main .* allowance of 0 \(plus 128 B build noise\) \(no charge file of its own\)/);
+
+  const charged = _runArgs(
+    pr,
+    _budgets({ charges: { 'library/charges/9001.json': _charge({ measured_main: 10000, measured_with_pr: 12500 }) } }),
+    ['--baseline', baseline, '--own', '9001'],
+  );
+  assert.equal(charged.code, 0, charged.out);
+  assert.match(charged.out, /allowance\s+3000 \(9001\)\s+\[ok\]/);
+});
+
+test('a PR delta within the build-noise floor passes without a charge; past it, it fails', () => {
+  const main = _fixture({ sizes: { library: 10000 } });
+  const baseline = _measure(main, _budgets(), SHA);
+  const noise = _runArgs(_fixture({ sizes: { library: 10040 } }), _budgets(), ['--baseline', baseline, '--own', '9001']);
+  assert.equal(noise.code, 0, noise.out);
+  assert.match(noise.out, /library .* delta\s+\d+ .*\[ok\]/);
+  const real = _runArgs(_fixture({ sizes: { library: 10400 } }), _budgets(), ['--baseline', baseline, '--own', '9001']);
+  assert.equal(real.code, 1, real.out);
+  assert.match(real.out, /allowance of 0 \(plus 128 B build noise\) \(no charge file of its own\)/);
+});
+
+test("another PR's charge is not this PR's allowance", () => {
+  const main = _fixture({ sizes: { library: 10000 } });
+  const baseline = _measure(main, _budgets(), SHA);
+  const pr = _fixture({ sizes: { library: 12500 } });
+  const other = _runArgs(
+    pr,
+    _budgets({ charges: { 'library/charges/8002.json': _charge({ measured_main: 10000, measured_with_pr: 12500 }) } }),
+    ['--baseline', baseline, '--own', '9001'],
+  );
+  assert.equal(other.code, 1, other.out);
+  assert.match(other.out, /allowance of 0 \(plus 128 B build noise\) \(no charge file of its own\)/);
+});
+
+test('a surface the PR introduces has no baseline and is read against its own limit', () => {
+  const main = _fixture();
+  const baseline = _measure(main, _budgets(), SHA);
+  const withBudgets = _budgets({
+    extra: {},
+  });
+  // Remove the new surface from the baseline file to simulate main not knowing it yet.
+  const parsed = JSON.parse(readFileSync(baseline, 'utf8'));
+  delete parsed.totals['set-notes-editor'];
+  writeFileSync(baseline, JSON.stringify(parsed));
+  const ok = _runArgs(_fixture(), withBudgets, ['--baseline', baseline]);
+  assert.equal(ok.code, 0, ok.out);
+  assert.match(ok.out, /set-notes-editor: new surface, no baseline/);
+  const over = _runArgs(_fixture({ sizes: { 'set-notes-editor': 25000 } }), withBudgets, ['--baseline', baseline]);
+  assert.equal(over.code, 1, over.out);
+  assert.match(over.out, /new budget "set-notes-editor" exceeded/);
+});
+
+test('an unreadable or shapeless baseline fails loudly instead of reading as zero growth', () => {
+  const pr = _fixture();
+  const missing = _runArgs(pr, _budgets(), ['--baseline', join(tmpdir(), 'no-such-measurement.json')]);
+  assert.equal(missing.code, 1, missing.out);
+  assert.match(missing.out, /cannot read as JSON/);
+  const shapeless = join(mkdtempSync(join(tmpdir(), 'bundle-measure-')), 'bad.json');
+  writeFileSync(shapeless, JSON.stringify({ sha: SHA }));
+  const bad = _runArgs(pr, _budgets(), ['--baseline', shapeless]);
+  assert.equal(bad.code, 1, bad.out);
+  assert.match(bad.out, /no "totals" object/);
+  const conflicting = _runArgs(pr, _budgets(), ['--baseline', shapeless, '--report-only']);
+  assert.equal(conflicting.code, 1, conflicting.out);
+  assert.match(conflicting.out, /different readings/);
+});
+
+test('coverage still fails in delta mode: an unreached chunk is never excused by a zero delta', () => {
+  const main = _fixture();
+  const baseline = _measure(main, _budgets(), SHA);
+  const pr = _fixture({ extras: { files: { 'chunks/orphan.js': 'export const z=1;' } } });
+  const done = _runArgs(pr, _budgets(), ['--baseline', baseline]);
+  assert.equal(done.code, 1, done.out);
+  assert.match(done.out, /belong to no budget/);
+});
+
+test('ARTTHUMB-8728d the /playlists card grid is charged to its own playlists-grid bucket, not other-lazy', () => {
+  const { code, out } = _run(_fixture({ sizes: { 'playlists-grid': _limitOf('playlists-grid') + 8000 } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /budget "playlists-grid" exceeded/);
+  assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
+});
+
+test('SKIN-8871B the /practice replica is charged to its own practice-replica bucket, not other-lazy', () => {
+  const { code, out } = _run(_fixture({ sizes: { 'practice-replica': _limitOf('practice-replica') + 8000 } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /budget "practice-replica" exceeded/);
   assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
 });

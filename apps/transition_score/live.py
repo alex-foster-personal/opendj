@@ -37,11 +37,11 @@ from typing import Any
 from apps.autodj.choose import STYLE_CAP, VARIETY_WINDOW, choose_for_set
 from apps.autodj.choose import Candidate as ChooserCandidate
 from apps.autodj.compile import compile_plan
-from apps.autodj.live import ANCHOR_LEAD_BARS, lead_short, live_bar, with_in_track
+from apps.autodj.live import ANCHOR_LEAD_BARS, heard_on_deck, lead_short, live_bar, with_in_track
 from apps.autodj.pair_memory import PairTransition, on_decks
 from apps.autodj.plan import PlanError, TransitionPlan, live_mapping, parse_plan, validate_plan
-from apps.autodj.profile import TrackProfile, match_trim_db
-from apps.autodj.propose import _outgoing_trim_db, parse_intent, propose_transition
+from apps.autodj.profile import TrackProfile
+from apps.autodj.propose import match_live_trim_db, parse_intent, propose_transition
 from apps.transition_score.contract import Candidate
 from apps.transition_score.tryer import PairNotTryable, TrackSource, TryError, renderable_plans, try_plans
 
@@ -112,6 +112,14 @@ class PrepareKey:
     out_deck: int
     in_deck: int
     intent: str
+    #: AUTOPLAY-8868d: how the decks are heard (applied key shifts, the master's pitch). A score made at one heard key or
+    #: tempo is another pair's score once the master is reshifted or repitched mid-play, so it is part of the key.
+    out_key_shift: int = 0
+    out_pitch: float = 1.0
+    in_key_shift: int = 0
+    #: AUTOPLAY-8870c: the follower deck's pitch range sets the Beat Sync fold, so plans prepared at one range are another
+    #: pair's plans after a range change. 0.0 when the deck reports none (the planner's 6% default).
+    in_pitch_range: float = 0.0
 
 
 @dataclass
@@ -234,6 +242,15 @@ def _reason(style: str, bars: int, score: float | None, intent: str, recent: Seq
     return f"intent {intent}: {style} over {bars} bars, {measured}, {len(recent[-VARIETY_WINDOW:])} recent styles, cap {STYLE_CAP}"
 
 
+def _heard_pair(source: TrackSource, key: PrepareKey, read: Mapping[str, Any]) -> tuple[TrackProfile, TrackProfile]:
+    """AUTOPLAY-HEARD: the pair as the decks play it: the master at its applied key shift and pitch, the incoming
+    track at the key shift it was loaded with. A pair is never judged on a key its deck is not playing."""
+    return (
+        heard_on_deck(source.profile(key.out_id), _deck(read, key.out_deck), with_tempo=True),
+        heard_on_deck(source.profile(key.in_id), _deck(read, key.in_deck), with_tempo=False),
+    )
+
+
 def _key(request: LiveRequest, mirror: Mapping[str, Any]) -> PrepareKey:
     return PrepareKey(
         _track(mirror, request.out_deck),
@@ -241,7 +258,27 @@ def _key(request: LiveRequest, mirror: Mapping[str, Any]) -> PrepareKey:
         request.out_deck,
         request.in_deck,
         parse_intent(request.intent),
+        _deck_key_shift(mirror, request.out_deck),
+        _deck_pitch(mirror, request.out_deck),
+        _deck_key_shift(mirror, request.in_deck),
+        _deck_pitch_range(mirror, request.in_deck),
     )
+
+
+def _deck_key_shift(mirror: Mapping[str, Any], deck: int) -> int:
+    key_sync = _deck(mirror, deck).get("key_sync")
+    shift = key_sync.get("shift_semitones") if isinstance(key_sync, Mapping) else None
+    return shift if isinstance(shift, int) and not isinstance(shift, bool) else 0
+
+
+def _deck_pitch_range(mirror: Mapping[str, Any], deck: int) -> float:
+    pitch_range = _deck(mirror, deck).get("pitch_range")
+    return float(pitch_range) if isinstance(pitch_range, (int, float)) and pitch_range > 0 else 0.0
+
+
+def _deck_pitch(mirror: Mapping[str, Any], deck: int) -> float:
+    pitch = _deck(mirror, deck).get("pitch")
+    return float(pitch) if isinstance(pitch, (int, float)) and pitch > 0 else 1.0
 
 
 def _playing_out(mirror: Mapping[str, Any], out_deck: int) -> Mapping[str, Any]:
@@ -315,7 +352,7 @@ def prepare_live(
         if _key(request, read) != key:
             cache.finish(key, "failed", "a deck changed track before the prepare started")
             return
-        out_profile, in_profile = source.profile(key.out_id), source.profile(key.in_id)
+        out_profile, in_profile = _heard_pair(source, key, read)
         bar_now = _bar_now(out_profile, read, request.out_deck)
         live = with_in_track(read, request.in_deck, key.in_id, in_profile.bpm)
         min_out_bar = bar_now + ANCHOR_LEAD_BARS + PLANNING_LEAD_BARS
@@ -382,14 +419,18 @@ def _pick(
 
 
 def _live_trim(
-    plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, mirror: Mapping[str, Any], out_deck: int
+    plan: TransitionPlan,
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    mirror: Mapping[str, Any],
+    out_deck: int,
+    in_deck: int,
 ) -> TransitionPlan:
     """A scored plan with its loudness match redone on the live outgoing trim: it was matched when the prepare ran."""
-    out_trim_db, note = _outgoing_trim_db(mirror, out_deck)
-    trim_db, trim_reason = match_trim_db(out_profile, in_profile, out_trim_db)
+    trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, mirror, out_deck, in_deck)
     document = plan.to_json()
     document["in"]["trim_db"] = trim_db
-    document["in"]["trim_reason"] = f"{trim_reason}; {note}" if note and trim_db is not None else trim_reason
+    document["in"]["trim_reason"] = trim_reason
     return parse_plan(document)
 
 
@@ -458,7 +499,7 @@ def plan_live(
         )
     key = _key(request, read)
     try:
-        out_profile, in_profile = source.profile(key.out_id), source.profile(key.in_id)
+        out_profile, in_profile = _heard_pair(source, key, read)
     except (PairNotTryable, TryError) as error:
         _log.warning("live plan: no pick for %s -> %s: %s", key.out_id, key.in_id, error)
         return LiveAnswer(None, str(error), intent)
@@ -489,7 +530,7 @@ def plan_live(
     pick, dropped = _pick(pool, plans, request, validate)
     if pick is not None:
         chosen = by_id[pick.cid]
-        plan = _live_trim(plans[pick.cid], out_profile, in_profile, read, request.out_deck)
+        plan = _live_trim(plans[pick.cid], out_profile, in_profile, read, request.out_deck, request.in_deck)
         order = compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
         reason = _reason(plan.style, plan.bars, chosen.score, intent, request.recent_styles)
         ms = round((time.perf_counter() - started) * 1000.0, 1)

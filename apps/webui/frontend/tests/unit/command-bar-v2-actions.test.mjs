@@ -143,7 +143,9 @@ test('CMDK-12: "gothic" offers the skin setting and Enter switches to Gothic, us
 	// Already Gothic: Enter moves on rather than writing the same value again.
 	assert.equal(actions.settingNextValue(skin.def, 'mono-dev', ['gothic']), 'light');
 	// No option named: the next one in order, wrapping.
-	assert.equal(actions.enumTarget(skin.def, 'light', ['skin']), 'default');
+	assert.equal(actions.enumTarget(skin.def, 'light', ['skin']), 'green-room');
+	assert.equal(actions.enumTarget(skin.def, 'green-room', ['skin']), 'practice-ddj-flx4');
+	assert.equal(actions.enumTarget(skin.def, 'practice-ddj-flx4', ['skin']), 'default');
 	assert.throws(() => actions.enumTarget({ ...def, control: { kind: 'boolean' } }, true, []), /not an enum/);
 });
 
@@ -942,7 +944,7 @@ test('CMDK-12: an enum value that is not one of its options is named and refused
 	assert.equal(actions.settingValueLabel(def, 'retired-skin'), 'retired-skin (not an option)');
 	assert.equal(actions.settingVerb(def, 'retired-skin', []), 'Not one of its options; fix it in Settings');
 	// Control: a known value still steps to the next option.
-	assert.equal(actions.enumTarget(def, 'light', []), 'default');
+	assert.equal(actions.enumTarget(def, 'practice-ddj-flx4', []), 'default');
 	// Enter's refusal reaches the bar's error line, not an uncaught throw.
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
 	const body = bar.slice(bar.indexOf('async function runAction'), bar.indexOf('const command = action.command;'));

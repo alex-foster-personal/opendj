@@ -9,6 +9,7 @@ Usage:
     python scripts/build-spec-site.py           # strict build
     python scripts/build-spec-site.py --serve   # live reload on localhost:8000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,10 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if shutil.which("mkdocs") is None:
-        sys.stderr.write(
-            "mkdocs not found on PATH. Install with:\n"
-            "    pip install -r requirements-docs.txt\n"
-        )
+        sys.stderr.write("mkdocs not found on PATH. Install with:\n    pip install -r requirements-docs.txt\n")
         return 2
 
     cmd = ["mkdocs", "serve"] if args.serve else ["mkdocs", "build", "--strict"]

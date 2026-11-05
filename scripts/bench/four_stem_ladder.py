@@ -45,6 +45,7 @@ Run:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,14 +79,34 @@ STEMS: tuple[str, ...] = ("vocals", "drums", "bass", "other")
 # cheap-lever arms below are here to open the range: they are real separator
 # outputs, several dB down, and both are shipping engines rather than strawmen.
 DEMUCS_ARMS: tuple[dict[str, Any], ...] = (
-    {"id": "hdemucs_mmi-ov0", "model": "hdemucs_mmi", "overlap": 0.0,
-     "sep_rate": 44100, "params": "hdemucs_mmi, overlap 0, 44.1 kHz"},
-    {"id": "hdemucs_mmi-ov25", "model": "hdemucs_mmi", "overlap": 0.25,
-     "sep_rate": 44100, "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz"},
-    {"id": "htdemucs-ov25", "model": "htdemucs", "overlap": 0.25,
-     "sep_rate": 44100, "params": "htdemucs, overlap 0.25, 44.1 kHz"},
-    {"id": "htdemucs-ov0-22k", "model": "htdemucs", "overlap": 0.0,
-     "sep_rate": 22050, "params": "htdemucs, overlap 0, separated at 22.05 kHz"},
+    {
+        "id": "hdemucs_mmi-ov0",
+        "model": "hdemucs_mmi",
+        "overlap": 0.0,
+        "sep_rate": 44100,
+        "params": "hdemucs_mmi, overlap 0, 44.1 kHz",
+    },
+    {
+        "id": "hdemucs_mmi-ov25",
+        "model": "hdemucs_mmi",
+        "overlap": 0.25,
+        "sep_rate": 44100,
+        "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz",
+    },
+    {
+        "id": "htdemucs-ov25",
+        "model": "htdemucs",
+        "overlap": 0.25,
+        "sep_rate": 44100,
+        "params": "htdemucs, overlap 0.25, 44.1 kHz",
+    },
+    {
+        "id": "htdemucs-ov0-22k",
+        "model": "htdemucs",
+        "overlap": 0.0,
+        "sep_rate": 22050,
+        "params": "htdemucs, overlap 0, separated at 22.05 kHz",
+    },
 )
 RB7_ARM: dict[str, Any] = {
     "id": "rb7-stems",
@@ -116,19 +137,19 @@ def _mono(x: torch.Tensor) -> np.ndarray:
     return x.mean(dim=0).to(torch.float64).numpy()
 
 
-#----- separators -------------------------------------------------------------
+# ----- separators -------------------------------------------------------------
 
 
 def _resample(x: torch.Tensor, src: int, dst: int) -> torch.Tensor:
     if src == dst:
         return x
     g = np.gcd(src, dst)
-    return torch.from_numpy(
-        resample_poly(x.numpy(), dst // g, src // g, axis=-1).astype(np.float32))
+    return torch.from_numpy(resample_poly(x.numpy(), dst // g, src // g, axis=-1).astype(np.float32))
 
 
-def run_demucs_arm(model_name: str, mix: torch.Tensor, sr: int, *, overlap: float,
-                   sep_rate: int) -> tuple[dict[str, torch.Tensor], float]:
+def run_demucs_arm(
+    model_name: str, mix: torch.Tensor, sr: int, *, overlap: float, sep_rate: int
+) -> tuple[dict[str, torch.Tensor], float]:
     """Return {stem: (2, samples)} at the INPUT rate, plus inference seconds.
 
     A reduced sep_rate resamples down, separates, and resamples back up, and the
@@ -144,20 +165,18 @@ def run_demucs_arm(model_name: str, mix: torch.Tensor, sr: int, *, overlap: floa
     t0 = time.perf_counter()
     work = _resample(mix, sr, sep_rate)
     with torch.no_grad():
-        out = apply_model(model, work.unsqueeze(0), overlap=overlap, shifts=0,
-                          split=True, progress=False, device="cpu", num_workers=0)[0]
-    stems = {s: _resample(out[model.sources.index(s)], sep_rate, sr)[..., :n_in]
-             for s in STEMS}
+        out = apply_model(
+            model, work.unsqueeze(0), overlap=overlap, shifts=0, split=True, progress=False, device="cpu", num_workers=0
+        )[0]
+    stems = {s: _resample(out[model.sources.index(s)], sep_rate, sr)[..., :n_in] for s in STEMS}
     infer_s = time.perf_counter() - t0
 
     if out.shape[0] != len(model.sources):
-        raise RuntimeError(f"{model_name} returned {out.shape[0]} sources, expected "
-                           f"{len(model.sources)}")
+        raise RuntimeError(f"{model_name} returned {out.shape[0]} sources, expected {len(model.sources)}")
     return stems, infer_s
 
 
-def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path
-                ) -> tuple[dict[str, torch.Tensor], float]:
+def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path) -> tuple[dict[str, torch.Tensor], float]:
     """A user-supplied Spleeter 4stems SavedModel, out of process.
 
     Spleeter needs tensorflow and demucs needs torch; resolving both into one
@@ -169,11 +188,29 @@ def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path
         raise RuntimeError(f"Spleeter SavedModel not found (no saved_model.pb): {model_dir}")
     work_dir.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
-        [_require_uv(), "run", "--python", "3.11", "--no-project",
-         str(_HERE / "rekordbox6_spleeter.py"), "--input", str(mixture_wav),
-         "--out-dir", str(work_dir), "--sep-rate", "44100", "--label", "rb6-spleeter",
-         "--model", str(model_dir)],
-        capture_output=True, text=True, cwd=str(_HERE), check=False)
+        [
+            _require_uv(),
+            "run",
+            "--python",
+            "3.11",
+            "--no-project",
+            str(_HERE / "rekordbox6_spleeter.py"),
+            "--input",
+            str(mixture_wav),
+            "--out-dir",
+            str(work_dir),
+            "--sep-rate",
+            "44100",
+            "--label",
+            "rb6-spleeter",
+            "--model",
+            str(model_dir),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(_HERE),
+        check=False,
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"rekordbox6_spleeter.py failed:\n{proc.stderr[-3000:]}")
     report = json.loads(proc.stdout.strip().splitlines()[-1])
@@ -189,14 +226,14 @@ def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path
 
 def _require_uv() -> str:
     import shutil
+
     path = shutil.which("uv")
     if not path:
         raise RuntimeError("uv is not on PATH, cannot run the out-of-process arms")
     return path
 
 
-def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int
-                ) -> tuple[dict[str, torch.Tensor], float, float]:
+def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int) -> tuple[dict[str, torch.Tensor], float, float]:
     """A user-supplied ONNX 4-stem graph, via rekordbox_stems so the convention has
     exactly one implementation."""
     import onnxruntime as ort
@@ -219,9 +256,7 @@ def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int
     resid = (stems.sum(dim=0) - mix).abs().mean().item()
     scale = mix.abs().mean().item()
     if resid > 0.15 * scale:
-        raise RuntimeError(
-            f"ONNX stems do not sum to the mixture: {resid / scale:.1%} residual, "
-            "convention is wrong")
+        raise RuntimeError(f"ONNX stems do not sum to the mixture: {resid / scale:.1%} residual, convention is wrong")
     order = rekordbox_stems.SOURCES
     return {s: stems[order.index(s)] for s in STEMS}, infer_s, rekordbox_stems.OVERLAP
 
@@ -233,9 +268,7 @@ def _load_truth_stems(window_dir: Path, mix: torch.Tensor, sr: int) -> dict[str,
         if stem_sr != sr:
             raise RuntimeError(f"true {stem} is {stem_sr} Hz, mixture is {sr} Hz")
         if stem_audio.shape[-1] != mix.shape[-1]:
-            raise RuntimeError(
-                f"true {stem} is {stem_audio.shape[-1]} samples, mixture is {mix.shape[-1]}"
-            )
+            raise RuntimeError(f"true {stem} is {stem_audio.shape[-1]} samples, mixture is {mix.shape[-1]}")
         truth[stem] = stem_audio
     return truth
 
@@ -261,31 +294,47 @@ def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any
     for spec in DEMUCS_ARMS:
         print(f"[run] {spec['id']}", flush=True)
         stems, infer_s = run_demucs_arm(
-            spec["model"], mix, sr, overlap=spec["overlap"], sep_rate=spec["sep_rate"],
+            spec["model"],
+            mix,
+            sr,
+            overlap=spec["overlap"],
+            sep_rate=spec["sep_rate"],
         )
         arms.append({**spec, "engine": "demucs", "infer_s": round(infer_s, 2), "_audio": stems})
     if args.with_rb7:
         print(f"[run] {RB7_ARM['id']}", flush=True)
         stems, infer_s, overlap = run_rb7_arm(args.rb7_model, mix, sr)
-        arms.append({
-            **RB7_ARM, "engine": "user-supplied-onnx", "model": args.rb7_model.name,
-            "model_sha256": _model_sha256(args.rb7_model),
-            "overlap": overlap, "sep_rate": sr,
-            "infer_s": round(infer_s, 2), "_audio": stems,
-        })
+        arms.append(
+            {
+                **RB7_ARM,
+                "engine": "user-supplied-onnx",
+                "model": args.rb7_model.name,
+                "model_sha256": _model_sha256(args.rb7_model),
+                "overlap": overlap,
+                "sep_rate": sr,
+                "infer_s": round(infer_s, 2),
+                "_audio": stems,
+            }
+        )
     if args.with_rb6:
         print(f"[run] {RB6_ARM['id']}", flush=True)
-        stems, infer_s = run_rb6_arm(
-            args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr, args.rb6_model)
-        arms.append({
-            **RB6_ARM, "engine": "user-supplied-spleeter", "model": args.rb6_model.name,
-            "model_sha256": _model_sha256(args.rb6_model),
-            "overlap": 0.0, "sep_rate": sr, "infer_s": round(infer_s, 2), "_audio": stems,
-        })
+        stems, infer_s = run_rb6_arm(args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr, args.rb6_model)
+        arms.append(
+            {
+                **RB6_ARM,
+                "engine": "user-supplied-spleeter",
+                "model": args.rb6_model.name,
+                "model_sha256": _model_sha256(args.rb6_model),
+                "overlap": 0.0,
+                "sep_rate": sr,
+                "infer_s": round(infer_s, 2),
+                "_audio": stems,
+            }
+        )
     return arms
 
 
-#----- main -------------------------------------------------------------------
+# ----- main -------------------------------------------------------------------
 
 
 def _resolve_optional_arm_models(ap: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -306,20 +355,28 @@ def _resolve_optional_arm_models(ap: argparse.ArgumentParser, args: argparse.Nam
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--window-dir", required=True, type=Path,
-                    help="dir holding mixture.wav plus one wav per true stem")
+    ap.add_argument("--window-dir", required=True, type=Path, help="dir holding mixture.wav plus one wav per true stem")
     ap.add_argument("--out-dir", required=True, type=Path)
-    ap.add_argument("--with-rb7", action="store_true",
-                    help="also run the optional ONNX comparison arm; needs --rb7-model "
-                         "or the RB7_ONNX_MODEL env var")
-    ap.add_argument("--rb7-model", type=Path, default=None,
-                    help="path to a user-supplied ONNX 4-stem model (env: RB7_ONNX_MODEL)")
-    ap.add_argument("--with-rb6", action="store_true",
-                    help="also run the optional Spleeter comparison arm, out of process; needs "
-                         "--rb6-model or the RB6_SPLEETER_MODEL env var")
-    ap.add_argument("--rb6-model", type=Path, default=None,
-                    help="path to a user-supplied Spleeter 4stems SavedModel directory "
-                         "(env: RB6_SPLEETER_MODEL)")
+    ap.add_argument(
+        "--with-rb7",
+        action="store_true",
+        help="also run the optional ONNX comparison arm; needs --rb7-model or the RB7_ONNX_MODEL env var",
+    )
+    ap.add_argument(
+        "--rb7-model", type=Path, default=None, help="path to a user-supplied ONNX 4-stem model (env: RB7_ONNX_MODEL)"
+    )
+    ap.add_argument(
+        "--with-rb6",
+        action="store_true",
+        help="also run the optional Spleeter comparison arm, out of process; needs "
+        "--rb6-model or the RB6_SPLEETER_MODEL env var",
+    )
+    ap.add_argument(
+        "--rb6-model",
+        type=Path,
+        default=None,
+        help="path to a user-supplied Spleeter 4stems SavedModel directory (env: RB6_SPLEETER_MODEL)",
+    )
     ap.add_argument("--json-out", required=True, type=Path)
     ap.add_argument("--track", required=True)
     ap.add_argument("--genre", required=True)
@@ -350,16 +407,13 @@ def main() -> None:
         for stem in STEMS:
             est = audio[stem]
             if est.shape[-1] != mix.shape[-1]:
-                raise RuntimeError(f"{arm['id']} {stem} is {est.shape[-1]} samples, "
-                                   f"mixture is {mix.shape[-1]}")
+                raise RuntimeError(f"{arm['id']} {stem} is {est.shape[-1]} samples, mixture is {mix.shape[-1]}")
             sf.write(str(args.out_dir / f"{arm['id']}-{stem}.wav"), est.T.numpy(), sr)
             scores[stem] = _si_sdr_db(truth_mono[stem], _mono(est))
         missing = [s for s in STEMS if s not in scores]
         if missing:
             raise RuntimeError(f"{arm['id']} has no score for {missing}")
-        results.append({**arm,
-                        "s_per_stem_minute": round(arm["infer_s"] / (duration_s / 60), 2),
-                        "si_sdr": scores})
+        results.append({**arm, "s_per_stem_minute": round(arm["infer_s"] / (duration_s / 60), 2), "si_sdr": scores})
 
     payload = {
         "track": args.track,

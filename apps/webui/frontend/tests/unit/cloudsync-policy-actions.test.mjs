@@ -83,7 +83,12 @@ after(() => {
 
 test('picking unset on a stored cell sends DELETE for exactly that cell', async () => {
 	stubFetch(() => json(200, outcome()));
-	const stored = { machine_id: 'm 1', asset_kind: 'stem_bundle', mode: 'pinned', cache_budget_mb: null };
+	const stored = {
+		machine_id: 'm 1',
+		asset_kind: 'stem_bundle',
+		mode: 'pinned',
+		cache_budget_mb: null
+	};
 	const decision = view.policyModeChange('m 1', 'stem_bundle', stored, 'unset');
 	const result = await view.commitPolicyDecision(decision);
 
@@ -232,7 +237,10 @@ test('each documented grant refusal maps to a plain sentence', () => {
 		assert.match(msg, sentence, code);
 		assert.doesNotMatch(msg, new RegExp(code), `${code} must not leak as a raw code`);
 	}
-	assert.match(view.grantErrorSentence(new Error('boom')), /Could not create the enrollment grant: boom/);
+	assert.match(
+		view.grantErrorSentence(new Error('boom')),
+		/Could not create the enrollment grant: boom/
+	);
 });
 
 test('the enroll hint matches the real CLI flags', () => {

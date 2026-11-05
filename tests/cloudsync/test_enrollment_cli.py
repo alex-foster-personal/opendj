@@ -1,6 +1,6 @@
 """The dev path's CLI, and the proof it cannot diverge from the HTTP twin.
 
-Contract: ``specs/design_decision_12.md`` section C. the maintainer asked for one
+Contract: ``(private path)`` section C. the maintainer asked for one
 formalized method for adding a machine, with the in-app path landing on the
 same mechanism. The load-bearing test here is
 :func:`test_cli_and_http_enrollment_write_identical_rows`, which compares the
@@ -18,6 +18,7 @@ Regression one-liners:
   - if an empty stdin grant enrolls anything then broken
   - if `fleet --json` omits a count, or misses an unowned machine, then broken
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,9 +84,7 @@ def test_cli_and_http_enrollment_write_identical_rows(
     fails here.
     """
     cli_token = mint_grant(enroll_hub_dir)
-    assert maintenance.main(
-        _enroll_argv(enroll_spoke_dir, name="via-cli", token=cli_token)
-    ) == 0
+    assert maintenance.main(_enroll_argv(enroll_spoke_dir, name="via-cli", token=cli_token)) == 0
     capsys.readouterr()
 
     http_enroll(
@@ -96,15 +95,11 @@ def test_cli_and_http_enrollment_write_identical_rows(
     )
 
     owners = {row["machine_id"]: row for row in owner_rows(enroll_hub_dir)}
-    machines = {
-        row["machine_id"]: row for row in read_hub(enroll_hub_dir, "machines")
-    }
+    machines = {row["machine_id"]: row for row in read_hub(enroll_hub_dir, "machines")}
     cli_id = machine_identity.get_or_create_machine_id(enroll_spoke_dir)
     http_id = machine_identity.get_or_create_machine_id(enroll_other_spoke_dir)
 
-    assert set(owners) == {cli_id, http_id}, (
-        "both entry points must have produced an owner row"
-    )
+    assert set(owners) == {cli_id, http_id}, "both entry points must have produced an owner row"
     assert masked_owner(owners[cli_id]) == masked_owner(owners[http_id])
     assert masked_machine(machines[cli_id]) == masked_machine(machines[http_id])
     assert owners[cli_id]["enrolled_via"] == "grant"
@@ -116,9 +111,7 @@ def test_the_cli_reports_the_second_run_as_already_enrolled(
     enroll_spoke_dir: Path,
     capsys: pytest.CaptureFixture[str],
 ):
-    argv = _enroll_argv(
-        enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    argv = _enroll_argv(enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     maintenance.main(argv)
     first = capsys.readouterr().out
     maintenance.main(argv)
@@ -126,8 +119,7 @@ def test_the_cli_reports_the_second_run_as_already_enrolled(
 
     assert "enrolled" in first
     assert "already enrolled" in second, (
-        "a no-op must SAY it was a no-op; printing the success line twice "
-        "hides a duplicate from an operator"
+        "a no-op must SAY it was a no-op; printing the success line twice hides a duplicate from an operator"
     )
     assert len(owner_rows(enroll_hub_dir)) == 1
 
@@ -143,25 +135,17 @@ def test_every_registered_subcommand_has_a_handler():
     be discoverable only by an operator hitting the AssertionError.
     """
     parser = maintenance._parser()
-    subparsers = [
-        action
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
+    subparsers = [action for action in parser._actions if isinstance(action, argparse._SubParsersAction)]
     assert len(subparsers) == 1, "the control: there IS a subparser to read"
     registered = set(subparsers[0].choices)
     assert registered, "the control: it registered at least one subcommand"
-    assert registered == (
-        set(maintenance.PRINTING_COMMANDS) | maintenance.EXIT_CODE_COMMANDS
-    )
+    assert registered == (set(maintenance.PRINTING_COMMANDS) | maintenance.EXIT_CODE_COMMANDS)
     assert {"enroll", "grant", "fleet"} <= registered
 
 
 def test_enroll_with_no_credential_exits_nonzero(enroll_spoke_dir: Path):
     with pytest.raises(SystemExit) as excinfo:
-        maintenance.main(
-            ["enroll", "--data-dir", str(enroll_spoke_dir), "--hub", "http://hub.invalid"]
-        )
+        maintenance.main(["enroll", "--data-dir", str(enroll_spoke_dir), "--hub", "http://hub.invalid"])
     assert excinfo.value.code != 0
 
 
@@ -179,10 +163,7 @@ def test_a_minted_grant_is_always_a_safe_cli_argument(enroll_hub_dir: Path):
     env var and a URL component by construction rather than usually.
     """
     tokens = [mint_grant(enroll_hub_dir) for _ in range(64)]
-    assert all(
-        token.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX)
-        for token in tokens
-    )
+    assert all(token.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX) for token in tokens)
     assert not any(token.startswith("-") for token in tokens)
 
 
@@ -195,9 +176,7 @@ def test_argparse_really_does_reject_a_hyphen_leading_grant(enroll_spoke_dir: Pa
     happens to start with a hyphen.
     """
     with pytest.raises(SystemExit) as excinfo:
-        maintenance.main(
-            _enroll_argv(enroll_spoke_dir, name="x", token="-leading-hyphen-token")
-        )
+        maintenance.main(_enroll_argv(enroll_spoke_dir, name="x", token="-leading-hyphen-token"))
     assert excinfo.value.code != 0
 
 
@@ -235,15 +214,13 @@ def test_the_grant_can_be_read_from_stdin_instead_of_argv(
     assert "enrolled" in capsys.readouterr().out
     rows = owner_rows(enroll_hub_dir)
     assert len(rows) == 1
-    assert rows[0]["machine_id"] == machine_identity.get_or_create_machine_id(
-        enroll_spoke_dir
-    )
+    assert rows[0]["machine_id"] == machine_identity.get_or_create_machine_id(enroll_spoke_dir)
     # What the process really saw, not the list this test built three lines
     # up: that list holds --grant-file and -, so a scan of it could never
     # fail and said nothing about /proc (Claude review, PR #1648 P3).
-    assert not any(
-        arg.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX) for arg in sys.argv
-    ), "the token must not be in this process's argument vector"
+    assert not any(arg.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX) for arg in sys.argv), (
+        "the token must not be in this process's argument vector"
+    )
     assert token.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX), (
         "control: the token really does carry the prefix being scanned for, "
         "so an absent match is a token that stayed off the argv rather than "
@@ -318,9 +295,7 @@ def test_the_cli_fleet_readout_counts_unowned_machines(
     assert maintenance.main(["fleet", "--data-dir", str(enroll_hub_dir), "--json"]) == 0
     printed = json.loads(capsys.readouterr().out)
 
-    assert printed["unowned"] == 2, (
-        "the hub itself and the machine that only said hello are both unowned"
-    )
+    assert printed["unowned"] == 2, "the hub itself and the machine that only said hello are both unowned"
     assert printed["owned"] == 0
     assert printed["foreign"] == 0
     assert printed["hub_machine_id"] == hub_machine_id(enroll_hub_dir)
@@ -334,9 +309,7 @@ def test_the_fleet_readout_counts_an_enrolled_machine_as_owned(
     capsys: pytest.CaptureFixture[str],
 ):
     """The control for the count above: the numbers have to MOVE."""
-    http_enroll(
-        enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir)
-    )
+    http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=mint_grant(enroll_hub_dir))
     maintenance.main(["fleet", "--data-dir", str(enroll_hub_dir), "--json"])
     printed = json.loads(capsys.readouterr().out)
     assert printed["owned"] == 1
@@ -368,9 +341,7 @@ def test_the_cli_enrolls_end_to_end_over_a_real_socket(
     unreachable URL must fail, or this test would pass without the server
     doing anything.
     """
-    assert isinstance(
-        maintenance_enroll._transport_for(enroll_live_hub), HttpTransport
-    ), (
+    assert isinstance(maintenance_enroll._transport_for(enroll_live_hub), HttpTransport), (
         "control: this test must drive the REAL transport factory, so it "
         "fails loudly if a fixture ever patches it out from under us. "
         "Asserted by calling the factory and typing what comes back: an "
@@ -439,6 +410,4 @@ def test_the_cli_reports_a_hub_it_cannot_reach(
     ]
     with pytest.raises(client.SyncTransportError, match=str(dead_port)):
         maintenance.main(argv)
-    assert not owner_rows(enroll_hub_dir), (
-        "and it must not have written an owner row on the way past"
-    )
+    assert not owner_rows(enroll_hub_dir), "and it must not have written an owner row on the way past"

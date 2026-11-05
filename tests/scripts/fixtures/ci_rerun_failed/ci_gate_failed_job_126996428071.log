@@ -1,0 +1,48 @@
+2026-11-05T01:53:44.3069843Z ##[group]Run python3 -m scripts.ci_required_gate verdict
+2026-11-05T01:53:44.3070325Z [36;1mpython3 -m scripts.ci_required_gate verdict[0m
+2026-11-05T01:53:44.3083878Z shell: /usr/bin/bash -e {0}
+2026-11-05T01:53:44.3084164Z env:
+2026-11-05T01:53:44.3084551Z   CI_ARTIFACT_R2_ACCOUNT_ID: ***
+2026-11-05T01:53:44.3084929Z   CI_ARTIFACT_R2_ACCESS_KEY_ID: ***
+2026-11-05T01:53:44.3085458Z   CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ***
+2026-11-05T01:53:44.3085802Z   CI_ARTIFACT_R2_BUCKET: mdt-gha-artifact-archive
+2026-11-05T01:53:44.3086157Z   PYTHONDONTWRITEBYTECODE: 1
+2026-11-05T01:53:44.3086452Z   MDT_ALLOW_MISSING_USB_STICK: 1
+2026-11-05T01:53:44.3088339Z   NEEDS_JSON: {
+  "scope": {
+    "result": "success",
+    "outputs": {
+      "in_scope": "true",
+      "skip_jobs": "contracts,frontend,quality",
+      "pr_selection": "affected",
+      "bundle_declarations": "{\"bundle\":false}",
+      "ledger_ref": "debcd628e1481658706022857ea0808443ab8513",
+      "shards": "[1,2]"
+    }
+  },
+  "test": {
+    "result": "failure",
+    "outputs": {}
+  },
+  "frontend-build": {
+    "result": "success",
+    "outputs": {}
+  },
+  "frontend": {
+    "result": "skipped",
+    "outputs": {}
+  },
+  "import-contracts": {
+    "result": "success",
+    "outputs": {}
+  }
+}
+2026-11-05T01:53:44.3090953Z ##[endgroup]
+2026-11-05T01:53:44.3496805Z scope: result=success in_scope=true skip_jobs=contracts,frontend,quality
+2026-11-05T01:53:44.3498319Z ok   frontend: skipped (by the scope decision)
+2026-11-05T01:53:44.3499149Z ok   frontend-build: success
+2026-11-05T01:53:44.3499813Z ok   import-contracts: success
+2026-11-05T01:53:44.3500728Z FAIL test: failure (in scope, so it must succeed)
+2026-11-05T01:53:44.3518232Z ##[error]FAIL test: failure (in scope, so it must succeed)
+2026-11-05T01:53:44.3524876Z [ci-gate] verdict: FAILURE
+2026-11-05T01:53:44.3565782Z ##[error]Process completed with exit code 1.

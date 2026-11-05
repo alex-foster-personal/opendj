@@ -16,6 +16,7 @@ Regression one-liners:
   - if publication skips flush, fsync, or close before replace then broken
   - if a non-finite or non-positive poll interval starts a busy loop then broken
 """
+
 from __future__ import annotations
 
 import os
@@ -56,6 +57,7 @@ def _worker_result(**overrides: Any) -> dict[str, Any]:
 
 # ----- gpu_is_busy pure logic ------------------------------------------------------
 
+
 def test_gpu_is_busy_trips_on_util_alone() -> None:
     reading = runner.GpuReading(utilization_pct=10, memory_used_mb=0)
     assert runner.gpu_is_busy(reading) is True
@@ -78,6 +80,7 @@ def test_gpu_is_busy_uses_supplied_thresholds() -> None:
 
 
 # ----- read_gpu_state: parses a stubbed nvidia-smi's CSV output --------------------
+
 
 @pytest.mark.skipif(sys.platform == "win32", reason="posix shebang script stub")
 def test_read_gpu_state_parses_stubbed_nvidia_smi(tmp_path: Path) -> None:
@@ -108,6 +111,7 @@ def test_read_gpu_state_raises_on_nonzero_exit(tmp_path: Path) -> None:
 
 # ----- process_one: success ---------------------------------------------------------
 
+
 def test_process_one_success_writes_outbox_deletes_input_logs_done(
     tmp_path: Path,
 ) -> None:
@@ -117,9 +121,7 @@ def test_process_one_success_writes_outbox_deletes_input_logs_done(
     audio = _make_inbox_file(inbox)
     result = _worker_result()
 
-    ok = runner.process_one(
-        audio, outbox, logs, "cpu", run_worker_fn=lambda p: result
-    )
+    ok = runner.process_one(audio, outbox, logs, "cpu", run_worker_fn=lambda p: result)
     assert ok is True
     assert not audio.exists(), "input must be deleted on success"
 
@@ -197,27 +199,26 @@ def test_process_one_publication_failure_never_leaves_partial_output(
     if failure_stage == "serialize":
         result["not_json"] = object()
     elif failure_stage == "write":
-        def _partial_write_then_fail(
-            _payload: object, result_file: Any, **_kwargs: object
-        ) -> None:
+
+        def _partial_write_then_fail(_payload: object, result_file: Any, **_kwargs: object) -> None:
             result_file.write('{"partial":')
             raise OSError("injected write failure")
 
         monkeypatch.setattr(runner.json, "dump", _partial_write_then_fail)
     elif failure_stage == "fsync":
+
         def _fail_fsync(_fd: int) -> None:
             raise OSError("injected fsync failure")
 
         monkeypatch.setattr(runner.os, "fsync", _fail_fsync)
     elif failure_stage == "replace":
+
         def _fail_replace(_source: Path, _target: Path) -> None:
             raise OSError("injected replace failure")
 
         monkeypatch.setattr(runner.os, "replace", _fail_replace)
 
-    ok = runner.process_one(
-        audio, outbox, logs, "cpu", run_worker_fn=lambda _: result
-    )
+    ok = runner.process_one(audio, outbox, logs, "cpu", run_worker_fn=lambda _: result)
 
     assert ok is False
     assert not audio.exists()
@@ -254,9 +255,7 @@ def test_process_one_flushes_fsyncs_and_closes_before_atomic_replace(
     monkeypatch.setattr(runner.os, "fsync", _record_fsync)
     monkeypatch.setattr(runner.os, "replace", _record_replace)
 
-    ok = runner.process_one(
-        audio, outbox, logs, "cpu", run_worker_fn=lambda _: _worker_result()
-    )
+    ok = runner.process_one(audio, outbox, logs, "cpu", run_worker_fn=lambda _: _worker_result())
 
     assert ok is True
     assert events == ["fsync", "closed", "replace"]
@@ -264,6 +263,7 @@ def test_process_one_flushes_fsyncs_and_closes_before_atomic_replace(
 
 
 # ----- run_once: STOP sentinel + GPU gate control flow -----------------------------
+
 
 def test_run_once_stop_sentinel_skips_before_processing(tmp_path: Path) -> None:
     inbox = tmp_path / "inbox"
@@ -279,7 +279,10 @@ def test_run_once_stop_sentinel_skips_before_processing(tmp_path: Path) -> None:
         return _worker_result()
 
     processed = runner.run_once(
-        inbox, outbox, logs, "cpu",
+        inbox,
+        outbox,
+        logs,
+        "cpu",
         gpu_gate=False,
         run_worker_fn=_track_call,
     )
@@ -302,7 +305,10 @@ def test_run_once_holds_when_gpu_busy(tmp_path: Path) -> None:
 
     busy_reading = runner.GpuReading(utilization_pct=99, memory_used_mb=9000)
     processed = runner.run_once(
-        inbox, outbox, logs, "cpu",
+        inbox,
+        outbox,
+        logs,
+        "cpu",
         gpu_gate=True,
         gpu_reader=lambda: busy_reading,
         run_worker_fn=_track_call,
@@ -322,7 +328,10 @@ def test_run_once_proceeds_when_gpu_idle(tmp_path: Path) -> None:
 
     idle_reading = runner.GpuReading(utilization_pct=0, memory_used_mb=0)
     processed = runner.run_once(
-        inbox, outbox, logs, "cpu",
+        inbox,
+        outbox,
+        logs,
+        "cpu",
         gpu_gate=True,
         gpu_reader=lambda: idle_reading,
         run_worker_fn=lambda p: _worker_result(),
@@ -341,7 +350,10 @@ def test_run_once_processes_a_one_file_inbox_end_to_end(tmp_path: Path) -> None:
     audio = _make_inbox_file(inbox, "onlyfile.wav")
 
     processed = runner.run_once(
-        inbox, outbox, logs, "cpu",
+        inbox,
+        outbox,
+        logs,
+        "cpu",
         gpu_gate=False,
         run_worker_fn=lambda p: _worker_result(),
     )
@@ -371,9 +383,15 @@ def test_run_once_resource_percent_sleeps_to_enforce_duty_cycle(tmp_path: Path) 
         return _worker_result()
 
     processed = runner.run_once(
-        inbox, outbox, logs, "cpu", gpu_gate=False,
-        run_worker_fn=_worker, resource_percent_file=resource_file,
-        clock_fn=lambda: now[0], sleep_fn=sleeps.append,
+        inbox,
+        outbox,
+        logs,
+        "cpu",
+        gpu_gate=False,
+        run_worker_fn=_worker,
+        resource_percent_file=resource_file,
+        clock_fn=lambda: now[0],
+        sleep_fn=sleeps.append,
     )
 
     assert processed == 1
@@ -382,7 +400,8 @@ def test_run_once_resource_percent_sleeps_to_enforce_duty_cycle(tmp_path: Path) 
 
 @pytest.mark.parametrize("value", ["0", "101", "not-an-integer", "50.5"])
 def test_run_once_rejects_invalid_resource_percent_before_work(
-    tmp_path: Path, value: str,
+    tmp_path: Path,
+    value: str,
 ) -> None:
     inbox = tmp_path / "inbox"
     resource_file = tmp_path / "RESOURCE_PERCENT"
@@ -391,7 +410,11 @@ def test_run_once_rejects_invalid_resource_percent_before_work(
 
     with pytest.raises(ValueError, match="resource percent"):
         runner.run_once(
-            inbox, tmp_path / "outbox", tmp_path / "logs", "cpu", gpu_gate=False,
+            inbox,
+            tmp_path / "outbox",
+            tmp_path / "logs",
+            "cpu",
+            gpu_gate=False,
             resource_percent_file=resource_file,
         )
 
@@ -413,9 +436,15 @@ def test_run_once_stop_sentinel_interrupts_duty_sleep(tmp_path: Path) -> None:
         return _worker_result()
 
     processed = runner.run_once(
-        inbox, tmp_path / "outbox", tmp_path / "logs", "cpu", gpu_gate=False,
-        run_worker_fn=_worker, resource_percent_file=resource_file,
-        clock_fn=lambda: now[0], sleep_fn=_sleep,
+        inbox,
+        tmp_path / "outbox",
+        tmp_path / "logs",
+        "cpu",
+        gpu_gate=False,
+        run_worker_fn=_worker,
+        resource_percent_file=resource_file,
+        clock_fn=lambda: now[0],
+        sleep_fn=_sleep,
     )
 
     assert processed == 1
@@ -432,8 +461,13 @@ def test_run_loop_stop_sentinel_interrupts_empty_poll_sleep(tmp_path: Path) -> N
         (tmp_path / "STOP").write_text("", encoding="utf-8")
 
     runner.run_loop(
-        inbox, tmp_path / "outbox", tmp_path / "logs", "cpu",
-        gpu_gate=False, poll_seconds=60, sleep_fn=_sleep,
+        inbox,
+        tmp_path / "outbox",
+        tmp_path / "logs",
+        "cpu",
+        gpu_gate=False,
+        poll_seconds=60,
+        sleep_fn=_sleep,
     )
 
     assert sleeps == [1.0]
@@ -457,24 +491,36 @@ def test_run_loop_rejects_invalid_poll_seconds_before_scanning(
 
 # ----- CLI parser --------------------------------------------------------------------
 
+
 def test_build_parser_rejects_once_and_loop_together(tmp_path: Path) -> None:
     parser = runner.build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args([
-            "--inbox", str(tmp_path / "in"),
-            "--outbox", str(tmp_path / "out"),
-            "--logs", str(tmp_path / "logs"),
-            "--once", "--loop",
-        ])
+        parser.parse_args(
+            [
+                "--inbox",
+                str(tmp_path / "in"),
+                "--outbox",
+                str(tmp_path / "out"),
+                "--logs",
+                str(tmp_path / "logs"),
+                "--once",
+                "--loop",
+            ]
+        )
 
 
 def test_build_parser_defaults(tmp_path: Path) -> None:
     parser = runner.build_parser()
-    args = parser.parse_args([
-        "--inbox", str(tmp_path / "in"),
-        "--outbox", str(tmp_path / "out"),
-        "--logs", str(tmp_path / "logs"),
-    ])
+    args = parser.parse_args(
+        [
+            "--inbox",
+            str(tmp_path / "in"),
+            "--outbox",
+            str(tmp_path / "out"),
+            "--logs",
+            str(tmp_path / "logs"),
+        ]
+    )
     assert args.device == "auto"
     assert args.gpu_gate is False
     assert args.loop is False
@@ -488,20 +534,38 @@ def test_build_parser_rejects_non_positive_or_non_finite_poll_seconds(
 ) -> None:
     parser = runner.build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args([
-            "--inbox", str(tmp_path / "in"),
-            "--outbox", str(tmp_path / "out"),
-            "--logs", str(tmp_path / "logs"),
-            "--loop", "--poll-seconds", value,
-        ])
+        parser.parse_args(
+            [
+                "--inbox",
+                str(tmp_path / "in"),
+                "--outbox",
+                str(tmp_path / "out"),
+                "--logs",
+                str(tmp_path / "logs"),
+                "--loop",
+                "--poll-seconds",
+                value,
+            ]
+        )
 
 
 def test_build_parser_accepts_resource_and_gpu_gate_thresholds(tmp_path: Path) -> None:
-    args = runner.build_parser().parse_args([
-        "--inbox", str(tmp_path / "in"), "--outbox", str(tmp_path / "out"),
-        "--logs", str(tmp_path / "logs"), "--gpu-utilization-threshold", "50",
-        "--gpu-memory-threshold-mb", "2048", "--resource-percent-file", str(tmp_path / "RESOURCE_PERCENT"),
-    ])
+    args = runner.build_parser().parse_args(
+        [
+            "--inbox",
+            str(tmp_path / "in"),
+            "--outbox",
+            str(tmp_path / "out"),
+            "--logs",
+            str(tmp_path / "logs"),
+            "--gpu-utilization-threshold",
+            "50",
+            "--gpu-memory-threshold-mb",
+            "2048",
+            "--resource-percent-file",
+            str(tmp_path / "RESOURCE_PERCENT"),
+        ]
+    )
     assert args.gpu_utilization_threshold == 50
     assert args.gpu_memory_threshold_mb == 2048
     assert args.resource_percent_file == tmp_path / "RESOURCE_PERCENT"
@@ -511,11 +575,19 @@ def test_main_rejects_missing_resource_percent_file_before_empty_inbox_loop(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(ValueError, match="resource percent"):
-        runner.main([
-            "--inbox", str(tmp_path / "inbox"), "--outbox", str(tmp_path / "outbox"),
-            "--logs", str(tmp_path / "logs"), "--resource-percent-file",
-            str(tmp_path / "missing-resource-percent"), "--loop",
-        ])
+        runner.main(
+            [
+                "--inbox",
+                str(tmp_path / "inbox"),
+                "--outbox",
+                str(tmp_path / "outbox"),
+                "--logs",
+                str(tmp_path / "logs"),
+                "--resource-percent-file",
+                str(tmp_path / "missing-resource-percent"),
+                "--loop",
+            ]
+        )
 
 
 def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
@@ -541,19 +613,27 @@ def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
     assert "exit /b %ERRORLEVEL%" in wrapper
     assert "--gpu-utilization-threshold 50" in wrapper
     assert "--gpu-memory-threshold-mb 2048" in wrapper
-    assert "--resource-percent-file \"%RESOURCE_PERCENT_FILE%\"" in wrapper
-    assert 'wscript.exe D:\\demucs-work\\run_worker_hidden.vbs' in wrapper
-    assert 'cmd /c D:\\demucs-work\\run_worker.cmd' not in wrapper
-    assert 'shell.Run(command, 0, True)' in hidden_runner
-    assert 'D:\\demucs-work\\run_worker.cmd' in hidden_runner
+    assert '--resource-percent-file "%RESOURCE_PERCENT_FILE%"' in wrapper
+    assert "wscript.exe D:\\demucs-work\\run_worker_hidden.vbs" in wrapper
+    assert "cmd /c D:\\demucs-work\\run_worker.cmd" not in wrapper
+    assert "shell.Run(command, 0, True)" in hidden_runner
+    assert "D:\\demucs-work\\run_worker.cmd" in hidden_runner
 
 
 def test_build_parser_accepts_windows_process_resource_controls(tmp_path: Path) -> None:
-    args = runner.build_parser().parse_args([
-        "--inbox", str(tmp_path / "in"), "--outbox", str(tmp_path / "out"),
-        "--logs", str(tmp_path / "logs"), "--windows-below-normal",
-        "--cpu-affinity-mask", "0x07",
-    ])
+    args = runner.build_parser().parse_args(
+        [
+            "--inbox",
+            str(tmp_path / "in"),
+            "--outbox",
+            str(tmp_path / "out"),
+            "--logs",
+            str(tmp_path / "logs"),
+            "--windows-below-normal",
+            "--cpu-affinity-mask",
+            "0x07",
+        ]
+    )
     assert args.windows_below_normal is True
     assert args.cpu_affinity_mask == 7
 

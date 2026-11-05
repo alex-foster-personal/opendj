@@ -18,10 +18,16 @@ before(async () => {
 	basis = await loadTypeScriptModule('src/lib/rb/beatgrid-source-basis.ts');
 });
 
-const payload = (beatgrid_source, beatgrid_source_basis) => ({ beatgrid_source, beatgrid_source_basis });
+const payload = (beatgrid_source, beatgrid_source_basis) => ({
+	beatgrid_source,
+	beatgrid_source_basis
+});
 
 test('if an unmapped-default own payload disagrees with a rekordbox selection then deck load refetches /anlz forever - broken', () => {
-	assert.equal(basis.anlzSourceMatchesSelection(payload('own', 'unmapped-default'), 'rekordbox'), true);
+	assert.equal(
+		basis.anlzSourceMatchesSelection(payload('own', 'unmapped-default'), 'rekordbox'),
+		true
+	);
 	assert.equal(basis.isUnmappedDefault(payload('own', 'unmapped-default')), true);
 });
 
@@ -38,6 +44,9 @@ test('if a payload with no basis passes a mismatched selection then an older eng
 
 test('if a rekordbox payload passes an own selection then a stale rbx grid is kept - broken', () => {
 	assert.equal(basis.anlzSourceMatchesSelection(payload('rekordbox', 'selection'), 'own'), false);
-	assert.equal(basis.anlzSourceMatchesSelection(payload('rekordbox', 'unmapped-default'), 'own'), false);
+	assert.equal(
+		basis.anlzSourceMatchesSelection(payload('rekordbox', 'unmapped-default'), 'own'),
+		false
+	);
 	assert.equal(basis.isUnmappedDefault(payload('rekordbox', 'unmapped-default')), false);
 });

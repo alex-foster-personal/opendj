@@ -9,7 +9,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
 
-function target(tagName, { inPerfRoot = true, type = null, contentEditable = false, role = null } = {}) {
+function target(
+	tagName,
+	{ inPerfRoot = true, type = null, contentEditable = false, role = null } = {}
+) {
 	return {
 		tagName,
 		type,
@@ -36,7 +39,13 @@ test('if quick-draw takes a right-click in the library search box then Paste by 
 });
 
 test('if quick-draw stops taking right-clicks on decks and rows then the performance menu is gone', () => {
-	for (const el of [target('DIV'), target('CANVAS'), target('TR'), target('BUTTON'), target('INPUT', { type: 'range' })]) {
+	for (const el of [
+		target('DIV'),
+		target('CANVAS'),
+		target('TR'),
+		target('BUTTON'),
+		target('INPUT', { type: 'range' })
+	]) {
 		assert.equal(mod.quickDrawClaimsContextMenu(el), true, el.tagName);
 	}
 });

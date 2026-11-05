@@ -74,10 +74,7 @@ test('boot mode maps cloudsync waiting library detail', () => {
 		bootCopy.bootCheckDetail(waiting, 'boot'),
 		'Waiting for your library to sync from your hub'
 	);
-	assert.equal(
-		bootCopy.bootCheckDetail(waiting, 'admin'),
-		waiting.detail
-	);
+	assert.equal(bootCopy.bootCheckDetail(waiting, 'admin'), waiting.detail);
 });
 
 test('bootGateHeading reflects blocked library state and escalates after repeated fails', () => {

@@ -43,9 +43,7 @@ def flags_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Te
 
 
 @pytest.fixture
-def hydration_flags_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
+def hydration_flags_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """Like flags_client but with stem_hydration_data_dir wired on app.state."""
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -72,23 +70,19 @@ def _insert_track(client: TestClient, tmp_path: Path, stable_id: str) -> None:
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (stable_id, "inferred", "Test", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     connection.commit()
     connection.close()
 
 
-def test_track_out_optional_resource_flags_on_empty_track(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_track_out_optional_resource_flags_on_empty_track(flags_client: TestClient, tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         ("empty-track", "inferred", "Empty", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     connection.commit()
@@ -107,15 +101,12 @@ def test_track_out_optional_resource_flags_on_empty_track(
     assert lyrics_response.status_code == 404
 
 
-def test_track_out_lyrics_available_when_cache_file_exists(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_track_out_lyrics_available_when_cache_file_exists(flags_client: TestClient, tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (
             "track-with-lyrics",
             "inferred",
@@ -141,15 +132,12 @@ def test_track_out_lyrics_available_when_cache_file_exists(
     assert response.json()["lyrics_available"] is True
 
 
-def test_track_out_lyrics_available_for_asr_cache(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_track_out_lyrics_available_for_asr_cache(flags_client: TestClient, tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (
             "track-with-asr-lyrics",
             "inferred",
@@ -179,12 +167,8 @@ def test_track_out_lyrics_available_for_asr_cache(
     assert response.json()["lyrics_available"] is True
 
 
-def test_track_out_artwork_available_false_for_audio_without_picture(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
-    fixture = (
-        Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
-    )
+def test_track_out_artwork_available_false_for_audio_without_picture(flags_client: TestClient, tmp_path: Path) -> None:
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
     audio_path = tmp_path / "no-art.mp3"
     shutil.copy2(fixture, audio_path)
     state_dir = tmp_path / "state"
@@ -265,9 +249,7 @@ def test_track_out_artwork_available_agrees_with_artwork_route(
 
 
 @pytest.mark.requirement("STEM-25")
-def test_stems_available_true_when_indexed_but_not_local(
-    hydration_flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_stems_available_true_when_indexed_but_not_local(hydration_flags_client: TestClient, tmp_path: Path) -> None:
     """A track with no local bundle but a cached R2 index entry reports
     stems_available=True so the frontend's probe issues GET /stems.
 
@@ -296,9 +278,7 @@ def test_stems_available_true_when_indexed_but_not_local(
 
 
 @pytest.mark.requirement("STEM-25")
-def test_stems_available_false_when_hydration_disabled(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_stems_available_false_when_hydration_disabled(flags_client: TestClient, tmp_path: Path) -> None:
     """[if] a track is indexed, hydration unbound [then] stems_available is False, [else stop]."""
     stable_id = "indexed-no-hydration"
     data_dir = tmp_path / "data"
@@ -314,9 +294,7 @@ def test_stems_available_false_when_hydration_disabled(
 
 
 @pytest.mark.requirement("STEM-25")
-def test_stems_available_false_when_not_in_index(
-    hydration_flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_stems_available_false_when_not_in_index(hydration_flags_client: TestClient, tmp_path: Path) -> None:
     """[if] a track has no bundle, no index entry [then] stems_available is False, [else stop]."""
     stable_id = "not-in-index"
     data_dir = tmp_path / "data"
@@ -329,9 +307,7 @@ def test_stems_available_false_when_not_in_index(
 
 
 @pytest.mark.requirement("STEM-25")
-def test_stems_available_true_from_local_summary_without_hydration(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_stems_available_true_from_local_summary_without_hydration(flags_client: TestClient, tmp_path: Path) -> None:
     """Local bundle path is unaffected when hydration is not wired.
 
     [if] a local bundle exists, hydration unwired [then] stems_available still True, [else stop].
@@ -348,8 +324,10 @@ def test_stems_available_true_from_local_summary_without_hydration(
         "model": {"name": "htdemucs", "version": "4.0.1"},
         "source": {"path": "/music/x.wav", "sha256": "a" * 64},
         "files": {
-            "vocals": "vocals.wav", "drums": "drums.wav",
-            "bass": "bass.wav", "other": "other.wav",
+            "vocals": "vocals.wav",
+            "drums": "drums.wav",
+            "bass": "bass.wav",
+            "other": "other.wav",
         },
     }
     (bundle_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
@@ -360,8 +338,7 @@ def test_stems_available_true_from_local_summary_without_hydration(
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.execute(
-        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (stable_id, "inferred", "Local", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
     )
     connection.commit()
@@ -383,9 +360,7 @@ def _minimal_jpeg_bytes() -> bytes:
     return data
 
 
-def _listing_row_artwork(
-    client: TestClient, stable_id: str
-) -> bool | None:
+def _listing_row_artwork(client: TestClient, stable_id: str) -> bool | None:
     list_resp = client.get("/api/v1/tracks")
     assert list_resp.status_code == 200
     for item in list_resp.json()["items"]:
@@ -395,15 +370,11 @@ def _listing_row_artwork(
 
 
 @pytest.mark.requirement("PARITY-04")
-def test_track_detail_artwork_available_agrees_with_listing_unmapped(
-    flags_client: TestClient, tmp_path: Path
-) -> None:
+def test_track_detail_artwork_available_agrees_with_listing_unmapped(flags_client: TestClient, tmp_path: Path) -> None:
     """[if] unmapped embedded art [then] list and detail agree on artwork_available, [else stop]."""
     from tests.support.embed_picture import with_id3_apic
 
-    fixture = (
-        Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
-    )
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
     jpeg_bytes = _minimal_jpeg_bytes()
     audio_path = tmp_path / "embedded-art.mp3"
     audio_path.write_bytes(with_id3_apic(fixture.read_bytes(), jpeg_bytes))

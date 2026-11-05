@@ -4,6 +4,7 @@ Ported from companion ``~/Desktop/music-dj/tests/test_sync.py`` but trimmed
 to the normalisation-only surface area (the SyncEngine/writer tests are
 out of scope for Phase 2).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -47,14 +48,10 @@ class TestFeaturingVariants:
 
 class TestRemixStripping:
     def test_parenthesised_remix_stripped(self) -> None:
-        assert (
-            _normalise_for_match("Good Song (Extended Mix)") == "good song"
-        )
+        assert _normalise_for_match("Good Song (Extended Mix)") == "good song"
 
     def test_bracketed_edit_stripped(self) -> None:
-        assert (
-            _normalise_for_match("Good Song [Club Edit]") == "good song"
-        )
+        assert _normalise_for_match("Good Song [Club Edit]") == "good song"
 
     def test_non_remix_parens_preserved(self) -> None:
         # "(2021)" does not match remix/edit/version/mix/radio/extended/...

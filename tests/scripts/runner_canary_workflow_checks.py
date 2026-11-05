@@ -79,7 +79,9 @@ CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 #: Oct 2026): CI_BUNDLE_DECLARATIONS reads `needs.scope`, and the canary has no scope job; a
 #: canary is a push, so the selector never reads it there anyway.
 #: CI_MAIN_PUSH_RANGE (Tue 3 Nov 2026) reads `needs.scope` the same way.
-CI_ONLY_PYTEST_ENV = ("CI_BUNDLE_DECLARATIONS", "CI_MAIN_PUSH_RANGE")
+#: JOB_TOTAL (Thu 5 Nov 2026, #8761 moved `strategy.job-total` into env for zizmor) feeds only
+#: the two dynamic-shard flags below, which the canary replaces with its literal five.
+CI_ONLY_PYTEST_ENV = ("CI_BUNDLE_DECLARATIONS", "CI_MAIN_PUSH_RANGE", "JOB_TOTAL")
 
 
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.
@@ -89,6 +91,14 @@ PYTEST_BUDGET_SUBSTITUTION = ("MDT_PYTEST_TIMEOUT_S=2400\n", "MDT_PYTEST_TIMEOUT
 PYTEST_FULL_BUDGET_SUBSTITUTION = (
     "MDT_PYTEST_FULL_TIMEOUT_S=3600\n",
     "MDT_PYTEST_FULL_TIMEOUT_S=1440\n",
+)
+#: CI-DYNSHARD (#8633, Wed 4 Nov 2026): ci.yml's shard matrix is the scope job's plan, so its
+#: selector and pytest-split read the live leg count from `strategy.job-total`. The canary's
+#: matrix is the fixed vendor x shard product, where job-total counts every vendor's legs too,
+#: so it keeps the literal five.
+DYNAMIC_SHARD_SUBSTITUTIONS = (
+    ("--shards 5 --active-shards $JOB_TOTAL ", "--shards 5 "),
+    ("--splits $JOB_TOTAL ", "--splits 5 "),
 )
 
 
@@ -294,7 +304,7 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
         assert found[0] < pytest_index, f"declared CI-only step {name!r} moved after pytest"
     kept = [s for s in kept if s.get("name") not in CI_ONLY_PRE_PYTEST_STEPS]
     pytest_step = next(s for s in kept if s.get("name") == CONFIG["pytest_step_name"])
-    for old, new in (PYTEST_BUDGET_SUBSTITUTION, PYTEST_FULL_BUDGET_SUBSTITUTION):
+    for old, new in (PYTEST_BUDGET_SUBSTITUTION, PYTEST_FULL_BUDGET_SUBSTITUTION, *DYNAMIC_SHARD_SUBSTITUTIONS):
         assert pytest_step["run"].count(old) == 1, f"ci.yml's shard budget line {old!r} moved"
         pytest_step["run"] = pytest_step["run"].replace(old, new)
     for key in CI_ONLY_PYTEST_KEYS:

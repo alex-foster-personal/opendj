@@ -27,8 +27,12 @@
  * - if a master track swap leaves the follower 'following' a deck that is no longer master then the light lies
  * - if the follower becomes master and still reports 'following' then the light lies
  * - if a manual follower nudge is overwritten by the follow loop then the nudge is silently undone
+ * - if a Mixed In Key-only key (key segments declined) reads '--' on the deck header then the deck hides a key the library shows (DECK-KEY-01)
+ * - if a guess-only key does not read "4A?" on the deck header, or KEY SYNC cannot follow it, then the deck and the library disagree (DECK-KEY-01)
+ * - if the deck drops the row's key_source then the deck header cannot name where its key came from (DECK-KEY-01)
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, before, test } from 'node:test';
 
@@ -43,11 +47,22 @@ const TRACKS = {
 	['1'.repeat(40)]: '8A',
 	['2'.repeat(40)]: '3A',
 	['3'.repeat(40)]: '11B',
-	['4'.repeat(40)]: '5A'
+	['4'.repeat(40)]: '5A',
+	['5'.repeat(40)]: '4A',
+	['6'.repeat(40)]: null
 };
-const [SID_8A, SID_3A, SID_11B, SID_5A] = Object.keys(TRACKS);
+const [SID_8A, SID_3A, SID_11B, SID_5A, SID_MIK_4A, SID_GUESS_4A] = Object.keys(TRACKS);
+/** DECK-KEY-01: "Viva - The cut" shapes: the key lane declined (no tonal centre), so the
+ * library row shows Mixed In Key's tag or the dimmed guess, and /anlz key segments are failed. */
+const TRACK_KEY_EXTRA = {
+	[SID_MIK_4A]: { key_source: 'mik_tag' },
+	[SID_GUESS_4A]: { key_guess: '4A', key_guess_confidence: 0.6, key_source: 'guess' }
+};
+const DECLINED_KEY_SEGMENTS = { status: 'failed', reason: 'no_tonal_center: ambiguous_margin', segments: [] };
 
 let audio;
+let camelot;
+let keyPlayhead;
 let originalFetch;
 
 function defineGlobal(name, value) {
@@ -215,7 +230,8 @@ function stubFetch() {
 				cues: [],
 				phrases: [],
 				vocals: { status: 'not_analyzed' },
-				local_waveform: { status: 'decoded' }
+				local_waveform: { status: 'decoded' },
+				...(sid in TRACK_KEY_EXTRA ? { key_segments: DECLINED_KEY_SEGMENTS } : {})
 			});
 		}
 		if (url.endsWith('/hot-cues')) {
@@ -228,7 +244,7 @@ function stubFetch() {
 			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
 		}
 		if (url.endsWith(`/tracks/${sid}`)) {
-			return json({ stable_id: sid, title: `key ${TRACKS[sid]}`, artist: 'Fixture', bpm: null, key: TRACKS[sid] });
+			return json({ stable_id: sid, title: `key ${TRACKS[sid]}`, artist: 'Fixture', bpm: null, key: TRACKS[sid], ...TRACK_KEY_EXTRA[sid] });
 		}
 		throw new Error(`unexpected request ${url}`);
 	};
@@ -254,7 +270,8 @@ function expectedFollowShift(follower, master) {
 		deck(master).key,
 		effectiveSemitones(follower),
 		effectiveSemitones(master),
-		deck(follower).key_shift_semitones
+		deck(follower).key_shift_semitones,
+		deck(follower).key_sync_mode
 	);
 }
 
@@ -275,6 +292,8 @@ before(async () => {
 		viteApiBase: API_BASE,
 		alias: { '$lib/rb/stretch-adapter': STRETCH_STUB }
 	});
+	camelot = await loadTypeScriptModule('src/lib/player/key/camelot.ts');
+	keyPlayhead = await loadTypeScriptModule('src/lib/player/key-playhead.ts');
 });
 
 afterEach(async () => {
@@ -295,7 +314,9 @@ async function loadPair() {
 async function followDeck1() {
 	await loadPair();
 	await audio.engine.setDeckMaster(1);
-	await audio.engine.setKeySync(2, true);
+	// DECKUX-34's follow rules are mode-agnostic; these cases cross A/B wheels, so
+	// they run on the Pioneer-style compatible mode (exact refuses a mode mismatch).
+	await audio.engine.setKeySync(2, true, { mode: 'compatible' });
 	await settle();
 	assertFollowing(2, 1, 'precondition');
 }
@@ -445,4 +466,135 @@ test('a live deck re-follows when a newly presented schedule revision crosses ou
 	const queue = body.indexOf('if (rt.presentation.presented_revision !== presentedRevisionBefore) _queueKeySyncFollow();');
 	assert.ok(before !== -1 && observe !== -1 && queue !== -1, 'if the presented-revision follow hook is gone then a live master nudge is never followed');
 	assert.ok(before < observe && observe < queue, 'the revision must be read before observing and compared after');
+});
+
+// ------------------------------------------------------------ KEYSYNC-01
+
+test('KEYSYNC-01: exact KEY SYNC onto a target deck shifts the follower only, keeping tempo and position', async () => {
+	await loadPair();
+	await audio.engine.load(3, SID_11B);
+	await audio.engine.setDeckMaster(3);
+	const pitchBefore = deck(1).pitch;
+	const positionBefore = deck(1).position_ms;
+	await audio.engine.setKeySync(1, true, { mode: 'exact', target: 2 });
+	await settle();
+	assert.equal(deck(1).key_sync_mode, 'exact');
+	assert.equal(deck(1).key_sync_target, 2);
+	assert.equal(audio.keySyncStatus(1), 'following');
+	assert.equal(deck(1).key_shift_semitones, 1, '8A onto 3A is exactly +1');
+	assert.equal(audio.keySyncPreview(1).masterDeck, 2, 'the plan follows the target, not MASTER');
+	assert.equal(deck(1).pitch, pitchBefore, 'KEY SYNC must never move tempo');
+	assert.equal(deck(1).position_ms, positionBefore, 'KEY SYNC must never move the playhead or beat phase');
+	assert.equal(deck(2).key_shift_semitones, 0, 'the leader is untouched');
+	await audio.engine.setKeySync(1, false);
+	assert.equal(deck(1).key_shift_semitones, 0, 'reset returns to the original key');
+	assert.equal(audio.keySyncStatus(1), 'off');
+});
+
+test('KEYSYNC-01: KEY SYNC turns key lock (Master Tempo) on when it is off', async () => {
+	await loadPair();
+	await audio.engine.setDeckMaster(1);
+	await audio.engine.setMasterTempo(2, false);
+	await audio.engine.setTempoRatio(2, 1.05);
+	assert.equal(deck(2).master_tempo_enabled, false);
+	await audio.engine.setKeySync(2, true, { mode: 'exact' });
+	await settle();
+	assert.equal(deck(2).master_tempo_enabled, true, 'key sync needs key lock so tempo cannot move the key');
+	assert.equal(deck(2).pitch, 1.05, 'turning key lock on keeps the tempo');
+	assert.equal(deck(2).key_shift_semitones, -1, '3A onto 8A is exactly -1');
+});
+
+test('KEYSYNC-01: exact mode over a mode mismatch arms unlit; relative lands on the leader number', async () => {
+	await loadPair();
+	await audio.engine.load(3, SID_11B);
+	await audio.engine.setDeckMaster(3);
+	await audio.engine.setKeySync(1, true, { mode: 'exact' });
+	await settle();
+	assert.equal(audio.keySyncStatus(1), 'waiting-mode-mismatch');
+	assert.equal(deck(1).key_shift_semitones, 0, 'a mismatch must not move the key');
+	await audio.engine.setKeySync(1, true, { mode: 'relative' });
+	await settle();
+	assert.equal(audio.keySyncStatus(1), 'following');
+	assert.equal(deck(1).key_shift_semitones, -3, '8A onto 11B relative is 11A, -3');
+});
+
+test('KEYSYNC-01: a deck cannot target itself and mode is validated', async () => {
+	await loadPair();
+	await assert.rejects(audio.engine.setKeySync(1, true, { target: 1 }), /itself/);
+	await assert.rejects(audio.engine.setKeySync(1, true, { mode: 'loose' }), /mode/);
+	assert.equal(deck(1).key_sync_enabled, false);
+});
+
+test('KEYSYNC-01 ladder: key options list every shift against a target deck; picking one applies it, disarms the follow, and 0 resets', async () => {
+	await loadPair();
+	await audio.engine.setDeckMaster(2);
+	const rows = audio.keyShiftOptions(1, 2);
+	assert.equal(rows.length, 13);
+	assert.deepEqual(rows.find((row) => row.shift === 1), { shift: 1, key: '3A', pattern: 'exact', desirable: true });
+	await audio.engine.setKeySync(1, true);
+	await settle();
+	await audio.engine.setKeyShift(1, 2);
+	assert.equal(deck(1).key_shift_semitones, 2);
+	assert.equal(deck(1).key_sync_enabled, false, 'a ladder pick must not be undone by the follow');
+	assert.equal(deck(1).pitch, 1);
+	await audio.engine.setKeyShift(1, 0);
+	assert.equal(deck(1).key_shift_semitones, 0, 'one-tap reset to the original key');
+	await audio.engine.nudgeKey(2, 1);
+	assert.equal(audio.keyShiftOptions(1, 2).find((row) => row.pattern === 'exact').shift, 2, 'the ladder reads the target AUDIBLE key');
+});
+
+// ---------------------------------------------------------------- DECK-KEY-01
+
+const HEADER = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/deck/DeckHeader.svelte', import.meta.url)),
+	'utf8'
+);
+const TEMPO_MODAL = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/deck/TempoEditModal.svelte', import.meta.url)),
+	'utf8'
+);
+
+test('DECK-KEY-01: a Mixed In Key-only key loads onto the deck and its header, and KEY SYNC follows it', async () => {
+	stubFetch();
+	await audio.engine.load(1, SID_8A);
+	await audio.engine.load(2, SID_MIK_4A);
+	assert.equal(deck(2).key, '4A', 'deck state carries the library key');
+	assert.equal(deck(2).key_source, 'mik_tag', 'deck state carries the library key_source');
+	const readout = keyPlayhead.deckKeyAtPlayhead(deck(2));
+	assert.equal(readout.display, '4A', 'the header reads the library key, not "--", when key segments declined');
+	assert.equal(readout.isGuess, false);
+	await audio.engine.setDeckMaster(2);
+	await audio.engine.setKeySync(1, true, { mode: 'exact' });
+	await settle();
+	assert.equal(audio.keySyncStatus(1), 'following');
+	assert.equal(deck(1).key_shift_semitones, camelot.keySyncSemitoneDelta('8A', '4A', 'exact'), 'KEY SYNC computes from the MIK key');
+});
+
+test('DECK-KEY-01: a guess-only key reads "4A?" on the header and KEY SYNC follows it with the guess flagged', async () => {
+	stubFetch();
+	await audio.engine.load(1, SID_8A);
+	await audio.engine.load(2, SID_GUESS_4A);
+	assert.equal(deck(2).key, null);
+	assert.equal(deck(2).key_guess, '4A');
+	assert.equal(deck(2).key_source, 'guess');
+	const readout = keyPlayhead.deckKeyAtPlayhead(deck(2));
+	assert.equal(readout.display, '4A');
+	assert.equal(readout.isGuess, true, 'the header dims it with "?"');
+	assert.equal(camelot.keySyncKeyIsGuess(deck(2)), true, 'KEY SYNC warns it uses a guess');
+	await audio.engine.setDeckMaster(2);
+	await audio.engine.setKeySync(1, true, { mode: 'exact' });
+	await settle();
+	assert.equal(audio.keySyncStatus(1), 'following');
+	assert.equal(deck(1).key_shift_semitones, camelot.keySyncSemitoneDelta('8A', '4A', 'exact'));
+	const ladder = audio.keyShiftOptions(1, 2);
+	assert.ok(ladder !== null && ladder.some((row) => row.key === '4A'), 'the ladder lands on the guessed key');
+});
+
+test('DECK-KEY-01: every deck key surface reads the one resolved key, never deck.key alone', () => {
+	for (const [name, src] of [['DeckHeader', HEADER], ['TempoEditModal', TEMPO_MODAL]]) {
+		assert.match(src, /deckKeyAtPlayheadNow\(/, `${name} must read the shared deck key resolver`);
+		assert.doesNotMatch(src, /keyAtPlayheadNow\([^)]*\bkey\s*\)/, `${name} still passes a bare .key as the fallback`);
+	}
+	assert.doesNotMatch(HEADER, /keyNudgeSemitones\([^)]*deck\.key,/, 'the key nudges must read the resolved key');
+	assert.match(HEADER, /keySourceHint\(deck\.key_source/, 'the key badge hover names the key source');
 });

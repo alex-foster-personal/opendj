@@ -76,9 +76,7 @@ def _with(entry: str) -> str:
         "workspace-package",
     ],
 )
-def test_a_source_key_uv_rejects_for_its_kind_is_unknown(
-    tmp_path: Path, entry: str, named: str
-) -> None:
+def test_a_source_key_uv_rejects_for_its_kind_is_unknown(tmp_path: Path, entry: str, named: str) -> None:
     code, message = _run_sources(tmp_path, _with(entry))
     assert code == EXIT_UNKNOWN, message
     assert named in message, message
@@ -159,9 +157,7 @@ def test_a_group_scoped_source_parses_and_stops_downstream(tmp_path: Path) -> No
         "group-without-package-spelled-differently",
     ],
 )
-def test_a_scoped_source_naming_no_listing_extra_or_group_is_unknown(
-    tmp_path: Path, entry: str, named: str
-) -> None:
+def test_a_scoped_source_naming_no_listing_extra_or_group_is_unknown(tmp_path: Path, entry: str, named: str) -> None:
     """Round 53: uv 0.8.17 refuses each (an invalid name at parse, "Not a valid package
     or extra name", exit 2; a valid one whose extra/group is absent or does not list the
     package at metadata generation, exit 2), measured on an entry no requirement uses,
@@ -316,9 +312,7 @@ def _list(entries: str) -> str:
         "extra-markers",
     ],
 )
-def test_a_source_list_uv_refuses_at_list_level_is_unknown(
-    tmp_path: Path, entries: str, named: str
-) -> None:
+def test_a_source_list_uv_refuses_at_list_level_is_unknown(tmp_path: Path, entries: str, named: str) -> None:
     """Round 56: uv 0.8.17 refuses each list at parse (exit 2) on a rule no single entry
     shows: every entry in a shared scope needs a marker, and the markers must be
     pairwise disjoint under uv's marker algebra; `extra == ...` markers overlap for uv
@@ -399,9 +393,7 @@ def test_a_source_list_uv_reads_keeps_the_verdict(tmp_path: Path, entries: str) 
         "same-extra-same-marker",
     ],
 )
-def test_a_source_list_sharing_a_scope_is_checked_within_it(
-    tmp_path: Path, entries: str, named: str
-) -> None:
+def test_a_source_list_sharing_a_scope_is_checked_within_it(tmp_path: Path, entries: str, named: str) -> None:
     """Round 56: the marker rule applies among entries of ONE scope (uv 0.8.17 refuses
     `extra = "dev"` twice without markers, and twice with the same marker, exit 2)."""
     pyproject = MINI_PYPROJECT.replace('"1" = []', '"1" = ["localdep"]').replace(

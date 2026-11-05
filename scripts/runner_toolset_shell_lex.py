@@ -208,9 +208,7 @@ def tokens(text: str) -> list[tuple[str, int]]:
         # Unbalanced quoting: rescan line by line so one bad line hides nothing else.
         if "\n" not in text:
             return found
-        return [
-            (tok, n + ln) for n, line in enumerate(text.split("\n")) for tok, ln in tokens(line)
-        ]
+        return [(tok, n + ln) for n, line in enumerate(text.split("\n")) for tok, ln in tokens(line)]
     return found
 
 

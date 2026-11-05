@@ -28,8 +28,8 @@
 		{/each}
 	</ul>
 	<p class="note">
-		A single Prep workspace that brings these together is planned. Until then each one opens
-		its own page.
+		A single Prep workspace that brings these together is planned. Until then each one opens its own
+		page.
 	</p>
 </main>
 

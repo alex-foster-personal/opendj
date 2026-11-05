@@ -187,9 +187,7 @@ def test_a_holder_under_a_live_job_is_left_alone(work_cwd: Path) -> None:
     proc = _serve(port, work_cwd)
     try:
         # This test process stands in for the worker: it is in the holder's ancestry.
-        result = _run(
-            str(port), live_re=f"pytest|{os.path.basename(sys.executable)}", release_wait_s="2"
-        )
+        result = _run(str(port), live_re=f"pytest|{os.path.basename(sys.executable)}", release_wait_s="2")
         assert result.returncode == 0, result.stderr
         assert "waiting up to 2s" in result.stdout and "left alone" in result.stdout
         time.sleep(1)
@@ -211,8 +209,12 @@ def test_a_live_holder_mid_teardown_is_waited_for_not_reported(work_cwd: Path) -
 
         threading.Timer(2.0, proc.kill).start()
         result = _run(
-            str(port), "--", "echo", "suite-ran",
-            live_re=f"pytest|{os.path.basename(sys.executable)}", release_wait_s="15",
+            str(port),
+            "--",
+            "echo",
+            "suite-ran",
+            live_re=f"pytest|{os.path.basename(sys.executable)}",
+            release_wait_s="15",
         )
         assert result.returncode == 0, result.stderr
         assert "released after" in result.stdout, result.stdout
@@ -238,9 +240,7 @@ def test_a_holder_without_ci_provenance_fails_and_is_not_signalled(no_work_cwd: 
         proc.wait(timeout=10)
 
 
-def test_the_trailing_command_runs_only_once_ports_are_clear(
-    work_cwd: Path, no_work_cwd: Path
-) -> None:
+def test_the_trailing_command_runs_only_once_ports_are_clear(work_cwd: Path, no_work_cwd: Path) -> None:
     """if the command runs against a held port, or not at all on a clear one, then broken"""
     port = _free_port()
     proc = _serve(port, work_cwd)
@@ -281,12 +281,8 @@ def _canned_ss(tmp_path: Path, local_address: str) -> Path:
     return fake
 
 
-@pytest.mark.parametrize(
-    "address", ["[fd7a:115c:a1e0::d328:7f08]", "192.0.2.10", "[fe80::1%eth0]"]
-)
-def test_a_listener_on_a_non_loopback_address_is_quiet_and_runs_the_command(
-    tmp_path: Path, address: str
-) -> None:
+@pytest.mark.parametrize("address", ["[fd7a:115c:a1e0::d328:7f08]", "192.0.2.10", "[fe80::1%eth0]"])
+def test_a_listener_on_a_non_loopback_address_is_quiet_and_runs_the_command(tmp_path: Path, address: str) -> None:
     """if a listener on a non-loopback, non-wildcard address (a host's
     Tailscale IP) is waited on or fails the step then broken"""
     port = _free_port()
@@ -307,9 +303,7 @@ def test_a_listener_on_a_non_loopback_address_is_quiet_and_runs_the_command(
 @pytest.mark.parametrize(
     "address", ["127.0.0.1", "127.0.0.53%lo", "[::1]", "0.0.0.0", "[::]", "*", "[::ffff:127.0.0.1]"]
 )
-def test_a_foreign_listener_on_loopback_or_wildcard_still_fails(
-    tmp_path: Path, address: str
-) -> None:
+def test_a_foreign_listener_on_loopback_or_wildcard_still_fails(tmp_path: Path, address: str) -> None:
     """CONTROL: if an unseeable holder on loopback or the wildcard stops
     failing the step once non-loopback listeners are ignored then broken"""
     port = _free_port()
@@ -329,9 +323,7 @@ def test_a_foreign_listener_on_loopback_or_wildcard_still_fails(
 
 def test_no_ports_is_a_usage_error() -> None:
     """if no port is given then the script must fail loud"""
-    result = subprocess.run(
-        [str(SCRIPT), "--", "echo", "x"], capture_output=True, text=True, timeout=30, check=False
-    )
+    result = subprocess.run([str(SCRIPT), "--", "echo", "x"], capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 2 and "usage" in result.stderr
 
 
@@ -383,9 +375,7 @@ def test_a_foreign_holder_that_releases_during_the_wait_still_runs_the_command(
         import threading
 
         threading.Timer(1.0, proc.kill).start()
-        result = _run(
-            str(port), "--", "echo", "suite-ran", live_re=ORPHAN, foreign_wait_s="10"
-        )
+        result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, foreign_wait_s="10")
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
         assert "[ERROR]" not in result.stderr, result.stderr
@@ -404,14 +394,9 @@ def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
     registry_dir = tmp_path / "registry"
     registry_dir.mkdir()
     marker = registry_dir / f"{port}-{os.getuid()}.owner"
-    marker.write_text(
-        "worktree=/home/dev/code/music-dj-tools-wt-demo-1613\n"
-        "claimed_at=2026-09-10T00:00:00+00:00\n"
-    )
+    marker.write_text("worktree=/home/dev/code/music-dj-tools-wt-demo-1613\nclaimed_at=2026-09-10T00:00:00+00:00\n")
     try:
-        result = _run(
-            str(port), live_re=ORPHAN, foreign_wait_s="1", registry_dir=registry_dir
-        )
+        result = _run(str(port), live_re=ORPHAN, foreign_wait_s="1", registry_dir=registry_dir)
         assert result.returncode == 1
         assert "music-dj-tools-wt-demo-1613" in result.stdout, result.stdout
         assert "music-dj-tools-wt-demo-1613" in result.stderr, result.stderr

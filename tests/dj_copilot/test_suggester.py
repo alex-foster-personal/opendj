@@ -1,4 +1,5 @@
 """suggest_next end-to-end tests (AI-01)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -14,9 +15,7 @@ pytestmark = pytest.mark.requirement("AI-01")
 
 
 def _ctx(recent: list[PlayedTrack]) -> SessionContext:
-    return SessionContext(
-        recent=recent, source="manual", captured_at=FIXED_NOW
-    )
+    return SessionContext(recent=recent, source="manual", captured_at=FIXED_NOW)
 
 
 def _lib_small() -> list[TrackFeature]:
@@ -58,7 +57,6 @@ def test_end_to_end_local_ranks_hits_first(tmp_path) -> None:
         # "t-far" is dropped by BPM window.
         assert ids[0] == "t-hit"
         assert "t-far" not in ids
-
 
     finally:
         conn.close()
@@ -117,12 +115,8 @@ def test_deterministic(tmp_path) -> None:
     db = tmp_path / "s.db"
     conn = sqlite3.connect(str(db), isolation_level=None)
     try:
-        r1 = suggest_next(
-            conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5
-        )
-        r2 = suggest_next(
-            conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5
-        )
+        r1 = suggest_next(conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5)
+        r2 = suggest_next(conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5)
         assert [s.stable_id for s in r1] == [s.stable_id for s in r2]
     finally:
         conn.close()

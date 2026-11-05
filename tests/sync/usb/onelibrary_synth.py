@@ -7,6 +7,7 @@ against. This builder makes one from scratch: the Rekordbox 7
 ``devicelib_plus`` models), encrypted with the export key, holding five
 invented tracks and a small playlist tree. No real library data.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,24 +15,51 @@ from pathlib import Path
 from apps.sync.usb.pioneer.onelibrary import onelibrary_key
 
 _CONTENT_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("title", "TEXT"), ("titleForSearch", "TEXT"), ("subtitle", "TEXT"),
-    ("bpmx100", "INTEGER"), ("length", "INTEGER"), ("trackNo", "INTEGER"),
-    ("discNo", "INTEGER"), ("artist_id_artist", "INTEGER"),
-    ("artist_id_remixer", "INTEGER"), ("artist_id_originalArtist", "INTEGER"),
-    ("artist_id_composer", "INTEGER"), ("artist_id_lyricist", "INTEGER"),
-    ("album_id", "INTEGER"), ("genre_id", "INTEGER"), ("label_id", "INTEGER"),
-    ("key_id", "INTEGER"), ("color_id", "INTEGER"), ("image_id", "INTEGER"),
-    ("djComment", "TEXT"), ("rating", "INTEGER"), ("releaseYear", "INTEGER"),
-    ("releaseDate", "TEXT"), ("dateCreated", "TEXT"), ("dateAdded", "TEXT"),
-    ("path", "TEXT"), ("fileName", "TEXT"), ("fileSize", "INTEGER"),
-    ("fileType", "INTEGER"), ("bitrate", "INTEGER"), ("bitDepth", "INTEGER"),
-    ("samplingRate", "INTEGER"), ("isrc", "TEXT"), ("djPlayCount", "INTEGER"),
-    ("isHotCueAutoLoadOn", "INTEGER"), ("isKuvoDeliverStatusOn", "INTEGER"),
-    ("kuvoDeliveryComment", "TEXT"), ("masterDbId", "INTEGER"),
-    ("masterContentId", "INTEGER"), ("analysisDataFilePath", "TEXT"),
-    ("analysedBits", "INTEGER"), ("contentLink", "INTEGER"),
-    ("hasModified", "INTEGER"), ("cueUpdateCount", "INTEGER"),
-    ("analysisDataUpdateCount", "INTEGER"), ("informationUpdateCount", "INTEGER"),
+    ("title", "TEXT"),
+    ("titleForSearch", "TEXT"),
+    ("subtitle", "TEXT"),
+    ("bpmx100", "INTEGER"),
+    ("length", "INTEGER"),
+    ("trackNo", "INTEGER"),
+    ("discNo", "INTEGER"),
+    ("artist_id_artist", "INTEGER"),
+    ("artist_id_remixer", "INTEGER"),
+    ("artist_id_originalArtist", "INTEGER"),
+    ("artist_id_composer", "INTEGER"),
+    ("artist_id_lyricist", "INTEGER"),
+    ("album_id", "INTEGER"),
+    ("genre_id", "INTEGER"),
+    ("label_id", "INTEGER"),
+    ("key_id", "INTEGER"),
+    ("color_id", "INTEGER"),
+    ("image_id", "INTEGER"),
+    ("djComment", "TEXT"),
+    ("rating", "INTEGER"),
+    ("releaseYear", "INTEGER"),
+    ("releaseDate", "TEXT"),
+    ("dateCreated", "TEXT"),
+    ("dateAdded", "TEXT"),
+    ("path", "TEXT"),
+    ("fileName", "TEXT"),
+    ("fileSize", "INTEGER"),
+    ("fileType", "INTEGER"),
+    ("bitrate", "INTEGER"),
+    ("bitDepth", "INTEGER"),
+    ("samplingRate", "INTEGER"),
+    ("isrc", "TEXT"),
+    ("djPlayCount", "INTEGER"),
+    ("isHotCueAutoLoadOn", "INTEGER"),
+    ("isKuvoDeliverStatusOn", "INTEGER"),
+    ("kuvoDeliveryComment", "TEXT"),
+    ("masterDbId", "INTEGER"),
+    ("masterContentId", "INTEGER"),
+    ("analysisDataFilePath", "TEXT"),
+    ("analysedBits", "INTEGER"),
+    ("contentLink", "INTEGER"),
+    ("hasModified", "INTEGER"),
+    ("cueUpdateCount", "INTEGER"),
+    ("analysisDataUpdateCount", "INTEGER"),
+    ("informationUpdateCount", "INTEGER"),
 )
 
 _SCHEMA = f"""
@@ -90,16 +118,25 @@ def build_synthetic_onelibrary(path: Path) -> Path:
         conn.execute("INSERT INTO color (name) VALUES ('Pink')")
         names = [name for name, _ in _CONTENT_COLUMNS]
         for idx, (title, bpm, rating, fname) in enumerate(SYNTH_TRACKS, start=1):
-            values: dict[str, object] = {
-                name: ("" if typ == "TEXT" else 0) for name, typ in _CONTENT_COLUMNS
-            }
+            values: dict[str, object] = {name: ("" if typ == "TEXT" else 0) for name, typ in _CONTENT_COLUMNS}
             values.update(
-                title=title, titleForSearch=title.lower(), bpmx100=bpm,
-                rating=rating, fileName=fname, path=f"/Contents/Synth/{fname}",
-                artist_id_artist=1, genre_id=1, key_id=1, length=300 + idx,
-                releaseDate="2020-01-01", dateCreated="2026-10-01",
-                dateAdded="2026-10-01", fileType=1, bitrate=320,
-                bitDepth=16, samplingRate=44100,
+                title=title,
+                titleForSearch=title.lower(),
+                bpmx100=bpm,
+                rating=rating,
+                fileName=fname,
+                path=f"/Contents/Synth/{fname}",
+                artist_id_artist=1,
+                genre_id=1,
+                key_id=1,
+                length=300 + idx,
+                releaseDate="2020-01-01",
+                dateCreated="2026-10-01",
+                dateAdded="2026-10-01",
+                fileType=1,
+                bitrate=320,
+                bitDepth=16,
+                samplingRate=44100,
             )
             conn.execute(
                 f"INSERT INTO content (content_id, {', '.join(chr(34) + n + chr(34) for n in names)}) "
@@ -107,13 +144,10 @@ def build_synthetic_onelibrary(path: Path) -> Path:
                 [idx, *(values[n] for n in names)],
             )
         conn.executemany(
-            'INSERT INTO playlist ("sequenceNo", name, image_id, attribute, playlist_id_parent) '
-            "VALUES (?, ?, 0, ?, ?)",
+            'INSERT INTO playlist ("sequenceNo", name, image_id, attribute, playlist_id_parent) VALUES (?, ?, 0, ?, ?)',
             [(1, "Existing", 0, 0), (2, "Folder", 1, 0), (1, "Child", 0, 2)],
         )
-        conn.executemany(
-            'INSERT INTO playlist_content VALUES (?, ?, ?)', [(1, 3, 1), (1, 1, 2)]
-        )
+        conn.executemany("INSERT INTO playlist_content VALUES (?, ?, ?)", [(1, 3, 1), (1, 1, 2)])
         conn.commit()
     finally:
         conn.close()

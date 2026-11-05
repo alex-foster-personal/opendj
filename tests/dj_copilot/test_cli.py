@@ -8,9 +8,11 @@ DB wiring, Namespace propagation).
 
 Requirement: PLAY-02 (play-it) + AI-01 (suggest-next).
 """
+
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,17 +33,21 @@ pytestmark = pytest.mark.requirement("PLAY-02")
 def tracks_json(tmp_path: Path) -> Path:
     """A minimal tracks-json file with three tracks."""
     path = tmp_path / "tracks.json"
-    path.write_text(json.dumps([
-        {"stable_id": "A", "artist": "A", "bpm": 120.0, "key_camelot": "8A", "energy": 5},
-        {"stable_id": "B", "artist": "B", "bpm": 124.0, "key_camelot": "9A", "energy": 6},
-        {"stable_id": "C", "artist": "C", "bpm": 126.0, "key_camelot": "10A", "energy": 7},
-    ]))
+    path.write_text(
+        json.dumps(
+            [
+                {"stable_id": "A", "artist": "A", "bpm": 120.0, "key_camelot": "8A", "energy": 5},
+                {"stable_id": "B", "artist": "B", "bpm": 124.0, "key_camelot": "9A", "energy": 6},
+                {"stable_id": "C", "artist": "C", "bpm": 126.0, "key_camelot": "10A", "energy": 7},
+            ]
+        )
+    )
     return path
 
 
 @pytest.fixture
 def state_db(tmp_path: Path) -> Path:
-    """A fresh sqlite state-DB path (lazily created by _open_conn)."""
+    """A fresh sqlite state-DB path (lazily created when the CLI opens the state DB)."""
     return tmp_path / "state.db"
 
 
@@ -61,18 +67,26 @@ def test_load_tracks_from_json_coerces_numeric_fields(tracks_json: Path) -> None
 def test_load_tracks_from_json_accepts_key_alias(tmp_path: Path) -> None:
     """The JSON accepts ``key`` as a fallback for ``key_camelot``."""
     p = tmp_path / "t.json"
-    p.write_text(json.dumps([
-        {"stable_id": "A", "bpm": 120, "key": "8A", "energy": 5},
-    ]))
+    p.write_text(
+        json.dumps(
+            [
+                {"stable_id": "A", "bpm": 120, "key": "8A", "energy": 5},
+            ]
+        )
+    )
     out = cli._load_tracks_from_json(p)
     assert out[0].key_camelot == "8A"
 
 
 def test_load_tracks_from_json_none_fields_stay_none(tmp_path: Path) -> None:
     p = tmp_path / "t.json"
-    p.write_text(json.dumps([
-        {"stable_id": "A", "bpm": None, "key_camelot": None, "energy": None},
-    ]))
+    p.write_text(
+        json.dumps(
+            [
+                {"stable_id": "A", "bpm": None, "key_camelot": None, "energy": None},
+            ]
+        )
+    )
     out = cli._load_tracks_from_json(p)
     assert out[0].bpm is None
     assert out[0].energy is None
@@ -87,12 +101,17 @@ def test_load_tracks_from_json_none_fields_stay_none(tmp_path: Path) -> None:
 
 def test_parser_play_it_requires_duration_and_tracks_json(tracks_json: Path) -> None:
     parser = cli._build_parser()
-    args = parser.parse_args([
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-    ])
+    args = parser.parse_args(
+        [
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+        ]
+    )
     assert args.cmd == "play-it"
     assert args.playlist == "pl1"
     assert args.duration == 60
@@ -104,12 +123,17 @@ def test_parser_play_it_requires_duration_and_tracks_json(tracks_json: Path) -> 
 def test_parser_suggest_next_choices_enforced(tracks_json: Path) -> None:
     parser = cli._build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args([
-            "suggest-next",
-            "--current", "A",
-            "--library-json", str(tracks_json),
-            "--source", "not-a-choice",
-        ])
+        parser.parse_args(
+            [
+                "suggest-next",
+                "--current",
+                "A",
+                "--library-json",
+                str(tracks_json),
+                "--source",
+                "not-a-choice",
+            ]
+        )
 
 
 def test_parser_rejects_unknown_subcommand() -> None:
@@ -132,8 +156,13 @@ def test_parser_subcommand_required() -> None:
 def _fake_step(pos: int, sid: str, hint: str = "bpm-match"):
     """Build a StepTrace-shaped object with just the attrs the CLI touches."""
     return SimpleNamespace(
-        position=pos, stable_id=sid, score=1.0, camelot_distance=0,
-        bpm_delta_pct=0.0, target_energy=5.0, actual_energy=5.0,
+        position=pos,
+        stable_id=sid,
+        score=1.0,
+        camelot_distance=0,
+        bpm_delta_pct=0.0,
+        target_energy=5.0,
+        actual_energy=5.0,
         transition_hint=hint,
     )
 
@@ -169,13 +198,19 @@ def test_play_it_happy_path_prints_order_and_returns_zero(
 
     monkeypatch.setattr(cli, "play_it", _fake_play_it)
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "PLAY IT stored" in out
@@ -193,13 +228,19 @@ def test_play_it_emits_unmet_to_stderr_and_still_returns_zero(
     result = _fake_result(["A", "B"], unmet=[_fake_unmet(1, "camelot_hardcut")])
     monkeypatch.setattr(cli, "play_it", lambda **_: (7, result))
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+        ]
+    )
     assert rc == 0
     cap = capsys.readouterr()
     assert "constraints_unmet (1)" in cap.err
@@ -210,13 +251,19 @@ def test_play_it_invalid_goal_returns_two(
     tracks_json: Path, state_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """duration_min outside the allowed range surfaces as exit 2."""
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "5",  # below minimum (30)
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "5",  # below minimum (30)
+        ]
+    )
     assert rc == 2
     assert "error:" in capsys.readouterr().err
 
@@ -224,13 +271,19 @@ def test_play_it_invalid_goal_returns_two(
 def test_play_it_missing_tracks_json_returns_two(
     tmp_path: Path, state_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tmp_path / "missing.json"),
-        "--duration", "60",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tmp_path / "missing.json"),
+            "--duration",
+            "60",
+        ]
+    )
     assert rc == 2
     assert "failed to load tracks-json" in capsys.readouterr().err
 
@@ -240,13 +293,19 @@ def test_play_it_malformed_tracks_json_returns_two(
 ) -> None:
     p = tmp_path / "bad.json"
     p.write_text("{not json")
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(p),
-        "--duration", "60",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(p),
+            "--duration",
+            "60",
+        ]
+    )
     assert rc == 2
 
 
@@ -257,19 +316,23 @@ def test_play_it_insufficient_data_returns_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def _raise(**_):
-        raise InsufficientDataError(
-            playlist_id="pl1", missing={"bpm": ["A"], "key": [], "energy": []}
-        )
+        raise InsufficientDataError(playlist_id="pl1", missing={"bpm": ["A"], "key": [], "energy": []})
 
     monkeypatch.setattr(cli, "play_it", _raise)
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "play-it",
-        "--playlist", "pl1",
-        "--tracks-json", str(tracks_json),
-        "--duration", "60",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+        ]
+    )
     assert rc == 1
     assert "pre-flight failed" in capsys.readouterr().err
 
@@ -286,9 +349,12 @@ def test_suggest_next_happy_path(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     sug = SimpleNamespace(
-        stable_id="B", score=0.875,
+        stable_id="B",
+        score=0.875,
         rationale_tags=["bpm_match", "camelot_step_0"],
-        rationale_numbers={}, explain_text=None, candidate=None,
+        rationale_numbers={},
+        explain_text=None,
+        candidate=None,
     )
 
     called = {}
@@ -306,12 +372,17 @@ def test_suggest_next_happy_path(
 
     monkeypatch.setattr(cli, "suggest_next", _fake_suggest_next)
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "suggest-next",
-        "--current", "A",
-        "--library-json", str(tracks_json),
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tracks_json),
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "B" in out
@@ -325,19 +396,27 @@ def test_suggest_next_with_explain_prints_explain_block(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     sug = SimpleNamespace(
-        stable_id="B", score=0.5, rationale_tags=[],
-        rationale_numbers={}, explain_text="because vibes",
+        stable_id="B",
+        score=0.5,
+        rationale_tags=[],
+        rationale_numbers={},
+        explain_text="because vibes",
         candidate=None,
     )
     monkeypatch.setattr(cli, "suggest_next", lambda **_: [sug])
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "suggest-next",
-        "--current", "A",
-        "--library-json", str(tracks_json),
-        "--explain",
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tracks_json),
+            "--explain",
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "explain: because vibes" in out
@@ -350,10 +429,14 @@ def test_suggest_next_with_session_json_builds_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = tmp_path / "session.json"
-    session.write_text(json.dumps([
-        {"stable_id": "X", "artist": "A", "bpm": 118, "key_camelot": "8A", "energy": 4},
-        {"stable_id": "Y", "artist": "B", "bpm": 122, "key": "9A", "energy": 5},
-    ]))
+    session.write_text(
+        json.dumps(
+            [
+                {"stable_id": "X", "artist": "A", "bpm": 118, "key_camelot": "8A", "energy": 4},
+                {"stable_id": "Y", "artist": "B", "bpm": 122, "key": "9A", "energy": 5},
+            ]
+        )
+    )
 
     captured = {}
 
@@ -363,13 +446,19 @@ def test_suggest_next_with_session_json_builds_context(
 
     monkeypatch.setattr(cli, "suggest_next", _fake)
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "suggest-next",
-        "--current", "A",
-        "--library-json", str(tracks_json),
-        "--session-json", str(session),
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tracks_json),
+            "--session-json",
+            str(session),
+        ]
+    )
     assert rc == 0
     ctx = captured["ctx"]
     assert ctx is not None
@@ -382,31 +471,55 @@ def test_suggest_next_with_session_json_builds_context(
 def test_suggest_next_missing_library_json_returns_two(
     tmp_path: Path, state_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    rc = cli.main([
-        "--db", str(state_db),
-        "suggest-next",
-        "--current", "A",
-        "--library-json", str(tmp_path / "nope.json"),
-    ])
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tmp_path / "nope.json"),
+        ]
+    )
     assert rc == 2
     assert "failed to load library-json" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- #
-# _open_conn
+# play-it state DB open / migrations
 # --------------------------------------------------------------------------- #
 
 
-def test_open_conn_applies_play_order_migrations(state_db: Path) -> None:
-    """The conn must expose the play-orders tables after opening."""
-    conn = cli._open_conn(state_db)
+def test_cli_play_it_opens_state_db_with_play_order_migrations(
+    tracks_json: Path, state_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] play-it opens the state DB [then] the play-order tables exist, [else stop]."""
+    monkeypatch.setattr(cli, "play_it", lambda **_: (1, _fake_result(["A"])))
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "play-it",
+            "--playlist",
+            "pl1",
+            "--tracks-json",
+            str(tracks_json),
+            "--duration",
+            "60",
+        ]
+    )
+    assert rc == 0
+    conn = sqlite3.connect(state_db)
     try:
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
+        names = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
     finally:
         conn.close()
-    # Schema names are additive — at least the play_orders root table must exist.
     assert "play_orders" in names or any("play_order" in n for n in names)
 
 
@@ -432,21 +545,24 @@ def test_suggest_next_uses_source_arg(
         captured["manual_passed"] = manual
         from apps.dj_copilot.session_context import SessionContext
         from tests.dj_copilot.conftest import FIXED_NOW
-        return SessionContext(
-            recent=[], source=source, captured_at=FIXED_NOW
-        )
+
+        return SessionContext(recent=[], source=source, captured_at=FIXED_NOW)
 
     monkeypatch.setattr(cli, "load_session_context", _fake_loader)
     monkeypatch.setattr(cli, "suggest_next", lambda **kwargs: [])
 
-    rc = cli.main([
-        "--db", str(state_db),
-        "suggest-next",
-        "--current", "A",
-        "--library-json", str(tracks_json),
-        "--source", "phase12",
-    ])
-    assert rc == 0
-    assert captured["source"] == "phase12", (
-        "args.source was not threaded into the context loader"
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tracks_json),
+            "--source",
+            "phase12",
+        ]
     )
+    assert rc == 0
+    assert captured["source"] == "phase12", "args.source was not threaded into the context loader"

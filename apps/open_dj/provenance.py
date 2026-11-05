@@ -7,20 +7,24 @@ while ``canon`` is purely syntactic.
 ``modified_at`` is a REQUIRED keyword argument to :func:`wrap`, by design.
 The open-dj spec (section 6) defines ``modified_at`` as "when the SOURCE
 last modified this value" -- e.g. when rekordbox's DjmdContent row was
-last touched, not when ``open-dj-tool`` happened to run an export. A
-caller that reaches for the wall clock ("now") as a stand-in for that is
-not missing a default; it is asserting a fact it does not have, and two
-exports of the same untouched library would then disagree on bytes purely
-because they ran a second apart (caught live: PR #4119 fast-tier CI flake
-in ``test_export_deterministic``). Callers must supply the real source
-timestamp, or -- when the vendor genuinely does not expose one -- an
-explicit clock value decided at the call site, so the choice is visible
-in a diff rather than buried in this helper.
+last touched, or when the vendor library file (djay MediaLibrary.db,
+Serato database V2, Traktor collection.nml) last changed, not when
+``open-dj-tool`` happened to run an export. A caller that reaches for
+the wall clock ("now") as a stand-in for that is not missing a default;
+it is asserting a fact it does not have, and two exports of the same
+untouched library would then disagree on bytes purely because they ran
+a second apart (caught live: PR #4119 fast-tier CI flake in
+``test_export_deterministic``). Callers of :func:`wrap` must supply an
+explicit ``modified_at`` (no hidden ``now()`` inside this helper).
+Adapter export must pass a timestamp that came from source data. When
+the vendor cannot supply one, refuse provenance-bearing fields rather
+than stamping the wall clock.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal, get_args
 
 ProvenanceSource = Literal[
@@ -46,6 +50,11 @@ PROVENANCE_ENVELOPE_KEYS: tuple[str, ...] = (
     "confidence",
     "modified_at",
 )
+
+
+def utc_mtime(path: Path) -> datetime:
+    """Aware UTC datetime of ``path``'s mtime (second precision after wrap())."""
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC)
 
 
 def wrap(

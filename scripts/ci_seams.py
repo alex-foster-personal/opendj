@@ -95,6 +95,9 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     (".trunk/", Kind.INFRA),
     # Trees whose only CI consumers are pytest modules.
     ("apps/", Kind.PYTHON),
+    # The B2B relay Worker: tests/b2b_transport runs it in workerd (wrangler dev), so a
+    # relay change needs the python seam. Its own vitest suite has no CI job yet (#7955).
+    ("cloud--b2b-relay/", Kind.PYTHON),
     ("scripts/", Kind.PYTHON),
     ("tests/", Kind.PYTHON),
     ("ops/", Kind.PYTHON),
@@ -123,6 +126,7 @@ _ROOT_FILES: Mapping[str, Kind] = {
             "pnpm-lock.yaml",
             ".gitignore",
             ".gitattributes",
+            ".editorconfig",
             ".env.sample",
             ".coderabbit.yaml",
             ".pre-commit-config.yaml",

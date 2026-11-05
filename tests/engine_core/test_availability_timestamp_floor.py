@@ -4,6 +4,7 @@
 
 Supersedes: the assumption that a 1970 checked_at predates every track stamp.
 """
+
 from __future__ import annotations
 
 import sqlite3

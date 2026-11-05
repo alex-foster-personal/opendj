@@ -11,6 +11,7 @@ rows against on-disk audio files and emits three CSVs. We cover:
 
 Requirement: RECON (audit surface feeds reconcile).
 """
+
 from __future__ import annotations
 
 import csv
@@ -101,15 +102,9 @@ def test_category_returns_expected_labels(tmp_path: Path) -> None:
     real = tmp_path / "exists.mp3"
     real.write_bytes(b"stub")
     assert rvm._category(_mk_track(folder_path="")) == "empty_path"
-    assert rvm._category(
-        _mk_track(folder_path="spotify:track", is_streaming=True)
-    ) == "streaming"
-    assert rvm._category(
-        _mk_track(folder_path=str(real), file_path=real)
-    ) == "file_ok"
-    assert rvm._category(
-        _mk_track(folder_path="/nope", file_path=tmp_path / "nope.mp3")
-    ) == "file_missing"
+    assert rvm._category(_mk_track(folder_path="spotify:track", is_streaming=True)) == "streaming"
+    assert rvm._category(_mk_track(folder_path=str(real), file_path=real)) == "file_ok"
+    assert rvm._category(_mk_track(folder_path="/nope", file_path=tmp_path / "nope.mp3")) == "file_missing"
 
 
 # --------------------------------------------------------------------------- #
@@ -119,8 +114,7 @@ def test_category_returns_expected_labels(tmp_path: Path) -> None:
 
 def test_write_rb_missing_csv_has_expected_columns(tmp_path: Path) -> None:
     out = tmp_path / "rb_missing.csv"
-    rows = [_mk_track(id="7", title="T", artist="A", album="Al",
-                      folder_path="/x.mp3")]
+    rows = [_mk_track(id="7", title="T", artist="A", album="Al", folder_path="/x.mp3")]
     rvm._write_rb_missing_csv(out, rows)
     with out.open() as fh:
         reader = csv.reader(fh)
@@ -133,7 +127,9 @@ def test_write_rb_missing_csv_has_expected_columns(tmp_path: Path) -> None:
 def test_write_fs_missing_csv_has_expected_shape(tmp_path: Path) -> None:
     out = tmp_path / "fs_missing.csv"
     f = _audio_files.AudioFile(
-        path=tmp_path / "orphan.mp3", size_bytes=1234, mtime=1_700_000_000.0,
+        path=tmp_path / "orphan.mp3",
+        size_bytes=1234,
+        mtime=1_700_000_000.0,
         ext=".mp3",
     )
     rvm._write_fs_missing_csv(out, [f])
@@ -213,10 +209,8 @@ def test_main_writes_three_csvs_and_prints_missing_sample(
     real.write_bytes(b"stub")
     gone = tmp_path / "gone.mp3"
     rb_rows = [
-        _mk_track(id="1", title="t1", artist="a", album="al",
-                  folder_path=str(real), file_path=real),
-        _mk_track(id="2", title="t2", artist="a", album="al",
-                  folder_path=str(gone), file_path=gone),
+        _mk_track(id="1", title="t1", artist="a", album="al", folder_path=str(real), file_path=real),
+        _mk_track(id="2", title="t2", artist="a", album="al", folder_path=str(gone), file_path=gone),
     ]
     monkeypatch.setattr(rvm.rekordbox_db, "open_db", lambda: object())
     monkeypatch.setattr(rvm.rekordbox_db, "iter_tracks", lambda db: iter(rb_rows))
@@ -262,9 +256,7 @@ def test_main_writes_three_csvs_and_prints_missing_sample(
     assert "First 10 filesystem files not in Rekordbox" in stdout
 
 
-def test_main_handles_resolve_oserror(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_handles_resolve_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """If ``Path.resolve`` raises OSError for an OK row, fallback is used.
 
     Covers the ``except OSError`` branches in ``main()``.
@@ -277,6 +269,7 @@ def test_main_handles_resolve_oserror(
     class _BoomPath(type(Path())):  # type: ignore[misc]
         def resolve(self, strict: bool = False):  # type: ignore[override]
             raise OSError("no")
+
         def exists(self) -> bool:  # type: ignore[override]
             return True
 

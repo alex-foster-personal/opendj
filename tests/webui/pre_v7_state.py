@@ -1,4 +1,5 @@
 """Build a schema-v6 state.db (migrations 1..6, no ``deleted_at``)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -21,10 +22,7 @@ def build_pre_v7_state_db(path: Path) -> Path:
     conn = sqlite3.connect(str(path), isolation_level=None)
     try:
         conn.execute("BEGIN")
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_meta ("
-            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
         for step_idx in range(6):
             for stmt in state_schema.MIGRATIONS[step_idx]:
                 conn.execute(stmt)
@@ -56,8 +54,7 @@ def build_pre_v7_state_db(path: Path) -> Path:
             (PLAYLIST_ID, PLAYLIST_NAME, "rekordbox", "rb-pl-1", _TS, _TS),
         )
         conn.execute(
-            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES (?, ?, ?)",
             (PLAYLIST_ID, TRACK_STABLE_ID, 0),
         )
         conn.execute("COMMIT")

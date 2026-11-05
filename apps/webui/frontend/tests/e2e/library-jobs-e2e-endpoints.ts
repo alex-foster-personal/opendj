@@ -14,9 +14,9 @@ export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;
 export const LIBRARY_JOBS_E2E_FRONTEND_PORT = 5277;
 
 const RESERVED = new Set([
-	4455, 4456, 5214, 5216, 5273, 5311, 5320, 5321, 5322, 5323, 5324, 5326, 5399, 5173,
-	8585, 8682, 8685, 8686, 8688, 8690, 8691, 8692, 8695, 8696, 8697, 8698, 8699, 8703,
-	9402, 9405, 9408, 9414, 9473
+	4455, 4456, 5214, 5216, 5273, 5311, 5320, 5321, 5322, 5323, 5324, 5326, 5399, 5173, 8585, 8682,
+	8685, 8686, 8688, 8690, 8691, 8692, 8695, 8696, 8697, 8698, 8699, 8703, 9402, 9405, 9408, 9414,
+	9473
 ]);
 
 export interface LibraryJobsE2eEndpoints {
@@ -33,18 +33,13 @@ function requirePort(name: string, fallback: number): number {
 		throw new Error(`${name} must be a port between 1024 and 65535, got ${raw}`);
 	}
 	if (RESERVED.has(value)) {
-		throw new Error(
-			`${name}=${value} is a port another lane or suite owns; pick another`
-		);
+		throw new Error(`${name}=${value} is a port another lane or suite owns; pick another`);
 	}
 	return value;
 }
 
 export function resolveEndpoints(): LibraryJobsE2eEndpoints {
-	const backendPort = requirePort(
-		'LIBRARY_JOBS_E2E_BACKEND_PORT',
-		LIBRARY_JOBS_E2E_BACKEND_PORT
-	);
+	const backendPort = requirePort('LIBRARY_JOBS_E2E_BACKEND_PORT', LIBRARY_JOBS_E2E_BACKEND_PORT);
 	const frontendPort = requirePort(
 		'LIBRARY_JOBS_E2E_FRONTEND_PORT',
 		LIBRARY_JOBS_E2E_FRONTEND_PORT

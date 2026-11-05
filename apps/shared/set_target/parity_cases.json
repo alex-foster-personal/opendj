@@ -1,0 +1,54 @@
+{
+  "played": [
+    {"duration_s": 300, "bpm": 128, "expect": 240},
+    {"duration_s": 60, "bpm": 120, "expect": 30},
+    {"duration_s": 400, "bpm": null, "expect": 300},
+    {"duration_s": null, "bpm": 128, "expect": 0},
+    {"duration_s": 300, "bpm": 128, "mix_in_s": 20, "mix_out_s": 200, "expect": 180},
+    {"duration_s": 300, "bpm": 128, "mix_in_s": 200, "mix_out_s": 20, "expect": 240}
+  ],
+  "clash": [
+    {"from": "8A", "to": "8A", "expect": null},
+    {"from": "8A", "to": "9A", "expect": null},
+    {"from": "12A", "to": "1A", "expect": null},
+    {"from": "8A", "to": "8B", "expect": null},
+    {"from": "8A", "to": "9B", "expect": [1, false]},
+    {"from": "8A", "to": "10A", "expect": [2, false]},
+    {"from": "8A", "to": "10B", "expect": [2, true]},
+    {"from": "8A", "to": "11A", "expect": [3, true]},
+    {"from": "8A", "to": "3B", "expect": [5, true]},
+    {"from": "8A", "to": null, "expect": null},
+    {"from": "Am", "to": "3B", "expect": null}
+  ],
+  "summary": [
+    {
+      "target_s": 3600,
+      "entries": [
+        {"stable_id": "a", "duration_s": 300, "bpm": 128, "key": "8A"},
+        {"stable_id": "b", "duration_s": 300, "bpm": 128, "key": "3B", "skipped": true},
+        {"stable_id": "c", "duration_s": 300, "bpm": 128, "key": "2A"},
+        {"stable_id": "d", "duration_s": 400, "bpm": null, "key": "2A"}
+      ],
+      "expect": {"played_s": 780, "target_s": 3600, "over_s": -2820, "skipped": 1,
+                 "clashes": [{"from_id": "a", "to_id": "c", "from_key": "8A", "to_key": "2A", "steps": 6, "gross": true}],
+                 "readout": "~13m of 60m · 47m left"}
+    },
+    {
+      "target_s": 600,
+      "entries": [
+        {"stable_id": "a", "duration_s": 400, "bpm": null, "key": null},
+        {"stable_id": "b", "duration_s": 400, "bpm": null, "key": "8A"}
+      ],
+      "expect": {"played_s": 600, "target_s": 600, "over_s": 0, "skipped": 0, "clashes": [],
+                 "readout": "~10m of 10m · 0m left"}
+    },
+    {
+      "target_s": null,
+      "entries": [
+        {"stable_id": "a", "duration_s": 4020, "bpm": null, "key": "8A", "mix_in_s": 0, "mix_out_s": 4020}
+      ],
+      "expect": {"played_s": 4020, "target_s": null, "over_s": null, "skipped": 0, "clashes": [],
+                 "readout": "~67m"}
+    }
+  ]
+}

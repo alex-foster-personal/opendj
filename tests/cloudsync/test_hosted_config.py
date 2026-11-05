@@ -133,9 +133,7 @@ def test_an_unset_env_configures_the_inert_self_hosted_hub(tmp_path: Path) -> No
     assert not db_path.exists()
 
 
-def test_webui_startup_fails_fast_when_hosted_has_no_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_webui_startup_fails_fast_when_hosted_has_no_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """If the webui boots hosted with no source then only the first request finds out."""
     monkeypatch.setenv(hosted_config.HOSTED_ENV, "1")
     monkeypatch.delenv(hosted_config.ENTITLEMENTS_FILE_ENV, raising=False)
@@ -143,9 +141,7 @@ def test_webui_startup_fails_fast_when_hosted_has_no_source(
         create_app(state_db_path=str(tmp_path / "state" / "state.db"), mount_frontend=False)
 
 
-def test_webui_startup_hosted_with_a_source_wires_the_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_webui_startup_hosted_with_a_source_wires_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """If a correctly configured hosted webui does not reach app.state then the gate never runs."""
     for key, value in _hosted_env(tmp_path).items():
         monkeypatch.setenv(key, value)

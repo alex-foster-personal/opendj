@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build devices/ddj-flx10/layout.json from midi.json + plate fig positions."""
+
 from __future__ import annotations
 
 import json

@@ -1,6 +1,7 @@
 """USB stick volume tracker (read-only detect + classify).
 
-#328 feature: USB stick tracker (detect, name, export health, agentic check)
+#328 feature: USB stick tracker (detect, name, export health, agentic check).
+# Agentic check/fix safety contract: (private path)/
 
 GET  /api/v1/usb/volumes          - list present volumes (throttled scan)
 GET  /api/v1/usb/volumes/events   - SSE keepalive that refreshes while watched

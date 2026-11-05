@@ -8,6 +8,7 @@ typed :class:`OpenDjLibrary`, exercises the wire serializer directly,
 and validates the result against the shipped JSON Schema. It also walks
 through the CLI ``export`` subcommand end-to-end to pin the wiring.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,8 +33,8 @@ from apps.open_dj.wire import library_to_wire_document
 # the schema's regexes (``^[0-9a-f]{40}$`` and ``^sha256:[0-9a-f]{64}$``).
 _TRACK_ID = "a" * 40
 _CONTENT_HASH = "sha256:" + ("b" * 64)
-# library_to_wire_document() requires an explicit modified_at (no
-# wall-clock default -- see apps.open_dj.provenance module docstring).
+# Provenance envelopes take source_modified_at from the Track (no
+# document-wide wall-clock default -- see apps.open_dj.provenance).
 _MODIFIED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
 
 
@@ -66,6 +67,7 @@ def _minimal_library() -> OpenDjLibrary:
                 ),
                 isrc="USRC17607839",
                 extensions={"content_hash": _CONTENT_HASH},
+                source_modified_at=_MODIFIED_AT,
             ),
         ),
         playlists=(
@@ -80,12 +82,11 @@ def _minimal_library() -> OpenDjLibrary:
 @pytest.mark.requirement("OPEN-01a")
 class TestExportV02WireSchema:
     """[if] the v02 export schema is used [then] its wire contract remains stable, [else stop]."""
+
     """Export must produce schema-valid v0.2 documents (codex P15 finding)."""
 
     def test_library_to_wire_document_validates(self) -> None:
-        doc = library_to_wire_document(
-            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
-        )
+        doc = library_to_wire_document(_minimal_library(), source="serato")
 
         # Top-level shape: spec-mandated keys present, no stale ones.
         assert doc["schema_version"] == "0.2"
@@ -96,22 +97,15 @@ class TestExportV02WireSchema:
         assert "version" not in doc
 
         errors = validate_document(doc)
-        assert errors == [], (
-            "wire document failed v0.2 schema validation:\n  "
-            + "\n  ".join(errors)
-        )
+        assert errors == [], "wire document failed v0.2 schema validation:\n  " + "\n  ".join(errors)
 
     def test_provenance_envelopes_on_authored_fields(self) -> None:
-        doc = library_to_wire_document(
-            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
-        )
+        doc = library_to_wire_document(_minimal_library(), source="serato")
         track = doc["tracks"][0]
 
         # bpm / key / rating must be ProvenanceValue objects, not scalars.
         for field in ("bpm", "key", "rating"):
-            assert isinstance(track[field], dict), (
-                f"{field} should be wrapped in a ProvenanceValue dict"
-            )
+            assert isinstance(track[field], dict), f"{field} should be wrapped in a ProvenanceValue dict"
             assert track[field]["source"] == "serato"
             assert "modified_at" in track[field]
             assert "value" in track[field]
@@ -121,9 +115,7 @@ class TestExportV02WireSchema:
         assert track["rating"]["value"] == 5
 
     def test_cue_loop_alias_splits_into_loop_in_loop_out(self) -> None:
-        doc = library_to_wire_document(
-            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
-        )
+        doc = library_to_wire_document(_minimal_library(), source="serato")
         cues = doc["tracks"][0]["cue_points"]
         types = [c["type"] for c in cues]
         assert "loop" not in types, "convenience alias must not leak to wire"
@@ -135,9 +127,7 @@ class TestExportV02WireSchema:
         assert loop_out["position_ms"] == loop_in["position_ms"] + 4_000
 
     def test_beats_collapse_to_beatgrid_object(self) -> None:
-        doc = library_to_wire_document(
-            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
-        )
+        doc = library_to_wire_document(_minimal_library(), source="serato")
         track = doc["tracks"][0]
         assert "beats" not in track, "in-memory per-anchor shape must not leak"
         grid = track["beatgrid"]
@@ -146,9 +136,7 @@ class TestExportV02WireSchema:
         assert grid["algorithm"] == "constant"
         assert grid["beats"] == [0.0, 483.0]
 
-    def test_cli_export_validates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cli_export_validates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """``open-dj-tool export`` end-to-end must write a schema-valid file."""
         library = _minimal_library()
 
@@ -167,9 +155,7 @@ class TestExportV02WireSchema:
         # The real ``serato`` registry entry is family="class"; swapping
         # the loader is all we need to take the class-family branch with
         # our stand-in adapter.
-        monkeypatch.setattr(
-            "apps.open_dj.cli.load_adapter", lambda _name: _FakeClassAdapter()
-        )
+        monkeypatch.setattr("apps.open_dj.cli.load_adapter", lambda _name: _FakeClassAdapter())
 
         source = tmp_path / "library.serato"
         source.write_bytes(b"")
@@ -191,7 +177,68 @@ class TestExportV02WireSchema:
 
         doc = json.loads(out.read_bytes())
         errors = validate_document(doc)
-        assert errors == [], (
-            "CLI-exported document failed v0.2 schema validation:\n  "
-            + "\n  ".join(errors)
+        assert errors == [], "CLI-exported document failed v0.2 schema validation:\n  " + "\n  ".join(errors)
+
+    def test_library_to_wire_document_raises_when_source_modified_at_missing(self) -> None:
+        lib = OpenDjLibrary(
+            version="0.2",
+            tracks=(
+                Track(
+                    track_id=_TRACK_ID,
+                    file_path="/Music/min/one.flac",
+                    title="One",
+                    artists=("Ada",),
+                    duration_ms=123_000,
+                    bpm=124.0,
+                    extensions={"content_hash": _CONTENT_HASH},
+                ),
+            ),
         )
+        with pytest.raises(RuntimeError, match="source_modified_at"):
+            library_to_wire_document(lib, source="serato")
+
+    def test_cli_export_refuses_unstamped_provenance(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        library = OpenDjLibrary(
+            version="0.2",
+            tracks=(
+                Track(
+                    track_id=_TRACK_ID,
+                    file_path="/Music/min/one.flac",
+                    title="One",
+                    artists=("Ada",),
+                    duration_ms=123_000,
+                    bpm=124.0,
+                    extensions={"content_hash": _CONTENT_HASH},
+                ),
+            ),
+        )
+
+        class _FakeClassAdapter:
+            def read(self, source: Path) -> tuple[Any, Any]:
+                return library, object()
+
+            def write(self, library: Any, target: Path) -> Any:  # pragma: no cover
+                return object()
+
+            def capabilities(self) -> Any:  # pragma: no cover
+                return object()
+
+        monkeypatch.setattr("apps.open_dj.cli.load_adapter", lambda _name: _FakeClassAdapter())
+        source = tmp_path / "library.serato"
+        source.write_bytes(b"")
+        out = tmp_path / "library.open-dj.json"
+        rc = main(
+            [
+                "export",
+                "--adapter",
+                "serato",
+                "--source",
+                str(source),
+                "--out",
+                str(out),
+            ]
+        )
+        assert rc == 2
+        assert "source_modified_at" in capsys.readouterr().err

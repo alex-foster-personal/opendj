@@ -45,7 +45,7 @@ const ENTRY = [
 	"import { resolveDisplayedAnlz } from '$lib/components/rb/wave/anlz-cache.svelte';",
 	"import { flushSync } from 'svelte';",
 	'type Deck = { stable_id: string | null; anlz: any; anlz_error: string | null; bpm: number | null; key: string | null };',
-	"const blank = (): Deck => ({ stable_id: null, anlz: null, anlz_error: null, bpm: null, key: null });",
+	'const blank = (): Deck => ({ stable_id: null, anlz: null, anlz_error: null, bpm: null, key: null });',
 	'export const decks = $state<Record<1 | 2 | 3 | 4, Deck>>({ 1: blank(), 2: blank(), 3: blank(), 4: blank() });',
 	'export function publish(value: unknown, deck: 1 | 2 | 3 | 4 = 1): unknown { decks[deck].anlz = value; return decks[deck].anlz; }',
 	// The UI-facing read: WaveRow's own `$derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id))`.
@@ -75,7 +75,11 @@ function payload({ sid = SID, beats = 8, cues = 1, phrases = 0, source = 'rekord
 		waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
 		beatgrid: {
 			beat_count: beats,
-			beats: Array.from({ length: beats }, (_u, i) => ({ n: (i % 4) + 1, bpm: 128, t: i * 0.46875 }))
+			beats: Array.from({ length: beats }, (_u, i) => ({
+				n: (i % 4) + 1,
+				bpm: 128,
+				t: i * 0.46875
+			}))
 		},
 		beatgrid_source: source,
 		cues: Array.from({ length: cues }, (_u, i) => ({ kind: 'hot_cue', num: i + 1, t: i + 1 })),
@@ -84,7 +88,13 @@ function payload({ sid = SID, beats = 8, cues = 1, phrases = 0, source = 'rekord
 	};
 }
 
-const view = (p) => ({ sid: p.stable_id, beats: p.beatgrid.beats.length, cues: p.cues.length, phrases: p.phrases.length, src: p.beatgrid_source });
+const view = (p) => ({
+	sid: p.stable_id,
+	beats: p.beatgrid.beats.length,
+	cues: p.cues.length,
+	phrases: p.phrases.length,
+	src: p.beatgrid_source
+});
 
 const isProxied = (value) => {
 	try {
@@ -188,13 +198,20 @@ test('7 authoritative beatgrid adopt (beatgrid guards publishDeckAnlz of a sprea
 	live.flushSync();
 	stop();
 	assert.deepEqual(seen.at(-1), view(payload({ beats: 64, cues: 2 })));
-	assert.equal(live.isRawAnlz(live.decks[1].anlz), true, 'a spread copy must be re-wrapped or it is deep-proxied again');
+	assert.equal(
+		live.isRawAnlz(live.decks[1].anlz),
+		true,
+		'a spread copy must be re-wrapped or it is deep-proxied again'
+	);
 });
 
 test('8 gridless-error publish (beatgrid guards: spread with an emptied grid) re-renders to zero beats', async () => {
 	const { live, seen, stop } = await liveDeck(payload({ beats: 16 }));
 	const base = live.decks[1].anlz;
-	const published = { ...base, beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] } };
+	const published = {
+		...base,
+		beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] }
+	};
 	live.publish(live.rawAnlz(published));
 	live.flushSync();
 	stop();
@@ -213,7 +230,11 @@ test('9 deck swap / load() (st.anlz = rawAnlz(publishedAnlz)) re-renders the new
 	live.publish(null);
 	live.flushSync();
 	stop();
-	assert.deepEqual(seen, [view(payload({ sid: SID, beats: 8 })), view(payload({ sid: SID_B, beats: 12, phrases: 3 })), null]);
+	assert.deepEqual(seen, [
+		view(payload({ sid: SID, beats: 8 })),
+		view(payload({ sid: SID_B, beats: 12, phrases: 3 })),
+		null
+	]);
 });
 
 test('10 Rust deck load (rust-engine loadRustDeck: st.anlz = rawAnlz(anlz)) from an empty deck renders the payload', async () => {
@@ -248,10 +269,16 @@ test('12 beatgrid fallback upgrade: the REAL upgradeDeckBeatgrid publishes its m
 		const reply = path.endsWith('/rb-meta')
 			? captured.rb_meta_ok
 			: path.endsWith('/beatgrid-fallback')
-				? { status: captured.beatgrid_fallback_ok.status, body: { ...captured.beatgrid_fallback_ok.body, anlz_available: false } }
+				? {
+						status: captured.beatgrid_fallback_ok.status,
+						body: { ...captured.beatgrid_fallback_ok.body, anlz_available: false }
+					}
 				: null;
 		if (reply === null) throw new Error(`unexpected request in this test: ${path}`);
-		return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'content-type': 'application/json' } });
+		return new Response(JSON.stringify(reply.body), {
+			status: reply.status,
+			headers: { 'content-type': 'application/json' }
+		});
 	};
 	await live.upgradeDeckBeatgrid(1, SID, live.decks[1], () => false);
 	live.flushSync();
@@ -274,7 +301,9 @@ function sourceFiles(dir) {
 }
 
 const stripComments = (text) =>
-	text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+	text
+		.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+		.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 /** `.anlz = <rhs>` writers whose rhs is neither rawAnlz(...) nor null. */
 function unwrappedWriters(text) {
@@ -291,22 +320,32 @@ function inPlaceEdits(text) {
 	const code = stripComments(text);
 	return [
 		...code.matchAll(/\.anlz\??\.[\w.?[\]]+\s*(?:=(?![=>])|\+=|-=)/g),
-		...code.matchAll(/\.anlz\??\.[\w.?[\]]+\.(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin)\(/g),
+		...code.matchAll(
+			/\.anlz\??\.[\w.?[\]]+\.(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin)\(/g
+		),
 		...code.matchAll(/delete\s+[\w.]*\.anlz\./g),
 		...code.matchAll(/Object\.assign\(\s*[\w.[\]]*\.anlz\b/g)
 	].map((m) => m[0]);
 }
 
 test('13 scanner controls: it flags an unwrapped writer and an in-place edit, and passes a wrapped one', () => {
-	assert.deepEqual(unwrappedWriters('st.anlz = { ...latest, beatgrid };'), ['{ ...latest, beatgrid }']);
+	assert.deepEqual(unwrappedWriters('st.anlz = { ...latest, beatgrid };'), [
+		'{ ...latest, beatgrid }'
+	]);
 	assert.deepEqual(unwrappedWriters('decks[deck].anlz = fresh;'), ['fresh']);
-	assert.deepEqual(unwrappedWriters('st.anlz = rawAnlz(fresh); st.anlz = null; if (st.anlz === x) {}'), []);
+	assert.deepEqual(
+		unwrappedWriters('st.anlz = rawAnlz(fresh); st.anlz = null; if (st.anlz === x) {}'),
+		[]
+	);
 	assert.deepEqual(unwrappedWriters('// st.anlz = fresh\n'), [], 'comments are not writers');
 	assert.equal(inPlaceEdits('st.anlz.cues = next;').length, 1);
 	assert.equal(inPlaceEdits('deckStates[deck].anlz.beatgrid.beats.push(b);').length, 1);
 	assert.equal(inPlaceEdits('delete st.anlz.tempo_changes;').length, 1);
 	assert.equal(inPlaceEdits('Object.assign(st.anlz, patch);').length, 1);
-	assert.equal(inPlaceEdits('if (st.anlz.cues === x) {} const n = st.anlz?.beatgrid.beats.length;').length, 0);
+	assert.equal(
+		inPlaceEdits('if (st.anlz.cues === x) {} const n = st.anlz?.beatgrid.beats.length;').length,
+		0
+	);
 });
 
 test('14 every `.anlz =` writer in src publishes rawAnlz(...) or null, and nothing edits a payload in place', () => {
@@ -316,14 +355,26 @@ test('14 every `.anlz =` writer in src publishes rawAnlz(...) or null, and nothi
 	for (const file of sourceFiles(SRC_ROOT)) {
 		const text = readFileSync(file, 'utf8');
 		const rel = relative(FRONTEND_ROOT, file);
-		for (const m of stripComments(text).matchAll(/\.anlz\s*=(?![=>])/g)) writers.push(`${rel}@${m.index}`);
+		for (const m of stripComments(text).matchAll(/\.anlz\s*=(?![=>])/g))
+			writers.push(`${rel}@${m.index}`);
 		for (const rhs of unwrappedWriters(text)) unwrapped.push(`${rel}: .anlz = ${rhs}`);
 		for (const hit of inPlaceEdits(text)) inPlace.push(`${rel}: ${hit}`);
 	}
 	// Positive control: the scan found the known writers (load, refreshHotCues,
 	// guard publish, eject x2, Rust load, source refresh, fallback upgrade), so a
 	// green result is not a scan that matched nothing.
-	assert.ok(writers.length >= 8, `expected at least 8 .anlz writers, found ${writers.length}: ${writers.join(', ')}`);
-	assert.deepEqual(unwrapped, [], 'a writer that skips rawAnlz() deep-proxies that deck payload again');
-	assert.deepEqual(inPlace, [], 'an in-place edit of a raw payload never re-renders its readers; replace st.anlz instead');
+	assert.ok(
+		writers.length >= 8,
+		`expected at least 8 .anlz writers, found ${writers.length}: ${writers.join(', ')}`
+	);
+	assert.deepEqual(
+		unwrapped,
+		[],
+		'a writer that skips rawAnlz() deep-proxies that deck payload again'
+	);
+	assert.deepEqual(
+		inPlace,
+		[],
+		'an in-place edit of a raw payload never re-renders its readers; replace st.anlz instead'
+	);
 });

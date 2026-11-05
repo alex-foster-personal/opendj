@@ -38,7 +38,10 @@ function _ensureEndListener(): void {
 	_endBound = true;
 }
 
-export function beginTrackDrag(stableIds: string[], rows: Record<string, DraggedDeckRow> = {}): void {
+export function beginTrackDrag(
+	stableIds: string[],
+	rows: Record<string, DraggedDeckRow> = {}
+): void {
 	const ids = stableIds.map((s) => s.trim()).filter((s) => s.length > 0);
 	if (ids.length === 0) return;
 	trackDrag.active = true;

@@ -21,7 +21,10 @@ let originalFetch;
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, status = 200) {
-	const payload = status === 200 ? { key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body } : body;
+	const payload =
+		status === 200
+			? { key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body }
+			: body;
 	return new Response(JSON.stringify(payload), {
 		status,
 		headers: { 'content-type': 'application/json' }
@@ -164,7 +167,11 @@ test('hydration removes a remembered drop mode the disk map no longer has', asyn
 	await prefs.hydrateConfirmPrefsFromDisk();
 
 	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined);
-	assert.equal(prefs.uiPrefs.confirm.delete_playlist, false, 'a key present on disk still hydrates');
+	assert.equal(
+		prefs.uiPrefs.confirm.delete_playlist,
+		false,
+		'a key present on disk still hydrates'
+	);
 });
 
 test('hydration keeps a choice whose PUT is still in flight, then honors disk once it lands', async () => {
@@ -183,12 +190,20 @@ test('hydration keeps a choice whose PUT is still in flight, then honors disk on
 
 	prefs.setConfirmPref('playlist_drop_mode', 'move');
 	await prefs.hydrateConfirmPrefsFromDisk();
-	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'move', 'an unacknowledged choice must survive');
+	assert.equal(
+		prefs.uiPrefs.confirm.playlist_drop_mode,
+		'move',
+		'an unacknowledged choice must survive'
+	);
 
 	releasePut();
 	await settle();
 	await prefs.hydrateConfirmPrefsFromDisk();
-	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined, 'once saved, disk is authoritative again');
+	assert.equal(
+		prefs.uiPrefs.confirm.playlist_drop_mode,
+		undefined,
+		'once saved, disk is authoritative again'
+	);
 });
 
 test('a failed confirm PUT keeps the choice through hydration and the next write resends it', async () => {
@@ -288,9 +303,16 @@ test('a reset that lands after a newer choice keeps that choice and saves it', a
 
 	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'add');
 	assert.deepEqual(bodies.at(-1), { confirm: { playlist_drop_mode: 'add' } });
-	globalThis.fetch = routeFetch({ get: () => jsonResponse({ confirm: {} }), put: () => jsonResponse({}) });
+	globalThis.fetch = routeFetch({
+		get: () => jsonResponse({ confirm: {} }),
+		put: () => jsonResponse({})
+	});
 	await prefs.hydrateConfirmPrefsFromDisk();
-	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined, 'the newer choice was saved, so disk wins');
+	assert.equal(
+		prefs.uiPrefs.confirm.playlist_drop_mode,
+		undefined,
+		'the newer choice was saved, so disk wins'
+	);
 	assert.deepEqual(globalThis.__recordedSettingSaveErrors, []);
 });
 
@@ -316,5 +338,9 @@ test('a reset still clears a choice that was unsaved before it was asked for', a
 	assert.deepEqual(bodies, [{ confirm: { playlist_drop_mode: null } }]);
 	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined);
 	await prefs.hydrateConfirmPrefsFromDisk();
-	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'move', 'no longer unsaved: disk is authoritative');
+	assert.equal(
+		prefs.uiPrefs.confirm.playlist_drop_mode,
+		'move',
+		'no longer unsaved: disk is authoritative'
+	);
 });

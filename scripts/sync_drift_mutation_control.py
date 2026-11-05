@@ -2,7 +2,7 @@
 
 The drift linter guards OMISSIONS, and an omission raises nothing. That makes
 a green run indistinguishable from a linter pointed at the wrong thing unless
-each check has been SHOWN to fire (``.claude/rules/verification.md``). The
+each check has been SHOWN to fire (``(private path)``). The
 per-check tests next to it do that at the assertion level; this does it at the
 whole-file level, by injecting the exact defect the file exists to prevent:
 one check made to ``return []`` before it measures anything.
@@ -49,8 +49,8 @@ LINT: Path = REPO / "scripts" / "sync_drift_lint.py"
 PYCACHE: Path = LINT.parent / "__pycache__"
 TESTS: tuple[str, ...] = (
     "tests/quality/test_sync_drift_lint.py",
-    "tests/quality/test_sync_drift_declarations.py",
-    "tests/quality/test_sync_drift_authorities.py",
+    "(private path)",
+    "(private path)",
     "tests/quality/test_sync_drift_floors.py",
     "tests/quality/test_sync_drift_sources.py",
     "tests/quality/test_sync_drift_wire.py",
@@ -91,9 +91,7 @@ def _run_tests() -> tuple[int, list[str]]:
         check=False,
     )
     failed = sorted(
-        line.split(" ", 2)[1].split("::")[-1]
-        for line in proc.stdout.splitlines()
-        if line.startswith("FAILED ")
+        line.split(" ", 2)[1].split("::")[-1] for line in proc.stdout.splitlines() if line.startswith("FAILED ")
     )
     return proc.returncode, failed
 
@@ -133,8 +131,7 @@ def main() -> int:
     code, failed = _run_tests()
     if code != 0 or failed:
         raise MutationControlError(
-            f"the unmutated tree is already red ({failed}), so nothing below "
-            "would mean anything."
+            f"the unmutated tree is already red ({failed}), so nothing below would mean anything."
         )
     print("BASELINE: green, so a red below is caused by the mutation.\n")
 

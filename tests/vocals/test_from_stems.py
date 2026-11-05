@@ -205,7 +205,9 @@ def test_parts_that_cannot_be_pinned_are_decoded_under_the_bundle_lock(tmp_path:
         part = stems / sid / "other.wav"
         held = fifo_part.make_fifo(part)
         identity = vfrom_stems.bundle_stem_identity(bundle)
-        with fifo_part.serving(part, held, bundle_lock_path(data_dir, sid), [_swap_writer(stems / sid, fresh)]) as served:
+        with fifo_part.serving(
+            part, held, bundle_lock_path(data_dir, sid), [_swap_writer(stems / sid, fresh)]
+        ) as served:
             if pinnable:
                 with pytest.raises(vfrom_stems.BundleChangedError):
                     vfrom_stems.derive_from_generation(data_dir, sid, bundle, identity)
@@ -317,5 +319,7 @@ def test_a_swap_after_a_decode_held_under_the_lock_is_not_published(
     # Control: with no writer, the same lock-held decode publishes.
     monkeypatch.setattr(vfrom_stems, "_pin_generation", pin)
     now = load_stem_bundle(sid, stems_dir=stems)
-    vfrom_stems.derive_from_generation(data_dir, sid, now, vfrom_stems.bundle_stem_identity(now), publish=published.append)
+    vfrom_stems.derive_from_generation(
+        data_dir, sid, now, vfrom_stems.bundle_stem_identity(now), publish=published.append
+    )
     assert len(published) == 1

@@ -198,3 +198,23 @@ def test_docs_pull_requests_create_no_deployment():
     environment = _load_workflow("docs.yml")["jobs"]["build"]["environment"]
     assert environment["deployment"] == "${{ github.event_name == 'push' }}"
     assert "'cloudflare-pages'" in environment["name"]
+
+
+def test_docs_workflow_triggers_on_exactly_what_mkdocs_reads():
+    """If docs.yml's paths filter misses docs_dir then broken: a site edit would build no
+    check. If it lists `**.md` again then broken: every PR carrying the requirements delta
+    builds an unchanged site (CI fan-out, Thu 5 Nov 2026)."""
+    cfg = _load_config()
+    assert "custom_dir" not in (cfg.get("theme") or {}), "a theme custom_dir is a docs input"
+    extensions = [ext if isinstance(ext, str) else next(iter(ext)) for ext in cfg.get("markdown_extensions") or []]
+    assert "pymdownx.snippets" not in extensions, "snippets read files outside docs_dir"
+    inputs = {
+        f"{cfg['docs_dir']}/**",
+        "mkdocs.yml",
+        "requirements-docs.txt",
+        "pylock.docs.toml",
+        ".github/workflows/docs.yml",
+    }
+    triggers = _load_workflow("docs.yml")["on"]
+    for event in ("push", "pull_request"):
+        assert set(triggers[event]["paths"]) == inputs, event

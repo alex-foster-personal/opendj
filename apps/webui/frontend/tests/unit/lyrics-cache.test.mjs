@@ -52,7 +52,11 @@ after(() => {
  * constants - every call below still lands on the real production function. */
 async function freshCache() {
 	const mod = await loadTypeScriptModule(MODULE, { viteApiBase: API_BASE });
-	return { ...mod.lyricsCache, HOVER_DEBOUNCE_MS: mod.HOVER_DEBOUNCE_MS, MAX_SETTLED: mod.LYRICS_CACHE_MAX_SETTLED };
+	return {
+		...mod.lyricsCache,
+		HOVER_DEBOUNCE_MS: mod.HOVER_DEBOUNCE_MS,
+		MAX_SETTLED: mod.LYRICS_CACHE_MAX_SETTLED
+	};
 }
 
 function verdict(stableId, overrides = {}) {
@@ -139,8 +143,7 @@ test('a payload lands as loaded, with lines requested', async () => {
 
 test('a 404 lands as none, not as an error', async () => {
 	const cache = await freshCache();
-	globalThis.fetch = async () =>
-		jsonResponse({ detail: 'no karaoke lyric data for track' }, 404);
+	globalThis.fetch = async () => jsonResponse({ detail: 'no karaoke lyric data for track' }, 404);
 
 	await cache.load('t-missing');
 
@@ -184,11 +187,7 @@ test('concurrent loads of one id share a single request', async () => {
 		return jsonResponse(karaokeTrack('t-once', 2));
 	};
 
-	await Promise.all([
-		cache.load('t-once'),
-		cache.load('t-once'),
-		cache.load('t-once')
-	]);
+	await Promise.all([cache.load('t-once'), cache.load('t-once'), cache.load('t-once')]);
 	await cache.load('t-once');
 
 	assert.equal(calls, 1, 'a loaded or in-flight track must never be refetched');
@@ -286,12 +285,14 @@ test('the hover path is debounced and cancellable', async () => {
 
 test('B9: settled entries are capped, least recently loaded first', async () => {
 	const cache = await freshCache();
-	globalThis.fetch = async (request) => jsonResponse(karaokeTrack(new URL(request.url).pathname.split('/')[4], 4));
+	globalThis.fetch = async (request) =>
+		jsonResponse(karaokeTrack(new URL(request.url).pathname.split('/')[4], 4));
 	const cap = cache.MAX_SETTLED;
 	assert.equal(cap, 16);
 	for (let i = 0; i < cap + 4; i++) await cache.load(`cap-${i}`);
 	assert.equal(cache.stats().entries, cap, 'a long set must not hold every track it ever loaded');
-	for (let i = 0; i < 4; i++) assert.equal(cache.entry(`cap-${i}`), null, `cap-${i} is the oldest and goes first`);
+	for (let i = 0; i < 4; i++)
+		assert.equal(cache.entry(`cap-${i}`), null, `cap-${i} is the oldest and goes first`);
 	for (let i = 4; i < cap + 4; i++) assert.equal(cache.entry(`cap-${i}`).state, 'loaded');
 });
 

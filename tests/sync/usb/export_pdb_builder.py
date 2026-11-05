@@ -12,6 +12,7 @@ table directory; every table is a chain of fixed-size pages, each a 40-byte
 header, a row heap growing up, and row-group indexes (16 row offsets plus a
 presence bitmask, 36 bytes) growing down from the end of the page.
 """
+
 from __future__ import annotations
 
 import struct
@@ -108,13 +109,38 @@ def _track_row(track: PdbTrack) -> bytes:
         offsets.append(cursor)
         cursor += len(blob)
     head = struct.pack(
-        "<HHIIIIIHH" "IIIIIIIIIIII" "HHHHHH" "BB" "HH",
-        0x24, 0, 0, 44100, 0, 0, 0, 0, 0,
-        track.artwork_id, track.key_id, 0, 0, 0, 320, 0, track.tempo_x100,
-        track.genre_id, track.album_id, track.artist_id, track.id,
-        0, track.play_count, 0, 16, track.duration_s, 0x29,
-        0, track.rating,
-        1, 0,
+        "<HHIIIIIHHIIIIIIIIIIIIHHHHHHBBHH",
+        0x24,
+        0,
+        0,
+        44100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        track.artwork_id,
+        track.key_id,
+        0,
+        0,
+        0,
+        320,
+        0,
+        track.tempo_x100,
+        track.genre_id,
+        track.album_id,
+        track.artist_id,
+        track.id,
+        0,
+        track.play_count,
+        0,
+        16,
+        track.duration_s,
+        0x29,
+        0,
+        track.rating,
+        1,
+        0,
     )
     return head + struct.pack(f"<{_TRACK_STRING_COUNT}H", *offsets) + b"".join(encoded)
 
@@ -152,8 +178,7 @@ def _table_rows(export: PdbExport) -> list[tuple[int, list[bytes]]]:
         for list_id, track_id, entry_index in export.playlist_entries
     ]
     history_entry = [
-        struct.pack("<III", track_id, list_id, entry_index)
-        for list_id, track_id, entry_index in export.history_entries
+        struct.pack("<III", track_id, list_id, entry_index) for list_id, track_id, entry_index in export.history_entries
     ]
     return [
         (_PT.tracks, [_track_row(track) for track in export.tracks]),
@@ -204,9 +229,7 @@ def _data_page(page_index: int, page_type: int, next_page: int, rows: list[bytes
         offsets.append(len(heap))
         heap += _padded(row)
     count = len(rows)
-    struct.pack_into(
-        "<4sIIII4s", page, 0, b"\0" * 4, page_index, page_type, next_page, 1, b"\0" * 4
-    )
+    struct.pack_into("<4sIIII4s", page, 0, b"\0" * 4, page_index, page_type, next_page, 1, b"\0" * 4)
     page[24:27] = (count | (count << 13)).to_bytes(3, "little")
     page[27] = _DATA_PAGE_FLAGS
     free = PAGE_SIZE - _PAGE_HEADER_SIZE - len(heap) - _index_size(count)
@@ -237,9 +260,7 @@ def build_export_pdb(export: PdbExport) -> bytes:
             page_index += 1
         directory.append((page_type, first, page_index - 1))
     header = bytearray(PAGE_SIZE)
-    struct.pack_into(
-        "<IIIIII4s", header, 0, 0, PAGE_SIZE, len(directory), next_unused, 5, 1, b"\0" * 4
-    )
+    struct.pack_into("<IIIIII4s", header, 0, 0, PAGE_SIZE, len(directory), next_unused, 5, 1, b"\0" * 4)
     for position, (page_type, first, last) in enumerate(directory):
         struct.pack_into("<IIII", header, 28 + 16 * position, page_type, next_unused, first, last)
     return bytes(header) + b"".join(body)

@@ -18,7 +18,9 @@ let stores;
 let deeplink;
 
 before(async () => {
-	({ session, stores } = await loadTypeScriptModule('tests/unit/fixtures/performance-session-restore-entry.ts'));
+	({ session, stores } = await loadTypeScriptModule(
+		'tests/unit/fixtures/performance-session-restore-entry.ts'
+	));
 	deeplink = await loadTypeScriptModule('src/lib/rb/performance-deeplink.ts');
 });
 
@@ -48,12 +50,29 @@ function deck(stable_id) {
 }
 
 function engine(loaded) {
-	const channel = { trim: 0.5, eq_high: 0.5, eq_mid: 0.5, eq_low: 0.5, filter: 0.5, fader: 1, assign: 'THRU' };
+	const channel = {
+		trim: 0.5,
+		eq_high: 0.5,
+		eq_mid: 0.5,
+		eq_low: 0.5,
+		filter: 0.5,
+		fader: 1,
+		assign: 'THRU'
+	};
 	return {
 		browser: { active_playlist: null },
 		master_deck: null,
-		mixer: { crossfader: 0.5, master: 0.5, channels: { 1: channel, 2: channel, 3: channel, 4: channel } },
-		decks: { 1: deck(loaded[1] ?? null), 2: deck(loaded[2] ?? null), 3: deck(loaded[3] ?? null), 4: deck(loaded[4] ?? null) }
+		mixer: {
+			crossfader: 0.5,
+			master: 0.5,
+			channels: { 1: channel, 2: channel, 3: channel, 4: channel }
+		},
+		decks: {
+			1: deck(loaded[1] ?? null),
+			2: deck(loaded[2] ?? null),
+			3: deck(loaded[3] ?? null),
+			4: deck(loaded[4] ?? null)
+		}
 	};
 }
 
@@ -62,7 +81,11 @@ async function run(loaded, restoreOpts) {
 	globalThis.window = {};
 	const state = engine(loaded);
 	const dispatched = [];
-	const location = { pathname: '/performance', search: SEARCH, href: `http://127.0.0.1/performance${SEARCH}` };
+	const location = {
+		pathname: '/performance',
+		search: SEARCH,
+		href: `http://127.0.0.1/performance${SEARCH}`
+	};
 	try {
 		const dispose = session.installPerformanceSessionRestore({
 			location,
@@ -88,7 +111,9 @@ async function run(loaded, restoreOpts) {
 		delete globalThis.window;
 	}
 	return {
-		loads: dispatched.filter((c) => c.type === 'load').map((c) => ({ deck: c.deck, stable_id: c.stable_id })),
+		loads: dispatched
+			.filter((c) => c.type === 'load')
+			.map((c) => ({ deck: c.deck, stable_id: c.stable_id })),
 		mixer: dispatched.filter((c) => c.type === 'crossfader' || c.type === 'master_volume'),
 		urlIds: deeplink.parseLv2Ids(location.search)
 	};
@@ -105,7 +130,10 @@ test('a resumed restore loads only the empty URL decks, each with its own id', a
 });
 
 test('a resume never replaces a deck that already holds a track', async () => {
-	const out = await run({ 1: URL_IDS[1], 2: URL_IDS[2], 3: 'operator-choice' }, { resumeInterruptedRestore: true });
+	const out = await run(
+		{ 1: URL_IDS[1], 2: URL_IDS[2], 3: 'operator-choice' },
+		{ resumeInterruptedRestore: true }
+	);
 	assert.deepEqual(out.loads, [{ deck: 4, stable_id: URL_IDS[4] }]);
 	assert.equal(out.urlIds[3], 'operator-choice');
 });
@@ -122,45 +150,56 @@ test('the settled callback fires after a resume that ran to its end', async () =
 	assert.equal(settled, 1);
 });
 
-for (const resumeInterruptedRestore of [true, false]) test(`bug #31: a restore disposed by losing the lease mid-flight is quiet (resume=${resumeInterruptedRestore})`, async () => {
-	stores.toasts.length = 0;
-	const unhandled = [];
-	const onUnhandled = (reason) => unhandled.push(String(reason));
-	process.on('unhandledRejection', onUnhandled);
-	globalThis.window = {};
-	const state = engine({});
-	let release;
-	const gate = new Promise((resolve) => (release = resolve));
-	const location = { pathname: '/performance', search: SEARCH, href: `http://127.0.0.1/performance${SEARCH}` };
-	try {
-		const dispose = session.installPerformanceSessionRestore({
-			location,
-			storage: { getItem: () => null, setItem: () => {} },
-			replaceState: () => {},
-			dispatch: async (command) => {
-				await gate;
-				if (command.type === 'load') state.decks[command.deck].stable_id = command.stable_id;
-				return state;
-			},
-			query: () => state,
-			document: { hidden: false, addEventListener: () => {}, removeEventListener: () => {} },
-			window: { addEventListener: () => {}, removeEventListener: () => {} },
-			setInterval: () => 1,
-			clearInterval: () => {},
-			commandSession: () => 1,
-			operatorMaster: () => null,
-			resumeInterruptedRestore
-		});
-		for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
-		dispose(); // the lease is lost while deck 1 is still loading
-		release();
-		for (let i = 0; i < 30; i += 1) await new Promise((resolve) => setImmediate(resolve));
-		await new Promise((resolve) => setTimeout(resolve, 20));
-	} finally {
-		delete globalThis.window;
-		process.off('unhandledRejection', onUnhandled);
-	}
-	assert.deepEqual(unhandled, []);
-	const restoreToasts = stores.toasts.filter((toast) => String(toast.message).startsWith('session restore deck'));
-	assert.deepEqual(restoreToasts.map((toast) => toast.message), [], 'and no error toast per remaining deck');
-});
+for (const resumeInterruptedRestore of [true, false])
+	test(`bug #31: a restore disposed by losing the lease mid-flight is quiet (resume=${resumeInterruptedRestore})`, async () => {
+		stores.toasts.length = 0;
+		const unhandled = [];
+		const onUnhandled = (reason) => unhandled.push(String(reason));
+		process.on('unhandledRejection', onUnhandled);
+		globalThis.window = {};
+		const state = engine({});
+		let release;
+		const gate = new Promise((resolve) => (release = resolve));
+		const location = {
+			pathname: '/performance',
+			search: SEARCH,
+			href: `http://127.0.0.1/performance${SEARCH}`
+		};
+		try {
+			const dispose = session.installPerformanceSessionRestore({
+				location,
+				storage: { getItem: () => null, setItem: () => {} },
+				replaceState: () => {},
+				dispatch: async (command) => {
+					await gate;
+					if (command.type === 'load') state.decks[command.deck].stable_id = command.stable_id;
+					return state;
+				},
+				query: () => state,
+				document: { hidden: false, addEventListener: () => {}, removeEventListener: () => {} },
+				window: { addEventListener: () => {}, removeEventListener: () => {} },
+				setInterval: () => 1,
+				clearInterval: () => {},
+				commandSession: () => 1,
+				operatorMaster: () => null,
+				resumeInterruptedRestore
+			});
+			for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+			dispose(); // the lease is lost while deck 1 is still loading
+			release();
+			for (let i = 0; i < 30; i += 1) await new Promise((resolve) => setImmediate(resolve));
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		} finally {
+			delete globalThis.window;
+			process.off('unhandledRejection', onUnhandled);
+		}
+		assert.deepEqual(unhandled, []);
+		const restoreToasts = stores.toasts.filter((toast) =>
+			String(toast.message).startsWith('session restore deck')
+		);
+		assert.deepEqual(
+			restoreToasts.map((toast) => toast.message),
+			[],
+			'and no error toast per remaining deck'
+		);
+	});

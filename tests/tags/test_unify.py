@@ -1,4 +1,5 @@
 """Tests for ``apps.tags.unify``."""
+
 from __future__ import annotations
 
 from dataclasses import fields
@@ -97,9 +98,7 @@ def test_deterministic_rerun() -> None:
     b = unify(sources)
     # Provenance includes attempts log.
     assert a.tags == b.tags
-    assert {k: v.source for k, v in a.provenance.items()} == {
-        k: v.source for k, v in b.provenance.items()
-    }
+    assert {k: v.source for k, v in a.provenance.items()} == {k: v.source for k, v in b.provenance.items()}
 
 
 @pytest.mark.requirement("META-03")

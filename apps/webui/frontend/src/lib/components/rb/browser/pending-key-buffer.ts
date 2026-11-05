@@ -14,7 +14,16 @@ export interface BufferableKey {
 
 /** The keys CompatibleFilterPanel.handleKey acts on (T / M and arrows + WASD). */
 export const COMPAT_PANEL_KEYS: ReadonlySet<string> = new Set([
-	't', 'm', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'a', 'd', 'w', 's'
+	't',
+	'm',
+	'arrowleft',
+	'arrowright',
+	'arrowup',
+	'arrowdown',
+	'a',
+	'd',
+	'w',
+	's'
 ]);
 
 export class PendingKeyBuffer<E extends BufferableKey> {

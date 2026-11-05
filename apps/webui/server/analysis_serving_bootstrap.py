@@ -13,7 +13,9 @@ from apps.analysis.serving_lanes import SERVING_LANES, register_serving_lane
 # ``phrase`` serves own sections from the structure sidecar
 # (apps/analysis_structure/serve.py); a track with no sidecar answers an empty
 # `phrases` with `phrases_source: none`, never rekordbox's (STRUCT-04).
-_LANDED_LANES: tuple[str, ...] = ("beatgrid", "waveform", "phrase")
+# ``loudness`` is NATIVE-07 / ``own_loudness.backfill``; selectable because the
+# producer landed, not because the persisted default changed (issue #7069).
+_LANDED_LANES: tuple[str, ...] = ("beatgrid", "waveform", "phrase", "loudness")
 
 
 def ensure_analysis_serving_lanes() -> None:

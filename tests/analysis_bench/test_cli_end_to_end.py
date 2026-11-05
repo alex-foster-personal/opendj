@@ -23,9 +23,7 @@ from tests.analysis_bench import synthetic
 def bundle(tmp_path: Path) -> Path:
     staged = tmp_path / "beatgrid-v1"
     fixtures = synthetic.build(staged)
-    bundles.seal_bundle(
-        staged, lane="beatgrid", version="v1", manifest_extra=synthetic.manifest_extra(fixtures)
-    )
+    bundles.seal_bundle(staged, lane="beatgrid", version="v1", manifest_extra=synthetic.manifest_extra(fixtures))
     return staged
 
 
@@ -34,11 +32,41 @@ def bundle(tmp_path: Path) -> Path:
 def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     """[if] a bundle is pushed, pulled and run with --post [then] a round is logged, [else stop]."""
     store_root = tmp_path / "asset-store"
-    assert cli.main(["fixtures", "push", "--lane", "beatgrid", "--version", "v1",
-                     "--bundle-dir", str(bundle), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "push",
+                "--lane",
+                "beatgrid",
+                "--version",
+                "v1",
+                "--bundle-dir",
+                str(bundle),
+                "--store",
+                str(store_root),
+            ]
+        )
+        == 0
+    )
     pulled = tmp_path / "pulled"
-    assert cli.main(["fixtures", "pull", "--lane", "beatgrid", "--version", "v1",
-                     "--dest", str(pulled), "--store", str(store_root)]) == 0
+    assert (
+        cli.main(
+            [
+                "fixtures",
+                "pull",
+                "--lane",
+                "beatgrid",
+                "--version",
+                "v1",
+                "--dest",
+                str(pulled),
+                "--store",
+                str(store_root),
+            ]
+        )
+        == 0
+    )
 
     # The round goes to a scratch log through the production `--log-path` input,
     # not by replacing the lane registry in-process: a test that swaps the
@@ -46,9 +74,27 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     log = tmp_path / "spec.md"
     log.write_text("# spec\n\n## Experiment log\n")
     report_path = tmp_path / "report.json"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(pulled), "--workdir", str(tmp_path / "arms"),
-                     "--out", str(report_path), "--post", "--log-path", str(log)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(pulled),
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--out",
+                str(report_path),
+                "--post",
+                "--log-path",
+                str(log),
+            ]
+        )
+        == 0
+    )
 
     report = json.loads(report_path.read_text())
     assert report["scorer_version"] == "1.1.0"
@@ -80,9 +126,23 @@ def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) 
     """--no-controls is allowed for a quick look and must never reach the log."""
     log = tmp_path / "spec.md"
     log.write_text("# spec\n")
-    code = cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(tmp_path / "arms"),
-                     "--no-controls", "--post", "--log-path", str(log)])
+    code = cli.main(
+        [
+            "run",
+            "--lane",
+            "beatgrid",
+            "--candidate",
+            "constant_128",
+            "--bundle-dir",
+            str(bundle),
+            "--workdir",
+            str(tmp_path / "arms"),
+            "--no-controls",
+            "--post",
+            "--log-path",
+            str(log),
+        ]
+    )
     assert code == 2
     assert "cannot be posted" in capsys.readouterr().err
     assert log.read_text() == "# spec\n"
@@ -90,8 +150,7 @@ def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) 
 
 def test_scoring_a_tampered_bundle_refuses(bundle: Path, tmp_path: Path, capsys) -> None:
     (bundle / "wav" / "synthetic-0.wav").write_bytes(b"not the audio it was sealed with")
-    code = cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
-                     "--arm", "constant_128=/dev/null"])
+    code = cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle), "--arm", "constant_128=/dev/null"])
     assert code == 2
     assert "wav/synthetic-0.wav" in capsys.readouterr().err
 
@@ -99,18 +158,40 @@ def test_scoring_a_tampered_bundle_refuses(bundle: Path, tmp_path: Path, capsys)
 def test_an_arm_measured_on_another_bundle_is_refused(bundle: Path, tmp_path: Path) -> None:
     """A rebuild that keeps the stable ids must not be able to reuse old results."""
     arms = tmp_path / "arms"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+            ]
+        )
+        == 0
+    )
     stamped = json.loads((arms / "constant_128.json").read_text())
     assert stamped["bundle_id"] == bundles.verify_bundle(bundle)["bundle_id"]
 
     other = tmp_path / "other"
     fixtures = synthetic.build(other, bpms=(90.0, 128.0, 174.0))
-    bundles.seal_bundle(other, lane="beatgrid", version="v1",
-                        manifest_extra=synthetic.manifest_extra(fixtures))
+    bundles.seal_bundle(other, lane="beatgrid", version="v1", manifest_extra=synthetic.manifest_extra(fixtures))
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(other),
-                  "--arm", f"constant_128={arms / 'constant_128.json'}"])
+        cli.main(
+            [
+                "score",
+                "--lane",
+                "beatgrid",
+                "--bundle-dir",
+                str(other),
+                "--arm",
+                f"constant_128={arms / 'constant_128.json'}",
+            ]
+        )
     assert "another bundle's numbers" in str(excinfo.value)
 
 
@@ -132,9 +213,23 @@ def test_a_stale_results_file_is_replaced_not_reused(bundle: Path, tmp_path: Pat
     arms = tmp_path / "arms"
     arms.mkdir()
     (arms / "constant_128.json").write_text('{"schema": 1, "candidate": "STALE", "results": {}}')
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms),
-                     "--no-controls"]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+                "--no-controls",
+            ]
+        )
+        == 0
+    )
     assert json.loads((arms / "constant_128.json").read_text())["candidate"] == "constant_128"
 
 
@@ -146,8 +241,22 @@ def test_a_partial_candidate_keeps_the_bundle_denominator(bundle: Path, tmp_path
     bundle's full fixture count.
     """
     arms = tmp_path / "arms"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+            ]
+        )
+        == 0
+    )
     path = arms / "constant_128.json"
     payload = json.loads(path.read_text())
     kept = sorted(payload["results"])[0]
@@ -155,8 +264,22 @@ def test_a_partial_candidate_keeps_the_bundle_denominator(bundle: Path, tmp_path
     path.write_text(json.dumps(payload))
 
     report_path = tmp_path / "partial.json"
-    assert cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
-                     "--arm", f"constant_128={path}", "--out", str(report_path)]) == 0
+    assert (
+        cli.main(
+            [
+                "score",
+                "--lane",
+                "beatgrid",
+                "--bundle-dir",
+                str(bundle),
+                "--arm",
+                f"constant_128={path}",
+                "--out",
+                str(report_path),
+            ]
+        )
+        == 0
+    )
     report = json.loads(report_path.read_text())
     arm = report["arms"]["constant_128"]
     assert arm["n_omitted"] == 2
@@ -167,29 +290,50 @@ def test_a_partial_candidate_keeps_the_bundle_denominator(bundle: Path, tmp_path
 def test_an_arm_answering_a_foreign_fixture_is_refused(bundle: Path, tmp_path: Path) -> None:
     """The other direction: results for a track this bundle does not contain."""
     arms = tmp_path / "arms"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms)]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+            ]
+        )
+        == 0
+    )
     path = arms / "constant_128.json"
     payload = json.loads(path.read_text())
-    payload["results"]["not-in-this-bundle"] = {"beats": [], "downbeats": None,
-                                                "native_bpm": None, "error": None}
+    payload["results"]["not-in-this-bundle"] = {"beats": [], "downbeats": None, "native_bpm": None, "error": None}
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="does not contain"):
-        cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
-                  "--arm", f"constant_128={path}"])
+        cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle), "--arm", f"constant_128={path}"])
 
 
 def test_a_bundle_sealed_for_another_lane_is_refused(tmp_path: Path) -> None:
     """A key bundle scored under --lane beatgrid would misfile the measurement."""
     staged = tmp_path / "key-v1"
     fixtures = synthetic.build(staged)
-    bundles.seal_bundle(
-        staged, lane="key", version="v1", manifest_extra=synthetic.manifest_extra(fixtures)
-    )
+    bundles.seal_bundle(staged, lane="key", version="v1", manifest_extra=synthetic.manifest_extra(fixtures))
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                  "--bundle-dir", str(staged), "--workdir", str(tmp_path / "arms"),
-                  "--no-controls"])
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(staged),
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--no-controls",
+            ]
+        )
     assert "sealed as key/v1" in str(excinfo.value)
     assert not (tmp_path / "arms" / "constant_128.json").exists(), "refused before launching"
 
@@ -197,9 +341,22 @@ def test_a_bundle_sealed_for_another_lane_is_refused(tmp_path: Path) -> None:
 def test_a_bundle_of_another_version_is_refused(bundle: Path, tmp_path: Path) -> None:
     """The round line quotes the version, so a mismatch would mislabel the round."""
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["run", "--lane", "beatgrid", "--version", "v2", "--candidate", "constant_128",
-                  "--bundle-dir", str(bundle), "--workdir", str(tmp_path / "arms"),
-                  "--no-controls"])
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--version",
+                "v2",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(tmp_path / "arms"),
+                "--no-controls",
+            ]
+        )
     assert "beatgrid/v1" in str(excinfo.value)
     assert "beatgrid/v2" in str(excinfo.value)
 
@@ -207,11 +364,35 @@ def test_a_bundle_of_another_version_is_refused(bundle: Path, tmp_path: Path) ->
 def test_an_arm_labeled_as_another_candidate_is_refused(bundle: Path, tmp_path: Path) -> None:
     """`--arm beat_this=constant_128.json` would print the control's numbers as Beat This."""
     arms = tmp_path / "arms"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms), "--no-controls"]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+                "--no-controls",
+            ]
+        )
+        == 0
+    )
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
-                  "--arm", f"truth_offset_25ms={arms / 'constant_128.json'}"])
+        cli.main(
+            [
+                "score",
+                "--lane",
+                "beatgrid",
+                "--bundle-dir",
+                str(bundle),
+                "--arm",
+                f"truth_offset_25ms={arms / 'constant_128.json'}",
+            ]
+        )
     assert "emitted by 'constant_128'" in str(excinfo.value)
     assert "'truth_offset_25ms'" in str(excinfo.value)
 
@@ -219,10 +400,38 @@ def test_an_arm_labeled_as_another_candidate_is_refused(bundle: Path, tmp_path: 
 def test_a_correctly_labeled_arm_still_scores(bundle: Path, tmp_path: Path) -> None:
     """The control: the refusal above would pass against a check that always refused."""
     arms = tmp_path / "arms"
-    assert cli.main(["run", "--lane", "beatgrid", "--candidate", "constant_128",
-                     "--bundle-dir", str(bundle), "--workdir", str(arms), "--no-controls"]) == 0
+    assert (
+        cli.main(
+            [
+                "run",
+                "--lane",
+                "beatgrid",
+                "--candidate",
+                "constant_128",
+                "--bundle-dir",
+                str(bundle),
+                "--workdir",
+                str(arms),
+                "--no-controls",
+            ]
+        )
+        == 0
+    )
     out = tmp_path / "report.json"
-    assert cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
-                     "--arm", f"constant_128={arms / 'constant_128.json'}",
-                     "--out", str(out)]) == 0
+    assert (
+        cli.main(
+            [
+                "score",
+                "--lane",
+                "beatgrid",
+                "--bundle-dir",
+                str(bundle),
+                "--arm",
+                f"constant_128={arms / 'constant_128.json'}",
+                "--out",
+                str(out),
+            ]
+        )
+        == 0
+    )
     assert set(json.loads(out.read_text())["arms"]) == {"constant_128"}

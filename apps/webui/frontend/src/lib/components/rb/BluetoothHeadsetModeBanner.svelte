@@ -18,7 +18,12 @@
 </script>
 
 {#if warning !== null && warning.key !== bluetoothHeadsetMode.dismissedKey}
-	<div class="bt-hfp" role="status" data-testid="bluetooth-headset-mode-banner" title={warning.title}>
+	<div
+		class="bt-hfp"
+		role="status"
+		data-testid="bluetooth-headset-mode-banner"
+		title={warning.title}
+	>
 		<span class="bt-hfp-copy">{warning.text}</span>
 		<button
 			type="button"
@@ -29,7 +34,12 @@
 			onclick={() => dismissHeadsetModeWarning(warning.key)}
 		>
 			<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-				<path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+				<path
+					d="M2 2 L8 8 M8 2 L2 8"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+				/>
 			</svg>
 		</button>
 	</div>

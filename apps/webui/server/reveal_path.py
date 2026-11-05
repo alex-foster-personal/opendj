@@ -35,8 +35,6 @@ def reveal_track_path(file_path: str | None) -> None:
     try:
         subprocess.run(argv, check=True, timeout=10)
     except FileNotFoundError as exc:
-        raise RevealPathError(
-            "reveal_unavailable", f"reveal command unavailable: {argv}"
-        ) from exc
+        raise RevealPathError("reveal_unavailable", f"reveal command unavailable: {argv}") from exc
     except subprocess.CalledProcessError as exc:
         raise RevealPathError("reveal_unavailable", f"reveal failed: {exc}") from exc

@@ -1,6 +1,6 @@
 """SPIKE-B2 disposable data-dir builder for live demucs PVDI acceptance (#274).
 
-Never reads or writes the worktree canonical ``data/state/vocal-cache`` or live
+Never reads or writes the worktree canonical ``(private path)`` or live
 ``state.db`` / ``master.plain.db``. Source audio and ANLZ are read-only from a
 real library pointed at by ``VOCALS_ACCEPTANCE_SOURCE_DATA_DIR`` (or fallbacks).
 
@@ -28,9 +28,7 @@ from apps.shared.platform_paths import PathMap, load_path_map, resolve_asset_pat
 from apps.vocals.cli import pvdi_present
 from apps.webui.server.rb_vendor_pkg.anlz import _vocal_regions, read_pvdi
 
-_MANIFEST_PATH = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "vocals" / "spike-b2-acceptance.json"
-)
+_MANIFEST_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "vocals" / "spike-b2-acceptance.json"
 _PVDI_FIXED_HEADER = bytes.fromhex("0000040056220001")
 _PLAYLIST_ID = "spike-b2-acceptance"
 _USE_SOURCE_PATHS_ENV = "VOCALS_ACCEPTANCE_USE_SOURCE_PATHS"
@@ -85,12 +83,7 @@ def resolve_source_data_dir() -> Path | None:
 def _is_usable_source(path: Path) -> bool:
     state = path / "state" / "state.db"
     master = path / "master.plain.db"
-    return (
-        state.is_file()
-        and master.is_file()
-        and state.stat().st_size > 0
-        and master.stat().st_size > 0
-    )
+    return state.is_file() and master.is_file() and state.stat().st_size > 0 and master.stat().st_size > 0
 
 
 def assert_disposable(cache_dir: Path, canonical_data_dir: Path) -> None:
@@ -149,9 +142,7 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
         master.close()
 
     if not folder_path or not adp:
-        raise FileNotFoundError(
-            f"SPIKE-B2 vendor_id {vendor_id} lacks FolderPath or AnalysisDataPath"
-        )
+        raise FileNotFoundError(f"SPIKE-B2 vendor_id {vendor_id} lacks FolderPath or AnalysisDataPath")
     # Real rekordbox rows store AnalysisDataPath share-relative
     # ("/PIONEER/USBANLZ/..."), so resolve both paths the way production
     # (apps.vocals.cli.load_tracks / _anlz_data_file) does.
@@ -178,9 +169,7 @@ def _lookup_vendor_track(source_data_dir: Path, vendor_id: str) -> dict[str, Any
 def _resolved_or_raise(raw: str, path_map: PathMap, vendor_id: str, what: str) -> Path:
     mapped = resolve_asset_path(raw, path_map=path_map)
     if mapped.resolved is None:
-        raise FileNotFoundError(
-            f"SPIKE-B2 {what} path unresolvable for {vendor_id}: {raw} ({mapped.reason})"
-        )
+        raise FileNotFoundError(f"SPIKE-B2 {what} path unresolvable for {vendor_id}: {raw} ({mapped.reason})")
     return mapped.resolved
 
 
@@ -190,8 +179,7 @@ def pvdi_regions(twoex_path: Path) -> list[dict[str, float]]:
         return []
     fps, envelope = decoded
     return [
-        {"start_s": float(item["start_s"]), "end_s": float(item["end_s"])}
-        for item in _vocal_regions(envelope, fps)
+        {"start_s": float(item["start_s"]), "end_s": float(item["end_s"])} for item in _vocal_regions(envelope, fps)
     ]
 
 
@@ -260,9 +248,7 @@ def build_disposable_data_dir(dest: Path, source_data_dir: Path) -> SpikeB2Fixtu
         slug = str(spec["slug"])
         _verify_pinned_inputs(slug, spec, source)
         if spec["role"] == "vocal" and not pvdi_present(source["twoex_path"]):
-            raise RuntimeError(
-                f"SPIKE-B2 track {slug} requires PVDI in .2EX: {source['twoex_path']}"
-            )
+            raise RuntimeError(f"SPIKE-B2 track {slug} requires PVDI in .2EX: {source['twoex_path']}")
 
         if use_source_paths:
             folder_path = str(source["audio_path"])

@@ -203,6 +203,8 @@ test('buildUiMirror publishes the three fields from the live reader and declares
 	for (const key of ['autoplay_enabled', 'autoplay_armed', 'autoplay_disarm_reason']) {
 		assert.match(build, new RegExp(`\\b${key}: autoPlay\\.${key},`), key);
 	}
+	assert.match(build, /mixer: state\.mixer,/);
+	assert.match(build, /auto_gain: state\.auto_gain,/);
 	assert.match(build, /mirror_schema: UI_MIRROR_SCHEMA,/);
 	assert.match(MIRROR, /^export const UI_MIRROR_SCHEMA = 2;$/m);
 	assert.doesNotMatch(build, /autoplay_enabled: true/, 'control: no hardcoded value');

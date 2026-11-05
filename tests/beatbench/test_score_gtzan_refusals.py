@@ -96,9 +96,7 @@ def test_an_unexpected_runner_error_is_fatal(
 
 def test_the_allowlist_does_not_swallow_a_crash_beside_it() -> None:
     """The overshoot direction: one exempt clip must not exempt the run."""
-    unscorable = _unscorable(
-        runner_error=[*sorted(KNOWN_UNANALYZABLE_FIXTURES), "rock_00090"]
-    )
+    unscorable = _unscorable(runner_error=[*sorted(KNOWN_UNANALYZABLE_FIXTURES), "rock_00090"])
     assert _report(ARGS, _summary(), PER_CLIP, unscorable, DIGEST) == 1
 
 
@@ -110,10 +108,12 @@ def test_an_unmeasured_continuity_control_is_fatal(metric: str) -> None:
     continuity metrics decline on every clip, so checking only the F
     cross-check passed a run whose other two stated controls never ran.
     """
-    summary = _summary(**{
-        f"our_{metric}_n_comparable": 0,
-        f"our_{metric}_note": "UNMEASURED: no clip produced a comparable value.",
-    })
+    summary = _summary(
+        **{
+            f"our_{metric}_n_comparable": 0,
+            f"our_{metric}_note": "UNMEASURED: no clip produced a comparable value.",
+        }
+    )
     assert _report(ARGS, summary, PER_CLIP, _unscorable(), DIGEST) == 1
 
 
@@ -126,9 +126,7 @@ def test_an_unimportable_scorer_is_reported_once_not_three_times(
     assert capsys.readouterr().err.count("[gtzan] FAIL") == 1
 
 
-@pytest.mark.parametrize(
-    "raw", ["", "not-a-digest", "0" * 63, "0" * 65, "Z" * 64, "ESTABLISH"]
-)
+@pytest.mark.parametrize("raw", ["", "not-a-digest", "0" * 63, "0" * 65, "Z" * 64, "ESTABLISH"])
 def test_an_unparseable_fixtures_digest_is_refused(raw: str) -> None:
     """Codex P1 BLOCKING, discussion_r3976483262.
 

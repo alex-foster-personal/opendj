@@ -62,7 +62,12 @@ class Creds:
 
 
 def _creds_from_env() -> Creds:
-    names = ("CI_ARTIFACT_R2_ACCOUNT_ID", "CI_ARTIFACT_R2_ACCESS_KEY_ID", "CI_ARTIFACT_R2_SECRET_ACCESS_KEY", "CI_ARTIFACT_R2_BUCKET")
+    names = (
+        "CI_ARTIFACT_R2_ACCOUNT_ID",
+        "CI_ARTIFACT_R2_ACCESS_KEY_ID",
+        "CI_ARTIFACT_R2_SECRET_ACCESS_KEY",
+        "CI_ARTIFACT_R2_BUCKET",
+    )
     missing = [n for n in names if not os.environ.get(n)]
     if missing:
         raise R2Error(f"R2 credentials unset: {', '.join(missing)} (repo secrets ARTIFACT_ARCHIVE_R2_*)")

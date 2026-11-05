@@ -46,10 +46,7 @@ def _uses_a_platform_rewrite(marker: str) -> bool:
 
 def _orders_a_string(marker: str) -> bool:
     ordered = re.findall(r"([a-z_]+)\s*(?:<=|>=|<|>)\s*'", marker)
-    return any(
-        var not in ("python_version", "python_full_version", "implementation_version")
-        for var in ordered
-    )
+    return any(var not in ("python_version", "python_full_version", "implementation_version") for var in ordered)
 
 
 def _as_uv_stores_it(marker: str) -> str:
@@ -80,8 +77,7 @@ def _as_uv_stores_it(marker: str) -> str:
         ("python_version != '3.10'", "python_full_version != '3.10.*'", True),
         (
             "(sys_platform == 'win32' or sys_platform == 'darwin') and extra == 'dev'",
-            "(extra == 'dev' and sys_platform == 'darwin') "
-            "or (extra == 'dev' and sys_platform == 'win32')",
+            "(extra == 'dev' and sys_platform == 'darwin') or (extra == 'dev' and sys_platform == 'win32')",
             True,
         ),
         ("python_version < '3.11'", "python_full_version < '3.12'", False),
@@ -242,14 +238,12 @@ def _as_uv_stores_it(marker: str) -> str:
         ("os_name == 'nt' and sys_platform != 'linux'", "os_name == 'nt'", False),
         (
             "(os_name == 'nt' or os_name == 'posix') and sys_platform == 'linux'",
-            "(os_name == 'nt' and sys_platform == 'linux')"
-            " or (os_name == 'posix' and sys_platform == 'linux')",
+            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'posix' and sys_platform == 'linux')",
             True,
         ),
         (
             "os_name == 'nt' and (sys_platform == 'linux' or sys_platform == 'win32')",
-            "(os_name == 'nt' and sys_platform == 'linux')"
-            " or (os_name == 'nt' and sys_platform == 'win32')",
+            "(os_name == 'nt' and sys_platform == 'linux') or (os_name == 'nt' and sys_platform == 'win32')",
             True,
         ),
     ],
@@ -290,9 +284,11 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
         for text, ast in ((uv_spelled, ast_a), (uv_recorded, ast_b)):
             assert _eval(ast, env) == Marker(text).evaluate(env), (text, env)
     if not same:
-        assert any(
-            Marker(uv_spelled).evaluate(env) != Marker(uv_recorded).evaluate(env) for env in envs
-        ), (spelled, recorded, envs)
+        assert any(Marker(uv_spelled).evaluate(env) != Marker(uv_recorded).evaluate(env) for env in envs), (
+            spelled,
+            recorded,
+            envs,
+        )
     # ORACLE for the true cases: packaging agrees on a hand-picked environment grid.
     if same:
         for full in ("3.9.7", "3.10.0", "3.10.12", "3.11.0", "3.11.3", "3.12.1", "3.13.0"):
@@ -321,9 +317,7 @@ def test_markers_compare_by_meaning(spelled: str, recorded: str, same: bool) -> 
         ("win32", False, False),
     ],
 )
-def test_string_ordering_is_lexical_as_uv_ranges_it(
-    value: str, below_win32: bool, at_most_linux: bool
-) -> None:
+def test_string_ordering_is_lexical_as_uv_ranges_it(value: str, below_win32: bool, at_most_linux: bool) -> None:
     """`sys_platform < 'win32'` holds for every platform that sorts before it, which is
     how uv's marker algebra ranges strings (it folds `< 'win32' and != 'win32'` to
     `< 'win32'`); 'netbsd' is the value between 'linux' and 'win32' that separates
@@ -337,9 +331,7 @@ def test_a_local_version_in_a_marker_is_unknown_not_a_verdict() -> None:
     """uv dropped the marker outright for `>= '3.11.2+local'` (measured); that rewrite is
     not modeled, so the compare must say so rather than guess either way."""
     with pytest.raises(Exception, match="local version"):
-        markers_equivalent(
-            ("python_full_version >= '3.11.2+local'",), ("python_full_version >= '3.11.2'",)
-        )
+        markers_equivalent(("python_full_version >= '3.11.2+local'",), ("python_full_version >= '3.11.2'",))
 
 
 def test_a_one_component_compatible_release_is_unknown_not_a_verdict() -> None:
@@ -423,12 +415,8 @@ def test_the_contradiction_table_reads_only_the_pyproject_side() -> None:
     """uv applies its os_name / sys_platform table when it RECORDS a marker, so the
     lock side never holds such a chain; one that does is another uv's output and
     must not be read as uv 0.8.17's false."""
-    assert markers_equivalent(
-        ("os_name == 'nt' and sys_platform == 'linux'",), ("python_version < '0'",)
-    )
-    assert not markers_equivalent(
-        ("python_version < '0'",), ("os_name == 'nt' and sys_platform == 'linux'",)
-    )
+    assert markers_equivalent(("os_name == 'nt' and sys_platform == 'linux'",), ("python_version < '0'",))
+    assert not markers_equivalent(("python_version < '0'",), ("os_name == 'nt' and sys_platform == 'linux'",))
 
 
 def test_an_unknown_marker_variable_is_unknown_not_a_tautology() -> None:

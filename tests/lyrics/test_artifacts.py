@@ -19,6 +19,7 @@ whatever mode the process started in.
 - if load_words serves a local file whose sha256 disagrees with the row then
   a stale or tampered cache is indistinguishable from the real words -- broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -148,9 +149,9 @@ def _record(conn: sqlite3.Connection, artifact: artifacts.WordsArtifact, stable_
     )
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # local mode
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_local_mode_writes_the_file_and_touches_no_network(
     conn: sqlite3.Connection,
     data_dir: Path,
@@ -174,9 +175,9 @@ def test_local_mode_needs_no_sync_policies_row(
     assert _produce(conn, data_dir, s3=None, cfg=None).content_hash
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # cloud mode
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_pinned_pushes_verifies_and_writes_no_track_location(
     conn: sqlite3.Connection,
     data_dir: Path,
@@ -268,9 +269,9 @@ def test_a_push_that_does_not_land_is_not_recorded(
         _produce(conn, data_dir, s3=InMemoryAssetS3(fail_puts=True), cfg=cfg)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the read side
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_load_words_parses_the_verified_local_file(
     conn: sqlite3.Connection, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -299,9 +300,7 @@ def test_load_words_returns_none_when_nothing_is_known(
 ) -> None:
     use_local_mode(monkeypatch)
     seed_track(conn, "sid-1")
-    assert artifacts.load_words(
-        conn, data_dir=data_dir, stable_id="sid-1", s3=None, cfg=None
-    ) is None
+    assert artifacts.load_words(conn, data_dir=data_dir, stable_id="sid-1", s3=None, cfg=None) is None
 
 
 def test_load_words_hydrates_by_hash_in_cloud_mode(
@@ -319,9 +318,7 @@ def test_load_words_hydrates_by_hash_in_cloud_mode(
     artifact = _produce(conn, data_dir, s3=fake_s3, cfg=cfg)
     _record(conn, artifact, "sid-1")
     artifact.path.unlink()
-    loaded = artifacts.load_words(
-        conn, data_dir=data_dir, stable_id="sid-1", s3=fake_s3, cfg=cfg
-    )
+    loaded = artifacts.load_words(conn, data_dir=data_dir, stable_id="sid-1", s3=fake_s3, cfg=cfg)
     assert loaded is not None
     assert [entry.word for entry in loaded.words] == ["one", "two"]
     assert artifact.path.is_file(), "the fetch lands at the cache path, by stable_id"
@@ -341,9 +338,7 @@ def test_local_mode_never_hydrates_from_r2(
     _record(conn, artifact, "sid-1")
     artifact.path.unlink()
     use_local_mode(monkeypatch)
-    assert artifacts.load_words(
-        conn, data_dir=data_dir, stable_id="sid-1", s3=fake_s3, cfg=cfg
-    ) is None
+    assert artifacts.load_words(conn, data_dir=data_dir, stable_id="sid-1", s3=fake_s3, cfg=cfg) is None
 
 
 def test_load_words_refuses_a_file_the_row_does_not_vouch_for(

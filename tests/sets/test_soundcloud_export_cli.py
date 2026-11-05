@@ -1,4 +1,5 @@
 """CLI contract for ``python -m apps.sets soundcloud-export`` (SET-06a)."""
+
 from __future__ import annotations
 
 import json
@@ -33,9 +34,7 @@ def test_soundcloud_export_subcommand_is_registered() -> None:
 
 
 @pytest.mark.requirement("SET-06a")
-def test_without_acknowledge_prints_reminder_not_comment(
-    seeded_cli: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_without_acknowledge_prints_reminder_not_comment(seeded_cli: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """[if] the CLI omits --acknowledge-rights [then] it exits 2 without a comment, [else stop]."""
     out_path = seeded_cli / "comment.txt"
     rc = cli.main(["soundcloud-export", "s1", "--out", str(out_path)])
@@ -49,9 +48,7 @@ def test_without_acknowledge_prints_reminder_not_comment(
 
 
 @pytest.mark.requirement("SET-06a")
-def test_with_acknowledge_prints_reminder_before_comment(
-    seeded_cli: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_with_acknowledge_prints_reminder_before_comment(seeded_cli: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """[if] the CLI acknowledges rights [then] the reminder precedes the tracklist, [else stop]."""
     rc = cli.main(["soundcloud-export", "s1", "--acknowledge-rights"])
     captured = capsys.readouterr()
@@ -88,9 +85,7 @@ def test_json_with_ack_includes_sentinels_and_library_comment(
 
 
 @pytest.mark.requirement("SET-06a")
-def test_out_writes_comment_only_after_ack(
-    seeded_cli: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_out_writes_comment_only_after_ack(seeded_cli: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """[if] --out is given with the ack [then] the file receives the comment, [else stop]."""
     out_path = seeded_cli.parent / "pasted-comment.txt"
     rc = cli.main(

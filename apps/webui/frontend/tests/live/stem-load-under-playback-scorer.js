@@ -74,7 +74,10 @@ async function _armLongTasks() {
 	if (_longTasks !== null) return _longTasks;
 	const state = { entries: [], observer: null, status: 'unsupported', control_seen_ms: null };
 	_longTasks = state;
-	if (typeof PerformanceObserver !== 'function' || !PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
+	if (
+		typeof PerformanceObserver !== 'function' ||
+		!PerformanceObserver.supportedEntryTypes?.includes('longtask')
+	) {
 		return state;
 	}
 	const take = (list) => {
@@ -85,12 +88,16 @@ async function _armLongTasks() {
 	state.drain = () => take(state.observer.takeRecords());
 	await _sleep(50);
 	const blockStart = performance.now();
-	while (performance.now() - blockStart < LONGTASK_CONTROL_BLOCK_MS) { /* deliberate block */ }
+	while (performance.now() - blockStart < LONGTASK_CONTROL_BLOCK_MS) {
+		/* deliberate block */
+	}
 	const blockEnd = performance.now();
 	for (let waited = 0; waited < 3000; waited += 100) {
 		await _sleep(100);
 		state.drain();
-		const hit = state.entries.find((entry) => entry.t <= blockEnd && entry.t + entry.dur >= blockStart + 50);
+		const hit = state.entries.find(
+			(entry) => entry.t <= blockEnd && entry.t + entry.dur >= blockStart + 50
+		);
 		if (hit !== undefined) {
 			state.status = 'verified';
 			state.control_seen_ms = Math.round(hit.dur);
@@ -106,8 +113,9 @@ function _longTasksBetween(state, t0, t1) {
 	if (state.status !== 'verified') return null;
 	state.drain();
 	const [c0, c1] = state.control_window;
-	return state.entries.filter((task) =>
-		task.t + task.dur >= t0 && task.t <= t1 && !(task.t <= c1 && task.t + task.dur >= c0));
+	return state.entries.filter(
+		(task) => task.t + task.dur >= t0 && task.t <= t1 && !(task.t <= c1 && task.t + task.dur >= c0)
+	);
 }
 
 async function _engine() {
@@ -215,7 +223,9 @@ async function _armLoadProbe(ctx) {
 	const url = URL.createObjectURL(new Blob([LOAD_PROBE_SOURCE], { type: 'text/javascript' }));
 	await ctx.audioWorklet.addModule(url);
 	const node = new AudioWorkletNode(ctx, 'stem-scorer-load-probe', {
-		numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1]
+		numberOfInputs: 0,
+		numberOfOutputs: 1,
+		outputChannelCount: [1]
 	});
 	const silence = ctx.createGain();
 	silence.gain.value = 0;
@@ -281,8 +291,9 @@ function _clockSteps(samples, t0) {
 	if (rate === null) return null;
 	const steps = [];
 	for (let i = 1; i < samples.length; i += 1) {
-		const excess = (samples[i][1] - samples[i - 1][1]) - rate * (samples[i][0] - samples[i - 1][0]);
-		if (Math.abs(excess) > 40) steps.push({ at_ms: Math.round(samples[i][0] - t0), step_ms: Math.round(excess) });
+		const excess = samples[i][1] - samples[i - 1][1] - rate * (samples[i][0] - samples[i - 1][0]);
+		if (Math.abs(excess) > 40)
+			steps.push({ at_ms: Math.round(samples[i][0] - t0), step_ms: Math.round(excess) });
 	}
 	return { rate: +rate.toFixed(4), samples: samples.length, steps };
 }
@@ -298,7 +309,14 @@ function _heapMb() {
 
 /** One measured stem load. Resolves with the run record; never throws for a
  * load that fails, it records the failure instead. */
-export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeoutMs = 120000, playWhenMixReady = false }) {
+export async function runStemLoad({
+	loadDeck,
+	sid,
+	label,
+	settleMs = 2500,
+	timeoutMs = 120000,
+	playWhenMixReady = false
+}) {
 	if (typeof loadDeck !== 'number') throw new TypeError('scorer: loadDeck must be a number (1..4)');
 	const m = await _engine();
 	if (!m.isMasterMuted()) throw new Error('scorer: master must be muted before loading tracks');
@@ -306,8 +324,12 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	const probe = await _armProbe(ctx);
 	const loadProbe = await _armLoadProbe(ctx);
 	// Deck ids are NUMBERS (1..4); the engine rejects the string form.
-	const playing = Object.keys(m.deckStates).map(Number).filter((deck) => m.deckStates[deck].playing);
-	const playingPosBefore = Object.fromEntries(playing.map((d) => [d, m.deckAudioClockPositionMs(d)]));
+	const playing = Object.keys(m.deckStates)
+		.map(Number)
+		.filter((deck) => m.deckStates[deck].playing);
+	const playingPosBefore = Object.fromEntries(
+		playing.map((d) => [d, m.deckAudioClockPositionMs(d)])
+	);
 
 	const longTaskState = await _armLongTasks();
 	const handoffRowsBefore = _handoffRows();
@@ -330,8 +352,13 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	let loadResolvedAt = null;
 	const loading = m.engine
 		.load(loadDeck, sid)
-		.then(() => { loadResolvedAt = performance.now(); })
-		.catch((error) => { loadError = String(error); loadResolvedAt = performance.now(); });
+		.then(() => {
+			loadResolvedAt = performance.now();
+		})
+		.catch((error) => {
+			loadError = String(error);
+			loadResolvedAt = performance.now();
+		});
 
 	let lastPhase = '';
 	let readyAt = null;
@@ -349,7 +376,9 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		if (playWhenMixReady && playAt === null && loadResolvedAt !== null && loadError === null) {
 			playAt = now;
 			posAtPlay = m.deckAudioClockPositionMs(loadDeck);
-			m.engine.play(loadDeck).catch((error) => { playError = String(error); });
+			m.engine.play(loadDeck).catch((error) => {
+				playError = String(error);
+			});
 		}
 		if (playAt !== null) positionSamples.push([now, m.deckAudioClockPositionMs(loadDeck)]);
 		const phase = loadResolvedAt === null ? 'mix-load' : _stemPhase(stems);
@@ -363,21 +392,35 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 			if (heap !== null && heap > heapPeak) heapPeak = heap;
 			const stats = _playbackStats(ctx);
 			if (stats !== null && lastStats !== null && stats.events > lastStats.events) {
-				underrunTimeline.push({ t: now, events: stats.events - lastStats.events, ms: stats.ms - lastStats.ms });
+				underrunTimeline.push({
+					t: now,
+					events: stats.events - lastStats.events,
+					ms: stats.ms - lastStats.ms
+				});
 			}
 			lastStats = stats;
 		}
-		if (loadError !== null) { terminal = 'load-error'; break; }
+		if (loadError !== null) {
+			terminal = 'load-error';
+			break;
+		}
 		if (loadResolvedAt !== null && readyAt === null && stems.status === 'ready') {
 			readyAt = now;
 			transitions.push(['settle', now]);
 			lastPhase = 'settle';
 		}
-		if (loadResolvedAt !== null && readyAt === null && (stems.status === 'unavailable' || stems.status === 'error')) {
+		if (
+			loadResolvedAt !== null &&
+			readyAt === null &&
+			(stems.status === 'unavailable' || stems.status === 'error')
+		) {
 			terminal = `stems-${stems.status}: ${stems.error ?? ''}`;
 			break;
 		}
-		if (readyAt !== null && now - readyAt >= settleMs) { terminal = 'ready'; break; }
+		if (readyAt !== null && now - readyAt >= settleMs) {
+			terminal = 'ready';
+			break;
+		}
 		polls += 1;
 		await _sleep(POLL_MS);
 	}
@@ -391,10 +434,26 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	const statsAfter = _playbackStats(ctx);
 	const probeReports = probe.reports.slice(probeFrom).filter((r) => r.t >= t0);
 	const sentinelEvents = probeReports.filter((r) => r.xruns > 0);
-	const stageRow = window.__mdtPerfLog().filter((e) =>
-		typeof e.kind === 'string' && e.kind.startsWith('deck-stems') && e.kind.includes(sid.slice(0, 12))).pop() ?? null;
-	const loadRow = window.__mdtPerfLog().filter((e) =>
-		typeof e.kind === 'string' && e.kind.startsWith('deck-load sid=') && e.kind.includes(sid.slice(0, 12))).pop() ?? null;
+	const stageRow =
+		window
+			.__mdtPerfLog()
+			.filter(
+				(e) =>
+					typeof e.kind === 'string' &&
+					e.kind.startsWith('deck-stems') &&
+					e.kind.includes(sid.slice(0, 12))
+			)
+			.pop() ?? null;
+	const loadRow =
+		window
+			.__mdtPerfLog()
+			.filter(
+				(e) =>
+					typeof e.kind === 'string' &&
+					e.kind.startsWith('deck-load sid=') &&
+					e.kind.includes(sid.slice(0, 12))
+			)
+			.pop() ?? null;
 	const inRunOrNull = _longTasksBetween(longTaskState, t0, tEnd);
 	const inRun = inRunOrNull ?? [];
 	const handoffRowsAfter = _handoffRows();
@@ -417,22 +476,35 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		stages: stageRow?.stages ?? null,
 		stage_labels: stageRow?.labels ?? null,
 		pressure: loadRow?.labels
-			? { load_avg_1m: loadRow.labels.load_avg_1m, swap_used_mb: loadRow.labels.swap_used_mb, kernel_level: loadRow.labels.kernel_level }
+			? {
+					load_avg_1m: loadRow.labels.load_avg_1m,
+					swap_used_mb: loadRow.labels.swap_used_mb,
+					kernel_level: loadRow.labels.kernel_level
+				}
 			: null,
 		playing_decks: playing,
-		playing_advanced_ms: Object.fromEntries(playing.map((d) => [d, Math.round(m.deckAudioClockPositionMs(d) - playingPosBefore[d])])),
+		playing_advanced_ms: Object.fromEntries(
+			playing.map((d) => [d, Math.round(m.deckAudioClockPositionMs(d) - playingPosBefore[d])])
+		),
 		wall_ms: Math.round(tEnd - t0),
 		// A deck that reached the end of its track still reads `playing` but
 		// renders nothing: a run beside it is not a run beside a playing deck.
-		other_decks_kept_playing: playing.length === 0
-			? null
-			: playing.every((d) => m.deckAudioClockPositionMs(d) - playingPosBefore[d] >= 0.9 * (tEnd - t0)),
+		other_decks_kept_playing:
+			playing.length === 0
+				? null
+				: playing.every(
+						(d) => m.deckAudioClockPositionMs(d) - playingPosBefore[d] >= 0.9 * (tEnd - t0)
+					),
 		// A hidden tab has its timers throttled, which stretches the app's own
 		// holds and this scorer's polling: a run is only comparable when visible.
 		visibility: [visibilityAtStart, document.visibilityState],
 		poll_period_ms: polls === 0 ? null : +((tEnd - t0) / polls).toFixed(1),
-		underrun_events: statsBefore === null || statsAfter === null ? null : statsAfter.events - statsBefore.events,
-		underrun_ms: statsBefore === null || statsAfter === null ? null : +(statsAfter.ms - statsBefore.ms).toFixed(2),
+		underrun_events:
+			statsBefore === null || statsAfter === null ? null : statsAfter.events - statsBefore.events,
+		underrun_ms:
+			statsBefore === null || statsAfter === null
+				? null
+				: +(statsAfter.ms - statsBefore.ms).toFixed(2),
 		underruns_by_phase: byPhase(underrunTimeline, (u) => u.events),
 		sentinel_reports: probeReports.length,
 		sentinel_threshold_ms: probe.thresholdMs,
@@ -444,15 +516,21 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		longtask_instrument: longTaskState.status,
 		longtask_control_seen_ms: longTaskState.control_seen_ms,
 		longtask_count: inRunOrNull === null ? null : inRun.length,
-		longtask_total_ms: inRunOrNull === null ? null : Math.round(inRun.reduce((sum, task) => sum + task.dur, 0)),
-		longtask_max_ms: inRunOrNull === null ? null : Math.round(inRun.reduce((max, task) => Math.max(max, task.dur), 0)),
-		longtask_ms_by_phase: inRunOrNull === null ? null : byPhase(inRun, (task) => Math.round(task.dur)),
+		longtask_total_ms:
+			inRunOrNull === null ? null : Math.round(inRun.reduce((sum, task) => sum + task.dur, 0)),
+		longtask_max_ms:
+			inRunOrNull === null
+				? null
+				: Math.round(inRun.reduce((max, task) => Math.max(max, task.dur), 0)),
+		longtask_ms_by_phase:
+			inRunOrNull === null ? null : byPhase(inRun, (task) => Math.round(task.dur)),
 		play_when_mix_ready: playWhenMixReady,
 		play_error: playError,
 		load_deck_playing_at_end: m.deckStates[loadDeck].playing,
 		// Audio clock advance of the load deck since play, against wall time: a
 		// handoff that stopped or jumped the deck shows as a mismatch.
-		load_deck_advanced_ms: playAt === null ? null : Math.round(m.deckAudioClockPositionMs(loadDeck) - posAtPlay),
+		load_deck_advanced_ms:
+			playAt === null ? null : Math.round(m.deckAudioClockPositionMs(loadDeck) - posAtPlay),
 		load_deck_wall_since_play_ms: playAt === null ? null : Math.round(tEnd - playAt),
 		// Steps of the load deck's TRANSPORT clock that disagree with wall time
 		// by more than 40 ms, with when they happened. A beat-sync join at play
@@ -464,9 +542,10 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		// The engine logs one 'stem-live-handoff' row when stems take over a
 		// playing deck without stopping it. Counted before and after the run.
 		live_handoffs: handoffRowsAfter.length - handoffRowsBefore.length,
-		live_handoff_message: handoffRowsAfter.length > handoffRowsBefore.length
-			? handoffRowsAfter[handoffRowsAfter.length - 1].message ?? null
-			: null,
+		live_handoff_message:
+			handoffRowsAfter.length > handoffRowsBefore.length
+				? (handoffRowsAfter[handoffRowsAfter.length - 1].message ?? null)
+				: null,
 		heap_base_mb: heapBase === null ? null : Math.round(heapBase),
 		heap_peak_mb: heapPeak === null ? null : Math.round(heapPeak),
 		pcm_mb: Math.round(m.deckPcmEstimatedBytes() / 1048576)
@@ -486,7 +565,9 @@ export async function runIdle({ label, durationMs = 20000 }) {
 	const probe = await _armProbe(ctx);
 	const loadProbe = await _armLoadProbe(ctx);
 	const loadFrom = loadProbe.windows.length;
-	const playing = Object.keys(m.deckStates).map(Number).filter((deck) => m.deckStates[deck].playing);
+	const playing = Object.keys(m.deckStates)
+		.map(Number)
+		.filter((deck) => m.deckStates[deck].playing);
 	const appBefore = await window.__mdtFlushXruns();
 	const statsBefore = _playbackStats(ctx);
 	const probeFrom = probe.reports.length;
@@ -501,21 +582,35 @@ export async function runIdle({ label, durationMs = 20000 }) {
 		duration_ms: Math.round(performance.now() - t0),
 		playing_decks: playing,
 		visibility: document.visibilityState,
-		underrun_events: statsBefore === null || statsAfter === null ? null : statsAfter.events - statsBefore.events,
+		underrun_events:
+			statsBefore === null || statsAfter === null ? null : statsAfter.events - statsBefore.events,
 		sentinel_xruns: events.reduce((sum, r) => sum + r.xruns, 0),
 		sentinel_worst_gap_ms: events.reduce((max, r) => Math.max(max, r.worst), 0),
 		sentinel_threshold_ms: probe.thresholdMs,
 		app_xruns: appAfter.xruns - appBefore.xruns,
 		render_load: _renderLoad(loadProbe, loadFrom, t0),
-		decks: Object.fromEntries(Object.keys(m.deckStates).map((deck) => [deck,
-			m.deckStates[deck].stable_id === null ? 'empty' : `${m.deckStates[deck].playing ? 'playing' : 'stopped'}/${m.deckStates[deck].stems.status}`]))
+		decks: Object.fromEntries(
+			Object.keys(m.deckStates).map((deck) => [
+				deck,
+				m.deckStates[deck].stable_id === null
+					? 'empty'
+					: `${m.deckStates[deck].playing ? 'playing' : 'stopped'}/${m.deckStates[deck].stems.status}`
+			])
+		)
 	};
 	(window.__stemIdleRuns ??= []).push(record);
 	return record;
 }
 
 /** Runs each sid once on `loadDeck`, unloading between runs. */
-export async function runCondition({ label, loadDeck, sids, restMs = 4000, idleMs = 8000, playWhenMixReady = false }) {
+export async function runCondition({
+	label,
+	loadDeck,
+	sids,
+	restMs = 4000,
+	idleMs = 8000,
+	playWhenMixReady = false
+}) {
 	const m = await _engine();
 	const out = [];
 	window.__stemLoadProgress = { label, done: 0, of: sids.length, finished: false };
@@ -549,7 +644,8 @@ function _worst(values) {
 
 /** P(X >= k) for X ~ Poisson(lambda). */
 export function poissonUpperTail(k, lambda) {
-	if (!(lambda >= 0) || !Number.isInteger(k) || k < 0) throw new RangeError('poissonUpperTail: bad input');
+	if (!(lambda >= 0) || !Number.isInteger(k) || k < 0)
+		throw new RangeError('poissonUpperTail: bad input');
 	if (k === 0) return 1;
 	let term = Math.exp(-lambda);
 	let below = term;
@@ -564,7 +660,8 @@ export function poissonUpperTail(k, lambda) {
  * 0.05: the highest background rate the idle windows cannot rule out. With no
  * idle event this is the rule of three (3 / seconds). */
 export function poissonRateUpper95(count, seconds) {
-	if (!(seconds > 0) || !Number.isInteger(count) || count < 0) throw new RangeError('poissonRateUpper95: bad input');
+	if (!(seconds > 0) || !Number.isInteger(count) || count < 0)
+		throw new RangeError('poissonRateUpper95: bad input');
 	let low = 0;
 	let high = count + 10 * Math.sqrt(count + 1) + 10;
 	for (let i = 0; i < 80; i += 1) {
@@ -605,7 +702,10 @@ export function aboveBackground(runs, idles) {
 		// allow. Short idle windows with no event prove little: this is the
 		// figure to read before calling a small excess real.
 		background_late_per_s_upper95: +poissonRateUpper95(idleLate, idleSeconds).toFixed(3),
-		p_at_least_observed_at_upper95: +poissonUpperTail(observed, poissonRateUpper95(idleLate, idleSeconds) * loadSeconds).toFixed(3),
+		p_at_least_observed_at_upper95: +poissonUpperTail(
+			observed,
+			poissonRateUpper95(idleLate, idleSeconds) * loadSeconds
+		).toFixed(3),
 		idle_worst_gap_ms: _worst(idles.map((idle) => idle.sentinel_worst_gap_ms)),
 		load_worst_gap_ms: _worst(runs.map((run) => run.sentinel_worst_gap_ms))
 	};
@@ -615,8 +715,16 @@ export function aboveBackground(runs, idles) {
 export function summarize(runs, idles = window.__stemIdleRuns ?? []) {
 	const labels = [...new Set(runs.map((run) => run.label))];
 	const metrics = [
-		'ready_ms', 'underrun_events', 'underrun_ms', 'sentinel_xruns', 'sentinel_worst_gap_ms',
-		'app_xruns', 'longtask_count', 'longtask_total_ms', 'longtask_max_ms', 'heap_peak_mb'
+		'ready_ms',
+		'underrun_events',
+		'underrun_ms',
+		'sentinel_xruns',
+		'sentinel_worst_gap_ms',
+		'app_xruns',
+		'longtask_count',
+		'longtask_total_ms',
+		'longtask_max_ms',
+		'heap_peak_mb'
 	];
 	const stages = ['probeStem', 'fetchStems', 'decodeStems', 'stemProcessorCreate', 'landStems'];
 	return labels.map((label) => {
@@ -628,13 +736,18 @@ export function summarize(runs, idles = window.__stemIdleRuns ?? []) {
 			// Runs whose "playing" deck had stopped rendering: not evidence for a
 			// with-playback condition. Computed from the fields every round kept.
 			other_deck_stalled: group.filter((run) =>
-				run.playing_decks.some((d) => run.playing_advanced_ms[d] < 0.9 * run.wall_ms)).length
+				run.playing_decks.some((d) => run.playing_advanced_ms[d] < 0.9 * run.wall_ms)
+			).length
 		};
 		for (const metric of metrics) {
 			const values = group.map((run) => run[metric]);
 			// A sum over a run that could not be measured is not a smaller sum.
 			const measured = values.every((v) => typeof v === 'number');
-			row[metric] = { median: _median(values), worst: _worst(values), sum: measured ? values.reduce((s, v) => s + v, 0) : null };
+			row[metric] = {
+				median: _median(values),
+				worst: _worst(values),
+				sum: measured ? values.reduce((s, v) => s + v, 0) : null
+			};
 		}
 		for (const stage of stages) {
 			const values = group.map((run) => run.stages?.[stage]);
@@ -642,7 +755,10 @@ export function summarize(runs, idles = window.__stemIdleRuns ?? []) {
 		}
 		const waits = group.map((run) => Number(run.stage_labels?.decode_wait_ms));
 		row.decode_wait_ms = { median: _median(waits), worst: _worst(waits) };
-		row.background = aboveBackground(group, idles.filter((idle) => idle.label === label));
+		row.background = aboveBackground(
+			group,
+			idles.filter((idle) => idle.label === label)
+		);
 		row.longtask_instrument = [...new Set(group.map((run) => run.longtask_instrument))];
 		row.heap_growth_mb = {
 			median: _median(group.map((run) => run.heap_peak_mb - run.heap_base_mb)),
@@ -681,11 +797,13 @@ export async function benchLoadShapes({ sid, iterations = 6, idleMs = 3000 }) {
 	const loadProbe = await _armLoadProbe(ctx);
 	const graph = await _pageModule('/src/lib/rb/stem-graph.ts');
 	const parts = ['vocals', 'drums', 'bass', 'other'];
-	const encoded = await Promise.all(parts.map(async (part) => {
-		const response = await fetch(`/api/v1/tracks/${sid}/stems/${part}`);
-		if (!response.ok) throw new Error(`bench: stem ${part} fetch failed (${response.status})`);
-		return response.arrayBuffer();
-	}));
+	const encoded = await Promise.all(
+		parts.map(async (part) => {
+			const response = await fetch(`/api/v1/tracks/${sid}/stems/${part}`);
+			if (!response.ok) throw new Error(`bench: stem ${part} fetch failed (${response.status})`);
+			return response.arrayBuffer();
+		})
+	);
 	const segments = [];
 	const timed = async (name, run) => {
 		const t0 = performance.now();
@@ -694,10 +812,13 @@ export async function benchLoadShapes({ sid, iterations = 6, idleMs = 3000 }) {
 		return value;
 	};
 	const build = async (name, buffers) => {
-		const created = await timed(name, () => graph.AlignedStemDeckProcessor.create(
-			ctx, Object.fromEntries(parts.map((part, i) => [part, buffers[i]])),
-			{ onProcessorError: () => {} }
-		));
+		const created = await timed(name, () =>
+			graph.AlignedStemDeckProcessor.create(
+				ctx,
+				Object.fromEntries(parts.map((part, i) => [part, buffers[i]])),
+				{ onProcessorError: () => {} }
+			)
+		);
 		await _sleep(300);
 		await timed('dispose', () => created.processor.dispose());
 	};
@@ -705,7 +826,8 @@ export async function benchLoadShapes({ sid, iterations = 6, idleMs = 3000 }) {
 	for (let i = 0; i < iterations; i += 1) {
 		await timed('idle', () => _sleep(idleMs));
 		const wide = await timed('decode-4-wide', () =>
-			Promise.all(encoded.map((bytes) => ctx.decodeAudioData(bytes.slice(0)))));
+			Promise.all(encoded.map((bytes) => ctx.decodeAudioData(bytes.slice(0))))
+		);
 		await timed('idle', () => _sleep(idleMs));
 		await build('create-processors', wide);
 		await timed('idle', () => _sleep(idleMs));
@@ -717,7 +839,9 @@ export async function benchLoadShapes({ sid, iterations = 6, idleMs = 3000 }) {
 		await timed('idle', () => _sleep(idleMs));
 		await timed('decode-2-wide', async () => {
 			for (let at = 0; at < encoded.length; at += 2) {
-				await Promise.all(encoded.slice(at, at + 2).map((bytes) => ctx.decodeAudioData(bytes.slice(0))));
+				await Promise.all(
+					encoded.slice(at, at + 2).map((bytes) => ctx.decodeAudioData(bytes.slice(0)))
+				);
 			}
 		});
 		window.__stemBench.done += 1;
@@ -768,17 +892,30 @@ const STRETCH_CONSTRUCT = 'Module().then(wasmModule => {';
  */
 const STRETCH_VARIANTS = {
 	'as-shipped': (source) => source,
-	'compile-once': (source) => _swap(source, STRETCH_INSTANTIATE,
-		'function instantiateArrayBuffer(binaryFile,imports,receiver){return (globalThis.__benchStretchModule??=getBinaryPromise(binaryFile).then(binary=>WebAssembly.compile(binary))).then(compiled=>WebAssembly.instantiate(compiled,imports)).then(instance=>({instance})).then(receiver,'),
-	'main-compiled': (source) => _swap(
-		_swap(source, STRETCH_CONSTRUCT, 'Module({benchCompiled: options.processorOptions.compiled}).then(wasmModule => {'),
-		STRETCH_INSTANTIATE,
-		'function instantiateArrayBuffer(binaryFile,imports,receiver){return WebAssembly.instantiate(Module.benchCompiled,imports).then(instance=>({instance})).then(receiver,')
+	'compile-once': (source) =>
+		_swap(
+			source,
+			STRETCH_INSTANTIATE,
+			'function instantiateArrayBuffer(binaryFile,imports,receiver){return (globalThis.__benchStretchModule??=getBinaryPromise(binaryFile).then(binary=>WebAssembly.compile(binary))).then(compiled=>WebAssembly.instantiate(compiled,imports)).then(instance=>({instance})).then(receiver,'
+		),
+	'main-compiled': (source) =>
+		_swap(
+			_swap(
+				source,
+				STRETCH_CONSTRUCT,
+				'Module({benchCompiled: options.processorOptions.compiled}).then(wasmModule => {'
+			),
+			STRETCH_INSTANTIATE,
+			'function instantiateArrayBuffer(binaryFile,imports,receiver){return WebAssembly.instantiate(Module.benchCompiled,imports).then(instance=>({instance})).then(receiver,'
+		)
 };
 
 function _swap(source, anchor, replacement) {
 	const parts = source.split(anchor);
-	if (parts.length !== 2) throw new Error(`bench: anchor found ${parts.length - 1} times, wanted 1: ${anchor.slice(0, 60)}`);
+	if (parts.length !== 2)
+		throw new Error(
+			`bench: anchor found ${parts.length - 1} times, wanted 1: ${anchor.slice(0, 60)}`
+		);
 	return parts.join(replacement);
 }
 
@@ -853,11 +990,13 @@ export async function benchProcessorCreation({
 	const adapter = await _pageModule('/src/lib/rb/stretch-adapter.ts');
 	let encoded = null;
 	if (sid !== null) {
-		encoded = await Promise.all(parts.map(async (part) => {
-			const stem = await fetch(`/api/v1/tracks/${sid}/stems/${part}`);
-			if (!stem.ok) throw new Error(`bench: stem ${part} fetch failed (${stem.status})`);
-			return stem.arrayBuffer();
-		}));
+		encoded = await Promise.all(
+			parts.map(async (part) => {
+				const stem = await fetch(`/api/v1/tracks/${sid}/stems/${part}`);
+				if (!stem.ok) throw new Error(`bench: stem ${part} fetch failed (${stem.status})`);
+				return stem.arrayBuffer();
+			})
+		);
 	}
 	const cells = built.flatMap((variant) => staggerMs.map((gap) => ({ variant, gap })));
 	const segments = [];
@@ -877,7 +1016,13 @@ export async function benchProcessorCreation({
 				}
 				// Construction work can outlive the ready handshake by a quantum.
 				await _sleep(60);
-				const segment = _segment(probe, loadProbe, `${variant.name}${gap > 0 ? `+stagger${gap}` : ''}`, t0, performance.now());
+				const segment = _segment(
+					probe,
+					loadProbe,
+					`${variant.name}${gap > 0 ? `+stagger${gap}` : ''}`,
+					t0,
+					performance.now()
+				);
 				segment.sleep_ms = 60 + gap * (perBundle - 1);
 				segments.push(segment);
 				for (const node of nodes) await _disposeStretchNode(node);
@@ -898,16 +1043,19 @@ export async function benchProcessorCreation({
 					let dispose = async () => {};
 					let note = null;
 					if (cell === 'pcm-copy-only') {
-						let copies = decoded.flatMap((buffer) => Array.from({ length: buffer.numberOfChannels }, (_unused, channel) => {
-							const samples = new Float32Array(buffer.length);
-							buffer.copyFromChannel(samples, channel);
-							return samples;
-						}));
+						let copies = decoded.flatMap((buffer) =>
+							Array.from({ length: buffer.numberOfChannels }, (_unused, channel) => {
+								const samples = new Float32Array(buffer.length);
+								buffer.copyFromChannel(samples, channel);
+								return samples;
+							})
+						);
 						note = copies.length;
 						copies = null;
 					} else if (cell === 'product-create') {
 						const created = await graph.AlignedStemDeckProcessor.create(
-							ctx, Object.fromEntries(parts.map((part, at) => [part, decoded[at]])),
+							ctx,
+							Object.fromEntries(parts.map((part, at) => [part, decoded[at]])),
 							{ onProcessorError: () => {} }
 						);
 						note = created.pcmHandoff;
@@ -918,14 +1066,18 @@ export async function benchProcessorCreation({
 						const processors = [];
 						const happened = [];
 						for (const buffer of decoded) {
-							const processor = await adapter.StretchDeckProcessor.create(ctx, { onProcessorError: () => {} });
+							const processor = await adapter.StretchDeckProcessor.create(ctx, {
+								onProcessorError: () => {}
+							});
 							happened.push(await processor.load(buffer, requested));
 							const gain = ctx.createGain();
 							processor.connect(gain);
 							processors.push(processor);
 						}
 						note = [...new Set(happened)].join('+');
-						dispose = async () => { for (const processor of processors) await processor.dispose(); };
+						dispose = async () => {
+							for (const processor of processors) await processor.dispose();
+						};
 					}
 					await _sleep(60);
 					const segment = _segment(probe, loadProbe, cell, t0, performance.now());

@@ -28,7 +28,9 @@ test('Create pairing stays reachable on one line at 1280px and 1440px, and at fu
 	for (const width of [1280, 1440, 1920]) {
 		await page.setViewportSize({ width, height: 800 });
 		await expect(button, `${width}px: Create pairing is hidden`).toBeVisible();
-		await expect.poll(() => _hit(page, PAIRING), { message: `${width}px: not hittable` }).toBe(true);
+		await expect
+			.poll(() => _hit(page, PAIRING), { message: `${width}px: not hittable` })
+			.toBe(true);
 		const box = await button.boundingBox();
 		expect(box, `${width}px: no box`).not.toBeNull();
 		// One text line is ~17px here; the wrapped two-line label measured 28px.

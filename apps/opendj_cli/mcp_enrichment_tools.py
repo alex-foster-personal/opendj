@@ -35,8 +35,9 @@ def register_enrichment_tools(
 ) -> None:
     """Register the ``ingest_enrichment_*`` tools on ``server``."""
 
-    def call(method: str, path: str, json_body: Any = None, *, root: str = ENRICHMENT_PATH,
-             timeout: float = TIMEOUT_S) -> Any:
+    def call(
+        method: str, path: str, json_body: Any = None, *, root: str = ENRICHMENT_PATH, timeout: float = TIMEOUT_S
+    ) -> Any:
         try:
             origin = resolve_origin(lock_path())
         except EngineNotRunning as error:
@@ -49,8 +50,13 @@ def register_enrichment_tools(
         body = response.json()
         if not response.is_success:
             detail = body.get("detail") if isinstance(body, dict) else None
-            raise tool_error({"error": engine_error_code(detail, response.status_code),
-                              "status_code": response.status_code, "detail": detail or body})
+            raise tool_error(
+                {
+                    "error": engine_error_code(detail, response.status_code),
+                    "status_code": response.status_code,
+                    "detail": detail or body,
+                }
+            )
         return body
 
     @server.tool(annotations=_READ_ONLY)

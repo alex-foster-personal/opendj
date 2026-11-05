@@ -78,8 +78,7 @@ def _run_playwright_capture(
             "ok": False,
             "reason": (
                 "playwright capture did not write KPI_CAPTURE_RESULT "
-                f"(exit {proc.returncode})"
-                + (f": {detail}" if detail else "")
+                f"(exit {proc.returncode})" + (f": {detail}" if detail else "")
             ),
         }
     if proc.returncode != 0 and result.get("ok") is not True:

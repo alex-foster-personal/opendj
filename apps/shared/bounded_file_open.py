@@ -3,27 +3,20 @@
 A kernel-blocked ``open()`` cannot be cancelled from a Python thread: abandoning
 the future leaves a wedged worker that starves later probes and can block engine
 shutdown (#766). This module runs the syscall in a short-lived subprocess and
-kills the process group on timeout so nothing leaks into the parent.
+stops the worker's whole process tree on timeout (``apps.shared.process_tree``)
+so nothing leaks into the parent, on every OS.
 """
 
 from __future__ import annotations
 
-import signal
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from apps.shared.process_groups import (
-    WorkerCleanupError,
-    group_has_live_member,
-    signal_group,
-    wait_group_gone,
-)
-
-_WINDOWS = sys.platform == "win32"
+from apps.shared.process_tree import ProcessTreeError, TreeRoot, spawn_tree, stop_tree
 
 # Shared knob for preflight and deck-load probes.
 AUDIO_ACCESS_TIMEOUT_S: float = 3.0
@@ -83,43 +76,22 @@ def _worker_command(path: Path) -> list[str]:
     return [sys.executable, "-I", "-S", "-c", _INLINE_WORKER_SOURCE, str(path)]
 
 
-def _process_kwargs() -> dict[str, Any]:
-    if _WINDOWS:
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-    return {"start_new_session": True}
+def _spawn_probe_worker(path: Path) -> tuple[subprocess.Popen[bytes], TreeRoot]:
+    return spawn_tree(
+        _worker_command(path),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
-def _terminate_probe_worker(proc: subprocess.Popen[bytes]) -> None:
-    if _WINDOWS:
-        subprocess.run(
-            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        proc.wait(timeout=_PROBE_TERMINATE_GRACE_S)
-        return
-
-    process_group_id = proc.pid
+def _stop_probe_worker(proc: subprocess.Popen[bytes], root: TreeRoot) -> None:
+    """Stop the worker's whole tree, then reap the handle; raises if any of it survives."""
+    stop_tree(root, grace_s=_PROBE_TERMINATE_GRACE_S)
     try:
-        if signal_group(process_group_id, signal.SIGTERM) is not None:
-            proc.wait()
-            return
-        try:
-            proc.wait(timeout=_PROBE_TERMINATE_GRACE_S)
-        except subprocess.TimeoutExpired:
-            pass
-        if group_has_live_member(process_group_id):
-            signal_group(process_group_id, signal.SIGKILL)
-        proc.wait()
-        wait_group_gone(process_group_id, _PROBE_TERMINATE_GRACE_S)
-    except WorkerCleanupError:
-        raise
-    except BaseException as exc:
-        raise WorkerCleanupError(
-            f"bounded open worker process group {process_group_id} cleanup is unverified"
-        ) from exc
+        proc.wait(timeout=_PROBE_TERMINATE_GRACE_S)
+    except subprocess.TimeoutExpired as exc:
+        raise ProcessTreeError(f"probe worker {proc.pid} was stopped but its handle did not exit") from exc
 
 
 def _parse_worker_stderr(stderr: bytes) -> tuple[int | None, str]:
@@ -140,19 +112,12 @@ def probe_readable_byte(path: Path, *, timeout_s: float) -> BoundedOpenResult:
     if timeout_s <= 0:
         raise ValueError(f"timeout_s must be > 0, got {timeout_s}")
     start = time.monotonic()
-    proc = subprocess.Popen(
-        _worker_command(path),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        **(_process_kwargs()),
-    )
+    proc, root = _spawn_probe_worker(path)
     try:
         try:
             proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            _terminate_probe_worker(proc)
-            proc.wait()
+            _stop_probe_worker(proc, root)
             return BoundedOpenResult(
                 outcome="timeout",
                 elapsed_s=time.monotonic() - start,

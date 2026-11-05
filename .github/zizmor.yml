@@ -28,8 +28,8 @@ rules:
       # The two port-lane steps write MUSIC_DJ_PORT_LANE from RUNNER_NAME alone (the
       # runner's own name, never pull-request content); they predate the workflow_run
       # trigger and this audit only fires alongside a dangerous trigger. Wed 4 Nov 2026.
-      - e2e.yml:911
-      - e2e.yml:2096
+      - e2e.yml:917
+      - e2e.yml:2102
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch

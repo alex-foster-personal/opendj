@@ -27,13 +27,7 @@ export function reorderPanesInPlace<T>(
 	to: number,
 	activePane: number
 ): number {
-	if (
-		from === to ||
-		from < 0 ||
-		to < 0 ||
-		from >= panes.length ||
-		to >= panes.length
-	) {
+	if (from === to || from < 0 || to < 0 || from >= panes.length || to >= panes.length) {
 		return activePane;
 	}
 	const [moved] = panes.splice(from, 1);

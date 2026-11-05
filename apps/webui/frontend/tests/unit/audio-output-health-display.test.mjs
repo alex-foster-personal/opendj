@@ -30,8 +30,10 @@ function snap(combined, browserVerdict = 'ok', latencyMs = 192) {
 		browser: browser(browserVerdict, latencyMs),
 		device: {
 			device_delivering: combined === 'ok',
-			verdict: combined === 'ok' ? 'ok' : combined === 'not_delivering' ? 'not_delivering' : 'unknown',
-			reason: combined === 'not_delivering' ? 'device stuck' : combined === 'unknown' ? 'no probe' : null,
+			verdict:
+				combined === 'ok' ? 'ok' : combined === 'not_delivering' ? 'not_delivering' : 'unknown',
+			reason:
+				combined === 'not_delivering' ? 'device stuck' : combined === 'unknown' ? 'no probe' : null,
 			default_device_name: 'Speakers',
 			default_device_uid: 'uid',
 			io_cycles_advanced: combined === 'ok',

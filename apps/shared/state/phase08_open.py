@@ -1,4 +1,5 @@
 """Open the state DB with Phase 08 pairings tables (CLI helpers)."""
+
 from __future__ import annotations
 
 import sqlite3

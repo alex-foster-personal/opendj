@@ -30,13 +30,18 @@ function _tracksEventTouchesLoadedDeck(ids: string[]): boolean {
 
 /** Fire-and-forget: read the authoritative vocal status and bypass-fetch only
  * when it disagrees with the shared ANLZ cache. */
-export function refreshLoadedDeckVocalsIfNeeded(stable_id: string, observedStatus: Vocals['status']): void {
+export function refreshLoadedDeckVocalsIfNeeded(
+	stable_id: string,
+	observedStatus: Vocals['status']
+): void {
 	refreshAnlzVocalsIfNeeded(stable_id, observedStatus);
 }
 
 /** Same as above but fetches `GET /vocals/{id}/status` first so ingest
  * completion can refresh a loaded deck even before pane rows reload. */
-export async function refreshLoadedDeckVocalsFromServer(stable_ids: readonly string[]): Promise<void> {
+export async function refreshLoadedDeckVocalsFromServer(
+	stable_ids: readonly string[]
+): Promise<void> {
 	for (const stable_id of stable_ids) {
 		const status = await getVocalStatus(stable_id);
 		refreshAnlzVocalsIfNeeded(stable_id, status.status);

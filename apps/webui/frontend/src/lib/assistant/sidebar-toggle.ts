@@ -26,8 +26,13 @@ export interface ToggleKeyEvent {
 export const ASSISTANT_ROOT_ATTR = 'data-assistant-sidebar';
 
 /** The platform's own modifier (Cmd on Apple, Ctrl elsewhere) and no other, never while typing in a field outside the sidebar. */
-export function isAssistantToggleKey(e: ToggleKeyEvent, platform: string = ASSISTANT_PLATFORM): boolean {
-	const onlyPrimary = assistantChordUsesMeta(platform) ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+export function isAssistantToggleKey(
+	e: ToggleKeyEvent,
+	platform: string = ASSISTANT_PLATFORM
+): boolean {
+	const onlyPrimary = assistantChordUsesMeta(platform)
+		? e.metaKey && !e.ctrlKey
+		: e.ctrlKey && !e.metaKey;
 	if (!onlyPrimary || e.altKey || e.shiftKey) return false;
 	if (e.key.toLowerCase() !== ASSISTANT_CHORD_KEY && e.code !== ASSISTANT_CHORD_CODE) return false;
 	return !isTextEntryTarget(e.target) || inAssistant(e.target);
@@ -63,7 +68,11 @@ function inAssistant(target: unknown): boolean {
 }
 
 /** AISIDE-7892j: with the flag off the chord is not ours, so the key event passes through. */
-export function assistantChordApplies(enabled: boolean, e: ToggleKeyEvent, platform: string = ASSISTANT_PLATFORM): boolean {
+export function assistantChordApplies(
+	enabled: boolean,
+	e: ToggleKeyEvent,
+	platform: string = ASSISTANT_PLATFORM
+): boolean {
 	return enabled && isAssistantToggleKey(e, platform);
 }
 

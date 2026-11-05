@@ -26,6 +26,7 @@ Three rounds of review shaped what these tests pin:
     operator's general-purpose NUMBA_CACHE_DIR - shared with other
     numba-using tools - would lose their artifacts too.
 """
+
 from __future__ import annotations
 
 import errno
@@ -62,8 +63,12 @@ def _ensure_owned_numba_cache_dir_via_subprocess(env: dict[str, str]) -> str:
     )
     proc = subprocess.run(
         [sys.executable, "-c", driver],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=30,
         check=False,
     )
     assert proc.returncode == 0, proc.stdout
@@ -252,8 +257,12 @@ def test_an_operator_directory_already_stamped_by_our_own_warmup_is_trusted(
     )
     setup = subprocess.run(
         [sys.executable, "-c", stamp_driver],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=30,
         check=False,
     )
     assert setup.returncode == 0, setup.stdout
@@ -278,9 +287,7 @@ def test_this_platform_provisions_a_directory_or_refuses_without_raising(
     With a uid the default path is provisioned; without one, ownership cannot
     be proven, so the answer is a refusal (no purge), not a crash and not an
     assumed owner (Sol review at 7110a58d7)."""
-    result = _ensure_owned_numba_cache_dir_via_subprocess(
-        _env_without_numba_cache_dir(tmp_path)
-    )
+    result = _ensure_owned_numba_cache_dir_via_subprocess(_env_without_numba_cache_dir(tmp_path))
 
     if not hasattr(os, "getuid"):
         assert result == "None", "with no uid, ownership is unproven and must refuse"
@@ -296,9 +303,7 @@ def test_this_platform_provisions_a_directory_or_refuses_without_raising(
     )
 
 
-def _run_without_platform_primitive(
-    tmp_path: Path, *, hide: str, body: str
-) -> str:
+def _run_without_platform_primitive(tmp_path: Path, *, hide: str, body: str) -> str:
     """Run ``body`` in a fresh process where ``os.getuid`` or ``fcntl`` is absent.
 
     ``hide="nothing"`` runs it against this platform's real primitives.
@@ -313,16 +318,15 @@ def _run_without_platform_primitive(
         "fcntl": "sys.modules['fcntl'] = None",
         "nothing": "",
     }[hide]
-    driver = (
-        "import sys\n"
-        f"sys.path.insert(0, {str(REPO_ROOT)!r})\n"
-        f"{hiding}\n"
-        f"{textwrap.dedent(body)}"
-    )
+    driver = f"import sys\nsys.path.insert(0, {str(REPO_ROOT)!r})\n{hiding}\n{textwrap.dedent(body)}"
     proc = subprocess.run(
         [sys.executable, "-c", driver],
-        cwd=str(REPO_ROOT), env=_env_without_numba_cache_dir(tmp_path),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30,
+        cwd=str(REPO_ROOT),
+        env=_env_without_numba_cache_dir(tmp_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=30,
         check=False,
     )
     assert proc.returncode == 0, proc.stdout
@@ -371,7 +375,10 @@ def test_with_a_uid_the_same_checks_still_pass(tmp_path: Path) -> None:
         pytest.skip("POSIX control: this platform has no getuid")
     existing = tmp_path / "already-here"
     existing.mkdir()
-    out = _run_without_platform_primitive(tmp_path, hide="nothing", body=f"""
+    out = _run_without_platform_primitive(
+        tmp_path,
+        hide="nothing",
+        body=f"""
         from pathlib import Path
         from apps.analysis._warmup_lock import (
             _ensure_lock_dir, _is_owned_dir, ensure_owned_numba_cache_dir,
@@ -381,7 +388,8 @@ def test_with_a_uid_the_same_checks_still_pass(tmp_path: Path) -> None:
             _ensure_lock_dir(Path({str(tmp_path / "lock")!r}), shared=False),
             ensure_owned_numba_cache_dir() is not None,
         )
-        """)
+        """,
+    )
 
     assert out == "True True True"
     assert (tmp_path / "lock").is_dir()
@@ -406,15 +414,10 @@ def test_a_non_contention_lock_error_refuses_without_waiting(
 
     monkeypatch.setattr(file_lock, "try_lock", _bad_lock)
     started = time.monotonic()
-    with jit_warmup._compile_lock(
-        tmp_path / "x.lock", 30.0, require_self_owned=False
-    ) as (held, proceed, _waited):
+    with jit_warmup._compile_lock(tmp_path / "x.lock", 30.0, require_self_owned=False) as (held, proceed, _waited):
         assert (held, proceed) == (False, False)
     assert time.monotonic() - started < 5.0
-    assert any(
-        "REFUSED rather than treat a lock error as contention" in r.message
-        for r in caplog.records
-    )
+    assert any("REFUSED rather than treat a lock error as contention" in r.message for r in caplog.records)
     assert not any("another process held" in r.message for r in caplog.records)
 
 
@@ -431,14 +434,9 @@ def test_contention_past_timeout_refuses_rather_than_warming_unlocked(
 
     caplog.set_level(logging.ERROR, logger="apps.analysis.jit_warmup")
     monkeypatch.setattr(file_lock, "try_lock", lambda _fd, **_: False)
-    with jit_warmup._compile_lock(
-        tmp_path / "x.lock", 0.4, require_self_owned=False
-    ) as (held, proceed, _waited):
+    with jit_warmup._compile_lock(tmp_path / "x.lock", 0.4, require_self_owned=False) as (held, proceed, _waited):
         assert (held, proceed) == (False, False)
-    assert any(
-        "REFUSED rather than compile a cold cache unlocked" in r.message
-        for r in caplog.records
-    )
+    assert any("REFUSED rather than compile a cold cache unlocked" in r.message for r in caplog.records)
     assert not any("warming WITHOUT" in r.message for r in caplog.records)
 
 

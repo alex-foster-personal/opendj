@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.sets.watermark` -- stdlib ID3v2.4 COMM writer."""
+
 from __future__ import annotations
 
 from pathlib import Path

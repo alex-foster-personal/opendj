@@ -20,7 +20,8 @@ function source(relative) {
 
 // The chip is a container plus a props-only view; the pair is the component.
 const CHIP =
-	source('lib/components/CloudSyncStatusChip.svelte') + source('lib/components/CloudSyncStatusChipView.svelte');
+	source('lib/components/CloudSyncStatusChip.svelte') +
+	source('lib/components/CloudSyncStatusChipView.svelte');
 const QUICK =
 	source('lib/components/cloudsync/CloudSyncQuickActions.svelte') +
 	source('lib/components/cloudsync/CloudSyncQuickActionsView.svelte');
@@ -54,15 +55,21 @@ before(async () => {
 test('sync now is refused while a deck is playing, and the chip never wires a nav/transport call', () => {
 	const playingGate = {
 		appPosture: 'prep',
-		uiMirror: { decks: { '1': { playing: true } } }
+		uiMirror: { decks: { 1: { playing: true } } }
 	};
 
 	const ordinary = view.syncNowRequest(config(), playingGate);
 	assert.equal(ordinary.kind, 'refuse');
 	assert.match(ordinary.reason, /deck_playing/);
 
-	assert.doesNotMatch(CHIP, /performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/);
-	assert.doesNotMatch(QUICK, /performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/);
+	assert.doesNotMatch(
+		CHIP,
+		/performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/
+	);
+	assert.doesNotMatch(
+		QUICK,
+		/performance-ipc|dispatchPerformanceCommand|runPerformanceCommandFromUi/
+	);
 	assert.doesNotMatch(CHIP, /goto\(|href=/);
 	assert.match(CHIP, /onclick=\{togglePopover\}/);
 	assert.match(QUICK, /data-testid="cloudsync-quick-actions-popover"/);

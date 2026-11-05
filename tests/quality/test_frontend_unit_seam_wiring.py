@@ -76,8 +76,7 @@ def test_every_node_dependent_exclusion_is_collected_by_quality() -> None:
         )
         orphaned = sorted(ignored - collected)
         assert not orphaned, (
-            f"ci.yml `{job_id}` ignores {orphaned}, but the `quality` job never collects them, "
-            "so they run nowhere"
+            f"ci.yml `{job_id}` ignores {orphaned}, but the `quality` job never collects them, so they run nowhere"
         )
 
 
@@ -99,6 +98,4 @@ def test_unit_scripts_chain_the_seam_check_first(script: str) -> None:
     command = scripts[script]
     assert "pnpm run check:unit-seams &&" in command, f"{script} no longer runs the seam check"
     node_test = command.index("node --experimental-strip-types --test")
-    assert command.index("check:unit-seams") < node_test, (
-        f"{script} must run the seam check before node --test"
-    )
+    assert command.index("check:unit-seams") < node_test, f"{script} must run the seam check before node --test"

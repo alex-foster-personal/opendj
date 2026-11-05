@@ -2,6 +2,7 @@
 
 [if] a stick path is swapped for a link between the containment check and the open [then] serving refuses with USB_PATH_OUTSIDE_VOLUME, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -15,7 +16,9 @@ from apps.sync.usb.stick_model import StickError
 
 pytestmark = [
     pytest.mark.requirement("USBPLAY-06"),
-    pytest.mark.skipif(not FD_ANCHORED_WALK_SUPPORTED, reason="no O_NOFOLLOW or fd paths: Windows serves the checked path"),
+    pytest.mark.skipif(
+        not FD_ANCHORED_WALK_SUPPORTED, reason="no O_NOFOLLOW or fd paths: Windows serves the checked path"
+    ),
 ]
 
 UUID = "0123ABCD-0000-0000-0000-000000000000"

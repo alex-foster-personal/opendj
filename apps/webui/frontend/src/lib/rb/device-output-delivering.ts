@@ -22,6 +22,9 @@ export interface DeviceDeliverySnapshot {
 	hal_overload_recent: boolean | null;
 	probe_available: boolean;
 	checked_at: string;
+	/** AUDIO-DEVICE-03: the main output's transport ('bluetooth', 'usb', ...). */
+	default_device_transport?: string | null;
+	shell_link_fault?: string | null;
 }
 
 export function foldDeviceDelivery(input: {

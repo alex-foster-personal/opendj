@@ -63,18 +63,14 @@ def test_cli_launcher_run_directly_finds_its_payload(payload: Path, tmp_path: Pa
     _assert_resolved_to(_run(payload / "bin" / "opendj", tmp_path), payload)
 
 
-def test_cli_launcher_through_absolute_symlink_finds_its_payload(
-    payload: Path, tmp_path: Path
-) -> None:
+def test_cli_launcher_through_absolute_symlink_finds_its_payload(payload: Path, tmp_path: Path) -> None:
     link = tmp_path / "home" / ".local" / "bin" / "opendj"
     link.parent.mkdir(parents=True)
     link.symlink_to(payload / "bin" / "opendj")
     _assert_resolved_to(_run(link, tmp_path), payload)
 
 
-def test_cli_launcher_through_relative_symlink_chain_finds_its_payload(
-    payload: Path, tmp_path: Path
-) -> None:
+def test_cli_launcher_through_relative_symlink_chain_finds_its_payload(payload: Path, tmp_path: Path) -> None:
     # Two hops, both relative, and run from an unrelated cwd: a relative link
     # must resolve against the LINK's directory, never the caller's cwd.
     bin_dir = tmp_path / "home" / ".local" / "bin"

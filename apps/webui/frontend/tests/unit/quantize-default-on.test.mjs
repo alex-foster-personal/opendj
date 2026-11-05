@@ -23,7 +23,9 @@ const API_BASE = 'https://quantize-default-on.example.test';
 const SID_A = 'a'.repeat(40);
 const SID_B = 'b'.repeat(40);
 const SID_MISSING = 'c'.repeat(40);
-const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
+const STRETCH_STUB = fileURLToPath(
+	new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url)
+);
 const realFetch = globalThis.fetch;
 const realWarn = console.warn;
 
@@ -32,7 +34,10 @@ let uninstall = null;
 let warnings = [];
 
 function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 /** The daemon routes a deck load reads, for two loadable tracks and one that 404s. */
@@ -57,12 +62,20 @@ function installDaemon() {
 			});
 		}
 		if (url.endsWith('/hot-cues')) {
-			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
+			return json(
+				['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))
+			);
 		}
 		if (url.endsWith('/audio')) return new Response(new Uint8Array(4 * 48_000 * 4));
 		const track = url.match(/\/tracks\/([0-9a-f]{40})(\/stems)?$/);
-		if (track?.[2] !== undefined) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
-		if (track !== null) return json({ stable_id: track[1], title: 'Quantize', artist: 'Fixture', bpm: null });
+		if (track?.[2] !== undefined)
+			return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (track !== null)
+			return json({ stable_id: track[1], title: 'Quantize', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
 }
@@ -120,7 +133,11 @@ test('at boot every deck has Quantize on', () => {
 
 test('at load Quantize is on', async () => {
 	await dispatchViaBridge({ type: 'load', deck: 1, stable_id: SID_A });
-	assert.equal(m.ipc.queryPerformanceState().decks[1].stable_id, SID_A, 'precondition: the track loaded');
+	assert.equal(
+		m.ipc.queryPerformanceState().decks[1].stable_id,
+		SID_A,
+		'precondition: the track loaded'
+	);
 	assert.equal(quantizeOn(1), true, 'if a load leaves Quantize off then broken');
 });
 
@@ -159,14 +176,32 @@ test('a programmatic off through dispatchPerformanceCommand names the calling fu
 });
 
 test('an agent order off without user provenance is REFUSED naming the flag; with by_user it lands', async () => {
-	const refused = await m.executeAgentOrder({ kind: 'single', payload: { type: 'quantize', deck: 4, enabled: false } });
-	assert.equal(refused.steps[0].status, 'failed', 'if an agent command off is silently reverted instead of refused then broken');
+	const refused = await m.executeAgentOrder({
+		kind: 'single',
+		payload: { type: 'quantize', deck: 4, enabled: false }
+	});
+	assert.equal(
+		refused.steps[0].status,
+		'failed',
+		'if an agent command off is silently reverted instead of refused then broken'
+	);
 	assert.match(refused.steps[0].error, /send by_user: true when a person asked for this/);
-	assert.equal(quantizeOn(4), true, 'if an agent order without by_user turns Quantize off then broken');
+	assert.equal(
+		quantizeOn(4),
+		true,
+		'if an agent order without by_user turns Quantize off then broken'
+	);
 
 	warnings = [];
-	await m.executeAgentOrder({ kind: 'single', payload: { type: 'quantize', deck: 4, enabled: false, by_user: true } });
-	assert.equal(quantizeOn(4), false, 'if an agent relaying a user ask cannot turn Quantize off then broken');
+	await m.executeAgentOrder({
+		kind: 'single',
+		payload: { type: 'quantize', deck: 4, enabled: false, by_user: true }
+	});
+	assert.equal(
+		quantizeOn(4),
+		false,
+		'if an agent relaying a user ask cannot turn Quantize off then broken'
+	);
 	assert.deepEqual(quantizeWarnings(), []);
 });
 
@@ -175,16 +210,39 @@ test('the next load re-enables Quantize after a user off', async () => {
 	await userToggle(1, false);
 	assert.equal(quantizeOn(1), false, 'precondition: the user turned it off');
 	await dispatchViaBridge({ type: 'load', deck: 1, stable_id: SID_B });
-	assert.equal(m.ipc.queryPerformanceState().decks[1].stable_id, SID_B, 'precondition: the new track loaded');
-	assert.equal(quantizeOn(1), true, 'if the next load does not re-enable Quantize after a user off then broken');
+	assert.equal(
+		m.ipc.queryPerformanceState().decks[1].stable_id,
+		SID_B,
+		'precondition: the new track loaded'
+	);
+	assert.equal(
+		quantizeOn(1),
+		true,
+		'if the next load does not re-enable Quantize after a user off then broken'
+	);
 });
 
 test('a failed load keeps the user off on the track still loaded', async () => {
 	await dispatchViaBridge({ type: 'load', deck: 1, stable_id: SID_A });
 	await userToggle(1, false);
-	await assert.rejects(dispatchViaBridge({ type: 'load', deck: 1, stable_id: SID_MISSING, suppressCommandErrorToast: true }));
-	assert.equal(m.ipc.queryPerformanceState().decks[1].stable_id, SID_A, 'precondition: the old track is still loaded');
-	assert.equal(quantizeOn(1), false, 'if a failed load ends the user off on the track still loaded then broken');
+	await assert.rejects(
+		dispatchViaBridge({
+			type: 'load',
+			deck: 1,
+			stable_id: SID_MISSING,
+			suppressCommandErrorToast: true
+		})
+	);
+	assert.equal(
+		m.ipc.queryPerformanceState().decks[1].stable_id,
+		SID_A,
+		'precondition: the old track is still loaded'
+	);
+	assert.equal(
+		quantizeOn(1),
+		false,
+		'if a failed load ends the user off on the track still loaded then broken'
+	);
 });
 
 test('by_user is validated like every other wire field', async () => {

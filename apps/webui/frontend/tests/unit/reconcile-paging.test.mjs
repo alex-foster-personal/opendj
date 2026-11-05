@@ -86,7 +86,10 @@ test('a reload keeps what was loaded, in requests no larger than the route allow
 		{ limit: 400, offset: 2000 }
 	]);
 	assert.equal(got.tracks.length, 2400);
-	assert.deepEqual(got.tracks.slice(0, 2).map((t) => t.stable_id), ['t0', 't1']);
+	assert.deepEqual(
+		got.tracks.slice(0, 2).map((t) => t.stable_id),
+		['t0', 't1']
+	);
 	assert.equal(got.tracks[2399].stable_id, 't2399');
 	assert.equal(got.nextOffset, 2400);
 });
@@ -114,7 +117,10 @@ test('loadBrokenRows refuses a non-positive want instead of looping', async () =
 
 test('a daemon that stops advancing is an error, not an endless load', async () => {
 	const stuck = async (limit, offset) => ({
-		total: 500, tracks: [{ stable_id: 'same' }], offset, next_offset: offset
+		total: 500,
+		tracks: [{ stable_id: 'same' }],
+		offset,
+		next_offset: offset
 	});
 	await assert.rejects(paging.loadBrokenRows(stuck, 400), /did not advance/);
 });

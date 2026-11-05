@@ -60,9 +60,7 @@ def test_utc_now_is_millisecond_zulu() -> None:
         ),
     ],
 )
-def test_scripts_facades_reexport_every_public_name(
-    implementation: str, facade: str
-) -> None:
+def test_scripts_facades_reexport_every_public_name(implementation: str, facade: str) -> None:
     impl = importlib.import_module(implementation)
     fac = importlib.import_module(facade)
     impl_public = {name for name in dir(impl) if not name.startswith("_")}

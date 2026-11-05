@@ -7,7 +7,12 @@
 	 * this machine keeps that kind local-only (CLOUDSYNC-33).
 	 * The budget input is live only while the STORED mode is cached.
 	 */
-	import { policyErrorMessage, SYNC_MODES, type AssetKind, type SyncPolicy } from '$lib/api-cloudsync';
+	import {
+		policyErrorMessage,
+		SYNC_MODES,
+		type AssetKind,
+		type SyncPolicy
+	} from '$lib/api-cloudsync';
 
 	import {
 		UNSET,
@@ -59,7 +64,11 @@
 			if (result.kind === 'saved') {
 				onSaved(result.policy);
 			} else {
-				onCleared(result.machineId, result.assetKind, policyClearedNote(kindLabel, machineName, result.outcome));
+				onCleared(
+					result.machineId,
+					result.assetKind,
+					policyClearedNote(kindLabel, machineName, result.outcome)
+				);
 			}
 		} catch (exc) {
 			const verb = decision.kind === 'delete' ? 'clear' : 'save';
@@ -81,7 +90,8 @@
 	budgetTitle={view.budgetTitle}
 	budgetValue={policy?.cache_budget_mb ?? ''}
 	onModeChange={(value) => apply(policyModeChange(machineId, assetKind, policy, value), 'policy')}
-	onBudgetChange={(value) => apply(policyBudgetChange(machineId, assetKind, policy, value), 'cache budget')}
+	onBudgetChange={(value) =>
+		apply(policyBudgetChange(machineId, assetKind, policy, value), 'cache budget')}
 	bind:selectEl
 	bind:budgetEl
 />

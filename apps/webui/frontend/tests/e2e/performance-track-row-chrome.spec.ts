@@ -122,7 +122,12 @@ async function preparePerformancePage(page: Page, stableId: string): Promise<Loc
 	return row;
 }
 
-async function assertArtworkLoaded(page: Page, request: APIRequestContext, stableId: string, row: Locator) {
+async function assertArtworkLoaded(
+	page: Page,
+	request: APIRequestContext,
+	stableId: string,
+	row: Locator
+) {
 	const artResponse = await request.get(`${API_BASE}/api/v1/tracks/${stableId}/artwork`);
 	expect(artResponse.ok(), 'production artwork route must succeed').toBeTruthy();
 	const contentType = artResponse.headers()['content-type'] ?? '';
@@ -299,7 +304,11 @@ test('performance: title text is vertically centered in the row and separator sp
 		const selected = document.querySelector('[data-testid="track-row"].rb-row-selected');
 		const art = selected?.querySelector('.c-art');
 		const title = selected?.querySelector('.title-text');
-		if (!(selected instanceof HTMLElement) || !(art instanceof HTMLElement) || !(title instanceof HTMLElement)) {
+		if (
+			!(selected instanceof HTMLElement) ||
+			!(art instanceof HTMLElement) ||
+			!(title instanceof HTMLElement)
+		) {
 			return null;
 		}
 		const rowBox = selected.getBoundingClientRect();
@@ -313,18 +322,9 @@ test('performance: title text is vertically centered in the row and separator sp
 		};
 	});
 	expect(probe).not.toBeNull();
-	const artX = Math.min(
-		rowShot.width - 1,
-		Math.max(0, Math.round(probe!.artLocalX))
-	);
-	const titleX = Math.min(
-		rowShot.width - 1,
-		Math.max(0, Math.round(probe!.titleLocalX))
-	);
-	const sampleY = Math.min(
-		rowShot.height - 1,
-		Math.max(0, Math.round(probe!.sepLocalY))
-	);
+	const artX = Math.min(rowShot.width - 1, Math.max(0, Math.round(probe!.artLocalX)));
+	const titleX = Math.min(rowShot.width - 1, Math.max(0, Math.round(probe!.titleLocalX)));
+	const sampleY = Math.min(rowShot.height - 1, Math.max(0, Math.round(probe!.sepLocalY)));
 	const artPixel = rgbaAt(rowShot, artX, sampleY);
 	const titlePixel = rgbaAt(rowShot, titleX, sampleY);
 	expect(

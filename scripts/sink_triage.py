@@ -125,9 +125,7 @@ class TriageState:
         data = json.loads(path.read_text(encoding="utf-8"))
         return cls(
             offsets={str(k): int(v) for k, v in (data.get("offsets") or {}).items()},
-            run_history={
-                str(k): [int(x) for x in v] for k, v in (data.get("run_history") or {}).items()
-            },
+            run_history={str(k): [int(x) for x in v] for k, v in (data.get("run_history") or {}).items()},
             last_comment={str(k): str(v) for k, v in (data.get("last_comment") or {}).items()},
             last_run=data.get("last_run"),
         )
@@ -393,9 +391,7 @@ def draft_acceptance(
 def issue_body(stats: FingerprintStats, acceptance: str) -> str:
     hosts = ", ".join(sorted(stats.hosts)) or "unknown"
     shas = ", ".join(sorted(stats.build_shas)) or "unknown"
-    examples = "\n\n".join(
-        f"```json\n{json.dumps(ex, indent=2, sort_keys=True)}\n```" for ex in stats.examples
-    )
+    examples = "\n\n".join(f"```json\n{json.dumps(ex, indent=2, sort_keys=True)}\n```" for ex in stats.examples)
     return (
         f"Auto-filed by sink-triage (issue #2673) at {utc_now_iso()}.\n\n"
         f"{marker_for(stats.fingerprint)}\n\n"
@@ -522,20 +518,14 @@ def source_names(environ: Mapping[str, str] | None = None) -> tuple[str, tuple[s
     env = os.environ if environ is None else environ
     local_raw = (env.get(LOCAL_SOURCE_NAME_ENV) or "").strip()
     if not local_raw:
-        raise ValueError(
-            f"{LOCAL_SOURCE_NAME_ENV} is not set; set it in the process environment (see .env.sample)"
-        )
+        raise ValueError(f"{LOCAL_SOURCE_NAME_ENV} is not set; set it in the process environment (see .env.sample)")
     remote_raw = (env.get(SSH_SOURCES_ENV) or "").strip()
     if not remote_raw:
-        raise ValueError(
-            f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)"
-        )
+        raise ValueError(f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)")
     local = local_raw
     remote = tuple(h.strip() for h in remote_raw.split(",") if h.strip())
     if not remote:
-        raise ValueError(
-            f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)"
-        )
+        raise ValueError(f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)")
     for variable, name in [(LOCAL_SOURCE_NAME_ENV, local)] + [(SSH_SOURCES_ENV, h) for h in remote]:
         if not _SSH_ALIAS_RE.fullmatch(name):
             raise ValueError(f"{variable}: {name!r} is not an ssh host alias")
@@ -566,9 +556,7 @@ def default_sources(jobs_dir: Path, environ: Mapping[str, str] | None = None) ->
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Error-sink triage lane (issue #2673)")
     parser.add_argument("--dry-run", action="store_true", help="Print gh commands only")
-    parser.add_argument(
-        "--jobs-dir", type=Path, default=Path(os.environ.get("JOBS_DIR", Path.home() / "jobs"))
-    )
+    parser.add_argument("--jobs-dir", type=Path, default=Path(os.environ.get("JOBS_DIR", Path.home() / "jobs")))
     parser.add_argument("--repo", default=os.environ.get("SINK_TRIAGE_REPO", REPO_DEFAULT))
     return parser.parse_args(argv)
 

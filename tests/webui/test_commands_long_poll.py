@@ -6,6 +6,7 @@ hidden minutes), so the page's 50 ms claim poll paid that per order. A held netw
 request is not throttled, so the engine now holds `GET /commands/next?wait_ms=N`
 and answers the moment an order is submitted.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,9 +52,7 @@ async def _open_page(client: AsyncClient) -> None:
 
 async def _open_leased_page(client: AsyncClient, tab: str) -> None:
     doc = {**LEASE_DOC, "client_id": tab}
-    published = await client.put(
-        "/api/v1/state/ui-mirror", json=doc, headers={"x-opendj-lease": tab}
-    )
+    published = await client.put("/api/v1/state/ui-mirror", json=doc, headers={"x-opendj-lease": tab})
     assert published.status_code == 202
 
 
@@ -178,13 +177,9 @@ def test_wait_ms_is_bounded_and_refused_for_the_shell_consumer() -> None:
     async def run() -> None:
         async with _client(_app()) as client:
             await _open_page(client)
-            too_long = await client.get(
-                "/api/v1/commands/next", params={"wait_ms": ORDER_WAIT_MAX_MS + 1}
-            )
+            too_long = await client.get("/api/v1/commands/next", params={"wait_ms": ORDER_WAIT_MAX_MS + 1})
             assert too_long.status_code == 422
-            shell = await client.get(
-                "/api/v1/commands/next", params={"consumer": "shell", "wait_ms": 100}
-            )
+            shell = await client.get("/api/v1/commands/next", params={"consumer": "shell", "wait_ms": 100})
             assert shell.status_code == 422
 
     asyncio.run(run())
@@ -345,9 +340,7 @@ def test_a_stale_lease_renewal_is_refused() -> None:
         app = _app()
         async with _client(app) as client:
             await _open_leased_page(client, "tab-a")
-            app.state.ui_mirror_lease = MirrorLease(
-                holder="tab-a", expires_monotonic=time.monotonic() + 1.0
-            )
+            app.state.ui_mirror_lease = MirrorLease(holder="tab-a", expires_monotonic=time.monotonic() + 1.0)
             stale = await client.get("/api/v1/commands/next", headers={"x-opendj-lease": "tab-a"})
             assert stale.status_code == 409
             assert stale.json()["reason"] == "lease_stale"

@@ -57,7 +57,11 @@ function unexpectedPauseToasts() {
 
 test('a stop request onto an already-paused deck records nothing and toasts nothing', () => {
 	h.notePlayingFallingEdge({ ...midTrackStop, was_active: false });
-	assert.equal(rows.length, 0, 'if a re-stated pause records a row then the seek-during-pause false alarm is back');
+	assert.equal(
+		rows.length,
+		0,
+		'if a re-stated pause records a row then the seek-during-pause false alarm is back'
+	);
 	assert.equal(unexpectedPauseToasts().length, 0);
 });
 
@@ -81,12 +85,20 @@ test('_scheduleDeck reports the falling edge with the intent it had BEFORE overw
 	const body = engineBlockAfter(SCHEDULE_DECK_ANCHOR);
 	const report = body.search(/notePlayingFallingEdge\(\{\s*was_active: rt\.desiredActive,/);
 	const overwrite = body.indexOf('rt.desiredActive = active;');
-	assert.ok(report >= 0, 'if _scheduleDeck does not pass the prior intent the edge cannot be told apart');
-	assert.ok(overwrite > report, 'if the report follows the overwrite then was_active always equals active');
+	assert.ok(
+		report >= 0,
+		'if _scheduleDeck does not pass the prior intent the edge cannot be told apart'
+	);
+	assert.ok(
+		overwrite > report,
+		'if the report follows the overwrite then was_active always equals active'
+	);
 });
 
 test("pressCue's stop of a playing deck is tagged as an operator command", () => {
-	const body = engineBlockAfter('async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	const body = engineBlockAfter(
+		'async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {'
+	);
 	assert.match(
 		body,
 		/withPauseOrigin\('command', \(\) =>\s*_schedulePress\(deck, _futureScheduleTime\(deck\), target \/ 1000, false, pressT0Ms\)/

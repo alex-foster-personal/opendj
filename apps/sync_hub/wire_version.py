@@ -71,6 +71,8 @@ from apps.sync_hub import protocol
 #: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
 #: field older peers ignore, advertised by the ``identity-reject/v1``
 #: capability token: NOT a wire change under the rule above, so no bump.
+#: Likewise identity_remap_pairs / identity_remaps_contradicted are optional,
+#: negotiated by identity-remap-precondition/v1 (#4192); no synced row changes.
 WIRE_VERSION: int = 8
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest

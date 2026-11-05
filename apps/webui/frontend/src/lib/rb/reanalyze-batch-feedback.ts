@@ -45,17 +45,16 @@ export function formatReanalyzeEnqueueToast(
 	if (result.admitted === 0) {
 		const reasons = progress ? topRefusalReasons(progress) : [];
 		const reasonBit =
-			reasons.length > 0 ?
-				` Reasons: ${reasons.join('; ')}.`
-			:	' None were queued; check that the analysis queue runner is draining.';
+			reasons.length > 0
+				? ` Reasons: ${reasons.join('; ')}.`
+				: ' None were queued; check that the analysis queue runner is draining.';
 		return {
 			title,
 			message: `Re-analyze (${planLabel}): queued 0 of ${result.offered} (batch ${batch}).${reasonBit}`,
 			kind: result.refused > 0 ? 'warn' : 'error'
 		};
 	}
-	const refusedBit =
-		result.refused > 0 ? ` (${result.refused} refused at enqueue).` : '';
+	const refusedBit = result.refused > 0 ? ` (${result.refused} refused at enqueue).` : '';
 	return {
 		title,
 		message: `Re-analyze (${planLabel}): queued ${result.admitted} of ${result.offered} (batch ${batch})${refusedBit} Waiting for the queue…`,
@@ -96,7 +95,10 @@ export type ReanalyzeToastSlice = {
 };
 
 function _stripBatchSuffix(message: string): string {
-	return message.replace(/\s*\(batch [^)]+\)/gu, '').replace(/\s{2,}/g, ' ').trim();
+	return message
+		.replace(/\s*\(batch [^)]+\)/gu, '')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
 }
 
 /** Collapsed-tray headline + expandable detail for UX-TOAST-02 (#3981 pin 0a3514651f17). */
@@ -117,8 +119,14 @@ export function toReanalyzeToastPresentation(presentation: ReanalyzeToastSlice):
 }
 
 export type ReanalyzeWatchCallbacks = {
-	onUpdate: (progress: BackfillProgress, presentation: ReturnType<typeof formatReanalyzeProgressToast>) => void;
-	onTerminal: (progress: BackfillProgress, presentation: ReturnType<typeof formatReanalyzeProgressToast>) => void;
+	onUpdate: (
+		progress: BackfillProgress,
+		presentation: ReturnType<typeof formatReanalyzeProgressToast>
+	) => void;
+	onTerminal: (
+		progress: BackfillProgress,
+		presentation: ReturnType<typeof formatReanalyzeProgressToast>
+	) => void;
 	onError: (message: string) => void;
 };
 

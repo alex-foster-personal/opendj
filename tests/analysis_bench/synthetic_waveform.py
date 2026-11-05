@@ -33,7 +33,7 @@ def _bands(kind: str) -> dict[str, list[float]]:
     if kind == "ramp":
         low = np.clip(8.0 + 3.0 * t, 0.0, SCALE)
         mid = np.clip(20.0 + 1.7 * t + 8.0 * np.sin(t / 5.0), 0.0, SCALE)
-        high = np.clip(4.0 + (t ** 1.3), 0.0, SCALE)
+        high = np.clip(4.0 + (t**1.3), 0.0, SCALE)
     else:
         rng = np.random.default_rng(20260910)
         noise = rng.normal(0.0, 2.0, N_COLUMNS)
@@ -59,9 +59,7 @@ def build(staged: Path) -> list[dict]:
             "columns": N_COLUMNS,
             "bands": bands,
         }
-        (truth_dir / f"{stable_id}.json").write_text(
-            json.dumps(payload, indent=1), encoding="utf-8"
-        )
+        (truth_dir / f"{stable_id}.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
         tracks.append(
             {
                 "stable_id": stable_id,
@@ -82,9 +80,6 @@ def manifest_extra(tracks: list[dict]) -> dict:
         "paths_relative_to": "manifest",
         "truth_tag": TAG,
         "truth_scale": SCALE,
-        "synthetic": (
-            "hand-built PWV6-shaped preview columns, NOT a substitute for a real "
-            "rekordbox PWV bundle"
-        ),
+        "synthetic": ("hand-built PWV6-shaped preview columns, NOT a substitute for a real rekordbox PWV bundle"),
         "tracks": tracks,
     }

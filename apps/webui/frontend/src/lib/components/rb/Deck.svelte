@@ -23,6 +23,7 @@
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
+	import { deckBannerDismissMs, deckBannerTone } from '$lib/rb/deck-banner-policy';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
@@ -80,6 +81,7 @@
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import { SeparateEndProbe, lookForBundle, separateRunId } from '$lib/rb/stem-separate-probe';
 	import StripWaveform from './deck/StripWaveform.svelte';
+	import { waveSeekCommand } from './wave/wave-scrub';
 	import TransportCluster from './deck/TransportCluster.svelte';
 	import GridEditButtons from './deck/GridEditButtons.svelte';
 	import ReactIsland from '$lib/react/ReactIsland.svelte';
@@ -186,6 +188,19 @@
 
 	const controlErrorId: string | null = $derived(deckErrorIds[deckId]);
 
+	// DECKUX-LABEL-02: an expected, self-resolving condition (stems still
+	// loading) clears itself and is not painted as a fault; a real fault stays
+	// until dismissed. Primitives, so the timer restarts only on a real change.
+	const controlErrorDismissMs: number | null = $derived(
+		controlError === null ? null : deckBannerDismissMs(controlError, deck.stems.status)
+	);
+	$effect(() => {
+		const ms = controlErrorDismissMs;
+		if (ms === null) return;
+		const timer = setTimeout(() => dismissPerformanceDeckError(deckId), ms);
+		return () => clearTimeout(timer);
+	});
+
 	// REACT-01 (`ui.react.deck`, default OFF): the deck's leaf controls render
 	// through their React twins only when the daemon declares the flag on.
 	// BeatJump stays Svelte either way: it reads deck.position_ms, which the
@@ -273,7 +288,8 @@
 	// callers below are gated by disabled states, never by silent catches.
 
 	async function seekTo(ms: number): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
+		// The strip already snapped the target (WAVE-SEEK-01): exact, no grid re-snap.
+		await runPerformanceCommandFromUi(waveSeekCommand(deckId, ms));
 	}
 
 	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
@@ -603,6 +619,13 @@
 		event.preventDefault();
 		await applyDeckTrackDrop({ deckId, occupied: deck.stable_id !== null, stableId, row, dispatch: dispatchPerformanceCommand, toast: pushToast });
 	}
+
+	// DECKUX-8360: decks 2+4 follow the right mirror pref, decks 1+3 the left.
+	// A mirrored deck is a true horizontal mirror of the header and the main
+	// row, so its sync, jog and transport sit on the screen-centre side.
+	const mirrored: boolean = $derived(
+		(deckId === 2 || deckId === 4) ? uiPrefs.deck_right_mirror : uiPrefs.deck_left_mirror
+	);
 </script>
 
 <section
@@ -649,13 +672,15 @@
 		onResetTempo={setTempo}
 		onUnload={unloadDeck}
 		{keySyncAvailable}
+		{mirrored}
 	/>
 
 	<StripWaveform {deck} {pending} onSeek={seekTo} onPlay={playPause} />
 
 	<div
 		class="main-row"
-		class:mirror-main-row={(deckId === 2 || deckId === 4) ? uiPrefs.deck_right_mirror : uiPrefs.deck_left_mirror}
+		class:mirror-main-row={mirrored}
+		data-mirrored={mirrored}
 	>
 		<!-- Left edge: grid adjust (top) and grid shift (bottom), GRIDEDIT-6235, then
 		     the HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the
@@ -757,7 +782,7 @@
 			separate={separateView}
 			onSeparate={separateStems}
 			stemsResetOn={trackLoadResetEnabled('stems')}
-			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el)}
+			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
 		/>
 	{/if}
 
@@ -765,12 +790,13 @@
 		{#if reactDeck}
 			<ReactIsland
 				load={() => import('./deck/DeckErrorBanner.tsx')}
-				props={{ deckId, error: controlError, errorId: controlErrorId, onDismiss: () => dismissPerformanceDeckError(deckId) }}
+				props={{ deckId, error: controlError, tone: deckBannerTone(controlError), errorId: controlErrorId, onDismiss: () => dismissPerformanceDeckError(deckId) }}
 			/>
 		{:else}
 			<DeckErrorBanner
 				{deckId}
 				error={controlError}
+				tone={deckBannerTone(controlError)}
 				errorId={controlErrorId}
 				onDismiss={() => dismissPerformanceDeckError(deckId)}
 			/>
@@ -920,7 +946,16 @@
 		min-width: 0;
 		overflow: hidden;
 	}
+	/* DECKUX-8360: a true mirror. The row order reverses, and so do the two
+	   side-by-side groups inside it (loop | jump, dial | Q/SLIP/MT column), so
+	   the jog's modifier column and the transport face the screen centre the
+	   way they do on an unmirrored deck. Each control's own content (labels,
+	   pad grid, text) keeps its normal left-to-right order. */
 	.main-row.mirror-main-row {
+		flex-direction: row-reverse;
+	}
+	.main-row.mirror-main-row > .loop-col,
+	.main-row.mirror-main-row > :global(.jog) {
 		flex-direction: row-reverse;
 	}
 	.left-edge {

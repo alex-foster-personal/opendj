@@ -41,6 +41,8 @@ from typing import Any
 
 import psutil
 
+from apps.shared.process_tree import stop_processes
+
 log = logging.getLogger("opendj.shutdown")
 
 #: Seconds from SIGTERM to the engine's exit, at the latest. The shell's own
@@ -171,11 +173,16 @@ def reap_descendants(grace_s: float = REAP_GRACE_S) -> list[str]:
     first = _live_descendants(seen)
     for child in first:
         _note(child, found)
-        _signal(child, kill=False)
-    _, alive = psutil.wait_procs(first, timeout=grace_s)
-    for child in alive:
-        _signal(child, kill=True)
-    psutil.wait_procs(alive, timeout=grace_s)
+    # The seam splits one budget between its polite and forced rungs, so it
+    # gets two graces: each rung keeps the grace_s it always had.
+    try:
+        survivors = stop_processes(first, grace_s=2 * grace_s)
+    except psutil.Error as exc:
+        # The watchdog must reach os._exit whatever happens here, so a failure
+        # is reported in the returned lines rather than raised past it.
+        found.append(f"reap failed: {exc!r}")
+    else:
+        found.extend(f"SURVIVED {child.pid}" for child in survivors)
     stop_looking = time.monotonic() + grace_s
     while time.monotonic() < stop_looking:
         late = _live_descendants(seen)

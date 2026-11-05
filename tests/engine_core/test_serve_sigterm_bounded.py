@@ -18,6 +18,7 @@ Regression lines:
     request did not hold the shutdown, and the case above proves nothing
     (the control) -> broken
 """
+
 from __future__ import annotations
 
 import os
@@ -35,9 +36,7 @@ from apps.engine_core.__main__ import GRACEFUL_SHUTDOWN_S
 
 pytestmark = [
     pytest.mark.requirement("INSTALL-33"),
-    pytest.mark.skipif(
-        sys.platform == "win32", reason="POSIX SIGTERM delivery to the engine process"
-    ),
+    pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM delivery to the engine process"),
 ]
 
 REPO = Path(__file__).resolve().parents[2]
@@ -45,6 +44,7 @@ REPO = Path(__file__).resolve().parents[2]
 EXIT_WITHIN_S: float = GRACEFUL_SHUTDOWN_S + 12.0
 #: A production route whose handler reads a JSON body.
 OPEN_REQUEST_PATH: str = "/api/v1/feedback/comments"
+
 
 def _free_port() -> int:
     with socket.socket() as sock:

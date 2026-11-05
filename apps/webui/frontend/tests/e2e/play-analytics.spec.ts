@@ -44,8 +44,7 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	await page.screenshot({ path: join(SCREENSHOT_DIR, 'play-analytics-1280x800.png') });
 
 	const filteredResponse = page.waitForResponse(
-		(response) =>
-			response.url().includes('share_state=shared_local') && response.status() === 200
+		(response) => response.url().includes('share_state=shared_local') && response.status() === 200
 	);
 	await page.getByLabel('Session visibility').selectOption('shared_local');
 	await filteredResponse;
@@ -54,17 +53,17 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	);
 	await expect(page.getByText('warehouse-2026-07-21')).not.toBeVisible();
 	await expect(page.getByText('studio-2026-07-20')).toBeVisible();
-	// Repo checkouts carry app_version from tauri.conf.json. The public
-	// manifest is still unpublished, so /update/check answers HTTP 200 with
-	// endpoint-refused rather than 502. setup-entry-points.spec.ts already
-	// carves out payload 502 console noise for the app shell.
-	expect(
-		failedResources.every(({ url }) => url.endsWith('/favicon.svg'))
-	).toBe(true);
+	// Repo checkouts carry app_version from tauri.conf.json and read the live
+	// public manifest, which ships only darwin-aarch64. Every other host must
+	// get the named platform-unsupported fault, never reassurance.
+	expect(failedResources.filter(({ url }) => !url.endsWith('/favicon.svg'))).toEqual([]);
 	const updateCheckResponse = await updateCheck;
 	expect(updateCheckResponse.status()).toBe(200);
-	expect((await updateCheckResponse.json()).status).toBe('endpoint-refused');
-	expect(
-		consoleErrors.filter((error) => !error.includes('favicon'))
-	).toEqual([]);
+	const updateStatus = (await updateCheckResponse.json()).status;
+	if (process.platform === 'darwin' && process.arch === 'arm64') {
+		expect(['update-available', 'up-to-date', 'ahead-of-channel']).toContain(updateStatus);
+	} else {
+		expect(updateStatus).toBe('platform-unsupported');
+	}
+	expect(consoleErrors.filter((error) => !error.includes('favicon'))).toEqual([]);
 });

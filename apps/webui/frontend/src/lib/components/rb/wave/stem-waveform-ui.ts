@@ -11,7 +11,10 @@ export const STEM_WAVE_ROW_PX = 12;
 /** Maximum stem rows shown under one deck when ``show_stems`` is on. */
 export const STEM_WAVE_ROW_MAX = STEM_CONTROLS.length;
 
-export function stemWaveformApiPart(control: StemControl, layout: StemLayout | null): string | null {
+export function stemWaveformApiPart(
+	control: StemControl,
+	layout: StemLayout | null
+): string | null {
 	if (control === 'vocal') return 'vocals';
 	if (control === 'instrumental') return 'instrumental';
 	// drums / bass / other are real parts of a demucs4 bundle only; the

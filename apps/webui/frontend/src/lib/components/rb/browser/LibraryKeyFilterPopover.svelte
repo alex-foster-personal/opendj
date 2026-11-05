@@ -59,9 +59,7 @@
 	let popoverEl = $state<HTMLDivElement | null>(null);
 
 	const selectedCount = $derived(uiPrefs.library_key_filter.length);
-	const triggerLabel = $derived(
-		selectedCount === 0 ? 'Key' : `Key (${selectedCount})`
-	);
+	const triggerLabel = $derived(selectedCount === 0 ? 'Key' : `Key (${selectedCount})`);
 	const syncError = $derived(libraryKeyFilterSync.error);
 
 	function _ensurePanel(): void {

@@ -38,9 +38,18 @@ SURFACE_NAMES = frozenset({"Makefile", "justfile", "package.json"})
 SURFACE_DIRS = ("scripts", ".github")
 # Pruned while walking: vendored or generated trees are not this repository's
 # call sites, and node_modules alone would dominate the walk.
-EXCLUDED_DIRS = frozenset({
-    ".git", ".svelte-kit", ".venv", "build", "data", "dist", "node_modules", "target",
-})
+EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".svelte-kit",
+        ".venv",
+        "build",
+        "data",
+        "dist",
+        "node_modules",
+        "target",
+    }
+)
 
 # Scope is a DENY list, not an allow list. An allow list of executable suffixes
 # silently omits whatever nobody thought of -- .js, .cjs, .bash today, something
@@ -72,6 +81,7 @@ _PUNCTUATION = ";|&"
 #: keeps it impossible to spell in a real command.
 _UNPARSED = "\x00unparsed"
 
+
 # A token that invokes node: the bare binary, a path ending in it, or a variable
 # expanding to it. The Makefile calls `$(FRONTEND_NODE)`, so a word-boundary
 # match on `node` would skip that site entirely.
@@ -84,8 +94,8 @@ def _is_node_token(token: str) -> bool:
     word boundary before `node` would skip the site entirely.
     """
     tok = token.strip().strip("\"'")
-    tok = tok.rstrip(")}")                      # $(FRONTEND_NODE) -> $(FRONTEND_NODE
-    tok = re.split(r"[\\/]", tok)[-1]            # path or Windows path -> basename
+    tok = tok.rstrip(")}")  # $(FRONTEND_NODE) -> $(FRONTEND_NODE
+    tok = re.split(r"[\\/]", tok)[-1]  # path or Windows path -> basename
     if tok.lower().endswith(".exe"):
         tok = tok[: -len(".exe")]
     if tok.lower() == "node":
@@ -95,7 +105,9 @@ def _is_node_token(token: str) -> bool:
     # as `notnode`, is a different program, and accepting it would put a false
     # entry in the census.
     looks_like_variable = "$" in tok or "%" in tok or "{" in tok
-    return looks_like_variable and tok.upper().strip("%${}(") .endswith("NODE")
+    return looks_like_variable and tok.upper().strip("%${}(").endswith("NODE")
+
+
 # Quoted string literals, used to bound commands inside JSON and YAML. Each value
 # is its own command, which is what stops one line's flags reaching another's.
 #: A folded workflow command (`run: >`) joins its lines into one command with
@@ -204,10 +216,7 @@ def _argv_parts(node: ast.AST, consumed: set[int]) -> list[str] | None:
     """
     if isinstance(node, (ast.List, ast.Tuple)):
         consumed.add(id(node))
-        return [
-            e.value for e in node.elts
-            if isinstance(e, ast.Constant) and isinstance(e.value, str)
-        ]
+        return [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         left = _argv_parts(node.left, consumed)
         right = _argv_parts(node.right, consumed)
@@ -260,11 +269,7 @@ def _python_commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
             # both directions right, because a reporter spelled after the dynamic
             # part is still seen. A flag that is itself dynamic cannot be read by
             # any static scan, and is reported as missing rather than assumed.
-            parts = [
-                e.value
-                for e in node.elts
-                if isinstance(e, ast.Constant) and isinstance(e.value, str)
-            ]
+            parts = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
             if parts:
                 found.append((node.lineno, parts))
         elif (
@@ -308,11 +313,7 @@ def _commands(path: Path, text: str) -> list[tuple[int, list[str]]]:
         return _python_commands(path, text)
     commands: list[tuple[int, list[str]]] = []
     if path.suffix in {".yml", ".yaml"}:
-        folded = [
-            lineno
-            for lineno, line in enumerate(text.split("\n"), start=1)
-            if _FOLDED_RUN.match(line)
-        ]
+        folded = [lineno for lineno, line in enumerate(text.split("\n"), start=1) if _FOLDED_RUN.match(line)]
         if folded:
             raise AssertionError(
                 f"{_display(path)} uses a folded command scalar at line(s) "

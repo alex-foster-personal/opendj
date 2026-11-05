@@ -21,6 +21,7 @@ real database file; these only observe:
 Both expose a ``reset()`` so a test can measure one request in isolation
 after fixture setup has run through the same connections.
 """
+
 from __future__ import annotations
 
 import re
@@ -70,7 +71,7 @@ def statement_shapes(statements: list[str]) -> Counter[str]:
     return Counter(re.sub(r"\(\?(?:\s*,\s*\?)+\)", "(?)", sql) for sql in blanked)
 
 
-#-----
+# -----
 # The audit hook is process-wide and cannot be removed (CPython by design), so
 # it is installed once, at import, and does nothing unless a trace is active.
 

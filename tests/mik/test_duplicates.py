@@ -4,6 +4,7 @@
 - [if] the candidates are not provably one recording [then] the song stays staged and nothing is shared, [else stop].
 - [if] two songs propose different energies for one row [then] that row is written by neither and reported, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -103,9 +104,7 @@ def test_stored_paths_differing_only_in_case_never_group(state_conn, add_track) 
     assert groups.members_of(B) == (B,)
 
 
-def test_metadata_groups_need_the_flag_and_durations_within_one_second(
-    state_conn, add_track
-) -> None:
+def test_metadata_groups_need_the_flag_and_durations_within_one_second(state_conn, add_track) -> None:
     for stable_id, folder in ((A, "one"), (B, "two"), (C, "three"), (D, "four")):
         add_track(stable_id, title="Tamborel ", artist="quilla ventrosk", file_path=f"/Users/old/{folder}/x.mp3")
     _set(state_conn, A, duration_ms=200_000)
@@ -142,9 +141,7 @@ def twins(state_conn, add_track) -> None:
     state_conn.commit()
 
 
-def test_an_ambiguous_song_shares_to_every_same_recording_candidate(
-    state_conn, twins, make_mik_store
-) -> None:
+def test_an_ambiguous_song_shares_to_every_same_recording_candidate(state_conn, twins, make_mik_store) -> None:
     store = make_mik_store([{"path": "/gone/x.mp3", "energy": 7.0, "segments": SEGMENTS}])
     _songs, report, share = _share(state_conn, store, by_metadata=True)
     assert report.unmatched[1].reason == "ambiguous_candidates"
@@ -154,18 +151,14 @@ def test_an_ambiguous_song_shares_to_every_same_recording_candidate(
     assert share.counts()["rows_shared"] == 2
 
 
-def test_without_a_basis_an_ambiguous_song_shares_nothing(
-    state_conn, twins, make_mik_store
-) -> None:
+def test_without_a_basis_an_ambiguous_song_shares_nothing(state_conn, twins, make_mik_store) -> None:
     store = make_mik_store([{"path": "/gone/x.mp3", "energy": 7.0, "segments": SEGMENTS}])
     _songs, _report, share = _share(state_conn, store, by_metadata=False)
     assert share.shared == {}
     assert share.counts()["ambiguous_not_one_recording"] == 1
 
 
-def test_candidates_of_two_recordings_are_not_shared(
-    state_conn, twins, add_track, make_mik_store
-) -> None:
+def test_candidates_of_two_recordings_are_not_shared(state_conn, twins, add_track, make_mik_store) -> None:
     add_track(C, title="Other", artist="Other", file_path="/Users/old/three/x.mp3")
     state_conn.commit()
     store = make_mik_store([{"path": "/gone/x.mp3", "energy": 7.0, "segments": SEGMENTS}])
@@ -174,9 +167,7 @@ def test_candidates_of_two_recordings_are_not_shared(
     assert share.counts()["ambiguous_not_one_recording"] == 1
 
 
-def test_conflicting_energies_for_one_row_are_reported_not_written(
-    state_conn, twins, make_mik_store
-) -> None:
+def test_conflicting_energies_for_one_row_are_reported_not_written(state_conn, twins, make_mik_store) -> None:
     store = make_mik_store(
         [
             {"path": "/gone/x.mp3", "energy": 7.0, "segments": SEGMENTS},
@@ -189,9 +180,7 @@ def test_conflicting_energies_for_one_row_are_reported_not_written(
     assert share.counts()["conflicting_rows"] == 2
 
 
-def test_agreeing_songs_share_once_from_a_deterministic_winner(
-    state_conn, twins, make_mik_store
-) -> None:
+def test_agreeing_songs_share_once_from_a_deterministic_winner(state_conn, twins, make_mik_store) -> None:
     store = make_mik_store(
         [
             {"path": "/gone/x.mp3", "energy": 7.0, "confidence": 0.5, "segments": SEGMENTS},
@@ -203,9 +192,7 @@ def test_agreeing_songs_share_once_from_a_deterministic_winner(
     assert {match.stable_id for match in share.shared[2]} == {A, B}
 
 
-def test_a_unique_match_shares_with_its_duplicate_and_keeps_its_own_row(
-    state_conn, twins, make_mik_store
-) -> None:
+def test_a_unique_match_shares_with_its_duplicate_and_keeps_its_own_row(state_conn, twins, make_mik_store) -> None:
     store = make_mik_store([{"path": "/Users/old/one/x.mp3", "energy": 6.0, "segments": SEGMENTS}])
     _songs, report, share = _share(state_conn, store, by_metadata=True)
     assert report.matches[1].stable_id == A
@@ -218,9 +205,7 @@ def test_build_plan_writes_scalar_and_series_to_each_shared_row(
     write_verdicts({field: "passed" for field in loader.GATED_FIELDS})
     store = make_mik_store([{"path": "/gone/x.mp3", "energy": 7.0, "segments": SEGMENTS}])
     songs, report, share = _share(state_conn, store, by_metadata=True)
-    plan = loader.build_plan(
-        songs, report, EquivalenceGate.load(data_dir), state_conn, shared=share.shared
-    )
+    plan = loader.build_plan(songs, report, EquivalenceGate.load(data_dir), state_conn, shared=share.shared)
     assert sorted((w.stable_id, w.field_name, w.value, w.tier) for w in plan.field_writes) == [
         (A, "energy", 7, dups.SHARE_TIER),
         (B, "energy", 7, dups.SHARE_TIER),
@@ -262,7 +247,11 @@ def test_case_variants_that_cannot_be_stat_ed_never_group(state_conn, add_track)
     """if two case spellings whose files cannot be checked group as one recording (a guessed case rule) then broken."""
     for stable_id, folder in ((A, "one"), (B, "two"), (C, "three")):
         add_track(stable_id, file_path=f"/Users/old/{folder}/x.mp3")
-    for stable_id, checked in ((A, "/Volumes/Lib/Track.mp3"), (B, "/volumes/lib/track.mp3"), (C, "/Volumes/Lib/Track.mp3")):
+    for stable_id, checked in (
+        (A, "/Volumes/Lib/Track.mp3"),
+        (B, "/volumes/lib/track.mp3"),
+        (C, "/Volumes/Lib/Track.mp3"),
+    ):
         state_conn.execute(
             "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) "
             "VALUES (?, 'present', ?, '2026-10-13T00:00:00+00:00')",
@@ -310,6 +299,7 @@ def test_two_paths_to_one_file_on_disk_group_whatever_their_names(state_conn, ad
     _present(state_conn, C, str(other))  # control: a different file stays apart
     groups = dups.duplicate_groups(state_conn, by_metadata=False)
     assert groups.members_of(A) == (A, B) and groups.members_of(C) == (C,)
+
 
 def test_same_energy_with_different_series_is_a_conflict(state_conn, twins, make_mik_store) -> None:
     """if two songs offering one energy but different series share either field then broken."""
@@ -362,9 +352,7 @@ def test_a_song_without_a_series_shares_nothing(state_conn, twins, make_mik_stor
     assert share.shared != {}
 
 
-def test_a_collision_loser_still_offers_its_result_to_the_duplicates(
-    state_conn, add_track, make_mik_store
-) -> None:
+def test_a_collision_loser_still_offers_its_result_to_the_duplicates(state_conn, add_track, make_mik_store) -> None:
     """if two songs claiming one track disagree and the winner alone is shared to its duplicate then broken."""
     for stable_id, folder in ((A, "one"), (B, "two")):
         add_track(stable_id, file_path=f"/Users/old/{folder}/x.mp3")

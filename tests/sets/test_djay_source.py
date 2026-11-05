@@ -1,4 +1,5 @@
 """Tests for the djay deck-state source."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ def test_djay_source_emits_track_loaded_and_track_change(
         source._monitor._last_uuid = None  # force re-emit
         # Shrink the DB to only include items up to this uuid.
         import sqlite3
+
         conn = sqlite3.connect(str(djay_three_tracks_two_decks))
         try:
             # Delete items after the target uuid; we rebuild per poll.

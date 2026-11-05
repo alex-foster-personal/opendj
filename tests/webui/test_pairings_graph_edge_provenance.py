@@ -9,6 +9,7 @@ the first fix: ownership by "the edge is newer" also claimed an edge that graph
 tooling recreated after the capture. Ownership is now an explicit marker,
 ``http_pairings.graph_owner_stamp``. Real migrated state.db, real backend, no mocks.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -30,9 +31,15 @@ def _route_pairing(pairing_id: str = "pair-1", notes: str | None = "from capture
     # Stamped the way routes/pairings.py stamps a create: server UTC, now.
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     return Pairing(
-        pairing_id=pairing_id, from_stable_id="track-a", to_stable_id="track-b",
-        direction="->", source="manual", notes=notes, snapshot=None,
-        created_at=now, updated_at=now,
+        pairing_id=pairing_id,
+        from_stable_id="track-a",
+        to_stable_id="track-b",
+        direction="->",
+        source="manual",
+        notes=notes,
+        snapshot=None,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -46,17 +53,13 @@ def backend_and_path(tmp_path: Path) -> tuple[SqliteBackend, Path]:
 def _graph(path: Path) -> list[tuple[object, ...]]:
     conn = sqlite3.connect(path)
     try:
-        return conn.execute(
-            "SELECT from_stable_id, to_stable_id, direction, source, notes FROM pairings"
-        ).fetchall()
+        return conn.execute("SELECT from_stable_id, to_stable_id, direction, source, notes FROM pairings").fetchall()
     finally:
         conn.close()
 
 
 def _delete(backend: SqliteBackend, stored: Pairing) -> None:
-    backend.delete_pairing(
-        stored.pairing_id, expected_etag=compute_etag(stored.pairing_id, stored.updated_at)
-    )
+    backend.delete_pairing(stored.pairing_id, expected_etag=compute_etag(stored.pairing_id, stored.updated_at))
 
 
 def test_delete_keeps_a_graph_edge_authored_before_the_http_pairing(backend_and_path) -> None:
@@ -112,9 +115,7 @@ def _cli_rewrite(path: Path, *, recreate: bool) -> None:
 
 
 @pytest.mark.parametrize("recreate", [True, False], ids=["recreated", "rewritten"])
-def test_delete_keeps_an_edge_graph_tooling_wrote_after_the_capture(
-    backend_and_path, recreate: bool
-) -> None:
+def test_delete_keeps_an_edge_graph_tooling_wrote_after_the_capture(backend_and_path, recreate: bool) -> None:
     """[if] graph tooling recreates or rewrites the edge after capture [then] delete leaves its version, [else stop]."""
     backend, path = backend_and_path
     stored = backend.create_pairing(_route_pairing())
@@ -149,8 +150,7 @@ def test_rows_from_before_the_marker_own_no_edge(tmp_path: Path) -> None:
         )
         stamp = "2026-09-26T00:00:00.000000Z"
         conn.execute(
-            "INSERT INTO http_pairings VALUES ('pair-1', 'track-a', 'track-b', '->', 'manual', "
-            "'old', NULL, ?, ?)",
+            "INSERT INTO http_pairings VALUES ('pair-1', 'track-a', 'track-b', '->', 'manual', 'old', NULL, ?, ?)",
             (stamp, stamp),
         )
         PairingsRepo(conn).add("track-a", "track-b", direction="into", source="manual", notes="old")

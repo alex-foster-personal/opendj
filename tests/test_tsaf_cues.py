@@ -5,6 +5,7 @@ djay_writer's encoders to build fixture blobs, parse them back with the
 reader, and assert the shape survives. Byte-level fidelity is asserted
 for the stable tokens (``0x2b``, ``0x08``, ``0x0b``, terminator ``0x00``).
 """
+
 from __future__ import annotations
 
 import struct
@@ -68,8 +69,7 @@ def test_round_trip_multiple_cues():
     cues_in = [
         NormalisedCue(position_msec=0, kind="memory"),
         NormalisedCue(position_msec=1000, kind="hot", index=0, name="drop"),
-        NormalisedCue(position_msec=2500, kind="hot", index=2,
-                      color_rgb=(255, 0, 0)),
+        NormalisedCue(position_msec=2500, kind="hot", index=2, color_rgb=(255, 0, 0)),
         NormalisedCue(position_msec=60000, kind="memory", name="end"),
     ]
     blob = _wrap_in_tsaf_envelope(b"")
@@ -81,10 +81,7 @@ def test_round_trip_multiple_cues():
 
 
 def test_round_trip_preserves_hot_cue_index():
-    cues_in = [
-        NormalisedCue(position_msec=i * 1000, kind="hot", index=i)
-        for i in range(8)
-    ]
+    cues_in = [NormalisedCue(position_msec=i * 1000, kind="hot", index=i) for i in range(8)]
     blob = _wrap_in_tsaf_envelope(b"")
     blob = patch_cue_points(blob, cues_in)
     out = parse_cues_from_blob(blob)
@@ -150,8 +147,7 @@ def test_tsaf_scan_array_counts_elements():
 
 def test_loop_region_round_trip():
     loops_in = [
-        NormalisedCue(position_msec=4000, kind="loop",
-                      loop_length_msec=8000, name="loop A"),
+        NormalisedCue(position_msec=4000, kind="loop", loop_length_msec=8000, name="loop A"),
     ]
     blob = _wrap_in_tsaf_envelope(b"")
     blob = patch_loop_regions(blob, loops_in)

@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.stt (VOICE-01)."""
+
 from __future__ import annotations
 
 import io
@@ -37,6 +38,7 @@ class TestPcmToWav:
         assert wav[8:12] == b"WAVE"
         # RIFF size = total - 8
         import struct
+
         riff_size = struct.unpack("<I", wav[4:8])[0]
         assert riff_size == len(wav) - 8
 
@@ -96,9 +98,7 @@ class TestWhisperCppClient:
 
     def test_health_true_on_http_error_still_up(self):
         def fake_opener(req, timeout):
-            raise urllib.error.HTTPError(
-                req.full_url, 404, "not found", {}, io.BytesIO(b"")
-            )
+            raise urllib.error.HTTPError(req.full_url, 404, "not found", {}, io.BytesIO(b""))
 
         client = stt.WhisperCppClient(opener=fake_opener)
         assert client.health() is True

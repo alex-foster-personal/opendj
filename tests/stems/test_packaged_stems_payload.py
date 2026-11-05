@@ -100,27 +100,19 @@ def test_negative_control_an_unstaged_script_reports_missing(packaged: Path) -> 
 
 
 @pytest.mark.parametrize("executor", ["local", "modal"])
-def test_compute_routes_run_from_the_payload(
-    packaged: Path, monkeypatch: pytest.MonkeyPatch, executor: str
-) -> None:
+def test_compute_routes_run_from_the_payload(packaged: Path, monkeypatch: pytest.MonkeyPatch, executor: str) -> None:
     """[if] the local or relay route names uv or a checkout path [then] fail."""
     monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: executor)
     monkeypatch.setattr("apps.stems.local_gate.local_stems_gate", lambda: None)
-    monkeypatch.setattr(
-        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None
-    )
+    monkeypatch.setattr("apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None)
     argv = stems_job.build_argv({"stable_ids": [SID], "tier": "M"})
     _assert_runs_from_payload(argv, packaged)
 
 
-def test_r2_first_route_runs_from_the_payload(
-    packaged: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_r2_first_route_runs_from_the_payload(packaged: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the R2-first route names a checkout path [then] fail."""
     monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: "modal")
-    monkeypatch.setattr(
-        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: object()
-    )
+    monkeypatch.setattr("apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: object())
     argv = stems_job.build_argv({"stable_ids": [SID], "tier": "M"})
     assert argv[1].endswith("stems_r2_first_worker.py")
     _assert_runs_from_payload(argv, packaged)
@@ -141,14 +133,10 @@ def test_cloud_hydrate_route_runs_from_the_payload(packaged: Path, tmp_path: Pat
     _assert_runs_from_payload(argv, packaged)
 
 
-def test_the_app_refuses_the_direct_transport(
-    packaged: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_app_refuses_the_direct_transport(packaged: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the app accepted a direct job [then] it would die on import modal."""
     monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: "modal")
-    monkeypatch.setattr(
-        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None
-    )
+    monkeypatch.setattr("apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None)
     monkeypatch.setenv("MDT_STEMS_TRANSPORT", "direct")
     with pytest.raises(stems_job.StemsJobPayloadError, match="modal"):
         stems_job.build_argv({"stable_ids": [SID], "tier": "M"})
@@ -224,9 +212,20 @@ def test_relay_worker_writes_a_bundle_from_the_payload_without_modal(
     audio.parent.mkdir(parents=True)
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=3:sample_rate=44100",
-            "-ac", "2", "-b:a", "192k", str(audio),
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=3:sample_rate=44100",
+            "-ac",
+            "2",
+            "-b:a",
+            "192k",
+            str(audio),
         ],
         check=True,
     )
@@ -234,27 +233,18 @@ def test_relay_worker_writes_a_bundle_from_the_payload_without_modal(
     state_db.parent.mkdir(parents=True)
     connection = sqlite3.connect(state_db)
     try:
-        connection.execute(
-            "CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, file_path TEXT, "
-            "duration_ms INTEGER)"
-        )
+        connection.execute("CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, file_path TEXT, duration_ms INTEGER)")
         connection.execute("INSERT INTO tracks VALUES (?, ?, ?)", (SID, str(audio), 3000))
         connection.commit()
     finally:
         connection.close()
 
     monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: "modal")
-    monkeypatch.setattr(
-        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None
-    )
-    argv = stems_job.build_argv(
-        {"stable_ids": [SID], "tier": "M", "data_dir": str(data_dir)}
-    )
+    monkeypatch.setattr("apps.cloud.stem_source.resolve_stem_hydration_source", lambda _d: None)
+    argv = stems_job.build_argv({"stable_ids": [SID], "tier": "M", "data_dir": str(data_dir)})
     _assert_runs_from_payload(argv, packaged)
 
-    result = subprocess.run(
-        argv, env=env, cwd="/", capture_output=True, text=True, timeout=300, check=False
-    )
+    result = subprocess.run(argv, env=env, cwd="/", capture_output=True, text=True, timeout=300, check=False)
     assert result.returncode == 0, result.stderr[-2000:]
     lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     assert any(line.get(stems_job.PROGRESS_TRACK_KEY) == SID for line in lines)

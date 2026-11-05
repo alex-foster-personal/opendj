@@ -24,7 +24,6 @@ from .types import Event
 from .writer_common import (
     MEMBERSHIPS_TABLE,
     PLAYLISTS_TABLE,
-    immediate_transaction,
     next_playlist_revision,
 )
 from .writer_membership_order import write_membership_order_keys
@@ -144,8 +143,7 @@ class _PlaylistWriterMixin:
         never propagate and would strand the fleet on a permanent digest
         mismatch (round 1 finding 5b).
         """
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
+        with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             conn.execute(
                 "DELETE FROM playlist_memberships WHERE playlist_id = ?",
@@ -194,8 +192,7 @@ class _PlaylistWriterMixin:
         rows: list[tuple[str, str, str]],
     ) -> None:
         """O(1) insert of new membership rows (item_id, stable_id, order_key)."""
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
+        with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id, stable_id, order_key in rows:
                 max_pos = conn.execute(
@@ -243,8 +240,7 @@ class _PlaylistWriterMixin:
         """Soft-delete membership rows by item_id without touching neighbors."""
         if not item_ids:
             return
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
+        with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id in item_ids:
                 row = conn.execute(
@@ -292,8 +288,7 @@ class _PlaylistWriterMixin:
         """Undelete tombstoned membership rows, preserving item_id/order_key."""
         if not item_ids:
             return
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
+        with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id in item_ids:
                 row = conn.execute(

@@ -122,9 +122,7 @@ def test_genuine_failure_cancels(
     monkeypatch.setattr(ci_fast_cancel, "_run_gh", _record_gh)
     log = _log(tmp_path)
     baseline = _baseline(tmp_path, ["FAILED tests/a/test_x.py::test_two"])
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)])
     assert rc == 0
     assert gh_calls == [
         ["api", "--method", "POST", "repos/private_owner/music-dj-tools/actions/runs/777/cancel"]
@@ -148,9 +146,7 @@ def test_all_known_on_main_does_not_cancel(
         tmp_path,
         ["FAILED tests/a/test_x.py::test_two", "ERROR tests/b/test_y.py::test_three[param-1]"],
     )
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)])
     assert rc == 0
     assert "cancelling nothing" in capsys.readouterr().out
 
@@ -162,9 +158,7 @@ def test_missing_baseline_is_unknown_and_cancels_nothing(
     _forbid_gh(monkeypatch)
     log = _log(tmp_path)
     absent = tmp_path / "absent.json"
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(absent)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(absent)])
     assert rc == ci_fast_cancel.EXIT_UNKNOWN
     assert "UNKNOWN" in capsys.readouterr().out
 
@@ -176,9 +170,7 @@ def test_no_identity_does_not_cancel(
     _forbid_gh(monkeypatch)
     log = _log(tmp_path, "Terminated\n")
     baseline = _baseline(tmp_path, [])
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)])
     assert rc == 0
     assert "no failing test identity" in capsys.readouterr().out
 
@@ -190,9 +182,7 @@ def test_dry_run_never_calls_gh(
     _forbid_gh(monkeypatch)
     log = _log(tmp_path)
     baseline = _baseline(tmp_path, [])
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run"]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run"])
     assert rc == 0
     assert "dry run, gh not called" in capsys.readouterr().out
 
@@ -208,8 +198,7 @@ def test_genuine_under_actions_writes_an_error_annotation_and_step_summary(
     log = _log(tmp_path)
     baseline = _baseline(tmp_path, ["FAILED tests/a/test_x.py::test_two"])
     rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run",
-         "--leg", "2 of 4"]
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run", "--leg", "2 of 4"]
     )
     assert rc == 0
     out = capsys.readouterr().out
@@ -231,8 +220,7 @@ def test_unknown_under_actions_is_a_warning_not_evidence(
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     log = _log(tmp_path)
     rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(tmp_path / "absent.json"),
-         "--leg", "1 of 4"]
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(tmp_path / "absent.json"), "--leg", "1 of 4"]
     )
     assert rc == ci_fast_cancel.EXIT_UNKNOWN
     out = capsys.readouterr().out
@@ -248,9 +236,7 @@ def test_outside_actions_no_annotation_is_written(
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     log = _log(tmp_path)
     baseline = _baseline(tmp_path, [])
-    ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run"]
-    )
+    ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--dry-run"])
     assert "::error" not in capsys.readouterr().out
 
 
@@ -278,9 +264,7 @@ PASSED tests/c/test_z.py::test_ok
 def test_the_identities_are_the_watchers_own_not_a_second_parser() -> None:
     """if this module's identities differ from the watcher's then the subtraction compares
     two formats and can never subtract anything"""
-    assert ci_fast_cancel.failed_identities(PARITY_LOG) == ci_failure_ids.failed_identities(
-        PARITY_LOG
-    )
+    assert ci_fast_cancel.failed_identities(PARITY_LOG) == ci_failure_ids.failed_identities(PARITY_LOG)
     # Negative control: the comparison above can report a difference. A parser that read
     # nothing would satisfy it just as well, so pin what it actually found.
     assert len(ci_fast_cancel.failed_identities(PARITY_LOG)) == 5
@@ -302,9 +286,7 @@ def test_a_leg_failing_only_main_reds_is_not_cancelled_in_the_baselines_real_for
     _forbid_gh(monkeypatch)
     log = _log(tmp_path, PARITY_LOG)
     baseline = _baseline(tmp_path, sorted(ci_failure_ids.failed_identities(PARITY_LOG)))
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "every failure is already red on main" in out
@@ -330,9 +312,7 @@ def test_one_new_failure_beside_five_known_ones_is_still_genuine(
     monkeypatch.setattr(ci_fast_cancel, "_run_gh", _record_gh)
     log = _log(tmp_path, PARITY_LOG + "FAILED tests/new/test_n.py::test_new - boom\n")
     baseline = _baseline(tmp_path, sorted(ci_failure_ids.failed_identities(PARITY_LOG)))
-    rc = ci_fast_cancel.main(
-        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
-    )
+    rc = ci_fast_cancel.main(["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)])
     assert rc == 0
     assert gh_calls
     assert "outcome=cancelled" in audit_log.read_text(encoding="utf-8")

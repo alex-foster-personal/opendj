@@ -131,7 +131,7 @@ REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 8
+FIXTURE_REVISION: int = 9
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100

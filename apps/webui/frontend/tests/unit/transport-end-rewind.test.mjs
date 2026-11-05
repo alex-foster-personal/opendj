@@ -92,9 +92,14 @@ test('sparse presentation samples cannot count loop wraps from backward edges', 
 			`presented loop position must remain in range, got ${positionSec}s`
 		);
 	}
-	const backwardEdges = samples.filter((positionSec, index) => index > 0 && positionSec < samples[index - 1]);
+	const backwardEdges = samples.filter(
+		(positionSec, index) => index > 0 && positionSec < samples[index - 1]
+	);
 	assert.equal(backwardEdges.length, 0, 'sparse samples do not expose every real wrap');
-	assert.deepEqual(samples.map((positionSec) => Math.round(positionSec * 1000)), [700, 900]);
+	assert.deepEqual(
+		samples.map((positionSec) => Math.round(positionSec * 1000)),
+		[700, 900]
+	);
 
 	// Those two healthy positions span 200ms, so the retired spread rule would
 	// have called this loop broken. The continuity rule reads elapsed time, not
@@ -104,7 +109,11 @@ test('sparse presentation samples cannot count loop wraps from backward edges', 
 		{ observedAtMs: 700, positionMs: 700 },
 		{ observedAtMs: 5_700, positionMs: 900 }
 	];
-	assert.equal(_retiredSpreadRuleAccepts(sparse), false, 'the retired rule rejected a healthy loop');
+	assert.equal(
+		_retiredSpreadRuleAccepts(sparse),
+		false,
+		'the retired rule rejected a healthy loop'
+	);
 	assert.throws(
 		() => continuity.findStalledLoopSlices(sparse, CONTINUITY),
 		/observer must sample faster than the slice/,
@@ -174,10 +183,17 @@ test('a loop that stalls late in the window fails even though its spread is wide
 
 	// The retired rule passes this: the first two seconds alone spread wider
 	// than a quarter of the loop, and nothing after them was ever required.
-	assert.equal(_retiredSpreadRuleAccepts(samples), true, 'the retired rule accepted a stalled deck');
+	assert.equal(
+		_retiredSpreadRuleAccepts(samples),
+		true,
+		'the retired rule accepted a stalled deck'
+	);
 
 	const stalled = continuity.findStalledLoopSlices(samples, CONTINUITY);
-	assert.ok(stalled.length >= 2, `expected the stalled seconds to be reported, got ${stalled.length}`);
+	assert.ok(
+		stalled.length >= 2,
+		`expected the stalled seconds to be reported, got ${stalled.length}`
+	);
 	const lastSlice = stalled.at(-1);
 	assert.equal(
 		lastSlice.endedAtMs,

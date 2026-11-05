@@ -28,10 +28,10 @@ test('playing decks stay bright, including at the end and while looping', async 
 		deckActivityLook(stopped({ playing: true, positionMs: 180_000, pausedForMs: 60_000 })),
 		{ dim: false, looping: false }
 	);
-	assert.deepEqual(
-		deckActivityLook(stopped({ playing: true, loopEngaged: true })),
-		{ dim: false, looping: true }
-	);
+	assert.deepEqual(deckActivityLook(stopped({ playing: true, loopEngaged: true })), {
+		dim: false,
+		looping: true
+	});
 });
 
 test('a stopped deck dims at the end immediately, and after 30s in the middle', async () => {
@@ -49,9 +49,7 @@ test('an engaged loop is slightly marked even when paused, and is not treated as
 		{ dim: false, looping: true }
 	);
 	assert.deepEqual(
-		deckActivityLook(
-			stopped({ loopEngaged: true, pausedForMs: DECK_PAUSE_DIM_AFTER_MS })
-		),
+		deckActivityLook(stopped({ loopEngaged: true, pausedForMs: DECK_PAUSE_DIM_AFTER_MS })),
 		{ dim: true, looping: true }
 	);
 });
@@ -67,8 +65,5 @@ test('empty decks and a still-settling end stay undimmed', async () => {
 		deckActivityLook(stopped({ positionMs: 180_000, transportPending: true })).dim,
 		false
 	);
-	assert.equal(
-		deckActivityLook(stopped({ positionMs: 180_000, commandPending: true })).dim,
-		false
-	);
+	assert.equal(deckActivityLook(stopped({ positionMs: 180_000, commandPending: true })).dim, false);
 });

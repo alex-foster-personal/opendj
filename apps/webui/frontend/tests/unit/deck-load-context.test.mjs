@@ -109,14 +109,26 @@ test('two overlapping loads BOTH write rows carrying solo=0', () => {
 	spin(1);
 	const load2 = context.beginDeckLoad(2);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=bbbbbbbbbbbb', { total: load2.clock() }, 2, MIX_ONLY, load2.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=bbbbbbbbbbbb',
+		{ total: load2.clock() },
+		2,
+		MIX_ONLY,
+		load2.spanId
+	);
 	const firstRow = lastDeckLoadRow();
 	assert.equal(firstRow.deck, 2);
 	assert.equal(firstRow.labels.solo, '0', 'the load that finished first must still see its rival');
 	assert.equal(firstRow.labels.concurrent_loads, '2');
 
 	spin(1);
-	context.recordDeckLoad('deck-load sid=cccccccccccc', { total: load1.clock() }, 1, MIX_ONLY, load1.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=cccccccccccc',
+		{ total: load1.clock() },
+		1,
+		MIX_ONLY,
+		load1.spanId
+	);
 	const secondRow = lastDeckLoadRow();
 	assert.equal(secondRow.deck, 1);
 	assert.equal(secondRow.labels.solo, '0');
@@ -126,13 +138,25 @@ test('two overlapping loads BOTH write rows carrying solo=0', () => {
 test('a load that starts after another finished is solo again', () => {
 	const loadA = context.beginDeckLoad(1);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=dddddddddddd', { total: loadA.clock() }, 1, MIX_ONLY, loadA.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=dddddddddddd',
+		{ total: loadA.clock() },
+		1,
+		MIX_ONLY,
+		loadA.spanId
+	);
 	assert.equal(lastDeckLoadRow().labels.solo, '1');
 
 	spin(2);
 	const loadB = context.beginDeckLoad(2);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=eeeeeeeeeeee', { total: loadB.clock() }, 2, MIX_ONLY, loadB.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=eeeeeeeeeeee',
+		{ total: loadB.clock() },
+		2,
+		MIX_ONLY,
+		loadB.spanId
+	);
 	const row = lastDeckLoadRow();
 	assert.equal(row.labels.solo, '1');
 	assert.equal(row.labels.concurrent_loads, '1');
@@ -234,13 +258,31 @@ test('two concurrent same-deck loads: the first to finish must not close the oth
 	spin(1);
 	const w2 = context.beginDeckLoad(3);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=w1w1w1w1w1w1', { total: w1.clock() }, 2, MIX_ONLY, w1.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=w1w1w1w1w1w1',
+		{ total: w1.clock() },
+		2,
+		MIX_ONLY,
+		w1.spanId
+	);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=w2w2w2w2w2w2', { total: w2.clock() }, 3, MIX_ONLY, w2.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=w2w2w2w2w2w2',
+		{ total: w2.clock() },
+		3,
+		MIX_ONLY,
+		w2.spanId
+	);
 	spin(1);
 	const loadY = context.beginDeckLoad(1);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=xxxxxxxxxxxx', { total: loadX.clock() }, 1, MIX_ONLY, loadX.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=xxxxxxxxxxxx',
+		{ total: loadX.clock() },
+		1,
+		MIX_ONLY,
+		loadX.spanId
+	);
 	const xRow = lastDeckLoadRow();
 	assert.equal(xRow.labels.solo, '0');
 	assert.equal(
@@ -250,7 +292,13 @@ test('two concurrent same-deck loads: the first to finish must not close the oth
 	);
 
 	spin(1);
-	context.recordDeckLoad('deck-load sid=yyyyyyyyyyyy', { total: loadY.clock() }, 1, MIX_ONLY, loadY.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=yyyyyyyyyyyy',
+		{ total: loadY.clock() },
+		1,
+		MIX_ONLY,
+		loadY.spanId
+	);
 	const yRow = lastDeckLoadRow();
 	assert.equal(yRow.labels.solo, '0');
 	assert.equal(
@@ -276,19 +324,45 @@ test('a slow load survives sixteen later loads on other decks, and still closes 
 	for (let i = 0; i < 16; i++) {
 		const filler = context.beginDeckLoad(2);
 		spin(1);
-		context.recordDeckLoad(`deck-load sid=filler${i}`, { total: filler.clock() }, 2, MIX_ONLY, filler.spanId);
+		context.recordDeckLoad(
+			`deck-load sid=filler${i}`,
+			{ total: filler.clock() },
+			2,
+			MIX_ONLY,
+			filler.spanId
+		);
 	}
 	const witness = context.beginDeckLoad(3);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=witnesswitn', { total: witness.clock() }, 3, MIX_ONLY, witness.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=witnesswitn',
+		{ total: witness.clock() },
+		3,
+		MIX_ONLY,
+		witness.spanId
+	);
 	const witnessRow = lastDeckLoadRow();
-	assert.equal(witnessRow.labels.solo, '0', 'the slow load must still be visible after 16 later loads');
+	assert.equal(
+		witnessRow.labels.solo,
+		'0',
+		'the slow load must still be visible after 16 later loads'
+	);
 	assert.equal(witnessRow.labels.concurrent_loads, '2');
 
 	spin(1);
-	context.recordDeckLoad('deck-load sid=slowslowslow', { total: slow.clock() }, 1, MIX_ONLY, slow.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=slowslowslow',
+		{ total: slow.clock() },
+		1,
+		MIX_ONLY,
+		slow.spanId
+	);
 	const slowRow = lastDeckLoadRow();
-	assert.equal(slowRow.labels.solo, '0', 'the slow load must still close against its own real span, not a synthesized one');
+	assert.equal(
+		slowRow.labels.solo,
+		'0',
+		'the slow load must still close against its own real span, not a synthesized one'
+	);
 });
 
 test('closing the slow load first must not evict its own span before its witness can see it', () => {
@@ -304,15 +378,37 @@ test('closing the slow load first must not evict its own span before its witness
 	for (let i = 0; i < 16; i++) {
 		const filler = context.beginDeckLoad(2);
 		spin(1);
-		context.recordDeckLoad(`deck-load sid=filler${i}`, { total: filler.clock() }, 2, MIX_ONLY, filler.spanId);
+		context.recordDeckLoad(
+			`deck-load sid=filler${i}`,
+			{ total: filler.clock() },
+			2,
+			MIX_ONLY,
+			filler.spanId
+		);
 	}
 	const witness = context.beginDeckLoad(3);
 	spin(1);
-	context.recordDeckLoad('deck-load sid=slowslowslow', { total: slow.clock() }, 1, MIX_ONLY, slow.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=slowslowslow',
+		{ total: slow.clock() },
+		1,
+		MIX_ONLY,
+		slow.spanId
+	);
 
 	spin(1);
-	context.recordDeckLoad('deck-load sid=witnesswitn', { total: witness.clock() }, 3, MIX_ONLY, witness.spanId);
+	context.recordDeckLoad(
+		'deck-load sid=witnesswitn',
+		{ total: witness.clock() },
+		3,
+		MIX_ONLY,
+		witness.spanId
+	);
 	const witnessRow = lastDeckLoadRow();
-	assert.equal(witnessRow.labels.solo, '0', 'the witness genuinely overlapped the slow load, which had not closed when it began');
+	assert.equal(
+		witnessRow.labels.solo,
+		'0',
+		'the witness genuinely overlapped the slow load, which had not closed when it began'
+	);
 	assert.equal(witnessRow.labels.concurrent_loads, '2');
 });

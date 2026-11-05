@@ -48,7 +48,7 @@ import { reportClientError, type ClientErrorContext } from '$lib/client-error-re
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
 import { pressureLabels, readMachinePressure } from '$lib/rb/machine-pressure';
-import { foldedLaunchNotices } from '$lib/rb/beat-sync-math';
+import { foldedLaunchNotices, shortDurationFlag } from '$lib/rb/beat-sync-math';
 import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -476,6 +476,9 @@ export function deckLoadFailureHeadline(
  * kept alive; a thrown non-object cannot be tracked and is reported twice. */
 const _toastedLoadFailures = new WeakSet<object>();
 
+/** Load failures must stay readable to AGT `read_page` longer than the default toast. */
+export const DECK_LOAD_ERROR_TOAST_MS = 8000;
+
 function _pushDeckLoadFailureToast(
 	deck: 1 | 2 | 3 | 4,
 	message: string,
@@ -486,7 +489,7 @@ function _pushDeckLoadFailureToast(
 	pushToast(
 		`Deck ${deck} load failed - ${message}`,
 		'error',
-		undefined,
+		DECK_LOAD_ERROR_TOAST_MS,
 		cause,
 		context,
 		groupKey,
@@ -525,6 +528,26 @@ export function reportDeckLoadCommandFailure(deck: 1 | 2 | 3 | 4, message: strin
 	// Grouped per deck, as the dispatcher groups every other command failure:
 	// a refusal repeated by a held key is one toast with a count, not a stack.
 	_pushDeckLoadFailureToast(deck, message, cause, { source: 'deck-load', deck }, `performance:${deck}:load:`);
+}
+
+export function warnShortDurationOnLoad(
+	deck: 1 | 2 | 3 | 4,
+	track: { duration_ms?: number | null },
+	anlz: { beatgrid?: { beats?: readonly { t: number }[] } } | null | undefined,
+	buffer: { duration: number }
+): void {
+	const beats = anlz?.beatgrid?.beats;
+	const last = Array.isArray(beats) && beats.length > 0 ? beats[beats.length - 1] : undefined;
+	const gridLastBeatMs =
+		last != null && Number.isFinite(last.t) ? last.t * 1000 : null;
+	const decodedMs = buffer.duration * 1000;
+	if (!shortDurationFlag(track.duration_ms, gridLastBeatMs, decodedMs)) return;
+	recordPerfEvent(
+		'short-duration',
+		`library ${track.duration_ms ?? 'missing'} ms, grid last ${gridLastBeatMs ?? 'missing'} ms, decoded ${decodedMs} ms`,
+		deck,
+		'warn'
+	);
 }
 
 /** The orange fold notice and its perf rows for a folded sync launch. The paused incoming deck never reaches the engine's own notice path, so the page raises them here. */

@@ -8,10 +8,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
 
-function target(
-	tagName,
-	{ type = null, contentEditable = false, role = null } = {}
-) {
+function target(tagName, { type = null, contentEditable = false, role = null } = {}) {
 	return {
 		tagName,
 		type,

@@ -1,0 +1,21 @@
+2026-11-05T01:47:39.6798158Z =========================== short test summary info ============================
+2026-11-05T01:47:39.6798710Z SKIPPED [1] (private path):124: UNAVAILABLE: the committed djay fixture has no analysis or cue rows, so the BPM, key and cue joins cannot be measured until a sanitized capture with them is committed
+2026-11-05T01:47:41.3624748Z FAILED (private path)::test_contraction_docs_only_drop_ci_and_e2e_names_from_a_full_baseline - AssertionError: assert frozenset({'p...ard 5 of 5)'}) == frozenset()
+2026-11-05T01:47:41.3625150Z   
+2026-11-05T01:47:41.3625270Z   Extra items in the left set:
+2026-11-05T01:47:41.3625427Z   'pytest fast lane (shard 3 of 5)'
+2026-11-05T01:47:41.3630747Z FAILED (private path)::test_a_docs_only_head_keeps_waiting_for_the_always_created_checks - AssertionError: assert frozenset({'c...ard 1 of 5)'}) == frozenset({'c...e2e verdict'})
+2026-11-05T01:47:41.3631198Z   
+2026-11-05T01:47:41.3631357Z   Extra items in the left set:
+2026-11-05T01:47:41.3631521Z   'pytest fast lane (shard 1 of 5)'
+2026-11-05T01:47:41.3633225Z ===== 2 failed, 6386 passed, 153 skipped, 14 warnings in 724.83s (0:12:04) =====
+2026-11-05T01:47:46.9943987Z ##[error]Process completed with exit code 1.
+2026-11-05T01:47:48.4342559Z ##[group]Run set -uo pipefail
+2026-11-05T01:47:48.4343333Z [36;1mset -uo pipefail[0m
+2026-11-05T01:47:48.4343603Z [36;1mcase "$PYTEST_OUTCOME" in[0m
+2026-11-05T01:47:48.4343889Z [36;1m  success)[0m
+2026-11-05T01:47:48.5599070Z   SHARD: 2
+2026-11-05T01:47:48.5599279Z ##[endgroup]
+2026-11-05T01:47:48.6310359Z ##[error]pytest exited 1
+2026-11-05T01:47:48.6312525Z ##[error]Process completed with exit code 1.
+2026-11-05T01:47:48.8396707Z Post job cleanup.

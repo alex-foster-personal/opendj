@@ -23,7 +23,8 @@ const JOG_SCRUB_SETTLE_MS = 250;
 /** A deck this far from the last target was moved by something else. */
 const JOG_SCRUB_RESYNC_MS = 1000;
 
-const _clamp = (value: number, low: number, high: number): number => Math.min(Math.max(value, low), high);
+const _clamp = (value: number, low: number, high: number): number =>
+	Math.min(Math.max(value, low), high);
 
 export function jogScrubTargetMs(positionMs: number, durationMs: number, delta: number): number {
 	return _clamp(positionMs + delta * JOG_SCRUB_MS_PER_TICK, 0, durationMs);

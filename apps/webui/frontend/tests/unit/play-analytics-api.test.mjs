@@ -59,10 +59,7 @@ afterEach(() => {
 test('fetchPlayAnalytics uses configured API base and serialized HTTP filters', async () => {
 	const response = await analyticsApi.fetchPlayAnalytics('shared_local', 25);
 
-	assert.equal(
-		requestedUrl,
-		`${API_BASE}/api/play-analytics?share_state=shared_local&limit=25`
-	);
+	assert.equal(requestedUrl, `${API_BASE}/api/play-analytics?share_state=shared_local&limit=25`);
 	assert.equal(response.summary.plays, 4);
 });
 

@@ -205,9 +205,7 @@ def test_a_zero_identity_job_also_red_on_main_is_unmeasured_not_known_red():
 
 def test_a_zero_identity_job_not_red_on_main_is_loud():
     name = "reqs-check + native wheel + contract drift"
-    got = classify_job(
-        name, frozenset(), frozenset(), frozenset({"some other job"}), beyond_tests=False
-    )
+    got = classify_job(name, frozenset(), frozenset(), frozenset({"some other job"}), beyond_tests=False)
     assert got.verdict is JobVerdict.GENUINE
 
 
@@ -216,9 +214,7 @@ def test_a_job_whose_baseline_log_was_unreadable_is_not_main_red():
     establishes the two failures are the same. Classified as main's own red it exits mergeable
     off a baseline that was never measured."""
     name = "frontend unit + check + build"
-    got = classify_job(
-        name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False
-    )
+    got = classify_job(name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False)
     assert got.verdict is JobVerdict.BASELINE_UNREADABLE
 
 
@@ -227,12 +223,8 @@ def test_a_measured_main_red_job_name_is_still_distinguished_from_an_unreadable_
     job is unmeasured, which is the difference between main's log saying something else
     failed and main's log not being readable at all. Both are unmeasured; neither merges."""
     name = "frontend unit + check + build"
-    measured = classify_job(
-        name, frozenset(), frozenset(), frozenset({name}), frozenset(), beyond_tests=False
-    )
-    unreadable = classify_job(
-        name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False
-    )
+    measured = classify_job(name, frozenset(), frozenset(), frozenset({name}), frozenset(), beyond_tests=False)
+    unreadable = classify_job(name, frozenset(), frozenset(), frozenset(), frozenset({name}), beyond_tests=False)
     assert measured.verdict is JobVerdict.BASELINE_MISMATCH
     assert unreadable.verdict is JobVerdict.BASELINE_UNREADABLE
 
@@ -370,9 +362,7 @@ def test_a_ratchet_job_that_also_died_beyond_the_tests_is_unmeasured():
     """Sol's P1 on #3293. RATCHET_DEBT is the only mergeable zero-identity verdict, so it is
     the one that must read the beyond-the-tests evidence. A cap-killed or disk-full ratchet
     job measured no ratchet, and shipping that as debt merges a job nobody read."""
-    got = classify_job(
-        "quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=True
-    )
+    got = classify_job("quality ratchet (lint debt)", frozenset(), frozenset(), frozenset(), beyond_tests=True)
     assert got.verdict is JobVerdict.UNEXPLAINED
 
 
@@ -426,9 +416,7 @@ def test_a_flaky_job_is_known_red_end_to_end():
     classifier really consults it, so a job failing only on flakes still merges."""
     got = classify_job(
         "pytest fast lane (shard 2 of 5)",
-        frozenset(
-            {"FAILED tests/ops/test_l.py::test_lifespan_runs_and_joins_a_real_lyric_index_thread"}
-        ),
+        frozenset({"FAILED tests/ops/test_l.py::test_lifespan_runs_and_joins_a_real_lyric_index_thread"}),
         frozenset(),
         frozenset(),
         beyond_tests=False,
@@ -471,20 +459,14 @@ def test_a_ratchet_step_that_died_without_stating_a_breach_is_still_unowned():
     """The control against the overshoot: the excuse belongs to a step that SAID why it
     failed, not to every step the ratchet job runs. A ratchet killed mid-measurement
     measured no ratchet, and must not inherit the debt path."""
-    killed = (
-        "##[group]Run uv run python -m scripts.quality_gate --check\n"
-        "##[error]Process completed with exit code 1\n"
-    )
+    killed = "##[group]Run uv run python -m scripts.quality_gate --check\n##[error]Process completed with exit code 1\n"
     assert unowned_exit_steps(killed) != []
 
 
 # ----- an exit nobody could attribute is unmeasured, not owned -----
 
 
-_UNPARTITIONABLE = (
-    "FAILED tests/a/test_x.py::test_one - AssertionError\n"
-    "##[error]Process completed with exit code 1\n"
-)
+_UNPARTITIONABLE = "FAILED tests/a/test_x.py::test_one - AssertionError\n##[error]Process completed with exit code 1\n"
 
 
 def test_an_exit_in_a_log_with_no_steps_is_reported_unpartitionable():
@@ -608,9 +590,7 @@ def test_a_failure_that_leans_on_main_is_still_poisoned_by_a_stale_baseline():
     still depends on that baseline, so a stale one must still refuse the verdict."""
     got = classify_job(
         "pytest fast lane (shard 2 of 5)",
-        frozenset(
-            {"FAILED tests/x.py::prefs-golden-blob.test.mjs", "FAILED tests/t.py::a"}
-        ),
+        frozenset({"FAILED tests/x.py::prefs-golden-blob.test.mjs", "FAILED tests/t.py::a"}),
         frozenset({"FAILED tests/t.py::a"}),
         frozenset(),
         beyond_tests=False,

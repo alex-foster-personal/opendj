@@ -1,4 +1,5 @@
 """Bounded browser-error sink with full details in a separate daily log."""
+
 from __future__ import annotations
 
 import json
@@ -66,9 +67,7 @@ class ClientErrorIn(BaseModel):
 
     @field_validator("context")
     @classmethod
-    def validate_context(
-        cls, value: dict[str, ContextValue]
-    ) -> dict[str, ContextValue]:
+    def validate_context(cls, value: dict[str, ContextValue]) -> dict[str, ContextValue]:
         for key, item in value.items():
             if len(key) > 128:
                 raise ValueError("context keys must be at most 128 characters")
@@ -141,9 +140,7 @@ def _log_dir(request: Request) -> Path:
 @router.post("", response_model=ClientErrorOut, status_code=202)
 def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErrorOut:
     event_id = uuid.uuid4().hex[:16]
-    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00", "Z"
-    )
+    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     source_site = client_source_site(payload.kind, payload.url)
     error_message = client_error_message(payload.name, payload.message)
     record = {
@@ -191,11 +188,14 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
         # The page's free-form context goes in FIRST so the typed fields win:
         # `any_deck_live` is what the live-set gate reads, and a context key
         # of the same name must not be able to overwrite it (Codex, #3737).
-        context={**payload.context,
-                 "kind": payload.kind, "client_event_id": payload.client_event_id,
-                 "secure_context": payload.secure_context,
-                 "audio_worklet_available": payload.audio_worklet_available,
-                 "any_deck_live": payload.any_deck_live},
+        context={
+            **payload.context,
+            "kind": payload.kind,
+            "client_event_id": payload.client_event_id,
+            "secure_context": payload.secure_context,
+            "audio_worklet_available": payload.audio_worklet_available,
+            "any_deck_live": payload.any_deck_live,
+        },
     )
     return ClientErrorOut(
         event_id=event_id,
@@ -209,13 +209,9 @@ def _parse_since(since: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
     except ValueError as error:
-        raise HTTPException(
-            status_code=422, detail=f"since must be an ISO 8601 time, got {since!r}"
-        ) from error
+        raise HTTPException(status_code=422, detail=f"since must be an ISO 8601 time, got {since!r}") from error
     if parsed.tzinfo is None:
-        raise HTTPException(
-            status_code=422, detail=f"since must carry a timezone (Z or +hh:mm), got {since!r}"
-        )
+        raise HTTPException(status_code=422, detail=f"since must carry a timezone (Z or +hh:mm), got {since!r}")
     return parsed
 
 
@@ -268,9 +264,7 @@ def list_client_errors(
 
 
 @router.patch("/{event_id}", response_model=ClientErrorTriageOut)
-def triage_client_error(
-    event_id: str, payload: ClientErrorTriageIn, request: Request
-) -> ClientErrorTriageOut:
+def triage_client_error(event_id: str, payload: ClientErrorTriageIn, request: Request) -> ClientErrorTriageOut:
     log_dir = _log_dir(request)
     daily_path = _find_event_log(log_dir, event_id)
     if daily_path is None:

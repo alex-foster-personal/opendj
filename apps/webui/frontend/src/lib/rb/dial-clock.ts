@@ -31,11 +31,14 @@ const CLOCK_PATTERN = /^\s*(\d{1,2})(?::(\d{2}))?\s*(?:o'?\s*clock|am|pm|a\.m\.|
 function _signedHours(text: string): number {
 	const match = CLOCK_PATTERN.exec(text);
 	if (match === null) {
-		throw new TypeError(`dial clock time must look like 3, 3pm, 3 o'clock, 3:00 or 15:00; got ${JSON.stringify(text)}`);
+		throw new TypeError(
+			`dial clock time must look like 3, 3pm, 3 o'clock, 3:00 or 15:00; got ${JSON.stringify(text)}`
+		);
 	}
 	const hour = Number(match[1]);
 	const minute = match[2] === undefined ? 0 : Number(match[2]);
-	if (hour > 24 || minute > 59) throw new TypeError(`dial clock time is not a time of day: ${JSON.stringify(text)}`);
+	if (hour > 24 || minute > 59)
+		throw new TypeError(`dial clock time is not a time of day: ${JSON.stringify(text)}`);
 	const onDial = ((hour % 12) + minute / 60) % 12; // 0..<12, 0 = 12 o'clock
 	const signed = onDial > 6 ? onDial - 12 : onDial;
 	if (Math.abs(signed) > HALF_SWEEP_HOURS + 1e-9) {

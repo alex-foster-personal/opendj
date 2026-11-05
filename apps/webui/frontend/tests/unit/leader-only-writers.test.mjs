@@ -21,9 +21,12 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const { whileLeader } = await loadTypeScriptModule('src/lib/rb/tab-leadership.ts');
-const { installDemotionSilencer, installLeaderOnlyEventWriters, installLeaderOnlyRestore, silenceDemotedTab } = await loadTypeScriptModule(
-	'src/lib/rb/leader-only-writers.ts'
-);
+const {
+	installDemotionSilencer,
+	installLeaderOnlyEventWriters,
+	installLeaderOnlyRestore,
+	silenceDemotedTab
+} = await loadTypeScriptModule('src/lib/rb/leader-only-writers.ts');
 
 const flush = async () => {
 	for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -70,7 +73,11 @@ function recorder({ rescueHandled = false, rescueDelay = null, restoreSettles = 
 				if (rescueDelay !== null) await rescueDelay;
 				return rescueHandled;
 			},
-			installSessionRestore: ({ skipDeckRestore, resumeInterruptedRestore, onDeckRestoreSettled }) => {
+			installSessionRestore: ({
+				skipDeckRestore,
+				resumeInterruptedRestore,
+				onDeckRestoreSettled
+			}) => {
 				log.push(`session restore skipDeckRestore=${skipDeckRestore}`);
 				if (resumeInterruptedRestore) log.push('session restore resumes the URL decks');
 				// A restore that settles reports it; one cut short by demotion never does.
@@ -177,7 +184,11 @@ test('LIBWS-06: the hold outlives demotion and re-promotion until the deck resto
 	leadership.set(false);
 	leadership.set(true);
 	await flush();
-	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1, 'released, Take control resumes from the ring again');
+	assert.equal(
+		r.log.filter((line) => line === 'rescue restore').length,
+		1,
+		'released, Take control resumes from the ring again'
+	);
 });
 
 test('LIBWS-06: the hold outlives a route remount before the deck restore settles (Codex P1, #6189)', async () => {
@@ -225,10 +236,12 @@ test('a follower promoted later restores then, and losing leadership stops every
 	await flush();
 	leadership.set(true);
 	await flush();
-	assert.deepEqual(
-		[...r.live].sort(),
-		['deck observer', 'play counter', 'rescue writer', 'session writer']
-	);
+	assert.deepEqual([...r.live].sort(), [
+		'deck observer',
+		'play counter',
+		'rescue writer',
+		'session writer'
+	]);
 	leadership.set(false);
 	assert.equal(r.live.size, 0, `still live after demotion: ${[...r.live]}`);
 });
@@ -241,7 +254,11 @@ test('re-promotion resumes from the rescue ring but never re-applies the session
 	leadership.set(false);
 	leadership.set(true);
 	await flush();
-	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 2, 'Take control continues the set from the rescue ring');
+	assert.equal(
+		r.log.filter((line) => line === 'rescue restore').length,
+		2,
+		'Take control continues the set from the rescue ring'
+	);
 	assert.deepEqual(
 		r.log.filter((line) => line.startsWith('session restore')),
 		['session restore skipDeckRestore=false', 'session restore skipDeckRestore=true']
@@ -298,7 +315,10 @@ test('leadership lost during the rescue fetch installs no session writer', async
 	leadership.set(false);
 	release();
 	await flush();
-	assert.equal(r.log.some((line) => line.startsWith('session restore')), false);
+	assert.equal(
+		r.log.some((line) => line.startsWith('session restore')),
+		false
+	);
 	assert.equal(r.live.size, 0);
 });
 
@@ -331,7 +351,10 @@ test('whileLeader passes how many times it ran before', () => {
 
 test('/performance routes every writer through the leader gate', async () => {
 	const { readFileSync } = await import('node:fs');
-	const page = readFileSync(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8');
+	const page = readFileSync(
+		new URL('../../src/routes/performance/+page.svelte', import.meta.url),
+		'utf8'
+	);
 	const onMount = page.slice(page.indexOf('onMount(() => {'));
 	for (const call of [
 		'installPerformanceSessionRestore(',
@@ -340,7 +363,9 @@ test('/performance routes every writer through the leader gate', async () => {
 		'installPlayCounter(',
 		'installDeckObserverEmitter('
 	]) {
-		const sites = [...onMount.matchAll(new RegExp(call.replace('(', '\\('), 'g'))].map((m) => m.index);
+		const sites = [...onMount.matchAll(new RegExp(call.replace('(', '\\('), 'g'))].map(
+			(m) => m.index
+		);
 		assert.ok(sites.length > 0, `${call} is still wired`);
 		for (const at of sites) {
 			const gate = Math.max(
@@ -363,7 +388,8 @@ function fakeGraph(playingDecks) {
 	for (const deck of [1, 2, 3, 4]) {
 		const playing = playingDecks.includes(deck);
 		nodes.push({ deck, kind: 'deck', running: playing });
-		for (const stem of ['vocals', 'drums']) nodes.push({ deck, kind: `stem-${stem}`, running: playing });
+		for (const stem of ['vocals', 'drums'])
+			nodes.push({ deck, kind: `stem-${stem}`, running: playing });
 	}
 	nodes.push({ deck: null, kind: 'preview-cue', running: true });
 	let autoplayArmed = true;
@@ -412,7 +438,10 @@ test('mutation control: a silence that pauses only playing-flagged decks misses 
 	// A quantized launch armed on a paused deck reads playing=false; pausing every
 	// deck is what clears it. Pausing only decks 1..3 leaves deck 4 running here.
 	const graph = fakeGraph([4]);
-	const partial = { ...graph.effects, pauseDeck: async (deck) => (deck === 4 ? undefined : graph.effects.pauseDeck(deck)) };
+	const partial = {
+		...graph.effects,
+		pauseDeck: async (deck) => (deck === 4 ? undefined : graph.effects.pauseDeck(deck))
+	};
 	silenceDemotedTab(partial);
 	await flush();
 	assert.deepEqual(graph.running(), ['deck@4', 'stem-vocals@4', 'stem-drums@4']);

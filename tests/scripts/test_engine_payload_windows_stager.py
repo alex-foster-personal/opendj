@@ -50,7 +50,9 @@ def test_the_manifest_names_exactly_what_was_not_staged(tmp_path: Path) -> None:
     )
     assert manifest["identity"]["app_version"] == "1.2.3", "the engine reads its version from identity.app_version"
     assert manifest["platform"] == "win32"
-    assert not [key for key in REQUIRED_IDENTITY_KEYS if key not in manifest["identity"]], "the engine's reader needs them all"
+    assert not [key for key in REQUIRED_IDENTITY_KEYS if key not in manifest["identity"]], (
+        "the engine's reader needs them all"
+    )
     assert manifest["identity"]["lane_label"] == "", "a plain product build has an empty lane label"
     assert set(manifest["not_staged"]) == set(stager.NOT_STAGED)
     assert all(reason.strip() for reason in manifest["not_staged"].values()), "every omission needs a stated reason"
@@ -95,7 +97,9 @@ def test_a_missing_program_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) -
         stager.resolve_program("cargo", "cannot build the audio engine")
 
 
-def test_a_program_resolves_to_the_absolute_path_that_is_launched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_program_resolves_to_the_absolute_path_that_is_launched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """[if] a program is on PATH [then] the stager launches its absolute path, not the bare name, [else stop]."""
     program = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
     program.write_text("")

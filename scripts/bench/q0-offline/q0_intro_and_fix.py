@@ -34,9 +34,9 @@ def rms_env(mono, sr):
 
 def build_envelopes():
     out = {}
-    for d in sorted(glob.glob("data/state/stems/*")):
+    for d in sorted(glob.glob("(private path)/*")):
         sid = os.path.basename(d)
-        if not os.path.isfile(f"data/state/vocal-cache/{sid}.json"):
+        if not os.path.isfile(f"(private path)/{sid}.json"):
             continue
         monos = {}
         for s in STEMS:
@@ -89,14 +89,16 @@ for sid, e in sorted(envs.items()):
     intro_db = 20 * np.log10(max(float(m[:n5].mean()), 1e-9))
     med_db = 20 * np.log10(max(float(np.median(m)), 1e-9))
     intro_rows.append((sid, first0, intro_db, med_db, float(r[:n5].mean())))
-    print(f"{sid[:8]:9} {str(first0):>8} {intro_db:>13.1f} {med_db:>15.1f} {intro_db-med_db:>10.1f} {float(r[:n5].mean()):>11.3f}")
+    print(
+        f"{sid[:8]:9} {str(first0):>8} {intro_db:>13.1f} {med_db:>15.1f} {intro_db - med_db:>10.1f} {float(r[:n5].mean()):>11.3f}"
+    )
 
 grp1 = [x for x in intro_rows if x[1]]
 grp0 = [x for x in intro_rows if not x[1]]
 print(f"\nfirst-region-at-0.00s: n={len(grp1)}   otherwise: n={len(grp0)}")
 if grp1 and grp0:
-    print(f"  mean (intro - track median) dB, first@0 group : {np.mean([x[2]-x[3] for x in grp1]):+.1f} dB")
-    print(f"  mean (intro - track median) dB, other group   : {np.mean([x[2]-x[3] for x in grp0]):+.1f} dB")
+    print(f"  mean (intro - track median) dB, first@0 group : {np.mean([x[2] - x[3] for x in grp1]):+.1f} dB")
+    print(f"  mean (intro - track median) dB, other group   : {np.mean([x[2] - x[3] for x in grp0]):+.1f} dB")
 print("  MECHANISM PREDICTS: first@0 group should have a MUCH QUIETER intro (large negative).")
 
 print("\n=== TEST B: strategist's proposed fix -- absolute vocals_rms floor AND ratio ===")
@@ -120,7 +122,9 @@ base_all = np.array([tbl[s][0] for s in tbl])
 print(f"\nmedian coverage, no floor: {np.median(base_all):.1f}%")
 for i, fdb in enumerate(floors_db):
     c = np.array([tbl[s][1][i] for s in tbl])
-    print(f"  floor {fdb:>4} dBFS -> median {np.median(c):>5.1f}%   mean drop {np.mean(base_all-c):>5.1f} pts   tracks changed >5pts: {(base_all-c>5).sum()}/{len(c)}")
+    print(
+        f"  floor {fdb:>4} dBFS -> median {np.median(c):>5.1f}%   mean drop {np.mean(base_all - c):>5.1f} pts   tracks changed >5pts: {(base_all - c > 5).sum()}/{len(c)}"
+    )
 
 print("\n=== TEST C: degenerate ceiling -- what does a passthrough 'separator' score? ===")
 print("If vocals == mix, ratio == 1.0 everywhere -> coverage 100% on every track.")

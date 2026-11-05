@@ -50,8 +50,9 @@ describe('wave cue-marker contrast', () => {
 		assert.ok(Math.abs(contrastRatio('#000000', '#ffffff') - 21) < 0.01);
 		assert.ok(Math.abs(contrastRatio(RB_BG, RB_BG) - 1) < 0.001);
 		assert.ok(
-			Math.abs(contrastRatio('rgb(200 205 210)', RB_BG) - contrastRatio(RB_BG, 'rgb(200 205 210)')) <
-				1e-9
+			Math.abs(
+				contrastRatio('rgb(200 205 210)', RB_BG) - contrastRatio(RB_BG, 'rgb(200 205 210)')
+			) < 1e-9
 		);
 	});
 
@@ -85,7 +86,10 @@ describe('wave cue-marker contrast', () => {
 			['cueLoop (--rb-orange)', RB_ORANGE]
 		]) {
 			const ratio = contrastRatio(color, RB_BG);
-			assert.ok(ratio >= CUE_MIN_CONTRAST, `${name} only clears ${ratio.toFixed(2)}:1 against --rb-bg`);
+			assert.ok(
+				ratio >= CUE_MIN_CONTRAST,
+				`${name} only clears ${ratio.toFixed(2)}:1 against --rb-bg`
+			);
 		}
 	});
 });

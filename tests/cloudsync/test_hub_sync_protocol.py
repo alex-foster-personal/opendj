@@ -10,8 +10,8 @@ one is cheaper to keep in sync by eye than to fight the linter over. The
 substantial helpers (``_open``, ``_seed_common_track``, ``_sync``,
 ``_TestClientTransport``) are imported, not duplicated, so THEY cannot drift.
 
-Contract under test: ``specs/design_decision_04.md`` over the v6 schema of
-``specs/design_decision_05.md``. Acceptance criteria, one test each:
+Contract under test: ``(private path)`` over the v6 schema of
+``(private path)``. Acceptance criteria, one test each:
 
 - if ``GET /status`` or ``GET /digest`` cannot answer without a spoke
   driving a full sync first, the agent-native-parity read surface is
@@ -25,6 +25,7 @@ Contract under test: ``specs/design_decision_04.md`` over the v6 schema of
 - if the webui app does not mount the sync router, the CLI/HTTP twin the
   agent-native parity rule requires does not exist -- broken.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -78,23 +79,17 @@ def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
         yield _TestClientTransport(http)
 
 
-def test_status_and_digest_endpoints_answer(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
+def test_status_and_digest_endpoints_answer(hub: _TestClientTransport, spoke_a: Path) -> None:
     """Agent parity: the hub's read surface works without a spoke driving it."""
     _seed_common_track((spoke_a,), "trk-1")
     result = _sync(spoke_a, hub, "spoke-a")
 
-    status = hub.get(
-        f"{client.API_PREFIX}/status", {"machine_id": result.machine_id}
-    )
+    status = hub.get(f"{client.API_PREFIX}/status", {"machine_id": result.machine_id})
     assert status["seq"] >= 1
     assert status["row_counts"]["tracks"] == 1
     assert {machine["name"] for machine in status["machines"]} >= {"hub", "spoke-a"}
 
-    digest = protocol.SyncDigest.from_wire(
-        hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id})
-    )
+    digest = protocol.SyncDigest.from_wire(hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id}))
     assert set(digest.tables) == set(protocol.DIGEST_TABLES)
     assert len(digest.overall) == SHA256_HEX_LENGTH
 

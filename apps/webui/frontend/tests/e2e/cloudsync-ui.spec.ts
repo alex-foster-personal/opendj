@@ -56,7 +56,11 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	await page.getByTestId('cloudsync-config-save').click();
 	expect((await saved).status()).toBe(200);
 	const stored = await (await request.get(`${CLOUDSYNC_UI_ORIGIN}/api/v1/cloudsync/config`)).json();
-	expect(stored.file).toEqual({ enabled: false, hub_url: CLOUDSYNC_UI_HUB_URL, machine_name: SPOKE_NAME });
+	expect(stored.file).toEqual({
+		enabled: false,
+		hub_url: CLOUDSYNC_UI_HUB_URL,
+		machine_name: SPOKE_NAME
+	});
 
 	// 3. Sync now: one real round trip to the hub, then a journal row.
 	const syncNow = page.getByTestId('cloudsync-sync-now');
@@ -75,13 +79,20 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	await expect(rows.first()).toHaveAttribute('data-status', /^(ok|inconclusive)$/);
 
 	// The hub, asked directly, now knows this spoke by the name the form set.
-	const hubMachines = await (await request.get(`${CLOUDSYNC_UI_HUB_URL}/api/v1/cloudsync/machines`)).json();
+	const hubMachines = await (
+		await request.get(`${CLOUDSYNC_UI_HUB_URL}/api/v1/cloudsync/machines`)
+	).json();
 	expect(hubMachines.map((m: { name: string }) => m.name)).toContain(SPOKE_NAME);
 
 	// 4. Fleet tab lists this machine, with titled counts.
 	await page.getByRole('tab', { name: 'Fleet' }).click();
-	await expect(page.locator(`[data-testid="cloudsync-fleet-row"][data-machine-name="${SPOKE_NAME}"]`)).toHaveCount(1);
-	await expect(page.getByTestId('cloudsync-fleet').locator('.counts span').first()).toHaveAttribute('title', /enrolled/);
+	await expect(
+		page.locator(`[data-testid="cloudsync-fleet-row"][data-machine-name="${SPOKE_NAME}"]`)
+	).toHaveCount(1);
+	await expect(page.getByTestId('cloudsync-fleet').locator('.counts span').first()).toHaveAttribute(
+		'title',
+		/enrolled/
+	);
 
 	// 5. Enable: the running scheduler beats within one beat interval (15s).
 	await page.getByRole('tab', { name: 'Status & config' }).click();
@@ -90,14 +101,19 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	await expect(page.getByTestId('cloudsync-status-configured')).toHaveText('yes');
 	await expect(async () => {
 		await page.getByRole('button', { name: 'Refresh' }).click();
-		await expect(page.getByTestId('cloudsync-status-running')).toHaveText('yes', { timeout: 2_000 });
+		await expect(page.getByTestId('cloudsync-status-running')).toHaveText('yes', {
+			timeout: 2_000
+		});
 	}).toPass({ timeout: 45_000, intervals: [3_000] });
 
 	// With a fresh heartbeat the chip leaves 'off' (the positive control for
 	// step 1) WITHOUT a reload: the save's status-changed event fired before the
 	// first beat, and Refresh does not signal the chip, so only the chip's own
 	// poll (CHIP_POLL_MS, 30s) can bring this in.
-	await expect(await chip(page)).not.toHaveText('sync: off', { timeout: 40_000, useInnerText: true });
+	await expect(await chip(page)).not.toHaveText('sync: off', {
+		timeout: 40_000,
+		useInnerText: true
+	});
 	await page.reload();
 	await expect(await chip(page)).not.toHaveText('sync: off', { useInnerText: true });
 
@@ -118,7 +134,9 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 		await expect(cell.locator('input.budget')).toBeDisabled();
 	}
 	// Positive control: storing 'cached' on one cell is what enables its budget.
-	const anlzCell = spokeRow.locator('[data-testid="cloudsync-policy-cell"][data-asset-kind="anlz_cache"]');
+	const anlzCell = spokeRow.locator(
+		'[data-testid="cloudsync-policy-cell"][data-asset-kind="anlz_cache"]'
+	);
 	const policySaved = page.waitForResponse(
 		(r) => r.url().endsWith('/api/v1/cloudsync/policies') && r.request().method() === 'PUT'
 	);
@@ -180,7 +198,9 @@ test('a real declared 409 shows a plain conflict summary and technical details o
 	await syncNow.click();
 	const refusedResponse = await refused;
 	expect(refusedResponse.status()).toBe(409);
-	await expect.poll(() => syncStatuses.filter((status) => status === 409).length).toBeGreaterThan(0);
+	await expect
+		.poll(() => syncStatuses.filter((status) => status === 409).length)
+		.toBeGreaterThan(0);
 
 	const notice = page.getByTestId('cloudsync-notice');
 	await expect(notice).toContainText('Sync failed:');
@@ -188,7 +208,9 @@ test('a real declared 409 shows a plain conflict summary and technical details o
 	await expect(notice).not.toContainText('HTTP 409');
 	await expect(notice).not.toContainText(CLOUDSYNC_UI_HUB_URL);
 	await page.getByTestId('cloudsync-notice-details').locator('summary').click();
-	await expect(page.getByTestId('cloudsync-notice-details')).toContainText(/already running against this data dir/);
+	await expect(page.getByTestId('cloudsync-notice-details')).toContainText(
+		/already running against this data dir/
+	);
 
 	expect(serverErrors).toEqual([]);
 });

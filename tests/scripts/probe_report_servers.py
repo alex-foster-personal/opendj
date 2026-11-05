@@ -70,9 +70,7 @@ def serving_engine(log_dir: Path) -> tuple[uvicorn.Server, threading.Thread, int
         time.sleep(ENGINE_START_POLL_SECONDS)
     server.should_exit = True
     thread.join(timeout=ENGINE_STOP_WAIT_SECONDS)
-    raise RuntimeError(
-        f"production engine did not start within {ENGINE_START_WAIT_SECONDS} s"
-    )
+    raise RuntimeError(f"production engine did not start within {ENGINE_START_WAIT_SECONDS} s")
 
 
 def stop_engine(server: uvicorn.Server, thread: threading.Thread) -> None:
@@ -84,9 +82,7 @@ def persisted_client_error_rows(log_dir: Path) -> list[dict[str, object]]:
     """Every row the engine durably wrote, across every daily log in ``log_dir``."""
     rows: list[dict[str, object]] = []
     for path in sorted(log_dir.glob("webui-client-errors-*.log")):
-        rows.extend(
-            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-        )
+        rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
     return rows
 
 
@@ -103,9 +99,7 @@ class ReplyDelayingProxy:
     behind the same delay.
     """
 
-    def __init__(
-        self, upstream_port: int, *, slow_method: str, slow_path: str, delay_seconds: float
-    ) -> None:
+    def __init__(self, upstream_port: int, *, slow_method: str, slow_path: str, delay_seconds: float) -> None:
         self.forwarded: list[tuple[str, str]] = []
         self._upstream_port = upstream_port
         self._slow = (slow_method, slow_path)
@@ -132,9 +126,7 @@ class ReplyDelayingProxy:
 
     def _relay(self, handler: BaseHTTPRequestHandler, *, body: bytes | None) -> None:
         route = (handler.command, handler.path)
-        upstream = http.client.HTTPConnection(
-            LOOPBACK, self._upstream_port, timeout=PROXY_UPSTREAM_TIMEOUT_SECONDS
-        )
+        upstream = http.client.HTTPConnection(LOOPBACK, self._upstream_port, timeout=PROXY_UPSTREAM_TIMEOUT_SECONDS)
         try:
             headers = {"Connection": "close"}
             content_type = handler.headers.get("Content-Type")

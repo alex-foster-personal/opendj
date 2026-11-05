@@ -21,10 +21,7 @@ export async function startTry(
 	);
 }
 
-export async function pickCandidate(
-	job: TryJobOut,
-	candidateId: string
-): Promise<TryJobOut> {
+export async function pickCandidate(job: TryJobOut, candidateId: string): Promise<TryJobOut> {
 	return await unwrap(
 		api.POST('/api/v1/dj/try/{job_id}/pick', {
 			params: {
@@ -62,6 +59,8 @@ export type TryLanes = Awaited<ReturnType<typeof getLanes>>;
  *  so a USB stick id is refused here rather than sent to the library route. */
 export async function trackLabel(stableId: string): Promise<string> {
 	refuseStickRead(stableId, 'name a try-er track');
-	const track = await unwrap(api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id: stableId } } }));
+	const track = await unwrap(
+		api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id: stableId } } })
+	);
 	return `${track.artist ?? 'unknown artist'} - ${track.title ?? stableId}`;
 }

@@ -64,12 +64,7 @@ def validate_capture(payload: dict[str, Any], phase: str) -> dict[str, Any]:
     """Validate one capture phase payload and return the normalized object."""
     for name in ("deck_load_ms", "ui_latency_ms"):
         value = payload.get(name)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value < 0
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
             _error(f"{phase} capture requires {name} as a finite number >= 0")
     xruns = payload.get("xruns")
     if isinstance(xruns, bool) or not isinstance(xruns, int) or xruns < 0:
@@ -85,10 +80,7 @@ def validate_capture(payload: dict[str, Any], phase: str) -> dict[str, Any]:
     if payload.get("frontend_build_dirty") is not False:
         _error(f"{phase} capture requires frontend_build_dirty must be false")
     xrun_session_id = payload.get("xrun_session_id")
-    if (
-        not isinstance(xrun_session_id, str)
-        or _XRUN_SESSION_RE.fullmatch(xrun_session_id) is None
-    ):
+    if not isinstance(xrun_session_id, str) or _XRUN_SESSION_RE.fullmatch(xrun_session_id) is None:
         _error(f"{phase} capture requires xrun_session_id as a stable identifier")
     if phase in ("baseline", "pressure-end") and payload.get("xrun_boundary_ack") is not True:
         _error(f"{phase} capture requires xrun_boundary_ack after flushing the worklet")
@@ -139,9 +131,7 @@ def _resolve_track_count(path: Path) -> int | None:
 
 def resolve_library_scale(path: Path | None) -> dict[str, Any]:
     """Return a JSON-ready library-scale honesty object."""
-    absent_reason = (
-        "library-scale fixture is absent; the 2-track bench is not a library-scale number"
-    )
+    absent_reason = "library-scale fixture is absent; the 2-track bench is not a library-scale number"
     if path is None or not path.exists():
         return {"present": False, "track_count": None, "reason": absent_reason}
 
@@ -156,17 +146,14 @@ def resolve_library_scale(path: Path | None) -> dict[str, Any]:
         return {
             "present": False,
             "track_count": track_count,
-            "reason": (
-                f"track_count={track_count}; the 2-track bench is not a library-scale number"
-            ),
+            "reason": (f"track_count={track_count}; the 2-track bench is not a library-scale number"),
         }
     if track_count < LIBRARY_SCALE_MIN_TRACKS:
         return {
             "present": False,
             "track_count": track_count,
             "reason": (
-                f"track_count={track_count} is below {LIBRARY_SCALE_MIN_TRACKS}; "
-                "it is not a library-scale number"
+                f"track_count={track_count} is below {LIBRARY_SCALE_MIN_TRACKS}; it is not a library-scale number"
             ),
         }
     return {"present": True, "track_count": track_count, "reason": None}
@@ -235,12 +222,9 @@ def write_report(request: SqueezeWriteRequest) -> dict[str, Any]:
         },
         "captures": captures,
         "during_minus_baseline": {
-            "deck_load_ms": (
-                captures["during"]["deck_load_ms"] - captures["baseline"]["deck_load_ms"]
-            ),
+            "deck_load_ms": (captures["during"]["deck_load_ms"] - captures["baseline"]["deck_load_ms"]),
             "xruns": captures["pressure-end"]["xruns"] - captures["baseline"]["xruns"],
-            "ui_latency_ms": captures["during"]["ui_latency_ms"]
-            - captures["baseline"]["ui_latency_ms"],
+            "ui_latency_ms": captures["during"]["ui_latency_ms"] - captures["baseline"]["ui_latency_ms"],
         },
     }
     request.output_path.write_text(
@@ -283,10 +267,7 @@ def compare_reports(a: dict[str, Any], b: dict[str, Any]) -> None:
     a_present = a.get("library_scale", {}).get("present")
     b_present = b.get("library_scale", {}).get("present")
     if a_present != b_present:
-        _error(
-            "library_scale.present differs between reports; comparison rejected "
-            "(different measurement class)"
-        )
+        _error("library_scale.present differs between reports; comparison rejected (different measurement class)")
 
 
 def _cmd_validate(args: argparse.Namespace) -> None:

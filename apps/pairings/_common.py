@@ -1,7 +1,8 @@
 """Shared helpers for the pairings CLI entry points.
 
-Isolates SQLite path resolution + repo construction so the three
-entrypoints (``add`` / ``remove`` / ``list``) stay thin.
+Isolates repo construction so the three entrypoints (``add`` / ``remove`` /
+``list``) stay thin. SQLite path resolution lives in
+``apps.shared.state.phase08_open``.
 """
 from __future__ import annotations
 
@@ -13,13 +14,8 @@ from apps.shared.pairings import PairingsRepo
 from apps.shared.state.phase08_open import open_phase08_state_db
 
 
-def open_state_db(path: Path | None = None) -> sqlite3.Connection:
-    """Open the state DB rw and ensure Phase 08 tables exist."""
-    return open_phase08_state_db(path)
-
-
 def build_repo(path: Path | None = None) -> tuple[PairingsRepo, sqlite3.Connection]:
-    conn = open_state_db(path)
+    conn = open_phase08_state_db(path)
     return PairingsRepo(conn, ensure_schema=False), conn
 
 
@@ -54,6 +50,5 @@ def add_from_to_arguments(
 __all__ = [
     "add_db_argument",
     "add_from_to_arguments",
-    "open_state_db",
     "build_repo",
 ]

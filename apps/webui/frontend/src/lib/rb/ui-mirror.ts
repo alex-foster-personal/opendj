@@ -27,6 +27,8 @@ import {
 import { startMirrorPublishTicker } from './mirror-publish-ticker';
 import { countVisibleTrackRows } from './track-row-visibility';
 import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-mirror-controls';
+import { deckLoadErrors } from '$lib/player/state.svelte';
+import type { DeckId } from '$lib/rb/deck-id';
 
 /** CUEOUT-18: one id per page load, so the engine can keep two open tabs'
  * headphone reports apart. Not the Web Crypto UUID call: that needs a
@@ -119,6 +121,7 @@ export function buildUiMirror(): Record<string, unknown> {
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSentinelMirror(),
 		mixer: state.mixer,
+		auto_gain: state.auto_gain,
 		// COLORFX-04: per deck, the color knob's effect, echo division and timing.
 		color_fx: state.color_fx,
 		decks: Object.fromEntries(
@@ -142,10 +145,13 @@ export function buildUiMirror(): Record<string, unknown> {
 				// beatmatch the incoming deck cannot reach.
 				pitch_range: deck.pitch_range,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
+				// KEYSYNC-01: KEY SYNC mode/target/status, the applied shift and the ladder per target deck.
+				key_sync: { mode: deck.key_sync_mode, target: deck.key_sync_target, status: deck.key_sync_status, shift_semitones: deck.key_shift_semitones, options: deck.key_options },
 				phrases: deck.phrases,
 				// PLAY-18: the deck's last stop and its cause; user_pause is true only
 				// when a person stopped it. The engine logs each new one on ingest.
-				last_stop: readLastDeckStop(deck.deck_id)
+				last_stop: readLastDeckStop(deck.deck_id),
+				load_error: deckLoadErrors[Number(id) as DeckId] ?? null
 			}])
 		),
 		browser: {

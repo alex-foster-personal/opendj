@@ -90,8 +90,7 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
 def test_contract_rev_is_stable_across_two_app_builds(probe: dict) -> None:
     assert probe["rev_first"] == probe["rev_second"]
     assert probe["boot_first"] != probe["boot_second"], (
-        "boot_id must be fresh per build; a stable contract_rev must not be "
-        "coming from a cached app"
+        "boot_id must be fresh per build; a stable contract_rev must not be coming from a cached app"
     )
 
 
@@ -128,7 +127,5 @@ def test_contract_rev_changes_when_the_schema_or_ws_version_changes() -> None:
     widened = {"openapi": "3.1.0", "paths": {"/a": {}, "/b": {}}}
     assert compute_contract_rev(base) != compute_contract_rev(widened)
     # Key order is not a contract change; content is.
-    assert compute_contract_rev(base) == compute_contract_rev(
-        {"paths": {"/a": {}}, "openapi": "3.1.0"}
-    )
+    assert compute_contract_rev(base) == compute_contract_rev({"paths": {"/a": {}}, "openapi": "3.1.0"})
     assert WS_SCHEMA_VERSION == "ws1"

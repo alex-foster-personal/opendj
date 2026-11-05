@@ -195,7 +195,9 @@ function parseList(raw: readonly string[], field: FieldName, path: string): unkn
 export function formToAst(form: FormNode, path = 'root'): RuleAst {
 	if (form.kind === 'group') {
 		if (form.children.length === 0) {
-			throw new Error(`${path}.children: logical op ${JSON.stringify(form.op)} requires at least one child`);
+			throw new Error(
+				`${path}.children: logical op ${JSON.stringify(form.op)} requires at least one child`
+			);
 		}
 		if (form.op === 'not' && form.children.length !== 1) {
 			throw new Error(`${path}.children: 'not' requires exactly one child`);
@@ -215,16 +217,27 @@ export function formToAst(form: FormNode, path = 'root'): RuleAst {
 		return {
 			field: form.field,
 			op: form.op,
-			value: [parseScalar(form.valueLo, form.field, `${path}.value[0]`), parseScalar(form.valueHi, form.field, `${path}.value[1]`)]
+			value: [
+				parseScalar(form.valueLo, form.field, `${path}.value[0]`),
+				parseScalar(form.valueHi, form.field, `${path}.value[1]`)
+			]
 		};
 	}
 	if (form.op === 'in') {
-		return { field: form.field, op: form.op, value: parseList(form.valueList, form.field, `${path}.value`) };
+		return {
+			field: form.field,
+			op: form.op,
+			value: parseList(form.valueList, form.field, `${path}.value`)
+		};
 	}
 	if (form.op === 'missing') {
 		return { field: form.field, op: form.op, value: null };
 	}
-	return { field: form.field, op: form.op, value: parseScalar(form.value, form.field, `${path}.value`) };
+	return {
+		field: form.field,
+		op: form.op,
+		value: parseScalar(form.value, form.field, `${path}.value`)
+	};
 }
 
 /** Validate a single node in isolation (its own arity/op/value, never its
@@ -234,7 +247,10 @@ export function validateNodeOwn(form: FormNode, path = 'root'): ValidationError[
 	const errors: ValidationError[] = [];
 	if (form.kind === 'group') {
 		if (form.children.length === 0) {
-			errors.push({ path: `${path}.children`, message: `logical op '${form.op}' requires at least one child` });
+			errors.push({
+				path: `${path}.children`,
+				message: `logical op '${form.op}' requires at least one child`
+			});
 		}
 		if (form.op === 'not' && form.children.length !== 1) {
 			errors.push({ path: `${path}.children`, message: "'not' requires exactly one child" });

@@ -62,9 +62,13 @@ function countImportPosts(page: import('@playwright/test').Page): () => number {
 }
 
 test.describe('onboarding gauntlet: adversarial folders', () => {
-	test('a folder the OS refuses to list says so, never reads as empty, and offers no import', async ({ page }) => {
+	test('a folder the OS refuses to list says so, never reads as empty, and offers no import', async ({
+		page
+	}) => {
 		if (process.getuid?.() === 0) {
-			throw new Error('running as root: a chmod 000 folder is still listable, so the denied case cannot be arranged');
+			throw new Error(
+				'running as root: a chmod 000 folder is still listable, so the denied case cannot be arranged'
+			);
 		}
 		const denied = join(engine.musicRoot, 'Locked Crate');
 		writeMusicFolder(denied, 3);
@@ -79,7 +83,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		expect(scan).toMatchObject({ exists: true, readable: false, denied: true, audio_files: 0 });
 
 		const dialog = setupDialog(page);
-		await expect(dialog.getByRole('alert').filter({ hasText: 'refused the listing' })).toBeVisible();
+		await expect(
+			dialog.getByRole('alert').filter({ hasText: 'refused the listing' })
+		).toBeVisible();
 		// A count taken behind a permission wall is a count of nothing: never quoted.
 		await expect(dialog.getByText(/\b0 audio files\b/)).toHaveCount(0);
 		await expect(dialog.getByRole('button', { name: 'Import this folder' })).toBeDisabled();
@@ -89,7 +95,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		expect((await readSetupStatus(engine.origin)).library_empty).toBe(true);
 	});
 
-	test('a folder that does not exist is named as missing and the user keeps every way forward', async ({ page }) => {
+	test('a folder that does not exist is named as missing and the user keeps every way forward', async ({
+		page
+	}) => {
 		const missing = join(engine.musicRoot, 'Typo Crate That Was Never Made');
 		const imports = countImportPosts(page);
 
@@ -100,7 +108,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 
 		const dialog = setupDialog(page);
 		// Named by its folder, never by its full absolute path (#2590).
-		await expect(dialog.getByText(/^Nothing was found at .*Typo Crate That Was Never Made\.$/)).toBeVisible();
+		await expect(
+			dialog.getByText(/^Nothing was found at .*Typo Crate That Was Never Made\.$/)
+		).toBeVisible();
 		await expect(dialog.getByText(missing, { exact: false })).toHaveCount(0);
 		await expect(dialog.getByRole('button', { name: 'Import this folder' })).toBeDisabled();
 		await expectFolderEscapesEnabled(page);
@@ -114,7 +124,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		await expect(dialog.getByRole('button', { name: 'Import this folder' })).toBeEnabled();
 	});
 
-	test('a folder path with NFD unicode and repeated spaces imports every track, titles intact', async ({ page }) => {
+	test('a folder path with NFD unicode and repeated spaces imports every track, titles intact', async ({
+		page
+	}) => {
 		// NFD on purpose: what the macOS picker and Finder hand over, and what a
 		// naive NFC normalization on the way to the engine would break on Linux.
 		const folderName = 'Café  Crème Mix'.normalize('NFD');
@@ -140,7 +152,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		expect(intact.length, `rows: ${JSON.stringify(rowText)}`).toBe(3);
 	});
 
-	test('corrupt and zero-byte files are skipped and the playable ones still import', async ({ page }) => {
+	test('corrupt and zero-byte files are skipped and the playable ones still import', async ({
+		page
+	}) => {
 		const folder = join(engine.musicRoot, 'Mixed Bag');
 		mkdirSync(folder, { recursive: true });
 		const good = writeMusicFolder(folder, 2, 'Playable');

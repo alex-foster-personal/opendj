@@ -5,6 +5,7 @@ points at the committed ~50-track Rekordbox fixture
 (``tests/fixtures/rekordbox/master.plain.db``). Every test opens a throwaway
 state.db under ``tmp_path`` and leaves the fixture untouched (read-only).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -73,9 +74,7 @@ def test_ingest_write_populates_tables(rb_fixture: Path, writer_and_conn) -> Non
     report = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
     assert report.tracks_inserted > 0
     counts = _counts(conn)
-    total_ops = (
-        report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
-    )
+    total_ops = report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
     assert counts["tracks"] <= total_ops
     assert counts["tracks"] >= report.tracks_inserted
     assert counts["track_vendor_ids"] == counts["tracks"]
@@ -84,15 +83,11 @@ def test_ingest_write_populates_tables(rb_fixture: Path, writer_and_conn) -> Non
     assert counts["events"] > 0
 
 
-def test_ingest_tier_breakdown_counts_match_ops(
-    rb_fixture: Path, writer_and_conn
-) -> None:
+def test_ingest_tier_breakdown_counts_match_ops(rb_fixture: Path, writer_and_conn) -> None:
     writer, _conn = writer_and_conn
     report = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
     total_from_tiers = sum(report.tier_counts.values())
-    total_ops = (
-        report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
-    )
+    total_ops = report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
     assert total_from_tiers == total_ops
     assert set(report.tier_counts).issubset({"isrc", "fingerprint", "inferred"})
 
@@ -100,27 +95,19 @@ def test_ingest_tier_breakdown_counts_match_ops(
 def test_ingest_idempotent(rb_fixture: Path, writer_and_conn) -> None:
     writer, conn = writer_and_conn
     first = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
-    h_before = conn.execute(
-        "SELECT COUNT(*) FROM track_field_history"
-    ).fetchone()[0]
+    h_before = conn.execute("SELECT COUNT(*) FROM track_field_history").fetchone()[0]
     second = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
-    h_after = conn.execute(
-        "SELECT COUNT(*) FROM track_field_history"
-    ).fetchone()[0]
+    h_after = conn.execute("SELECT COUNT(*) FROM track_field_history").fetchone()[0]
     assert second.tracks_inserted == 0
     assert second.tracks_unchanged == first.tracks_inserted
     # Byte-stable provenance writes mean no history churn.
     assert h_after == h_before
 
 
-def test_ingest_appends_expected_event_kinds(
-    rb_fixture: Path, writer_and_conn
-) -> None:
+def test_ingest_appends_expected_event_kinds(rb_fixture: Path, writer_and_conn) -> None:
     writer, conn = writer_and_conn
     rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False, limit=5)
-    kinds = {
-        row[0] for row in conn.execute("SELECT DISTINCT kind FROM events")
-    }
+    kinds = {row[0] for row in conn.execute("SELECT DISTINCT kind FROM events")}
     assert "track.insert" in kinds
     assert "track.vendor_id.set" in kinds
     assert "adapter.run" in kinds
@@ -129,9 +116,7 @@ def test_ingest_appends_expected_event_kinds(
 def test_ingest_limit_caps_tracks(rb_fixture: Path, writer_and_conn) -> None:
     writer, _conn = writer_and_conn
     report = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False, limit=3)
-    total_ops = (
-        report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
-    )
+    total_ops = report.tracks_inserted + report.tracks_updated + report.tracks_unchanged
     assert total_ops <= 3
 
 
@@ -152,15 +137,11 @@ def test_ingest_reports_vendor_id_links(rb_fixture: Path, writer_and_conn) -> No
     writer, conn = writer_and_conn
     rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)
     tracks_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
-    vendor_count = conn.execute(
-        "SELECT COUNT(*) FROM track_vendor_ids WHERE vendor = 'rekordbox'"
-    ).fetchone()[0]
+    vendor_count = conn.execute("SELECT COUNT(*) FROM track_vendor_ids WHERE vendor = 'rekordbox'").fetchone()[0]
     assert vendor_count == tracks_count
 
 
-def test_cli_ingest_rb_dry_run_exits_zero(
-    rb_fixture: Path, state_db_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_cli_ingest_rb_dry_run_exits_zero(rb_fixture: Path, state_db_path: Path, capsys: pytest.CaptureFixture) -> None:
     from apps.shared.state import cli as state_cli
 
     state_cli.main(["--db", str(state_db_path), "init"])
@@ -180,9 +161,7 @@ def test_cli_ingest_rb_dry_run_exits_zero(
     assert "Rekordbox ingest (dry-run)" in out
 
 
-def test_cli_ingest_rb_write_then_stats(
-    rb_fixture: Path, state_db_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_cli_ingest_rb_write_then_stats(rb_fixture: Path, state_db_path: Path, capsys: pytest.CaptureFixture) -> None:
     from apps.shared.state import cli as state_cli
 
     state_cli.main(["--db", str(state_db_path), "init"])

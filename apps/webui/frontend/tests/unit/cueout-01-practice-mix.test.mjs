@@ -20,7 +20,11 @@ test('practice mode keeps master at unity for every MIX value; MIX only blends c
 	for (const mix of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
 		const gains = headphones.practiceMainGains('practice', null, mix);
 		assert.equal(gains.master, 1, `practice master must be 1 at mix ${mix}, got ${gains.master}`);
-		assert.equal(gains.cue, headphones.headphoneMixGains(mix).cue, `practice cue leg at mix ${mix}`);
+		assert.equal(
+			gains.cue,
+			headphones.headphoneMixGains(mix).cue,
+			`practice cue leg at mix ${mix}`
+		);
 	}
 	assert.deepEqual(headphones.practiceMainGains('practice', null, 0), { cue: 1, master: 1 });
 	assert.deepEqual(headphones.practiceMainGains('practice', null, 1), { cue: 0, master: 1 });
@@ -91,7 +95,10 @@ test('practice blend sits on the master mute path, never a second sink', async (
 	assert.match(hpSrc, /practiceMasterMix\.connect\(muteGain\)/);
 	assert.match(hpSrc, /cueSum\.connect\(nodes\.practiceCueMix\)/);
 	assert.match(hpSrc, /masterGain\.connect\(nodes\.practiceMasterMix\)/);
-	assert.match(engineSrc, /wirePracticeBlendIntoMasterPath\(_masterGain, _masterMuteGain, headphones\)/);
+	assert.match(
+		engineSrc,
+		/wirePracticeBlendIntoMasterPath\(_masterGain, _masterMuteGain, headphones\)/
+	);
 	assert.match(hpSrc, /_setOutputMode\('two_outputs', 'cue_pick'\)/);
 	assert.match(hpSrc, /'practice'/);
 	assert.match(hpSrc, /output_mode = mode/);

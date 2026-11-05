@@ -94,7 +94,8 @@ for (const { module, install, already, port } of PORTS) {
 }
 
 test('the module-scope installers route through reinstallAcrossHotUpdates', () => {
-	const read = (path) => readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8');
+	const read = (path) =>
+		readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8');
 	const wiring = [
 		['src/lib/rb/performance-ipc.svelte.ts', 'installAnalysisSourceRefreshRunner'],
 		['src/lib/rb/audio-engine.svelte.ts', 'installAuthoritativeAnlzGridSink'],
@@ -105,7 +106,11 @@ test('the module-scope installers route through reinstallAcrossHotUpdates', () =
 		const pattern = new RegExp(
 			`reinstallAcrossHotUpdates\\(import\\.meta\\.hot, '\\w+', \\(\\) =>\\s+${install}\\(`
 		);
-		assert.match(source, pattern, `${path} must install ${install} through reinstallAcrossHotUpdates`);
+		assert.match(
+			source,
+			pattern,
+			`${path} must install ${install} through reinstallAcrossHotUpdates`
+		);
 		const bare = new RegExp(`^${install}\\(`, 'm');
 		assert.doesNotMatch(source, bare, `${path} has a bare module-scope ${install} call`);
 	}

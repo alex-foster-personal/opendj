@@ -67,7 +67,11 @@ function setup() {
 
 test('the first placement reads the trigger with the node already fixed', () => {
 	const { node, trigger } = setup();
-	const action = clamp.triggerFloatingAction(node, { getTrigger: () => trigger, preferred: 'below', gap: 4 });
+	const action = clamp.triggerFloatingAction(node, {
+		getTrigger: () => trigger,
+		preferred: 'below',
+		gap: 4
+	});
 	action.update({ getTrigger: () => trigger, preferred: 'below', gap: 4 });
 	assert.equal(node.style.position, 'fixed');
 	assert.equal(node.style.top, `${TRIGGER_TOP + TRIGGER_HEIGHT + 4}px`);
@@ -76,8 +80,19 @@ test('the first placement reads the trigger with the node already fixed', () => 
 
 test('control: a trigger that really is tall still places the node below all of it', () => {
 	const { node } = setup();
-	const tall = { getBoundingClientRect: () => ({ left: 16, top: TRIGGER_TOP, width: 23, height: STRETCHED_HEIGHT }) };
-	const action = clamp.triggerFloatingAction(node, { getTrigger: () => tall, preferred: 'below', gap: 4 });
+	const tall = {
+		getBoundingClientRect: () => ({
+			left: 16,
+			top: TRIGGER_TOP,
+			width: 23,
+			height: STRETCHED_HEIGHT
+		})
+	};
+	const action = clamp.triggerFloatingAction(node, {
+		getTrigger: () => tall,
+		preferred: 'below',
+		gap: 4
+	});
 	action.update({ getTrigger: () => tall, preferred: 'below', gap: 4 });
 	assert.equal(node.style.top, `${TRIGGER_TOP + STRETCHED_HEIGHT + 4}px`);
 	action.destroy();

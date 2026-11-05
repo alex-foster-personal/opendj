@@ -35,9 +35,7 @@ def test_the_scan_sees_templates() -> None:
 def test_no_placeholder_inside_a_comment(template: Path) -> None:
     raw = template.read_text(encoding="utf-8")
     assert _PLACEHOLDER.search(raw), f"{template} substitutes nothing; is it a template?"
-    leaked = sorted(
-        {tok for comment in _COMMENT.findall(raw) for tok in _PLACEHOLDER.findall(comment)}
-    )
+    leaked = sorted({tok for comment in _COMMENT.findall(raw) for tok in _PLACEHOLDER.findall(comment)})
     assert not leaked, (
         f"{template.relative_to(REPO_ROOT)} spells {leaked} inside an XML comment; "
         "a substituted value holding `--` makes the rendered plist unparseable"

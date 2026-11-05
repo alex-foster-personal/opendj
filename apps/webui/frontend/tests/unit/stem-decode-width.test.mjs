@@ -1,7 +1,7 @@
 /**
  * PERF-STEMDEC-04: stem parts decode two at a time while a deck is audible.
  *
- * Measured Thu 1 Oct 2026 (ops/perf/stem-decode-under-playback-round-0): with
+ * Measured Thu 1 Oct 2026 ((private path)): with
  * a deck playing, the four-wide decode burst made the audio callback late at
  * about 0.90 per second against a 0.10 per second background. Per bundle
  * that is 0.47 late callbacks four wide against 0.13 two wide and 0.14 one
@@ -126,7 +126,11 @@ function fakeContext() {
 // REQ: PERF-STEMDEC-04
 test('a silent rig decodes every part at once; a playing deck narrows to two', () => {
 	assert.equal(widthModule.STEM_DECODE_WIDTH_WHILE_PLAYING, 2);
-	assert.equal(widthModule.stemDecodeWidth(4, false), 4, 'control: nothing playing keeps the fast shape');
+	assert.equal(
+		widthModule.stemDecodeWidth(4, false),
+		4,
+		'control: nothing playing keeps the fast shape'
+	);
 	assert.equal(widthModule.stemDecodeWidth(2, false), 2);
 	assert.equal(widthModule.stemDecodeWidth(4, true), 2);
 	assert.equal(widthModule.stemDecodeWidth(2, true), 2);
@@ -200,7 +204,11 @@ test('a deck that starts playing mid-bundle narrows the parts not yet started', 
 	playing = true;
 	state.release.get('vocals')();
 	await tick();
-	assert.deepEqual(state.started, ['vocals', 'drums'], 'one still in flight fills the narrowed width');
+	assert.deepEqual(
+		state.started,
+		['vocals', 'drums'],
+		'one still in flight fills the narrowed width'
+	);
 	state.release.get('drums')();
 	await tick();
 	assert.deepEqual(state.started, ['vocals', 'drums', 'bass']);
@@ -265,14 +273,21 @@ test('a run that throws synchronously is a rejection, not an escape', async () =
 test('an invalid width fails the settle and starts nothing', async () => {
 	for (const bad of [0, 1.5, Number.NaN, -2]) {
 		const { state, run } = gatedRuns();
-		await assert.rejects(widthModule.settleWithWidth(PARTS, () => bad, run), RangeError);
+		await assert.rejects(
+			widthModule.settleWithWidth(PARTS, () => bad, run),
+			RangeError
+		);
 		assert.deepEqual(state.started, [], `width ${bad} must not decode anything`);
 	}
 });
 
 // REQ: PERF-STEMDEC-04
 test('no items settles to an empty result', async () => {
-	const result = await widthModule.settleWithWidth([], () => 1, async () => 'never');
+	const result = await widthModule.settleWithWidth(
+		[],
+		() => 1,
+		async () => 'never'
+	);
 	assert.deepEqual(result.settled, []);
 });
 
@@ -361,7 +376,10 @@ test('a trial that a deck narrows halfway is not recorded as a measurement', asy
 		now,
 		width
 	});
-	assert.ok(first.reports.every((report) => report.refusal === 'calibrating'), 'it began as the trial');
+	assert.ok(
+		first.reports.every((report) => report.refusal === 'calibrating'),
+		'it began as the trial'
+	);
 	assert.equal(first.width, 1);
 	// Had the narrowed trial been recorded, the next eligible load would trial
 	// the WORKERS lane. It must trial main-thread again instead.
@@ -429,6 +447,10 @@ test('the shipped rule end to end: a playing deck decodes a four-part bundle two
 		width: () => decode.stemDecodeWidth(PARTS.length, true)
 	});
 	assert.equal(fallback.state.calls, 4);
-	assert.equal(fallback.state.peak, 2, 'four wide is the burst; one wide is slower for nothing measured');
+	assert.equal(
+		fallback.state.peak,
+		2,
+		'four wide is the burst; one wide is slower for nothing measured'
+	);
 	assert.equal(result.width, 2);
 });

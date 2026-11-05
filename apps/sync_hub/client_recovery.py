@@ -252,6 +252,18 @@ def stale_remaps_the_offer_would_spread(
     return [pair for pair in stale if reach[pair[0]] & named]
 
 
+def remap_pairs_the_offer_relies_on(
+    conn: sqlite3.Connection, rows: list[RowChange]
+) -> list[tuple[str, str]]:
+    """Claims keyed to the actual survivor or chain terminal named by this offer."""
+    named = _ids_named_by(rows)
+    return sorted(
+        (loser, target)
+        for loser, reach in _survivor_reach(conn).items()
+        for target in reach & named
+    )
+
+
 def _survivor_reach(conn: sqlite3.Connection) -> dict[str, set[str]]:
     """Each persisted loser -> its persisted survivor and its chain's terminal one.
 

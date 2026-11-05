@@ -28,8 +28,13 @@
 // Structural slices of BrowserRow's `vocals` (api-rb Vocals) and `lyrics`
 // (LyricsRowSummary), declared here rather than imported so this leaf adds no
 // importer to api-rb, the repo's most-imported module (quality ratchet fan-in).
-type VocalsSlice = { status: 'rekordbox' | 'no_vocals' | 'demucs'; regions: readonly unknown[] } | { status: 'not_analyzed' };
-type LyricsSlice = { effective: 'vocal' | 'sparse' | 'no-lyrics' | 'unknown'; n_lines: number | null };
+type VocalsSlice =
+	| { status: 'rekordbox' | 'no_vocals' | 'demucs'; regions: readonly unknown[] }
+	| { status: 'not_analyzed' };
+type LyricsSlice = {
+	effective: 'vocal' | 'sparse' | 'no-lyrics' | 'unknown';
+	n_lines: number | null;
+};
 
 /** Lyrics count as vocals at MORE than 5 lines (a one-line hook is a chop). */
 export const VOCALS_FILTER_MIN_LINES = 6;
@@ -53,7 +58,8 @@ export function rowVocalsVerdict(row: VocalsFilterRow): VocalsVerdict {
 		lyrics.n_lines !== null &&
 		lyrics.n_lines >= VOCALS_FILTER_MIN_LINES;
 	if (regionsFound || lyricLines || lyrics?.effective === 'vocal') return 'yes';
-	const analyzedNone = v.status === 'no_vocals' || v.status === 'rekordbox' || v.status === 'demucs';
+	const analyzedNone =
+		v.status === 'no_vocals' || v.status === 'rekordbox' || v.status === 'demucs';
 	if (analyzedNone || lyrics?.effective === 'no-lyrics') return 'no';
 	return 'unknown';
 }

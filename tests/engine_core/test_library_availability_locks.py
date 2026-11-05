@@ -4,6 +4,7 @@
 
 Supersedes: lock-retry tests at the end of test_library_availability.py.
 """
+
 from __future__ import annotations
 
 import threading
@@ -112,9 +113,7 @@ def test_lock_error_on_first_batch_still_checks_every_row(
     it gave up the round. Releasing that lock lets the same worker write
     every seeded ``track_availability`` row.
     """
-    stable_ids = _seed_worker_tracks(
-        state_db_path, tmp_path, count=6, prefix="lock-drain-"
-    )
+    stable_ids = _seed_worker_tracks(state_db_path, tmp_path, count=6, prefix="lock-drain-")
     release = threading.Event()
     holder = _hold_immediate_until(state_db_path, release)
     worker = LibraryAvailabilityWorker(data_dir, batch_size=3)
@@ -123,10 +122,7 @@ def test_lock_error_on_first_batch_still_checks_every_row(
             worker.start()
             started = time.monotonic()
             while time.monotonic() - started < 40.0:
-                if any(
-                    "gave up this round" in record.message
-                    for record in caplog.records
-                ):
+                if any("gave up this round" in record.message for record in caplog.records):
                     break
                 time.sleep(0.05)
             else:
@@ -142,8 +138,7 @@ def test_lock_error_on_first_batch_still_checks_every_row(
     conn = state_db.open_rw(state_db_path)
     try:
         rows = conn.execute(
-            "SELECT stable_id FROM track_availability WHERE stable_id IN "
-            f"({','.join('?' for _ in stable_ids)})",
+            f"SELECT stable_id FROM track_availability WHERE stable_id IN ({','.join('?' for _ in stable_ids)})",
             stable_ids,
         ).fetchall()
     finally:
@@ -157,9 +152,7 @@ def test_full_probe_resumes_after_lock_exhaustion_when_nothing_is_pending(
     tmp_path: Path,
 ) -> None:
     """A settled library's full probe must run again after the lock clears."""
-    stable_ids = _seed_worker_tracks(
-        state_db_path, tmp_path, count=4, prefix="full-lock-"
-    )
+    stable_ids = _seed_worker_tracks(state_db_path, tmp_path, count=4, prefix="full-lock-")
     worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
     worker.start()
     try:
@@ -190,11 +183,7 @@ def test_full_probe_resumes_after_lock_exhaustion_when_nothing_is_pending(
             started = time.monotonic()
             while time.monotonic() - started < 40.0:
                 snapshot = worker.status()
-                if (
-                    snapshot.pending == 0
-                    and snapshot.last_error
-                    and "lock retries" in snapshot.last_error
-                ):
+                if snapshot.pending == 0 and snapshot.last_error and "lock retries" in snapshot.last_error:
                     break
                 time.sleep(0.05)
             else:
@@ -238,10 +227,7 @@ def test_full_probe_resumes_after_lock_exhaustion_when_nothing_is_pending(
             }
         finally:
             conn.close()
-        assert all(
-            checked_after[stable_id] != checked_before[stable_id]
-            for stable_id in stable_ids
-        )
+        assert all(checked_after[stable_id] != checked_before[stable_id] for stable_id in stable_ids)
     finally:
         worker.stop()
 
@@ -251,9 +237,7 @@ def test_mid_round_busy_requeues_priority_ids(
     state_db_path: Path,
     tmp_path: Path,
 ) -> None:
-    stable_ids = _seed_worker_tracks(
-        state_db_path, tmp_path, count=8, prefix="prio-requeue-"
-    )
+    stable_ids = _seed_worker_tracks(state_db_path, tmp_path, count=8, prefix="prio-requeue-")
     priority_id = stable_ids[0]
     worker = LibraryAvailabilityWorker(data_dir, batch_size=2)
     worker.request_probe([priority_id])

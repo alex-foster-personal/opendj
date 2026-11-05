@@ -1,4 +1,5 @@
 """Settings endpoint tests (settings-page, CAT-05)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -127,5 +128,6 @@ def test_settings_backend_type_reflects_sqlite_when_state_db_present(tmp_path):
         r = c.get("/api/v1/settings")
     items = _flatten(r.json())
     assert items["backend_type"]["value"] == "SqliteBackend"
+
 
 pytestmark = pytest.mark.rb_parity

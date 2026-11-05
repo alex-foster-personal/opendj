@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.profile."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -62,7 +63,7 @@ def test_unknown_key_rejected() -> None:
 @pytest.mark.requirement("CAT-02")
 def test_missing_playlist_rejected() -> None:
     bad = HAPPY.replace(
-        "playlists:\n  - Warmup\n  - \"Peak Time A\"\n",
+        'playlists:\n  - Warmup\n  - "Peak Time A"\n',
         "playlists: []\n",
     )
     with pytest.raises(ProfileError, match="non-empty"):

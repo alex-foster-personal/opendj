@@ -158,6 +158,11 @@ def _skip_for_pull(event: RunEvent, pull: dict, api: Api, sleep: Callable[[float
             f"pull request #{event.pr_number} head moved from {event.head_sha[:10]} to {head[:10]} "
             "after CI ran; the newer head's CI completion triggers its own E2E"
         )
+    if pull["state"] != "open":
+        # A closed pull request's `mergeable` stays null, so polling it can only go red. The lander
+        # merges on a green ci gate, often before this run starts; main's push E2E covers the merge.
+        how = "is already merged" if pull.get("merged") else "is closed"
+        return f"pull request #{event.pr_number} {how}; there is no open merge commit to test"
     mergeable = pull.get("mergeable")
     attempts = 1
     while mergeable is None and attempts < MERGEABILITY_ATTEMPTS:

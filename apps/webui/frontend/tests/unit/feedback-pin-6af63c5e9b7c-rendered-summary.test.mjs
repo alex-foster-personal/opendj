@@ -88,7 +88,11 @@ test('pin 6af63c5e9b7c the shell button exposes the breakdown to focus and scree
 	mod.feedbackState.availability = 'ok';
 	mod.feedbackState.pinSummary = summary();
 	const html = decode(mod.render(mod.Shell, { props: {} }).body);
-	assert.match(html, /<span class="explainer[^"]*"/, 'wrapped in ControlExplainer (focusin opens it)');
+	assert.match(
+		html,
+		/<span class="explainer[^"]*"/,
+		'wrapped in ControlExplainer (focusin opens it)'
+	);
 	const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1];
 	assert.ok(describedBy, 'the button must name a description element');
 	const target = html.match(new RegExp(`<span id="${describedBy}"[^>]*>([^<]*)</span>`));
@@ -134,7 +138,9 @@ test('pin 6af63c5e9b7c explainer bullets: untracked stub only without the route,
 	mod.feedbackState.pinSummary = summary('ledger_missing');
 	const noLedger = mod.commentPinSummaryBullets([]);
 	assert.ok(
-		noLedger.some((b) => /In-progress excludes fleet work: this daemon has no progress ledger/.test(b)),
+		noLedger.some((b) =>
+			/In-progress excludes fleet work: this daemon has no progress ledger/.test(b)
+		),
 		'an unmeasured fleet correlation must be said, never shown as zero fleet work'
 	);
 });
@@ -150,5 +156,8 @@ test('pin 6af63c5e9b7c a persistent summary failure reaches both controls as an 
 	}
 	const bullets = mod.commentPinSummaryBullets([]);
 	assert.match(bullets[0], /^Comment pin summary failed/);
-	assert.ok(!bullets.some((b) => /not tracked by the comment API yet/.test(b)), bullets.join(' | '));
+	assert.ok(
+		!bullets.some((b) => /not tracked by the comment API yet/.test(b)),
+		bullets.join(' | ')
+	);
 });

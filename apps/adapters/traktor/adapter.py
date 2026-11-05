@@ -11,6 +11,7 @@ import hashlib
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 
@@ -33,6 +34,7 @@ from apps.open_dj import (
     Playlist,
     Track,
 )
+from apps.open_dj.provenance import utc_mtime
 
 # --------------------------------------------------------------- options
 
@@ -98,6 +100,8 @@ class TraktorAdapter:
     def read(self, source: Path) -> tuple[OpenDjLibrary, AdapterReport]:
         """Read ``source`` (a ``collection.nml`` file) into an OpenDjLibrary."""
         report = AdapterReport()
+        source = Path(source)
+        stamp = utc_mtime(source)
         doc = NMLDocument.read(source)
         kept: list[Track] = []
         for e in doc.entries():
@@ -107,7 +111,7 @@ class TraktorAdapter:
                 report.warn(field="location", track_id="", action="dropped",
                             reason="collection entry has no file location")
                 continue
-            kept.append(self._read_entry(e, report))
+            kept.append(self._read_entry(e, report, source_modified_at=stamp))
         tracks = tuple(kept)
         playlists = tuple(self._read_playlists(doc, report))
         report.counts["tracks_read"] = len(tracks)
@@ -138,7 +142,9 @@ class TraktorAdapter:
 
     # ---------------------------------------------------------- entry read
 
-    def _read_entry(self, entry: NMLEntry, report: AdapterReport) -> Track:
+    def _read_entry(
+        self, entry: NMLEntry, report: AdapterReport, *, source_modified_at: datetime
+    ) -> Track:
         path = entry.location_path() or "unknown"
         track_id = _stable_track_id(path)
         bpm_str = entry.get_subchild_attr("TEMPO", "BPM")
@@ -187,6 +193,7 @@ class TraktorAdapter:
             play_count=play_count,
             cues=cues,
             extensions=extensions,
+            source_modified_at=source_modified_at,
         )
 
     def _read_cues(

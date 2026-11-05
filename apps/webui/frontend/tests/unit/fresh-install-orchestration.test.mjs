@@ -56,17 +56,11 @@ test('needsSetupForEmptyLibrary ignores healthy library', () => {
 // empty library that has NOT been dismissed and 'pending' when setup was dismissed
 // or when CloudSync is configured and the first ok pull has not landed yet.
 function libraryAt(status, detail) {
-	return [
-		check(),
-		check({ id: 'library-attached', label: 'Library attached', status, detail })
-	];
+	return [check(), check({ id: 'library-attached', label: 'Library attached', status, detail })];
 }
 
 test('cloudsync waiting pending must not re-trigger the wizard', () => {
-	const waiting = libraryAt(
-		'pending',
-		'0 tracks in the library; waiting for CloudSync'
-	);
+	const waiting = libraryAt('pending', '0 tracks in the library; waiting for CloudSync');
 	assert.equal(mod.needsSetupForEmptyLibrary(waiting, false), false);
 	assert.equal(mod.shouldAutoOpenEmptyLibrarySetup(waiting, false, false), false);
 });

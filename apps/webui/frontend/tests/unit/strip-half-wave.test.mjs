@@ -60,7 +60,12 @@ const COLORS = { low: '#111111', mid: '#222222', high: '#333333', mono: '#cfcfcf
 // Loud first half (one point at full scale), silent second half.
 const N = 40;
 const loud = Array.from({ length: N }, (_, i) => (i === 0 ? 1 : i < N / 2 ? 0.6 : 0));
-const BANDS = { length: N, low: loud, mid: loud.map((v) => v * 0.5), high: loud.map((v) => v * 0.25) };
+const BANDS = {
+	length: N,
+	low: loud,
+	mid: loud.map((v) => v * 0.5),
+	high: loud.map((v) => v * 0.25)
+};
 
 for (const design of ['tri-band', 'mono', 'blocks']) {
 	for (const payload of ['tri', 'mono']) {
@@ -83,7 +88,9 @@ test('strip line design is a half wave: y within the strip, silence on the basel
 	const ctx = recordingCtx();
 	strip.drawStripPreviewBands(ctx, BANDS, 'tri', W, H, 'line', COLORS);
 	assert.equal(ctx.points.length, N, 'one vertex per preview point');
-	for (const p of ctx.points) assert.ok(p.y >= 0 && p.y <= H, `vertex outside the strip: ${JSON.stringify(p)}`);
+	for (const p of ctx.points)
+		assert.ok(p.y >= 0 && p.y <= H, `vertex outside the strip: ${JSON.stringify(p)}`);
 	assert.equal(ctx.points[0].y, 0, 'full-scale point touches the strip top');
-	for (const p of ctx.points.slice(N / 2)) assert.equal(p.y, H, 'silent point sits on the baseline');
+	for (const p of ctx.points.slice(N / 2))
+		assert.equal(p.y, H, 'silent point sits on the baseline');
 });

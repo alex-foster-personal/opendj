@@ -11,6 +11,7 @@
   [if] it already exists [then] publishing replaces its body (overwrite, not
   content-addressed create).
 """
+
 from __future__ import annotations
 
 import json
@@ -31,8 +32,12 @@ from apps.cloud.stem_index import (
     load_cached_index,
     publish_index,
     refresh_error,
+    refresh_local_cache_from_r2,
     refresh_local_cache_from_r2_throttled,
+    refresh_local_cache_throttled,
+    remote_base_path,
     save_cached_index,
+    three_way_merge_index,
 )
 
 
@@ -89,8 +94,10 @@ def test_build_index_later_line_wins_for_rerendered_bundle(tmp_path: Path):
     """[if] the journal has two lines, same id [then] the later hash wins, [else stop]."""
     journal = tmp_path / "journal.jsonl"
     journal.write_text(
-        _journal_line(stable_id="t", files={"vocals.mp3": "1" * 64}) + "\n"
-        + _journal_line(stable_id="t", files={"vocals.mp3": "2" * 64}) + "\n",
+        _journal_line(stable_id="t", files={"vocals.mp3": "1" * 64})
+        + "\n"
+        + _journal_line(stable_id="t", files={"vocals.mp3": "2" * 64})
+        + "\n",
         encoding="utf-8",
     )
     index = build_index_from_journal(journal)
@@ -147,9 +154,7 @@ def test_publish_index_creates_then_overwrites(cfg: CloudConfig):
     body1, _ = got1
     assert json.loads(body1)["stable_ids"] == {"a": {"manifest.json": "1" * 64}}
 
-    etag2 = publish_index(
-        cfg, s3, {"a": {"manifest.json": "1" * 64}, "b": {"manifest.json": "2" * 64}}
-    )
+    etag2 = publish_index(cfg, s3, {"a": {"manifest.json": "1" * 64}, "b": {"manifest.json": "2" * 64}})
     got2 = s3.get_object(cfg.audio_bucket, INDEX_OBJECT_KEY)
     assert got2 is not None
     body2, _ = got2
@@ -338,9 +343,7 @@ class _CountingGetS3(FakeS3Client):
 
 
 @pytest.mark.requirement("STEM-26")
-def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(
-    tmp_path: Path, cfg: CloudConfig
-):
+def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(tmp_path: Path, cfg: CloudConfig):
     """[if] refresh runs twice inside backoff [then] the second call is a no-op, [else stop]."""
     data_dir = tmp_path / "data"
     s3 = _CountingGetS3()
@@ -353,9 +356,7 @@ def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(
 
 
 @pytest.mark.requirement("STEM-26")
-def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(
-    tmp_path: Path, cfg: CloudConfig
-):
+def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(tmp_path: Path, cfg: CloudConfig):
     """[if] force=True during backoff [then] refresh still makes a fresh R2 request, [else stop]."""
     data_dir = tmp_path / "data"
     s3 = _CountingGetS3()
@@ -369,9 +370,7 @@ def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(
 
 
 @pytest.mark.requirement("STEM-26")
-def test_refresh_local_cache_from_r2_throttled_records_and_clears_error(
-    tmp_path: Path, cfg: CloudConfig
-):
+def test_refresh_local_cache_from_r2_throttled_records_and_clears_error(tmp_path: Path, cfg: CloudConfig):
     """[if] a refresh fails then later succeeds [then] refresh_error sets, clears, [else stop]."""
     data_dir = tmp_path / "data"
 
@@ -388,3 +387,98 @@ def test_refresh_local_cache_from_r2_throttled_records_and_clears_error(
     publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
     refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True)
     assert refresh_error(data_dir) is None
+
+
+# --- refresh merges, never replaces (issue #8891) ---------------------------
+
+_OLD = {"manifest.json": "a" * 64, "vocals.mp3": "b" * 64}
+_NEW = {"manifest.json": "c" * 64, "vocals.mp3": "d" * 64}
+_OTHER = {"manifest.json": "e" * 64}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_refresh_keeps_local_only_entry(tmp_path: Path, cfg: CloudConfig):
+    """[if] an entry is recorded locally but not published [then] a refresh keeps it, [else stop]."""
+    data_dir = tmp_path / "data"
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"remote-only": _OTHER})
+    save_cached_index(data_dir, {"local-only": _OLD})
+
+    merged = refresh_local_cache_from_r2(cfg, s3, data_dir)
+
+    assert merged == {"local-only": _OLD, "remote-only": _OTHER}
+    assert load_cached_index(data_dir) == merged
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_refresh_adds_remote_only_entry_to_empty_cache(tmp_path: Path, cfg: CloudConfig):
+    """[if] the cache is cold and R2 holds an entry [then] the refresh adds it, [else stop]."""
+    data_dir = tmp_path / "data"
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"remote-only": _OTHER})
+
+    assert refresh_local_cache_from_r2(cfg, s3, data_dir) == {"remote-only": _OTHER}
+    assert remote_base_path(data_dir).is_file()
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_refresh_takes_remote_update_for_unchanged_local_copy(tmp_path: Path, cfg: CloudConfig):
+    """[if] remote re-renders an id this host only fetched [then] remote wins, [else stop]."""
+    data_dir = tmp_path / "data"
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"t": _OLD})
+    refresh_local_cache_from_r2(cfg, s3, data_dir)
+    publish_index(cfg, s3, {"t": _NEW})
+
+    assert refresh_local_cache_from_r2(cfg, s3, data_dir) == {"t": _NEW}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_refresh_keeps_unpublished_local_rerecord_over_remote(tmp_path: Path, cfg: CloudConfig):
+    """[if] this host re-records an id after the last refresh [then] local wins, [else stop]."""
+    data_dir = tmp_path / "data"
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"t": _OLD})
+    refresh_local_cache_from_r2(cfg, s3, data_dir)
+    save_cached_index(data_dir, {"t": _NEW})
+
+    assert refresh_local_cache_from_r2(cfg, s3, data_dir) == {"t": _NEW}
+    assert refresh_local_cache_from_r2(cfg, s3, data_dir) == {"t": _NEW}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_refresh_propagates_remote_removal_of_unchanged_entry(tmp_path: Path, cfg: CloudConfig):
+    """[if] remote drops an id this host never changed [then] the cache drops it, [else stop]."""
+    data_dir = tmp_path / "data"
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"t": _OLD, "keep": _OTHER})
+    refresh_local_cache_from_r2(cfg, s3, data_dir)
+    got = s3.get_object(cfg.audio_bucket, INDEX_OBJECT_KEY)
+    assert got is not None
+    body = json.dumps({"schema_version": 1, "stable_ids": {"keep": _OTHER}}).encode()
+    assert s3.put_object_if_match(cfg.audio_bucket, INDEX_OBJECT_KEY, body, etag=got[1])[0]
+
+    assert refresh_local_cache_from_r2(cfg, s3, data_dir) == {"keep": _OTHER}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_three_way_merge_without_base_prefers_remote_on_conflict_and_keeps_local_only():
+    """[if] no base exists yet [then] remote wins conflicts and local-only ids stay, [else stop]."""
+    merged = three_way_merge_index({"t": _OLD, "mine": _OTHER}, {"t": _NEW}, None)
+    assert merged == {"t": _NEW, "mine": _OTHER}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_three_way_merge_keeps_local_edit_when_remote_removed_it():
+    """[if] remote removed an id this host changed [then] the local entry stays, [else stop]."""
+    assert three_way_merge_index({"t": _NEW}, {}, {"t": _OLD}) == {"t": _NEW}
+
+
+@pytest.mark.requirement("STEM-8894")
+def test_throttled_refresh_with_hub_fetch_merges_not_replaces(tmp_path: Path):
+    """[if] the hub-style fetch path refreshes [then] local-only entries survive, [else stop]."""
+    data_dir = tmp_path / "data"
+    save_cached_index(data_dir, {"local-only": _OLD})
+
+    assert refresh_local_cache_throttled(data_dir, lambda: {"hub": _OTHER}, force=True) is True
+    assert load_cached_index(data_dir) == {"local-only": _OLD, "hub": _OTHER}

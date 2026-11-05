@@ -117,9 +117,7 @@
 			stroke-width="2"
 			use:tip={dotTip(point, order)}
 		>
-			<title
-				>{snapshots[point.index].label}: {formatWithUnit(point.value, kpi.unit)}</title
-			>
+			<title>{snapshots[point.index].label}: {formatWithUnit(point.value, kpi.unit)}</title>
 		</circle>
 	{/each}
 </svg>

@@ -47,9 +47,7 @@ def test_eval_subcommands_landed(command: str) -> None:
 
 def test_dataset_dir_is_per_eval_subcommand_not_parser_wide() -> None:
     """If it leaked onto fetch/index they would advertise a flag they ignore."""
-    assert build_parser().parse_args(["stats", "--dataset-dir", "/tmp/gt"]).dataset_dir == Path(
-        "/tmp/gt"
-    )
+    assert build_parser().parse_args(["stats", "--dataset-dir", "/tmp/gt"]).dataset_dir == Path("/tmp/gt")
     for command in SHIPPING:
         with pytest.raises(SystemExit):
             build_parser().parse_args([command, "--dataset-dir", "/tmp/gt"])
@@ -97,9 +95,7 @@ def test_witness_eval_defaults_to_shipped_local_window() -> None:
     args = build_parser().parse_args(["witness-eval", "--pred", "preds", "--asr", "asr"])
     assert args.local_window == WITNESS_LOCAL_WINDOW_S
     assert args.local_window == pytest.approx(5.0)
-    zero = build_parser().parse_args(
-        ["witness-eval", "--pred", "preds", "--asr", "asr", "--local-window", "0"]
-    )
+    zero = build_parser().parse_args(["witness-eval", "--pred", "preds", "--asr", "asr", "--local-window", "0"])
     assert zero.local_window == 0.0
 
 

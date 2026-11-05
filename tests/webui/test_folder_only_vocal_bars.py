@@ -32,7 +32,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from apps.vocals import cache as vcache
 from apps.webui.server.app import create_app
-from apps.webui.server.routes import vocals as vocals_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 pytestmark = pytest.mark.requirement("VOCALS-04")
@@ -66,7 +65,6 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conn.close()
     assert not (data / "master.plain.db").exists()
 
-    monkeypatch.setattr(vocals_routes, "DATA_DIR", data)
     monkeypatch.setattr(rb_config, "DATA_DIR", data)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", data / "master.plain.db")
     monkeypatch.setattr(rb_config, "STATE_DB", data / "state" / "state.db")

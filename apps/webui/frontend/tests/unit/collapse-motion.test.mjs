@@ -58,7 +58,8 @@ describe('collapseRowCount', () => {
 	it('refuses an element without exactly one clipping child', () => {
 		assert.throws(() => motion.collapseRowCount({ children: [] }), /exactly one clipping child/);
 		assert.throws(
-			() => motion.collapseRowCount({ children: [{ childElementCount: 1 }, { childElementCount: 1 }] }),
+			() =>
+				motion.collapseRowCount({ children: [{ childElementCount: 1 }, { childElementCount: 1 }] }),
 			/exactly one clipping child/
 		);
 	});
@@ -90,8 +91,12 @@ describe('library components follow the rule', () => {
 			'utf8'
 		);
 		const tree =
-			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'), 'utf8') + view;
-		assert.match(tree, /<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/);
+			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'), 'utf8') +
+			view;
+		assert.match(
+			tree,
+			/<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/
+		);
 		// [if] the block used transition:collapse [then] Svelte would keep the open-time
 		// snap decision for the close [else stop] (sol review P1, PR #7600)
 		assert.doesNotMatch(view, /transition:collapse/);
@@ -103,7 +108,10 @@ describe('library components follow the rule', () => {
 			join(FRONTEND, 'src/lib/components/rb/browser/RecentlyDeletedFolderView.svelte'),
 			'utf8'
 		);
-		assert.match(view, /<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/);
+		assert.match(
+			view,
+			/<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/
+		);
 		assert.doesNotMatch(view, /transition:collapse/);
 		assert.match(view, /from '\$lib\/motion\/collapse'/);
 	});
@@ -112,7 +120,9 @@ describe('library components follow the rule', () => {
 		const dir = join(FRONTEND, 'src/lib/components/rb/browser');
 		const offenders = readdirSync(dir)
 			.filter((name) => name.endsWith('.svelte'))
-			.filter((name) => /\bslide\b[^;]*from 'svelte\/transition'/.test(readFileSync(join(dir, name), 'utf8')));
+			.filter((name) =>
+				/\bslide\b[^;]*from 'svelte\/transition'/.test(readFileSync(join(dir, name), 'utf8'))
+			);
 		assert.deepEqual(offenders, []);
 	});
 });

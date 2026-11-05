@@ -81,13 +81,10 @@ def _wheel(name: str, requires: list[str]) -> bytes:
     files = {
         f"{name}/__init__.py": b"",
         f"{dist_info}/METADATA": "\n".join(
-            ["Metadata-Version: 2.1", f"Name: {name}", "Version: 1.0"]
-            + [f"Requires-Dist: {req}" for req in requires]
+            ["Metadata-Version: 2.1", f"Name: {name}", "Version: 1.0"] + [f"Requires-Dist: {req}" for req in requires]
         ).encode()
         + b"\n",
-        f"{dist_info}/WHEEL": (
-            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
-        ),
+        f"{dist_info}/WHEEL": (b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n"),
     }
     record = (
         "".join(
@@ -111,9 +108,7 @@ class Index:
 
 @pytest.fixture
 def index() -> Iterator[Index]:
-    wheels = {
-        f"{name}-1.0-py3-none-any.whl": _wheel(name, deps) for name, deps in DISTRIBUTIONS.items()
-    }
+    wheels = {f"{name}-1.0-py3-none-any.whl": _wheel(name, deps) for name, deps in DISTRIBUTIONS.items()}
     seen: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -133,9 +128,7 @@ def index() -> Iterator[Index]:
                     for f, w in wheels.items()
                     if f.startswith(f"{parts[1]}-")
                 )
-                self._send(
-                    f"<html><body>{links}</body></html>".encode(), "text/html", SIMPLE_CACHE_CONTROL
-                )
+                self._send(f"<html><body>{links}</body></html>".encode(), "text/html", SIMPLE_CACHE_CONTROL)
             elif parts[0] == "files" and len(parts) == 2 and parts[1] in wheels:
                 self._send(wheels[parts[1]], "application/octet-stream", FILE_CACHE_CONTROL)
             else:
@@ -211,9 +204,7 @@ def job(tmp_path: Path, index: Index) -> Job:
     return fixture_job
 
 
-def _run(
-    job: Job, *args: str, extra_env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess:
+def _run(job: Job, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         list(args),
         cwd=job.workdir,
@@ -224,9 +215,7 @@ def _run(
     )
 
 
-def _provision(
-    job: Job, *extra: str, extra_env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess:
+def _provision(job: Job, *extra: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     return _run(job, "bash", str(VENV_SCRIPT), PYTHON, *extra, extra_env=extra_env)
 
 
@@ -247,14 +236,9 @@ def _legacy_install(job: Job) -> subprocess.CompletedProcess:
 
 
 def _installed(job: Job) -> set[str]:
-    code = (
-        "import importlib.metadata as m; "
-        "print('\\n'.join(sorted(d.metadata['Name'] for d in m.distributions())))"
-    )
+    code = "import importlib.metadata as m; print('\\n'.join(sorted(d.metadata['Name'] for d in m.distributions())))"
     # cwd is the job's workspace: `-c` puts cwd on sys.path, so the repo's egg-info would count.
-    out = subprocess.run(
-        [str(job.python), "-c", code], cwd=job.workdir, capture_output=True, text=True, check=True
-    )
+    out = subprocess.run([str(job.python), "-c", code], cwd=job.workdir, capture_output=True, text=True, check=True)
     return set(out.stdout.split())
 
 
@@ -282,9 +266,7 @@ def test_warm_lock_provisioning_sends_zero_index_requests(job: Job, index: Index
         assert CACHE_MISS not in result.stdout + result.stderr, "warm cache reported a miss"
 
 
-def test_cold_lock_provisioning_fetches_pinned_files_without_resolving(
-    job: Job, index: Index
-) -> None:
+def test_cold_lock_provisioning_fetches_pinned_files_without_resolving(job: Job, index: Index) -> None:
     index.requests.clear()  # the fixture's compile read index pages; provisioning must not
 
     result = _provision(job, "--lock", "pylock.test.toml")
@@ -347,11 +329,7 @@ def test_missing_lock_fails_provisioning(job: Job) -> None:
 
 def test_requirements_flag_is_gone() -> None:
     """The --upgrade path is removed, not left beside the lock path as an option."""
-    code = [
-        line
-        for line in VENV_SCRIPT.read_text(encoding="utf-8").splitlines()
-        if not line.lstrip().startswith("#")
-    ]
+    code = [line for line in VENV_SCRIPT.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#")]
     assert code, "control: the script has code lines to inspect"
     offenders = [line for line in code if "--upgrade" in line or "--requirements" in line]
     assert not offenders, offenders

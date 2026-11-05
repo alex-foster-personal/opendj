@@ -36,18 +36,9 @@ test('measureCueLatencyMs recovers 0, 40, 180, 500 ms of injected lag', async ()
 });
 
 test('weak peak and out-of-range lag fail fast without a HEAD DELAY integer', () => {
-	assert.throws(
-		() => cueLatency.resolveCalibratedHeadDelayMs(180, 0.1),
-		/too weak to trust/
-	);
-	assert.throws(
-		() => cueLatency.resolveCalibratedHeadDelayMs(501, 0.99),
-		/outside 0\.\.500/
-	);
-	assert.throws(
-		() => cueLatency.resolveCalibratedHeadDelayMs(-2, 0.99),
-		/outside 0\.\.500/
-	);
+	assert.throws(() => cueLatency.resolveCalibratedHeadDelayMs(180, 0.1), /too weak to trust/);
+	assert.throws(() => cueLatency.resolveCalibratedHeadDelayMs(501, 0.99), /outside 0\.\.500/);
+	assert.throws(() => cueLatency.resolveCalibratedHeadDelayMs(-2, 0.99), /outside 0\.\.500/);
 	assert.equal(cueLatency.resolveCalibratedHeadDelayMs(179.6, 0.99), 180);
 	assert.equal(cueLatency.resolveCalibratedHeadDelayMs(0.4, 0.99), 0);
 	assert.equal(cueLatency.resolveCalibratedHeadDelayMs(500, 0.99), 500);
@@ -122,8 +113,11 @@ test('the calibration chirp reaches the cue bridge input, not the delay line, an
 	assert.match(source, /cue setSinkId/);
 	assert.doesNotMatch(source, /createMediaStreamDestination/);
 	assert.doesNotMatch(source, /new Audio\(/);
-	assert.doesNotMatch(source, /shouldCalibrateCueLatency|_calibratedCueIds|_calibratingCueId|measureCueLatencyMs/,
-		'CUEOUT-14: the first-select auto-chirp is gone; CALIBRATE is the only chirp path');
+	assert.doesNotMatch(
+		source,
+		/shouldCalibrateCueLatency|_calibratedCueIds|_calibratingCueId|measureCueLatencyMs/,
+		'CUEOUT-14: the first-select auto-chirp is gone; CALIBRATE is the only chirp path'
+	);
 	assert.match(source, /sinkSelectIsNoop/);
 	assert.match(source, /cueOutputChangePlan/);
 	assert.match(source, /Promise\.all/);

@@ -153,7 +153,6 @@ import hashlib
 import importlib.metadata
 import json
 import os
-import resource
 import subprocess
 import sys
 import time
@@ -162,6 +161,11 @@ from typing import Any
 import numpy as np
 import torch
 from beat_this.inference import Audio2Frames, Postprocessor, load_audio
+
+try:
+    import resource
+except ImportError:  # POSIX-only; Windows has no resource module
+    resource = None
 
 # ----- Named constants ----------------------------------------------------
 
@@ -524,8 +528,13 @@ def _collect_paths(args: argparse.Namespace) -> list[str]:
     return paths
 
 
-def _peak_rss_mb() -> float:
-    """Peak resident set in MB. ru_maxrss is BYTES on macOS and KILOBYTES on Linux."""
+def _peak_rss_mb() -> float | None:
+    """Peak resident set in MB, or None when unavailable (no resource module, Windows).
+
+    ru_maxrss is BYTES on macOS and KILOBYTES on Linux. None means UNAVAILABLE, never 0.
+    """
+    if resource is None:
+        return None
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return round(peak / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
 
@@ -632,7 +641,9 @@ def main() -> int:
     )
 
     peak_rss_mb = _peak_rss_mb() if args.measure_rss else None
-    if peak_rss_mb is not None:
+    if args.measure_rss and peak_rss_mb is None:
+        print("[beatgrid] peak RSS UNAVAILABLE on this platform (no resource module)", flush=True)
+    elif peak_rss_mb is not None:
         print(f"[beatgrid] peak RSS {peak_rss_mb} MB", flush=True)
 
     ok = [r for r in results.values() if not r.get("error")]

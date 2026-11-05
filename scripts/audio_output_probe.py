@@ -61,6 +61,7 @@ Measured Thu 10 Sep 2026: broadband read -28.1 dB with a tone playing and
 frequency gave 22 dB of margin on the same hardware. `--tone` mode therefore
 bandpasses; music mode cannot and relies on the sign test instead.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -145,9 +146,7 @@ def os_audio_out_holders() -> list[str]:
     A held stream does NOT mean signal is flowing through it. During the
     Thu 10 Sep 2026 outage a WebKit GPU process held one the entire time.
     """
-    out = subprocess.run(
-        ["pmset", "-g", "assertions"], capture_output=True, text=True, timeout=15, check=False
-    )
+    out = subprocess.run(["pmset", "-g", "assertions"], capture_output=True, text=True, timeout=15, check=False)
     if out.returncode != 0:
         raise Unmeasurable(f"pmset failed rc={out.returncode}: {out.stderr.strip()}")
 
@@ -190,8 +189,7 @@ def _ffmpeg_mean_db(wav: Path, audio_filter: str) -> float:
     matches = re.findall(r"mean_volume:\s*(-?[\d.]+) dB", proc.stderr)
     if not matches:
         raise Unmeasurable(
-            f"volumedetect produced no mean_volume for filter {audio_filter!r}; "
-            f"ffmpeg rc={proc.returncode}"
+            f"volumedetect produced no mean_volume for filter {audio_filter!r}; ffmpeg rc={proc.returncode}"
         )
     return float(matches[-1])
 
@@ -201,10 +199,28 @@ def capture_level(seconds: float, tone_hz: int | None) -> Level:
     with tempfile.TemporaryDirectory() as tmp:
         wav = Path(tmp) / "cap.wav"
         rec = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation",
-             "-i", MIC_DEVICE, "-t", str(seconds), "-ac", "1", "-ar", "44100",
-             "-y", str(wav)],
-            capture_output=True, text=True, timeout=seconds + 30, check=False,
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "avfoundation",
+                "-i",
+                MIC_DEVICE,
+                "-t",
+                str(seconds),
+                "-ac",
+                "1",
+                "-ar",
+                "44100",
+                "-y",
+                str(wav),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=seconds + 30,
+            check=False,
         )
         if not wav.exists() or wav.stat().st_size == 0:
             raise Unmeasurable(
@@ -212,11 +228,7 @@ def capture_level(seconds: float, tone_hz: int | None) -> Level:
                 f"Microphone permission in System Settings. ffmpeg: {rec.stderr.strip()[:200]}"
             )
         broadband = _ffmpeg_mean_db(wav, "volumedetect")
-        inband = (
-            _ffmpeg_mean_db(wav, f"bandpass=f={tone_hz}:width_type=h:w=12,volumedetect")
-            if tone_hz
-            else None
-        )
+        inband = _ffmpeg_mean_db(wav, f"bandpass=f={tone_hz}:width_type=h:w=12,volumedetect") if tone_hz else None
         return Level(broadband_db=broadband, inband_db=inband)
 
 
@@ -234,9 +246,7 @@ def _deck_transport(origin: str, deck: int) -> dict:
     mirror = _get(origin, "/api/v1/state/ui-mirror")
     published = mirror.get("decks", {}).get(str(deck))
     if published is None:
-        raise Unmeasurable(
-            f"ui-mirror publishes no deck {deck}; decks={sorted(mirror.get('decks', {}))}"
-        )
+        raise Unmeasurable(f"ui-mirror publishes no deck {deck}; decks={sorted(mirror.get('decks', {}))}")
     clock = published.get("presentation_clock", {})
     return {
         "playing": published.get("playing"),
@@ -413,8 +423,7 @@ def acoustic_verdict(acoustic: dict) -> tuple[str, str]:
     median = acoustic["median_delta_db"]
     if wins == cycles:
         return "AUDIBLE", (
-            f"on louder in {cycles}/{cycles} cycles, p={acoustic['p_audible']:.3f}, "
-            f"median {median:+.1f} dB"
+            f"on louder in {cycles}/{cycles} cycles, p={acoustic['p_audible']:.3f}, median {median:+.1f} dB"
         )
     if wins == 0:
         return "NOT AUDIBLE", (
@@ -432,17 +441,17 @@ def acoustic_verdict(acoustic: dict) -> tuple[str, str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--deck", type=int, default=1, help="deck to toggle for the acoustic test")
     ap.add_argument("--cycles", type=int, default=6, help="A/B cycles; p = 2**-cycles")
     ap.add_argument("--sample-seconds", type=float, default=2.5)
     ap.add_argument("--settle-seconds", type=float, default=1.2)
-    ap.add_argument("--tone-hz", type=int, default=None,
-                    help="narrowband detection at this frequency (for tone sources)")
-    ap.add_argument("--layers", default="app,os,acoustic",
-                    help="comma-separated subset; acoustic makes noise and moves the deck")
+    ap.add_argument(
+        "--tone-hz", type=int, default=None, help="narrowband detection at this frequency (for tone sources)"
+    )
+    ap.add_argument(
+        "--layers", default="app,os,acoustic", help="comma-separated subset; acoustic makes noise and moves the deck"
+    )
     args = ap.parse_args()
     wanted = {s.strip() for s in args.layers.split(",")}
 
@@ -458,9 +467,12 @@ def main() -> int:
     for name, fn in (
         ("app", lambda: app_claim(origin)),
         ("os", os_audio_out_holders),
-        ("acoustic", lambda: acoustic_sign_test(
-            origin, args.deck, args.cycles, args.sample_seconds,
-            args.settle_seconds, args.tone_hz)),
+        (
+            "acoustic",
+            lambda: acoustic_sign_test(
+                origin, args.deck, args.cycles, args.sample_seconds, args.settle_seconds, args.tone_hz
+            ),
+        ),
     ):
         if name not in wanted:
             continue

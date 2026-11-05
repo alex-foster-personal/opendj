@@ -5,6 +5,7 @@ analysis date at all (``ZANALYSISDATE`` NULL) cannot be proven to be the
 bytes MIK actually analysed, so it must not enter the ``mtime_before_analysis``
 subset just because there was nothing to compare against.
 """
+
 from __future__ import annotations
 
 from scripts.mik_volume_identify import AudioLoudness, mtime_before_analysis

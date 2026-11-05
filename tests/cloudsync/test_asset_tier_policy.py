@@ -6,8 +6,8 @@ gate). Same contract, same fixtures (``tests/cloudsync/conftest.py``), same
 helpers -- imported from ``test_asset_tier`` rather than duplicated so the two
 files cannot drift on what a seeded track/policy/pin looks like.
 
-Contract under test: ``specs/design_decision_06.md`` over the v6 policy
-tables of ``specs/design_decision_05.md``. Acceptance criteria, one
+Contract under test: ``(private path)`` over the v6 policy
+tables of ``(private path)``. Acceptance criteria, one
 assertion block each:
 
 - if the policy matrix resolves any of pinned/cached/stream/excluded, or a
@@ -17,6 +17,7 @@ assertion block each:
   first, or picks a different victim on a rerun, the LRU is not an LRU --
   broken.
 """
+
 from __future__ import annotations
 
 import os
@@ -88,9 +89,7 @@ def test_policy_matrix_with_no_local_copy_and_no_cache(
 
 
 @pytest.mark.parametrize("mode", ["pinned", "cached", "stream"])
-def test_a_present_local_file_always_wins(
-    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path, mode: str
-):
+def test_a_present_local_file_always_wins(conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path, mode: str):
     """Mode governs what a machine KEEPS, not what it READS."""
     body = b"local body"
     audio = _write(tmp_path / "music" / "song.flac", body)
@@ -107,9 +106,7 @@ def test_a_present_local_file_always_wins(
     assert source.pin_unhydrated is False
 
 
-def test_excluded_short_circuits_even_with_a_local_file(
-    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
-):
+def test_excluded_short_circuits_even_with_a_local_file(conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path):
     audio = _write(tmp_path / "music" / "song.flac", b"local body")
     _seed_track(conn, "t1", content_hash=_sha(b"local body"))
     _seed_machine(conn, "m1")
@@ -157,9 +154,7 @@ def test_a_stale_available_flag_does_not_hand_back_a_dead_path(
     assert source.origin == "presigned"
 
 
-def test_cache_hit_is_keyed_by_content_hash_and_bumps_atime(
-    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
-):
+def test_cache_hit_is_keyed_by_content_hash_and_bumps_atime(conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path):
     body = b"cached body"
     digest = _sha(body)
     cache_dir = tmp_path / "cache"
@@ -170,9 +165,7 @@ def test_cache_hit_is_keyed_by_content_hash_and_bumps_atime(
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", "cached")
 
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg)
     assert source.origin == "cache"
     assert source.path == cached
     assert cached.stat().st_atime > 1_600_000_000
@@ -199,9 +192,7 @@ def test_playlist_pin_overrides_the_asset_kind_default(
     _seed_track(conn, "t1", content_hash=_sha(b"body"))
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", default_mode)
-    _seed_playlist_pin(
-        conn, machine_id="m1", playlist_id="p1", stable_id="t1", mode=pin_mode
-    )
+    _seed_playlist_pin(conn, machine_id="m1", playlist_id="p1", stable_id="t1", mode=pin_mode)
 
     resolution = hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
     assert resolution.mode == pin_mode
@@ -209,19 +200,13 @@ def test_playlist_pin_overrides_the_asset_kind_default(
     assert resolution.playlist_id == "p1"
 
 
-def test_conflicting_pins_resolve_to_the_strongest_mode(
-    conn: sqlite3.Connection, tmp_path: Path
-):
+def test_conflicting_pins_resolve_to_the_strongest_mode(conn: sqlite3.Connection, tmp_path: Path):
     """A pin exists to guarantee availability, so the strongest claim wins."""
     _seed_track(conn, "t1", content_hash=_sha(b"body"))
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", "stream")
-    _seed_playlist_pin(
-        conn, machine_id="m1", playlist_id="p-zzz", stable_id="t1", mode="pinned"
-    )
-    _seed_playlist_pin(
-        conn, machine_id="m1", playlist_id="p-aaa", stable_id="t1", mode="excluded"
-    )
+    _seed_playlist_pin(conn, machine_id="m1", playlist_id="p-zzz", stable_id="t1", mode="pinned")
+    _seed_playlist_pin(conn, machine_id="m1", playlist_id="p-aaa", stable_id="t1", mode="excluded")
 
     resolution = hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
     assert resolution.mode == "pinned"
@@ -233,9 +218,7 @@ def test_a_pin_for_another_machine_is_ignored(conn: sqlite3.Connection):
     _seed_machine(conn, "m1")
     _seed_machine(conn, "m2")
     _seed_policy(conn, "m1", "stream")
-    _seed_playlist_pin(
-        conn, machine_id="m2", playlist_id="p1", stable_id="t1", mode="pinned"
-    )
+    _seed_playlist_pin(conn, machine_id="m2", playlist_id="p1", stable_id="t1", mode="pinned")
     resolution = hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
     assert resolution.mode == "stream"
     assert resolution.source == "sync_policies"
@@ -245,9 +228,7 @@ def test_a_soft_deleted_pin_is_ignored(conn: sqlite3.Connection):
     _seed_track(conn, "t1", content_hash=_sha(b"body"))
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", "stream")
-    _seed_playlist_pin(
-        conn, machine_id="m1", playlist_id="p1", stable_id="t1", mode="pinned"
-    )
+    _seed_playlist_pin(conn, machine_id="m1", playlist_id="p1", stable_id="t1", mode="pinned")
     conn.execute("UPDATE playlist_pins SET deleted_at = 't1'")
     resolution = hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
     assert resolution.mode == "stream"
@@ -263,9 +244,7 @@ def test_an_unconfigured_machine_raises_rather_than_defaulting(
     assert "sync_policies" in str(excinfo.value)
 
 
-def test_unconfigured_machine_with_local_file_plays_without_policy_row(
-    conn: sqlite3.Connection, tmp_path: Path
-):
+def test_unconfigured_machine_with_local_file_plays_without_policy_row(conn: sqlite3.Connection, tmp_path: Path):
     """Local-only installs without a sync_policies row still play on-disk bytes."""
     body = b"local body"
     audio = _write(tmp_path / "music" / "song.flac", body)
@@ -276,9 +255,7 @@ def test_unconfigured_machine_with_local_file_plays_without_policy_row(
         (str(audio), "t1"),
     )
 
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache"
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache")
     assert source.origin == "local"
     assert source.path == audio
 
@@ -317,17 +294,13 @@ def test_unconfigured_machine_plays_bytes_a_past_policy_hydrated(
     cached = hydration.cache_path(cache_dir, digest)
     cached.parent.mkdir(parents=True, exist_ok=True)
     cached.write_bytes(b"body")
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg)
     assert source.origin == "cache"
     assert source.path == cached
     assert source.url is None
     # Control: without the entry the same machine says the file is not here.
     cached.unlink()
-    gone = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
-    )
+    gone = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg)
     assert gone.origin == "unavailable"
     assert gone.reason == hydration.NOT_ON_THIS_MACHINE
 
@@ -352,17 +325,13 @@ def test_a_track_with_no_content_hash_is_unavailable_not_guessed(
     assert source.reason is not None and "content_hash" in source.reason
 
 
-def test_a_presign_without_a_config_raises_instead_of_returning_nothing(
-    conn: sqlite3.Connection, tmp_path: Path
-):
+def test_a_presign_without_a_config_raises_instead_of_returning_nothing(conn: sqlite3.Connection, tmp_path: Path):
     """ADR 06 consequence 2: no creds means pinned/cached only, loudly."""
     _seed_track(conn, "t1", content_hash=_sha(b"body"))
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", "stream")
     with pytest.raises(hydration.HydrationError) as excinfo:
-        hydration.resolve_playback_source(
-            conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=None
-        )
+        hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=None)
     assert "R2_ACCESS_KEY_ID" in str(excinfo.value)
 
 
@@ -378,18 +347,14 @@ def test_a_prefixed_stored_hash_still_resolves_to_a_content_addressed_key(
     _seed_machine(conn, "m1")
     _seed_policy(conn, "m1", "stream")
 
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=cfg
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=cfg)
 
     assert source.origin == "presigned"
     assert source.content_hash == digest  # bare hex, not sha256:<hex>
     assert digest in (source.url or "")
 
 
-def test_remote_content_hash_wins_over_the_ingest_copy(
-    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
-):
+def test_remote_content_hash_wins_over_the_ingest_copy(conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path):
     """The R2 key was minted from the remote row's digest, so it is truth."""
     remote_digest = _sha(b"the uploaded bytes")
     _seed_track(conn, "t1", content_hash=_sha(b"a stale ingest guess"))
@@ -401,9 +366,7 @@ def test_remote_content_hash_wins_over_the_ingest_copy(
         "(?, 'remote', 'alternate', ?, 1, ?, 't0', 't0')",
         ("t1", asset_store.asset_object_key(remote_digest), remote_digest),
     )
-    source = hydration.resolve_playback_source(
-        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=cfg
-    )
+    source = hydration.resolve_playback_source(conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=cfg)
     assert source.content_hash == remote_digest
     assert remote_digest in (source.url or "")
 
@@ -443,14 +406,10 @@ def test_evict_cache_tiebreak_is_deterministic_across_runs(tmp_path: Path):
     for run in range(2):
         cache_dir = tmp_path / f"run{run}"
         for body in (b"a", b"b", b"c", b"d"):
-            entry = _write(
-                hydration.cache_path(cache_dir, _sha(body * 1024)), body * 1024
-            )
+            entry = _write(hydration.cache_path(cache_dir, _sha(body * 1024)), body * 1024)
             os.utime(entry, (5_000, 5_000))
         result = hydration.evict_cache(cache_dir, budget_mb=0)
-        victims.append(
-            tuple(p.relative_to(cache_dir) for p in result.evicted)
-        )
+        victims.append(tuple(p.relative_to(cache_dir) for p in result.evicted))
     assert victims[0] == victims[1]
     assert len(victims[0]) == 4
 
@@ -536,8 +495,5 @@ def test_eviction_uses_cfg_audio_budget(
         asset_kind="audio",
         cache_dir=cache_dir,
     )
-    remaining = sum(
-        path.stat().st_size for path in cache_dir.rglob("*") if path.is_file()
-    )
+    remaining = sum(path.stat().st_size for path in cache_dir.rglob("*") if path.is_file())
     assert remaining <= 1 * hydration.BYTES_PER_MB
-

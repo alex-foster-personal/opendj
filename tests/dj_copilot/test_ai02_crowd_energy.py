@@ -1,4 +1,5 @@
 """AI-02 crowd-energy scenarios."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -25,9 +26,7 @@ def _ctx(energies: list[int]) -> SessionContext:
         )
         for i, e in enumerate(energies)
     ]
-    return SessionContext(
-        recent=recent, source="manual", captured_at=FIXED_NOW
-    )
+    return SessionContext(recent=recent, source="manual", captured_at=FIXED_NOW)
 
 
 def _library_all_energies(current_energy: int) -> list[TrackFeature]:

@@ -107,8 +107,7 @@ export function buildRescueSnapshot(
 	for (const deckId of DECK_IDS) {
 		const deck = state.decks[deckId];
 		const channel = state.mixer.channels[deckId];
-		const beats =
-			deck.beatgrid.map((beat) => ({ n: beat.n, t: beat.time_ms / 1000 })) ?? [];
+		const beats = deck.beatgrid.map((beat) => ({ n: beat.n, t: beat.time_ms / 1000 })) ?? [];
 		const armed = deck.hot_cue_armed;
 		decks[deckId] = {
 			deck_id: deckId,
@@ -128,15 +127,17 @@ export function buildRescueSnapshot(
 			cue_ms: deck.cue_ms,
 			loop: deck.loop === null ? null : { ...deck.loop },
 			hot_cue_armed:
-				armed === null
-					? null
-					: { slot: armed.slot, target_position_ms: armed.target_position_ms },
+				armed === null ? null : { slot: armed.slot, target_position_ms: armed.target_position_ms },
 			stems: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
 				drums: { ...deck.stems.controls.drums },
-				...(deck.stems.available_controls.includes('bass') ? { bass: { ...deck.stems.controls.bass } } : {}),
-				...(deck.stems.available_controls.includes('other') ? { other: { ...deck.stems.controls.other } } : {})
+				...(deck.stems.available_controls.includes('bass')
+					? { bass: { ...deck.stems.controls.bass } }
+					: {}),
+				...(deck.stems.available_controls.includes('other')
+					? { other: { ...deck.stems.controls.other } }
+					: {})
 			},
 			mixer_channel: {
 				trim: channel.trim,
@@ -166,8 +167,7 @@ export function buildRescueSnapshot(
 				mix: state.mixer.headphones.mix,
 				level: state.mixer.headphones.level,
 				output_mode: state.mixer.headphones.output_mode,
-				selected_master_output_device_id:
-					state.mixer.headphones.selected_master_output_device_id,
+				selected_master_output_device_id: state.mixer.headphones.selected_master_output_device_id,
 				selected_output_device_id: state.mixer.headphones.selected_output_device_id,
 				selected_master_output_device_label: _selectedOutputLabel(
 					state.mixer.headphones.outputs,

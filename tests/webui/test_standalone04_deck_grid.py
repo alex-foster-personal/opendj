@@ -169,6 +169,7 @@ def test_failed_own_beatgrid_is_inert_and_blocks_default_legacy_resurrection(
         "reason": "no_trackable_pulse",
         "beat_count": 0,
         "beats": [],
+        "grid_source": "none",
     }
 
     fallback = standalone_client.get(f"/api/v1/tracks/{SID_FAILED}/beatgrid-fallback")

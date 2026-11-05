@@ -200,6 +200,13 @@ class EnrollRequest(BaseModel):
     credential: service_enroll.EnrollCredentialModel
 
 
+class IdentityRemapPairModel(BaseModel):
+    """A remap claim, or a claim the hub contradicted at apply time."""
+
+    loser_pk: str = Field(min_length=1)
+    survivor_pk: str = Field(min_length=1)
+
+
 class PushRequest(BaseModel):
     machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
     schema_version: int
@@ -224,6 +231,8 @@ class PushRequest(BaseModel):
     #: (:mod:`apps.sync_hub.stale_copy`) stands aside for that push, because
     #: a restored hub has forgotten rows it really held.
     reseed: bool = False
+    #: Optional claims checked under the hub apply lock; absent means an older spoke.
+    identity_remap_pairs: list[IdentityRemapPairModel] | None = None
 
 
 class StaleCandidateModel(BaseModel):
@@ -251,6 +260,8 @@ class StaleCheckResponse(BaseModel):
 
 
 class PushResponse(BaseModel):
+    #: Alarm only: never feed these through apply_hub_identity_rejects.
+    identity_remaps_contradicted: list[IdentityRemapPairModel] = Field(default_factory=list)
     accepted: int
     rejected: int
     seq: int
@@ -358,6 +369,7 @@ __all__ = [
     "HelloRequest",
     "HelloResponse",
     "IdentityRejectModel",
+    "IdentityRemapPairModel",
     "RejectedRowModel",
     "MachineModel",
     "PullResponse",

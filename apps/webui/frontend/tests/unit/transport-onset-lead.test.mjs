@@ -272,7 +272,8 @@ test('beat sync still plans from the self-report, not the shortened lead', () =>
 			'sync regression would be blamed on the transport fix'
 	);
 	assert.ok(
-		syncAt > math.safeTransportScheduleTime(now, math.processorOnsetLeadSec(SHIPPED_BLOCK_LATENCY_S)),
+		syncAt >
+			math.safeTransportScheduleTime(now, math.processorOnsetLeadSec(SHIPPED_BLOCK_LATENCY_S)),
 		'the sync launch must stay strictly further out than a plain transport schedule'
 	);
 });
@@ -475,7 +476,9 @@ test('the configured block must be the block the processor actually adopted', ()
 test('the configure call sits at creation, before any audio can exist', () => {
 	const text = moduleSource('lib/rb/stretch-adapter.ts');
 	const configureAt = text.indexOf('node.configure({ blockMs })');
-	const loadAt = text.indexOf("async load(buffer: AudioBuffer, requested: PcmHandoff = 'copy'): Promise<PcmHandoff> {");
+	const loadAt = text.indexOf(
+		"async load(buffer: AudioBuffer, requested: PcmHandoff = 'copy'): Promise<PcmHandoff> {"
+	);
 	assert.ok(configureAt !== -1 && loadAt !== -1);
 	assert.ok(
 		configureAt < loadAt,

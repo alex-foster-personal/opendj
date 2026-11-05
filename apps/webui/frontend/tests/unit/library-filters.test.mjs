@@ -67,11 +67,21 @@ const VOCALS_CASES = [
 	['not analyzed, vocal verdict', { status: 'not_analyzed' }, _lyrics('vocal', null), 'yes'],
 	['not analyzed, sparse verdict', { status: 'not_analyzed' }, _lyrics('sparse', null), 'unknown'],
 	['not analyzed, no-lyrics verdict', { status: 'not_analyzed' }, _lyrics('no-lyrics', null), 'no'],
-	['no_vocals but 20 lines of lyrics', { status: 'no_vocals', fps: 150, regions: [] }, _lyrics('unknown', 20), 'yes'],
+	[
+		'no_vocals but 20 lines of lyrics',
+		{ status: 'no_vocals', fps: 150, regions: [] },
+		_lyrics('unknown', 20),
+		'yes'
+	],
 	// Sol P1 on 4c6107765: a no-lyrics verdict outranks the track's own line count...
 	['no-lyrics verdict over 12 lines', { status: 'not_analyzed' }, _lyrics('no-lyrics', 12), 'no'],
 	// ...but not real vocal regions.
-	['no-lyrics verdict, rekordbox regions', { status: 'rekordbox', fps: 150, regions: [_REGION] }, _lyrics('no-lyrics', 12), 'yes']
+	[
+		'no-lyrics verdict, rekordbox regions',
+		{ status: 'rekordbox', fps: 150, regions: [_REGION] },
+		_lyrics('no-lyrics', 12),
+		'yes'
+	]
 ];
 
 test('VOCALS-FILTER-01: each vocals/lyrics status gets the expected verdict', async () => {
@@ -81,18 +91,35 @@ test('VOCALS-FILTER-01: each vocals/lyrics status gets the expected verdict', as
 	for (const [label, vocals, lyrics, verdict] of VOCALS_CASES) {
 		const row = _row({ vocals, lyrics });
 		assert.equal(f.rowVocalsVerdict(row), verdict, label);
-		const vocalsOnly = { remixes_filter: false, vocals_filter: true, available_offline_filter: false, library_key_filter: [] };
-		assert.equal(c.applyLibraryFilters([row], vocalsOnly).length === 1, verdict === 'yes', `filter: ${label}`);
+		const vocalsOnly = {
+			remixes_filter: false,
+			vocals_filter: true,
+			available_offline_filter: false,
+			library_key_filter: []
+		};
+		assert.equal(
+			c.applyLibraryFilters([row], vocalsOnly).length === 1,
+			verdict === 'yes',
+			`filter: ${label}`
+		);
 	}
 });
 
 test('VOCALS-FILTER-01 mutation: the old n_lines-only rule fails the fixture', () => {
 	// The pre-fix predicate, verbatim in behavior: lyrics.n_lines >= 6 or nothing.
-	const oldRule = (row) => row.lyrics !== null && row.lyrics.n_lines !== null && row.lyrics.n_lines >= 6;
-	const wrong = VOCALS_CASES.filter(([, vocals, lyrics, verdict]) => oldRule(_row({ vocals, lyrics })) !== (verdict === 'yes'));
+	const oldRule = (row) =>
+		row.lyrics !== null && row.lyrics.n_lines !== null && row.lyrics.n_lines >= 6;
+	const wrong = VOCALS_CASES.filter(
+		([, vocals, lyrics, verdict]) => oldRule(_row({ vocals, lyrics })) !== (verdict === 'yes')
+	);
 	assert.deepEqual(
 		wrong.map(([label]) => label),
-		['rekordbox regions', 'demucs regions', 'not analyzed, vocal verdict', 'no-lyrics verdict over 12 lines'],
+		[
+			'rekordbox regions',
+			'demucs regions',
+			'not analyzed, vocal verdict',
+			'no-lyrics verdict over 12 lines'
+		],
 		'the fixture must catch a revert to the n_lines-only rule'
 	);
 });
@@ -110,18 +137,9 @@ test('VOCALS-FILTER-01: the tooltip states the rule and the counts', async () =>
 
 test('CAT-07 (pin c7da76c16aae): rowIsLocallyAvailable keeps only local-audio rows', async () => {
 	const c = await _loadContract();
-	assert.equal(
-		c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: false })),
-		true
-	);
-	assert.equal(
-		c.rowIsLocallyAvailable(_row({ file_exists: false, has_remote_copy: true })),
-		false
-	);
-	assert.equal(
-		c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: true })),
-		false
-	);
+	assert.equal(c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: false })), true);
+	assert.equal(c.rowIsLocallyAvailable(_row({ file_exists: false, has_remote_copy: true })), false);
+	assert.equal(c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: true })), false);
 	assert.equal(c.rowIsLocallyAvailable(_row({ file_exists: null })), false);
 });
 
@@ -178,10 +196,20 @@ test('CAT-07: the browser applies rowIsLocallyAvailable only while the available
 	const c = await _loadContract();
 	const local = _row({ stable_id: 'local', file_exists: true, is_streaming: false });
 	const cloud = _row({ stable_id: 'cloud', file_exists: false, has_remote_copy: true });
-	const off = { remixes_filter: false, vocals_filter: false, available_offline_filter: false, library_key_filter: [] };
-	assert.deepEqual(c.applyLibraryFilters([local, cloud], off).map((r) => r.stable_id), ['local', 'cloud']);
+	const off = {
+		remixes_filter: false,
+		vocals_filter: false,
+		available_offline_filter: false,
+		library_key_filter: []
+	};
 	assert.deepEqual(
-		c.applyLibraryFilters([local, cloud], { ...off, available_offline_filter: true }).map((r) => r.stable_id),
+		c.applyLibraryFilters([local, cloud], off).map((r) => r.stable_id),
+		['local', 'cloud']
+	);
+	assert.deepEqual(
+		c
+			.applyLibraryFilters([local, cloud], { ...off, available_offline_filter: true })
+			.map((r) => r.stable_id),
 		['local']
 	);
 });

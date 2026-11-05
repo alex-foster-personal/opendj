@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from collections import Counter
 from pathlib import Path
 
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.sync.diff_csv import load_diff_rows
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 # ----- Path resolution (mirrors playlist_apply._live_db_path) -----------
@@ -33,13 +33,6 @@ def _live_djay_db_path(live: bool) -> Path:
     open the working copy under ``data/``.
     """
     return paths.DJAY_LIVE_DB if live else paths.DJAY_WORKING_DB
-
-
-def _load_ratings_diff(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open("r", newline="", encoding="utf-8") as fp:
-        return list(csv.DictReader(fp))
 
 
 def _summarise_plan(rows: list[dict]) -> dict[str, int]:
@@ -280,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    rows = _load_ratings_diff(args.diff_csv)
+    rows = load_diff_rows(args.diff_csv)
     if not args.live:
         return dry_run(rows)
     if args.bulk and not args.i_understand_the_risks:

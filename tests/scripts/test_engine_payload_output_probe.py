@@ -3,12 +3,10 @@
 [if] the payload is built on darwin [then] cargo builds odj-output-probe and it is staged executable at bin/odj-output-probe, [else stop].
 [if] the payload is built on Linux or Windows [then] no cargo build runs and the skip names the macOS-only reason, [else stop].
 [if] the staged file does not answer an empty argv with the helper's usage error [then] the build stops, [else stop].
-[if] the helper's cargo build runs [then] TAURI_CONFIG empties bundle.resources so src-tauri/payload need not exist, [else stop].
+[if] the helper's crate lives under or depends on the Tauri shell [then] deleting apps/desktop/src-tauri breaks the Electron payload, [else stop].
 
 Without the helper the packed Electron app answers output health ``unknown``
-forever, because output-health.ts finds nothing at that path. tauri-build fails
-on an absent ``apps/desktop/src-tauri/payload``, which is the Electron stage's
-normal state, hence the resource override.
+forever, because output-health.ts finds nothing at that path.
 
 -Claude
 """
@@ -120,7 +118,7 @@ def test_the_verify_accepts_the_helpers_usage_error(tmp_path: Path) -> None:
 
 def test_the_gate_reads_what_the_real_helper_prints() -> None:
     """The usage marker and exit code are the Rust helper's, not only the fake's."""
-    source = (REPO_ROOT / OUTPUT_PROBE_CRATE / "src/bin/odj-output-probe.rs").read_text(encoding="utf-8")
+    source = (REPO_ROOT / OUTPUT_PROBE_CRATE / "src/main.rs").read_text(encoding="utf-8")
     usage = re.search(r'const USAGE: &str = "([^"]*)"', source)
     assert usage is not None and usage.group(1).startswith(USAGE_MARKER)
     assert f"ExitCode::from({payload_output_probe.USAGE_EXIT_CODE})" in source
@@ -133,15 +131,13 @@ def test_the_electron_shell_looks_where_the_payload_stages() -> None:
     assert f"export const OUTPUT_PROBE_HELPER = '{OUTPUT_PROBE_RELATIVE}';" in shell
 
 
-def test_the_resource_override_empties_the_payload_resource() -> None:
-    """tauri-build applies TAURI_CONFIG as an RFC 7396 merge patch over tauri.conf.json.
-
-    The premise: the conf maps the ``payload`` resource dir (so without the
-    override the build needs that dir), and the patch replaces the map with an
-    empty list (a non-object patch value replaces the target outright).
-    """
-    conf = json.loads((REPO_ROOT / OUTPUT_PROBE_CRATE / "tauri.conf.json").read_text(encoding="utf-8"))
-    assert "payload" in conf["bundle"]["resources"]
+def test_the_helper_crate_builds_without_the_tauri_shell() -> None:
+    """The Electron payload must survive deleting apps/desktop/src-tauri (Tauri deletion blocker)."""
+    assert not OUTPUT_PROBE_CRATE.startswith("apps/desktop/src-tauri")
+    cargo = (REPO_ROOT / OUTPUT_PROBE_CRATE / "Cargo.toml").read_text(encoding="utf-8")
+    assert re.search(r"^\s*tauri", cargo, re.MULTILINE) is None, "the helper crate must not depend on tauri"
+    assert re.search(r'path\s*=\s*"[^"]*src-tauri', cargo) is None, "no path dependency into the Tauri crate"
+    assert not (REPO_ROOT / OUTPUT_PROBE_CRATE / "build.rs").exists(), "no tauri-build step"
 
 
 def _artifact(name: str, executable: str | None) -> str:
@@ -150,10 +146,10 @@ def _artifact(name: str, executable: str | None) -> str:
 
 def test_the_staged_file_is_the_one_cargo_reports_under_a_target_triple() -> None:
     """With build.target set cargo writes target/<triple>/release; its own message is the source of truth."""
-    triple_path = "/repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/odj-output-probe"
+    triple_path = "/repo/apps/desktop/native/odj-output-probe/target/aarch64-apple-darwin/release/odj-output-probe"
     stdout = "\n".join(
         [
-            _artifact("tauri_build", None),
+            _artifact("serde_json", None),
             _artifact("odj-audio", "/elsewhere/odj-audio"),
             _artifact(OUTPUT_PROBE_BIN, triple_path),
             json.dumps({"reason": "build-finished", "success": True}),

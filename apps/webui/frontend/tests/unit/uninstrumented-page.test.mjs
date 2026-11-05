@@ -43,20 +43,33 @@ async function withRealChromium(run) {
 }
 
 test('a protocol-level context loss during navigation is retryable', () => {
-	assert.equal(isContextLossError(new CdpProtocolError('Runtime.evaluate', 'Execution context was destroyed.')), true);
 	assert.equal(
-		isContextLossError(new CdpProtocolError('Runtime.evaluate', 'Cannot find default execution context')),
+		isContextLossError(
+			new CdpProtocolError('Runtime.evaluate', 'Execution context was destroyed.')
+		),
+		true
+	);
+	assert.equal(
+		isContextLossError(
+			new CdpProtocolError('Runtime.evaluate', 'Cannot find default execution context')
+		),
 		true
 	);
 });
 
 test('a page exception that mentions a context is not retryable', () => {
-	assert.equal(isContextLossError(new Error('NotAllowedError: AudioContext was not allowed to start')), false);
+	assert.equal(
+		isContextLossError(new Error('NotAllowedError: AudioContext was not allowed to start')),
+		false
+	);
 	assert.equal(isContextLossError(new Error('Execution context was destroyed.')), false);
 });
 
 test('any other protocol failure is not retryable', () => {
-	assert.equal(isContextLossError(new CdpProtocolError('Runtime.evaluate', 'Internal error')), false);
+	assert.equal(
+		isContextLossError(new CdpProtocolError('Runtime.evaluate', 'Internal error')),
+		false
+	);
 });
 
 test('the page refuses the Network domain and allows Runtime', () => {
@@ -82,12 +95,7 @@ test('waitForFunction rejects near timeout when evaluate never replies', async (
 		const page = await openUninstrumentedPage(browser);
 		const started = Date.now();
 		await assert.rejects(
-			() =>
-				page.waitForFunction(
-					() => new Promise(() => {}),
-					undefined,
-					{ timeout: 200 }
-				),
+			() => page.waitForFunction(() => new Promise(() => {}), undefined, { timeout: 200 }),
 			(error) => {
 				assert.match(error.message, /waitForFunction timed out after 200ms/);
 				return true;

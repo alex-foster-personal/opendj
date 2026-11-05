@@ -39,16 +39,18 @@
 
 import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
-import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import {
+	pioneerBrowserAndGlobalBindings,
 	pioneerCc,
 	pioneerDeckChannel,
+	pioneerDeckHints,
 	pioneerNote,
-	pioneerPadChannel
+	pioneerPadBindings,
+	pioneerPadLedRules,
+	pioneerTransportLedRules
 } from './pioneer-deck-bindings';
 
 const DECKS = [1, 2] as const;
-const HOT_CUE_SLOTS: readonly HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export const FLX4_BEAT_LOOP_PAD_BEATS: readonly number[] = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
 export const FLX4_PAD_ON = 0x7f;
@@ -81,93 +83,55 @@ function _mixerBindings(deck: (typeof DECKS)[number]): MidiBinding[] {
 		// [PDF] 3-3 TRIM: CC 4 MSB.
 		{ source: pioneerCc(ch, 0x04), action: { type: 'mixer_channel', deck, target: 'trim' } },
 		// [PDF] 3-4 EQ HI: CC 7 MSB.
-		{ source: pioneerCc(ch, 0x07), action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
+		{
+			source: pioneerCc(ch, 0x07),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' }
+		},
 		// [PDF] 3-4 EQ MID: CC 11 MSB.
-		{ source: pioneerCc(ch, 0x0b), action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
+		{
+			source: pioneerCc(ch, 0x0b),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' }
+		},
 		// [PDF] 3-4 EQ LOW: CC 15 MSB.
-		{ source: pioneerCc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
+		{
+			source: pioneerCc(ch, 0x0f),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' }
+		},
 		// [PDF] 3-7 CH FADER: CC 19 MSB.
 		{ source: pioneerCc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } },
 		// [PDF] 3-5 CFX: CC 23 deck 1 / CC 24 deck 2 on the global mixer channel 7,
 		// NOT the deck channel. Hardware-confirmed Fri 18 Sep 2026 (live sniff sent
 		// B6 17/37 for deck 1); the first transcription had ch 1/2 and never fired.
-		{ source: pioneerCc(MIXER_GLOBAL_CH, CFX_CC[deck]), action: { type: 'mixer_channel', deck, target: 'filter' } },
+		{
+			source: pioneerCc(MIXER_GLOBAL_CH, CFX_CC[deck]),
+			action: { type: 'mixer_channel', deck, target: 'filter' }
+		},
 		// [PDF] 3-6 CH CUE: note 84 (0x54).
 		{ source: pioneerNote(ch, 0x54), action: { type: 'channel_cue', deck } }
 	];
 }
 
 function _padBindings(deck: DeckId): MidiBinding[] {
-	const ch = pioneerPadChannel(deck);
-	const bindings: MidiBinding[] = [];
-	for (let pad = 0; pad < 8; pad++) {
-		// [PDF] 5-5 HOT CUE mode: pad k -> note k-1 (0..7).
-		bindings.push({
-			source: pioneerNote(ch, pad),
-			action: { type: 'deck_hot_cue', deck, slot: HOT_CUE_SLOTS[pad] }
-		});
-		// [PDF] 5-5 BEAT LOOP mode: notes 96-103 (0x60..0x67).
-		bindings.push({
-			source: pioneerNote(ch, 0x60 + pad),
-			action: { type: 'deck_beat_loop', deck, beats: FLX4_BEAT_LOOP_PAD_BEATS[pad] }
-		});
-	}
-	return bindings;
+	// [PDF] 5-5 HOT CUE (notes 0-7) and BEAT LOOP (notes 0x60-0x67).
+	// The doubling ladder is our software assignment (see const above).
+	return pioneerPadBindings(deck, FLX4_BEAT_LOOP_PAD_BEATS);
 }
 
 function _browserAndGlobalBindings(): MidiBinding[] {
-	const ch = 7;
-	return [
-		// [PDF] 4-1 BROWSE rotate: CC 64 (0x40).
-		{ source: pioneerCc(ch, 0x40), action: { type: 'browse_encoder' }, relative: true },
-		// [PDF] 4-1 BROWSE rotate +SHIFT: CC 100 (0x64).
-		{ source: pioneerCc(ch, 0x64), action: { type: 'browse_encoder' }, relative: true },
-		// [PDF] 4-2 LOAD deck 1: note 70 (0x46).
-		{ source: pioneerNote(ch, 0x46), action: { type: 'browse_load', deck: 1 } },
-		// [PDF] 4-3 LOAD deck 2: note 71 (0x47).
-		{ source: pioneerNote(ch, 0x47), action: { type: 'browse_load', deck: 2 } },
-		// [PDF] 3-8 CROSSFADER: CC 31 MSB.
-		{ source: pioneerCc(ch, 0x1f), action: { type: 'mixer_global', target: 'crossfader' } },
-		// [PDF] 3-1 MASTER LEVEL: CC 8 MSB.
-		{ source: pioneerCc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } },
-		// [PDF] 3-11 HEADPHONE MIX: CC 12 MSB.
-		{ source: pioneerCc(ch, 0x0c), action: { type: 'headphone_mix' } },
-		// [PDF] 3-12 HEADPHONE LEVEL: CC 13 MSB.
-		{ source: pioneerCc(ch, 0x0d), action: { type: 'headphone_level' } },
-		// [PDF] 3-2 MASTER CUE: note 99 (0x63).
-		{ source: pioneerNote(ch, 0x63), action: { type: 'master_cue', mode: 'latch' } }
-	];
+	// [PDF] 4-1..4-3 BROWSE + LOAD, 3-1/3-2/3-8/3-11/3-12 global mixer.
+	return pioneerBrowserAndGlobalBindings();
 }
 
+/** Documented-but-unbound physical controls ([PDF] 1-4/1-5/1-6/1-7/1-8/1-9/1-10, 3-6).
+ * Row names are the FLX4's; wire numbers are shared with the DDJ-400. */
 function _deckHints(deck: DeckId): ControlHint[] {
-	const ch = pioneerDeckChannel(deck);
-	return [
-		// [PDF] 1-4 JOG DIAL.
-		{ source: pioneerCc(ch, 0x22), label: `JOG platter, vinyl on (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x23), label: `JOG platter, vinyl off (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x29), label: `JOG platter + SHIFT (deck ${deck})` },
-		{ source: pioneerCc(ch, 0x21), label: `JOG wheel side (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x36), label: `JOG touch (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x67), label: `JOG touch + SHIFT (deck ${deck})` },
-		// [PDF] 1-10 BEAT SYNC (out of scope #1777).
-		{ source: pioneerNote(ch, 0x58), label: `BEAT SYNC (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x5c), label: `BEAT SYNC long press (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x60), label: `BEAT SYNC + SHIFT (deck ${deck})` },
-		// [PDF] 1-5 IN / 1-6 OUT.
-		{ source: pioneerNote(ch, 0x10), label: `IN (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x4c), label: `IN + SHIFT (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x11), label: `OUT (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x4e), label: `OUT + SHIFT (deck ${deck})` },
-		// [PDF] 1-7 4 BEAT/EXIT +SHIFT.
-		{ source: pioneerNote(ch, 0x50), label: `4 BEAT/EXIT + SHIFT (deck ${deck})` },
-		// [PDF] 1-8 / 1-9 CUE/LOOP CALL.
-		{ source: pioneerNote(ch, 0x51), label: `CUE/LOOP CALL back (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x3e), label: `CUE/LOOP CALL back + SHIFT (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x53), label: `CUE/LOOP CALL forward (deck ${deck})` },
-		{ source: pioneerNote(ch, 0x3d), label: `CUE/LOOP CALL forward + SHIFT (deck ${deck})` },
-		// [PDF] 3-6 CH CUE +SHIFT.
-		{ source: pioneerNote(ch, 0x68), label: `CH CUE + SHIFT (deck ${deck})` }
-	];
+	return pioneerDeckHints(deck, {
+		loopIn: 'IN',
+		loopInShift: 'IN + SHIFT',
+		loopOut: 'OUT',
+		loopOutShift: 'OUT + SHIFT',
+		loopExitShift: '4 BEAT/EXIT + SHIFT'
+	});
 }
 
 function _globalHints(): ControlHint[] {
@@ -224,36 +188,16 @@ function _modeButtonHints(deck: DeckId): ControlHint[] {
 
 function _ledRules(deck: DeckId): LedRule[] {
 	const ch = pioneerDeckChannel(deck);
-	const padCh = pioneerPadChannel(deck);
-	const rules: LedRule[] = [
-		// [PDF] 1-1 PLAY MIDI-OUT.
-		{
-			trigger: { kind: 'deck_playing', deck },
-			out: { ch, note: 0x0b, velocityOn: 0x7f, velocityOff: 0x00 }
-		},
-		// [PDF] 1-2 CUE MIDI-OUT.
-		{
-			trigger: { kind: 'deck_loaded', deck },
-			out: { ch, note: 0x0c, velocityOn: 0x7f, velocityOff: 0x00 }
-		},
-		// [PDF] 1-7 4 BEAT/EXIT MIDI-OUT.
-		{
-			trigger: { kind: 'loop_engaged', deck },
-			out: { ch, note: 0x4d, velocityOn: 0x7f, velocityOff: 0x00 }
-		},
-		// [PDF] 3-6 CH CUE MIDI-OUT.
+	// [PDF] 1-1 PLAY MIDI-OUT; 1-2 CUE MIDI-OUT; 1-7 4 BEAT/EXIT MIDI-OUT.
+	// [PDF] 3-6 CH CUE MIDI-OUT.
+	return [
+		...pioneerTransportLedRules(deck, 0x4d),
 		{
 			trigger: { kind: 'channel_cue_enabled', deck },
 			out: { ch, note: 0x54, velocityOn: 0x7f, velocityOff: 0x00 }
-		}
+		},
+		...pioneerPadLedRules(deck, FLX4_PAD_ON, FLX4_PAD_OFF)
 	];
-	for (let pad = 0; pad < 8; pad++) {
-		rules.push({
-			trigger: { kind: 'hot_cue_present', deck, slot: HOT_CUE_SLOTS[pad] },
-			out: { ch: padCh, note: pad, velocityOn: FLX4_PAD_ON, velocityOff: FLX4_PAD_OFF }
-		});
-	}
-	return rules;
 }
 
 export const FLX4_MAP: DeviceMap = {

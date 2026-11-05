@@ -73,9 +73,7 @@ def test_callback_delay_increases_measured_duration(client: TestClient) -> None:
         json={"origin": "http://127.0.0.1:19411"},
     ).json()
 
-    def _slow_exchange(
-        _config: GoogleOAuthConfig, _pending: object, _code: str
-    ) -> GoogleIdentity:
+    def _slow_exchange(_config: GoogleOAuthConfig, _pending: object, _code: str) -> GoogleIdentity:
         time.sleep(0.2)
         return _identity()
 

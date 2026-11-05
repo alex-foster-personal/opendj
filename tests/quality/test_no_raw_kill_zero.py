@@ -21,10 +21,12 @@ from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
-ALLOWED = frozenset({
-    "apps/shared/process_liveness.py",
-    "scripts/pytest_tree_read_census.py",
-})
+ALLOWED = frozenset(
+    {
+        "apps/shared/process_liveness.py",
+        "scripts/pytest_tree_read_census.py",
+    }
+)
 
 
 def _is_raw_kill_zero(node: ast.AST) -> bool:
@@ -74,19 +76,13 @@ def _files_with_raw_kill_zero(*roots: str) -> set[str]:
 def test_no_raw_kill_zero_outside_allowlist() -> None:
     found = _files_with_raw_kill_zero("apps", "scripts")
     offenders = found - ALLOWED
-    assert not offenders, (
-        "raw os.kill(<x>, 0) outside the platform seam: "
-        f"{sorted(offenders)}"
-    )
+    assert not offenders, f"raw os.kill(<x>, 0) outside the platform seam: {sorted(offenders)}"
 
 
 def test_scan_sees_the_allowlisted_files() -> None:
     found = _files_with_raw_kill_zero("apps", "scripts")
     missing = ALLOWED - found
-    assert not missing, (
-        "allowlisted files no longer contain os.kill(<x>, 0); update ALLOWED: "
-        f"{sorted(missing)}"
-    )
+    assert not missing, f"allowlisted files no longer contain os.kill(<x>, 0); update ALLOWED: {sorted(missing)}"
 
 
 def test_tracked_file_probe_both_directions() -> None:
@@ -98,9 +94,7 @@ def test_tracked_file_probe_both_directions() -> None:
     absent = {
         name
         for name in _tracked_py_files("apps")
-        if "af_probe_no_such_token_anywhere" in (REPO_ROOT / name).read_text(
-            encoding="utf-8", errors="replace"
-        )
+        if "af_probe_no_such_token_anywhere" in (REPO_ROOT / name).read_text(encoding="utf-8", errors="replace")
     }
     assert "apps/shared/state/schema.py" in present
     assert absent == set()

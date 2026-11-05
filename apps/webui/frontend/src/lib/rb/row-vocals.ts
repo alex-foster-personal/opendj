@@ -119,7 +119,9 @@ export interface RowPreviewStripSources {
  * without per-row fetches. Listing-hydrated `row.strip` wins; otherwise a
  * ready cache entry with a decoded local waveform is decoded here.
  */
-export function resolveRowPreviewStrip(sources: RowPreviewStripSources): Record<string, PreviewStripData | null> {
+export function resolveRowPreviewStrip(
+	sources: RowPreviewStripSources
+): Record<string, PreviewStripData | null> {
 	const out: Record<string, PreviewStripData | null> = {};
 	for (const row of sources.rows) {
 		if (row.strip !== null) {
@@ -127,10 +129,7 @@ export function resolveRowPreviewStrip(sources: RowPreviewStripSources): Record<
 			continue;
 		}
 		const entry = sources.cachedAnlzEntry(row.stable_id);
-		if (
-			entry?.status === 'ready' &&
-			entry.data.local_waveform?.status === 'decoded'
-		) {
+		if (entry?.status === 'ready' && entry.data.local_waveform?.status === 'decoded') {
 			out[row.stable_id] = decodePreviewStrip(
 				entry.data.local_waveform.preview_b64,
 				entry.data.local_waveform.preview_max

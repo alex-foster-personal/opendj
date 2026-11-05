@@ -1,4 +1,5 @@
 """Unit tests for tools/deck-diagrams/scripts/_fig_sort.py."""
+
 from __future__ import annotations
 
 import sys

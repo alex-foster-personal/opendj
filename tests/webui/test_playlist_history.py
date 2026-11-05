@@ -12,6 +12,7 @@ Regression one-liners:
   * if events with actor != webui enter the stack then broken
   * if create + undo hard-DELETEs the row instead of tombstoning then broken
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -48,9 +49,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -64,8 +70,11 @@ def _snap(
     items: list[str] | None = None,
 ) -> PlaylistSnapshot:
     return PlaylistSnapshot(
-        playlist_id=playlist_id, name=name, vendor="webui",
-        vendor_pl_id="v1", items=list(items or []),
+        playlist_id=playlist_id,
+        name=name,
+        vendor="webui",
+        vendor_pl_id="v1",
+        items=list(items or []),
     )
 
 
@@ -82,8 +91,12 @@ def _cmd(
         snap = after if after is not None else before
         pid = snap.playlist_id if snap is not None else "pl-1"
     return PlaylistEditCommand(
-        command_id=command_id, op=op, playlist_id=pid,
-        ts="2026-01-01T00:00:00+00:00", before=before, after=after,
+        command_id=command_id,
+        op=op,
+        playlist_id=pid,
+        ts="2026-01-01T00:00:00+00:00",
+        before=before,
+        after=after,
     )
 
 
@@ -103,10 +116,9 @@ def _history_kinds(db_path: Path) -> list[str]:
     conn = sqlite3.connect(str(db_path))
     try:
         return [
-            row[0] for row in conn.execute(
-                "SELECT kind FROM events "
-                "WHERE kind IN ('playlist.edit','playlist.undo','playlist.redo') "
-                "ORDER BY id"
+            row[0]
+            for row in conn.execute(
+                "SELECT kind FROM events WHERE kind IN ('playlist.edit','playlist.undo','playlist.redo') ORDER BY id"
             )
         ]
     finally:
@@ -115,12 +127,11 @@ def _history_kinds(db_path: Path) -> list[str]:
 
 # --- pure rebuild / invert (no sqlite) --------------------------------------
 
+
 def test_rebuild_stack_edit_undo_redo_and_truncation() -> None:
     a = _cmd("create", command_id="a", after=_snap(name="A")).to_dict()
-    b = _cmd("rename", command_id="b",
-             before=_snap(name="A"), after=_snap(name="B")).to_dict()
-    c = _cmd("rename", command_id="c",
-             before=_snap(name="B"), after=_snap(name="C")).to_dict()
+    b = _cmd("rename", command_id="b", before=_snap(name="A"), after=_snap(name="B")).to_dict()
+    c = _cmd("rename", command_id="c", before=_snap(name="B"), after=_snap(name="C")).to_dict()
     events = [
         {"kind": "playlist.edit", "payload": a},
         {"kind": "playlist.edit", "payload": b},
@@ -138,7 +149,9 @@ def test_invert_table_and_labels() -> None:
     assert label_for(created) == "Create 'Fresh'"
 
     renamed = _cmd(
-        "rename", before=_snap(name="Warmup"), after=_snap(name="Peak"),
+        "rename",
+        before=_snap(name="Warmup"),
+        after=_snap(name="Peak"),
     )
     assert invert(renamed)[0] == "rename"
     renamed_before = invert(renamed)[1]
@@ -155,7 +168,8 @@ def test_invert_table_and_labels() -> None:
     members_before = invert(members)[1]
     assert members_before is not None
     assert members_before.items == ["t-001"]
-    assert label_for(members) == "Edit tracks in 'Warmup'"
+    assert label_for(members) == "Add 1 track to 'Warmup'"
+    assert label_for(members, {"t-002": "Song"}) == "Add 'Song' to 'Warmup'"
 
     deleted = _cmd("delete", before=_snap(name="Doomed", items=["t-001"]))
     assert invert(deleted) == ("create", deleted.before)
@@ -169,8 +183,11 @@ def test_invert_table_and_labels() -> None:
 def test_snapshots_match_ignores_identity_fields_other_than_name_items() -> None:
     live = _snap(name="Warmup", items=["t-001"])
     expected = PlaylistSnapshot(
-        playlist_id="other", name="Warmup", vendor="rekordbox",
-        vendor_pl_id="x", items=["t-001"],
+        playlist_id="other",
+        name="Warmup",
+        vendor="rekordbox",
+        vendor_pl_id="x",
+        items=["t-001"],
     )
     assert snapshots_match(live, expected)
     assert not snapshots_match(live, _snap(name="Warmup", items=["t-002"]))
@@ -180,6 +197,7 @@ def test_snapshots_match_ignores_identity_fields_other_than_name_items() -> None
 
 
 # --- store inverses ---------------------------------------------------------
+
 
 def test_inverse_of_each_op_restores_before_snapshot(db_path: Path) -> None:
     with PlaylistStore(db_path, bus=FakeEventBus()) as store:
@@ -195,7 +213,9 @@ def test_inverse_of_each_op_restores_before_snapshot(db_path: Path) -> None:
         assert restored.items == []
 
         renamed = store.rename_playlist(
-            created.playlist_id, "Peak", expected_etag=restored.etag,
+            created.playlist_id,
+            "Peak",
+            expected_etag=restored.etag,
         )
         store.undo()
         after_rename_undo = store.get_playlist_row(created.playlist_id)
@@ -206,7 +226,8 @@ def test_inverse_of_each_op_restores_before_snapshot(db_path: Path) -> None:
         assert after_rename_redo.etag == renamed.etag or after_rename_redo.name == "Peak"
 
         store.replace_memberships(
-            created.playlist_id, ["t-002", "t-001"],
+            created.playlist_id,
+            ["t-002", "t-001"],
             expected_etag=after_rename_redo.etag,
         )
         store.undo()
@@ -238,7 +259,9 @@ def test_undo_then_undo_then_redo_walks_two_edits(db_path: Path) -> None:
     with PlaylistStore(db_path, bus=FakeEventBus()) as store:
         row = store.create_playlist("Warmup")
         row = store.replace_memberships(
-            row.playlist_id, ["t-001", "t-002"], expected_etag=row.etag,
+            row.playlist_id,
+            ["t-001", "t-002"],
+            expected_etag=row.etag,
         )
         row = store.rename_playlist(row.playlist_id, "Peak", expected_etag=row.etag)
         store.undo()
@@ -265,7 +288,9 @@ def test_new_edit_after_undo_invalidates_redo(db_path: Path) -> None:
         assert store.history()["can_redo"] is True
         row = store.get_playlist_row(row.playlist_id)
         store.replace_memberships(
-            row.playlist_id, ["t-003"], expected_etag=row.etag,
+            row.playlist_id,
+            ["t-003"],
+            expected_etag=row.etag,
         )
         hist = store.history()
         assert hist["can_redo"] is False
@@ -284,7 +309,9 @@ def test_bounded_history_drops_oldest_edit(db_path: Path) -> None:
         for i in range(51):
             sid = TRACK_IDS[i % len(TRACK_IDS)]
             row = store.replace_memberships(
-                row.playlist_id, [sid], expected_etag=row.etag,
+                row.playlist_id,
+                [sid],
+                expected_etag=row.etag,
             )
         hist = store.history()
         assert len(hist["entries"]) == HISTORY_LIMIT
@@ -302,13 +329,18 @@ def test_revision_conflict_when_live_diverges_from_after(db_path: Path) -> None:
     with PlaylistStore(db_path, bus=FakeEventBus()) as store:
         row = store.create_playlist("Warmup")
         row = store.replace_memberships(
-            row.playlist_id, ["t-001"], expected_etag=row.etag,
+            row.playlist_id,
+            ["t-001"],
+            expected_etag=row.etag,
         )
         playlist_id = row.playlist_id
         etag = row.etag
     with PlaylistStore(db_path, bus=FakeEventBus()) as sneaky:
         sneaky.replace_memberships(
-            playlist_id, ["t-002"], expected_etag=etag, record_edit=False,
+            playlist_id,
+            ["t-002"],
+            expected_etag=etag,
+            record_edit=False,
         )
     with PlaylistStore(db_path, bus=FakeEventBus()) as store, pytest.raises(ConflictError):
         store.undo()
@@ -318,7 +350,9 @@ def test_restart_rebuild_undo_restores_last_before_snapshot(db_path: Path) -> No
     with PlaylistStore(db_path, bus=FakeEventBus()) as store:
         row = store.create_playlist("Warmup")
         row = store.replace_memberships(
-            row.playlist_id, ["t-001", "t-004"], expected_etag=row.etag,
+            row.playlist_id,
+            ["t-001", "t-004"],
+            expected_etag=row.etag,
         )
         playlist_id = row.playlist_id
         store.close()
@@ -334,12 +368,16 @@ def test_noop_rename_and_membership_do_not_grow_stack(db_path: Path) -> None:
         row = store.create_playlist("Keep Me")
         assert len(store.history()["entries"]) == 1
         same_name = store.rename_playlist(
-            row.playlist_id, "Keep Me", expected_etag=row.etag,
+            row.playlist_id,
+            "Keep Me",
+            expected_etag=row.etag,
         )
         assert same_name.etag == row.etag
         assert len(store.history()["entries"]) == 1
         same_items = store.replace_memberships(
-            row.playlist_id, [], expected_etag=row.etag,
+            row.playlist_id,
+            [],
+            expected_etag=row.etag,
         )
         assert same_items.etag == row.etag
         assert len(store.history()["entries"]) == 1

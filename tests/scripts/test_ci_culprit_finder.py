@@ -25,7 +25,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -39,7 +41,7 @@ WORKFLOW = REPO / ".github" / "workflows" / "culprit-finder.yml"
 A, B, C = "a" * 40, "b" * 40, "c" * 40
 
 
-def _scripted(results: dict[str, str]) -> tuple[list[str], object]:
+def _scripted(results: dict[str, str]) -> tuple[list[str], Callable[[str], str]]:
     ran: list[str] = []
 
     def run_at(sha: str) -> str:
@@ -179,7 +181,7 @@ def _window(repo: Path, commits: list[dict[str, str]]) -> list[str]:
     # Its own ini makes the repo pytest's rootdir, so no ancestor conftest or addopts leak in.
     (repo / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     _git(repo, "init", "-q", "-b", "main")
-    shas = []
+    shas: list[str] = []
     for files in commits:
         for rel, text in files.items():
             path = repo / rel
@@ -249,7 +251,7 @@ def test_a_parametrized_id_with_spaces_runs_at_each_sha(tmp_path: Path, monkeypa
 
 def test_the_pr_whose_merge_commit_is_the_sha_is_named() -> None:
     """[if] a commit appears in several PRs [then] the one that merged AS that commit is named."""
-    pulls = [
+    pulls: list[dict[str, Any]] = [
         {"number": 10, "merged_at": "2026-11-03T10:00:00Z", "merge_commit_sha": C},
         {"number": 11, "merged_at": "2026-11-03T11:00:00Z", "merge_commit_sha": B},
         {"number": 12, "merged_at": None, "merge_commit_sha": B},

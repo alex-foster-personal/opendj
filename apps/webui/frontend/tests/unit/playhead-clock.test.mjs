@@ -25,7 +25,15 @@ before(async () => {
 });
 
 function sample(positionMs, sampledAtMs, extra = {}) {
-	return { positionMs, sampledAtMs, rate: 1, playing: true, trusted: true, trackKey: 'a', ...extra };
+	return {
+		positionMs,
+		sampledAtMs,
+		rate: 1,
+		playing: true,
+		trusted: true,
+		trackKey: 'a',
+		...extra
+	};
 }
 
 /** Deterministic frame jitter (xorshift), so a failure reproduces exactly. */
@@ -51,7 +59,15 @@ function p95(values) {
  * per-frame deviation |painted delta - rate x frame interval| for the clock's
  * display and for the raw sample, plus every reconcile verdict.
  */
-function simulate({ seconds = 60, rate = 1.016, bufferMs = 10.667, latencyMs = 25, jitterMs = 4, stampJitterMs = 1, anchorAtNotice = false } = {}) {
+function simulate({
+	seconds = 60,
+	rate = 1.016,
+	bufferMs = 10.667,
+	latencyMs = 25,
+	jitterMs = 4,
+	stampJitterMs = 1,
+	anchorAtNotice = false
+} = {}) {
 	const random = rng(7);
 	const state = clock.initPlayheadClock();
 	const verdicts = [];
@@ -69,7 +85,8 @@ function simulate({ seconds = 60, rate = 1.016, bufferMs = 10.667, latencyMs = 2
 		raw.push(positionMs);
 		frames.push(t);
 	}
-	const deviations = (series) => series.slice(1).map((v, i) => Math.abs(v - series[i] - rate * (frames[i + 1] - frames[i])));
+	const deviations = (series) =>
+		series.slice(1).map((v, i) => Math.abs(v - series[i] - rate * (frames[i + 1] - frames[i])));
 	return { shown: deviations(shown), raw: deviations(raw), verdicts };
 }
 
@@ -86,7 +103,11 @@ describe('dead reckoning from the output timestamp', () => {
 		const b = clock.initPlayheadClock();
 		clock.notePlayheadSample(a, sample(5000, 1000), 1000);
 		clock.notePlayheadSample(b, sample(7000, 1000), 1100); // noticed a whole busy frame later
-		assert.equal(clock.playheadDisplayMs(b, 1100) - clock.playheadDisplayMs(a, 1100), 2000, 'if decks the engine holds 2000 ms apart paint apart by anything else then they slip - broken');
+		assert.equal(
+			clock.playheadDisplayMs(b, 1100) - clock.playheadDisplayMs(a, 1100),
+			2000,
+			'if decks the engine holds 2000 ms apart paint apart by anything else then they slip - broken'
+		);
 	});
 
 	it('control: anchoring at notice time paints the same tick 100 ms out of phase', () => {
@@ -98,10 +119,27 @@ describe('dead reckoning from the output timestamp', () => {
 	});
 
 	it('takes performanceTime only while the output clock drives presentation', () => {
-		assert.equal(display.presentedSampleAtMs({ clock_source: 'output' }, { performanceTime: 990 }, 1000), 990);
-		assert.equal(display.presentedSampleAtMs({ clock_source: 'sample' }, { performanceTime: 990 }, 1000), 1000, 'if the sample-clock fallback is stamped with a stale output time then it projects from the wrong instant - broken');
-		assert.equal(display.presentedSampleAtMs({ clock_source: 'output' }, { performanceTime: Number.NaN }, 1000), 1000);
-		assert.equal(display.presentedSampleAtMs({ clock_source: 'output' }, { performanceTime: -1 }, 1000), 1000);
+		assert.equal(
+			display.presentedSampleAtMs({ clock_source: 'output' }, { performanceTime: 990 }, 1000),
+			990
+		);
+		assert.equal(
+			display.presentedSampleAtMs({ clock_source: 'sample' }, { performanceTime: 990 }, 1000),
+			1000,
+			'if the sample-clock fallback is stamped with a stale output time then it projects from the wrong instant - broken'
+		);
+		assert.equal(
+			display.presentedSampleAtMs(
+				{ clock_source: 'output' },
+				{ performanceTime: Number.NaN },
+				1000
+			),
+			1000
+		);
+		assert.equal(
+			display.presentedSampleAtMs({ clock_source: 'output' }, { performanceTime: -1 }, 1000),
+			1000
+		);
 	});
 });
 
@@ -111,10 +149,21 @@ describe('reconciling drift', () => {
 		clock.notePlayheadSample(state, sample(5000, 1000), 1000);
 		const before = clock.playheadDisplayMs(state, 1100); // 5100
 		assert.equal(clock.notePlayheadSample(state, sample(5090, 1100), 1100), 'slew'); // truth is 10 ms behind
-		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1100) - before) < 1e-9, 'if a 10 ms drift moves the playhead at the sample instant then it jumps - broken');
-		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1100 + CFG().slewWindowMs) - (5090 + CFG().slewWindowMs)) < 1e-9, 'if the drift survives the slew window then it accumulates - broken');
+		assert.ok(
+			Math.abs(clock.playheadDisplayMs(state, 1100) - before) < 1e-9,
+			'if a 10 ms drift moves the playhead at the sample instant then it jumps - broken'
+		);
+		assert.ok(
+			Math.abs(
+				clock.playheadDisplayMs(state, 1100 + CFG().slewWindowMs) - (5090 + CFG().slewWindowMs)
+			) < 1e-9,
+			'if the drift survives the slew window then it accumulates - broken'
+		);
 		const step = clock.playheadDisplayMs(state, 1117) - clock.playheadDisplayMs(state, 1100);
-		assert.ok(Math.abs(step - 17) <= (10 / CFG().slewWindowMs) * 17 + 1e-9, 'a slewing frame strays by at most drift x frame / window');
+		assert.ok(
+			Math.abs(step - 17) <= (10 / CFG().slewWindowMs) * 17 + 1e-9,
+			'a slewing frame strays by at most drift x frame / window'
+		);
 	});
 
 	it('catches a mid-size drift up faster than a small one, still without a jump', () => {
@@ -123,33 +172,54 @@ describe('reconciling drift', () => {
 		const before = clock.playheadDisplayMs(state, 1100);
 		assert.equal(clock.notePlayheadSample(state, sample(5070, 1100), 1100), 'catch-up'); // 30 ms
 		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1100) - before) < 1e-9);
-		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1100 + CFG().catchUpWindowMs) - (5070 + CFG().catchUpWindowMs)) < 1e-9);
+		assert.ok(
+			Math.abs(
+				clock.playheadDisplayMs(state, 1100 + CFG().catchUpWindowMs) -
+					(5070 + CFG().catchUpWindowMs)
+			) < 1e-9
+		);
 	});
 
 	it('snaps a drift over snapErrorMs at once', () => {
 		const state = clock.initPlayheadClock();
 		clock.notePlayheadSample(state, sample(5000, 1000), 1000);
 		assert.equal(clock.notePlayheadSample(state, sample(9000, 1100), 1100), 'snap-error'); // a seek
-		assert.equal(clock.playheadDisplayMs(state, 1100), 9000, 'if a seek is slewed then the playhead crawls to it - broken');
+		assert.equal(
+			clock.playheadDisplayMs(state, 1100),
+			9000,
+			'if a seek is slewed then the playhead crawls to it - broken'
+		);
 	});
 
 	it('snaps real discontinuities even when the error is small: track change, resume, tempo step', () => {
 		const load = clock.initPlayheadClock();
 		clock.notePlayheadSample(load, sample(5000, 1000), 1000);
-		assert.equal(clock.notePlayheadSample(load, sample(5095, 1100, { trackKey: 'b' }), 1100), 'snap-discontinuity');
+		assert.equal(
+			clock.notePlayheadSample(load, sample(5095, 1100, { trackKey: 'b' }), 1100),
+			'snap-discontinuity'
+		);
 		const resume = clock.initPlayheadClock();
 		clock.notePlayheadSample(resume, sample(5000, 1000, { playing: false }), 1000);
 		assert.equal(clock.notePlayheadSample(resume, sample(5000, 1100), 1100), 'snap-discontinuity');
 		const tempo = clock.initPlayheadClock();
 		clock.notePlayheadSample(tempo, sample(5000, 1000), 1000);
-		assert.equal(clock.notePlayheadSample(tempo, sample(5100, 1100, { rate: 1.08 }), 1100), 'snap-discontinuity');
-		assert.ok(Math.abs(clock.playheadDisplayMs(tempo, 1200) - (5100 + 100 * 1.08)) < 1e-9, 'a tempo change re-anchors: no error accumulated from the old rate');
+		assert.equal(
+			clock.notePlayheadSample(tempo, sample(5100, 1100, { rate: 1.08 }), 1100),
+			'snap-discontinuity'
+		);
+		assert.ok(
+			Math.abs(clock.playheadDisplayMs(tempo, 1200) - (5100 + 100 * 1.08)) < 1e-9,
+			'a tempo change re-anchors: no error accumulated from the old rate'
+		);
 	});
 
 	it('control: a sync nudge under tempoStepRatio re-anchors and slews instead of snapping', () => {
 		const state = clock.initPlayheadClock();
 		clock.notePlayheadSample(state, sample(5000, 1000), 1000);
-		assert.equal(clock.notePlayheadSample(state, sample(5100, 1100, { rate: 1.002 }), 1100), 'slew');
+		assert.equal(
+			clock.notePlayheadSample(state, sample(5100, 1100, { rate: 1.002 }), 1100),
+			'slew'
+		);
 	});
 });
 
@@ -159,7 +229,11 @@ describe('stall and pause freeze at the last confirmed position', () => {
 			const state = clock.initPlayheadClock();
 			clock.notePlayheadSample(state, sample(5000, 1000), 1000);
 			assert.equal(clock.notePlayheadSample(state, sample(5100, 1100, extra), 1100), 'frozen');
-			assert.equal(clock.playheadDisplayMs(state, 5000), 5100, `if a ${JSON.stringify(extra)} deck keeps moving then a stall is hidden - broken`);
+			assert.equal(
+				clock.playheadDisplayMs(state, 5000),
+				5100,
+				`if a ${JSON.stringify(extra)} deck keeps moving then a stall is hidden - broken`
+			);
 		}
 	});
 
@@ -168,7 +242,11 @@ describe('stall and pause freeze at the last confirmed position', () => {
 		clock.notePlayheadSample(state, sample(5000, 1000), 1000);
 		const cap = CFG().maxProjectionMs;
 		assert.equal(clock.playheadDisplayMs(state, 1000 + cap), 5000 + cap);
-		assert.equal(clock.playheadDisplayMs(state, 1000 + cap + 500), 5000 + cap, 'if a starved clock runs on then the display leaves the audio behind - broken');
+		assert.equal(
+			clock.playheadDisplayMs(state, 1000 + cap + 500),
+			5000 + cap,
+			'if a starved clock runs on then the display leaves the audio behind - broken'
+		);
 		assert.equal(clock.projectionCapped(state.anchor, 1000 + cap + 1), true);
 	});
 
@@ -185,12 +263,18 @@ describe('steady play through a chunky output clock (the acceptance shape)', () 
 		const run = simulate();
 		const snaps = run.verdicts.filter((v) => v.startsWith('snap')).length;
 		assert.equal(snaps, 0, 'if steady play snaps then the playhead visibly jumps - broken');
-		assert.ok(p95(run.shown) < 1, `p95 ${p95(run.shown)} ms: if the display strays from tempo x frame then it jitters - broken`);
+		assert.ok(
+			p95(run.shown) < 1,
+			`p95 ${p95(run.shown)} ms: if the display strays from tempo x frame then it jitters - broken`
+		);
 	});
 
 	it('control: the raw sample through the same clock strays by several ms per frame', () => {
 		const run = simulate();
-		assert.ok(p95(run.raw) > 3, `raw p95 ${p95(run.raw)} ms; if this is small the simulation is not chunky and proves nothing`);
+		assert.ok(
+			p95(run.raw) > 3,
+			`raw p95 ${p95(run.raw)} ms; if this is small the simulation is not chunky and proves nothing`
+		);
 	});
 
 	it('control: anchoring each sample at the frame that noticed it fails the same 1 ms bar', () => {

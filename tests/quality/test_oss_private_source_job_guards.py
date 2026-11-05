@@ -63,18 +63,14 @@ def _top_level_conjuncts(condition: str) -> list[str]:
 def _guarded(condition: str) -> bool:
     # A top-level `||` would let a disjunct bypass the guard, so the whole condition
     # must be one disjunct, and the guard one of its top-level conjuncts.
-    return len(top_level_disjuncts(condition)) == 1 and GUARD in _top_level_conjuncts(
-        condition
-    )
+    return len(top_level_disjuncts(condition)) == 1 and GUARD in _top_level_conjuncts(condition)
 
 
 @pytest.mark.parametrize(("workflow", "job"), GUARDED_JOBS)
 def test_private_only_job_skips_outside_the_private_source_repo(workflow: str, job: str) -> None:
     condition = _job_if(workflow, job)
     assert _guarded(condition), f"{workflow}:{job} lacks a top-level {GUARD}: {condition!r}"
-    assert "repository_owner" not in condition, (
-        f"{workflow}:{job} keys on the owner, which the publish recipe rewrites"
-    )
+    assert "repository_owner" not in condition, f"{workflow}:{job} keys on the owner, which the publish recipe rewrites"
 
 
 @pytest.mark.parametrize(("workflow", "job"), UNGUARDED_JOBS)

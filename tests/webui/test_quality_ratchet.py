@@ -9,6 +9,7 @@ Regression lines:
 - if the response leaks the 'burn_down' narrative then the endpoint contract
   drifts from what it documents (generated + metrics only)
 """
+
 from __future__ import annotations
 
 import json
@@ -67,14 +68,19 @@ def test_baseline_without_generated_key_is_loud(client, monkeypatch, tmp_path):
 def test_burn_down_narrative_is_not_leaked(client, monkeypatch, tmp_path):
     """The endpoint's contract is generated + metrics only, never the prose."""
     full = tmp_path / "baseline.json"
-    full.write_text(json.dumps({
-        "generated": "t",
-        "metrics": {"ruff.total": 5},
-        "burn_down": {"SOME_TRAIN": {"what": "internal commentary"}},
-    }))
+    full.write_text(
+        json.dumps(
+            {
+                "generated": "t",
+                "metrics": {"ruff.total": 5},
+                "burn_down": {"SOME_TRAIN": {"what": "internal commentary"}},
+            }
+        )
+    )
     monkeypatch.setattr(quality, "QUALITY_BASELINE_FILE", full)
     r = client.get("/api/v1/admin/quality-ratchet")
     assert r.status_code == 200
     assert set(r.json()) == {"generated", "metrics"}
+
 
 pytestmark = pytest.mark.rb_parity

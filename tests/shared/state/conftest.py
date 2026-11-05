@@ -2,6 +2,7 @@
 
 Every test that needs a state DB gets a fresh file under ``tmp_path``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

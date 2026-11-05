@@ -14,10 +14,10 @@ describe('next-only-filter', () => {
 		const unfiltered = [{ stable_id: 'azara-1' }, { stable_id: 'azara-2' }];
 
 		assert.equal(SEARCH_FILTER_FALLBACK_MAX_ROWS, 2);
-		assert.deepEqual(
-			resolveSearchFilterFallback([], unfiltered, ['next-only']),
-			{ rows: unfiltered, ignoredFilters: ['next-only'] }
-		);
+		assert.deepEqual(resolveSearchFilterFallback([], unfiltered, ['next-only']), {
+			rows: unfiltered,
+			ignoredFilters: ['next-only']
+		});
 		assert.deepEqual(
 			resolveSearchFilterFallback([{ stable_id: 'kept' }], unfiltered, ['next-only']),
 			{ rows: [{ stable_id: 'kept' }], ignoredFilters: [] }
@@ -26,10 +26,10 @@ describe('next-only-filter', () => {
 			resolveSearchFilterFallback([], [...unfiltered, { stable_id: 'azara-3' }], ['next-only']),
 			{ rows: [], ignoredFilters: [] }
 		);
-		assert.deepEqual(
-			resolveSearchFilterFallback([], unfiltered, []),
-			{ rows: [], ignoredFilters: [] }
-		);
+		assert.deepEqual(resolveSearchFilterFallback([], unfiltered, []), {
+			rows: [],
+			ignoredFilters: []
+		});
 	});
 
 	it('recovers only one or two hidden matches for a non-empty search', () => {
@@ -64,10 +64,22 @@ describe('next-only-filter', () => {
 		const { bpmMatchesCompatiblePrefs, isAppropriateNext, COMPATIBLE_FILTER_DEFAULTS } = mod;
 		const halfDoublePrefs = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 6 };
 		assert.equal(bpmMatchesCompatiblePrefs(90, 180, halfDoublePrefs), true);
-		assert.equal(bpmMatchesCompatiblePrefs(93, 180, halfDoublePrefs), true, '93 is heard as 186: 6 off');
-		assert.equal(bpmMatchesCompatiblePrefs(100, 180, halfDoublePrefs), false, 'was true under the fixed 15 BPM fold');
+		assert.equal(
+			bpmMatchesCompatiblePrefs(93, 180, halfDoublePrefs),
+			true,
+			'93 is heard as 186: 6 off'
+		);
+		assert.equal(
+			bpmMatchesCompatiblePrefs(100, 180, halfDoublePrefs),
+			false,
+			'was true under the fixed 15 BPM fold'
+		);
 		assert.equal(bpmMatchesCompatiblePrefs(256, 128, halfDoublePrefs), true);
-		assert.equal(bpmMatchesCompatiblePrefs(268, 128, halfDoublePrefs), true, '268 is heard as 134: 6 off');
+		assert.equal(
+			bpmMatchesCompatiblePrefs(268, 128, halfDoublePrefs),
+			true,
+			'268 is heard as 134: 6 off'
+		);
 		assert.equal(bpmMatchesCompatiblePrefs(270, 128, halfDoublePrefs), false);
 		assert.equal(isAppropriateNext({ key: '8A', bpm: 90 }, { key: '8A', bpm: 180 }), true);
 	});
@@ -79,7 +91,11 @@ describe('next-only-filter', () => {
 		const { bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS } = mod;
 		const live = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 10 };
 		for (const bpm of [70, 72.5, 76, 77.5]) {
-			assert.equal(bpmMatchesCompatiblePrefs(bpm, 125, live), false, `${bpm} is heard as ${bpm * 2}`);
+			assert.equal(
+				bpmMatchesCompatiblePrefs(bpm, 125, live),
+				false,
+				`${bpm} is heard as ${bpm * 2}`
+			);
 		}
 		assert.equal(bpmMatchesCompatiblePrefs(62.5, 125, live), true, 'exact half time');
 		assert.equal(bpmMatchesCompatiblePrefs(67.5, 125, live), true, 'heard as 135: the 10 BPM edge');
@@ -90,16 +106,32 @@ describe('next-only-filter', () => {
 		const keyless = { ...COMPATIBLE_FILTER_DEFAULTS, rules: [], bpm_window_bpm: 10 };
 		const ref = { key: null, bpm: 125 };
 		// The unmapped-default placeholder grid: 125.0 at confidence 0 (15 rows on silver).
-		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, keyless), false);
-		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: null }, ref, keyless), true);
-		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0.7 }, ref, keyless), true);
-		assert.equal(isAppropriateNext({ key: '8A', bpm: 125 }, ref, keyless), true, 'no field: trusted');
+		assert.equal(
+			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, keyless),
+			false
+		);
+		assert.equal(
+			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: null }, ref, keyless),
+			true
+		);
+		assert.equal(
+			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0.7 }, ref, keyless),
+			true
+		);
+		assert.equal(
+			isAppropriateNext({ key: '8A', bpm: 125 }, ref, keyless),
+			true,
+			'no field: trusted'
+		);
 		assert.equal(bpmIsKnown(125, 0), false);
 		assert.equal(bpmIsKnown(0, null), false);
 		assert.equal(bpmIsKnown(null, 0.9), false);
 		// BPM off: the placeholder does not matter.
 		assert.equal(
-			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, { ...keyless, bpm_enabled: false }),
+			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, {
+				...keyless,
+				bpm_enabled: false
+			}),
 			true
 		);
 	});

@@ -38,6 +38,7 @@ Acceptance criteria, one assertion block each:
 - if a location row is not scoped to the writing machine, availability
   computed from it counts another machine's disk -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -89,30 +90,51 @@ def _exercise_state_writer(conn: sqlite3.Connection, tmp_path: Path) -> None:
     try:
         # tracks (insert), and track_locations via sync_primary_local.
         writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="First",
-            artists=["X"], album=None, isrc=None, duration_ms=1000,
+            stable_id=SID,
+            stable_id_tier="inferred",
+            title="First",
+            artists=["X"],
+            album=None,
+            isrc=None,
+            duration_ms=1000,
             file_path=str(audio),
         )
         # tracks (update).
         writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="Second",
-            artists=["X"], album=None, isrc=None, duration_ms=1000,
+            stable_id=SID,
+            stable_id_tier="inferred",
+            title="Second",
+            artists=["X"],
+            album=None,
+            isrc=None,
+            duration_ms=1000,
             file_path=str(audio),
         )
         writer.upsert_track(
-            stable_id=OTHER_SID, stable_id_tier="inferred", title="Other",
-            artists=["Y"], album=None, isrc=None, duration_ms=1000,
+            stable_id=OTHER_SID,
+            stable_id_tier="inferred",
+            title="Other",
+            artists=["Y"],
+            album=None,
+            isrc=None,
+            duration_ms=1000,
             file_path=None,
         )
         # track_locations (explicit alternate, then a re-probe of the same row).
         writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(alternate),
+            stable_id=SID,
+            kind="local",
+            file_path=str(alternate),
         )
         writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(alternate),
+            stable_id=SID,
+            kind="local",
+            file_path=str(alternate),
         )
         writer.upsert_track_location(
-            stable_id=SID, kind="remote", remote_url="https://example/x.flac",
+            stable_id=SID,
+            kind="remote",
+            remote_url="https://example/x.flac",
         )
         # track_vendor_ids (insert then overwrite).
         writer.set_vendor_id(SID, "rekordbox", "rb-1")
@@ -120,16 +142,23 @@ def _exercise_state_writer(conn: sqlite3.Connection, tmp_path: Path) -> None:
         # track_fields (insert then overwrite -- the A1 path).
         writer.set_field(SID, "bpm", 120, source="mik", modified_at=_TS)
         writer.set_field(
-            SID, "bpm", 174, source="mik",
+            SID,
+            "bpm",
+            174,
+            source="mik",
             modified_at="2026-08-30T10:00:00+00:00",
         )
         # playlists (insert then rename) + playlist_memberships.
         writer.insert_playlist(
-            playlist_id=PLAYLIST_ID, name="Opener", vendor="rekordbox",
+            playlist_id=PLAYLIST_ID,
+            name="Opener",
+            vendor="rekordbox",
             vendor_pl_id="native-1",
         )
         writer.insert_playlist(
-            playlist_id=PLAYLIST_ID, name="Opener v2", vendor="rekordbox",
+            playlist_id=PLAYLIST_ID,
+            name="Opener v2",
+            vendor="rekordbox",
             vendor_pl_id="native-1",
         )
         writer.set_playlist_memberships(PLAYLIST_ID, [SID, OTHER_SID])
@@ -157,46 +186,78 @@ def _exercise_cloudsync_routes(db_path: Path) -> None:
         machines.raise_for_status()
         machine_id = machines.json()[0]["machine_id"]
         for asset_kind, mode in (("audio", "pinned"), ("stem_bundle", "cached")):
-            put = http.put("/api/v1/cloudsync/policies", json={
-                "machine_id": machine_id, "asset_kind": asset_kind,
-                "mode": mode,
-            })
+            put = http.put(
+                "/api/v1/cloudsync/policies",
+                json={
+                    "machine_id": machine_id,
+                    "asset_kind": asset_kind,
+                    "mode": mode,
+                },
+            )
             put.raise_for_status()
         # Upsert the same cell again: the ON CONFLICT branch must stamp too.
-        http.put("/api/v1/cloudsync/policies", json={
-            "machine_id": machine_id, "asset_kind": "audio", "mode": "cached",
-        }).raise_for_status()
-        http.put("/api/v1/cloudsync/playlist-pins", json={
-            "machine_id": machine_id, "playlist_id": PLAYLIST_ID,
-            "mode": "pinned",
-        }).raise_for_status()
+        http.put(
+            "/api/v1/cloudsync/policies",
+            json={
+                "machine_id": machine_id,
+                "asset_kind": "audio",
+                "mode": "cached",
+            },
+        ).raise_for_status()
+        http.put(
+            "/api/v1/cloudsync/playlist-pins",
+            json={
+                "machine_id": machine_id,
+                "playlist_id": PLAYLIST_ID,
+                "mode": "pinned",
+            },
+        ).raise_for_status()
 
 
 def _exercise_spotify_importer(conn: sqlite3.Connection, tmp_path: Path) -> None:
     """Drive the Spotify importer's playlists + memberships writes (N1c)."""
     matched_source = SpotifyTrack(
-        spotify_id="sp-1", spotify_uri="spotify:track:sp-1", isrc=None,
-        title="Matched", artists=("X",), album="A", duration_ms=1000,
+        spotify_id="sp-1",
+        spotify_uri="spotify:track:sp-1",
+        isrc=None,
+        title="Matched",
+        artists=("X",),
+        album="A",
+        duration_ms=1000,
         is_local=False,
     )
     unmatched_source = SpotifyTrack(
-        spotify_id="sp-2", spotify_uri="spotify:track:sp-2", isrc=None,
-        title="Unmatched", artists=("Y",), album="A", duration_ms=1000,
+        spotify_id="sp-2",
+        spotify_uri="spotify:track:sp-2",
+        isrc=None,
+        title="Unmatched",
+        artists=("Y",),
+        album="A",
+        duration_ms=1000,
         is_local=False,
     )
     target = LocalTrack(
-        stable_id=SID, isrc=None, title="Matched", artists=("X",),
+        stable_id=SID,
+        isrc=None,
+        title="Matched",
+        artists=("X",),
         duration_ms=1000,
     )
-    result = MatchResult(pairs=[
-        MatchedPair(matched_source, target, 1.0, (), "matched"),
-        MatchedPair(unmatched_source, None, 0.0, (), "unmatched"),
-    ])
+    result = MatchResult(
+        pairs=[
+            MatchedPair(matched_source, target, 1.0, (), "matched"),
+            MatchedPair(unmatched_source, None, 0.0, (), "unmatched"),
+        ]
+    )
     write_playlist_and_pending(
         conn,
         SpotifyPlaylist(
-            id=SPOTIFY_PL_ID, name="Spotify crate", snapshot_id="snap-1",
-            owner="tripwire", description="", tracks=(),
+            id=SPOTIFY_PL_ID,
+            name="Spotify crate",
+            snapshot_id="snap-1",
+            owner="tripwire",
+            description="",
+            tracks=(),
         ),
         result,
         backup_path=tmp_path / "backup.db",
@@ -204,9 +265,7 @@ def _exercise_spotify_importer(conn: sqlite3.Connection, tmp_path: Path) -> None
     )
 
 
-def _exercise_hydration_writers(
-    conn: sqlite3.Connection, tmp_path: Path, machine_id: str
-) -> None:
+def _exercise_hydration_writers(conn: sqlite3.Connection, tmp_path: Path, machine_id: str) -> None:
     """Drive the R2 hydration path's track_locations writes (N1b).
 
     The two module-private writers are called directly rather than through
@@ -237,7 +296,10 @@ def _exercise_hydration_writers(
         )
     with sync_stamp.stamped_transaction(conn):
         hydration._mark_local_unavailable(
-            conn, SID, tmp_path / "alternate.flac", machine_id,
+            conn,
+            SID,
+            tmp_path / "alternate.flac",
+            machine_id,
             sync_stamp.canonical_now(),
         )
 
@@ -245,25 +307,30 @@ def _exercise_hydration_writers(
 def _exercise_library_organization(conn: sqlite3.Connection) -> None:
     """Every library organization table, including an edit of each seeded row."""
     writer = StateWriter(conn, FakeEventBus(), actor="test")
-    writer.insert_playlist(
-        playlist_id="pl-org", name="Org", vendor="webui", vendor_pl_id="pl-org"
-    )
-    library_org.add_section(
-        writer, "s", owner_kind="playlist", owner_id="pl-org", before_position=0
-    )
+    writer.insert_playlist(playlist_id="pl-org", name="Org", vendor="webui", vendor_pl_id="pl-org")
+    library_org.add_section(writer, "s", owner_kind="playlist", owner_id="pl-org", before_position=0)
     for type_id in ("general", "instrument", "mood"):
         library_org.update_tag_type(writer, "s", type_id, {"sort_index": 9})
     library_org.put_tag_meta(writer, "s", "piano")
     library_org.put_tag_synonym(writer, "s", "keys", "piano")
     work = library_org.create_work(writer, "s", {"kind": "song", "title": "A"}).row["id"]
+    # A track member must be a live track (library_org._check_member_exists).
+    writer.upsert_track(
+        stable_id="t",
+        stable_id_tier="isrc",
+        title="t",
+        artists=["x"],
+        album=None,
+        isrc=None,
+        duration_ms=None,
+        file_path=None,
+    )
     library_org.link_member(writer, "s", work, member_kind="track", member_id="t", role="remix")
     library_org.dismiss_pair(writer, "s", "a", "b")
     library_org.set_work_pref(writer, "s", work, "t")
 
 
-def _exercise_every_writer_path(
-    conn: sqlite3.Connection, tmp_path: Path, db_path: Path
-) -> None:
+def _exercise_every_writer_path(conn: sqlite3.Connection, tmp_path: Path, db_path: Path) -> None:
     """Every shipped writer that touches a digest table, in one pass."""
     _exercise_state_writer(conn, tmp_path)
     machine_id = sync_stamp.ensure_local_machine(conn)
@@ -279,26 +346,16 @@ def _exercise_every_writer_path(
 
 
 def _unstamped(conn: sqlite3.Connection, table: str) -> list[tuple[object, ...]]:
-    return conn.execute(
-        f"SELECT rowid, * FROM {table} "
-        f"WHERE updated_at IS NULL OR origin_device_id IS NULL"
-    ).fetchall()
+    return conn.execute(f"SELECT rowid, * FROM {table} WHERE updated_at IS NULL OR origin_device_id IS NULL").fetchall()
 
 
 def _logged_row_pks(conn: sqlite3.Connection, table: str) -> set[str]:
-    return {
-        str(row[0])
-        for row in conn.execute(
-            "SELECT row_pk FROM local_changelog WHERE table_name = ?", (table,)
-        )
-    }
+    return {str(row[0]) for row in conn.execute("SELECT row_pk FROM local_changelog WHERE table_name = ?", (table,))}
 
 
 def _stored_row_pks(conn: sqlite3.Connection, table: str) -> set[str]:
     pk_columns = hub_protocol.pk_columns(table)
-    rows = conn.execute(
-        f"SELECT {', '.join(pk_columns)} FROM {table}"
-    ).fetchall()
+    rows = conn.execute(f"SELECT {', '.join(pk_columns)} FROM {table}").fetchall()
     return {sync_stamp.encode_row_pk(row) for row in rows}
 
 
@@ -306,13 +363,13 @@ def _stored_row_pks(conn: sqlite3.Connection, table: str) -> set[str]:
 
 
 def test_no_synced_row_survives_a_writer_path_unstamped(
-    state_conn: sqlite3.Connection, tmp_path: Path, state_db_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
+    state_db_path: Path,
 ) -> None:
     _exercise_every_writer_path(state_conn, tmp_path, state_db_path)
     for table in SYNCED_TABLES:
-        populated = state_conn.execute(
-            f"SELECT COUNT(*) FROM {table}"
-        ).fetchone()[0]
+        populated = state_conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         assert populated, f"{table} was never written, so it proves nothing"
         assert _unstamped(state_conn, table) == [], (
             f"{table} holds rows with NULL updated_at or NULL "
@@ -322,7 +379,9 @@ def test_no_synced_row_survives_a_writer_path_unstamped(
 
 
 def test_every_stored_row_is_named_by_the_local_changelog(
-    state_conn: sqlite3.Connection, tmp_path: Path, state_db_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
+    state_db_path: Path,
 ) -> None:
     """The widened tripwire, and the one that would have caught N1.
 
@@ -347,7 +406,9 @@ def test_every_stored_row_is_named_by_the_local_changelog(
 
 
 def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
-    state_conn: sqlite3.Connection, tmp_path: Path, state_db_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
+    state_db_path: Path,
 ) -> None:
     """The tripwire proves itself, on every digest table.
 
@@ -459,14 +520,11 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
         ),
     }
     assert set(bypasses) == set(SYNCED_TABLES), (
-        "a digest table with no simulated bypass here is a table this proof "
-        "does not cover"
+        "a digest table with no simulated bypass here is a table this proof does not cover"
     )
     for table, (sql, params) in bypasses.items():
         state_conn.execute(sql, params)
-        unlogged = _stored_row_pks(state_conn, table) - _logged_row_pks(
-            state_conn, table
-        )
+        unlogged = _stored_row_pks(state_conn, table) - _logged_row_pks(state_conn, table)
         assert unlogged, (
             f"a raw INSERT into {table} left no unlogged row, so the coverage "
             f"check cannot detect a writer that bypasses stamp_and_log"
@@ -474,14 +532,14 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
 
 
 def test_every_stamp_is_canonical_and_carries_this_machine(
-    state_conn: sqlite3.Connection, tmp_path: Path, state_db_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
+    state_db_path: Path,
 ) -> None:
     _exercise_every_writer_path(state_conn, tmp_path, state_db_path)
     expected = mid.get_or_create_machine_id(state_db_path.parent)
     for table in SYNCED_TABLES:
-        rows = state_conn.execute(
-            f"SELECT updated_at, origin_device_id FROM {table}"
-        ).fetchall()
+        rows = state_conn.execute(f"SELECT updated_at, origin_device_id FROM {table}").fetchall()
         for updated_at, origin in rows:
             assert origin == expected, f"{table} row claims a foreign origin"
             assert sync_stamp.to_canonical(updated_at) == updated_at, (
@@ -490,20 +548,21 @@ def test_every_stamp_is_canonical_and_carries_this_machine(
 
 
 def test_track_locations_never_keeps_a_null_machine_id(
-    state_conn: sqlite3.Connection, tmp_path: Path, state_db_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
+    state_db_path: Path,
 ) -> None:
     """The NOT NULL the DDL cannot express (schema.py reading 3)."""
     _exercise_every_writer_path(state_conn, tmp_path, state_db_path)
-    assert state_conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL"
-    ).fetchone()[0] == 0
+    assert state_conn.execute("SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL").fetchone()[0] == 0
 
 
 # ----- (2) the A1 regression ----------------------------------------------
 
 
 def test_a_second_field_edit_outranks_the_first(
-    state_conn: sqlite3.Connection, tmp_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
 ) -> None:
     """Round 1 finding A1, reproduced as a permanent regression.
 
@@ -515,17 +574,25 @@ def test_a_second_field_edit_outranks_the_first(
     writer = StateWriter(state_conn, FakeEventBus(), actor="tripwire")
     try:
         writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="T",
-            artists=[], album=None, isrc=None, duration_ms=None, file_path=None,
+            stable_id=SID,
+            stable_id_tier="inferred",
+            title="T",
+            artists=[],
+            album=None,
+            isrc=None,
+            duration_ms=None,
+            file_path=None,
         )
         writer.set_field(SID, "bpm", 120, source="mik", modified_at=_TS)
         first = state_conn.execute(
-            "SELECT updated_at, origin_device_id FROM track_fields "
-            "WHERE stable_id = ? AND field_name = 'bpm'",
+            "SELECT updated_at, origin_device_id FROM track_fields WHERE stable_id = ? AND field_name = 'bpm'",
             (SID,),
         ).fetchone()
         writer.set_field(
-            SID, "bpm", 174, source="mik",
+            SID,
+            "bpm",
+            174,
+            source="mik",
             modified_at="2026-08-30T10:00:00+00:00",
         )
         second = state_conn.execute(
@@ -549,7 +616,8 @@ def test_a_second_field_edit_outranks_the_first(
 
 
 def test_every_state_writer_write_lands_in_the_local_changelog(
-    state_conn: sqlite3.Connection, tmp_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
 ) -> None:
     """Exact counts for the one writer whose paths are enumerable here.
 
@@ -559,15 +627,11 @@ def test_every_state_writer_write_lands_in_the_local_changelog(
     importer changed how many rows it touches, and would say nothing about
     whether a NEW writer bypassed the chokepoint.
     """
-    before = state_conn.execute(
-        "SELECT COUNT(*) FROM local_changelog"
-    ).fetchone()[0]
+    before = state_conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0]
     assert before == 0
     _exercise_state_writer(state_conn, tmp_path)
 
-    logged = state_conn.execute(
-        "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
-    ).fetchall()
+    logged = state_conn.execute("SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name").fetchall()
     counts = dict(logged)
     # 3 track writes (2 on SID, 1 on OTHER_SID); 2 vendor-id writes; 2 field
     # writes; 3 playlist writes (insert, rename, membership bump); 2
@@ -584,8 +648,7 @@ def test_every_state_writer_write_lands_in_the_local_changelog(
 
     # Every entry names a row that exists, with the stamp that row carries.
     for table, row_pk, updated_at, origin in state_conn.execute(
-        "SELECT table_name, row_pk, updated_at, origin_device_id "
-        "FROM local_changelog ORDER BY seq"
+        "SELECT table_name, row_pk, updated_at, origin_device_id FROM local_changelog ORDER BY seq"
     ):
         assert sync_stamp.to_canonical(updated_at) == updated_at
         assert origin
@@ -594,31 +657,50 @@ def test_every_state_writer_write_lands_in_the_local_changelog(
 
 
 def test_an_unchanged_write_logs_nothing(
-    state_conn: sqlite3.Connection, tmp_path: Path,
+    state_conn: sqlite3.Connection,
+    tmp_path: Path,
 ) -> None:
     """A byte-equal repeat is a no-op, so it must not move the fence."""
     writer = StateWriter(state_conn, FakeEventBus(), actor="tripwire")
     try:
         writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="T",
-            artists=[], album=None, isrc=None, duration_ms=None, file_path=None,
+            stable_id=SID,
+            stable_id_tier="inferred",
+            title="T",
+            artists=[],
+            album=None,
+            isrc=None,
+            duration_ms=None,
+            file_path=None,
         )
         writer.set_field(SID, "bpm", 120, source="mik", modified_at=_TS)
-        settled = state_conn.execute(
-            "SELECT MAX(seq) FROM local_changelog"
-        ).fetchone()[0]
-        assert writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="T",
-            artists=[], album=None, isrc=None, duration_ms=None, file_path=None,
-        ) is False
-        assert writer.set_field(
-            SID, "bpm", 120, source="mik", modified_at=_TS,
-        ) is False
+        settled = state_conn.execute("SELECT MAX(seq) FROM local_changelog").fetchone()[0]
+        assert (
+            writer.upsert_track(
+                stable_id=SID,
+                stable_id_tier="inferred",
+                title="T",
+                artists=[],
+                album=None,
+                isrc=None,
+                duration_ms=None,
+                file_path=None,
+            )
+            is False
+        )
+        assert (
+            writer.set_field(
+                SID,
+                "bpm",
+                120,
+                source="mik",
+                modified_at=_TS,
+            )
+            is False
+        )
     finally:
         writer.close()
-    assert state_conn.execute(
-        "SELECT MAX(seq) FROM local_changelog"
-    ).fetchone()[0] == settled
+    assert state_conn.execute("SELECT MAX(seq) FROM local_changelog").fetchone()[0] == settled
 
 
 # ----- (4) per-machine locations, (5) the swept list ------------------------

@@ -59,10 +59,7 @@
 	async function load(): Promise<void> {
 		loading = true;
 		try {
-			const got = await loadBrokenRows(
-				listBrokenPage,
-				Math.max(MISSING_PAGE_SIZE, broken.length)
-			);
+			const got = await loadBrokenRows(listBrokenPage, Math.max(MISSING_PAGE_SIZE, broken.length));
 			broken = got.tracks;
 			total = got.total;
 			nextOffset = got.nextOffset;
@@ -177,9 +174,8 @@
 
 <h2>Missing tracks</h2>
 <p style="color: var(--muted);">
-	Local tracks whose recorded path no longer resolves on disk. Streaming
-	tracks and pathless rows never appear here. Remove from library drops the
-	track from OpenDJ only; the file stays on disk.
+	Local tracks whose recorded path no longer resolves on disk. Streaming tracks and pathless rows
+	never appear here. Remove from library drops the track from OpenDJ only; the file stays on disk.
 </p>
 
 {#if view === 'loading'}

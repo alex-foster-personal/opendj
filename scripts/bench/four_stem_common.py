@@ -11,6 +11,7 @@ are gated, would be a silent confound rather than a visible error.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,8 @@ def gate_flags(*gate_jsons: Path) -> dict[str, dict[str, Any]]:
             if candidate["track"] in out:
                 raise RuntimeError(
                     f"{candidate['track']} has a gate row in more than one file; "
-                    "refusing to guess which window its scores belong to")
+                    "refusing to guess which window its scores belong to"
+                )
             _add_flag(out, candidate)
     return out
 
@@ -70,13 +72,13 @@ def _add_flag(out: dict[str, dict[str, Any]], candidate: dict[str, Any]) -> None
         "stem_failures": {s: failures.get(s, []) for s in STEMS},
         "mixture_floor_si_sdr": candidate["mixture_floor_si_sdr"],
         "stem_energy_share": {s["stem"]: s["energy_share"] for s in candidate["stems"]},
-        "stem_spectral_centroid_hz": {
-            s["stem"]: s["spectral_centroid_hz"] for s in candidate["stems"]},
+        "stem_spectral_centroid_hz": {s["stem"]: s["spectral_centroid_hz"] for s in candidate["stems"]},
     }
 
 
-def paired_deltas(cube: dict[str, dict[str, dict[str, float]]],
-                  flags: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def paired_deltas(
+    cube: dict[str, dict[str, dict[str, float]]], flags: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Per (model, stem) paired delta against DEFAULT_MODEL, gated cells only.
 
     PAIRED because every model separated the identical window, so track
@@ -106,22 +108,24 @@ def paired_deltas(cube: dict[str, dict[str, dict[str, float]]],
                 raise RuntimeError(f"no gated track for stem {stem}, cannot conclude")
             mean = statistics.fmean(values)
             sd = statistics.stdev(values) if len(values) > 1 else 0.0
-            rows.append({
-                "model": model,
-                "vs": DEFAULT_MODEL,
-                "stem": stem,
-                "n_gated": len(values),
-                "mean_delta_db": round(mean, 3),
-                "median_delta_db": round(statistics.median(values), 3),
-                "sd": round(sd, 3),
-                # t against zero. n is small on purpose; read this as a
-                # magnitude-versus-spread check, not a significance claim.
-                "t": round(mean / (sd / len(values) ** 0.5), 2) if sd > 0 else None,
-                "min_delta_db": round(min(values), 3),
-                "max_delta_db": round(max(values), 3),
-                "tracks_favouring_challenger": sum(1 for v in values if v > 0),
-                "beats_audibility_bar": abs(mean) >= AUDIBILITY_DB,
-                "per_track_gated": gated,
-                "per_track_ungated": ungated,
-            })
+            rows.append(
+                {
+                    "model": model,
+                    "vs": DEFAULT_MODEL,
+                    "stem": stem,
+                    "n_gated": len(values),
+                    "mean_delta_db": round(mean, 3),
+                    "median_delta_db": round(statistics.median(values), 3),
+                    "sd": round(sd, 3),
+                    # t against zero. n is small on purpose; read this as a
+                    # magnitude-versus-spread check, not a significance claim.
+                    "t": round(mean / (sd / len(values) ** 0.5), 2) if sd > 0 else None,
+                    "min_delta_db": round(min(values), 3),
+                    "max_delta_db": round(max(values), 3),
+                    "tracks_favouring_challenger": sum(1 for v in values if v > 0),
+                    "beats_audibility_bar": abs(mean) >= AUDIBILITY_DB,
+                    "per_track_gated": gated,
+                    "per_track_ungated": ungated,
+                }
+            )
     return rows

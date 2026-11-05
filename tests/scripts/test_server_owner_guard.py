@@ -113,9 +113,7 @@ def _time_owner_death(
 def test_a_server_that_ignores_sigterm_is_gone_within_the_bound_of_owner_death(
     tmp_path: Path, cleanup_pids: list[int]
 ) -> None:
-    gone_after = _time_owner_death(
-        TERM_IGNORING_CODE, tmp_path / "server.pid", cleanup_pids
-    ).server_gone_after_s
+    gone_after = _time_owner_death(TERM_IGNORING_CODE, tmp_path / "server.pid", cleanup_pids).server_gone_after_s
     assert gone_after <= GONE_WITHIN_S, (
         f"a TERM-ignoring server outlived its owner by {gone_after:.2f} s (bound {GONE_WITHIN_S} s)"
     )
@@ -136,9 +134,7 @@ def test_a_server_that_handles_sigterm_gets_to_finish_its_shutdown(
     GROUP, not its child; and once the group is empty it must exit promptly
     rather than sit out its deadline."""
     pid_file = tmp_path / "server.pid"
-    timing = _time_owner_death(
-        COOPERATIVE_CODE, pid_file, cleanup_pids, shell_wrapper=shell_wrapper
-    )
+    timing = _time_owner_death(COOPERATIVE_CODE, pid_file, cleanup_pids, shell_wrapper=shell_wrapper)
     graceful = pid_file.with_name(pid_file.name + ".graceful")
     assert graceful.exists(), "the server was killed before its SIGTERM shutdown could finish"
     assert COOPERATIVE_CLEANUP_S <= timing.server_gone_after_s <= GONE_WITHIN_S, timing
@@ -171,9 +167,7 @@ def _live_members_of_group(pgid: int) -> list[int]:
         env={**os.environ, "LC_ALL": "C"},
     ).stdout
     rows = [line.split() for line in out.splitlines()]
-    return [
-        int(r[0]) for r in rows if len(r) == 3 and int(r[1]) == pgid and not r[2].startswith("Z")
-    ]
+    return [int(r[0]) for r in rows if len(r) == 3 and int(r[1]) == pgid and not r[2].startswith("Z")]
 
 
 def test_a_signal_just_after_the_spawn_does_not_leak_the_child(tmp_path: Path) -> None:

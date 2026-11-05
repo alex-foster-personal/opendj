@@ -40,9 +40,7 @@ from apps.shared.platform_paths import PROJECT_ROOT
 from apps.shared.state import migrations_v10
 from apps.webui.server.routes import cloudsync as cloudsync_routes
 
-_TS_MODULE: Path = (
-    PROJECT_ROOT / "apps" / "webui" / "frontend" / "src" / "lib" / "api-cloudsync.ts"
-)
+_TS_MODULE: Path = PROJECT_ROOT / "apps" / "webui" / "frontend" / "src" / "lib" / "api-cloudsync.ts"
 _TS_ASSET_KINDS = re.compile(r"export const ASSET_KINDS = \[(?P<body>.*?)\] as const;", re.DOTALL)
 
 
@@ -51,9 +49,7 @@ def _typescript_asset_kinds() -> tuple[str, ...]:
     source = _TS_MODULE.read_text(encoding="utf-8")
     match = _TS_ASSET_KINDS.search(source)
     if match is None:
-        raise AssertionError(
-            f"could not find `export const ASSET_KINDS = [...] as const;` in {_TS_MODULE}"
-        )
+        raise AssertionError(f"could not find `export const ASSET_KINDS = [...] as const;` in {_TS_MODULE}")
     return tuple(re.findall(r"'([^']+)'", match.group("body")))
 
 

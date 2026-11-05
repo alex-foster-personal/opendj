@@ -61,7 +61,8 @@ export type KnobRole =
 	| 'hp-level'
 	| 'stem-vocal'
 	| 'stem-instrumental'
-	| 'stem-drums';
+	| 'stem-drums'
+	| 'stem-bass';
 
 export interface KnobRef {
 	id: string;

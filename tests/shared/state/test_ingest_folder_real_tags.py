@@ -13,6 +13,7 @@ Regression one-liners:
   - if tag genre / bpm / key are not recorded with inferred provenance then broken
   - if a rescan overwrites an analysed bpm with the file's tag bpm then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -85,9 +86,7 @@ def test_genre_comment_bpm_and_key_are_recorded_as_inferred(state_conn, music_di
 def test_a_rescan_never_overwrites_an_existing_bpm_or_key(state_conn, music_dir: Path) -> None:
     """[if] a track has an analysed bpm/key [then] a rescan keeps it, [else stop]."""
     _import(state_conn, music_dir)
-    (stable_id,) = state_conn.execute(
-        "SELECT stable_id FROM tracks WHERE file_path LIKE '%/flac.flac'"
-    ).fetchone()
+    (stable_id,) = state_conn.execute("SELECT stable_id FROM tracks WHERE file_path LIKE '%/flac.flac'").fetchone()
     writer = StateWriter(state_conn, bus=FakeEventBus(), actor="analysis-test")
     try:
         writer.set_field(stable_id, "bpm", 127.98, source="open-dj-tool", modified_at="2026-10-01T09:00:00Z")

@@ -39,7 +39,7 @@ from pathlib import Path
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
-GATE = WORKFLOWS / "reqs-flip-gate.yml"
+GATE = WORKFLOWS / "pr-body-gates.yml"
 CI = WORKFLOWS / "ci.yml"
 
 # GitHub's implicit `pull_request` type list. Naming `types` replaces it, so a
@@ -102,8 +102,7 @@ def test_the_gate_reruns_when_pr_metadata_is_edited() -> None:
     )
     missing = GITHUB_DEFAULT_TYPES - types
     assert not missing, (
-        f"naming `types` replaces GitHub's defaults, and {sorted(missing)} "
-        "would no longer trigger the gate at all"
+        f"naming `types` replaces GitHub's defaults, and {sorted(missing)} would no longer trigger the gate at all"
     )
 
 

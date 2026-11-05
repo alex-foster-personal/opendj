@@ -48,10 +48,13 @@ Authoritative source:
 ## Export entry points
 
 - `build_library(tracks, playlists, *, include_cues=True)` -- pure,
-  dataclass-driven, returns an `ExportResult`.
+  dataclass-driven, returns an `ExportResult`. Provenance-bearing tracks
+  must set `source_modified_at` (library-file mtime); there is no
+  document-wide `modified_at` clock argument.
 - `export_library(source_path=..., out_path=..., include_cues=True)` --
   live-DB wrapper. Iterates the djay DB via `apps.shared.djay_db` (which
-  enforces `mode=ro&immutable=1`) and writes canonical JSON via
+  enforces `mode=ro&immutable=1`), stamps every `ProvenanceValue.modified_at`
+  from the `MediaLibrary.db` file mtime, and writes canonical JSON via
   `open_dj.canon.to_canonical_bytes` when `out_path` is provided.
 
 ## Safety

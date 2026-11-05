@@ -158,7 +158,12 @@
 			Tap
 		</button>
 	{/if}
-	<button type="button" data-testid="bpm-key-edit-set" disabled={saving} onclick={() => void commit()}>
+	<button
+		type="button"
+		data-testid="bpm-key-edit-set"
+		disabled={saving}
+		onclick={() => void commit()}
+	>
 		Set
 	</button>
 	{#if error !== null}

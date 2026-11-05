@@ -100,9 +100,7 @@ def test_positive_controls_align_exactly(true_delay: int) -> None:
     alignment = metrics.estimate_delay_samples(
         reference, probes.shift(reference, true_delay), label=f"control{true_delay:+d}"
     )
-    assert alignment.delay_samples == pytest.approx(
-        true_delay, abs=metrics.ALIGN_FINE_HOP_SAMPLES * 2
-    ), (
+    assert alignment.delay_samples == pytest.approx(true_delay, abs=metrics.ALIGN_FINE_HOP_SAMPLES * 2), (
         f"expected {true_delay:+d}, got {alignment.delay_samples:+d} at corr "
         f"{alignment.correlation:.4f}, self-similarity {alignment.self_similarity:.4f}"
     )
@@ -128,9 +126,7 @@ def test_reference_self_similarity_is_reported_on_every_row() -> None:
 
 
 def _coarse_bound_samples() -> int:
-    frames = round(
-        metrics.ALIGN_COARSE_MAX_LAG_MS * SAMPLE_RATE / 1000.0 / metrics.ONSET_HOP_SAMPLES
-    )
+    frames = round(metrics.ALIGN_COARSE_MAX_LAG_MS * SAMPLE_RATE / 1000.0 / metrics.ONSET_HOP_SAMPLES)
     return frames * metrics.ONSET_HOP_SAMPLES
 
 
@@ -148,9 +144,7 @@ def test_delay_at_the_coarse_bound_raises_instead_of_clipping() -> None:
         metrics.estimate_delay_samples(reference, probes.delay(reference, bound), label="at-bound")
 
     inside = bound - metrics.ONSET_HOP_SAMPLES * 3
-    alignment = metrics.estimate_delay_samples(
-        reference, probes.delay(reference, inside), label="inside"
-    )
+    alignment = metrics.estimate_delay_samples(reference, probes.delay(reference, inside), label="inside")
     assert alignment.delay_samples == pytest.approx(inside, abs=metrics.ALIGN_FINE_HOP_SAMPLES * 2)
 
 
@@ -175,8 +169,7 @@ def test_out_of_window_delay_never_yields_a_confident_row(delay_ms: int) -> None
     except metrics.AlignmentError:
         return
     assert alignment.correlation < 0.148, (
-        f"an out-of-window delay came back at corr {alignment.correlation:.4f}, "
-        "indistinguishable from a real arm"
+        f"an out-of-window delay came back at corr {alignment.correlation:.4f}, indistinguishable from a real arm"
     )
 
 
@@ -192,24 +185,19 @@ def test_sixteenth_note_alias_is_reported_not_silently_absorbed() -> None:
     """
     period = int(SAMPLE_RATE * 60.0 / 122.0 / 4.0)  # 5422 samples = 123 ms
     signal = probes.click_train(period)
-    alignment = metrics.estimate_delay_samples(
-        signal, probes.delay(signal, period), label="16ths-at-122"
-    )
+    alignment = metrics.estimate_delay_samples(signal, probes.delay(signal, period), label="16ths-at-122")
 
     # A periodic signal delayed by exactly one period coincides with itself, so
     # lag 0 is the honest answer and no algorithm can report 5422 here. That is
     # precisely why a bound check cannot prove a trim: this row would sail
     # through +-25 ms while hiding a whole period of displacement.
     assert alignment.delay_samples == pytest.approx(0, abs=64)
-    assert abs(alignment.runner_up_delay_samples) == pytest.approx(
-        period, abs=metrics.ONSET_HOP_SAMPLES
-    ), (
+    assert abs(alignment.runner_up_delay_samples) == pytest.approx(period, abs=metrics.ONSET_HOP_SAMPLES), (
         "the one-period alias must surface as the runner-up lag, otherwise the row "
         f"hides it; read {alignment.runner_up_delay_samples}"
     )
     assert 0.5 < alignment.peak_ratio < metrics.ALIGN_AMBIGUITY_MAX_RATIO, (
-        "the alias should be a visible but non-refusing runner-up, ratio read "
-        f"{alignment.peak_ratio:.3f}"
+        f"the alias should be a visible but non-refusing runner-up, ratio read {alignment.peak_ratio:.3f}"
     )
 
 

@@ -77,8 +77,11 @@ def ceiling_exceeded(
     trailing_median_ms: float | None,
     factor: float = DEFAULT_FACTOR,
 ) -> bool:
-    return ceiling_verdict(
-        warm_median_ms=warm_median_ms,
-        trailing_median_ms=trailing_median_ms,
-        factor=factor,
-    ) == "breach"
+    return (
+        ceiling_verdict(
+            warm_median_ms=warm_median_ms,
+            trailing_median_ms=trailing_median_ms,
+            factor=factor,
+        )
+        == "breach"
+    )

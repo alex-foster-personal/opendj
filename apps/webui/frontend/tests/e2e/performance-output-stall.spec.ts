@@ -17,14 +17,19 @@ async function waitForIpc(page: Page): Promise<void> {
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 }
 
-test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers', async ({ page }) => {
+test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers', async ({
+	page
+}) => {
 	test.setTimeout(60_000);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto(`${UI_BASE}/performance`);
 	await waitForIpc(page);
 
 	await page.getByRole('button', { name: /all tracks/i }).click();
-	const stableId = await page.locator('.track-row[data-stable-id]').first().getAttribute('data-stable-id');
+	const stableId = await page
+		.locator('.track-row[data-stable-id]')
+		.first()
+		.getAttribute('data-stable-id');
 	expect(stableId, 'fixture library must expose a track row').toBeTruthy();
 
 	await page.evaluate(async (sid) => {
@@ -35,7 +40,9 @@ test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers
 
 	await page.waitForFunction(() => {
 		const q = window.musicDjToolsPerformance!.query();
-		const output = (window as Window & { __mdtAudioOutput?: () => { verdict: string } }).__mdtAudioOutput?.();
+		const output = (
+			window as Window & { __mdtAudioOutput?: () => { verdict: string } }
+		).__mdtAudioOutput?.();
 		return q.decks[1].playing === true && output !== undefined && output.verdict !== 'idle';
 	});
 
@@ -66,7 +73,8 @@ test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers
 	await expect
 		.poll(async () =>
 			page.evaluate(() => {
-				const read = (window as Window & { __mdtAudioOutput?: () => { verdict: string } }).__mdtAudioOutput;
+				const read = (window as Window & { __mdtAudioOutput?: () => { verdict: string } })
+					.__mdtAudioOutput;
 				return read?.().verdict ?? 'missing';
 			})
 		)
@@ -78,7 +86,9 @@ test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers
 		const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
 		return read?.() ?? [];
 	});
-	expect(perfRows.some((row) => row.kind === 'audio-output-stalled' && row.severity === 'error')).toBeTruthy();
+	expect(
+		perfRows.some((row) => row.kind === 'audio-output-stalled' && row.severity === 'error')
+	).toBeTruthy();
 	expect(
 		perfRows.some(
 			(row) => row.kind === 'audio-output-rebound' || row.kind === 'audio-output-rebind-failed'

@@ -34,7 +34,9 @@ async function loadAndPlayDeck1(page: Page): Promise<void> {
 		await ipc.dispatch({ type: 'load', deck: 1, stable_id: sid! });
 		await ipc.dispatch({ type: 'play', deck: 1, playing: true });
 	}, stableId);
-	await page.waitForFunction(() => window.musicDjToolsPerformance!.query().decks[1].playing === true);
+	await page.waitForFunction(
+		() => window.musicDjToolsPerformance!.query().decks[1].playing === true
+	);
 }
 
 test('main-thread freeze logs mirror-stall and received_at moves forward', async ({ page }) => {
@@ -77,9 +79,12 @@ test('main-thread freeze logs mirror-stall and received_at moves forward', async
 	await expect
 		.poll(
 			async () => {
-				const hasConsoleStall = consoleLines.some((line) => line.includes('[perf-event] mirror-stall'));
+				const hasConsoleStall = consoleLines.some((line) =>
+					line.includes('[perf-event] mirror-stall')
+				);
 				const { perfStall, receivedAt } = await page.evaluate(async () => {
-					const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
+					const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] })
+						.__mdtPerfLog;
 					const rows = read?.() ?? [];
 					const perfStall = rows.find((row) => row.kind === 'mirror-stall');
 					const response = await fetch('/api/v1/state/ui-mirror');
@@ -92,12 +97,7 @@ test('main-thread freeze logs mirror-stall and received_at moves forward', async
 				const gapMatch = perfStall?.message?.match(/(\d+)ms/);
 				const gapMs = gapMatch ? Number.parseInt(gapMatch[1], 10) : 0;
 				const receivedMoved = isReceivedAtStamp(receivedAt) && receivedAt > before;
-				return (
-					hasConsoleStall &&
-					perfStall?.severity === 'warn' &&
-					gapMs > 5000 &&
-					receivedMoved
-				);
+				return hasConsoleStall && perfStall?.severity === 'warn' && gapMs > 5000 && receivedMoved;
 			},
 			{ timeout: 8_000 }
 		)

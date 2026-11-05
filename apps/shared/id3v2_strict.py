@@ -29,10 +29,12 @@ def _reject_cut_short_header(path: Path, header: bytes) -> None:
     if header[:3] == b"ID3" and len(header) < HEADER_SIZE:
         raise Id3Error(f"{path}: ID3 header is cut short at {len(header)} bytes")
 
+
 def _check_footer_padding(path: Path, body: bytes, frames_end: int, has_footer: bool) -> None:
     """v2.4 forbids padding when a footer is present, so the frames must reach the end of the body."""
     if has_footer and frames_end != len(body):
         raise Id3Error(f"{path}: ID3v2.4 tag has a footer but {len(body) - frames_end} padding bytes follow the frames")
+
 
 def _check_tag_header(path: Path, header: bytes, body: bytes, footer_bytes: bytes) -> None:
     """Reject a version, revision, size, footer or flag set the spec does not allow, so the tag is unreadable rather than empty."""
@@ -54,6 +56,7 @@ def _check_tag_header(path: Path, header: bytes, body: bytes, footer_bytes: byte
     if reserved_flags:
         raise Id3Error(f"{path}: ID3v2.{major} header sets reserved flag bits 0x{reserved_flags:02x}")
 
+
 def _decode_text_frame(frame: Frame, major: int, errors: str) -> None:
     """Decode a text-bearing frame's text fields with the given error mode, raising on what that mode rejects."""
     if frame.frame_id == "TXXX":
@@ -66,6 +69,7 @@ def _decode_text_frame(frame: Frame, major: int, errors: str) -> None:
         _decode_geob(frame.data, major, errors)
     else:
         _decode_apic(frame.data, major, errors)
+
 
 def _check_text_encodings_at_read(frames: list[Frame], major: int, path: Path) -> None:
     """Check the encoding byte of every text-bearing frame when the tag is read, not only when an accessor decodes it.
@@ -91,11 +95,13 @@ def _check_text_encodings_at_read(frames: list[Frame], major: int, path: Path) -
         except UnicodeDecodeError as exc:
             raise Id3Error(f"{path}: {frame.frame_id} text is not valid for its encoding") from exc
 
+
 def _check_apic_picture_type(data: bytes, path: Path) -> None:
     """An APIC picture type is one of the values ID3v2 defines, 0x00 through 0x14; any other byte is malformed."""
     _mime, separator, rest = data[1:].partition(b"\x00")
     if separator and rest and rest[0] > 0x14:
         raise Id3Error(f"{path}: APIC picture type {rest[0]} is not defined by ID3v2")
+
 
 def _check_popm_body(data: bytes, path: Path) -> None:
     """A POPM body is an email, a NUL, then a rating byte; a strict read rejects one that lacks either part."""
@@ -103,7 +109,10 @@ def _check_popm_body(data: bytes, path: Path) -> None:
     if not separator or not rest:
         raise Id3Error(f"{path}: POPM frame has no email terminator or rating byte")
 
-def _verify_extended_header(body: bytes, major: int, flags: int, offset: int, frames_end: int, unsynced: bool, path: Path) -> None:
+
+def _verify_extended_header(
+    body: bytes, major: int, flags: int, offset: int, frames_end: int, unsynced: bool, path: Path
+) -> None:
     """Check the padding size and CRC an extended header declares, against the frames they cover."""
     if not flags & 0x40:
         return
@@ -111,7 +120,9 @@ def _verify_extended_header(body: bytes, major: int, flags: int, offset: int, fr
         # The v2.3 padding size is the total padding: every byte after the frames, and no others.
         padding = struct.unpack(">I", body[6:10])[0]
         if padding != len(body) - frames_end:
-            raise Id3Error(f"{path}: ID3 extended header declares {padding} bytes of padding but {len(body) - frames_end} follow the frames")
+            raise Id3Error(
+                f"{path}: ID3 extended header declares {padding} bytes of padding but {len(body) - frames_end} follow the frames"
+            )
     expected = _extended_crc(body, major)
     # v2.3's CRC covers the frames only and is taken before unsynchronisation, which is already undone here. v2.4's
     # covers everything after the extended header, padding included; its order against unsynchronisation is not
@@ -121,6 +132,7 @@ def _verify_extended_header(body: bytes, major: int, flags: int, offset: int, fr
         if zlib.crc32(covered) != expected:
             raise Id3Error(f"{path}: ID3 extended header CRC {expected:08x} does not match the tag data")
 
+
 def _extended_crc(body: bytes, major: int) -> int | None:
     """The CRC-32 an extended header declares, or None when it declares none."""
     if major == 3:
@@ -129,6 +141,7 @@ def _extended_crc(body: bytes, major: int) -> int | None:
         return None
     pos = 7 if body[5] & 0x40 else 6  # the update flag's zero length byte comes first
     return _syncsafe_to_int(body[pos + 1 : pos + 6])
+
 
 def _check_v23_extended_header(body: bytes, size: int) -> None:
     """Check the v2.3 field bytes after the size: how many there are, whether the CRC flag matches them, and the reserved bits."""
@@ -143,6 +156,7 @@ def _check_v23_extended_header(body: bytes, size: int) -> None:
         raise Id3Error("ID3 extended header declares 10 field bytes but does not set the CRC flag")
     if body[4] & 0x7F or body[5]:
         raise Id3Error("ID3 extended header sets reserved flag bits; v2.3 defines only the CRC bit")
+
 
 def _check_v24_extended_payloads(body: bytes, end: int) -> None:
     """Each flag set in a v2.4 extended header is followed by a length byte and that many payload bytes, in flag order."""
@@ -160,6 +174,7 @@ def _check_v24_extended_payloads(body: bytes, end: int) -> None:
         pos += 1 + length
     if pos != end:
         raise Id3Error(f"ID3 extended header declares {end} bytes but its flags account for {pos}")
+
 
 def _check_crc_payload(payload: bytes) -> None:
     """A v2.4 extended-header CRC is five syncsafe bytes that hold a 32-bit value."""

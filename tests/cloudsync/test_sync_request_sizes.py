@@ -229,9 +229,7 @@ def test_first_sync_requests_grow_by_one_per_thousand_rows(
         f"{rows} rows took {push_requests} push requests; at most {allowed} "
         f"({ROWS_PER_REQUEST} rows per request, LIBM-120 L6)"
     )
-    assert pull_requests <= allowed, (
-        f"{rows} rows took {pull_requests} pull pages; at most {allowed} (LIBM-120 L6)"
-    )
+    assert pull_requests <= allowed, f"{rows} rows took {pull_requests} pull pages; at most {allowed} (LIBM-120 L6)"
 
 
 def test_the_pull_limit_is_one_the_hub_serves() -> None:
@@ -273,8 +271,7 @@ def test_a_push_the_proxy_refuses_as_too_large_is_resent_in_halves(tmp_path: Pat
         result = _sync_through(proxy, spoke)
     assert proxy.refused_push_bytes, "the proxy refused nothing, so no split was tested"
     assert result.accepted == result.pushed >= client.PUSH_BATCH_ROWS, (
-        f"{result.pushed} rows offered, {result.accepted} accepted behind a "
-        f"{TIGHT_PROXY_LIMIT_BYTES:,}-byte proxy"
+        f"{result.pushed} rows offered, {result.accepted} accepted behind a {TIGHT_PROXY_LIMIT_BYTES:,}-byte proxy"
     )
     assert max(proxy.delivered_push_bytes) <= TIGHT_PROXY_LIMIT_BYTES
 

@@ -4,7 +4,7 @@ analyzer over real hydrated media, not by replaying a captured payload
 through `_write_own_record` alone.
 
 `_write_own_record` (see `test_anlz_own_beatgrid.py`) is not a mock: it feeds
-a real captured Beat This! artifact (`ops/beatbench/round-1/
+a real captured Beat This! artifact (`(private path)/
 raw-beatgrid_lane_t050.json`) through the real `record_from_payload` and
 `upsert_record` production functions, which is exactly the "captured real
 protocol payload, consumed through production paths" AGENTS.md permits
@@ -33,6 +33,7 @@ or point `MDT_BEATGRID_WEIGHTS` at one) and set MDT_BEATGRID_MODEL_TESTS=1.
 
 -Claude Sonnet 5
 """
+
 from __future__ import annotations
 
 import math
@@ -86,9 +87,7 @@ def _write_real_click_track(path: Path) -> None:
             if start + i >= n_samples:
                 break
             envelope = math.exp(-i / (0.01 * SAMPLE_RATE))
-            samples[start + i] += amp * envelope * math.sin(
-                2 * math.pi * freq * i / SAMPLE_RATE
-            )
+            samples[start + i] += amp * envelope * math.sin(2 * math.pi * freq * i / SAMPLE_RATE)
         beat += 1
         t0 += period
 
@@ -96,11 +95,7 @@ def _write_real_click_track(path: Path) -> None:
         fh.setnchannels(1)
         fh.setsampwidth(2)
         fh.setframerate(SAMPLE_RATE)
-        fh.writeframes(
-            b"".join(
-                struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples
-            )
-        )
+        fh.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32000)) for s in samples))
 
 
 def test_the_promotion_precondition_holds_against_the_real_analyzer_and_route(
@@ -135,8 +130,13 @@ def test_the_promotion_precondition_holds_against_the_real_analyzer_and_route(
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
     try:
         writer.upsert_track(
-            stable_id=sid, stable_id_tier="inferred", title=None, artists=[],
-            album=None, isrc=None, duration_ms=int(DURATION_S * 1000),
+            stable_id=sid,
+            stable_id_tier="inferred",
+            title=None,
+            artists=[],
+            album=None,
+            isrc=None,
+            duration_ms=int(DURATION_S * 1000),
             file_path=str(audio),
         )
     finally:

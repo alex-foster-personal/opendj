@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from scripts.perf.ledger_row import LedgerProvenance, LedgerRowCtx, base_row
+
 CAPTURE_ID = "perf-capture"
 ROUND = "issue-2697"
-SOURCE = (
-    "client perf-span open-to-library-rows from navigationStart to first track row paint"
-)
+SOURCE = "client perf-span open-to-library-rows from navigationStart to first track row paint"
 METHOD = "navigationStart to first track row first paint"
 SPAN_NAME = "open-to-library-rows"
 MISSING_TELEMETRY_PREFIX = "missing-telemetry:"
+
+_PROVENANCE = LedgerProvenance(
+    round=ROUND,
+    source=SOURCE,
+    method=METHOD,
+    capture_id=CAPTURE_ID,
+)
 
 
 def classify_boot_library_withhold_reason(reason: str | None) -> str:
@@ -43,40 +49,13 @@ def _span_is_scorable(span: dict[str, Any]) -> tuple[bool, str | None]:
     return True, None
 
 
-@dataclass(frozen=True)
-class _LedgerRowCtx:
-    sha: str
-    machine: str
-    capture_date: date
-    note: str
-    status: str | None = None
-    measured: bool | None = None
-
-
 def _base_row(
     kpi: str,
     value: float | None,
     unit: str,
-    ctx: _LedgerRowCtx,
+    ctx: LedgerRowCtx,
 ) -> dict[str, Any]:
-    row: dict[str, Any] = {
-        "date": ctx.capture_date.isoformat(),
-        "round": ROUND,
-        "kpi": kpi,
-        "value": value,
-        "unit": unit,
-        "machine": ctx.machine,
-        "source": SOURCE,
-        "method": METHOD,
-        "sha": ctx.sha,
-        "capture_id": CAPTURE_ID,
-        "note": ctx.note,
-    }
-    if ctx.status is not None:
-        row["status"] = ctx.status
-    if ctx.measured is not None:
-        row["measured"] = ctx.measured
-    return row
+    return base_row(kpi, value, unit, ctx, _PROVENANCE)
 
 
 def span_to_ledger_rows(
@@ -91,7 +70,7 @@ def span_to_ledger_rows(
     if span is None:
         withheld_reason = classify_boot_library_withhold_reason(reason)
         note = f"UNKNOWN: {withheld_reason}"
-        ctx = _LedgerRowCtx(
+        ctx = LedgerRowCtx(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
@@ -102,7 +81,7 @@ def span_to_ledger_rows(
         return [_base_row("open_to_library_rows_ms", None, "ms", ctx)]
     ok, reject_reason = _span_is_scorable(span)
     if not ok:
-        ctx = _LedgerRowCtx(
+        ctx = LedgerRowCtx(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
@@ -112,7 +91,7 @@ def span_to_ledger_rows(
         )
         return [_base_row("open_to_library_rows_ms", None, "ms", ctx)]
     duration_ms = float(span["duration_ms"])
-    ctx = _LedgerRowCtx(
+    ctx = LedgerRowCtx(
         sha=sha,
         machine=machine,
         capture_date=capture_date,

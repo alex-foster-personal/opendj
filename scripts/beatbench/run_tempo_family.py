@@ -24,10 +24,10 @@ number), never an input to any candidate.
 
 Usage:
   python -m scripts.beatbench.run_tempo_family \\
-      --candidate ops/beatbench/round-0/candidate-beat_this.json \\
-      --out-dir ops/beatbench/round-4-tempo-family [--genres genres.json]
+      --candidate (private path) \\
+      --out-dir (private path) [--genres genres.json]
   python -m scripts.beatbench.run_tempo_family \\
-      --bands ops/beatbench/round-4-tempo-family/results.json
+      --bands (private path)
 """
 
 from __future__ import annotations
@@ -62,9 +62,7 @@ def _failed(reason: str) -> dict[str, Any]:
     return {"beats": [], "downbeats": [], "native_bpm": None, "error": reason}
 
 
-def build(
-    row: dict[str, Any], *, fold: bool, policy: bool, family: TempoFamily | None = None
-) -> dict[str, Any]:
+def build(row: dict[str, Any], *, fold: bool, policy: bool, family: TempoFamily | None = None) -> dict[str, Any]:
     """One fixture's grid under one variant; failures are recorded, never dropped."""
     if row.get("error"):
         return _failed(str(row["error"]))
@@ -80,9 +78,7 @@ def build(
         if tempo is None:
             return _failed("no_tempo_fit")
         multiple, reason = tempo.octave_multiple, tempo.octave_reason
-    fit = fit_grid(
-        beats, row.get("downbeats") or [], offset_s=DEFAULT_OFFSET_S, octave_multiple=multiple
-    )
+    fit = fit_grid(beats, row.get("downbeats") or [], offset_s=DEFAULT_OFFSET_S, octave_multiple=multiple)
     if fit.reason:
         return _failed(fit.reason)
     return {
@@ -119,9 +115,7 @@ def write_candidates(candidate: str, out_dir: str, genres_path: str | None) -> N
                 print("[tempo_family] tf_fold_genre: no --genres given, row not written")
                 continue
             results = {
-                sid: build(
-                    row, fold=True, policy=True, family=tempo_family_for_genre(genres.get(sid))
-                )
+                sid: build(row, fold=True, policy=True, family=tempo_family_for_genre(genres.get(sid)))
                 for sid, row in rows.items()
             }
         else:
@@ -129,9 +123,7 @@ def write_candidates(candidate: str, out_dir: str, genres_path: str | None) -> N
         payload = {
             "schema": 1,
             "candidate": name,
-            "candidate_version": (
-                f"tempo_family over {source['candidate']} ({source['candidate_version']})"
-            ),
+            "candidate_version": (f"tempo_family over {source['candidate']} ({source['candidate_version']})"),
             "source_candidate": os.path.relpath(candidate),
             "license": source["license"],
             "shippable": True,
@@ -165,9 +157,7 @@ def band_table(results_path: str) -> str:
     ]
     for cand in doc["candidates"]:
         for dynamic in (False, True):
-            counts: dict[str, collections.Counter[str]] = collections.defaultdict(
-                collections.Counter
-            )
+            counts: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
             for track in cand["tracks"]:
                 if track["is_dynamic"] != dynamic:
                     continue

@@ -28,8 +28,12 @@ def _in_process(code: str, override: str | None = None) -> subprocess.CompletedP
     if override is not None:
         environment[GRID_FIT_ENV] = override
     return subprocess.run(
-        [sys.executable, "-c", code], env=environment, capture_output=True,
-        text=True, timeout=30, check=False,
+        [sys.executable, "-c", code],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
     )
 
 
@@ -40,9 +44,12 @@ def _result(result: subprocess.CompletedProcess[str]) -> str:
 
 def test_shipped_config_serves_const_regions():
     assert analysis_config.load_config()["own_beatgrid"]["grid_fit"] == "const_regions"
-    assert _result(_in_process(
-        "from apps.analysis.backends.grid_fit_setting import grid_fit_mode; print(grid_fit_mode())"
-    )) == "const_regions"
+    assert (
+        _result(
+            _in_process("from apps.analysis.backends.grid_fit_setting import grid_fit_mode; print(grid_fit_mode())")
+        )
+        == "const_regions"
+    )
 
 
 def test_missing_section_falls_back_to_const_regions():

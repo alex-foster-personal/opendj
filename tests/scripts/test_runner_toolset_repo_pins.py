@@ -1,6 +1,6 @@
 """Every `repo:`-sourced pin in ci/runner-toolset.yml matches the file it names.
 
-Split out of tests/scripts/test_runner_toolset_complete.py: that file checks
+Split out of (private path): that file checks
 the manifest declares every tool CI uses; this one checks the declared versions
 of repo-backed entries (packageManager, action inputs, lockfiles, a pinned
 `cargo install`) track their source, so a bump in the source goes red here
@@ -316,7 +316,7 @@ def test_two_different_pins_in_one_source_glob_go_red(manifest: dict, tmp_path: 
         (
             "pnpm",
             "apps/webui/frontend/package.json",
-            '{"packageManager": "pnpm@11.9.0+sha512.abc"}',
+            '{"packageManager": "pnpm@11.11.0+sha512.abc"}',
         ),
         (
             "toolcache-sccache",

@@ -129,7 +129,10 @@ describe('rowFromListWire keeps analysis status for empty cells', () => {
 	// The server keeps an explicit ok beside an empty string (same predicate
 	// as the client), so that row arrives with its status and stays ok.
 	it('keeps the served ok on an empty-string key row', () => {
-		const row = wire.rowFromListWire({ ...baseListWire, key: '', key_status: 'ok', key_reason: null }, 1);
+		const row = wire.rowFromListWire(
+			{ ...baseListWire, key: '', key_status: 'ok', key_reason: null },
+			1
+		);
 		assert.equal(row.key_status, 'ok');
 		assert.equal(row.key_reason, null);
 	});

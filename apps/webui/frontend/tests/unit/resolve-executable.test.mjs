@@ -40,7 +40,9 @@ test('a program on no PATH directory fails with a named error', () => {
 
 test(
 	'a non-executable file of that name does not shadow the real program',
-	{ skip: process.platform === 'win32' && 'Windows has no execute permission bit; PATHEXT decides' },
+	{
+		skip: process.platform === 'win32' && 'Windows has no execute permission bit; PATHEXT decides'
+	},
 	() => {
 		const shadow = mkdtempSync(path.join(tmpdir(), 'resolve-shadow-'));
 		try {

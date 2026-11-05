@@ -5,6 +5,7 @@
 - [if] a clock time sits in the dead gap at the bottom of the dial [then] it is refused by name, never clamped, [else stop].
 - [if] ``color_fx 2 next`` is sent [then] the command carries ``effect: next``, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

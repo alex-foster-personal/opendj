@@ -27,6 +27,9 @@ export async function runTransitionInCue(
 			);
 		}
 	} catch (e) {
-		deps.pushToast(`Transition-in cue not set: ${e instanceof Error ? e.message : String(e)}`, 'error');
+		deps.pushToast(
+			`Transition-in cue not set: ${e instanceof Error ? e.message : String(e)}`,
+			'error'
+		);
 	}
 }

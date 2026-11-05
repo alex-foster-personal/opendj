@@ -69,7 +69,9 @@ export function watchUiPrefsPuts(page: Page): UiPrefsPutWatch {
 		if (status !== null && status >= 200 && status < 300) {
 			if (body !== null) landed.push(body);
 		} else if (status !== null || !(blocked.has(r) || afterRoute.has(r))) {
-			failed.push(`${JSON.stringify(body)}: ${status !== null ? `HTTP ${status}` : (why ?? 'no response')}`);
+			failed.push(
+				`${JSON.stringify(body)}: ${status !== null ? `HTTP ${status}` : (why ?? 'no response')}`
+			);
 		}
 	};
 	page.on('request', (r) => {

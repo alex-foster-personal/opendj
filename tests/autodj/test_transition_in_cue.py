@@ -151,7 +151,9 @@ def test_propose_transition_without_a_cue_still_moves_in_windows() -> None:
     """[if] there is no transition-in cue [then] place_hit may still move the in-window, [else stop]."""
     from apps.autodj.propose import propose_transition
 
-    result = propose_transition(profile("trk-out"), profile("trk-in"), out_deck=1, in_deck=2, intent="energy_up", top=None)
+    result = propose_transition(
+        profile("trk-out"), profile("trk-in"), out_deck=1, in_deck=2, intent="energy_up", top=None
+    )
     rationales = " ".join(p["rationale"] for p in result["proposals"])
     assert "in-window moved" in rationales
 

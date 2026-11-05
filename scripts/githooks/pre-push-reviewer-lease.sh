@@ -21,11 +21,11 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 if [ "${MDT_REVIEWER_LEASE_EMERGENCY:-0}" = "1" ]; then
-  export MDT_REVIEWER_LEASE_EMERGENCY=1
+    export MDT_REVIEWER_LEASE_EMERGENCY=1
 fi
 
 while read -r local_ref local_sha remote_ref remote_sha; do
-  printf '%s %s %s %s\n' "$local_ref" "$local_sha" "$remote_ref" "$remote_sha"
+    printf '%s %s %s %s\n' "$local_ref" "$local_sha" "$remote_ref" "$remote_sha"
 done | uv run --no-sync python -m scripts.review_lease check-push
 
 exit 0

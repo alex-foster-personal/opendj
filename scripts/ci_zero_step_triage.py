@@ -178,15 +178,11 @@ def _runs_at_head(head_sha: str) -> list[_RunRef]:
     runs: list[_RunRef] = []
     for run in _paginated_list(f"repos/{REPO}/actions/runs?head_sha={head_sha}", "workflow_runs"):
         if not isinstance(run, dict):
-            raise PreconditionError(
-                f"actions/runs for head {head_sha} contained an invalid run: {run!r}"
-            )
+            raise PreconditionError(f"actions/runs for head {head_sha} contained an invalid run: {run!r}")
         run_id = run.get("id")
         workflow_id = run.get("workflow_id")
         if type(run_id) is not int or type(workflow_id) is not int:
-            raise PreconditionError(
-                f"actions/runs for head {head_sha} contained an invalid run: {run!r}"
-            )
+            raise PreconditionError(f"actions/runs for head {head_sha} contained an invalid run: {run!r}")
         runs.append(_RunRef(run_id=run_id, workflow_id=workflow_id))
     return runs
 
@@ -213,9 +209,7 @@ def _jobs_for_run(run_id: int) -> list[dict[str, object]]:
     jobs: list[dict[str, object]] = []
     for item in _paginated_list(f"repos/{REPO}/actions/runs/{run_id}/jobs", "jobs"):
         if not isinstance(item, dict) or "name" not in item or "conclusion" not in item:
-            raise PreconditionError(
-                f"actions/runs/{run_id}/jobs contained an invalid job: {item!r}"
-            )
+            raise PreconditionError(f"actions/runs/{run_id}/jobs contained an invalid job: {item!r}")
         jobs.append(item)
     return jobs
 
@@ -262,15 +256,13 @@ def classify_job(job: dict[str, object]) -> tuple[str, int, str]:
         return (
             LABEL_CANCELLED,
             steps,
-            f'"{name}": cancelled, {steps} step(s) executed -- unmeasurable, '
-            "excluded from every tally.",
+            f'"{name}": cancelled, {steps} step(s) executed -- unmeasurable, excluded from every tally.',
         )
     if conclusion is None:
         return (
             LABEL_INCOMPLETE,
             steps,
-            f'"{name}": still queued or in progress -- excluded from every tally, '
-            "re-run once it completes.",
+            f'"{name}": still queued or in progress -- excluded from every tally, re-run once it completes.',
         )
     if conclusion in ("action_required", "neutral", "stale"):
         labels = {
@@ -294,7 +286,7 @@ def classify_job(job: dict[str, object]) -> tuple[str, int, str]:
     if conclusion == "success":
         return LABEL_OK, steps, f'"{name}": {conclusion}, {steps} step(s) executed.'
     raise PreconditionError(
-        f'job {job.get("id")!r} named {name!r} has an unrecognized conclusion {conclusion!r} -- '
+        f"job {job.get('id')!r} named {name!r} has an unrecognized conclusion {conclusion!r} -- "
         "refusing to default it to OK"
     )
 

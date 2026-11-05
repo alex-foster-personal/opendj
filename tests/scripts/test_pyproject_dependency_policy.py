@@ -2,7 +2,7 @@
 
 The block is the single place a reader (human or agent) learns that uv is the
 only installer, pyproject.toml the only declaration and uv.lock the only lock
-(ADR docs/decisions/ADR-*-uv-lock-single-python-lock.md). These tests pin that
+(ADR (private path)*-uv-lock-single-python-lock.md). These tests pin that
 it stays at the top, keeps its load-bearing rules, and cites only https URLs
 on documentation hosts, so a link cannot quietly rot into a non-doc host.
 """
@@ -72,9 +72,5 @@ def test_policy_urls_are_https_on_doc_hosts() -> None:
     urls = set(_URL_RE.findall(joined))
     # Presence first: an empty set would pass the host check vacuously.
     assert urls >= REQUIRED_URLS, f"missing doc URL(s): {sorted(REQUIRED_URLS - urls)}"
-    bad = sorted(
-        url
-        for url in urls
-        if urlparse(url).scheme != "https" or urlparse(url).hostname not in DOC_HOSTS
-    )
+    bad = sorted(url for url in urls if urlparse(url).scheme != "https" or urlparse(url).hostname not in DOC_HOSTS)
     assert not bad, f"non-https or off-allowlist URL(s) in policy block: {bad}"

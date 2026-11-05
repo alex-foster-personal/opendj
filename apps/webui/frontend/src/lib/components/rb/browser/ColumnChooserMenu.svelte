@@ -1,6 +1,7 @@
 <script module lang="ts">
 	import type { HideableColumn } from '$lib/rb/library-columns';
 	import type { KeyNotation } from '$lib/rb/key-notation';
+	import type { TagTypeChooserEntry } from '$lib/rb/library-tags.svelte';
 	import type { UiSkin } from '$lib/rb/ui-skin';
 
 	/** The ui-prefs state and setters the chooser reads and calls. The table
@@ -14,6 +15,9 @@
 			readonly ui_skin: UiSkin;
 		};
 		toggleColumn: (col: HideableColumn) => void;
+		tagTypes: () => TagTypeChooserEntry[];
+		toggleTagTypeColumn: (entry: TagTypeChooserEntry) => void;
+		toggleTagTypeInTags: (entry: TagTypeChooserEntry) => void;
 		showAllColumns: () => void;
 		setKeyNotation: (next: KeyNotation) => void;
 		setDensity: (next: 'compact' | 'cosy') => void;
@@ -31,6 +35,13 @@
 	import { HIDEABLE_COLUMN_LABELS, HIDEABLE_COLUMNS } from '$lib/rb/library-columns';
 	import { KEY_NOTATIONS, keyNotationChoiceLabel } from '$lib/rb/key-notation';
 	import { UI_SKIN_CHOICES, UI_SKIN_LABELS } from '$lib/rb/ui-skin';
+	import { OPTIONAL_COLUMN_LABELS, OPTIONAL_COLUMNS } from '$lib/rb/library-works';
+	import {
+		reportWorksFailure,
+		setClassicalLayout,
+		setOptionalColumn,
+		worksView
+	} from '$lib/rb/works-overlay.svelte';
 
 	type MenuItem = ComponentProps<typeof ContextMenu>['items'][number];
 
@@ -59,6 +70,29 @@
 			testId: `column-chooser-${col}`,
 			run: () => prefs.toggleColumn(col)
 		})),
+		...OPTIONAL_COLUMNS.map((col) => {
+			const on = worksView.optionalColumns.includes(col);
+			return {
+				id: `col-${col}`,
+				label: `${on ? 'Hide' : 'Show'} column: ${OPTIONAL_COLUMN_LABELS[col]}`,
+				checked: on,
+				testId: `column-chooser-${col}`,
+				run: () =>
+					void setOptionalColumn(col, !on).catch((exc: unknown) =>
+						reportWorksFailure('column change failed', exc)
+					)
+			};
+		}),
+		{
+			id: 'classical-layout',
+			label: `${worksView.classicalLayout ? 'Turn off' : 'Turn on'} Classical layout`,
+			checked: worksView.classicalLayout,
+			testId: 'column-chooser-classical-layout',
+			run: () =>
+				void setClassicalLayout(!worksView.classicalLayout).catch((exc: unknown) =>
+					reportWorksFailure('layout change failed', exc)
+				)
+		},
 		hidden.size === 0
 			? {
 					id: 'col-show-all',
@@ -72,6 +106,22 @@
 					testId: 'column-chooser-show-all',
 					run: prefs.showAllColumns
 				},
+		...prefs.tagTypes().flatMap((entry) => [
+			{
+				id: `tagtype-col-${entry.id}`,
+				label: `${entry.column ? 'Hide' : 'Show'} column: ${entry.label}`,
+				checked: entry.column,
+				testId: `column-chooser-tagtype-${entry.id}`,
+				run: () => prefs.toggleTagTypeColumn(entry)
+			},
+			{
+				id: `tagtype-tags-${entry.id}`,
+				label: `${entry.inTags ? 'Leave out of' : 'Also show in'} Tags: ${entry.label}`,
+				checked: entry.inTags,
+				testId: `column-chooser-tagtype-tags-${entry.id}`,
+				run: () => prefs.toggleTagTypeInTags(entry)
+			}
+		]),
 		...KEY_NOTATIONS.map((notation) => ({
 			id: `key-${notation}`,
 			label: _current(

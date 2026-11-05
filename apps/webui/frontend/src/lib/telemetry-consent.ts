@@ -359,7 +359,10 @@ export function bootTelemetryConsent(deps: BootDeps): () => void {
 /** The dialog's buttons. Records the answer, then arms replay on acceptance. */
 export async function answerConsent(
 	decision: ConsentDecision,
-	put: (body: { decision: ConsentDecision; terms_version: string }) => Promise<ConsentOut> = putConsent
+	put: (body: {
+		decision: ConsentDecision;
+		terms_version: string;
+	}) => Promise<ConsentOut> = putConsent
 ): Promise<ConsentOut> {
 	const terms_version = currentConsent()?.terms_current_version;
 	if (!terms_version) throw new Error('telemetry consent: no terms version loaded');

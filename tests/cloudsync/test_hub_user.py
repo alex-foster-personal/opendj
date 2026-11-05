@@ -29,11 +29,11 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.__main__ import HUB_MACHINE_NAME_ENV
+from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.sync_hub import hub_deploy, hub_user
 from apps.sync_hub.machine_credentials import MODE_ENV
-from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-24")
 
@@ -47,9 +47,7 @@ UV = "/opt/fake/uv"
 def _fake_systemctl(tmp_path: Path) -> tuple[str, Path]:
     log = tmp_path / "systemctl.log"
     script = tmp_path / "systemctl"
-    script.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$*" >> {shlex.quote(str(log))}\n', encoding="utf-8"
-    )
+    script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> {shlex.quote(str(log))}\n', encoding="utf-8")
     script.chmod(0o755)
     return str(script), log
 
@@ -155,10 +153,7 @@ def test_provision_writes_data_dir_identity_units_and_registry(tmp_path: Path) -
 def test_serve_unit_argv_is_the_single_hub_argv_on_the_user_port(tmp_path: Path) -> None:
     plan = _provision(tmp_path, "ben")
     service = _unit(plan, ".service")
-    (exec_start,) = [
-        line.removeprefix("ExecStart=") for line in service.splitlines()
-        if line.startswith("ExecStart=")
-    ]
+    (exec_start,) = [line.removeprefix("ExecStart=") for line in service.splitlines() if line.startswith("ExecStart=")]
     assert shlex.split(exec_start) == hub_deploy.hub_serve_argv(
         uv=UV, data_dir=Path(plan.hub.data_dir), port=plan.hub.port
     )
@@ -194,9 +189,7 @@ def test_allowed_hosts_gives_the_tailnet_url_and_the_serve_step(tmp_path: Path) 
     plan = _provision(tmp_path, "ben", allowed_hosts="hub.example-tailnet.ts.net")
     assert plan.tailnet_url == f"https://hub.example-tailnet.ts.net:{plan.hub.port}"
     assert _env_lines(_unit(plan, ".service"))[ALLOWED_HOSTS_ENV] == "hub.example-tailnet.ts.net"
-    assert plan.expose_commands == [
-        ["tailscale", "serve", "--bg", f"--https={plan.hub.port}", plan.hub.url]
-    ]
+    assert plan.expose_commands == [["tailscale", "serve", "--bg", f"--https={plan.hub.port}", plan.hub.url]]
 
 
 def test_extra_env_cannot_override_the_hub_env() -> None:
@@ -242,15 +235,28 @@ def test_without_enable_no_service_manager_is_called(tmp_path: Path) -> None:
 def _cli(*argv: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "apps.sync_hub.hub_deploy", *argv],
-        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
     )
 
 
 def test_cli_dry_run_prints_the_plan_and_writes_nothing(tmp_path: Path) -> None:
     root = tmp_path / "hubs"
     proc = _cli(
-        "provision-user", "--user", "ben", "--uv", UV, "--repo-root", str(REPO_ROOT),
-        "--root", str(root), "--unit-dir", str(tmp_path / "units"), "--dry-run",
+        "provision-user",
+        "--user",
+        "ben",
+        "--uv",
+        UV,
+        "--repo-root",
+        str(REPO_ROOT),
+        "--root",
+        str(root),
+        "--unit-dir",
+        str(tmp_path / "units"),
+        "--dry-run",
     )
     assert proc.returncode == 0, proc.stderr
     plan = json.loads(proc.stdout.splitlines()[0])
@@ -262,9 +268,19 @@ def test_cli_dry_run_prints_the_plan_and_writes_nothing(tmp_path: Path) -> None:
 
 def test_cli_provision_prints_the_url_and_next_steps(tmp_path: Path) -> None:
     proc = _cli(
-        "provision-user", "--user", "ben", "--uv", UV, "--repo-root", str(REPO_ROOT),
-        "--root", str(tmp_path / "hubs"), "--unit-dir", str(tmp_path / "units"),
-        "--allowed-hosts", "hub.example-tailnet.ts.net",
+        "provision-user",
+        "--user",
+        "ben",
+        "--uv",
+        UV,
+        "--repo-root",
+        str(REPO_ROOT),
+        "--root",
+        str(tmp_path / "hubs"),
+        "--unit-dir",
+        str(tmp_path / "units"),
+        "--allowed-hosts",
+        "hub.example-tailnet.ts.net",
     )
     assert proc.returncode == 0, proc.stderr
     port = hub_user.UCFG.PORT_BASE
@@ -277,8 +293,18 @@ def test_cli_provision_prints_the_url_and_next_steps(tmp_path: Path) -> None:
 
 def test_cli_refuses_a_relative_root(tmp_path: Path) -> None:
     proc = _cli(
-        "provision-user", "--user", "ben", "--uv", UV, "--repo-root", str(REPO_ROOT),
-        "--root", "relative/hubs", "--unit-dir", str(tmp_path / "units"), "--dry-run",
+        "provision-user",
+        "--user",
+        "ben",
+        "--uv",
+        UV,
+        "--repo-root",
+        str(REPO_ROOT),
+        "--root",
+        "relative/hubs",
+        "--unit-dir",
+        str(tmp_path / "units"),
+        "--dry-run",
     )
     assert proc.returncode == 1
     assert "[ERROR] --root must be absolute" in proc.stderr
@@ -295,8 +321,7 @@ def test_remove_disables_deletes_units_drops_registry_and_keeps_data(tmp_path: P
         user="ben", root=tmp_path / "hubs", unit_dir=tmp_path / "units", systemctl=systemctl
     )
     assert log.read_text(encoding="utf-8").splitlines() == [
-        "--user disable --now opendj-hub-ben.service opendj-hub-ben-backup.service "
-        "opendj-hub-ben-backup.timer",
+        "--user disable --now opendj-hub-ben.service opendj-hub-ben-backup.service opendj-hub-ben-backup.timer",
         "--user daemon-reload",
     ]
     for path in ben.unit_files.values():
@@ -316,8 +341,7 @@ def test_remove_stops_registered_units_even_when_unit_files_are_missing(tmp_path
         user="ben", root=tmp_path / "hubs", unit_dir=tmp_path / "units", systemctl=systemctl
     )
     assert log.read_text(encoding="utf-8").splitlines() == [
-        "--user disable --now opendj-hub-ben.service opendj-hub-ben-backup.service "
-        "opendj-hub-ben-backup.timer",
+        "--user disable --now opendj-hub-ben.service opendj-hub-ben-backup.service opendj-hub-ben-backup.timer",
     ]
     assert set(hub_user.read_registry(tmp_path / "hubs")) == set()
     assert removal.kept == [ben.hub.data_dir, ben.hub.backup_dir]
@@ -332,9 +356,7 @@ def test_remove_unknown_user_is_refused(tmp_path: Path) -> None:
 def test_freed_port_is_reused_by_the_next_user(tmp_path: Path) -> None:
     systemctl, _ = _fake_systemctl(tmp_path)
     ben = _provision(tmp_path, "ben")
-    hub_user.remove_user_hub(
-        user="ben", root=tmp_path / "hubs", unit_dir=tmp_path / "units", systemctl=systemctl
-    )
+    hub_user.remove_user_hub(user="ben", root=tmp_path / "hubs", unit_dir=tmp_path / "units", systemctl=systemctl)
     assert _provision(tmp_path, "kim").hub.port == ben.hub.port
 
 
@@ -345,27 +367,32 @@ def test_provisioned_serve_unit_boots_under_enforce(tmp_path: Path) -> None:
     """Run the unit's ExecStart with its Environment; health answers, status 401s."""
     port = _free_port()
     plan = hub_user.plan_user_hub(
-        user="ben", root=tmp_path / "hubs", port=None, unit_dir=tmp_path / "units",
+        user="ben",
+        root=tmp_path / "hubs",
+        port=None,
+        unit_dir=tmp_path / "units",
         allowed_hosts=None,
     )
     # The registry window may be busy on a shared box: substitute a free port.
-    plan = hub_user.UserHubPlan(**{**plan.__dict__, "hub": hub_user.UserHub(
-        **{**plan.hub.__dict__, "port": port, "url": f"http://127.0.0.1:{port}"}
-    )})
-    hub_user.provision_user_hub(
-        plan, repo_root=REPO_ROOT, uv=UV, keep=3, allowed_hosts=None, enable=False
+    plan = hub_user.UserHubPlan(
+        **{
+            **plan.__dict__,
+            "hub": hub_user.UserHub(**{**plan.hub.__dict__, "port": port, "url": f"http://127.0.0.1:{port}"}),
+        }
     )
+    hub_user.provision_user_hub(plan, repo_root=REPO_ROOT, uv=UV, keep=3, allowed_hosts=None, enable=False)
     service = _unit(plan, ".service")
-    (exec_start,) = [
-        line.removeprefix("ExecStart=") for line in service.splitlines()
-        if line.startswith("ExecStart=")
-    ]
+    (exec_start,) = [line.removeprefix("ExecStart=") for line in service.splitlines() if line.startswith("ExecStart=")]
     argv = shlex.split(exec_start)
     assert argv[:4] == [UV, "run", "--no-sync", "python"]
     env = {**os.environ, **_env_lines(service)}
     proc = subprocess.Popen(
         [sys.executable, *argv[4:]],
-        cwd=REPO_ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     stderr = proc.stderr
     assert stderr is not None
@@ -384,9 +411,7 @@ def test_provisioned_serve_unit_boots_under_enforce(tmp_path: Path) -> None:
                 time.sleep(0.5)
         hub_id = machine_identity.machine_id_path(Path(plan.hub.data_dir)).read_text().strip()
         with pytest.raises(urllib.error.HTTPError) as exc_info:
-            urllib.request.urlopen(
-                f"{plan.hub.url}/api/v1/sync/status?machine_id={hub_id}", timeout=5
-            )
+            urllib.request.urlopen(f"{plan.hub.url}/api/v1/sync/status?machine_id={hub_id}", timeout=5)
         assert exc_info.value.code == 401, "ENFORCE must 401 a credential-less status call"
     finally:
         proc.terminate()

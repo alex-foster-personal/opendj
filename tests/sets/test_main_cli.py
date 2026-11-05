@@ -1,4 +1,5 @@
 """Smoke tests for the ``python -m apps.sets`` argparse entry."""
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,16 @@ def test_parser_exposes_expected_subcommands():
     assert sub_actions, "expected at least one subparsers action"
     choices = set(sub_actions[0].choices.keys())
     assert {
-        "start", "stop", "resume", "status", "list",
-        "prune", "classify", "label", "train", "replay",
+        "start",
+        "stop",
+        "resume",
+        "status",
+        "list",
+        "prune",
+        "classify",
+        "label",
+        "train",
+        "replay",
         "soundcloud-export",
     } <= choices
 
@@ -38,9 +47,8 @@ def test_list_command_handles_empty_tree(capsys, tmp_path, monkeypatch):
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", tmp_path / "empty")
     # list uses SetsState not sessions_mod, but still needs the DB path:
     from apps.sets import state as state_mod
-    monkeypatch.setattr(
-        state_mod.sets_paths, "SETS_DB", tmp_path / "sets.db"
-    )
+
+    monkeypatch.setattr(state_mod.sets_paths, "SETS_DB", tmp_path / "sets.db")
     rc = cli.main(["list"])
     assert rc == 0
     assert "no sessions recorded yet" in capsys.readouterr().out
@@ -64,13 +72,23 @@ def test_replay_command_renders_seeded_session(tmp_path, monkeypatch, capsys):
         ),
     )
     (sess / "transitions.jsonl").write_text(
-        json.dumps({
-            "idx": 0, "t_start_s": 0.0, "t_change_s": 10.0, "t_end_s": 12.0,
-            "from_deck": "A", "to_deck": "B", "from_track": "t1",
-            "to_track": "t2", "predicted_class": "cut", "confidence": 0.9,
-            "model_version": "rules-v0",
-            "features": {"overlap_s": 0.1},
-        }) + "\n"
+        json.dumps(
+            {
+                "idx": 0,
+                "t_start_s": 0.0,
+                "t_change_s": 10.0,
+                "t_end_s": 12.0,
+                "from_deck": "A",
+                "to_deck": "B",
+                "from_track": "t1",
+                "to_track": "t2",
+                "predicted_class": "cut",
+                "confidence": 0.9,
+                "model_version": "rules-v0",
+                "features": {"overlap_s": 0.1},
+            }
+        )
+        + "\n"
     )
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     rc = cli.main(["replay", "s1", "--format", "jsonl"])

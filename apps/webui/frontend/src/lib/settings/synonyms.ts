@@ -25,6 +25,8 @@ export const SETTINGS_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 	vocals: ['vocals_filter', 'lyrics', 'lines'],
 	segments: ['show_sections', 'sections', 'phrase'],
 	structure: ['show_sections', 'sections', 'phrase'],
+	bluetooth: ['speaker_auto_recover', 'speaker', 'reconnect'],
+	hyperboom: ['speaker_auto_recover', 'speaker', 'reconnect'],
 	drift: ['show_tempo_lane', 'tempo_lane_scale', 'tempo'],
 	bpm: ['show_tempo_lane', 'tempo_lane_scale', 'tempo'],
 	karaoke: ['lyrics_global', 'lyrics_waveform_overlay', 'lyrics_deck_line'],

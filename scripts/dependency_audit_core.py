@@ -199,8 +199,7 @@ def summarize(results: list[ScanResult]) -> tuple[int, str]:
     dev_count = sum(1 for r in results for f in r.findings if f.dev_only)
     runtime_count = sum(1 for r in results for f in r.findings if not f.dev_only)
     lines.append(
-        f"[dependency-audit] findings={runtime_count + dev_count} "
-        f"(runtime={runtime_count} dev-only={dev_count})"
+        f"[dependency-audit] findings={runtime_count + dev_count} (runtime={runtime_count} dev-only={dev_count})"
     )
     unknown = [r.name for r in results if r.status == "UNKNOWN"]
     if unknown:

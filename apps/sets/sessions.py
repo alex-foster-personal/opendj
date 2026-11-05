@@ -90,15 +90,24 @@ def list_sessions(*, sets_root: Path | None = None) -> list[SessionSummary]:
 
 
 def get_session(session_id: str, *, sets_root: Path | None = None) -> Session | None:
-    """Return the full :class:`Session` or ``None`` if missing."""
+    """Return the full :class:`Session` or ``None`` if missing.
+
+    Raises ``ValueError`` when ``manifest.json`` names a different session_id
+    than the requested directory.
+    """
     root = sets_paths.resolve_sets_root(sets_root)
     session_dir = sets_paths.session_dir(session_id, root=root)
     if not (session_dir / "manifest.json").exists():
         return None
     manifest = read_manifest(session_dir)
+    if manifest.session_id != session_id:
+        raise ValueError(
+            f"manifest session_id {manifest.session_id!r} does not match "
+            f"requested {session_id!r}"
+        )
     summary = _session_summary(manifest, session_dir)
-    transitions = read_transitions(manifest.session_id, sets_root=root)
-    labels = read_labels(manifest.session_id, sets_root=root)
+    transitions = read_transitions(session_id, sets_root=root)
+    labels = read_labels(session_id, sets_root=root)
     return Session(
         summary=summary,
         manifest=manifest.to_dict(),

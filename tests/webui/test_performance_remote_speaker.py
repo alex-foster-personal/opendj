@@ -121,9 +121,28 @@ def _receiver_handler(command: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _port_refuses(port: int) -> bool:
+    """True when nothing on 127.0.0.1:port accepts a TCP handshake.
+
+    Bind the probe first. On loopback, connect() to a closed port succeeds
+    when the kernel picks that same port as the source: the socket connects
+    to itself (see ``apps.webui.server.ui_url._dev_frontend_accepts``). A
+    source port equal to ``port`` means nothing else held it.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        if int(probe.getsockname()[1]) == port:
+            return True
         probe.settimeout(1.0)
         return probe.connect_ex(("127.0.0.1", port)) != 0
+
+
+def test_port_refuses_a_just_freed_ephemeral() -> None:
+    """Linux loopback can self-connect to a closed ephemeral; that is not a listener."""
+    for _ in range(32):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+            holder.bind(("127.0.0.1", 0))
+            port = int(holder.getsockname()[1])
+        assert _port_refuses(port)
 
 
 def _offer_url(port: int) -> str:

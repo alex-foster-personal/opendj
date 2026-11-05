@@ -3,9 +3,9 @@
 # requires-python = ">=3.10"
 # dependencies = []
 # ///
-"""Re-check every docs/moc/*.md citation against the live tree.
+"""Re-check every (private path)/*.md citation against the live tree.
 
-A MOC (map of content, see .agents/skills/area-moc/SKILL.md) cites its claims
+A MOC (map of content, see (private path)) cites its claims
 two ways, both backtick-delimited so they are trivial to find in prose:
 
   1. Path citation: a backtick path, optionally with a line or line range,
@@ -54,18 +54,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-THRESHOLD_RE = re.compile(
-    r"`(?P<snippet>[^`\n]+)`\s*\(`(?P<path>[A-Za-z0-9_][A-Za-z0-9_.\-/]*):(?P<line>\d+)`\)"
-)
+THRESHOLD_RE = re.compile(r"`(?P<snippet>[^`\n]+)`\s*\(`(?P<path>[A-Za-z0-9_][A-Za-z0-9_.\-/]*):(?P<line>\d+)`\)")
 PATH_RE = re.compile(
     r"`(?P<path>[A-Za-z0-9_][A-Za-z0-9_.\-/]*/[A-Za-z0-9_.\-]+)"
     r"(?::(?P<line1>\d+)(?:-(?P<line2>\d+))?)?`"
 )
 # Root-level candidates: no `/` at all. Every match is then filtered through
 # `_is_root_citation` -- the regex alone would also match a bare basename.
-ROOT_PATH_RE = re.compile(
-    r"`(?P<path>[A-Za-z_][A-Za-z0-9_.\-]*)(?::(?P<line1>\d+)(?:-(?P<line2>\d+))?)?`"
-)
+ROOT_PATH_RE = re.compile(r"`(?P<path>[A-Za-z_][A-Za-z0-9_.\-]*)(?::(?P<line1>\d+)(?:-(?P<line2>\d+))?)?`")
 ROOT_BARE_FILES = frozenset({"justfile", "Makefile"})
 
 OK = "OK"
@@ -118,9 +114,7 @@ def check_threshold(repo_root: Path, moc_name: str, snippet: str, path: str, lin
     return Row(moc_name, "threshold", citation, OK, "")
 
 
-def check_path(
-    repo_root: Path, moc_name: str, path: str, line1: str | None, line2: str | None
-) -> Row:
+def check_path(repo_root: Path, moc_name: str, path: str, line1: str | None, line2: str | None) -> Row:
     citation = f"`{path}" + (f":{line1}" + (f"-{line2}" if line2 else "") if line1 else "") + "`"
     full = repo_root / path
     if not full.exists():
@@ -164,11 +158,7 @@ def scan_moc(repo_root: Path, moc_path: Path) -> list[Row]:
     threshold_spans: list[tuple[int, int]] = []
     for m in THRESHOLD_RE.finditer(text):
         threshold_spans.append(m.span())
-        rows.append(
-            check_threshold(
-                repo_root, moc_name, m.group("snippet"), m.group("path"), int(m.group("line"))
-            )
-        )
+        rows.append(check_threshold(repo_root, moc_name, m.group("snippet"), m.group("path"), int(m.group("line"))))
 
     def _in_threshold_span(pos: int) -> bool:
         return any(start <= pos < end for start, end in threshold_spans)
@@ -183,9 +173,7 @@ def scan_moc(repo_root: Path, moc_path: Path) -> list[Row]:
         if key in seen_paths:
             continue
         seen_paths.add(key)
-        rows.append(
-            check_path(repo_root, moc_name, m.group("path"), m.group("line1"), m.group("line2"))
-        )
+        rows.append(check_path(repo_root, moc_name, m.group("path"), m.group("line1"), m.group("line2")))
 
     return rows
 

@@ -33,9 +33,7 @@ FRONTEND_SRC = APPS / "webui" / "frontend" / "src"
 #: The seam itself is allowed to know plan names; that is what it is for.
 EXEMPT_DIRS: tuple[Path, ...] = (APPS / "entitlements",)
 
-SKIP_DIR_NAMES: frozenset[str] = frozenset(
-    {"node_modules", "__pycache__", ".svelte-kit", "build", "dist"}
-)
+SKIP_DIR_NAMES: frozenset[str] = frozenset({"node_modules", "__pycache__", ".svelte-kit", "build", "dist"})
 
 #: A comparison, either way round, between a plan-shaped identifier and a
 #: string literal. Also catches ``plan in ("pro", "team")``.
@@ -67,10 +65,7 @@ def _scanned_files() -> list[Path]:
 
 def test_no_call_site_branches_on_a_plan_name() -> None:
     files = _scanned_files()
-    assert len(files) > 500, (
-        f"only {len(files)} files scanned; the walk is broken and this test "
-        "is passing vacuously"
-    )
+    assert len(files) > 500, f"only {len(files)} files scanned; the walk is broken and this test is passing vacuously"
     offenders: list[str] = []
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")

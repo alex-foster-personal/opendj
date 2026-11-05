@@ -16,7 +16,14 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import RelocatePopoverView from './RelocatePopoverView.svelte';
 
-	let { stableId, trackTitle, x, y, onclose, onrelocated }: {
+	let {
+		stableId,
+		trackTitle,
+		x,
+		y,
+		onclose,
+		onrelocated
+	}: {
 		stableId: string;
 		trackTitle: string | null;
 		x: number;

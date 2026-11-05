@@ -6,7 +6,10 @@ GitHub hands out PR numbers one at a time, so an id built from the PR number
 cannot collide. A requirement first defined by PR #7101 is ``LIBM-7101``; a
 second one in the same category and PR is ``LIBM-7101b`` (the letter suffix
 ``scripts/build_reqs_json`` already accepts). Ids that exist on the base keep
-their numbers.
+their numbers. So do ids listed in ``(private path)``: ids a
+long-lived branch already defined, carried unchanged onto main by its slice PRs
+(the B2B branch, #7955), because that branch's code markers and its preview build
+use those numbers. A second definition of a carried id still fails.
 
     python -m scripts.req_id_pr_number --base <sha> --head <sha> --pr <N> [--head-ref <ref>]
 
@@ -24,6 +27,7 @@ that the generator would see is a bullet this sees.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -33,6 +37,7 @@ from collections import Counter
 from scripts.build_reqs_json import _REQ_ID
 
 SOURCE = ".planning/REQUIREMENTS.md"
+CARRIED = "(private path)"
 _BULLET = re.compile(rf"^\s*-\s+(?:\[[ x]\]\s+)?\*\*({_REQ_ID})\*\*")
 _NUMBERED = re.compile(r"^(?P<code>.+)-(?P<num>\d+)(?P<suffix>[a-z]?)$")
 _SUFFIXES = ["", *"bcdefghijklmnopqrstuvwxyz"]
@@ -53,17 +58,27 @@ def _order(rid: str) -> tuple[int, str, str]:
     return (int(m.group("num")), m.group("suffix"), rid) if m else (sys.maxsize, "", rid)
 
 
-def _show(git: str, rev: str) -> tuple[str | None, str]:
+def _show(git: str, rev: str, path: str = SOURCE) -> tuple[str | None, str]:
     """The file's text at rev ("" when it does not exist there), or None plus git's stderr."""
-    proc = subprocess.run([git, "show", f"{rev}:{SOURCE}"], capture_output=True, text=True, encoding="utf-8", check=False)
+    proc = subprocess.run(
+        [git, "show", f"{rev}:{path}"], capture_output=True, text=True, encoding="utf-8", check=False
+    )
     if proc.returncode == 0:
         return proc.stdout, ""
     if "does not exist" in proc.stderr or "exists on disk, but not in" in proc.stderr:
         return "", ""
-    return None, f"git show {rev}:{SOURCE} exited {proc.returncode}: {proc.stderr.strip() or '(no stderr)'}"
+    return None, f"git show {rev}:{path} exited {proc.returncode}: {proc.stderr.strip() or '(no stderr)'}"
 
 
-def check(base_ids: Counter[str], head_ids: Counter[str], pr: int) -> list[str]:
+def carried_ids(text: str) -> frozenset[str]:
+    """Ids the carried-ids file exempts from the rename, whichever PR they came from."""
+    data = json.loads(text) if text.strip() else {}
+    return frozenset(rid for ids in data.get("carried", {}).values() for rid in ids)
+
+
+def check(
+    base_ids: Counter[str], head_ids: Counter[str], pr: int, carried: frozenset[str] = frozenset()
+) -> list[str]:
     """Return one failure line per new id that is not the next canonical name for its code.
 
     Per code, this PR's ids are CODE-PR, CODE-PRb, CODE-PRc, ... in that order, so
@@ -74,7 +89,7 @@ def check(base_ids: Counter[str], head_ids: Counter[str], pr: int) -> list[str]:
     failures: list[str] = []
     taken = set(head_ids) | set(base_ids)
     by_code: dict[str, list[str]] = {}
-    for rid in sorted(set(head_ids) - set(base_ids), key=_order):
+    for rid in sorted(set(head_ids) - set(base_ids) - carried, key=_order):
         by_code.setdefault(_code(rid), []).append(rid)
     for code, rids in by_code.items():
         free = [f"{code}-{pr}{s}" for s in _SUFFIXES if f"{code}-{pr}{s}" not in base_ids]
@@ -131,9 +146,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[UNKNOWN] {SOURCE} is missing or empty at {args.head} but defines ids at {args.base}", file=sys.stderr)
         return 2
     if head_text and not head_ids:
-        print(f"[UNKNOWN] {SOURCE} at {args.head} defines no ids: the parser is looking at the wrong thing", file=sys.stderr)
+        print(
+            f"[UNKNOWN] {SOURCE} at {args.head} defines no ids: the parser is looking at the wrong thing",
+            file=sys.stderr,
+        )
         return 2
-    failures = check(base_ids, head_ids, args.pr)
+    carried_text, _ = _show(git, args.head, CARRIED)
+    failures = check(base_ids, head_ids, args.pr, carried_ids(carried_text or ""))
     for line in failures:
         print(line, file=sys.stderr)
     if failures:

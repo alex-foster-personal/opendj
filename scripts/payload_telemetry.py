@@ -23,10 +23,10 @@ logged: the file is the only place it is written.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from collections.abc import Mapping
 from pathlib import Path
+
+from scripts.payload_doppler import read_doppler_secret
 
 #: Payload-relative path of the baked file. Next to manifest.json, not under
 #: app/, because it is a build product rather than app source.
@@ -68,36 +68,6 @@ def bundled_telemetry_path(payload_dir: Path) -> Path:
     return payload_dir / BUNDLED_RELATIVE
 
 
-def _doppler_get(name: str) -> str:
-    """Read one Doppler secret. Never logs stdout (the value)."""
-    doppler = shutil.which("doppler")
-    if doppler is None:
-        return ""
-    try:
-        result = subprocess.run(
-            [
-                doppler,
-                "secrets",
-                "get",
-                name,
-                "--project",
-                "general",
-                "--config",
-                "dev_personal",
-                "--plain",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    if result.returncode != 0:
-        return ""
-    return result.stdout.strip()
-
-
 def _looks_like_dsn(value: str) -> bool:
     """A Sentry DSN is an https URL with a key before an @ host. Shape only."""
     return value.startswith("https://") and "@" in value and "/" in value.split("@", 1)[1]
@@ -106,7 +76,7 @@ def _looks_like_dsn(value: str) -> bool:
 def _resolve_one(env: Mapping[str, str], name: str, missing: str) -> str:
     dsn = (env.get(name) or "").strip()
     if not dsn:
-        dsn = _doppler_get(name)
+        dsn = read_doppler_secret(name)
     if not dsn:
         raise PayloadTelemetryError(missing)
     if not _looks_like_dsn(dsn):
@@ -139,9 +109,7 @@ def bake_telemetry(payload_dir: Path, env: Mapping[str, str] | None = None) -> P
     frontend_dsn = _resolve_frontend_dsn(source)
     dest = bundled_telemetry_path(payload_dir)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps({"dsn": dsn, "frontend_dsn": frontend_dsn}) + "\n", encoding="utf-8"
-    )
+    dest.write_text(json.dumps({"dsn": dsn, "frontend_dsn": frontend_dsn}) + "\n", encoding="utf-8")
     return dest
 
 

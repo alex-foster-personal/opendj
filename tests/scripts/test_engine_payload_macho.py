@@ -179,11 +179,7 @@ def test_the_old_predicate_missed_only_the_interpreter(tmp_path: Path) -> None:
     # Candidates that file(1) confirms, which is the set the scan reads.
     # macho_candidates alone is the cheap narrowing pass and still contains
     # the shell launcher; describe_macho is what rejects it.
-    new = {
-        p.relative_to(root).as_posix()
-        for p in macho_candidates(root)
-        if describe_macho(p) is not None
-    }
+    new = {p.relative_to(root).as_posix() for p in macho_candidates(root) if describe_macho(p) is not None}
     assert "runtime/lib/libpython3.11.dylib" in old, (
         f"the control predicate cannot find a .dylib, so it measures nothing: {old}"
     )
@@ -304,9 +300,9 @@ def test_the_fixtures_load_on_the_oldest_macos_the_app_supports() -> None:
     the assertion to tauri.conf.json means raising or lowering the app's floor
     cannot silently invalidate the fixtures.
     """
-    declared = json.loads(
-        (REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text()
-    )["bundle"]["macOS"]["minimumSystemVersion"]
+    declared = json.loads((REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text())["bundle"]["macOS"][
+        "minimumSystemVersion"
+    ]
     ceiling = tuple(int(part) for part in str(declared).split("."))
     for name, entry in load_manifest()["files"].items():
         minos = tuple(int(part) for part in entry["minos"].split("."))
@@ -348,14 +344,10 @@ def test_a_dylibs_install_name_is_not_read_as_a_dependency(tmp_path: Path) -> No
     """
     root = _macho_payload(tmp_path)
     named_so = root / "pylib/_pydantic_core.cpython-311-darwin.so"
-    output = subprocess.run(
-        ["otool", "-L", str(named_so)], capture_output=True, text=True, check=True
-    ).stdout
+    output = subprocess.run(["otool", "-L", str(named_so)], capture_output=True, text=True, check=True).stdout
     as_dylib = parse_otool(output, is_dylib=True)
     as_bundle = parse_otool(output, is_dylib=False)
-    assert len(as_bundle) == len(as_dylib) + 1, (
-        "the fixture must carry an id line, or this proves nothing"
-    )
+    assert len(as_bundle) == len(as_dylib) + 1, "the fixture must carry an id line, or this proves nothing"
     assert as_bundle[0].endswith("opendj-probe-dylib-named.so"), as_bundle
     assert not any(d.endswith("opendj-probe-dylib-named.so") for d in as_dylib)
     assert link_violations("pylib/x.so", as_dylib) == []
@@ -380,6 +372,4 @@ def test_an_executable_keeps_its_first_dependency(tmp_path: Path) -> None:
     kept = parse_otool(output, is_dylib=False)
     mistaken = parse_otool(output, is_dylib=True)
     assert kept, "the fixture must link something, or this proves nothing"
-    assert len(mistaken) == len(kept) - 1, (
-        "the control must show what the wrong answer costs"
-    )
+    assert len(mistaken) == len(kept) - 1, "the control must show what the wrong answer costs"

@@ -19,7 +19,10 @@ let external;
 let readsDown;
 
 function jsonResponse(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'content-type': 'application/json' }
+	});
 }
 
 before(async () => {

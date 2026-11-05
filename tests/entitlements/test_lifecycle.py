@@ -41,9 +41,7 @@ def test_the_four_states_are_exactly_the_agreed_ones() -> None:
         ("archived", False, False),
     ],
 )
-def test_each_state_admits_exactly_its_operations(
-    state: lifecycle.LifecycleState, read: bool, write: bool
-) -> None:
+def test_each_state_admits_exactly_its_operations(state: lifecycle.LifecycleState, read: bool, write: bool) -> None:
     """If read_only stops admitting pull, or admits push, then broken."""
     assert allows(state, "read") is read
     assert allows(state, "write") is write

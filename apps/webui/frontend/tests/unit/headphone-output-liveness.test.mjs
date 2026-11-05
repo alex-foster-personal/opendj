@@ -44,7 +44,10 @@ function elementHarness({
 		},
 		removeEventListener(type, listener) {
 			const bucket = listeners.get(type) ?? [];
-			listeners.set(type, bucket.filter((fn) => fn !== listener));
+			listeners.set(
+				type,
+				bucket.filter((fn) => fn !== listener)
+			);
 		},
 		emit(type) {
 			for (const fn of listeners.get(type) ?? []) fn();
@@ -141,7 +144,10 @@ describe('installHeadphoneOutputLiveness', () => {
 		}
 		assert.equal(live.verdict(), 'dead-escalated');
 		assert.equal(h.calls.filter((c) => c === 'perf:headphone-output-dead:error').length, 1);
-		assert.equal(h.calls.filter((c) => c === 'perf:headphone-output-dead-persistent:error').length, 1);
+		assert.equal(
+			h.calls.filter((c) => c === 'perf:headphone-output-dead-persistent:error').length,
+			1
+		);
 	});
 
 	it('advancing currentTime recovers to ok with one restored toast', () => {
@@ -191,17 +197,15 @@ describe('installHeadphoneOutputLiveness', () => {
 		h.setDevicePresent(false);
 		h.deviceChange();
 		assert.equal(live.verdict(), 'dead');
-		assert.equal(h.calls.filter((c) => c === 'perf:headphone-output-device-vanished:error').length, 1);
+		assert.equal(
+			h.calls.filter((c) => c === 'perf:headphone-output-device-vanished:error').length,
+			1
+		);
 	});
 
 	it('not monitoring => idle and silent', () => {
 		const h = elementHarness();
-		mod.installHeadphoneOutputLiveness(
-			h.element,
-			h.effects,
-			() => false,
-			h.isDevicePresent
-		);
+		mod.installHeadphoneOutputLiveness(h.element, h.effects, () => false, h.isDevicePresent);
 		for (let i = 0; i < 6; i++) {
 			h.advance(mod.LIVENESS_POLL_MS, false);
 			h.poll();
@@ -218,8 +222,14 @@ describe('headphoneLivenessAlertText', () => {
 	});
 
 	it('maps broken verdicts to operator-facing alert copy', () => {
-		assert.equal(headphones.headphoneLivenessAlertText('stalled'), 'Headphone output not producing sound');
-		assert.equal(headphones.headphoneLivenessAlertText('dead'), 'Headphone output not producing sound');
+		assert.equal(
+			headphones.headphoneLivenessAlertText('stalled'),
+			'Headphone output not producing sound'
+		);
+		assert.equal(
+			headphones.headphoneLivenessAlertText('dead'),
+			'Headphone output not producing sound'
+		);
 		assert.match(headphones.headphoneLivenessAlertText('dead-escalated'), /re-select/);
 		assert.equal(headphones.headphoneLivenessAlertText('ok'), null);
 		assert.equal(headphones.headphoneLivenessAlertText('idle'), null);
@@ -248,7 +258,10 @@ describe('cue bridge liveness recovery', () => {
 			{
 				pushToast: () => {},
 				recordPerfEvent: (kind) => calls.push(`perf:${kind}`),
-				setInterval: (fn) => { tick = fn; return 'h'; },
+				setInterval: (fn) => {
+					tick = fn;
+					return 'h';
+				},
 				clearInterval: () => {},
 				now: () => 0,
 				rebindDeadOutput: () => calls.push('cue-rebind'),
@@ -260,8 +273,11 @@ describe('cue bridge liveness recovery', () => {
 		);
 		for (let i = 0; i < 2; i += 1) tick();
 		assert.equal(detector.verdict(), 'dead');
-		assert.deepEqual(calls.filter((c) => c === 'cue-rebind'), ['cue-rebind'],
-			'if a dead headphone leg does not call the cue recovery then it falls through to the global master re-bind and suspends the room - broken');
+		assert.deepEqual(
+			calls.filter((c) => c === 'cue-rebind'),
+			['cue-rebind'],
+			'if a dead headphone leg does not call the cue recovery then it falls through to the global master re-bind and suspends the room - broken'
+		);
 		detector.uninstall();
 	});
 	it('a restarted detector does not read historical underruns as a new stall', () => {
@@ -280,7 +296,10 @@ describe('cue bridge liveness recovery', () => {
 			{
 				pushToast: (message) => toasts.push(message),
 				recordPerfEvent: () => {},
-				setInterval: (fn) => { tick = fn; return 'h'; },
+				setInterval: (fn) => {
+					tick = fn;
+					return 'h';
+				},
 				clearInterval: () => {},
 				now: () => 0,
 				rebindDeadOutput: () => {},
@@ -291,8 +310,11 @@ describe('cue bridge liveness recovery', () => {
 			() => ({ bufferMs: 60, underrunCount: 7 })
 		);
 		tick();
-		assert.deepEqual(toasts.filter((t) => t.startsWith('NO HEADPHONE OUTPUT')), [],
-			'if a restarted detector starts its underrun baseline at 0 then old underruns raise a false NO HEADPHONE OUTPUT - broken');
+		assert.deepEqual(
+			toasts.filter((t) => t.startsWith('NO HEADPHONE OUTPUT')),
+			[],
+			'if a restarted detector starts its underrun baseline at 0 then old underruns raise a false NO HEADPHONE OUTPUT - broken'
+		);
 		assert.notEqual(detector.verdict(), 'stalled');
 		detector.uninstall();
 	});

@@ -20,8 +20,7 @@ def main() -> int:
     print(f"waveform native wheel tags: python={python_tag} abi={abi_tag} platform={platform_tag}")
     if python_tag != minimum_python_tag or abi_tag != "abi3":
         raise SystemExit(
-            f"expected {minimum_python_tag}-abi3 wheel for Python 3.11+; "
-            f"got {python_tag}-{abi_tag}: {wheel.name}"
+            f"expected {minimum_python_tag}-abi3 wheel for Python 3.11+; got {python_tag}-{abi_tag}: {wheel.name}"
         )
     if platform_tag == "any":
         raise SystemExit(f"native extension wheel cannot be platform-independent: {wheel.name}")
@@ -38,8 +37,7 @@ def main() -> int:
         metadata = archive.read(metadata_names[0]).decode()
     suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
     if not any(
-        Path(member).name.startswith("_rb_waveform_native.") and member.endswith(suffixes)
-        for member in members
+        Path(member).name.startswith("_rb_waveform_native.") and member.endswith(suffixes) for member in members
     ):
         raise SystemExit(f"wheel lacks _rb_waveform_native extension: {wheel.name}")
     if "Requires-Dist: numpy>=1.26" not in metadata:

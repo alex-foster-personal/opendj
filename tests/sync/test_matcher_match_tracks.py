@@ -1,4 +1,5 @@
 """Integration tests for ``apps.sync.matcher.match_tracks`` (SYNC-02)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -120,9 +121,7 @@ class TestMatchTracksBuckets:
         """Fixture: 5 RB + 5 djay tracks, 3 ISRC-matching."""
         rb_list = [
             _FakeRB(id=f"rb-{i}", title=f"Track{i}", artist="A", isrc=isrc)
-            for i, isrc in enumerate(
-                ["USA111", "USA222", "USA333", "", ""], start=1
-            )
+            for i, isrc in enumerate(["USA111", "USA222", "USA333", "", ""], start=1)
         ]
         # Phase 2 scorer needs >=3 signals. An ISRC-only match (0.35) is
         # one signal; we bump up by setting file_path + duration on both
@@ -141,9 +140,7 @@ class TestMatchTracksBuckets:
                 file_path=(tmp_path / f"Track{i}.mp3") if isrc else None,
                 duration_s=180.0 if isrc else None,
             )
-            for i, isrc in enumerate(
-                ["USA111", "USA222", "USA333", "USA444", "USA555"], start=1
-            )
+            for i, isrc in enumerate(["USA111", "USA222", "USA333", "USA444", "USA555"], start=1)
         ]
         result = match_tracks(rb_list, dj_list)
         assert len(result.matched) == 3, result.stats
@@ -183,9 +180,6 @@ class TestMatchStats:
         assert result.stats["rb_total"] == 1
         assert result.stats["dj_total"] == 1
         assert (
-            result.stats["matched"]
-            + result.stats["review"]
-            + result.stats["rb_only"]
-            == result.stats["rb_total"]
-            + result.stats["review"]  # review tracks NOT in rb_only
+            result.stats["matched"] + result.stats["review"] + result.stats["rb_only"]
+            == result.stats["rb_total"] + result.stats["review"]  # review tracks NOT in rb_only
         ) or result.stats["rb_only"] <= 1

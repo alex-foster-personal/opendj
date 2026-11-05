@@ -81,9 +81,17 @@ class TempoStabilityOut(BaseModel):
 
 def _not_analyzed(stable_id: str, reason: str, source: str | None) -> TempoStabilityOut:
     return TempoStabilityOut(
-        stable_id=stable_id, status="not_analyzed", reason=reason, beatgrid_source=source,
-        nominal_bpm=None, verdict=None, largest_change_pct=None, change_count=None,
-        grid_class=None, grid_quality_message=None, segments=[],
+        stable_id=stable_id,
+        status="not_analyzed",
+        reason=reason,
+        beatgrid_source=source,
+        nominal_bpm=None,
+        verdict=None,
+        largest_change_pct=None,
+        change_count=None,
+        grid_class=None,
+        grid_quality_message=None,
+        segments=[],
     )
 
 

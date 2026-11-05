@@ -8,7 +8,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let setTabLabel;
 
 before(async () => {
-	({ setTabLabel } = await loadTypeScriptModule('src/lib/components/rb/browser/playlist-set-tabs.ts'));
+	({ setTabLabel } = await loadTypeScriptModule(
+		'src/lib/components/rb/browser/playlist-set-tabs.ts'
+	));
 });
 
 test('SET-05 setTabLabel formats name and play count', () => {

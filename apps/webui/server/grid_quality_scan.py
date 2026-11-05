@@ -34,6 +34,7 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -56,10 +57,11 @@ from apps.analysis_beatgrid.grid_quality import (
     rule_version,
     unknown_quality,
 )
+from apps.analysis_beatgrid.tempo_stability import TempoStability, tempo_stability
 from apps.shared.events import publish
 from apps.shared.platform_paths import AssetResolver
 from apps.webui.server import grid_quality_store, library_playable
-from apps.webui.server.grid_quality_store import StoredGridQuality
+from apps.webui.server.grid_quality_store import StoredGridQuality, StoredTempoStability
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
 from apps.webui.server.scan_runner import ScanRunner as SharedScanRunner
 
@@ -75,6 +77,9 @@ BACKGROUND_PAUSE_S = 0.005
 #: Verdicts are committed in batches so a long first scan shows up as it goes.
 WRITE_BATCH = 200
 SCAN_THREAD_NAME = "grid-quality-scan"
+#: Bump when `tempo_stability.py` changes what it decides: every stored tempo
+#: row is then re-judged on the next scan (issue #7879).
+TEMPO_RULE_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -162,7 +167,9 @@ def read_pqtz_grid(dat_path: Path) -> tuple[list[float], list[float]] | None:
     return times, bpms
 
 
-def _judge(dat_path: Path) -> GridQuality:
+def _judge(dat_path: Path) -> tuple[GridQuality, TempoStability | None]:
+    """The grid verdict and, when the grid has beats, its tempo stability
+    (issue #7879), from ONE parse of the analysis file."""
     try:
         grid = read_pqtz_grid(dat_path)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
@@ -170,10 +177,45 @@ def _judge(dat_path: Path) -> GridQuality:
         # invalid file. Not swallowed: the verdict records it as `unknown`
         # with this reason, and the scan goes on to the next track.
         log.warning("grid-quality: unreadable ANLZ %s (%s)", dat_path, exc)
-        return unknown_quality(REASON_ANLZ_UNREADABLE)
+        return unknown_quality(REASON_ANLZ_UNREADABLE), None
     if grid is None:
-        return unknown_quality(REASON_NO_GRID_DATA)
-    return classify_grid(grid[0], grid[1])
+        return unknown_quality(REASON_NO_GRID_DATA), None
+    return classify_grid(grid[0], grid[1]), _judge_tempo(dat_path, grid[0], grid[1])
+
+
+def _judge_tempo(dat_path: Path, times: list[float], bpms: list[float]) -> TempoStability | None:
+    """None (column blank, never `steady`) when the grid cannot be judged."""
+    if len(times) < 2:
+        return None
+    try:
+        return tempo_stability(times, bpms)
+    except ValueError as exc:
+        # Non-increasing beat times: the detector refuses them. Recorded as not
+        # judged (a blank column) and logged; the scan goes on.
+        log.warning("tempo-stability: cannot judge %s (%s)", dat_path, exc)
+        return None
+
+
+def tempo_rule_version() -> str:
+    """Stored tempo rows are current while this matches: the grid rule plus
+    the tempo rule's own version (bump on any change to tempo_stability.py)."""
+    return f"{rule_version()}+tempo{TEMPO_RULE_VERSION}"
+
+
+def _stored_tempo(stable_id: str, version: str, result: TempoStability | None) -> StoredTempoStability:
+    if result is None:
+        return StoredTempoStability(stable_id, version, tempo_rule_version(), None, None, None, None, "[]", _utc_now())
+    return StoredTempoStability(
+        stable_id=stable_id,
+        grid_version=version,
+        rule_version=tempo_rule_version(),
+        verdict=result.verdict,
+        nominal_bpm=result.nominal_bpm,
+        largest_change_pct=result.largest_change_pct,
+        change_count=result.change_count,
+        segments_json=json.dumps([asdict(segment) for segment in result.segments], separators=(",", ":")),
+        computed_at=_utc_now(),
+    )
 
 
 def _stored(
@@ -199,21 +241,29 @@ def scan_library(*, scope: ScanScope = "present", pause_s: float = 0.0) -> ScanR
     ids = scope_ids(scope)
     metas = bulk_rb_meta(ids)
     stored = grid_quality_store.read_many(ids)
+    stored_tempo = grid_quality_store.read_tempo_many(ids)
+    tempo_rule = tempo_rule_version()
     resolver = AssetResolver()
     pending: list[StoredGridQuality] = []
+    pending_tempo: list[StoredTempoStability] = []
     parsed = unchanged = written = 0
     for stable_id in ids:
         source, version, dat_path, unknown_reason = _grid_identity(metas.get(stable_id), resolver)
         previous = stored.get(stable_id)
+        previous_tempo = stored_tempo.get(stable_id)
         if (
             previous is not None
             and previous.grid_version == version
             and previous.rule_version == rule
+            and previous_tempo is not None
+            and previous_tempo.grid_version == version
+            and previous_tempo.rule_version == tempo_rule
         ):
             unchanged += 1
             continue
+        tempo: TempoStability | None = None
         if dat_path is not None:
-            quality = _judge(dat_path)
+            quality, tempo = _judge(dat_path)
             parsed += 1
             if pause_s > 0:
                 time.sleep(pause_s)
@@ -222,11 +272,14 @@ def scan_library(*, scope: ScanScope = "present", pause_s: float = 0.0) -> ScanR
         else:
             raise AssertionError("a grid with no file must say why it is unknown")
         pending.append(_stored(stable_id, source, version, rule, quality))
+        pending_tempo.append(_stored_tempo(stable_id, version, tempo))
         if len(pending) >= WRITE_BATCH:
             grid_quality_store.upsert_many(pending)
+            grid_quality_store.upsert_tempo_many(pending_tempo)
             written += len(pending)
-            pending = []
+            pending, pending_tempo = [], []
     grid_quality_store.upsert_many(pending)
+    grid_quality_store.upsert_tempo_many(pending_tempo)
     written += len(pending)
     return ScanResult(
         scope=scope,

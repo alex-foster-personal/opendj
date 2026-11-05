@@ -1,4 +1,5 @@
 """OSSPUB-06: rbox is fetched on first use and is not a payload dependency."""
+
 from __future__ import annotations
 
 from pathlib import Path

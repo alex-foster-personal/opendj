@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from apps.engine_core.jobs.runner import (
-    JobRunner,
     UnknownJobKind,
     known_kinds,
     resolve_and_reenqueue,
@@ -27,9 +26,12 @@ from apps.engine_core.jobs.store import (
     JobConflict,
     JobDuplicate,
     JobNotFound,
-    JobStore,
 )
-from apps.shared.engine_app_state import data_dir_from_engine_request
+from apps.shared.engine_app_state import (
+    data_dir_from_engine_request,
+    jobs_runner_from_engine_request,
+    jobs_store_from_engine_request,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -96,24 +98,6 @@ class JobKindsOut(BaseModel):
     kinds: list[str]
 
 
-def _store(request: Request) -> JobStore:
-    store = getattr(request.app.state, "jobs_store", None)
-    if store is None:
-        raise RuntimeError(
-            "engine jobs store is not mounted on app.state.jobs_store"
-        )
-    return store
-
-
-def _runner(request: Request) -> JobRunner:
-    runner = getattr(request.app.state, "jobs_runner", None)
-    if runner is None:
-        raise RuntimeError(
-            "engine jobs runner is not mounted on app.state.jobs_runner"
-        )
-    return runner
-
-
 @router.get("", response_model=list[JobOut])
 def list_jobs(
     request: Request,
@@ -121,7 +105,7 @@ def list_jobs(
         int, Query(ge=1, le=MAX_LIST_LIMIT)
     ] = DEFAULT_LIST_LIMIT,
 ) -> list[dict[str, Any]]:
-    return _store(request).list(limit=limit)
+    return jobs_store_from_engine_request(request).list(limit=limit)
 
 
 @router.get("/kinds", response_model=JobKindsOut)
@@ -168,7 +152,7 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
         # atomically with the insert, and the caller gets that job to adopt.
         requested = payload
         default_data_dir = data_dir_from_engine_request(request)
-        job, created = _store(request).enqueue_unless_active(
+        job, created = jobs_store_from_engine_request(request).enqueue_unless_active(
             body.kind,
             payload,
             conflicts=lambda active: covering_job(
@@ -179,7 +163,7 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
         if not created:
             raise _stems_job_active(job, "not enqueued again")
         return job
-    return _store(request).enqueue(
+    return jobs_store_from_engine_request(request).enqueue(
         body.kind, payload, external_ref=body.external_ref
     )
 
@@ -187,7 +171,7 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
 @router.get("/{job_id}", response_model=JobOut)
 def get_job(request: Request, job_id: str) -> dict[str, Any]:
     try:
-        return _store(request).get(job_id)
+        return jobs_store_from_engine_request(request).get(job_id)
     except JobNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
@@ -197,7 +181,7 @@ def get_job(request: Request, job_id: str) -> dict[str, Any]:
 @router.post("/{job_id}/cancel", response_model=JobOut)
 async def cancel_job(request: Request, job_id: str) -> dict[str, Any]:
     try:
-        return await _runner(request).cancel(job_id)
+        return await jobs_runner_from_engine_request(request).cancel(job_id)
     except JobNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
@@ -264,7 +248,7 @@ def _reenqueue_conflicts(
     },
 )
 def reenqueue_job(request: Request, job_id: str) -> dict[str, Any]:
-    store = _store(request)
+    store = jobs_store_from_engine_request(request)
     try:
         job = store.get(job_id)
         conflicts = (

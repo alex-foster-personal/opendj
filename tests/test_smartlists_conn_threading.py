@@ -10,6 +10,7 @@ was created with sqlite's default check_same_thread=True.
   thread then broken.
 - if a burst of GET /smartlists requests yields any 500 then broken.
 """
+
 from __future__ import annotations
 
 import threading
@@ -64,7 +65,8 @@ def test_conn_usable_from_another_thread(tmp_state_db: Path) -> None:
 
 def test_smartlists_burst_never_500s(tmp_state_db: Path) -> None:
     app: FastAPI = create_app(
-        state_db_path=str(tmp_state_db), mount_frontend=False,
+        state_db_path=str(tmp_state_db),
+        mount_frontend=False,
     )
     with TestClient(app) as client:
         for _ in range(25):

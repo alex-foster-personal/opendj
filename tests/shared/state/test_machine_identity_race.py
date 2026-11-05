@@ -91,9 +91,9 @@ def test_an_existing_id_is_read_from_a_read_only_data_dir(tmp_path: Path) -> Non
     finally:
         tmp_path.chmod(0o700)
     assert read_back == minted, f"the lookup returned {read_back!r}, the dir holds {minted!r}"
-    assert sorted(path.name for path in tmp_path.iterdir()) == [
-        machine_identity.MACHINE_ID_FILENAME
-    ], "a lookup of an existing id must not leave a staging file"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [machine_identity.MACHINE_ID_FILENAME], (
+        "a lookup of an existing id must not leave a staging file"
+    )
 
 
 def test_the_atomic_mint_leaves_only_the_id_file_at_0600(tmp_path: Path) -> None:
@@ -101,9 +101,9 @@ def test_the_atomic_mint_leaves_only_the_id_file_at_0600(tmp_path: Path) -> None
     print("if the atomic mint leaves a temp file behind or loosens the 0600 mode then broken")
     ids, errors = _race_first_mint(tmp_path)
     assert not errors and len(set(ids)) == 1
-    assert sorted(path.name for path in tmp_path.iterdir()) == [
-        machine_identity.MACHINE_ID_FILENAME
-    ], "temp files from the losing racers must be removed"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [machine_identity.MACHINE_ID_FILENAME], (
+        "temp files from the losing racers must be removed"
+    )
     if sys.platform != "win32":
         mode = stat.S_IMODE(machine_identity.machine_id_path(tmp_path).stat().st_mode)
         assert mode == machine_identity.MACHINE_ID_MODE, f"machine-id mode is {oct(mode)}"

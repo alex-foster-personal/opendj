@@ -49,5 +49,9 @@ export function rawAnlz<T extends AnlzData | null | undefined>(anlz: T): T {
 export function isRawAnlz(anlz: unknown): boolean {
 	if (typeof anlz !== 'object' || anlz === null) return false;
 	const proto: unknown = Object.getPrototypeOf(anlz);
-	return typeof proto === 'object' && proto !== null && (proto as Record<symbol, unknown>)[ANLZ_RAW_BRAND] === true;
+	return (
+		typeof proto === 'object' &&
+		proto !== null &&
+		(proto as Record<symbol, unknown>)[ANLZ_RAW_BRAND] === true
+	);
 }

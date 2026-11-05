@@ -74,8 +74,7 @@ class FakeGh:
         if "/compare/" in path:
             assert path.startswith(f"repos/{REPO}/compare/"), path
             assert path.endswith("...main"), (
-                "DEVOPS-02: compare the recorded SHA against main, not a resolved head "
-                f"SHA (path={path})"
+                f"DEVOPS-02: compare the recorded SHA against main, not a resolved head SHA (path={path})"
             )
             base = path.split("/compare/", 1)[1].removesuffix("...main")
             if base in self.compare_errors:
@@ -138,9 +137,7 @@ def test_no_previous_state_marker_reports_bootstrap_and_runs() -> None:
     assert decision.count == -1
     assert decision.base == ""
     assert "bootstrap" in decision.reason
-    assert not any("/compare/" in c for c in gh.calls), (
-        "a missing marker must not invent a compare base"
-    )
+    assert not any("/compare/" in c for c in gh.calls), "a missing marker must not invent a compare base"
 
 
 @pytest.mark.requirement("DEVOPS-02")

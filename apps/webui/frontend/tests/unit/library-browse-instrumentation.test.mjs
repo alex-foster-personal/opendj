@@ -105,7 +105,6 @@ test('playlist tree readiness records a slow-but-real duration instead of throwi
 	);
 });
 
-
 test('a keystroke burst coalesces into ONE settle carrying the last query', () => {
 	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
@@ -299,7 +298,10 @@ test('recordPlaylistTreeReadyMs skips an unusable sample and records a slow one 
 	const timingCountBeforeEpoch = countOfKind('library-playlist-tree-ready');
 	lib.recordPlaylistTreeReadyMs(lib.measurePlaylistTreeReadyMs(1_700_000_000_000));
 	const epochAnomaly = lastOfKind('library-playlist-tree-ready-anomaly');
-	assert.ok(epochAnomaly, 'an epoch-mismatch sample must still be logged as a named perf-event warning');
+	assert.ok(
+		epochAnomaly,
+		'an epoch-mismatch sample must still be logged as a named perf-event warning'
+	);
 	assert.match(epochAnomaly.message, /epoch-mismatch/);
 	assert.equal(
 		countOfKind('library-playlist-tree-ready'),
@@ -310,7 +312,10 @@ test('recordPlaylistTreeReadyMs skips an unusable sample and records a slow one 
 	const timingCountBeforeSlow = countOfKind('library-playlist-tree-ready');
 	lib.recordPlaylistTreeReadyMs(lib.measurePlaylistTreeReadyMs(68_271.9));
 	const slowAnomaly = lastOfKind('library-playlist-tree-ready-anomaly');
-	assert.ok(slowAnomaly, 'a slow-but-real sample must also be flagged so it is findable without scanning every row');
+	assert.ok(
+		slowAnomaly,
+		'a slow-but-real sample must also be flagged so it is findable without scanning every row'
+	);
 	assert.match(slowAnomaly.message, /slow/);
 	const timingRow = lastOfKind('library-playlist-tree-ready');
 	assert.ok(timingRow, 'a slow-but-real sample must still land in the timing ring');

@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { MIC_WHILE_ROOM_PLAYS_REFUSAL, micOpenRefusal } from '../../src/lib/player/io-device-test.ts';
+import {
+	MIC_WHILE_ROOM_PLAYS_REFUSAL,
+	micOpenRefusal
+} from '../../src/lib/player/io-device-test.ts';
 
 const PLAYER = new URL('../../src/lib/player/', import.meta.url);
 const read = (name) => readFileSync(new URL(name, PLAYER), 'utf8');
@@ -21,10 +24,24 @@ function after(source, from, needle) {
 
 test('if calibration reaches getUserMedia before the mic guard then a calibration during a set can silence the Bluetooth MAIN', () => {
 	const source = read('cue-align-audio.ts');
-	const gate = after(source, 'async getUserMedia(): Promise<_MicStreamHandle>', 'assertMicOpenAllowedNow();');
-	const open = after(source, 'async getUserMedia(): Promise<_MicStreamHandle>', 'mediaDevices.getUserMedia(');
-	assert.ok(gate > 0 && open > 0 && gate < open, 'the calibration mic must be refused before it opens');
-	assert.match(source, /import \{ assertMicOpenAllowedNow \} from '\$lib\/player\/io-device-test-audio';/);
+	const gate = after(
+		source,
+		'async getUserMedia(): Promise<_MicStreamHandle>',
+		'assertMicOpenAllowedNow();'
+	);
+	const open = after(
+		source,
+		'async getUserMedia(): Promise<_MicStreamHandle>',
+		'mediaDevices.getUserMedia('
+	);
+	assert.ok(
+		gate > 0 && open > 0 && gate < open,
+		'the calibration mic must be refused before it opens'
+	);
+	assert.match(
+		source,
+		/import \{ assertMicOpenAllowedNow \} from '\$lib\/player\/io-device-test-audio';/
+	);
 });
 
 test('if the Mac app input name unlock opens a mic while MAIN plays then the guard has a hole', () => {
@@ -38,7 +55,10 @@ test('if the Mac app input name unlock opens a mic while MAIN plays then the gua
 });
 
 test('if the shared guard stops refusing while MAIN plays in the Mac app then calibration is unguarded too', () => {
-	assert.equal(micOpenRefusal({ macAppWebview: true, masterRms: 0.02 }), MIC_WHILE_ROOM_PLAYS_REFUSAL);
+	assert.equal(
+		micOpenRefusal({ macAppWebview: true, masterRms: 0.02 }),
+		MIC_WHILE_ROOM_PLAYS_REFUSAL
+	);
 	assert.equal(micOpenRefusal({ macAppWebview: true, masterRms: 0 }), null);
 });
 
@@ -51,6 +71,10 @@ test('if a getUserMedia call site is added outside the guarded set then a mic ca
 	for (const name of readdirSync(PLAYER).filter((file) => file.endsWith('.ts'))) {
 		const calls = (read(name).match(/\.getUserMedia\(\{/g) ?? []).length;
 		if (calls === 0) continue;
-		assert.equal(calls, guarded.get(name), `${name} opens a microphone ${calls}x; route it through assertMicOpenAllowedNow`);
+		assert.equal(
+			calls,
+			guarded.get(name),
+			`${name} opens a microphone ${calls}x; route it through assertMicOpenAllowedNow`
+		);
 	}
 });

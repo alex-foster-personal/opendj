@@ -27,10 +27,7 @@ test('playlist drag payloads round-trip, and junk decodes to null', () => {
 		track_count: 42,
 		kind: 'playlist'
 	};
-	assert.deepEqual(
-		drag.decodePlaylistDrag(drag.encodePlaylistDrag(payload)),
-		payload
-	);
+	assert.deepEqual(drag.decodePlaylistDrag(drag.encodePlaylistDrag(payload)), payload);
 
 	for (const junk of [
 		'',

@@ -6,6 +6,7 @@
 	import type { AnlzWaveform } from '$lib/rb/anlz-types';
 	import WaveformDesignPreviewView from './WaveformDesignPreviewView.svelte';
 	import { blockSnapLoadError } from '$lib/components/rb/wave/block-layout-lazy.svelte';
+	import { paintWaveformPreview } from '$lib/settings/waveform-preview-paint';
 
 	let { design, label = 'Waveform design preview' }: { design?: WaveformDesign; label?: string } = $props();
 
@@ -36,7 +37,7 @@
 	});
 </script>
 
-<WaveformDesignPreviewView {active} {palette} {colors} {sample} {label} />
+<WaveformDesignPreviewView paint={paintWaveformPreview} {active} {palette} {colors} {sample} {label} />
 {#if active === 'blocks' && blockSnapLoadError() !== null}
 	<!-- DECKUX-42: say why deck rows paint the fixed pitch rather than look snapped-but-wrong.
 	     Reload, not a promise to retry: the browser can keep a failed module

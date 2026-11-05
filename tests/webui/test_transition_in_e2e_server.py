@@ -10,10 +10,7 @@ import pytest
 from apps.webui.frontend.tests.e2e.support import transition_in_e2e_server
 
 _LAUNCHER = Path(transition_in_e2e_server.__file__)
-_CONFIG = (
-    Path(__file__).resolve().parents[2]
-    / "apps/webui/frontend/tests/e2e/playwright.transition-in-cue.config.ts"
-)
+_CONFIG = Path(__file__).resolve().parents[2] / "apps/webui/frontend/tests/e2e/playwright.transition-in-cue.config.ts"
 _FIXTURE_MODULE = "apps.webui.frontend.tests.e2e.support.transition_in_fixture"
 
 

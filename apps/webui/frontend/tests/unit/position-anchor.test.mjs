@@ -16,15 +16,30 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const { validAnchor } = await loadTypeScriptModule('src/lib/rb/position-anchor.ts');
 
 const timeline = {};
-const recorded = { position_ms: 1000, context_sec: 5, pitch: 1, basis: { timeline, revision: 3, master_delay_ms: 0 } };
-const live = { timeline, desired_revision: 3, presented_revision: 3, playing: true, loop_active: false, master_delay_ms: 0 };
+const recorded = {
+	position_ms: 1000,
+	context_sec: 5,
+	pitch: 1,
+	basis: { timeline, revision: 3, master_delay_ms: 0 }
+};
+const live = {
+	timeline,
+	desired_revision: 3,
+	presented_revision: 3,
+	playing: true,
+	loop_active: false,
+	master_delay_ms: 0
+};
 
 test('an anchor on the same timeline, revision, transport and delay is valid (control)', () => {
 	assert.deepEqual(validAnchor(recorded, live), { position_ms: 1000, context_sec: 5, pitch: 1 });
 });
 
 for (const [event, change] of [
-	['seek, tempo/pitch, play or loop toggle (a new presented revision)', { desired_revision: 4, presented_revision: 4 }],
+	[
+		'seek, tempo/pitch, play or loop toggle (a new presented revision)',
+		{ desired_revision: 4, presented_revision: 4 }
+	],
 	['any of those still pending (desired ahead of presented)', { desired_revision: 4 }],
 	['load or unload (a new timeline object)', { timeline: {} }],
 	['pause', { playing: false }],
@@ -55,7 +70,10 @@ test('the engine records no anchor for a sample-clock fallback observation, so s
 	// Codex BLOCKING #7594: a stalled output timestamp paired with a sample-clock position projected steps into the past.
 	const { readFrontendSource } = await import('./engine-source.mjs');
 	const source = await readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
-	assert.match(source, /_positionAnchor\[deck\] = observation\.clock_source === 'sample' \? null : \{/);
+	assert.match(
+		source,
+		/_positionAnchor\[deck\] = observation\.clock_source === 'sample' \? null : \{/
+	);
 });
 
 test('a graph reset clears every position anchor; one recorded after it is used as before', async () => {
@@ -63,13 +81,42 @@ test('a graph reset clears every position anchor; one recorded after it is used 
 	// timed from the wrong clock. Control: the recording path, which writes a fresh anchor after the reset, is unchanged.
 	const { readFrontendSource } = await import('./engine-source.mjs');
 	const source = await readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
-	const reset = source.slice(source.indexOf('function _resetGraphState('), source.indexOf('function _resetGraphState(') + 800);
-	assert.match(reset, /_ctx = null; _steps\.cancelAll\(\); for \(const deck of DECK_IDS\) _positionAnchor\[deck\] = null;/);
-	assert.match(source, /_positionAnchor\[deck\] = observation\.clock_source === 'sample' \? null : \{/);
+	const reset = source.slice(
+		source.indexOf('function _resetGraphState('),
+		source.indexOf('function _resetGraphState(') + 800
+	);
+	assert.match(
+		reset,
+		/_ctx = null; _steps\.cancelAll\(\); for \(const deck of DECK_IDS\) _positionAnchor\[deck\] = null;/
+	);
+	assert.match(
+		source,
+		/_positionAnchor\[deck\] = observation\.clock_source === 'sample' \? null : \{/
+	);
 	// The plan side of both halves: a null anchor fires a step on its bar, and a valid anchor sends it ahead.
-	const recorded = { position_ms: 1000, context_sec: 2, pitch: 1, basis: { timeline: {}, revision: 1, master_delay_ms: 0 } };
+	const recorded = {
+		position_ms: 1000,
+		context_sec: 2,
+		pitch: 1,
+		basis: { timeline: {}, revision: 1, master_delay_ms: 0 }
+	};
 	const timeline = recorded.basis.timeline;
-	const now = { timeline, desired_revision: 1, presented_revision: 1, playing: true, loop_active: false, master_delay_ms: 0 };
-	assert.equal(validAnchor(null, now), null, 'after the reset: no anchor, so the step fires on its bar');
-	assert.deepEqual(validAnchor(recorded, now), { position_ms: 1000, context_sec: 2, pitch: 1 }, 'control: a fresh anchor is used');
+	const now = {
+		timeline,
+		desired_revision: 1,
+		presented_revision: 1,
+		playing: true,
+		loop_active: false,
+		master_delay_ms: 0
+	};
+	assert.equal(
+		validAnchor(null, now),
+		null,
+		'after the reset: no anchor, so the step fires on its bar'
+	);
+	assert.deepEqual(
+		validAnchor(recorded, now),
+		{ position_ms: 1000, context_sec: 2, pitch: 1 },
+		'control: a fresh anchor is used'
+	);
 });

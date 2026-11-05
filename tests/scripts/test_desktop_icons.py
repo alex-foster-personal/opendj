@@ -1,8 +1,9 @@
-"""Desktop Tauri icon set verification (issue #2307)."""
+"""Desktop icon set verification (issue #2307), from its shell-neutral home apps/desktop/shared/icons."""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from PIL import Image, ImageDraw
 from scripts.build_engine_payload import PayloadBuildError
 from scripts.desktop_icons import (
     ICNS_REQUIRED_PIXEL_SIZES,
+    ICONS_RELATIVE,
     MASTER_GRID_PROBE_PX,
     generate_desktop_icons,
     icns_embedded_pixel_sizes,
@@ -21,7 +23,8 @@ from scripts.desktop_icons import (
 )
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-ICONS_DIR: Path = REPO_ROOT / "apps/desktop/src-tauri/icons"
+ICONS_DIR: Path = REPO_ROOT / ICONS_RELATIVE
+TAURI_DIR: Path = REPO_ROOT / "apps/desktop/src-tauri"
 
 
 def _grid_master(path: Path, fill: tuple[int, int, int, int]) -> Path:
@@ -37,6 +40,22 @@ def _grid_master(path: Path, fill: tuple[int, int, int, int]) -> Path:
 def test_committed_icon_set_is_complete() -> None:
     """[if] any Tauri slot is missing [then] payload verify must refuse the build, [else stop]."""
     verify_desktop_icons(ICONS_DIR)
+
+
+# REQ: INSTALL-17
+@pytest.mark.requirement("INSTALL-17")
+def test_icon_set_lives_outside_the_tauri_shell_and_tauri_bundles_it_from_there() -> None:
+    """[if] the icon set or a tauri.conf.json icon sits outside shared/icons [then] fail, [else stop].
+
+    Deleting src-tauri would otherwise break the payload build, or the Tauri bundle would lose its icons.
+    """
+    assert not (TAURI_DIR / "icons").exists(), "the icon set moved to apps/desktop/shared/icons"
+    icons = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))["bundle"]["icon"]
+    assert icons, "tauri.conf.json bundle.icon is empty"
+    for relative in icons:
+        resolved = (TAURI_DIR / relative).resolve()
+        assert resolved.parent == ICONS_DIR.resolve(), f"{relative} is not under {ICONS_RELATIVE}"
+        assert resolved.is_file(), f"tauri.conf.json names {relative}, which does not exist"
 
 
 # REQ: INSTALL-17
@@ -108,12 +127,18 @@ def test_committed_master_sits_on_apple_grid() -> None:
         # and the tile itself is opaque, so the check is not passing on an empty image
         assert rgba.getpixel((512, 120))[3] == 255
 
+
 ICONSET_SLOTS = {
-    "icon_16x16.png": (16, 1), "icon_16x16@2x.png": (16, 2),
-    "icon_32x32.png": (32, 1), "icon_32x32@2x.png": (32, 2),
-    "icon_128x128.png": (128, 1), "icon_128x128@2x.png": (128, 2),
-    "icon_256x256.png": (256, 1), "icon_256x256@2x.png": (256, 2),
-    "icon_512x512.png": (512, 1), "icon_512x512@2x.png": (512, 2),
+    "icon_16x16.png": (16, 1),
+    "icon_16x16@2x.png": (16, 2),
+    "icon_32x32.png": (32, 1),
+    "icon_32x32@2x.png": (32, 2),
+    "icon_128x128.png": (128, 1),
+    "icon_128x128@2x.png": (128, 2),
+    "icon_256x256.png": (256, 1),
+    "icon_256x256@2x.png": (256, 2),
+    "icon_512x512.png": (512, 1),
+    "icon_512x512@2x.png": (512, 2),
 }
 
 
@@ -148,19 +173,20 @@ def test_generated_icns_native_decode_preserves_real_master_pixels(tmp_path: Pat
     before = hashlib.sha256(master.read_bytes()).hexdigest()
     generated = tmp_path / "generated"
     generate_desktop_icons(master, generated)
-    for label, icns in (("generated", generated / "icon.icns"),
-                        ("committed", ICONS_DIR / "icon.icns")):
+    for label, icns in (("generated", generated / "icon.icns"), ("committed", ICONS_DIR / "icon.icns")):
         unpacked = tmp_path / f"{label}.iconset"
         subprocess.run(
             [iconutil, "-c", "iconset", str(icns), "-o", str(unpacked)],
-            check=True, capture_output=True, text=True, timeout=20,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
         )
         assert {p.name for p in unpacked.iterdir()} == set(ICONSET_SLOTS)
         for name, (edge, scale) in ICONSET_SLOTS.items():
             with Image.open(unpacked / name) as image:
                 _assert_master_pixels(image, edge * scale)
     assert hashlib.sha256(master.read_bytes()).hexdigest() == before
-
 
 
 @pytest.mark.parametrize("chunk_type", [b"is32", b"s8mk", b"il32", b"l8mk"])

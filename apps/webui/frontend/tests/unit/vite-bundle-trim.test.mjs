@@ -75,7 +75,10 @@ const SHELL = [
 const BOOT = ['/app/src/hooks.client.ts', '/app/src/lib/error-report.ts', '/svelte/runtime.js'];
 
 function membersOf(chunkByModuleId, chunkName) {
-	return [...chunkByModuleId].filter(([, name]) => name === chunkName).map(([id]) => id).sort();
+	return [...chunkByModuleId]
+		.filter(([, name]) => name === chunkName)
+		.map(([id]) => id)
+		.sort();
 }
 
 test('boot-runtime is the entries static closure; layout-shell is node 0 closure minus it', () => {
@@ -105,16 +108,27 @@ test('boot-runtime imports nothing outside itself and layout-shell only boot-run
 		for (const dependency of importedIdsOf(member)) {
 			const dependencyChunk = chunks.get(dependency);
 			if (chunkName === BOOT_RUNTIME_CHUNK) {
-				assert.equal(dependencyChunk, BOOT_RUNTIME_CHUNK, `${member} -> ${dependency} leaves boot-runtime`);
+				assert.equal(
+					dependencyChunk,
+					BOOT_RUNTIME_CHUNK,
+					`${member} -> ${dependency} leaves boot-runtime`
+				);
 			} else {
-				assert.notEqual(dependencyChunk, undefined, `${member} -> ${dependency} leaves both boot chunks`);
+				assert.notEqual(
+					dependencyChunk,
+					undefined,
+					`${member} -> ${dependency} leaves both boot chunks`
+				);
 			}
 		}
 	}
 });
 
 test('a graph with no client layout node (the server build) names nothing', () => {
-	const serverIds = ['/app/.svelte-kit/generated/server/internal.js', '/app/src/routes/+layout.svelte'];
+	const serverIds = [
+		'/app/.svelte-kit/generated/server/internal.js',
+		'/app/src/routes/+layout.svelte'
+	];
 	assert.equal(bootChunkByModuleId(serverIds, importedIdsOf).size, 0);
 });
 
@@ -178,7 +192,12 @@ test('[if] a shipped rider gains a runtime import or a top-level statement [then
 		const topLevel = source
 			.split('\n')
 			.filter((line) => /^[^\s})\]|]/.test(line))
-			.filter((line) => !/^(?:import type|export (?:type|interface|function|const)|type|interface|function|const)\b/.test(line));
+			.filter(
+				(line) =>
+					!/^(?:import type|export (?:type|interface|function|const)|type|interface|function|const)\b/.test(
+						line
+					)
+			);
 		assert.deepEqual(topLevel, [], `${name} must hold declarations only at top level`);
 	}
 });
@@ -215,7 +234,10 @@ test('the installed codec-parser imports exactly the parsers this trim reasons a
 test('MPEG, AAC and Ogg parsers resolve to stubs; the FLAC parser does not', () => {
 	const entry = parserImports('src/CodecParser.js');
 	const resolved = Object.fromEntries(
-		entry.specifiers.map((specifier) => [specifier, unusedCodecParserStubId(specifier, entry.importer)])
+		entry.specifiers.map((specifier) => [
+			specifier,
+			unusedCodecParserStubId(specifier, entry.importer)
+		])
 	);
 	assert.deepEqual(resolved, {
 		'./codecs/aac/AACParser.js': '\0codec-parser-unused:AACParser',
@@ -230,7 +252,10 @@ test('only imports made by the codec-parser entry are stubbed', () => {
 	for (const specifier of ogg.specifiers) {
 		assert.equal(unusedCodecParserStubId(specifier, ogg.importer), null);
 	}
-	assert.equal(unusedCodecParserStubId('./codecs/mpeg/MPEGParser.js', '/app/src/lib/CodecParser.js'), null);
+	assert.equal(
+		unusedCodecParserStubId('./codecs/mpeg/MPEGParser.js', '/app/src/lib/CodecParser.js'),
+		null
+	);
 	assert.equal(unusedCodecParserStubId('./codecs/mpeg/MPEGParser.js', undefined), null);
 });
 
@@ -241,7 +266,10 @@ test('the app gate that keeps Ogg away from the FLAC decoder: only fLaC magic pa
 	assert.equal(isFlacContainer(bytesOf('ID3\x04\0\0\0\0')), false);
 	const decode = readFileSync(join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'), 'utf8');
 	assert.match(decode, /if \(isFlacContainer\(bytes\)\) return 'flac';/);
-	assert.match(decode, /if \(barred !== null\) return \{ buffer: await fallback\(bytes\), refusal: barred \};/);
+	assert.match(
+		decode,
+		/if \(barred !== null\) return \{ buffer: await fallback\(bytes\), refusal: barred \};/
+	);
 });
 
 test('a stubbed parser throws by name when constructed', async () => {

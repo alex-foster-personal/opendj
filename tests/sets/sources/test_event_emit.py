@@ -1,4 +1,5 @@
 """Tests for shared deck-source event emission helper."""
+
 from __future__ import annotations
 
 import logging

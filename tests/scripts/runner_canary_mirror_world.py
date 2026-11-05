@@ -59,9 +59,7 @@ class World(Remotes):
 
 
 def git(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env
-    ).stdout.strip()
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=env).stdout.strip()
 
 
 def repo_url(world: Remotes, repo: str, spelling: int = 0) -> str:

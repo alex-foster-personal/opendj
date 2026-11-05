@@ -19,11 +19,14 @@ Deliberately a thin facade, no new job store:
     install with no decrypted rekordbox copy) is keyed by the app's own
     stable id and needs only its audio file: it is never refused for a
     missing rekordbox mapping or ANLZ file, and a missing
-    ``master.plain.db`` is never an error. Only a path that is truly
-    absent means "no rekordbox": one that exists but cannot be read (a
-    directory, a dangling link, an empty or corrupt file) is a broken
-    install and answers 503 ``MASTER_DB_UNREADABLE``, because falling back
-    would skip the ANLZ and PVDI checks of every rekordbox-held track.
+    ``master.plain.db`` is never an error on status. ``POST
+    /vocals/analyze`` decides once up front: a copy that exists but cannot
+    be read (a directory, a dangling link, an empty or corrupt file) is a
+    broken install and answers 503 ``MASTER_DB_UNREADABLE``, because falling
+    back would skip the ANLZ and PVDI checks of every rekordbox-held track.
+    ``GET /vocals/{stable_id}/status`` probes the copy only when that track
+    has a rekordbox mapping; a folder-only track is served from the
+    vocal-cache even when the copy is broken.
   * ``GET /vocals/{stable_id}/status`` reuses the exact vocal-cache
     reader ``/anlz`` already serves through
     ``rb_vendor.vocals_for_content`` (``rb_assets.py``'s ``vocals`` field),
@@ -62,7 +65,6 @@ from pydantic import BaseModel, Field, model_validator
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.adapters.rekordbox.errors import unavailable
-from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import load_path_map
 from apps.shared.state import locations as state_locations
 from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
@@ -92,7 +94,12 @@ from apps.vocals.cli import (
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_read_state, get_write_state
+from ..deps import (
+    get_library_data_dir,
+    get_library_state_db,
+    get_read_state,
+    get_write_state,
+)
 
 router = APIRouter(prefix="/vocals", tags=["vocals"])
 
@@ -169,6 +176,14 @@ def _unique_stable_ids(stable_ids: list[str]) -> list[str]:
     return unique
 
 
+def _request_vocals_ctx(request: Request) -> Ctx:
+    """The exact state database and derived cache root selected for this app."""
+    return Ctx(
+        data_dir=get_library_data_dir(request),
+        state_db_path=get_library_state_db(request),
+    )
+
+
 def _master_db_unreadable(path: Path, why: str) -> HTTPException:
     return unavailable(
         "MASTER_DB_UNREADABLE",
@@ -218,6 +233,20 @@ def _rekordbox_copy_present(path: Path) -> bool:
     """Does this machine have a rekordbox copy: absent is a normal library
     with no rekordbox, broken is the typed 503."""
     return _regular_file_present(path, _master_db_unreadable)
+
+
+def _status_mapping_exists(stable_id: str) -> bool:
+    """Whether state.db maps this stable id to a live rekordbox vendor row."""
+    state = _open_ro(rb_config.STATE_DB, "STATE_DB")
+    try:
+        row = state.execute(
+            "SELECT 1 FROM track_vendor_ids "
+            "WHERE stable_id = ? AND vendor = 'rekordbox' AND deleted_at IS NULL",
+            (stable_id,),
+        ).fetchone()
+        return row is not None
+    finally:
+        state.close()
 
 
 def _vocal_cache_entry_present(data_dir: Path, stable_id: str) -> bool:
@@ -307,11 +336,10 @@ def _classify_own(
             tr.category = CATEGORY_TODO
 
 
-def _own_vocals(stable_id: str) -> dict[str, Any]:
+def _own_vocals(ctx: Ctx, stable_id: str) -> dict[str, Any]:
     """The ``vocals`` field for a track rekordbox does not hold: its
     vocal-cache entry, valid against the audio the library plays, else
     ``not_analyzed``. A cache path that is there but broken raises."""
-    ctx = Ctx(data_dir=DATA_DIR)
     if not _vocal_cache_entry_present(ctx.data_dir, stable_id):
         return {"status": "not_analyzed"}
     entry_path = vcache.cache_path(ctx.data_dir, stable_id)
@@ -330,10 +358,10 @@ def _own_vocals(stable_id: str) -> dict[str, Any]:
     return vcache.anlz_vocals_of(entry)
 
 
-def _own_vocals_for_serve(stable_id: str) -> dict[str, Any]:
+def _own_vocals_for_serve(ctx: Ctx, stable_id: str) -> dict[str, Any]:
     """Like :func:`_own_vocals`, but a broken cache entry never escapes as a 500."""
     try:
-        return _own_vocals(stable_id)
+        return _own_vocals(ctx, stable_id)
     except ValueError as exc:
         log.warning("broken vocal-cache for %s: %s", stable_id, exc)
         return {"status": "not_analyzed"}
@@ -369,7 +397,7 @@ def analyze_vocals(
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsAnalyzeOut:
     stable_ids = _unique_stable_ids(_resolve_stable_ids(body, backend))
-    ctx = Ctx(data_dir=DATA_DIR)
+    ctx = _request_vocals_ctx(request)
     rekordbox_by_id = _rekordbox_tracks(ctx)
     own_ids = [sid for sid in stable_ids if sid not in rekordbox_by_id]
     own_by_id = (
@@ -441,33 +469,38 @@ def analyze_vocals(
 @router.get("/{stable_id}/status", response_model=VocalsStatusOut)
 def get_vocal_status(
     stable_id: str,
+    request: Request,
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsStatusOut:
-    # Decided once, up front, by a probe that touches the rekordbox copy and
-    # nothing else: a broken copy is the typed 503 here, so nothing below has
-    # to guess whether an error came from the copy or from state.db.
-    rekordbox_present = _rekordbox_copy_present(rb_config.MASTER_PLAIN_DB)
+    ctx = _request_vocals_ctx(request)
+    # Lazy copy probe: only after resolve_content knows this track has a
+    # rekordbox mapping do we treat a broken master.plain.db as 503. A
+    # folder-only track is served from the vocal-cache regardless of copy
+    # shape (issue #6125).
     try:
         content = rb_vendor.resolve_content(stable_id)
     except HTTPException as exc:
         detail: dict[str, str] = exc.detail if isinstance(exc.detail, dict) else {}
         code = detail.get("code")
-        no_mapping = code == "VENDOR_MAPPING_NOT_FOUND"
-        # Only the probe above decides "no rekordbox". If it saw a copy and
-        # the adapter now calls it unavailable, that is re-raised, not a
-        # fallback.
-        no_rekordbox = code == "MASTER_DB_UNAVAILABLE" and not rekordbox_present
-        if not (no_mapping or no_rekordbox):
+        if code == "VENDOR_MAPPING_NOT_FOUND":
+            vocals = _own_vocals_for_serve(ctx, stable_id)
+        elif code == "MASTER_DB_UNAVAILABLE":
+            if not _rekordbox_copy_present(rb_config.MASTER_PLAIN_DB):
+                vocals = _own_vocals_for_serve(ctx, stable_id)
+            else:
+                raise
+        else:
             raise
-        # Rekordbox does not hold this track (a folder import, or no
-        # rekordbox on this machine): no PVDI is possible, so the vocal-cache
-        # keyed by the app's own stable id is the only source. /anlz serves
-        # this same read for such a track (VOCALS-04).
-        vocals = _own_vocals_for_serve(stable_id)
+    except (OSError, sqlite3.Error) as exc:
+        if _status_mapping_exists(stable_id):
+            raise _master_db_unreadable(
+                rb_config.MASTER_PLAIN_DB, f"{type(exc).__name__}: {exc}"
+            ) from exc
+        raise
     else:
         vocals = rb_vendor.vocals_for_content(content)
     failed = (
-        vattempts.load_failure(DATA_DIR, stable_id)
+        vattempts.load_failure(ctx.data_dir, stable_id)
         if vocals["status"] == "not_analyzed"
         else None
     )

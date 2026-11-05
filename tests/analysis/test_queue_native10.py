@@ -138,9 +138,7 @@ def _seed_library(db: Path, rows: list[tuple[str, float | None]]) -> None:
     conn.close()
 
 
-def _lane_candidate(
-    tmp_path: Path, *, lane: str, backend: str, stable_id: str = "probe"
-) -> admission.Candidate:
+def _lane_candidate(tmp_path: Path, *, lane: str, backend: str, stable_id: str = "probe") -> admission.Candidate:
     audio = tmp_path / f"{stable_id}_{lane}.wav"
     audio.write_bytes(b"\0")
     return admission.Candidate(
@@ -179,9 +177,7 @@ def test_progress_reports_running_and_pending_mid_batch(tmp_path: Path, probe_di
     conn.close()
 
 
-def test_upsert_of_a_new_producer_version_requeues_only_stale_tracks(
-    tmp_path: Path, probe_dir: Path
-) -> None:
+def test_upsert_of_a_new_producer_version_requeues_only_stale_tracks(tmp_path: Path, probe_dir: Path) -> None:
     db = tmp_path / "state.db"
     _seed_library(db, [("a", 4.0), ("b", 4.0), ("c", 4.0)])
     conn = open_conn(db)

@@ -64,7 +64,9 @@ test('typing narrows the playlist and Tab searches the whole library', async ({ 
 	await page.keyboard.press('Tab');
 	await expect(page.getByTestId('command-bar-scope')).toHaveAttribute('data-scope', 'library');
 	await expect(page.getByTestId('command-bar-input')).toBeFocused();
-	await expect(page.getByTestId('command-bar-row').first()).toContainText(word, { timeout: 15_000 });
+	await expect(page.getByTestId('command-bar-row').first()).toContainText(word, {
+		timeout: 15_000
+	});
 });
 
 test('Right then Enter loads the highlighted track onto deck 2', async ({ page }) => {

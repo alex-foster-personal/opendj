@@ -1,4 +1,4 @@
-import { effectiveCamelotKey } from '$lib/player/key/camelot';
+import { effectiveCamelotKey, keySyncKey, keySyncKeyIsGuess } from '$lib/player/key/camelot';
 import type { AnlzData, AnlzKeySegment } from '$lib/rb/anlz-types';
 
 export interface KeyAtPlayhead {
@@ -38,11 +38,10 @@ export function keyAtPlayhead(
 	}
 	const block = anlz.key_segments;
 	if (block.status !== 'ok') {
-		const reason =
-			typeof block.reason === 'string' && block.reason.length > 0
-				? block.reason
-				: `key segments ${block.status}`;
-		return { display: '--', title: reason, markerTimesS: [] };
+		// DECK-KEY-01: no per-segment keys (our analysis declined), so the deck shows
+		// the track key the library shows (rekordbox / Mixed In Key / guess), never "--".
+		const display = effectiveCamelotKey(fallbackKey, keyShiftSemitones) ?? fallbackKey ?? '--';
+		return { display, title: null, markerTimesS: [] };
 	}
 	const segments = block.segments;
 	if (segments.length <= 1) {
@@ -59,4 +58,20 @@ export function keyAtPlayhead(
 		title = `next key ${nextKey} at ${at.next.start_s.toFixed(1)}s`;
 	}
 	return { display, title, markerTimesS: segments.slice(1).map((seg) => seg.start_s) };
+}
+
+/** The deck fields the key readout reads. */
+export interface DeckKeyFields {
+	anlz: AnlzData | null;
+	position_ms: number;
+	key_shift_semitones: number;
+	key: string | null;
+	key_guess?: string | null;
+}
+
+/** DECK-KEY-01: the deck header's key at the playhead over the deck's resolved
+ * key (keySyncKey), with isGuess set when that key is the "?" guess. */
+export function deckKeyAtPlayhead(deck: DeckKeyFields): KeyAtPlayhead & { isGuess: boolean } {
+	const at = keyAtPlayhead(deck.anlz, deck.position_ms, deck.key_shift_semitones, keySyncKey(deck));
+	return { ...at, isGuess: keySyncKeyIsGuess(deck) };
 }

@@ -27,19 +27,12 @@ def _ceiling(parallel_fraction: float) -> float:
 def print_per_load(records: list[LoadRecord]) -> None:
     print()
     print("Per load (wall ms; p = parallelizable fraction of the load's own wall)")
-    print(
-        "  deck  sid           total   stems   parallel   serial      p   ceiling  "
-        "fetch-concurrency"
-    )
+    print("  deck  sid           total   stems   parallel   serial      p   ceiling  fetch-concurrency")
     print("  " + "-" * 92)
     for record in records:
         fraction = record.parallel_fraction
         concurrency = record.fetch_concurrency
-        ceil = (
-            "UNKNOWN"
-            if record.anomalous or record.ceiling_unknown
-            else f"{_ceiling(fraction):.2f}x"
-        )
+        ceil = "UNKNOWN" if record.anomalous or record.ceiling_unknown else f"{_ceiling(fraction):.2f}x"
         print(
             "  {deck:>4}  {sid:<12} {total:>7.0f} {stems:>7} {par:>10.0f} "
             "{ser:>8.0f} {frac:>6.3f}  {ceil:>7}  {conc}{anom}".format(
@@ -71,10 +64,7 @@ def print_aggregate(summary: dict[str, Any], notes: dict[str, Any]) -> None:
     )
     print(f"  total wall             {summary['total_ms']:.0f} ms")
     print(f"  median load            {summary['median_load_ms']:.0f} ms")
-    print(
-        f"  parallelizable         {summary['parallelizable_ms']:.0f} ms "
-        f"({summary['parallel_fraction'] * 100:.1f}%)"
-    )
+    print(f"  parallelizable         {summary['parallelizable_ms']:.0f} ms ({summary['parallel_fraction'] * 100:.1f}%)")
     # Contested ms is pooled into `serial_ms` (R5), but printing it bare would
     # read as a proven verdict over ms this model never measured a floor for
     # (Codex P1/BLOCKING, #705, perf_log_model.py:451). `contested_ms` names
@@ -117,9 +107,7 @@ def print_aggregate(summary: dict[str, Any], notes: dict[str, Any]) -> None:
 def print_notes(notes: dict[str, Any], records: list[LoadRecord]) -> None:
     print()
     print("Notes")
-    ceiling_withheld = sum(
-        1 for record in records if record.ceiling_unknown and not record.anomalous
-    )
+    ceiling_withheld = sum(1 for record in records if record.ceiling_unknown and not record.anomalous)
     if ceiling_withheld:
         print(
             f"  {ceiling_withheld} load(s) have a contested fetch group (#705): "

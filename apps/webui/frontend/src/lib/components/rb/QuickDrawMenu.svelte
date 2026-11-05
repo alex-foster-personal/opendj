@@ -35,6 +35,9 @@
 	import { menuStemTiers } from '$lib/rb/stem-tier-menu';
 	import { menuFor, type CueSlot, type MenuTarget, type ResolvedMenuItem } from '$lib/context-menu/registry';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
+	import { ANIMATE_CONTROLS, animateTargetOfKnobId, animationKeyOf, type AnimateControl } from '$lib/rb/animate-expr';
+	import { cancelAnimation, dialAnimations, openAnimatePrompt } from '$lib/rb/dial-animations.svelte';
+	import AnimatePrompt from './AnimatePrompt.svelte';
 
 	type CtxItem = {
 		id: string;
@@ -190,6 +193,8 @@
 	type QuickDrawTarget =
 		| Extract<MenuTarget, { kind: 'hot-cue' | 'mixer-channel' | 'waveform' | 'deck' }>
 		| { kind: 'track-chip'; stableId: string }
+		/** ANIM-01: `channel` is the strip the dial sits in, whose items follow the Animate ones. */
+		| { kind: 'mixer-control'; label: string; deck: DeckId | null; control: AnimateControl; channel: DeckId | null }
 		| { kind: 'tree-readonly' | 'library-source' | 'perf-empty' };
 
 	function _deckAttr(el: Element | null, attr: string): DeckId | null {
@@ -207,6 +212,12 @@
 			return { kind: 'hot-cue', deck: cueDeck, slot };
 		}
 		const mixerDeck = _deckAttr(t.closest('[data-mixer-channel]'), 'data-mixer-channel');
+		const dialEl = t.closest('[data-knob-id], [data-animate-control]');
+		const dial = dialEl?.getAttribute('data-animate-control') ?? dialEl?.getAttribute('data-knob-id');
+		const animated = dial == null ? null : animateTargetOfKnobId(dial);
+		if (animated !== null) {
+			return { kind: 'mixer-control', label: ANIMATE_CONTROLS[animated.control].label, ...animated, channel: mixerDeck };
+		}
 		if (mixerDeck !== null) return { kind: 'mixer-channel', deck: mixerDeck };
 		// A read-only tree or source strip owns everything inside it: a child
 		// carrying a stable id there (a stick track, say) must not borrow the
@@ -370,6 +381,23 @@
 		}).map((item) => _toCtxItem(item, runners[item.id]));
 	}
 
+	function _controlItems(target: Extract<QuickDrawTarget, { kind: 'mixer-control' }>): CtxItem[] {
+		const key = animationKeyOf(ANIMATE_CONTROLS[target.control].command(target.deck ?? 1, 0));
+		if (key === null) throw new Error(`no animation key for ${target.control}`);
+		// The menu's own corner, read when the item runs: the box opens where the menu stood.
+		const runners: Record<string, CtxItem['run']> = {
+			animate: async () => openAnimatePrompt(target.deck, target.control, x, y),
+			'animate-stop': async () => {
+				cancelAnimation(key, 'stopped from the menu');
+			}
+		};
+		const items = menuFor(
+			{ kind: 'mixer-control', label: target.label },
+			{ animating: dialAnimations.running[key] !== undefined }
+		).map((item) => _toCtxItem(item, runners[item.id]));
+		return target.channel === null ? items : [...items, ..._mixerItems({ kind: 'mixer-channel', deck: target.channel })];
+	}
+
 	function _contextItems(
 		target: EventTarget | null,
 		knownStableId: string | null = null,
@@ -393,6 +421,8 @@
 				return _hotCueItems(menuTarget);
 			case 'mixer-channel':
 				return _mixerItems(menuTarget);
+			case 'mixer-control':
+				return _controlItems(menuTarget);
 			case 'tree-readonly':
 				// A USB stick's tree opens its own menu (UsbStickTree, USBEXP-04)
 				// and stops the event, so only stick-less trees reach here.
@@ -539,6 +569,8 @@
 </script>
 
 <svelte:window oncontextmenu={onContextMenu} onkeydown={onKeydown} />
+
+<AnimatePrompt />
 
 {#if open}
 	<div

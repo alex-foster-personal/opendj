@@ -29,13 +29,14 @@
  *     [if] the grid is `unknown` [then] a hollow `unknown` dot ⛔️ drawn as ok
  *     [if] the flag is dismissed [then] no dot, and still restorable ⛔️ gone
  */
-import type { AnalysisIssues } from '$lib/rb/job-progress.svelte';
+import type { AnalysisIssue, AnalysisIssues } from '$lib/rb/job-progress.svelte';
 import type { GridClass } from '$lib/rb/grid-quality';
 import { gridProvenanceHoverText, type GridProvenanceView } from '$lib/rb/grid-provenance';
-import type { BeatgridIssue } from '$lib/rb/library-types';
+import type { BeatgridIssue, SourceFlag } from '$lib/rb/library-types';
 
 /** Analysis kinds that have a working detector behind them, today. */
-export const DETECTED_ANALYSIS_KINDS = ['beatgrid'] as const;
+/** `stems`: SRCFLAG-02, a stem-set made from a different-length recording. */
+export const DETECTED_ANALYSIS_KINDS = ['beatgrid', 'stems'] as const;
 
 /** A row's stored beatgrid verdict (GRIDFLAG-02), as the listing sends it.
  * Computed by the server's scan, never here. `message` is the sentence the
@@ -46,6 +47,19 @@ export interface GridQualityRow {
 	/** The user hid this track's flag. */
 	dismissed: boolean;
 	message: string | null;
+	/** BPM Stability column (issue #7879): the daemon's words and tone for the
+	 * stored tempo verdict. Null or absent when never judged (the cell is blank). */
+	tempo?: TempoStabilityRow | null;
+}
+
+/** The stored tempo verdict as a row carries it; rendered verbatim, never computed. */
+export interface TempoStabilityRow {
+	verdict: 'steady' | 'drift' | 'free_intro' | 'changes';
+	largest_change_pct: number;
+	change_count: number;
+	text: string;
+	tone: 'none' | 'amber' | 'red' | 'deep_red';
+	title: string;
 }
 
 /** The row fields this mapping reads. Kept structural so both BrowserRow and
@@ -53,6 +67,11 @@ export interface GridQualityRow {
 export interface AnalysisIssueSource {
 	rb_meta?: { beatgrid_issue?: BeatgridIssue | null } | null;
 	grid_quality?: GridQualityRow | null;
+	key_status?: string | null;
+	key_reason?: string | null;
+	bpm_status?: string | null;
+	bpm_reason?: string | null;
+	source_flags?: SourceFlag[] | null;
 }
 
 /** A flagged grid's state for the dismiss / restore control. */
@@ -101,6 +120,32 @@ function _legacyIssues(row: AnalysisIssueSource): AnalysisIssues {
  * otherwise shows as `unknown` - never as ok.
  */
 export function analysisIssuesFor(row: AnalysisIssueSource): AnalysisIssues {
+	return { ..._gridIssues(row), ..._laneValueIssues(row), ..._stemsSourceIssue(row) };
+}
+
+/** KEY-CELL-01: a failed or missing key / BPM shows here (and on the cell's hover),
+ * never as a status word inside the cell. Failed is a finding (warning); missing is
+ * "not analyzed yet" (unknown). BPM shares the beatgrid slot only when that is free. */
+function _laneValueIssues(row: AnalysisIssueSource): AnalysisIssues {
+	const out: AnalysisIssues = {};
+	const key = _laneIssue('Key', row.key_status, row.key_reason);
+	if (key !== null) out.key = key;
+	const bpm = _laneIssue('BPM', row.bpm_status, row.bpm_reason);
+	if (bpm !== null && _gridIssues(row).beatgrid === undefined) out.beatgrid = bpm;
+	return out;
+}
+
+function _laneIssue(
+	label: string,
+	status: string | null | undefined,
+	reason: string | null | undefined
+): AnalysisIssue | null {
+	if (status === 'failed') return { severity: 'warning', detail: `${label} analysis failed: ${reason ?? 'no reason given'}` };
+	else if (status === 'missing') return { severity: 'unknown', detail: `${label} not analyzed yet${reason ? `: ${reason}` : ''}` };
+	return null;
+}
+
+function _gridIssues(row: AnalysisIssueSource): AnalysisIssues {
 	const grid = row.grid_quality;
 	if (grid === null || grid === undefined) return _legacyIssues(row);
 	if (grid.grid_class === 'ok') return {};
@@ -121,6 +166,24 @@ export function analysisIssuesFor(row: AnalysisIssueSource): AnalysisIssues {
 	throw new Error(`Unhandled: ${unhandled}`);
 }
 
+/** SRCFLAG-02: a stem-set made from a different recording lights the Stems slot. */
+function _stemsSourceIssue(row: AnalysisIssueSource): AnalysisIssues {
+	const flag = (row.source_flags ?? []).find((f) => f.code === 'stems_other_recording');
+	return flag === undefined ? {} : { stems: { severity: flag.severity, detail: flag.message } };
+}
+
+/** SRCFLAG-01 / SRCFLAG-03: findings about the source FILE itself, which no
+ * analysis slot owns. They ring the Err grid and read out on its hover and in
+ * its popover; never a status word in a cell. */
+export function sourceFileFlagsFor(row: AnalysisIssueSource): SourceFlag[] {
+	return (row.source_flags ?? []).filter((f) => f.code !== 'stems_other_recording');
+}
+
+/** SRCFLAG-01: the Length cell's hover adds the release-length finding. */
+export function lengthFlagText(row: AnalysisIssueSource): string | null {
+	return (row.source_flags ?? []).find((f) => f.code === 'length_mismatch')?.message ?? null;
+}
+
 /** How many slots carry a real finding. `unknown` is not one: it says the
  * detector could not look, not that it found something. */
 export function flaggedIssueCount(issues: AnalysisIssues): number {
@@ -130,6 +193,13 @@ export function flaggedIssueCount(issues: AnalysisIssues): number {
 /** Hover title for the row's Err cell: what was measured about the beatgrid,
  * with the numbers. undefined = the cell's default title stands. */
 export function errColumnTitle(row: AnalysisIssueSource): string | undefined {
+	const grid = _gridTitle(row);
+	const source = (row.source_flags ?? []).map((f) => f.message);
+	if (source.length === 0) return grid;
+	return [...source, ...(grid === undefined ? [] : [grid])].join('\n');
+}
+
+function _gridTitle(row: AnalysisIssueSource): string | undefined {
 	const grid = row.grid_quality;
 	if (grid === null || grid === undefined) return undefined;
 	if (grid.grid_class === 'ok') return OK_TITLE;
@@ -143,7 +213,7 @@ export function errColumnTitle(row: AnalysisIssueSource): string | undefined {
  * grid and its confidence, read lazily on hover (pin f85c5881). A row with no
  * verdict says so and is never worded as ok. */
 export function bpmGridHoverText(row: AnalysisIssueSource, provenance: GridProvenanceView): string {
-	const verdict = errColumnTitle(row) ?? 'Beatgrid: not checked for this track yet.';
+	const verdict = _gridTitle(row) ?? 'Beatgrid: not checked for this track yet.';
 	return `${verdict} ${gridProvenanceHoverText(provenance)}`;
 }
 

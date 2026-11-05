@@ -1,4 +1,4 @@
-"""Playlist WRITE store over the shared state DB (``data/state/state.db``).
+"""Playlist WRITE store over the shared state DB (``(private path)``).
 
 CONTRACT -- playlists-router lane owner (see also ``routes/playlist_write``)
 =============================================================================
@@ -18,12 +18,14 @@ import json
 import sqlite3
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 from apps.shared.state import db as _state_db
+from apps.shared.state import library_entries
 from apps.shared.state.events import EventBus, FakeEventBus
 from apps.shared.state.writer import StateWriter, compute_playlist_id
 from apps.shared.state.writer_playlists import (
@@ -48,6 +50,7 @@ from .playlist_history import (
     PlaylistEditCommand,
     PlaylistHistoryEmptyError,
     PlaylistSnapshot,
+    affected_stable_ids,
     invert,
     label_for,
     rebuild_stack,
@@ -56,6 +59,7 @@ from .playlist_history import (
 from .playlist_move import MoveResult
 from .playlist_move import move_memberships as _move_memberships
 from .playlist_remove import (
+    _snapshot_with_members,
     apply_membership_snapshot,
 )
 from .playlist_remove import (
@@ -142,6 +146,33 @@ class PlaylistStore:
         self.close()
 
     # --- internal helpers -------------------------------------------------
+    @contextmanager
+    def _sections_follow(self, *playlist_ids: str) -> Iterator[None]:
+        """Keep each list's dividers on their tracks across a membership write.
+
+        Costs one index read on a list with no sections, so the O(1) add and
+        remove paths stay O(1) for everyone not using them.
+        """
+        before = {pid: library_entries.live_member_order(self._conn, pid) for pid in playlist_ids}
+        yield
+        for playlist_id, members in before.items():
+            if members:
+                library_entries.follow_membership_change(self._writer, playlist_id, members)
+
+    @contextmanager
+    def recording_membership_edit(self, playlist_id: str) -> Iterator[None]:
+        """Put a reorder made on another connection on this list's undo stack, so
+        the undo button and key keep working however a track moved."""
+        with self._lock:
+            row = self._load(playlist_id)
+            before = _snapshot_with_members(self, row)
+            yield
+            moved = self._load(playlist_id)
+            if moved.items != row.items:
+                self._record_edit(
+                    "memberships", playlist_id, before, _snapshot_with_members(self, moved),
+                )
+
     def _load(self, playlist_id: str) -> PlaylistRow:
         row = self._load_header(playlist_id)
         row.items = [
@@ -469,7 +500,7 @@ class PlaylistStore:
         Replaying the identical list is a true no-op: no event, no
         ``updated_at`` bump, same etag back.
         """
-        with self._lock:
+        with self._lock, self._sections_follow(playlist_id):
             with self._writer.playlist_transaction():
                 row = self._load(playlist_id)
                 self._check_etag(row, expected_etag)
@@ -498,7 +529,7 @@ class PlaylistStore:
         record_edit: bool = True,
     ) -> AddResult:
         """O(1) append/insert via ``:add`` (LIBM-20, LIBM-132)."""
-        with self._lock:
+        with self._lock, self._sections_follow(playlist_id):
             return _add_memberships(
                 self, playlist_id, stable_ids,
                 position=position, record_edit=record_edit,
@@ -512,7 +543,7 @@ class PlaylistStore:
         record_edit: bool = True,
     ) -> PlaylistRow:
         """O(1) remove via POST :remove or DELETE by item_id (LIBM-21)."""
-        with self._lock:
+        with self._lock, self._sections_follow(playlist_id):
             return _remove_memberships(
                 self, playlist_id, item_ids, record_edit=record_edit,
             )
@@ -568,7 +599,8 @@ class PlaylistStore:
         """
         validate_transfer(stable_ids, mode, source_id, source_etag, dest_id)
 
-        with self._lock:
+        touched = (dest_id,) if source_id is None else (dest_id, source_id)
+        with self._lock, self._sections_follow(*touched):
             with self._writer.playlist_transaction():
                 self._require_known_tracks(stable_ids)
                 dest = self._load(dest_id)
@@ -614,9 +646,28 @@ class PlaylistStore:
             self._check_etag(row, expected_etag)
             return row
 
+    def _track_titles(self, stable_ids: list[str]) -> dict[str, str]:
+        unique = list(dict.fromkeys(stable_ids))
+        if not unique:
+            return {}
+        placeholders = ",".join("?" * len(unique))
+        rows = self._conn.execute(
+            f"SELECT stable_id, title FROM tracks WHERE stable_id IN ({placeholders})",
+            tuple(unique),
+        ).fetchall()
+        return {row[0]: row[1] for row in rows if row[1]}
+
     def history(self) -> dict[str, Any]:
-        """Live undo window: entries oldest-first, cursor at next-redo."""
+        """Live undo window: entries oldest-first, cursor at next-redo.
+
+        Each entry carries ``stable_ids`` (tracks it added or removed) so a
+        client can navigate to them; one-track edits name the track.
+        """
         with self._lock:
+            affected = [affected_stable_ids(cmd) for cmd in self._stack]
+            titles = self._track_titles(
+                [ids[0] for ids in affected if len(ids) == 1],
+            )
             return {
                 "cursor": self._cursor,
                 "limit": HISTORY_LIMIT,
@@ -628,11 +679,42 @@ class PlaylistStore:
                         "op": cmd.op,
                         "playlist_id": cmd.playlist_id,
                         "ts": cmd.ts,
-                        "label": label_for(cmd),
+                        "label": label_for(cmd, titles),
+                        "stable_ids": ids,
                     }
-                    for cmd in self._stack
+                    for cmd, ids in zip(self._stack, affected, strict=True)
                 ],
             }
+
+    def jump_to(
+        self, command_id: str,
+    ) -> list[tuple[str, PlaylistEditCommand, PlaylistRow | None]]:
+        """Undo or redo until ``command_id`` is the edge of the cursor.
+
+        An applied entry is undone together with every newer applied entry
+        (cursor lands on its index); a pending entry is redone together with
+        every older pending entry (cursor lands just past it). Each step is
+        its own journaled undo/redo, so a conflict part-way stops there with
+        the earlier steps kept, exactly as repeated Cmd+Z would.
+        """
+        with self._lock:
+            index = next(
+                (i for i, cmd in enumerate(self._stack) if cmd.command_id == command_id),
+                None,
+            )
+            if index is None:
+                raise NotFoundError(
+                    f"playlist history has no live entry {command_id}",
+                )
+            target = index if index < self._cursor else index + 1
+            steps: list[tuple[str, PlaylistEditCommand, PlaylistRow | None]] = []
+            while self._cursor > target:
+                command, current = self.undo()
+                steps.append(("undo", command, current))
+            while self._cursor < target:
+                command, current = self.redo()
+                steps.append(("redo", command, current))
+            return steps
 
     def _undo_snapshot(self, command: PlaylistEditCommand) -> PlaylistRow | None:
         live = self._try_load(command.playlist_id)
@@ -656,10 +738,11 @@ class PlaylistStore:
             if self._cursor <= 0:
                 raise PlaylistHistoryEmptyError("undo")
             command = self._stack[self._cursor - 1]
-            current = (
-                undo_add(self, command) if command.op == ADD_ITEMS_OP
-                else self._undo_snapshot(command)
-            )
+            with self._sections_follow(command.playlist_id):
+                current = (
+                    undo_add(self, command) if command.op == ADD_ITEMS_OP
+                    else self._undo_snapshot(command)
+                )
             self._writer.append_playlist_history(
                 "playlist.undo", {"command_id": command.command_id},
             )
@@ -671,10 +754,11 @@ class PlaylistStore:
             if self._cursor >= len(self._stack):
                 raise PlaylistHistoryEmptyError("redo")
             command = self._stack[self._cursor]
-            current = (
-                redo_add(self, command) if command.op == ADD_ITEMS_OP
-                else self._redo_snapshot(command)
-            )
+            with self._sections_follow(command.playlist_id):
+                current = (
+                    redo_add(self, command) if command.op == ADD_ITEMS_OP
+                    else self._redo_snapshot(command)
+                )
             self._writer.append_playlist_history(
                 "playlist.redo", {"command_id": command.command_id},
             )

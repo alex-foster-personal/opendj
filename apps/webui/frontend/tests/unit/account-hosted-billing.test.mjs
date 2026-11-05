@@ -244,10 +244,13 @@ test('account overlay shows an eligibility failure instead of hiding billing', a
 				headers: { 'content-type': 'application/json' }
 			}),
 		[ELIGIBILITY_PATH]: () =>
-			new Response(JSON.stringify({ detail: { code: 'SYNC_HUB_UNREACHABLE', message: 'hub down' } }), {
-				status: 503,
-				headers: { 'content-type': 'application/json' }
-			})
+			new Response(
+				JSON.stringify({ detail: { code: 'SYNC_HUB_UNREACHABLE', message: 'hub down' } }),
+				{
+					status: 503,
+					headers: { 'content-type': 'application/json' }
+				}
+			)
 	});
 
 	await bundle.entitlements.load();
@@ -454,7 +457,10 @@ for (const state of ['paid', 'ACTIVE', '', 3]) {
 		globalThis.fetch = routedFetch({
 			[ELIGIBILITY_PATH]: () => json(ELIGIBLE),
 			[REFRESH_PATH]: () =>
-				json({ provider: 'polar:sandbox', standings: [{ feature_id: 'cloudsync.hosted_hub', state }] })
+				json({
+					provider: 'polar:sandbox',
+					standings: [{ feature_id: 'cloudsync.hosted_hub', state }]
+				})
 		});
 		await bundle.loadHostedBilling();
 		assert.match(String(bundle.hostedBilling.error), /bad refresh answer/);

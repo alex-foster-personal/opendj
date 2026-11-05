@@ -58,7 +58,10 @@ WARM_OPEN_BUDGET = 40
 #: 1,900 -> 1,960 (Tue 27 Oct 2026, QLTSCAN-02): every row gained the QLT grade
 #: block, about 52 bytes (letter, checked, issue keys). Its ~300-byte hover text
 #: was moved off the row to a hover-time read to keep the rise this small.
-ROW_BYTES_BUDGET = 1_960
+#: 1,960 -> 2,040 (Thu 5 Nov 2026, GRID-OCTAVE-02 and SRCFLAG-01): every row gained
+#: bpm_disputed, bpm_alternatives, bpm_pick and source_flags, about 64 bytes at
+#: their defaults (measured 2,024 per row).
+ROW_BYTES_BUDGET = 2_040
 PREVIEW_LEVEL, REANALYZED_LEVEL, OUTSIDE_LEVEL = 5, 9, 13
 
 #: What each row has on disk, cycled by row number.

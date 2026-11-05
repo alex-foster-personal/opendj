@@ -1,11 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+function _isItemRemoval(method: string, url: string): boolean {
+	const path = new URL(url).pathname;
+	if (method === 'DELETE') return /\/items\/[a-f0-9]+$/.test(path);
+	if (method === 'POST') return path.endsWith('/items:remove');
+	return false;
+}
+
 test('remove from playlist context menu DELETEs by item_id', async ({ page }) => {
 	const deleteRequests: string[] = [];
 	const putTrackRequests: string[] = [];
 	page.on('request', (request) => {
 		const url = request.url();
-		if (request.method() === 'DELETE' && /\/items\/[a-f0-9]+$/.test(url)) {
+		// LIBM-21 + LIBUX-8626: removal writes by membership item id, one
+		// DELETE /items/{item_id} or one bulk POST /items:remove for the selection.
+		if (_isItemRemoval(request.method(), url)) {
 			deleteRequests.push(url);
 		}
 		if (request.method() === 'PUT' && url.includes('/tracks')) {
@@ -46,15 +55,21 @@ test('remove from playlist context menu DELETEs by item_id', async ({ page }) =>
 	await page.getByRole('menuitem', { name: /Remove from playlist/i }).click();
 
 	await expect.poll(() => deleteRequests.length, { timeout: 10_000 }).toBeGreaterThan(0);
-	expect(deleteRequests.some((url) => url.includes(`/items/`))).toBe(true);
+	expect(deleteRequests.some((url) => /\/items(\/|:remove$)/.test(new URL(url).pathname))).toBe(true);
 	expect(putTrackRequests.length).toBe(0);
 
-	const etag = create.headers()['etag'];
-	if (etag) {
-		await page.request.delete(`/api/v1/playlists/${playlistId}`, {
-			headers: { 'If-Match': etag }
+	// The playlist's ETag moved with every membership write, so read it fresh:
+	// the creation ETag answers 412 and the list stayed behind, where the
+	// library tabs (LIBUX-8677) reopen it on the next spec's boot, empty.
+	// The UI's own remove may still be landing, moving the ETag between the read
+	// and the DELETE (409), so retry with a fresh read until the DELETE lands.
+	await expect(async () => {
+		const etag = (await page.request.get(`/api/v1/playlists/${playlistId}`)).headers()['etag'];
+		const removed = await page.request.delete(`/api/v1/playlists/${playlistId}`, {
+			headers: { 'If-Match': etag ?? '' }
 		});
-	}
+		expect(removed.ok(), `cleanup DELETE playlist: ${removed.status()}`).toBeTruthy();
+	}).toPass({ timeout: 10_000 });
 });
 
 test('Delete key removes membership via DELETE not PUT', async ({ page }) => {
@@ -62,7 +77,9 @@ test('Delete key removes membership via DELETE not PUT', async ({ page }) => {
 	const putTrackRequests: string[] = [];
 	page.on('request', (request) => {
 		const url = request.url();
-		if (request.method() === 'DELETE' && /\/items\/[a-f0-9]+$/.test(url)) {
+		// LIBM-21 + LIBUX-8626: removal writes by membership item id, one
+		// DELETE /items/{item_id} or one bulk POST /items:remove for the selection.
+		if (_isItemRemoval(request.method(), url)) {
 			deleteRequests.push(url);
 		}
 		if (request.method() === 'PUT' && url.includes('/tracks')) {
@@ -104,10 +121,16 @@ test('Delete key removes membership via DELETE not PUT', async ({ page }) => {
 	await expect.poll(() => deleteRequests.length, { timeout: 10_000 }).toBeGreaterThan(0);
 	expect(putTrackRequests.length).toBe(0);
 
-	const etag = create.headers()['etag'];
-	if (etag) {
-		await page.request.delete(`/api/v1/playlists/${playlistId}`, {
-			headers: { 'If-Match': etag }
+	// The playlist's ETag moved with every membership write, so read it fresh:
+	// the creation ETag answers 412 and the list stayed behind, where the
+	// library tabs (LIBUX-8677) reopen it on the next spec's boot, empty.
+	// The UI's own remove may still be landing, moving the ETag between the read
+	// and the DELETE (409), so retry with a fresh read until the DELETE lands.
+	await expect(async () => {
+		const etag = (await page.request.get(`/api/v1/playlists/${playlistId}`)).headers()['etag'];
+		const removed = await page.request.delete(`/api/v1/playlists/${playlistId}`, {
+			headers: { 'If-Match': etag ?? '' }
 		});
-	}
+		expect(removed.ok(), `cleanup DELETE playlist: ${removed.status()}`).toBeTruthy();
+	}).toPass({ timeout: 10_000 });
 });

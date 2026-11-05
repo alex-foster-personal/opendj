@@ -37,7 +37,11 @@ export function stepPressureCapState(state: PressureCapState, elevated: boolean)
 }
 
 /** baseline and floor are already-locked tier caps; only `state` moves. */
-export function pressureScaledCap(baseline: number, floor: number, state: PressureCapState): number {
+export function pressureScaledCap(
+	baseline: number,
+	floor: number,
+	state: PressureCapState
+): number {
 	if (state.steps <= 0) return baseline;
 	const perStep = (baseline - floor) / PRESSURE_CAP_STEPS;
 	return Math.max(floor, Math.round(baseline - perStep * state.steps));

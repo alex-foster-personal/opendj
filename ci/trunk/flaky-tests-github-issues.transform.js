@@ -70,7 +70,7 @@ function handler(webhook) {
       `- Code owners: ${t.codeowners.length ? t.codeowners.join(", ") : EMPTY}`,
       `- Trunk detail page: ${t.html_url}`,
       "",
-      "Filed automatically by the Trunk Flaky Tests webhook (ADR-NEW-trunk-merge-queue-replaces-mergify).",
+      "Filed automatically by the Trunk Flaky Tests webhook (ADR-NEW-trunk-is-the-only-merge-queue).",
     ].join("\n"),
     labels: LABELS,
   };

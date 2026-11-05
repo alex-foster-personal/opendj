@@ -17,8 +17,8 @@ from .own_beatgrid_overlay import (
     _own_beatgrid_block,
     _own_beatgrid_lane_result,
     _set_dynamic_tempo_hint,
-    _state_conn_ro,
 )
+from .own_lane_store import state_conn_ro
 
 
 def vendor_analysis_path_absent(content: RbContent) -> bool:
@@ -32,7 +32,7 @@ def own_beatgrid_served_when_vendor_absent(stable_id: str, state_db_path: Path |
     The grid-edit routes resolve a default ``source`` with this, so an edit
     that names no source lands on the grid ``/anlz`` actually serves.
     """
-    conn = _state_conn_ro(state_db_path)
+    conn = state_conn_ro(state_db_path)
     try:
         return _own_beatgrid_lane_result(conn, stable_id) is not None
     finally:
@@ -50,7 +50,7 @@ def apply_own_beatgrid_when_vendor_absent(
     legacy fallback; beatgrid-fallback.ts).
     Failed own record: stamp failed with reason (NATIVE-01 inert contract).
     """
-    conn = _state_conn_ro(state_db_path)
+    conn = state_conn_ro(state_db_path)
     try:
         result = _own_beatgrid_lane_result(conn, stable_id)
     finally:

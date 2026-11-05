@@ -290,6 +290,19 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=False,
     ),
     FlagDef(
+        flag_id="library.art_thumbnails",
+        default=True,
+        owner="maintainer",
+        note=(
+            "ARTTHUMB-8592 (issue #8592): playlist art thumbnails in the sidebar and "
+            "the /playlists card grid, behind the library_sidebar_art view option. "
+            "ON by default; OFF hides the option, the sidebar tiles and the grid "
+            "link. GET /api/v1/playlists/{id}/thumbnail stays on for agents."
+        ),
+        retire_by="2027-05-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="assistant.sidebar",
         default=False,
         owner="maintainer",

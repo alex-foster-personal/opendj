@@ -1,0 +1,17 @@
+{
+  "_doc": "B2BROOM-03: the room verdict table both room_output.py (pytest) and room-output.ts (node:test) are checked against. local/peer are speakers-on flags; null is not known; \"absent\" is no peer configured.",
+  "cases": [
+    {"local": true, "peer": true, "room": "both", "warning": "double_audio"},
+    {"local": true, "peer": false, "room": "this_laptop", "warning": null},
+    {"local": false, "peer": true, "room": "their_laptop", "warning": null},
+    {"local": false, "peer": false, "room": "none", "warning": "silent_room"},
+    {"local": true, "peer": "absent", "room": "this_laptop", "warning": null},
+    {"local": false, "peer": "absent", "room": "none", "warning": "silent_room"},
+    {"local": true, "peer": null, "room": "unknown", "warning": null},
+    {"local": false, "peer": null, "room": "unknown", "warning": null},
+    {"local": null, "peer": true, "room": "unknown", "warning": null},
+    {"local": null, "peer": false, "room": "unknown", "warning": null},
+    {"local": null, "peer": "absent", "room": "unknown", "warning": null},
+    {"local": null, "peer": null, "room": "unknown", "warning": null}
+  ]
+}

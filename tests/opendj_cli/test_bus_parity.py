@@ -41,7 +41,7 @@ _SAMPLE_TOKENS = (
     "1", "8", "true", "false", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
-    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space",
+    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move",
 )
 
 
@@ -170,6 +170,15 @@ def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
     assert parse_invocation(["show_pads", "false"]).command == {"type": "show_pads", "enabled": False}
     with pytest.raises(InvocationError):
         parse_invocation(["set_perf_view", "grid"])
+
+
+def test_autoplay_verdict_builds_the_bus_command() -> None:
+    """[if] the AutoPlay menu's one-tap verdict has no verb [then] an agent cannot give it, [else stop]."""
+    assert parse_invocation(["autoplay_verdict", "trk-out", "trk-in", "meh"]).command == {
+        "type": "autoplay_verdict", "out": "trk-out", "in": "trk-in", "verdict": "meh",
+    }
+    with pytest.raises(InvocationError, match="good\\|meh\\|bad"):
+        parse_invocation(["autoplay_verdict", "trk-out", "trk-in", "great"])
 
 
 def test_set_waveform_design_builds_the_bus_command() -> None:

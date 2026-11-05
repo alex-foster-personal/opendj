@@ -28,8 +28,7 @@ REQUIRES = 'requires-python = ">=3.11"\n'
 STAMP = "2025-01-01T00:00:00Z"
 CONFLICT = '[[{ extra = "a" }, { extra = "b" }]]'
 RECORDED_CONFLICT = (
-    'conflicts = [[\n    { package = "demo", extra = "a" },\n'
-    '    { package = "demo", extra = "b" },\n]]\n'
+    'conflicts = [[\n    { package = "demo", extra = "a" },\n    { package = "demo", extra = "b" },\n]]\n'
 )
 
 
@@ -118,8 +117,7 @@ def test_a_setting_that_disagrees_with_the_lock_is_stale(
         ),
         (
             "constraint-dependencies = [\"seven>=1; os_name == 'x'\"]",
-            "[manifest]\nconstraints = [\n"
-            '    { name = "seven", marker = "os_name == \'x\'", specifier = ">=1" },\n]\n',
+            '[manifest]\nconstraints = [\n    { name = "seven", marker = "os_name == \'x\'", specifier = ">=1" },\n]\n',
         ),
         (
             "constraint-dependencies = [\"six<2; python_version < '3.12'\"]",
@@ -222,8 +220,7 @@ def test_a_setting_that_agrees_with_the_lock_keeps_the_verdict(
         ("no-sources = true", None, "[tool.uv] no-sources = true: uv resolves without"),
         ("no-sources = 1", None, "[tool.uv] no-sources = 1 is not a boolean"),
         (
-            '[[tool.uv.index]]\nname = "mirror"\nurl = "https://mirror.example/simple"\n'
-            "default = true",
+            '[[tool.uv.index]]\nname = "mirror"\nurl = "https://mirror.example/simple"\ndefault = true',
             None,
             "[tool.uv] index: index configuration is not compared",
         ),
@@ -287,8 +284,7 @@ def _dev_pair(settings: str | None, groups: str | None, recorded: str | None) ->
     assert UNMARKED_LOCK.count(PROVIDES) == 1
     lock = UNMARKED_LOCK.replace(
         PROVIDES,
-        PROVIDES
-        + ("" if recorded is None else f"\n[package.metadata.requires-dev]\ndev = {recorded}\n"),
+        PROVIDES + ("" if recorded is None else f"\n[package.metadata.requires-dev]\ndev = {recorded}\n"),
     )
     return pyproject, lock
 
@@ -336,9 +332,7 @@ def test_legacy_dev_dependencies_are_the_dev_group(
     ],
     ids=["string", "int-item", "bad-name"],
 )
-def test_a_legacy_dev_dependency_uv_cannot_read_is_unknown(
-    tmp_path: Path, settings: str, named: str
-) -> None:
+def test_a_legacy_dev_dependency_uv_cannot_read_is_unknown(tmp_path: Path, settings: str, named: str) -> None:
     """`dev-dependencies = "bad"`, `[1]` and `["bad space"]` are "Failed to parse:
     `pyproject.toml`", `uv lock --check` exit 2 (measured uv 0.8.17, round 44)."""
     got, message = _run(tmp_path, *_dev_pair(settings, None, None))
@@ -347,8 +341,7 @@ def test_a_legacy_dev_dependency_uv_cannot_read_is_unknown(
 
 
 SORTED_CONFLICT = (
-    'conflicts = [[\n    { package = "demo", extra = "ok" },\n'
-    '    { package = "demo", group = "dev" },\n]]\n'
+    'conflicts = [[\n    { package = "demo", extra = "ok" },\n    { package = "demo", group = "dev" },\n]]\n'
 )
 
 
@@ -419,8 +412,7 @@ def test_a_conflict_selector_uv_refuses_is_unknown(
     [
         (
             'conflicts = [[{ package = "demo" }, { extra = "ok" }]]',
-            'conflicts = [[\n    { package = "demo" },\n'
-            '    { package = "demo", extra = "ok" },\n]]\n',
+            'conflicts = [[\n    { package = "demo" },\n    { package = "demo", extra = "ok" },\n]]\n',
         ),
         (
             'constraint-dependencies = ["six<2", "six<2"]',
@@ -431,8 +423,7 @@ def test_a_conflict_selector_uv_refuses_is_unknown(
             '[manifest]\nconstraints = [{ name = "six", specifier = "<2" }]\n',
         ),
         (
-            "constraint-dependencies = [\"six<2; python_version < '3.12'\", "
-            "\"six<2; python_full_version < '3.12'\"]",
+            "constraint-dependencies = [\"six<2; python_version < '3.12'\", \"six<2; python_full_version < '3.12'\"]",
             "[manifest]\nconstraints = [\n"
             '    { name = "six", marker = "python_full_version < \'3.12\'", '
             'specifier = "<2" },\n]\n',

@@ -4,14 +4,16 @@
  */
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
+import { artThumbnailsAvailable, setSidebarArt, sidebarArt } from '$lib/rb/library-sidebar-art.svelte';
 import {
 	compatibleFilterSettingPatch,
 	readCompatibleFilterSetting,
 	type CompatibleFilterSettingKey
 } from '$lib/settings/compatible-filter-setting';
 import { parseWavePalettePref } from '$lib/rb/wave-palette';
-import { parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
+import { UI_SKIN_CHOICES, parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
 import { parseWavePlayheadMode, parseWaveZoom } from '$lib/rb/wave-zoom';
+import { parseSpeakerAutoRecover, SPEAKER_AUTO_RECOVER_PREFS } from '$lib/rb/speaker-link-prefs';
 import { parseTempoLaneScale } from '$lib/rb/tempo-lane-prefs';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -39,8 +41,10 @@ import {
 	setShowDevUi,
 	setPinVisibleDays,
 	setShowStems,
+	setMixerStems,
 	setDeckHoverLink,
 	setShowSections,
+	setSpeakerAutoRecover,
 	setShowTempoLane,
 	setTempoLaneScale,
 	setWaveformDesign,
@@ -144,6 +148,7 @@ async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 export const ALLOWED_SETTING_KEYS = [
 	'theme',
 	'hide_broken_links',
+	'library_sidebar_art',
 	'library_density',
 	'key_notation',
 	'beat_sync_max',
@@ -173,6 +178,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_stems',
 	'deck_hover_link',
 	'show_sections',
+	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
 	'waveform_design',
@@ -183,6 +189,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'wave_zoom_playhead',
 	'wave_zoom_linked',
 	'deck_layout',
+	'mixer_stems',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
 	'deck_right_mirror',
@@ -221,12 +228,51 @@ export type SettingValue = boolean | string;
 /** Why a setting's shown value is not the saved one right now, or null.
  * The overlay prints it under the row instead of passing a fallback off as read. */
 export function settingUnavailable(key: string): string | null {
+	if (key === 'library_sidebar_art') {
+		return artThumbnailsAvailable() ? null : 'Playlist art is turned off by the library.art_thumbnails flag.';
+	}
 	if (key !== 'auto_gain.enabled' && key !== 'auto_gain.target_lufs') return null;
 	const why = autoGainPrefsUnavailable();
 	return why === null ? null : `Auto gain settings ${why}.`;
 }
 
-export function readSettingValue(key: AllowedSettingKey): SettingValue {
+function _unhandledSettingKey(key: never): never {
+	throw new Error(`Unhandled setting key: ${key}`);
+}
+
+const _LIBRARY_UI_PREF_KEYS = [
+	'theme',
+	'hide_broken_links',
+	'library_density',
+	'key_notation',
+	'beat_sync_max',
+	'deck_default_quantize',
+	'preview_beat_sync',
+	'auto_play_enabled',
+	'auto_play_enforce_order',
+	'auto_play_maximize_reach',
+	'next_only_filter',
+	'remixes_filter',
+	'vocals_filter',
+	'available_offline_filter',
+	'lyrics_global',
+	'lyrics_library_col',
+	'lyrics_hover_scrub',
+	'lyrics_load_strategy',
+	'lyrics_waveform_overlay',
+	'lyrics_deck_line',
+	'hide_todo_settings',
+	'show_dev_ui',
+	'technically_working_animate'
+] as const satisfies readonly AllowedSettingKey[];
+
+type _LibraryUiPrefKey = (typeof _LIBRARY_UI_PREF_KEYS)[number];
+
+function _isLibraryUiPrefKey(key: AllowedSettingKey): key is _LibraryUiPrefKey {
+	return (_LIBRARY_UI_PREF_KEYS as readonly string[]).includes(key);
+}
+
+function _readLibraryUiPref(key: _LibraryUiPrefKey): SettingValue {
 	switch (key) {
 		case 'theme':
 			return uiPrefs.theme;
@@ -248,10 +294,6 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.auto_play_maximize_reach;
 		case 'next_only_filter':
 			return uiPrefs.next_only_filter;
-		case 'compatible_filter.mode':
-		case 'compatible_filter.mashup_relative':
-		case 'compatible_filter.key_shift_max':
-			return readCompatibleFilterSetting(uiPrefs.compatible_filter, key);
 		case 'remixes_filter':
 			return uiPrefs.remixes_filter;
 		case 'vocals_filter':
@@ -274,10 +316,56 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.hide_todo_settings;
 		case 'show_dev_ui':
 			return uiPrefs.show_dev_ui;
-		case 'pin_visible_days':
-			return String(uiPrefs.pin_visible_days);
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
+		case 'preview_beat_sync':
+			return uiPrefs.preview_beat_sync;
+		default: {
+			const _exhaustive: never = key;
+			return _unhandledSettingKey(_exhaustive);
+		}
+	}
+}
+
+const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
+	'jog_radial_waveform',
+	'show_stems',
+	'deck_hover_link',
+	'show_sections',
+	'speaker_auto_recover',
+	'show_tempo_lane',
+	'tempo_lane_scale',
+	'waveform_design',
+	'wave_palette',
+	'ui_skin',
+	'wave_split_master',
+	'wave_zoom',
+	'wave_zoom_playhead',
+	'wave_zoom_linked',
+	'deck_layout',
+	'mixer_stems',
+	'deck_layout_animate',
+	'deck_right_mirror',
+	'deck_left_mirror',
+	'playlist_tree_view',
+	'auto_sync.rekordbox',
+	'auto_sync.djay',
+	'auto_sync.open_dj',
+	'crossfade_curve',
+	'horizontal_wheel_knob',
+	'perf_tier',
+	'app_posture',
+	'gig_helper'
+] as const satisfies readonly AllowedSettingKey[];
+
+type _AppearanceAndDeckUiPrefKey = (typeof _APPEARANCE_AND_DECK_UI_PREF_KEYS)[number];
+
+function _isAppearanceAndDeckUiPrefKey(key: AllowedSettingKey): key is _AppearanceAndDeckUiPrefKey {
+	return (_APPEARANCE_AND_DECK_UI_PREF_KEYS as readonly string[]).includes(key);
+}
+
+function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): SettingValue {
+	switch (key) {
 		case 'jog_radial_waveform':
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
@@ -286,6 +374,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.deck_hover_link;
 		case 'show_sections':
 			return uiPrefs.show_sections;
+		case 'speaker_auto_recover':
+			return uiPrefs.speaker_auto_recover;
 		case 'show_tempo_lane':
 			return uiPrefs.show_tempo_lane;
 		case 'tempo_lane_scale':
@@ -306,16 +396,14 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.wave_zoom_linked;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
+		case 'mixer_stems':
+			return uiPrefs.mixer_stems;
 		case 'deck_layout_animate':
 			return uiPrefs.deck_layout_animate;
-		case 'deck_layout_duration_ms':
-			return String(uiPrefs.deck_layout_duration_ms);
 		case 'deck_right_mirror':
 			return uiPrefs.deck_right_mirror;
 		case 'deck_left_mirror':
 			return uiPrefs.deck_left_mirror;
-		case 'feature_icon_single_click':
-			return featureIconSingleClick();
 		case 'playlist_tree_view':
 			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
@@ -324,12 +412,69 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.auto_sync.djay;
 		case 'auto_sync.open_dj':
 			return uiPrefs.auto_sync.open_dj;
+		case 'crossfade_curve':
+			return uiPrefs.crossfade_curve;
+		case 'horizontal_wheel_knob':
+			return uiPrefs.horizontal_wheel_knob;
+		case 'perf_tier':
+			return uiPrefs.perf_tier;
+		case 'app_posture':
+			return uiPrefs.app_posture;
+		case 'gig_helper':
+			return uiPrefs.gig_helper;
+		default: {
+			const _exhaustive: never = key;
+			return _unhandledSettingKey(_exhaustive);
+		}
+	}
+}
+
+const _CONFIRM_SETTING_KEYS = [
+	'confirm.delete_playlist',
+	'confirm.dblclick_load_play',
+	'confirm.playlist_drop_mode'
+] as const satisfies readonly AllowedSettingKey[];
+
+type _ConfirmSettingKey = (typeof _CONFIRM_SETTING_KEYS)[number];
+
+function _isConfirmSettingKey(key: AllowedSettingKey): key is _ConfirmSettingKey {
+	return (_CONFIRM_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+function _readConfirmSetting(key: _ConfirmSettingKey): SettingValue {
+	switch (key) {
 		case 'confirm.delete_playlist':
 			return uiPrefs.confirm.delete_playlist !== false;
 		case 'confirm.dblclick_load_play':
 			return uiPrefs.confirm.dblclick_load_play !== false;
 		case 'confirm.playlist_drop_mode':
 			return dropModeSettingValue(uiPrefs.confirm.playlist_drop_mode);
+		default: {
+			const _exhaustive: never = key;
+			return _unhandledSettingKey(_exhaustive);
+		}
+	}
+}
+
+type _NumericAndExternalSettingKey = Exclude<
+	AllowedSettingKey,
+	_LibraryUiPrefKey | _AppearanceAndDeckUiPrefKey | _ConfirmSettingKey
+>;
+
+function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): SettingValue {
+	switch (key) {
+		case 'library_sidebar_art':
+			return sidebarArt.pref;
+		case 'compatible_filter.mode':
+		case 'compatible_filter.mashup_relative':
+		case 'compatible_filter.key_shift_max':
+			return readCompatibleFilterSetting(uiPrefs.compatible_filter, key);
+		case 'pin_visible_days':
+			return String(uiPrefs.pin_visible_days);
+		case 'deck_layout_duration_ms':
+			return String(uiPrefs.deck_layout_duration_ms);
+		case 'feature_icon_single_click':
+			return featureIconSingleClick();
 		case 'wheel_sensitivity.mouse':
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
@@ -338,31 +483,26 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(uiPrefs.drag_sensitivity.base);
 		case 'drag_sensitivity.falloff_px':
 			return String(uiPrefs.drag_sensitivity.falloff_px);
-		case 'crossfade_curve':
-			return uiPrefs.crossfade_curve;
-		case 'horizontal_wheel_knob':
-			return uiPrefs.horizontal_wheel_knob;
-		case 'preview_beat_sync':
-			return uiPrefs.preview_beat_sync;
-		case 'perf_tier':
-			return uiPrefs.perf_tier;
-		case 'app_posture':
-			return uiPrefs.app_posture;
 		case 'rb.midi_enabled':
 			return midiEnabledPersisted();
 		case 'auto_gain.enabled':
 			return autoGainPrefs.enabled;
 		case 'auto_gain.target_lufs':
 			return String(autoGainPrefs.target_lufs);
-		case 'gig_helper':
-			return uiPrefs.gig_helper;
 		case 'audio_engine':
 			return storedEngineChoice();
 		default: {
 			const _exhaustive: never = key;
-			throw new Error(`Unhandled setting key: ${_exhaustive}`);
+			return _unhandledSettingKey(_exhaustive);
 		}
 	}
+}
+
+export function readSettingValue(key: AllowedSettingKey): SettingValue {
+	if (_isLibraryUiPrefKey(key)) return _readLibraryUiPref(key);
+	if (_isAppearanceAndDeckUiPrefKey(key)) return _readAppearanceAndDeckUiPref(key);
+	if (_isConfirmSettingKey(key)) return _readConfirmSetting(key);
+	return _readNumericAndExternalSetting(key);
 }
 
 /** KEYSHIFT-01..05: validates synchronously (a bad value throws at the call),
@@ -388,6 +528,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'hide_broken_links':
 			setHideBrokenLinks(_asBool(value, key));
+			return;
+		case 'library_sidebar_art':
+			void setSidebarArt(_asBool(value, key)).catch((exc: unknown) => reportSettingSaveError(`Playlist art setting not saved: ${String(exc)}`, exc));
 			return;
 		case 'library_density': {
 			if (value !== 'compact' && value !== 'cosy') {
@@ -483,6 +626,14 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
 			return;
+		case 'speaker_auto_recover': {
+			const pref = parseSpeakerAutoRecover(value);
+			if (pref === undefined) {
+				throw new Error(`speaker_auto_recover must be ${SPEAKER_AUTO_RECOVER_PREFS.join('|')}, got ${String(value)}`);
+			}
+			setSpeakerAutoRecover(pref);
+			return;
+		}
 		case 'show_tempo_lane':
 			setShowTempoLane(_asBool(value, key));
 			return;
@@ -510,7 +661,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'ui_skin': {
 			const skin = parseUiSkin(value);
-			if (skin === undefined) throw new Error(`ui_skin must be default|mono-dev|light, got ${String(value)}`);
+			if (skin === undefined) throw new Error(`ui_skin must be ${UI_SKIN_CHOICES.join('|')}, got ${String(value)}`);
 			setUiSkin(skin);
 			return;
 		}
@@ -542,6 +693,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setDeckLayoutMode(value as DeckLayoutMode);
 			return;
 		}
+		case 'mixer_stems':
+			setMixerStems(_asBool(value, key));
+			return;
 		case 'deck_layout_animate':
 			setDeckLayoutAnimate(_asBool(value, key));
 			return;
@@ -686,7 +840,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		default: {
 			const _exhaustive: never = key;
-			throw new Error(`Unhandled setting key: ${_exhaustive}`);
+			return _unhandledSettingKey(_exhaustive);
 		}
 	}
 }

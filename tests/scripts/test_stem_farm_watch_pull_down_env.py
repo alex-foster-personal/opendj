@@ -21,9 +21,7 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT = (
-    Path(__file__).resolve().parents[2] / "scripts" / "stem_farm_watch_pull_down.sh"
-)
+_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "stem_farm_watch_pull_down.sh"
 
 
 def _bash() -> str:
@@ -47,9 +45,7 @@ def _run(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 
 def test_missing_host_fails_fast_with_a_named_error() -> None:
     env = {
-        k: v
-        for k, v in os.environ.items()
-        if k not in ("MDT_STEM_HOST", "MDT_STEM_SSH_KEY", "MDT_VOCAL_GCE_PROJECT")
+        k: v for k, v in os.environ.items() if k not in ("MDT_STEM_HOST", "MDT_STEM_SSH_KEY", "MDT_VOCAL_GCE_PROJECT")
     }
     result = _run(env)
     assert result.returncode != 0

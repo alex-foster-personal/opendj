@@ -48,7 +48,8 @@ for (const path of ['/', '/pairings', '/queues']) {
 		expect(unexpectedResponses).toEqual([]);
 		expect(failedRequests).toEqual([]);
 		const expectedUpdateConsoleError = updateResponse.status() === 502;
-		const USB_503 = 'Failed to load resource: the server responded with a status of 503 (Service Unavailable)';
+		const USB_503 =
+			'Failed to load resource: the server responded with a status of 503 (Service Unavailable)';
 		let usbConsoleAllowance = usbRefusals.length;
 		expect(
 			errors.filter((error) => {
@@ -60,7 +61,8 @@ for (const path of ['/', '/pairings', '/queues']) {
 					!error.includes('favicon') &&
 					!(
 						expectedUpdateConsoleError &&
-						error === 'Failed to load resource: the server responded with a status of 502 (Bad Gateway)'
+						error ===
+							'Failed to load resource: the server responded with a status of 502 (Bad Gateway)'
 					)
 				);
 			})

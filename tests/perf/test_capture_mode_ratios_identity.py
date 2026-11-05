@@ -80,9 +80,7 @@ def _empty_ledger(tmp_path: Path) -> Path:
 
 
 def _four_deck_rows(sha: str) -> list[dict[str, object]]:
-    return cmr._gig_baseline_rows(
-        _GIG_SAMPLE, _TRACKIFY_SAMPLE, list(_FOUR_GIG_IDS), session_meta(sha=sha)
-    )
+    return cmr._gig_baseline_rows(_GIG_SAMPLE, _TRACKIFY_SAMPLE, list(_FOUR_GIG_IDS), session_meta(sha=sha))
 
 
 def _ledger_entries(ledger: Path) -> list[dict[str, object]]:
@@ -101,9 +99,7 @@ def _unbound_loopback_url() -> str:
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_identity_passes_a_clean_checkout_at_sha_behind_a_matching_static_build(
-    repo: Path, frontend: str
-) -> None:
+def test_identity_passes_a_clean_checkout_at_sha_behind_a_matching_static_build(repo: Path, frontend: str) -> None:
     """[if] the checkout is clean at the sha and the static frontend serves it [then] no reason, [else stop]."""
     assert cmr._capture_identity_reason(frontend, _git_head(repo), repo) is None
 
@@ -134,9 +130,7 @@ def test_identity_refuses_a_dirty_checkout_before_probing_the_frontend(repo: Pat
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_identity_refuses_a_clean_checkout_that_moved_to_another_commit(
-    repo: Path, frontend: str
-) -> None:
+def test_identity_refuses_a_clean_checkout_that_moved_to_another_commit(repo: Path, frontend: str) -> None:
     """[if] the checkout is clean but HEAD is not the labeled sha [then] refused naming both shas, [else stop]."""
     sha = _git_head(repo)
     moved_sha = _commit_another_change(repo)
@@ -208,9 +202,7 @@ def test_rows_land_when_identity_still_holds_after_a_four_deck_capture(
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_rows_refused_when_the_checkout_goes_dirty_during_sampling(
-    tmp_path: Path, repo: Path, frontend: str
-) -> None:
+def test_rows_refused_when_the_checkout_goes_dirty_during_sampling(tmp_path: Path, repo: Path, frontend: str) -> None:
     """[if] the checkout goes dirty during sampling [then] refused and no row is written, [else stop]."""
     sha = _git_head(repo)
     ledger = _empty_ledger(tmp_path)
@@ -222,9 +214,7 @@ def test_rows_refused_when_the_checkout_goes_dirty_during_sampling(
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_rows_refused_when_the_checkout_moves_commit_during_sampling(
-    tmp_path: Path, repo: Path, frontend: str
-) -> None:
+def test_rows_refused_when_the_checkout_moves_commit_during_sampling(tmp_path: Path, repo: Path, frontend: str) -> None:
     """[if] the checkout moves to another commit during sampling [then] refused and no row is written, [else stop]."""
     sha = _git_head(repo)
     ledger = _empty_ledger(tmp_path)
@@ -236,9 +226,7 @@ def test_rows_refused_when_the_checkout_moves_commit_during_sampling(
 
 
 @pytest.mark.requirement("PERFMODE-15")
-def test_rows_refused_when_the_frontend_changes_during_sampling(
-    tmp_path: Path, repo: Path, frontend: str
-) -> None:
+def test_rows_refused_when_the_frontend_changes_during_sampling(tmp_path: Path, repo: Path, frontend: str) -> None:
     """[if] the frontend serves another build by the end of sampling [then] refused and no row is written, [else stop].
 
     Sol P1/BLOCKING, PR #4034, discussion_r4149791234.
@@ -248,9 +236,7 @@ def test_rows_refused_when_the_frontend_changes_during_sampling(
     rows = _four_deck_rows(sha)
     server, swapped_url = _serve_frontend(version="some-other-checkouts-sha", vite_dev=False)
     try:
-        with pytest.raises(
-            SystemExit, match=r"post-capture reverification failed.*some-other-checkouts-sha"
-        ):
+        with pytest.raises(SystemExit, match=r"post-capture reverification failed.*some-other-checkouts-sha"):
             cmr._append_rows_after_reverification(ledger, rows, swapped_url, sha, repo, engine=None)
     finally:
         server.shutdown()
@@ -262,9 +248,7 @@ def test_rows_refused_when_the_frontend_changes_during_sampling(
 def test_rows_refused_for_a_capture_that_cannot_name_four_gig_decks(repo: Path) -> None:
     """[if] a capture names fewer than four Gig decks [then] no ratio row is built, [else stop]."""
     with pytest.raises(RuntimeError, match="must hold exactly 4 ids"):
-        cmr._gig_baseline_rows(
-            _GIG_SAMPLE, _TRACKIFY_SAMPLE, [_FOUR_GIG_IDS[0]], session_meta(sha=_git_head(repo))
-        )
+        cmr._gig_baseline_rows(_GIG_SAMPLE, _TRACKIFY_SAMPLE, [_FOUR_GIG_IDS[0]], session_meta(sha=_git_head(repo)))
 
 
 # ----- the leak series file is written only after reverification --------------

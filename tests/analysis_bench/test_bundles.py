@@ -171,22 +171,35 @@ def _cli(*args: str) -> subprocess.CompletedProcess[str]:
     env["PYTHONPATH"] = str(REPO)
     return subprocess.run(
         [sys.executable, "-m", "apps.analysis_bench", *args],
-        capture_output=True, text=True, env=env, cwd=REPO, check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=REPO,
+        check=False,
     )
 
 
 def test_r2_store_names_the_missing_credential(tmp_path: Path) -> None:
     """No creds is a named refusal, never a silent fall back to somewhere else."""
-    done = _cli("fixtures", "pull", "--lane", "beatgrid", "--version", "v1",
-                "--store", "s3://af-main-r2/bench", "--dest", str(tmp_path / "pulled"))
+    done = _cli(
+        "fixtures",
+        "pull",
+        "--lane",
+        "beatgrid",
+        "--version",
+        "v1",
+        "--store",
+        "s3://af-main-r2/bench",
+        "--dest",
+        str(tmp_path / "pulled"),
+    )
     assert done.returncode == 2, done.stdout + done.stderr
     assert "CF_R2_ACCESS_KEY_ID" in done.stdout + done.stderr
     assert not (tmp_path / "pulled").exists()
 
 
 def test_no_store_configured_is_a_named_refusal(tmp_path: Path) -> None:
-    done = _cli("fixtures", "pull", "--lane", "beatgrid", "--version", "v1",
-                "--dest", str(tmp_path / "pulled"))
+    done = _cli("fixtures", "pull", "--lane", "beatgrid", "--version", "v1", "--dest", str(tmp_path / "pulled"))
     assert done.returncode == 2, done.stdout + done.stderr
     assert stores.STORE_ENV in done.stdout + done.stderr
 
@@ -207,12 +220,8 @@ def test_scoring_semantics_change_the_bundle_id(tmp_path: Path) -> None:
     """Identical audio scored under a different policy is a different question."""
     first = _stage(tmp_path / "one")
     second = _stage(tmp_path / "two")
-    bundles.seal_bundle(
-        first, lane="beatgrid", version="v1", manifest_extra={"window": "first drop"}
-    )
-    bundles.seal_bundle(
-        second, lane="beatgrid", version="v1", manifest_extra={"window": "track start"}
-    )
+    bundles.seal_bundle(first, lane="beatgrid", version="v1", manifest_extra={"window": "first drop"})
+    bundles.seal_bundle(second, lane="beatgrid", version="v1", manifest_extra={"window": "track start"})
     assert bundles.verify_bundle(first)["bundle_id"] != bundles.verify_bundle(second)["bundle_id"]
 
 
@@ -234,18 +243,24 @@ def test_a_rebuild_at_a_different_time_keeps_its_bundle_id(tmp_path: Path) -> No
     """Provenance describes the build, not the question, so it is not identity."""
     first = _stage(tmp_path / "one")
     second = _stage(tmp_path / "two")
-    bundles.seal_bundle(first, lane="beatgrid", version="v1", manifest_extra={
-        "window": "first drop", "built_at": "2026-09-08T00:00:00Z", "built_from": "/mac/pack.py"})
-    bundles.seal_bundle(second, lane="beatgrid", version="v1", manifest_extra={
-        "window": "first drop", "built_at": "2026-09-09T13:00:00Z", "built_from": "/nuc/pack.py"})
+    bundles.seal_bundle(
+        first,
+        lane="beatgrid",
+        version="v1",
+        manifest_extra={"window": "first drop", "built_at": "2026-09-08T00:00:00Z", "built_from": "/mac/pack.py"},
+    )
+    bundles.seal_bundle(
+        second,
+        lane="beatgrid",
+        version="v1",
+        manifest_extra={"window": "first drop", "built_at": "2026-09-09T13:00:00Z", "built_from": "/nuc/pack.py"},
+    )
     one, two = bundles.verify_bundle(first), bundles.verify_bundle(second)
     assert one["bundle_id"] == two["bundle_id"]
     assert one["built_at"] != two["built_at"], "provenance must survive in the manifest"
 
 
-@pytest.mark.parametrize(
-    "suffix", ["../escaped.wav", "wav/../../escaped.wav", "/etc/passwd", ""]
-)
+@pytest.mark.parametrize("suffix", ["../escaped.wav", "wav/../../escaped.wav", "/etc/passwd", ""])
 def test_a_store_key_that_climbs_out_of_the_bundle_is_refused(tmp_path: Path, suffix: str) -> None:
     """A store we hold credentials for is still not allowed to pick the path."""
     dest = tmp_path / "pulled"
@@ -289,8 +304,7 @@ def test_a_manifest_referencing_a_checksummed_file_seals(tmp_path: Path) -> None
     """The control: the two refusals above would pass against a blanket rejection."""
     staged = _stage(tmp_path)
     (staged / bundles.MANIFEST_NAME).write_text(
-        json.dumps({"reads": {"truth": "truth.json"},
-                    "fixtures": [{"stable_id": "a", "wav": "wav/track-a.wav"}]})
+        json.dumps({"reads": {"truth": "truth.json"}, "fixtures": [{"stable_id": "a", "wav": "wav/track-a.wav"}]})
     )
     bundles.seal_bundle(staged, lane="beatgrid", version="v1")
     assert bundles.verify_bundle(staged)["reads"] == {"truth": "truth.json"}
@@ -310,11 +324,17 @@ def test_replacing_a_directory_store_bundle_leaves_no_staging_litter(tmp_path: P
 def test_the_reads_map_the_real_packer_writes_seals(tmp_path: Path) -> None:
     """`checksums` is metadata and `scorer` is repo code; only `truth` is payload."""
     staged = _stage(tmp_path)
-    (staged / bundles.MANIFEST_NAME).write_text(json.dumps({"reads": {
-        "truth": "truth.json",
-        "checksums": "SHA256SUMS",
-        "scorer": "apps/analysis_bench/scorers/beatgrid.py (version stamped in every artifact)",
-    }}))
+    (staged / bundles.MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "reads": {
+                    "truth": "truth.json",
+                    "checksums": "SHA256SUMS",
+                    "scorer": "apps/analysis_bench/scorers/beatgrid.py (version stamped in every artifact)",
+                }
+            }
+        )
+    )
     bundles.seal_bundle(staged, lane="beatgrid", version="v1")
     assert bundles.verify_bundle(staged)["reads"]["checksums"] == "SHA256SUMS"
 
@@ -328,8 +348,7 @@ def test_a_swapped_payload_and_checksums_cannot_keep_the_bundle_id(tmp_path: Pat
     swapped.write_bytes(b"different-audio-entirely")
     sums = staged / bundles.SUMS_NAME
     rewritten = [
-        f"{bundles.sha256_file(swapped)}  wav/track-a.wav"
-        if line.endswith("wav/track-a.wav") else line
+        f"{bundles.sha256_file(swapped)}  wav/track-a.wav" if line.endswith("wav/track-a.wav") else line
         for line in sums.read_text().splitlines()
     ]
     sums.write_text("\n".join(rewritten) + "\n")

@@ -38,11 +38,12 @@ import { PAYLOAD_DIR } from './engine';
 import { makeLockProbe, performancePageUrl } from './launch';
 import { isOpenerUrlAllowed } from './opener';
 import { payloadPython } from './platform';
-import { coreAudioOutputDevices, outputHealthJson } from './output-health';
+import { coreAudioOutputDevices, outputHealthJson, reconnectSpeakerJson } from './output-health';
 import {
 	APP_HOST,
 	APP_ORIGIN,
 	APP_SCHEME,
+	appNameFromPackage,
 	AUDIO_ENGINE_CHOICE_FILE,
 	type PageInit,
 	devCdpPortFromEnv,
@@ -101,17 +102,19 @@ if (packagedCdpRefusal !== null) {
 	main();
 }
 
-function readIdentifier(): string {
+/** The packed package.json, or null when it cannot be read (the defaults then apply). */
+function readPackageJson(): unknown {
 	try {
-		const pkg = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')) as {
-			opendj?: { identifier?: unknown };
-		};
-		const id = pkg.opendj?.identifier;
-		if (typeof id === 'string' && /^[A-Za-z0-9.-]+$/.test(id)) return id;
+		return JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')) as unknown;
 	} catch {
-		// Fall through to the default.
+		return null;
 	}
-	return DEFAULT_IDENTIFIER;
+}
+
+function readIdentifier(): string {
+	const pkg = readPackageJson() as { opendj?: { identifier?: unknown } } | null;
+	const id = pkg?.opendj?.identifier;
+	return typeof id === 'string' && /^[A-Za-z0-9.-]+$/.test(id) ? id : DEFAULT_IDENTIFIER;
 }
 
 /**
@@ -198,7 +201,8 @@ function applyShellMark(): void {
 }
 
 function main(): void {
-	app.setName('Open DJ');
+	// Before pinChromiumDirsToHome and the single-instance lock: the name picks the userData folder both use.
+	app.setName(appNameFromPackage(readPackageJson()));
 	// P19/D10 / ELECTRON-6877: CDP only for unpackaged builds (CLI refusal above).
 	const cdpPort = devCdpPortFromEnv(app.isPackaged, process.env.OPENDJ_REMOTE_DEBUGGING_PORT);
 	if (cdpPort !== null) {
@@ -489,7 +493,9 @@ function main(): void {
 				});
 				bootEngine = await startEngine(payload, dataDir, logPath, bootDeps);
 				page.engineOrigin = supervisedOrigin(bootEngine);
-				health = await ShellHealthServer.start(dataDir, (action) => outputHealthJson(action, payload));
+				health = await ShellHealthServer.start(dataDir, (action) =>
+					action === 'reconnect' ? reconnectSpeakerJson(payload) : outputHealthJson(action, payload)
+				);
 				const surface: SupervisorSurface = {
 					setTitle: (title) => window?.setTitle(title),
 					navigateToOrigin: (origin) => {

@@ -24,7 +24,7 @@ been built wrong:
 1. **Per request, never remembered.** The obvious shape is a handshake: the
    spoke advertises at ``/hello`` and the hub stores that against its
    ``machines`` row. A stored capability is a verdict with its timestamp
-   removed (``.claude/rules/verification.md``) -- a spoke rolled back to
+   removed (``(private path)``) -- a spoke rolled back to
    main still reads as capable, and the hub partial-accepts to it, which is
    precisely the loss being fixed. The advertisement therefore rides EVERY
    request that can produce a partial answer, and the hub keeps no state
@@ -68,13 +68,22 @@ HASH_PENDING_V1: str = "hash-pending/v1"
 #: (issue #3057).
 IDENTITY_REJECT_V1: str = "identity-reject/v1"
 
+#: Hub validates spoke remap claims inside each push transaction (issue #4192).
+IDENTITY_REMAP_PRECONDITION_V1: str = "identity-remap-precondition/v1"
+
 #: Everything this build understands, advertised on every request it makes.
 THIS_BUILD: tuple[str, ...] = (
     QUARANTINE_V1,
     LIBRARY_SIZE_V1,
     HASH_PENDING_V1,
     IDENTITY_REJECT_V1,
+    IDENTITY_REMAP_PRECONDITION_V1,
 )
+
+
+def understands_identity_remap_precondition(advertised: Sequence[str] | None) -> bool:
+    """True only when the hub advertised the transactional remap check."""
+    return advertised is not None and IDENTITY_REMAP_PRECONDITION_V1 in advertised
 
 
 def understands_hash_pending(advertised: Sequence[str] | None) -> bool:
@@ -139,6 +148,7 @@ def refusal(endpoint: str, detail: str, advertised: Sequence[str] | None) -> str
 __all__ = [
     "HASH_PENDING_V1",
     "IDENTITY_REJECT_V1",
+    "IDENTITY_REMAP_PRECONDITION_V1",
     "LIBRARY_SIZE_V1",
     "QUARANTINE_V1",
     "THIS_BUILD",
@@ -146,5 +156,6 @@ __all__ = [
     "hash_pending_upgrade_message",
     "refusal",
     "understands_hash_pending",
+    "understands_identity_remap_precondition",
     "understands_quarantine",
 ]

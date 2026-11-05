@@ -35,6 +35,7 @@ Requirements (mini-PRD):
     [if] the coverage reading names absent rows by folder [then] the summary carries them unchanged
     [if] the drain reports usable values and drain states [then] ``analysis`` carries them unchanged
 """
+
 from __future__ import annotations
 
 import json
@@ -54,9 +55,9 @@ DECISIONS: tuple[str, ...] = ("ask", "never")
 ANALYSIS_LANES: tuple[str, ...] = ("tags", "strip", "beatgrid", "key", "loudness", "waveform")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # decision store
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def store_path(data_dir: Path) -> Path:
     return data_dir / "state" / FILENAME
 
@@ -91,9 +92,9 @@ def save_decision(data_dir: Path, lane: str, answer: str) -> dict[str, Decision]
     return decisions
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # policy
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _analysis_left(analysis: Mapping[str, Any] | None) -> bool:
     if analysis is None:
         return False
@@ -114,9 +115,7 @@ def _lyrics_left(coverage: Mapping[str, Any] | None) -> bool:
     return bool(coverage["pending"].get("lyrics") or coverage["failed"].get("lyrics"))
 
 
-def stems_ask(
-    coverage: Mapping[str, Any] | None, decisions: Mapping[str, str]
-) -> dict[str, Any]:
+def stems_ask(coverage: Mapping[str, Any] | None, decisions: Mapping[str, str]) -> dict[str, Any]:
     """The stems line of the card: asked, declined, impossible, failed, or nothing to do.
 
     ``failed`` counts separations that failed ``MAX_ATTEMPTS`` times and left
@@ -146,8 +145,12 @@ def stems_ask(
         return {"state": "done", "pending": 0, "failed": 0, "reason": None, **extra}
     if refusal:
         return {
-            "state": "no_source", "pending": pending, "failed": failed, "missing": missing,
-            "reason": str(refusal), **extra,
+            "state": "no_source",
+            "pending": pending,
+            "failed": failed,
+            "missing": missing,
+            "reason": str(refusal),
+            **extra,
         }
     if pending == 0:
         # Nothing left to ask about, only failures to report. A stored "never" still wins.
@@ -191,7 +194,9 @@ def build_summary(
         "show": show,
         "analysis": analysis,
         "analysis_error": analysis_error,
-        "coverage": None if coverage is None else {
+        "coverage": None
+        if coverage is None
+        else {
             "on_disk": coverage["on_disk"],
             # ENRICH-02: rows whose file is not on this Mac, by bucket and folder,
             # straight from the coverage reading (never recounted here).

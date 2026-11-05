@@ -1,16 +1,17 @@
-"""Identity-verified process-group termination.
+"""Identity-verified worker-tree termination.
 
-The SIGTERM -> grace -> SIGKILL -> confirm-gone ladder is adapted from
-``apps/vocals/cli.py::_terminate_worker_tree`` (credit: that module already
-proved the pattern for the vocal worker tree). What is added here is
-IDENTITY VERIFICATION.
+The polite -> grace -> forced -> confirm-gone ladder, and the proof that the
+whole tree is gone, live in ``apps.shared.process_tree`` (POSIX: the process
+group; Windows: the tree by parentage), shared with the vocal worker and the
+bounded file probe. What this module adds is IDENTITY VERIFICATION.
 
-The group primitives underneath it -- liveness, the zombie-discounting member
-walk, the signal that tolerates an all-zombie group, and the two-cadence wait
--- now live in ``apps.shared.process_groups`` and are re-exported below. They
-were written here first and the vocal worker kept its own pre-zombie copy, so
-the same EPERM-on-a-corpse bug this module fixed went on burning a full grace
-over there. One home means one fix.
+The POSIX group primitives underneath the seam -- liveness, the
+zombie-discounting member walk, the signal that tolerates an all-zombie group,
+and the two-cadence wait -- live in ``apps.shared.process_groups`` and are
+re-exported below. One home means one fix.
+
+On Windows a recorded worker has no console group of its own, so its reap has
+no polite rung: the seam forces it from the start and says so in the outcome.
 
 A pgid recorded in the jobs db outlives the engine that wrote it. After a
 crash the OS is free to hand that number to an unrelated process, so a blind
@@ -33,7 +34,6 @@ so, never quietly dropped.
 from __future__ import annotations
 
 import os
-import signal
 import sys
 import time
 from collections.abc import Sequence
@@ -48,22 +48,26 @@ from apps.shared.process_groups import (
     group_members,
     live_group_members,
     process_group_exists,
-    signal_group,
-    wait_group_gone,
 )
+from apps.shared.process_tree import (
+    KILL_CONFIRM_S,
+    TreeRoot,
+    live_tree_members,
+    root_for_group_leader,
+    stop_tree,
+    unattributable_orphans,
+)
+
+_WINDOWS = sys.platform == "win32"
 
 # Every job reap uses this default, including a normal cancel. 10s is the
 # cancelled worker's flush window. Quit is bounded by #5844's stop window,
 # so this grace stays 10s rather than shrinking to fit a 5s quit.
 WORKER_TERMINATE_GRACE_S: float = 10.0
 
-# The share of the grace held back for the SIGKILL rung. A kill is not
-# instantaneous either -- the kernel still has to schedule the exit and
-# somebody still has to reap it -- so spending the whole budget on SIGTERM
-# would leave the confirm no time and turn every stubborn group into a raise
-# instead of a kill. Capped at half the grace so a caller passing a small one
-# still gets a ladder rather than an immediate SIGKILL.
-WORKER_KILL_CONFIRM_S: float = 2.0
+# The share of the grace held back for the SIGKILL rung: the seam's own
+# reserve, re-exported under the name the jobs code and its tests budget with.
+WORKER_KILL_CONFIRM_S: float = KILL_CONFIRM_S
 
 
 @dataclass(frozen=True)
@@ -91,13 +95,13 @@ class WorkerIdentity:
         return cls(pgid=pid, argv=tuple(argv), started_at=started_at)
 
 
-def _require_posix() -> None:
-    if sys.platform == "win32":
-        raise WorkerCleanupError(
-            "engine worker reaping is POSIX-only; port the taskkill branch "
-            "from apps/vocals/cli.py::_terminate_worker_tree before running "
-            "the engine on Windows"
-        )
+def _tree_root(identity: WorkerIdentity) -> TreeRoot:
+    return root_for_group_leader(identity.pgid, identity.started_at)
+
+
+def worker_tree_has_live_member(identity: WorkerIdentity) -> bool:
+    """Is anything of the recorded worker's tree still RUNNING, on this OS?"""
+    return bool(live_tree_members(_tree_root(identity)))
 
 
 @dataclass(frozen=True)
@@ -155,6 +159,8 @@ def _readable_leader_verdict(
             f"recorded {list(identity.argv)!r}",
             alive=True,
         )
+    if _WINDOWS:
+        return _LeaderVerdict(None, alive=True)  # no process groups: the tree is by parentage
     try:
         if os.getpgid(identity.pgid) != identity.pgid:
             return _LeaderVerdict(
@@ -213,7 +219,7 @@ def _inspect_survivors(identity: WorkerIdentity) -> _GroupVerdict:
     group that cannot be enumerated at all is therefore refused as unreaped
     rather than killed on faith -- never silently either way.
     """
-    survivors = live_group_members(identity.pgid)
+    survivors = live_tree_members(_tree_root(identity))
     floor = identity.started_at - CREATE_TIME_TOLERANCE_S
     ours: list[int] = []
     foreign: list[int] = []
@@ -251,43 +257,20 @@ def _inspect_survivors(identity: WorkerIdentity) -> _GroupVerdict:
 
 
 def terminate_group(
-    pgid: int, *, grace_s: float = WORKER_TERMINATE_GRACE_S
+    pgid: int, *, started_at: float, grace_s: float = WORKER_TERMINATE_GRACE_S
 ) -> str:
-    """SIGTERM -> SIGKILL -> confirm gone, all inside ONE ``grace_s``.
+    """Polite -> forced -> confirm gone, all inside ONE ``grace_s``.
 
-    WORST CASE IS grace_s IN TOTAL, per call. Both rungs draw on the same
-    deadline: SIGTERM gets what is left after reserving WORKER_KILL_CONFIRM_S
-    (capped at half the grace) for the confirm, and the confirm gets whatever
-    remains, including anything SIGTERM did not spend.
+    WORST CASE IS grace_s IN TOTAL, per call: the seam's polite rung gets what
+    is left after reserving WORKER_KILL_CONFIRM_S (capped at half the grace)
+    for the forced confirm. Boot recovery reaps its rows in a SERIAL loop on
+    the synchronous boot path, so N orphaned rows cost up to N x grace_s
+    before the engine finishes starting (C17).
 
-    That total is the number callers budget against. Boot recovery reaps its
-    rows in a SERIAL loop on the synchronous boot path, so N orphaned rows cost
-    up to N x grace_s before the engine finishes starting -- it used to be
-    N x 2 x grace_s, because each rung waited a full grace of its own (C17).
-
-    Adapted from apps/vocals/cli.py::_terminate_worker_tree. Raises
-    WorkerCleanupError when the group survives SIGKILL, because an
-    unverifiable kill is worse than a loud one.
+    Raises WorkerCleanupError when any of the tree survives the forced rung,
+    because an unverifiable kill is worse than a loud one.
     """
-    _require_posix()
-    deadline = time.monotonic() + grace_s
-    kill_at = deadline - min(WORKER_KILL_CONFIRM_S, grace_s / 2)
-    already = signal_group(pgid, signal.SIGTERM)
-    if already is not None:
-        return already
-    if wait_group_gone(pgid, max(kill_at - time.monotonic(), 0.0)):
-        return f"process group {pgid} exited on SIGTERM"
-    already = signal_group(pgid, signal.SIGKILL)
-    if already is not None:
-        return already
-    if not wait_group_gone(pgid, max(deadline - time.monotonic(), 0.0)):
-        raise WorkerCleanupError(
-            f"process group {pgid} survived SIGKILL; it was still live "
-            f"{grace_s:.0f}s after the SIGTERM that opened the ladder"
-        )
-    return (
-        f"process group {pgid} killed within the {grace_s:.0f}s SIGTERM grace"
-    )
+    return stop_tree(root_for_group_leader(pgid, started_at), grace_s=grace_s).sentence
 
 
 @dataclass(frozen=True)
@@ -326,11 +309,21 @@ def reap_group(identity: WorkerIdentity) -> ReapResult:
         return ReapResult(f"reap skipped: {unusable}", group_cleared=True)
     leader = _inspect_leader(identity)
     if leader.mismatch is None:
-        return _apply_ladder(identity.pgid, "leader identity verified")
+        return _apply_ladder(identity, "leader identity verified")
     if leader.alive:
         # A live pid that is NOT ours owns this pgid, and so does its tree.
         return ReapResult(f"reap skipped: {leader.mismatch}", group_cleared=True)
-    if not group_has_live_member(identity.pgid):
+    unproven = [proc.pid for proc in unattributable_orphans(_tree_root(identity))]
+    if unproven:
+        # Windows: nothing pins a dead recorded leader's pid, so a process naming
+        # it may be the child of a stranger that reused it. Kept, named, retried.
+        return ReapResult(
+            f"reap skipped: {leader.mismatch}; process(es) {unproven} name it as "
+            "parent but are unattributable (its pid may have been reused), so they "
+            "were left UNREAPED",
+            group_cleared=False,
+        )
+    if not worker_tree_has_live_member(identity):
         return ReapResult(f"reap skipped: {leader.mismatch}", group_cleared=True)
     verdict = _inspect_survivors(identity)
     if verdict.refusal is not None:
@@ -340,7 +333,7 @@ def reap_group(identity: WorkerIdentity) -> ReapResult:
             group_cleared=verdict.cleared,
         )
     return _apply_ladder(
-        identity.pgid,
+        identity,
         f"{leader.mismatch}, but the group outlived it and a survivor is "
         "consistent with the recorded spawn",
     )
@@ -361,14 +354,14 @@ def _unusable_pgid(pgid: int) -> str | None:
     return None
 
 
-def _apply_ladder(pgid: int, why: str) -> ReapResult:
+def _apply_ladder(identity: WorkerIdentity, why: str) -> ReapResult:
     try:
-        outcome = terminate_group(pgid)
+        outcome = terminate_group(identity.pgid, started_at=identity.started_at)
     except WorkerCleanupError as exc:
         return ReapResult(f"reap FAILED ({why}): {exc}", group_cleared=False)
     return ReapResult(
         f"reap: {outcome} ({why})",
-        group_cleared=not group_has_live_member(pgid),
+        group_cleared=not worker_tree_has_live_member(identity),
     )
 
 
@@ -392,4 +385,5 @@ __all__ = [
     "reap",
     "reap_group",
     "terminate_group",
+    "worker_tree_has_live_member",
 ]

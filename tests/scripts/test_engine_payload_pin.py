@@ -57,19 +57,14 @@ def test_a_runtime_off_the_pinned_line_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_runtime_on_the_pinned_line_passes(tmp_path: Path) -> None:
-    assert_runtime_matches_pin(
-        runtime_version="3.11.15", pin="3.11.15", runtime_source=tmp_path
-    )
+    assert_runtime_matches_pin(runtime_version="3.11.15", pin="3.11.15", runtime_source=tmp_path)
 
 
 def test_patch_drift_within_the_pinned_line_passes(tmp_path: Path) -> None:
     """The contract is major.minor: 3.11.16 against a 3.11.15 pin ships."""
-    assert_runtime_matches_pin(
-        runtime_version="3.11.16", pin="3.11.15", runtime_source=tmp_path
-    )
+    assert_runtime_matches_pin(runtime_version="3.11.16", pin="3.11.15", runtime_source=tmp_path)
 
 
 def test_the_repo_pin_is_itself_parseable() -> None:
     """The committed .python-version must satisfy the reader that gates dmg."""
     read_python_pin(REPO_ROOT)
-

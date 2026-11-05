@@ -20,9 +20,12 @@ CLIP_START_S = os.environ.get("VOCALS_DEMUCS_OVERLAY_CLIP_START_S")
 def test_vocals_demucs_fixture_refuses_relative_data_dir() -> None:
     code = vocals_demucs_fixture.main(
         [
-            "--data-dir", "relative-vocals-data",
-            "--source-audio", "/abs/vocal.mp3",
-            "--clip-start-s", "0",
+            "--data-dir",
+            "relative-vocals-data",
+            "--source-audio",
+            "/abs/vocal.mp3",
+            "--clip-start-s",
+            "0",
         ]
     )
     assert code == 2
@@ -48,10 +51,14 @@ def test_vocals_demucs_fixture_builds_manifest(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
     code = vocals_demucs_fixture.main(
         [
-            "--data-dir", str(data_dir),
-            "--manifest", str(manifest),
-            "--source-audio", str(SOURCE_AUDIO),
-            "--clip-start-s", str(CLIP_START_S),
+            "--data-dir",
+            str(data_dir),
+            "--manifest",
+            str(manifest),
+            "--source-audio",
+            str(SOURCE_AUDIO),
+            "--clip-start-s",
+            str(CLIP_START_S),
         ]
     )
     assert code == 0

@@ -325,9 +325,10 @@ export function readFreshProcessFamilySnapshot(
 	maxAgeMs: number,
 	monoNowMs: number = _monoNowMs()
 ): ProcessFamilySnapshot | null {
-	if (_cached === null || _cachedAtMonoMs === null || _probeAgeBaseMonoMs === null) return null;
+	if (_cached === null || _cachedAtMonoMs === null) return null;
 	if (monoNowMs - _cachedAtMonoMs > maxAgeMs) return null;
-	return _withinProbeLifetime(_cached, (monoNowMs - _probeAgeBaseMonoMs) / 1000);
+	const probeBaseMonoMs = _probeAgeBaseMonoMs ?? _cachedAtMonoMs;
+	return _withinProbeLifetime(_cached, (monoNowMs - probeBaseMonoMs) / 1000);
 }
 
 /**

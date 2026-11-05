@@ -11,9 +11,7 @@ from apps.shared import app_posture
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TS_PATH = REPO_ROOT / "apps/webui/frontend/src/lib/rb/app-posture.ts"
-_TS_NUMERIC_CONST = re.compile(
-    r"^export const ([A-Z][A-Z0-9_]*) = ([0-9_]+(?: \* [0-9_]+)*);$", re.M
-)
+_TS_NUMERIC_CONST = re.compile(r"^export const ([A-Z][A-Z0-9_]*) = ([0-9_]+(?: \* [0-9_]+)*);$", re.M)
 
 
 def _ts_numeric_constants(text: str) -> dict[str, int]:
@@ -36,11 +34,7 @@ def test_ts_posture_constants_match_python() -> None:
     earlier four-name version would have let a new Gig cap exist on one side only.
     """
     ts = _ts_numeric_constants(TS_PATH.read_text(encoding="utf-8"))
-    py = {
-        name: value
-        for name, value in vars(app_posture).items()
-        if name.isupper() and isinstance(value, int)
-    }
+    py = {name: value for name, value in vars(app_posture).items() if name.isupper() and isinstance(value, int)}
     assert len(ts) >= 5, f"if the TS parser finds almost nothing then it is vacuous - broken: {ts}"
     assert ts.keys() == py.keys(), (
         "if a posture constant exists in one language only then Gig caps differ - broken: "

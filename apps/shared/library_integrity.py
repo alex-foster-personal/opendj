@@ -24,8 +24,9 @@ R3. Pure, injectable core (``check_integrity`` takes an iterable of tracks +
     touch the real DB. ``live_report`` wires it to the live working-copy DB.
 
 R4. Lives in ``apps.shared`` because it is a gate every write path may call,
-    not an audit report. ``apps.sync.playlist_apply`` gates live applies on
-    it (GUARD-lineage H1); an audit-owned guard would have made every writer
+    not an audit report. ``apps.sync.playlist_apply`` and
+    ``apps.reconcile.apply`` gate live applies on it (GUARD-lineage H1); an
+    audit-owned guard would have made every writer
     import the auditor, which is how the ``audit <-> sync`` package cycle
     appeared. ``apps.audit.library_integrity`` keeps the operator CLI and
     re-exports this surface.

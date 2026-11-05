@@ -89,8 +89,14 @@ test('empty and duplicate scopes fail fast before any command executes', async (
 	const scheduler = new ScopedCommandScheduler();
 	let calls = 0;
 
-	await assert.rejects(scheduler.run([], async () => calls++), /at least one scope/i);
-	await assert.rejects(scheduler.run([1, 1], async () => calls++), /duplicate scope/i);
+	await assert.rejects(
+		scheduler.run([], async () => calls++),
+		/at least one scope/i
+	);
+	await assert.rejects(
+		scheduler.run([1, 1], async () => calls++),
+		/duplicate scope/i
+	);
 	assert.equal(calls, 0);
 });
 
@@ -100,10 +106,11 @@ test('gesture work claims an idle scope synchronously and rejects a busy scope w
 	const regular = scheduler.run(['headphone'], async () => gate.promise);
 	let invoked = false;
 	assert.throws(
-		() => scheduler.runImmediatelyIfIdle('headphone', () => {
-			invoked = true;
-			return Promise.resolve();
-		}),
+		() =>
+			scheduler.runImmediatelyIfIdle('headphone', () => {
+				invoked = true;
+				return Promise.resolve();
+			}),
 		/headphone.*busy/i
 	);
 	assert.equal(invoked, false);
@@ -185,7 +192,7 @@ test('a detached run() fired from inside another run(), never awaited by it, doe
 	);
 });
 
-test('a detached wide claim that also claims the narrow claim\'s own scope keeps that scope occupied until the wide work finishes', async () => {
+test("a detached wide claim that also claims the narrow claim's own scope keeps that scope occupied until the wide work finishes", async () => {
 	// r3914267990 P1 BLOCKING, found on top of the fix above: excluding the
 	// narrow scope (1) from the detached wide claim's own scope list means
 	// scope 1 is released the instant the narrow claim's body returns - a

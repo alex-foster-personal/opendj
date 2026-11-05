@@ -64,6 +64,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.platform_capabilities import posix_bash_or_skip
+
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "periodic-checks.yml"
 
 EXTENDED_JOB = "e2e extended (nightly)"
@@ -158,14 +160,8 @@ _STUB_NEVER_RAN = "gh stub never ran"
 
 def _e2e_script_failure_diagnostics(tmp_path: Path, proc: subprocess.CompletedProcess[str]) -> str:
     e2e_err_path = tmp_path / "e2e.err"
-    e2e_err = (
-        e2e_err_path.read_text(encoding="utf-8") if e2e_err_path.exists() else "(absent)"
-    )
-    return (
-        f"exit code {proc.returncode}\n"
-        f"stderr:\n{proc.stderr}\n"
-        f"e2e.err:\n{e2e_err}"
-    )
+    e2e_err = e2e_err_path.read_text(encoding="utf-8") if e2e_err_path.exists() else "(absent)"
+    return f"exit code {proc.returncode}\nstderr:\n{proc.stderr}\ne2e.err:\n{e2e_err}"
 
 
 def _run_with_stub_gh(
@@ -194,19 +190,13 @@ def _run_with_stub_gh(
     date = tmp_path / "date"
     date.write_text(date_shim.format(gnu_date=GNU_DATE), encoding="utf-8")
     date.chmod(date.stat().st_mode | stat.S_IEXEC)
-    script = (
-        f"gh() {{ {stub_abs} \"$@\"; }}\n"
-        f"{_extract_e2e_line_script()}\n"
-        'printf "%s" "$e2e_line"\n'
-    )
+    script = f'gh() {{ {stub_abs} "$@"; }}\n{_extract_e2e_line_script()}\nprintf "%s" "$e2e_line"\n'
     env = dict(os.environ)
     env["PATH"] = f"{tmp_path}:{env['PATH']}"
     env["STUB_LOG"] = str(tmp_path / "gh.argv")
 
     runs = runs if runs is not None else []
-    run_list_payload = [
-        {"databaseId": r["databaseId"], "createdAt": r["createdAt"], "url": r["url"]} for r in runs
-    ]
+    run_list_payload = [{"databaseId": r["databaseId"], "createdAt": r["createdAt"], "url": r["url"]} for r in runs]
     env["STUB_JSON"] = json.dumps(run_list_payload)
     for r in runs:
         jobs_payload: dict = {"jobs": []}
@@ -223,7 +213,7 @@ def _run_with_stub_gh(
     else:
         env.pop("BASE_AT", None)
     proc = subprocess.run(
-        ["bash", "-c", script],
+        [posix_bash_or_skip(), "-c", script],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -238,9 +228,7 @@ def _run_with_stub_gh(
             f"{_STUB_NEVER_RAN}: the test stub was not invoked, so this measurement is "
             f"not trustworthy (another gh may have run instead).\n{diagnostics}"
         )
-    assert proc.returncode == 0, (
-        "extracted e2e_line script failed:\n" + diagnostics
-    )
+    assert proc.returncode == 0, "extracted e2e_line script failed:\n" + diagnostics
     return proc.stdout, argv_log
 
 

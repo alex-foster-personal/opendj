@@ -1,0 +1,13 @@
+{
+  "note": "hardware practice replica route (/practice/<device>), lazy",
+  "order": 62,
+  "attribution": {
+    "markers": [
+      "neither binds nor hints"
+    ]
+  },
+  "limit": 17408,
+  "measured": 15986,
+  "measured_on": "Thu 5 Nov 2026",
+  "baseline_sha": "5865cedc6a"
+}

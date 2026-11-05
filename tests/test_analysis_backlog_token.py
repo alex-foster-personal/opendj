@@ -15,6 +15,7 @@ Regression lines:
   - if a file that vanished mid-scan raises instead of reading None then broken
   - if this platform is routed to the branch its capability does not name then broken
 """
+
 from __future__ import annotations
 
 import os
@@ -49,7 +50,7 @@ def test_the_token_digests_the_bytes_where_ctime_cannot_see_a_repair(tmp_path):
     before_stat = repaired.stat()
     before = backlog_mod._content_token(repaired, ctime_is_inode_change=False)
 
-    repaired.write_bytes(b"\x03" * before_stat.st_size)   # same length, new bytes
+    repaired.write_bytes(b"\x03" * before_stat.st_size)  # same length, new bytes
     os.utime(repaired, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
 
     # The last assertion reads "the token does not carry st_ctime_ns", which
@@ -137,8 +138,7 @@ def test_this_platform_is_routed_to_the_branch_its_capability_names(tmp_path):
     assert token is not None
 
     assert backlog_mod.CTIME_IS_INODE_CHANGE is (os.name != "nt"), (
-        "the capability was derived from something other than the platform "
-        "whose ctime semantics it describes"
+        "the capability was derived from something other than the platform whose ctime semantics it describes"
     )
     st = track.stat()
     if backlog_mod.CTIME_IS_INODE_CHANGE:

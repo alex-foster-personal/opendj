@@ -133,23 +133,21 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
                 "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
             ).fetchall()
         }
-        conn.execute("BEGIN IMMEDIATE")
-        with StateWriter(conn, actor="webui") as writer:
-            # The user picked these files to add, so one they removed earlier
-            # comes back rather than failing the drop (LIBM-141).
-            folder_ingest.ingest_folder(
-                writer, [dest_dir], dry_run=False, restore_removed=True
-            )
-
-        # Commit only after EVERY staged path resolved (see _resolve_staged).
-        tracks = _resolve_staged(conn, dest_dir, staged, before_ids)
-        conn.commit()
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                # The user picked these files to add, so one they removed earlier
+                # comes back rather than failing the drop (LIBM-141).
+                folder_ingest.ingest_folder(
+                    writer, [dest_dir], dry_run=False, restore_removed=True
+                )
+                # Commit only after EVERY staged path resolved (see _resolve_staged).
+                tracks = _resolve_staged(conn, dest_dir, staged, before_ids)
         # After the commit, so the coordinator reads committed rows (ENRICH-06).
         ingest_enrichment.coordinator_for(request.app).register(
             batch, (track.stable_id for track in tracks), "materialize")
         return MaterializeOut(batch=batch, tracks=tracks)
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise
     finally:
         conn.close()

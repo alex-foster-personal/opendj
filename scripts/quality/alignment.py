@@ -98,9 +98,7 @@ def normalised_cross_correlation(a: np.ndarray, b: np.ndarray, lags: np.ndarray)
     return scores
 
 
-def carrier_self_similarity(
-    carrier: np.ndarray, lags: np.ndarray, guard_lags: int
-) -> tuple[float, int]:
+def carrier_self_similarity(carrier: np.ndarray, lags: np.ndarray, guard_lags: int) -> tuple[float, int]:
     """Gate (d): how well the reference's own carrier matches itself elsewhere.
 
     Returns the best non-trivial self-correlation inside the search window and
@@ -139,9 +137,7 @@ class Alignment:
         return asdict(self)
 
 
-def _guarded_peak(
-    scores: np.ndarray, lags: np.ndarray, guard_lags: int, label: str
-) -> tuple[int, float, float, int]:
+def _guarded_peak(scores: np.ndarray, lags: np.ndarray, guard_lags: int, label: str) -> tuple[int, float, float, int]:
     best_index = int(np.argmax(scores))
     best_score = float(scores[best_index])
     if best_score < ALIGN_CORRELATION_FLOOR:
@@ -232,9 +228,7 @@ def estimate_delay_samples(
             "stage and the fine stage disagree"
         )
     fine_guard = max(round(ALIGN_AMBIGUITY_GUARD_MS * sample_rate_hz / 1000.0 / fine_hop), 1)
-    fine_lag, correlation, fine_ratio, _ = _guarded_peak(
-        fine_scores, fine_lags, fine_guard, f"{label} fine"
-    )
+    fine_lag, correlation, fine_ratio, _ = _guarded_peak(fine_scores, fine_lags, fine_guard, f"{label} fine")
     return Alignment(
         delay_samples=int(fine_lag * fine_hop),
         correlation=correlation,
@@ -246,9 +240,7 @@ def estimate_delay_samples(
     )
 
 
-def apply_delay(
-    reference: np.ndarray, rendered: np.ndarray, delay_samples: int
-) -> tuple[np.ndarray, np.ndarray]:
+def apply_delay(reference: np.ndarray, rendered: np.ndarray, delay_samples: int) -> tuple[np.ndarray, np.ndarray]:
     """Trim both signals to their aligned, common span."""
     ref_mono, test_mono = to_mono(reference), to_mono(rendered)
     if delay_samples >= 0:

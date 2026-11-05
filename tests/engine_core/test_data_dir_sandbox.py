@@ -115,23 +115,20 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
 def test_client_errors_are_written_inside_the_data_dir(probe: dict) -> None:
     assert probe["errors_status"] == 202
     assert probe["errors_stored"] is True
-    assert any(
-        "client-errors" in name for name in probe["in_data_dir"]
-    ), f"no client-errors log under the data dir; found {probe['in_data_dir']}"
+    assert any("client-errors" in name for name in probe["in_data_dir"]), (
+        f"no client-errors log under the data dir; found {probe['in_data_dir']}"
+    )
 
 
 def test_client_events_are_written_inside_the_data_dir(probe: dict) -> None:
     assert probe["events_status"] == 202
-    assert any(
-        "visitors" in name for name in probe["in_data_dir"]
-    ), f"no visitor log under the data dir; found {probe['in_data_dir']}"
+    assert any("visitors" in name for name in probe["in_data_dir"]), (
+        f"no visitor log under the data dir; found {probe['in_data_dir']}"
+    )
 
 
 def test_nothing_is_written_to_the_home_directory(probe: dict) -> None:
-    assert probe["in_home"] == [], (
-        "a --data-dir engine wrote outside its data dir: "
-        f"{probe['in_home']}"
-    )
+    assert probe["in_home"] == [], f"a --data-dir engine wrote outside its data dir: {probe['in_home']}"
 
 
 def test_boot_refuses_an_unwritable_logs_dir(tmp_path: Path) -> None:

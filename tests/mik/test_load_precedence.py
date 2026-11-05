@@ -4,6 +4,7 @@ fixture constant with that module rather than redefining them.
 
 [if] a MIK song matches a track or none [then] load() writes fields/stages unmatched, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -37,19 +38,13 @@ def test_mik_bpm_never_clobbers_rekordbox(
         "'2026-01-01T00:00:00+00:00')",
         ("a" * 40,),
     )
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "tempo": 90.0, "confidence": 0.99}]
-    )
-    plan, _gate = _load(
-        state_conn, store, data_dir, overwrite_lower_precedence=True
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "tempo": 90.0, "confidence": 0.99}])
+    plan, _gate = _load(state_conn, store, data_dir, overwrite_lower_precedence=True)
     assert plan.blocked_by_precedence["bpm"] == 1
     loader.apply_plan(state_conn, plan)
-    assert (
-        state_conn.execute(
-            "SELECT value_json, source FROM track_fields WHERE field_name='bpm'"
-        ).fetchone()
-        == ("120.0", "rekordbox")
+    assert state_conn.execute("SELECT value_json, source FROM track_fields WHERE field_name='bpm'").fetchone() == (
+        "120.0",
+        "rekordbox",
     )
 
 
@@ -62,9 +57,7 @@ def test_low_confidence_key_falls_through_to_rekordbox(
 ) -> None:
     write_verdicts(ALL_PASSED)
     add_track("a" * 40, file_path="/Users/user/x.mp3")
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "key": "3A", "confidence": 0.29}]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "key": "3A", "confidence": 0.29}])
     plan, _gate = _load(state_conn, store, data_dir)
     assert plan.blocked_by_key_floor == 1
     assert {write.field_name for write in plan.field_writes} == {
@@ -90,16 +83,11 @@ def test_high_confidence_key_only_overwrites_when_asked(
         "'2026-01-01T00:00:00+00:00')",
         ("a" * 40,),
     )
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.99}]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.99}])
     default_plan, _ = _load(state_conn, store, data_dir)
     assert default_plan.blocked_by_precedence["key"] == 1
-    opted_in, _ = _load(
-        state_conn, store, data_dir, overwrite_lower_precedence=True
-    )
-    assert [write.value for write in opted_in.field_writes if
-            write.field_name == "key"] == ["9A"]
+    opted_in, _ = _load(state_conn, store, data_dir, overwrite_lower_precedence=True)
+    assert [write.value for write in opted_in.field_writes if write.field_name == "key"] == ["9A"]
 
 
 def test_mid_band_key_is_flagged_for_review_not_silently_written(
@@ -118,12 +106,8 @@ def test_mid_band_key_is_flagged_for_review_not_silently_written(
         "'2026-01-01T00:00:00+00:00')",
         ("a" * 40,),
     )
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}]
-    )
-    plan, _gate = _load(
-        state_conn, store, data_dir, overwrite_lower_precedence=True
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}])
+    plan, _gate = _load(state_conn, store, data_dir, overwrite_lower_precedence=True)
     assert plan.key_review_band == ["a" * 40]
     assert "key" not in {write.field_name for write in plan.field_writes}
     assert plan.blocked_by_key_floor == 0
@@ -139,9 +123,7 @@ def test_mid_band_key_still_fills_an_empty_field(
     """Nothing to disagree with, so a 0.80-confidence key beats no key."""
     write_verdicts(ALL_PASSED)
     add_track("a" * 40, file_path="/Users/user/x.mp3")
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}])
     plan, _gate = _load(state_conn, store, data_dir)
     assert plan.key_review_band == []
     assert [w.value for w in plan.field_writes if w.field_name == "key"] == ["9A"]
@@ -157,21 +139,12 @@ def test_key_confidence_is_mik_own_per_track_value(
     """Not the flat 0.95: the whole point of the audit's correction 1."""
     write_verdicts(ALL_PASSED)
     add_track("a" * 40, file_path="/Users/user/x.mp3")
-    store = make_mik_store(
-        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.83}]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.83}])
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
+    assert state_conn.execute("SELECT confidence FROM track_fields WHERE field_name='key'").fetchone()[0] == 0.83
     assert (
-        state_conn.execute(
-            "SELECT confidence FROM track_fields WHERE field_name='key'"
-        ).fetchone()[0]
-        == 0.83
-    )
-    assert (
-        state_conn.execute(
-            "SELECT confidence FROM track_fields WHERE field_name='energy'"
-        ).fetchone()[0]
+        state_conn.execute("SELECT confidence FROM track_fields WHERE field_name='energy'").fetchone()[0]
         == loader.MIK_CONFIDENCE
     )
 
@@ -199,10 +172,7 @@ def test_modified_at_comes_from_the_analysis_date_not_the_clock(
     )
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
-    stamps = {
-        row[0]
-        for row in state_conn.execute("SELECT modified_at FROM track_fields")
-    }
+    stamps = {row[0] for row in state_conn.execute("SELECT modified_at FROM track_fields")}
     assert stamps == {"2023-12-20T02:20:10+00:00"}
 
 
@@ -217,8 +187,7 @@ def test_second_live_run_writes_nothing(
     add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
         [
-            {"path": "/Users/user/x.mp3", "confidence": 0.9,
-             "segments": [(0.0, 60.0, 5)]},
+            {"path": "/Users/user/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]},
             {"path": "/none/y.mp3", "confidence": 0.9, "segments": [(0.0, 30.0, 3)]},
         ]
     )
@@ -302,12 +271,7 @@ def test_verification_basis_is_persisted_with_the_data(
         ),
         encoding="utf-8",
     )
-    store = make_mik_store(
-        [
-            {"path": "/Users/user/x.mp3", "confidence": 0.95,
-             "segments": [(0.0, 60.0, 5)]}
-        ]
-    )
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.95, "segments": [(0.0, 60.0, 5)]}])
     plan, _gate = _load(state_conn, store, data_dir)
     result = loader.apply_plan(state_conn, plan)
     assert result.verification_rows == len(loader.GATED_FIELDS)
@@ -328,12 +292,7 @@ def test_verification_basis_is_persisted_with_the_data(
     assert rows["bpm"] == ("failed", "unverified", None, 0)
     assert rows["loudness"] == ("untested", "unverified", None, 0)
     # And the data it gated actually landed.
-    assert (
-        state_conn.execute(
-            "SELECT COUNT(*) FROM track_energy_segments"
-        ).fetchone()[0]
-        == 1
-    )
+    assert state_conn.execute("SELECT COUNT(*) FROM track_energy_segments").fetchone()[0] == 1
 
 
 def test_clamped_start_is_persisted_per_row(
@@ -357,10 +316,7 @@ def test_clamped_start_is_persisted_per_row(
     )
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
-    rows = state_conn.execute(
-        "SELECT seq, start_ms, start_clamped FROM track_energy_segments "
-        "ORDER BY seq"
-    ).fetchall()
+    rows = state_conn.execute("SELECT seq, start_ms, start_clamped FROM track_energy_segments ORDER BY seq").fetchall()
     assert rows == [(0, 0, 1), (1, 60000, 0)]
 
 
@@ -373,9 +329,7 @@ def test_staged_series_round_trips_the_clamp_flag(
 ) -> None:
     """Staging must not lose the flag, or promotion would invent a clean 0."""
     write_verdicts(ALL_PASSED)
-    store = make_mik_store(
-        [{"path": "/none/y.mp3", "confidence": 0.9, "segments": [(-0.0195, 60.0, 5)]}]
-    )
+    store = make_mik_store([{"path": "/none/y.mp3", "confidence": 0.9, "segments": [(-0.0195, 60.0, 5)]}])
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
     value = state_conn.execute(
@@ -392,9 +346,9 @@ def test_override_is_recorded_as_overridden(
     store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.95}])
     plan, _gate = _load(state_conn, store, data_dir, allow_unverified=True)
     loader.apply_plan(state_conn, plan)
-    overridden = state_conn.execute(
-        "SELECT COUNT(*) FROM analysis_field_verification WHERE overridden = 1"
-    ).fetchone()[0]
+    overridden = state_conn.execute("SELECT COUNT(*) FROM analysis_field_verification WHERE overridden = 1").fetchone()[
+        0
+    ]
     assert overridden == len(loader.GATED_FIELDS)
 
 
@@ -416,9 +370,7 @@ def test_every_source_value_is_accounted_for(
         ]
     )
     plan, _gate = _load(state_conn, store, data_dir)
-    energy_written = sum(
-        1 for write in plan.field_writes if write.field_name == "energy"
-    )
+    energy_written = sum(1 for write in plan.field_writes if write.field_name == "energy")
     energy_staged = sum(1 for row in plan.staged if row.field_name == "energy")
     energy_blocked = plan.blocked_by_gate.get("energy", 0)
     energy_absent = plan.no_value.get("energy", 0)

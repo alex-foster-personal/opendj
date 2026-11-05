@@ -54,12 +54,41 @@ from pathlib import Path
 
 #: Segments that describe the OS or the tool rather than the person. Keeping
 #: them readable costs nothing: none of them narrows down a human being.
-GENERIC = frozenset({
-    "", "Users", "Desktop", "Documents", "Downloads", "Library", "home", "var",
-    "private", "tmp", "opt", "usr", "code", "src", "projects", "worktrees",
-    "tests", "test", "e2e", "artifacts", "proj", "Music", "Movies", "Pictures",
-    ".claude", ".codex", ".config", ".local", "node_modules", "dist", "build",
-})
+GENERIC = frozenset(
+    {
+        "",
+        "Users",
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Library",
+        "home",
+        "var",
+        "private",
+        "tmp",
+        "opt",
+        "usr",
+        "code",
+        "src",
+        "projects",
+        "worktrees",
+        "tests",
+        "test",
+        "e2e",
+        "artifacts",
+        "proj",
+        "Music",
+        "Movies",
+        "Pictures",
+        ".claude",
+        ".codex",
+        ".config",
+        ".local",
+        "node_modules",
+        "dist",
+        "build",
+    }
+)
 
 #: 32 random bytes, generated once per run and never persisted. Nothing that
 #: reaches disk depends on its value, so there is no artifact anyone can use to
@@ -81,9 +110,7 @@ def _keystream(piece: str, length: int) -> bytes:
     out = bytearray()
     block = 0
     while len(out) < length:
-        out += hashlib.blake2b(
-            f"{block}:{piece}".encode(), key=_KEY, digest_size=64
-        ).digest()
+        out += hashlib.blake2b(f"{block}:{piece}".encode(), key=_KEY, digest_size=64).digest()
         block += 1
     return bytes(out[:length])
 

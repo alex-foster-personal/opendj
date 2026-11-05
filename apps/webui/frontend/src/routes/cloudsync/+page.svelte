@@ -330,7 +330,10 @@
 										title={`Sync mode for ${pin.playlist_name ?? pin.playlist_id} on ${machineName(pin.machine_id)}`}
 										value={pin.mode}
 										onchange={(e) =>
-											onPinModeChange(pin, (e.currentTarget as HTMLSelectElement).value as SyncMode)}
+											onPinModeChange(
+												pin,
+												(e.currentTarget as HTMLSelectElement).value as SyncMode
+											)}
 									>
 										{#each SYNC_MODES as mode (mode)}
 											<option value={mode}>{mode}</option>
@@ -389,10 +392,14 @@
 								>
 									{m.pinned_tracks}
 								</td>
-								<td title="Distinct tracks in playlists set to cached (LRU local copy) on this machine">
+								<td
+									title="Distinct tracks in playlists set to cached (LRU local copy) on this machine"
+								>
 									{m.cached_tracks}
 								</td>
-								<td title="Distinct tracks in playlists set to stream-only (no local copy) on this machine">
+								<td
+									title="Distinct tracks in playlists set to stream-only (no local copy) on this machine"
+								>
 									{m.stream_tracks}
 								</td>
 								<td
@@ -401,7 +408,9 @@
 								>
 									{m.unhydrated_pinned_count}
 								</td>
-								<td title="Last hub-sync exchange with this machine's peer id, from the local sync_state table (blank until the hub-sync daemon runs)">
+								<td
+									title="Last hub-sync exchange with this machine's peer id, from the local sync_state table (blank until the hub-sync daemon runs)"
+								>
 									{m.last_sync_at ?? 'never'}
 								</td>
 							</tr>

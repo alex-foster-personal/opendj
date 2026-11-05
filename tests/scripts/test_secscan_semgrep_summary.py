@@ -26,9 +26,22 @@ def _summary_with_stderr(tmp_path: Path, doc: dict, *flags: str) -> tuple[int, s
     scan.write_text(json.dumps(doc), encoding="utf-8")
     count = tmp_path / "scan.count"
     proc = subprocess.run(
-        [sys.executable, str(SECSCAN), "semgrep-summary", str(scan), "--min-rules", "1",
-         "--min-files", "1", "--count-file", str(count), *flags],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(SECSCAN),
+            "semgrep-summary",
+            str(scan),
+            "--min-rules",
+            "1",
+            "--min-files",
+            "1",
+            "--count-file",
+            str(count),
+            *flags,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     written = count.read_text(encoding="utf-8").strip() if count.exists() else ""
     return proc.returncode, written, proc.stderr
@@ -95,9 +108,7 @@ def _ignored_out_doc(skipped: list[dict] | None) -> dict:
 
 def test_ignored_out_diff_is_unknown_even_with_skipped_evidence(tmp_path: Path) -> None:
     """[if] 0 rules, 0 scanned, and a skipped tests/ path [then] UNKNOWN, [else stop]."""
-    doc = _ignored_out_doc(
-        [{"path": "tests/scripts/test_probe.py", "reason": "semgrepignore_patterns_match"}]
-    )
+    doc = _ignored_out_doc([{"path": "tests/scripts/test_probe.py", "reason": "semgrepignore_patterns_match"}])
     rc, _, stderr = _summary_with_stderr(tmp_path, doc, "--expected-scannable", "1")
     assert rc == 2, "an unmeasured scan is UNKNOWN; the SKIP belongs upstream in diff scope"
     assert "ignore list" in stderr, "the reason must name the ignore list, not a rule-load failure"
@@ -111,8 +122,6 @@ def test_zero_scanned_without_skipped_evidence_is_unknown(tmp_path: Path) -> Non
 
 def test_rule_load_failure_still_names_the_rule_set(tmp_path: Path) -> None:
     """[if] files were scanned but 0 rules loaded [then] UNKNOWN blaming the rules, [else stop]."""
-    rc, _, stderr = _summary_with_stderr(
-        tmp_path, _doc(rules=0, scanned=3), "--expected-scannable", "3"
-    )
+    rc, _, stderr = _summary_with_stderr(tmp_path, _doc(rules=0, scanned=3), "--expected-scannable", "3")
     assert rc == 2
     assert "rule set failed to load" in stderr

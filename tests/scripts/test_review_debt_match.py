@@ -57,9 +57,7 @@ def test_summary_names_the_finding_that_was_already_debt_logged() -> None:
 
     summary = add_suppressed_summary(f"Claude review\n{marker}", [finding], marker)
 
-    assert "already debt-logged: LYRICS-02 ledger entry description is truncated mid-sentence" in (
-        summary
-    )
+    assert "already debt-logged: LYRICS-02 ledger entry description is truncated mid-sentence" in (summary)
 
 
 def test_different_unicode_titles_never_normalize_to_the_same_heading() -> None:

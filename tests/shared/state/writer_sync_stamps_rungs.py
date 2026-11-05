@@ -10,6 +10,7 @@ This is a helper module, not a test module (no ``test_`` prefix), so pytest
 does not collect it. It takes the stable id and timestamp from the caller
 rather than importing them back, because the tripwire module imports this one.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,9 +21,7 @@ from apps.shared.state import sync_stamp
 from apps.webui.server.routes import feedback_replica
 
 
-def exercise_lyric_verdict_writes(
-    conn: sqlite3.Connection, machine_id: str, sid: str, ts: str
-) -> None:
+def exercise_lyric_verdict_writes(conn: sqlite3.Connection, machine_id: str, sid: str, ts: str) -> None:
     """Drive the ``lyric_verdict`` write shape (schema v10, D13.1).
 
     Written against ``stamped_transaction`` + ``stamp_and_log`` directly
@@ -58,9 +57,7 @@ def exercise_lyric_verdict_writes(
         )
 
 
-def exercise_feedback_pin_reconcile(
-    conn: sqlite3.Connection, tmp_path: Path, ts: str
-) -> None:
+def exercise_feedback_pin_reconcile(conn: sqlite3.Connection, tmp_path: Path, ts: str) -> None:
     """Drive the ONLY ``feedback_pins`` writer (schema v12, FBSYNC-01).
 
     Through the real bridge, not a hand-rolled INSERT: the reconcile is the
@@ -71,8 +68,13 @@ def exercise_feedback_pin_reconcile(
     root = tmp_path / "feedback"
     root.mkdir(parents=True, exist_ok=True)
     pin = {
-        "id": "tripwirepin1", "x_pct": 10.0, "y_pct": 20.0, "anchor": None,
-        "page": "/performance", "text": "tripwire", "created_at": ts,
+        "id": "tripwirepin1",
+        "x_pct": 10.0,
+        "y_pct": 20.0,
+        "anchor": None,
+        "page": "/performance",
+        "text": "tripwire",
+        "created_at": ts,
         "build": {"git_sha": "deadbeef", "built_at_utc": ts, "source": "repo"},
     }
     (root / "comments.json").write_text(json.dumps({"comments": [pin]}), encoding="utf-8")

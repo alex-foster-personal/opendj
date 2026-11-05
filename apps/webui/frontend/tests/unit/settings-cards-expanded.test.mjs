@@ -21,7 +21,11 @@ const INERT_TITLE = 'not implemented - see PARITY-TODO';
 const FAKE_NAVIGATION = new URL('./fake-app-navigation.mjs', import.meta.url).pathname;
 
 const escapeHtml = (s) =>
-	s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+	s
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;');
 
 /** Render the open overlay once, server-side: no pointer, no focus, nothing hovered. */
 async function renderOpenOverlay() {
@@ -42,18 +46,26 @@ test('CHROME-17 if a settings card hides its description until hover then the ov
 	const rows = cards(body);
 	assert.ok(rows.length > 10, `control: the open overlay rendered its cards (got ${rows.length})`);
 	const withDetail = rows.filter((r) => /<p class="so-detail[^"]*">[^<]+<\/p>/.test(r.inner));
-	assert.equal(withDetail.length, rows.length, `${rows.length - withDetail.length} of ${rows.length} cards render no description without hover`);
+	assert.equal(
+		withDetail.length,
+		rows.length,
+		`${rows.length - withDetail.length} of ${rows.length} cards render no description without hover`
+	);
 });
 
 test('CHROME-17 if a card or its control carries the catalog title as a hover explainer then the explainer tooltips are back', async () => {
 	const body = await renderOpenOverlay();
 	const { SETTINGS_CATALOG } = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	const rows = cards(body);
-	for (const r of rows) assert.doesNotMatch(r.open, /\btitle=/, `card carries a hover explainer: ${r.open}`);
+	for (const r of rows)
+		assert.doesNotMatch(r.open, /\btitle=/, `card carries a hover explainer: ${r.open}`);
 	let checked = 0;
 	for (const def of SETTINGS_CATALOG) {
 		if (def.title === INERT_TITLE) continue; // the inert 'todo' marker keeps its PARITY-TODO tooltip (house rule)
-		assert.ok(!body.includes(`title="${escapeHtml(def.title)}"`), `${def.id}: its explainer "${def.title}" is still a hover tooltip`);
+		assert.ok(
+			!body.includes(`title="${escapeHtml(def.title)}"`),
+			`${def.id}: its explainer "${def.title}" is still a hover tooltip`
+		);
 		checked += 1;
 	}
 	assert.ok(checked > 10, 'control: real catalog titles were checked');
@@ -63,9 +75,15 @@ test('CHROME-17 if dropping the explainers also dropped the accessible names the
 	const body = await renderOpenOverlay();
 	const { SETTINGS_CATALOG } = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	const named = (def) => body.includes(`aria-label="${escapeHtml(def.label)}"`);
-	const controls = SETTINGS_CATALOG.filter((d) => d.implemented && ['enum', 'boolean', 'number', 'multi_bool'].includes(d.control.kind));
+	const controls = SETTINGS_CATALOG.filter(
+		(d) => d.implemented && ['enum', 'boolean', 'number', 'multi_bool'].includes(d.control.kind)
+	);
 	assert.ok(controls.length > 10, 'control: implemented catalog rows exist');
 	const rendered = controls.filter((d) => body.includes(`>${escapeHtml(d.label)}</span>`));
-	assert.ok(rendered.length > 10, `control: implemented rows rendered in the overlay (got ${rendered.length})`);
-	for (const def of rendered) assert.ok(named(def), `${def.id}: control has no aria-label "${def.label}"`);
+	assert.ok(
+		rendered.length > 10,
+		`control: implemented rows rendered in the overlay (got ${rendered.length})`
+	);
+	for (const def of rendered)
+		assert.ok(named(def), `${def.id}: control has no aria-label "${def.label}"`);
 });

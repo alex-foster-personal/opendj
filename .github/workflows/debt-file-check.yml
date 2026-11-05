@@ -2,7 +2,7 @@ name: Debt file check
 
 # WHY THIS IS ITS OWN WORKFLOW AND NOT A STEP IN CI
 #
-# Same reason as adr-check.yml and reqs-flip-gate.yml: ci.yml's
+# Same reason as the adr and reqs_flip jobs in pr-body-gates.yml: ci.yml's
 # `pull_request` `paths` filter excludes `**.md` and `.planning/**`, so a PR
 # that touches only `(private path)/<pr>.md` schedules NO ci.yml run at all.
 # `(private path)` runs `scripts.debt_index` inside the

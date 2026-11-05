@@ -87,6 +87,29 @@ def _resolve_or_raise() -> str:
         raise FingerprintUnavailable(str(exc)) from None
 
 
+def _zero_fill_damage(path: Path) -> str | None:
+    """A note when every byte of ``path`` is zero, else None (NAE-28).
+
+    A sync or disk fault can leave a file its full size with no data in it
+    (two MP3s in the Wed 4 Nov 2026 library). No decoder can recover audio
+    from that, so the reason says the file is damaged and must be restored,
+    rather than leaving "unrecognized format" to read as a decoder bug. Read
+    only after a failed decode, and it stops at the first non-zero byte.
+    """
+    size = 0
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(_CHUNK_BYTES):
+                if chunk.count(0) != len(chunk):
+                    return None
+                size += len(chunk)
+    except OSError:
+        return None
+    if size == 0:
+        return None
+    return f"the file is damaged: all {size} bytes are zero, so it holds no audio; restore or re-download it"
+
+
 def _write_probe_tone(path: Path) -> None:
     """A real 16-bit PCM WAV, written with the standard library."""
     frames = int(_PROBE_RATE_HZ * _PROBE_SECONDS)
@@ -225,6 +248,9 @@ def canonical_decode_fingerprint_and_frames(path: Path) -> tuple[str, int]:
             errors.seek(0)
             tail = errors.read().decode("utf-8", "replace").strip().splitlines()
             reason = tail[-1] if tail else f"exit {returncode}"
+            damage = _zero_fill_damage(audio_path)
+            if damage is not None:
+                reason = f"{reason}; {damage}"
             raise FingerprintUnavailable(f"{DECODER} could not decode {audio_path}: {reason}")
         if decoded_bytes == 0:
             raise FingerprintUnavailable(

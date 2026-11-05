@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.open_dj.cli` -- argparse entrypoint."""
+
 from __future__ import annotations
 
 import io
@@ -38,18 +39,14 @@ class TestValidate:
 class TestCanon:
     """`open-dj-tool canon` rewrites to JCS bytes; in-place or stdout."""
 
-    def test_canon_file_to_stdout(
-        self, fixtures_dir: Path, capsysbinary: pytest.CaptureFixture[bytes]
-    ) -> None:
+    def test_canon_file_to_stdout(self, fixtures_dir: Path, capsysbinary: pytest.CaptureFixture[bytes]) -> None:
         rc = main(["canon", str(fixtures_dir / "minimal.open-dj.json")])
         assert rc == 0
         captured = capsysbinary.readouterr()
         expected = (fixtures_dir / "minimal.open-dj.json").read_bytes()
         assert captured.out == expected
 
-    def test_canon_in_place_rewrites_file(
-        self, fixtures_dir: Path, tmp_path: Path
-    ) -> None:
+    def test_canon_in_place_rewrites_file(self, fixtures_dir: Path, tmp_path: Path) -> None:
         """Non-canonical input file becomes canonical after in-place canon."""
         doc = json.loads((fixtures_dir / "minimal.open-dj.json").read_bytes())
         target = tmp_path / "pretty.open-dj.json"
@@ -62,14 +59,15 @@ class TestCanon:
         assert canon_bytes == expected
 
     def test_canon_stdin(
-        self, fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch,
-        capsysbinary: pytest.CaptureFixture[bytes]
+        self, fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
     ) -> None:
         raw = (fixtures_dir / "minimal.open-dj.json").read_bytes()
+
         # Build a fake stdin with a .buffer attribute since cli reads
         # sys.stdin.buffer.
         class _FakeStdin:
             buffer = io.BytesIO(raw)
+
         monkeypatch.setattr(sys, "stdin", _FakeStdin())
         rc = main(["canon", "-"])
         assert rc == 0
@@ -91,25 +89,20 @@ class TestDiff:
         assert rc == 0
 
     def test_different_docs_exit_1(
-        self, fixtures_dir: Path, tmp_path: Path,
-        capsys: pytest.CaptureFixture[str]
+        self, fixtures_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         # Make a diverged copy of minimal with a different title.
         doc = json.loads((fixtures_dir / "minimal.open-dj.json").read_bytes())
         doc["tracks"][0]["title"] = "Different"
         other = tmp_path / "other.open-dj.json"
         other.write_text(json.dumps(doc))
-        rc = main(["diff",
-                   str(fixtures_dir / "minimal.open-dj.json"),
-                   str(other)])
+        rc = main(["diff", str(fixtures_dir / "minimal.open-dj.json"), str(other)])
         assert rc == 1
         captured = capsys.readouterr()
         assert "title" in captured.out
 
     def test_missing_file_exit_2(self, fixtures_dir: Path, tmp_path: Path) -> None:
-        rc = main(["diff",
-                   str(fixtures_dir / "minimal.open-dj.json"),
-                   str(tmp_path / "nope.json")])
+        rc = main(["diff", str(fixtures_dir / "minimal.open-dj.json"), str(tmp_path / "nope.json")])
         assert rc == 2
 
 

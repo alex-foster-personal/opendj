@@ -70,9 +70,7 @@ def test_the_reversal_script_names_nothing_it_did_not_import(
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
 
-    assert not (loaded - bound), (
-        f"the reversal script uses names it never imports: {sorted(loaded - bound)}"
-    )
+    assert not (loaded - bound), f"the reversal script uses names it never imports: {sorted(loaded - bound)}"
 
 
 def test_the_reversal_script_imports_nothing_from_this_repo(
@@ -90,14 +88,8 @@ def test_the_reversal_script_imports_nothing_from_this_repo(
     offenders: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            offenders += [
-                a.name for a in node.names if a.name.split(".")[0] in local
-            ]
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and node.module
-            and (node.module.split(".")[0] in local or node.level)
-        ):
+            offenders += [a.name for a in node.names if a.name.split(".")[0] in local]
+        elif isinstance(node, ast.ImportFrom) and node.module and (node.module.split(".")[0] in local or node.level):
             offenders.append(node.module)
     assert not offenders, f"the reversal script imports from this repo: {offenders}"
 
@@ -120,19 +112,13 @@ def test_the_rendered_script_really_detects_a_plain_header(tmp_path: Path) -> No
         if stripped.startswith("path=LIVE_DB, unlock=")
     )
     expression = line.split("unlock=", 1)[1].strip()
-    assert expression.count("(") == expression.count(")"), (
-        f"could not isolate the unlock expression from {line!r}"
-    )
-    decide = eval(
-        "lambda header: " + expression
-    )
+    assert expression.count("(") == expression.count(")"), f"could not isolate the unlock expression from {line!r}"
+    decide = eval("lambda header: " + expression)
 
     assert decide(b"SQLite format 3\x00" + b"\x00" * 80) is False, (
         "a real plain SQLite header must not be sent through SQLCipher"
     )
-    assert decide(b"\x8a\x1f\xd3" + bytes(13)) is True, (
-        "ciphertext must still be unlocked"
-    )
+    assert decide(b"\x8a\x1f\xd3" + bytes(13)) is True, "ciphertext must still be unlocked"
     assert decide(b"") is True, "an unreadable file falls back to SQLCipher"
 
 

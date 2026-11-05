@@ -59,9 +59,7 @@ def test_file_configured_without_a_loop_is_not_enabled(tmp_path: Path) -> None:
 def test_fresh_heartbeat_makes_a_configured_machine_enabled(tmp_path: Path) -> None:
     """[if] a fresh heartbeat on a configured machine is not enabled [then] broken, [else stop]."""
     sync_heartbeat.beat(tmp_path, hub_url=_HUB, now=_NOW)
-    current = sync_status.read_status(
-        tmp_path, env=_env_configured(), now=_NOW + timedelta(seconds=1)
-    )
+    current = sync_status.read_status(tmp_path, env=_env_configured(), now=_NOW + timedelta(seconds=1))
 
     assert (current.configured, current.running, current.enabled) == (True, True, True)
     assert current.reason is None

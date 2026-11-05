@@ -4,9 +4,7 @@ import test from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 test('unchecked or absent rows are not loadable; a present row is', async () => {
-	const wire = await loadTypeScriptModule(
-		'src/lib/components/rb/browser/browser-row-wire.ts'
-	);
+	const wire = await loadTypeScriptModule('src/lib/components/rb/browser/browser-row-wire.ts');
 	const missing = wire.libraryAudioLoadRefusal({
 		file_exists: null,
 		file_availability: 'AVAILABILITY_PENDING'

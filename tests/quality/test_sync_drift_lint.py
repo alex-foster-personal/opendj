@@ -109,9 +109,7 @@ def test_d01_fires_on_a_synced_table_nobody_registered(scan: lint.Scan) -> None:
     assert _rules(found) == [("unregistered_synced_table", "gig_notes")]
 
 
-def test_d01_goes_quiet_once_the_table_is_registered(
-    scan: lint.Scan, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_d01_goes_quiet_once_the_table_is_registered(scan: lint.Scan, monkeypatch: pytest.MonkeyPatch) -> None:
     """Proves the check reads the registry rather than a list baked into it."""
     scan.state["gig_notes"] = _facts("gig_notes", ("gig_id", "body", *TRIO))
     monkeypatch.setattr(
@@ -168,9 +166,7 @@ def test_d01_still_fires_on_an_unhandled_table_with_the_same_columns(
     assert other.name not in lint.handled_tables()
     scan.state["adapters"] = _with_columns(other, *PAIR)
 
-    assert _rules(lint.check_unregistered_synced_table(scan)) == [
-        ("unregistered_synced_table", "adapters")
-    ]
+    assert _rules(lint.check_unregistered_synced_table(scan)) == [("unregistered_synced_table", "adapters")]
 
 
 def test_d01_clean_against_the_real_tree(clean_scan: lint.Scan) -> None:
@@ -180,9 +176,7 @@ def test_d01_clean_against_the_real_tree(clean_scan: lint.Scan) -> None:
 # ----- D-02 registered_table_missing ------------------------------------------
 
 
-def test_d02_fires_on_a_registered_table_no_authority_builds(
-    scan: lint.Scan, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_d02_fires_on_a_registered_table_no_authority_builds(scan: lint.Scan, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         protocol_common,
         "SYNC_TABLES",
@@ -233,9 +227,7 @@ def test_d02_clean_against_the_real_tree(clean_scan: lint.Scan) -> None:
 # ----- D-03 version_ladder_mismatch -------------------------------------------
 
 
-def test_d03_fires_on_a_step_appended_without_a_bump(
-    scan: lint.Scan, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_d03_fires_on_a_step_appended_without_a_bump(scan: lint.Scan, monkeypatch: pytest.MonkeyPatch) -> None:
     """The forgotten bump: the appended step never runs and nothing complains."""
     monkeypatch.setattr(
         state_schema,
@@ -249,9 +241,7 @@ def test_d03_fires_on_a_step_appended_without_a_bump(
     assert "the last step never runs" in found[0].detail
 
 
-def test_d03_fires_on_a_bump_without_a_step(
-    scan: lint.Scan, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_d03_fires_on_a_bump_without_a_step(scan: lint.Scan, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(state_schema, "SCHEMA_VERSION", state_schema.SCHEMA_VERSION + 1)
 
     found = lint.check_version_ladder_mismatch(scan)
@@ -285,9 +275,7 @@ def test_d04_fires_on_an_undocumented_table(scan: lint.Scan) -> None:
     assert _rules(found) == [("undocumented_table_or_column", "gig_notes")]
 
 
-def test_d04_fires_on_an_undocumented_column(
-    scan: lint.Scan, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_d04_fires_on_an_undocumented_column(scan: lint.Scan, monkeypatch: pytest.MonkeyPatch) -> None:
     thinned = {
         table: ({k: v for k, v in columns.items() if k != "isrc"} if table == "tracks" else columns)
         for table, columns in docs.COLUMN_DOCS.items()
@@ -318,9 +306,7 @@ def test_d04_covers_the_tables_the_sibling_authorities_add(clean_scan: lint.Scan
 def test_d05_fires_on_a_ladder_that_mints_a_naive_stamp(scan: lint.Scan) -> None:
     """Today's P0 class, one level earlier: the DDL default that writes it."""
     scan.ladders["fake_ladder"] = {
-        "gig_notes": _facts(
-            "gig_notes", ("gig_id", "created_at"), created_at="CURRENT_TIMESTAMP"
-        )
+        "gig_notes": _facts("gig_notes", ("gig_id", "created_at"), created_at="CURRENT_TIMESTAMP")
     }
 
     found = lint.check_naive_stamp_default(scan)
@@ -335,9 +321,7 @@ def test_d05_allowlist_covers_one_triple_not_a_whole_table(scan: lint.Scan) -> N
     would quietly absorb every future naive default added beside a listed one.
     """
     before = scan.ladders["engine_core_durable"]["duplicate_clusters"]
-    assert ("engine_core_durable", "duplicate_clusters", "created_at") in (
-        lint.NAIVE_DEFAULT_ALLOWLIST
-    )
+    assert ("engine_core_durable", "duplicate_clusters", "created_at") in (lint.NAIVE_DEFAULT_ALLOWLIST)
     scan.ladders["engine_core_durable"]["duplicate_clusters"] = dataclasses.replace(
         before,
         columns=(*before.columns, "reviewed_at"),
@@ -346,9 +330,7 @@ def test_d05_allowlist_covers_one_triple_not_a_whole_table(scan: lint.Scan) -> N
 
     found = lint.check_naive_stamp_default(scan)
 
-    assert _rules(found) == [
-        ("naive_stamp_default", "engine_core_durable:duplicate_clusters.reviewed_at")
-    ]
+    assert _rules(found) == [("naive_stamp_default", "engine_core_durable:duplicate_clusters.reviewed_at")]
 
 
 @pytest.mark.parametrize(
@@ -356,7 +338,7 @@ def test_d05_allowlist_covers_one_triple_not_a_whole_table(scan: lint.Scan) -> N
     [
         "'pending'",
         "'see CURRENT_TIMESTAMP notes'",
-        "\"CURRENT_TIMESTAMP\"",
+        '"CURRENT_TIMESTAMP"',
         "(strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
         # The correct fix for a naive default, WRAPPING the token rather than
         # avoiding it: a sortable ISO-8601 UTC stamp. Token matching reported
@@ -367,14 +349,10 @@ def test_d05_allowlist_covers_one_triple_not_a_whole_table(scan: lint.Scan) -> N
         "0",
     ],
 )
-def test_d05_ignores_a_default_that_does_not_evaluate_the_token(
-    scan: lint.Scan, default: str
-) -> None:
+def test_d05_ignores_a_default_that_does_not_evaluate_the_token(scan: lint.Scan, default: str) -> None:
     """A hard-zero gate whose only escape hatch is editing the linter gets
     switched off, so the match has to be the CALL and not the substring."""
-    scan.ladders["fake_ladder"] = {
-        "gig_notes": _facts("gig_notes", ("gig_id", "state"), state=default)
-    }
+    scan.ladders["fake_ladder"] = {"gig_notes": _facts("gig_notes", ("gig_id", "state"), state=default)}
 
     assert lint.check_naive_stamp_default(scan) == []
 
@@ -394,13 +372,9 @@ def test_d05_ignores_a_default_that_does_not_evaluate_the_token(
 )
 def test_d05_still_fires_on_the_real_call(scan: lint.Scan, default: str) -> None:
     """The control for the narrowing above: the defect itself still reports."""
-    scan.ladders["fake_ladder"] = {
-        "gig_notes": _facts("gig_notes", ("gig_id", "made_at"), made_at=default)
-    }
+    scan.ladders["fake_ladder"] = {"gig_notes": _facts("gig_notes", ("gig_id", "made_at"), made_at=default)}
 
-    assert _rules(lint.check_naive_stamp_default(scan)) == [
-        ("naive_stamp_default", "fake_ladder:gig_notes.made_at")
-    ]
+    assert _rules(lint.check_naive_stamp_default(scan)) == [("naive_stamp_default", "fake_ladder:gig_notes.made_at")]
 
 
 def test_d05_refuses_a_verdict_on_a_default_it_cannot_evaluate(scan: lint.Scan) -> None:
@@ -412,9 +386,7 @@ def test_d05_refuses_a_verdict_on_a_default_it_cannot_evaluate(scan: lint.Scan) 
     it raises rather than returning clean (or guessing dirty).
     """
     scan.ladders["fake_ladder"] = {
-        "gig_notes": _facts(
-            "gig_notes", ("gig_id", "made_at"), made_at="no_such_fn(CURRENT_TIMESTAMP)"
-        )
+        "gig_notes": _facts("gig_notes", ("gig_id", "made_at"), made_at="no_such_fn(CURRENT_TIMESTAMP)")
     }
 
     with pytest.raises(RuntimeError, match="could not evaluate"):
@@ -426,9 +398,7 @@ def test_d05_clean_against_the_real_tree(clean_scan: lint.Scan) -> None:
 
 
 @pytest.mark.parametrize("triple", sorted(lint.NAIVE_DEFAULT_ALLOWLIST))
-def test_d05_allowlist_entries_still_name_a_real_defect(
-    clean_scan: lint.Scan, triple: tuple[str, str, str]
-) -> None:
+def test_d05_allowlist_entries_still_name_a_real_defect(clean_scan: lint.Scan, triple: tuple[str, str, str]) -> None:
     """The debt list may only shrink, and it may not lie.
 
     Without this, D-05's zero is ambiguous: it reads the same whether the
@@ -440,8 +410,7 @@ def test_d05_allowlist_entries_still_name_a_real_defect(
     ladder, table, column = triple
     assert ladder in clean_scan.ladders, f"allowlist names ladder {ladder!r}, which was not built"
     assert table in clean_scan.ladders[ladder], (
-        f"allowlist names {ladder}:{table}, which the ladder no longer builds. "
-        "Delete the entry."
+        f"allowlist names {ladder}:{table}, which the ladder no longer builds. Delete the entry."
     )
     default = clean_scan.ladders[ladder][table].defaults.get(column)
     probe = sqlite3.connect(":memory:")

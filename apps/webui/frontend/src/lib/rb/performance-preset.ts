@@ -12,10 +12,7 @@
  * only after that common revision reaches the audio output.
  */
 
-import type {
-	PerformanceCommand,
-	PerformanceState
-} from '$lib/rb/performance-ipc.svelte';
+import type { PerformanceCommand, PerformanceState } from '$lib/rb/performance-ipc.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SyncMode } from '$lib/rb/deck-state-types';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';

@@ -56,3 +56,18 @@ paths = ['''^apps/webui/frontend/tests/unit/gig-stamp-mirror\.test\.mjs$''']
 regexes = [
   '''mdt\.rb\.ui-prefs\.v1''',
 ]
+
+[[allowlists]]
+description = """\
+  The pyrekordbox SQLCipher test key in tests/smartlists/test_writeback_read_members.py \
+  (_PYREKORDBOX_TEST_KEY = "402fd" then a sequential hex run): a placeholder that opens a \
+  throwaway test database, not a credential. It went unflagged while ruff wrapped it in \
+  parentheses; the issue #4456 round 4b format joined it onto one line, where \
+  generic-api-key matches (d6e66cccb, PR #8847). Path AND the exact value, so the same shape \
+  elsewhere still reports. Review by Sat 6 Feb 2027."""
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/smartlists/test_writeback_read_members\.py$''']
+regexes = [
+  '''^_PYREKORDBOX_TEST_KEY = "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"$''',
+]

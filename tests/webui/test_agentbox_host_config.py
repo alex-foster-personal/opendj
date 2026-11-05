@@ -62,8 +62,13 @@ def _uses_in_a_fresh_process(value: str | None) -> tuple[int, str]:
     if value is not None:
         env[AGENTBOX_HOST_ENV] = value
     proc = subprocess.run(
-        [sys.executable, "-c", _PROBE], cwd=REPO_ROOT, env=env,
-        capture_output=True, text=True, timeout=120, check=False,
+        [sys.executable, "-c", _PROBE],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     return proc.returncode, (proc.stdout or proc.stderr).strip()
 
@@ -86,9 +91,7 @@ def test_agentbox_host_override_names_the_box_and_its_ssh_allowlist() -> None:
     assert allowed_ssh_hosts(environ=env) == frozenset({OVERRIDE, "box.example.ts.net"})
 
 
-@pytest.mark.parametrize(
-    "bad", ["two words", "box;reboot", "box.example", "-box", "box-", "x" * 64, "box$(id)"]
-)
+@pytest.mark.parametrize("bad", ["two words", "box;reboot", "box.example", "-box", "box-", "x" * 64, "box$(id)"])
 def test_a_value_that_is_not_one_dns_label_is_refused_naming_the_variable(bad: str) -> None:
     """[if] a non-label MDT_AGENTBOX_HOST is accepted [then] fail, [else stop]."""
     with pytest.raises(PortConfigError, match=AGENTBOX_HOST_ENV):
@@ -117,16 +120,19 @@ def test_every_agentbox_use_follows_the_one_variable_when_set() -> None:
 @pytest.mark.parametrize("value", [None, "", "  "], ids=["unset", "blank", "spaces"])
 def test_import_succeeds_then_use_raises_without_host(value: str | None) -> None:
     """[if] import fails without host env [then] fail, [else stop]."""
-    import_code = (
-        "import apps.webui.run_agentbox\nfrom apps.webui import crate_sync\n"
-    )
+    import_code = "import apps.webui.run_agentbox\nfrom apps.webui import crate_sync\n"
     drop = {AGENTBOX_HOST_ENV, AGENTBOX_SSH_HOSTS_ENV}
     env = {k: v for k, v in os.environ.items() if k not in drop}
     if value is not None:
         env[AGENTBOX_HOST_ENV] = value
     proc = subprocess.run(
-        [sys.executable, "-c", import_code], cwd=REPO_ROOT, env=env,
-        capture_output=True, text=True, timeout=120, check=False,
+        [sys.executable, "-c", import_code],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     code, out = _uses_in_a_fresh_process(value)
@@ -140,8 +146,13 @@ def test_a_bad_value_does_not_stop_import() -> None:
     env = {k: v for k, v in os.environ.items() if k not in drop}
     env[AGENTBOX_HOST_ENV] = "box;reboot"
     proc = subprocess.run(
-        [sys.executable, "-c", "import apps.webui.run_agentbox"], cwd=REPO_ROOT, env=env,
-        capture_output=True, text=True, timeout=120, check=False,
+        [sys.executable, "-c", "import apps.webui.run_agentbox"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     with pytest.raises(PortConfigError, match=AGENTBOX_HOST_ENV):

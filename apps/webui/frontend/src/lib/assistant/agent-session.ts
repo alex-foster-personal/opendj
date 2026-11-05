@@ -71,7 +71,11 @@ export interface RequestOptions {
 	context?: ContextRef[];
 }
 
-export function requestFor(session: Session, approved: string[] = [], options: RequestOptions = {}): AgentIn {
+export function requestFor(
+	session: Session,
+	approved: string[] = [],
+	options: RequestOptions = {}
+): AgentIn {
 	return {
 		messages: session.history,
 		approved_tool_call_ids: approved,
@@ -93,13 +97,22 @@ export function applyEvent(session: Session, event: AgentEvent): Session {
 		case 'tier':
 			return turnHasTier(session)
 				? session
-				: push(session, { kind: 'tier', tier: event.tier, model: event.model, reason: event.reason });
+				: push(session, {
+						kind: 'tier',
+						tier: event.tier,
+						model: event.model,
+						reason: event.reason
+					});
 		case 'text':
 			return appendText(session, event.delta);
 		case 'tool_call':
 			return push(session, toolItem(event.call, event.gate, 'running', null));
 		case 'confirm':
-			return upsertTool(session, event.call, (item) => ({ ...item, status: 'held', reason: event.reason }));
+			return upsertTool(session, event.call, (item) => ({
+				...item,
+				status: 'held',
+				reason: event.reason
+			}));
 		case 'tool_result':
 			return mapTool(session, event.call_id, (item) => ({
 				...item,
@@ -112,7 +125,10 @@ export function applyEvent(session: Session, event: AgentEvent): Session {
 		case 'done':
 			return { ...session, busy: false, done: event.reason };
 		case 'error':
-			return { ...push(session, { kind: 'error', code: event.code, message: event.message }), busy: false };
+			return {
+				...push(session, { kind: 'error', code: event.code, message: event.message }),
+				busy: false
+			};
 	}
 }
 
@@ -141,7 +157,10 @@ function turnHasTier(session: Session): boolean {
 function appendText(session: Session, delta: string): Session {
 	const last = session.items.at(-1);
 	if (last?.kind !== 'text') return push(session, { kind: 'text', text: delta });
-	return { ...session, items: [...session.items.slice(0, -1), { kind: 'text', text: last.text + delta }] };
+	return {
+		...session,
+		items: [...session.items.slice(0, -1), { kind: 'text', text: last.text + delta }]
+	};
 }
 
 function mapTool(session: Session, callId: string, change: (item: ToolItem) => ToolItem): Session {
@@ -154,7 +173,11 @@ function mapTool(session: Session, callId: string, change: (item: ToolItem) => T
 }
 
 /** A confirm may follow its tool_call or arrive alone; either way one card. */
-function upsertTool(session: Session, call: ToolCall, change: (item: ToolItem) => ToolItem): Session {
+function upsertTool(
+	session: Session,
+	call: ToolCall,
+	change: (item: ToolItem) => ToolItem
+): Session {
 	const known = session.items.some((item) => item.kind === 'tool' && item.call.id === call.id);
 	return known
 		? mapTool(session, call.id, change)

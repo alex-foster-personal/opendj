@@ -44,10 +44,7 @@ class Finding:
 
 def _is_scripts_import(node: ast.Import | ast.ImportFrom) -> bool:
     if isinstance(node, ast.Import):
-        return any(
-            alias.name == "scripts" or alias.name.startswith("scripts.")
-            for alias in node.names
-        )
+        return any(alias.name == "scripts" or alias.name.startswith("scripts.") for alias in node.names)
     if isinstance(node, ast.ImportFrom) and node.module is not None:
         return node.module == "scripts" or node.module.startswith("scripts.")
     return False
@@ -55,15 +52,9 @@ def _is_scripts_import(node: ast.Import | ast.ImportFrom) -> bool:
 
 def _import_text(node: ast.Import | ast.ImportFrom) -> str:
     if isinstance(node, ast.Import):
-        names = ", ".join(
-            f"{alias.name} as {alias.asname}" if alias.asname else alias.name
-            for alias in node.names
-        )
+        names = ", ".join(f"{alias.name} as {alias.asname}" if alias.asname else alias.name for alias in node.names)
         return f"import {names}"
-    names = ", ".join(
-        f"{alias.name} as {alias.asname}" if alias.asname else alias.name
-        for alias in node.names
-    )
+    names = ", ".join(f"{alias.name} as {alias.asname}" if alias.asname else alias.name for alias in node.names)
     module = node.module or ""
     level = "." * node.level
     return f"from {level}{module} import {names}"
@@ -87,15 +78,11 @@ class _FunctionBodyImportVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         if self._in_function and _is_scripts_import(node):
-            self.findings.append(
-                Finding(self._rel_path, node.lineno, _import_text(node))
-            )
+            self.findings.append(Finding(self._rel_path, node.lineno, _import_text(node)))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if self._in_function and _is_scripts_import(node):
-            self.findings.append(
-                Finding(self._rel_path, node.lineno, _import_text(node))
-            )
+            self.findings.append(Finding(self._rel_path, node.lineno, _import_text(node)))
 
 
 def _is_allowlisted(rel_path: str) -> bool:
@@ -125,9 +112,7 @@ def audit_apps_tree(root: Path) -> list[Finding]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="List function-body scripts imports under apps/"
-    )
+    parser = argparse.ArgumentParser(description="List function-body scripts imports under apps/")
     parser.add_argument(
         "--root",
         type=Path,

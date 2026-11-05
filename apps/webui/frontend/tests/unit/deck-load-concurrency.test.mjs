@@ -7,7 +7,7 @@
  * wrong spans, and from one that never ran. So the first two cases below are a
  * MATCHED PAIR over the same span list shape -- one that MUST report solo, one
  * that MUST report contended -- and neither is allowed to pass without the
- * other. That is the presence-of-the-good-thing rule in .claude/rules/
+ * other. That is the presence-of-the-good-thing rule in (private path)/
  * verification.md applied to the instrument rather than to its subject.
  *
  * Every case drives `concurrencyLabels`, which is the function that actually
@@ -87,12 +87,7 @@ test('concurrent_loads is a PEAK, not a total of everything that overlapped', ()
 	// Four peers all overlap the subject, but only two are ever in flight at
 	// the same instant as it. A count of overlaps would say 5 here.
 	const subject = span(1, 0, 1000);
-	const peers = [
-		span(2, 10, 100),
-		span(3, 200, 300),
-		span(4, 400, 500),
-		span(5, 600, 700)
-	];
+	const peers = [span(2, 10, 100), span(3, 200, 300), span(4, 400, 500), span(5, 600, 700)];
 	const labels = concurrencyLabels(subject, [subject, ...peers], 1000);
 	assert.equal(labels.solo, '0');
 	assert.equal(labels.concurrent_loads, '2');

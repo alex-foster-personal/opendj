@@ -1,8 +1,19 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
 import { fn } from 'storybook/test';
 
-import { DECLINED_CODE, type AgentEvent, type ToolCall, type ToolError } from '$lib/assistant/agent-contract';
-import { EMPTY_SESSION, foldEvents, resumeTurn, startTurn, type Session } from '$lib/assistant/agent-session';
+import {
+	DECLINED_CODE,
+	type AgentEvent,
+	type ToolCall,
+	type ToolError
+} from '$lib/assistant/agent-contract';
+import {
+	EMPTY_SESSION,
+	foldEvents,
+	resumeTurn,
+	startTurn,
+	type Session
+} from '$lib/assistant/agent-session';
 
 import AgentSidebarStoryDock from './AgentSidebarStoryDock.svelte';
 import AgentSidebarView from './AgentSidebarView.svelte';
@@ -39,7 +50,10 @@ const answered = (callId: string, result: unknown): AgentEvent => ({
 /** A failed or declined call's tool message: the engine stores `{error}` in history. */
 const refused = (callId: string, error: ToolError): AgentEvent => answered(callId, { error });
 
-const said = (content: string): AgentEvent => ({ type: 'message', message: { role: 'assistant', content } });
+const said = (content: string): AgentEvent => ({
+	type: 'message',
+	message: { role: 'assistant', content }
+});
 
 /** Text as it streams: split into small deltas, the way the engine sends it. */
 const deltas = (text: string): AgentEvent[] =>
@@ -50,14 +64,33 @@ const reply = (text: string): AgentEvent[] => [...deltas(text), said(text)];
 const turn = (text: string, events: AgentEvent[], from: Session = EMPTY_SESSION): Session =>
 	foldEvents(startTurn(from, text), events);
 
-const resume = (from: Session, events: AgentEvent[]): Session => foldEvents(resumeTurn(from), events);
+const resume = (from: Session, events: AgentEvent[]): Session =>
+	foldEvents(resumeTurn(from), events);
 
 //----- transcripts
 
 const TRACKS = [
-	{ title: 'Sample Track A', artist: 'Sample Artist One', bpm: 128, key: '8A', last_played_at: '2026-06-02' },
-	{ title: 'Sample Track B', artist: 'Sample Artist Two', bpm: 127.5, key: '9A', last_played_at: null },
-	{ title: 'Sample Track C', artist: 'Sample Artist Three', bpm: 128, key: '8B', last_played_at: '2026-04-19' }
+	{
+		title: 'Sample Track A',
+		artist: 'Sample Artist One',
+		bpm: 128,
+		key: '8A',
+		last_played_at: '2026-06-02'
+	},
+	{
+		title: 'Sample Track B',
+		artist: 'Sample Artist Two',
+		bpm: 127.5,
+		key: '9A',
+		last_played_at: null
+	},
+	{
+		title: 'Sample Track C',
+		artist: 'Sample Artist Three',
+		bpm: 128,
+		key: '8B',
+		last_played_at: '2026-04-19'
+	}
 ];
 
 const LISTING = { items: TRACKS, next_cursor: null, non_music_hidden: 0 };
@@ -131,7 +164,9 @@ const toolFailed = turn("What's loaded on each deck?", [
 ]);
 
 const rounds = Array.from({ length: 8 }, (_, round) =>
-	call(`call_lib_${round + 1}`, 'library_read', { path: `/api/v1/tracks?limit=50&cursor=page${round + 1}` })
+	call(`call_lib_${round + 1}`, 'library_read', {
+		path: `/api/v1/tracks?limit=50&cursor=page${round + 1}`
+	})
 );
 const turnCap = turn('Build me a two hour set from everything that mixes out of 8A', [
 	{ type: 'tier', tier: 'think', model: THINK, reason: 'multi-step set building' },
@@ -163,17 +198,16 @@ const spendCap = turn('Suggest a closer for tonight', [
 	}
 ]);
 
-const streaming = turn(
-	'Find techno around 128 BPM I have not played lately',
-	[
-		{ type: 'tier', tier: 'fast', model: FAST, reason: 'library question, one tool round' },
-		asked(search),
-		{ type: 'tool_call', call: search, gate: 'read' },
-		{ type: 'tool_result', call_id: search.id, ok: true, result: LISTING, error: null },
-		answered(search.id, LISTING),
-		...deltas('Three techno tracks near **128 BPM**:\n\n1. **Sample Track B** - Sample Artist Two, 127.5 BPM\n2. **Steel')
-	]
-);
+const streaming = turn('Find techno around 128 BPM I have not played lately', [
+	{ type: 'tier', tier: 'fast', model: FAST, reason: 'library question, one tool round' },
+	asked(search),
+	{ type: 'tool_call', call: search, gate: 'read' },
+	{ type: 'tool_result', call_id: search.id, ok: true, result: LISTING, error: null },
+	answered(search.id, LISTING),
+	...deltas(
+		'Three techno tracks near **128 BPM**:\n\n1. **Sample Track B** - Sample Artist Two, 127.5 BPM\n2. **Steel'
+	)
+]);
 
 const thinkPlan = turn('Plan a warm-up hour that ends ready for peak time', [
 	{ type: 'tier', tier: 'think', model: THINK, reason: 'open-ended set planning' },
@@ -191,7 +225,11 @@ const thinkPlan = turn('Plan a warm-up hour that ends ready for peak time', [
 
 //----- meta
 
-const view = (session: Session) => ({ items: session.items, busy: session.busy, done: session.done });
+const view = (session: Session) => ({
+	items: session.items,
+	busy: session.busy,
+	done: session.done
+});
 
 const DECKS = [
 	{ id: 'deck-1', label: 'Deck 1', title: 'Deck 1: Sample Track A - Sample Artist One, playing' },
@@ -246,7 +284,9 @@ export const Checking: Story = { args: { availability: 'checking' } };
 export const Unreachable: Story = { args: { availability: 'unreachable' } };
 
 /** No key or gateway on this computer: an instant command the engine matched sends. */
-export const Keyless: Story = { args: { availability: 'keyless', draft: 'pause deck 4', instantDraft: true } };
+export const Keyless: Story = {
+	args: { availability: 'keyless', draft: 'pause deck 4', instantDraft: true }
+};
 
 /** Keyless with a draft the engine's instant rules reject: Send is disabled and says why. */
 export const KeylessNotInstant: Story = {

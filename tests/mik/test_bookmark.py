@@ -7,6 +7,7 @@ would_truncate_but_parser_does_not`` encodes that failure directly, so nobody
 
 [if] a bookmark blob is well-formed, non-ASCII, or malformed [then] it parses/raises, [else stop].
 """
+
 from __future__ import annotations
 
 import pytest

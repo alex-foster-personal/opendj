@@ -40,9 +40,7 @@ def test_update_check_reports_the_channel(updater: Updater) -> None:
     """[if] update check runs [then] the result names the channel, [else stop].
     [if] the channel offers a newer build [then] update_check returns the
     engine's own check document, [else stop]."""
-    updater.start(
-        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
-    )
+    updater.start(app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION)
     result = _call_updater(updater, "update_check", {})
     assert result.is_error is False
     payload = mcp_support.tool_payload(result)
@@ -52,15 +50,11 @@ def test_update_check_reports_the_channel(updater: Updater) -> None:
 
 
 @pytest.mark.requirement("AGENT-13")
-def test_update_check_is_an_error_when_the_channel_cannot_be_read(
-    updater: Updater, tmp_path: Any
-) -> None:
+def test_update_check_is_an_error_when_the_channel_cannot_be_read(updater: Updater, tmp_path: Any) -> None:
     """[if] the channel cannot be read [then] update check is an error, [else stop].
     [if] the channel is not offering anything actionable [then] update_check
     is an error result naming the status, [else stop]."""
-    updater.start(
-        app_version="0.2.0", git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION
-    )
+    updater.start(app_version="0.2.0", git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION)
     result = _call_updater(updater, "update_check", {})
     assert result.is_error is True
     texts = [block.text for block in result.content if block.type == "text"]
@@ -72,14 +66,8 @@ def test_update_apply_is_gated_like_the_other_destructive_calls(updater: Updater
     """[if] update_apply runs gated closed [then] it errors destructive_blocked, [else stop].
     [if] the destructive gate is closed [then] update_apply is an error
     naming destructive_blocked and posts no order, [else stop]."""
-    updater.start(
-        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
-    )
-    updater.start_shell(
-        lambda: updater.relaunch(
-            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
-        )
-    )
+    updater.start(app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION)
+    updater.start_shell(lambda: updater.relaunch(app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA))
     env = mcp_support.closed_gate_env()
     result = _call_updater(updater, "update_apply", {}, env=env)
     assert result.is_error is True
@@ -94,14 +82,8 @@ def test_update_apply_installs_and_reports_both_identities(updater: Updater) -> 
     """[if] update_apply installs a new build [then] it reports both identities, [else stop].
     [if] the gate is open and the channel offers a newer build [then]
     update_apply returns the before and after identities, [else stop]."""
-    updater.start(
-        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
-    )
-    updater.start_shell(
-        lambda: updater.relaunch(
-            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
-        )
-    )
+    updater.start(app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION)
+    updater.start_shell(lambda: updater.relaunch(app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA))
     env = mcp_support.destructive_env()
     result = _call_updater(updater, "update_apply", {"timeout_s": 60.0}, env=env)
     updater.wait_for_shell()
@@ -118,13 +100,9 @@ def test_update_apply_is_an_error_when_the_install_does_not_land(updater: Update
     """[if] the shell reports a failed install [then] update_apply errors with it, [else stop].
     [if] the shell reports the install failed [then] update_apply is an error
     carrying the shell's own error, [else stop]."""
-    updater.start(
-        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
-    )
+    updater.start(app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION)
     updater.start_shell(
-        lambda: updater.relaunch(
-            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
-        ),
+        lambda: updater.relaunch(app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA),
         result={
             "status": "failed",
             "outcome": "refused",

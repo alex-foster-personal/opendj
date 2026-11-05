@@ -106,8 +106,7 @@ def test_header_carries_the_provenance_fields(tmp_path) -> None:
     path = pml.archive_path(tmp_path, app)
     pml.append_block(path, app, "body\n")
     header = path.read_text().splitlines()[0]
-    for field in ("app_id=ap-AAA", "description=mdt-roformer", "state=stopped",
-                  "created_at=2026-07-31", "pulled_at="):
+    for field in ("app_id=ap-AAA", "description=mdt-roformer", "state=stopped", "created_at=2026-07-31", "pulled_at="):
         assert field in header, header
 
 

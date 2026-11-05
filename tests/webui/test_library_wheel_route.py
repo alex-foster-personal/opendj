@@ -26,9 +26,7 @@ from tests.webui.library_wheel_fixtures import _make_master_db, _make_state_db
 
 
 @pytest.fixture
-def wheel_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
+def wheel_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     state_db = tmp_path / "state.db"
     master_db = tmp_path / "master.plain.db"
     _make_state_db(
@@ -38,15 +36,16 @@ def wheel_client(
         playlists=[],
         vendor_ids={"t1": "v1"},
     )
-    _make_master_db(
-        master_db, content=[{"vendor_id": "v1", "genre_id": "g-techno", "play_count": 7}]
-    )
+    _make_master_db(master_db, content=[{"vendor_id": "v1", "genre_id": "g-techno", "play_count": 7}])
     monkeypatch.setattr(shared_paths, "STATE_DB", state_db)
     monkeypatch.setattr(shared_paths, "REKORDBOX_PLAIN_DB", master_db)
 
     app = create_app(
-        backend=SqliteBackend(state_db), bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+        backend=SqliteBackend(state_db),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
     )
     with TestClient(app) as c:
         yield c
@@ -85,20 +84,25 @@ def test_wheel_axes_endpoint_names_all_seven(wheel_client: TestClient) -> None:
     assert resp.status_code == 200
     keys = {a["key"] for a in resp.json()}
     assert keys == {
-        "genre", "decade", "play_count", "popularity",
-        "overplayed_ness", "playlist", "set_played_in",
+        "genre",
+        "decade",
+        "play_count",
+        "popularity",
+        "overplayed_ness",
+        "playlist",
+        "set_played_in",
     }
 
 
-def test_wheel_missing_state_db_is_503_not_200(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_wheel_missing_state_db_is_503_not_200(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shared_paths, "STATE_DB", tmp_path / "missing-state.db")
     monkeypatch.setattr(shared_paths, "REKORDBOX_PLAIN_DB", tmp_path / "missing-master.db")
     app = create_app(
         backend=SqliteBackend(tmp_path / "missing-state.db"),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
     )
     with TestClient(app) as c:
         resp = c.get("/api/v1/library/wheel")

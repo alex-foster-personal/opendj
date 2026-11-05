@@ -179,7 +179,6 @@ E2E_SMOKE_TIER_PATHS: tuple[str, ...] = (
     "Makefile",
     ".gitignore",
     "NOTICE",
-    ".mergify.yml",
 )
 
 #: Always full tier, whatever else the change set holds: the web app and the engine that

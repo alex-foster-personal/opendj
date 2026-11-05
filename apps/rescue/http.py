@@ -9,6 +9,7 @@ from apps.rescue.contract import (
     RescueSnapshotInvalidError,
     RescueSnapshotTooLargeError,
 )
+from apps.rescue.ring import write_atomic
 from apps.rescue.service import RingRescueService
 
 
@@ -22,4 +23,5 @@ __all__ = [
     "RescueSnapshotInvalidError",
     "RescueSnapshotTooLargeError",
     "build_service",
+    "write_atomic",
 ]

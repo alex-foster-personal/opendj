@@ -92,26 +92,26 @@ def _snap(request: Request, stable_id: str, in_ms: int, backend: StateBackend) -
 
 
 def _write(request: Request, stable_id: str, op: Any) -> Any:
-    """One read-modify-write of the track's cue set under BEGIN IMMEDIATE."""
+    """One read-modify-write of the track's cue set under a writer unit."""
     content = _rekordbox_content(stable_id)
     conn = state_db.open_rw(_state_db_path(request))
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        with StateWriter(conn, actor="webui") as writer:
-            state = cue_store.load(conn, stable_id, _vendor_cues(content))
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                state = cue_store.load(conn, stable_id, _vendor_cues(content))
 
-            def write(blob: dict[str, Any]) -> None:
-                writer.set_field(
-                    stable_id, cue_store.CUE_FIELD, blob, source=cue_store.OWN_SOURCE, modified_at=canonical_now()
-                )
+                def write(blob: dict[str, Any]) -> None:
+                    writer.set_field(
+                        stable_id, cue_store.CUE_FIELD, blob, source=cue_store.OWN_SOURCE, modified_at=canonical_now()
+                    )
 
-            result = op(state, _duration_ms(conn, stable_id, content), write)
-        conn.commit()
+                result = op(state, _duration_ms(conn, stable_id, content), write)
     except cue_store.CueStoreError as exc:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise HTTPException(status_code=exc.status, detail=exc.detail()) from exc
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            conn.rollback()
         raise
     finally:
         conn.close()

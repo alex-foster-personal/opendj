@@ -181,7 +181,7 @@ def build(manifest_path: str, out_dir: str) -> int:
         f"[bundle] {len(entries)} fixtures "
         f"({bundle_manifest['counts']['fixed']} fixed, "
         f"{bundle_manifest['counts']['dynamic']} dynamic), "
-        f"{total_bytes / (1024 ** 3):.2f} GiB of wav, "
+        f"{total_bytes / (1024**3):.2f} GiB of wav, "
         f"built in {time.time() - started:.0f}s -> {out_dir}",
         flush=True,
     )
@@ -206,9 +206,7 @@ def _expected_contents(bundle_dir: str) -> set[str]:
     """
     manifest_path = os.path.join(bundle_dir, "manifest.json")
     if not os.path.exists(manifest_path):
-        raise SystemExit(
-            f"[bundle] no manifest.json in {bundle_dir}; nothing states what is expected"
-        )
+        raise SystemExit(f"[bundle] no manifest.json in {bundle_dir}; nothing states what is expected")
     with open(manifest_path, encoding="utf-8") as fh:
         manifest = json.load(fh)
     return {f["wav"] for f in manifest["fixtures"]} | {"rekordbox-truth.json", "manifest.json"}

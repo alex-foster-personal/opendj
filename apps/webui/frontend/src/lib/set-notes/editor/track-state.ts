@@ -51,7 +51,9 @@ export function createTrackState(exists: (stableId: string) => Promise<boolean>)
 		const target = nodeTarget(node);
 		if (!target || problem(target) === null) return null;
 		const attrs = { class: 'sn-missing' };
-		return node.isText ? Decoration.inline(pos, pos + node.nodeSize, attrs) : Decoration.node(pos, pos + node.nodeSize, attrs);
+		return node.isText
+			? Decoration.inline(pos, pos + node.nodeSize, attrs)
+			: Decoration.node(pos, pos + node.nodeSize, attrs);
 	};
 	const plugin = new Plugin({
 		key: redraw,

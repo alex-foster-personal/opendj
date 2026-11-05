@@ -21,6 +21,7 @@ sidecar row in ``track_locations`` (ADR 06 point 1), which the policy engine
 * old -> new mapping -- a legacy ``stems/<preset>/<stable_id>/<filename>``
   key maps onto the content-addressed key of the SAME object.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -88,9 +89,7 @@ def test_canonical_digest_strips_the_state_layer_prefix():
 
 def test_stored_digest_and_bare_digest_mint_the_same_key():
     digest = _sha(b"audio bytes")
-    assert r2_keys.object_key_for_stored_digest(f"sha256:{digest}") == (
-        r2_keys.object_key_for_stored_digest(digest)
-    )
+    assert r2_keys.object_key_for_stored_digest(f"sha256:{digest}") == (r2_keys.object_key_for_stored_digest(digest))
 
 
 # --- old -> new mapping for the losing layout --------------------------------
@@ -122,14 +121,10 @@ def test_rekey_maps_a_legacy_key_to_the_content_addressed_key_of_its_body():
     # for the SAME bytes, which is what makes it a migration and not a copy.
     legacy = r2_keys.legacy_stem_key("htdemucs", "ab12" * 10, "vocals.flac")
     body = b"some rendered vocals"
-    assert r2_keys.rekey_legacy_stem_key(legacy, _sha(body)) == (
-        r2_keys.asset_object_key(_sha(body))
-    )
+    assert r2_keys.rekey_legacy_stem_key(legacy, _sha(body)) == (r2_keys.asset_object_key(_sha(body)))
 
 
 def test_rekey_is_idempotent_for_identical_bytes():
     legacy = r2_keys.legacy_stem_key("htdemucs", "ab12" * 10, "vocals.flac")
     digest = _sha(b"identical bytes")
-    assert r2_keys.rekey_legacy_stem_key(legacy, digest) == (
-        r2_keys.rekey_legacy_stem_key(legacy, digest)
-    )
+    assert r2_keys.rekey_legacy_stem_key(legacy, digest) == (r2_keys.rekey_legacy_stem_key(legacy, digest))

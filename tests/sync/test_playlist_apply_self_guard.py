@@ -17,6 +17,7 @@ running, ``apply_plan`` raises ``PlaylistApplyError`` instead of writing.
 Notably we do NOT launch djay or Rekordbox; we monkeypatch
 ``apps.sync.safety._is_running`` to simulate a live process.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,7 +30,8 @@ from apps.sync import safety as _safety
 
 @pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_refuses_without_safety_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """live=True + no safety_session + djay running => refuse."""
     # Fixture DB — empty file is enough because the guard short-circuits
@@ -49,7 +51,8 @@ def test_playlist_apply_refuses_without_safety_session(
 
 @pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_refuses_when_rekordbox_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The guard also catches Rekordbox, not only djay."""
     db_path = tmp_path / "MediaLibrary.db"
@@ -66,7 +69,8 @@ def test_playlist_apply_refuses_when_rekordbox_running(
 
 @pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_allows_when_safety_session_provided(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With an explicit safety_session= the inline guard is skipped
     (the caller asserts it has already run the full harness).
@@ -77,6 +81,7 @@ def test_playlist_apply_allows_when_safety_session_provided(
     # apply_plan opens a sqlite connection even for empty plans, so create
     # an actual (empty) SQLite DB rather than a zero-byte file.
     import sqlite3
+
     con = sqlite3.connect(str(db_path))
     con.close()
 
@@ -99,13 +104,15 @@ def test_playlist_apply_allows_when_safety_session_provided(
 
 @pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_dry_run_bypasses_guard(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """live=False (default) never triggers the guard — dry-run / staging
     workflows remain unaffected even if a DJ app is running.
     """
     db_path = tmp_path / "staging.db"
     import sqlite3
+
     con = sqlite3.connect(str(db_path))
     con.close()
 
@@ -119,16 +126,15 @@ def test_playlist_apply_dry_run_bypasses_guard(
 @pytest.mark.requirement("SYNC-03")
 @pytest.mark.requirement("SYNC-8454")
 def test_playlist_apply_self_guard_refuses_when_is_running_raises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] _is_running raises SafetyAbort [then] apply_plan self-guard refuses, [else stop]."""
     db_path = tmp_path / "MediaLibrary.db"
     db_path.touch()
 
     def _unmeasurable(_name: str) -> bool:
-        raise _safety.SafetyAbort(
-            "pgrep is unavailable; cannot prove djay Pro is closed"
-        )
+        raise _safety.SafetyAbort("pgrep is unavailable; cannot prove djay Pro is closed")
 
     monkeypatch.setattr(_safety, "_is_running", _unmeasurable)
 
@@ -140,15 +146,14 @@ def test_playlist_apply_self_guard_refuses_when_is_running_raises(
 @pytest.mark.requirement("SYNC-03")
 @pytest.mark.requirement("SYNC-8454")
 def test_playlist_apply_force_no_pgrep_passes_safety_session_to_apply_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """[if] --force-no-pgrep with unmeasurable pgrep [then] apply_plan gets sentinel, [else stop]."""
     captured: dict[str, object] = {}
 
     def _pgrep_unavailable(_pattern: str) -> bool:
-        raise pa.PlaylistApplyError(
-            "pgrep not available; cannot verify 'djay' is not running."
-        )
+        raise pa.PlaylistApplyError("pgrep not available; cannot verify 'djay' is not running.")
 
     def _capture_apply(*args: object, **kwargs: object) -> pa.ApplyResult:
         captured.update(kwargs)

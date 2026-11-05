@@ -39,7 +39,8 @@ test('readout carries a key line above the main tempo number, both Camelot-colou
 	assert.match(block, /\(from /, 'no "(from X)" annotation for the key line');
 	assert.match(block, /keyColor/, 'current key segment is not Camelot-coloured');
 	assert.match(block, /origKeyColor/, 'original key segment is not Camelot-coloured');
-	assert.match(header, /origKeyColor[^\n]*=[^\n]*camelotKeyColor\(deck\.key\)/, 'origKeyColor is not derived from deck.key\'s own Camelot colour');
+	// DECK-KEY-01: the original key is the deck's resolved key (keySyncKey), the key the library shows.
+	assert.match(header, /origKeyColor[^\n]*=[^\n]*camelotKeyColor\(deckKey\)/, 'origKeyColor is not derived from the deck resolved key\'s own Camelot colour');
 });
 
 test('readout tempo line carries a percentage-offset-from-original annotation, only when pitched', () => {

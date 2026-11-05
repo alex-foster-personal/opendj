@@ -8,6 +8,7 @@ would silently transfer a shared-library track to whoever edited its tags.
 
 A rollback that cannot keep the owner still restores the audio bytes.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,7 +23,9 @@ from apps.shared.file_rewrite import copy_rest, keep_ownership, rewrite_atomic
 
 pytestmark = pytest.mark.requirement("TAGIO-02")
 
-needs_chown = pytest.mark.skipif(not hasattr(os, "chown"), reason="no os.chown: Windows takes the owner from the directory")
+needs_chown = pytest.mark.skipif(
+    not hasattr(os, "chown"), reason="no os.chown: Windows takes the owner from the directory"
+)
 
 
 def _stat_owned_by(path: Path, uid: int, gid: int) -> os.stat_result:

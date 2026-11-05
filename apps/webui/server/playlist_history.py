@@ -8,6 +8,7 @@ the same cursor.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -154,12 +155,67 @@ _LABEL: dict[EditOp, str] = {
     "rename": "Rename '{before}' to '{after}'",
     "memberships": "Edit tracks in '{after}'",
     "delete": "Delete '{before}'",
-    "add_items": "Add {count} track(s) to '{after}'",
+    "add_items": "Add {tracks} to '{after}'",
 }
+
+# LIBUX-8626: a membership edit names what it did, so the history list reads
+# "Remove 'Song' from 'INBOX'" rather than a generic "Edit tracks in" row.
+_MEMBERSHIP_LABEL: dict[str, str] = {
+    "add": "Add {tracks} to '{after}'",
+    "remove": "Remove {tracks} from '{after}'",
+    "reorder": "Reorder tracks in '{after}'",
+    "mixed": "Edit tracks in '{after}'",
+}
+
+AFFECTED_TRACKS_LIMIT: int = 100
+"""Most stable_ids one history entry reports for navigation."""
 
 
 def _snap_name(snap: PlaylistSnapshot | None) -> str:
     return "" if snap is None else snap.name
+
+
+def _multiset_minus(left: list[str], right: list[str]) -> list[str]:
+    """Items of ``left`` not matched one-for-one in ``right`` (order kept)."""
+    remaining: dict[str, int] = {}
+    for item in right:
+        remaining[item] = remaining.get(item, 0) + 1
+    out: list[str] = []
+    for item in left:
+        if remaining.get(item, 0) > 0:
+            remaining[item] -= 1
+            continue
+        out.append(item)
+    return out
+
+
+def _membership_delta(command: PlaylistEditCommand) -> tuple[list[str], list[str]]:
+    """(added, removed) stable_ids of a ``memberships`` edit."""
+    before = [] if command.before is None else list(command.before.items)
+    after = [] if command.after is None else list(command.after.items)
+    return _multiset_minus(after, before), _multiset_minus(before, after)
+
+
+def affected_stable_ids(command: PlaylistEditCommand) -> list[str]:
+    """Tracks an edit added or removed, unique, capped for the wire.
+
+    Header-only ops (create, rename, delete, duplicate) and pure reorders
+    report none: their navigation target is the playlist itself.
+    """
+    if command.op == "add_items":
+        ids = [member["stable_id"] for member in command.added or []]
+    elif command.op == "memberships":
+        added, removed = _membership_delta(command)
+        ids = removed + added
+    else:
+        ids = []
+    return list(dict.fromkeys(ids))[:AFFECTED_TRACKS_LIMIT]
+
+
+def _tracks_phrase(ids: list[str], titles: Mapping[str, str]) -> str:
+    if len(ids) == 1 and titles.get(ids[0]):
+        return f"'{titles[ids[0]]}'"
+    return f"{len(ids)} track" if len(ids) == 1 else f"{len(ids)} tracks"
 
 
 def invert(command: PlaylistEditCommand) -> tuple[InverseOp, PlaylistSnapshot | None]:
@@ -172,17 +228,36 @@ def invert(command: PlaylistEditCommand) -> tuple[InverseOp, PlaylistSnapshot | 
     return inverse, snap
 
 
-def label_for(command: PlaylistEditCommand) -> str:
-    """Short ASCII label for the history panel."""
+def label_for(
+    command: PlaylistEditCommand,
+    titles: Mapping[str, str] | None = None,
+) -> str:
+    """Short label for the history panel.
+
+    ``titles`` maps stable_id -> track title; a one-track edit names the
+    track when its title is known, otherwise it counts tracks.
+    """
     try:
         template = _LABEL[command.op]
     except KeyError as exc:
         raise ValueError(f"unknown playlist edit op: {command.op!r}") from exc
+    known = titles or {}
     after = command.after if command.after is not None else command.before
+    tracks = [member["stable_id"] for member in command.added or []]
+    if command.op == "memberships":
+        added, removed = _membership_delta(command)
+        if added and not removed:
+            template, tracks = _MEMBERSHIP_LABEL["add"], added
+        elif removed and not added:
+            template, tracks = _MEMBERSHIP_LABEL["remove"], removed
+        elif not added and not removed:
+            template = _MEMBERSHIP_LABEL["reorder"]
+        else:
+            template = _MEMBERSHIP_LABEL["mixed"]
     return template.format(
         before=_snap_name(command.before),
         after=_snap_name(after),
-        count=len(command.added or []),
+        tracks=_tracks_phrase(tracks, known),
     )
 
 
@@ -203,12 +278,14 @@ def snapshots_match(
 
 
 __all__ = [
+    "AFFECTED_TRACKS_LIMIT",
     "HISTORY_LIMIT",
     "EditOp",
     "InverseOp",
     "PlaylistEditCommand",
     "PlaylistHistoryEmptyError",
     "PlaylistSnapshot",
+    "affected_stable_ids",
     "invert",
     "label_for",
     "rebuild_stack",

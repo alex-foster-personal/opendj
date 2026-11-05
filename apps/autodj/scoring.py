@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from apps.autodj.plan import BEATMATCH_LIMIT_PCT, STRONG_BASS, _overlaps, bpm_gap_pct, pair_beat_sync_fold
+from apps.autodj.plan import STRONG_BASS, _overlaps, beat_sync_reach_pct, bpm_gap_pct, pair_beat_sync_fold
 from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile
 from apps.autodj.windows import MixWindow, mix_windows
 from apps.shared.harmonic import CamelotKey, camelot_compatibility, camelot_distance
@@ -120,14 +120,14 @@ def _weighted_mean(terms: dict[str, float]) -> float:
     return sum(TERM_WEIGHTS[name] * value for name, value in terms.items()) / weight
 
 
-def _tempo_term(gap: float | None, reasons: list[str]) -> tuple[bool | None, float | None]:
+def _tempo_term(gap: float | None, reasons: list[str], reach_pct: float) -> tuple[bool | None, float | None]:
     """Whether Beat Sync reaches the gap, and the tempo term (None, unscored, when a tempo is unknown)."""
     if gap is None:
         reasons.append("a tempo is unknown: tempo not scored")
         return None, None
-    beatmatchable = gap <= BEATMATCH_LIMIT_PCT
+    beatmatchable = gap <= reach_pct
     reasons.append(f"tempo gap {gap:.1f}% ({'within' if beatmatchable else 'beyond'} Beat Sync's reach)")
-    return beatmatchable, max(0.0, 1.0 - gap / (2 * BEATMATCH_LIMIT_PCT))
+    return beatmatchable, max(0.0, 1.0 - gap / (2 * reach_pct))
 
 
 def _vocal_term(vocal_clash: int | None, bass_clash: int | None, bars: int, reasons: list[str]) -> float | None:
@@ -166,15 +166,16 @@ def score_windows(
     key_out = key_at(out_profile, out_window.start_bar + bars - 1)
     key_in = key_at(in_profile, in_window.start_bar)
     key_distance, key_term = _key_term(key_out, key_in, reasons)
-    gap = bpm_gap_pct(out_profile.bpm, in_profile.bpm)
-    beatmatchable, tempo_term = _tempo_term(gap, reasons)
+    gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
+    reach = beat_sync_reach_pct(in_profile)
+    beatmatchable, tempo_term = _tempo_term(gap, reasons, reach)
     vocal_clash, bass_clash = _clashes(
         out_profile,
         in_profile,
         out_window.start_bar,
         in_window.start_bar,
         bars,
-        pair_beat_sync_fold(out_profile.bpm, in_profile.bpm),
+        pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, reach),
     )
     vocal_term = _vocal_term(vocal_clash, bass_clash, bars, reasons)
     energy_delta = None

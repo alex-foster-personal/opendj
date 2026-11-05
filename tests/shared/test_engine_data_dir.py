@@ -157,7 +157,15 @@ def test_python_and_electron_shell_resolve_the_same_path(platform: str, env_over
         f"appDataDir: '{home}/Library/Application Support'}})))"
     )
     shell = subprocess.run(
-        [node, "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script, json.dumps(env_overrides)],
+        [
+            node,
+            "--experimental-strip-types",
+            "--no-warnings",
+            "--input-type=module",
+            "-e",
+            script,
+            json.dumps(env_overrides),
+        ],
         capture_output=True,
         text=True,
         check=False,

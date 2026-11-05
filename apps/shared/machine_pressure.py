@@ -9,11 +9,11 @@ runtime budget is documented as untested because it was taken at load average
 554 with roughly 71 MB free. The browser cannot see any of that. This is the
 one read-only door it gets.
 
-WHAT IT REUSES. ``apps.diagnostics.probe_native_metrics.machine_metrics``,
-which is already the project's machine sampler: the launchd probe writes it
-into its JSONL every 15 seconds, and it is where load average and free page
-count now live too. Writing a second sampler here would guarantee the two
-drift and would make the endpoint's numbers incomparable with the probe log's.
+WHAT IT REUSES. ``apps.shared.machine_metrics.machine_metrics``, which is
+already the project's machine sampler: the launchd probe writes it into its
+JSONL every 15 seconds, and it is where load average and free page count now
+live too. Writing a second sampler here would guarantee the two drift and
+would make the endpoint's numbers incomparable with the probe log's.
 
 WHY IT IS CACHED. ``machine_metrics`` shells out to ``sysctl`` three times and
 ``vm_stat`` once. That is cheap next to walking the whole process table, which
@@ -22,13 +22,13 @@ caller is a browser polling on a timer while audio is playing. One sample is
 shared for a self-throttled TTL and every response states how old the sample
 it is handing back actually is.
 
-WHY IT CAN REPORT NOTHING. The diagnostics package is stdlib-only and
-standalone by design so the launchd probe can run on a machine with no
-checkout, and the desktop payload stages ``apps`` only (see APP_SOURCE_ROOTS
-in scripts/build_engine_payload.py), so ``scripts`` is absent inside a
-packaged Open DJ.app. There, this reports ``available: false`` with the reason.
-It never reports zeros. An unmeasured condition that renders as a real reading
-is precisely the defect (private path) exists to forbid.
+WHY IT CAN REPORT NOTHING. The sampler lives under ``apps.shared``, which the
+desktop payload already stages (see APP_SOURCE_ROOTS in
+scripts/build_engine_payload.py). ``available: false`` is for ``OSError`` or
+unreadable native tools, not for a missing checkout. ``ImportError`` remains
+the defensive path if the sampler module cannot load. It never reports zeros.
+An unmeasured condition that renders as a real reading is precisely the
+defect (private path) exists to forbid.
 """
 
 from __future__ import annotations
@@ -179,7 +179,7 @@ class PressureSample:
 
 
 def _sample_machine_metrics() -> dict[str, Any]:
-    from apps.diagnostics.probe_native_metrics import machine_metrics
+    from apps.shared.machine_metrics import machine_metrics
 
     return machine_metrics()
 
@@ -275,7 +275,10 @@ def _default_process_iter() -> list[ProcessInfo]:
     import psutil
 
     rows: list[ProcessInfo] = []
-    for proc in psutil.process_iter(["pid", "ppid", "cmdline", "memory_info"]):
+    # ``name`` is prefetched with the rest: a live ``proc.name()`` call here
+    # raised NoSuchProcess for a process that exited mid-walk, and that one
+    # error emptied the whole walk (the family read as unavailable).
+    for proc in psutil.process_iter(["pid", "ppid", "cmdline", "name", "memory_info"]):
         try:
             info = proc.info
         except (psutil.Error, OSError):
@@ -285,7 +288,7 @@ def _default_process_iter() -> list[ProcessInfo]:
         if not isinstance(pid, int) or not isinstance(ppid, int):
             continue
         cmdline = info.get("cmdline") or []
-        command = " ".join(str(part) for part in cmdline) if cmdline else proc.name()
+        command = " ".join(str(part) for part in cmdline) if cmdline else str(info.get("name") or "")
         memory_info = info.get("memory_info")
         rss_bytes = memory_info.rss if memory_info is not None else None
         rows.append(ProcessInfo(pid=pid, ppid=ppid, command=command, rss_bytes=rss_bytes))

@@ -27,6 +27,7 @@
 	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 	import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, decisionLine } from '$lib/rb/auto-play-early';
 	import { autoPlayDecision } from '$lib/rb/auto-play-early.svelte';
+	import AutoPlayWhy from '$lib/components/rb/autoplay/AutoPlayWhy.svelte';
 	import {
 		autoPlayNextState,
 		runLabel,
@@ -47,7 +48,7 @@
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
-	import { skinCycleTitle } from '$lib/rb/ui-skin';
+	import { SKIN_BUTTON_ICON_SVG, skinCycleTitle } from '$lib/rb/ui-skin';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
@@ -971,6 +972,7 @@
 					<p class="ap-status" data-testid="ap-next-run">{runTitle(autoPlayNextState.run)}</p>
 				{/if}
 				<p class="ap-status" data-testid="ap-decision">{decisionLine(autoPlayDecision, uiPrefs.auto_play_early_planning)}</p>
+				<AutoPlayWhy />
 				<label class="ap-row" title="Decide the next transition early and plan it. Off: AutoPlay hands off in the last ~16 s only.">
 					<input
 						type="checkbox"
@@ -1140,14 +1142,8 @@
 		aria-label={skinCycleTitle(uiPrefs.ui_skin)}
 		onclick={cycleUiSkin}
 	>
-		<!-- One glyph per skin: moon = default dark, half disc = Gothic, sun = Light. -->
-		{#if uiPrefs.ui_skin === 'default'}
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
-		{:else if uiPrefs.ui_skin === 'mono-dev'}
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2Z" fill="currentColor" /></svg>
-		{:else if uiPrefs.ui_skin === 'light'}
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
-		{/if}
+		<!-- One glyph per skin (SKIN_BUTTON_ICON_SVG in ui-skin.ts): static, trusted markup. -->
+		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">{@html SKIN_BUTTON_ICON_SVG[uiPrefs.ui_skin]}</svg>
 	</button>
 
 	<WaveQuickSettingsButton />

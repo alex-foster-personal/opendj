@@ -1,4 +1,5 @@
 """Tests for apps.sync.usb.preflight."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +25,9 @@ def _small_plan(drive_root: Path) -> Plan:
 def test_drive_mounted_error(fixture_profile, tmp_path) -> None:
     missing = tmp_path / "missing"
     res = preflight(
-        fixture_profile, _small_plan(missing), drive_root=missing,
+        fixture_profile,
+        _small_plan(missing),
+        drive_root=missing,
     )
     assert not res.ok
     assert any("drive_mounted" in e for e in res.errors)
@@ -89,6 +92,7 @@ def test_skip_check_suppresses(fixture_profile, tmp_path) -> None:
 @pytest.mark.requirement("CAT-02")
 def test_ffmpeg_missing_triggers_error(fixture_canonical, drive_root, monkeypatch) -> None:
     from apps.sync.usb.profile import load_from_string
+
     profile = load_from_string(
         """
 name: fixtureA
@@ -100,11 +104,10 @@ playlist_files: m3u8
 conflict_policy: canonical-wins
 """
     )
-    plan = compute_plan(
-        profile=profile, canonical=fixture_canonical, drive_root=drive_root
-    )
+    plan = compute_plan(profile=profile, canonical=fixture_canonical, drive_root=drive_root)
     # Force which() to return None so the check fails.
     import shutil as _shutil
+
     monkeypatch.setattr(_shutil, "which", lambda _x: None)
     res = preflight(
         profile,
@@ -118,6 +121,7 @@ conflict_policy: canonical-wins
 @pytest.mark.requirement("CAT-02")
 def test_case_collision_detected(drive_root) -> None:
     from pathlib import PurePosixPath
+
     ops = [
         Op(
             kind="copy",
@@ -141,6 +145,7 @@ def test_case_collision_detected(drive_root) -> None:
         ),
     ]
     from apps.sync.usb.profile import load_from_string
+
     profile = load_from_string(
         """
 name: x
@@ -160,9 +165,7 @@ conflict_policy: canonical-wins
         existing_bytes=0,
         free_bytes_needed=2,
     )
-    res = preflight(
-        profile, plan, drive_root=drive_root, drive_free_bytes=10_000_000_000
-    )
+    res = preflight(profile, plan, drive_root=drive_root, drive_free_bytes=10_000_000_000)
     assert any("no_case_collisions" in e for e in res.errors)
 
 

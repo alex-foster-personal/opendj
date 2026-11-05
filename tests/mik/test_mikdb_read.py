@@ -2,6 +2,7 @@
 
 [if] a MIK song/energy row is well-formed or malformed [then] reader normalises/raises, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -91,18 +92,12 @@ def test_no_overlap_across_a_long_synthetic_series(make_mik_store) -> None:
         length = 0.4995 + (index % 7) * 0.0007
         segments.append((cursor, length, 1 + index % 9))
         cursor += length
-    store = make_mik_store(
-        [{"path": "/Users/user/a.mp3", "confidence": 0.9, "segments": segments}]
-    )
+    store = make_mik_store([{"path": "/Users/user/a.mp3", "confidence": 0.9, "segments": segments}])
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     got = songs[0].segments
     assert len(got) == 200
     assert stats.segments_rejected == 0
-    overlaps = [
-        (a.seq, b.seq)
-        for a, b in pairwise(got)
-        if a.start_ms + a.length_ms > b.start_ms
-    ]
+    overlaps = [(a.seq, b.seq) for a, b in pairwise(got) if a.start_ms + a.length_ms > b.start_ms]
     assert overlaps == []
     # Contiguous, so each segment ends exactly where the next begins.
     for a, b in pairwise(got):
@@ -148,9 +143,7 @@ def test_wildly_negative_start_is_rejected_not_clamped(make_mik_store) -> None:
 
 
 def test_placeholder_key_and_zero_bpm_are_rejected(make_mik_store) -> None:
-    store = make_mik_store(
-        [{"path": "/Users/user/a.mp3", "key": "0", "tempo": 0.0, "confidence": 0.9}]
-    )
+    store = make_mik_store([{"path": "/Users/user/a.mp3", "key": "0", "tempo": 0.0, "confidence": 0.9}])
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].key_camelot is None
     assert songs[0].bpm is None
@@ -159,9 +152,7 @@ def test_placeholder_key_and_zero_bpm_are_rejected(make_mik_store) -> None:
 
 
 def test_energy_outside_the_scale_is_rejected(make_mik_store) -> None:
-    store = make_mik_store(
-        [{"path": "/Users/user/a.mp3", "energy": 17.0, "confidence": 0.9}]
-    )
+    store = make_mik_store([{"path": "/Users/user/a.mp3", "energy": 17.0, "confidence": 0.9}])
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].energy is None
     assert stats.energy_rejected == 1
@@ -255,9 +246,7 @@ def test_zero_loudness_and_zero_energy_are_not_treated_as_missing(
     make_mik_store,
 ) -> None:
     """Same falsy-is-not-absent rule for the other numeric scalars."""
-    store = make_mik_store(
-        [{"path": "/Users/user/a.mp3", "volume": 0.0, "confidence": 0.0}]
-    )
+    store = make_mik_store([{"path": "/Users/user/a.mp3", "volume": 0.0, "confidence": 0.0}])
     songs, _ = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].loudness == 0.0
     assert songs[0].key_confidence == 0.0

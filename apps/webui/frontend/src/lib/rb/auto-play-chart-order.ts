@@ -3,7 +3,7 @@
  */
 
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
-import { autoPlaySongIdentity } from '$lib/rb/auto-play-chain';
+import { autoPlaySongIdentity, heardKeyAndTempo } from '$lib/rb/auto-play-chain';
 import {
 	chartedOrderKey,
 	getAutoPlayPlaylist,
@@ -57,12 +57,16 @@ export function refreshChartedAutoPlayOrder(input: {
 	}
 	const followerPitchRange = pitchRanges[follower];
 	const bounds = tempoBoundsFromPitchRange(followerPitchRange);
+	// AUTOPLAY-8868: the chart starts from the key and tempo the master is heard at, with the same shift allowance
+	// as the pick, so the queue shows the track AutoPlay will actually load.
+	const heard = heardKeyAndTempo(deckStates[input.source.id]);
+	const keyShiftMax = uiPrefs.compatible_filter.key_shift_max;
 	const key = chartedOrderKey({
 		feed_epoch: input.playedFeedEpoch,
 		playlist_revision: getAutoPlayPlaylistRevision(),
 		source_stable_id: input.source.stable_id,
-		source_key: deckStates[input.source.id].key,
-		source_bpm: deckStates[input.source.id].bpm,
+		source_key: heard.key,
+		source_bpm: heard.bpm,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
@@ -70,7 +74,8 @@ export function refreshChartedAutoPlayOrder(input: {
 		exclude_ids: input.excludeIds,
 		played_ids: input.playedIds,
 		follower_deck: follower,
-		follower_pitch_range: followerPitchRange
+		follower_pitch_range: followerPitchRange,
+		key_shift_max: keyShiftMax
 	});
 	if (key === input.chartKey.current) return;
 	input.chartKey.current = key;
@@ -79,7 +84,8 @@ export function refreshChartedAutoPlayOrder(input: {
 		playlist: getAutoPlayPlaylist(),
 		start_stable_id: input.source.stable_id,
 		start_key: deckStates[input.source.id].key,
-		start_bpm: deckStates[input.source.id].bpm,
+		start_bpm: heard.bpm,
+		start_heard_key: heard.key,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
@@ -87,6 +93,7 @@ export function refreshChartedAutoPlayOrder(input: {
 		exclude_ids: input.excludeIds,
 		played_ids: input.playedIds,
 		max_chain_length: CHARTED_ORDER_HORIZON + 1,
+		key_shift_max: keyShiftMax,
 		exclude_identities: deckSongIdentities()
 	});
 	publishAutoPlayOrder(full.slice(1));

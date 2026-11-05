@@ -13,7 +13,10 @@ const rows = (...labels: string[]) =>
 
 const explainers = [
 	{ label: 'Import your music', text: 'opens setup to import rekordbox or a music folder.' },
-	{ label: 'Re-check', text: 'runs every startup check again now instead of waiting for the next automatic check.' },
+	{
+		label: 'Re-check',
+		text: 'runs every startup check again now instead of waiting for the next automatic check.'
+	},
 	{
 		label: 'Re-request permissions',
 		text: 'attempts the protected audio read again; macOS shows its prompt here if it never has.'
@@ -71,16 +74,28 @@ export const SetupCheckFailed: Story = {
 };
 
 /** A re-check in flight. */
-export const Rechecking: Story = { args: { pendingAction: 'recheck', actionStatus: 'Re-checking...' } };
+export const Rechecking: Story = {
+	args: { pendingAction: 'recheck', actionStatus: 'Re-checking...' }
+};
 
 /** The non-blocking strip shown once the app runs with advisories. */
 export const BootStrip: Story = {
-	args: { blocking: false, bootHeadline: 'Startup checks', footer: null, checkRows: rows('Audio output') }
+	args: {
+		blocking: false,
+		bootHeadline: 'Startup checks',
+		footer: null,
+		checkRows: rows('Audio output')
+	}
 };
 
 /** The admin page's live reference. */
 export const Admin: Story = {
-	args: { mode: 'admin', bootHeadline: 'Preflight', footer: null, visibleActions: ['recheck', 'permissions'] }
+	args: {
+		mode: 'admin',
+		bootHeadline: 'Preflight',
+		footer: null,
+		visibleActions: ['recheck', 'permissions']
+	}
 };
 
 /** Boot strip with nothing to show. */

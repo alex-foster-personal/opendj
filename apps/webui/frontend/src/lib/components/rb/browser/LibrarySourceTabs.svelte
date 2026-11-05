@@ -1,10 +1,21 @@
 <script lang="ts">
 	import { COLUMN_VIEW_PATH, REDO_PATH, TREE_LIST_PATH, UNDO_PATH } from '$lib/ui/icon-glyphs';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
-	import { undoButtonTitle } from '$lib/rb/playlist-history';
+	import { onDestroy } from 'svelte';
 	import {
+		HISTORY_CLOSE_GRACE_MS,
+		HISTORY_HOVER_OPEN_MS,
+		HISTORY_NAV_HOVER_MS,
+		historyEntryNavTarget,
+		historyRowsNewestFirst,
+		undoButtonTitle,
+		type PlaylistHistoryRow
+	} from '$lib/rb/playlist-history';
+	import {
+		jumpPlaylistHistoryFromChrome,
 		playlistHistoryChrome,
 		redoPlaylistFromChrome,
+		showHistoryTargetFromChrome,
 		undoPlaylistFromChrome
 	} from '$lib/rb/playlist-history-chrome.svelte';
 
@@ -33,19 +44,106 @@
 
 	let historyOpen = $state(false);
 	let historyAnchor = $state<HTMLButtonElement | null>(null);
+	let historyPopover = $state<HTMLDivElement | null>(null);
+	let openTimer: ReturnType<typeof setTimeout> | null = null;
+	let closeTimer: ReturnType<typeof setTimeout> | null = null;
+	let navTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function toggleTreeColumn(): void {
 		if (!showPlaylistTools || onPlaylistTreeViewChange === undefined) return;
 		onPlaylistTreeViewChange(playlistTreeView === 'tree' ? 'column' : 'tree');
 	}
 
-	function openHistory(): void {
+	function _clear(timer: ReturnType<typeof setTimeout> | null): null {
+		if (timer !== null) clearTimeout(timer);
+		return null;
+	}
+
+	// LIBUX-8626: 1 s of hover intent opens the history; it then stays open
+	// while the pointer is over the undo button OR the popover, so the list
+	// can be scrolled and clicked. Leaving both closes it after a short grace
+	// that covers the gap between them.
+	function intendHistory(): void {
+		closeTimer = _clear(closeTimer);
+		if (historyOpen || openTimer !== null) return;
+		openTimer = setTimeout(() => {
+			openTimer = null;
+			historyOpen = true;
+		}, HISTORY_HOVER_OPEN_MS);
+	}
+
+	function openHistoryNow(): void {
+		openTimer = _clear(openTimer);
+		closeTimer = _clear(closeTimer);
 		historyOpen = true;
 	}
 
-	function closeHistory(): void {
-		historyOpen = false;
+	// PLAYLIST-ROW-01: only KEYBOARD focus opens the history at once. A mouse
+	// click also focuses the button, and opening on that put the popover over
+	// the playlist rows right after every undo click, where the pointer on its
+	// way to a row kept it open and swallowed the row click.
+	function openHistoryOnKeyboardFocus(event: FocusEvent): void {
+		const button = event.currentTarget;
+		if (!(button instanceof HTMLElement) || !button.matches(':focus-visible')) return;
+		openHistoryNow();
 	}
+
+	function keepHistoryOpen(): void {
+		closeTimer = _clear(closeTimer);
+	}
+
+	function releaseHistory(): void {
+		openTimer = _clear(openTimer);
+		if (!historyOpen || closeTimer !== null) return;
+		closeTimer = setTimeout(() => {
+			closeTimer = null;
+			navTimer = _clear(navTimer);
+			historyOpen = false;
+		}, HISTORY_CLOSE_GRACE_MS);
+	}
+
+	function releaseHistoryOnBlur(event: FocusEvent): void {
+		const next = event.relatedTarget;
+		if (next instanceof Node && (historyAnchor?.contains(next) || historyPopover?.contains(next))) return;
+		releaseHistory();
+	}
+
+	function closeHistoryOnEscape(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || !historyOpen) return;
+		event.stopPropagation();
+		openTimer = _clear(openTimer);
+		closeTimer = _clear(closeTimer);
+		historyOpen = false;
+		historyAnchor?.focus();
+	}
+
+	function previewHistoryRow(row: PlaylistHistoryRow): void {
+		navTimer = _clear(navTimer);
+		const target = historyEntryNavTarget(row);
+		if (target === null) return;
+		navTimer = setTimeout(() => {
+			navTimer = null;
+			showHistoryTargetFromChrome(target);
+		}, HISTORY_NAV_HOVER_MS);
+	}
+
+	async function jumpToHistoryRow(row: PlaylistHistoryRow): Promise<void> {
+		navTimer = _clear(navTimer);
+		if (!(await jumpPlaylistHistoryFromChrome(row.entry.command_id))) return;
+		// After the jump the row flipped applied <-> pending; show where it landed.
+		const target = historyEntryNavTarget({ ...row, applied: !row.applied });
+		if (target !== null) showHistoryTargetFromChrome(target);
+	}
+
+	onDestroy(() => {
+		_clear(openTimer);
+		_clear(closeTimer);
+		_clear(navTimer);
+	});
+
+	const historyRows: PlaylistHistoryRow[] = $derived(
+		historyRowsNewestFirst(playlistHistoryChrome.entries, playlistHistoryChrome.cursor)
+	);
 
 	const undoTitle: string = $derived(
 		undoButtonTitle(playlistHistoryChrome.entries, playlistHistoryChrome.cursor, playlistHistoryChrome.canUndo)
@@ -105,11 +203,14 @@
 			data-custom-tip=""
 			disabled={!playlistHistoryChrome.canUndo}
 			bind:this={historyAnchor}
+			aria-haspopup="true"
+			aria-expanded={historyOpen}
 			onclick={() => undoPlaylistFromChrome()}
-			onmouseenter={openHistory}
-			onfocus={openHistory}
-			onmouseleave={closeHistory}
-			onblur={closeHistory}
+			onmouseenter={intendHistory}
+			onfocus={openHistoryOnKeyboardFocus}
+			onmouseleave={releaseHistory}
+			onblur={releaseHistoryOnBlur}
+			onkeydown={closeHistoryOnEscape}
 		>
 			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
 				<path d={UNDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -132,20 +233,45 @@
 	<!-- LIBUX-51: inside .source-toolbar (position: relative) so top: 100% anchors
 	     the popover under the undo button; as a sibling it resolved against a page
 	     ancestor and opened at the bottom edge of the window (found by the v1 ship
-	     day thread, #5674). It is a read-only tooltip: it closes when the pointer or
-	     focus leaves the undo button and takes no pointer events, so it never
-	     covers a playlist row it overlaps. -->
+	     day thread, #5674).
+	     LIBUX-8626: the full history, newest first, interactive. It only opens
+	     after a deliberate 1 s hover (or keyboard focus) and closes shortly after
+	     the pointer leaves both it and the button, so it does not linger over the
+	     playlist rows it overlaps. -->
 	{#if historyOpen && historyAnchor !== null}
-		<div class="history-popover" style:z-index="5" role="tooltip">
-			<p class="history-hint" data-testid="playlist-undo-next">{undoTitle}. Recent edits at the undo cursor:</p>
+		<div
+			class="history-popover"
+			style:z-index="5"
+			role="dialog"
+			aria-label="Playlist edit history"
+			tabindex="-1"
+			data-testid="playlist-history-popover"
+			bind:this={historyPopover}
+			onmouseenter={keepHistoryOpen}
+			onmouseleave={releaseHistory}
+			onfocusout={releaseHistoryOnBlur}
+			onkeydown={closeHistoryOnEscape}
+		>
+			<p class="history-hint" data-testid="playlist-undo-next">
+				{undoTitle}. Newest first: hover an edit to show it, click to undo back to it.
+			</p>
 			<ol class="history-list" data-testid="playlist-history-list">
-				{#each playlistHistoryChrome.entries as entry, index (entry.command_id)}
-					<li
-						class="history-item"
-						class:pending={index >= playlistHistoryChrome.cursor}
-						aria-current={index === playlistHistoryChrome.cursor - 1 ? 'step' : undefined}
-					>
-						{entry.label}
+				{#each historyRows as row (row.entry.command_id)}
+					<li>
+						<button
+							type="button"
+							class="history-item"
+							class:pending={!row.applied}
+							data-testid="playlist-history-item"
+							data-command-id={row.entry.command_id}
+							aria-current={row.next ? 'step' : undefined}
+							title={row.action}
+							onmouseenter={() => previewHistoryRow(row)}
+							onfocus={() => previewHistoryRow(row)}
+							onclick={() => void jumpToHistoryRow(row)}
+						>
+							{row.entry.label}
+						</button>
 					</li>
 				{/each}
 			</ol>
@@ -230,12 +356,11 @@
 	}
 	.history-popover {
 		position: absolute;
-		pointer-events: none;
 		top: 100%;
 		right: 4px;
 		margin-top: 2px;
-		min-width: 180px;
-		max-width: 260px;
+		min-width: 200px;
+		max-width: 320px;
 		padding: 4px 6px;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
@@ -250,11 +375,18 @@
 	.history-list {
 		margin: 0;
 		padding: 0;
-		max-height: 120px;
+		max-height: min(320px, 60vh);
 		overflow-y: auto;
+		overscroll-behavior: contain;
 		list-style: none;
 	}
 	.history-item {
+		display: block;
+		width: 100%;
+		border: none;
+		background: none;
+		text-align: left;
+		cursor: pointer;
 		font-family: var(--rb-font);
 		font-size: var(--rb-fs-label);
 		color: var(--rb-text);
@@ -263,8 +395,15 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	.history-item:hover,
+	.history-item:focus-visible {
+		background: var(--rb-panel);
+		outline: 1px solid var(--rb-accent);
+		outline-offset: -1px;
+	}
 	.history-item.pending {
 		color: var(--rb-text-dim);
+		text-decoration: line-through;
 	}
 	.history-item[aria-current='step'] {
 		color: var(--rb-accent);

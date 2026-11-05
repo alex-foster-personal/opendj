@@ -247,7 +247,7 @@ def _int(value: Any, where: str, *, minimum: int | None = None) -> int:
 def _number(value: Any, where: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PlanError(f"{where} must be a number, got {value!r}")
-    if value != value or value in (float("inf"), float("-inf")):
+    if isinstance(value, float) and not math.isfinite(value):
         raise PlanError(f"{where} must be finite, got {value!r}")
     try:
         return float(value)
@@ -684,6 +684,13 @@ def _base_rate(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str
     if not isinstance(out_bpm, (int, float)) or not isinstance(in_bpm, (int, float)) or out_bpm <= 0 or in_bpm <= 0:
         return 1.0
     return float(in_bpm) / float(out_bpm)
+
+
+def beat_sync_reach_pct(in_profile: TrackProfile) -> float:
+    """AUTOPLAY-REACH: how far Beat Sync can stretch the incoming track: its deck's real pitch range when a deck
+    reports one (the engine's own bound), else the 6% default. Wider only removes a false "beyond reach"."""
+    reach = in_profile.deck_pitch_range_pct
+    return reach if reach is not None and reach > 0 else BEATMATCH_LIMIT_PCT
 
 
 def pair_beat_sync_fold(out_bpm: float | None, in_bpm: float | None, range_pct: float = BEATMATCH_LIMIT_PCT) -> float:
@@ -1298,12 +1305,13 @@ def _check_fit(plan: TransitionPlan, out_profile: TrackProfile, in_profile: Trac
 def _check_tempo_fit(
     plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
 ) -> None:
-    gap = bpm_gap_pct(out_profile.bpm, in_profile.bpm)
+    gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
     result.metrics["bpm_gap_pct"] = None if gap is None else round(gap, 2)
     beatmatched = _beatmatched(plan)
-    if gap is not None and gap > BEATMATCH_LIMIT_PCT and beatmatched:
+    reach = beat_sync_reach_pct(in_profile)
+    if gap is not None and gap > reach and beatmatched:
         result.warnings.append(
-            f"tempo gap {gap:.1f}% is beyond Beat Sync's {BEATMATCH_LIMIT_PCT:.0f}% reach; the "
+            f"tempo gap {gap:.1f}% is beyond Beat Sync's {reach:.0f}% reach; the "
             "blend will drift. A cut or drop_swap does not need beatmatching"
         )
     if plan.tempo_mode == "none" and beatmatched:

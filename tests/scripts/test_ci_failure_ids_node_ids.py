@@ -49,10 +49,7 @@ def test_a_parametrized_id_holding_whitespace_survives_its_reason_text():
 
 def test_a_dash_inside_the_parameters_is_not_the_reason_separator():
     """if ` - ` inside a parameter ends the identity then a real ledger id is cut in half"""
-    identity = (
-        "tests/mik/test_mikdb_read.py::test_strip_energy_prefix"
-        "[1979 - Remaster-1979 - Remaster]"
-    )
+    identity = "tests/mik/test_mikdb_read.py::test_strip_energy_prefix[1979 - Remaster-1979 - Remaster]"
     log = f"{TS}FAILED {identity} - AssertionError: assert 'a' == 'b'\n"
     assert failed_identities(log) == {f"FAILED {identity}"}
 

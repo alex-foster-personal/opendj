@@ -176,7 +176,9 @@
 
 	<div class="validation-summary">
 		{#if errors.length > 0}
-			<p style="color: var(--danger);">{errors.length} validation {errors.length === 1 ? 'error' : 'errors'}:</p>
+			<p style="color: var(--danger);">
+				{errors.length} validation {errors.length === 1 ? 'error' : 'errors'}:
+			</p>
 			<ul>
 				{#each errors as error, i (i)}
 					<li>{error.path}: {error.message}</li>
@@ -189,13 +191,21 @@
 
 	<h3>AST preview</h3>
 	{#if astResult?.ok}
-		<pre class="ast-preview">{JSON.stringify({ rule: astResult.ast, order_by: orderBy }, null, 2)}</pre>
+		<pre class="ast-preview">{JSON.stringify(
+				{ rule: astResult.ast, order_by: orderBy },
+				null,
+				2
+			)}</pre>
 	{:else}
 		<p style="color: var(--danger);">{astResult?.error}</p>
 	{/if}
 
 	<div class="save-row">
-		<button class="primary" onclick={save} disabled={saving || !astResult?.ok || etag === null || conflictCurrent !== null}>
+		<button
+			class="primary"
+			onclick={save}
+			disabled={saving || !astResult?.ok || etag === null || conflictCurrent !== null}
+		>
 			{saving ? 'Saving...' : 'Save'}
 		</button>
 		{#if saveError}

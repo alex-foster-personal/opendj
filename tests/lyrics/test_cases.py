@@ -45,7 +45,7 @@ def _song(name: str, words: list[str], finals: list[bool], language: str = "Engl
         lyric_overlap=True,
         polyphonic=False,
         non_lexical=False,
-        mp3_path=Path("/Users/dev/fixture.mp3"),
+        mp3_path=Path("/fixtures/lyrics/fixture.mp3"),
         words=spans,
     )
 

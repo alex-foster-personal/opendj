@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { REVEAL_TRACK_TITLE, runRevealTracks } from '$lib/components/rb/browser/track-context-menu';
+	import {
+		REVEAL_TRACK_TITLE,
+		runRevealTracks
+	} from '$lib/components/rb/browser/track-context-menu';
 	import {
 		fetchHandoffApps,
 		HANDOFF_BUTTONS,
@@ -20,7 +23,9 @@
 	onMount(() => {
 		fetchHandoffApps()
 			.then((apps) => (probe = apps))
-			.catch((err: unknown) => (probe = { error: err instanceof Error ? err.message : String(err) }));
+			.catch(
+				(err: unknown) => (probe = { error: err instanceof Error ? err.message : String(err) })
+			);
 	});
 
 	// The click's result shows inline beside the buttons (a status line, not a

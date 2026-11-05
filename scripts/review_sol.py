@@ -56,6 +56,14 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from scripts.review_identity import (
+    is_lane_artifact,
+    is_lane_thread,
+)
+from scripts.review_identity import (
+    normalize_login as _normalize_login,  # noqa: F401  (review_coverage_carry imports this)
+)
+
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard, typing only
     from scripts.review_coverage import ReviewerVerdict
 
@@ -104,10 +112,6 @@ def marker_skipped_mismatch(body: str, diff: str) -> str | None:
     return skipped_paths_match_diff(skipped_paths_from_marker(body), diff)
 
 
-def _normalize_login(login: str) -> str:
-    return login.removesuffix("[bot]").lower()
-
-
 def is_sol_artifact(login: str, body: str, head_sha: str) -> bool:
     """Was this artifact written by the Sol lane, against THIS push?
 
@@ -116,12 +120,7 @@ def is_sol_artifact(login: str, body: str, head_sha: str) -> bool:
     same direction `review_coverage._body_is_at_head` uses, because GitHub
     abbreviates SHAs and the marker may legitimately carry a short one.
     """
-    if _normalize_login(login) not in SOL_LOGINS:
-        return False
-    match = SOL_MARKER.search(body or "")
-    if not match:
-        return False
-    return head_sha.lower().startswith(match.group(1).lower())
+    return is_lane_artifact(login, body, head_sha, SOL_LOGINS, SOL_MARKER)
 
 
 def is_sol_thread(login: str, body: str) -> bool:
@@ -140,7 +139,7 @@ def is_sol_thread(login: str, body: str) -> bool:
     2026); the coverage side already required both signals, and triage
     quietly did not.
     """
-    return _normalize_login(login) in SOL_LOGINS and bool(SOL_MARKER.search(body or ""))
+    return is_lane_thread(login, body, SOL_LOGINS, SOL_MARKER)
 
 
 def substitute_alternatives(

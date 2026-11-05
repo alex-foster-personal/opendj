@@ -48,7 +48,10 @@ test('Energy header is a lightning icon with an accessible hover explainer', () 
 test('Energy header sits immediately before the Genre header in column order', () => {
 	const energyIdx = table.indexOf('class="h-energy"');
 	const genreIdx = table.indexOf("sortableTh('genre'");
-	assert.ok(energyIdx !== -1 && genreIdx !== -1 && energyIdx < genreIdx, 'Energy header must precede Genre header');
+	assert.ok(
+		energyIdx !== -1 && genreIdx !== -1 && energyIdx < genreIdx,
+		'Energy header must precede Genre header'
+	);
 	// nothing else between them but whitespace/the closing </th>
 	const between = table.slice(table.indexOf('</th>', energyIdx), genreIdx);
 	assert.doesNotMatch(between, /<th/, 'another header column sits between Energy and Genre');
@@ -57,7 +60,11 @@ test('Energy header sits immediately before the Genre header in column order', (
 test('Energy cell renders the row value undimmed and dims when absent', () => {
 	const cell = energyCell();
 	assert.match(cell, /row\.energy/, 'cell does not read row.energy');
-	assert.match(cell, /class:energy-unset=\{row\.energy === null\}/, 'no dim state for a missing energy value');
+	assert.match(
+		cell,
+		/class:energy-unset=\{row\.energy === null\}/,
+		'no dim state for a missing energy value'
+	);
 });
 
 test('Energy column has a COL_DEFAULTS width entry and a matching <col>', async () => {

@@ -27,7 +27,7 @@ if [ "$#" -eq 0 ]; then
     exit 2
 fi
 
-if ! command -v dpkg-query > /dev/null; then
+if ! command -v dpkg-query >/dev/null; then
     echo "[apt-present] no dpkg-query on this host, cannot measure; installing under the packages lock"
     exit 1
 fi
@@ -36,7 +36,7 @@ missing=()
 for pkg in "$@"; do
     # An unknown package makes dpkg-query exit 1 with a message; that is the
     # "missing" answer, so its status stays empty and the name is recorded.
-    status=$(dpkg-query -W -f='${Status}' "$pkg" 2> /dev/null || true)
+    status=$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)
     [ "$status" = "install ok installed" ] || missing+=("$pkg")
 done
 

@@ -52,9 +52,7 @@ async function _clusters(request: APIRequestContext): Promise<{
 	return { status: response.status(), body: (await response.json()) as ClustersBody, etag };
 }
 
-test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', async ({
-	page
-}) => {
+test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', async ({ page }) => {
 	const first = await _clusters(page.request);
 	if (first.body === null || first.body.clusters.length === 0) {
 		const note = first.body?.note ?? `GET /api/v1/dedup/clusters status ${first.status}`;
@@ -86,9 +84,7 @@ test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', asyn
 	for (let index = 0; index < hydratedMembers.length; index += 1) {
 		const member = hydratedMembers[index];
 		const card = memberCards.nth(index);
-		await expect(card.locator('.member-title')).toHaveText(
-			`${member.title} - ${member.artist}`
-		);
+		await expect(card.locator('.member-title')).toHaveText(`${member.title} - ${member.artist}`);
 		await expect(card.locator('.member-meta')).toContainText(`${member.bpm} BPM`);
 	}
 	await clusterCard.getByTestId('dedup-keep-all').click();
@@ -145,11 +141,13 @@ test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', asyn
 		const mergeCard = page.getByTestId('dedup-cluster').first();
 		page.once('dialog', (dialog) => dialog.accept());
 		await mergeCard.getByTestId('dedup-merge').click();
-		await expect(mergeCard.locator('.badge.decided')).toContainText(`applied: merge -> ${survivorId}`);
+		await expect(mergeCard.locator('.badge.decided')).toContainText(
+			`applied: merge -> ${survivorId}`
+		);
 		await page.reload();
-		await expect(
-			page.getByTestId('dedup-cluster').first().locator('.badge.decided')
-		).toContainText(`applied: merge -> ${survivorId}`);
+		await expect(page.getByTestId('dedup-cluster').first().locator('.badge.decided')).toContainText(
+			`applied: merge -> ${survivorId}`
+		);
 
 		const afterApply = await page.request.get(`/api/v1/playlists/${playlistId}`);
 		expect(afterApply.ok()).toBeTruthy();
@@ -157,9 +155,9 @@ test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', asyn
 		expect(afterApplyBody.items).toEqual([survivorId]);
 
 		await page.getByTestId('dedup-cluster').first().getByTestId('dedup-undo').click();
-		await expect(
-			page.getByTestId('dedup-cluster').first().locator('.badge.decided')
-		).toContainText('pending apply');
+		await expect(page.getByTestId('dedup-cluster').first().locator('.badge.decided')).toContainText(
+			'pending apply'
+		);
 		await page.reload();
 		const restored = await page.request.get(`/api/v1/playlists/${playlistId}`);
 		expect(restored.ok()).toBeTruthy();

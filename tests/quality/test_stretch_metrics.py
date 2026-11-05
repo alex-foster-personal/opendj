@@ -85,9 +85,7 @@ def test_librosa_default_hop_raises_against_a_12ms_gate() -> None:
 
 def test_hop_64_is_accepted_and_reports_its_resolution() -> None:
     """If hop 64 does not read 1.451 ms then the resolution maths is wrong."""
-    assert metrics.assert_onset_hop_resolution(64, SAMPLE_RATE, 12.0) == pytest.approx(
-        1.451, abs=1e-3
-    )
+    assert metrics.assert_onset_hop_resolution(64, SAMPLE_RATE, 12.0) == pytest.approx(1.451, abs=1e-3)
 
 
 def test_hop_guard_boundary_is_exactly_gate_over_four() -> None:
@@ -128,9 +126,7 @@ def test_low_band_transient_is_detected_not_swallowed() -> None:
         "would not prove low-band sensitivity"
     )
 
-    found = metrics.pick_onsets(
-        metrics.onset_strength(signal), SAMPLE_RATE, metrics.ONSET_HOP_SAMPLES
-    )
+    found = metrics.pick_onsets(metrics.onset_strength(signal), SAMPLE_RATE, metrics.ONSET_HOP_SAMPLES)
     for hit in hit_times:
         assert np.min(np.abs(found - hit)) < 0.05, f"no onset near the {hit}s kick: {found}"
 

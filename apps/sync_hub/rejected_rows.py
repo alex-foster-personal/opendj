@@ -32,6 +32,8 @@ REASON_NOT_NEWER: str = "not_newer"
 REASON_REMOVED_ON_HUB: str = "removed_on_hub"
 #: The content-identity collapse kept another id for the same audio.
 REASON_IDENTITY_LOSER: str = "identity_loser"
+#: A spoke remap contradicts an independently live loser on the hub.
+REASON_IDENTITY_REMAP_CONTRADICTED: str = "identity_remap_contradicted"
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ def summarize(rows: Sequence[RejectedRow], *, limit: int = 5) -> str:
 __all__ = [
     "MAX_REJECTED_ROWS_NAMED",
     "REASON_IDENTITY_LOSER",
+    "REASON_IDENTITY_REMAP_CONTRADICTED",
     "REASON_NOT_NEWER",
     "REASON_REMOVED_ON_HUB",
     "RejectedRow",

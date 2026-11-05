@@ -61,9 +61,7 @@ def _transcript_bytes(stable_id: str) -> bytes:
     return (json.dumps(payload) + "\n").encode("utf-8")
 
 
-def test_hub_presign_returns_url_for_existing_transcript(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_hub_presign_returns_url_for_existing_transcript(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hub_dir = tmp_path / "hub"
     spoke_dir = tmp_path / "spoke"
     cfg = _cfg()
@@ -94,9 +92,7 @@ def test_hub_presign_returns_url_for_existing_transcript(
     assert payload["url"].startswith("http://127.0.0.1")
 
 
-def test_hub_presign_missing_transcript_is_named_404(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_hub_presign_missing_transcript_is_named_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hub_dir = tmp_path / "hub"
     spoke_dir = tmp_path / "spoke"
     cfg = _cfg()
@@ -120,9 +116,7 @@ def test_hub_presign_missing_transcript_is_named_404(
     assert response.json()["detail"]["code"] == LYRICS_ASR_NOT_FOUND
 
 
-def test_hub_presign_response_has_no_r2_credentials(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_hub_presign_response_has_no_r2_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     hub_dir = tmp_path / "hub"
     spoke_dir = tmp_path / "spoke"
     cfg = _cfg()

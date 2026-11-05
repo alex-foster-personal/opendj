@@ -37,7 +37,9 @@ async function pixelAt(page: import('@playwright/test').Page, x: number, y: numb
 async function paint(page: import('@playwright/test').Page, tone: string, timeMs = 0) {
 	await page.evaluate(
 		async ({ tone, timeMs, w, h }) => {
-			const mod = await import(new URL('/src/lib/components/rb/wave/render.ts', location.href).href);
+			const mod = await import(
+				new URL('/src/lib/components/rb/wave/render.ts', location.href).href
+			);
 			const canvas = document.getElementById('stage') as HTMLCanvasElement;
 			const ctx = canvas.getContext('2d')!;
 			ctx.clearRect(0, 0, w, h);
@@ -125,7 +127,9 @@ test.describe('playhead weight, painted on a real canvas', () => {
 		}
 	});
 
-	test('an unsynced master stays yellow-only and followers gain no master core', async ({ page }) => {
+	test('an unsynced master stays yellow-only and followers gain no master core', async ({
+		page
+	}) => {
 		await paint(page, 'master');
 		expect(await pixelAt(page, CENTER_X, 20)).toEqual({ r: 224, g: 204, b: 110, a: 255 });
 		for (const followerTone of ['bar1', 'synced', 'drift']) {

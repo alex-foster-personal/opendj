@@ -147,9 +147,7 @@ def find_shadowing_imports(workspace: str) -> list[Shadow]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--workspace", required=True, help="the job's checkout root ($GITHUB_WORKSPACE)"
-    )
+    parser.add_argument("--workspace", required=True, help="the job's checkout root ($GITHUB_WORKSPACE)")
     args = parser.parse_args(argv)
     workspace = os.path.realpath(args.workspace)
     if not os.path.isdir(workspace):

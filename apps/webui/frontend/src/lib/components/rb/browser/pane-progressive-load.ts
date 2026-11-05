@@ -55,11 +55,7 @@ export function appendRows<Row>(
 
 /** Settle a background fill: clear load_progress, keep painted rows.
  * `truncated` is true when the walk failed after first paint. */
-export function finishFill(
-	pane: ProgressiveLoadPane,
-	seq: number,
-	truncated = false
-): boolean {
+export function finishFill(pane: ProgressiveLoadPane, seq: number, truncated = false): boolean {
 	if (!pane.isCurrentLoad(seq)) return false;
 	pane.loading = false;
 	pane.truncated = truncated;

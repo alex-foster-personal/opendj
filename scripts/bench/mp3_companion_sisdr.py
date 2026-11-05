@@ -18,7 +18,7 @@ silently reported as if trustworthy.
 
 Usage:
     uv run scripts/bench/mp3_companion_sisdr.py \
-        data/state/stems-roformer-spike data/state/stems-demucs-ab [--out results.json]
+        (private path) (private path) [--out results.json]
 
 Requirements (mini-PRD)
   ✔︎ ✅ per-stem SI-SDR of decoded-mp3 vs its own flac, sample-aligned
@@ -32,6 +32,7 @@ Requirements (mini-PRD)
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse

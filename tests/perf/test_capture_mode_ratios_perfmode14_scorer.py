@@ -45,9 +45,7 @@ def test_perfmode14_medians_use_median_not_mean() -> None:
     """[if] footprint and CPU series are scored [then] medians match statistics.median, [else stop]."""
     footprint = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
     cpu = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    fp_median, cpu_median = perfmode14_medians_from_lists(
-        footprint, cpu, mode="test"
-    )
+    fp_median, cpu_median = perfmode14_medians_from_lists(footprint, cpu, mode="test")
     assert fp_median == perfmode14_median(footprint)
     assert cpu_median == perfmode14_median(cpu)
     assert fp_median == 350.0

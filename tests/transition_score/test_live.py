@@ -98,7 +98,7 @@ def _prepared(monkeypatch: pytest.MonkeyPatch, score: Any = None, mirror: Any = 
     """A cache after a real prepare, every plan scored 0.4 (or as ``score(plan)`` says)."""
     rendered = _patch_renders(monkeypatch, score)
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     assert cache.begin(key)
     prepare_live(_request(), key, mirror=mirror, source=_Source(), cache=cache)
     entry = cache.get(key)
@@ -148,7 +148,7 @@ def test_prepare_covers_later_phrases_within_its_budget(monkeypatch: pytest.Monk
 def test_prepare_publishes_each_window_and_a_second_claim_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] a window finishes [then] a press can use it before the rest, and a second prepare of the key does not start, [else stop]."""
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     assert cache.begin(key) and not cache.begin(key)
     seen: list[int] = []
 
@@ -240,7 +240,7 @@ def test_no_window_left_is_a_reason_not_an_order(monkeypatch: pytest.MonkeyPatch
 def test_nothing_eligible_in_the_cache_falls_to_the_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] every scored candidate is vetoed [then] the press plans from profiles, marked unscored, [else stop]."""
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache.begin(key)
     plan = parse_plan(propose_transition(OUT, IN, out_deck=1, in_deck=2, min_out_bar=60, top=1)["proposals"][0]["plan"])
     cache.publish(key, [_scored(plan, "c1", 0.0, vetoed=True)], 1.0)
@@ -257,7 +257,7 @@ def test_a_render_failure_fails_the_prepare_with_its_reason(monkeypatch: pytest.
 
     monkeypatch.setattr(live_module, "try_plans", broken)
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache.begin(key)
     prepare_live(_request(), key, mirror=_mirror, source=_Source(), cache=cache)
     entry = cache.get(key)
@@ -304,7 +304,7 @@ def test_a_track_changing_before_prepare_starts_fails_that_prepare(monkeypatch: 
     """[if] a deck loads another track before the prepare runs [then] nothing is scored for the old pair, [else stop]."""
     rendered = _patch_renders(monkeypatch)
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache.begin(key)
     changed = _mirror()
     changed["decks"]["2"]["stable_id"] = "trk-other"
@@ -318,7 +318,7 @@ def test_a_prepare_with_nothing_to_offer_is_not_ready(monkeypatch: pytest.Monkey
     """[if] the outgoing track is past its last window [then] the entry says failed with the reason, never ready, [else stop]."""
     rendered = _patch_renders(monkeypatch)
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache.begin(key)
     prepare_live(_request(), key, mirror=lambda: _mirror(OUT.bars - 1), source=_Source(), cache=cache)
     entry = cache.get(key)
@@ -424,7 +424,7 @@ def test_a_cached_pick_takes_the_live_outgoing_trim(monkeypatch: pytest.MonkeyPa
     source.tracks[OUT.stable_id] = replace(OUT, lufs=-10.0, lufs_reason=None)
     rendered = _patch_renders(monkeypatch)
     cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache.begin(key)
     prepare_live(_request(), key, mirror=_mirror, source=source, cache=cache)
     assert rendered
@@ -442,6 +442,26 @@ def test_a_cached_pick_takes_the_live_outgoing_trim(monkeypatch: pytest.MonkeyPa
     assert trim_of(turned_down) != trim_of(_mirror)
 
 
+@pytest.mark.requirement("AGENT-31")
+def test_live_trim_recomputes_match_with_auto_gain_on_the_mirror() -> None:
+    """[if] auto_gain is on the mirror [then] _live_trim uses both decks' offsets, [else stop]."""
+    out_p = replace(OUT, lufs=-6.0, lufs_reason=None)
+    in_p = replace(IN, lufs=-12.0, lufs_reason=None)
+    plan = parse_plan(propose_transition(out_p, in_p, out_deck=1, in_deck=2, intent="smooth")["proposals"][0]["plan"])
+    mirror = _mirror()
+    mirror["mixer"] = {"channels": {"1": {"trim": 0.5, "fader": 1.0}, "2": {"trim": 0.5, "fader": 0.0}}}
+    mirror["auto_gain"] = {
+        "1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": -6.0}},
+        "2": {"state": "ready", "value": {"stable_id": "trk-in", "effective_offset_db": 0.0}},
+    }
+    trimmed = live_module._live_trim(plan, out_p, in_p, mirror, 1, 2)
+    assert trimmed.in_.trim_db == pytest.approx(0.0)
+    del mirror["auto_gain"]
+    trimmed = live_module._live_trim(plan, out_p, in_p, mirror, 1, 2)
+    assert trimmed.in_.trim_db == pytest.approx(6.0)
+    assert "the live mirror carries no auto_gain" in (trimmed.in_.trim_reason or "")
+
+
 @pytest.mark.requirement("AUTOPLAN-04")
 def test_a_prepare_that_names_a_point_scores_that_window_first(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] AutoPlay has decided a window [then] it is the first scored, so the M floor reaches it inside a short wait, [else stop]."""
@@ -454,8 +474,36 @@ def test_a_prepare_that_names_a_point_scores_that_window_first(monkeypatch: pyte
     monkeypatch.setattr(live_module, "renderable_plans", lambda group, *_args: (group, []))
     monkeypatch.setattr(live_module, "try_plans", record)
     request = LiveRequest(1, 2, "smooth", (), OUT.time_of_bar(65) * 1000.0)
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth")
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
     cache = PlanCache()
     assert cache.begin(key)
     prepare_live(request, key, mirror=_mirror, source=_Source(), cache=cache)
     assert scored[0] == 65, f"if the decided window is not scored first then broken, got {scored}"
+
+
+@pytest.mark.requirement("AUTOPLAY-8868d")
+@pytest.mark.requirement("AUTOPLAY-8870c")
+def test_a_reshifted_or_repitched_master_misses_the_prepared_score(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the master's key shift or pitch changes after a prepare [then] the press misses the cache, [else stop]."""
+    cache, _rendered = _prepared(monkeypatch)
+    _fail_on_render(monkeypatch)
+    assert plan_live(_request(), mirror=_mirror, source=_Source(), cache=cache).scored, "control: same heard state hits"
+
+    def reshifted() -> dict[str, Any]:
+        mirror = _mirror()
+        mirror["decks"]["1"]["key_sync"] = {"shift_semitones": 1}
+        return mirror
+
+    def repitched() -> dict[str, Any]:
+        mirror = _mirror()
+        mirror["decks"]["1"]["pitch"] = 1.04
+        return mirror
+
+    def reranged() -> dict[str, Any]:
+        mirror = _mirror()
+        mirror["decks"]["2"]["pitch_range"] = 16.0
+        return mirror
+
+    for changed in (reshifted, repitched, reranged):
+        answer = plan_live(_request(), mirror=changed, source=_Source(), cache=cache)
+        assert not answer.scored, f"if a {changed.__name__} master is served the old score then broken"

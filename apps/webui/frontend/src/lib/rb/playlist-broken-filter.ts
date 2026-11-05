@@ -19,10 +19,7 @@ export type PlaylistWithId = PlaylistAvailability & { playlist_id: string };
  * Replaces the old ratio rule (available_count / track_count < 0.3) which hid
  * large playlists that still had many usable tracks.
  */
-export function playlistMostlyBroken(
-	availableCount: number,
-	minVisibleTracks: number
-): boolean {
+export function playlistMostlyBroken(availableCount: number, minVisibleTracks: number): boolean {
 	if (availableCount < 0) return false;
 	return availableCount < minVisibleTracks;
 }

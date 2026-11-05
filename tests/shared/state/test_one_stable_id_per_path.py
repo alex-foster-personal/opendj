@@ -7,6 +7,7 @@ again by the folder-refresh route, and demands a single stable_id.
 
 [if] folder import then refresh see one file [then] one stable_id, [else stop].
 """
+
 from __future__ import annotations
 
 import os
@@ -34,16 +35,13 @@ def _writer(conn) -> StateWriter:
 
 
 def _all_sids(conn) -> list[str]:
-    rows = conn.execute(
-        "SELECT stable_id FROM tracks ORDER BY created_at, stable_id"
-    ).fetchall()
+    rows = conn.execute("SELECT stable_id FROM tracks ORDER BY created_at, stable_id").fetchall()
     return [row[0] for row in rows]
 
 
 def _live_sids(conn) -> list[str]:
     rows = conn.execute(
-        "SELECT stable_id FROM tracks WHERE deleted_at IS NULL "
-        "ORDER BY created_at, stable_id"
+        "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY created_at, stable_id"
     ).fetchall()
     return [row[0] for row in rows]
 
@@ -62,9 +60,7 @@ def _bump_mtime(path: Path) -> None:
     os.utime(path, (later, later))
 
 
-def test_folder_import_then_refresh_keeps_one_stable_id(
-    state_conn, tmp_path: Path
-) -> None:
+def test_folder_import_then_refresh_keeps_one_stable_id(state_conn, tmp_path: Path) -> None:
     """[if] folder import then refresh see one file [then] one stable_id, [else stop]."""
     music, dest = _copy_real_mp3(tmp_path)
     writer = _writer(state_conn)
@@ -75,9 +71,7 @@ def test_folder_import_then_refresh_keeps_one_stable_id(
     stable_id = first[0]
 
     _bump_mtime(dest)
-    refreshed = folder_rescan.reconcile_folders(
-        writer, [music], previous_signature=""
-    )
+    refreshed = folder_rescan.reconcile_folders(writer, [music], previous_signature="")
     writer.close()
 
     assert _live_sids(state_conn) == [stable_id]
@@ -86,9 +80,7 @@ def test_folder_import_then_refresh_keeps_one_stable_id(
     assert refreshed.tracks_removed == 0
 
 
-def test_folder_import_twice_after_mtime_move_keeps_one_stable_id(
-    state_conn, tmp_path: Path
-) -> None:
+def test_folder_import_twice_after_mtime_move_keeps_one_stable_id(state_conn, tmp_path: Path) -> None:
     """[if] folder import runs twice after mtime moves [then] one stable_id, [else stop]."""
     music, dest = _copy_real_mp3(tmp_path)
     writer = _writer(state_conn)
@@ -104,9 +96,7 @@ def test_folder_import_twice_after_mtime_move_keeps_one_stable_id(
     assert _all_sids(state_conn) == first
 
 
-def test_existing_duplicate_rows_do_not_gain_a_third_id(
-    state_conn, tmp_path: Path
-) -> None:
+def test_existing_duplicate_rows_do_not_gain_a_third_id(state_conn, tmp_path: Path) -> None:
     """[if] two live inferred rows already share one path [then] no third, [else stop]."""
     music, dest = _copy_real_mp3(tmp_path)
     writer = _writer(state_conn)
@@ -132,9 +122,7 @@ def test_existing_duplicate_rows_do_not_gain_a_third_id(
     assert live == {first, "already-duplicate"}
 
 
-def test_path_identity_reuses_the_oldest_live_inferred_id(
-    state_conn, tmp_path: Path
-) -> None:
+def test_path_identity_reuses_the_oldest_live_inferred_id(state_conn, tmp_path: Path) -> None:
     """[if] two inferred rows share one path [then] resolve keeps the oldest, [else stop]."""
     music, dest = _copy_real_mp3(tmp_path)
     writer = _writer(state_conn)

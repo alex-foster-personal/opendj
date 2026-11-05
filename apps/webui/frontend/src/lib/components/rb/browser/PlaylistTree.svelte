@@ -17,6 +17,7 @@
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
 	import { dropPlaceAt, type DropPlace } from './playlist-tree-order';
+	import { isInboxPlaylistId } from './inbox-id';
 	import { trackDrag } from '$lib/rb/track-drag.svelte';
 	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
@@ -26,6 +27,7 @@
 	import RecentlyDeletedFolder from './RecentlyDeletedFolder.svelte';
 	import { missingTracksNode } from './missing-tracks';
 	import PlaylistTreeView from './PlaylistTreeView.svelte';
+	import { sidebarArtShown } from '$lib/rb/library-sidebar-art.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
 	let {
@@ -100,7 +102,8 @@
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		if (_onReorderDragOver(event, node)) return;
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
-		if (ondroptracks === undefined || node.kind !== 'playlist') return;
+		if (ondroptracks === undefined || node.kind !== 'playlist' || isInboxPlaylistId(node.playlist_id))
+			return;
 		// Same WKWebView rule as the deck drop targets: accept on the in-app
 		// drag state, never on dataTransfer.types (see track-drag.svelte.ts).
 		if (!acceptTrackDragOver(event)) return;
@@ -114,7 +117,8 @@
 
 	function _onTrackDrop(event: DragEvent, node: PlaylistNode): void {
 		if (_onReorderDrop(event, node)) return;
-		if (ondroptracks === undefined || node.kind !== 'playlist') return;
+		if (ondroptracks === undefined || node.kind !== 'playlist' || isInboxPlaylistId(node.playlist_id))
+			return;
 		event.preventDefault();
 		dropTargetId = null;
 		const ids = droppedStableIds(event);
@@ -165,7 +169,8 @@
 		);
 		// A library playlist may also move within the tree (LIBTREE-01); the
 		// pane tab bar still takes the drag as a copy.
-		const reorderable = node.kind === 'playlist' && onmoveplaylist !== undefined;
+		const reorderable =
+			node.kind === 'playlist' && !isInboxPlaylistId(node.playlist_id) && onmoveplaylist !== undefined;
 		if (reorderable) movingPlaylistId = node.playlist_id;
 		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = reorderable ? 'copyMove' : 'copy';
 	}
@@ -262,6 +267,7 @@
 	bind:renameInputEl={rename.inputEl}
 	cancreate={oncreateplaylist !== undefined}
 	canrename={onrenameplaylist !== undefined}
+	sidebarart={sidebarArtShown()}
 	{ondeleteplaylist}
 	{onselect}
 	onselectmissing={() => onselect(missingTracksNode(allTracksBrokenCount ?? 0))}

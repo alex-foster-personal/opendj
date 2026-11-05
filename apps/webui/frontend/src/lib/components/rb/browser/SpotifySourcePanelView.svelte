@@ -7,7 +7,11 @@
 	import type { SpotifyPendingTrack, SpotifyPurchaseSource } from '$lib/rb/spotify-api';
 	import type { SpotifyAccountListing } from '$lib/rb/spotify-account-api';
 	import { isSpotifyClientId, spotifyNotConnectedText } from '$lib/rb/spotify-account-copy';
-	import { importedAccountCount, mergeSpotifyPlaylists, type SpotifyPanelRow } from '$lib/rb/spotify-account-merge';
+	import {
+		importedAccountCount,
+		mergeSpotifyPlaylists,
+		type SpotifyPanelRow
+	} from '$lib/rb/spotify-account-merge';
 
 	// PlaylistSummaryHydrated's shape, spelled from the schema so this view
 	// adds no importer to api-rb.ts (the quality gate's max_fan_in module).
@@ -95,14 +99,16 @@
 	const connected = $derived(account !== null && account.connected);
 	// While the imported list loads, the account's own rows are listed alone: imports join them when they land.
 	const rows = $derived(
-		mergeSpotifyPlaylists(account !== null && account.connected ? account.playlists : null, playlistsLoading ? [] : playlists)
+		mergeSpotifyPlaylists(
+			account !== null && account.connected ? account.playlists : null,
+			playlistsLoading ? [] : playlists
+		)
 	);
 	const visibleRows = $derived(rankSpotifyPlaylists(rows, { query, pinnedIds, recentIds }));
 	// A failed imported-list load must not hide the account's own playlists: the error is reported above the rows, not instead of them.
 	const showFilter = $derived(rows.length > 0);
 	const importedCount = $derived(importedAccountCount(rows));
 </script>
-
 
 {#snippet playlistRow(row: SpotifyPanelRow<SpotifyPlaylist>)}
 	{@const pinned = pinnedSet.has(row.playlist_id)}
@@ -145,7 +151,8 @@
 			onclick={() => (imported !== null ? onselect(imported) : onplay(row))}
 		>
 			<span class="playlist-name">{row.name}</span>
-			{#if imported !== null}<span class="imported-mark" aria-label="Imported into Open DJ">●</span>{/if}
+			{#if imported !== null}<span class="imported-mark" aria-label="Imported into Open DJ">●</span
+				>{/if}
 			<span class="playlist-count" title="Tracks in this playlist">{row.track_count ?? '?'}</span>
 		</button>
 		{#if row.open_url !== null}
@@ -161,7 +168,9 @@
 					onplay(row);
 				}}
 			>
-				<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path fill="currentColor" d="M2 1l7 4-7 4z" /></svg>
+				<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"
+					><path fill="currentColor" d="M2 1l7 4-7 4z" /></svg
+				>
 			</button>
 		{:else}
 			<!-- A row with no Spotify id keeps its play button, inert with the reason. -->
@@ -172,7 +181,9 @@
 				aria-label={`Play ${row.name} in the Spotify side player (unavailable)`}
 				title="No Spotify playlist id was saved for this imported playlist, so the player cannot open it; import it again from Spotify"
 			>
-				<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path fill="currentColor" d="M2 1l7 4-7 4z" /></svg>
+				<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"
+					><path fill="currentColor" d="M2 1l7 4-7 4z" /></svg
+				>
 			</button>
 		{/if}
 	</div>
@@ -187,7 +198,9 @@
 		{#if accountLoading}
 			<span class="source-state-inline">Checking your Spotify account...</span>
 		{:else if accountError !== null}
-			<span class="source-state-inline source-error">Spotify account load failed: {accountError}</span>
+			<span class="source-state-inline source-error"
+				>Spotify account load failed: {accountError}</span
+			>
 			<button type="button" class="link-btn" onclick={onrefresh}>Retry</button>
 		{:else if account !== null && account.connected}
 			<span
@@ -195,7 +208,12 @@
 				title="Every playlist your Spotify account owns or follows, read live from Spotify. {importedCount} of them are imported into Open DJ."
 				>{account.display_name ?? account.user_id} · {account.playlists.length} playlists</span
 			>
-			<button type="button" class="link-btn" title="Read the list from Spotify again" onclick={onrefresh}>Refresh</button>
+			<button
+				type="button"
+				class="link-btn"
+				title="Read the list from Spotify again"
+				onclick={onrefresh}>Refresh</button
+			>
 		{:else if account !== null && !account.connected}
 			<span class="source-state-inline">{spotifyNotConnectedText(account.reason)}</span>
 			{#if account.reason === 'no_client_id'}
@@ -244,7 +262,8 @@
 					<button type="button" class="connect-btn" onclick={onconnect}>Connect Spotify</button>
 				{:else}
 					<span class="source-state-inline"
-						>Open DJ is running on another machine: sign in there (open Open DJ on that machine, or run
+						>Open DJ is running on another machine: sign in there (open Open DJ on that machine, or
+						run
 						<code>python -m apps.spotify login</code> there).</span
 					>
 				{/if}
@@ -292,7 +311,12 @@
 				}}
 			/>
 			{#if query !== ''}
-				<button type="button" class="filter-clear" aria-label="Clear playlist filter" onclick={() => (query = '')}>×</button>
+				<button
+					type="button"
+					class="filter-clear"
+					aria-label="Clear playlist filter"
+					onclick={() => (query = '')}>×</button
+				>
 			{/if}
 			<span
 				class="filter-count"
@@ -311,7 +335,9 @@
 			<!-- The account's rows do not wait on the imported list (state.db), however slow it is. -->
 			{#each visibleRows as row (row.playlist_id)}{@render playlistRow(row)}{/each}
 		{:else if rows.length === 0 && playlistsError === null}
-			<p class="source-state">{connected ? 'No playlists on this Spotify account.' : 'No imported Spotify playlists.'}</p>
+			<p class="source-state">
+				{connected ? 'No playlists on this Spotify account.' : 'No imported Spotify playlists.'}
+			</p>
 		{:else if rows.length > 0 && visibleRows.length === 0}
 			<p class="source-state">No playlists match "{normalizedQuery}"</p>
 		{:else if rows.length > 0}
@@ -343,7 +369,9 @@
 						</div>
 						<div class="purchase-links" aria-label={`Purchase links for ${track.title}`}>
 							{#each purchaseSources as source (source)}
-								<a href={track.suggested_sources[source]} target="_blank" rel="noreferrer">{source}</a>
+								<a href={track.suggested_sources[source]} target="_blank" rel="noreferrer"
+									>{source}</a
+								>
 							{/each}
 						</div>
 					</article>
@@ -354,52 +382,298 @@
 </section>
 
 <style>
-	.spotify-source { display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--rb-panel); }
-	.source-header, .buy-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; padding: 0 6px; border-bottom: 1px solid var(--rb-border); color: var(--rb-text); font-size: var(--rb-fs-label); }
-	.collection-back { border: 0; padding: 0; background: transparent; color: var(--rb-accent); font: inherit; cursor: pointer; }
-	.spotify-mark { color: #35c04f; font-weight: 600; }
-	.playlist-filter { display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-bottom: 1px solid var(--rb-border); }
-	.playlist-filter input { flex: 1; min-width: 0; height: 18px; padding: 0 4px; border: 1px solid var(--rb-border); background: transparent; color: var(--rb-text); font: inherit; font-size: var(--rb-fs-label); }
-	.playlist-filter input::placeholder { color: var(--rb-text-dim); }
-	.filter-clear { flex: none; width: 14px; height: 14px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--rb-text-dim); font-size: 12px; line-height: 1; cursor: pointer; }
-	.filter-clear:hover { color: var(--rb-text); background: rgba(255, 255, 255, 0.08); }
-	.filter-count { flex: none; color: var(--rb-text-dim); font-size: var(--rb-fs-label); font-variant-numeric: tabular-nums; }
-	.playlist-list { flex: none; max-height: 38%; overflow-y: auto; padding: 2px 0; border-bottom: 1px solid var(--rb-border); }
-	.playlist-row-wrap { display: flex; align-items: center; width: 100%; height: 22px; }
-	.playlist-row-wrap:hover { background: var(--rb-panel-raised); }
-	.playlist-row-wrap.selected { background: var(--rb-select); }
-	.pin-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 2px; padding: 0; border: 0; background: transparent; color: var(--rb-text-dim); cursor: pointer; }
-	.pin-toggle.pinned { color: var(--rb-accent); }
-	.playlist-row { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; height: 22px; padding: 0 6px 0 2px; border: 0; background: transparent; color: var(--rb-text); font: inherit; text-align: left; cursor: pointer; }
-	.playlist-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.playlist-count { color: var(--rb-text-dim); font-variant-numeric: tabular-nums; }
-	.playlist-row.not-imported .playlist-name { color: var(--rb-text-dim); }
-	.imported-mark { flex: none; color: var(--rb-accent); font-size: 7px; }
-	.play-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 2px; padding: 0; border: 0; background: transparent; color: var(--rb-text-dim); cursor: pointer; }
-	.play-btn:hover { color: var(--rb-text); }
-	.play-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+	.spotify-source {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		height: 100%;
+		background: var(--rb-panel);
+	}
+	.source-header,
+	.buy-list-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 6px;
+		min-height: 24px;
+		padding: 0 6px;
+		border-bottom: 1px solid var(--rb-border);
+		color: var(--rb-text);
+		font-size: var(--rb-fs-label);
+	}
+	.collection-back {
+		border: 0;
+		padding: 0;
+		background: transparent;
+		color: var(--rb-accent);
+		font: inherit;
+		cursor: pointer;
+	}
+	.spotify-mark {
+		color: #35c04f;
+		font-weight: 600;
+	}
+	.playlist-filter {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		height: 22px;
+		padding: 0 6px;
+		border-bottom: 1px solid var(--rb-border);
+	}
+	.playlist-filter input {
+		flex: 1;
+		min-width: 0;
+		height: 18px;
+		padding: 0 4px;
+		border: 1px solid var(--rb-border);
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		font-size: var(--rb-fs-label);
+	}
+	.playlist-filter input::placeholder {
+		color: var(--rb-text-dim);
+	}
+	.filter-clear {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: transparent;
+		color: var(--rb-text-dim);
+		font-size: 12px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.filter-clear:hover {
+		color: var(--rb-text);
+		background: rgba(255, 255, 255, 0.08);
+	}
+	.filter-count {
+		flex: none;
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+		font-variant-numeric: tabular-nums;
+	}
+	.playlist-list {
+		flex: none;
+		max-height: 38%;
+		overflow-y: auto;
+		padding: 2px 0;
+		border-bottom: 1px solid var(--rb-border);
+	}
+	.playlist-row-wrap {
+		display: flex;
+		align-items: center;
+		width: 100%;
+		height: 22px;
+	}
+	.playlist-row-wrap:hover {
+		background: var(--rb-panel-raised);
+	}
+	.playlist-row-wrap.selected {
+		background: var(--rb-select);
+	}
+	.pin-toggle {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		margin-left: 2px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.pin-toggle.pinned {
+		color: var(--rb-accent);
+	}
+	.playlist-row {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex: 1;
+		min-width: 0;
+		height: 22px;
+		padding: 0 6px 0 2px;
+		border: 0;
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.playlist-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.playlist-count {
+		color: var(--rb-text-dim);
+		font-variant-numeric: tabular-nums;
+	}
+	.playlist-row.not-imported .playlist-name {
+		color: var(--rb-text-dim);
+	}
+	.imported-mark {
+		flex: none;
+		color: var(--rb-accent);
+		font-size: 7px;
+	}
+	.play-btn {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		margin-right: 2px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.play-btn:hover {
+		color: var(--rb-text);
+	}
+	.play-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
 	/* flex: none: in the panel's column a wrapped status line must push the bar
 	   below it down, not shrink under it (the bar then covered Connect). */
-	.account-line, .player-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 22px; padding: 2px 6px; border-bottom: 1px solid var(--rb-border); font-size: var(--rb-fs-label); }
-	.source-state-inline { color: var(--rb-text-dim); }
-	.link-btn { border: 0; padding: 0; background: transparent; color: var(--rb-accent); font: inherit; cursor: pointer; }
-	.link-btn:disabled { color: var(--rb-text-dim); cursor: default; }
-	.connect-btn { height: 18px; padding: 0 8px; border: 1px solid var(--rb-border); border-radius: 9px; background: transparent; color: var(--rb-text); font: inherit; cursor: pointer; }
-	.connect-btn:hover { background: var(--rb-panel-raised); }
-	.connect-btn:disabled { color: var(--rb-text-dim); cursor: default; }
-	.client-id-form { display: inline-flex; align-items: center; gap: 6px; }
-	.client-id-input { width: 22ch; height: 18px; padding: 0 6px; border: 1px solid var(--rb-border); border-radius: 4px; background: transparent; color: var(--rb-text); font: inherit; font-family: var(--rb-font-mono, monospace); }
-	.shrink-toggle { display: inline-flex; align-items: center; gap: 3px; color: var(--rb-text-dim); cursor: pointer; }
-	.shrink-toggle input { margin: 0; }
-	.buy-list { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-	.pending-list { overflow-y: auto; }
-	.pending-row { padding: 5px 6px; border-bottom: 1px solid var(--rb-border); }
-	.pending-copy { display: flex; min-width: 0; flex-direction: column; }
-	.pending-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rb-text); }
-	.pending-artist, .pending-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rb-text-dim); font-size: var(--rb-fs-label); }
-	.purchase-links { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; font-size: var(--rb-fs-label); }
-	.purchase-links a { color: var(--rb-accent); text-decoration: none; }
-	.purchase-links a:hover { text-decoration: underline; }
-	.source-state { margin: 7px 6px; color: var(--rb-text-dim); font-size: var(--rb-fs-label); line-height: 1.35; }
-	.source-error { color: var(--rb-danger, #d0342c); }
+	.account-line,
+	.player-bar {
+		flex: none;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		min-height: 22px;
+		padding: 2px 6px;
+		border-bottom: 1px solid var(--rb-border);
+		font-size: var(--rb-fs-label);
+	}
+	.source-state-inline {
+		color: var(--rb-text-dim);
+	}
+	.link-btn {
+		border: 0;
+		padding: 0;
+		background: transparent;
+		color: var(--rb-accent);
+		font: inherit;
+		cursor: pointer;
+	}
+	.link-btn:disabled {
+		color: var(--rb-text-dim);
+		cursor: default;
+	}
+	.connect-btn {
+		height: 18px;
+		padding: 0 8px;
+		border: 1px solid var(--rb-border);
+		border-radius: 9px;
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		cursor: pointer;
+	}
+	.connect-btn:hover {
+		background: var(--rb-panel-raised);
+	}
+	.connect-btn:disabled {
+		color: var(--rb-text-dim);
+		cursor: default;
+	}
+	.client-id-form {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.client-id-input {
+		width: 22ch;
+		height: 18px;
+		padding: 0 6px;
+		border: 1px solid var(--rb-border);
+		border-radius: 4px;
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		font-family: var(--rb-font-mono, monospace);
+	}
+	.shrink-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.shrink-toggle input {
+		margin: 0;
+	}
+	.buy-list {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		min-height: 0;
+	}
+	.pending-list {
+		overflow-y: auto;
+	}
+	.pending-row {
+		padding: 5px 6px;
+		border-bottom: 1px solid var(--rb-border);
+	}
+	.pending-copy {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+	}
+	.pending-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--rb-text);
+	}
+	.pending-artist,
+	.pending-album {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+	}
+	.purchase-links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		margin-top: 3px;
+		font-size: var(--rb-fs-label);
+	}
+	.purchase-links a {
+		color: var(--rb-accent);
+		text-decoration: none;
+	}
+	.purchase-links a:hover {
+		text-decoration: underline;
+	}
+	.source-state {
+		margin: 7px 6px;
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+		line-height: 1.35;
+	}
+	.source-error {
+		color: var(--rb-danger, #d0342c);
+	}
 </style>

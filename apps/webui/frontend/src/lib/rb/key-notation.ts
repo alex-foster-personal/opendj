@@ -18,7 +18,12 @@ export type KeyNotation = 'camelot_musical' | 'camelot' | 'open_key' | 'musical'
 
 /** The first entry is the default (the maintainer, Tue 27 Oct 2026): Camelot and musical
  * side by side, `8A • Am`, so neither half has to be translated in the head. */
-export const KEY_NOTATIONS: readonly KeyNotation[] = ['camelot_musical', 'camelot', 'open_key', 'musical'];
+export const KEY_NOTATIONS: readonly KeyNotation[] = [
+	'camelot_musical',
+	'camelot',
+	'open_key',
+	'musical'
+];
 
 export const DEFAULT_KEY_NOTATION: KeyNotation = 'camelot_musical';
 
@@ -154,7 +159,9 @@ export function shownKey(raw: string | null | undefined): string | null {
 /** The notation every surface is printing in right now (the installed source). */
 export function shownKeyNotation(): KeyNotation {
 	if (_notationSource === null) {
-		throw new Error('shownKeyNotation: no key notation source; $lib/rb/prefs.svelte installs it on load');
+		throw new Error(
+			'shownKeyNotation: no key notation source; $lib/rb/prefs.svelte installs it on load'
+		);
 	}
 	return _notationSource();
 }

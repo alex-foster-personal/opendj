@@ -9,6 +9,7 @@ Usage:
   uv run python tools/deck-diagrams/scripts/ingest_mixxx.py --id roland-dj-505 --xml /path/to/map.midi.xml
   uv run python tools/deck-diagrams/scripts/ingest_mixxx.py --all
 """
+
 from __future__ import annotations
 
 import argparse
@@ -310,9 +311,9 @@ def ingest(
     }
     (dev / "layout.json").write_text(json.dumps(layout, indent=2) + "\n")
 
-    mixxx_url = "https://github.com/mixxxdj/mixxx/blob/main/res/controllers/" + (
-        mixxx_rel or xml_path.name
-    ).replace(" ", "%20")
+    mixxx_url = "https://github.com/mixxxdj/mixxx/blob/main/res/controllers/" + (mixxx_rel or xml_path.name).replace(
+        " ", "%20"
+    )
     (dev / "footnotes.md").write_text(
         f"""# {device} diagram footnotes
 
@@ -413,9 +414,7 @@ def main() -> int:
         ap.error("pass --id or --all")
     resolved = _resolve_xml(args.id, args.xml, args.mixxx_dir)
     if resolved is None:
-        raise SystemExit(
-            f"{args.id}: no Mixxx .midi.xml in built-in map (HID-only or missing upstream)"
-        )
+        raise SystemExit(f"{args.id}: no Mixxx .midi.xml in built-in map (HID-only or missing upstream)")
     xml_path, rel = resolved
     n = ingest(args.id, xml_path, mixxx_rel=rel)
     if args.patch_catalog:

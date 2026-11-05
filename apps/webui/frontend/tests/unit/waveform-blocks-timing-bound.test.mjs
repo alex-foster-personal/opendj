@@ -46,7 +46,10 @@ test('every lone transient paints a block whose left edge is never late and at m
 	for (let i = 0; i < POINTS; i++) {
 		const earlyPx = spikeStartPx(i) - firstLitBlockLeftPx(i);
 		assert.ok(earlyPx >= -1e-9, `spike at point ${i}: block is ${-earlyPx}px LATE`);
-		assert.ok(earlyPx <= pitch + 1e-9, `spike at point ${i}: block is ${earlyPx}px early, bound is <= ${pitch}`);
+		assert.ok(
+			earlyPx <= pitch + 1e-9,
+			`spike at point ${i}: block is ${earlyPx}px early, bound is <= ${pitch}`
+		);
 		checked++;
 	}
 	assert.equal(checked, POINTS);
@@ -64,6 +67,9 @@ test('two decks showing the same hit differ by at most one pitch, in either dire
 			worst = Math.max(worst, Math.abs(earlyA - earlyB));
 		}
 	}
-	assert.ok(worst > 0, 'control: neighbouring hits never disagreed, the probe is not measuring offset');
+	assert.ok(
+		worst > 0,
+		'control: neighbouring hits never disagreed, the probe is not measuring offset'
+	);
 	assert.ok(worst <= pitch + 1e-9, `relative offset reached ${worst}px, bound is <= ${pitch}`);
 });

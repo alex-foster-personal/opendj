@@ -49,22 +49,29 @@ test('smartlist update sends the complete replacement and returns server readbac
 	globalThis.fetch = async (request) => {
 		seen = request;
 		sentBody = await request.clone().json();
-		return Response.json({
-			id: 'smart / one',
-			name: 'Late night',
-			rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
-			order_by: 'rating desc',
-			referenced_fields: ['genre'],
-			last_evaluated_at: null,
-			created_at: '2026-01-01T00:00:00+00:00',
-			modified_at: '2026-01-01T00:00:01+00:00'
-		}, { headers: { ETag: '"revision-b"' } });
+		return Response.json(
+			{
+				id: 'smart / one',
+				name: 'Late night',
+				rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
+				order_by: 'rating desc',
+				referenced_fields: ['genre'],
+				last_evaluated_at: null,
+				created_at: '2026-01-01T00:00:00+00:00',
+				modified_at: '2026-01-01T00:00:01+00:00'
+			},
+			{ headers: { ETag: '"revision-b"' } }
+		);
 	};
 
-	const saved = await api.updateSmartlist('smart / one', {
-		rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
-		order_by: 'rating desc'
-	}, '"revision-a"');
+	const saved = await api.updateSmartlist(
+		'smart / one',
+		{
+			rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
+			order_by: 'rating desc'
+		},
+		'"revision-a"'
+	);
 
 	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/smart%20%2F%20one`);
 	assert.equal(seen.method, 'PUT');
@@ -78,16 +85,20 @@ test('smartlist update sends the complete replacement and returns server readbac
 });
 
 test('smartlist detail returns the opaque ETag needed for compare-and-swap', async () => {
-	globalThis.fetch = async () => Response.json({
-		id: 'smart-one',
-		name: 'Late night',
-		rule: { field: 'rating', op: '>=', value: 4 },
-		order_by: 'rating desc',
-		referenced_fields: ['rating'],
-		last_evaluated_at: null,
-		created_at: '2026-01-01T00:00:00+00:00',
-		modified_at: '2026-01-01T00:00:00+00:00'
-	}, { headers: { ETag: '"revision-a"' } });
+	globalThis.fetch = async () =>
+		Response.json(
+			{
+				id: 'smart-one',
+				name: 'Late night',
+				rule: { field: 'rating', op: '>=', value: 4 },
+				order_by: 'rating desc',
+				referenced_fields: ['rating'],
+				last_evaluated_at: null,
+				created_at: '2026-01-01T00:00:00+00:00',
+				modified_at: '2026-01-01T00:00:00+00:00'
+			},
+			{ headers: { ETag: '"revision-a"' } }
+		);
 
 	const detail = await api.getSmartlist('smart-one');
 
@@ -102,24 +113,29 @@ test('smartlist detail fails fast when the server omits its ETag', async () => {
 });
 
 test('stale smartlist update surfaces current summary and revision without retrying', async () => {
-	globalThis.fetch = async () => Response.json({
-		error: 'conflict',
-		message: 'If-Match does not match the current row etag',
-		current: {
-			id: 'smart-one',
-			name: 'Late night',
-			rule: { field: 'energy', op: '>=', value: 7 },
-			order_by: 'energy desc'
-		},
-		etag: '"revision-b"'
-	}, { status: 409, headers: { ETag: '"revision-b"' } });
+	globalThis.fetch = async () =>
+		Response.json(
+			{
+				error: 'conflict',
+				message: 'If-Match does not match the current row etag',
+				current: {
+					id: 'smart-one',
+					name: 'Late night',
+					rule: { field: 'energy', op: '>=', value: 7 },
+					order_by: 'energy desc'
+				},
+				etag: '"revision-b"'
+			},
+			{ status: 409, headers: { ETag: '"revision-b"' } }
+		);
 
 	await assert.rejects(
-		() => api.updateSmartlist(
-			'smart-one',
-			{ rule: { field: 'rating', op: '>=', value: 4 } },
-			'"revision-a"'
-		),
+		() =>
+			api.updateSmartlist(
+				'smart-one',
+				{ rule: { field: 'rating', op: '>=', value: 4 } },
+				'"revision-a"'
+			),
 		(error) => {
 			assert.equal(error.constructor.name, 'SmartlistConflictError');
 			assert.equal(error.etag, '"revision-b"');
@@ -145,16 +161,19 @@ test('smartlist create posts name plus starter rule and returns server readback 
 	globalThis.fetch = async (request) => {
 		seen = request;
 		sentBody = await request.clone().json();
-		return Response.json({
-			id: 'smart-new',
-			name: 'Late night',
-			rule: { field: 'rating', op: '>=', value: 0 },
-			order_by: 'added_date desc',
-			referenced_fields: ['rating'],
-			last_evaluated_at: null,
-			created_at: '2026-01-01T00:00:00+00:00',
-			modified_at: '2026-01-01T00:00:00+00:00'
-		}, { status: 201, headers: { ETag: '"revision-new"' } });
+		return Response.json(
+			{
+				id: 'smart-new',
+				name: 'Late night',
+				rule: { field: 'rating', op: '>=', value: 0 },
+				order_by: 'added_date desc',
+				referenced_fields: ['rating'],
+				last_evaluated_at: null,
+				created_at: '2026-01-01T00:00:00+00:00',
+				modified_at: '2026-01-01T00:00:00+00:00'
+			},
+			{ status: 201, headers: { ETag: '"revision-new"' } }
+		);
 	};
 
 	const created = await api.createSmartlist({
@@ -174,14 +193,25 @@ test('smartlist create posts name plus starter rule and returns server readback 
 });
 
 test('smartlist create failures surface the daemon status explicitly', async () => {
-	globalThis.fetch = async () => Response.json({
-		detail: { code: 'SMARTLIST_NAME_CONFLICT', message: "smartlist with name 'Late night' already exists" }
-	}, { status: 409 });
+	globalThis.fetch = async () =>
+		Response.json(
+			{
+				detail: {
+					code: 'SMARTLIST_NAME_CONFLICT',
+					message: "smartlist with name 'Late night' already exists"
+				}
+			},
+			{ status: 409 }
+		);
 
-	await assert.rejects(() => api.createSmartlist({
-		name: 'Late night',
-		rule: { field: 'rating', op: '>=', value: 0 }
-	}), /POST smartlist failed: 409/);
+	await assert.rejects(
+		() =>
+			api.createSmartlist({
+				name: 'Late night',
+				rule: { field: 'rating', op: '>=', value: 0 }
+			}),
+		/POST smartlist failed: 409/
+	);
 });
 
 test('smartlist list page names a new smartlist, lands in the editor, and drops the CLI placeholder', async () => {

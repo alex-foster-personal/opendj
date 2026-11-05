@@ -7,6 +7,7 @@ Covers:
       - rail 2 (timestamped backup)
       - rail 4 (verifier wired into LiveWriteSession)
 """
+
 from __future__ import annotations
 
 import csv
@@ -78,7 +79,8 @@ def test_main_live_without_mode_aborts(tmp_path: Path):
     # --live without --cautious or --bulk aborts.
     rc = main(
         [
-            "--diff-csv", str(path),
+            "--diff-csv",
+            str(path),
             "--live",
             "--i-understand-the-risks",
         ]
@@ -97,7 +99,8 @@ def test_bulk_all_tracks_without_only_tracks_flag_permitted(tmp_path: Path):
     path = _make_diff(tmp_path, [])
     rc = main(
         [
-            "--diff-csv", str(path),
+            "--diff-csv",
+            str(path),
             "--live",
             "--bulk",
             "--i-understand-the-risks",
@@ -142,7 +145,9 @@ def _cue_rows() -> list[dict]:
 
 class TestCuesLiveRails:
     def test_pgrep_aborts_stub(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb")
@@ -162,14 +167,18 @@ class TestCuesLiveRails:
             )
 
     def test_backup_created_before_stub_writes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
     ) -> None:
         rb_db = tmp_path / "master.db"
         rb_db.write_bytes(b"rb-contents")
         djay_db = tmp_path / "ml.db"
         djay_db.write_bytes(b"dj")
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _n: False,
+            "apps.sync.safety._is_running",
+            lambda _n: False,
         )
         rc = live_run(
             _cue_rows(),
@@ -184,7 +193,9 @@ class TestCuesLiveRails:
         assert backups[0].read_bytes() == b"rb-contents"
 
     def test_stub_verifier_path_runs(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Rail 4 wiring: the stub verifier is invoked for each row.
 
@@ -197,7 +208,8 @@ class TestCuesLiveRails:
         djay_db = tmp_path / "ml.db"
         djay_db.write_bytes(b"dj")
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _n: False,
+            "apps.sync.safety._is_running",
+            lambda _n: False,
         )
         rc = live_run(
             _cue_rows(),
@@ -214,13 +226,9 @@ class TestCuesLiveRails:
         # <data>/sync/reversal/<ts>/reverse.sh. When we point db_path at
         # tmp_path/master.db the default reversal_root resolves to
         # tmp_path.parent/sync/reversal. Walk broadly to find it.
-        assert any(
-            "revert RB cues" in p.read_text() for p in scripts
-        ) or any(
-            "revert RB cues" in p.read_text()
-            for p in tmp_path.rglob("reverse.sh")
+        assert any("revert RB cues" in p.read_text() for p in scripts) or any(
+            "revert RB cues" in p.read_text() for p in tmp_path.rglob("reverse.sh")
         )
-
 
 
 def test_live_cautious_emits_stub_banner(tmp_path: Path, capsys):
@@ -248,4 +256,3 @@ def test_live_cautious_emits_stub_banner(tmp_path: Path, capsys):
     assert "STUB LIVE MODE" in captured.err
     assert "NO REAL CUE WRITES" in captured.err
     assert "phase-04-probe-o2-runbook.md" in captured.err
-

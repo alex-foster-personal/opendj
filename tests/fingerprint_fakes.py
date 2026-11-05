@@ -6,6 +6,7 @@ it travels the same decode and compare path a real one does. Its first
 the audio's identity, and the rest on the file's bytes: two encodings of the
 same source score ~0.97 against each other, unrelated audio ~0.5.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -74,9 +74,7 @@ def validate_rubric_data(data: dict[str, Any], schema_path: Path = DEFAULT_SCHEM
 
 def _parse_dimension(raw: dict[str, Any]) -> Dimension:
     evidence_raw = raw["evidence"]
-    deductions = tuple(
-        Deduction(finding=d["finding"], points=int(d["points"])) for d in raw["deductions"]
-    )
+    deductions = tuple(Deduction(finding=d["finding"], points=int(d["points"])) for d in raw["deductions"])
     return Dimension(
         id=str(raw["id"]),
         surfaces=tuple(raw["surfaces"]),

@@ -1,7 +1,7 @@
 """CLOUDSYNC-30: a stale or copied library cannot bring back tracks the fleet dropped.
 
 Contract: ``apps/sync_hub/stale_copy.py`` and
-``docs/decisions/ADR-NEW-deletes-stay-deleted.md`` ("Stale copies"), issue
+``(private path)`` ("Stale copies"), issue
 #4628. Every scenario runs the real hub router and the real ``run_sync``.
 
 The fixture is the incident: two machines share a library, the fleet then
@@ -83,9 +83,7 @@ def _decorate(data_dir: Path, stable_id: str) -> None:
         writer = _writer(conn)
         try:
             writer.set_vendor_id(stable_id, "rekordbox", f"rb-{stable_id}")
-            writer.set_field(
-                stable_id, "bpm", 124.0, source="manual", modified_at="2026-09-01T10:00:00.000000+00:00"
-            )
+            writer.set_field(stable_id, "bpm", 124.0, source="manual", modified_at="2026-09-01T10:00:00.000000+00:00")
             playlist_id = compute_playlist_id("open-dj", "warmup")
             writer.insert_playlist(playlist_id=playlist_id, name="Warmup", vendor="open-dj", vendor_pl_id="warmup")
             writer.set_playlist_memberships(playlist_id, [_KEPT, stable_id])

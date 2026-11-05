@@ -118,9 +118,7 @@ def _run_gh(args: list[str]) -> str:
     )
     if completed.returncode != 0:
         invocation = " ".join(args)
-        raise PreconditionError(
-            f"gh {invocation} failed with exit {completed.returncode}: {completed.stderr.strip()}"
-        )
+        raise PreconditionError(f"gh {invocation} failed with exit {completed.returncode}: {completed.stderr.strip()}")
     return completed.stdout
 
 
@@ -177,9 +175,7 @@ def _parse_completed_runs(payload: object) -> list[Run]:
                 head_branch=str(item["head_branch"]),
                 head_sha=str(item["head_sha"]),
                 conclusion=str(item["conclusion"]),
-                started_at=_parse_github_timestamp(
-                    item["run_started_at"], "run_started_at", run_id
-                ),
+                started_at=_parse_github_timestamp(item["run_started_at"], "run_started_at", run_id),
                 updated_at=_parse_github_timestamp(item["updated_at"], "updated_at", run_id),
             )
         )
@@ -208,9 +204,7 @@ def _validate_run_jobs_payload(payload: object, run_id: int) -> list[dict[str, o
         raise PreconditionError(f"actions/runs/{run_id}/jobs response has no total_count key")
     total_count = payload["total_count"]
     if type(total_count) is not int or total_count < 0:
-        raise PreconditionError(
-            f"actions/runs/{run_id}/jobs response has invalid total_count: {total_count!r}"
-        )
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response has invalid total_count: {total_count!r}")
     if total_count > len(jobs):
         raise PreconditionError(
             f"actions/runs/{run_id}/jobs returned {len(jobs)} of {total_count} jobs; "
@@ -218,30 +212,21 @@ def _validate_run_jobs_payload(payload: object, run_id: int) -> list[dict[str, o
         )
     if total_count < len(jobs):
         raise PreconditionError(
-            f"actions/runs/{run_id}/jobs response has invalid total_count "
-            f"{total_count} for {len(jobs)} jobs"
+            f"actions/runs/{run_id}/jobs response has invalid total_count {total_count} for {len(jobs)} jobs"
         )
 
     required = ("name", "status", "conclusion")
     validated: list[dict[str, object]] = []
     for index, item in enumerate(jobs, start=1):
         if not isinstance(item, dict):
-            raise PreconditionError(
-                f"actions/runs/{run_id}/jobs response job {index} was not an object"
-            )
+            raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} was not an object")
         missing = [field for field in required if field not in item]
         if missing:
-            raise PreconditionError(
-                f"actions/runs/{run_id}/jobs response job {index} is missing: {missing}"
-            )
+            raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} is missing: {missing}")
         if not isinstance(item["name"], str) or not isinstance(item["status"], str):
-            raise PreconditionError(
-                f"actions/runs/{run_id}/jobs response job {index} has invalid name or status"
-            )
+            raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} has invalid name or status")
         if item["conclusion"] is not None and not isinstance(item["conclusion"], str):
-            raise PreconditionError(
-                f"actions/runs/{run_id}/jobs response job {index} has invalid conclusion"
-            )
+            raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} has invalid conclusion")
         validated.append(item)
     return validated
 
@@ -263,6 +248,7 @@ def _cached_run_jobs_payload(
     _validate_run_jobs_payload(payload, run_id)
     cache[run_id] = payload
     return payload
+
 
 # A job that never executed is not a job that passed, and the two are indistinguishable
 # downstream unless something says so out loud. `cancelled` is the one that misleads: it
@@ -298,20 +284,14 @@ class Job:
 def _validated_job_id(item: dict[str, object], run_id: int, index: int) -> int:
     """Return one GitHub job ID without coercing malformed API values."""
     if "id" not in item:
-        raise PreconditionError(
-            f"actions/runs/{run_id}/jobs response job {index} is missing: ['id']"
-        )
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} is missing: ['id']")
     job_id = item["id"]
     if type(job_id) is not int or job_id <= 0:
-        raise PreconditionError(
-            f"actions/runs/{run_id}/jobs response job {index} has invalid id: {job_id!r}"
-        )
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response job {index} has invalid id: {job_id!r}")
     return job_id
 
 
-def fetch_run_jobs(
-    run_id: int, job_payloads: RunJobsPayloadCache | None = None
-) -> list[Job]:
+def fetch_run_jobs(run_id: int, job_payloads: RunJobsPayloadCache | None = None) -> list[Job]:
     """Every job of one run. Raises rather than returning an empty list on a bad body."""
     cache = {} if job_payloads is None else job_payloads
     payload = _cached_run_jobs_payload(run_id, cache, _gh_api_json)

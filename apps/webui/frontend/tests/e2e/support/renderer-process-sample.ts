@@ -31,7 +31,9 @@ export function selectChromiumFamilyPids(processInfo: readonly ProcessInfoEntry[
 	}
 	return processInfo.map((entry) => {
 		if (!Number.isInteger(entry.id) || entry.id <= 0) {
-			throw new Error(`CDP SystemInfo.getProcessInfo entry has no usable pid: ${JSON.stringify(entry)}`);
+			throw new Error(
+				`CDP SystemInfo.getProcessInfo entry has no usable pid: ${JSON.stringify(entry)}`
+			);
 		}
 		return entry.id;
 	});
@@ -140,13 +142,17 @@ export function descendantFamilyPids(rows: readonly PsRow[], roots: readonly num
 export function parseFootprintMb(output: string, pid: number): number {
 	const match = output.match(/\[(\d+)\][^\n]*Footprint:\s*([\d.]+)\s*(B|KB|MB|GB)\b/);
 	if (match === null) {
-		throw new Error(`footprint output for pid ${pid} has no Footprint line: ${JSON.stringify(output.slice(0, 200))}`);
+		throw new Error(
+			`footprint output for pid ${pid} has no Footprint line: ${JSON.stringify(output.slice(0, 200))}`
+		);
 	}
 	if (Number(match[1]) !== pid) {
 		throw new Error(`footprint answered for pid ${match[1]}, asked for ${pid}`);
 	}
 	const value = Number(match[2]);
-	const scale = { B: 1 / 1_048_576, KB: 1 / 1024, MB: 1, GB: 1024 }[match[3] as 'B' | 'KB' | 'MB' | 'GB'];
+	const scale = { B: 1 / 1_048_576, KB: 1 / 1024, MB: 1, GB: 1024 }[
+		match[3] as 'B' | 'KB' | 'MB' | 'GB'
+	];
 	return value * scale;
 }
 
@@ -177,8 +183,8 @@ export function assertEngineOwnsListener(pids: readonly number[], enginePid: num
 			`engine build-info reports pid ${enginePid}, but the pids listening on its port are ` +
 				`[${pids.join(', ')}] -- this is exactly what a local SSH/TCP forward to a remote engine ` +
 				'produces (the forwarder listens locally under its own pid while the engine answering ' +
-				"HTTP requests is a different, non-local process), so the sample would walk the " +
-				'forwarder\'s own tree and silently exclude the real engine and its stem workers; ' +
+				'HTTP requests is a different, non-local process), so the sample would walk the ' +
+				"forwarder's own tree and silently exclude the real engine and its stem workers; " +
 				'point --engine at a directly-reachable, non-tunneled origin'
 		);
 	}
@@ -295,7 +301,11 @@ function uvRunsEngineModule(args: string[]): boolean {
 	for (let i = 1; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '-m' || arg === '--module') return args[i + 1] === ENGINE_MODULE;
-		if (arg === '--') return PYTHON_BASENAME.test(basename(args[i + 1] ?? '')) && pythonRunsEngineModule(args.slice(i + 2));
+		if (arg === '--')
+			return (
+				PYTHON_BASENAME.test(basename(args[i + 1] ?? '')) &&
+				pythonRunsEngineModule(args.slice(i + 2))
+			);
 		if (arg.startsWith('-')) continue;
 		return PYTHON_BASENAME.test(basename(arg)) && pythonRunsEngineModule(args.slice(i + 1));
 	}
@@ -323,7 +333,7 @@ export function assertLocalProcessIsTheEngine(pid: number): void {
 		throw new Error(
 			`pid ${pid} passed the build-info pid check but its own command line is ` +
 				`'${command || '(no such local process)'}', which does not name the engine -- this is ` +
-				"exactly what a local port-forward (ssh -L, kubectl port-forward, socat, a bespoke proxy) " +
+				'exactly what a local port-forward (ssh -L, kubectl port-forward, socat, a bespoke proxy) ' +
 				"produces when its own pid happens to numerically coincide with the remote engine's " +
 				'self-reported pid; point --engine at a directly-reachable, non-tunneled origin'
 		);
@@ -366,9 +376,9 @@ export function assertLoopbackOrigin(apiBase: string): void {
 	if (!_LOOPBACK_HOSTNAMES.has(hostname)) {
 		throw new Error(
 			`API base ${apiBase} is not loopback (hostname '${hostname}') -- this capture only samples ` +
-				"processes LOCAL to the machine it runs on, so a remote --engine can never be measured " +
+				'processes LOCAL to the machine it runs on, so a remote --engine can never be measured ' +
 				'correctly: lsof only sees local listeners on the port number, which could coincidentally ' +
-				"belong to an unrelated local process rather than the named remote engine. Run the capture " +
+				'belong to an unrelated local process rather than the named remote engine. Run the capture ' +
 				'on the same host as the engine, reachable at localhost/127.0.0.1.'
 		);
 	}
@@ -415,12 +425,17 @@ export async function engineRootPids(apiBase: string, expectedPid?: number): Pro
 }
 
 function readPsTable(): PsRow[] {
-	return parsePsTable(execFileSync(PS_BIN, ['-Ao', 'pid=,ppid=,rss=,%cpu='], { encoding: 'utf-8' }));
+	return parsePsTable(
+		execFileSync(PS_BIN, ['-Ao', 'pid=,ppid=,rss=,%cpu='], { encoding: 'utf-8' })
+	);
 }
 
 function readFootprintMb(pid: number): number {
 	return parseFootprintMb(
-		execFileSync(FOOTPRINT_BIN, ['-p', String(pid)], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }),
+		execFileSync(FOOTPRINT_BIN, ['-p', String(pid)], {
+			encoding: 'utf-8',
+			stdio: ['ignore', 'pipe', 'pipe']
+		}),
 		pid
 	);
 }

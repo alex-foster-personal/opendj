@@ -46,8 +46,7 @@ def engine_data_dir(
         local_app_data = environ.get("LOCALAPPDATA", "").strip()
         if local_app_data == "":
             raise EngineDataDirError(
-                "LOCALAPPDATA is unset; the Windows engine data dir lives under "
-                "%LOCALAPPDATA% and has no fallback."
+                "LOCALAPPDATA is unset; the Windows engine data dir lives under %LOCALAPPDATA% and has no fallback."
             )
         if not PureWindowsPath(local_app_data).is_absolute():
             raise EngineDataDirError(f"LOCALAPPDATA must be an absolute path, got {local_app_data!r}.")

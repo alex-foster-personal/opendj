@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { LOGICAL_OPS } from '$lib/smartlists/rule-schema';
-	import { changeGroupOp, createEmptyGroup, createEmptyPredicate, validateNodeOwn, type FormGroup, type FormNode } from '$lib/smartlists/rule-form';
+	import {
+		changeGroupOp,
+		createEmptyGroup,
+		createEmptyPredicate,
+		validateNodeOwn,
+		type FormGroup,
+		type FormNode
+	} from '$lib/smartlists/rule-form';
 	import RuleGroup from './RuleGroup.svelte';
 	import RulePredicate from './RulePredicate.svelte';
 

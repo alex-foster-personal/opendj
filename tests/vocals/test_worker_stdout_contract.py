@@ -35,13 +35,15 @@ from typing import Any
 
 import pytest
 
+from apps.vocals import cache as vcache
 from apps.vocals import cli as vcli
+from apps.vocals.worker_output import RESULT_FRAME
+from tests.vocals._worker_script import VOCAL_REGION_WORKER_SCRIPT, load_vocal_region_worker
 
 pytestmark = pytest.mark.requirement("VOCALS-05")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKER_SCRIPT = REPO_ROOT / "scripts" / "vocal_region_worker.py"
-FRAME = "odj-vocal-result-v1 "
+WORKER_SCRIPT = VOCAL_REGION_WORKER_SCRIPT
+FRAME = RESULT_FRAME
 # The first line of the worker's stdout on a first run in the installed app.
 DOWNLOAD_LINE = (
     'Downloading: "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th"'
@@ -50,7 +52,7 @@ DOWNLOAD_LINE = (
 
 # What the real worker printed for the 30 s acceptance voice fixture on CPU.
 RESULT: dict[str, Any] = {
-    "schema": 2,
+    "schema": vcache.VOCAL_CACHE_SCHEMA,
     "source": "demucs-htdemucs",
     "audio_path": "track.wav",
     "source_sample_rate": 44100,
@@ -193,10 +195,7 @@ def test_worker_and_engine_agree_on_the_frame() -> None:
     """[if] the worker's frame differs from the one the engine parses [then] this fails, [else stop]."""
     from apps.vocals import worker_output
 
-    spec = importlib.util.spec_from_file_location("vocal_region_worker_frame", WORKER_SCRIPT)
-    assert spec is not None and spec.loader is not None
-    worker = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(worker)
+    worker = load_vocal_region_worker(module_name="vocal_region_worker_frame")
     assert worker.RESULT_FRAME == worker_output.RESULT_FRAME == FRAME
 
 

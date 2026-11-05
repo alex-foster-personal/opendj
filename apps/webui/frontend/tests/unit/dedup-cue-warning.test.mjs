@@ -73,7 +73,10 @@ test('mergeCueWarning sums cues across multiple other copies', async () => {
 test('mergeCueWarning is null when survivor already has cues', () => {
 	assert.equal(
 		mergeCueWarning(
-			[member({ stable_id: 'survivor', cue_count: 1 }), member({ stable_id: 'alias', cue_count: 3 })],
+			[
+				member({ stable_id: 'survivor', cue_count: 1 }),
+				member({ stable_id: 'alias', cue_count: 3 })
+			],
 			'survivor'
 		),
 		null
@@ -83,7 +86,10 @@ test('mergeCueWarning is null when survivor already has cues', () => {
 test('mergeCueWarning is null when no member has cues', () => {
 	assert.equal(
 		mergeCueWarning(
-			[member({ stable_id: 'survivor', cue_count: 0 }), member({ stable_id: 'alias', cue_count: 0 })],
+			[
+				member({ stable_id: 'survivor', cue_count: 0 }),
+				member({ stable_id: 'alias', cue_count: 0 })
+			],
 			'survivor'
 		),
 		null

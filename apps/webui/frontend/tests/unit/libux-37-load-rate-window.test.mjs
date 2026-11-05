@@ -54,7 +54,11 @@ test('the rate counts only rows that arrived inside the window', () => {
 test('overshoot control: a real rate is still shown once it is measurable, and a stall is not', () => {
 	const baseline = { atMs: 0, loaded: 500 };
 	assert.equal(rate.loadRowsPerSecond(baseline, 4000, 2500), 500);
-	assert.equal(rate.loadRowsPerSecond(baseline, 4000, 500), null, 'no rows in the window is no rate, not 0 rows/s');
+	assert.equal(
+		rate.loadRowsPerSecond(baseline, 4000, 500),
+		null,
+		'no rows in the window is no rate, not 0 rows/s'
+	);
 });
 
 test('the indicator renders the shared figure, keeps its hover title, and hides a null rate', () => {

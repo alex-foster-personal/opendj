@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Open DJ",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "identifier": "com.opendj.desktop",
   "build": {
     "frontendDist": "../setup"
@@ -14,11 +14,11 @@
     "targets": ["app"],
     "createUpdaterArtifacts": true,
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "../shared/icons/32x32.png",
+      "../shared/icons/128x128.png",
+      "../shared/icons/128x128@2x.png",
+      "../shared/icons/icon.icns",
+      "../shared/icons/icon.ico"
     ],
     "publisher": "open-dj",
     "category": "Music",
@@ -38,7 +38,8 @@
       "endpoints": [
         "https://github.com/alex-foster-personal/issue-assets/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1Q0RDQjZDRkEzQzIxQ0QKUldUTklUejZiTXZONVpUM3J5OVJWdkxCUlBINC9DQ1BMN0lCMU50WEt4K1E1OHNFZkVPUFg4dmQK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1Q0RDQjZDRkEzQzIxQ0QKUldUTklUejZiTXZONVpUM3J5OVJWdkxCUlBINC9DQ1BMN0lCMU50WEt4K1E1OHNFZkVPUFg4dmQK",
+      "dangerousInsecureTransportProtocol": true
     }
   }
 }

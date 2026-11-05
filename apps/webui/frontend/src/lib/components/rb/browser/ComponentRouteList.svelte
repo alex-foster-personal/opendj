@@ -56,7 +56,9 @@
 	);
 	const parts = $derived(partsOf(pick, groups));
 	const matched = $derived(matchSet(parts, setRoutesView.sets));
-	const selectedSet = $derived(setRoutesView.sets.find((s) => s.id === setRoutesView.selectedSetId) ?? null);
+	const selectedSet = $derived(
+		setRoutesView.sets.find((s) => s.id === setRoutesView.selectedSetId) ?? null
+	);
 	/** Parts of the selected set the components list does not hold (a deleted component); moving the set would drop them. */
 	const hiddenParts = $derived(selectedSet ? selectedSet.parts.filter((id) => !byId.has(id)) : []);
 	const routeTracks = $derived(parts.flatMap((id) => byId.get(id)?.stable_ids ?? []));
@@ -65,7 +67,8 @@
 	const repeats = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const id of parts) {
-			for (const sid of new Set(byId.get(id)?.stable_ids ?? [])) counts.set(sid, (counts.get(sid) ?? 0) + 1);
+			for (const sid of new Set(byId.get(id)?.stable_ids ?? []))
+				counts.set(sid, (counts.get(sid) ?? 0) + 1);
 		}
 		return [...counts].filter(([, n]) => n > 1).map(([sid]) => sid);
 	});
@@ -83,7 +86,9 @@
 
 	function lenTitle(len: { ms: number; unknown: number }, what: string): string {
 		const base = `Total play time of ${what}, summed from each track's length`;
-		return len.unknown > 0 ? `${base}; ${len.unknown} track(s) have no known length and are left out` : base;
+		return len.unknown > 0
+			? `${base}; ${len.unknown} track(s) have no known length and are left out`
+			: base;
 	}
 
 	function choose(slot: string, componentId: number): void {
@@ -123,7 +128,11 @@
 		try {
 			const page = await listPlaylistRoutes(id, ROUTE_PAGE_SIZE, routeList.routes.length);
 			if (id !== playlistId || !routeList) return;
-			routeList = { routes: [...routeList.routes, ...page.routes], total: page.total, truncated: page.truncated };
+			routeList = {
+				routes: [...routeList.routes, ...page.routes],
+				total: page.total,
+				truncated: page.truncated
+			};
 		} catch (exc) {
 			if (id === playlistId) error = errorText(exc);
 		} finally {
@@ -166,19 +175,38 @@
 
 	/** Gutter width fits the slot with the most alternatives; 60px is the floor for one to three lanes. */
 	const gutterW = $derived(
-		Math.max(60, LANE_X0 * 2 + (Math.max(1, ...groups.map((g) => g.components.length)) - 1) * LANE_DX)
+		Math.max(
+			60,
+			LANE_X0 * 2 + (Math.max(1, ...groups.map((g) => g.components.length)) - 1) * LANE_DX
+		)
 	);
 
 	/** Gutter geometry: one lane per component in its slot, stacked like the rows. */
 	const layout = $derived.by(() => {
-		const nodes: { id: number; slotIndex: number; lane: number; top: number; bottom: number; on: boolean; tone: string }[] = [];
+		const nodes: {
+			id: number;
+			slotIndex: number;
+			lane: number;
+			top: number;
+			bottom: number;
+			on: boolean;
+			tone: string;
+		}[] = [];
 		let y = 0;
 		groups.forEach((g, slotIndex) => {
 			y += SLOT_H;
 			g.components.forEach((c, lane) => {
 				const top = y + HEAD_H / 2;
 				y += HEAD_H + c.stable_ids.length * ROW_H;
-				nodes.push({ id: c.id, slotIndex, lane, top, bottom: y - ROW_H / 2, on: pick[g.slot] === c.id, tone: slotTone(g.slot) });
+				nodes.push({
+					id: c.id,
+					slotIndex,
+					lane,
+					top,
+					bottom: y - ROW_H / 2,
+					on: pick[g.slot] === c.id,
+					tone: slotTone(g.slot)
+				});
 			});
 		});
 		const edges: { d: string; on: boolean }[] = [];
@@ -188,7 +216,10 @@
 				const xa = LANE_X0 + a.lane * LANE_DX;
 				const xb = LANE_X0 + b.lane * LANE_DX;
 				const mid = (a.bottom + b.top) / 2;
-				edges.push({ d: `M${xa} ${a.bottom} C ${xa} ${mid}, ${xb} ${mid}, ${xb} ${b.top}`, on: a.on && b.on });
+				edges.push({
+					d: `M${xa} ${a.bottom} C ${xa} ${mid}, ${xb} ${mid}, ${xb} ${b.top}`,
+					on: a.on && b.on
+				});
 			}
 		}
 		return { nodes, edges, height: y };
@@ -281,13 +312,20 @@
 		</div>
 
 		<div class="routes" style:min-height="{layout.height}px" style:--gutter-w="{gutterW + 4}px">
-			<svg class="gutter" aria-hidden="true" width={gutterW} height={layout.height} viewBox="0 0 {gutterW} {layout.height}">
+			<svg
+				class="gutter"
+				aria-hidden="true"
+				width={gutterW}
+				height={layout.height}
+				viewBox="0 0 {gutterW} {layout.height}"
+			>
 				{#each layout.edges as edge, i (i)}
 					<path d={edge.d} class="edge" class:on={edge.on} />
 				{/each}
 				{#each layout.nodes as node (node.id)}
 					<path
-						d="M{LANE_X0 + node.lane * LANE_DX} {node.top} L {LANE_X0 + node.lane * LANE_DX} {node.bottom}"
+						d="M{LANE_X0 + node.lane * LANE_DX} {node.top} L {LANE_X0 +
+							node.lane * LANE_DX} {node.bottom}"
 						class="lane {node.tone}"
 						class:on={node.on}
 					/>
@@ -305,7 +343,9 @@
 					<div class="slot-head" style:height="{SLOT_H}px">
 						<span class="label"
 							>{group.slot}{#if group.components.length > 1}
-								· <span title="Components in this slot; a route takes one of them">{group.components.length}</span> options{/if}</span
+								· <span title="Components in this slot; a route takes one of them"
+									>{group.components.length}</span
+								> options{/if}</span
 						>
 					</div>
 					{#each group.components as comp (comp.id)}
@@ -350,9 +390,14 @@
 									{#if row}
 										{row.title ?? ''} <span class="artist">· {row.artist ?? ''}</span>
 									{:else}
-										<span class="artist" title="This track is not in the playlist any more">{sid.slice(0, 10)}</span>
+										<span class="artist" title="This track is not in the playlist any more"
+											>{sid.slice(0, 10)}</span
+										>
 									{/if}
-									{#if shared.has(sid)}<span class="shared" title="This track is in more than one component">shared</span>{/if}
+									{#if shared.has(sid)}<span
+											class="shared"
+											title="This track is in more than one component">shared</span
+										>{/if}
 								</div>
 								<div class="n" title="Tempo in beats per minute">{row?.bpm ?? ''}</div>
 								<div class="n" title="Musical key (Camelot)">{row?.key ?? ''}</div>
@@ -369,7 +414,9 @@
 		{#if routeList}
 			<div class="all-routes" data-testid="all-routes">
 				<div class="all-head">
-					<span class="count" title="Every way through this playlist's components, one per slot">{routeList.total}</span>
+					<span class="count" title="Every way through this playlist's components, one per slot"
+						>{routeList.total}</span
+					>
 					<span class="label">possible routes</span>
 					{#if routeList.truncated}
 						<span class="label" title="Routes load a page at a time; the count is exact"
@@ -396,8 +443,11 @@
 					</tbody>
 				</table>
 				{#if routeList.truncated}
-					<button type="button" data-testid="route-load-more" disabled={loadingMore} onclick={() => void loadMoreRoutes()}
-						>Show more routes</button
+					<button
+						type="button"
+						data-testid="route-load-more"
+						disabled={loadingMore}
+						onclick={() => void loadMoreRoutes()}>Show more routes</button
 					>
 				{/if}
 			</div>

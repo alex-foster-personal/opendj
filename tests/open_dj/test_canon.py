@@ -1,4 +1,5 @@
 """Tests for :mod:`apps.open_dj.canon` -- RFC 8785 JCS canonicalisation."""
+
 from __future__ import annotations
 
 import hashlib
@@ -35,8 +36,7 @@ class TestRfc8785:
         assert "カリブ".encode("utf-8") in out
 
     def test_boolean_and_null(self) -> None:
-        assert to_canonical_bytes({"a": True, "b": False, "c": None}) == \
-            b'{"a":true,"b":false,"c":null}'
+        assert to_canonical_bytes({"a": True, "b": False, "c": None}) == b'{"a":true,"b":false,"c":null}'
 
     def test_empty_structures(self) -> None:
         assert to_canonical_bytes({}) == b"{}"
@@ -73,6 +73,7 @@ def test_sha256_hex_matches_raw_hash(full_bytes: bytes, full_doc: dict) -> None:
 def test_x_extension_survives_canon_roundtrip(ext_doc: dict) -> None:
     """x_* keys must survive a canon -> parse -> canon cycle unchanged."""
     import json as _json
+
     canon_a = to_canonical_bytes(ext_doc)
     reparsed = _json.loads(canon_a)
     canon_b = to_canonical_bytes(reparsed)

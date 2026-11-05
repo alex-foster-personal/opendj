@@ -1,4 +1,5 @@
 """``opendj api POST .../items:add`` agent-native parity (LIBM-20)."""
+
 from __future__ import annotations
 
 import json
@@ -29,9 +30,14 @@ def seeded_db(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -82,23 +88,35 @@ def test_api_post_items_add_duplicate_allowed(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Set"}, timeout=30,
+        f"{base_url}/api/v1/playlists",
+        json={"name": "CLI Set"},
+        timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]
 
-    code = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
-    ])
+    code = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:add",
+            "--json",
+            '{"stable_ids":["t-004"]}',
+        ]
+    )
     assert code == api_cli.EXIT_OK
     out = json.loads(capsys.readouterr().out)
     assert [row["stable_id"] for row in out["added"]] == ["t-004"]
 
-    code2 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
-    ])
+    code2 = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:add",
+            "--json",
+            '{"stable_ids":["t-004"]}',
+        ]
+    )
     assert code2 == api_cli.EXIT_OK
     out2 = json.loads(capsys.readouterr().out)
     assert [row["stable_id"] for row in out2["added"]] == ["t-004"]
@@ -121,34 +139,53 @@ def test_api_post_items_add_noop_when_forbid_duplicates(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Forbid"}, timeout=30,
+        f"{base_url}/api/v1/playlists",
+        json={"name": "CLI Forbid"},
+        timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]
     etag = create.headers["etag"]
 
-    code = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
-    ])
+    code = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:add",
+            "--json",
+            '{"stable_ids":["t-004"]}',
+        ]
+    )
     assert code == api_cli.EXIT_OK
     capsys.readouterr()
     etag_hdr = httpx.get(
-        f"{base_url}/api/v1/playlists/{pid}", timeout=30,
+        f"{base_url}/api/v1/playlists/{pid}",
+        timeout=30,
     ).headers["etag"]
 
-    patch_code = main([
-        "api", "PATCH", f"/api/v1/playlists/{pid}",
-        "-H", f"If-Match: {etag_hdr}",
-        "--json", '{"forbid_duplicates":true}',
-    ])
+    patch_code = main(
+        [
+            "api",
+            "PATCH",
+            f"/api/v1/playlists/{pid}",
+            "-H",
+            f"If-Match: {etag_hdr}",
+            "--json",
+            '{"forbid_duplicates":true}',
+        ]
+    )
     assert patch_code == api_cli.EXIT_OK
     patch_out = json.loads(capsys.readouterr().out)
 
-    code2 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
-    ])
+    code2 = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:add",
+            "--json",
+            '{"stable_ids":["t-004"]}',
+        ]
+    )
     assert code2 == api_cli.EXIT_OK
     out2 = json.loads(capsys.readouterr().out)
     assert out2["added"] == []

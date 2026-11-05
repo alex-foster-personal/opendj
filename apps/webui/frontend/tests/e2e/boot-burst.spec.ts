@@ -224,65 +224,66 @@ async function _measureOneBoot(page: Page, stableId: string): Promise<Sample> {
 		bootWindowMs: number;
 		deduped: readonly string[];
 	}
-	return page.evaluate(({ families, bootWindowMs, deduped }: EvalArgs) => {
-		const ring = (window as PerfRingWindow).__mdtLastLoads?.(8) ?? [];
-		const load = ring.find((event) => typeof event.stages?.fetchWall === 'number');
-		if (load?.stages === undefined) throw new Error('no deck-load event carrying fetchWall');
-		const fetchWall = load.stages.fetchWall;
-		const deckLoadMs = load.stages.total ?? fetchWall;
+	return page.evaluate(
+		({ families, bootWindowMs, deduped }: EvalArgs) => {
+			const ring = (window as PerfRingWindow).__mdtLastLoads?.(8) ?? [];
+			const load = ring.find((event) => typeof event.stages?.fetchWall === 'number');
+			if (load?.stages === undefined) throw new Error('no deck-load event carrying fetchWall');
+			const fetchWall = load.stages.fetchWall;
+			const deckLoadMs = load.stages.total ?? fetchWall;
 
-		const api = (
-			performance.getEntriesByType('resource') as PerformanceResourceTiming[]
-		)
-			.filter((entry) => entry.name.includes('/api/v1/'))
-			.map((entry) => ({ name: entry.name, start: entry.startTime, end: entry.responseEnd }));
+			const api = (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+				.filter((entry) => entry.name.includes('/api/v1/'))
+				.map((entry) => ({ name: entry.name, start: entry.startTime, end: entry.responseEnd }));
 
-		const boot = api.filter((entry) => families.some((family) => entry.name.includes(family)));
-		const burstSpanMs =
-			boot.length === 0
-				? 0
-				: Math.max(...boot.map((e) => e.end)) - Math.min(...boot.map((e) => e.start));
+			const boot = api.filter((entry) => families.some((family) => entry.name.includes(family)));
+			const burstSpanMs =
+				boot.length === 0
+					? 0
+					: Math.max(...boot.map((e) => e.end)) - Math.min(...boot.map((e) => e.start));
 
-		// The ring row is stamped in wall clock; both halves come from this
-		// page, so subtracting timeOrigin puts it on the same clock as the
-		// resource timings. The load ended when the row was written, so its
-		// fetch block ran over [end - total, end - total + fetchWall].
-		const deckEndMs = new Date(load.t).getTime() - performance.timeOrigin;
-		const deckStartMs = deckEndMs - deckLoadMs;
-		const deckFetchEndMs = deckStartMs + fetchWall;
-		const contendingCalls = boot.filter(
-			(entry) => entry.start < deckFetchEndMs && entry.end > deckStartMs
-		).length;
+			// The ring row is stamped in wall clock; both halves come from this
+			// page, so subtracting timeOrigin puts it on the same clock as the
+			// resource timings. The load ended when the row was written, so its
+			// fetch block ran over [end - total, end - total + fetchWall].
+			const deckEndMs = new Date(load.t).getTime() - performance.timeOrigin;
+			const deckStartMs = deckEndMs - deckLoadMs;
+			const deckFetchEndMs = deckStartMs + fetchWall;
+			const contendingCalls = boot.filter(
+				(entry) => entry.start < deckFetchEndMs && entry.end > deckStartMs
+			).length;
 
-		// Counted over the app's own startup wave, NOT relative to the deck
-		// load: these are duplicates the boot issues whether or not a deck is
-		// loading. The wave starts at the first request to any of these
-		// endpoints; if the app never made one the window is empty and the
-		// counts are -1, never a zero that would read as "deduplicated".
-		const dedupedStarts = api
-			.filter((entry) => deduped.some((path) => entry.name.includes(path)))
-			.map((entry) => entry.start);
-		const waveStart = dedupedStarts.length === 0 ? null : Math.min(...dedupedStarts);
-		const inBootWindow = (path: string): number =>
-			waveStart === null
-				? -1
-				: api.filter(
-						(entry) =>
-							entry.name.includes(path) &&
-							entry.start >= waveStart &&
-							entry.start < waveStart + bootWindowMs
-					).length;
+			// Counted over the app's own startup wave, NOT relative to the deck
+			// load: these are duplicates the boot issues whether or not a deck is
+			// loading. The wave starts at the first request to any of these
+			// endpoints; if the app never made one the window is empty and the
+			// counts are -1, never a zero that would read as "deduplicated".
+			const dedupedStarts = api
+				.filter((entry) => deduped.some((path) => entry.name.includes(path)))
+				.map((entry) => entry.start);
+			const waveStart = dedupedStarts.length === 0 ? null : Math.min(...dedupedStarts);
+			const inBootWindow = (path: string): number =>
+				waveStart === null
+					? -1
+					: api.filter(
+							(entry) =>
+								entry.name.includes(path) &&
+								entry.start >= waveStart &&
+								entry.start < waveStart + bootWindowMs
+						).length;
 
-		return {
-			fetchWall,
-			deckLoadMs,
-			contendingCalls,
-			burstSpanMs,
-			deckFetchEndMs,
-			healthCallsAtBoot: inBootWindow('/api/v1/health'),
-			uiPrefsCallsAtBoot: inBootWindow('/api/v1/ui-prefs')
-		};
-	}, { families: BOOT_FAMILIES, bootWindowMs: BOOT_WINDOW_MS, deduped: DEDUPED_AT_BOOT });
+			return {
+				fetchWall,
+				deckLoadMs,
+				contendingCalls,
+				burstSpanMs,
+				deckFetchEndMs,
+				healthCallsAtBoot: inBootWindow('/api/v1/health'),
+				uiPrefsCallsAtBoot: inBootWindow('/api/v1/ui-prefs')
+			};
+		},
+		{ families: BOOT_FAMILIES, bootWindowMs: BOOT_WINDOW_MS, deduped: DEDUPED_AT_BOOT }
+	);
 }
 
 test('a deck load fired at boot, measured over repeated cold page loads', async ({ browser }) => {
@@ -336,8 +337,14 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 	// coalescer.ts) stops that same first-open resync from also forcing an
 	// in-flight health entry to re-issue.
 	for (const sample of samples) {
-		expect(sample.healthCallsAtBoot, 'health@boot must be exactly 4 on every boot: 3 coalesced + 1 uncoalesced fresh refresh from the first-open resync').toBe(4);
-		expect(sample.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline on every boot').toBe(2);
+		expect(
+			sample.healthCallsAtBoot,
+			'health@boot must be exactly 4 on every boot: 3 coalesced + 1 uncoalesced fresh refresh from the first-open resync'
+		).toBe(4);
+		expect(
+			sample.uiPrefsCallsAtBoot,
+			'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline on every boot'
+		).toBe(2);
 	}
 
 	const report = {
@@ -374,8 +381,14 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 	// every one of 6 boots, so <=4 would let a silent regression to 0 (or any
 	// count under 4) pass unnoticed -- the exact gap review round 3 (thread on
 	// this file) named, and round 5 does not relax.
-	expect(report.median.healthCallsAtBoot, 'health@boot must be exactly 4: 3 coalesced + 1 uncoalesced fresh refresh').toBe(4);
-	expect(report.median.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline').toBe(2);
+	expect(
+		report.median.healthCallsAtBoot,
+		'health@boot must be exactly 4: 3 coalesced + 1 uncoalesced fresh refresh'
+	).toBe(4);
+	expect(
+		report.median.uiPrefsCallsAtBoot,
+		'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline'
+	).toBe(2);
 });
 
 /**

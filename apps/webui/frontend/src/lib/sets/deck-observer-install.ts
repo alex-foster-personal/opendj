@@ -25,7 +25,6 @@ import {
 	type DeckObserverEmitterOptions
 } from './deck-observer-emitter';
 
-
 /** The window global name an agent drives this through, so the emitter is
  *  inspectable and flushable without a UI (agent-native parity). */
 export const DECK_OBSERVER_GLOBAL = '__mdtDeckObserver';
@@ -66,7 +65,7 @@ export function installDeckObserverEmitter(
 	// which is the single request this puts back after PERF-R6 moved eight
 	// out; it buys correct session attribution for every snapshot taken during
 	// the window, which is the alternative this rejected. Flagged in
-	// docs/perf/performance-register.md rather than assumed neutral.
+	// (private path) rather than assumed neutral.
 	let bootWindowOpen = true;
 	const emitter = createDeckObserverEmitter({
 		canFlush: () => !bootWindowOpen,

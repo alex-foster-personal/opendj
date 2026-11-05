@@ -4,6 +4,7 @@ Every helper writes through the production state layer (real migrations, the
 real ``upsert_location`` probe) and real files under ``tmp_path``: disk truth,
 no stubbed stat results.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,8 +63,7 @@ def claim_on_other_machine(state_db: Path, stable_id: str, file_path: str) -> No
             "INSERT INTO track_locations (location_id, stable_id, machine_id, kind, role, "
             "file_path, available, probed_at, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (f"loc-{stable_id}", stable_id, OTHER_MACHINE, "local", "primary", file_path, 1,
-             STAMP, STAMP, STAMP),
+            (f"loc-{stable_id}", stable_id, OTHER_MACHINE, "local", "primary", file_path, 1, STAMP, STAMP, STAMP),
         )
         conn.commit()
     finally:
@@ -204,8 +204,7 @@ def write_analysis_row(state_db: Path, stable_id: str, *, backend: str = "libros
             "duration_s, sample_rate, bpm, bpm_confidence, key_camelot, key_openkey, "
             "key_confidence, energy, energy_source, record_json) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (stable_id, backend, "test", STAMP, 200.0, 44_100, 120.0, 1.0, "8A", "1m",
-             1.0, 5, "test", "{}"),
+            (stable_id, backend, "test", STAMP, 200.0, 44_100, 120.0, 1.0, "8A", "1m", 1.0, 5, "test", "{}"),
         )
         conn.commit()
     finally:

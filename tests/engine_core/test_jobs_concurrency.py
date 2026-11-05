@@ -71,9 +71,7 @@ def kinds() -> Iterator[None]:
     unregister_worker("slot-holder")
 
 
-def test_max_concurrent_is_never_exceeded_during_the_spawn_window(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_max_concurrent_is_never_exceeded_during_the_spawn_window(tmp_path: Path, kinds: None) -> None:
     """One slot, five jobs: every one must succeed, in sequence.
 
     poll_s is deliberately far shorter than a fork+exec, so the supervisor
@@ -88,10 +86,7 @@ def test_max_concurrent_is_never_exceeded_during_the_spawn_window(
     async def drive() -> list[dict]:
         runner = JobRunner(store, poll_s=0.001, max_concurrent=1)
         await runner.start()
-        ids = [
-            store.enqueue("slot-holder", {"slot": str(slot)})["id"]
-            for _ in range(_JOBS)
-        ]
+        ids = [store.enqueue("slot-holder", {"slot": str(slot)})["id"] for _ in range(_JOBS)]
         deadline = asyncio.get_running_loop().time() + 60
         try:
             while True:
@@ -108,17 +103,14 @@ def test_max_concurrent_is_never_exceeded_during_the_spawn_window(
 
     violations = [row for row in rows if "CONCURRENCY VIOLATION" in (row["error"] or "")]
     assert not violations, (
-        f"{len(violations)} of {_JOBS} workers ran while the single slot was "
-        f"already held: {violations[0]['error']}"
+        f"{len(violations)} of {_JOBS} workers ran while the single slot was already held: {violations[0]['error']}"
     )
     assert all(row["status"] == "succeeded" for row in rows), rows
     assert not slot.exists(), "a worker left the slot behind"
     store.close()
 
 
-def test_the_supervisor_reserves_the_slot_before_the_worker_registers(
-    tmp_path: Path, kinds: None
-) -> None:
+def test_the_supervisor_reserves_the_slot_before_the_worker_registers(tmp_path: Path, kinds: None) -> None:
     """The accounting itself, without waiting on the OS to expose it.
 
     A spawned-but-unregistered job is invisible to ``_running`` by
@@ -148,8 +140,5 @@ def test_the_supervisor_reserves_the_slot_before_the_worker_registers(
     in_flight, registered = asyncio.run(drive())
 
     assert registered == 0, "the premise is wrong: a worker registered too early"
-    assert in_flight == 1, (
-        "the spawned job is not counted against max_concurrent, so the next "
-        "poll claims another one"
-    )
+    assert in_flight == 1, "the spawned job is not counted against max_concurrent, so the next poll claims another one"
     store.close()

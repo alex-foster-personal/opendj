@@ -68,7 +68,10 @@ export function openingPick(
 
 /** A saved set's parts as a pick. Parts that are not listed here (a borrowed
  *  component) are dropped, since the view cannot draw them. */
-export function pickFromParts(parts: readonly number[], components: readonly RouteComponent[]): RoutePick {
+export function pickFromParts(
+	parts: readonly number[],
+	components: readonly RouteComponent[]
+): RoutePick {
 	const byId = new Map(components.map((c) => [c.id, c]));
 	const pick: RoutePick = {};
 	for (const id of parts) {
@@ -108,7 +111,10 @@ export function sameParts(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /** The saved set whose route is exactly these parts; sets without parts never match. */
-export function matchSet<S extends RouteSet>(parts: readonly number[], sets: readonly S[]): S | null {
+export function matchSet<S extends RouteSet>(
+	parts: readonly number[],
+	sets: readonly S[]
+): S | null {
 	if (parts.length === 0) return null;
 	return sets.find((s) => s.parts.length > 0 && sameParts(s.parts, parts)) ?? null;
 }
@@ -122,7 +128,10 @@ export function componentGlyphs(components: readonly RouteComponent[]): Map<numb
 	components.forEach((comp, i) => {
 		const name = names[i];
 		let len = 1;
-		while (len < name.length && names.some((other, j) => j !== i && other.startsWith(name.slice(0, len)))) {
+		while (
+			len < name.length &&
+			names.some((other, j) => j !== i && other.startsWith(name.slice(0, len)))
+		) {
 			len += 1;
 		}
 		const glyph = name.slice(0, len);

@@ -9,6 +9,7 @@ Regression lines:
 - limit truncates and sets truncated: true
 - limit above 500 is 422 (FastAPI/Pydantic), not silently capped on the server after execute
 """
+
 from __future__ import annotations
 
 import sqlite3

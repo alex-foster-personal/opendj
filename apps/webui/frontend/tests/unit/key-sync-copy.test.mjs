@@ -56,8 +56,8 @@ test('3d9ae399ddb2: DeckHeader wires key-sync-copy and camelotKeyHoverLabel titl
 	assert.match(source, /keySyncNotationBullet/);
 	assert.match(source, /const keyHover/);
 	assert.match(source, /camelotKeyHoverLabel\(effective\)/);
-	assert.match(source, /title=\{keyHover/);
+	assert.match(source, /\(keyHover \?\? undefined\)/);
 	assert.match(source, /origKeyHover/);
-	assert.match(source, /camelotKeyHoverLabel\(deck\.key\)/);
+	assert.match(source, /camelotKeyHoverLabel\(deckKey\)/); // DECK-KEY-01: the resolved key
 	assert.match(source, /title=\{origKeyHover/);
 });

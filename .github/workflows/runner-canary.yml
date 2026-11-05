@@ -298,7 +298,7 @@ jobs:
         timeout-minutes: 1
         run: |
           corepack enable
-          corepack prepare pnpm@11.9.0 --activate
+          corepack prepare pnpm@11.11.0 --activate
 
       - name: Setup Python
         timeout-minutes: 1
@@ -378,6 +378,7 @@ jobs:
           # always runs FULL, so neither changes what the canary runs.
           CI_PR_SELECT_BY_NAME: ${{ vars.CI_PR_SELECT_BY_NAME }}
           CI_PR_DEMOTE_WEAK_LINKS: ${{ vars.CI_PR_DEMOTE_WEAK_LINKS }}
+          SHARD: ${{ matrix.shard }}
           # Mirrored from ci.yml; a canary branch push is not a main push, so it stays FULL.
           CI_MAIN_PUSH_TEST_SELECTION: ${{ vars.CI_MAIN_PUSH_TEST_SELECTION }}
         run: |
@@ -489,7 +490,7 @@ jobs:
           selection_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pr-test-selection"
           selection_rc=0
           mode="$(timeout --kill-after=10 300 .venv/bin/python -m scripts.ci_test_selection select \
-            --shard ${{ matrix.shard }} --shards 5 --out-dir "$selection_dir" \
+            --shard $SHARD --shards 5 --out-dir "$selection_dir" \
             --budget ci/test-budget.yml \
             "${LANE_IGNORES[@]}")" || selection_rc=$?
           case "$selection_rc:$mode" in
@@ -500,7 +501,7 @@ jobs:
               # selection is never widened. The off-switch is CI_PR_TEST_SELECTION (the selector then
               # answers `full` without reading the budget); see ci/test-budget.yml.
               printf '\n::error title=PR test selection REFUSED (shard %s of 5)::the selector exited %s with mode [%s] and cannot honor the hard cap (reason in the log above); FULL would exceed it, so this shard fails\n' \
-                "${{ matrix.shard }}" "$selection_rc" "$mode"
+                "$SHARD" "$selection_rc" "$mode"
               exit 1
               ;;
           esac
@@ -508,32 +509,32 @@ jobs:
           case "$mode" in
             empty)
               printf '\n::notice title=pytest fast lane (shard %s of 5): 0 affected tests::this run selected no test module for this shard, so pytest did not start and the shard reports success. The nightly full-ci.yml run on main runs the FULL suite.\n' \
-                "${{ matrix.shard }}"
+                "$SHARD"
               exit 0
               ;;
             affected)
               mapfile -t MODE_ARGS < "$selection_dir/shard-modules.txt"
-              echo "[selection] AFFECTED: shard ${{ matrix.shard }} runs ${#MODE_ARGS[@]} selected module(s); the nightly full-ci.yml run covers the rest"
+              echo "[selection] AFFECTED: shard $SHARD runs ${#MODE_ARGS[@]} selected module(s); the nightly full-ci.yml run covers the rest"
               ;;
             full)
               MDT_PYTEST_TIMEOUT_S=$MDT_PYTEST_FULL_TIMEOUT_S
               MODE_ARGS=(
                 --collect-floor 3181
                 --ledger-coverage-min 0.50 --ledger-coverage-warn 0.95
-                --splits 5 --group ${{ matrix.shard }}
+                --splits 5 --group $SHARD
                 --splitting-algorithm least_duration
                 --durations-path .test_durations
                 --store-durations --clean-durations
               )
-              echo "[selection] FULL: shard ${{ matrix.shard }} runs its pytest-split slice of the whole lane"
+              echo "[selection] FULL: shard $SHARD runs its pytest-split slice of the whole lane"
               ;;
           esac
           budget_left=$(( MDT_PYTEST_TIMEOUT_S - ($(date +%s) - started) ))
           set +e
           timeout --kill-after=60 "$budget_left" \
             .venv/bin/pytest \
-              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-${{ matrix.shard }}-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
-              --junitxml="${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
+              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-$SHARD-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
+              --junitxml="${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-$SHARD.xml" \
               "${MODE_ARGS[@]}" \
               --durations=25 \
               --timeout=900 \
@@ -547,13 +548,13 @@ jobs:
           # here: it exited 0 above without starting pytest.
           if [ "$mode" = affected ] && [ "$rc" -eq 5 ]; then
             if .venv/bin/python -m scripts.ci_test_selection junit-all-skipped \
-                "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
+                "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-$SHARD.xml" \
                 --modules "$selection_dir/shard-modules.txt"; then
               echo "[selection] exit 5 with every selected module skipped at module level (JUnit evidence): success"
               rc=0
             else
               printf '\n::error title=pytest fast lane (shard %s of 5): selected modules collected nothing::pytest exit 5 and the JUnit report does not show every selected module skipped\n' \
-                "${{ matrix.shard }}"
+                "$SHARD"
             fi
           fi
           echo "rc=${rc}" >> "$GITHUB_OUTPUT"
@@ -577,9 +578,9 @@ jobs:
             # with exit code 124" -- which is the inference this step exists to
             # remove. printf forces the command onto its own line.
             printf '\n::error title=pytest fast lane TIMEOUT (shard %s of 5)::shard %s of 5 exit %s: %s after %ss. This is a TIMEOUT, not a run superseded by a newer push and not a fail-fast cascade -- those two report CANCELLED, this reports FAILURE.\n' \
-              "${{ matrix.shard }}" "${{ matrix.shard }}" "$rc" "$kill_note" "$elapsed"
+              "$SHARD" "$SHARD" "$rc" "$kill_note" "$elapsed"
             {
-              echo "### pytest fast lane (shard ${{ matrix.shard }} of 5): TIMEOUT"
+              echo "### pytest fast lane (shard $SHARD of 5): TIMEOUT"
               echo
               echo "The shard was killed by its own wall-clock budget, not by the runner."
               echo

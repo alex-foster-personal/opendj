@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "el": "enrich-pill > span.enrich-flag",
+      "el": "div[data-testid=\"enrich-pill\"].enrich-pill > span.enrich-flag",
       "skins": [
         "light",
         "theme-light"
@@ -13,7 +13,7 @@
       "reason": "Found by the SVG pixel sampler (this PR, Nov 4 2026): the enrich pill's \"needs you\" flag is #e8a13a text over a light panel, light #1.94:1 and theme-light #2.15:1 (needs 4.5:1). The pill sits over a replaced svg, so this text was unmeasured before and is measured now. Product decision for CORE (flag color or panel): listed on #5638."
     },
     {
-      "el": "rb-topbar > button.bsm-toggle.topbar-slot-bsm.on",
+      "el": "header.rb-topbar.rb-panel > button.bsm-toggle.topbar-slot-bsm.on",
       "skins": [
         "default"
       ],
@@ -25,7 +25,7 @@
       "optional": true
     },
     {
-      "el": "lyr-wrap > button.bsm-toggle.topbar-slot-lyr.on",
+      "el": "span.lyr-wrap.topbar-slot-lyr-wrap > button.bsm-toggle.topbar-slot-lyr.on",
       "skins": [
         "default"
       ],
@@ -36,7 +36,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"LYR\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "ap-wrap > button.bsm-toggle.on",
+      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.on",
       "skins": [
         "default"
       ],
@@ -49,7 +49,7 @@
       "optional": true
     },
     {
-      "el": "ap-wrap > button.bsm-toggle",
+      "el": "span.ap-wrap.topbar-slot-autoplay > button.bsm-toggle",
       "skins": [
         "default"
       ],
@@ -62,7 +62,7 @@
       "optional": true
     },
     {
-      "el": "ap-wrap > button.bsm-toggle.ap-next-btn.on",
+      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.ap-next-btn.on",
       "skins": [
         "default"
       ],
@@ -75,7 +75,7 @@
       "optional": true
     },
     {
-      "el": "ap-wrap > button.bsm-toggle.ap-next-btn",
+      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.ap-next-btn",
       "skins": [
         "default"
       ],
@@ -88,7 +88,7 @@
       "optional": true
     },
     {
-      "el": "rb-deck > span.load-latency",
+      "el": "section.rb-deck.rb-panel > span.load-latency",
       "skins": [
         "default",
         "mono-dev",
@@ -104,7 +104,7 @@
       "optional": true
     },
     {
-      "el": "row > span.count",
+      "el": "div[data-testid=\"playlist-all-tracks\"].row.selected > span.count",
       "skins": [
         "default"
       ],
@@ -130,7 +130,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): the track table's muted time column on a tinted row (loaded, paired, first or hovered). Worst default \"01:00\" #838990 on #433f29 = 3.0:1 (needs 4.5:1); a paired row measured 3.97:1 in CI run 37558009259. TrackTable.svelte (hotspot). Rows carry only state classes, so the audit labels the row `tr` (rendered-contrast.ts). Listed in the W34 findings table on #5638 for triage. Light skin (#5812 palette): hovered TrackTable row, \"01:00\" #5e5e5e on #cccccc = 4.04:1 (needs 4.5:1)."
     },
     {
-      "el": "explainer > span.stem-tags.empty",
+      "el": "tr > span.stem-tags.empty",
       "skins": [
         "default",
         "mono-dev",
@@ -145,7 +145,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"-\" #9d947e on #dcd0b1 = 1.96:1 (needs 4.5:1). StemTags.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "c-lyrics > span.lyr-dash",
+      "el": "tr > span.lyr-dash",
       "skins": [
         "default",
         "mono-dev",
@@ -159,7 +159,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"-\" #838990 on #433f29 = 3.0:1 (needs 4.5:1). LyricColumn.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage. Light skin (#5812 palette): hovered TrackTable row, \"-\" #5e5e5e on #cccccc = 4.04:1 (needs 4.5:1)."
     },
     {
-      "el": "strip > span.head",
+      "el": "section.strip > div.library-panels-strips-body > div.library-panels-strips > div.list-panel > section[data-testid=\"browser-panel\"].rb-browser > span.head",
       "skins": [
         "default"
       ],
@@ -171,7 +171,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"NEXT\" #2f6fd6 on #14171d = 3.73:1 (needs 4.5:1). SuggestNextStrip.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "knob > span.label",
+      "el": "div.knob > span.label",
       "skins": [
         "default"
       ],
@@ -183,7 +183,7 @@
       "optional": true
     },
     {
-      "el": "strip > button.stem-label",
+      "el": "section.strip > button.stem-label",
       "skins": [
         "default"
       ],
@@ -195,7 +195,7 @@
       "optional": true
     },
     {
-      "el": "cal-controls > button.cal-btn",
+      "el": "div.cal-controls > button.cal-btn",
       "skins": [
         "default"
       ],
@@ -206,7 +206,7 @@
       "optional": true
     },
     {
-      "el": "row > button.pl-action",
+      "el": "div[data-testid=\"playlist-folder\"].row.folder > button.pl-action",
       "skins": [
         "default"
       ],
@@ -216,7 +216,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"+\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). PlaylistTree.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "row > button.pl-action.dim",
+      "el": "div[data-testid=\"playlist-row\"].row.child.art.broken > button.pl-action.dim",
       "skins": [
         "default"
       ],
@@ -226,7 +226,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"\u00d7\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). PlaylistTree.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "c-title > span.title-text",
+      "el": "tr > span.title-text",
       "skins": [
         "default",
         "theme-light"
@@ -237,7 +237,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"webkit-fixture-a-128bpm\" #1d7035 on #dcd0b1 = 4.0:1 (needs 4.5:1). TrackTable.svelte (hotspot). Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "library-panels-collapse-bar > button.panels-chevron",
+      "el": "div[data-testid=\"library-panels-collapse-bar\"].library-panels-collapse-bar > button.panels-chevron",
       "skins": [
         "default"
       ],
@@ -247,7 +247,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"\u203a\" #2f6fd6 on #14171d = 3.73:1 (needs 4.5:1). BrowserPanel.svelte (hotspot). Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "summary > span.lane",
+      "el": "button.summary > span.lane",
       "skins": [
         "light"
       ],
@@ -260,7 +260,7 @@
       "optional": true
     },
     {
-      "el": "summary > span.sha",
+      "el": "button.summary > span.sha",
       "skins": [
         "light"
       ],
@@ -273,7 +273,7 @@
       "optional": true
     },
     {
-      "el": "art-btn > span.art-eject",
+      "el": "button.art-btn > span.art-eject",
       "skins": [
         "light",
         "theme-light"
@@ -284,7 +284,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"\u23cf\" #ffffff on #fffdf8 = 1.02:1 (needs 3:1). DeckHeader.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
-      "el": "q-badge > span.q-label",
+      "el": "span.q-badge > span.q-label",
       "skins": [
         "theme-light"
       ],
@@ -294,7 +294,7 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"S\" #4a4f57 on #b6bbb9 = 4.23:1 (needs 4.5:1). QualityBadge.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage. The theme-light pass shows the same pair (#4a4f57 on #b6bbb9 = 4.23:1) once it is driven through the real theme pref (Codex P2 on #5727): the hovered TrackTable row is the backdrop, and TrackTable is a single-owner hotspot, so the fix is left to its owner."
     },
     {
-      "el": "summary > span.sha.dirty",
+      "el": "button.summary > span.sha.dirty",
       "skins": [
         "light",
         "theme-light"
@@ -308,7 +308,7 @@
       "optional": true
     },
     {
-      "el": "gutter > span.deck-num.empty",
+      "el": "div.gutter > span.deck-num.empty",
       "skins": [
         "default",
         "mono-dev",
@@ -322,7 +322,7 @@
       "reason": "New on main via #5685 (DECKUX-40, merged Tue 6 Oct 2026), caught by this audit after the W34 branch merged main: an empty deck's gutter number is drawn in var(--rb-border) on purpose (the maintainer: \"Empty state should be less messy - just show nothing\"), worst mono-dev \"3\" #2a2a2a on #282828 = 1.03:1 (needs 3:1). WaveGutter.svelte. It is a placeholder for an unloaded deck, not content; listed on #5638 for a design call on whether it should meet 3:1."
     },
     {
-      "el": "rb-deck > span.secondary-load",
+      "el": "section.rb-deck.rb-panel > span.secondary-load",
       "skins": [
         "light",
         "theme-light"
@@ -336,7 +336,7 @@
       "optional": true
     },
     {
-      "el": "toast > button.toast-dismiss",
+      "el": "div.toast > button.toast-dismiss",
       "skins": [
         "default",
         "mono-dev",
@@ -349,7 +349,7 @@
       "optional": true
     },
     {
-      "el": "slot > span.letter",
+      "el": "button[data-testid=\"hot-cue-1-A\"].slot.proposal > span.letter",
       "skins": [
         "default",
         "mono-dev",
@@ -364,7 +364,472 @@
       "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
     },
     {
-      "el": "mode-toggle > span.mode-glyph",
+      "el": "button[data-testid=\"hot-cue-1-B\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-C\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-D\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-E\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-F\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-G\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-H\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-A\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-B\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-C\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-D\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-E\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-F\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-G\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-H\"].slot.proposal > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-A\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-B\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-C\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-D\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-E\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-F\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-G\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-3-H\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-A\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-B\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-C\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-D\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-E\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-F\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-G\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-4-H\"].slot.inert-mapping > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"loop-interval-mode-deck-1\"].mode-toggle > span.mode-glyph",
       "skins": [
         "default",
         "mono-dev",
@@ -378,7 +843,49 @@
       "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
     },
     {
-      "el": "deck-btns > button.deck-target.loaded-target",
+      "el": "button[data-testid=\"loop-interval-mode-deck-2\"].mode-toggle > span.mode-glyph",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"loop-interval-mode-deck-3\"].mode-toggle > span.mode-glyph",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "button[data-testid=\"loop-interval-mode-deck-4\"].mode-toggle > span.mode-glyph",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "div.deck-btns > button.deck-target.loaded-target",
       "skins": [
         "light",
         "theme-light"
@@ -390,7 +897,7 @@
       "optional": true
     },
     {
-      "el": "dkl-row > span.dkl-tag",
+      "el": "div.dkl-row > span.dkl-tag",
       "skins": [
         "theme-light"
       ],
@@ -401,7 +908,7 @@
       "optional": true
     },
     {
-      "el": "stems > span.status",
+      "el": "div.stems > span.status",
       "skins": [
         "theme-light"
       ],
@@ -412,7 +919,7 @@
       "optional": true
     },
     {
-      "el": "meta > span.title",
+      "el": "div.meta > span.title",
       "skins": [
         "theme-light"
       ],
@@ -423,7 +930,7 @@
       "reason": "Optional because it depends on deck state: the empty-deck title shows on the hover surface in some runs and not others (present in PR CI at 2a5813ebb, absent in the merge-queue run of the same tree, Wed 7 Oct 2026). Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"No track loaded\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
     },
     {
-      "el": "deck-btns > button.deck-target",
+      "el": "div.deck-btns > button.deck-target",
       "skins": [
         "light",
         "theme-light"
@@ -434,7 +941,7 @@
       "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"2\" #f4f1eb on #e6dfd2 = 1.17:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Light skin on hover: #f7f5f0 on #7e8082 = 3.65:1, measured once faded fills composite as a group."
     },
     {
-      "el": "slot > span.proposal-label",
+      "el": "button[data-testid=\"hot-cue-1-A\"].slot.proposal > span.proposal-label",
       "skins": [
         "default",
         "mono-dev",
@@ -450,7 +957,247 @@
       "optional": true
     },
     {
-      "el": "enrich-card > p.enrich-line.failed",
+      "el": "button[data-testid=\"hot-cue-1-B\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-C\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-D\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-E\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-F\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-G\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-1-H\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-A\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-B\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-C\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-D\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-E\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-F\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-G\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "button[data-testid=\"hot-cue-2-H\"].slot.proposal > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "div[data-testid=\"enrich-card\"].enrich-card > p.enrich-line.failed",
       "skins": [
         "default",
         "mono-dev",
@@ -466,18 +1213,18 @@
       "optional": true
     },
     {
-      "el": "row > span.count",
+      "el": "div[data-testid=\"playlist-row\"].row.child > span.count",
       "skins": [
         "default"
       ],
       "surfaces": [
         "library"
       ],
-      "reason": "Playlist row count #838990 on the selected row's #1d3f73 = 2.96:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
+      "reason": "PlaylistTree playlist-row count #838990 on the selected row's #1d3f73 = 2.96:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
       "optional": true
     },
     {
-      "el": "explainer > span.stem-tags.empty",
+      "el": "tr > span.stem-tags.empty",
       "skins": [
         "default",
         "mono-dev",
@@ -490,7 +1237,7 @@
       "reason": "Empty stem-tags dash, worst light 2.09:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there."
     },
     {
-      "el": "chip > span.chip-label-full",
+      "el": "div.chip > span.chip-label-full",
       "skins": [
         "light"
       ],
@@ -501,7 +1248,7 @@
       "optional": true
     },
     {
-      "el": "summary > span.lane",
+      "el": "button.summary > span.lane",
       "skins": [
         "light"
       ],
@@ -512,7 +1259,7 @@
       "optional": true
     },
     {
-      "el": "summary > span.sha",
+      "el": "button.summary > span.sha",
       "skins": [
         "light"
       ],
@@ -523,7 +1270,7 @@
       "optional": true
     },
     {
-      "el": "gutter > span.deck-num.empty",
+      "el": "div.gutter > span.deck-num.empty",
       "skins": [
         "mono-dev"
       ],
@@ -538,7 +1285,7 @@
   ],
   "unmeasured": [
     {
-      "el": "explainer > button.round.cue",
+      "el": "span.explainer > button.round.cue",
       "skins": [
         "default",
         "theme-light"
@@ -551,7 +1298,7 @@
       "reason": "TransportCluster.svelte CUE button paints its label over a gradient, which this audit cannot composite; Gothic replaces the gradient with a flat fill and is measured."
     },
     {
-      "el": "dial > text.bpm",
+      "el": "svg.dial > text.bpm",
       "skins": [
         "default",
         "mono-dev",
@@ -566,7 +1313,7 @@
       "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
     },
     {
-      "el": "dial > text.pitch",
+      "el": "svg.dial > text.pitch",
       "skins": [
         "default",
         "mono-dev",
@@ -581,7 +1328,7 @@
       "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
     },
     {
-      "el": "dial > text.range",
+      "el": "svg.dial > text.range",
       "skins": [
         "default",
         "mono-dev",
@@ -596,7 +1343,7 @@
       "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
     },
     {
-      "el": "bpm > tspan.bpm-fraction",
+      "el": "text.bpm > tspan.bpm-fraction",
       "skins": [
         "default",
         "mono-dev",
@@ -611,7 +1358,7 @@
       "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
     },
     {
-      "el": "strip > span.no-anlz",
+      "el": "button[data-testid=\"waveform-seek-deck-1\"].strip > span.no-anlz",
       "skins": [
         "default",
         "mono-dev",
@@ -626,7 +1373,22 @@
       "reason": "StripWaveform.svelte paints the NO OWN GRID label over the waveform <canvas>, a replaced element with no CSS color to composite. Before Codex's image-backdrop finding on #5727 it was measured against the panel behind the canvas (light 2.77:1)."
     },
     {
-      "el": "q-badge > span.q-label",
+      "el": "button[data-testid=\"waveform-seek-deck-1\"].strip > span.grid-provider",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "StripWaveform.svelte paints the DECKUX-LABEL-01 grid provider chip over the waveform <canvas>, a replaced element with no CSS color to composite; same gap as span.no-anlz above."
+    },
+    {
+      "el": "span.q-badge > span.q-label",
       "skins": [
         "mono-dev",
         "light"

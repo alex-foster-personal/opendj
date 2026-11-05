@@ -213,16 +213,10 @@ def probe_lan_refusal(target: ProbeTarget, lan_ips: Sequence[str] | None = None)
 def probe_cors(target: ProbeTarget) -> ProbeResult:
     """Hostile and null Origin refused; the app origin is the positive control."""
     command = (
-        f"GET {HEALTH_PATH} with Origin {HOSTILE_ORIGIN!r}, {NULL_ORIGIN!r}, "
-        f"and control {target.frontend_origin!r}"
+        f"GET {HEALTH_PATH} with Origin {HOSTILE_ORIGIN!r}, {NULL_ORIGIN!r}, and control {target.frontend_origin!r}"
     )
-    control_acao, control_status, control_err = acao(
-        target.host, target.port, HEALTH_PATH, target.frontend_origin
-    )
-    control = (
-        f"Origin {target.frontend_origin} -> HTTP {control_status} "
-        f"ACAO={control_acao!r}"
-    )
+    control_acao, control_status, control_err = acao(target.host, target.port, HEALTH_PATH, target.frontend_origin)
+    control = f"Origin {target.frontend_origin} -> HTTP {control_status} ACAO={control_acao!r}"
     if control_status is None:
         return ProbeResult(
             name="cors",
@@ -241,12 +235,8 @@ def probe_cors(target: ProbeTarget) -> ProbeResult:
             output=control,
             control=control,
         )
-    evil_acao, evil_status, _evil_err = acao(
-        target.host, target.port, HEALTH_PATH, HOSTILE_ORIGIN
-    )
-    null_acao, null_status, _null_err = acao(
-        target.host, target.port, HEALTH_PATH, NULL_ORIGIN
-    )
+    evil_acao, evil_status, _evil_err = acao(target.host, target.port, HEALTH_PATH, HOSTILE_ORIGIN)
+    null_acao, null_status, _null_err = acao(target.host, target.port, HEALTH_PATH, NULL_ORIGIN)
     output = (
         f"evil Origin {HOSTILE_ORIGIN} -> HTTP {evil_status} ACAO={evil_acao!r}\n"
         f"null Origin {NULL_ORIGIN!r} -> HTTP {null_status} ACAO={null_acao!r}"
@@ -277,15 +267,10 @@ def probe_cors(target: ProbeTarget) -> ProbeResult:
     )
 
 
-def probe_path_traversal(
-    target: ProbeTarget, routes: Sequence[tuple[str, str, str]] | None = None
-) -> ProbeResult:
+def probe_path_traversal(target: ProbeTarget, routes: Sequence[tuple[str, str, str]] | None = None) -> ProbeResult:
     """../ and encoded variants against every path/filename route, plus a control."""
     discovered = tuple(routes) if routes is not None else discover_path_routes(target.openapi_path)
-    command = (
-        f"GET/POST traversal payloads {list(TRAVERSAL_PAYLOADS)} against "
-        f"{[item[1] for item in discovered]}"
-    )
+    command = f"GET/POST traversal payloads {list(TRAVERSAL_PAYLOADS)} against {[item[1] for item in discovered]}"
     control_ok, control = _path_control(target)
     if not control_ok:
         return ProbeResult(
@@ -331,10 +316,7 @@ def probe_path_traversal(
     return ProbeResult(
         name="path-traversal",
         verdict=ProbeVerdict.PASS,
-        summary=(
-            f"{len(discovered)} routes x {len(TRAVERSAL_PAYLOADS)} payloads "
-            "all refused with 4xx"
-        ),
+        summary=(f"{len(discovered)} routes x {len(TRAVERSAL_PAYLOADS)} payloads all refused with 4xx"),
         command=command,
         output=output,
         control=control,
@@ -377,10 +359,8 @@ def _pathish_in_methods(path: str, methods: dict[str, Any]) -> list[tuple[str, s
         )
         body = (spec.get("requestBody") or {}).get("content", {})
         for media in body.values():
-            properties = ((media.get("schema") or {}).get("properties") or {})
-            found.extend(
-                (verb, path, name) for name in properties if name in PATHISH_NAMES
-            )
+            properties = (media.get("schema") or {}).get("properties") or {}
+            found.extend((verb, path, name) for name in properties if name in PATHISH_NAMES)
     return found
 
 
@@ -417,9 +397,7 @@ def exit_code(results: Sequence[ProbeResult]) -> int:
     return 0
 
 
-def findings_from_results(
-    results: Sequence[ProbeResult], *, sha: str, host: str
-) -> tuple[Finding, ...]:
+def findings_from_results(results: Sequence[ProbeResult], *, sha: str, host: str) -> tuple[Finding, ...]:
     """FAIL -> Finding.fail, UNKNOWN -> Finding.unavailable. PASS is not a finding."""
     out: list[Finding] = []
     for result in results:
@@ -447,9 +425,7 @@ def findings_from_results(
     return tuple(out)
 
 
-def discover_target(
-    *, port: int | None = None, frontend_origin: str | None = None
-) -> ProbeTarget:
+def discover_target(*, port: int | None = None, frontend_origin: str | None = None) -> ProbeTarget:
     """Resolve the worktree pair the same way ``just webui-ports`` does."""
     if port is not None and frontend_origin is not None:
         return ProbeTarget(
@@ -471,24 +447,17 @@ def discover_target(
 
 
 def _path_control(target: ProbeTarget) -> tuple[bool, str]:
-    status, err, preview = http_body(
-        target.host, target.port, "GET", "/api/v1/bench/ratings/probe-control.json", None
-    )
-    control = (
-        f"GET /api/v1/bench/ratings/probe-control.json -> {status} {preview or err or ''}"
-    )
+    status, err, preview = http_body(target.host, target.port, "GET", "/api/v1/bench/ratings/probe-control.json", None)
+    control = f"GET /api/v1/bench/ratings/probe-control.json -> {status} {preview or err or ''}"
     if status in {200, 404}:
         return True, control
-    health_status, health_err = http_status(
-        target.host, target.port, "GET", HEALTH_PATH
-    )
+    health_status, health_err = http_status(target.host, target.port, "GET", HEALTH_PATH)
     if health_status is not None and health_status < 500:
         # Route may 405/422 and still prove the daemon is up; keep going only
         # when the filename route itself answered as a lookup (200/404) OR we
         # can name a 2xx/404 in-root hit. Health alone is not an in-root path.
         return False, (
-            f"{control}; health={health_status} {health_err or ''} "
-            "(in-root filename control did not succeed)"
+            f"{control}; health={health_status} {health_err or ''} (in-root filename control did not succeed)"
         )
     return False, control
 
@@ -502,9 +471,7 @@ def _method_is_safe(method: str, template: str, param: str) -> bool:
     return verb in {"GET", "HEAD", "OPTIONS", "POST"}
 
 
-def _apply_payload(
-    method: str, template: str, param: str, payload: str
-) -> tuple[str, str | None]:
+def _apply_payload(method: str, template: str, param: str, payload: str) -> tuple[str, str | None]:
     if "{" + param + "}" in template:
         path = template.replace("{" + param + "}", payload)
         path = re.sub(r"\{[^}]+\}", "x", path)
@@ -566,17 +533,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--index",
         type=Path,
-        default=Path(os.environ.get("HOME", "."))
-        / "jobs"
-        / "redteam"
-        / DEFAULT_RUN_ID
-        / "index.jsonl",
+        default=Path(os.environ.get("HOME", ".")) / "jobs" / "redteam" / DEFAULT_RUN_ID / "index.jsonl",
     )
     arguments = parser.parse_args(argv)
     try:
-        target = discover_target(
-            port=arguments.port, frontend_origin=arguments.frontend_origin
-        )
+        target = discover_target(port=arguments.port, frontend_origin=arguments.frontend_origin)
     except Exception as exc:
         unknown = ProbeResult(
             name="bind-address",

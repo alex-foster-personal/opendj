@@ -13,6 +13,7 @@ Each executor:
 On failure we clean the ``.part`` file so callers never see a partial
 result sitting on the drive.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -144,10 +145,7 @@ def copy_one(op: Op, profile: Profile) -> CopyResult:
                 ok=False,
                 actual_hash=actual,
                 dst_size=op.dst.stat().st_size,
-                error=(
-                    f"post-write hash mismatch: "
-                    f"expected {op.expected_hash}, got {actual}"
-                ),
+                error=(f"post-write hash mismatch: expected {op.expected_hash}, got {actual}"),
                 backup_path=backup,
             )
         return CopyResult(

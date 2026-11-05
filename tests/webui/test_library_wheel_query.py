@@ -88,10 +88,7 @@ def test_soft_deleted_track_is_absent_from_every_wheel_count(
 ) -> None:
     state_db, master_db = wheel_dbs
     with sqlite3.connect(state_db) as state:
-        state.execute(
-            "UPDATE tracks SET deleted_at = '2026-09-04T00:00:00Z' "
-            "WHERE stable_id = 't-techno-1'"
-        )
+        state.execute("UPDATE tracks SET deleted_at = '2026-09-04T00:00:00Z' WHERE stable_id = 't-techno-1'")
 
     result = query_library_wheel(state_db, master_db, axis="play_count")
 
@@ -120,8 +117,7 @@ def test_playlist_axis_counts_distinct_playlists_not_membership_rows(
     state_db, master_db = wheel_dbs
     with sqlite3.connect(state_db) as state:
         state.execute(
-            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
-            "VALUES ('pl-1', 't-techno-1', 99)"
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('pl-1', 't-techno-1', 99)"
         )
 
     result = query_library_wheel(state_db, master_db, axis="playlist")

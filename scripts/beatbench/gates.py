@@ -69,9 +69,7 @@ def refusals(summary: dict[str, Any], unscorable: dict[str, list[str]]) -> list[
     # recording UNMEASURED and exiting 0 let automation accept a benchmark whose
     # stated control never ran (Codex P1 BLOCKING, discussion_r3975199353).
     problems: list[str] = []
-    unexpected_errors = sorted(
-        set(unscorable["runner_error"]) - KNOWN_UNANALYZABLE_FIXTURES
-    )
+    unexpected_errors = sorted(set(unscorable["runner_error"]) - KNOWN_UNANALYZABLE_FIXTURES)
     if unexpected_errors:
         problems.append(
             f"{len(unexpected_errors)} clips failed in the analyzer and are not "

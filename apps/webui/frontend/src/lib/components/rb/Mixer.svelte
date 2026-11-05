@@ -27,6 +27,7 @@
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import { librarySongCapacity } from '$lib/rb/library-song-capacity.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
@@ -47,14 +48,6 @@
 	 * persisted preference (also driven by Cmd/Ctrl+2/+4 via
 	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
 	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
-
-	/** Pin a00900579b7b: artwork that failed to load, keyed by stable id. */
-	let artworkFailed = $state<ReadonlySet<string>>(new Set());
-
-	function noteArtworkFailed(stableId: string): void {
-		if (artworkFailed.has(stableId)) return;
-		artworkFailed = new Set([...artworkFailed, stableId]);
-	}
 
 	/** Same play command as the deck transport, including Cmd/Ctrl quantize. */
 	function duplicatePlayPause(deck: DeckId, event: MouseEvent): void {
@@ -139,13 +132,16 @@
 		void runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
 	}
 
-	function handleStemEqMode(deck: DeckId, enabled: boolean): void {
-		void runPerformanceCommandFromUi({ type: 'stem_eq_mode', deck, enabled });
-	}
-
 	function handleStemGain(deck: DeckId, stem: StemControl, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'stem_gain', deck, stem, value });
 	}
+
+	/** S button: same command an agent sends (`mixer_stems`), so both paths persist alike. */
+	function handleMixerStems(enabled: boolean): void {
+		void runPerformanceCommandFromUi({ type: 'mixer_stems', enabled });
+	}
+
+	const mixerStems = $derived(uiPrefs.mixer_stems);
 
 	function handleHeadphoneMix(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_mix', value });
@@ -202,7 +198,22 @@
 	});
 </script>
 
-<section class="rb-mixer rb-panel">
+<section class="rb-mixer rb-panel" class:mixer-stems={mixerStems}>
+	<div class="mixer-view-row">
+	<button
+		type="button"
+		class="mixer-stems-btn"
+		class:active={mixerStems}
+		aria-pressed={mixerStems}
+		aria-label="Stem dials on every channel with stems"
+		data-testid="mixer-stems-toggle"
+		title={mixerStems
+			? 'S - stem dials ON: VOCAL/INST/BASS beside HI/MID/LOW and DRUMS beside FILTER on every channel with stems. Click to hide them.'
+			: 'S - show stem dials (VOCAL/INST/BASS beside HI/MID/LOW, DRUMS beside FILTER) on every channel whose track has stems. Widens the mixer.'}
+		onclick={() => handleMixerStems(!mixerStems)}
+	>
+		S
+	</button>
 	<div class="deck-layout-toggle" role="group" aria-label="Deck layout">
 		<button
 			type="button"
@@ -227,6 +238,7 @@
 			LESS
 		</button>
 	</div>
+	</div>
 	<div class="strips" class:less={deckLayoutLess} class:with-art={librarySongCapacity.showMixerColumnArt}>
 		{#each STRIP_ORDER as deck (deck)}
 			{@const channel = getDeckState(deck)}
@@ -247,14 +259,16 @@
 			>
 				{#if librarySongCapacity.showMixerColumnArt}
 					<div class="col-art" data-mixer-column-art={deck}>
-						{#if artId !== null && !artworkFailed.has(artId)}
+						{#if artId !== null && coverVisible(artId)}
 							<img
 								class="col-art-img"
-								src={deckArtworkUrl(artId, 's')}
+								src={coverSrc(deckArtworkUrl(artId, 's'), artId)}
+								data-expected-resource-error
 								alt=""
 								title="Track artwork"
 								draggable="false"
-								onerror={() => noteArtworkFailed(artId)}
+								onload={() => coverLoaded(artId)}
+								onerror={() => coverFailed(artId)}
 							/>
 						{:else}
 							<div
@@ -297,7 +311,7 @@
 					filter={mixerState.channels[deck].filter}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
-					stemEqMode={mixerState.channels[deck].stem_eq_mode}
+					{mixerStems}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					onAutoGainOffset={(db, id) => handleAutoGainOffset(deck, db, id)}
@@ -306,7 +320,6 @@
 					oncolorfx={(effect) => handleColorFx(deck, effect)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
-					onStemEqMode={(enabled) => handleStemEqMode(deck, enabled)}
 					onStemGain={(stem, value) => handleStemGain(deck, stem, value)}
 					onStemMute={(stem) => handleStemMute(deck, stem)}
 					onStemSolo={(stem) => handleStemSolo(deck, stem)}
@@ -361,12 +374,35 @@
 	 * both, and MORE mode has no reason to keep the extra height either).
 	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
 	 * from this height too. */
-	.deck-layout-toggle {
+	/* S sits immediately left of MORE/LESS, the pair centred as before. Same
+	 * button height as MORE/LESS, so the toggle row (and the LESS floor
+	 * channel-strip-less-floor.test.mjs derives from it) does not grow. */
+	.mixer-view-row {
 		flex: 0 0 auto;
 		display: flex;
 		justify-content: center;
-		gap: 2px;
+		align-items: stretch;
+		gap: 4px;
 		padding-bottom: 2px;
+	}
+	.deck-layout-toggle {
+		display: flex;
+		gap: 2px;
+	}
+	.mixer-stems-btn {
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		padding: 1px 6px;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--rb-text-dim, #9aa4b2);
+		cursor: pointer;
+	}
+	.mixer-stems-btn.active {
+		background: var(--rb-accent, #3d7bfd);
+		color: var(--rb-on-accent, #fff);
 	}
 	.deck-layout-btn {
 		font-size: 9px;

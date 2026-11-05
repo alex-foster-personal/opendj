@@ -48,10 +48,7 @@ _SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]{0,63}$")
 
 def _validate_playlist_id(playlist_id: str) -> str:
     if not isinstance(playlist_id, str) or not _SPOTIFY_ID_RE.fullmatch(playlist_id):
-        raise ValueError(
-            f"invalid Spotify playlist_id {playlist_id!r}: "
-            "expected alphanumeric + dash, length 1..64"
-        )
+        raise ValueError(f"invalid Spotify playlist_id {playlist_id!r}: expected alphanumeric + dash, length 1..64")
     return playlist_id
 
 
@@ -70,9 +67,7 @@ DEFAULT_REDIRECT_URI: str = "http://127.0.0.1:8888/callback"
 # Adding a scope invalidates the cached token: spotipy notices the scope set
 # changed and re-runs the PKCE browser flow ONCE. That is deliberate and
 # visible, not something to work around by keeping two token caches.
-DEFAULT_SCOPES: str = (
-    "playlist-read-private playlist-read-collaborative user-read-recently-played"
-)
+DEFAULT_SCOPES: str = "playlist-read-private playlist-read-collaborative user-read-recently-played"
 
 
 @dataclass(frozen=True)
@@ -133,9 +128,7 @@ class ReauthorizationRequired(RuntimeError):
 class SpotifyClientProtocol(Protocol):
     """Minimal shape we depend on from ``spotipy.Spotify``."""
 
-    def playlist(
-        self, playlist_id: str, fields: str | None = None
-    ) -> dict: ...  # pragma: no cover -- protocol
+    def playlist(self, playlist_id: str, fields: str | None = None) -> dict: ...  # pragma: no cover -- protocol
 
     def playlist_items(
         self,
@@ -145,11 +138,9 @@ class SpotifyClientProtocol(Protocol):
         additional_types: tuple[str, ...] = ("track",),
     ) -> dict: ...  # pragma: no cover -- protocol
 
-    def current_user_recently_played(self, limit: int = 50) -> dict:
-        ...  # pragma: no cover -- protocol
+    def current_user_recently_played(self, limit: int = 50) -> dict: ...  # pragma: no cover -- protocol
 
-    def me(self) -> dict:
-        ...  # pragma: no cover -- protocol
+    def me(self) -> dict: ...  # pragma: no cover -- protocol
 
 
 # ---------------------------------------------------------------------------
@@ -282,8 +273,7 @@ class SpotifyClient:
         client_id = os.environ.get("SPOTIFY_CLIENT_ID")
         if not client_id:
             raise MissingCredentialsError(
-                "SPOTIFY_CLIENT_ID not set. Wrap the command with "
-                "`doppler run -- ...` or export the env var manually."
+                "SPOTIFY_CLIENT_ID not set. Wrap the command with `doppler run -- ...` or export the env var manually."
             )
         import spotipy
         from spotipy.oauth2 import SpotifyPKCE

@@ -134,9 +134,7 @@ def _client_error_breakdown(tally: _ScanTally) -> list[str]:
     ]
 
 
-def check_client_errors(
-    log_dirs: tuple[Path, ...], days: int, now: datetime
-) -> CheckResult:
+def check_client_errors(log_dirs: tuple[Path, ...], days: int, now: datetime) -> CheckResult:
     window = _window_label(days)
     paths, present_roots = _log_files(log_dirs, CLIENT_ERROR_PREFIX, days, now)
     if not present_roots:
@@ -146,10 +144,7 @@ def check_client_errors(
             classification="sink-absent",
             detail="no client-error log root exists on this machine, so 0 rows were readable",
             window=window,
-            remediation=(
-                "none of the expected roots exist: "
-                + ", ".join(str(directory) for directory in log_dirs)
-            ),
+            remediation=("none of the expected roots exist: " + ", ".join(str(directory) for directory in log_dirs)),
         )
     if not paths:
         roots = ", ".join(str(root) for root in present_roots)
@@ -180,7 +175,5 @@ def check_client_errors(
         sources=[str(path) for path in paths],
         breakdown=_client_error_breakdown(tally),
         findings=tally.findings,
-        remediation=(
-            "; ".join(tally.malformed[:MAX_EVIDENCE_ROWS]) if tally.malformed else ""
-        ),
+        remediation=("; ".join(tally.malformed[:MAX_EVIDENCE_ROWS]) if tally.malformed else ""),
     )

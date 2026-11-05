@@ -69,17 +69,14 @@ def test_route_table_builds_without_scripts_package() -> None:
     """if any route module imports scripts.* at import time then the payload cannot boot."""
     result = _boot_route_table(block_scripts=True)
     assert result.returncode == 0, (
-        "the route table imports from scripts/, which the payload does not ship:\n"
-        + result.stderr[-4000:]
+        "the route table imports from scripts/, which the payload does not ship:\n" + result.stderr[-4000:]
     )
     assert int(result.stdout.strip().splitlines()[-1]) > 100, result.stdout
 
 
 def test_scripts_blocker_refuses_a_scripts_import() -> None:
     """if the blocker lets `import scripts.stem_inventory` through then the guard above is inert."""
-    probe = _BOOT_WITHOUT_SCRIPTS.split("from apps.engine_core.config")[0] + (
-        "import scripts.stem_inventory\n"
-    )
+    probe = _BOOT_WITHOUT_SCRIPTS.split("from apps.engine_core.config")[0] + ("import scripts.stem_inventory\n")
     result = subprocess.run(
         [sys.executable, "-c", probe],
         cwd=REPO_ROOT,

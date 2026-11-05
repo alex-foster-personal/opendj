@@ -36,40 +36,40 @@ null_sha256=0000000000000000000000000000000000000000000000000000000000000000
 [ "$1" = "$null_sha1" ] || [ "$1" = "$null_sha256" ] || exit 0
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || {
-  echo "[ERROR] sparse-worktree: SPARSE_HOOK_NO_WORKTREE: git rev-parse --show-toplevel failed in a fresh worktree; it was not made sparse" >&2
-  exit 3
+    echo "[ERROR] sparse-worktree: SPARSE_HOOK_NO_WORKTREE: git rev-parse --show-toplevel failed in a fresh worktree; it was not made sparse" >&2
+    exit 3
 }
 [ -f "$root/scripts/sparse_worktree.py" ] || exit 0
 
 python_ok() {
-  "$@" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1
+    "$@" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1
 }
 
 py_cmd=()
 tried=""
 if [ -n "${MDT_SPARSE_HOOK_PYTHON:-}" ]; then
-  tried=" MDT_SPARSE_HOOK_PYTHON=$MDT_SPARSE_HOOK_PYTHON"
-  resolved=$(command -v "$MDT_SPARSE_HOOK_PYTHON" 2>/dev/null) && python_ok "$resolved" && py_cmd=("$resolved")
+    tried=" MDT_SPARSE_HOOK_PYTHON=$MDT_SPARSE_HOOK_PYTHON"
+    resolved=$(command -v "$MDT_SPARSE_HOOK_PYTHON" 2>/dev/null) && python_ok "$resolved" && py_cmd=("$resolved")
 else
-  for name in python3 python py; do
-    if [ "$name" = "py" ]; then tried="$tried py -3"; else tried="$tried $name"; fi
-    resolved=$(command -v "$name" 2>/dev/null) || continue
-    if [ "$name" = "py" ]; then
-      python_ok "$resolved" -3 && py_cmd=("$resolved" -3)
-    else
-      python_ok "$resolved" && py_cmd=("$resolved")
-    fi
-    [ "${#py_cmd[@]}" -gt 0 ] && break
-  done
+    for name in python3 python py; do
+        if [ "$name" = "py" ]; then tried="$tried py -3"; else tried="$tried $name"; fi
+        resolved=$(command -v "$name" 2>/dev/null) || continue
+        if [ "$name" = "py" ]; then
+            python_ok "$resolved" -3 && py_cmd=("$resolved" -3)
+        else
+            python_ok "$resolved" && py_cmd=("$resolved")
+        fi
+        [ "${#py_cmd[@]}" -gt 0 ] && break
+    done
 fi
 if [ "${#py_cmd[@]}" -eq 0 ]; then
-  echo "[ERROR] sparse-worktree: SPARSE_HOOK_PYTHON_UNAVAILABLE: no Python 3.9+ interpreter (tried:$tried); this new worktree was NOT made sparse. Install Python 3 or set MDT_SPARSE_HOOK_PYTHON, then run: python -m scripts.sparse_worktree sparse" >&2
-  exit 3
+    echo "[ERROR] sparse-worktree: SPARSE_HOOK_PYTHON_UNAVAILABLE: no Python 3.9+ interpreter (tried:$tried); this new worktree was NOT made sparse. Install Python 3 or set MDT_SPARSE_HOOK_PYTHON, then run: python -m scripts.sparse_worktree sparse" >&2
+    exit 3
 fi
 
 cd "$root" || {
-  echo "[ERROR] sparse-worktree: SPARSE_HOOK_NO_WORKTREE: cannot enter $root; it was not made sparse" >&2
-  exit 3
+    echo "[ERROR] sparse-worktree: SPARSE_HOOK_NO_WORKTREE: cannot enter $root; it was not made sparse" >&2
+    exit 3
 }
 "${py_cmd[@]}" -m scripts.sparse_worktree post-checkout "$1" "$2" "$3"
 rc=$?

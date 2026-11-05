@@ -5,6 +5,7 @@ present), never in the ci.yml pytest lanes, which ignore this file: it is a full
 bench with a 600 s test timeout and a 240 s webServer timeout, and it ate a whole shard's
 1380 s budget on PR #3732. ``tests/scripts/test_ci_playlist_bench_lane.py`` pins the lane.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -88,6 +89,4 @@ def test_playlist_switch_bench_meets_post_fix_caps(tmp_path: Path) -> None:
     assert isinstance(post_fix, dict)
     for metric, cap in thresholds.items():
         measured = post_fix[metric]["p50"]
-        assert measured <= cap, (
-            f"{metric} p50 {measured}ms exceeds cap {cap}ms"
-        )
+        assert measured <= cap, f"{metric} p50 {measured}ms exceeds cap {cap}ms"

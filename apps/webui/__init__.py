@@ -13,6 +13,6 @@ from __future__ import annotations
 
 from apps.shared.app_version import APP_VERSION
 
-# The app version from tauri.conf.json (apps/shared/app_version.py).
+# The app version from apps/desktop/electron/package.json (apps/shared/app_version.py).
 __version__ = APP_VERSION
 __all__ = ["__version__"]

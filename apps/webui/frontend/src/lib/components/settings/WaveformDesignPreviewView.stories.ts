@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/sveltekit';
 
 import { resolveWaveBandColors } from '$lib/rb/wave-palette';
 import { previewSampleWaveform } from '$lib/settings/waveform-preview-sample';
+import { paintWaveformPreview } from '$lib/settings/waveform-preview-paint';
 
 import WaveformDesignPreviewView from './WaveformDesignPreviewView.svelte';
 
@@ -26,6 +27,7 @@ const meta = {
 		}
 	],
 	args: {
+		paint: paintWaveformPreview,
 		active: 'tri-band',
 		palette: 'rekordbox',
 		colors: resolveWaveBandColors('dark', 'rekordbox'),

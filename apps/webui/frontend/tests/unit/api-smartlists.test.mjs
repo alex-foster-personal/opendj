@@ -210,9 +210,12 @@ test('duplicateSmartlist posts the duplicate route', async () => {
 	let seen;
 	globalThis.fetch = async (request) => {
 		seen = request;
-		return jsonResponse({ ...summaryPayload(), id: 'sl-copy', name: 'Peak time (copy)' }, {
-			status: 201
-		});
+		return jsonResponse(
+			{ ...summaryPayload(), id: 'sl-copy', name: 'Peak time (copy)' },
+			{
+				status: 201
+			}
+		);
 	};
 
 	const row = await smartlists.duplicateSmartlist('sl-1', 'Custom');

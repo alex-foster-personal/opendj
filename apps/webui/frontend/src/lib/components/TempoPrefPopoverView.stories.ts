@@ -46,10 +46,14 @@ export const RangeInvalid: Story = { args: { min: 130, max: 126, rangeInvalid: t
 export const Saving: Story = { args: { saving: true } };
 
 /** A save failed. */
-export const SaveError: Story = { args: { saveError: 'Save failed: Error: 500 Internal Server Error' } };
+export const SaveError: Story = {
+	args: { saveError: 'Save failed: Error: 500 Internal Server Error' }
+};
 
 /** The fresh track read is in flight. */
 export const Loading: Story = { args: { loading: true } };
 
 /** The track could not be read. */
-export const LoadError: Story = { args: { loadError: 'Failed to load track: Error: 404 Not Found' } };
+export const LoadError: Story = {
+	args: { loadError: 'Failed to load track: Error: 404 Not Found' }
+};

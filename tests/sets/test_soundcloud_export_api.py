@@ -1,4 +1,5 @@
 """HTTP contract for SET-06a metadata-only SoundCloud export."""
+
 from __future__ import annotations
 
 import json
@@ -16,9 +17,7 @@ from tests.sets.test_soundcloud_export import THREE_TRACK_TIMELINE, _seed_sessio
 
 
 @pytest.fixture
-def api_test_client(
-    sets_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[tuple[TestClient, Path]]:
+def api_test_client(sets_root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, Path]]:
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     app = FastAPI()
     app.include_router(api_mod.router)
@@ -75,9 +74,7 @@ def test_post_false_ack_is_400_and_omits_comment(
     """[if] the POST sends a false ack [then] it is 400 and withholds the comment, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    resp = client.post(
-        "/api/sets/s1/soundcloud-export", json={"acknowledge_rights": False}
-    )
+    resp = client.post("/api/sets/s1/soundcloud-export", json={"acknowledge_rights": False})
     assert resp.status_code == 400
     payload = resp.json()
     assert payload.get("comment") in (None, "")
@@ -90,9 +87,7 @@ def test_post_with_ack_returns_library_comment(
     """[if] the POST acknowledges the rights [then] it returns the library comment, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    resp = client.post(
-        "/api/sets/s1/soundcloud-export", json={"acknowledge_rights": True}
-    )
+    resp = client.post("/api/sets/s1/soundcloud-export", json={"acknowledge_rights": True})
     assert resp.status_code == 200
     payload = resp.json()
     library = build_soundcloud_export("s1", sets_root=sets_root)

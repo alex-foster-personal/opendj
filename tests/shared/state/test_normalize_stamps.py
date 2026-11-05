@@ -19,6 +19,7 @@ Acceptance criteria, one assertion block each:
 - if neither or both of --dry-run/--live is accepted, the CLI has a hidden
   default about writing to a database -- broken.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -90,10 +91,7 @@ def test_the_floor_is_storable_and_the_epoch_sentinel_is_not() -> None:
     """
     with pytest.raises(sync_stamp.SyncStampError):
         sync_stamp.parse_canonical(sync_stamp.EPOCH)
-    assert (
-        sync_stamp.to_canonical(normalize_stamps.FLOOR_STAMP)
-        == normalize_stamps.FLOOR_STAMP
-    )
+    assert sync_stamp.to_canonical(normalize_stamps.FLOOR_STAMP) == normalize_stamps.FLOOR_STAMP
     assert sync_stamp.EPOCH < normalize_stamps.FLOOR_STAMP < CANONICAL
 
 
@@ -101,13 +99,14 @@ def test_the_floor_is_storable_and_the_epoch_sentinel_is_not() -> None:
     "orderable",
     [
         CANONICAL,
-        "2026-08-30T09:00:00Z",        # Z suffix
-        "2026-08-30T09:00:00+00:00",   # second precision
-        "2026-08-30T10:00:00+01:00",   # non-UTC offset
+        "2026-08-30T09:00:00Z",  # Z suffix
+        "2026-08-30T09:00:00+00:00",  # second precision
+        "2026-08-30T10:00:00+01:00",  # non-UTC offset
     ],
 )
 def test_an_orderable_stamp_is_never_rewritten(
-    state_conn: sqlite3.Connection, orderable: str,
+    state_conn: sqlite3.Connection,
+    orderable: str,
 ) -> None:
     """The protocol boundary re-emits these canonically on every read, so
     rewriting them would churn rows for no correctness gain."""
@@ -137,9 +136,7 @@ def test_applying_the_repair_makes_every_stored_stamp_orderable(
     _seed_track(state_conn, "d" * 40, updated_at="not a timestamp")
     _seed_track(state_conn, "e" * 40, updated_at=CANONICAL)
 
-    outcome = normalize_stamps.apply_repairs(
-        state_conn, normalize_stamps.scan(state_conn)
-    )
+    outcome = normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
     assert outcome.applied == 2
     assert normalize_stamps.scan(state_conn) == [], "the repair is idempotent"
 
@@ -162,16 +159,17 @@ def test_the_repair_is_one_transaction(state_conn: sqlite3.Connection) -> None:
     assert len(repairs) == 2
 
     doomed = normalize_stamps.Repair(
-        table="tracks", column="no_such_column", rowid=1,
-        stored="whatever", replacement=CANONICAL,
+        table="tracks",
+        column="no_such_column",
+        rowid=1,
+        stored="whatever",
+        replacement=CANONICAL,
         reason="unparseable-to-floor",
     )
     with pytest.raises(sqlite3.OperationalError):
         normalize_stamps.apply_repairs(state_conn, [*repairs, doomed])
 
-    assert len(normalize_stamps.scan(state_conn)) == 2, (
-        "a failed repair must leave every row exactly as it was"
-    )
+    assert len(normalize_stamps.scan(state_conn)) == 2, "a failed repair must leave every row exactly as it was"
 
 
 # ----- (3) the swept list cannot silently shrink ---------------------------
@@ -183,15 +181,9 @@ def test_the_swept_columns_cover_the_whole_digest_set() -> None:
     swept = {table for table, _column in normalize_stamps.STAMP_COLUMNS}
     assert set(hub_protocol.DIGEST_TABLES) <= swept
     for table in hub_protocol.DIGEST_TABLES:
-        columns = {
-            column
-            for swept_table, column in normalize_stamps.STAMP_COLUMNS
-            if swept_table == table
-        }
+        columns = {column for swept_table, column in normalize_stamps.STAMP_COLUMNS if swept_table == table}
         assert {"updated_at", "deleted_at"} <= columns, table
-    assert sync_stamp.LOCAL_CHANGELOG_TABLE in swept, (
-        "the spoke changelog carries stamps the push fence reads"
-    )
+    assert sync_stamp.LOCAL_CHANGELOG_TABLE in swept, "the spoke changelog carries stamps the push fence reads"
 
 
 # ----- (4) the CLI ---------------------------------------------------------
@@ -218,20 +210,20 @@ def _stored_stamp(data_dir: Path) -> str:
 
 
 def test_dry_run_reports_every_repair_and_writes_nothing(
-    data_dir: Path, capsys: pytest.CaptureFixture[str],
+    data_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert normalize_stamps.main(["--data-dir", str(data_dir), "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "tracks.updated_at" in out
     assert "naive-assumed-utc" in out
     assert "[DRY-RUN]" in out
-    assert _stored_stamp(data_dir) == "2024-11-01T12:00:00", (
-        "--dry-run must not touch the database"
-    )
+    assert _stored_stamp(data_dir) == "2024-11-01T12:00:00", "--dry-run must not touch the database"
 
 
 def test_live_rewrites_the_row(
-    data_dir: Path, capsys: pytest.CaptureFixture[str],
+    data_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert normalize_stamps.main(["--data-dir", str(data_dir), "--live"]) == 0
     assert "[OK] rewrote 1 value(s)" in capsys.readouterr().out
@@ -239,9 +231,10 @@ def test_live_rewrites_the_row(
 
 
 def test_a_live_repair_names_the_hub_rotate_as_the_remaining_step(
-    data_dir: Path, capsys: pytest.CaptureFixture[str],
+    data_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """"[OK] rewrote N value(s)" alone is only true on a SPOKE.
+    """ "[OK] rewrote N value(s)" alone is only true on a SPOKE.
 
     A repair frees rows TRANSITIVELY, and neither thing this pass does
     re-delivers the freed closure from a hub: ``_reset_sync_fences`` rewrites
@@ -262,7 +255,8 @@ def test_a_live_repair_names_the_hub_rotate_as_the_remaining_step(
 
 
 def test_a_dry_run_does_not_tell_anyone_to_rotate_anything(
-    data_dir: Path, capsys: pytest.CaptureFixture[str],
+    data_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The control. A notice printed unconditionally would pass the test
     above while telling an operator who changed NOTHING to go rotate a
@@ -288,7 +282,8 @@ def test_the_rotate_command_that_notice_names_actually_exists() -> None:
 
 
 def test_a_clean_db_says_so_and_exits_zero(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     state_db.open_rw(normalize_stamps.state_db_path(tmp_path)).close()
     assert normalize_stamps.main(["--data-dir", str(tmp_path), "--dry-run"]) == 0
@@ -296,17 +291,17 @@ def test_a_clean_db_says_so_and_exits_zero(
 
 
 def test_a_missing_db_fails_loudly_rather_than_reporting_success(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert normalize_stamps.main(
-        ["--data-dir", str(tmp_path / "nope"), "--dry-run"]
-    ) == 2
+    assert normalize_stamps.main(["--data-dir", str(tmp_path / "nope"), "--dry-run"]) == 2
     assert "[ERROR]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("flags", [[], ["--dry-run", "--live"]])
 def test_the_write_mode_is_never_defaulted(
-    data_dir: Path, flags: list[str],
+    data_dir: Path,
+    flags: list[str],
 ) -> None:
     """Neither flag, or both, must be an argparse error. A pass that writes
     to a database by default is a hidden default with a blast radius."""
@@ -336,12 +331,10 @@ def test_a_repaired_row_is_logged_so_the_push_fence_can_offer_it(
 
     normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
 
-    logged = state_conn.execute(
-        "SELECT table_name, row_pk, updated_at FROM local_changelog"
-    ).fetchall()
-    assert logged == [
-        ("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")
-    ], "the entry must name the repaired row and carry its REPAIRED stamp"
+    logged = state_conn.execute("SELECT table_name, row_pk, updated_at FROM local_changelog").fetchall()
+    assert logged == [("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")], (
+        "the entry must name the repaired row and carry its REPAIRED stamp"
+    )
 
 
 def test_a_clean_repair_run_logs_nothing(state_conn: sqlite3.Connection) -> None:
@@ -352,9 +345,7 @@ def test_a_clean_repair_run_logs_nothing(state_conn: sqlite3.Connection) -> None
     """
     _seed_track(state_conn, SID, updated_at=CANONICAL)
     state_conn.execute("DELETE FROM local_changelog")
-    outcome = normalize_stamps.apply_repairs(
-        state_conn, normalize_stamps.scan(state_conn)
-    )
+    outcome = normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
     assert outcome.applied == 0
     assert state_conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0] == 0
 
@@ -391,12 +382,11 @@ def test_a_repair_resets_both_fences_against_every_peer(
 
     normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
 
-    assert state_conn.execute(
-        "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
-    ).fetchone() == (0, None, 0), (
-        "both floors reset, or a row the peer sent while this machine was "
-        "quarantined never comes back"
-    )
+    assert state_conn.execute("SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state").fetchone() == (
+        0,
+        None,
+        0,
+    ), "both floors reset, or a row the peer sent while this machine was quarantined never comes back"
 
 
 def test_a_run_with_nothing_to_repair_still_resets_both_fences(
@@ -425,15 +415,15 @@ def test_a_run_with_nothing_to_repair_still_resets_both_fences(
     )
     assert normalize_stamps.scan(state_conn) == [], "nothing to repair here"
 
-    outcome = normalize_stamps.apply_repairs(
-        state_conn, normalize_stamps.scan(state_conn)
-    )
+    outcome = normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
 
     assert outcome.applied == 0
     assert outcome.fences_reset == 1, "and it must REPORT the reset it did"
-    assert state_conn.execute(
-        "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
-    ).fetchone() == (0, None, 0), (
+    assert state_conn.execute("SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state").fetchone() == (
+        0,
+        None,
+        0,
+    ), (
         "both floors and last_sync_at: needs_full_offer reads the last, and "
         "only a full offer reaches rows that predate local_changelog"
     )
@@ -459,15 +449,15 @@ def test_a_dry_run_moves_no_fence(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    assert normalize_stamps.main(
-        ["--data-dir", str(data_dir), "--dry-run"]
-    ) == 0
+    assert normalize_stamps.main(["--data-dir", str(data_dir), "--dry-run"]) == 0
 
     conn = state_db.open_rw(normalize_stamps.state_db_path(data_dir))
     try:
-        assert conn.execute(
-            "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
-        ).fetchone() == (9, CANONICAL, 9)
+        assert conn.execute("SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state").fetchone() == (
+            9,
+            CANONICAL,
+            9,
+        )
     finally:
         conn.close()
 
@@ -483,10 +473,7 @@ def test_the_logged_pk_map_covers_every_synced_table() -> None:
     assert set(normalize_stamps.SYNCED_PKS) == expected
     for spec in hub_protocol.SYNC_TABLES:
         assert normalize_stamps.SYNCED_PKS[spec.name] == spec.pk
-    assert (
-        normalize_stamps.SYNCED_PKS[hub_protocol.MEMBERSHIP_TABLE]
-        == hub_protocol.MEMBERSHIP_SPEC.pk
-    )
+    assert normalize_stamps.SYNCED_PKS[hub_protocol.MEMBERSHIP_TABLE] == hub_protocol.MEMBERSHIP_SPEC.pk
     # Control: the two changelogs are deliberately ABSENT, because they are
     # machine-local bookkeeping and logging them would be a loop.
     assert sync_stamp.LOCAL_CHANGELOG_TABLE not in normalize_stamps.SYNCED_PKS
@@ -521,12 +508,10 @@ def test_a_repaired_row_on_a_hub_gets_a_fresh_hub_changelog_entry(
 
     normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
 
-    logged = state_conn.execute(
-        "SELECT table_name, row_pk, updated_at FROM hub_changelog"
-    ).fetchall()
-    assert logged == [
-        ("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")
-    ], "the entry must name the repaired row and carry its REPAIRED stamp"
+    logged = state_conn.execute("SELECT table_name, row_pk, updated_at FROM hub_changelog").fetchall()
+    assert logged == [("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")], (
+        "the entry must name the repaired row and carry its REPAIRED stamp"
+    )
 
 
 def test_a_clean_repair_run_logs_nothing_to_hub_changelog_either(
@@ -535,9 +520,7 @@ def test_a_clean_repair_run_logs_nothing_to_hub_changelog_either(
     """The control: no repair, no hub_changelog entry either."""
     _seed_track(state_conn, SID, updated_at=CANONICAL)
     state_conn.execute("DELETE FROM hub_changelog")
-    outcome = normalize_stamps.apply_repairs(
-        state_conn, normalize_stamps.scan(state_conn)
-    )
+    outcome = normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
     assert outcome.applied == 0
     assert state_conn.execute("SELECT COUNT(*) FROM hub_changelog").fetchone()[0] == 0
 
@@ -557,16 +540,14 @@ def test_a_concurrent_write_in_the_scan_to_lock_gap_is_not_clobbered(
     assert len(repairs) == 1
 
     newer = "2026-01-01T00:00:00.000000+00:00"
-    state_conn.execute(
-        "UPDATE tracks SET updated_at = ? WHERE stable_id = ?", (newer, SID)
-    )
+    state_conn.execute("UPDATE tracks SET updated_at = ? WHERE stable_id = ?", (newer, SID))
 
     outcome = normalize_stamps.apply_repairs(state_conn, repairs)
 
     assert outcome.applied == 0, "the stale repair must not have been counted as applied"
-    assert (
-        state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0] == newer
-    ), "the concurrent writer's newer value must survive"
+    assert state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0] == newer, (
+        "the concurrent writer's newer value must survive"
+    )
 
 
 def test_a_repair_still_applies_and_logs_once_when_nothing_races_it(
@@ -579,7 +560,4 @@ def test_a_repair_still_applies_and_logs_once_when_nothing_races_it(
     outcome = normalize_stamps.apply_repairs(state_conn, repairs)
 
     assert outcome.applied == 1
-    assert (
-        state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0]
-        == "2024-11-01T12:00:00.000000+00:00"
-    )
+    assert state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0] == "2024-11-01T12:00:00.000000+00:00"

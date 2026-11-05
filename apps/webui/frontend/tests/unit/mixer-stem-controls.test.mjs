@@ -23,10 +23,11 @@ test('1e63026e90e8: channel strip compiles STEM label and shared StemRow below i
 	assert.match(strip, /import StemRow from '\.\.\/deck\/StemRow\.svelte';/);
 	assert.match(
 		strip,
-		/<div class="fader-slot">[\s\S]*?<\/div>\s*<button[\s\S]*class="stem-label"[\s\S]*>STEM<\/button[\s\S]*<div class="stem-slot">\s*<StemRow/,
-		'StemRow must occupy the reserved STEM slot directly below the fader'
+		/<div class="fader-slot">[\s\S]*?<\/div>\s*<span class="stem-label"[^>]*>STEM<\/span>\s*<div class="stem-slot">\s*<StemRow/,
+		'StemRow must occupy the reserved STEM slot directly below the fader, under its STEM heading'
 	);
-	assert.match(strip, /onclick=\{\(\) => onStemEqMode/);
+	// MIXUX-14: the heading is a label now; the S button in the mixer shows stem dials.
+	assert.doesNotMatch(strip, /onStemEqMode/);
 });
 
 test('mixer routes strip gestures through the existing typed stem commands', async () => {

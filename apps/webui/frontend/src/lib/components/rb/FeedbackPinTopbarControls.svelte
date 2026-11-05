@@ -1,7 +1,11 @@
 <script lang="ts">
 	/** App-shell topbar: FB-17 pins-visible checkbox (library and admin routes). */
 	import { onMount } from 'svelte';
-	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
+	import {
+		onPinsVisibleChanged,
+		readPinsVisible,
+		writePinsVisible
+	} from '$lib/rb/feedback-pin-visibility';
 
 	let pinsVisible = $state(false);
 

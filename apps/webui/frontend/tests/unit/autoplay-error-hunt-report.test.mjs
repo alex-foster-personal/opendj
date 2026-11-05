@@ -106,7 +106,8 @@ test('allowlist match is exact on the normalized signature', () => {
 	assert.deepEqual(unexpectedSignatures(grouped, allowlist), []);
 	assert.equal(allowlistedSignatures(grouped, allowlist).length, 1);
 	assert.equal(
-		unexpectedSignatures(grouped, [{ signature: 'http-404:GET:/api/v1/stems', issue: '#1853' }]).length,
+		unexpectedSignatures(grouped, [{ signature: 'http-404:GET:/api/v1/stems', issue: '#1853' }])
+			.length,
 		1
 	);
 });
@@ -151,10 +152,10 @@ test('stall and silence kinds are findings when not allowlisted', () => {
 	]);
 	const unexpected = unexpectedSignatures(grouped, []);
 	assert.equal(unexpected.length, 2);
-	assert.deepEqual(
-		unexpected.map((finding) => finding.signature).sort(),
-		['silence:deck-1-frozen', 'stall:autoplay-banner']
-	);
+	assert.deepEqual(unexpected.map((finding) => finding.signature).sort(), [
+		'silence:deck-1-frozen',
+		'stall:autoplay-banner'
+	]);
 });
 
 test('the negative-control message is a distinct signature', () => {
@@ -191,10 +192,16 @@ test('b91c8ba9b84b autoplay arm failure surfaces in console and hunt report', as
 		stallMod.clearAutoPlayStall();
 	}
 	const message = calls.error.find((line) => line.startsWith('[autoplay]'));
-	assert.ok(message, `expected production [autoplay] console.error, saw: ${calls.error.join(' | ')}`);
+	assert.ok(
+		message,
+		`expected production [autoplay] console.error, saw: ${calls.error.join(' | ')}`
+	);
 	assert.match(message, /no-deck-playing after idle timeout/);
 	const perfRows = stallMod.readPerfEvents().filter((row) => row.kind === 'autoplay-stall');
-	assert.ok(perfRows.length >= 1, 'autoplay-stall perf row must carry the same diagnostic for engine.log');
+	assert.ok(
+		perfRows.length >= 1,
+		'autoplay-stall perf row must carry the same diagnostic for engine.log'
+	);
 	assert.match(perfRows.at(-1).message, /\[autoplay\] arm failed/);
 	const ts = perfRows.at(-1).t;
 	const events = [

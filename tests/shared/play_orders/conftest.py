@@ -1,4 +1,5 @@
 """Shared fixtures for play-order tests."""
+
 from __future__ import annotations
 
 import sqlite3

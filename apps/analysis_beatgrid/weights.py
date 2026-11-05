@@ -1,6 +1,6 @@
 """Offline provisioning of the Beat This! checkpoint this lane runs on.
 
-WHY THE LANE OWNS THIS AT ALL. `specs/native-analysis-v1.md` section 4 says
+WHY THE LANE OWNS THIS AT ALL. `(private path)` section 4 says
 there is no network after install. `beat_this_runner.py` defaults to loading
 the checkpoint by the NAME `final0`, and Beat This! resolves a bare name
 through Torch Hub, which downloads it on first use into the user's own hub
@@ -47,11 +47,12 @@ launchers.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import shutil
 import sys
 from pathlib import Path
+
+from apps.shared.hashing import sha256_file_hex as sha256_of
 
 #: The checkpoint file name, kept identical to the one Beat This! itself uses
 #: for `final0` so a file copied out of a hub cache needs no renaming.
@@ -67,9 +68,6 @@ CHECKPOINT_SHA256 = "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8e
 #: Absolute path override, read at call time so a test or a packaged build can
 #: set it. Empty or unset means "not provided", never "use the hub cache".
 WEIGHTS_PATH_ENV = "MDT_BEATGRID_WEIGHTS"
-
-_READ_BLOCK = 1 << 20
-
 
 class WeightsError(RuntimeError):
     """The checkpoint this lane must run on is not usable."""
@@ -115,18 +113,6 @@ def search_paths(*, app_dir: Path | None = None) -> list[Path]:
 
 
 #-----------------------------------------------------------------------------
-# digest
-#-----------------------------------------------------------------------------
-
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(_READ_BLOCK), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-#-----------------------------------------------------------------------------
 # resolution
 #-----------------------------------------------------------------------------
 
@@ -162,7 +148,7 @@ def resolve_checkpoint(
             "no Beat This! checkpoint is provisioned for the beatgrid lane; "
             f"searched {[str(p) for p in searched]}. This producer never falls "
             "back to the Torch Hub name, which would download weights over the "
-            "network on a fresh install (specs/native-analysis-v1.md section 4). "
+            "network on a fresh install ((private path) section 4). "
             "Install it with: python -m apps.analysis_beatgrid.weights install "
             "--from <path to " + CHECKPOINT_FILENAME + ">"
         )

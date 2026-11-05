@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -68,19 +68,15 @@ class _DelayTransport:
             time.sleep(self._hello_delay_s)
         return self._inner.post(path, payload)
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
         if self._digest_delay_s and path.endswith("/digest"):
             time.sleep(self._digest_delay_s)
         return self._inner.get(path, params)
 
 
-def test_hello_delay_increases_hello_and_total_timings(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_hello_delay_increases_hello_and_total_timings(spoke_a: Path, hub: _TestClientTransport) -> None:
     transport = _DelayTransport(hub, hello_delay_s=0.2)
-    result = client.run_sync(
-        spoke_a, "http://hub.invalid", transport=transport, name="spoke-a"
-    )
+    result = client.run_sync(spoke_a, "http://hub.invalid", transport=transport, name="spoke-a")
     assert result.timings is not None
     assert result.timings.hello_s >= 0.2
     assert result.timings.total_s >= result.timings.hello_s
@@ -90,9 +86,7 @@ _TRANSACTION_CONTROL = frozenset({"BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "R
 
 
 @pytest.mark.requirement("PERF-CAPTURE-01")
-def test_local_digest_delay_increases_local_digest_and_total_timings(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_local_digest_delay_increases_local_digest_and_total_timings(spoke_a: Path, hub: _TestClientTransport) -> None:
     """[if] local sync_digest is slowed [then] local_digest_s rises, [else stop]."""
     prior = _sync(spoke_a, hub, "spoke-a")
     delay_s = 0.2
@@ -122,21 +116,15 @@ def test_local_digest_delay_increases_local_digest_and_total_timings(
     assert timings.total_s >= timings.local_digest_s
 
 
-def test_digest_delay_increases_digest_timing(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_digest_delay_increases_digest_timing(spoke_a: Path, hub: _TestClientTransport) -> None:
     _sync(spoke_a, hub, "spoke-a")
     transport = _DelayTransport(hub, digest_delay_s=0.2)
-    result = client.run_sync(
-        spoke_a, "http://hub.invalid", transport=transport, name="spoke-a"
-    )
+    result = client.run_sync(spoke_a, "http://hub.invalid", transport=transport, name="spoke-a")
     assert result.timings is not None
     assert result.timings.digest_s >= 0.2
 
 
-def test_first_then_noop_classification(
-    spoke_a: Path, hub: _TestClientTransport
-) -> None:
+def test_first_then_noop_classification(spoke_a: Path, hub: _TestClientTransport) -> None:
     _seed_common_track((spoke_a,), "trk-timing-1")
     first = client.run_sync(spoke_a, "http://hub.invalid", transport=hub, name="spoke-a")
     assert first.timings is not None

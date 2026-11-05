@@ -10,6 +10,7 @@ spelling.
 - [if] a Windows source line equals a row below the library root and the row's home [then] it resolves, [else stop].
 - [if] a Windows path is spelled decomposed [then] it still binds (NFC is kept), [else stop].
 """
+
 from __future__ import annotations
 
 import dataclasses

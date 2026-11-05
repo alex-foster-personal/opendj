@@ -1,6 +1,6 @@
 """pytest plugin: record which repository files each test module actually touches.
 
-SMARTEST-CI (specs/ci-fail-fast.md, part 3). A static import graph cannot see a test that
+SMARTEST-CI ((private path), part 3). A static import graph cannot see a test that
 reads a data file, lists a directory, or globs the frontend tree, and measured Wed 16 Sep
 2026 72 test files reference frontend paths while 16 of the last 80 merged pull requests
 touched only the frontend. Test impact analysis tools (Bazel data dependencies, Launchable,
@@ -201,8 +201,7 @@ def pytest_make_collect_report(collector: pytest.Collector):
         return
     kind = "module:" if isinstance(collector, pytest.Module) else "dir:"
     _TRACER.current.append(
-        kind
-        + (relative if kind == "module:" or Path(path).is_dir() else str(Path(relative).parent))
+        kind + (relative if kind == "module:" or Path(path).is_dir() else str(Path(relative).parent))
     )
     try:
         yield

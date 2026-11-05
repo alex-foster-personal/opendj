@@ -13,40 +13,46 @@ THREADS="$ROOT/docs/threads"
 TYPORA="/Applications/Typora.app"
 
 if [ ! -d "$THREADS" ]; then
-  echo "[ERROR] no transcripts at $THREADS - see docs/threads/README.md" >&2
-  exit 1
+    echo "[ERROR] no transcripts at $THREADS - see docs/threads/README.md" >&2
+    exit 1
 fi
 
 if [ $# -eq 0 ] || [ "${1:-}" = "--list" ]; then
-  echo "Archived threads (ssid-prefix : dir : prompts):"
-  find "$THREADS" -name '*.md' ! -name 'README.md' | sort | while read -r f; do
-    n=$(grep -m1 '^| human prompts |' "$f" | tr -dc '0-9' || echo '?')
-    printf "  %-10s %-40s %s\n" "$(basename "$f" .md)" "$(basename "$(dirname "$f")")" "${n:-0}"
-  done
-  exit 0
+    echo "Archived threads (ssid-prefix : dir : prompts):"
+    find "$THREADS" -name '*.md' ! -name 'README.md' | sort | while read -r f; do
+        n=$(grep -m1 '^| human prompts |' "$f" | tr -dc '0-9' || echo '?')
+        printf "  %-10s %-40s %s\n" "$(basename "$f" .md)" "$(basename "$(dirname "$f")")" "${n:-0}"
+    done
+    exit 0
 fi
 
 if [ ! -d "$TYPORA" ]; then
-  echo "[WARN] Typora not installed at $TYPORA - falling back to the default handler" >&2
-  OPENER=(open)
+    echo "[WARN] Typora not installed at $TYPORA - falling back to the default handler" >&2
+    OPENER=(open)
 else
-  OPENER=(open -a "$TYPORA")
+    OPENER=(open -a "$TYPORA")
 fi
 
 if [ "${1:-}" = "--all" ]; then
-  dir="$THREADS/${2:?usage: --all <dir>}"
-  [ -d "$dir" ] || { echo "[ERROR] no such thread dir: $dir" >&2; exit 1; }
-  count=$(find "$dir" -name '*.md' | wc -l | tr -d ' ')
-  [ "$count" = "0" ] && { echo "[ERROR] no transcripts in $dir" >&2; exit 1; }
-  echo "[OK] opening $count transcripts from $(basename "$dir")"
-  find "$dir" -name '*.md' -print0 | xargs -0 "${OPENER[@]}"
-  exit 0
+    dir="$THREADS/${2:?usage: --all <dir>}"
+    [ -d "$dir" ] || {
+        echo "[ERROR] no such thread dir: $dir" >&2
+        exit 1
+    }
+    count=$(find "$dir" -name '*.md' | wc -l | tr -d ' ')
+    [ "$count" = "0" ] && {
+        echo "[ERROR] no transcripts in $dir" >&2
+        exit 1
+    }
+    echo "[OK] opening $count transcripts from $(basename "$dir")"
+    find "$dir" -name '*.md' -print0 | xargs -0 "${OPENER[@]}"
+    exit 0
 fi
 
 matches=$(find "$THREADS" -name "$1*.md" ! -name 'README.md')
 if [ -z "$matches" ]; then
-  echo "[ERROR] no transcript matching '$1' - run --list to see what exists" >&2
-  exit 1
+    echo "[ERROR] no transcript matching '$1' - run --list to see what exists" >&2
+    exit 1
 fi
 n=$(echo "$matches" | wc -l | tr -d ' ')
 echo "[OK] opening $n transcript(s) for '$1'"

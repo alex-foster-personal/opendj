@@ -24,7 +24,11 @@ fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new()
-                .commands(&["native_midi_snapshot", "native_midi_send"]),
+                .commands(&[
+                    "native_midi_snapshot",
+                    "native_midi_send",
+                    "install_local_update",
+                ]),
         ),
     )
     .expect("failed to build Tauri application metadata")

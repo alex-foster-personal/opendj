@@ -9,6 +9,7 @@ convention) - the BPM window is skipped, never divided by.
 - if a zero-bpm candidate is silently BPM-dropped -> broken (unknown is
   not "far"; ranking scores it 0.0 instead).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,8 +28,12 @@ def _ctx() -> SessionContext:
 
 def _cur(bpm: float | None = 120.0) -> PlayedTrack:
     return PlayedTrack(
-        stable_id="cur", artist="Cur", bpm=bpm, key_camelot="8A",
-        energy=5, played_at=FIXED_NOW,
+        stable_id="cur",
+        artist="Cur",
+        bpm=bpm,
+        key_camelot="8A",
+        energy=5,
+        played_at=FIXED_NOW,
     )
 
 

@@ -334,18 +334,26 @@ def resolve_model(
 # --------------------------------------------------------------------------- #
 
 
-def run_export_agent(
-    cfg: AgentConfig,
-    *,
-    client: Any | None = None,
-    on_step: Any = None,
-) -> AgentResult:
-    """Run the Claude export agent end-to-end.
+@dataclass
+class _AgentRun:
+    cfg: AgentConfig
+    client: Any
+    model: str
+    actuator: Actuator
+    trace: Trace
+    on_step: Any
+    messages: list[dict[str, Any]]
+    computer_tool: dict[str, Any]
+    system_prompt: str
+    api_calls: list[dict[str, Any]]
+    total_in: int = 0
+    total_out: int = 0
+    action_summaries: list[str] = field(default_factory=list)
+    stop_reason: str = "unknown"
+    final_text: str = ""
 
-    ``client`` may be provided by tests to inject a mock Anthropic SDK.
-    ``on_step`` is an optional callback ``(i, message, actions)`` invoked
-    after each API round-trip.
-    """
+
+def _resolve_agent_client(cfg: AgentConfig, client: Any | None) -> Any:
     api_key = cfg.api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY missing. Export via doppler or env var.")
@@ -354,20 +362,25 @@ def run_export_agent(
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
+    return client
 
-    trace = Trace.new(Path(cfg.trace_dir))
+
+def _build_actuator(cfg: AgentConfig, trace: Trace) -> Actuator:
     # NOTE: we do NOT pass `simulated=cfg.dry_run`. Dry-run is a system-
     # prompt discipline ("don't click Export"); the actuator must still
     # click through every preliminary step (dismiss modals, open Sync
     # Manager, select playlist) or the agent can never reach the export
     # surface to "dry-run stop" against. See docstring on ``Actuator``.
-    actuator = Actuator(
+    return Actuator(
         trace,
         downsample_width=cfg.downsample_width,
         dry_run=cfg.dry_run,
         window_app=cfg.window_app,
         frontmost_app=cfg.frontmost_app,
     )
+
+
+def _preflight_frontmost_app(cfg: AgentConfig, trace: Trace) -> None:
     # Pre-flight: bring Rekordbox to the front BEFORE the first
     # capture so the window-isolated path finds it on-screen (Fix 3).
     # Non-fatal if it can't — capture_window falls back to display.
@@ -386,13 +399,12 @@ def run_export_agent(
         except Exception as exc:  # pragma: no cover
             LOGGER.warning("frontmost preflight failed: %s", exc)
 
-    # Use the SCALED screenshot size as the logical display for Claude —
-    # that is what it actually "sees". The actuator handles conversion
-    # back to screen points internally.
-    capture = actuator.capture()
-    scaled_w, scaled_h = capture["scaled_size"]
-    geometry_px = (scaled_w, scaled_h)
 
+def _record_run_start(
+    cfg: AgentConfig,
+    trace: Trace,
+    geometry_px: tuple[int, int],
+) -> None:
     trace.record(
         "run_start",
         {
@@ -405,17 +417,12 @@ def run_export_agent(
         },
     )
 
-    model, probes = resolve_model(
-        client,
-        cfg.model_candidates,
-        beta_header=cfg.beta_header,
-        geometry_px=geometry_px,
-    )
-    LOGGER.info("selected model: %s", model)
-    trace.record("model_selected", {"model": model, "probes": probes})
 
-    # Initial user message with the first screenshot already embedded.
-    messages: list[dict[str, Any]] = [
+def _build_initial_user_message(
+    cfg: AgentConfig,
+    capture: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
         {
             "role": "user",
             "content": [
@@ -434,193 +441,265 @@ def run_export_agent(
         }
     ]
 
-    computer_tool = {
-        "type": COMPUTER_TOOL_TYPE,
-        "name": "computer",
-        "display_width_px": scaled_w,
-        "display_height_px": scaled_h,
-    }
 
-    api_calls: list[dict[str, Any]] = [{"phase": "probe", "probes": probes}]
-    total_in = 0
-    total_out = 0
-    action_summaries: list[str] = []
-    stop_reason = "unknown"
-    final_text = ""
+def _record_api_success(step: int, run: _AgentRun, resp: Any, t0: float) -> None:
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        run.total_in += getattr(usage, "input_tokens", 0) or 0
+        run.total_out += getattr(usage, "output_tokens", 0) or 0
+    run.api_calls.append(
+        {
+            "step": step,
+            "status": "ok",
+            "id": resp.id,
+            "stop_reason": resp.stop_reason,
+            "latency_ms": int((time.time() - t0) * 1000),
+            "usage": {
+                "in": getattr(usage, "input_tokens", 0) if usage else 0,
+                "out": getattr(usage, "output_tokens", 0) if usage else 0,
+            },
+        }
+    )
 
-    system_prompt = build_system_prompt(cfg)
 
-    for step in range(1, cfg.max_steps + 1):
-        LOGGER.info("=== agent step %d ===", step)
-        t0 = time.time()
-        try:
-            resp = client.beta.messages.create(
-                model=model,
-                max_tokens=1024,
-                betas=[cfg.beta_header],
-                tools=[computer_tool],
-                system=system_prompt,
-                messages=messages,
-            )
-        except Exception as exc:  # pragma: no cover
-            trace.record(
-                "api_error",
-                {"step": step, "error": f"{type(exc).__name__}: {exc}"},
-            )
-            api_calls.append(
-                {
-                    "step": step,
-                    "status": "error",
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            )
-            stop_reason = "api_error"
-            break
-
-        usage = getattr(resp, "usage", None)
-        if usage is not None:
-            total_in += getattr(usage, "input_tokens", 0) or 0
-            total_out += getattr(usage, "output_tokens", 0) or 0
-        api_calls.append(
+def _call_model(step: int, run: _AgentRun) -> Any | None:
+    t0 = time.time()
+    try:
+        resp = run.client.beta.messages.create(
+            model=run.model,
+            max_tokens=1024,
+            betas=[run.cfg.beta_header],
+            tools=[run.computer_tool],
+            system=run.system_prompt,
+            messages=run.messages,
+        )
+    except Exception as exc:  # pragma: no cover
+        run.trace.record(
+            "api_error",
+            {"step": step, "error": f"{type(exc).__name__}: {exc}"},
+        )
+        run.api_calls.append(
             {
                 "step": step,
-                "status": "ok",
-                "id": resp.id,
-                "stop_reason": resp.stop_reason,
-                "latency_ms": int((time.time() - t0) * 1000),
-                "usage": {
-                    "in": getattr(usage, "input_tokens", 0) if usage else 0,
-                    "out": getattr(usage, "output_tokens", 0) if usage else 0,
-                },
+                "status": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        run.stop_reason = "api_error"
+        return None
+    _record_api_success(step, run, resp, t0)
+    return resp
+
+
+def _collect_assistant_turn(
+    step: int,
+    run: _AgentRun,
+    resp: Any,
+) -> tuple[str, list[Any]]:
+    usage = getattr(resp, "usage", None)
+    assistant_blocks: list[Any] = []
+    tool_uses: list[Any] = []
+    step_text_parts: list[str] = []
+    for block in resp.content:
+        assistant_blocks.append(block.model_dump() if hasattr(block, "model_dump") else block)
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            step_text_parts.append(block.text)
+        elif btype == "tool_use":
+            tool_uses.append(block)
+
+    step_text = "\n".join(step_text_parts).strip()
+    run.trace.record(
+        "assistant",
+        {
+            "step": step,
+            "stop_reason": resp.stop_reason,
+            "text": step_text,
+            "tool_use_count": len(tool_uses),
+            "usage": {
+                "in": getattr(usage, "input_tokens", 0) if usage else 0,
+                "out": getattr(usage, "output_tokens", 0) if usage else 0,
+            },
+        },
+    )
+    run.messages.append({"role": "assistant", "content": assistant_blocks})
+    return step_text, tool_uses
+
+
+def _tool_result_content(
+    exec_result: dict[str, Any],
+    actuator: Actuator,
+) -> tuple[list[dict[str, Any]], bool]:
+    content_blocks: list[dict[str, Any]] = []
+    is_error = not exec_result.get("ok", True)
+    outcome = exec_result.get("meta", {}).get("outcome", "?")
+
+    # Anthropic rejects tool_result with image content when
+    # `is_error=true` — errors MUST be text-only. Skip the
+    # screenshot in that case and surface the failure text.
+    if is_error:
+        err_msg = exec_result.get("error") or outcome
+        content_blocks.append(
+            {
+                "type": "text",
+                "text": f"ERROR: {err_msg}",
+            }
+        )
+    else:
+        if exec_result.get("screenshot"):
+            # Claude expects a screenshot back for `screenshot` actions.
+            content_blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": exec_result["screenshot"],
+                    },
+                }
+            )
+        else:
+            # After non-screenshot actions, also send a fresh
+            # screenshot so the model can verify the UI state
+            # changed.
+            cap = actuator.capture()
+            content_blocks.append(_image_block(cap["png_bytes"]))
+        content_blocks.append({"type": "text", "text": f"outcome={outcome}"})
+
+    return content_blocks, is_error
+
+
+def _execute_tool_uses(
+    run: _AgentRun,
+    tool_uses: list[Any],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    tool_results_content: list[dict[str, Any]] = []
+    step_actions: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for tu in tool_uses:
+        action_input = tu.input or {}
+        summary_input = dict(action_input)  # copy for summary
+        exec_result = run.actuator.execute_action(action_input)
+        step_actions.append((action_input, exec_result))
+        run.action_summaries.append(_summarise_action(summary_input, exec_result))
+
+        content_blocks, is_error = _tool_result_content(exec_result, run.actuator)
+        tool_results_content.append(
+            {
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": content_blocks,
+                "is_error": is_error,
             }
         )
 
-        # Collect text + tool_use blocks.
-        assistant_blocks: list[Any] = []
-        tool_uses: list[Any] = []
-        step_text_parts: list[str] = []
-        for block in resp.content:
-            assistant_blocks.append(block.model_dump() if hasattr(block, "model_dump") else block)
-            btype = getattr(block, "type", None)
-            if btype == "text":
-                step_text_parts.append(block.text)
-            elif btype == "tool_use":
-                tool_uses.append(block)
+    run.messages.append({"role": "user", "content": tool_results_content})
+    return step_actions
 
-        step_text = "\n".join(step_text_parts).strip()
-        trace.record(
-            "assistant",
-            {
-                "step": step,
-                "stop_reason": resp.stop_reason,
-                "text": step_text,
-                "tool_use_count": len(tool_uses),
-                "usage": {
-                    "in": getattr(usage, "input_tokens", 0) if usage else 0,
-                    "out": getattr(usage, "output_tokens", 0) if usage else 0,
-                },
-            },
-        )
 
-        # Append the assistant turn to the conversation.
-        messages.append({"role": "assistant", "content": assistant_blocks})
+def _run_agent_round(step: int, run: _AgentRun) -> bool:
+    resp = _call_model(step, run)
+    if resp is None:
+        return True
 
-        if resp.stop_reason != "tool_use" or not tool_uses:
-            # Agent is done talking.
-            final_text = step_text
-            stop_reason = resp.stop_reason or "end_turn"
-            if on_step is not None:
-                on_step(step, resp, [])
-            break
+    step_text, tool_uses = _collect_assistant_turn(step, run, resp)
 
-        # Dispatch each tool_use in order and build the user response.
-        tool_results_content: list[dict[str, Any]] = []
-        step_actions: list[tuple[dict[str, Any], dict[str, Any]]] = []
-        for tu in tool_uses:
-            action_input = tu.input or {}
-            summary_input = dict(action_input)  # copy for summary
-            exec_result = actuator.execute_action(action_input)
-            step_actions.append((action_input, exec_result))
-            action_summaries.append(_summarise_action(summary_input, exec_result))
+    if resp.stop_reason != "tool_use" or not tool_uses:
+        run.final_text = step_text
+        run.stop_reason = resp.stop_reason or "end_turn"
+        if run.on_step is not None:
+            run.on_step(step, resp, [])
+        return True
 
-            content_blocks: list[dict[str, Any]] = []
-            is_error = not exec_result.get("ok", True)
-            outcome = exec_result.get("meta", {}).get("outcome", "?")
+    step_actions = _execute_tool_uses(run, tool_uses)
+    if run.on_step is not None:
+        run.on_step(step, resp, step_actions)
+    return False
 
-            # Anthropic rejects tool_result with image content when
-            # `is_error=true` — errors MUST be text-only. Skip the
-            # screenshot in that case and surface the failure text.
-            if is_error:
-                err_msg = exec_result.get("error") or outcome
-                content_blocks.append(
-                    {
-                        "type": "text",
-                        "text": f"ERROR: {err_msg}",
-                    }
-                )
-            else:
-                if exec_result.get("screenshot"):
-                    # Claude expects a screenshot back for `screenshot` actions.
-                    content_blocks.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": exec_result["screenshot"],
-                            },
-                        }
-                    )
-                else:
-                    # After non-screenshot actions, also send a fresh
-                    # screenshot so the model can verify the UI state
-                    # changed.
-                    cap = actuator.capture()
-                    content_blocks.append(_image_block(cap["png_bytes"]))
-                content_blocks.append({"type": "text", "text": f"outcome={outcome}"})
 
-            tool_results_content.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": content_blocks,
-                    "is_error": is_error,
-                }
-            )
-
-        messages.append({"role": "user", "content": tool_results_content})
-
-        if on_step is not None:
-            on_step(step, resp, step_actions)
-    else:
-        stop_reason = "max_steps"
-
+def _record_run_end(trace: Trace, run: _AgentRun, step: int) -> None:
     trace.record(
         "run_end",
         {
-            "stop_reason": stop_reason,
+            "stop_reason": run.stop_reason,
             "steps": step,
-            "final_text": final_text,
-            "actions": action_summaries,
-            "usage": {"in": total_in, "out": total_out},
+            "final_text": run.final_text,
+            "actions": run.action_summaries,
+            "usage": {"in": run.total_in, "out": run.total_out},
             "cost_usd": round(
-                total_in / 1_000_000 * PRICE_IN_PER_M + total_out / 1_000_000 * PRICE_OUT_PER_M,
+                run.total_in / 1_000_000 * PRICE_IN_PER_M
+                + run.total_out / 1_000_000 * PRICE_OUT_PER_M,
                 4,
             ),
         },
     )
 
+
+def run_export_agent(
+    cfg: AgentConfig,
+    *,
+    client: Any | None = None,
+    on_step: Any = None,
+) -> AgentResult:
+    """Run the Claude export agent end-to-end.
+
+    ``client`` may be provided by tests to inject a mock Anthropic SDK.
+    ``on_step`` is an optional callback ``(i, message, actions)`` invoked
+    after each API round-trip.
+    """
+    client = _resolve_agent_client(cfg, client)
+    trace = Trace.new(Path(cfg.trace_dir))
+    actuator = _build_actuator(cfg, trace)
+    _preflight_frontmost_app(cfg, trace)
+    # Use the SCALED screenshot size as the logical display for Claude —
+    # that is what it actually "sees". The actuator handles conversion
+    # back to screen points internally.
+    capture = actuator.capture()
+    scaled_w, scaled_h = capture["scaled_size"]
+    geometry_px = (scaled_w, scaled_h)
+    _record_run_start(cfg, trace, geometry_px)
+    model, probes = resolve_model(
+        client,
+        cfg.model_candidates,
+        beta_header=cfg.beta_header,
+        geometry_px=geometry_px,
+    )
+    LOGGER.info("selected model: %s", model)
+    trace.record("model_selected", {"model": model, "probes": probes})
+    run = _AgentRun(
+        cfg=cfg,
+        client=client,
+        model=model,
+        actuator=actuator,
+        trace=trace,
+        on_step=on_step,
+        messages=_build_initial_user_message(cfg, capture),
+        computer_tool={
+            "type": COMPUTER_TOOL_TYPE,
+            "name": "computer",
+            "display_width_px": scaled_w,
+            "display_height_px": scaled_h,
+        },
+        system_prompt=build_system_prompt(cfg),
+        api_calls=[{"phase": "probe", "probes": probes}],
+    )
+    for step in range(1, cfg.max_steps + 1):
+        LOGGER.info("=== agent step %d ===", step)
+        if _run_agent_round(step, run):
+            break
+    else:
+        run.stop_reason = "max_steps"
+    _record_run_end(trace, run, step)
     return AgentResult(
-        success=stop_reason in {"end_turn", "stop_sequence"},
+        success=run.stop_reason in {"end_turn", "stop_sequence"},
         model=model,
         steps=step,
-        stop_reason=stop_reason,
+        stop_reason=run.stop_reason,
         trace_root=trace.root,
-        api_calls=api_calls,
-        usage_in_tokens=total_in,
-        usage_out_tokens=total_out,
-        final_text=final_text,
-        action_summaries=action_summaries,
+        api_calls=run.api_calls,
+        usage_in_tokens=run.total_in,
+        usage_out_tokens=run.total_out,
+        final_text=run.final_text,
+        action_summaries=run.action_summaries,
     )
 
 

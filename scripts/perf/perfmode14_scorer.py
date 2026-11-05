@@ -34,15 +34,10 @@ def perfmode14_median(samples: list[float]) -> float:
 def perfmode14_require_scored_sample_count(count: int, *, mode: str, field: str) -> None:
     """Fail fast when a scored field's tick count is below the absolute floor."""
     if count < _MIN_SCORED_SAMPLES:
-        raise ValueError(
-            f"{mode} {field} has {count} sample(s); "
-            f"PERFMODE-14 requires >={_MIN_SCORED_SAMPLES}"
-        )
+        raise ValueError(f"{mode} {field} has {count} sample(s); PERFMODE-14 requires >={_MIN_SCORED_SAMPLES}")
 
 
-def perfmode14_require_scored_samples(
-    samples: list[float], *, mode: str, field: str
-) -> None:
+def perfmode14_require_scored_samples(samples: list[float], *, mode: str, field: str) -> None:
     """Fail fast when a mode's scored field is empty or below the absolute floor."""
     if not isinstance(samples, list) or len(samples) == 0:
         raise ValueError(f"{mode} {field} holds no samples; a median over none is not a capture")

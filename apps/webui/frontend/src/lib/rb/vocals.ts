@@ -32,9 +32,7 @@ const _vocalsMemo = new WeakMap<AnlzData, Vocals>();
  * absent/malformed: that is a contract breach, never invent regions. */
 export function parseVocals(raw: unknown): Vocals {
 	if (typeof raw !== 'object' || raw === null) {
-		throw new Error(
-			'payload has no valid "vocals" field - backend contract point 5 not met'
-		);
+		throw new Error('payload has no valid "vocals" field - backend contract point 5 not met');
 	}
 	const v = raw as { status?: unknown; fps?: unknown; regions?: unknown };
 	if (v.status === 'not_analyzed') return { status: 'not_analyzed' };

@@ -52,7 +52,11 @@ function anlzPayload(local_waveform, cues = []) {
 	return {
 		stable_id: 'abc',
 		points: 38400,
-		waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: 0, low: [], mid: [], high: [] } },
+		waveform: {
+			kind: 'mono',
+			preview: { length: 0, low: [], mid: [], high: [] },
+			detail: { length: 0, low: [], mid: [], high: [] }
+		},
 		beatgrid: { beat_count: 0, beats: [] },
 		cues,
 		phrases: [],
@@ -232,12 +236,20 @@ test('a prefetch issued before a grid edit cannot overwrite the edit refresh whe
 	try {
 		cache.ensureAnlz('edit-race-prefetch');
 		await cache.refetchAnlzCacheEntry('edit-race-prefetch');
-		assert.deepEqual(cache.getAnlzEntry('edit-race-prefetch').data.cues, [EDITED_CUE], 'positive control: the refresh published');
+		assert.deepEqual(
+			cache.getAnlzEntry('edit-race-prefetch').data.cues,
+			[EDITED_CUE],
+			'positive control: the refresh published'
+		);
 		race.release();
 		await settle();
 		const entry = cache.getAnlzEntry('edit-race-prefetch');
 		assert.equal(entry.status, 'ready');
-		assert.deepEqual(entry.data.cues, [EDITED_CUE], 'the pre-edit answer must not revert the edited payload');
+		assert.deepEqual(
+			entry.data.cues,
+			[EDITED_CUE],
+			'the pre-edit answer must not revert the edited payload'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -277,7 +289,13 @@ test('an analysis-source refresh staged before a grid edit re-stages instead of 
 	// payload, so the edit is told apart by the grid itself here, not by cues.
 	const gridPayload = (t0) => ({
 		...anlzPayload(DECODED),
-		beatgrid: { beat_count: 2, beats: [{ n: 1, bpm: 120, t: t0 }, { n: 2, bpm: 120, t: t0 + 0.5 }] },
+		beatgrid: {
+			beat_count: 2,
+			beats: [
+				{ n: 1, bpm: 120, t: t0 },
+				{ n: 2, bpm: 120, t: t0 + 0.5 }
+			]
+		},
 		beatgrid_source: 'rekordbox'
 	});
 	let release;
@@ -297,10 +315,18 @@ test('an analysis-source refresh staged before a grid edit re-stages instead of 
 		const deck = { stable_id: 'edit-race-switch', anlz: null, bpm: null, key: null };
 		const refresh = cache.refreshAnalysisSourceDecks([1], { 1: deck });
 		await cache.refetchAnlzCacheEntry('edit-race-switch');
-		assert.equal(cache.getAnlzEntry('edit-race-switch').data.beatgrid.beats[0].t, 0.102, 'positive control: the edit published');
+		assert.equal(
+			cache.getAnlzEntry('edit-race-switch').data.beatgrid.beats[0].t,
+			0.102,
+			'positive control: the edit published'
+		);
 		release();
 		await refresh;
-		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.102, 'the deck must not be left on the pre-edit grid');
+		assert.equal(
+			deck.anlz.beatgrid.beats[0].t,
+			0.102,
+			'the deck must not be left on the pre-edit grid'
+		);
 		assert.equal(cache.getAnlzEntry('edit-race-switch').data.beatgrid.beats[0].t, 0.102);
 	} finally {
 		globalThis.fetch = originalFetch;
@@ -313,7 +339,13 @@ test('a grid-edit refresh in flight across an analysis-source switch retries ins
 	// must be retried rather than published over the switch's refresh.
 	const gridPayload = (t0, source) => ({
 		...anlzPayload(DECODED),
-		beatgrid: { beat_count: 2, beats: [{ n: 1, bpm: 120, t: t0 }, { n: 2, bpm: 120, t: t0 + 0.5 }] },
+		beatgrid: {
+			beat_count: 2,
+			beats: [
+				{ n: 1, bpm: 120, t: t0 },
+				{ n: 2, bpm: 120, t: t0 + 0.5 }
+			]
+		},
 		beatgrid_source: source
 	});
 	let release;
@@ -333,10 +365,18 @@ test('a grid-edit refresh in flight across an analysis-source switch retries ins
 		const edit = cache.refetchAnlzCacheEntry('edit-across-switch');
 		const deck = { stable_id: 'edit-across-switch', anlz: null, bpm: null, key: null };
 		await cache.refreshAnalysisSourceDecks([1], { 1: deck });
-		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.2, 'positive control: the switch refresh published');
+		assert.equal(
+			deck.anlz.beatgrid.beats[0].t,
+			0.2,
+			'positive control: the switch refresh published'
+		);
 		release();
 		await edit;
-		assert.equal(cache.getAnlzEntry('edit-across-switch').data.beatgrid.beats[0].t, 0.2, 'the pre-switch answer must not publish');
+		assert.equal(
+			cache.getAnlzEntry('edit-across-switch').data.beatgrid.beats[0].t,
+			0.2,
+			'the pre-switch answer must not publish'
+		);
 		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.2);
 		assert.ok(anlzCalls >= 3, `the edit retried after the switch (${anlzCalls} /anlz calls)`);
 	} finally {
@@ -353,7 +393,11 @@ test('a fetch issued after a grid edit still publishes (no revision change since
 		cache.revalidateAnlz('edit-then-revalidate');
 		await settle();
 		await settle();
-		assert.deepEqual(cache.getAnlzEntry('edit-then-revalidate').data.cues, [], 'a post-edit revalidation publishes');
+		assert.deepEqual(
+			cache.getAnlzEntry('edit-then-revalidate').data.cues,
+			[],
+			'a post-edit revalidation publishes'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -461,11 +505,19 @@ test('the ambient retry drops itself once its stable_id has no registered consum
 		// returning later revives it with no special-casing.
 		const entry = cache.getAnlzEntry('abandoned-track');
 		assert.equal(entry.status, 'ready');
-		assert.equal(cache.isAnlzEntryUsable(entry), false, 'still the retryable class, not a cache hit');
+		assert.equal(
+			cache.isAnlzEntryUsable(entry),
+			false,
+			'still the retryable class, not a cache hit'
+		);
 
 		cache.ensureAnlz('abandoned-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		assert.equal(calls, 2, 'a consumer returning later must revive the retry, not stay dropped forever');
+		assert.equal(
+			calls,
+			2,
+			'a consumer returning later must revive the retry, not stay dropped forever'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -507,7 +559,12 @@ test('unregisterAnlzConsumer is a safe no-op for an unknown or already-released 
 });
 
 test('deckAnlzNeedsFetch: a still-retryable deck.anlz keeps needing a fetch, not just a null one', () => {
-	const decoded = anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 });
+	const decoded = anlzPayload({
+		status: 'decoded',
+		reason: null,
+		preview_b64: 'AAAA',
+		preview_max: 200
+	});
 	const retryable = anlzPayload({
 		status: 'not_decoded',
 		reason: 'decoder saturated',
@@ -577,7 +634,11 @@ test('a retryable cache write self-schedules its own retry, with no caller invol
 		assert.equal(calls, 2, 'the cooldown elapsing on its own must trigger a second attempt');
 
 		await new Promise((resolve) => setTimeout(resolve, RETRY_FIRES_WAIT_MS));
-		assert.equal(calls, 3, 'still-retryable results keep self-scheduling until a terminal answer lands');
+		assert.equal(
+			calls,
+			3,
+			'still-retryable results keep self-scheduling until a terminal answer lands'
+		);
 
 		const entry = cache.getAnlzEntry('self-scheduling-track');
 		assert.equal(entry.data.local_waveform.status, 'decoded');
@@ -599,7 +660,12 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz defers to a fresher cach
 		preview_max: null,
 		retryable: true
 	});
-	const decoded = anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 });
+	const decoded = anlzPayload({
+		status: 'decoded',
+		reason: null,
+		preview_b64: 'AAAA',
+		preview_max: 200
+	});
 
 	// No deck.anlz, no cache entry: null, same as before this fix.
 	assert.equal(cache.resolveDisplayedAnlz(null, null), null);
@@ -620,7 +686,9 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz defers to a fresher cach
 	// (Codex finding, issue #735 follow-up, discussion_r3907741366 - the
 	// display half of the same gap).
 	globalThis.fetch = async () =>
-		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'BBBB', preview_max: 200 }));
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'BBBB', preview_max: 200 })
+		);
 	try {
 		cache.ensureAnlz('landed-decode-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -657,7 +725,9 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz that already carries an 
 	};
 
 	globalThis.fetch = async () =>
-		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'CCCC', preview_max: 200 }));
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'CCCC', preview_max: 200 })
+		);
 	try {
 		cache.ensureAnlz('merged-grid-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -666,7 +736,11 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz that already carries an 
 	}
 
 	const resolved = cache.resolveDisplayedAnlz(mergedButRetryable, 'merged-grid-track');
-	assert.equal(resolved.local_waveform.status, 'decoded', "the cache's refreshed waveform must still be adopted");
+	assert.equal(
+		resolved.local_waveform.status,
+		'decoded',
+		"the cache's refreshed waveform must still be adopted"
+	);
 	assert.deepEqual(
 		resolved.beatgrid,
 		mergedButRetryable.beatgrid,
@@ -726,7 +800,10 @@ test('resolveDisplayedAnlz: a fresher cache entry that already carries a real be
 });
 
 test('refreshAnlzCacheEntry overwrites a stale published entry without fetching', async () => {
-	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	globalThis.fetch = async () =>
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	try {
 		// Seed the shared cache the way a normal deck load does, standing in
 		// for the pre-mutation state a hot cue save leaves behind: the bank
@@ -744,12 +821,18 @@ test('refreshAnlzCacheEntry overwrites a stale published entry without fetching'
 		// thing that lands it in the shared cache. No fetch mock swap here:
 		// this call must not perform a fetch of its own.
 		const freshCue = { slot: 'A', kind: 'hot_cue', is_loop: false, in_ms: 1000, out_ms: null };
-		cache.refreshAnlzCacheEntry('mutated-track', anlzPayload({
-			status: 'decoded',
-			reason: null,
-			preview_b64: 'AAAA',
-			preview_max: 200
-		}, [freshCue]));
+		cache.refreshAnlzCacheEntry(
+			'mutated-track',
+			anlzPayload(
+				{
+					status: 'decoded',
+					reason: null,
+					preview_b64: 'AAAA',
+					preview_max: 200
+				},
+				[freshCue]
+			)
+		);
 
 		const refreshed = cache.getAnlzEntry('mutated-track');
 		assert.equal(cache.isAnlzEntryUsable(refreshed), true);
@@ -767,7 +850,7 @@ test('refreshAnlzCacheEntry overwrites a stale published entry without fetching'
 	}
 });
 
-test('a wrong-source /anlz response is discarded, not cached, when it disagrees with the confirmed selection (thread 2 fix, discussion_r3975650988\'s cache-side twin)', async () => {
+test("a wrong-source /anlz response is discarded, not cached, when it disagrees with the confirmed selection (thread 2 fix, discussion_r3975650988's cache-side twin)", async () => {
 	// Real node:http server, not a mocked globalThis.fetch: AGENTS.md's
 	// no-mocks contract forbids monkeypatching the module's own request for a
 	// NEW regression (a pre-existing mocked test elsewhere in this file is not
@@ -793,9 +876,12 @@ test('a wrong-source /anlz response is discarded, not cached, when it disagrees 
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	try {
 		const origin = `http://127.0.0.1:${server.address().port}`;
-		const isolatedCache = await loadTypeScriptModule('src/lib/components/rb/wave/anlz-cache.svelte.ts', {
-			viteApiBase: origin
-		});
+		const isolatedCache = await loadTypeScriptModule(
+			'src/lib/components/rb/wave/anlz-cache.svelte.ts',
+			{
+				viteApiBase: origin
+			}
+		);
 		isolatedCache.analysisSourceState.features.beatgrid = 'rekordbox';
 		isolatedCache.ensureAnlz('mismatched-track');
 		{
@@ -837,7 +923,11 @@ test('fetchAnlzUntilSourceConfirmed retries a direct-publication fetch that reso
 				beatgrid_own_unavailable_reason: null
 			};
 		});
-		assert.equal(calls, 2, 'a first answer disagreeing with the confirmed source must be retried once more');
+		assert.equal(
+			calls,
+			2,
+			'a first answer disagreeing with the confirmed source must be retried once more'
+		);
 		assert.equal(
 			data.beatgrid_source,
 			'rekordbox',
@@ -873,7 +963,10 @@ test('refreshAnalysisSourceDecks own publish (alreadyScoped) is trusted even whi
 });
 
 test('invalidateAnlzCacheEntry evicts a ready entry so a later ensureAnlz refetches it', async () => {
-	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	globalThis.fetch = async () =>
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	try {
 		// Seed a ready entry, standing in for the pre-mutation cache state
 		// refreshHotCues finds itself unable to overwrite when one of its two
@@ -948,7 +1041,9 @@ test('revalidateAnlz replaces a stale entry without blanking it first', async ()
 	// 'loading', or every deck load blanks a waveform that was painting fine.
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = async () =>
-		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	try {
 		cache.ensureAnlz('promoted-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -998,7 +1093,9 @@ test('a revalidation the server explicitly refuses marks the entry unusable, not
 	// fallback (Codex P1 BLOCKING, PR #1587).
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = async () =>
-		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	try {
 		cache.ensureAnlz('corrupt-source-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1032,7 +1129,9 @@ test('revalidateAnlz notifies the authoritative-error sink for an explicit RbApi
 	const originalFetch = globalThis.fetch;
 	try {
 		globalThis.fetch = async () =>
-			jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+			jsonResponse(
+				anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+			);
 		cache.ensureAnlz('sink-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1124,7 +1223,13 @@ test('a settled own answer of missing reaches the engine, an empty rekordbox gri
 		globalThis.fetch = async () =>
 			jsonResponse({
 				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
-				beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: ownBeats.length, beats: ownBeats }
+				beatgrid: {
+					source: 'own',
+					status: 'ok',
+					reason: null,
+					beat_count: ownBeats.length,
+					beats: ownBeats
+				}
 			});
 		cache.ensureAnlz('demoted-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1166,7 +1271,9 @@ test('while the shed defers, ensureAnlzPrefetch does not fetch; once released, i
 	let calls = 0;
 	globalThis.fetch = async () => {
 		calls += 1;
-		return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		return jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	};
 	const requests = [];
 	cache.setAnlzPrefetchShedRequest((id) => requests.push(id));
@@ -1174,8 +1281,16 @@ test('while the shed defers, ensureAnlzPrefetch does not fetch; once released, i
 		cache.ensureAnlzPrefetch('shed-gated-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		assert.deepEqual(requests, ['waveform-detail-bands'], 'ensureAnlzPrefetch must ask the shed, not fetch directly');
-		assert.equal(calls, 0, 'the work effect (a real /anlz fetch) must be absent while the gate is closed');
+		assert.deepEqual(
+			requests,
+			['waveform-detail-bands'],
+			'ensureAnlzPrefetch must ask the shed, not fetch directly'
+		);
+		assert.equal(
+			calls,
+			0,
+			'the work effect (a real /anlz fetch) must be absent while the gate is closed'
+		);
 		assert.equal(cache.getAnlzEntry('shed-gated-track'), undefined, 'nothing published yet');
 
 		await cache.resumeAnlzPrefetchOwedFetch();
@@ -1193,7 +1308,9 @@ test('with no shed armed, ensureAnlzPrefetch fetches immediately, exactly like b
 	let calls = 0;
 	globalThis.fetch = async () => {
 		calls += 1;
-		return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		return jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	};
 	try {
 		cache.ensureAnlzPrefetch('shed-ungated-track');
@@ -1206,7 +1323,10 @@ test('with no shed armed, ensureAnlzPrefetch fetches immediately, exactly like b
 });
 
 test('ensureAnlzPrefetch on a fresh, usable cache entry still does not fetch (cache-hit check runs before the gate)', async () => {
-	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	globalThis.fetch = async () =>
+		jsonResponse(
+			anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+		);
 	try {
 		cache.ensureAnlzPrefetch('shed-cachehit-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1215,7 +1335,9 @@ test('ensureAnlzPrefetch on a fresh, usable cache entry still does not fetch (ca
 		let calls = 0;
 		globalThis.fetch = async () => {
 			calls += 1;
-			return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+			return jsonResponse(
+				anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 })
+			);
 		};
 		const requests = [];
 		cache.setAnlzPrefetchShedRequest((id) => requests.push(id));

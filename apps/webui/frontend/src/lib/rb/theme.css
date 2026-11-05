@@ -539,6 +539,252 @@ html[data-skin='light'] .perf-root .deck-col:last-child {
 	border-left-color: var(--rb-border);
 }
 
+/* -------- skin: green-room (Green Room) --------
+ * the maintainer, Wed 4 Nov 2026: a skin in the visual language of the big
+ * music-streaming desktop apps, as an homage (no logo, wordmark, icon set or
+ * font file). Hygiene is mimicked from that reference, not calibrated:
+ * near-black page #121212, #181818 panels, #282828 hover, one green accent
+ * (#1DB954, hover #1ED760), white and #b3b3b3 text, a geometric sans at
+ * 400/700/800, 8px panels, 4 to 6px cards, pill buttons and chips. The
+ * waveforms keep the colored tri-band read (ui-skin.ts SKIN_WAVE_LOOK); only
+ * the chrome bends. Like Gothic it is dark on either theme, and it defines
+ * every token mono-dev and the base palette define, so no light-theme value
+ * leaks in (tests/unit/skin-green-room.test.mjs). Red stays semantic. */
+html[data-skin='green-room'] {
+	color-scheme: dark !important;
+	--rb-artwork-filter: none;
+}
+html[data-skin='green-room'] .perf-root {
+	--rb-pair: #b58cff;
+	--rb-bg: #121212;
+	--rb-panel: #181818;
+	--rb-panel-raised: #282828;
+	--rb-waverow-secondary: #1a1a1a;
+	--rb-border: #2a2a2a;
+	--rb-text: #ffffff;
+	--rb-text-dim: #b3b3b3;
+	--rb-accent: #1db954;
+	--rb-on-accent: #000000; /* black ink on the green fill, 8.2:1 */
+	--rb-accent-glow: transparent;
+	--rb-focus-outline: 2px solid #ffffff;
+	--rb-green: #1db954;
+	--rb-orange: #ffa42b;
+	--rb-wave-low: #2767d8;
+	--rb-wave-mid: #f0a020;
+	--rb-wave-high: #f4f6f8;
+	--rb-wave-mono: #1db954;
+	--rb-plan-fader: #ffffff;
+	--rb-plan-eq-low: #ffc04d;
+	--rb-plan-eq-mid: #7ee787;
+	--rb-plan-eq-high: #ff7eb6;
+	--rb-plan-filter: #4dd8ff;
+	--rb-plan-out: #ff3b30;
+	--rb-plan-in: #35c04f;
+	--rb-wave-vocal: #4fb2ff;
+	--rb-red: #f15e6c; /* the reference's error red; 5.6:1 on the page */
+	--rb-yellow: #ffd04d;
+	--rb-select: #2a2a2a;
+	--rb-master: #1db954;
+	--rb-master-ink: #000000;
+	--rb-master-text: #1ed760;
+	--rb-font: 'Figtree', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--rb-fs-browser: 12.5px;
+	--rb-fs-label: 11px;
+	--rb-waverow-h: 56px;
+	--rb-status-dot-filter: none;
+	--rb-rail-spotify: currentColor;
+	--rb-rail-spotify-arc: var(--rb-panel);
+	--rb-rail-files: currentColor;
+	--rb-rail-beatport: currentColor;
+	--rb-rail-record: currentColor;
+	--rb-knob-warn: #ffa42b;
+	--rb-knob-alarm: #f15e6c;
+	--rb-key-compat-border: #ffffff;
+	--rb-artwork-filter: none;
+	--rb-issue-square: #ffffff;
+	--rb-issue-square-ink: #000000;
+	--rb-quality-filter: none;
+	--rb-bpm-mismatch-ring: #f15e6c;
+	--rb-stem-vocal: initial;
+	--rb-stem-instrumental: initial;
+	--rb-stem-drums: initial;
+	--rb-stem-bass: initial;
+	--rb-stem-other: initial;
+	--rb-stem-ink: initial;
+	--rb-section-edge: #3fb3c8;
+	--rb-section-rise: #d9a441;
+	--rb-section-drop: #ea4a76;
+	--rb-section-calm: #8b82c4;
+	--rb-section-body: #6e8fa8;
+	--rb-section-neutral: #80868d;
+	/* Light-only hooks unset, as in Gothic: dark wells and jog ink. */
+	--rb-jog-text: initial;
+	--rb-jog-text-dim: initial;
+	--rb-round-face: initial;
+	--rb-well: initial;
+	--rb-strip-pos: initial;
+	--rb-strip-pos-glow: initial;
+	--rb-text-muted: initial;
+	--rb-key-lightness-major: initial;
+	--rb-key-lightness-minor: initial;
+	--rb-knob-ring: initial;
+	--rb-knob-cap: initial;
+	--rb-knob-cap-edge: initial;
+	--rb-knob-indicator-white: initial;
+	--rb-knob-takeover: initial;
+	--rb-knob-stem-tint: initial;
+}
+/* Green Room honors an explicit waveform palette (issue #8759): these
+ * out-rank the skin block above (one more attribute), so Legacy and Mono
+ * draw on the main rows as they do on the strips. Green Room is dark on
+ * either theme, so these mirror wave-palette.ts's dark scheme. */
+html[data-skin='green-room'][data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #b0b0b0;
+	--rb-wave-high: #f4f4f4;
+	--rb-wave-mono: #cfcfcf;
+	--rb-wave-vocal: #cfe6ff;
+}
+html[data-skin='green-room'][data-wave-palette='legacy'] .perf-root {
+	--rb-wave-low: #e8a13a;
+	--rb-wave-mid: #3d7dd9;
+	--rb-wave-high: #cfe0f2;
+}
+/* Green Room section 2: shape overrides with no token yet (each one is a
+ * finding in (private path)). */
+html[data-skin='green-room'] .perf-root :is(.deck-area, .deck-col) {
+	background: #000000;
+}
+html[data-skin='green-room'] .perf-root .rb-panel {
+	border-radius: 8px;
+	border-color: transparent;
+}
+html[data-skin='green-room'] .perf-root button {
+	border-radius: 999px;
+}
+html[data-skin='green-room'] .perf-root :is(.slot, .pad) {
+	border-radius: 4px;
+}
+html[data-skin='green-room'] .perf-root .round {
+	background: #ffffff;
+	color: #000000;
+	border-color: #ffffff;
+	box-shadow: none;
+}
+html[data-skin='green-room'] .perf-root .rb-lit-button.lit {
+	background: var(--rb-accent);
+	color: var(--rb-on-accent);
+	box-shadow: none;
+}
+html[data-skin='green-room'] .perf-root button:hover:not(:disabled) {
+	border-color: #ffffff;
+}
+html[data-skin='green-room'] .perf-root .readout .bpm {
+	font-weight: 800;
+	color: #ffffff;
+	letter-spacing: -0.02em;
+}
+html[data-skin='green-room'] .perf-root .rb-row-loaded {
+	color: #1ed760;
+}
+html[data-skin='green-room'] .perf-root tbody tr:hover {
+	background: #282828;
+}
+html[data-skin='green-room'] img[src*='/artwork'] {
+	border-radius: 4px;
+}
+
+/* -------- skin: practice-ddj-flx4 (Practice deck) --------
+ * The hardware practice skin ((private path), ADR-0137): the
+ * schematic replica's own palette (panel #1a1c20, controls #2b2f36, labels #e8ebf0, one blue
+ * accent #4da3ff), so the app and /practice/<device> read as one surface. Tokens only, no
+ * shape overrides; it defines every token Green Room defines, so no light value leaks in.
+ * Dark on either theme. The manifest's color pairs pass scripts/skins/contrast_check.py. */
+html[data-skin='practice-ddj-flx4'] {
+	color-scheme: dark !important;
+	--rb-artwork-filter: none;
+}
+html[data-skin='practice-ddj-flx4'] .perf-root {
+	--rb-pair: #b58cff;
+	--rb-bg: #121418;
+	--rb-panel: #1a1c20;
+	--rb-panel-raised: #2b2f36;
+	--rb-waverow-secondary: #16181c;
+	--rb-border: #3a3f47;
+	--rb-text: #e8ebf0;
+	--rb-text-dim: #a9b0bc;
+	--rb-accent: #4da3ff;
+	--rb-on-accent: #000000; /* black ink on the blue fill */
+	--rb-accent-glow: transparent;
+	--rb-focus-outline: 2px solid #4da3ff;
+	--rb-green: #1db954;
+	--rb-orange: #ffa42b;
+	--rb-wave-low: #2767d8;
+	--rb-wave-mid: #f0a020;
+	--rb-wave-high: #f4f6f8;
+	--rb-wave-mono: #4da3ff;
+	--rb-plan-fader: #ffffff;
+	--rb-plan-eq-low: #ffc04d;
+	--rb-plan-eq-mid: #7ee787;
+	--rb-plan-eq-high: #ff7eb6;
+	--rb-plan-filter: #4dd8ff;
+	--rb-plan-out: #ff3b30;
+	--rb-plan-in: #35c04f;
+	--rb-wave-vocal: #4fb2ff;
+	--rb-red: #f15e6c;
+	--rb-yellow: #ffd04d;
+	--rb-select: #2b2f36;
+	--rb-master: #4da3ff;
+	--rb-master-ink: #000000;
+	--rb-master-text: #7cbcff;
+	--rb-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--rb-fs-browser: 12.5px;
+	--rb-fs-label: 11px;
+	--rb-waverow-h: 56px;
+	--rb-status-dot-filter: none;
+	--rb-rail-spotify: currentColor;
+	--rb-rail-spotify-arc: var(--rb-panel);
+	--rb-rail-files: currentColor;
+	--rb-rail-beatport: currentColor;
+	--rb-rail-record: currentColor;
+	--rb-knob-warn: #ffa42b;
+	--rb-knob-alarm: #f15e6c;
+	--rb-key-compat-border: #ffffff;
+	--rb-artwork-filter: none;
+	--rb-issue-square: #ffffff;
+	--rb-issue-square-ink: #000000;
+	--rb-quality-filter: none;
+	--rb-bpm-mismatch-ring: #f15e6c;
+	--rb-stem-vocal: initial;
+	--rb-stem-instrumental: initial;
+	--rb-stem-drums: initial;
+	--rb-stem-bass: initial;
+	--rb-stem-other: initial;
+	--rb-stem-ink: initial;
+	--rb-section-edge: #3fb3c8;
+	--rb-section-rise: #d9a441;
+	--rb-section-drop: #ea4a76;
+	--rb-section-calm: #8b82c4;
+	--rb-section-body: #6e8fa8;
+	--rb-section-neutral: #80868d;
+	/* Light-only hooks unset, as in Gothic: dark wells and jog ink. */
+	--rb-jog-text: initial;
+	--rb-jog-text-dim: initial;
+	--rb-round-face: initial;
+	--rb-well: initial;
+	--rb-strip-pos: initial;
+	--rb-strip-pos-glow: initial;
+	--rb-text-muted: initial;
+	--rb-key-lightness-major: initial;
+	--rb-key-lightness-minor: initial;
+	--rb-knob-ring: initial;
+	--rb-knob-cap: initial;
+	--rb-knob-cap-edge: initial;
+	--rb-knob-indicator-white: initial;
+	--rb-knob-takeover: initial;
+	--rb-knob-stem-tint: initial;
+}
+
 /* -------- panel chrome -------- */
 .perf-root .rb-panel {
 	background: var(--rb-panel);

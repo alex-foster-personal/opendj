@@ -35,9 +35,7 @@ const payload = {
 	source: 'apps.analysis',
 	backend: 'librosa',
 	backend_version: '1.0',
-	proposals: [
-		{ time_s: 12.4, kind: 'intro', confidence: 0.9, source: 'heuristic', rms_dbfs: -12 }
-	]
+	proposals: [{ time_s: 12.4, kind: 'intro', confidence: 0.9, source: 'heuristic', rms_dbfs: -12 }]
 };
 
 before(async () => {

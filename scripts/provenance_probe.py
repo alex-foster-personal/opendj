@@ -109,8 +109,7 @@ def _identity_tokens(root: Path, reference: float | None) -> str:
             continue
         digest = hashlib.blake2b(digest_size=4)
         digest.update(
-            f"{path.relative_to(root)}|{info.st_dev}|{info.st_ino}|"
-            f"{info.st_size}|{info.st_mtime_ns}".encode()
+            f"{path.relative_to(root)}|{info.st_dev}|{info.st_ino}|{info.st_size}|{info.st_mtime_ns}".encode()
         )
         tokens.add(digest.hexdigest())
     return _TOKEN_SEP.join(sorted(tokens))
@@ -162,9 +161,7 @@ def _split(joined: str) -> list[str]:
     return joined.split(_TOKEN_SEP) if joined else []
 
 
-def _store_generations(
-    roots: SourceRoots, present: set[str], reference: float | None
-) -> dict[str, str]:
+def _store_generations(roots: SourceRoots, present: set[str], reference: float | None) -> dict[str, str]:
     """Each present store's identity, as durably as this run can state it.
 
     Two parts, because a store can change in two ways that a name cannot see.

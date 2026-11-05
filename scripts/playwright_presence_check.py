@@ -82,9 +82,7 @@ def _walk_suites(
             file_label = file_title
         nested = suite.get("suites")
         if isinstance(nested, list) and nested:
-            rows.extend(
-                _walk_suites(nested, file_title=file_label, project_name=project_name)
-            )
+            rows.extend(_walk_suites(nested, file_title=file_label, project_name=project_name))
         specs = suite.get("specs")
         if not isinstance(specs, list):
             continue
@@ -142,9 +140,7 @@ def _analyze(rows: list[tuple[str, str, str, str | None]]) -> tuple[int, int, in
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Fail when a Playwright JSON report lists tests that did not run."
-    )
+    parser = argparse.ArgumentParser(description="Fail when a Playwright JSON report lists tests that did not run.")
     parser.add_argument(
         "--floor",
         type=int,
@@ -183,11 +179,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {line}", file=sys.stderr)
         return 1
 
-    print(
-        "presence ok: "
-        f"{listed} executed ({passed} passed, {failed} failed, {timed_out} timedOut), "
-        "0 did not run"
-    )
+    print(f"presence ok: {listed} executed ({passed} passed, {failed} failed, {timed_out} timedOut), 0 did not run")
     return 0
 
 

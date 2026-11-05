@@ -41,8 +41,13 @@ test('the analyzed key segment at the playhead wins over the metadata key', () =
 
 test('an unknown key is null, not the "--" display placeholder', () => {
 	const anlz = { key_segments: { status: 'failed', reason: 'no audio' } };
-	assert.equal(open.audibleDeckKey(deck({ anlz })), null);
+	assert.equal(open.audibleDeckKey(deck({ anlz, key: null })), null);
 	assert.equal(open.audibleDeckKey(deck({ key: null })), null);
+});
+
+test('DECK-KEY-01: declined key segments fall back to the track key the library shows', () => {
+	const anlz = { key_segments: { status: 'failed', reason: 'no_tonal_center: ambiguous_margin' } };
+	assert.equal(open.audibleDeckKey(deck({ anlz })), '8A');
 });
 
 test('the ranking context reads the audible key, not st.key', () => {

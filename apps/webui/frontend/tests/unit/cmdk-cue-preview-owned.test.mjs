@@ -9,7 +9,9 @@ import { describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const { createCuePreview, MASTER_PHASE_UNKNOWN } = await loadTypeScriptModule('src/lib/rb/cmdk-cue-preview.svelte.ts');
+const { createCuePreview, MASTER_PHASE_UNKNOWN } = await loadTypeScriptModule(
+	'src/lib/rb/cmdk-cue-preview.svelte.ts'
+);
 
 const TRACK = {
 	stable_id: 'trk-owned',

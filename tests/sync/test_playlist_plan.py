@@ -7,6 +7,7 @@ Exercises the RB-canonical bi-directional diff against matcher output:
 * CONTEXT D3 (djay-only playlists reported, never touched).
 * CONTEXT D6 (flatten folder hierarchy with " / " separator).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -82,9 +83,7 @@ def test_plan_updates_colliding_djay_playlist_with_adds_and_removes() -> None:
 @pytest.mark.requirement("SYNC-03")
 def test_plan_reports_djay_only_playlists_as_noop() -> None:
     rb = []
-    djay = [
-        DjayPlaylistRead(uuid="pl_djay", name="User's Private", member_uuids_ordered=("u1",))
-    ]
+    djay = [DjayPlaylistRead(uuid="pl_djay", name="User's Private", member_uuids_ordered=("u1",))]
     plan = build_plan(rb, djay, _matches({}))
     assert plan.playlists == []
     assert len(plan.djay_only) == 1
@@ -114,9 +113,7 @@ def test_plan_reports_unmatched_rb_tracks_per_playlist() -> None:
 @pytest.mark.requirement("SYNC-03")
 def test_plan_noop_when_membership_already_matches() -> None:
     rb = [_flat("r1", "Chill", ("t1", "t2"))]
-    djay = [
-        DjayPlaylistRead(uuid="pl1", name="Chill", member_uuids_ordered=("u1", "u2"))
-    ]
+    djay = [DjayPlaylistRead(uuid="pl1", name="Chill", member_uuids_ordered=("u1", "u2"))]
     plan = build_plan(rb, djay, _matches({"t1": "u1", "t2": "u2"}))
     op = plan.playlists[0]
     assert op.op == "noop"
@@ -128,9 +125,7 @@ def test_plan_noop_when_membership_already_matches() -> None:
 @pytest.mark.requirement("SYNC-03")
 def test_plan_flags_reorder_when_only_order_differs() -> None:
     rb = [_flat("r1", "Flow", ("t1", "t2", "t3"))]
-    djay = [
-        DjayPlaylistRead(uuid="pl1", name="Flow", member_uuids_ordered=("u2", "u1", "u3"))
-    ]
+    djay = [DjayPlaylistRead(uuid="pl1", name="Flow", member_uuids_ordered=("u2", "u1", "u3"))]
     plan = build_plan(rb, djay, _matches({"t1": "u1", "t2": "u2", "t3": "u3"}))
     op = plan.playlists[0]
     assert op.op == "update"

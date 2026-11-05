@@ -34,6 +34,7 @@ MINI-PRD
 
 -Claude
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -117,7 +118,11 @@ def file_identity(path: str) -> tuple[str, int] | str:
 
 
 def scan_one(
-    stable_id: str, path: str, version: str, size: int, rule: str,
+    stable_id: str,
+    path: str,
+    version: str,
+    size: int,
+    rule: str,
     cancel: threading.Event | None = None,
 ) -> StoredScan:
     """Scan one file into a row. A file that will not decode is a row with
@@ -131,8 +136,14 @@ def scan_one(
         error = str(exc)[:300]
         log.warning("audio-quality: %s: %s", path, error)
     return StoredScan(
-        stable_id=stable_id, file_path=path, file_version=version, file_size=size,
-        rule_version=rule, facts_json=facts_json, error=error, computed_at=_utc_now(),
+        stable_id=stable_id,
+        file_path=path,
+        file_version=version,
+        file_size=size,
+        rule_version=rule,
+        facts_json=facts_json,
+        error=error,
+        computed_at=_utc_now(),
     )
 
 
@@ -144,8 +155,14 @@ def _unreadable_row(stable_id: str, path: str, error: str, rule: str) -> StoredS
     """A file that vanished or cannot be stat-ed between the walk and the scan:
     recorded as a failure, so its letter goes back to unchecked."""
     return StoredScan(
-        stable_id=stable_id, file_path=path, file_version="unreadable", file_size=-1,
-        rule_version=rule, facts_json=None, error=error, computed_at=_utc_now(),
+        stable_id=stable_id,
+        file_path=path,
+        file_version="unreadable",
+        file_size=-1,
+        rule_version=rule,
+        facts_json=None,
+        error=error,
+        computed_at=_utc_now(),
     )
 
 
@@ -265,17 +282,13 @@ class ScanRunner(SharedScanRunner[ScanResult]):
     def start(self, state_db: Path, limit: int | None = None) -> dict[str, Any]:
         """Start a background scan (one worker) unless one is running."""
         return self.start_work(
-            lambda stop: scan_library(
-                state_db, workers=1, pause_s=BACKGROUND_PAUSE_S, limit=limit, stop=stop
-            ),
+            lambda stop: scan_library(state_db, workers=1, pause_s=BACKGROUND_PAUSE_S, limit=limit, stop=stop),
         )
 
     def run_blocking(self, state_db: Path, workers: int, limit: int | None) -> dict[str, Any]:
         """Scan on the caller's thread; refuses while a scan is running."""
         return self.run_work(
-            lambda stop: scan_library(
-                state_db, workers=workers, pause_s=0.0, limit=limit, stop=stop
-            ),
+            lambda stop: scan_library(state_db, workers=workers, pause_s=0.0, limit=limit, stop=stop),
         )
 
 

@@ -14,6 +14,7 @@ Regression one-liners:
   - if deleting a users row leaves its machine_owners rows behind then broken
   - if either new table has no column docs then opening a DB breaks
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,19 +41,13 @@ PREVIOUS_VERSION: int = ENROLLMENT_VERSION - 1
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
-    return {
-        str(row[0])
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
+    return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
 
 def _migrate_to(conn: sqlite3.Connection, version: int) -> None:
     """Run the ladder up to ``version`` only, so the rung BELOW the top
     can be built and the migration under test has something to migrate."""
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_meta ("
-        "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
     for index in range(version):
         for statement in state_schema.MIGRATIONS[index]:
             conn.execute(statement)
@@ -81,11 +76,7 @@ def _digests_of_present_sync_tables(conn: sqlite3.Connection) -> dict[str, str]:
     claim under test is per table anyway: rung nine moves none of them.
     """
     present = _tables(conn)
-    return {
-        table: protocol.table_digest(conn, table).hash
-        for table in protocol.DIGEST_TABLES
-        if table in present
-    }
+    return {table: protocol.table_digest(conn, table).hash for table in protocol.DIGEST_TABLES if table in present}
 
 
 def _seed_library(conn: sqlite3.Connection) -> None:
@@ -131,14 +122,10 @@ def test_a_v8_database_migrates_to_nine_with_both_tables(tmp_path: Path):
     path = tmp_path / "v8.db"
     conn = sqlite3.connect(str(path), isolation_level=None)
     _migrate_to(conn, PREVIOUS_VERSION)
-    assert (
-        conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-        == PREVIOUS_VERSION
-    )
+    assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == PREVIOUS_VERSION
     for table in NEW_TABLES:
         assert table not in _tables(conn), (
-            "the control: these tables must be ABSENT at v8, or the "
-            "post-migration assertion proves nothing"
+            "the control: these tables must be ABSENT at v8, or the post-migration assertion proves nothing"
         )
     assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
     present = _tables(conn)
@@ -201,8 +188,7 @@ def test_deleting_a_user_drops_its_ownership_rows(tmp_path: Path):
     try:
         stamp = sync_stamp.canonical_now()
         conn.execute(
-            "INSERT INTO users(google_sub, email, created_at, updated_at) "
-            "VALUES ('sub-1', 'a@example.com', ?, ?)",
+            "INSERT INTO users(google_sub, email, created_at, updated_at) VALUES ('sub-1', 'a@example.com', ?, ?)",
             (stamp, stamp),
         )
         conn.execute(
@@ -232,8 +218,7 @@ def test_enrolled_via_rejects_an_unknown_provenance(tmp_path: Path):
     try:
         stamp = sync_stamp.canonical_now()
         conn.execute(
-            "INSERT INTO users(google_sub, email, created_at, updated_at) "
-            "VALUES ('sub-1', 'a@example.com', ?, ?)",
+            "INSERT INTO users(google_sub, email, created_at, updated_at) VALUES ('sub-1', 'a@example.com', ?, ?)",
             (stamp, stamp),
         )
         conn.execute(

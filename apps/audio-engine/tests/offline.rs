@@ -501,6 +501,14 @@ fn a_hard_link_is_the_file_it_links_to() {
     let rewritten = session(&spec("copy.wav")).unwrap();
     assert_eq!(rewritten.frames, 24000);
     assert!(!std::sync::Arc::ptr_eq(&copy2.pcm, &rewritten.pcm));
+    // The session cache key's change time, taken from copy.wav itself at the
+    // open that inserted it.
+    #[cfg(unix)]
+    let cached_changed = {
+        use std::os::unix::fs::MetadataExt;
+        let m = std::fs::metadata(d.join("copy.wav")).unwrap();
+        (m.ctime(), m.ctime_nsec())
+    };
     // Codex on 7a620cdd: also when the rewrite keeps the length and puts the
     // modification time back, as `cp -p` or `rsync -t` does (on Windows too
     // since Codex on 60b7a5a0).
@@ -509,32 +517,37 @@ fn a_hard_link_is_the_file_it_links_to() {
         let old = std::fs::metadata(d.join("copy.wav")).unwrap();
         let kept = old.modified().unwrap();
         let before = offline(&spec("copy.wav"), u64::MAX).unwrap();
-        // The loader tells a rewrite apart by the change time, which a coarse
-        // volume clock (a jiffy on older Linux kernels) can stamp the same
-        // for two writes in one tick; that case is outside what it promises
-        // (see `FileKey`), so let the clock move past the cached stamp first.
+        // The loader distinguishes a kept-mtime rewrite by change time; two
+        // writes in one volume-clock tick still look alike (`FileKey` docs).
+        // Wait until this file's change time is past the session-cached stamp,
+        // then rewrite.
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            let stamp = |m: &std::fs::Metadata| (m.ctime(), m.ctime_nsec());
-            let probe = d.join("clock.probe");
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while {
-                std::fs::write(&probe, b"t").unwrap();
-                stamp(&std::fs::metadata(&probe).unwrap()) <= stamp(&old)
-            } {
-                assert!(std::time::Instant::now() < deadline, "the volume's change-time clock did not move in 5 s");
-                std::thread::sleep(std::time::Duration::from_millis(1));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let meta = loop {
+            write_wav(&d, "copy.wav", 48000, &sine(48000, 440.0, 0.5));
+            std::fs::File::options().write(true).open(d.join("copy.wav")).unwrap().set_modified(kept).unwrap();
+            let meta = std::fs::metadata(d.join("copy.wav")).unwrap();
+            assert_eq!((meta.len(), meta.modified().unwrap()), (old.len(), kept), "the rewrite is not the case under test");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let observed = (meta.ctime(), meta.ctime_nsec());
+                if observed == cached_changed {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "copy.wav's change time stayed at the session-cached stamp {cached_changed:?} for 5 s (just observed {observed:?})"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    continue;
+                }
             }
-        }
-        write_wav(&d, "copy.wav", 48000, &sine(48000, 440.0, 0.5));
-        std::fs::File::options().write(true).open(d.join("copy.wav")).unwrap().set_modified(kept).unwrap();
-        let meta = std::fs::metadata(d.join("copy.wav")).unwrap();
+            break meta;
+        };
         assert_eq!((meta.len(), meta.modified().unwrap()), (old.len(), kept), "the rewrite is not the case under test");
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            assert_ne!((meta.ctime(), meta.ctime_nsec()), (old.ctime(), old.ctime_nsec()), "the rewrite kept its change time");
+            assert_ne!((meta.ctime(), meta.ctime_nsec()), cached_changed, "the rewrite kept its change time");
         }
         let after = session(&spec("copy.wav")).unwrap();
         assert!(after.pcm[..] != rewritten.pcm[..], "the session loader handed out the old samples");

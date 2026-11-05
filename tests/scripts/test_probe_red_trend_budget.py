@@ -117,8 +117,7 @@ def test_a_reply_slower_than_the_old_timeout_still_records_exactly_one_row(
         stop_engine(server, thread)
 
     assert elapsed >= SLOW_REPLY_SECONDS, (
-        "this test only bites if the reply really was held past the old "
-        f"timeout; it came back in {elapsed:.2f} s"
+        f"this test only bites if the reply really was held past the old timeout; it came back in {elapsed:.2f} s"
     )
     assert receipt["posted"] is True
     assert receipt["http_status"] == 202
@@ -131,8 +130,7 @@ def test_a_reply_slower_than_the_old_timeout_still_records_exactly_one_row(
     assert rows[0]["client_event_id"] == receipt["client_event_id"]
     assert rows[0]["event_id"] == receipt["engine_event_id"]
     assert proxy.count("POST", CLIENT_ERRORS_PATH) == 1, (
-        "if more than one POST reached the engine then a retry happened, "
-        "whatever the row count says"
+        "if more than one POST reached the engine then a retry happened, whatever the row count says"
     )
 
 
@@ -222,8 +220,7 @@ def test_an_engine_that_never_finishes_its_reply_is_abandoned_at_the_budget(
     assert "waiting" in message, message
     expected_attempts = f"{TREND_REPORT_ATTEMPTS} attempt"
     assert expected_attempts in message, (
-        "if the give-up message does not say how many attempts it made then "
-        f"broken: {message}"
+        f"if the give-up message does not say how many attempts it made then broken: {message}"
     )
     if stall_mode == STALL_HEALTH_SILENT:
         assert HEALTH_PATH in message

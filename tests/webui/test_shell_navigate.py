@@ -1,4 +1,5 @@
 """Shell navigation HTTP contract (issue #2866, AGENT-12)."""
+
 from __future__ import annotations
 
 import pytest
@@ -34,10 +35,7 @@ def test_post_navigate_logs_the_request(caplog: pytest.LogCaptureFixture) -> Non
             posted = client.post("/api/v1/shell/navigate", json={"route": "/performance"})
 
     navigate_id = posted.json()["id"]
-    assert any(
-        "/performance" in record.message and navigate_id in record.message
-        for record in caplog.records
-    )
+    assert any("/performance" in record.message and navigate_id in record.message for record in caplog.records)
 
 
 def test_pending_poll_does_not_consume() -> None:
@@ -74,9 +72,7 @@ def test_ack_returns_404_on_id_mismatch() -> None:
 def test_last_post_wins_pending_slot() -> None:
     with _client() as client:
         first = client.post("/api/v1/shell/navigate", json={"route": "/performance"})
-        second = client.post(
-            "/api/v1/shell/navigate", json={"route": "/performance/preload1"}
-        )
+        second = client.post("/api/v1/shell/navigate", json={"route": "/performance/preload1"})
         pending = client.get("/api/v1/shell/navigate/pending")
 
     assert first.json()["id"] != second.json()["id"]

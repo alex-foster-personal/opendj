@@ -1,4 +1,5 @@
 """Regression tests for the analysis-backed performance rescue fixture (#1735)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -38,11 +39,7 @@ def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Pat
     stored = fetch_records(stable_ids=stable_ids, backend="librosa", db_path=state_db)
     assert len(stored) == len(RESCUE_PLAYBACK_TRACKS)
 
-    by_filename = {
-        Path(file_path).name: stable_id
-        for stable_id, _title, file_path in rows
-        if file_path is not None
-    }
+    by_filename = {Path(file_path).name: stable_id for stable_id, _title, file_path in rows if file_path is not None}
     for track in RESCUE_PLAYBACK_TRACKS:
         audio_path = data_dir / "fixture-audio" / track.filename
         assert audio_path.is_file()
@@ -57,8 +54,7 @@ def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Pat
         assert record.downbeats_s == sorted(record.downbeats_s)
         assert len(record.downbeats_s) == len(set(record.downbeats_s))
         assert all(
-            record.downbeats_s[index] < record.downbeats_s[index + 1]
-            for index in range(len(record.downbeats_s) - 1)
+            record.downbeats_s[index] < record.downbeats_s[index + 1] for index in range(len(record.downbeats_s) - 1)
         )
         assert all(0.0 <= downbeat < duration_s for downbeat in record.downbeats_s)
         assert record.features_blob["downbeat_tracking"] is True

@@ -6,6 +6,7 @@ Codex P04-01: ``build_analysis_diff`` previously never plumbed the
 ``resolve_conflict``, so ``prefer="newest"`` silently collapsed to
 RB-default for every row.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta

@@ -64,7 +64,11 @@ export function installLeaderOnlyEventWriters(
 export function installLeaderOnlyRestore(
 	deps: Pick<
 		LeaderOnlyWriterDeps,
-		'leadership' | 'runRescueAutoRestore' | 'libraryRescueHold' | 'installSessionRestore' | 'installRescueRingWriter'
+		| 'leadership'
+		| 'runRescueAutoRestore'
+		| 'libraryRescueHold'
+		| 'installSessionRestore'
+		| 'installRescueRingWriter'
 	>
 ): () => void {
 	// True once a deck restore ran to its end in THIS tab. Until then a

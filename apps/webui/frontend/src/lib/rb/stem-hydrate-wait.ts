@@ -7,7 +7,11 @@ import type { StemArtifactProbe } from '$lib/rb/api-rb';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
-import type { HeldStemLandingPort, StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
+import type {
+	HeldStemLandingPort,
+	StemLandingOutcome,
+	StemLandingPort
+} from '$lib/rb/stem-live-handoff';
 import type { StemRetryPort } from '$lib/rb/stem-retry';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
@@ -48,7 +52,10 @@ export function stemsBlockedState(): StemDeckState | null {
  * `deck.stems` to the blocked state. Read it before the upgrade's first await
  * and in every stale check after it, so an upgrade already under way when the
  * block begins stops at its next check. */
-export function stemBlockCheck(deck: { stems: StemDeckState }, isCurrent: () => boolean): () => boolean {
+export function stemBlockCheck(
+	deck: { stems: StemDeckState },
+	isCurrent: () => boolean
+): () => boolean {
 	return () => {
 		const blockedState = stemsBlockedState();
 		if (blockedState === null) return false;

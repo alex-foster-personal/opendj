@@ -25,7 +25,7 @@ regenerate openapi.json BEFORE step 3 reads it -- run the TS client generator
 against a stale schema and it produces a stale client that looks freshly
 generated.
 
-tests/quality/test_gate_scope.py already parses this justfile for the same
+(private path) already parses this justfile for the same
 reason; this is the same technique pointed at a different recipe.
 
 Regression lines:
@@ -62,6 +62,10 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
     (
         "reviewer lease (open PR on current branch only)",
         r"scripts\.review_lease\s+check-branch",
+    ),
+    (
+        "changed-path fast guards (carry paths, filetree, OSS audit, bundle budget, svelte text ratchet)",
+        r"scripts\.pre_push_guards\s+run",
     ),
     (
         "requirement ids and reqs.json drift",

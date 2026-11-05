@@ -3,28 +3,25 @@
  * slot. Pure, so it lives outside the engine (convention D5) and is shared by
  * deck load and the slot-state path without either importing the other.
  */
-import type { AnlzCue } from "$lib/rb/anlz-types";
-import type { HotCue } from "$lib/rb/hot-cue-types";
+import type { AnlzCue } from '$lib/rb/anlz-types';
+import type { HotCue } from '$lib/rb/hot-cue-types';
 
 export function hotCuesFromAnlz(cues: AnlzCue[]): HotCue[] {
-  return cues
-    .filter(
-      (c): c is AnlzCue & { slot: NonNullable<AnlzCue["slot"]> } =>
-        c.slot !== null,
-    )
-    .map((c) => ({
-      slot: c.slot,
-      in_ms: c.in_ms,
-      out_ms: c.out_ms,
-      is_loop: c.is_loop,
-      beat_loop_size: c.beat_loop_size,
-      color_table_index: c.color_table_index,
-      comment: c.comment,
-    }))
-    .sort((a, b) => a.slot.localeCompare(b.slot));
+	return cues
+		.filter((c): c is AnlzCue & { slot: NonNullable<AnlzCue['slot']> } => c.slot !== null)
+		.map((c) => ({
+			slot: c.slot,
+			in_ms: c.in_ms,
+			out_ms: c.out_ms,
+			is_loop: c.is_loop,
+			beat_loop_size: c.beat_loop_size,
+			color_table_index: c.color_table_index,
+			comment: c.comment
+		}))
+		.sort((a, b) => a.slot.localeCompare(b.slot));
 }
 
 /** The hot-cue bank from per-slot state rows (deck load, both engines). */
 export function hotCuesFromSlots(slots: ReadonlyArray<{ cue: AnlzCue | null }>): HotCue[] {
-  return hotCuesFromAnlz(slots.flatMap((slot) => (slot.cue === null ? [] : [slot.cue])));
+	return hotCuesFromAnlz(slots.flatMap((slot) => (slot.cue === null ? [] : [slot.cue])));
 }

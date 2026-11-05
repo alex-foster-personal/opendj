@@ -17,6 +17,7 @@ Covers:
   fallback) so a closed RB7 install does not degrade to the XML
   sidecar path.
 """
+
 from __future__ import annotations
 
 import sys
@@ -45,9 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_p13_f02_explicit_source_preserved_on_empty() -> None:
     ctx = load_session_context(source="phase12", conn=None)
     assert ctx.recent == []
-    assert ctx.source == "phase12", (
-        f"explicit source must be preserved on empty fallback; got {ctx.source!r}"
-    )
+    assert ctx.source == "phase12", f"explicit source must be preserved on empty fallback; got {ctx.source!r}"
 
 
 @pytest.mark.requirement("AI-01")
@@ -68,21 +67,15 @@ def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
 ) -> None:
     from apps.voice.__main__ import _cmd_run, build_parser
 
-    args = build_parser().parse_args(
-        ["run", "--enable-destructive", "--dry-bus"]
-    )
+    args = build_parser().parse_args(["run", "--enable-destructive", "--dry-bus"])
     rc = _cmd_run(args)
     # VOICE-01: the daemon now degrades to text-only mode when sounddevice
     # is missing (prints "mic capture disabled" and exits cleanly), so the
     # contract tightens back to rc=0 on every host.
     assert rc == 0
     out = capsys.readouterr().out
-    assert "destructive=True" in out, (
-        f"--enable-destructive must flip VoiceContext.destructive; stdout={out!r}"
-    )
-    assert "dry_bus=True" in out, (
-        f"--dry-bus must surface in the run summary; stdout={out!r}"
-    )
+    assert "destructive=True" in out, f"--enable-destructive must flip VoiceContext.destructive; stdout={out!r}"
+    assert "dry_bus=True" in out, f"--dry-bus must surface in the run summary; stdout={out!r}"
 
 
 # -- P16-F03 --------------------------------------------------------------
@@ -147,39 +140,26 @@ def test_p16_f03_conformance_loader_only_swallows_module_not_found(
 
 @pytest.mark.requirement("LAUNCH-02")
 def test_p17_02_frecency_decay_uses_max_timestamp() -> None:
-    text = (
-        REPO_ROOT / "apps/launcher/src-tauri/src/commands/frecency.rs"
-    ).read_text(encoding="utf-8")
+    text = (REPO_ROOT / "apps/launcher/src-tauri/src/commands/frecency.rs").read_text(encoding="utf-8")
     # Strip comment lines before scanning so the retrospective reference
     # to the old expression in the fix's doc-comment doesn't trip the guard.
-    live = "\n".join(
-        ln for ln in text.splitlines() if not ln.lstrip().startswith("//")
-    )
-    assert "last_dragged.or(last_played)" not in live, (
-        "frecency decay must use the most-recent of the two timestamps"
-    )
+    live = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    assert "last_dragged.or(last_played)" not in live, "frecency decay must use the most-recent of the two timestamps"
     assert "last_played_at.max(last_dragged_at)" in live
 
 
 @pytest.mark.requirement("LAUNCH-02")
 def test_p17_03_use_search_logs_backend_failures() -> None:
-    text = (
-        REPO_ROOT / "apps/launcher/src/hooks/useSearch.ts"
-    ).read_text(encoding="utf-8")
-    assert "console.error" in text, (
-        "backend search failures must be logged, not silently swallowed"
-    )
+    text = (REPO_ROOT / "apps/launcher/src/hooks/useSearch.ts").read_text(encoding="utf-8")
+    assert "console.error" in text, "backend search failures must be logged, not silently swallowed"
 
 
 @pytest.mark.requirement("LAUNCH-02")
 def test_f18_03_rb_unknown_defaults_to_clipboard() -> None:
-    text = (
-        REPO_ROOT / "apps/launcher/drag-core/src/drag/rekordbox.rs"
-    ).read_text(encoding="utf-8")
+    text = (REPO_ROOT / "apps/launcher/drag-core/src/drag/rekordbox.rs").read_text(encoding="utf-8")
     assert "RekordboxMajor::Unknown" in text
     # The dispatch must handle Unknown in the clipboard-fallback branch,
     # not leave it falling through to the XML sidecar path.
     assert "Seven || major == RekordboxMajor::Unknown" in text, (
-        "F18-03: closed RB (Unknown major) must share the clipboard path "
-        "with RB7 until an installation probe lands"
+        "F18-03: closed RB (Unknown major) must share the clipboard path with RB7 until an installation probe lands"
     )

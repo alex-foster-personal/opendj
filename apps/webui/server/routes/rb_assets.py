@@ -19,7 +19,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
 from apps.analysis_structure.http import build_service as build_structure_service
@@ -35,11 +34,13 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
     vendor_analysis_path_absent,
 )
 from ..rb_vendor_pkg.cached_pssi import apply_cached_pssi
+from ..rb_vendor_pkg.grid_phase_overlay import apply_grid_phase
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
-from .grid_edit import apply_stored_grid_edit
+from .grid_edit import apply_stored_grid_edit, stored_grid_edit, stored_tempo_pick
+from .grid_edit import state_db_path as grid_state_db_path
 from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
-from .vocals import _own_vocals_for_serve
+from .vocals import _own_vocals_for_serve, _request_vocals_ctx
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -376,6 +377,7 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
     example ``/tempo-stability``, issue #8339), so none of them can resolve a
     different beatgrid source, overlay or grid edit than the deck does.
     """
+    vocals_ctx = _request_vocals_ctx(request)
     # NATIVE-21: a deck load (or a selected row) moves this track to the
     # front of the ahead-of-time drain; it never becomes the only producer.
     ahead = getattr(request.app.state, "ahead_analysis", None)
@@ -426,7 +428,7 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
             # vocal-cache under the app's own stable id is the only source of
             # vocal bars (VOCALS-04): the same read GET /vocals/{id}/status
             # serves, so the deck waveform and that route cannot disagree.
-            payload["vocals"] = _own_vocals_for_serve(stable_id)
+            payload["vocals"] = _own_vocals_for_serve(vocals_ctx, stable_id)
             # A relinked track whose rekordbox content row is gone keeps its PSSI
             # in the anlz cache; serve it behind a duration guard (PHRASE-RECOVER-01).
             payload = apply_cached_pssi(payload, stable_id, share=share)
@@ -481,12 +483,23 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
     payload["beatgrid_source_basis"] = beatgrid_source_basis
+    # GRID-MIK-01 / GRID-PHASE-01: Mixed In Key's grid fills a missing or
+    # low-confidence own grid, then the lines slide onto the kick, before
+    # phrases and edits read the grid.
+    payload = apply_grid_phase(
+        payload,
+        stable_id,
+        share=getattr(request.state, "share_audience", "local") == "share",
+        user_edit_stored=not stored_grid_edit(request, stable_id, payload).is_identity(),
+        state_db_path=grid_state_db_path(request),
+        tempo_pick=stored_tempo_pick(request, stable_id),
+    )
     # Phrase lane rbx: own sections fill only an empty PSSI (STRUCT-02); own:
     # only own sections are served (STRUCT-04). `phrases_source` names which.
     payload = build_structure_service().merge_own_phrases(
         payload,
         stable_id,
-        rb_config.DATA_DIR,
+        vocals_ctx.data_dir,
         source=phrase_source_for_request(request),
         share=getattr(request.state, "share_audience", "local") == "share",
     )

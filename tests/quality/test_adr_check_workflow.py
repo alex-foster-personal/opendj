@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
-GATE = WORKFLOWS / "adr-check.yml"
+GATE = WORKFLOWS / "pr-body-gates.yml"
 CI = WORKFLOWS / "ci.yml"
 
 GITHUB_DEFAULT_TYPES = {"opened", "synchronize", "reopened"}
@@ -68,9 +68,7 @@ def test_the_gate_reruns_on_body_edits() -> None:
     assert types >= GITHUB_DEFAULT_TYPES, (
         f"naming types replaced GitHub's defaults; missing {GITHUB_DEFAULT_TYPES - types}"
     )
-    assert "edited" in types, (
-        "without edited, a green check outlives a body that had its ADR line removed"
-    )
+    assert "edited" in types, "without edited, a green check outlives a body that had its ADR line removed"
 
 
 def test_the_job_can_read_pull_requests() -> None:
@@ -81,8 +79,7 @@ def test_the_job_can_read_pull_requests() -> None:
 
 def test_ci_yml_does_not_also_run_the_gate() -> None:
     assert not _runs_the_gate(_doc(CI)), (
-        "ci.yml is path-filtered; a second copy there would make a docs PR's "
-        "absent check look like this gate had run"
+        "ci.yml is path-filtered; a second copy there would make a docs PR's absent check look like this gate had run"
     )
 
 
@@ -90,16 +87,11 @@ def test_checkout_fetches_full_history_for_ancestry_guard() -> None:
     """Issue #3513: origin/main must be current enough for merge-base --is-ancestor."""
     steps = next(iter(_doc(GATE).get("jobs", {}).values())).get("steps") or []
     checkout = next(
-        (
-            step
-            for step in steps
-            if isinstance(step, dict) and "uses" in step and "checkout" in step["uses"]
-        ),
+        (step for step in steps if isinstance(step, dict) and "uses" in step and "checkout" in step["uses"]),
         None,
     )
     assert checkout is not None, f"{GATE.name} has no actions/checkout step"
     with_block = checkout.get("with") or {}
     assert with_block.get("fetch-depth") == 0, (
-        "adr-check needs full history so the ancestry guard can compare HEAD "
-        "against a current origin/main"
+        "adr-check needs full history so the ancestry guard can compare HEAD against a current origin/main"
     )

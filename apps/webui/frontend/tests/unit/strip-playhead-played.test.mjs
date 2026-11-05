@@ -11,8 +11,14 @@ const src = readFileSync(
 );
 
 test('the played veil spans 0 to the playhead and the playhead sits on top of it', () => {
-	assert.match(src, /<span class="played" style=\{`width:\$\{posPct\}%`\} aria-hidden="true"><\/span>\s*<span class="pos" style=\{`left:\$\{posPct\}%`\}>/);
-	const played = src.slice(src.indexOf('\t.played {'), src.indexOf('}', src.indexOf('\t.played {')));
+	assert.match(
+		src,
+		/<span class="played" style=\{`width:\$\{posPct\}%`\} aria-hidden="true"><\/span>\s*<span class="pos" style=\{`left:\$\{posPct\}%`\}>/
+	);
+	const played = src.slice(
+		src.indexOf('\t.played {'),
+		src.indexOf('}', src.indexOf('\t.played {'))
+	);
 	const pos = src.slice(src.indexOf('\t.pos {'), src.indexOf('}', src.indexOf('\t.pos {')));
 	assert.match(played, /z-index: 2;/);
 	assert.match(played, /pointer-events: none;/);

@@ -209,7 +209,11 @@ async function dragRowToDeck(
 		() =>
 			(
 				window as unknown as {
-					__dragDeckProbe: { trustedDragStart: boolean; trustedDrop: boolean; payloadOnDrop: string };
+					__dragDeckProbe: {
+						trustedDragStart: boolean;
+						trustedDrop: boolean;
+						payloadOnDrop: string;
+					};
 				}
 			).__dragDeckProbe
 	);

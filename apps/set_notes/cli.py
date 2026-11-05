@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from apps.shared.argparse_types import nonnegative_int
 from apps.shared.paths import DATA_DIR
 
 from .store import (
@@ -47,15 +48,8 @@ def _build_parser() -> argparse.ArgumentParser:
     put = sub.add_parser("put", parents=[common], help="write a note body")
     put.add_argument("scope")
     put.add_argument("--body-file", type=Path, required=True, help="markdown file, '-' for stdin")
-    put.add_argument("--base-rev", type=_base_rev, required=True, help="rev you edited; 0 creates")
+    put.add_argument("--base-rev", type=nonnegative_int, required=True, help="rev you edited; 0 creates")
     return parser
-
-
-def _base_rev(raw: str) -> int:
-    value = int(raw)
-    if value < 0:
-        raise argparse.ArgumentTypeError("--base-rev must be 0 or greater")
-    return value
 
 
 def _emit(payload: object, stream: TextIO | None = None) -> None:

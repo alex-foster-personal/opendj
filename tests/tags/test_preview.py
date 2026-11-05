@@ -1,4 +1,5 @@
 """Tests for ``apps.tags.preview``."""
+
 from __future__ import annotations
 
 import csv

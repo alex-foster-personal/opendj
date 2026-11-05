@@ -169,9 +169,7 @@ def test_finish_allows_the_legal_sources(tmp_path: Path) -> None:
     unknown = store.enqueue("from-unknown", {})
     store.claim_queued()
     store.finish(unknown["id"], "unknown", error="lost the worker")
-    assert store.finish(unknown["id"], "failed", error="reconciled")[
-        "status"
-    ] == "failed"
+    assert store.finish(unknown["id"], "failed", error="reconciled")["status"] == "failed"
     store.close()
 
 

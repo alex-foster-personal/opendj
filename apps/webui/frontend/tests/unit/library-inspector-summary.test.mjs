@@ -198,7 +198,7 @@ test('a multi-select during whole-collection search names the search hits for ev
 	// context menu and the inspector all read the same search hits.
 	assert.match(
 		panel,
-		/const orderedRows = range \|\| wholeCollectionActive\s*\? renderedRows\.map\(\(r\) => \(\{ stable_id: r\.stable_id, order: r\.order \}\)\)/
+		/const orderedRows = range \|\| wholeCollectionActive\s*\? tableRows\.map\(\(r\) => \(\{ stable_id: r\.stable_id, order: r\.order \}\)\)/
 	);
 	// A playlist refresh under the search never rebuilds it from playlist rows.
 	assert.match(panel, /if \(!\(p === pane && wholeCollectionActive\)\) pruneSelection\(p, result\.rows\);/);

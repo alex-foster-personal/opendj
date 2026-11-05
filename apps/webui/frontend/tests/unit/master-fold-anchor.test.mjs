@@ -92,20 +92,14 @@ describe('masterFoldCenterPx', () => {
 		// Scrolled far left, an 80px-wide badge (40px half-width): the centre
 		// alone would clamp at MIN_LEFT_PX, but translateX(-50%) would still
 		// push the badge's own left edge 40px further off-screen than that.
-		assert.equal(
-			masterFoldCenterPx(WIDTHS, 5000, undefined, 40),
-			MASTER_FOLD_MIN_LEFT_PX + 40
-		);
+		assert.equal(masterFoldCenterPx(WIDTHS, 5000, undefined, 40), MASTER_FOLD_MIN_LEFT_PX + 40);
 	});
 
 	it('clamps the right edge past the wrap width, not just the centre, once translateX(-50%) is accounted for (Sol review r3941617671)', () => {
 		const { masterFoldCenterPx, MASTER_FOLD_MIN_LEFT_PX } = mod;
 		// Same narrow-wrap case as above, now with the badge's own half-width
 		// pulled in from the right edge too.
-		assert.equal(
-			masterFoldCenterPx(WIDTHS, 0, 300, 40),
-			300 - MASTER_FOLD_MIN_LEFT_PX - 40
-		);
+		assert.equal(masterFoldCenterPx(WIDTHS, 0, 300, 40), 300 - MASTER_FOLD_MIN_LEFT_PX - 40);
 	});
 
 	it('defaults badgeHalfWidthPx to 0, leaving every pre-fix caller and its numbers unchanged', () => {

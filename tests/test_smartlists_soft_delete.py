@@ -40,8 +40,7 @@ def test_delete_on_unmigrated_table_tombstones(tmp_path: Path):
     try:
         conn.execute(_OLD_SMARTLISTS_DDL)
         conn.execute(
-            "INSERT INTO smartlists (id, name, rule, referenced_fields, "
-            "created_at, modified_at) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO smartlists (id, name, rule, referenced_fields, created_at, modified_at) VALUES (?,?,?,?,?,?)",
             (
                 "sl-legacy",
                 "legacy-name",
@@ -66,9 +65,7 @@ def test_delete_on_unmigrated_table_tombstones(tmp_path: Path):
 
     conn = sqlite3.connect(str(db_path))
     try:
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(smartlists)")
-        }
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(smartlists)")}
         assert "deleted_at" in columns
         row = conn.execute(
             "SELECT deleted_at, name FROM smartlists WHERE id=?",
@@ -89,9 +86,7 @@ def test_ensure_phase08_adds_deleted_at_idempotent(tmp_path: Path):
         conn.execute(_OLD_SMARTLISTS_DDL)
         ensure_phase08_tables(conn)
         ensure_phase08_tables(conn)
-        columns = [
-            row[1] for row in conn.execute("PRAGMA table_info(smartlists)")
-        ]
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(smartlists)")]
         assert columns.count("deleted_at") == 1
     finally:
         conn.close()

@@ -79,8 +79,7 @@ export function startDesktopShellSignInPoll(deps: DesktopSignInDeps): DesktopSig
 }
 
 export type SignInNavigationResult =
-	| { surface: 'browser' }
-	| { surface: 'desktop-shell'; session: DesktopSignInSession };
+	{ surface: 'browser' } | { surface: 'desktop-shell'; session: DesktopSignInSession };
 
 export interface SignInNavigationHooks {
 	beforeOpenUrl?: () => void;

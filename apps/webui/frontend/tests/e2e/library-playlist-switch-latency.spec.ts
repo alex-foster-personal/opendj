@@ -12,10 +12,7 @@ import {
 	PLAYLIST_SWITCH_BENCH_ORIGIN,
 	PLAYLIST_SWITCH_BENCH_PORT
 } from './playwright.playlist-switch-latency.config';
-import {
-	summarizeSamples,
-	THRESHOLDS_P50_MS
-} from './support/playlist-switch-bench-stats.mjs';
+import { summarizeSamples, THRESHOLDS_P50_MS } from './support/playlist-switch-bench-stats.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const PLAYLIST_NAME = 'Perf 1k';
@@ -26,11 +23,7 @@ const COMMITTED_FIXTURE_PATH = join(
 	'fixtures',
 	'library-playlist-switch-bench.json'
 );
-const DEFAULT_OUT_PATH = join(
-	FRONTEND_ROOT,
-	'test-results',
-	'library-playlist-switch-bench.json'
-);
+const DEFAULT_OUT_PATH = join(FRONTEND_ROOT, 'test-results', 'library-playlist-switch-bench.json');
 const OUT_PATH = resolve(process.env.PLAYLIST_SWITCH_BENCH_OUT ?? DEFAULT_OUT_PATH);
 const COMMITTED_RESOLVED = resolve(COMMITTED_FIXTURE_PATH);
 
@@ -120,85 +113,83 @@ async function waitForSwitchPaint(page: Page): Promise<void> {
 }
 
 async function measureOneSample(page: Page): Promise<Sample> {
-		await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
-		await page.goto('/performance', { waitUntil: 'domcontentloaded' });
-		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
-			timeout: 60_000
-		});
-		await waitForPerfRing(page);
-		await waitForTreeReady(page);
-		const playlist_tree_ready_ms = await readLatestPerfMs(
-			page,
-			'library-playlist-tree-ready',
-			'ready_ms'
-		);
+	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
+	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
+		timeout: 60_000
+	});
+	await waitForPerfRing(page);
+	await waitForTreeReady(page);
+	const playlist_tree_ready_ms = await readLatestPerfMs(
+		page,
+		'library-playlist-tree-ready',
+		'ready_ms'
+	);
 
-		await page.getByTestId('playlist-all-tracks').click();
-		await waitForSwitchPaint(page);
-		// Compare actual event identities; bounded retention can keep the length unchanged.
-		const playlistCountBefore = await page.evaluate(
-			() => ((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
-		);
-		await page.getByTestId('playlist-row').filter({ hasText: PLAYLIST_NAME }).click();
-		await waitForSwitchPaint(page);
-		await page.waitForFunction(
-			(before) => {
-				const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
-				return rows
-					.some(
-						(row) =>
-							row.kind === 'library-switch-first-rows' &&
-							!before.includes(JSON.stringify(row)) &&
-							row.labels?.source === 'playlist'
-					);
-			},
-			playlistCountBefore,
-			{ timeout: 10_000 }
-		);
-		const playlist_switch_first_rows_ms = await readLatestPerfMs(
-			page,
-			'library-switch-first-rows',
-			'first_rows_ms',
-			{ source: 'playlist' }
-		);
-		const playlist_switch_fetch_ms = await readLatestPerfMs(
-			page,
-			'library-switch-first-rows',
-			'fetch_ms',
-			{ source: 'playlist' }
-		);
-		const playlist_switch_paint_ms = await readLatestPerfMs(
-			page,
-			'library-switch-first-rows',
-			'paint_ms',
-			{ source: 'playlist' }
-		);
+	await page.getByTestId('playlist-all-tracks').click();
+	await waitForSwitchPaint(page);
+	// Compare actual event identities; bounded retention can keep the length unchanged.
+	const playlistCountBefore = await page.evaluate(() =>
+		((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
+	);
+	await page.getByTestId('playlist-row').filter({ hasText: PLAYLIST_NAME }).click();
+	await waitForSwitchPaint(page);
+	await page.waitForFunction(
+		(before) => {
+			const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
+			return rows.some(
+				(row) =>
+					row.kind === 'library-switch-first-rows' &&
+					!before.includes(JSON.stringify(row)) &&
+					row.labels?.source === 'playlist'
+			);
+		},
+		playlistCountBefore,
+		{ timeout: 10_000 }
+	);
+	const playlist_switch_first_rows_ms = await readLatestPerfMs(
+		page,
+		'library-switch-first-rows',
+		'first_rows_ms',
+		{ source: 'playlist' }
+	);
+	const playlist_switch_fetch_ms = await readLatestPerfMs(
+		page,
+		'library-switch-first-rows',
+		'fetch_ms',
+		{ source: 'playlist' }
+	);
+	const playlist_switch_paint_ms = await readLatestPerfMs(
+		page,
+		'library-switch-first-rows',
+		'paint_ms',
+		{ source: 'playlist' }
+	);
 
-		const allTracksCountBefore = await page.evaluate(
-			() => ((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
-		);
-		await page.getByTestId('playlist-all-tracks').click();
-		await waitForSwitchPaint(page);
-		await page.waitForFunction(
-			(before) => {
-				const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
-				return rows
-					.some(
-						(row) =>
-							row.kind === 'library-switch-first-rows' &&
-							!before.includes(JSON.stringify(row)) &&
-							row.labels?.source === 'all-tracks'
-					);
-			},
-			allTracksCountBefore,
-			{ timeout: 10_000 }
-		);
-		const all_tracks_first_rows_ms = await readLatestPerfMs(
-			page,
-			'library-switch-first-rows',
-			'first_rows_ms',
-			{ source: 'all-tracks' }
-		);
+	const allTracksCountBefore = await page.evaluate(() =>
+		((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
+	);
+	await page.getByTestId('playlist-all-tracks').click();
+	await waitForSwitchPaint(page);
+	await page.waitForFunction(
+		(before) => {
+			const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
+			return rows.some(
+				(row) =>
+					row.kind === 'library-switch-first-rows' &&
+					!before.includes(JSON.stringify(row)) &&
+					row.labels?.source === 'all-tracks'
+			);
+		},
+		allTracksCountBefore,
+		{ timeout: 10_000 }
+	);
+	const all_tracks_first_rows_ms = await readLatestPerfMs(
+		page,
+		'library-switch-first-rows',
+		'first_rows_ms',
+		{ source: 'all-tracks' }
+	);
 
 	return {
 		playlist_tree_ready_ms,
@@ -250,9 +241,7 @@ test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 	expect(samples.length).toBeGreaterThanOrEqual(SAMPLES);
 
 	const post_fix = {
-		playlist_tree_ready_ms: summarizeSamples(
-			samples.map((s) => s.playlist_tree_ready_ms)
-		),
+		playlist_tree_ready_ms: summarizeSamples(samples.map((s) => s.playlist_tree_ready_ms)),
 		playlist_switch_first_rows_ms: summarizeSamples(
 			samples.map((s) => s.playlist_switch_first_rows_ms)
 		),
@@ -261,10 +250,7 @@ test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 
 	for (const [metric, cap] of Object.entries(THRESHOLDS_P50_MS)) {
 		const measured = post_fix[metric as keyof typeof post_fix].p50;
-		expect(
-			measured,
-			`${metric} p50 ${measured}ms exceeds cap ${cap}ms`
-		).toBeLessThanOrEqual(cap);
+		expect(measured, `${metric} p50 ${measured}ms exceeds cap ${cap}ms`).toBeLessThanOrEqual(cap);
 	}
 
 	const payload = {
@@ -280,10 +266,7 @@ test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 		origin: PLAYLIST_SWITCH_BENCH_ORIGIN,
 		samples
 	};
-	if (
-		OUT_PATH === COMMITTED_RESOLVED &&
-		process.env.PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE !== '1'
-	) {
+	if (OUT_PATH === COMMITTED_RESOLVED && process.env.PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE !== '1') {
 		throw new Error(
 			`Refusing to write playlist-switch bench results to committed fixture ${COMMITTED_FIXTURE_PATH}. ` +
 				`Set PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE=1 to refresh the committed snapshot, ` +

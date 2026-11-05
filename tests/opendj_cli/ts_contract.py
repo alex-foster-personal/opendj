@@ -44,7 +44,7 @@ def _union_lines(source: Path, marker: str) -> list[str]:
     lines = source.read_text(encoding="utf-8").splitlines()
     start = next(index for index, line in enumerate(lines) if line.startswith(marker))
     members: list[str] = []
-    rest = iter(lines[start + 1:])
+    rest = iter(lines[start + 1 :])
     for line in rest:
         stripped = line.strip()
         if stripped.startswith("|"):
@@ -118,9 +118,7 @@ def _top_level_parts(body: str) -> list[str]:
 
 def headphone_command_fields() -> frozenset[str]:
     """Every ``HeadphoneCommand`` type name (CUEOUT-04 HTTP-mirrored controls)."""
-    return frozenset(
-        _command_member(line) for line in _union_lines(IPC_SOURCE, _HEADPHONE_COMMAND_UNION)
-    )
+    return frozenset(_command_member(line) for line in _union_lines(IPC_SOURCE, _HEADPHONE_COMMAND_UNION))
 
 
 def _field_part_name(part: str) -> str | None:

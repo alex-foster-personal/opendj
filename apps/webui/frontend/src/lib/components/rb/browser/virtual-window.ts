@@ -41,8 +41,7 @@ export function computeVirtualWindow(params: {
 	/** Sticky header height inside the scrollport (e.g. TrackTable thead). */
 	headerOffsetPx?: number;
 }): VirtualWindow {
-	const { scrollTop, viewportHeight, rowHeight, rowCount, overscan, headerOffsetPx = 0 } =
-		params;
+	const { scrollTop, viewportHeight, rowHeight, rowCount, overscan, headerOffsetPx = 0 } = params;
 	if (rowHeight <= 0) {
 		throw new Error(`computeVirtualWindow: rowHeight must be positive, got ${rowHeight}`);
 	}
@@ -55,10 +54,7 @@ export function computeVirtualWindow(params: {
 	// only endIndex would clamp to rowCount while startIndex stayed past
 	// it, producing an empty slice behind a stale, oversized top spacer.
 	const maxFirstVisible = Math.max(0, rowCount - 1);
-	const firstVisible = Math.min(
-		maxFirstVisible,
-		Math.floor(Math.max(0, scrollTop) / rowHeight)
-	);
+	const firstVisible = Math.min(maxFirstVisible, Math.floor(Math.max(0, scrollTop) / rowHeight));
 	const visibleCount = Math.ceil(Math.max(0, viewportHeight - headerOffsetPx) / rowHeight);
 	const startIndex = Math.max(0, firstVisible - overscan);
 	const endIndex = Math.min(rowCount, firstVisible + visibleCount + overscan);

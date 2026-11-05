@@ -22,6 +22,7 @@ Regression lines:
   - if the CI warm-up command can warm zero artifacts and still exit 0 then
     the CI step is a green signal that guarantees nothing
 """
+
 from __future__ import annotations
 
 import os
@@ -37,9 +38,7 @@ from tests.platform_capabilities import posix_permission_denial_supported
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
-    os.name, getattr(os, "geteuid", None)
-)
+_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(os.name, getattr(os, "geteuid", None))
 
 
 def _stamp_vouches_via_subprocess(roots: tuple[Path, ...], env: dict[str, str]) -> bool:
@@ -62,12 +61,17 @@ def _stamp_vouches_via_subprocess(roots: tuple[Path, ...], env: dict[str, str]) 
     )
     proc = subprocess.run(
         [sys.executable, "-c", driver],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
         check=False,
     )
     assert proc.returncode == 0, proc.stdout
     return proc.stdout.strip().splitlines()[-1] == "True"
+
 
 # ---------------------------------------------------------------------------
 # The real subject: librosa, a real purge, real concurrent CLI invocations
@@ -93,9 +97,7 @@ def purged_librosa_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Pat
 @pytest.mark.slow
 @pytest.mark.requires_audio_stack
 @pytest.mark.requirement("JIT-04")
-def test_two_concurrent_cold_cli_invocations_both_succeed(
-    purged_librosa_cache: Path, tmp_path: Path
-) -> None:
+def test_two_concurrent_cold_cli_invocations_both_succeed(purged_librosa_cache: Path, tmp_path: Path) -> None:
     """[if] a cold concurrent analysis run exits non-zero, or leaves a cache a later run cannot load [then] fail, [else stop].
 
     if two cold `apps.analysis.run --workers 2` processes can still poison a
@@ -113,14 +115,24 @@ def test_two_concurrent_cold_cli_invocations_both_succeed(
 
     env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
     cmd = [
-        sys.executable, "-m", "apps.analysis.run",
-        "--files", *[str(p) for p in audio],
-        "--workers", "2", "--all", "--dry-run",
+        sys.executable,
+        "-m",
+        "apps.analysis.run",
+        "--files",
+        *[str(p) for p in audio],
+        "--workers",
+        "2",
+        "--all",
+        "--dry-run",
     ]
     procs = [
         subprocess.Popen(
-            cmd, cwd=str(REPO_ROOT), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cmd,
+            cwd=str(REPO_ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         for _ in range(2)
     ]
@@ -131,8 +143,7 @@ def test_two_concurrent_cold_cli_invocations_both_succeed(
 
     for code, out in outputs:
         assert code == 0, (
-            f"a cold concurrent invocation exited {code} "
-            f"({'SEGFAULT' if code in (-11, 139) else 'error'}):\n{out}"
+            f"a cold concurrent invocation exited {code} ({'SEGFAULT' if code in (-11, 139) else 'error'}):\n{out}"
         )
     assert any("jit-warmup" in out for _, out in outputs), (
         "neither invocation reported a warm-up, so this run did not exercise it"
@@ -146,8 +157,13 @@ def test_two_concurrent_cold_cli_invocations_both_succeed(
     # And the cache they left is loadable: the crash was in the LOADERS, not
     # only in the writers, so a third run against it is the check that matters.
     after = subprocess.run(
-        cmd, cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        cmd,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert after.returncode == 0, (
@@ -180,29 +196,31 @@ def test_the_warmup_cli_purges_warms_and_proves_it_wrote_something(
     the step is a green signal that guarantees nothing"""
     env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
     proc = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert proc.returncode == 0, proc.stdout
     assert "purged=0" in proc.stdout, proc.stdout
     written = [
-        int(line.split("=", 1)[1])
-        for line in proc.stdout.splitlines()
-        if line.startswith("jit-warmup artifacts=")
+        int(line.split("=", 1)[1]) for line in proc.stdout.splitlines() if line.startswith("jit-warmup artifacts=")
     ]
-    assert written and written[0] > 0, (
-        f"the warm-up reported {written} artifacts on disk:\n{proc.stdout}"
-    )
+    assert written and written[0] > 0, f"the warm-up reported {written} artifacts on disk:\n{proc.stdout}"
 
     # Run it again: it must now purge what it just wrote, and warm again.
     again = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert again.returncode == 0, again.stdout
@@ -239,12 +257,13 @@ def test_the_warmup_cli_fails_loudly_when_it_warms_nothing(tmp_path: Path) -> No
     )
     proc = subprocess.run(
         [sys.executable, "-c", driver],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=120,
         check=False,
     )
-    assert proc.returncode == 1, (
-        f"a warm-up that wrote nothing exited {proc.returncode}:\n{proc.stdout}"
-    )
+    assert proc.returncode == 1, f"a warm-up that wrote nothing exited {proc.returncode}:\n{proc.stdout}"
     assert "warmed zero artifacts" in proc.stdout, proc.stdout
 
 
@@ -280,23 +299,21 @@ def test_a_real_artifact_torn_in_place_no_longer_vouches(
     lock_dir = purged_librosa_cache.parent / "lock"
     lock_dir.mkdir(mode=0o700)
     roots = (purged_librosa_cache,)
-    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache),
-           "MDT_NUMBA_WARMUP_DIR": str(lock_dir)}
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache), "MDT_NUMBA_WARMUP_DIR": str(lock_dir)}
 
     warmup = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge-if-stale"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert warmup.returncode == 0, warmup.stdout
-    assert "skipped" not in warmup.stdout, (
-        f"a cold cache must compile, not skip: {warmup.stdout}"
-    )
-    assert _stamp_vouches_via_subprocess(roots, env), (
-        "the serial warm-up's own cache must be vouched for"
-    )
+    assert "skipped" not in warmup.stdout, f"a cold cache must compile, not skip: {warmup.stdout}"
+    assert _stamp_vouches_via_subprocess(roots, env), "the serial warm-up's own cache must be vouched for"
 
     artifacts = [p for root in roots for p in root.rglob("*.nbc") if p.is_file()]
     assert artifacts, "the real backend must have compiled at least one .nbc"
@@ -312,8 +329,7 @@ def test_a_real_artifact_torn_in_place_no_longer_vouches(
     assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
 
     assert not _stamp_vouches_via_subprocess(roots, env), (
-        f"{target} was torn at its original size and mtime, but the real "
-        "cache still vouches for itself"
+        f"{target} was torn at its original size and mtime, but the real cache still vouches for itself"
     )
 
 
@@ -351,46 +367,44 @@ def test_a_real_artifact_that_cannot_be_read_self_heals_through_purge_if_stale(
     env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
 
     warmup = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge-if-stale"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert warmup.returncode == 0, warmup.stdout
-    assert "skipped" not in warmup.stdout, (
-        f"a cold cache must compile, not skip: {warmup.stdout}"
-    )
+    assert "skipped" not in warmup.stdout, f"a cold cache must compile, not skip: {warmup.stdout}"
 
     artifacts = [p for root in roots for p in root.rglob("*.nbc") if p.is_file()]
     assert artifacts, "the real backend must have compiled at least one .nbc"
     target = artifacts[0]
     target.chmod(0o000)
     try:
-        assert cache_fingerprint(roots) == "", (
-            "a real but unreadable artifact must read as unmeasurable, not raise"
-        )
+        assert cache_fingerprint(roots) == "", "a real but unreadable artifact must read as unmeasurable, not raise"
         repaired = subprocess.run(
-            [sys.executable, "-m", "apps.analysis.jit_warmup",
-             "--backend", "librosa", "--purge-if-stale"],
-            cwd=str(REPO_ROOT), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+            [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
+            cwd=str(REPO_ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=900,
             check=False,
         )
     finally:
         target.chmod(0o644)
 
     assert repaired.returncode == 0, (
-        f"{target} was made unreadable but the warm-up crashed instead of "
-        f"purging and recompiling:\n{repaired.stdout}"
+        f"{target} was made unreadable but the warm-up crashed instead of purging and recompiling:\n{repaired.stdout}"
     )
     assert "skipped" not in repaired.stdout, (
-        f"an unreadable artifact must force a purge and recompile, not a "
-        f"skip: {repaired.stdout}"
+        f"an unreadable artifact must force a purge and recompile, not a skip: {repaired.stdout}"
     )
-    assert _stamp_vouches_via_subprocess(roots, env), (
-        "the purge-and-recompile must leave a vouched-for cache behind"
-    )
+    assert _stamp_vouches_via_subprocess(roots, env), "the purge-and-recompile must leave a vouched-for cache behind"
 
 
 @pytest.mark.slow
@@ -418,10 +432,13 @@ def test_a_real_analysis_run_purges_a_torn_cache_instead_of_loading_it(
     env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
 
     warmup = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge-if-stale"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert warmup.returncode == 0, warmup.stdout
@@ -440,10 +457,13 @@ def test_a_real_analysis_run_purges_a_torn_cache_instead_of_loading_it(
     assert audio.is_file(), f"fixture precondition: {audio} must exist"
 
     run = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.run",
-         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.run", "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert run.returncode == 0, (
@@ -485,29 +505,26 @@ def test_a_real_analysis_run_self_provisions_a_cache_dir_and_purges_it_when_torn
     assert audio.is_file(), f"fixture precondition: {audio} must exist"
 
     first_run = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.run",
-         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.run", "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert first_run.returncode == 0, first_run.stdout
 
-    provisioned = [
-        p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("mdt-numba-cache-")
-    ]
+    provisioned = [p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("mdt-numba-cache-")]
     assert len(provisioned) == 1, (
-        "expected exactly one self-provisioned cache directory under TMPDIR, "
-        f"found {provisioned}"
+        f"expected exactly one self-provisioned cache directory under TMPDIR, found {provisioned}"
     )
     cache_dir = provisioned[0]
     roots = (cache_dir,)
 
     artifacts = [p for p in cache_dir.rglob("*.nbc") if p.is_file()]
-    assert artifacts, (
-        "the real backend must have compiled at least one .nbc into the "
-        "self-provisioned directory"
-    )
+    assert artifacts, "the real backend must have compiled at least one .nbc into the self-provisioned directory"
     target = artifacts[0]
     before_stat = target.stat()
     torn = bytearray(target.read_bytes())
@@ -516,10 +533,13 @@ def test_a_real_analysis_run_self_provisions_a_cache_dir_and_purges_it_when_torn
     os.utime(target, ns=(before_stat.st_mtime_ns, before_stat.st_mtime_ns))
 
     second_run = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.run",
-         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.run", "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert second_run.returncode == 0, (
@@ -558,10 +578,13 @@ def test_a_no_cache_backends_purge_does_not_touch_a_real_shared_stamp(
     env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
 
     warmup = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "librosa", "--purge-if-stale"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=900,
         check=False,
     )
     assert warmup.returncode == 0, warmup.stdout
@@ -570,10 +593,13 @@ def test_a_no_cache_backends_purge_does_not_touch_a_real_shared_stamp(
     )
 
     no_cache = subprocess.run(
-        [sys.executable, "-m", "apps.analysis.jit_warmup",
-         "--backend", "mik", "--purge-if-stale"],
-        cwd=str(REPO_ROOT), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60,
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "mik", "--purge-if-stale"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
         check=False,
     )
     assert no_cache.returncode == 0, no_cache.stdout
@@ -581,4 +607,3 @@ def test_a_no_cache_backends_purge_does_not_touch_a_real_shared_stamp(
     assert _stamp_vouches_via_subprocess(roots, env), (
         "a no-cache backend's purge must not delete librosa's real, shared stamp"
     )
-

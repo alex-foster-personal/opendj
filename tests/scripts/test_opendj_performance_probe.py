@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import sqlite3
 import stat
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.diagnostics.opendj_performance_probe import (
     DEFAULT_BUNDLE_IDS,
+    OpenDJProbe,
     ProcessRow,
+    _lock_probe,
     append_bounded_jsonl,
     browser_perf_ring,
     summarize_logs,
@@ -21,6 +27,71 @@ from scripts.diagnostics.opendj_performance_probe import (
 from scripts.diagnostics.probe_log_store import TREND_MINUTES
 from tests.scripts.probe_sample_fixtures import captured_record as _captured_record
 from tests.scripts.probe_sample_fixtures import write_trend_rows as _write_trend_rows
+
+
+class _FakeNativeReader:
+    nanoseconds_per_tick = 125 / 3
+
+    def __init__(self) -> None:
+        self.user_time = 3_000_000
+
+    def read(self, _pid: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            user_time=self.user_time,
+            system_time=0,
+            diskio_bytesread=0,
+            diskio_byteswritten=0,
+            phys_footprint=0,
+            lifetime_max_phys_footprint=0,
+            resident_size=0,
+            wired_size=0,
+            pageins=0,
+        )
+
+
+def test_family_metrics_converts_mach_ticks_for_cpu_total_and_percent() -> None:
+    """[if] mach CPU ticks are sampled [then] totals and deltas use the timebase, [else stop]."""
+
+    probe = OpenDJProbe.__new__(OpenDJProbe)
+    probe.native = _FakeNativeReader()
+    probe.prior_cpu = {}
+    probe.prior_io = {}
+    row = ProcessRow(pid=7, ppid=1, pgid=7, command="opendj-engine")
+
+    first = probe._family_metrics([(row, "python-engine")], monotonic_now=10.0)[0]
+    probe.native.user_time = 6_000_000
+    second = probe._family_metrics([(row, "python-engine")], monotonic_now=11.0)[0]
+
+    assert first["cpu_seconds_total"] == 0.125
+    assert first["cpu_percent"] is None
+    assert second["cpu_seconds_total"] == 0.25
+    assert second["cpu_percent"] == 12.5
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "apps.diagnostics.probe_native_metrics",
+        "scripts.diagnostics.probe_native_metrics",
+    ],
+)
+def test_native_metric_copies_convert_mach_ticks(module_name: str) -> None:
+    """[if] either probe copy reads mach ticks [then] it converts CPU seconds, [else stop]."""
+
+    native_metrics = importlib.import_module(module_name)
+    usage = _FakeNativeReader().read(7)
+
+    record = native_metrics.process_metric_record(
+        row=ProcessRow(pid=7, ppid=1, pgid=7, command="opendj-engine"),
+        role="python-engine",
+        usage=usage,
+        nanoseconds_per_tick=125 / 3,
+        monotonic_now=10.0,
+        prior_cpu={},
+        prior_io={},
+    )
+
+    assert record["cpu_seconds_total"] == 0.125
 
 
 def test_summary_attributes_growth_to_roles_without_exposing_commands(tmp_path: Path) -> None:
@@ -57,8 +128,7 @@ def test_orphan_detection_covers_reparented_payloads_and_known_agents() -> None:
             ppid=10,
             pgid=11,
             command=(
-                "/Applications/Open DJ (B).app/Contents/Resources/payload/runtime/bin/python3 "
-                "-m apps.engine_core serve"
+                "/Applications/Open DJ (B).app/Contents/Resources/payload/runtime/bin/python3 -m apps.engine_core serve"
             ),
         ),
         ProcessRow(
@@ -84,15 +154,10 @@ def test_orphan_detection_covers_reparented_payloads_and_known_agents() -> None:
     assert "previously associated engine-worker" in result[1]["reason"]
 
 
-def _write_perf_ring(home: Path, bundle_id: str, last_timestamp: str) -> Path:
+def _write_perf_ring(home: Path, bundle_id: str, last_timestamp: str, *, store: str = "Default") -> Path:
     """Build a real WebKit LocalStorage sqlite holding a real perf ring."""
 
-    path = (
-        home
-        / "Library/WebKit"
-        / bundle_id
-        / "WebsiteData/Default/salt/origin/LocalStorage/localstorage.sqlite3"
-    )
+    path = home / "Library/WebKit" / bundle_id / f"WebsiteData/{store}/salt/origin/LocalStorage/localstorage.sqlite3"
     path.parent.mkdir(parents=True, exist_ok=True)
     events = [
         {"t": "2026-08-21T20:00:00.000Z", "kind": "deck-load", "ms": 14800},
@@ -111,9 +176,7 @@ def _write_perf_ring(home: Path, bundle_id: str, last_timestamp: str) -> Path:
     return path
 
 
-def test_perf_ring_is_read_from_either_bundle_identifier(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_perf_ring_is_read_from_either_bundle_identifier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """OPS-08 renamed the bundle; the ring must survive on both identifiers."""
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
@@ -131,9 +194,26 @@ def test_perf_ring_is_read_from_either_bundle_identifier(
     assert newest_wins["last_timestamp"] == "2026-08-21T20:30:00.000Z"
 
 
-def test_perf_ring_is_explicit_when_no_bundle_has_written_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_perf_ring_prefers_a_newer_uuid_store_over_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the probe ignores a custom WKWebsiteDataStore [then] broken, [else stop]."""
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    _write_perf_ring(tmp_path, "com.opendj.desktop", "2026-08-21T20:00:00.000Z")
+    uuid_path = _write_perf_ring(
+        tmp_path,
+        "com.opendj.desktop",
+        "2026-08-21T20:40:00.000Z",
+        store="40AD07D8-CF03-6A90-53B0-23817C437E74",
+    )
+    uuid_path.touch()
+    later = uuid_path.stat().st_mtime + 1
+    os.utime(uuid_path, (later, later))
+    picked = browser_perf_ring(("com.opendj.desktop",))
+    assert picked["storage_path"] == str(uuid_path)
+    assert picked["last_timestamp"] == "2026-08-21T20:40:00.000Z"
+
+
+def test_perf_ring_is_explicit_when_no_bundle_has_written_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     assert browser_perf_ring(DEFAULT_BUNDLE_IDS) == {
         "available": False,
@@ -141,19 +221,14 @@ def test_perf_ring_is_explicit_when_no_bundle_has_written_one(
     }
 
 
-def test_perf_ring_recovers_the_fresh_empty_deck_baseline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_perf_ring_recovers_the_fresh_empty_deck_baseline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The first unload cycle starts with the player's authoritative empty deck states."""
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     _write_ring_at(
         tmp_path,
         "com.opendj.desktop",
-        [
-            {"t": f"2026-09-06T12:00:0{deck}.000Z", "kind": "deck-state-empty", "deck": deck}
-            for deck in (1, 2, 3, 4)
-        ],
+        [{"t": f"2026-09-06T12:00:0{deck}.000Z", "kind": "deck-state-empty", "deck": deck} for deck in (1, 2, 3, 4)],
     )
 
     assert browser_perf_ring(DEFAULT_BUNDLE_IDS)["loaded_deck_count"] == 0
@@ -205,9 +280,7 @@ def test_trend_is_amber_when_the_window_has_no_measurable_process_slope(tmp_path
         _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
         _captured_record("2026-08-21T20:30:00Z", 320.0, 120.0),
     ]
-    rows[1]["processes"] = [
-        {"pid": 999, "role": "desktop-shell", "physical_footprint_mb": 32.0}
-    ]
+    rows[1]["processes"] = [{"pid": 999, "role": "desktop-shell", "physical_footprint_mb": 32.0}]
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
     result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
@@ -413,12 +486,7 @@ def test_trend_unload_check_requires_the_first_sample_to_be_post_boot(tmp_path: 
 def _write_storage_value(home: Path, bundle_id: str, key: str, value: object) -> Path:
     """Write one key into a real WebKit LocalStorage sqlite file."""
 
-    path = (
-        home
-        / "Library/WebKit"
-        / bundle_id
-        / "WebsiteData/Default/salt/origin/LocalStorage/localstorage.sqlite3"
-    )
+    path = home / "Library/WebKit" / bundle_id / "WebsiteData/Default/salt/origin/LocalStorage/localstorage.sqlite3"
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     try:
@@ -509,9 +577,7 @@ def _write_empty_deck_baseline(home: Path, bundle_id: str, t: str) -> Path:
     )
 
 
-def test_only_a_completed_deck_load_marks_a_deck_loaded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_only_a_completed_deck_load_marks_a_deck_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `deck-load`-prefixed row that is not a COMPLETION is not a load.
 
     audio-engine.svelte.ts emits exactly two such kinds today, `deck-load
@@ -531,19 +597,14 @@ def test_only_a_completed_deck_load_marks_a_deck_loaded(
         _write_ring_at(
             tmp_path,
             "com.opendj.desktop",
-            [
-                {"t": f"2026-09-05T20:0{deck}:00.000Z", "kind": kind, "deck": deck}
-                for deck in (1, 2, 3, 4)
-            ],
+            [{"t": f"2026-09-05T20:0{deck}:00.000Z", "kind": kind, "deck": deck} for deck in (1, 2, 3, 4)],
         )
         ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
         assert ring["available"] is True
         assert ring["loaded_deck_count"] is None, f"{kind} must not read as a loaded deck"
 
 
-def test_completed_deck_loads_are_still_counted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_completed_deck_loads_are_still_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Control for the failure test above: a real four-deck state still reads 4.
 
     Without this, a probe that reported None for everything would satisfy the
@@ -686,10 +747,7 @@ def test_empty_baseline_reads_as_zero_loaded_not_as_no_evidence(
     _write_ring_at(
         tmp_path,
         "com.opendj.desktop",
-        [
-            {"t": "2026-09-06T11:06:00.000Z", "kind": "audio-context", "deck": None, "message": "x"}
-            for _ in range(10)
-        ],
+        [{"t": "2026-09-06T11:06:00.000Z", "kind": "audio-context", "deck": None, "message": "x"} for _ in range(10)],
     )
     _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
 
@@ -834,8 +892,7 @@ def test_loaded_deck_count_is_none_when_a_stale_unload_outlives_its_evicted_relo
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     gate = "2026-09-06T11:00:00.000Z"
     unloads: list[dict[str, object]] = [
-        {"t": f"2026-09-06T11:0{deck}:00.000Z", "kind": "deck-unload", "deck": deck}
-        for deck in (1, 2, 3, 4)
+        {"t": f"2026-09-06T11:0{deck}:00.000Z", "kind": "deck-unload", "deck": deck} for deck in (1, 2, 3, 4)
     ]
     failed_attempts: list[dict[str, object]] = [
         {
@@ -913,3 +970,17 @@ def test_trend_names_a_ring_without_deck_state_evidence_as_such(
 
     assert result["unload_check"]["available"] is False
     assert "no deck-state evidence" in result["unload_check"]["reason"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="probe is macOS-only; its lock is fcntl.flock")
+def test_second_probe_is_refused_while_the_first_holds_the_lock(tmp_path: Path) -> None:
+    """Two real open file descriptions contend for one flock: the second is refused, and a release frees it."""
+    first = _lock_probe(tmp_path)
+    try:
+        with pytest.raises(RuntimeError, match="another probe owns"):
+            _lock_probe(tmp_path)
+    finally:
+        first.close()
+
+    third = _lock_probe(tmp_path)
+    third.close()

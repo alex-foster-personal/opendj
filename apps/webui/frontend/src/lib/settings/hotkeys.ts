@@ -20,7 +20,10 @@ import { closeSettings, isSettingsOpen, openSettings, toggleSettings } from './o
 function _isSettingsChord(e: KeyboardEvent): boolean {
 	const mod = e.metaKey || e.ctrlKey;
 	return (
-		mod && !e.altKey && !e.shiftKey && (e.key === SETTINGS_CHORD_KEY || e.code === SETTINGS_CHORD_CODE)
+		mod &&
+		!e.altKey &&
+		!e.shiftKey &&
+		(e.key === SETTINGS_CHORD_KEY || e.code === SETTINGS_CHORD_CODE)
 	);
 }
 

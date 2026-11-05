@@ -9,6 +9,7 @@
 	import SettingPreview from './SettingPreview.svelte';
 	import GroupPad from '$lib/components/rb/mixer/GroupPad.svelte';
 	import { DRAG_DEFAULTS, dragSensitivity } from '$lib/rb/drag-sensitivity.svelte';
+	import { tierOnNowLabel } from '$lib/rb/perf-tier';
 	import { goto } from '$app/navigation';
 	import {
 		RUN_SETUP_LABEL,
@@ -624,19 +625,24 @@
 													<span>{boolValue(def) ? 'On' : 'Off'}</span>
 												</label>
 											{:else if def.control.kind === 'enum'}
-												<select
-													aria-label={def.label}
-													value={enumValue(def)}
-													onchange={(e) =>
-														applySettingChange(
-															def.id,
-															(e.currentTarget as HTMLSelectElement).value
-														)}
-												>
-													{#each def.control.options as opt (opt.value)}
-														<option value={opt.value}>{opt.label}</option>
-													{/each}
-												</select>
+												<div class="so-enum">
+													<select
+														aria-label={def.label}
+														value={enumValue(def)}
+														onchange={(e) =>
+															applySettingChange(
+																def.id,
+																(e.currentTarget as HTMLSelectElement).value
+															)}
+													>
+														{#each def.control.options as opt (opt.value)}
+															<option value={opt.value}>{opt.label}</option>
+														{/each}
+													</select>
+													{#if def.id === 'perf_tier'}
+														<span data-testid="perf-tier-on-now">{tierOnNowLabel()}</span>
+													{/if}
+												</div>
 											{:else if def.control.kind === 'multi_bool'}
 												<div class="so-multi" role="group" aria-label={def.label}>
 													{#each def.control.keys as key (key.id)}
@@ -957,6 +963,7 @@
 		flex-wrap: wrap;
 		gap: 8px;
 	}
+	.so-enum,
 	.so-number {
 		display: inline-flex;
 		align-items: center;

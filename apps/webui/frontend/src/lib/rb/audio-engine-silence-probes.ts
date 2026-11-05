@@ -55,24 +55,40 @@ export function disconnectDeckProcessorForTest(deck: DeckId): void {
 }
 
 export function sampleMasterSilenceForSilenceE2e(): void {
-	const { ctx, masterAnalyser, externalRouteAnalyser, profile, externallyRouted, masterCeilingGain } =
-		_graph?.() ?? {
-			ctx: null,
-			masterAnalyser: null,
-			externalRouteAnalyser: null,
-			profile: null,
-			externallyRouted: null,
-			masterCeilingGain: 1
-		};
+	const {
+		ctx,
+		masterAnalyser,
+		externalRouteAnalyser,
+		profile,
+		externallyRouted,
+		masterCeilingGain
+	} = _graph?.() ?? {
+		ctx: null,
+		masterAnalyser: null,
+		externalRouteAnalyser: null,
+		profile: null,
+		externallyRouted: null,
+		masterCeilingGain: 1
+	};
 	if (ctx === null || masterAnalyser === null) return;
 	const anyTransport = DECK_IDS.some((d) => deckStates[d].playing || deckStates[d].audible);
 	const stemsSilent = playingStemsIntentionallySilent(Object.values(deckStates));
 	const intentionalSilence =
-		masterSilenceIsCommanded(profile, mixerState, deckStates, externallyRouted, masterCeilingGain) ||
-		stemsSilent;
+		masterSilenceIsCommanded(
+			profile,
+			mixerState,
+			deckStates,
+			externallyRouted,
+			masterCeilingGain
+		) || stemsSilent;
 	const busSilence =
-		masterBusSilenceIsCommanded(profile, mixerState, deckStates, externallyRouted, masterCeilingGain) ||
-		stemsSilent;
+		masterBusSilenceIsCommanded(
+			profile,
+			mixerState,
+			deckStates,
+			externallyRouted,
+			masterCeilingGain
+		) || stemsSilent;
 	noteMasterSilence(
 		masterAnalyser,
 		externalRouteAnalyser,

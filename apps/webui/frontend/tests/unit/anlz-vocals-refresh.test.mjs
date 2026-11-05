@@ -299,7 +299,11 @@ test('a deck that loads the same track from the old cache mid-refresh adopts the
 		await refreshSettled(cache, stableId);
 		assert.equal(anlzRequestLog.length, 1);
 		assert.equal(early.anlz.vocals.status, 'demucs');
-		assert.equal(late.anlz.vocals.status, 'demucs', 'a holder still on the old vocals must not stay stale');
+		assert.equal(
+			late.anlz.vocals.status,
+			'demucs',
+			'a holder still on the old vocals must not stay stale'
+		);
 		cache.refreshAnlzVocalsIfNeeded(stableId, 'demucs');
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		assert.equal(anlzRequestLog.length, 1, 'the cache now agrees, so no second fetch');

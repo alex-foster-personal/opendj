@@ -10,6 +10,7 @@ import pytest
 from apps.shared import icloud_zone
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="iCloud zone is Darwin-scoped")
 def test_music_path_is_not_icloud_zone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     music = tmp_path / "Music"
@@ -21,6 +22,7 @@ def test_music_path_is_not_icloud_zone(tmp_path: Path, monkeypatch: pytest.Monke
     assert icloud_zone.icloud_zone_reason(track) is None
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="iCloud zone is Darwin-scoped")
 def test_mobile_documents_path_is_zone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     mobile = tmp_path / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "lib"
@@ -32,6 +34,7 @@ def test_mobile_documents_path_is_zone(tmp_path: Path, monkeypatch: pytest.Monke
     assert icloud_zone.icloud_zone_reason(track) == "mobile-documents"
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="iCloud zone is Darwin-scoped")
 def test_documents_is_zone_when_cloud_docs_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -46,6 +49,7 @@ def test_documents_is_zone_when_cloud_docs_exists(
     assert icloud_zone.icloud_zone_reason(track) == "documents-desktop-sync"
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="iCloud zone is Darwin-scoped")
 def test_missing_mobile_documents_path_classifies_lexically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -55,6 +59,7 @@ def test_missing_mobile_documents_path_classifies_lexically(
     assert icloud_zone.is_icloud_zone(missing) is True
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(sys.platform != "darwin", reason="iCloud zone is Darwin-scoped")
 def test_music_root_inside_zone_fails_fast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -66,6 +71,7 @@ def test_music_root_inside_zone_fails_fast(
         icloud_zone.assert_music_roots_outside_icloud_zone([cloud])
 
 
+@pytest.mark.darwin
 @pytest.mark.skipif(
     sys.platform != "darwin",
     reason="off-Darwin returns None before the absolute-path check runs",

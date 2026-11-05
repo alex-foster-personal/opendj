@@ -1,10 +1,12 @@
 """POST /api/v1/update/apply and shell command delivery (issue #2924)."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 
 import httpx
+import yaml
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -42,17 +44,20 @@ def _identity(source: str = "payload", app_version: str | None = RUNNING_VERSION
 
 
 def _manifest(version: str) -> dict[str, object]:
+    """The electron-updater ``latest-mac.yml`` the engine check reads (CHECKED_FEED_FILE)."""
+    zip_name = f"OpenDJ-{version}-arm64-mac.zip"
     return {
         "version": version,
-        "notes": "",
-        "pub_date": "2026-09-01T00:00:00Z",
-        "platforms": {
-            KEY: {
-                "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZw==",
-                "url": f"https://example.invalid/OpenDJ-{version}.app.tar.gz",
-            }
-        },
+        "files": [{"url": zip_name, "sha512": "c2hhNTEy", "size": 123}],
+        "path": zip_name,
+        "sha512": "c2hhNTEy",
+        "releaseDate": "2026-09-01T00:00:00.000Z",
+        "releaseNotes": "",
     }
+
+
+def _feed(version: str) -> httpx.Response:
+    return httpx.Response(200, text=yaml.safe_dump(_manifest(version)))
 
 
 def _app(identity: BuildIdentity) -> FastAPI:
@@ -80,16 +85,12 @@ def _patch_channel(monkeypatch, transport: httpx.MockTransport) -> None:
 
 def test_apply_returns_202_and_shell_next_claims_apply_update(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             apply = await client.post(UPDATE_APPLY_PATH)
             assert apply.status_code == 202
             body = apply.json()
@@ -115,9 +116,7 @@ def test_apply_returns_202_and_shell_next_claims_apply_update(monkeypatch) -> No
 
 def test_apply_refuses_up_to_date_with_409_and_enqueues_nothing(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest(RUNNING_VERSION))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed(RUNNING_VERSION) if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
@@ -156,9 +155,7 @@ def test_apply_refuses_endpoint_fault_with_409(monkeypatch) -> None:
 
 def test_apply_refuses_repo_checkout_with_409(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
@@ -178,16 +175,12 @@ def test_apply_refuses_repo_checkout_with_409(monkeypatch) -> None:
 
 def test_second_apply_while_first_pending_returns_409(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             first = await client.post(UPDATE_APPLY_PATH)
             assert first.status_code == 202
             command_id = first.json()["command_id"]
@@ -206,16 +199,12 @@ def _apply_status_path(command_id: str) -> str:
 
 def test_apply_status_pending_before_claim(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             apply = await client.post(UPDATE_APPLY_PATH)
             assert apply.status_code == 202
             command_id = apply.json()["command_id"]
@@ -236,16 +225,12 @@ def test_apply_status_pending_before_claim(monkeypatch) -> None:
 
 def test_apply_status_claimed_after_shell_next(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             apply = await client.post(UPDATE_APPLY_PATH)
             command_id = apply.json()["command_id"]
 
@@ -266,16 +251,12 @@ def test_apply_status_claimed_after_shell_next(monkeypatch) -> None:
 
 def test_apply_status_failed_after_shell_result(monkeypatch, caplog) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             apply = await client.post(UPDATE_APPLY_PATH)
             command_id = apply.json()["command_id"]
 
@@ -304,8 +285,7 @@ def test_apply_status_failed_after_shell_result(monkeypatch, caplog) -> None:
             warnings = [
                 record
                 for record in caplog.records
-                if record.levelname == "WARNING"
-                and "shell apply-update" in record.getMessage()
+                if record.levelname == "WARNING" and "shell apply-update" in record.getMessage()
             ]
             assert len(warnings) == 1
             message = warnings[0].getMessage()
@@ -318,16 +298,12 @@ def test_apply_status_failed_after_shell_result(monkeypatch, caplog) -> None:
 
 def test_apply_status_succeeded_after_shell_result(monkeypatch) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, json=_manifest("0.1.1"))
-        if request.url == UPDATE_ENDPOINT
-        else httpx.Response(404)
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
     )
     _patch_channel(monkeypatch, transport)
 
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             apply = await client.post(UPDATE_APPLY_PATH)
             command_id = apply.json()["command_id"]
 
@@ -353,9 +329,7 @@ def test_apply_status_succeeded_after_shell_result(monkeypatch) -> None:
 
 def test_apply_status_404_unknown_id() -> None:
     async def run() -> None:
-        async with AsyncClient(
-            transport=ASGITransport(app=_app(_identity())), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=_app(_identity())), base_url="http://test") as client:
             status = await client.get(_apply_status_path("deadbeefdeadbeefdeadbeefdeadbeef"))
             assert status.status_code == 404
 

@@ -14,9 +14,7 @@ import type { CommentSummary } from './feedback-pin-operator-summary';
 const TRANSIENT_SUMMARY_STATUSES = new Set([408, 429, 502, 503, 504]);
 
 export type SummaryFailure =
-	| { kind: 'missing' }
-	| { kind: 'transient' }
-	| { kind: 'error'; message: string };
+	{ kind: 'missing' } | { kind: 'transient' } | { kind: 'error'; message: string };
 
 /** How a failed GET /comments/summary must show (PR #4094 Sol P1):
  * - `missing`: 404, a daemon without the route; clear the summary, no error;

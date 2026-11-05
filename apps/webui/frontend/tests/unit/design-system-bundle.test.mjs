@@ -34,7 +34,9 @@ let files;
 
 function walk(dir, prefix = '') {
 	const acc = [];
-	const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+	const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+		a.name < b.name ? -1 : 1
+	);
 	for (const e of entries) {
 		const rel = prefix ? `${prefix}/${e.name}` : e.name;
 		if (e.isDirectory()) acc.push(...walk(join(dir, e.name), rel));
@@ -105,7 +107,10 @@ test('DS-01 if a CSS custom property from app.css or theme.css is absent from th
 	const themeCss = readFileSync(join(FRONTEND, 'src/lib/rb/theme.css'), 'utf8');
 	const expected = [...cssCustomProps(appCss), ...cssCustomProps(themeCss)];
 	// 35 unique names measured Wed 17 Sep 2026 (10 app + 25 perf; the light block reuses the perf names).
-	assert.ok(expected.length >= 35, `expected at least the 35 unique token names measured Wed 17 Sep 2026, saw ${expected.length}`);
+	assert.ok(
+		expected.length >= 35,
+		`expected at least the 35 unique token names measured Wed 17 Sep 2026, saw ${expected.length}`
+	);
 	for (const name of expected) assert.ok(flat.has(name), `${name} not in tokens json`);
 	assert.equal(tokens.perf.light.$extensions.selector, "html[data-theme='light'] .perf-root");
 	assert.equal(tokens.perf.light['--rb-bg'].$value, '#f7f3eb');
@@ -135,7 +140,10 @@ test('DS-02 if any card lacks the @dsCard first line, a resolving <link href>, o
 		}
 		const prompt = rel.replace(/\.html$/, '.prompt.md');
 		assert.ok(existsSync(join(out, prompt)), `${prompt} missing`);
-		assert.ok(readFileSync(join(out, prompt), 'utf8').split('\n', 1)[0].trim(), `${prompt} first line blank`);
+		assert.ok(
+			readFileSync(join(out, prompt), 'utf8').split('\n', 1)[0].trim(),
+			`${prompt} first line blank`
+		);
 	}
 });
 
@@ -204,7 +212,10 @@ test('DS-03 if guidelines/ lacks DESIGN.md, the two UI decisions, the wordmark d
 test('DS-03 if the build silently tolerates a missing input instead of failing fast then broken', () => {
 	const bogus = mkdtempSync(join(tmpdir(), 'odj-ds-bogus-'));
 	try {
-		assert.throws(() => buildDesignSystem({ frontendDir: bogus, outDir: join(bogus, 'out') }), /src[\\/]app\.css/);
+		assert.throws(
+			() => buildDesignSystem({ frontendDir: bogus, outDir: join(bogus, 'out') }),
+			/src[\\/]app\.css/
+		);
 	} finally {
 		rmSync(bogus, { recursive: true, force: true });
 	}

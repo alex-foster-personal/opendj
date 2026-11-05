@@ -14,6 +14,8 @@ export const COL_DEFAULTS = {
 	artist: 140,
 	key: 64,
 	bpm: 46,
+	// `← drift ±12% · grid?` at the browser font, one px smaller (issue #7879).
+	tempostab: 92,
 	plays: 36,
 	// "128 days ago" at the table's 10px tabular size, plus cell padding.
 	last: 96,
@@ -24,9 +26,15 @@ export const COL_DEFAULTS = {
 	energy: 22,
 	genre: 90,
 	stems: 148,
+	tags: 140,
 	lyrics: 64,
 	// 12px robot icon with 8px breathing room on each side.
-	autoplay: 28
+	autoplay: 28,
+	work: 150,
+	composer: 110,
+	ensemble: 150,
+	label: 110,
+	year: 44
 } as const;
 
 export type ColId = keyof typeof COL_DEFAULTS;

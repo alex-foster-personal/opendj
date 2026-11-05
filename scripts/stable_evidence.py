@@ -147,9 +147,7 @@ def _missing_suites(body: dict[str, Any]) -> list[str]:
             missing.append(f"suites.{suite}.run_id")
         conclusion = record.get("conclusion")
         if conclusion != GREEN_CONCLUSION:
-            missing.append(
-                f"suites.{suite} conclusion is {conclusion!r} (must be {GREEN_CONCLUSION})"
-            )
+            missing.append(f"suites.{suite} conclusion is {conclusion!r} (must be {GREEN_CONCLUSION})")
     return missing
 
 
@@ -166,8 +164,7 @@ def _missing_red_team(body: dict[str, Any]) -> list[str]:
             missing.append("red_team.open_blocking_bug_count")
         elif count != 0:
             missing.append(
-                f"red_team.open_blocking_bug_count is {count} (must be 0); "
-                "a fix needs a new sha and a new pass"
+                f"red_team.open_blocking_bug_count is {count} (must be 0); a fix needs a new sha and a new pass"
             )
     if "pass_id" in red and not _nonempty_str(red.get("pass_id")):
         missing.append("red_team.pass_id")
@@ -250,9 +247,7 @@ def append_suite(
 ) -> Path:
     sha = require_sha(sha)
     if suite not in SUITE_KEYS:
-        raise StableEvidenceError(
-            f"unknown suite {suite!r}; expected one of {', '.join(SUITE_KEYS)}"
-        )
+        raise StableEvidenceError(f"unknown suite {suite!r}; expected one of {', '.join(SUITE_KEYS)}")
     if not _nonempty_str(run_id) or not _nonempty_str(conclusion) or not _nonempty_str(written_by):
         raise StableEvidenceError("suite writer needs run_id, conclusion, and written_by")
     path = evidence_path(evidence_dir, sha)
@@ -308,14 +303,8 @@ def append_signing(
     written_by: str,
 ) -> Path:
     sha = require_sha(sha)
-    if (
-        not _nonempty_str(identity)
-        or not _nonempty_str(notarization_submission_id)
-        or not _nonempty_str(written_by)
-    ):
-        raise StableEvidenceError(
-            "signing writer needs identity, notarization_submission_id, and written_by"
-        )
+    if not _nonempty_str(identity) or not _nonempty_str(notarization_submission_id) or not _nonempty_str(written_by):
+        raise StableEvidenceError("signing writer needs identity, notarization_submission_id, and written_by")
     path = evidence_path(evidence_dir, sha)
     body = _load_or_create(path, sha)
     body["signing"] = {
@@ -348,18 +337,14 @@ def stamp_payload_identity(
         identity = {}
         body["identity"] = identity
     identity["release_channel"] = channel if isinstance(channel, str) else ""
-    identity["evidence_written_at_utc"] = (
-        evidence_written_at_utc if isinstance(evidence_written_at_utc, str) else ""
-    )
+    identity["evidence_written_at_utc"] = evidence_written_at_utc if isinstance(evidence_written_at_utc, str) else ""
     manifest.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
 
 
 def suite_for_workflow(name: str) -> str:
     suite = _WORKFLOW_TO_SUITE.get(name)
     if suite is None:
-        raise StableEvidenceError(
-            f"unknown workflow {name!r}; expected one of " + ", ".join(_WORKFLOW_TO_SUITE)
-        )
+        raise StableEvidenceError(f"unknown workflow {name!r}; expected one of " + ", ".join(_WORKFLOW_TO_SUITE))
     return suite
 
 

@@ -20,7 +20,13 @@ export const PLANNER_TIMEOUT_MS = 10_000;
 /** How many played styles the page remembers: the planner's own window (apps/autodj/choose.py VARIETY_WINDOW). */
 export const VARIETY_WINDOW = 10;
 
-export const TRANSITION_INTENTS = ['smooth', 'energy_up', 'wind_down', 'showy', 'vocals_clean'] as const;
+export const TRANSITION_INTENTS = [
+	'smooth',
+	'energy_up',
+	'wind_down',
+	'showy',
+	'vocals_clean'
+] as const;
 export type TransitionIntent = (typeof TRANSITION_INTENTS)[number];
 
 export interface PlannerRequest {
@@ -75,7 +81,8 @@ export type TransitionChoice =
 	| { path: 'featurette'; reason: string };
 
 export function selectTransitionPath(answer: PlannerAnswer): TransitionChoice {
-	if (answer.order === null || answer.pick === null) return { path: 'featurette', reason: answer.reason };
+	if (answer.order === null || answer.pick === null)
+		return { path: 'featurette', reason: answer.reason };
 	return {
 		path: 'planner',
 		plan: answer.order.plan,
@@ -91,7 +98,8 @@ async function _refusal(response: Response): Promise<string> {
 	const text = await response.text();
 	try {
 		const body = JSON.parse(text) as { message?: unknown };
-		if (typeof body.message === 'string') return `planner answered ${response.status}: ${body.message}`;
+		if (typeof body.message === 'string')
+			return `planner answered ${response.status}: ${body.message}`;
 	} catch {
 		// Not an ErrorBody: the status and the text below say what came back.
 	}
@@ -113,7 +121,10 @@ export async function requestPlannedTransition(
 			signal
 		});
 	} catch (error) {
-		return { path: 'featurette', reason: `planner unreachable: ${error instanceof Error ? error.message : String(error)}` };
+		return {
+			path: 'featurette',
+			reason: `planner unreachable: ${error instanceof Error ? error.message : String(error)}`
+		};
 	}
 	if (!response.ok) return { path: 'featurette', reason: await _refusal(response) };
 	let answer: unknown;
@@ -123,7 +134,8 @@ export async function requestPlannedTransition(
 		return { path: 'featurette', reason: 'planner answered 200 with a body that is not JSON' };
 	}
 	const malformed = _malformed(answer);
-	if (malformed !== null) return { path: 'featurette', reason: `planner answer malformed: ${malformed}` };
+	if (malformed !== null)
+		return { path: 'featurette', reason: `planner answer malformed: ${malformed}` };
 	return selectTransitionPath(answer as PlannerAnswer);
 }
 
@@ -136,7 +148,11 @@ function _malformed(answer: unknown): string | null {
 	if (!_record(answer)) return 'not an object';
 	if (typeof answer.reason !== 'string') return 'no reason';
 	if (answer.order === null) return null;
-	if (!_record(answer.order) || !_record(answer.order.plan) || typeof answer.order.plan.id !== 'string') {
+	if (
+		!_record(answer.order) ||
+		!_record(answer.order.plan) ||
+		typeof answer.order.plan.id !== 'string'
+	) {
 		return 'order carries no plan id';
 	}
 	const pick = answer.pick;
@@ -186,19 +202,32 @@ export async function requestPrepareStatus(
  * document the page holds sits on these decks at this bar, and sending it back would replace the saved row.
  */
 export async function reportPlayed(
-	played: { out: string; in: string; saved: boolean; plan: Record<string, unknown> | null; style: string },
+	played: {
+		out: string;
+		in: string;
+		saved: boolean;
+		plan: Record<string, unknown> | null;
+		style: string;
+	},
 	fetchImpl: typeof fetch = fetch
 ): Promise<void> {
 	const body =
 		played.saved || played.plan === null
 			? { out: played.out, in: played.in }
-			: { out: played.out, in: played.in, plan: played.plan, source: 'planner', style: played.style };
+			: {
+					out: played.out,
+					in: played.in,
+					plan: played.plan,
+					source: 'planner',
+					style: played.style
+				};
 	const response = await fetchImpl(PLAYED_URL, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
-	if (!response.ok) throw new Error(`played answered ${response.status}: ${(await response.text()).slice(0, 200)}`);
+	if (!response.ok)
+		throw new Error(`played answered ${response.status}: ${(await response.text()).slice(0, 200)}`);
 }
 
 /** What the last or current arm did: the readout and the mirror's `auto_play_next` both show this. */
@@ -237,15 +266,21 @@ export function planRunOf(choice: TransitionChoice, planningMs: number): AutoPla
 
 export function runLabel(run: AutoPlayNextRun): string {
 	if (run.saved) return `saved: ${run.style} ${run.bars}`;
-	if (run.path === 'planner') return `plan: ${run.style} ${run.bars}${run.score === null ? ' (unscored)' : ''}`;
+	if (run.path === 'planner')
+		return `plan: ${run.style} ${run.bars}${run.score === null ? ' (unscored)' : ''}`;
 	return run.path === 'featurette' ? 'fixed loop' : 'no plan';
 }
 
 export function runTitle(run: AutoPlayNextRun): string {
 	const took = `${run.planning_ms} ms planning`;
-	if (run.path === 'featurette') return `Fixed loop transition, not planned: ${run.reason} (${took})`;
+	if (run.path === 'featurette')
+		return `Fixed loop transition, not planned: ${run.reason} (${took})`;
 	if (run.path === 'none') return `Nothing armed: ${run.reason} (${took})`;
-	if (run.saved) return `Saved transition for this pair, starting at outgoing bar ${run.out_start_bar}. ${run.reason} (${took}).`;
-	const from = run.score === null ? 'from the track analysis, not yet scored' : `from ${run.rendered} scored candidates`;
+	if (run.saved)
+		return `Saved transition for this pair, starting at outgoing bar ${run.out_start_bar}. ${run.reason} (${took}).`;
+	const from =
+		run.score === null
+			? 'from the track analysis, not yet scored'
+			: `from ${run.rendered} scored candidates`;
 	return `Planned transition starting at outgoing bar ${run.out_start_bar}. ${run.reason}. Chose ${from} (${took}). M is the 0..1 transition quality score.`;
 }

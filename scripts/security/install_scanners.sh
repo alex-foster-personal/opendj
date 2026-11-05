@@ -51,130 +51,133 @@ SEMGREP_REQUIREMENTS="$SECURITY_SCRIPTS/semgrep-requirements.txt"
 
 # ----- helpers ------------------------------------------------------------------
 _platform() {
-  local os arch
-  os="$(uname -s)"
-  arch="$(uname -m)"
-  if [[ "$os" == "Linux" && "$arch" == "x86_64" ]]; then
-    echo linux_amd64
-  elif [[ "$os" == "Darwin" && "$arch" == "arm64" ]]; then
-    echo darwin_arm64
-  else
-    printf '[ERROR] unsupported platform %s/%s: add pins for it\n' "$os" "$arch" >&2
-    exit 1
-  fi
+    local os arch
+    os="$(uname -s)"
+    arch="$(uname -m)"
+    if [[ "$os" == "Linux" && "$arch" == "x86_64" ]]; then
+        echo linux_amd64
+    elif [[ "$os" == "Darwin" && "$arch" == "arm64" ]]; then
+        echo darwin_arm64
+    else
+        printf '[ERROR] unsupported platform %s/%s: add pins for it\n' "$os" "$arch" >&2
+        exit 1
+    fi
 }
 
 _sha256_of() {
-  if command -v sha256sum >/dev/null; then
-    sha256sum "$1" | cut -d' ' -f1
-  elif command -v shasum >/dev/null; then
-    shasum -a 256 "$1" | cut -d' ' -f1
-  else
-    printf '[ERROR] neither sha256sum nor shasum found\n' >&2
-    exit 1
-  fi
+    if command -v sha256sum >/dev/null; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        printf '[ERROR] neither sha256sum nor shasum found\n' >&2
+        exit 1
+    fi
 }
 
 # _fetch_verified <url> <expected-sha256> <dest-file>
 _fetch_verified() {
-  local url="$1" expected="$2" dest="$3" actual
-  curl --fail --silent --show-error --location --retry 3 --output "$dest" "$url"
-  actual="$(_sha256_of "$dest")"
-  if [[ "$actual" != "$expected" ]]; then
-    printf '[ERROR] sha256 MISMATCH for %s\n  expected %s\n  actual   %s\n' "$url" "$expected" "$actual" >&2
-    rm -f "$dest"
-    exit 1
-  fi
+    local url="$1" expected="$2" dest="$3" actual
+    curl --fail --silent --show-error --location --retry 3 --output "$dest" "$url"
+    actual="$(_sha256_of "$dest")"
+    if [[ "$actual" != "$expected" ]]; then
+        printf '[ERROR] sha256 MISMATCH for %s\n  expected %s\n  actual   %s\n' "$url" "$expected" "$actual" >&2
+        rm -f "$dest"
+        exit 1
+    fi
 }
 
 # Skip a download when the installed binary was produced from the same pinned hash.
 _already_installed() {
-  local tool="$1" sha="$2"
-  [[ -x "$SECURITY_BIN_DIR/$tool" && -f "$SECURITY_BIN_DIR/.$tool.sha256" &&
-    "$(cat "$SECURITY_BIN_DIR/.$tool.sha256")" == "$sha" ]]
+    local tool="$1" sha="$2"
+    [[ -x "$SECURITY_BIN_DIR/$tool" && -f "$SECURITY_BIN_DIR/.$tool.sha256" &&
+        "$(cat "$SECURITY_BIN_DIR/.$tool.sha256")" == "$sha" ]]
 }
 
 # _install_release <tool> <url> <sha256> <member-in-tarball|"-" for a bare binary>
 _install_release() {
-  local tool="$1" url="$2" sha="$3" member="$4" tmp
-  if _already_installed "$tool" "$sha"; then
-    sec_log "$tool already installed (pinned sha256 matches)"
-    return 0
-  fi
-  tmp="$(mktemp -d)"
-  _fetch_verified "$url" "$sha" "$tmp/download"
-  if [[ "$member" == "-" ]]; then
-    install -m 0755 "$tmp/download" "$SECURITY_BIN_DIR/$tool"
-  else
-    tar -xzf "$tmp/download" -C "$tmp" "$member"
-    install -m 0755 "$tmp/$member" "$SECURITY_BIN_DIR/$tool"
-  fi
-  echo "$sha" >"$SECURITY_BIN_DIR/.$tool.sha256"
-  rm -rf "$tmp"
-  sec_log "$tool installed and sha256-verified ($url)"
+    local tool="$1" url="$2" sha="$3" member="$4" tmp
+    if _already_installed "$tool" "$sha"; then
+        sec_log "$tool already installed (pinned sha256 matches)"
+        return 0
+    fi
+    tmp="$(mktemp -d)"
+    _fetch_verified "$url" "$sha" "$tmp/download"
+    if [[ "$member" == "-" ]]; then
+        install -m 0755 "$tmp/download" "$SECURITY_BIN_DIR/$tool"
+    else
+        tar -xzf "$tmp/download" -C "$tmp" "$member"
+        install -m 0755 "$tmp/$member" "$SECURITY_BIN_DIR/$tool"
+    fi
+    echo "$sha" >"$SECURITY_BIN_DIR/.$tool.sha256"
+    rm -rf "$tmp"
+    sec_log "$tool installed and sha256-verified ($url)"
 }
 
 # _pin <PREFIX>: echo the sha256 variable for this platform.
-_pin() { local var="${1}_SHA256_${PLATFORM}"; echo "${!var}"; }
+_pin() {
+    local var="${1}_SHA256_${PLATFORM}"
+    echo "${!var}"
+}
 
 # ----- installers ---------------------------------------------------------------------------
 install_uv() {
-  local triple
-  if [[ "$PLATFORM" == "linux_amd64" ]]; then triple="x86_64-unknown-linux-gnu"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then triple="aarch64-apple-darwin"; fi
-  _install_release uv "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$triple.tar.gz" \
-    "$(_pin UV)" "uv-$triple/uv"
+    local triple
+    if [[ "$PLATFORM" == "linux_amd64" ]]; then triple="x86_64-unknown-linux-gnu"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then triple="aarch64-apple-darwin"; fi
+    _install_release uv "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$triple.tar.gz" \
+        "$(_pin UV)" "uv-$triple/uv"
 }
 
 install_osv_scanner() {
-  _install_release osv-scanner \
-    "https://github.com/google/osv-scanner/releases/download/v$OSV_VERSION/osv-scanner_$PLATFORM" \
-    "$(_pin OSV)" "-"
+    _install_release osv-scanner \
+        "https://github.com/google/osv-scanner/releases/download/v$OSV_VERSION/osv-scanner_$PLATFORM" \
+        "$(_pin OSV)" "-"
 }
 
 install_gitleaks() {
-  local asset="$PLATFORM"
-  if [[ "$PLATFORM" == "linux_amd64" ]]; then asset="linux_x64"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then asset="darwin_arm64"; fi
-  _install_release gitleaks \
-    "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_$asset.tar.gz" \
-    "$(_pin GITLEAKS)" "gitleaks"
+    local asset="$PLATFORM"
+    if [[ "$PLATFORM" == "linux_amd64" ]]; then asset="linux_x64"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then asset="darwin_arm64"; fi
+    _install_release gitleaks \
+        "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_$asset.tar.gz" \
+        "$(_pin GITLEAKS)" "gitleaks"
 }
 
 install_trufflehog() {
-  _install_release trufflehog \
-    "https://github.com/trufflesecurity/trufflehog/releases/download/v$TRUFFLEHOG_VERSION/trufflehog_${TRUFFLEHOG_VERSION}_$PLATFORM.tar.gz" \
-    "$(_pin TRUFFLEHOG)" "trufflehog"
+    _install_release trufflehog \
+        "https://github.com/trufflesecurity/trufflehog/releases/download/v$TRUFFLEHOG_VERSION/trufflehog_${TRUFFLEHOG_VERSION}_$PLATFORM.tar.gz" \
+        "$(_pin TRUFFLEHOG)" "trufflehog"
 }
 
 install_zizmor() {
-  local triple
-  if [[ "$PLATFORM" == "linux_amd64" ]]; then triple="x86_64-unknown-linux-gnu"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then triple="aarch64-apple-darwin"; fi
-  _install_release zizmor \
-    "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-$triple.tar.gz" \
-    "$(_pin ZIZMOR)" "zizmor"
+    local triple
+    if [[ "$PLATFORM" == "linux_amd64" ]]; then triple="x86_64-unknown-linux-gnu"; elif [[ "$PLATFORM" == "darwin_arm64" ]]; then triple="aarch64-apple-darwin"; fi
+    _install_release zizmor \
+        "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-$triple.tar.gz" \
+        "$(_pin ZIZMOR)" "zizmor"
 }
 
 install_actionlint() {
-  _install_release actionlint \
-    "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_$PLATFORM.tar.gz" \
-    "$(_pin ACTIONLINT)" "actionlint"
+    _install_release actionlint \
+        "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_$PLATFORM.tar.gz" \
+        "$(_pin ACTIONLINT)" "actionlint"
 }
 
 install_semgrep() {
-  local venv="$SECURITY_WORK_DIR/semgrep-venv" req_sha
-  req_sha="$(_sha256_of "$SEMGREP_REQUIREMENTS")"
-  if _already_installed semgrep "$req_sha"; then
-    sec_log "semgrep already installed (requirements sha256 matches)"
-    return 0
-  fi
-  install_uv
-  rm -rf "$venv"
-  "$SECURITY_BIN_DIR/uv" venv --quiet --python 3.12 "$venv"
-  # --require-hashes: every wheel, transitive ones included, must match a pinned sha256.
-  VIRTUAL_ENV="$venv" "$SECURITY_BIN_DIR/uv" pip install --quiet --require-hashes \
-    --no-deps -r "$SEMGREP_REQUIREMENTS"
-  ln -sf "$venv/bin/semgrep" "$SECURITY_BIN_DIR/semgrep"
-  echo "$req_sha" >"$SECURITY_BIN_DIR/.semgrep.sha256"
-  sec_log "semgrep installed from hash-pinned wheels ($("$SECURITY_BIN_DIR/semgrep" --version))"
+    local venv="$SECURITY_WORK_DIR/semgrep-venv" req_sha
+    req_sha="$(_sha256_of "$SEMGREP_REQUIREMENTS")"
+    if _already_installed semgrep "$req_sha"; then
+        sec_log "semgrep already installed (requirements sha256 matches)"
+        return 0
+    fi
+    install_uv
+    rm -rf "$venv"
+    "$SECURITY_BIN_DIR/uv" venv --quiet --python 3.12 "$venv"
+    # --require-hashes: every wheel, transitive ones included, must match a pinned sha256.
+    VIRTUAL_ENV="$venv" "$SECURITY_BIN_DIR/uv" pip install --quiet --require-hashes \
+        --no-deps -r "$SEMGREP_REQUIREMENTS"
+    ln -sf "$venv/bin/semgrep" "$SECURITY_BIN_DIR/semgrep"
+    echo "$req_sha" >"$SECURITY_BIN_DIR/.semgrep.sha256"
+    sec_log "semgrep installed from hash-pinned wheels ($("$SECURITY_BIN_DIR/semgrep" --version))"
 }
 
 # ----- main ---------------------------------------------------------------------------
@@ -183,14 +186,17 @@ mkdir -p "$SECURITY_BIN_DIR"
 tools=("$@")
 [[ ${#tools[@]} -eq 0 ]] && tools=("${ALL_TOOLS[@]}")
 for tool in "${tools[@]}"; do
-  case "$tool" in
-    uv) install_uv ;;
-    osv-scanner) install_osv_scanner ;;
-    gitleaks) install_gitleaks ;;
-    trufflehog) install_trufflehog ;;
-    zizmor) install_zizmor ;;
-    actionlint) install_actionlint ;;
-    semgrep) install_semgrep ;;
-    *) printf '[ERROR] unknown tool: %s (known: %s)\n' "$tool" "${ALL_TOOLS[*]}" >&2; exit 64 ;;
-  esac
+    case "$tool" in
+        uv) install_uv ;;
+        osv-scanner) install_osv_scanner ;;
+        gitleaks) install_gitleaks ;;
+        trufflehog) install_trufflehog ;;
+        zizmor) install_zizmor ;;
+        actionlint) install_actionlint ;;
+        semgrep) install_semgrep ;;
+        *)
+            printf '[ERROR] unknown tool: %s (known: %s)\n' "$tool" "${ALL_TOOLS[*]}" >&2
+            exit 64
+            ;;
+    esac
 done

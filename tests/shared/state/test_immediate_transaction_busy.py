@@ -5,6 +5,7 @@ Regression one-liners:
   - if the lock is released within busy_timeout then the transaction commits
   - if OperationalError is not a lock failure then it propagates unchanged
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -42,9 +43,7 @@ def test_immediate_transaction_waits_and_succeeds_when_lock_released(
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path, apply_schema=True)
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS probe (id INTEGER PRIMARY KEY, v TEXT)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS probe (id INTEGER PRIMARY KEY, v TEXT)")
         conn.commit()
     finally:
         conn.close()

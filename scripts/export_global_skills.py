@@ -85,9 +85,7 @@ from typing import Final
 
 USER_SKILLS_ROOT: Final[Path] = Path.home() / ".claude" / "skills"
 PLUGIN_CACHE_ROOT: Final[Path] = Path.home() / ".claude" / "plugins" / "cache"
-PLUGIN_MARKETPLACE_ROOT: Final[Path] = (
-    Path.home() / ".claude" / "plugins" / "marketplaces"
-)
+PLUGIN_MARKETPLACE_ROOT: Final[Path] = Path.home() / ".claude" / "plugins" / "marketplaces"
 
 VENDOR_DIRNAME: Final[str] = "_vendored"
 MANIFEST_NAME: Final[str] = "MANIFEST.json"
@@ -199,12 +197,8 @@ SECRET_PATTERNS: Final[tuple[tuple[str, str], ...]] = (
 
 PROVENANCE_OPEN: Final[str] = "<!-- VENDORED-SKILL"
 PROVENANCE_CLOSE: Final[str] = "-->"
-PROVENANCE_RE: Final[re.Pattern[str]] = re.compile(
-    r"<!-- VENDORED-SKILL\n.*?\n-->\n\n", re.DOTALL
-)
-VENDORED_REF_RE: Final[re.Pattern[str]] = re.compile(
-    r"<!-- vendored-ref: ([^\s>]+) -->"
-)
+PROVENANCE_RE: Final[re.Pattern[str]] = re.compile(r"<!-- VENDORED-SKILL\n.*?\n-->\n\n", re.DOTALL)
+VENDORED_REF_RE: Final[re.Pattern[str]] = re.compile(r"<!-- vendored-ref: ([^\s>]+) -->")
 # Escape hatches for documentation that merely SHOWS a reference shape.
 EXAMPLES_BEGIN_RE: Final[re.Pattern[str]] = re.compile(r"<!-- ref-examples: begin -->")
 EXAMPLES_END_RE: Final[re.Pattern[str]] = re.compile(r"<!-- ref-examples: end -->")
@@ -218,18 +212,10 @@ MAX_VENDOR_BYTES_DEFAULT: Final[int] = 2_000_000
 # ----- reference discovery ----------------------------------------------------
 
 WIKI_RE: Final[re.Pattern[str]] = re.compile(r"\[\[([A-Za-z0-9][A-Za-z0-9:._/-]*)\]\]")
-HOME_PATH_RE: Final[re.Pattern[str]] = re.compile(
-    r"~/\(private path)/([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
-)
-SKILL_COLON_RE: Final[re.Pattern[str]] = re.compile(
-    r"\bskill:([A-Za-z0-9](?:[A-Za-z0-9:._-]*[A-Za-z0-9])?)"
-)
-PLUGIN_NS_RE: Final[re.Pattern[str]] = re.compile(
-    r"\b([a-z][a-z0-9-]{2,}(?::[a-z][a-z0-9-]{2,}){1,2})\b"
-)
-SLASH_CMD_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![\w/.-])/([a-z][a-z0-9-]{3,})\b"
-)
+HOME_PATH_RE: Final[re.Pattern[str]] = re.compile(r"~/\(private path)/([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
+SKILL_COLON_RE: Final[re.Pattern[str]] = re.compile(r"\bskill:([A-Za-z0-9](?:[A-Za-z0-9:._-]*[A-Za-z0-9])?)")
+PLUGIN_NS_RE: Final[re.Pattern[str]] = re.compile(r"\b([a-z][a-z0-9-]{2,}(?::[a-z][a-z0-9-]{2,}){1,2})\b")
+SLASH_CMD_RE: Final[re.Pattern[str]] = re.compile(r"(?<![\w/.-])/([a-z][a-z0-9-]{3,})\b")
 BARE_NAME_MIN_LEN: Final[int] = 8
 
 
@@ -388,15 +374,10 @@ def _index_plugin_skills() -> dict[str, tuple[Path, str, str]]:
             parts = skill_md.relative_to(root).parts
             skill_name = parts[-2]
             plugin = parts[1] if parts[1] != "skills" else parts[0]
-            version = (
-                parts[2] if len(parts) >= 5 and parts[2] != "skills" else "unversioned"
-            )
+            version = parts[2] if len(parts) >= 5 and parts[2] != "skills" else "unversioned"
             key = f"{plugin}:{skill_name}"
             previous = index.get(key)
-            if (
-                previous is None
-                or skill_md.stat().st_mtime > previous[0].stat().st_mtime
-            ):
+            if previous is None or skill_md.stat().st_mtime > previous[0].stat().st_mtime:
                 index[key] = (skill_md, plugin, version)
     return index
 
@@ -453,9 +434,7 @@ def _discover(
     Bare names are only reported when long and hyphenated, so short generic global
     names (`template`, `review`, `pdf`) cannot produce false positives.
     """
-    bare_candidates = {
-        name for name in user_index if "-" in name and len(name) >= BARE_NAME_MIN_LEN
-    }
+    bare_candidates = {name for name in user_index if "-" in name and len(name) >= BARE_NAME_MIN_LEN}
     references: list[Reference] = []
     skipped_doc_lines = 0
     for path in targets:
@@ -475,17 +454,9 @@ def _discover(
             if DISPOSITION_MARKER_RE.search(line):
                 continue
             for match in WIKI_RE.finditer(line):
-                references.append(
-                    Reference(
-                        rel, lineno, match.group(0), "wiki-link", match.group(1), "high"
-                    )
-                )
+                references.append(Reference(rel, lineno, match.group(0), "wiki-link", match.group(1), "high"))
             for match in HOME_PATH_RE.finditer(line):
-                references.append(
-                    Reference(
-                        rel, lineno, match.group(0), "home-path", match.group(1), "high"
-                    )
-                )
+                references.append(Reference(rel, lineno, match.group(0), "home-path", match.group(1), "high"))
             for match in SKILL_COLON_RE.finditer(line):
                 references.append(
                     Reference(
@@ -499,27 +470,15 @@ def _discover(
                 )
             for match in PLUGIN_NS_RE.finditer(line):
                 token = match.group(1)
-                if token in plugin_index or token.split(":")[0] in {
-                    key.split(":")[0] for key in plugin_index
-                }:
-                    references.append(
-                        Reference(
-                            rel, lineno, token, "plugin-namespaced", token, "high"
-                        )
-                    )
+                if token in plugin_index or token.split(":")[0] in {key.split(":")[0] for key in plugin_index}:
+                    references.append(Reference(rel, lineno, token, "plugin-namespaced", token, "high"))
             for match in SLASH_CMD_RE.finditer(line):
                 name = match.group(1)
                 if name in user_index:
-                    references.append(
-                        Reference(
-                            rel, lineno, match.group(0), "slash-command", name, "medium"
-                        )
-                    )
+                    references.append(Reference(rel, lineno, match.group(0), "slash-command", name, "medium"))
             for name in bare_candidates:
                 if re.search(rf"(?<![\w/-]){re.escape(name)}(?![\w/-])", line):
-                    references.append(
-                        Reference(rel, lineno, name, "bare-name", name, "low")
-                    )
+                    references.append(Reference(rel, lineno, name, "bare-name", name, "low"))
     # Never silent: say how much was treated as documentation.
     print(
         f"discovery: skipped {skipped_doc_lines} line(s) as documentation "
@@ -659,14 +618,10 @@ def _triage(resolved: Resolved, repo_skill_trees: Sequence[str]) -> None:
 
     if not resolved.exists:
         resolved.disposition = "MISSING"
-        resolved.reason = (
-            "does not resolve on this machine; fix or delete the reference"
-        )
+        resolved.reason = "does not resolve on this machine; fix or delete the reference"
         return
 
-    blocked_reason = BLOCKED_NAMES.get(resolved.name) or BLOCKED_NAMES.get(
-        resolved.name.split(":")[-1]
-    )
+    blocked_reason = BLOCKED_NAMES.get(resolved.name) or BLOCKED_NAMES.get(resolved.name.split(":")[-1])
     if blocked_reason:
         resolved.disposition = "BLOCKED"
         resolved.reason = f"blocklist: {blocked_reason}"
@@ -678,11 +633,7 @@ def _triage(resolved: Resolved, repo_skill_trees: Sequence[str]) -> None:
         resolved.reason = "content markers: " + "; ".join(marker_hits)
         return
 
-    from_skill_tree = any(
-        ref.referencing_file.startswith(tree)
-        for ref in resolved.refs
-        for tree in repo_skill_trees
-    )
+    from_skill_tree = any(ref.referencing_file.startswith(tree) for ref in resolved.refs for tree in repo_skill_trees)
     personal_workflow = resolved.name.startswith(PERSONAL_WORKFLOW_PREFIXES)
 
     if personal_workflow:
@@ -696,9 +647,7 @@ def _triage(resolved: Resolved, repo_skill_trees: Sequence[str]) -> None:
         resolved.reason = "mentioned in docs only; a one-paragraph summary is cheaper"
 
 
-def _apply_manifest_overrides(
-    resolved: Sequence[Resolved], manifest_path: Path
-) -> None:
+def _apply_manifest_overrides(resolved: Sequence[Resolved], manifest_path: Path) -> None:
     """A hand-edited disposition in an existing manifest wins over the proposal."""
     if not manifest_path.is_file():
         return
@@ -731,13 +680,8 @@ def _apply_manifest_overrides(
 # ----- vendoring -------------------------------------------------------------
 
 
-def _provenance_block(
-    resolved: Resolved, source_sha: str, licence_vendored: bool
-) -> str:
-    licence = (
-        resolved.licence_file
-        or "UNKNOWN -- CHECK the upstream licence before publishing"
-    )
+def _provenance_block(resolved: Resolved, source_sha: str, licence_vendored: bool) -> str:
+    licence = resolved.licence_file or "UNKNOWN -- CHECK the upstream licence before publishing"
     return "\n".join(
         [
             PROVENANCE_OPEN,
@@ -778,9 +722,7 @@ def _dir_bytes(root: Path) -> int:
     return sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
 
 
-def _vendor_one(
-    resolved: Resolved, dest_root: Path, max_bytes: int
-) -> dict[str, object]:
+def _vendor_one(resolved: Resolved, dest_root: Path, max_bytes: int) -> dict[str, object]:
     if resolved.source is None:
         _die(f"cannot vendor unresolved skill: {resolved.name}")
     assert resolved.source is not None
@@ -819,13 +761,9 @@ def _vendor_one(
 
     source_sha = _sha256_file(resolved.source)
     original = dest_skill.read_text(encoding="utf-8")
-    injected = _inject_provenance(
-        original, _provenance_block(resolved, source_sha, licence_vendored)
-    )
+    injected = _inject_provenance(original, _provenance_block(resolved, source_sha, licence_vendored))
     if strip_provenance(injected) != original:
-        _die(
-            f"{resolved.name}: provenance round-trip is not byte-exact; refusing to vendor"
-        )
+        _die(f"{resolved.name}: provenance round-trip is not byte-exact; refusing to vendor")
     dest_skill.write_text(injected, encoding="utf-8")
 
     for path in sorted(dest.rglob("*")):
@@ -851,9 +789,7 @@ def _vendor_one(
 # ----- reference rewriting ---------------------------------------------------
 
 
-def _vendor_link(
-    referencing_file: str, vendor_rel: str, name: str, safe_name: str
-) -> str:
+def _vendor_link(referencing_file: str, vendor_rel: str, name: str, safe_name: str) -> str:
     """Relative markdown link that KEEPS the human-readable name, plus the marker."""
     target = posixpath.relpath(
         f"{vendor_rel}/{safe_name}/SKILL.md",
@@ -1000,9 +936,7 @@ def _verify(repo: Path, dest_root: Path, strict_secrets: bool) -> list[str]:
             continue
         entry = next((d for d in dependencies if d["name"] == ref.name), None)
         if entry is None:
-            failures.append(
-                f"V1 unmanifested global ref: {ref.referencing_file}:{ref.line} -> {ref.name}"
-            )
+            failures.append(f"V1 unmanifested global ref: {ref.referencing_file}:{ref.line} -> {ref.name}")
         elif entry["disposition"] == "IGNORE":
             continue
         elif entry["disposition"] in {"VENDOR", "MISSING", "UNTRIAGED"}:
@@ -1015,51 +949,34 @@ def _verify(repo: Path, dest_root: Path, strict_secrets: bool) -> list[str]:
     for name, entry in vendored.items():
         vdir = dest_root / entry["vendored_dir"]
         if not vdir.is_dir():
-            failures.append(
-                f"V2 manifest lists {name} but {_rel(vdir, repo)} is missing"
-            )
+            failures.append(f"V2 manifest lists {name} but {_rel(vdir, repo)} is missing")
             continue
         for rel_name, sha in entry["files"].items():
             fpath = vdir / rel_name
             if not fpath.is_file():
                 failures.append(f"V2 missing vendored file: {_rel(fpath, repo)}")
             elif _sha256_file(fpath) != sha:
-                failures.append(
-                    f"V2 sha mismatch (hand-edited after export?): {_rel(fpath, repo)}"
-                )
+                failures.append(f"V2 sha mismatch (hand-edited after export?): {_rel(fpath, repo)}")
         skill_md = vdir / "SKILL.md"
         if skill_md.is_file():
             text = skill_md.read_text(encoding="utf-8")
             if PROVENANCE_OPEN not in text:
                 failures.append(f"V2 no provenance header in {_rel(skill_md, repo)}")
-            elif (
-                _sha256_bytes(strip_provenance(text).encode("utf-8"))
-                != entry["source_sha256"]
-            ):
-                failures.append(
-                    f"V2 body does not strip back to recorded source sha: {_rel(skill_md, repo)}"
-                )
+            elif _sha256_bytes(strip_provenance(text).encode("utf-8")) != entry["source_sha256"]:
+                failures.append(f"V2 body does not strip back to recorded source sha: {_rel(skill_md, repo)}")
 
     # V3 no BLOCKED skill got vendored, and no stray dir bypassed the manifest.
-    vendored_dirs = (
-        {p.name for p in dest_root.iterdir() if p.is_dir()}
-        if dest_root.is_dir()
-        else set()
-    )
+    vendored_dirs = {p.name for p in dest_root.iterdir() if p.is_dir()} if dest_root.is_dir() else set()
     for blocked_name, blocked_reason in BLOCKED_NAMES.items():
         safe = blocked_name.replace(":", "__")
         if safe in vendored_dirs or blocked_name in vendored:
-            failures.append(
-                f"V3 BLOCKED skill was vendored: {blocked_name} ({blocked_reason})"
-            )
+            failures.append(f"V3 BLOCKED skill was vendored: {blocked_name} ({blocked_reason})")
     for entry in dependencies:
         if entry["disposition"] != "BLOCKED":
             continue
         safe = entry["name"].replace(":", "__")
         if safe in vendored_dirs or entry["name"] in vendored:
-            failures.append(
-                f"V3 BLOCKED skill was vendored: {entry['name']} ({entry['reason']})"
-            )
+            failures.append(f"V3 BLOCKED skill was vendored: {entry['name']} ({entry['reason']})")
     known_dirs = {str(entry["vendored_dir"]) for entry in vendored.values()}
     for stray in sorted(vendored_dirs - known_dirs):
         failures.append(
@@ -1073,14 +990,10 @@ def _verify(repo: Path, dest_root: Path, strict_secrets: bool) -> list[str]:
             continue
         hits = _scan_markers(_read_text(path), SECRET_PATTERNS)
         for hit in hits:
-            failures.append(
-                f"V4 secret pattern in vendored file: {_rel(path, repo)} -> {hit}"
-            )
+            failures.append(f"V4 secret pattern in vendored file: {_rel(path, repo)} -> {hit}")
         if strict_secrets:
             for hit in _scan_markers(_read_text(path), PERSONAL_MARKERS):
-                failures.append(
-                    f"V4 personal marker in vendored file: {_rel(path, repo)} -> {hit}"
-                )
+                failures.append(f"V4 personal marker in vendored file: {_rel(path, repo)} -> {hit}")
 
     # V5 plugin-sourced skills need a real licence, never an assumed one.
     for name, entry in vendored.items():
@@ -1103,13 +1016,8 @@ def _verify(repo: Path, dest_root: Path, strict_secrets: bool) -> list[str]:
         for match in VENDORED_REF_RE.finditer(_read_text(path)):
             name = match.group(1)
             entry = vendored.get(name)
-            if (
-                entry is None
-                or not (dest_root / entry["vendored_dir"] / "SKILL.md").is_file()
-            ):
-                failures.append(
-                    f"V6 dangling vendored-ref marker: {_rel(path, repo)} -> {name}"
-                )
+            if entry is None or not (dest_root / entry["vendored_dir"] / "SKILL.md").is_file():
+                failures.append(f"V6 dangling vendored-ref marker: {_rel(path, repo)} -> {name}")
     return failures
 
 
@@ -1139,26 +1047,17 @@ def _check_drift(repo: Path, dest_root: Path) -> list[str]:
 
 
 def _print_table(rows: Sequence[Sequence[str]], headers: Sequence[str]) -> None:
-    widths = [
-        max(len(str(headers[i])), max((len(str(r[i])) for r in rows), default=0))
-        for i in range(len(headers))
-    ]
+    widths = [max(len(str(headers[i])), max((len(str(r[i])) for r in rows), default=0)) for i in range(len(headers))]
     bar = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
     print(bar)
-    print(
-        "| " + " | ".join(str(h).ljust(widths[i]) for i, h in enumerate(headers)) + " |"
-    )
+    print("| " + " | ".join(str(h).ljust(widths[i]) for i, h in enumerate(headers)) + " |")
     print(bar)
     for row in rows:
-        print(
-            "| " + " | ".join(str(c).ljust(widths[i]) for i, c in enumerate(row)) + " |"
-        )
+        print("| " + " | ".join(str(c).ljust(widths[i]) for i, c in enumerate(row)) + " |")
     print(bar)
 
 
-def _report(
-    repo: Path, targets: Sequence[Path], resolved: Sequence[Resolved], dest_root: Path
-) -> None:
+def _report(repo: Path, targets: Sequence[Path], resolved: Sequence[Resolved], dest_root: Path) -> None:
     print(f"repo:        {repo}")
     print(f"dest-root:   {_rel(dest_root, repo)}")
     print(f"scanned:     {len(targets)} files")
@@ -1210,18 +1109,10 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "Run once per harness that must resolve the skills.",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--dry-run", action="store_true", help="discover + triage, write nothing"
-    )
-    mode.add_argument(
-        "--write", action="store_true", help="vendor, rewrite refs, write manifest"
-    )
-    mode.add_argument(
-        "--verify", action="store_true", help="run the verification checks"
-    )
-    mode.add_argument(
-        "--check-drift", action="store_true", help="have sources changed since export"
-    )
+    mode.add_argument("--dry-run", action="store_true", help="discover + triage, write nothing")
+    mode.add_argument("--write", action="store_true", help="vendor, rewrite refs, write manifest")
+    mode.add_argument("--verify", action="store_true", help="run the verification checks")
+    mode.add_argument("--check-drift", action="store_true", help="have sources changed since export")
     parser.add_argument(
         "--confirm-triage",
         action="store_true",
@@ -1322,9 +1213,7 @@ def main(argv: Sequence[str]) -> int:
             print(f"[BLOCKED] {item.name}: {item.reason}")
             print("          Hard stop. Rewrite the reference; never vendor this.")
         for item in missing:
-            print(
-                f"[MISSING] {item.name}: referenced but unresolvable on this machine."
-            )
+            print(f"[MISSING] {item.name}: referenced but unresolvable on this machine.")
         if blocked or missing:
             print()
             print(
@@ -1345,9 +1234,7 @@ def main(argv: Sequence[str]) -> int:
         )
     if missing:
         _die(
-            f"{len(missing)} unresolvable reference(s): "
-            + ", ".join(i.name for i in missing)
-            + ". Fix or delete them."
+            f"{len(missing)} unresolvable reference(s): " + ", ".join(i.name for i in missing) + ". Fix or delete them."
         )
 
     dest_root.mkdir(parents=True, exist_ok=True)
@@ -1364,9 +1251,7 @@ def main(argv: Sequence[str]) -> int:
     for path in targets:
         if _rel(path, repo).startswith(vendor_rel):
             continue
-        new_text, changes = _rewrite_file(
-            path, repo, dispositions, vendor_rel, vendored_names
-        )
+        new_text, changes = _rewrite_file(path, repo, dispositions, vendor_rel, vendored_names)
         if changes:
             path.write_text(new_text, encoding="utf-8")
             rewritten += 1
@@ -1404,9 +1289,7 @@ def main(argv: Sequence[str]) -> int:
         ],
         "vendored": vendored_entries,
     }
-    (dest_root / MANIFEST_NAME).write_text(
-        json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8"
-    )
+    (dest_root / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8")
     print(f"[OK] manifest written: {vendor_rel}/{MANIFEST_NAME}")
 
     failures = _verify(repo, dest_root, args.strict_secrets)

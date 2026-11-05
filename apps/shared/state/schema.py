@@ -48,8 +48,9 @@ from .migrations_v24 import _V24
 from .migrations_v25 import _V25
 from .migrations_v26 import _V26
 from .migrations_v27 import _V27
+from .migrations_v28 import _V28
 
-SCHEMA_VERSION: int = 27
+SCHEMA_VERSION: int = 28
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -82,6 +83,7 @@ MIGRATIONS: list[list[str]] = [
     _V25,
     _V26,
     _V27,
+    _V28,
 ]
 
 
@@ -205,6 +207,8 @@ TABLES: tuple[str, ...] = (
     "sync_write_tokens",
     # v25 (transition memory, ADR-0129). Machine-local.
     "pair_transitions",
+    "pair_decisions",
+    "pair_verdicts",
     # v26 (Library Organization PRD s6). undo_journal is machine-local.
     "playlist_section",
     "tag_type",
@@ -295,6 +299,9 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "playlist_set_entries",
     "playlist_set_runs",
     "playlist_sets_schema_meta",
+    # apps/shared/set_target/store.py (LIBUX-8679 set target and skip flags)
+    "set_targets",
+    "set_skips",
     # SET-6586 set routes (playlist_sets schema v2)
     "playlist_component_slots",
     "playlist_components",

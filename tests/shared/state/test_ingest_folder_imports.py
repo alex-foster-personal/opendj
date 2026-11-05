@@ -9,6 +9,7 @@ Regression one-liners:
   - if this test runs in-process then unrelated imports can hide the coupling
   - if the probe cannot see pyrekordbox at all then absence is not evidence
 """
+
 from __future__ import annotations
 
 import subprocess

@@ -8,13 +8,16 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use crate::http_paths::HEALTH_PATH;
+pub use odj_output_probe::clock::utc_timestamp_iso;
 
 const RELAUNCH_PATH: &str = "/api/v1/relaunch";
 const OUTPUT_HEALTH_PATH: &str = crate::output_health::OUTPUT_HEALTH_PATH;
 const SWITCH_OUTPUT_PATH: &str = crate::output_health::SWITCH_OUTPUT_PATH;
+const RECONNECT_SPEAKER_PATH: &str = crate::speaker_link::RECONNECT_SPEAKER_PATH;
+const INPUT_DEVICES_PATH: &str = crate::speaker_link::INPUT_DEVICES_PATH;
 const SHELL_LOCK_FILE: &str = ".engine.shell.json";
 const READ_TIMEOUT: Duration = Duration::from_millis(750);
 
@@ -188,6 +191,12 @@ fn handle_connection(
             &crate::output_health::switch_output_json(),
         );
     }
+    if method == "GET" && path == INPUT_DEVICES_PATH {
+        return write_json_response(&mut stream, 200, &crate::speaker_link::input_devices_json());
+    }
+    if method == "POST" && path == RECONNECT_SPEAKER_PATH {
+        return write_json_response(&mut stream, 200, &crate::speaker_link::reconnect_speaker_json());
+    }
     write_json_response(&mut stream, 404, r#"{"status":"not_found"}"#)
 }
 
@@ -222,43 +231,6 @@ fn write_json_response(stream: &mut TcpStream, status: u16, body: &str) -> std::
     stream.write_all(response.as_bytes())?;
     stream.flush()?;
     Ok(())
-}
-
-/// UTC RFC3339 with millisecond precision and a `+00:00` suffix.
-pub fn utc_timestamp_iso() -> String {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before Unix epoch");
-    let secs = duration.as_secs();
-    let millis = duration.subsec_millis();
-    let (year, month, day, hour, minute, second) = unix_secs_to_utc(secs);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}+00:00"
-    )
-}
-
-fn unix_secs_to_utc(secs: u64) -> (u32, u32, u32, u32, u32, u32) {
-    let days = secs / 86_400;
-    let time = secs % 86_400;
-    let hour = (time / 3_600) as u32;
-    let minute = ((time % 3_600) / 60) as u32;
-    let second = (time % 60) as u32;
-    let (year, month, day) = civil_from_days(days as i64);
-    (year, month, day, hour, minute, second)
-}
-
-fn civil_from_days(days: i64) -> (u32, u32, u32) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    let year = y + if month <= 2 { 1 } else { 0 };
-    (year as u32, month as u32, day as u32)
 }
 
 #[cfg(test)]
@@ -303,12 +275,5 @@ mod tests {
         assert!(response.contains(r#""engine":"dead""#), "{response}");
         assert!(response.contains(r#""status":"dead""#), "{response}");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn utc_timestamp_ends_with_plus_zero_offset() {
-        let stamp = utc_timestamp_iso();
-        assert!(stamp.ends_with("+00:00"), "{stamp}");
-        assert!(stamp.contains('T'), "{stamp}");
     }
 }

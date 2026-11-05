@@ -16,6 +16,7 @@ deleted in a ``finally``.
 
 - [if] real R2 answers a single-part PUT [then] its ETag is the body MD5 and the round trip is byte-identical, [else stop].
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,9 +41,11 @@ def test_live_offload_and_restore_round_trip(conn: sqlite3.Connection, tmp_path:
     cfg = live_r2_config()
     if cfg is None:
         pytest.skip(
-            "live R2 creds absent; set " + ", ".join(LIVE_R2_ENV_VARS)
+            "live R2 creds absent; set "
+            + ", ".join(LIVE_R2_ENV_VARS)
             + " (via `doppler run -p general -c dev_personal --`) to run this."
         )
+    assert cfg is not None
     body = f"music-dj-tools offload live probe {uuid.uuid4().hex}".encode() * 512
     digest = hashlib.sha256(body).hexdigest()
     audio = tmp_path / "music" / "live.mp3"

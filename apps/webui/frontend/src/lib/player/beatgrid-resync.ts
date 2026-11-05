@@ -100,7 +100,10 @@ function _reportPhaseLockFailure(
 	});
 }
 
-export function resyncAfterBeatgridUpgrade(ports: BeatgridResyncPorts, deck: DeckId): Promise<void> {
+export function resyncAfterBeatgridUpgrade(
+	ports: BeatgridResyncPorts,
+	deck: DeckId
+): Promise<void> {
 	const master = ports.syncMaster();
 	if (master === null) return Promise.resolve();
 	if (master === deck) {
@@ -191,8 +194,15 @@ export function resyncSettlementNeedsFullBarrier(
 	return ports.requiresReschedule(deck, ports.playing(deck), ports.beatSyncEnabled(deck), master);
 }
 
-function _disableForGridlessMaster(ports: BeatgridResyncPorts, follower: DeckId, master: DeckId): void {
-	ports.setSyncError(follower, `deck ${master} settled without a beatgrid - Beat Sync cannot phase-lock`);
+function _disableForGridlessMaster(
+	ports: BeatgridResyncPorts,
+	follower: DeckId,
+	master: DeckId
+): void {
+	ports.setSyncError(
+		follower,
+		`deck ${master} settled without a beatgrid - Beat Sync cannot phase-lock`
+	);
 	ports.setBeatSyncEnabled(follower, false);
 	recordPerfEvent(
 		'stranded-follower',
@@ -209,7 +219,11 @@ function _disableForGridlessMaster(ports: BeatgridResyncPorts, follower: DeckId,
  * outside that tracking, so without this recheck the abandonment still lands
  * and re-brands an opted-out deck with a sync_error for a wait it withdrew
  * from (discussion_r3920394940). */
-function _abandonStrandedFollowers(ports: BeatgridResyncPorts, master: DeckId, stranded: readonly DeckId[]): void {
+function _abandonStrandedFollowers(
+	ports: BeatgridResyncPorts,
+	master: DeckId,
+	stranded: readonly DeckId[]
+): void {
 	for (const follower of stranded) {
 		if (ports.beatSyncEnabled(follower)) _disableForGridlessMaster(ports, follower, master);
 	}
@@ -223,11 +237,19 @@ function _abandonStrandedFollowers(ports: BeatgridResyncPorts, master: DeckId, s
  * above). `master` may itself appear in a stale `stranded` list (it was
  * marked pending before it was elected), so this still filters through
  * requiresReschedule/hasRealBeatGrid to drop anyone no longer eligible. */
-function _syncStrandedFollowers(ports: BeatgridResyncPorts, master: DeckId, stranded: readonly DeckId[]): Promise<void> {
+function _syncStrandedFollowers(
+	ports: BeatgridResyncPorts,
+	master: DeckId,
+	stranded: readonly DeckId[]
+): Promise<void> {
 	const followers = stranded.filter(
 		(candidate) =>
-			ports.requiresReschedule(candidate, ports.playing(candidate), ports.beatSyncEnabled(candidate), master) &&
-			ports.hasRealBeatGrid(candidate)
+			ports.requiresReschedule(
+				candidate,
+				ports.playing(candidate),
+				ports.beatSyncEnabled(candidate),
+				master
+			) && ports.hasRealBeatGrid(candidate)
 	);
 	if (followers.length === 0) return Promise.resolve();
 	return ports.synchronizeFollowers(master, followers).then(
@@ -401,7 +423,8 @@ export function reconcileAfterBeatgridSettled(
 		// so they must be abandoned now rather than left with a stale pending
 		// record for a later re-election to silently inherit (issue #734
 		// send-back r3912960716).
-		for (const follower of ports.takePending(deck)) _disableForGridlessMaster(ports, follower, deck);
+		for (const follower of ports.takePending(deck))
+			_disableForGridlessMaster(ports, follower, deck);
 		return Promise.resolve();
 	}
 	if (master === deck) {

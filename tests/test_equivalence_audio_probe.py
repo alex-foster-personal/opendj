@@ -86,10 +86,7 @@ def _make_state_db(
     conn.execute("CREATE TABLE tracks (file_path TEXT, deleted_at TEXT)")
     conn.executemany(
         "INSERT INTO tracks VALUES (?, ?)",
-        [
-            (str(path), "2026-09-03T00:00:00+00:00" if path in deleted else None)
-            for path in paths
-        ],
+        [(str(path), "2026-09-03T00:00:00+00:00" if path in deleted else None) for path in paths],
     )
     conn.commit()
     conn.close()
@@ -199,13 +196,9 @@ def test_the_estimator_is_rotation_equivariant():
     profile = np.full(12, 0.01)
     for pitch_class in (0, 4, 7):
         profile[pitch_class] = 0.3
-    base_pc, base_mode, _ = key_mod._best_key(
-        profile, key_mod.KK_MAJOR, key_mod.KK_MINOR
-    )
+    base_pc, base_mode, _ = key_mod._best_key(profile, key_mod.KK_MAJOR, key_mod.KK_MINOR)
     for shift in range(1, 12):
-        pc, mode, _ = key_mod._best_key(
-            np.roll(profile, shift), key_mod.KK_MAJOR, key_mod.KK_MINOR
-        )
+        pc, mode, _ = key_mod._best_key(np.roll(profile, shift), key_mod.KK_MAJOR, key_mod.KK_MINOR)
         assert (pc, mode) == ((base_pc + shift) % 12, base_mode)
 
 

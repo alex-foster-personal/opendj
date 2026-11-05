@@ -16,6 +16,7 @@ placeholders (see SANITIZE) and the database is dumped with ``iterdump``.
 The script refuses to run on any tree whose ``order_key.between`` no longer
 returns the legacy empty key, so it cannot silently capture today's shapes.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -98,7 +99,11 @@ def _import_from_spotify(db_path: Path, work: Path) -> None:
     conn = open_state_rw_with_aux(db_path)
     try:
         summary = write_playlist_and_pending(
-            conn, playlist, result, backup_path=backup, reversal_script_path=reversal,
+            conn,
+            playlist,
+            result,
+            backup_path=backup,
+            reversal_script_path=reversal,
         )
     finally:
         conn.close()
@@ -115,8 +120,7 @@ def _webui_edits(db_path: Path) -> None:
         sids = [
             row[0]
             for row in store._conn.execute(
-                "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? "
-                "ORDER BY position",
+                "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
                 (twin_id,),
             )
         ]
@@ -128,9 +132,11 @@ def _webui_edits(db_path: Path) -> None:
         store.add_memberships(twin_id, [sids[1]], position=8)
         store.add_memberships(twin_id, [sids[2]], position=10)
         added = [
-            r[0] for r in store._conn.execute(
+            r[0]
+            for r in store._conn.execute(
                 "SELECT item_id FROM playlist_memberships WHERE playlist_id = ? "
-                "AND stable_id = ? AND item_id IS NOT NULL", (twin_id, sids[2]),
+                "AND stable_id = ? AND item_id IS NOT NULL",
+                (twin_id, sids[2]),
             )
         ]
         assert len(added) == 1, added

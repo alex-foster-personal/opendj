@@ -27,6 +27,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from apps.engine_core.build_info import MANIFEST_ENV, add_build_info_route
+from apps.engine_core.local_update import add_app_update_routes
 from apps.engine_core.update_channel import (
     UPDATE_APPLY_PATH,
     add_update_apply_route,
@@ -137,6 +138,9 @@ class Updater:
         self.apply_posts = 0
         self.shell_claims = 0
         self.shell_error: BaseException | None = None
+        #: INSTALL-43's install countdown, short so the rig stays fast; the
+        #: cancel tests raise it to have time to cancel.
+        self.countdown_s: float = 0.2
         self._boots = 0
         self._servers: list[tuple[Any, threading.Thread]] = []
         self._shell_stop = threading.Event()
@@ -165,6 +169,9 @@ class Updater:
         )
         add_update_check_route(app, endpoint=self.channel.endpoint)
         add_update_apply_route(app, endpoint=self.channel.endpoint)
+        # INSTALL-39: one data dir across boots, so a flagged build's record
+        # outlives the relaunch exactly as it does in the installed app.
+        add_app_update_routes(app, data_dir=self.tmp_path / "data", countdown_s=self.countdown_s)
         app.include_router(commands_router, prefix="/api/v1")
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))

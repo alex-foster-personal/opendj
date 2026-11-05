@@ -266,7 +266,11 @@ test('invalidate() on an already-settled entry is unaffected by the in-flight fi
 	coalescer.invalidate('ui-prefs');
 	const second = coalescer.share('ui-prefs', 1000, backing.request);
 
-	assert.equal(backing.calls, 2, 'a settled entry invalidated after the fact must still re-request immediately, exactly as before');
+	assert.equal(
+		backing.calls,
+		2,
+		'a settled entry invalidated after the fact must still re-request immediately, exactly as before'
+	);
 	backing.resolveAll();
 	assert.equal(await second, 'settled-body');
 });
@@ -297,13 +301,21 @@ test('invalidate({ forceInFlight: false }) leaves an in-flight request untouched
 	await settle();
 
 	assert.equal(seq.calls, 1, 'a request already in flight must not be forced to re-issue');
-	assert.equal(await waiter, 'in-flight-body', 'the original waiter must receive the request it was already holding');
+	assert.equal(
+		await waiter,
+		'in-flight-body',
+		'the original waiter must receive the request it was already holding'
+	);
 
 	// It must also have settled into the cache normally, as if invalidate()
 	// had never been called -- the whole point is that this reason does not
 	// treat the in-flight answer as stale.
 	const cached = coalescer.share('health', 1000, seq.request);
-	assert.equal(seq.calls, 1, 'the now-settled entry must still be joinable, not silently dropped by the invalidate() call');
+	assert.equal(
+		seq.calls,
+		1,
+		'the now-settled entry must still be joinable, not silently dropped by the invalidate() call'
+	);
 	assert.equal(await cached, 'in-flight-body');
 });
 
@@ -318,7 +330,11 @@ test('invalidate({ forceInFlight: false }) still evicts an already-SETTLED entry
 	coalescer.invalidate('health', { forceInFlight: false });
 	const second = coalescer.share('health', 1000, backing.request);
 
-	assert.equal(backing.calls, 2, 'forceInFlight only governs the in-flight branch; a settled entry must still be dropped');
+	assert.equal(
+		backing.calls,
+		2,
+		'forceInFlight only governs the in-flight branch; a settled entry must still be dropped'
+	);
 	backing.resolveAll();
 	assert.equal(await second, 'settled-body');
 });

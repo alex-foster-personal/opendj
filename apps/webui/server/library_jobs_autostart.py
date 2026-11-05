@@ -21,6 +21,7 @@ from apps.analysis import queue_user, queue_user_genre, queue_user_runner
 from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.queue_user_runner import runner_from_environ
 from apps.analysis.store import open_conn
+from apps.shared.env_on_off import read_on_off_environ
 from apps.shared.state.db import is_sqlite_busy
 
 log = logging.getLogger(__name__)
@@ -33,12 +34,13 @@ RESTART_JOIN_S: float = 5.0
 
 
 def arm_from_environ(environ: Mapping[str, str]) -> bool:
-    raw = environ.get(LIBRARY_JOBS_ENV, "on").strip().lower()
-    if raw not in LIBRARY_JOBS_VALUES:
-        raise ValueError(
-            f"{LIBRARY_JOBS_ENV}={raw!r} is not a member of {LIBRARY_JOBS_VALUES}"
-        )
-    return raw == "on"
+    return read_on_off_environ(
+        environ,
+        env_key=LIBRARY_JOBS_ENV,
+        allowed=LIBRARY_JOBS_VALUES,
+        default="on",
+        normalize=True,
+    )
 
 
 @dataclass

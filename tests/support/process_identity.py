@@ -6,6 +6,7 @@ helper that imports a ``scripts`` module carries the whole ``scripts`` closure i
 plan (ADR-NEW-layering-edges-and-contracts). The guard runs as a bare script and cannot
 import from ``tests``; ``tests/scripts/test_server_owner_guard.py`` holds the two equal.
 """
+
 from __future__ import annotations
 
 import os

@@ -93,10 +93,7 @@ def _stranded_callers(
                 for keyword in node.keywords:
                     if keyword.arg in params.get(name, set()):
                         rel = path.relative_to(relative_to)
-                        hits.add(
-                            f"{rel}:{node.lineno} {name}({keyword.arg}=...) "
-                            f"but the def takes _{keyword.arg}"
-                        )
+                        hits.add(f"{rel}:{node.lineno} {name}({keyword.arg}=...) but the def takes _{keyword.arg}")
     return sorted(hits)
 
 
@@ -123,11 +120,7 @@ def test_the_scanner_itself_finds_a_planted_breakage(tmp_path: Path) -> None:
     The planted pair is the real shape of the `record.status` bug.
     """
     (tmp_path / "planted.py").write_text(
-        "def status(*, _state=None):\n"
-        "    return 1\n"
-        "\n"
-        "def caller():\n"
-        "    return status(state=object())\n"
+        "def status(*, _state=None):\n    return 1\n\ndef caller():\n    return status(state=object())\n"
     )
 
     stranded = _stranded_callers((tmp_path,), (tmp_path,), relative_to=tmp_path)
@@ -155,12 +148,10 @@ def test_the_production_roots_actually_point_at_code() -> None:
         for root in roots:
             assert root.is_dir(), f"{label} entry {root} is not a directory - broken"
             assert next(root.rglob("*.py"), None) is not None, (
-                f"{label} entry {root} contains no Python, so it contributes "
-                "nothing to the scan - broken"
+                f"{label} entry {root} contains no Python, so it contributes nothing to the scan - broken"
             )
     assert REPO / "apps" in DEF_ROOTS, (
-        "DEF_ROOTS no longer covers apps/, where the public signatures this "
-        "test exists for live - broken"
+        "DEF_ROOTS no longer covers apps/, where the public signatures this test exists for live - broken"
     )
 
 

@@ -47,9 +47,7 @@ def tracked_cargo_lockfiles() -> dict[str, str]:
         text=True,
         check=True,
     ).stdout
-    return {
-        rel: (scan.REPO_ROOT / rel).read_text(encoding="utf-8") for rel in listed.split("\0") if rel
-    }
+    return {rel: (scan.REPO_ROOT / rel).read_text(encoding="utf-8") for rel in listed.split("\0") if rel}
 
 
 def cargo_system_library_gaps(manifest: dict, lockfiles: dict[str, str]) -> list[str]:
@@ -86,9 +84,7 @@ def test_every_cargo_system_library_is_declared(manifest: dict) -> None:
     lockfiles = tracked_cargo_lockfiles()
     assert lockfiles, "git ls-files found no Cargo.lock: the scan is broken, not clean"
     gaps = cargo_system_library_gaps(manifest, lockfiles)
-    assert not gaps, "Cargo build scripts need system libraries the manifest lacks:\n  " + (
-        "\n  ".join(gaps)
-    )
+    assert not gaps, "Cargo build scripts need system libraries the manifest lacks:\n  " + ("\n  ".join(gaps))
 
 
 def test_deleting_libclang_from_the_manifest_goes_red(manifest: dict) -> None:
@@ -115,9 +111,7 @@ LOCK_WITH = '[[package]]\nname = "{}"\nversion = "1.0.0"\n'
         ("serde", None, False),
     ],
 )
-def test_a_cargo_system_library_needs_its_apt_entry(
-    crate: str, entry: dict | None, gap: bool
-) -> None:
+def test_a_cargo_system_library_needs_its_apt_entry(crate: str, entry: dict | None, gap: bool) -> None:
     """Positive: clang-sys with no libclang1* apt entry is a gap. Negative controls:
     the version-neutral libclang1 or another LLVM's libclang1-NN satisfies it, a
     crate whose name only starts with clang-sys or a crate with no system library

@@ -25,18 +25,10 @@ _NUMERIC_RE = re.compile(r"^ADR-(\d{4})-")
 _NEW_RE = re.compile(r"^ADR-NEW-(.+)\.md$")
 _H1_RE = re.compile(r"^#\s+ADR-(?:NEW|\d{4}):\s*(.+)$", re.MULTILINE)
 _STATUS_CAPTURE = r"(superseded-by\s+\S+|\S+)"
-_STATUS_INLINE_RE = re.compile(
-    rf"^Status:\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE
-)
-_STATUS_HEADING_RE = re.compile(
-    rf"^##\s+Status\s*\n+\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE
-)
-_DATE_INLINE_RE = re.compile(
-    r"^Date:\s*(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4})", re.MULTILINE
-)
-_DATE_HEADING_RE = re.compile(
-    r"^##\s+Date\s*\n+\s*(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4})", re.MULTILINE
-)
+_STATUS_INLINE_RE = re.compile(rf"^Status:\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE)
+_STATUS_HEADING_RE = re.compile(rf"^##\s+Status\s*\n+\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE)
+_DATE_INLINE_RE = re.compile(r"^Date:\s*(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4})", re.MULTILINE)
+_DATE_HEADING_RE = re.compile(r"^##\s+Date\s*\n+\s*(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4})", re.MULTILINE)
 _SUPERSEDED_RE = re.compile(
     r"superseded-number:.*?renumbered to ADR-(\d{4})",
     re.IGNORECASE,
@@ -156,9 +148,7 @@ def build_adr_index(adr_dir: Path, readme_path: Path) -> str:
         "|---|---|---|---|",
     ]
     for adr_id, filename, status, date, title in rows:
-        lines.append(
-            f"| [ADR-{adr_id}]({filename}) | {status} | {date} | {title} |"
-        )
+        lines.append(f"| [ADR-{adr_id}]({filename}) | {status} | {date} | {title} |")
     lines.extend(
         [
             "",
@@ -198,8 +188,7 @@ def main(argv: list[str] | None = None) -> int:
         pending = check_no_pending(adr_dir)
         if pending:
             print(
-                "[adr-allocate] ADR-NEW placeholder(s) remain on main: "
-                + ", ".join(pending),
+                "[adr-allocate] ADR-NEW placeholder(s) remain on main: " + ", ".join(pending),
                 file=sys.stderr,
             )
             return 1

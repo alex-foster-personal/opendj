@@ -314,9 +314,7 @@ def test_presign_refuses_when_the_monthly_cap_is_unconfigured(
     """if a hosted hub meters CloudStems on a guessed cap then broken."""
     http, machine_id, _source = hosted_stems_hub
     monkeypatch.delenv("MDT_CLOUDSTEMS_MONTHLY_CAP", raising=False)
-    response = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    response = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == stem_meter.CAP_UNSET_CODE
 
@@ -328,9 +326,7 @@ def test_presign_refuses_a_bundle_past_the_monthly_cap(
     http, machine_id, _source = hosted_stems_hub
     monkeypatch.setenv("MDT_CLOUDSTEMS_MONTHLY_CAP", "1")
     _seed_usage(enroll_hub_dir, stable_id="track-a", cap=1)
-    response = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-b"}
-    )
+    response = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-b"})
     assert response.status_code == 429, response.text
     assert response.json()["detail"]["code"] == stem_meter.CAP_EXCEEDED_CODE
 
@@ -363,9 +359,7 @@ def _stub_r2(monkeypatch: pytest.MonkeyPatch) -> None:
 
     from apps.sync_hub import service_stem_assets
 
-    monkeypatch.setattr(
-        service_stem_assets, "_hub_r2_clients", lambda: (object(), object())
-    )
+    monkeypatch.setattr(service_stem_assets, "_hub_r2_clients", lambda: (object(), object()))
     monkeypatch.setattr(
         service_stem_assets.stem_index,
         "fetch_index",
@@ -395,9 +389,7 @@ def test_an_unindexed_bundle_does_not_use_up_a_track(
     http, machine_id, _source = hosted_stems_hub
     _stub_r2(monkeypatch)
     monkeypatch.setenv("MDT_CLOUDSTEMS_MONTHLY_CAP", "1")
-    response = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-missing"}
-    )
+    response = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-missing"})
     assert response.status_code == 404, response.text
     assert _used_this_month(enroll_hub_dir) == 0
 
@@ -410,13 +402,9 @@ def test_an_r2_failure_does_not_use_up_a_track(
 
     http, machine_id, _source = hosted_stems_hub
     _stub_r2(monkeypatch)
-    monkeypatch.setattr(
-        service_stem_assets.asset_store, "head_asset", lambda _cfg, _s3, _digest: None
-    )
+    monkeypatch.setattr(service_stem_assets.asset_store, "head_asset", lambda _cfg, _s3, _digest: None)
     monkeypatch.setenv("MDT_CLOUDSTEMS_MONTHLY_CAP", "1")
-    response = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    response = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert response.status_code == 502, response.text
     assert _used_this_month(enroll_hub_dir) == 0
 
@@ -428,20 +416,14 @@ def test_a_presigned_bundle_is_charged_exactly_once(
     http, machine_id, _source = hosted_stems_hub
     _stub_r2(monkeypatch)
     # A probe before the fetch costs nothing; only the fetch itself charges.
-    probe = http.get(
-        SIZE_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    probe = http.get(SIZE_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert probe.status_code == 200, probe.text
     assert _used_this_month(enroll_hub_dir) == 0
-    first = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    first = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert first.status_code == 200, first.text
     assert len(first.json()["files"]) == 1
     assert _used_this_month(enroll_hub_dir) == 1
-    again = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    again = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert again.status_code == 200, again.text
     assert _used_this_month(enroll_hub_dir) == 1
 
@@ -467,21 +449,15 @@ def test_a_size_probe_spends_no_track_and_mints_no_url(
     def _never_presign(*_args: object, **_kwargs: object) -> str:
         raise AssertionError("the size probe must not presign anything")
 
-    monkeypatch.setattr(
-        service_stem_assets.asset_store, "presign_url", _never_presign
-    )
+    monkeypatch.setattr(service_stem_assets.asset_store, "presign_url", _never_presign)
     monkeypatch.setenv("MDT_CLOUDSTEMS_MONTHLY_CAP", "1")
     # The month is already spent: the probe is unmetered, so it still answers.
     _seed_usage(enroll_hub_dir, stable_id="track-a", cap=1)
-    response = http.get(
-        SIZE_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    response = http.get(SIZE_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["stable_id"] == "track-a"
-    assert body["files"] == [
-        {"filename": "manifest.json", "content_hash": "a" * 64, "size_bytes": 7}
-    ]
+    assert body["files"] == [{"filename": "manifest.json", "content_hash": "a" * 64, "size_bytes": 7}]
     assert "url" not in response.text
     assert _used_this_month(enroll_hub_dir) == 1
 
@@ -597,19 +573,13 @@ def test_the_meter_bills_the_owner_whose_entitlement_passed(
         reads.append(None if owner is None else owner.google_sub)
         return owner
 
-    monkeypatch.setattr(
-        entitlement_gate.enrollment, "owner_for", _reassigned_after_first_read
-    )
-    response = http.get(
-        PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"}
-    )
+    monkeypatch.setattr(entitlement_gate.enrollment, "owner_for", _reassigned_after_first_read)
+    response = http.get(PRESIGN_PATH, params={"machine_id": machine_id, "stable_id": "track-a"})
     assert response.status_code == 200, response.text
     assert reads[0] == ENROLL_OWNER_SUB
     conn = sqlite3.connect(sync_client.state_db_path(enroll_hub_dir))
     try:
-        billed = conn.execute(
-            f"SELECT DISTINCT owner_sub FROM {stem_meter.USAGE_TABLE}"
-        ).fetchall()
+        billed = conn.execute(f"SELECT DISTINCT owner_sub FROM {stem_meter.USAGE_TABLE}").fetchall()
     finally:
         conn.close()
     assert billed == [(ENROLL_OWNER_SUB,)], billed

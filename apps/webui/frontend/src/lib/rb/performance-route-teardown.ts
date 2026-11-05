@@ -24,7 +24,11 @@ function _reportTeardownError(
 	try {
 		actions.reportError(phase, error);
 	} catch (reportError) {
-		console.error(`performance route teardown could not report ${phase} failure`, error, reportError);
+		console.error(
+			`performance route teardown could not report ${phase} failure`,
+			error,
+			reportError
+		);
 	}
 }
 

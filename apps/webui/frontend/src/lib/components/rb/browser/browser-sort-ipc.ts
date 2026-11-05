@@ -1,4 +1,4 @@
-const BROWSER_SORT_KEYS = [
+export const BROWSER_SORT_KEYS = [
 	'order',
 	'plays',
 	'title',
@@ -12,7 +12,12 @@ const BROWSER_SORT_KEYS = [
 	'genre',
 	'lyrics',
 	'grid',
-	'autoplay'
+	'autoplay',
+	'work',
+	'composer',
+	'ensemble',
+	'label',
+	'year'
 ] as const;
 
 export type SortKey = (typeof BROWSER_SORT_KEYS)[number];

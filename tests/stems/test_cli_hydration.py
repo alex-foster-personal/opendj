@@ -5,6 +5,7 @@ credential refusal, output) -- the library functions underneath
 (``apps.cloud.stem_index``, ``apps.cloud.stem_hydration``) already have
 their own dedicated tests in ``tests/cloudsync/``.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,8 +41,10 @@ def _manifest_bytes(stable_id: str) -> bytes:
         "model": {"name": "htdemucs", "version": "4.0.1"},
         "source": {"path": "/music/x.wav", "sha256": "a" * 64},
         "files": {
-            "vocals": "vocals.wav", "drums": "drums.wav",
-            "bass": "bass.wav", "other": "other.wav",
+            "vocals": "vocals.wav",
+            "drums": "drums.wav",
+            "bass": "bass.wav",
+            "other": "other.wav",
         },
     }
     return (json.dumps(manifest) + "\n").encode("utf-8")
@@ -96,9 +99,13 @@ class _InMemoryAssetS3:
 
 def _cfg() -> CloudConfig:
     return CloudConfig(
-        r2_account_id="acct", r2_access_key_id="id", r2_secret_access_key="secret",
-        state_bucket="test-state", audio_bucket="test-audio",
-        hostname="host", bind_host="127.0.0.1",
+        r2_account_id="acct",
+        r2_access_key_id="id",
+        r2_secret_access_key="secret",
+        state_bucket="test-state",
+        audio_bucket="test-audio",
+        hostname="host",
+        bind_host="127.0.0.1",
     )
 
 
@@ -135,9 +142,7 @@ def test_build_index_reads_default_journal_and_caches_locally(
     assert load_cached_index(data_dir) == {"track-a": {"manifest.json": "a" * 64}}
 
 
-def test_build_index_honors_explicit_journal_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_build_index_honors_explicit_journal_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """MUTATION TARGET: if ``--journal`` stopped being threaded through to
     ``build_index_from_journal`` (falling back to the default path always),
     this test goes red because the default-path journal (left empty) would
@@ -185,45 +190,53 @@ def test_build_index_publish_writes_to_r2(
 
 def test_bulk_hydrate_requires_ids_or_playlist(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
-        build_parser().parse_args(
-            ["bulk-hydrate", "--data-dir", str(tmp_path), "--budget-bytes", "1000"]
-        )
+        build_parser().parse_args(["bulk-hydrate", "--data-dir", str(tmp_path), "--budget-bytes", "1000"])
 
 
 def test_bulk_hydrate_rejects_both_ids_and_playlist(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(
             [
-                "bulk-hydrate", "--data-dir", str(tmp_path), "--budget-bytes", "1000",
-                "--ids", "a,b", "--playlist", "Some Playlist",
+                "bulk-hydrate",
+                "--data-dir",
+                str(tmp_path),
+                "--budget-bytes",
+                "1000",
+                "--ids",
+                "a,b",
+                "--playlist",
+                "Some Playlist",
             ]
         )
 
 
 def test_bulk_hydrate_without_credentials_refuses_loudly(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _data_dir: None
-    )
+    monkeypatch.setattr("apps.cloud.stem_source.resolve_stem_hydration_source", lambda _data_dir: None)
     with pytest.raises(SystemExit, match="credentials"):
         _run(
             [
-                "bulk-hydrate", "--data-dir", str(tmp_path / "data"),
-                "--ids", "nowhere", "--budget-bytes", "1000",
+                "bulk-hydrate",
+                "--data-dir",
+                str(tmp_path / "data"),
+                "--ids",
+                "nowhere",
+                "--budget-bytes",
+                "1000",
             ]
         )
 
 
-def test_bulk_hydrate_ids_fetches_and_reports(
-    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_bulk_hydrate_ids_fetches_and_reports(tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]) -> None:
     data_dir = tmp_path / "data"
     cfg = _cfg()
     s3 = _InMemoryAssetS3()
 
     files = {
         "manifest.json": _manifest_bytes("cli-track"),
-        "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
-        "bass.wav": _wav_bytes(), "other.wav": _wav_bytes(),
+        "vocals.wav": _wav_bytes(),
+        "drums.wav": _wav_bytes(),
+        "bass.wav": _wav_bytes(),
+        "other.wav": _wav_bytes(),
     }
     entry: dict[str, str] = {}
     for filename, body in files.items():
@@ -241,8 +254,13 @@ def test_bulk_hydrate_ids_fetches_and_reports(
 
     rc = _run(
         [
-            "bulk-hydrate", "--data-dir", str(data_dir),
-            "--ids", "cli-track", "--budget-bytes", str(10**9),
+            "bulk-hydrate",
+            "--data-dir",
+            str(data_dir),
+            "--ids",
+            "cli-track",
+            "--budget-bytes",
+            str(10**9),
         ]
     )
     assert rc == 0
@@ -272,8 +290,14 @@ def test_bulk_hydrate_json_output_reports_skip_reason(
 
     rc = _run(
         [
-            "bulk-hydrate", "--data-dir", str(data_dir),
-            "--ids", "nowhere-track", "--budget-bytes", str(10**9), "--json",
+            "bulk-hydrate",
+            "--data-dir",
+            str(data_dir),
+            "--ids",
+            "nowhere-track",
+            "--budget-bytes",
+            str(10**9),
+            "--json",
         ]
     )
     assert rc == 0
@@ -294,8 +318,10 @@ def test_bulk_hydrate_refresh_index_fetches_from_r2_on_empty_cache(
 
     files = {
         "manifest.json": _manifest_bytes("fresh-track"),
-        "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
-        "bass.wav": _wav_bytes(), "other.wav": _wav_bytes(),
+        "vocals.wav": _wav_bytes(),
+        "drums.wav": _wav_bytes(),
+        "bass.wav": _wav_bytes(),
+        "other.wav": _wav_bytes(),
     }
     entry: dict[str, str] = {}
     for filename, body in files.items():
@@ -311,8 +337,13 @@ def test_bulk_hydrate_refresh_index_fetches_from_r2_on_empty_cache(
 
     rc = _run(
         [
-            "bulk-hydrate", "--data-dir", str(data_dir),
-            "--ids", "fresh-track", "--budget-bytes", str(10**9),
+            "bulk-hydrate",
+            "--data-dir",
+            str(data_dir),
+            "--ids",
+            "fresh-track",
+            "--budget-bytes",
+            str(10**9),
             "--refresh-index",
         ]
     )
@@ -333,8 +364,10 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
 
     files = {
         "manifest.json": _manifest_bytes("cached-track"),
-        "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
-        "bass.wav": _wav_bytes(), "other.wav": _wav_bytes(),
+        "vocals.wav": _wav_bytes(),
+        "drums.wav": _wav_bytes(),
+        "bass.wav": _wav_bytes(),
+        "other.wav": _wav_bytes(),
     }
     entry: dict[str, str] = {}
     for filename, body in files.items():
@@ -358,8 +391,13 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
 
     rc = _run(
         [
-            "bulk-hydrate", "--data-dir", str(data_dir),
-            "--ids", "cached-track", "--budget-bytes", str(10**9),
+            "bulk-hydrate",
+            "--data-dir",
+            str(data_dir),
+            "--ids",
+            "cached-track",
+            "--budget-bytes",
+            str(10**9),
         ]
     )
     assert rc == 0

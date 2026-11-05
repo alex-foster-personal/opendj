@@ -52,7 +52,9 @@
 					{r.filename}
 					{#if r.duplicate_of !== null}
 						- possible dup: {r.duplicate_of.title ?? r.duplicate_of.stable_id.slice(0, 8)}
-						({r.duplicate_of.method}{r.duplicate_of.score !== null ? ` ${r.duplicate_of.score}` : ''})
+						({r.duplicate_of.method}{r.duplicate_of.score !== null
+							? ` ${r.duplicate_of.score}`
+							: ''})
 					{/if}
 					<span class="m-dup-actions">
 						<button

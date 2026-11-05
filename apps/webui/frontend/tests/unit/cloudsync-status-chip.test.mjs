@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { after, before, test } from 'node:test';
+
+import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 
 function source(relative) {
 	return readFileSync(fileURLToPath(new URL(`../../src/${relative}`, import.meta.url)), 'utf8');
@@ -18,6 +20,45 @@ const TAB =
 	source('lib/components/cloudsync/CloudSyncStatusTab.svelte') +
 	source('lib/components/cloudsync/CloudSyncStatusTabView.svelte');
 const LAYOUT = source('routes/+layout.svelte');
+
+const CHIP_VIEW_ENTRY = [
+	"export { default as CloudSyncStatusChipView } from '$lib/components/CloudSyncStatusChipView.svelte';",
+	"export { render } from 'svelte/server';",
+	"export { createRawSnippet } from 'svelte';"
+].join('\n');
+
+let ssr;
+
+before(async () => {
+	ssr = await loadSvelteSsrModule(CHIP_VIEW_ENTRY);
+});
+
+after(() => {
+	delete globalThis.window;
+});
+
+/** The chip's trigger button as SSR markup, with every prop the container would pass. */
+function renderChipButton(props) {
+	const popover = ssr.createRawSnippet(() => ({ render: () => '<span></span>' }));
+	const { body } = ssr.render(ssr.CloudSyncStatusChipView, {
+		props: {
+			chipState: () => 'ok',
+			icon: 'cloud-check',
+			glyphs: [],
+			fullLabel: 'Synced',
+			shortLabel: 'Synced',
+			title: 'unset',
+			ariaLabel: 'unset',
+			popoverOpen: false,
+			togglePopover: () => {},
+			popover,
+			...props
+		}
+	});
+	const button = body.match(/<button[^>]*data-testid="cloudsync-status-chip"[^>]*>/);
+	assert.ok(button, 'the chip renders its trigger button');
+	return button[0];
+}
 const TOPBAR = source('lib/components/rb/TopBar.svelte');
 
 test('the status chip has off, syncing, ok, error, inconclusive and update_required render states', () => {
@@ -38,7 +79,8 @@ test('the chip derives its state from the shared heartbeat-gated rule', () => {
 test('the chip carries an explanatory hover title derived from status', () => {
 	/** if the chip loses its hover title or its relative-time readout then broken */
 	assert.match(CHIP, /const title = \$derived\(chipTitle\(status, loadError\)\)/);
-	assert.match(CHIP, /title=\{title\}/);
+	// Rendered, not regexed: the button's title attribute is the title prop, however the markup is laid out.
+	assert.match(renderChipButton({ title: 'probe hover title' }), /\stitle="probe hover title"/);
 	assert.match(VIEW, /CHIP_QUICK_ACTIONS_CTA/);
 	assert.doesNotMatch(VIEW, /Click to open recent results\./);
 	assert.doesNotMatch(VIEW, /Click after it loads to see details/);

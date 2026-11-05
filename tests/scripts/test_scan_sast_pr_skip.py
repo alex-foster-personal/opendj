@@ -73,9 +73,7 @@ def test_tests_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     """
     repo = init_scan_repo(tmp_path)
     body = "import subprocess\nsubprocess.call({!r}, shell=True)\n"
-    base, head = _commit_pair(
-        repo, "tests/scripts/test_probe.py", body.format("ls"), body.format("pwd")
-    )
+    base, head = _commit_pair(repo, "tests/scripts/test_probe.py", body.format("ls"), body.format("pwd"))
     work = tmp_path / "work"
     proc = _run_pr_scan(repo, work, base, head)
     assert proc.returncode == 0, proc.stderr or proc.stdout

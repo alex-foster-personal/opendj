@@ -51,7 +51,10 @@ function harness() {
 
 test('runAnalysisOrder records the phase returned by the track-order command', async () => {
 	const { calls, deps } = harness();
-	await runAnalysisOrder('vocals', deps(async () => ({ stable_id: 'track-a', kind: 'vocals', phase: 'queued' })));
+	await runAnalysisOrder(
+		'vocals',
+		deps(async () => ({ stable_id: 'track-a', kind: 'vocals', phase: 'queued' }))
+	);
 
 	assert.equal(calls.upsertJob, 1);
 	assert.equal(calls.toasts.length, 1);

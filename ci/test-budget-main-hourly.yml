@@ -1,0 +1,28 @@
+# Runner-minute budget for the hourly selected run on main (.github/workflows/main-hourly-selected.yml,
+# scripts/ci_main_hourly.py), Thu 5 Nov 2026.
+#
+# The PR head's hard cap (ci/test-budget.yml: 10 runner-minutes, `cap: hard`, the same model and drop
+# order), priced for the ONE shard this run launches: the selector refuses a plan priced for five
+# shards when one runs. One shard pays one shard's overhead, so the same 10 runner-minutes leave about
+# 11.9 ledger-minutes for tests here against 9.25 on a five-shard PR head. Measured on main's last hour
+# (a1260d4f42..1a4c1d19bf, 5 merges, one of them a workflow change, so the selector ranked the whole
+# lane), Thu 5 Nov 2026: 527 of 2233 lane modules kept (24%), never the whole suite. The nightly full
+# runs still catch what this cap drops.
+version: 2
+
+runner_minutes:
+  # The hourly run presents itself to the selector as a push to main, which is priced as `pr_head`.
+  pr_head: 10
+  queue_draft: 10
+
+cap: hard
+
+model:
+  overhead_min_per_shard: 0.52
+  min_per_ledger_minute: 0.80
+  shards: 1
+
+drop_order:
+  - "coupling `"
+  - "named reference"
+  - "conftest reach `"

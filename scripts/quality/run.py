@@ -46,8 +46,7 @@ def build_plan(
             raise SystemExit(f"[ERROR] unknown arm(s): {sorted(missing)}")
     grid = json.loads((PLANS / "grid.json").read_text(encoding="utf-8"))["conditions"]
     sources = {
-        str(entry["fixture_id"]): entry
-        for entry in json.loads(sources_path.read_text(encoding="utf-8"))["sources"]
+        str(entry["fixture_id"]): entry for entry in json.loads(sources_path.read_text(encoding="utf-8"))["sources"]
     }
 
     planned: list[dict[str, object]] = []

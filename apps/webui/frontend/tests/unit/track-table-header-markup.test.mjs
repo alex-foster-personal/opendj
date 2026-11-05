@@ -45,11 +45,7 @@ function artHeader() {
 test('the artwork header is an icon, not the word', () => {
 	const th = artHeader();
 	assert.match(th, /<svg\b/, 'artwork header has no inline svg');
-	assert.equal(
-		/>\s*Artwork\s*</.test(th),
-		false,
-		'the word "Artwork" is back in the header'
-	);
+	assert.equal(/>\s*Artwork\s*</.test(th), false, 'the word "Artwork" is back in the header');
 });
 
 test('the artwork header keeps its accessible custom column explanation', () => {

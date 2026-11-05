@@ -17,7 +17,7 @@ WORKFLOWS = {
     "Stable evidence": (REPO / ".github" / "workflows" / "stable-evidence.yml", "append"),
     "CI error sink": (REPO / ".github" / "workflows" / "ci-error-sink.yml", "sink"),
 }
-RUNS_ON_EXPR = '${{ fromJSON(vars.CI_RUNS_ON_LINUX || \'"ubuntu-latest"\') }}'
+RUNS_ON_EXPR = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 
 
 def _workflow(path: Path) -> dict:
@@ -39,6 +39,4 @@ def test_bookkeeping_workflows_keep_cancel_in_progress_false() -> None:
         workflow = _workflow(path)
         job = workflow["jobs"][job_name]
         concurrency = job.get("concurrency") or workflow.get("concurrency") or {}
-        assert concurrency.get("cancel-in-progress") is False, (
-            f"{name} must keep cancel-in-progress: false"
-        )
+        assert concurrency.get("cancel-in-progress") is False, f"{name} must keep cancel-in-progress: false"

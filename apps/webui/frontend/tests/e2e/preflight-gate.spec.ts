@@ -45,23 +45,17 @@ test.describe('preflight boot gate', () => {
 		await expectFirstRunSetup(page);
 
 		// Preflight still reports the honest fail -- never a fabricated pass.
-		const preflight = await page.request.get(
-			`${PREFLIGHT_GATE_BROKEN_ORIGIN}/api/v1/preflight`
-		);
+		const preflight = await page.request.get(`${PREFLIGHT_GATE_BROKEN_ORIGIN}/api/v1/preflight`);
 		expect(preflight.ok()).toBeTruthy();
 		const body = await preflight.json();
-		const libraryRow = body.checks.find(
-			(check: { id: string }) => check.id === 'library-attached'
-		);
+		const libraryRow = body.checks.find((check: { id: string }) => check.id === 'library-attached');
 		expect(libraryRow?.status).toBe('fail');
 		// The engine's own copy (apps/webui/server/preflight_checks.py, 1f97fe0dd).
 		expect(libraryRow?.user_detail).toContain('No tracks in your library yet.');
 
 		// A fresh install has nothing recorded to sample, which is an honest
 		// `pending`, never a fabricated pass (this issue's own denominator rule).
-		const audioRow = body.checks.find(
-			(check: { id: string }) => check.id === 'audio-access'
-		);
+		const audioRow = body.checks.find((check: { id: string }) => check.id === 'audio-access');
 		expect(audioRow?.status).toBe('pending');
 	});
 });

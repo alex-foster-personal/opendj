@@ -12,6 +12,7 @@ fixes frame_length 4096, frame_step 1024, T 512, F 1024, mask_extension zeros.
 --sep-rate resamples before separation and back after, so the cost of the
 resample is charged to the arm rather than hidden.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,16 +35,15 @@ def _hann(fl, dtype):
 
 
 def _stft(x: np.ndarray) -> tf.Tensor:
-    s = tf.signal.stft(tf.transpose(x), FRAME_LENGTH, FRAME_STEP,
-                       window_fn=_hann, pad_end=True)
+    s = tf.signal.stft(tf.transpose(x), FRAME_LENGTH, FRAME_STEP, window_fn=_hann, pad_end=True)
     return tf.transpose(s, perm=[1, 2, 0])  # (frames, 2049, ch)
 
 
 def _istft(s: tf.Tensor, n: int) -> np.ndarray:
     s = tf.transpose(s, perm=[2, 0, 1])
     y = tf.signal.inverse_stft(
-        s, FRAME_LENGTH, FRAME_STEP,
-        window_fn=tf.signal.inverse_stft_window_fn(FRAME_STEP, forward_window_fn=_hann))
+        s, FRAME_LENGTH, FRAME_STEP, window_fn=tf.signal.inverse_stft_window_fn(FRAME_STEP, forward_window_fn=_hann)
+    )
     return tf.transpose(y).numpy()[:n]
 
 
@@ -61,11 +61,11 @@ def main() -> None:
     ap.add_argument("--sep-rate", type=int, default=44100)
     ap.add_argument("--mono", action="store_true")
     ap.add_argument("--label", required=True)
-    ap.add_argument("--model", type=Path, default=None,
-                    help="Spleeter 4stems SavedModel directory (env: RB6_SPLEETER_MODEL)")
+    ap.add_argument(
+        "--model", type=Path, default=None, help="Spleeter 4stems SavedModel directory (env: RB6_SPLEETER_MODEL)"
+    )
     args = ap.parse_args()
-    model_dir = args.model or (
-        Path(os.environ["RB6_SPLEETER_MODEL"]) if os.environ.get("RB6_SPLEETER_MODEL") else None)
+    model_dir = args.model or (Path(os.environ["RB6_SPLEETER_MODEL"]) if os.environ.get("RB6_SPLEETER_MODEL") else None)
     if model_dir is None:
         ap.error("a model path is required: pass --model or set RB6_SPLEETER_MODEL")
     if not (model_dir / "saved_model.pb").is_file():
@@ -92,7 +92,7 @@ def main() -> None:
 
     acc: dict[str, list] = {k: [] for k in STEMS}
     for i in range(segs.shape[0]):
-        out = fn(mix_stft=segs[i:i + 1])
+        out = fn(mix_stft=segs[i : i + 1])
         for k in acc:
             acc[k].append(out[k][0])
 
@@ -108,19 +108,24 @@ def main() -> None:
     # were being discarded, which is exactly the blind spot the 4-stem ladder exists
     # to close.
     for name in STEMS:
-        sf.write(str(args.out_dir / f"{name}.wav"),
-                 _resample(stems[name], args.sep_rate, sr)[:orig_n], sr)
-    inst = _resample(stems["drums"] + stems["bass"] + stems["other"],
-                     args.sep_rate, sr)[:orig_n]
+        sf.write(str(args.out_dir / f"{name}.wav"), _resample(stems[name], args.sep_rate, sr)[:orig_n], sr)
+    inst = _resample(stems["drums"] + stems["bass"] + stems["other"], args.sep_rate, sr)[:orig_n]
     sf.write(str(args.out_dir / "instrumental.wav"), inst, sr)
 
     dur = orig_n / sr
-    print(json.dumps({
-        "label": args.label, "engine": "user-supplied-spleeter-4stems",
-        "sep_rate": args.sep_rate, "mono": args.mono,
-        "audio_s": round(dur, 2), "infer_s": round(infer_s, 2),
-        "s_per_stem_minute": round(infer_s / (dur / 60), 2),
-    }))
+    print(
+        json.dumps(
+            {
+                "label": args.label,
+                "engine": "user-supplied-spleeter-4stems",
+                "sep_rate": args.sep_rate,
+                "mono": args.mono,
+                "audio_s": round(dur, 2),
+                "infer_s": round(infer_s, 2),
+                "s_per_stem_minute": round(infer_s / (dur / 60), 2),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -118,7 +118,12 @@ function paintLowOnly(palette) {
 	render.resetWaveBandCacheForTest();
 	bandFills = [];
 	const n = 1200;
-	const detail = { length: n, low: Array(n).fill(0.8), mid: Array(n).fill(0), high: Array(n).fill(0) };
+	const detail = {
+		length: n,
+		low: Array(n).fill(0.8),
+		mid: Array(n).fill(0),
+		high: Array(n).fill(0)
+	};
 	const anlz = {
 		stable_id: 'b'.repeat(40),
 		points: n,

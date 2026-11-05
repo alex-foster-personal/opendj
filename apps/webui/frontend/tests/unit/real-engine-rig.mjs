@@ -15,6 +15,16 @@
  * own gates. A test can hold a track's audio download or its stem part
  * downloads and release them on cue, and can make a track's audio fail.
  *
+ * A track can also be GRIDLESS (`grid: 'none'`), the shape a locally imported
+ * file really gets from /anlz, so the deferred beatgrid upgrade (PARITY-10)
+ * runs for real: /rb-meta and /beatgrid-fallback answer with the verified
+ * backend captures deck-beatgrid-fallback-upgrade.test.mjs reads, and the
+ * fallback request can be held and released on cue like the others. The grid
+ * lands through the scoped sync runner, which the app installs from
+ * performance-ipc.svelte.ts; that module cannot be bundled here (its circular
+ * import with the engine, see background-shed-jobs.test.mjs), so the rig
+ * installs the same shape over the real ScopedCommandScheduler.
+ *
  * The STEM-39 file keeps its inline copy for now: it belongs to PR #4756, which
  * this work is stacked on, and moving its scaffolding from under an open pull
  * request would only manufacture a conflict.
@@ -22,6 +32,7 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
+import { loadVerifiedJsonCapture } from './fixtures/verified-capture.mjs';
 import { importBundledSource } from './import-bundled-source.mjs';
 import { bundleTypeScriptModule } from './load-typescript.mjs';
 
@@ -40,6 +51,13 @@ const STRETCH_STUB = fileURLToPath(
 	new URL('./fixtures/stretch-deck-processor-recording-stub.ts', import.meta.url)
 );
 const HOT_CUE_SLOTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+/** Real /rb-meta and /beatgrid-fallback response bytes, hash-checked before use. */
+const CAPTURED = loadVerifiedJsonCapture(
+	new URL('./fixtures/beatgrid-fallback-unmapped-captured.json', import.meta.url),
+	new URL('./fixtures/beatgrid-fallback-unmapped-captured.manifest.json', import.meta.url)
+);
+/** The grid a gridless track's fallback upgrade lands: the captured analysis beats. */
+export const FALLBACK_BEATS = CAPTURED.beatgrid_fallback_ok.body.beatgrid.beats;
 
 /** Bundle the engine once per test file; every test imports it afresh. */
 export function bundleRealEngine() {
@@ -96,8 +114,8 @@ function makeGate(initiallyHeld) {
 	};
 }
 
-/** A track with a real grid, so the deferred beatgrid upgrade has nothing to
- * fetch and the only background work after `load` is the stem upgrade. */
+/** A track with a real grid (the default), so the deferred beatgrid upgrade has
+ * nothing to fetch and the only background work after `load` is the stem upgrade. */
 function griddedAnlz(sid) {
 	const bands = { length: 0, low: [], mid: [], high: [] };
 	const beats = Array.from({ length: TRACK_SECONDS * 2 }, (_unused, i) => ({ n: (i % 4) + 1, bpm: 120, t: i * 0.5 }));
@@ -113,6 +131,28 @@ function griddedAnlz(sid) {
 		local_waveform: { status: 'decoded' }
 	};
 }
+
+/** What /anlz serves a locally imported file (apps.analysis_waveform
+ * local_anlz_payload over rb_vendor.empty_anlz_payload): an empty rekordbox
+ * grid and a `local_waveform` block. No peaks are invented: the decode is
+ * reported as not run. */
+function gridlessAnlz(sid) {
+	const bands = { length: 0, low: [], mid: [], high: [] };
+	return {
+		stable_id: sid,
+		points: 38_400,
+		waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
+		beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] },
+		beatgrid_source: 'rekordbox',
+		cues: [],
+		phrases: [],
+		vocals: { status: 'not_analyzed' },
+		local_waveform: { status: 'not_decoded', reason: 'not decoded (test)', preview_b64: null, preview_max: null, retryable: false }
+	};
+}
+
+/** A captured body re-addressed to `sid`: only the id differs from the real bytes. */
+const capturedFor = (capture, sid) => json({ ...capture.body, stable_id: sid }, capture.status);
 
 function stemManifest(sid) {
 	return {
@@ -136,15 +176,19 @@ function stemManifest(sid) {
 /**
  * Stand up the platform and import a fresh copy of the engine.
  *
- * `tracks` maps a 40-hex stable id to `{ title, audio, listed_duration_ms }`.
+ * `tracks` maps a 40-hex stable id to `{ title, audio, listed_duration_ms, grid, fallback }`.
  * `audio` is `'ok'` (default) or `'fail'` (the audio endpoint answers 500).
+ * `grid` is `'real'` (default) or `'none'` (a locally imported file: /anlz has
+ * no grid, so `load` starts the beatgrid fallback upgrade). `fallback` is what
+ * /beatgrid-fallback answers for it: `'ok'` (default, the captured analysis
+ * grid) or `'missing'` (the captured 404: no analysis yet).
  * `listed_duration_ms` is the library's listed length, when a test needs it to
  * differ from the 4 s that is actually decoded. Every track has a ready demucs4
  * stem bundle whose four part downloads are HELD until the test calls
  * `stemParts(sid).release()`, so the stem decode finishes on cue.
  *
  * @param {string} bundleText from bundleRealEngine()
- * @param {{ tracks: Record<string, { title: string, audio?: 'ok' | 'fail', listed_duration_ms?: number }> }} options
+ * @param {{ tracks: Record<string, { title: string, audio?: 'ok' | 'fail', listed_duration_ms?: number, grid?: 'real' | 'none', fallback?: 'ok' | 'missing' }> }} options
  */
 export async function startRealEngine(bundleText, { tracks }) {
 	/** Render-clock seconds; the test is the only thing that advances it. */
@@ -153,10 +197,21 @@ export async function startRealEngine(bundleText, { tracks }) {
 	let frameQueue = [];
 	let nextFrameId = 1;
 	const originalFetch = globalThis.fetch;
+	/** Dispose gates failNextSwap() holds, released by stop() if a test did not. */
+	const swapDisposeGates = [];
 	const perTrack = new Map(
 		Object.entries(tracks).map(([sid, track]) => [
 			sid,
-			{ ...track, audioGate: makeGate(false), stemGate: makeGate(true), stemPartsRequested: 0, audioRequested: 0 }
+			{
+				...track,
+				audioGate: makeGate(false),
+				stemGate: makeGate(true),
+				fallbackGate: makeGate(false),
+				stemPartsRequested: 0,
+				audioRequested: 0,
+				rbMetaRequested: 0,
+				fallbackRequested: 0
+			}
 		])
 	);
 	const trackOf = (sid) => {
@@ -292,7 +347,17 @@ export async function startRealEngine(bundleText, { tracks }) {
 		const sid = match[1];
 		const rest = match[2] ?? '';
 		const track = trackOf(sid);
-		if (rest === '/anlz') return json(griddedAnlz(sid));
+		if (rest === '/anlz') return json(track.grid === 'none' ? gridlessAnlz(sid) : griddedAnlz(sid));
+		if (rest === '/rb-meta') {
+			track.rbMetaRequested += 1;
+			return capturedFor(CAPTURED.rb_meta_ok, sid);
+		}
+		if (rest === '/beatgrid-fallback') {
+			track.fallbackRequested += 1;
+			await track.fallbackGate.wait();
+			if (track.fallback === 'missing') return json(CAPTURED.beatgrid_fallback_not_found.body, CAPTURED.beatgrid_fallback_not_found.status);
+			return capturedFor(CAPTURED.beatgrid_fallback_ok, sid);
+		}
 		if (rest === '/hot-cues') {
 			return json(HOT_CUE_SLOTS.map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
 		}
@@ -319,6 +384,12 @@ export async function startRealEngine(bundleText, { tracks }) {
 
 	const entry = await importBundledSource(bundleText, 'real-engine-entry');
 	entry.resetPerfEventLog();
+	// performance-ipc.svelte.ts's runner, without its status counters: claim the
+	// deck, and widen to every deck plus 'sync' when a settlement asks to.
+	const scheduler = new entry.ScopedCommandScheduler();
+	entry.installScopedSyncRunner((deck, run) =>
+		scheduler.run([deck], () => run((work) => scheduler.run([...entry.DECK_IDS, 'sync'], work)))
+	);
 
 	/** Let every promise continuation and zero-delay timer queued so far run. */
 	async function settle(turns = 4) {
@@ -367,6 +438,22 @@ export async function startRealEngine(bundleText, { tracks }) {
 		},
 		/** Every processor the engine created, in creation order. */
 		processors: () => globalThis.__stretchStubProcessors,
+		/** Make the NEXT processor the engine creates throw at its swap's connect,
+		 * and hold its dispose until released: a load whose swap fails on a deck
+		 * that is not playing, with the window that failure leaves open held. */
+		failNextSwap() {
+			const registry = globalThis.__stretchStubProcessors;
+			const disposeGate = makeGate(true);
+			swapDisposeGates.push(disposeGate);
+			let disposing = false;
+			registry.push = (record) => {
+				delete registry.push; // back to Array.prototype.push for every later processor
+				record.connectError = new Error('connect failed (test)');
+				record.beforeDispose = () => ((disposing = true), disposeGate.wait());
+				return registry.push(record);
+			};
+			return { disposing: () => disposing, releaseDispose: () => disposeGate.release() };
+		},
 		/** Hold or release a track's audio download. Open unless held. */
 		audio: (sid) => ({
 			hold: () => trackOf(sid).audioGate.hold(),
@@ -377,6 +464,13 @@ export async function startRealEngine(bundleText, { tracks }) {
 		stemParts: (sid) => ({
 			release: () => trackOf(sid).stemGate.release(),
 			requested: () => trackOf(sid).stemPartsRequested
+		}),
+		/** A gridless track's beatgrid upgrade requests. The fallback is open unless held. */
+		beatgridFallback: (sid) => ({
+			hold: () => trackOf(sid).fallbackGate.hold(),
+			release: () => trackOf(sid).fallbackGate.release(),
+			requested: () => trackOf(sid).fallbackRequested,
+			rbMetaRequested: () => trackOf(sid).rbMetaRequested
 		}),
 		ring,
 		/** The row the stem upgrade writes when it finishes: one per upgrade, held or not. */
@@ -389,7 +483,9 @@ export async function startRealEngine(bundleText, { tracks }) {
 			for (const track of perTrack.values()) {
 				track.audioGate.release();
 				track.stemGate.release();
+				track.fallbackGate.release();
 			}
+			for (const gate of swapDisposeGates) gate.release();
 			await entry.engine.dispose();
 			globalThis.fetch = originalFetch;
 		}

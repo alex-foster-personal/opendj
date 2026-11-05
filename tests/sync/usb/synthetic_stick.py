@@ -16,6 +16,7 @@ that sorts by the wrong key reorders a list here and a test goes red.
 Track 10's artwork is named by the export but its files are not written (the
 reference stick has 42 such rows).
 """
+
 from __future__ import annotations
 
 import sys

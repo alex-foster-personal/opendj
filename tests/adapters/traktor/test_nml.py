@@ -61,9 +61,9 @@ def test_roundtrip_is_byte_stable(tmp_path) -> None:
 def test_unknown_attributes_preserved(tmp_path) -> None:
     raw = (
         b"<?xml version='1.0' encoding='utf-8'?>\n"
-        b"<NML VERSION=\"20\">\n"
-        b"  <HEAD><SOMETHING_UNKNOWN FOO=\"BAR\"></SOMETHING_UNKNOWN></HEAD>\n"
-        b"  <COLLECTION ENTRIES=\"0\"></COLLECTION>\n"
+        b'<NML VERSION="20">\n'
+        b'  <HEAD><SOMETHING_UNKNOWN FOO="BAR"></SOMETHING_UNKNOWN></HEAD>\n'
+        b'  <COLLECTION ENTRIES="0"></COLLECTION>\n'
         b"</NML>\n"
     )
     doc = NMLDocument.read(raw)

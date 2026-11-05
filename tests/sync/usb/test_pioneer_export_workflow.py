@@ -47,9 +47,7 @@ def _fixture_db() -> Path:
     the platform-refusal tests, and marker validation need no fixture and
     must stay collectible either way.
     """
-    return (
-        resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
-    )
+    return resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
 
 
 def _identity(target: Path, *, uuid: str = "USB-205") -> workflow.TargetIdentity:
@@ -72,9 +70,7 @@ def _require_writer_runtime() -> None:
         )
 
 
-def _promote_exclusively_on_test_filesystem(
-    source: Path, destination: Path
-) -> None:
+def _promote_exclusively_on_test_filesystem(source: Path, destination: Path) -> None:
     """Exercise real no-replace promotion without claiming host USB support."""
     os.link(source, destination)
     source.unlink()
@@ -82,9 +78,7 @@ def _promote_exclusively_on_test_filesystem(
 
 @pytest.fixture
 def platform_neutral_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        workflow, "_rename_exclusive", _promote_exclusively_on_test_filesystem
-    )
+    monkeypatch.setattr(workflow, "_rename_exclusive", _promote_exclusively_on_test_filesystem)
 
 
 def test_onelibrary_dependency_contract_is_declared_for_ci() -> None:
@@ -109,8 +103,7 @@ def test_onelibrary_dependency_contract_is_declared_for_ci() -> None:
     assert "rbox==0.1.7" in optional["dev"]
     requirements = (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
     assert any(r.startswith("sqlcipher3-wheels") for r in requirements), (
-        "requirements.txt must declare sqlcipher3-wheels so the Linux CI job "
-        "installs the OneLibrary runtime."
+        "requirements.txt must declare sqlcipher3-wheels so the Linux CI job installs the OneLibrary runtime."
     )
     assert "rbox==0.1.7" in requirements
 
@@ -134,9 +127,7 @@ def disposable_target(tmp_path: Path) -> Path:
     return target
 
 
-def test_plan_is_deterministic_and_serializable(
-    disposable_target: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_plan_is_deterministic_and_serializable(disposable_target: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -156,9 +147,7 @@ def test_plan_is_deterministic_and_serializable(
     assert workflow.ExportPlan.from_dict(first.to_dict()) == first
     assert first.plan_id == workflow.compute_plan_id(first.to_dict())
     assert first.scope == "onelibrary_overlay_only"
-    assert workflow.OUTPUT_RELATIVE_PATH.as_posix() == (
-        "PIONEER/rekordbox/exportLibrary.db"
-    )
+    assert workflow.OUTPUT_RELATIVE_PATH.as_posix() == ("PIONEER/rekordbox/exportLibrary.db")
     assert not (disposable_target / "PIONEER").exists()
 
 
@@ -175,9 +164,7 @@ def test_overlay_output_path_rejected_by_stick_value_verifier(tmp_path: Path) ->
     assert report.tracks_on_stick == 0
 
 
-def test_real_inspector_refuses_non_macos_without_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_real_inspector_refuses_non_macos_without_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "ordinary-directory"
     target.mkdir()
     monkeypatch.setattr(workflow.sys, "platform", "linux")
@@ -300,9 +287,7 @@ def test_apply_and_readback_real_onelibrary_round_trip(
         template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Issue 205", track_ids=(1, 2, 3))],
-        track_updates=[
-            TrackUpdate(id=1, title="Issue 205 title", rating=5, bpmx100=12600)
-        ],
+        track_updates=[TrackUpdate(id=1, title="Issue 205 title", rating=5, bpmx100=12600)],
     )
 
     receipt = workflow.apply_export(plan, confirmation=plan.plan_id)
@@ -318,9 +303,7 @@ def test_apply_and_readback_real_onelibrary_round_trip(
     assert report.track_updates[0]["title"] == "Issue 205 title"
 
 
-def test_apply_requires_exact_confirmation(
-    disposable_target: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_apply_requires_exact_confirmation(disposable_target: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -338,9 +321,7 @@ def test_apply_requires_exact_confirmation(
     assert not (disposable_target / "PIONEER").exists()
 
 
-def test_plan_rejects_tampered_serialized_payload(
-    disposable_target: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_plan_rejects_tampered_serialized_payload(disposable_target: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -453,9 +434,7 @@ def test_promotion_preserves_competing_part_file(
 ) -> None:
     local_output = tmp_path / "local.db"
     local_output.write_bytes(b"transaction")
-    target_output = (
-        tmp_path / "target" / "PIONEER" / "rekordbox" / "exportLibrary.db"
-    )
+    target_output = tmp_path / "target" / "PIONEER" / "rekordbox" / "exportLibrary.db"
     real_open = Path.open
 
     def collide_on_part(path: Path, *args: object, **kwargs: object):

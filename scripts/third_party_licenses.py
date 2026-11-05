@@ -28,7 +28,7 @@ WHERE EACH ECOSYSTEM'S INVENTORY COMES FROM (the shipped artifact, not the decla
 
 Industry-standard equivalents (pip-licenses, license-checker, cargo-about) were considered; this stays
 one stdlib-only module because the build already stages every ecosystem and a second tool per ecosystem
-would be three more things to pin. See docs/third-party-licenses.md.
+would be three more things to pin. See (private path).
 
 Requirements:
 
@@ -87,15 +87,22 @@ FRONTEND_RELATIVE = Path("apps/webui/frontend")
 # vite bundles the framework runtime out of devDependencies, so the
 # production-only closure would under-attribute the shipped SPA.
 JS_BUNDLED_FROM_DEV: tuple[str, ...] = ("svelte", "@sveltejs/kit")
-# (crate dir, extra cargo args): the three Rust artifacts a dmg carries.
+# (crate dir, extra cargo args): the Rust artifacts a dmg carries. The
+# CoreAudio helper crate is listed on its own (its own Cargo.lock is what
+# scripts/payload_output_probe.py builds into payload/bin/odj-output-probe),
+# so its dependencies stay attributed once the Tauri shell, which also links
+# it, is deleted. Shared crates dedupe on (name, version).
 RUST_CRATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("apps/desktop/src-tauri", ()),
+    ("apps/desktop/native/odj-output-probe", ()),
     ("apps/audio-engine", ("--features", "device")),
     ("apps/webui/server/native/waveform", ()),
 )
 RUST_TARGET_TRIPLE = "aarch64-apple-darwin"
 
-NON_TEXT_SUFFIXES: frozenset[str] = frozenset({".py", ".pyc", ".pyi", ".so", ".dylib", ".dll", ".h", ".c", ".js", ".json"})
+NON_TEXT_SUFFIXES: frozenset[str] = frozenset(
+    {".py", ".pyc", ".pyi", ".so", ".dylib", ".dll", ".h", ".c", ".js", ".json"}
+)
 
 #: A real inventory renders hundreds of license texts; a stub cannot pass.
 MIN_LICENSES_FILE_CHARS = 100_000
@@ -108,6 +115,7 @@ FIRST_PARTY_NAMES: frozenset[str] = frozenset(
         "music-dj-tools-waveform-native",
         "music_dj_tools_waveform_native",
         "odj-audio",
+        "odj-output-probe",
         "open-dj-desktop",
         "open-dj",
     }
@@ -154,7 +162,9 @@ def python_components(payload_dir: Path) -> list[Component]:
     components: dict[tuple[str, str], Component] = {}
     sites = [payload_dir / relative for relative in PYTHON_SITES_RELATIVE]
     if missing := [site for site in sites if not site.is_dir()]:
-        raise LicenseInventoryError(f"Python site(s) missing under {payload_dir}: {missing}; expected all of {PYTHON_SITES_RELATIVE}")
+        raise LicenseInventoryError(
+            f"Python site(s) missing under {payload_dir}: {missing}; expected all of {PYTHON_SITES_RELATIVE}"
+        )
     for site in sites:
         site_distributions = list(importlib_metadata.distributions(path=[str(site)]))
         if not site_distributions:
@@ -182,8 +192,13 @@ def python_components(payload_dir: Path) -> list[Component]:
             )
             for path, text in (t for t in texts if "/" in t[0]):  # vendored: not the wrapper's license
                 components[(f"{key[0]}:{path}", dist.version)] = Component(
-                    "python", f"{name} vendored {path}", dist.version, "", texts=[(path, text)],
-                    note=f"Vendored inside {name}; its license is not identified from metadata, read the text.")
+                    "python",
+                    f"{name} vendored {path}",
+                    dist.version,
+                    "",
+                    texts=[(path, text)],
+                    note=f"Vendored inside {name}; its license is not identified from metadata, read the text.",
+                )
     if not components:
         raise LicenseInventoryError(f"no dist-info found in {sites}")
     return sorted(components.values(), key=lambda c: c.name.lower())
@@ -242,9 +257,7 @@ def _pnpm_bin() -> str:
 
 
 _INDEX_ERROR = "ERR_PNPM_MISSING_PACKAGE_INDEX_FILE"
-_INDEX_PACKAGE = re.compile(
-    r"ERR_PNPM_MISSING_PACKAGE_INDEX_FILE\b.*?((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)@"
-)
+_INDEX_PACKAGE = re.compile(r"ERR_PNPM_MISSING_PACKAGE_INDEX_FILE\b.*?((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)@")
 
 
 def _pnpm_failure_detail(listing: subprocess.CompletedProcess[str]) -> str:
@@ -257,7 +270,10 @@ def _pnpm_failure_detail(listing: subprocess.CompletedProcess[str]) -> str:
 def _pnpm_licenses_list(frontend_dir: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [_pnpm_bin(), "licenses", "list", "--json", "--long"],
-        cwd=frontend_dir, capture_output=True, text=True, check=False,
+        cwd=frontend_dir,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -273,7 +289,10 @@ def _repair_missing_package_index(frontend_dir: Path, detail: str) -> None:
         shutil.rmtree(modules)
     install = subprocess.run(
         [_pnpm_bin(), "install", "--frozen-lockfile"],
-        cwd=frontend_dir, capture_output=True, text=True, check=False,
+        cwd=frontend_dir,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if install.returncode != 0:
         raise LicenseInventoryError(
@@ -323,9 +342,20 @@ def rust_components(repo_root: Path) -> list[Component]:
     for crate_relative, extra_args in RUST_CRATES:
         crate = repo_root / crate_relative
         result = subprocess.run(
-            [cargo_bin, "metadata", "--locked", "--format-version", "1",
-             "--filter-platform", RUST_TARGET_TRIPLE, *extra_args],
-            cwd=crate, capture_output=True, text=True, check=False,
+            [
+                cargo_bin,
+                "metadata",
+                "--locked",
+                "--format-version",
+                "1",
+                "--filter-platform",
+                RUST_TARGET_TRIPLE,
+                *extra_args,
+            ],
+            cwd=crate,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise LicenseInventoryError(f"cargo metadata failed in {crate}:\n{result.stderr}")
@@ -358,8 +388,11 @@ def rust_components(repo_root: Path) -> list[Component]:
                 if declared.is_file() and declared.name not in {name for name, _ in texts}:
                     texts.append((declared.name, _read_text(declared)))
             components[key] = Component(
-                "rust", package["name"], package["version"],
-                package.get("license") or "", package.get("homepage") or package.get("repository") or "",
+                "rust",
+                package["name"],
+                package["version"],
+                package.get("license") or "",
+                package.get("homepage") or package.get("repository") or "",
                 texts,
             )
     return sorted(components.values(), key=lambda c: c.name.lower())
@@ -489,8 +522,7 @@ def unreviewed_textless_components(components: list[Component]) -> list[Componen
         (
             c
             for c in components
-            if not any(text.strip() for _, text in c.license_texts)
-            and (c.ecosystem, c.name) not in KNOWN_TEXTLESS
+            if not any(text.strip() for _, text in c.license_texts) and (c.ecosystem, c.name) not in KNOWN_TEXTLESS
         ),
         key=lambda c: (c.ecosystem, c.name.lower()),
     )
@@ -521,7 +553,9 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     return {
         "file": LICENSES_FILE_NAME,
         "components": len(components),
-        "by_ecosystem": {e: sum(1 for c in components if c.ecosystem == e) for e in sorted({c.ecosystem for c in components})},
+        "by_ecosystem": {
+            e: sum(1 for c in components if c.ecosystem == e) for e in sorted({c.ecosystem for c in components})
+        },
         "flagged": sum(1 for c in components if c.category in FLAGGED),
         "sha256": hashlib.sha256((payload_dir / LICENSES_FILE_NAME).read_bytes()).hexdigest(),
     }
@@ -529,7 +563,9 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--payload", type=Path, required=True, help="a staged payload dir (or one with pylib/, runtime/, models/)")
+    parser.add_argument(
+        "--payload", type=Path, required=True, help="a staged payload dir (or one with pylib/, runtime/, models/)"
+    )
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--flags", action="store_true", help="print the copyleft/non-commercial/unknown table and exit")
     args = parser.parse_args(argv)

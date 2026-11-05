@@ -136,13 +136,9 @@ def test_a_version_respelled_to_the_same_pep_440_release_is_clean(tmp_path: Path
     """`uv lock --check` accepts `0.1.0` respelled `0.1` or `00.1.0.0` (one PEP 440
     version) and rejects `0.1.0rc1` (measured uv 0.8.17, Codex P2 on #3763, round 24)."""
     for spelling in ("0.1", "00.1.0.0", "0.1.0.0"):
-        code, message = _run(
-            tmp_path, PYPROJECT.replace('version = "0.1.0"', f'version = "{spelling}"'), LOCK
-        )
+        code, message = _run(tmp_path, PYPROJECT.replace('version = "0.1.0"', f'version = "{spelling}"'), LOCK)
         assert (code, message) == (EXIT_OK, message), spelling
-    code, message = _run(
-        tmp_path, PYPROJECT.replace('version = "0.1.0"', 'version = "0.1.0rc1"'), LOCK
-    )
+    code, message = _run(tmp_path, PYPROJECT.replace('version = "0.1.0"', 'version = "0.1.0rc1"'), LOCK)
     assert code == EXIT_STALE
     assert "[project] version: pyproject.toml '0.1.0rc1', uv.lock root '0.1.0'" in message
 

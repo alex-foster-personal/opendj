@@ -8,6 +8,7 @@ pyrekordbox's ORM via duck-typed fake) and
 Target: >= 80% coverage on both wrappers + the stable_id resolver
 helpers. Live vendor DBs are never touched.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -76,8 +77,7 @@ def state_conn() -> sqlite3.Connection:
         ("sid-3", "djay", "dj-uuid-300"),
     ]
     conn.executemany(
-        "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) VALUES (?, ?, ?)",
         rows,
     )
     yield conn
@@ -136,8 +136,7 @@ class TestRBResolve:
     def test_ignores_other_vendors(self, state_conn) -> None:
         # No rekordbox row for sid-foo even though djay has the sid.
         state_conn.execute(
-            "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id) VALUES (?, ?, ?)",
             ("sid-foo", "djay", "dj-foo"),
         )
         assert _resolve_rb_id(state_conn, "sid-foo") is None
@@ -162,9 +161,7 @@ class TestRBPlaylistWriter:
         ]
         assert db.commits == 1
 
-    def test_create_playlist_raises_on_missing_mapping(
-        self, state_conn
-    ) -> None:
+    def test_create_playlist_raises_on_missing_mapping(self, state_conn) -> None:
         db = _FakeRBDatabase()
         w = RBPlaylistWriter(db=db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="no ContentID mapping"):
@@ -199,13 +196,9 @@ class TestRBPlaylistWriter:
         # Either factory raising returns None.
         assert build_rb_writer(bad_db, bad_state) is None
 
-    def test_build_rb_writer_succeeds_with_factories(
-        self, state_conn
-    ) -> None:
+    def test_build_rb_writer_succeeds_with_factories(self, state_conn) -> None:
         db = _FakeRBDatabase()
-        w = build_rb_writer(
-            db_factory=lambda: db, state_conn_factory=lambda: state_conn
-        )
+        w = build_rb_writer(db_factory=lambda: db, state_conn_factory=lambda: state_conn)
         assert w is not None
         assert isinstance(w, RBPlaylistWriter)
         # Default is non-live so the pgrep + backup rails are off.
@@ -226,7 +219,10 @@ class TestRBPlaylistWriterLiveRails:
     """Phase 1 six-rail coverage for ``RBPlaylistWriter`` live writes."""
 
     def _make_writer(
-        self, state_conn, tmp_path: Path, db: _FakeRBDatabase,
+        self,
+        state_conn,
+        tmp_path: Path,
+        db: _FakeRBDatabase,
     ) -> RBPlaylistWriter:
         # Seed a non-empty master.db so the backup helper can copy it.
         live_db = tmp_path / "master.db"
@@ -241,12 +237,16 @@ class TestRBPlaylistWriterLiveRails:
         )
 
     def test_create_playlist_refuses_when_rekordbox_running(
-        self, state_conn, tmp_path, monkeypatch,
+        self,
+        state_conn,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         db = _FakeRBDatabase()
         w = self._make_writer(state_conn, tmp_path, db)
         monkeypatch.setattr(
-            "apps.smartlists.rb_writer._rekordbox_running", lambda: True,
+            "apps.smartlists.rb_writer._rekordbox_running",
+            lambda: True,
         )
         with pytest.raises(RuntimeError, match="Rekordbox appears to be running"):
             w.create_playlist("[SL] Blocked", ["sid-1"])
@@ -255,14 +255,18 @@ class TestRBPlaylistWriterLiveRails:
         assert db.create_calls == []
 
     def test_apply_diff_refuses_when_rekordbox_running(
-        self, state_conn, tmp_path, monkeypatch,
+        self,
+        state_conn,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         pl = _FakePlaylist("[SL] Dance")
         pl.members = ["rb-100"]
         db = _FakeRBDatabase([pl])
         w = self._make_writer(state_conn, tmp_path, db)
         monkeypatch.setattr(
-            "apps.smartlists.rb_writer._rekordbox_running", lambda: True,
+            "apps.smartlists.rb_writer._rekordbox_running",
+            lambda: True,
         )
         with pytest.raises(RuntimeError, match="Rekordbox appears to be running"):
             w.apply_diff("[SL] Dance", added=["sid-2"], removed=[])
@@ -270,12 +274,16 @@ class TestRBPlaylistWriterLiveRails:
         assert db.add_calls == []
 
     def test_create_playlist_takes_backup_once_then_reuses(
-        self, state_conn, tmp_path, monkeypatch,
+        self,
+        state_conn,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         db = _FakeRBDatabase()
         w = self._make_writer(state_conn, tmp_path, db)
         monkeypatch.setattr(
-            "apps.smartlists.rb_writer._rekordbox_running", lambda: False,
+            "apps.smartlists.rb_writer._rekordbox_running",
+            lambda: False,
         )
         w.create_playlist("[SL] First", ["sid-1"])
         backup_dir = w.backup_dir
@@ -289,7 +297,10 @@ class TestRBPlaylistWriterLiveRails:
         assert db.commits == 2
 
     def test_live_false_bypasses_rails(
-        self, state_conn, tmp_path, monkeypatch,
+        self,
+        state_conn,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         """Unit tests that don't care about rails see no change."""
         db = _FakeRBDatabase()
@@ -364,17 +375,14 @@ def djay_db(tmp_path: Path) -> Path:
         ("dj-uuid-300", b"blob-300"),
     ]
     con.executemany(
-        "INSERT INTO database2(collection, key, data) VALUES "
-        "('mediaItemUserData', ?, ?)",
+        "INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', ?, ?)",
         user_rows,
     )
     con.close()
     return db_path
 
 
-def _seed_existing_playlist(
-    djay_db: Path, name: str, member_uuids: list[str]
-) -> str:
+def _seed_existing_playlist(djay_db: Path, name: str, member_uuids: list[str]) -> str:
     """Seed a playlist row + page(s). Returns the playlist uuid."""
     import uuid as _uuid
 
@@ -386,15 +394,14 @@ def _seed_existing_playlist(
     con = sqlite3.connect(str(djay_db), isolation_level=None)
     try:
         con.execute(
-            "INSERT INTO database2(collection, key, data) "
-            "VALUES ('mediaItemPlaylists', ?, ?)",
+            "INSERT INTO database2(collection, key, data) VALUES ('mediaItemPlaylists', ?, ?)",
             (uuid, blob),
         )
         rowids = resolve_userdata_rowids(con, member_uuids)
         page_key = ptsaf.new_page_key()
         page_data = ptsaf.build_page_data(rowids)
         con.execute(
-            'INSERT INTO view_mediaItemPlaylistView_page '
+            "INSERT INTO view_mediaItemPlaylistView_page "
             '(pageKey, "group", prevPageKey, count, data) '
             "VALUES (?, ?, NULL, ?, ?)",
             (page_key, uuid, len(rowids), page_data),
@@ -414,9 +421,7 @@ class TestDjayResolve:
 
 class TestFindDjayPlaylist:
     def test_finds_by_name_in_blob(self, djay_db) -> None:
-        uuid = _seed_existing_playlist(
-            djay_db, "[SL] Hello", ["dj-uuid-100", "dj-uuid-200"]
-        )
+        uuid = _seed_existing_playlist(djay_db, "[SL] Hello", ["dj-uuid-100", "dj-uuid-200"])
         con = sqlite3.connect(str(djay_db), isolation_level=None)
         try:
             found = _find_djay_playlist(con, "[SL] Hello")
@@ -442,39 +447,26 @@ class TestDjayPlaylistWriter:
         assert w.playlist_exists("[SL] Nope") is False
         assert w.vendor == "djay"
 
-    def test_create_playlist_end_to_end(
-        self, djay_db, state_conn
-    ) -> None:
+    def test_create_playlist_end_to_end(self, djay_db, state_conn) -> None:
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         w.create_playlist("[SL] Fresh", ["sid-1", "sid-2"])
         # The playlist row + page row should now exist.
         con = sqlite3.connect(str(djay_db))
         try:
-            pl_rows = con.execute(
-                "SELECT key FROM database2 "
-                "WHERE collection = 'mediaItemPlaylists'"
-            ).fetchall()
-            pages = con.execute(
-                "SELECT data FROM view_mediaItemPlaylistView_page"
-            ).fetchall()
+            pl_rows = con.execute("SELECT key FROM database2 WHERE collection = 'mediaItemPlaylists'").fetchall()
+            pages = con.execute("SELECT data FROM view_mediaItemPlaylistView_page").fetchall()
         finally:
             con.close()
         assert len(pl_rows) == 1
         assert len(pages) == 1
 
-    def test_create_raises_on_missing_mapping(
-        self, djay_db, state_conn
-    ) -> None:
+    def test_create_raises_on_missing_mapping(self, djay_db, state_conn) -> None:
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="no djay_uuid"):
             w.create_playlist("[SL] Bad", ["sid-1", "unknown-sid"])
 
-    def test_apply_diff_updates_membership(
-        self, djay_db, state_conn
-    ) -> None:
-        _seed_existing_playlist(
-            djay_db, "[SL] Mix", ["dj-uuid-100", "dj-uuid-200"]
-        )
+    def test_apply_diff_updates_membership(self, djay_db, state_conn) -> None:
+        _seed_existing_playlist(djay_db, "[SL] Mix", ["dj-uuid-100", "dj-uuid-200"])
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         w.apply_diff("[SL] Mix", added=["sid-3"], removed=["sid-1"])
         # After the diff: removed sid-1 (dj-uuid-100), kept sid-2, added
@@ -485,10 +477,8 @@ class TestDjayPlaylistWriter:
             assert found is not None
             _uuid, rowids = found
             uuid_by_row = {
-                int(r): k for r, k in con.execute(
-                    "SELECT rowid, key FROM database2 "
-                    "WHERE collection = 'mediaItemUserData'"
-                )
+                int(r): k
+                for r, k in con.execute("SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'")
             }
             actual = [uuid_by_row.get(r) for r in rowids]
         finally:
@@ -497,24 +487,16 @@ class TestDjayPlaylistWriter:
         assert "dj-uuid-200" in actual
         assert "dj-uuid-300" in actual
 
-    def test_apply_diff_raises_if_missing(
-        self, djay_db, state_conn
-    ) -> None:
+    def test_apply_diff_raises_if_missing(self, djay_db, state_conn) -> None:
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="not found"):
             w.apply_diff("[SL] Ghost", added=["sid-1"], removed=[])
 
-    def test_build_djay_writer_returns_none_without_db(
-        self, tmp_path, state_conn
-    ) -> None:
+    def test_build_djay_writer_returns_none_without_db(self, tmp_path, state_conn) -> None:
         # Path that doesn't exist -> None.
-        assert build_djay_writer(
-            tmp_path / "no-such.db", state_conn=state_conn
-        ) is None
+        assert build_djay_writer(tmp_path / "no-such.db", state_conn=state_conn) is None
 
-    def test_build_djay_writer_returns_writer(
-        self, djay_db, state_conn
-    ) -> None:
+    def test_build_djay_writer_returns_writer(self, djay_db, state_conn) -> None:
         w = build_djay_writer(djay_db, state_conn=state_conn)
         assert w is not None
         assert isinstance(w, DjayPlaylistWriter)
@@ -545,21 +527,19 @@ class TestRefreshBuildWriters:
             raise RuntimeError("nope")
 
         monkeypatch.setattr(
-            "apps.smartlists.rb_writer.build_rb_writer", boom,
+            "apps.smartlists.rb_writer.build_rb_writer",
+            boom,
         )
         monkeypatch.setattr(
-            "apps.smartlists.djay_writer.build_djay_writer", boom,
+            "apps.smartlists.djay_writer.build_djay_writer",
+            boom,
         )
         assert refresh._build_writers() == []
 
-    def test_build_writers_keeps_live_writers(
-        self, monkeypatch, djay_db, state_conn
-    ) -> None:
+    def test_build_writers_keeps_live_writers(self, monkeypatch, djay_db, state_conn) -> None:
         from apps.smartlists import refresh
 
-        dj_writer = DjayPlaylistWriter(
-            djay_db_path=djay_db, state_conn=state_conn
-        )
+        dj_writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         monkeypatch.setattr(
             "apps.smartlists.rb_writer.build_rb_writer",
             lambda **kw: None,
@@ -571,9 +551,7 @@ class TestRefreshBuildWriters:
         writers = refresh._build_writers()
         assert writers == [dj_writer]
 
-    def test_build_writers_forwards_live_to_rb_factory(
-        self, monkeypatch
-    ) -> None:
+    def test_build_writers_forwards_live_to_rb_factory(self, monkeypatch) -> None:
         """``_build_writers(live=True)`` must propagate to the RB factory."""
         from apps.smartlists import refresh
 
@@ -584,7 +562,8 @@ class TestRefreshBuildWriters:
             return None
 
         monkeypatch.setattr(
-            "apps.smartlists.rb_writer.build_rb_writer", fake_build,
+            "apps.smartlists.rb_writer.build_rb_writer",
+            fake_build,
         )
         monkeypatch.setattr(
             "apps.smartlists.djay_writer.build_djay_writer",
@@ -603,7 +582,7 @@ class TestRefreshBuildWriters:
 #   rail 3: typed confirmation (flag_ok + prompt helper)
 #   rail 4: dry-run default
 #   rail 5: post-write verify (verifier callback)
-#   rail 6: reversal script emitted into data/sync/reversal/<ts>
+#   rail 6: reversal script emitted into (private path)/<ts>
 # All tests use a fixture DB under tmp_path -- the live master.db /
 # MediaLibrary.db is never touched.
 
@@ -635,24 +614,36 @@ class TestRequireTypedConfirmPhrase:
     """Rail 3: typed confirmation prompt helper."""
 
     def test_accepts_exact_phrase(self) -> None:
-        assert require_typed_confirm_phrase(
-            input_fn=lambda _prompt: DEFAULT_CONFIRM_PHRASE,
-        ) is True
+        assert (
+            require_typed_confirm_phrase(
+                input_fn=lambda _prompt: DEFAULT_CONFIRM_PHRASE,
+            )
+            is True
+        )
 
     def test_rejects_wrong_phrase(self) -> None:
-        assert require_typed_confirm_phrase(
-            input_fn=lambda _prompt: "yes",
-        ) is False
+        assert (
+            require_typed_confirm_phrase(
+                input_fn=lambda _prompt: "yes",
+            )
+            is False
+        )
 
     def test_rejects_case_mismatch(self) -> None:
-        assert require_typed_confirm_phrase(
-            input_fn=lambda _prompt: "apply smartlist",
-        ) is False
+        assert (
+            require_typed_confirm_phrase(
+                input_fn=lambda _prompt: "apply smartlist",
+            )
+            is False
+        )
 
     def test_strips_trailing_whitespace(self) -> None:
-        assert require_typed_confirm_phrase(
-            input_fn=lambda _prompt: DEFAULT_CONFIRM_PHRASE + "\n",
-        ) is True
+        assert (
+            require_typed_confirm_phrase(
+                input_fn=lambda _prompt: DEFAULT_CONFIRM_PHRASE + "\n",
+            )
+            is True
+        )
 
     def test_returns_false_on_eof(self) -> None:
         def raise_eof(_prompt: str) -> str:
@@ -667,9 +658,13 @@ class TestRequireTypedConfirmPhrase:
         assert require_typed_confirm_phrase(input_fn=raise_kbi) is False
 
     def test_custom_phrase(self) -> None:
-        assert require_typed_confirm_phrase(
-            "NUCLEAR", input_fn=lambda _p: "NUCLEAR",
-        ) is True
+        assert (
+            require_typed_confirm_phrase(
+                "NUCLEAR",
+                input_fn=lambda _p: "NUCLEAR",
+            )
+            is True
+        )
 
 
 class TestSafePlaylistWriterDryRun:
@@ -692,7 +687,8 @@ class TestSafePlaylistWriterDryRun:
         assert raw.calls == []
 
     def test_dry_run_session_yields_self_without_opening_live(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         """safe_writer_session in dry-run must NOT open LiveWriteSession.
 
@@ -706,7 +702,8 @@ class TestSafePlaylistWriterDryRun:
             assert safe._session is None
 
     def test_playlist_exists_passthrough_even_in_dry_run(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         """Read-only playlist_exists bypasses all rails."""
         inner = FakeWriter(vendor="rekordbox", playlists={"[SL] X": []})
@@ -720,7 +717,9 @@ class TestSafePlaylistWriterLiveGuards:
 
     def test_live_without_flag_refuses(self, tmp_path) -> None:
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=False,
+            tmp_path,
+            dry_run=False,
+            flag_ok=False,
         )
         with pytest.raises(RuntimeError, match="typed-confirm flag not set"):
             safe.create_playlist("[SL] A", ["sid-1"])
@@ -728,7 +727,9 @@ class TestSafePlaylistWriterLiveGuards:
 
     def test_live_without_session_refuses(self, tmp_path) -> None:
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         # Called outside safe_writer_session() -> _session is None.
         with pytest.raises(RuntimeError, match="no active LiveWriteSession"):
@@ -737,7 +738,9 @@ class TestSafePlaylistWriterLiveGuards:
 
     def test_apply_diff_live_without_flag_refuses(self, tmp_path) -> None:
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=False,
+            tmp_path,
+            dry_run=False,
+            flag_ok=False,
         )
         with pytest.raises(RuntimeError, match="typed-confirm flag not set"):
             safe.apply_diff("[SL] A", added=["sid-1"], removed=[])
@@ -748,14 +751,19 @@ class TestSafePlaylistWriterPgrepRail:
     """Rail 1: pgrep gate (via LiveWriteSession.process_gate)."""
 
     def test_pgrep_abort_blocks_create(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         # Force the process gate to report "running" -> SafetyAbort.
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: True,
+            "apps.sync.safety._is_running",
+            lambda _name: True,
         )
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         with pytest.raises(SafetyAbort, match="Rekordbox is running"):
             with safe_writer_session(safe):
@@ -767,13 +775,18 @@ class TestSafePlaylistWriterBackupRail:
     """Rail 2: timestamped backup before any write."""
 
     def test_backup_created_on_session_entry(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         safe, _raw, db_path = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         with safe_writer_session(safe, reversal_root=tmp_path / "reversal"):
             # A .bak.<ISO> sibling of db_path must exist.
@@ -782,14 +795,19 @@ class TestSafePlaylistWriterBackupRail:
             assert backups[0].read_bytes() == db_path.read_bytes()
 
     def test_backup_missing_source_aborts(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         """If the target DB doesn't exist we abort (no backup possible)."""
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         safe, _raw, db_path = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         db_path.unlink()
         with pytest.raises(SafetyAbort, match="DB to back up is missing"):
@@ -801,13 +819,18 @@ class TestSafePlaylistWriterVerifyRail:
     """Rail 5: post-write verify via injected verifier."""
 
     def test_verify_ok_writes_reverse_snippet(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         verifier_calls: list[tuple[str, list[str]]] = []
 
@@ -817,7 +840,9 @@ class TestSafePlaylistWriterVerifyRail:
 
         reversal_root = tmp_path / "reversal"
         with safe_writer_session(
-            safe, verifier=verifier, reversal_root=reversal_root,
+            safe,
+            verifier=verifier,
+            reversal_root=reversal_root,
         ) as s:
             s.create_playlist("[SL] V", ["sid-1", "sid-2"])
         # Verifier was called with the expected membership.
@@ -832,14 +857,20 @@ class TestSafePlaylistWriterVerifyRail:
         assert raw.playlists == {"[SL] V": ["sid-1", "sid-2"]}
 
     def test_verify_fail_aborts_session(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         safe, raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
+
         # Verifier returns False -> verify_readback fails -> session
         # aborts the batch via LiveWriteSession's verify-failure path.
         # Non-tty stdin -> default action is "abort".
@@ -849,7 +880,9 @@ class TestSafePlaylistWriterVerifyRail:
         reversal_root = tmp_path / "reversal"
         with pytest.raises(SafetyAbort, match="verify_readback failed"):
             with safe_writer_session(
-                safe, verifier=bad_verifier, reversal_root=reversal_root,
+                safe,
+                verifier=bad_verifier,
+                reversal_root=reversal_root,
             ) as s:
                 s.create_playlist("[SL] Bad", ["sid-1"])
         # The inner writer DID run (the verify happens AFTER the write).
@@ -860,13 +893,18 @@ class TestSafePlaylistWriterReversalRail:
     """Rail 6: reversal script content + path layout."""
 
     def test_reversal_script_header_and_shebang(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         safe, _raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
         )
         reversal_root = tmp_path / "reversal"
         with safe_writer_session(safe, reversal_root=reversal_root):
@@ -880,16 +918,23 @@ class TestSafePlaylistWriterReversalRail:
         assert "Last-resort full restore" in content
 
     def test_apply_diff_appends_reverse_snippet(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         monkeypatch.setattr(
-            "apps.sync.safety._is_running", lambda _name: False,
+            "apps.sync.safety._is_running",
+            lambda _name: False,
         )
         inner = FakeWriter(
-            vendor="rekordbox", playlists={"[SL] R": ["sid-1", "sid-2"]},
+            vendor="rekordbox",
+            playlists={"[SL] R": ["sid-1", "sid-2"]},
         )
         safe, _raw, _db = _make_safe_writer(
-            tmp_path, dry_run=False, flag_ok=True, inner=inner,
+            tmp_path,
+            dry_run=False,
+            flag_ok=True,
+            inner=inner,
         )
         reversal_root = tmp_path / "reversal"
         with safe_writer_session(safe, reversal_root=reversal_root) as s:
@@ -931,4 +976,3 @@ class TestSafePlaylistWriterVendorPassthrough:
         with pytest.raises(ValueError, match="target must be"):
             with safe_writer_session(safe):
                 pass
-

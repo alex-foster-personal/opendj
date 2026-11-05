@@ -142,9 +142,7 @@ def test_signing_identity_without_a_notary_profile_is_refused() -> None:
 
 
 @pytest.mark.requirement("INSTALL-04")
-@pytest.mark.parametrize(
-    "stage", ["payload", "verify-dmg-app", "notarize-app", "dmg", "notarize"]
-)
+@pytest.mark.parametrize("stage", ["payload", "verify-dmg-app", "notarize-app", "dmg", "notarize"])
 def test_every_signing_stage_refuses_without_an_identity(stage: str) -> None:
     """No stage may run unsigned, and each must name the variable that is missing.
 
@@ -312,14 +310,8 @@ def _shipped_notarize_setup() -> str:
     what is under test.
     """
     lines = _notarize_function_body().splitlines()
-    alloc = [
-        i for i, line in enumerate(lines) if "mktemp" in line and not line.strip().startswith("#")
-    ]
-    trap = [
-        i
-        for i, line in enumerate(lines)
-        if line.strip().startswith("trap ") and line.strip().endswith(" RETURN")
-    ]
+    alloc = [i for i, line in enumerate(lines) if "mktemp" in line and not line.strip().startswith("#")]
+    trap = [i for i, line in enumerate(lines) if line.strip().startswith("trap ") and line.strip().endswith(" RETURN")]
     assert len(alloc) == 1, f"expected one mktemp in cmd_notarize_app, found {alloc}"
     assert len(trap) == 1, f"expected one RETURN trap in cmd_notarize_app, found {trap}"
     decl = [i for i, line in enumerate(lines[: alloc[0]]) if line.strip().startswith("local ")]
@@ -338,9 +330,7 @@ def _run_trap_harness(
 ) -> subprocess.CompletedProcess[str]:
     tmpdir.mkdir(parents=True, exist_ok=True)
     script = tmp_path / "harness.sh"
-    script.write_text(
-        _TRAP_HARNESS.format(tmpdir=shlex.quote(str(tmpdir)), setup=setup, body=body)
-    )
+    script.write_text(_TRAP_HARNESS.format(tmpdir=shlex.quote(str(tmpdir)), setup=setup, body=body))
     script.chmod(0o755)
     return subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, check=False)
 
@@ -456,7 +446,7 @@ def test_a_stale_archive_from_a_failed_run_does_not_block_the_next(tmp_path: Pat
 @needs_system_bash_3
 def test_a_die_mid_notarization_still_deletes_the_temp_archive(tmp_path: Path) -> None:
     """`die` exits, and an exit never fires a RETURN trap."""
-    dies = "    touch \"${NOTARY_APP_DIR:-$zip}\"/app.zip 2>/dev/null || true; exit 1"
+    dies = '    touch "${NOTARY_APP_DIR:-$zip}"/app.zip 2>/dev/null || true; exit 1'
 
     control_tmp = tmp_path / "control"
     control = _run_trap_harness(PRE_FIX_SETUP, control_tmp, tmp_path, body="    exit 1")
@@ -504,9 +494,7 @@ def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
     hits = [
         f"{path}:{number}: {line.strip()}"
         for path in tracked
-        for number, line in enumerate(
-            (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace").splitlines(), 1
-        )
+        for number, line in enumerate((REPO_ROOT / path).read_text(encoding="utf-8", errors="replace").splitlines(), 1)
         if SUFFIXED_MKTEMP.search(line)
     ]
     assert hits == [], "\n".join(hits)
@@ -516,7 +504,7 @@ def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
 # INSTALL-26: the signed engine may JIT
 # ---------------------------------------------------------------------------
 
-ENGINE_ENTITLEMENTS: Path = REPO_ROOT / "apps/desktop/src-tauri/Entitlements.engine.plist"
+ENGINE_ENTITLEMENTS: Path = REPO_ROOT / "apps/desktop/shared/Entitlements.engine.plist"
 JIT_ENTITLEMENT = "com.apple.security.cs.allow-unsigned-executable-memory"
 AUDIO_INPUT_ENTITLEMENT = "com.apple.security.device.audio-input"
 
@@ -561,7 +549,7 @@ def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() ->
     entitle = body.index('_sign_engine_executables "$payload"')
     smoke = body.index('_prove_signed_engine_can_jit "$payload"')
     assert unentitled < entitle < smoke
-    entitlements_path = "$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
+    entitlements_path = "$SCRIPT_DIR/../apps/desktop/shared/Entitlements.engine.plist"
     assert f'ENGINE_ENTITLEMENTS="{entitlements_path}"' in source
 
 

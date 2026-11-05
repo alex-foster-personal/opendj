@@ -42,9 +42,7 @@ def _ingest(
 ) -> folder.FolderIngestReport:
     entries = [audio_files.AudioFile(path, path.stat().st_size, 1.0, ".wav") for path in paths]
     monkeypatch.setattr(folder, "collect_audio", lambda _roots: (entries, [], 0))
-    return folder.ingest_folder(
-        writer, [root], dry_run=False, allow_mass_missing=True, restore_removed=restore_removed
-    )
+    return folder.ingest_folder(writer, [root], dry_run=False, allow_mass_missing=True, restore_removed=restore_removed)
 
 
 def _removed_song(
@@ -60,9 +58,7 @@ def _removed_song(
 
 
 def _state(conn: sqlite3.Connection, stable_id: str) -> tuple[object, object]:
-    row = conn.execute(
-        "SELECT deleted_at, restored_at FROM tracks WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute("SELECT deleted_at, restored_at FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()
     assert row is not None, f"track {stable_id} vanished"
     return row[0], row[1]
 
@@ -95,10 +91,7 @@ def test_picking_the_removed_recording_under_a_new_path_adds_it(
     finally:
         writer.close()
 
-    live = [
-        str(row[0])
-        for row in state_conn.execute("SELECT file_path FROM tracks WHERE deleted_at IS NULL")
-    ]
+    live = [str(row[0]) for row in state_conn.execute("SELECT file_path FROM tracks WHERE deleted_at IS NULL")]
     assert live == [str(dropped)], "the dropped copy of a removed recording was not added"
     assert _state(state_conn, stable_id)[0] is not None, "the old row's tombstone was lifted"
     assert report.tracks_inserted == 1

@@ -9,7 +9,6 @@ only after those two are defined there, so there is no import cycle.
 """
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
@@ -25,18 +24,21 @@ from apps.sync_hub.engine_identity_map import (
     IdentityRepairRequest,
     apply_hub_identity_rejects,
 )
+from apps.sync_hub.identity_remap_precondition import (
+    _json_bytes,
+    _merge_split_push_payloads,
+    _push_batches,
+    pairs_from_wire,
+)
+from apps.sync_hub.identity_remap_precondition import (
+    _push_body as _encode_push_body,
+)
 from apps.sync_hub.transport import (
     API_PREFIX,
     HubTransport,
     SyncTransportError,
     is_timeout_transport,
 )
-
-#: What this build advertises on every request that can be answered
-#: partially (round 5 gate B-1). One comma-free token per request for the
-#: GET side, because :meth:`HubTransport.get` carries flat string params and
-#: FastAPI reads a single occurrence into a one-element list.
-_ADVERTISED: tuple[str, ...] = capabilities.THIS_BUILD
 
 #: Most bytes one ``POST /push`` body may take, counted as
 #: :class:`apps.sync_hub.transport.HttpTransport` encodes it (``json.dumps``
@@ -53,9 +55,6 @@ PUSH_BODY_MAX_BYTES: int = 768 * 1024
 #: What a proxy or server answers a body over its limit with. A push refused
 #: this way is split and re-sent, like a timed-out one.
 BODY_TOO_LARGE_STATUS: int = 413
-
-#: Bytes ``json.dumps`` puts between two array items with default separators.
-_ITEM_SEPARATOR_BYTES: int = len(", ")
 
 log = logging.getLogger(__name__)
 
@@ -110,62 +109,20 @@ def state_db_path(data_dir: Path) -> Path:
     return Path(data_dir) / "state" / "state.db"
 
 
-def _json_bytes(value: object) -> int:
-    """Bytes ``value`` takes in a request body as :class:`HttpTransport` encodes it."""
-    return len(json.dumps(value).encode("utf-8"))
-
-
 def _push_body(
     machine_id: str,
     wire_rows: Sequence[dict[str, Any]],
     wire_fleet: list[dict[str, object]],
     *,
     reseed: bool = False,
+    identity_remap_pairs: Sequence[tuple[str, str]] = (),
 ) -> dict[str, object]:
-    return {
-        "machine_id": machine_id,
-        "schema_version": state_schema.SCHEMA_VERSION,
-        "wire_version": wire_version.WIRE_VERSION,
-        "rows": list(wire_rows),
-        "machines": wire_fleet,
-        "capabilities": list(_ADVERTISED),
-        "reseed": reseed,
-    }
-
-
-def _push_batches(
-    wire_rows: Sequence[dict[str, Any]],
-    *,
-    max_rows: int,
-    max_bytes: int,
-    envelope_bytes: int,
-) -> Iterator[tuple[dict[str, Any], ...]]:
-    """Split ``wire_rows`` into push bodies of at most ``max_rows`` rows and ``max_bytes``.
-
-    ``envelope_bytes`` is the body with no rows: machine id, fleet,
-    capabilities. A row whose body alone is over ``max_bytes`` still travels,
-    alone, so a limit this client cannot see (the hub's or a proxy's) decides
-    it; a 413 on it is then loud (:func:`_push_chunk_with_split`).
-
-    Order matters: :func:`apps.sync_hub.engine.spoke_push` returns rows
-    parents-first, and each chunk is applied in its own hub transaction, so
-    a reordering here would present a child row before the row it references
-    and the FK would refuse it.
-    """
-    if max_rows < 1:
-        raise ValueError(f"batch size must be >= 1, got {max_rows}")
-    chunk: list[dict[str, Any]] = []
-    size = envelope_bytes
-    for wire in wire_rows:
-        row_bytes = _json_bytes(wire) + _ITEM_SEPARATOR_BYTES
-        if chunk and (len(chunk) == max_rows or size + row_bytes > max_bytes):
-            yield tuple(chunk)
-            chunk = []
-            size = envelope_bytes
-        chunk.append(wire)
-        size += row_bytes
-    if chunk:
-        yield tuple(chunk)
+    return _encode_push_body(
+        machine_id, wire_rows, wire_fleet,
+        schema_version=state_schema.SCHEMA_VERSION,
+        wire_version=wire_version.WIRE_VERSION, reseed=reseed,
+        identity_remap_pairs=identity_remap_pairs,
+    )
 
 
 def _fetch_hub_digest(channel: HubTransport, machine_id: str) -> protocol.SyncDigest:
@@ -203,7 +160,7 @@ def _total_reported(reports: Sequence[Any]) -> int | None:
     ``None`` covers both "an older build omitted the field" and "no request
     of this kind was made, so the peer was never asked". Neither is zero: a
     peer that was not asked has not answered, and reading an unmeasured
-    subject as a clean result is the defect ``.claude/rules/verification.md``
+    subject as a clean result is the defect ``(private path)``
     exists to stop.
     """
     if not reports:
@@ -230,6 +187,7 @@ class _PushOutcome:
     #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).
     #: The batches before it are counted; nothing after it was sent.
     refused: bool = False
+    identity_remaps_contradicted: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -259,6 +217,7 @@ def _push_chunk_with_split(
     wire_fleet: list[dict[str, object]],
     *,
     reseed: bool = False,
+    identity_remap_pairs: Sequence[tuple[str, str]] = (),
 ) -> tuple[dict[str, Any], int]:
     """Push one chunk, halving it on a timeout or a 413 until one row is left.
 
@@ -269,7 +228,11 @@ def _push_chunk_with_split(
     try:
         return (
             channel.post(
-                f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet, reseed=reseed)
+                f"{API_PREFIX}/push",
+                _push_body(
+                    machine_id, chunk, wire_fleet, reseed=reseed,
+                    identity_remap_pairs=identity_remap_pairs,
+                ),
             ),
             1,
         )
@@ -299,22 +262,14 @@ def _push_chunk_with_split(
             len(chunk) - mid,
         )
         left, left_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[:mid], wire_fleet, reseed=reseed
+            channel, machine_id, chunk[:mid], wire_fleet, reseed=reseed,
+            identity_remap_pairs=identity_remap_pairs,
         )
         right, right_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[mid:], wire_fleet, reseed=reseed
+            channel, machine_id, chunk[mid:], wire_fleet, reseed=reseed,
+            identity_remap_pairs=identity_remap_pairs,
         )
-        return {
-            "accepted": _int_from(left, "accepted", "push")
-            + _int_from(right, "accepted", "push"),
-            "rejected": _int_from(left, "rejected", "push")
-            + _int_from(right, "rejected", "push"),
-            "quarantined": left.get("quarantined"),
-            "identity_rejects": list(left.get("identity_rejects") or [])
-            + list(right.get("identity_rejects") or []),
-            "rejected_rows": list(left.get("rejected_rows") or [])
-            + list(right.get("rejected_rows") or []),
-        }, left_requests + right_requests
+        return _merge_split_push_payloads(left, right), left_requests + right_requests
 
 
 def _push_in_batches(
@@ -325,6 +280,7 @@ def _push_in_batches(
     *,
     batch_rows: int,
     reseed: bool = False,
+    identity_remap_pairs: Sequence[tuple[str, str]] = (),
     confirming: bool = False,
 ) -> _PushOutcome:
     """Offer ``rows`` to the hub, at most ``batch_rows`` and
@@ -343,6 +299,7 @@ def _push_in_batches(
     rejected = 0
     requests = 0
     reported: list[Any] = []
+    identity_remaps_contradicted: list[tuple[str, str]] = []
     identity_rejects: list[protocol.IdentityReject] = []
     rejected_rows: list[rejected_rows_mod.RejectedRow] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
@@ -350,12 +307,15 @@ def _push_in_batches(
         [row.to_wire() for row in rows],
         max_rows=batch_rows,
         max_bytes=PUSH_BODY_MAX_BYTES,
-        envelope_bytes=_json_bytes(_push_body(machine_id, [], wire_fleet)),
+        envelope_bytes=_json_bytes(
+            _push_body(machine_id, [], wire_fleet, identity_remap_pairs=identity_remap_pairs)
+        ),
     )
     for chunk in batches:
         try:
             payload, chunk_requests = _push_chunk_with_split(
-                channel, machine_id, chunk, wire_fleet, reseed=reseed
+                channel, machine_id, chunk, wire_fleet, reseed=reseed,
+                identity_remap_pairs=identity_remap_pairs,
             )
         except SyncTransportError as exc:
             if not client_refusal.is_plan_refusal(exc):
@@ -367,7 +327,9 @@ def _push_in_batches(
                 requests=requests + 1,
                 hub_quarantined=_total_reported(reported),
                 refused=True,
+                identity_remaps_contradicted=tuple(identity_remaps_contradicted),
             )
+        identity_remaps_contradicted.extend(pairs_from_wire(payload.get("identity_remaps_contradicted")))
         accepted += _int_from(payload, "accepted", "push")
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
@@ -380,6 +342,7 @@ def _push_in_batches(
         requests=requests,
         hub_quarantined=_total_reported(reported),
         identity_rejects=tuple(identity_rejects),
+        identity_remaps_contradicted=tuple(identity_remaps_contradicted),
         rejected_rows=tuple(rejected_rows),
     )
 

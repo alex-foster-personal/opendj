@@ -34,5 +34,5 @@ def test_shell_resolves_exactly_one_tao() -> None:
 def test_shell_tao_declares_appkit_callbacks_c_unwind() -> None:
     (version,) = _locked_versions("tao")
     assert version >= FIRST_UNWIND_SAFE_TAO, (
-        f"tao {'.'.join(map(str, version))} declares sendEvent: extern \"C\": an AppKit exception aborts Open DJ"
+        f'tao {".".join(map(str, version))} declares sendEvent: extern "C": an AppKit exception aborts Open DJ'
     )

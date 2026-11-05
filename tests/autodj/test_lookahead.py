@@ -41,7 +41,14 @@ def _mirror() -> dict[str, Any]:
 
 def _decide(shortlist: list[Any], *, intent: str | None = "smooth", recent: tuple[str, ...] = ()) -> Any:
     return decide(
-        OUT, shortlist, decks=(1, 2), intent=intent, recent_styles=recent, earliest_bar=48.0, target_bar=50.0, live=_mirror()
+        OUT,
+        shortlist,
+        decks=(1, 2),
+        intent=intent,
+        recent_styles=recent,
+        earliest_bar=48.0,
+        target_bar=50.0,
+        live=_mirror(),
     )
 
 
@@ -54,7 +61,9 @@ def test_only_phrase_starts_past_the_earliest_bar_are_offered() -> None:
 
 
 def test_no_phrase_analysis_means_no_windows() -> None:
-    assert windows_ahead(replace(OUT, sections=()), earliest_bar=1.0, target_bar=1.0) == [], "if a boundary is invented then broken"
+    assert windows_ahead(replace(OUT, sections=()), earliest_bar=1.0, target_bar=1.0) == [], (
+        "if a boundary is invented then broken"
+    )
 
 
 def test_the_breakdown_beats_the_distant_outro_when_the_target_is_near_it() -> None:
@@ -68,7 +77,12 @@ def test_the_outro_wins_when_the_target_is_already_near_it() -> None:
 
 
 def test_a_phrase_start_right_before_a_chorus_is_penalized() -> None:
-    arrangement = ((INTRO, 16, 0.4, 0.2, False), (UP, 8, 0.6, 0.5, False), (CHORUS_KIND, 32, 1.0, 1.0, False), (OUTRO, 16, 0.4, 0.8, False))
+    arrangement = (
+        (INTRO, 16, 0.4, 0.2, False),
+        (UP, 8, 0.6, 0.5, False),
+        (CHORUS_KIND, 32, 1.0, 1.0, False),
+        (OUTRO, 16, 0.4, 0.8, False),
+    )
     track = profile_from_payloads(anlz_payload("guard", arrangement=arrangement), {"stable_id": "guard"})
     assert _peak_within(track, 17), "if a chorus 8 bars ahead is not seen then broken"
     assert _peak_within(track, 25), "if a window right on the chorus counts as clear then broken"
@@ -77,10 +91,17 @@ def test_a_phrase_start_right_before_a_chorus_is_penalized() -> None:
 
 def test_a_breakdown_beats_a_nearer_chorus_in_a_track_of_drops() -> None:
     """Live on a real track, Fri 30 Oct 2026: every phrase is a drop bar one breakdown, and only the search's reach hid it."""
-    arrangement = ((INTRO, 16, 0.4, 0.2, False), (CHORUS_KIND, 16, 1.0, 1.0, False), (DOWN, 16, 0.3, 0.1, False), (CHORUS_KIND, 32, 1.0, 1.0, False))
+    arrangement = (
+        (INTRO, 16, 0.4, 0.2, False),
+        (CHORUS_KIND, 16, 1.0, 1.0, False),
+        (DOWN, 16, 0.3, 0.1, False),
+        (CHORUS_KIND, 32, 1.0, 1.0, False),
+    )
     track = profile_from_payloads(anlz_payload("drops", arrangement=arrangement), {"stable_id": "drops"})
     best = windows_ahead(track, earliest_bar=16.0, target_bar=16.0)[0]
-    assert best.start_bar == 33, f"if a phrase on a drop beats the breakdown after it then broken, got bar {best.start_bar}"
+    assert best.start_bar == 33, (
+        f"if a phrase on a drop beats the breakdown after it then broken, got bar {best.start_bar}"
+    )
 
 
 def test_decide_answers_a_track_and_a_window_on_a_phrase() -> None:
@@ -100,10 +121,14 @@ def test_the_chooser_picks_by_intent_not_by_score(monkeypatch: pytest.MonkeyPatc
         return {**document, "proposals": [{**row, "score": 0.5 + 0.01 * order.index(row["style"])} for row in rows]}
 
     monkeypatch.setattr(lookahead, "propose_transition", inverted)
-    rows = inverted(OUT, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=48.0, live=_mirror(), top=None)["proposals"]
+    rows = inverted(OUT, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=48.0, live=_mirror(), top=None)[
+        "proposals"
+    ]
     styles = {row["style"] for row in rows}
     assert len(styles) > 1, "control: one style cannot tell intent from score"
-    assert max(rows, key=lambda row: row["score"])["style"] != min(styles, key=order.index), "control: the two must disagree"
+    assert max(rows, key=lambda row: row["score"])["style"] != min(styles, key=order.index), (
+        "control: the two must disagree"
+    )
     assert _decide([IN]).style == min(styles, key=order.index), "if the score beat the intent's order then broken"
 
 

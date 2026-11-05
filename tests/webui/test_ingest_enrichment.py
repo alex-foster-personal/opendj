@@ -17,6 +17,7 @@ Regression one-liners:
   - [if] a rerun does not forget failures and cover misses [then] broken, [else stop].
   - [if] a placeholder own beatgrid (confidence 0) counts as a real grid [then] broken, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -43,8 +44,12 @@ pytestmark = pytest.mark.requirement("ENRICH-06")
 BACKENDS = ie.LANE_BACKENDS
 
 
-def facts(ids: Sequence[str], *, done_lanes: Sequence[str] = ("tags", "waveform", "beatgrid", "key", "loudness"),
-          **over: object) -> LaneFacts:
+def facts(
+    ids: Sequence[str],
+    *,
+    done_lanes: Sequence[str] = ("tags", "waveform", "beatgrid", "key", "loudness"),
+    **over: object,
+) -> LaneFacts:
     """Every id present and unmapped, with ``done_lanes`` produced for all of them."""
     ids = list(ids)
     done = {backend: (set(ids) if lane in done_lanes else set()) for lane, backend in BACKENDS.items()}
@@ -109,9 +114,9 @@ def rig(tmp_path: Path) -> Rig:
     return Rig(tmp_path)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # ENRICH-06: every import is enriched, front of the queue
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_registered_batch_goes_to_the_front_of_the_drain(rig: Rig) -> None:
     rig.coordinator.register("viva", ["a", "b"], "materialize")
     assert rig.prioritized == [["a", "b"]]
@@ -145,9 +150,9 @@ def test_batches_and_watermark_survive_a_restart(rig: Rig) -> None:
     assert again.reconcile_new_rows() is None, "the stored watermark means nothing is new"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # ENRICH-07: artwork waits for the essentials
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @pytest.mark.requirement("ENRICH-07")
 def test_artwork_waits_while_any_track_lacks_a_waveform(rig: Rig) -> None:
     rig.coordinator.register("viva", ["a", "b"], "materialize")
@@ -179,14 +184,16 @@ def test_settled_but_unfinished_lanes_do_not_hold_artwork(rig: Rig) -> None:
     ids = ["fail", "decl", "ph", "gone"]
     rig.coordinator.register("viva", ids, "materialize")
     base = facts(ids, done_lanes=("tags", "waveform", "beatgrid", "loudness"))
-    rig.facts = LaneFacts(**{
-        **base.__dict__,
-        "present": {"fail", "decl", "ph"},
-        "done": {**base.done, BACKENDS["key"]: {"decl", "ph"}},
-        "declined": {"key": {"decl": "no_tonal_center"}},
-        "placeholder": {"ph"},
-        "failures": {"key": {"fail": "decode failed"}},
-    })
+    rig.facts = LaneFacts(
+        **{
+            **base.__dict__,
+            "present": {"fail", "decl", "ph"},
+            "done": {**base.done, BACKENDS["key"]: {"decl", "ph"}},
+            "declined": {"key": {"decl": "no_tonal_center"}},
+            "placeholder": {"ph"},
+            "failures": {"key": {"fail": "decode failed"}},
+        }
+    )
     assert rig.coordinator.tick() == ["viva"]
     lanes = rig.coordinator.status("viva", with_tracks=True)["batches"][0]["track_lanes"]
     assert lanes["fail"]["key"] == {"state": "failed", "reason": "decode failed"}
@@ -222,13 +229,17 @@ def test_lane_priority_is_essentials_then_artwork() -> None:
     assert ie.LANE_PRIORITY == ("tags", "waveform", "beatgrid", "key", "loudness", "artwork")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # ENRICH-08: nothing missing is silent
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @pytest.mark.requirement("ENRICH-08")
 def test_capability_warnings_name_what_is_missing_and_where() -> None:
-    warnings = ie.capability_warnings(drain_running=False, unavailable={"loudness": "ffmpeg has no astats"},
-                                      artwork_online=False, ai_missing_keys=["OPENROUTER_API_KEY"])
+    warnings = ie.capability_warnings(
+        drain_running=False,
+        unavailable={"loudness": "ffmpeg has no astats"},
+        artwork_online=False,
+        ai_missing_keys=["OPENROUTER_API_KEY"],
+    )
     by_code = {w.code: w for w in warnings}
     assert set(by_code) == {"ANALYSIS_DRAIN_OFF", "LANE_UNAVAILABLE", "ARTWORK_ONLINE_OFF", "AI_GENRE_KEYS_MISSING"}
     assert "ODJ_ARTWORK_ONLINE=0" in by_code["ARTWORK_ONLINE_OFF"].fix
@@ -249,9 +260,9 @@ def test_a_warning_is_logged_once(rig: Rig, caplog: pytest.LogCaptureFixture) ->
     assert rig.coordinator.status()["warnings"][0]["code"] == "ARTWORK_ONLINE_OFF"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # ENRICH-09: rerun, HTTP and CLI
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @pytest.mark.requirement("ENRICH-09")
 def test_rerun_playlist_forgets_failures_and_misses_and_reprioritises(rig: Rig) -> None:
     rig.playlists["pl1"] = ["a", "b"]
@@ -285,12 +296,15 @@ def test_placeholder_grid_ids_reads_zero_confidence_records(tmp_path: Path) -> N
     def record(bpm: float, conf: float) -> str:
         return json.dumps({"lanes": {"beatgrid": {"status": "ok", "payload": {"bpm": bpm, "bpm_confidence": conf}}}})
 
-    conn.executemany("INSERT INTO analysis VALUES (?, ?, ?, ?)", [
-        ("real", backend, version, record(124.0, 0.9)),
-        ("zero", backend, version, record(120.0, 0.0)),
-        ("nobpm", backend, version, record(0.0, 0.5)),
-        ("stale", backend, "old-version", record(120.0, 0.0)),
-    ])
+    conn.executemany(
+        "INSERT INTO analysis VALUES (?, ?, ?, ?)",
+        [
+            ("real", backend, version, record(124.0, 0.9)),
+            ("zero", backend, version, record(120.0, 0.0)),
+            ("nobpm", backend, version, record(0.0, 0.5)),
+            ("stale", backend, "old-version", record(120.0, 0.0)),
+        ],
+    )
     conn.commit()
     conn.close()
     assert ie.placeholder_grid_ids(lambda: sqlite3.connect(path)) == {"zero", "nobpm"}
@@ -300,16 +314,22 @@ def test_new_rows_and_playlist_members_read_live_rows(tmp_path: Path) -> None:
     path = tmp_path / "s.db"
     audio = tmp_path / "x.mp3"
     audio.write_bytes(b"x")
-    conn = _db(path, """
+    conn = _db(
+        path,
+        """
         CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, file_path TEXT, deleted_at TEXT);
         CREATE TABLE playlists (playlist_id TEXT, deleted_at TEXT);
         CREATE TABLE playlist_memberships (playlist_id TEXT, stable_id TEXT, position INTEGER, deleted_at TEXT);
-    """)
-    conn.executemany("INSERT INTO tracks VALUES (?, ?, ?)",
-                     [("a", str(audio), None), ("b", str(tmp_path / "gone.mp3"), None), ("c", None, "2026")])
+    """,
+    )
+    conn.executemany(
+        "INSERT INTO tracks VALUES (?, ?, ?)",
+        [("a", str(audio), None), ("b", str(tmp_path / "gone.mp3"), None), ("c", None, "2026")],
+    )
     conn.execute("INSERT INTO playlists VALUES ('pl', NULL)")
-    conn.executemany("INSERT INTO playlist_memberships VALUES ('pl', ?, ?, ?)",
-                     [("b", 1, None), ("a", 0, None), ("c", 2, "2026")])
+    conn.executemany(
+        "INSERT INTO playlist_memberships VALUES ('pl', ?, ?, ?)", [("b", 1, None), ("a", 0, None), ("c", 2, "2026")]
+    )
     conn.commit()
     conn.close()
     factory = lambda: sqlite3.connect(path)  # noqa: E731
@@ -357,7 +377,10 @@ def test_cli_request_shapes() -> None:
     assert enrichment_cli.request_for("status", None, None) == ("GET", "/api/v1/ingest/enrichment", None)
     assert enrichment_cli.request_for("status", "a b", None)[1] == "/api/v1/ingest/enrichment/a%20b"
     assert enrichment_cli.request_for("rerun", None, "pl") == (
-        "POST", "/api/v1/ingest/enrichment/rerun", {"playlist_id": "pl"})
+        "POST",
+        "/api/v1/ingest/enrichment/rerun",
+        {"playlist_id": "pl"},
+    )
     with pytest.raises(ValueError):
         enrichment_cli.request_for("rerun", "b", "pl")
 

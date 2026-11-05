@@ -48,9 +48,7 @@ def _walk(runs: dict[int, list[Job]], ids: dict[int, frozenset[str]], order: lis
         reads.append(run_id)
         return runs[run_id]
 
-    red = main_red_identities(
-        [Verdict(r, 1) for r in order], jobs_of, lambda j: ids.get(j, frozenset())
-    )
+    red = main_red_identities([Verdict(r, 1) for r in order], jobs_of, lambda j: ids.get(j, frozenset()))
     return red, reads
 
 
@@ -229,9 +227,7 @@ def test_an_unreadable_job_does_not_become_a_trusted_red_job_name():
     def unreadable(job_id: int) -> frozenset[str]:
         raise LogUnreadable(job_id)
 
-    walk = main_red_identities(
-        [Verdict(1, 1)], lambda run_id, attempt: jobs[run_id], unreadable, window=1
-    )
+    walk = main_red_identities([Verdict(1, 1)], lambda run_id, attempt: jobs[run_id], unreadable, window=1)
 
     assert walk.failed_job_names == frozenset()
     assert walk.unreadable_job_names == frozenset({"frontend unit + check + build"})
@@ -250,9 +246,7 @@ def test_an_older_verdict_does_not_supply_a_cause_for_a_newer_unreadable_failure
             raise LogUnreadable(job_id)
         return frozenset({"FAILED tests/test_a.py::test_x"})
 
-    walk = main_red_identities(
-        [Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of
-    )
+    walk = main_red_identities([Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of)
 
     assert walk.unreadable_job_names == frozenset({name})
     assert walk.failed_job_names == frozenset()
@@ -273,9 +267,7 @@ def test_an_older_verdict_still_answers_for_a_job_the_unreadable_run_never_ran()
             raise LogUnreadable(job_id)
         return frozenset({f"FAILED tests/test_{job_id}.py::test_x"})
 
-    walk = main_red_identities(
-        [Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of
-    )
+    walk = main_red_identities([Verdict(1, 1), Verdict(2, 1)], lambda run_id, attempt: jobs[run_id], identities_of)
 
     assert walk.unreadable_job_names == frozenset({unreadable_name})
     assert walk.failed_job_names == frozenset({"shard 1"})
@@ -289,19 +281,22 @@ def test_a_failed_check_run_name_is_carried_as_unmeasured_not_as_red():
     """Sol's P1 on #3293. A check run gives a conclusion and no log this tool parsed, so it
     says main is red under that name and NOT what failed. Counted red it reads MAIN_RED_JOB
     against a zero-identity pull request failure and merges off an unmeasured baseline."""
-    assert unmeasured_baseline_names(
-        frozenset(), frozenset({"other-lazy bundle budget"}), frozenset()
-    ) == frozenset({"other-lazy bundle budget"})
+    assert unmeasured_baseline_names(frozenset(), frozenset({"other-lazy bundle budget"}), frozenset()) == frozenset(
+        {"other-lazy bundle budget"}
+    )
 
 
 def test_a_name_whose_log_was_actually_read_is_not_called_unmeasured():
     """The control, in the direction the fix could overshoot: a name main was measured on
     must stay measured, or every known-red job on main becomes UNKNOWN and nothing merges."""
-    assert unmeasured_baseline_names(
-        frozenset({"pytest fast lane (shard 1 of 5)"}),
-        frozenset({"pytest fast lane (shard 1 of 5)"}),
-        frozenset({"pytest fast lane (shard 1 of 5)"}),
-    ) == frozenset()
+    assert (
+        unmeasured_baseline_names(
+            frozenset({"pytest fast lane (shard 1 of 5)"}),
+            frozenset({"pytest fast lane (shard 1 of 5)"}),
+            frozenset({"pytest fast lane (shard 1 of 5)"}),
+        )
+        == frozenset()
+    )
 
 
 def test_names_from_both_sources_are_unioned():
@@ -315,6 +310,7 @@ def test_a_refused_log_read_leaves_that_job_unmeasured_not_the_whole_baseline():
     window answers 404. Propagated, one expired log killed the ENTIRE main-red measurement
     and the watcher had no baseline at all; the point of LogUnreadable is that exactly one
     job goes unmeasured."""
+
     def refuse(_job_id: int) -> str:
         raise TriageError("gh: HTTP 404")
 
@@ -437,9 +433,7 @@ def test_a_fresh_cache_about_the_current_main_is_reused(tmp_path):
     check that rejected every cache would make the watcher re-walk main on every poll."""
     cache = tmp_path / "main-red.json"
     _write_cache(cache, "a" * 40, ["FAILED tests/t.py::still_red"])
-    got = cached_main_red(
-        cache, now=lambda: cache.stat().st_mtime, main_sha=lambda: "a" * 40, fetch=_raise_walked
-    )
+    got = cached_main_red(cache, now=lambda: cache.stat().st_mtime, main_sha=lambda: "a" * 40, fetch=_raise_walked)
     assert got.identities == {"FAILED tests/t.py::still_red"}
 
 
@@ -479,9 +473,7 @@ def _pin_walk(heads: list[str], result: WalkResult | None = None, tries: int = 3
     """`fetch_main_red` over a scripted sequence of main-SHA reads. The walk is a stub, so
     the only thing under test is whether the two reads bracketing it agreed."""
     seen = list(heads)
-    walk = result or WalkResult(
-        frozenset({"FAILED tests/t.py::a"}), frozenset({"shard 1"}), frozenset()
-    )
+    walk = result or WalkResult(frozenset({"FAILED tests/t.py::a"}), frozenset({"shard 1"}), frozenset())
     return fetch_main_red(
         main_sha=lambda: seen.pop(0),
         walk=lambda: walk,
@@ -581,20 +573,17 @@ def _two_workflow_runs(first_sha: str, second_sha: str):
     """One completed run per workflow file, each measuring at its own commit."""
     per_workflow = {
         "ci.yml": [
-            {"id": 1, "status": "completed", "conclusion": "failure", "run_attempt": 1,
-             "head_sha": first_sha},
+            {"id": 1, "status": "completed", "conclusion": "failure", "run_attempt": 1, "head_sha": first_sha},
         ],
         "e2e.yml": [
-            {"id": 2, "status": "completed", "conclusion": "failure", "run_attempt": 1,
-             "head_sha": second_sha},
+            {"id": 2, "status": "completed", "conclusion": "failure", "run_attempt": 1, "head_sha": second_sha},
         ],
     }
     jobs = {
         1: [Job(11, "pytest fast lane (shard 1 of 5)", "failure")],
         2: [Job(21, "e2e gate", "failure")],
     }
-    ids = {11: frozenset({"FAILED tests/a/test_a.py::test_one"}),
-           21: frozenset({"FAILED tests/e/test_e.py::test_two"})}
+    ids = {11: frozenset({"FAILED tests/a/test_a.py::test_one"}), 21: frozenset({"FAILED tests/e/test_e.py::test_two"})}
     return (
         lambda workflow: per_workflow[workflow],
         lambda run_id, _attempt: jobs[run_id],

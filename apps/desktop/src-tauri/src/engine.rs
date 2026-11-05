@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::engine_log::{append_rotated, rotate_log_if_needed, ENGINE_LOG_MAX_BYTES};
-use crate::http_paths::HEALTH_PATH;
+use crate::http_paths::{BUILD_INFO_PATH, HEALTH_PATH};
 use crate::launch;
 
 /// The payload directory inside the bundle, relative to Contents/Resources.
@@ -453,6 +453,29 @@ pub fn health_ok(port: u16) -> bool {
         }
     }
     String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200")
+}
+
+/// `git_sha_full` the engine on `port` reports for itself, or None when it
+/// does not answer the build-info route with one.
+pub fn engine_build_sha(port: u16) -> Option<String> {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = TcpStream::connect_timeout(&address, SOCKET_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(SOCKET_TIMEOUT)).ok()?;
+    let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
+    let request = format!(
+        "GET {BUILD_INFO_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+         Connection: close\r\nAccept: application/json\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut response = Vec::new();
+    stream.take(64 * 1024).read_to_end(&mut response).ok()?;
+    let text = String::from_utf8_lossy(&response);
+    if !text.starts_with("HTTP/1.1 200") {
+        return None;
+    }
+    let body = text.split_once("\r\n\r\n")?.1;
+    let info: serde_json::Value = serde_json::from_str(body).ok()?;
+    info["git_sha_full"].as_str().map(str::to_string)
 }
 
 // ----- build profile ------------------------------------------------------

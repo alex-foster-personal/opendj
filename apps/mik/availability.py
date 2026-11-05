@@ -58,7 +58,6 @@ from apps.shared.state.locations import (
     mapped_audio_path_if_materialised,
 )
 from apps.shared.state.writer import StateWriter
-from apps.shared.state.writer_common import immediate_transaction
 
 VOLUMES_ROOT = "/Volumes"
 
@@ -296,16 +295,16 @@ def commit_availability_batch(
     existing_scope_stable_ids: Sequence[str] | None = None,
 ) -> AvailabilityReport:
     """Durably commit availability rows after acquiring the writer lock up front."""
-    with immediate_transaction(conn):
-        return write(
-            conn,
-            rows,
-            now=now,
-            allow_mass_missing=allow_mass_missing,
-            apply_mass_missing_guard=apply_mass_missing_guard,
-            always_refresh_checked_at=always_refresh_checked_at,
-            existing_scope_stable_ids=existing_scope_stable_ids,
-        )
+    with StateWriter(conn, bus=FakeEventBus()) as writer:
+        with writer.transaction():
+            return writer.upsert_availability(
+                rows,
+                now=now,
+                allow_mass_missing=allow_mass_missing,
+                apply_mass_missing_guard=apply_mass_missing_guard,
+                always_refresh_checked_at=always_refresh_checked_at,
+                existing_scope_stable_ids=existing_scope_stable_ids,
+            )
 
 
 def refresh(

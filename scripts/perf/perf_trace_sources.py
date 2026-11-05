@@ -106,9 +106,7 @@ def _stage_facts(stages: dict[str, Any]) -> dict[str, Any]:
     return {name: stages[name] for name in NON_DURATION_STAGES if name in stages}
 
 
-def _complete_event(
-    name: str, category: str, start_us: int, duration_us: int, tid: int, args: dict
-) -> dict[str, Any]:
+def _complete_event(name: str, category: str, start_us: int, duration_us: int, tid: int, args: dict) -> dict[str, Any]:
     return {
         "name": name,
         "cat": category,
@@ -168,9 +166,7 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
         is_load_path = family.startswith(("deck-load", "deck-stems"))
         row_unclassified: set[str] = set()
         if is_load_path:
-            row_unclassified = unclassified_deck_stages(
-                stages, is_load=family.startswith("deck-load")
-            )
+            row_unclassified = unclassified_deck_stages(stages, is_load=family.startswith("deck-load"))
             report["unclassified_stages"] |= row_unclassified
         model = (
             stem_phase_model(stages)
@@ -229,9 +225,7 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
                     "facts": _stage_facts(stages),
                     "labels": row.get("labels"),
                     "residual_ms": round(model.residual_ms, 2),
-                    "stages_ms": {
-                        k: v for k, v in stages.items() if k not in NON_DURATION_STAGES
-                    },
+                    "stages_ms": {k: v for k, v in stages.items() if k not in NON_DURATION_STAGES},
                 },
             )
         )
@@ -243,7 +237,7 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
             # saying so. Reject the phase breakdown for this one load rather
             # than export spans the model itself says are wrong; the
             # top-level complete event above still records that the load
-            # happened. (.claude/rules/verification.md: a failed measurement
+            # happened. ((private path): a failed measurement
             # must not render as a verdict.)
             report["negative_residual_loads_phases_skipped"] += 1
             report["spanned_loads"] += 1
@@ -366,9 +360,7 @@ def probe_events(path: Path) -> tuple[list[dict], dict]:
     return events, report
 
 
-def _sample_counters(
-    processes: list[dict[str, Any]], ts_us: int, report: dict[str, Any]
-) -> list[dict[str, Any]]:
+def _sample_counters(processes: list[dict[str, Any]], ts_us: int, report: dict[str, Any]) -> list[dict[str, Any]]:
     """One counter event per series for one probe sample, roles summed.
 
     A None value means UNMEASURED, not idle: the probe needs a PRIOR sample to
@@ -377,7 +369,7 @@ def _sample_counters(
     measured, and an idle engine really does read about 0.03%, so the
     fabrication is indistinguishable from a real reading. Withheld instead,
     and counted, so the omission is visible rather than silent
-    (.claude/rules/verification.md).
+    ((private path)).
 
     A role can have more than one process (two WebKit.WebContent helpers,
     say), and one of them can be unmeasured while its sibling is not -- a

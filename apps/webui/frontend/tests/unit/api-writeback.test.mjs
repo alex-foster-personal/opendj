@@ -39,7 +39,9 @@ const plan = {
 };
 
 before(async () => {
-	writebackApi = await loadTypeScriptModule('src/lib/rb/api-writeback.ts', { viteApiBase: API_BASE });
+	writebackApi = await loadTypeScriptModule('src/lib/rb/api-writeback.ts', {
+		viteApiBase: API_BASE
+	});
 	originalFetch = globalThis.fetch;
 });
 
@@ -147,11 +149,14 @@ test('rollbackWriteback throws before fetch when apply result has no backup', as
 
 test('writeback maps detail.code/message onto RbApiError', async () => {
 	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ detail: { code: 'WRITEBACK_CONFLICT', message: 'target changed' } }), {
-			status: 409,
-			statusText: 'Conflict',
-			headers: { 'content-type': 'application/json' }
-		});
+		new Response(
+			JSON.stringify({ detail: { code: 'WRITEBACK_CONFLICT', message: 'target changed' } }),
+			{
+				status: 409,
+				statusText: 'Conflict',
+				headers: { 'content-type': 'application/json' }
+			}
+		);
 
 	const caught = await writebackApi.getWritebackCapabilities('pl-1').then(
 		() => null,

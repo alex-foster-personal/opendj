@@ -28,9 +28,7 @@ before(async () => {
 });
 
 const TABLE = readFileSync(
-	fileURLToPath(
-		new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
-	),
+	fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
 	'utf8'
 );
 const IDLE = { state: 'idle' };
@@ -48,7 +46,10 @@ test('a flagged grid carries the Err column sentence', () => {
 	const row = verdict('suspect', 'Beatgrid: uneven spacing, 12 of 400 beats off');
 	const text = issues.bpmGridHoverText(row, IDLE);
 	assert.ok(text.includes(issues.errColumnTitle(row)));
-	const variable = issues.bpmGridHoverText(verdict('variable_tempo', 'Beatgrid: variable tempo'), IDLE);
+	const variable = issues.bpmGridHoverText(
+		verdict('variable_tempo', 'Beatgrid: variable tempo'),
+		IDLE
+	);
 	assert.match(variable, /variable tempo/);
 });
 
@@ -68,12 +69,18 @@ test('a row with no verdict says the grid was not checked', () => {
 
 test('every variant says where source and confidence come from', () => {
 	for (const row of [{}, verdict('ok'), verdict('suspect', 'Beatgrid: uneven')]) {
-		assert.match(issues.bpmGridHoverText(row, IDLE), /Grid source and confidence load when you hover/);
+		assert.match(
+			issues.bpmGridHoverText(row, IDLE),
+			/Grid source and confidence load when you hover/
+		);
 		assert.doesNotMatch(issues.bpmGridHoverText(row, IDLE), /not implemented - see PARITY-TODO/);
 	}
 });
 
 test('the BPM cell hover includes the grid text', () => {
-	const fn = TABLE.slice(TABLE.indexOf('function bpmCellTitle'), TABLE.indexOf('function _nowRatioFor'));
+	const fn = TABLE.slice(
+		TABLE.indexOf('function bpmCellTitle'),
+		TABLE.indexOf('function _nowRatioFor')
+	);
 	assert.match(fn, /bpmGridHoverText\(row, gridProvenanceFor\(row\.stable_id\)\)/);
 });

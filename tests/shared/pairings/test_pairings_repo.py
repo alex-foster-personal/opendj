@@ -3,6 +3,7 @@
 Covers add / remove / get_neighbors / list_all / exists behaviour plus
 validation and upsert semantics.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,8 +14,7 @@ pytestmark = pytest.mark.requirement("CAT-03")
 
 
 def test_add_returns_edge(pairings_repo: PairingsRepo) -> None:
-    edge = pairings_repo.add("a" * 40, "b" * 40, direction="into",
-                             notes="peak transition")
+    edge = pairings_repo.add("a" * 40, "b" * 40, direction="into", notes="peak transition")
     assert isinstance(edge, PairingEdge)
     assert edge.from_stable_id == "a" * 40
     assert edge.to_stable_id == "b" * 40
@@ -88,8 +88,7 @@ def test_get_neighbors_direction_filter(pairings_repo: PairingsRepo) -> None:
 
 def test_list_all_source_filter(pairings_repo: PairingsRepo) -> None:
     pairings_repo.add("a", "b", direction="into", source="manual")
-    pairings_repo.add("c", "d", direction="into", source="ai",
-                      confidence=0.9)
+    pairings_repo.add("c", "d", direction="into", source="ai", confidence=0.9)
     manual = list(pairings_repo.list_all(source="manual"))
     ai = list(pairings_repo.list_all(source="ai"))
     assert len(manual) == 1 and manual[0].from_stable_id == "a"
@@ -105,8 +104,7 @@ def test_list_all_from_id_filter(pairings_repo: PairingsRepo) -> None:
 
 
 def test_edge_round_trips_through_as_dict(pairings_repo: PairingsRepo) -> None:
-    edge = pairings_repo.add("a", "b", direction="into", notes="blend",
-                             confidence=0.75)
+    edge = pairings_repo.add("a", "b", direction="into", notes="blend", confidence=0.75)
     d = edge.as_dict()
     assert d["from_stable_id"] == "a"
     assert d["notes"] == "blend"

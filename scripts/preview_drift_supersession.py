@@ -6,6 +6,7 @@ question of whether main ever held a given combination of paths. Split out of
 that module so no file in the set crosses the 600-line file-size ratchet; see
 ``scripts/preview_drift_core.py`` for how the two combine in ``evaluate()``.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -134,6 +135,7 @@ def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: s
     (nothing took the removed line's place); a same-count replacement does
     not, so requiring a net decrease is exactly the distinguishing test.
     """
+
     def _line_counts(ref: str) -> Counter[str]:
         content = _file_content_at(cwd, ref, path)
         return Counter(content.splitlines()) if content is not None else Counter()
@@ -199,9 +201,7 @@ def _commit_mode_change_still_in_effect(cwd: Path, sha: str, preview_ref: str, p
     return False
 
 
-def _mark_superseded_commits(
-    cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
-) -> None:
+def _mark_superseded_commits(cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]) -> None:
     """Flag a preview-only commit as ``superseded`` when none of its own
     content survives anywhere in the served tree (r3975388097 and
     r3975388110, generalizing r3975194227, r3975092354, r3974912531 and

@@ -2,6 +2,7 @@
 
 [if] schema v14 is applied [then] playlists gain forbid_duplicates defaulting to 0, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -28,9 +29,7 @@ def test_fresh_ladder_has_forbid_duplicates() -> None:
     assert cols["forbid_duplicates"] == "INTEGER"
     count = conn.execute("SELECT COUNT(*) FROM playlists").fetchone()[0]
     if count:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM playlists WHERE forbid_duplicates != 0"
-        ).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM playlists WHERE forbid_duplicates != 0").fetchone()[0] == 0
     conn.close()
 
 
@@ -65,9 +64,7 @@ def test_v13_db_migrates_forbid_duplicates(tmp_path: Path) -> None:
             ("2026-09-13T00:00:00+00:00",),
         )
         conn.commit()
-        row = conn.execute(
-            "SELECT forbid_duplicates FROM playlists WHERE playlist_id='pl-1'"
-        ).fetchone()
+        row = conn.execute("SELECT forbid_duplicates FROM playlists WHERE playlist_id='pl-1'").fetchone()
         assert row is not None
         assert row[0] == 0
     finally:

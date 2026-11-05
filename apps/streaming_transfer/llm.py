@@ -55,9 +55,7 @@ class LlmDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.source_id, str) or not self.source_id.strip():
             raise LlmMatchError("LLM decision source_id must not be empty")
-        if self.target_id is not None and (
-            not isinstance(self.target_id, str) or not self.target_id.strip()
-        ):
+        if self.target_id is not None and (not isinstance(self.target_id, str) or not self.target_id.strip()):
             raise LlmMatchError("LLM decision target_id must be null or non-empty")
         if (
             not isinstance(self.confidence, (int, float))
@@ -100,7 +98,7 @@ _DECISION_SCHEMA: dict[str, Any] = {
                 "required": ["source_id", "target_id", "confidence", "evidence_urls"],
                 "additionalProperties": False,
             },
-        }
+        },
     },
     "required": ["batch_id", "decisions"],
     "additionalProperties": False,
@@ -147,7 +145,7 @@ def build_batch_request(escalations: Sequence[Escalation], *, model: str) -> dic
         },
         "provider": {"require_parameters": True},
         "temperature": 0,
-}
+    }
 
 
 def parse_batch_response(payload: object, *, expected_batch_id: str) -> tuple[LlmDecision, ...]:
@@ -161,14 +159,8 @@ def parse_batch_response(payload: object, *, expected_batch_id: str) -> tuple[Ll
         response_batch_id = decoded["batch_id"]
         rows = decoded["decisions"]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise LlmMatchError(
-            "OpenRouter response lacks decisions, citations, or web_search_requests"
-        ) from exc
-    if (
-        not isinstance(web_search_requests, int)
-        or isinstance(web_search_requests, bool)
-        or web_search_requests < 1
-    ):
+        raise LlmMatchError("OpenRouter response lacks decisions, citations, or web_search_requests") from exc
+    if not isinstance(web_search_requests, int) or isinstance(web_search_requests, bool) or web_search_requests < 1:
         raise LlmMatchError("OpenRouter web_search_requests must be positive")
     if response_batch_id != expected_batch_id:
         raise LlmMatchError("OpenRouter response batch_id does not match the request")

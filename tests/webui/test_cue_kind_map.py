@@ -1,4 +1,5 @@
 """Unit tests for ``apps.adapters.rekordbox.cue_kind`` (issue #4069)."""
+
 from __future__ import annotations
 
 import pytest

@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from .inbox_playlist import INBOX_PLAYLIST_ID
+
 
 def rewrite_items(
     items: Sequence[str],
@@ -24,4 +26,9 @@ def playlists_to_rewrite(
     alias_ids: set[str],
 ) -> list[Any]:
     """Playlists whose membership contains at least one alias stable id."""
-    return [playlist for playlist in playlists if any(stable_id in alias_ids for stable_id in playlist.items)]
+    return [
+        playlist
+        for playlist in playlists
+        if playlist.playlist_id != INBOX_PLAYLIST_ID
+        and any(stable_id in alias_ids for stable_id in playlist.items)
+    ]

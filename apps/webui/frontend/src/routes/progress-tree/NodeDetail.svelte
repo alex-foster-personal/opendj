@@ -123,7 +123,10 @@
 			<span class="label">build</span>
 			<div class="build-info">
 				{#if build.state}
-					<span class="build-glyph state-{build.state}" title="build state: {BUILD_STATE_LABEL[build.state]}">
+					<span
+						class="build-glyph state-{build.state}"
+						title="build state: {BUILD_STATE_LABEL[build.state]}"
+					>
 						{BUILD_STATE_GLYPH[build.state]}
 					</span>
 				{/if}
@@ -206,7 +209,13 @@
 				<span class="label">refs</span>
 				<div class="chips">
 					{#each links.refs as ref, i (`${ref}:${i}`)}
-						<a class="link-chip ref" href={ref} target="_blank" rel="noopener noreferrer" title={ref}>
+						<a
+							class="link-chip ref"
+							href={ref}
+							target="_blank"
+							rel="noopener noreferrer"
+							title={ref}
+						>
 							&#8599; ref
 						</a>
 					{/each}

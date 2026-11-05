@@ -107,7 +107,7 @@ test('reloading the same track is a new play, not the old one continued', async 
 	h.deck1.load_generation = 2;
 	h.run(mod.PLAY_THRESHOLD_S - 5);
 	await settle();
-	assert.equal(h.posts.length, 1, 'the reload must not inherit the first load\'s heard time');
+	assert.equal(h.posts.length, 1, "the reload must not inherit the first load's heard time");
 	h.run(10);
 	await settle();
 	assert.equal(h.posts.length, 2);
@@ -327,6 +327,9 @@ test('/performance installs the play counter (leader tab only, AGENT-18) and tea
 		fileURLToPath(new URL('../../src/routes/performance/+page.svelte', import.meta.url)),
 		'utf8'
 	);
-	assert.match(page, /installLeaderOnlyEventWriters\(\{[\s\S]*?installPlayCounter: \(\) => installPlayCounter\(\)/);
+	assert.match(
+		page,
+		/installLeaderOnlyEventWriters\(\{[\s\S]*?installPlayCounter: \(\) => installPlayCounter\(\)/
+	);
 	assert.match(page, /uninstallLeaderEventWriters\(\);/);
 });

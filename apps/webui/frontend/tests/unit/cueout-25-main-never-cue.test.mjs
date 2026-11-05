@@ -38,28 +38,45 @@ function headphoneState(overrides) {
 		selected_output_device_id: HP,
 		selected_master_output_device_id: SPEAKERS,
 		outputs: SILVER,
-		routes: { master: { state: 'selected', selected: true }, cue: { state: 'selected', selected: true } },
+		routes: {
+			master: { state: 'selected', selected: true },
+			cue: { state: 'selected', selected: true }
+		},
 		...overrides
 	};
 }
 
 test('a saved MAIN equal to the CUE device refuses the CUE (AUDFID-01), never a split and never a silent room', () => {
 	for (const currentRoomId of [undefined, 'native:lg']) {
-		const shared = headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP, currentRoomId });
+		const shared = headphones.dualSinkAssignment({
+			outputs: SILVER,
+			selectedCueId: HP,
+			selectedMasterId: HP,
+			currentRoomId
+		});
 		assert.equal(shared.masterId, HP, 'MAIN keeps playing where it is');
 		assert.equal(shared.cueId, null);
 		assert.match(shared.cueRefusal, /MAIN and CUE are the same output/);
 	}
 	// Control: an UNPINNED MAIN with the room elsewhere stays unpinned (no hidden default).
 	assert.deepEqual(
-		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: null, currentRoomId: 'native:lg' }),
+		headphones.dualSinkAssignment({
+			outputs: SILVER,
+			selectedCueId: HP,
+			selectedMasterId: null,
+			currentRoomId: 'native:lg'
+		}),
 		{ masterId: null, cueId: HP, autoPinnedMaster: false }
 	);
 });
 
 test('control: a distinct saved MAIN is kept and not re-pinned', () => {
 	assert.deepEqual(
-		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: 'native:lg' }),
+		headphones.dualSinkAssignment({
+			outputs: SILVER,
+			selectedCueId: HP,
+			selectedMasterId: 'native:lg'
+		}),
 		{ masterId: 'native:lg', cueId: HP, autoPinnedMaster: false }
 	);
 });
@@ -68,19 +85,38 @@ test('selectMasterOutput refuses MAIN-on-the-CUE-device before its try, so the l
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const body = source.slice(source.indexOf('export async function selectMasterOutput('));
 	const refusal = body.indexOf('throw new Error(refusal);');
-	const sameCheck = body.indexOf('sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)');
+	const sameCheck = body.indexOf(
+		'sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)'
+	);
 	const tryAt = body.indexOf('try {');
-	assert.ok(sameCheck > 0 && refusal > sameCheck, 'selectMasterOutput must refuse when MAIN is the CUE output');
+	assert.ok(
+		sameCheck > 0 && refusal > sameCheck,
+		'selectMasterOutput must refuse when MAIN is the CUE output'
+	);
 	assert.ok(refusal < tryAt, 'the refusal must run before the try that marks routes.master failed');
-	assert.ok(!source.includes('_enterSameDeviceSplit('), 'AUDFID-01: no automatic split path is left');
-	assert.ok(!source.includes('assertMainIsNotCue('), 'the CUEOUT-25 refusal is superseded, not kept beside the split');
+	assert.ok(
+		!source.includes('_enterSameDeviceSplit('),
+		'AUDFID-01: no automatic split path is left'
+	);
+	assert.ok(
+		!source.includes('assertMainIsNotCue('),
+		'the CUEOUT-25 refusal is superseded, not kept beside the split'
+	);
 });
 
 test('MAIN equal to CUE raises the banner fault with a room fix', () => {
 	const state = headphoneState({ selected_master_output_device_id: HP });
-	const fix = headphones.preferredMasterOutputDeviceId(state.outputs, state.selected_output_device_id);
+	const fix = headphones.preferredMasterOutputDeviceId(
+		state.outputs,
+		state.selected_output_device_id
+	);
 	const fault = collision.mainOutputFault(state, fix);
-	assert.deepEqual(fault, { kind: 'same_as_cue', deviceId: HP, label: 'External Headphones', fixDeviceId: SPEAKERS });
+	assert.deepEqual(fault, {
+		kind: 'same_as_cue',
+		deviceId: HP,
+		label: 'External Headphones',
+		fixDeviceId: SPEAKERS
+	});
 	assert.equal(
 		collision.mainOutputFaultText(fault),
 		'Main output is going to External Headphones (same as headphones). The room gets nothing.'
@@ -88,7 +124,12 @@ test('MAIN equal to CUE raises the banner fault with a room fix', () => {
 });
 
 test('a failed MAIN route raises the lost fault', () => {
-	const state = headphoneState({ routes: { master: { state: 'failed', selected: true }, cue: { state: 'selected', selected: true } } });
+	const state = headphoneState({
+		routes: {
+			master: { state: 'failed', selected: true },
+			cue: { state: 'selected', selected: true }
+		}
+	});
 	assert.deepEqual(collision.mainOutputFault(state, SPEAKERS), {
 		kind: 'lost',
 		label: 'MacBook Pro Speakers',
@@ -99,28 +140,51 @@ test('a failed MAIN route raises the lost fault', () => {
 test('control: distinct devices, and split_cable on one device, raise no fault', () => {
 	assert.equal(collision.mainOutputFault(headphoneState({}), SPEAKERS), null);
 	assert.equal(
-		collision.mainOutputFault(headphoneState({ output_mode: 'split_cable', selected_master_output_device_id: HP }), SPEAKERS),
+		collision.mainOutputFault(
+			headphoneState({ output_mode: 'split_cable', selected_master_output_device_id: HP }),
+			SPEAKERS
+		),
 		null
 	);
 });
 
 test('masterRepairedFromCue fires only when a refresh moved MAIN off the CUE device', () => {
 	assert.deepEqual(
-		collision.masterRepairedFromCue({ previousMasterId: HP, cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: true }),
+		collision.masterRepairedFromCue({
+			previousMasterId: HP,
+			cueId: HP,
+			nextMasterId: SPEAKERS,
+			autoPinnedMaster: true
+		}),
 		{ from: HP, to: SPEAKERS }
 	);
 	// Controls: a first auto-pin from nothing, and a kept distinct MAIN, are not repairs.
 	assert.equal(
-		collision.masterRepairedFromCue({ previousMasterId: null, cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: true }),
+		collision.masterRepairedFromCue({
+			previousMasterId: null,
+			cueId: HP,
+			nextMasterId: SPEAKERS,
+			autoPinnedMaster: true
+		}),
 		null
 	);
 	assert.equal(
-		collision.masterRepairedFromCue({ previousMasterId: SPEAKERS, cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: false }),
+		collision.masterRepairedFromCue({
+			previousMasterId: SPEAKERS,
+			cueId: HP,
+			nextMasterId: SPEAKERS,
+			autoPinnedMaster: false
+		}),
 		null
 	);
 	// A vanished non-cue MAIN that gets auto-pinned is a CUEOUT-09 fallback, not a repair from the cue.
 	assert.equal(
-		collision.masterRepairedFromCue({ previousMasterId: 'native:gone', cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: true }),
+		collision.masterRepairedFromCue({
+			previousMasterId: 'native:gone',
+			cueId: HP,
+			nextMasterId: SPEAKERS,
+			autoPinnedMaster: true
+		}),
 		null
 	);
 });
@@ -131,7 +195,10 @@ test('refresh persists the repaired MAIN only after the sink is re-pinned', () =
 	const reapply = body.indexOf('await _reapplyPinnedSinks(');
 	const persist = body.indexOf("_rememberSavedOutput('master', repaired.to)");
 	assert.ok(body.includes('masterRepairedFromCue({'), 'refresh must compute the repair');
-	assert.ok(persist > reapply && reapply > 0, 'the repaired MAIN must be persisted after the re-pin');
+	assert.ok(
+		persist > reapply && reapply > 0,
+		'the repaired MAIN must be persisted after the re-pin'
+	);
 });
 
 test('the TopBar mounts the persistent banner and its Fix calls engine.selectMasterOutput', () => {

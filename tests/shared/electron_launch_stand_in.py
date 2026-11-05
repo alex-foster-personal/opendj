@@ -44,10 +44,7 @@ def _wait_for_argv(pid: int, token: str) -> None:
 
 
 def _shell(stamp: bool) -> int:
-    children = {
-        key: subprocess.Popen([sys.executable, "-c", _SLEEP, token])
-        for key, token in _CHILD_TYPES.items()
-    }
+    children = {key: subprocess.Popen([sys.executable, "-c", _SLEEP, token]) for key, token in _CHILD_TYPES.items()}
     try:
         for key, token in _CHILD_TYPES.items():
             _wait_for_argv(children[key].pid, token)

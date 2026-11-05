@@ -51,7 +51,9 @@ export function stemControlsAreDefault(controls: StemControls): boolean {
 }
 
 /** True when the deck EQ is flat on all three bands. */
-export function channelEqIsFlat(channel: Pick<MixerChannelState, 'eq_low' | 'eq_mid' | 'eq_high'>): boolean {
+export function channelEqIsFlat(
+	channel: Pick<MixerChannelState, 'eq_low' | 'eq_mid' | 'eq_high'>
+): boolean {
 	return channel.eq_low === EQ_FLAT && channel.eq_mid === EQ_FLAT && channel.eq_high === EQ_FLAT;
 }
 
@@ -87,9 +89,12 @@ export function scheduleStemEngageCrossfade(
 	when: number,
 	sec: number
 ): { startSec: number; endSec: number } {
-	if (!Number.isFinite(when) || when < 0) throw new RangeError(`crossfade start must be a finite time, got ${when}`);
+	if (!Number.isFinite(when) || when < 0)
+		throw new RangeError(`crossfade start must be a finite time, got ${when}`);
 	if (!Number.isFinite(sec) || sec < STEM_ENGAGE_CROSSFADE_MIN_SEC) {
-		throw new RangeError(`stem engage crossfade must be at least ${STEM_ENGAGE_CROSSFADE_MIN_SEC}s, got ${sec}`);
+		throw new RangeError(
+			`stem engage crossfade must be at least ${STEM_ENGAGE_CROSSFADE_MIN_SEC}s, got ${sec}`
+		);
 	}
 	const end = when + sec;
 	incoming.setValueAtTime(0, when);

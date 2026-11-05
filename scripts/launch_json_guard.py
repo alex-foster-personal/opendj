@@ -1,4 +1,4 @@
-"""``.claude/launch.json`` hygiene guard (OPS-31, issue #2558).
+"""``(private path)`` hygiene guard (OPS-31, issue #2558).
 
 Verifies the presence of the good thing (a launch.json that will actually
 start the server it names, on the port it claims) rather than the absence
@@ -102,9 +102,7 @@ def _script_entrypoint_findings(
         if arg.endswith(_SCRIPT_EXTENSIONS):
             resolved = _substitute(arg, repo_root=repo_root)
             if not Path(resolved).is_file():
-                findings.append(
-                    f"{label}: script entrypoint {arg!r} does not exist at {resolved!r}"
-                )
+                findings.append(f"{label}: script entrypoint {arg!r} does not exist at {resolved!r}")
     return findings
 
 
@@ -117,9 +115,7 @@ def _localhost_url_findings(raw_url: str, *, label: str) -> tuple[list[str], int
     if parsed.hostname not in _LOCALHOST_HOSTNAMES:
         findings.append(f"{label}: url {raw_url!r} must point at localhost, not a remote host")
     if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-        findings.append(
-            f"{label}: url {raw_url!r} must be just the server origin, no path or query"
-        )
+        findings.append(f"{label}: url {raw_url!r} must be just the server origin, no path or query")
     if parsed.port is None:
         findings.append(f"{label}: url {raw_url!r} must carry an explicit port")
     return findings, parsed.port
@@ -174,9 +170,7 @@ def _validate_command_entry(
     """Validate an entry that starts its own server process."""
     findings: list[str] = []
     if not _executable_is_resolvable(runtime_executable, repo_root=repo_root):
-        findings.append(
-            f"{label}: runtimeExecutable {runtime_executable!r} does not exist and is not on PATH"
-        )
+        findings.append(f"{label}: runtimeExecutable {runtime_executable!r} does not exist and is not on PATH")
 
     runtime_args = entry.get("runtimeArgs", [])
     if not isinstance(runtime_args, list) or not all(isinstance(arg, str) for arg in runtime_args):
@@ -229,9 +223,7 @@ def _validate_entry(
     runtime_executable = entry.get("runtimeExecutable")
     raw_url = entry.get("url")
     if isinstance(runtime_executable, str) and runtime_executable:
-        entry_findings, port = _validate_command_entry(
-            entry, runtime_executable, label=label, repo_root=repo_root
-        )
+        entry_findings, port = _validate_command_entry(entry, runtime_executable, label=label, repo_root=repo_root)
     elif isinstance(raw_url, str) and raw_url:
         entry_findings, port = _validate_attach_only_entry(raw_url, label=label)
     else:
@@ -271,7 +263,7 @@ def validate(config: dict, *, repo_root: Path = REPO_ROOT) -> list[str]:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m scripts.launch_json_guard",
-        description="verify .claude/launch.json entries are internally consistent",
+        description="verify (private path) entries are internally consistent",
     )
     parser.add_argument("--launch-json", type=Path, default=DEFAULT_LAUNCH_JSON)
     parser.add_argument("--json", action="store_true")

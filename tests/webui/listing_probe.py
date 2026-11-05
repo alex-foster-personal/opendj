@@ -17,6 +17,7 @@ any failed request, so a broken probe can never read as a clean count.
 
     python -m tests.webui.listing_probe <spec.json>
 """
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REFRESH_THREAD = "path-availability-refresh"
 
 
-#-----
+# -----
 # Parent side: run the probe and hand back its result.
 
 
@@ -60,14 +61,12 @@ def run_probe(data_dir: Path, spec: dict[str, Any], scratch: Path) -> dict[str, 
         check=False,
     )
     if proc.returncode != 0:
-        raise AssertionError(
-            f"listing probe exited {proc.returncode}; its stderr tail:\n{proc.stderr[-4000:]}"
-        )
+        raise AssertionError(f"listing probe exited {proc.returncode}; its stderr tail:\n{proc.stderr[-4000:]}")
     result: dict[str, Any] = json.loads(out_path.read_text(encoding="utf-8"))
     return result
 
 
-#-----
+# -----
 # Child side: runs under MDT_DATA_DIR, in a fresh interpreter.
 
 

@@ -1,4 +1,5 @@
 """``opendj api POST .../items:move`` agent-native parity (LIBM-22)."""
+
 from __future__ import annotations
 
 import json
@@ -29,9 +30,14 @@ def seeded_db(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -82,7 +88,9 @@ def test_api_post_items_move(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Set"}, timeout=30,
+        f"{base_url}/api/v1/playlists",
+        json={"name": "CLI Set"},
+        timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]
@@ -98,47 +106,71 @@ def test_api_post_items_move(
     detail = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30)
     ids = [t["item_id"] for t in detail.json()["tracks"]]
 
-    code = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:move",
-        "-H", f"If-Match: {etag}",
-        "--json", json.dumps({
-            "range_start": ids[0],
-            "range_length": 2,
-            "range_end": ids[1],
-            "after_item_id": ids[3],
-        }),
-    ])
+    code = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:move",
+            "-H",
+            f"If-Match: {etag}",
+            "--json",
+            json.dumps(
+                {
+                    "range_start": ids[0],
+                    "range_length": 2,
+                    "range_end": ids[1],
+                    "after_item_id": ids[3],
+                }
+            ),
+        ]
+    )
     assert code == api_cli.EXIT_OK
     out = json.loads(capsys.readouterr().out)
     assert out["items"] == ["t-003", "t-004", "t-001", "t-002"]
     assert out["renumbered"] is False
 
-    code2 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:move",
-        "-H", f"If-Match: {etag}",
-        "--json", json.dumps({
-            "range_start": ids[0],
-            "range_length": 2,
-            "range_end": ids[1],
-            "after_item_id": ids[3],
-        }),
-    ])
+    code2 = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:move",
+            "-H",
+            f"If-Match: {etag}",
+            "--json",
+            json.dumps(
+                {
+                    "range_start": ids[0],
+                    "range_length": 2,
+                    "range_end": ids[1],
+                    "after_item_id": ids[3],
+                }
+            ),
+        ]
+    )
     assert code2 == api_cli.EXIT_CONFLICT
     err = json.loads(capsys.readouterr().err)
     assert err["error"] == "conflict"
 
     fresh = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30)
     fresh_etag = fresh.headers["ETag"]
-    code3 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:move",
-        "-H", f"If-Match: {fresh_etag}",
-        "--json", json.dumps({
-            "range_start": ids[0],
-            "range_length": 2,
-            "range_end": ids[2],
-            "after_item_id": ids[3],
-        }),
-    ])
+    code3 = main(
+        [
+            "api",
+            "POST",
+            f"/api/v1/playlists/{pid}/items:move",
+            "-H",
+            f"If-Match: {fresh_etag}",
+            "--json",
+            json.dumps(
+                {
+                    "range_start": ids[0],
+                    "range_length": 2,
+                    "range_end": ids[2],
+                    "after_item_id": ids[3],
+                }
+            ),
+        ]
+    )
     assert code3 == api_cli.EXIT_FAILED
     err3 = json.loads(capsys.readouterr().err)
     assert err3["error"] == "slice_not_contiguous"

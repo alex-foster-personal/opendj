@@ -1,4 +1,5 @@
 """PLAY-03 override write tests."""
+
 from __future__ import annotations
 
 import sqlite3

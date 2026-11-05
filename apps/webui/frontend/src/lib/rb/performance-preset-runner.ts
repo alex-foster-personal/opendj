@@ -25,16 +25,17 @@ import {
 	type PerformancePresetPlan
 } from '$lib/rb/performance-preset';
 
-export function assertPresetTracksReady(
-	preset: PerformancePreset,
-	state: PerformanceState
-): void {
+export function assertPresetTracksReady(preset: PerformancePreset, state: PerformanceState): void {
 	for (const definition of orderedPresetDecks(preset)) {
 		const deck = state.decks[definition.deck];
 		const prefix = `deck ${definition.deck} is not preset-ready`;
 		if (deck.stable_id !== definition.stable_id) {
 			throw new Error(`${prefix}: expected ${definition.stable_id}, got ${String(deck.stable_id)}`);
-		} else if (deck.duration_ms === null || !Number.isFinite(deck.duration_ms) || deck.duration_ms <= 0) {
+		} else if (
+			deck.duration_ms === null ||
+			!Number.isFinite(deck.duration_ms) ||
+			deck.duration_ms <= 0
+		) {
 			throw new Error(`${prefix}: decoded duration is unavailable`);
 		} else if (deck.beatgrid_ms.length === 0) {
 			throw new Error(`${prefix}: real PQTZ beat grid is empty`);
@@ -161,10 +162,10 @@ export function buildPerformancePresetPlan(preset: PerformancePreset): Performan
 			{ type: 'master', deck: preset.master_deck }
 		],
 		start: playbackDecks.map((definition) => ({
-				type: 'play' as const,
-				deck: definition!.deck,
-				playing: true
-			})),
+			type: 'play' as const,
+			deck: definition!.deck,
+			playing: true
+		})),
 		synchronize: { type: 'tempo', deck: master.deck, ratio: master.tempo_ratio },
 		unmute: { type: 'master_volume', value: preset.mixer.master }
 	};
@@ -295,8 +296,6 @@ export function assertPerformancePresetPresented(
 		}
 	}
 }
-
-
 
 export async function waitForPerformancePresetPresented(
 	preset: PerformancePreset,

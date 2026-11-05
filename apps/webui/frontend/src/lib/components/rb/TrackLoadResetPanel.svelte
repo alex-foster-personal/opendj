@@ -4,7 +4,9 @@
 	import { TRACK_LOAD_RESET_ITEMS, TRACK_LOAD_RESET_WARNING } from '$lib/rb/track-load-reset';
 	import {
 		closeTrackLoadReset,
+		resetDeckNowCommand,
 		trackLoadResetCommand,
+		trackLoadResetDeck,
 		trackLoadResetEnabled,
 		trackLoadResetFocus,
 		trackLoadResetOpen,
@@ -16,6 +18,7 @@
 	let panelEl: HTMLDivElement | undefined = $state();
 	const open = $derived(trackLoadResetOpen());
 	const focusId = $derived(trackLoadResetFocus());
+	const deck = $derived(trackLoadResetDeck());
 
 	function onWindowPointerDown(event: PointerEvent): void {
 		if (!open) return;
@@ -65,7 +68,20 @@
 				</li>
 			{/each}
 		</ul>
-		<p class="scope">Same choice on every deck. Saved in this browser.</p>
+		<div class="foot">
+			<p class="scope">Same choice on every deck. Saved in this browser.</p>
+			{#if deck !== null}
+				<button
+					type="button"
+					class="now"
+					data-testid="track-load-reset-now"
+					title={`Apply the ticked resets to deck ${deck} now, without waiting for a load`}
+					onclick={() => void runPerformanceCommandFromUi(resetDeckNowCommand(deck))}
+				>
+					Reset now
+				</button>
+			{/if}
+		</div>
 	</div>
 {/if}
 
@@ -130,9 +146,38 @@
 		line-height: 1.35;
 		color: var(--rb-text-dim, #9aa4b2);
 	}
-	.scope {
+	.foot {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
 		margin: 8px 0 0;
+	}
+	.scope {
+		margin: 0;
 		font-size: 10px;
 		color: var(--rb-text-dim, #9aa4b2);
+	}
+	/* DECKGAP-7691h: secondary, not a call to action. Dark fill, 1px outline, never the accent. */
+	.now {
+		flex: none;
+		margin-left: auto;
+		padding: 2px 7px;
+		border: 1px solid var(--rb-border, #2c3440);
+		border-radius: 2px;
+		background: transparent;
+		color: var(--rb-text-dim, #9aa4b2);
+		font: inherit;
+		font-size: 10px;
+		line-height: 1.3;
+		cursor: pointer;
+	}
+	.now:hover {
+		border-color: var(--rb-text-dim, #9aa4b2);
+		color: var(--rb-text, #e7ecf2);
+	}
+	.now:focus-visible {
+		outline: 1px solid var(--rb-text, #e7ecf2);
+		outline-offset: 1px;
 	}
 </style>

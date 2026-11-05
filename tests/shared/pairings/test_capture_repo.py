@@ -2,6 +2,7 @@
 
 [if] capture tables differ [then] migration adopts only safe shapes, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -50,12 +51,8 @@ def test_capture_migration_adopts_existing_live_tables_without_data_loss() -> No
         )
 
         assert apply_pairing_capture_migrations(conn) == 1
-        assert conn.execute(
-            "SELECT id FROM pairing_sync_snapshots"
-        ).fetchone() == ("existing",)
-        assert conn.execute(
-            "SELECT version FROM pairing_capture_schema_meta"
-        ).fetchone() == (1,)
+        assert conn.execute("SELECT id FROM pairing_sync_snapshots").fetchone() == ("existing",)
+        assert conn.execute("SELECT version FROM pairing_capture_schema_meta").fetchone() == (1,)
     finally:
         conn.close()
 
@@ -66,9 +63,9 @@ def test_capture_migration_rejects_incompatible_existing_table() -> None:
         conn.execute("CREATE TABLE pairing_sync_snapshots (id TEXT PRIMARY KEY)")
         with pytest.raises(RuntimeError, match="missing required columns"):
             apply_pairing_capture_migrations(conn)
-        assert conn.execute(
-            "SELECT name FROM sqlite_master WHERE name='pairing_capture_schema_meta'"
-        ).fetchone() is None
+        assert (
+            conn.execute("SELECT name FROM sqlite_master WHERE name='pairing_capture_schema_meta'").fetchone() is None
+        )
     finally:
         conn.close()
 
@@ -113,9 +110,7 @@ def test_capture_repo_round_trips_snapshot_and_alignment() -> None:
         ({"a_position_ms": -1.0}, "non-negative"),
     ],
 )
-def test_snapshot_rejects_invalid_values(
-    kwargs: dict[str, object], message: str
-) -> None:
+def test_snapshot_rejects_invalid_values(kwargs: dict[str, object], message: str) -> None:
     conn = sqlite3.connect(":memory:", isolation_level=None)
     try:
         repo = PairingCaptureRepo(conn)

@@ -13,3 +13,7 @@ export { toasts } from '$lib/stores.svelte';
 // The engine's own instance of the unexpected-stop reporter, so a test can ask
 // what origin a stop would be attributed to right now.
 export { notePlayingFallingEdge, readPauseOrigin } from '$lib/rb/unexpected-pause-report';
+// The scoped sync runner a deferred beatgrid upgrade settles through. The app
+// installs it from performance-ipc.svelte.ts; the rig installs the same shape.
+export { DECK_IDS, installScopedSyncRunner } from '$lib/rb/audio-engine.svelte';
+export { ScopedCommandScheduler } from '$lib/rb/performance-command-scheduler';

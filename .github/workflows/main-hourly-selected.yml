@@ -1,0 +1,239 @@
+name: main hourly selected
+
+# Once an hour, the selected tests of everything merged to main since this workflow last passed
+# (scripts/ci_main_hourly.py, ci/test-budget-main-hourly.yml). Why (Thu 5 Nov 2026): three latent
+# reds that day were each introduced by a merge whose own main push run did not select the broken
+# test, and each surfaced only on a later PR that happened to select it, costing that PR's owner a
+# cycle. This run finds them within the hour and names the commits that reach the failing modules.
+#
+# Never the whole suite (the maintainer, Tue 27 Oct 2026: "Full-suite runs belong to scheduled nightly jobs
+# ... never to merging"): the selector over the hour's union, inside the PR head's 10 runner-minute
+# hard cap priced for one shard; a change the selector cannot narrow (a workflow, a conftest) ranks
+# the lane into that cap, exactly as a PR head does. The nightly full runs still run everything.
+#
+# A failure is a main red to the fleet-af trunk checkpoint owner, which reads the
+# `main-hourly-selected culprits` annotation this job writes (range, candidate commits, failing count);
+# the job summary carries the same, readable on the run page. The 10 runner-minutes are a selector
+# estimate, not a wall time (the first run, 42094046369 on Thu 5 Nov 2026, planned 10.0 and ran past 28
+# on agbox3), so pytest runs under a 14-minute wall cap: a cap stop with no failing test id is
+# INCONCLUSIVE (`main-hourly-selected inconclusive`, job green), never a main red from a slow seat. No artifact: CI artifacts live on R2
+# (tests/scripts/test_ci_artifact_storage.py), and the annotation is all the owner needs.
+
+on:
+  schedule:
+    # Off the hour, clear of full-ci.yml (03:11) and the nightly ci.yml run (02:00).
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+# One run at a time and none stacked: a newer trigger waits for the running one, and GitHub keeps
+# only the newest pending run, so a slow hour never queues a backlog.
+concurrency:
+  group: main-hourly-selected
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  hourly:
+    name: main hourly selected
+    runs-on: [self-hosted, linux, linux-light]
+    timeout-minutes: 40
+    env:
+      # Same process settings as ci.yml's pytest fast lane (tests/scripts/test_ci_thread_caps.py).
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+    steps:
+      # The pre-checkout hygiene and environment steps below are ci.yml's pytest fast lane's, minimal.
+      - name: Reclaim workspace ownership before checkout
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"
+          foreign() { sudo find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          reclaimed=$(foreign -print0 | tr -cd '\0' | wc -c)
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | tr -cd '\0' | wc -c)
+          echo "[hygiene] reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || { echo "::error::$remaining workspace entries are not owned by uid $uid"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 2
+        with:
+          ref: main
+          persist-credentials: false
+          # The range walks main's first-parent history and diffs each merge against its parent.
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Derive the worktree-port lane from the runner identity
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:?RUNNER_NAME is unset; cannot derive a safe port lane}"
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then lane=$((BASH_REMATCH[1] + 1)); else lane=1; fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Setup Python
+        timeout-minutes: 1
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv for isolated dependency contracts
+        timeout-minutes: 1
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Provision isolated Python test environment
+        timeout-minutes: 2
+        run: scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
+
+      - name: System deps for pyrekordbox (SQLCipher) and Mach-O classification
+        timeout-minutes: 4
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
+        run: |
+          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        timeout-minutes: 1
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Warm the numba JIT cache before the suite (#1316)
+        timeout-minutes: 3
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
+
+      - name: Build the oss audit kernel and route the suite's audits through it
+        timeout-minutes: 3
+        run: .venv/bin/python scripts/ci_oss_audit_kernel.py
+
+      - name: The merge range since the last passing hourly run
+        id: range
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:?}/main-hourly"
+          rm -rf "$out"
+          .venv/bin/python -m scripts.ci_main_hourly range --repository "$GITHUB_REPOSITORY" --out-dir "$out" >> "$GITHUB_OUTPUT"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Select and run the hour's tests (hard cap, one shard)
+        id: pytest
+        if: steps.range.outputs.empty == 'false'
+        # 90 s selection + 840 s pytest + 30 s for pytest to write its partial report after SIGINT.
+        timeout-minutes: 16
+        env:
+          RANGE_DIR: ${{ steps.range.outputs.dir }}
+          RANGE_BASE: ${{ steps.range.outputs.base }}
+          RANGE_TIP: ${{ steps.range.outputs.tip }}
+        run: |
+          set -uo pipefail
+          out="$RANGE_DIR"
+          # ci.yml's LANE_IGNORES, the same list: the selector drops these paths from a selection.
+          LANE_IGNORES=(
+            --ignore=tests/analysis
+            --ignore=tests/vocals
+            --ignore=tests/sync/usb
+            --ignore=tests/sets
+            --ignore=tests/quality/test_frontend_typing_gate.py
+            --ignore=tests/quality/test_frontend_typing_directives.py
+            --ignore=tests/quality/test_frontend_unit_seam_gate.py
+            --ignore=tests/quality/test_mypy_cache.py
+            --ignore=tests/perf/test_library_playlist_switch_bench.py
+            --ignore=tests/health_lights/test_ahead_analysis_live_engine.py
+          )
+          printf '%s\n' "${LANE_IGNORES[@]}" > "$out/ignores.txt"
+          # The hour presents itself to the selector as a push to main over base..tip (range.json is a
+          # CI_MAIN_PUSH_RANGE record), selecting whatever the repo variables say: this lane is the selector's.
+          selection_rc=0
+          mode="$(GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH="$out/event.json" \
+            CI_PR_TEST_SELECTION=affected CI_MAIN_PUSH_TEST_SELECTION=affected \
+            CI_MAIN_PUSH_RANGE="$(cat "$out/range.json")" \
+            timeout --kill-after=10 90 .venv/bin/python -m scripts.ci_test_selection select \
+              --shard 1 --shards 1 --out-dir "$out/selection" --budget ci/test-budget-main-hourly.yml \
+              "${LANE_IGNORES[@]}")" || selection_rc=$?
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          case "$selection_rc:$mode" in
+            0:empty) echo "rc=0" >> "$GITHUB_OUTPUT"; echo "[selection] the hour selected no test module"; exit 0 ;;
+            0:affected) ;;
+            *)
+              # FULL is the uncapped lane: never an answer here, so anything else fails the run by name.
+              printf '\n::error title=main hourly selection REFUSED::the selector exited %s with mode [%s]; this run never widens to the full suite\n' "$selection_rc" "$mode"
+              echo "rc=3" >> "$GITHUB_OUTPUT"
+              exit 1
+              ;;
+          esac
+          mapfile -t MODULES < "$out/selection/shard-modules.txt"
+          echo "[selection] ${#MODULES[@]} module(s) over $RANGE_BASE..$RANGE_TIP"
+          set +e
+          # The wall cap: SIGINT lets pytest stop like Ctrl-C and still write the partial JUnit report and
+          # the durations; timeout exits 124 (137 if pytest ignored SIGINT for 30 s) and the report step
+          # reads the partial report (scripts/ci_main_hourly.py R5).
+          timeout --signal=INT --kill-after=30 840 .venv/bin/pytest \
+            --basetemp="${RUNNER_TEMP:?}/pytest-basetemp-hourly-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
+            --junitxml="$out/junit.xml" \
+            "${MODULES[@]}" \
+            --durations=25 \
+            --timeout=900 \
+            "${LANE_IGNORES[@]}"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "wall_cap=true" >> "$GITHUB_OUTPUT"
+            echo "rc=$rc" >> "$GITHUB_OUTPUT"
+            echo "[wall-cap] pytest stopped at the 840 s wall cap (rc=$rc); the report step decides FAIL or INCONCLUSIVE"
+            exit 0
+          fi
+          if [ "$rc" -eq 5 ] && .venv/bin/python -m scripts.ci_test_selection junit-all-skipped "$out/junit.xml" --modules "$out/selection/shard-modules.txt"; then
+            rc=0
+          fi
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Report the range, the selection and the culprit candidates
+        if: ${{ !cancelled() && steps.range.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          RANGE_DIR: ${{ steps.range.outputs.dir }}
+          RANGE_EMPTY: ${{ steps.range.outputs.empty }}
+          PYTEST_RC: ${{ steps.pytest.outputs.rc }}
+          WALL_CAP: ${{ steps.pytest.outputs.wall_cap }}
+        run: |
+          set -euo pipefail
+          out="$RANGE_DIR"
+          rc="$PYTEST_RC"
+          # A pytest step that died before writing its rc (a runner kill) is a failure with no ids.
+          if [ "$RANGE_EMPTY" = true ]; then rc=0; elif [ -z "$rc" ]; then rc=1; fi
+          mapfile -t IGNORES < <(cat "$out/ignores.txt" 2>/dev/null || true)
+          WALL=()
+          if [ "$WALL_CAP" = true ]; then WALL=(--wall-cap); fi
+          .venv/bin/python -m scripts.ci_main_hourly report "${WALL[@]}" --range "$out/range.json" \
+            --selection "$out/selection/selection.json" --junit "$out/junit.xml" \
+            --pytest-rc "$rc" --out "$out/culprits.json" "${IGNORES[@]}"

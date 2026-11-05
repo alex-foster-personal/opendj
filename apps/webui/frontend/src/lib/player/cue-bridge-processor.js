@@ -258,7 +258,15 @@ class CueBridgeReceiverProcessor extends AudioWorkletProcessor {
 			return { dropped: false, duplicated: false, underrun: false, fill: this.fill, priming: true };
 		}
 
-		const result = pullPolicy(this.fill, false, this.readPos, this.ringLocal, this.capacity, left, right);
+		const result = pullPolicy(
+			this.fill,
+			false,
+			this.readPos,
+			this.ringLocal,
+			this.capacity,
+			left,
+			right
+		);
 		this.readPos = result.readFrame;
 		this.fill = result.fill;
 		if (result.underrun) {
@@ -292,7 +300,14 @@ class CueBridgeReceiverProcessor extends AudioWorkletProcessor {
 		// live bridge reads it; it exists so a parity test can compare it
 		// against `CueBridgeRing.pull()`'s own return value.
 		if (this.mode === 'sab') {
-			this._lastPull = sabPull(this.control, this.ring, this.capacity, this._primingState, left, right);
+			this._lastPull = sabPull(
+				this.control,
+				this.ring,
+				this.capacity,
+				this._primingState,
+				left,
+				right
+			);
 			this._priming = this._primingState.value;
 		} else {
 			this._lastPull = this._pullPort(left, right);

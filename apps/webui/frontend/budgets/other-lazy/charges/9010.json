@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 473346,
+  "measured_with_pr": 473492,
+  "sha": "843d022939",
+  "date": "Thu 05 Nov 2026",
+  "reason": "Issue #329 USB tracker pointers in usb-tracker.svelte.ts and UsbPanel.svelte (skill path comment in lazy other-lazy graph).",
+  "payback": "none planned; comment-only linkage to repo skill, no feature bytes"
+}

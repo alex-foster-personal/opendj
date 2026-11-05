@@ -1,9 +1,10 @@
 """HTTP contract for the two /admin Spotify panes.
 
-  if /status reports connected without a live profile call -> broken
-  if a Spotify failure renders as an empty play list -> broken
-  if the production app does not expose both paths -> broken
+if /status reports connected without a live profile call -> broken
+if a Spotify failure renders as an empty play list -> broken
+if the production app does not expose both paths -> broken
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -23,12 +24,8 @@ from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import spotify as spotify_routes
 
-_RECENTLY_PLAYED_FIXTURE = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "spotify" / "recently-played.json"
-)
-_RECENTLY_PLAYED_SHA256 = (
-    "57afc93c54eef45c64eb73747dc958415cec2727d1e5299b09170c6d3ecd3150"
-)
+_RECENTLY_PLAYED_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "spotify" / "recently-played.json"
+_RECENTLY_PLAYED_SHA256 = "57afc93c54eef45c64eb73747dc958415cec2727d1e5299b09170c6d3ecd3150"
 
 
 class _HistorySpotipy:
@@ -121,9 +118,7 @@ def test_status_without_client_id_is_not_connected_and_says_why(
 
 
 @pytest.mark.requirement("CAT-01")
-def test_status_with_client_id_but_no_token_is_not_connected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_status_with_client_id_but_no_token_is_not_connected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A client id alone is not a connection, and the pane must not imply it is.
 
     [if] a client id is set but no token is cached [then] status reads not connected and says no cached token, [else stop]
@@ -221,32 +216,24 @@ def test_recently_played_scores_plays_against_the_local_library(
     assert review["ownership"] == "review"
     assert review["matched_stable_id"] == "local-review-tags"
     assert review["confidence"] == 0.55
-    assert review["suggested_sources"] == suggested_sources(
-        review["artist"], review["title"]
-    )
+    assert review["suggested_sources"] == suggested_sources(review["artist"], review["title"])
 
     unmatched = rows[1]
     assert unmatched["ownership"] == "unmatched"
     assert unmatched["matched_stable_id"] is None
     assert unmatched["confidence"] == 0.0
-    assert unmatched["suggested_sources"] == suggested_sources(
-        unmatched["artist"], unmatched["title"]
-    )
+    assert unmatched["suggested_sources"] == suggested_sources(unmatched["artist"], unmatched["title"])
 
     owned = rows[2]
     assert owned["ownership"] == "owned"
     assert owned["matched_stable_id"] == "local-owned-isrc"
     assert owned["confidence"] == 0.35
     assert owned["isrc"] == "USFIX2600001"
-    assert owned["suggested_sources"] == suggested_sources(
-        owned["artist"], owned["title"]
-    )
+    assert owned["suggested_sources"] == suggested_sources(owned["artist"], owned["title"])
 
 
 @pytest.mark.requirement("CAT-3807")
-def test_recently_played_missing_spotipy_is_503_not_a_bare_500(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_recently_played_missing_spotipy_is_503_not_a_bare_500(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] from_env raises ModuleNotFoundError [then] recently-played answers 503 SPOTIFY_EXTRA_MISSING, [else stop]"""
 
     class _Client:
@@ -271,6 +258,7 @@ def test_recently_played_upstream_failure_is_a_502_not_an_empty_list(
 
     [if] the Spotify history call fails [then] the route answers 502 SPOTIFY_HISTORY_UNAVAILABLE, never an empty list, [else stop]
     """
+
     def _boom(client: object, state_path: Path, *, limit: int) -> list:
         raise RuntimeError("spotify 429")
 
@@ -295,9 +283,7 @@ def test_recently_played_rejects_a_limit_spotify_cannot_serve(tmp_path: Path) ->
 
 
 @pytest.mark.requirement("CAT-01")
-def test_status_never_builds_an_interactive_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_status_never_builds_an_interactive_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A daemon opening a browser would hang the request on a headless host.
 
     [if] status builds a Spotify client [then] it passes interactive=False, [else stop]
@@ -354,6 +340,7 @@ def test_recently_played_reauth_is_a_401_distinct_from_not_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """[if] the client needs reauthorization [then] recently-played answers 401 SPOTIFY_REAUTH_REQUIRED, [else stop]"""
+
     class _Client:
         @staticmethod
         def from_env(**_kwargs: object) -> _Client:
@@ -367,9 +354,7 @@ def test_recently_played_reauth_is_a_401_distinct_from_not_configured(
 
 
 @pytest.mark.requirement("CAT-01")
-def test_recently_played_never_builds_an_interactive_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_recently_played_never_builds_an_interactive_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The history route shares the browser-hang failure mode with /status.
 
     [if] recently-played builds a Spotify client [then] it passes interactive=False, [else stop]
@@ -383,9 +368,7 @@ def test_recently_played_never_builds_an_interactive_client(
             return _Client()
 
     monkeypatch.setattr(spotify_routes, "SpotifyClient", _Client)
-    monkeypatch.setattr(
-        spotify_routes, "fetch_recent_plays", lambda *_a, **_k: []
-    )
+    monkeypatch.setattr(spotify_routes, "fetch_recent_plays", lambda *_a, **_k: [])
     _make_client(tmp_path).get("/api/v1/spotify/recently-played")
 
     assert seen["interactive"] is False

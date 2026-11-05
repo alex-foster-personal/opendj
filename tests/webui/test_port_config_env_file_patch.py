@@ -86,9 +86,7 @@ def test_an_explicit_dotenv_path_still_beats_the_module_default(
 ) -> None:
     """Overshoot control: the call-time default must not override a passed path."""
     patched = _write_env(tmp_path / "patched.env", PATCHED_BACKEND, PATCHED_FRONTEND, PATCHED_HOST)
-    explicit = _write_env(
-        tmp_path / "explicit.env", EXPLICIT_BACKEND, PATCHED_FRONTEND, EXPLICIT_HOST
-    )
+    explicit = _write_env(tmp_path / "explicit.env", EXPLICIT_BACKEND, PATCHED_FRONTEND, EXPLICIT_HOST)
     monkeypatch.setattr(port_config, "WEBUI_ENV_FILE", patched)
     assert resolve_ports(environ={}, dotenv_path=explicit).backend == EXPLICIT_BACKEND
     assert resolve_backend_port(None, environ={}, dotenv_path=explicit) == EXPLICIT_BACKEND
@@ -96,9 +94,7 @@ def test_an_explicit_dotenv_path_still_beats_the_module_default(
     assert resolve_allowed_hosts(environ={}, dotenv_path=explicit) == [EXPLICIT_HOST]
 
 
-def test_process_environment_still_beats_the_patched_env_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_process_environment_still_beats_the_patched_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Precedence control: shell > root ``.env`` survives the default change."""
     patched = _write_env(tmp_path / ".env", PATCHED_BACKEND, PATCHED_FRONTEND, PATCHED_HOST)
     monkeypatch.setattr(port_config, "WEBUI_ENV_FILE", patched)

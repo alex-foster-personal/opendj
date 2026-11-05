@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared import macos_diskutil
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from . import writer_onelibrary
@@ -242,14 +243,6 @@ class ReadbackReport:
             "track_updates": list(self.track_updates),
             "verified": self.verified,
         }
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def compute_plan_id(payload: Mapping[str, Any]) -> str:
@@ -472,7 +465,7 @@ def plan_export(
         schema_version=SCHEMA_VERSION,
         scope=SCOPE,
         template_path=str(template),
-        template_sha256=_sha256(template),
+        template_sha256=sha256_file_hex(template),
         target_root=str(identity.root),
         volume_label=identity.volume_label,
         volume_uuid=identity.volume_uuid,
@@ -596,8 +589,8 @@ def _promote_new_file(local_output: Path, target_output: Path) -> str:
             shutil.copyfileobj(source, destination, length=1024 * 1024)
             destination.flush()
             os.fsync(destination.fileno())
-        expected_hash = _sha256(local_output)
-        if _sha256(part_path) != expected_hash:
+        expected_hash = sha256_file_hex(local_output)
+        if sha256_file_hex(part_path) != expected_hash:
             raise UsbExportError(
                 "promotion_hash_mismatch", "USB staging copy hash does not match"
             )
@@ -631,7 +624,7 @@ def _rollback_promoted_output(
         _assert_identity(plan, identity)
         if not target_output.exists():
             return None
-        if not target_output.is_file() or _sha256(target_output) != expected_hash:
+        if not target_output.is_file() or sha256_file_hex(target_output) != expected_hash:
             return "promoted path no longer contains this transaction's exact bytes"
         target_output.unlink()
         _cleanup_empty_export_dirs(target_output, identity.root)
@@ -652,7 +645,7 @@ def apply_export(plan: ExportPlan, *, confirmation: str) -> ApplyReceipt:
     _assert_identity(plan, identity)
     _require_empty_target(identity.root)
     template = Path(plan.template_path)
-    if not template.is_file() or _sha256(template) != plan.template_sha256:
+    if not template.is_file() or sha256_file_hex(template) != plan.template_sha256:
         raise UsbExportError(
             "template_changed", "template bytes no longer match the reviewed plan"
         )
@@ -728,7 +721,7 @@ def readback_export(plan: ExportPlan, receipt: ApplyReceipt) -> ReadbackReport:
     output = identity.root / OUTPUT_RELATIVE_PATH
     if not output.is_file():
         raise UsbExportError("readback_missing", f"export output is missing: {output}")
-    output_hash = _sha256(output)
+    output_hash = sha256_file_hex(output)
     if output_hash != receipt.output_sha256:
         raise UsbExportError(
             "readback_hash_mismatch", "mounted output hash differs from apply receipt"

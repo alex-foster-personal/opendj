@@ -16,6 +16,7 @@ are the assertions that keep "the database refused it" from quietly becoming
 - if n_lines stops agreeing with lines.derive_lines then the stored column and
   what the UI renders disagree -- broken
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -56,27 +57,21 @@ def test_canonical_bytes_are_sorted_compact_and_newline_free() -> None:
 
 
 def test_write_returns_the_hash_of_the_file_on_disk(tmp_path: Path) -> None:
-    path, digest, n_words, n_lines = karaoke_cache.write_words(
-        karaoke_cache.cache_path(tmp_path, "sid-1"), _build()
-    )
+    path, digest, n_words, n_lines = karaoke_cache.write_words(karaoke_cache.cache_path(tmp_path, "sid-1"), _build())
     assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
     assert (n_words, n_lines) == (3, 2)
 
 
 def test_n_lines_agrees_with_derive_lines(tmp_path: Path) -> None:
     built = _build()
-    _, _, _, n_lines = karaoke_cache.write_words(
-        karaoke_cache.cache_path(tmp_path, "sid-1"), built
-    )
+    _, _, _, n_lines = karaoke_cache.write_words(karaoke_cache.cache_path(tmp_path, "sid-1"), built)
     assert n_lines == len(lines.derive_lines(built.words))
 
 
 def test_idx_is_assigned_positionally_not_read(tmp_path: Path) -> None:
     """The whole-list rule: the caller never supplies an index."""
     with pytest.raises(KaraokeCacheError, match="unsupported keys"):
-        karaoke_cache.build_words(
-            stable_id="sid-1", source="lrclib get", words=[{**word("a"), "idx": 7}]
-        )
+        karaoke_cache.build_words(stable_id="sid-1", source="lrclib get", words=[{**word("a"), "idx": 7}])
     built = _build()
     assert [entry.idx for entry in built.words] == [0, 1, 2]
 
@@ -86,7 +81,12 @@ def test_idx_is_assigned_positionally_not_read(tmp_path: Path) -> None:
     [
         ({**word("a"), "unexpected": 1}, "unsupported keys"),
         ({"word": "a"}, "missing required keys"),
-        ({**word(""), }, "non-empty string"),
+        (
+            {
+                **word(""),
+            },
+            "non-empty string",
+        ),
         ({**word("a"), "witness": "nope"}, "witness"),
         ({**word("a"), "line_final": 1}, "line_final must be a bool"),
         ({**word("a"), "start_s": "1.0"}, "must be a number or null"),
@@ -109,9 +109,7 @@ def test_cache_path_refuses_a_traversing_stable_id(tmp_path: Path) -> None:
 
 
 def test_parse_round_trips_every_field(tmp_path: Path) -> None:
-    path, _, _, _ = karaoke_cache.write_words(
-        karaoke_cache.cache_path(tmp_path, "sid-1"), _build()
-    )
+    path, _, _, _ = karaoke_cache.write_words(karaoke_cache.cache_path(tmp_path, "sid-1"), _build())
     parsed = karaoke_cache.parse_words(path, "sid-1")
     assert parsed.source == "lrclib get"
     assert parsed.pipeline_version == karaoke_cache.PIPELINE_VERSION

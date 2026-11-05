@@ -26,9 +26,7 @@ export type ShellUpdateProgress =
 	| { phase: 'restarting' };
 
 export type ShellUpdateOutcome =
-	| { kind: 'no-update' }
-	| { kind: 'installed' }
-	| { kind: 'refused'; reason: string };
+	{ kind: 'no-update' } | { kind: 'installed' } | { kind: 'refused'; reason: string };
 
 /** What apps/desktop/electron/src/preload.ts exposes. */
 interface ElectronShellBridge {
@@ -149,11 +147,16 @@ export function electronSavedAudioEngineChoice(scope: Scope = globalThis): strin
  * not in Electron. Rejects when the shell predates the bridge call, so a
  * choice that would not survive a relaunch is never reported as saved.
  */
-export function electronSaveAudioEngineChoice(choice: string, scope: Scope = globalThis): Promise<void> | null {
+export function electronSaveAudioEngineChoice(
+	choice: string,
+	scope: Scope = globalThis
+): Promise<void> | null {
 	const electron = electronBridge(scope);
 	if (electron === null) return null;
 	if (typeof electron.setAudioEngineChoice !== 'function') {
-		return Promise.reject(new Error('this Electron shell cannot save the audio engine choice; update the app'));
+		return Promise.reject(
+			new Error('this Electron shell cannot save the audio engine choice; update the app')
+		);
 	}
 	return electron.setAudioEngineChoice(choice);
 }

@@ -21,14 +21,7 @@ import {
 } from '$lib/rb/jobs-store.svelte';
 
 export type StemsFeedbackState =
-	| 'none'
-	| 'pending'
-	| 'queued'
-	| 'running'
-	| 'done'
-	| 'failed'
-	| 'cancelled'
-	| 'unknown';
+	'none' | 'pending' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'unknown';
 
 export type StemsFeedback = {
 	state: StemsFeedbackState;
@@ -52,7 +45,10 @@ export function stemsJobFeedback(jobId: string | null, job: JobRow | null): Stem
 	// An id with no row yet is the normal first instant after an enqueue. It is
 	// not evidence of anything, so it must not read as a failure.
 	if (job === null) {
-		return { state: 'pending', message: 'Stem separation was requested; waiting for the engine to pick it up.' };
+		return {
+			state: 'pending',
+			message: 'Stem separation was requested; waiting for the engine to pick it up.'
+		};
 	}
 	// The wire type is a plain string. A value outside the engine's status list
 	// is contract drift: report it as unknown rather than guess what it meant.

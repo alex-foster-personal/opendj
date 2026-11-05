@@ -4,7 +4,7 @@ Self-contained: every functional test builds its OWN tmp state.db (real
 Phase 5 migrations + Phase 08 DDL + seeded tracks/track_fields) so no
 shared data is touched and nothing here needs the repo's live state.db.
 The one live-DB smoke at the bottom skips cleanly when
-data/state/state.db is absent.
+(private path) is absent.
 
 Regression one-liners:
   - if GET /smartlists does not list a created smartlist then broken
@@ -377,7 +377,8 @@ def test_update_smartlist_requires_if_match_without_mutation(client, state_db_pa
 
 
 def test_update_smartlist_stale_if_match_returns_current_etag_without_mutation(
-    client, state_db_path,
+    client,
+    state_db_path,
 ):
     sid = _create_smartlist(state_db_path, "120s", _BPM_RULE)
     detail = client.get(f"/api/v1/smartlists/{sid}")
@@ -440,29 +441,23 @@ def test_smartlists_openapi_documents_cas_headers_and_responses(client):
 
     assert "ETag" in get_operation["responses"]["200"]["headers"]
     assert any(
-        parameter["name"] == "If-Match"
-        and parameter["in"] == "header"
-        and parameter["required"] is True
+        parameter["name"] == "If-Match" and parameter["in"] == "header" and parameter["required"] is True
         for parameter in put_operation["parameters"]
     )
     assert {"200", "409", "428"} <= set(put_operation["responses"])
     assert "ETag" in put_operation["responses"]["200"]["headers"]
     assert "ETag" in put_operation["responses"]["409"]["headers"]
     assert (
-        put_operation["responses"]["409"]["content"]["application/json"]
-        ["schema"]["$ref"]
+        put_operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/SmartlistConflictBody"
     )
     assert (
-        put_operation["responses"]["428"]["content"]["application/json"]
-        ["schema"]["$ref"]
+        put_operation["responses"]["428"]["content"]["application/json"]["schema"]["$ref"]
         == "#/components/schemas/SmartlistPreconditionRequiredBody"
     )
     conflict_schema = schema["components"]["schemas"]["SmartlistConflictBody"]
     assert {"current", "etag"} <= set(conflict_schema["required"])
-    assert conflict_schema["properties"]["current"]["$ref"].endswith(
-        "/SmartlistSummary"
-    )
+    assert conflict_schema["properties"]["current"]["$ref"].endswith("/SmartlistSummary")
 
 
 # ----------------------------------------------------------- evaluation

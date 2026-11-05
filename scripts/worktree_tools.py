@@ -51,8 +51,7 @@ def tool_argv(tool: str, rest: list[str]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] not in TOOLS:
-        print(f"usage: python -m scripts.worktree_tools {{{'|'.join(TOOLS)}}} <args>",
-              file=sys.stderr)
+        print(f"usage: python -m scripts.worktree_tools {{{'|'.join(TOOLS)}}} <args>", file=sys.stderr)
         return EXIT_UNAVAILABLE
     tool, rest = args[0], args[1:]
     home = fleet_af_home()
@@ -70,8 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.append(str(home))
     spec_origin = getattr(importlib.import_module(PACKAGE), "__file__", None) or ""
     if not Path(spec_origin).resolve().is_relative_to(home.resolve()):
-        print(f"[ERROR] worktree tools: {PACKAGE} resolved to {spec_origin}, not under {home}",
-              file=sys.stderr)
+        print(f"[ERROR] worktree tools: {PACKAGE} resolved to {spec_origin}, not under {home}", file=sys.stderr)
         return EXIT_UNAVAILABLE
     sys.argv = [str(source), *tool_argv(tool, rest)]
     runpy.run_module(f"{PACKAGE}.{tool}", run_name="__main__", alter_sys=True)

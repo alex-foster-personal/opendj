@@ -3,6 +3,7 @@
 The tag blocks are written with ffmpeg ``-c copy -metadata``, not Mixed In
 Key. A Mac capture with MIK remains the open acceptance item in issue #3864.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -13,13 +14,20 @@ import pytest
 
 from apps.shared.hashing import sha256_audio_payload, sha256_file
 
+
 def _tag(src: Path, dst: Path, value: str) -> None:
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", str(src),
-            "-c", "copy",
-            "-metadata", f"title={value}",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-c",
+            "copy",
+            "-metadata",
+            f"title={value}",
             str(dst),
         ],
         check=True,
@@ -36,8 +44,14 @@ def test_library_written_retags_preserve_audio_identity(tmp_path: Path, extensio
     source = tmp_path / "source.wav"
     subprocess.run(
         [
-            "ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i",
-            "sine=frequency=440:duration=0.1", str(source),
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.1",
+            str(source),
         ],
         check=True,
     )
@@ -64,8 +78,14 @@ def test_different_recordings_with_same_tags_do_not_share_audio_identity(tmp_pat
     for frequency, path in ((440, first), (880, second)):
         subprocess.run(
             [
-                "ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i",
-                f"sine=frequency={frequency}:duration=0.1", str(path),
+                "ffmpeg",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency={frequency}:duration=0.1",
+                str(path),
             ],
             check=True,
         )

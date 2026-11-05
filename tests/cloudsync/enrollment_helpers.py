@@ -6,6 +6,7 @@ and the CLI tests read the SAME rows the same way: a parity test that built
 its own reader would be comparing its own two readers as much as the two code
 paths under test.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -46,9 +47,7 @@ def hub_machine_id(hub_dir: Path) -> str:
     return machine_identity.get_or_create_machine_id(hub_dir)
 
 
-def mint_grant(
-    hub_dir: Path, *, email: str = ENROLL_OWNER_EMAIL, ttl_s: int = 900
-) -> str:
+def mint_grant(hub_dir: Path, *, email: str = ENROLL_OWNER_EMAIL, ttl_s: int = 900) -> str:
     """Mint through the same function the CLI's ``grant`` subcommand calls."""
     return maintenance_enroll.grant(hub_dir, owner_email=email, ttl_s=ttl_s).token
 
@@ -62,9 +61,7 @@ def mint_expired_grant(hub_dir: Path, *, email: str = ENROLL_OWNER_EMAIL) -> str
     instead of on redemption. A normal lifetime issued an hour ago is what an
     expired grant really looks like in the wild.
     """
-    issued_at = sync_stamp.canonical_from(
-        datetime.now(UTC) - timedelta(seconds=enrollment_credentials.GRANT_TTL_S * 4)
-    )
+    issued_at = sync_stamp.canonical_from(datetime.now(UTC) - timedelta(seconds=enrollment_credentials.GRANT_TTL_S * 4))
     conn = state_db.open_rw(client.state_db_path(hub_dir))
     try:
         conn.execute("BEGIN")
@@ -76,9 +73,7 @@ def mint_expired_grant(hub_dir: Path, *, email: str = ENROLL_OWNER_EMAIL) -> str
     return minted.token
 
 
-def machine_payload(
-    data_dir: Path, *, name: str, is_hub: bool = False
-) -> dict[str, Any]:
+def machine_payload(data_dir: Path, *, name: str, is_hub: bool = False) -> dict[str, Any]:
     stamp = sync_stamp.canonical_now()
     return {
         "machine_id": machine_identity.get_or_create_machine_id(data_dir),
@@ -117,11 +112,7 @@ def masked_owner(row: dict[str, Any]) -> dict[str, Any]:
 
 def masked_machine(row: dict[str, Any]) -> dict[str, Any]:
     """The per-machine facts two DIFFERENT machines still have in common."""
-    return {
-        k: v
-        for k, v in row.items()
-        if k not in ("machine_id", "name", "data_root", "first_seen", "last_seen")
-    }
+    return {k: v for k, v in row.items() if k not in ("machine_id", "name", "data_root", "first_seen", "last_seen")}
 
 
 __all__ = [

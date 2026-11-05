@@ -52,9 +52,7 @@ KNOWN_FLAKE_IDENTITIES = (
 # A parametrized variant (`name[case]`) does NOT match, which is the safe direction: it
 # reads GENUINE and a person looks, rather than inheriting another test's excuse.
 KNOWN_FLAKES = re.compile(
-    r"(?:^|[/:\s])(?:"
-    + "|".join(re.escape(name) for name in KNOWN_FLAKE_IDENTITIES)
-    + r")(?=$|[:\s])"
+    r"(?:^|[/:\s])(?:" + "|".join(re.escape(name) for name in KNOWN_FLAKE_IDENTITIES) + r")(?=$|[:\s])"
 )
 INFRA_CLASS_JOBS = re.compile(r"pytest fast lane|affected-test canary")
 RATCHET_JOBS = re.compile(r"quality ratchet")
@@ -310,9 +308,7 @@ def residual_identities(identities: frozenset[str], main_red: frozenset[str]) ->
     return frozenset(i for i in identities if not KNOWN_FLAKES.search(i)) - main_red
 
 
-def _fully_explained_verdict(
-    *, baseline_stale: bool, leaned_on_main: bool, beyond_tests: bool
-) -> JobVerdict:
+def _fully_explained_verdict(*, baseline_stale: bool, leaned_on_main: bool, beyond_tests: bool) -> JobVerdict:
     """The verdict when every identity was accounted for, so nothing NEW failed here."""
     if baseline_stale and leaned_on_main:
         # Sol's P1 on #3293. Identities were subtracted using a baseline measured at a commit
@@ -385,11 +381,7 @@ def classify_job(
     if not identities and INFRA_CLASS_JOBS.search(job_name):
         return verdict(JobVerdict.INFRA)
     if RATCHET_JOBS.search(job_name) and not residual:
-        return verdict(
-            _ratchet_verdict(
-                ratchet_breach_seen=ratchet_breach_seen, beyond_tests=beyond_tests
-            )
-        )
+        return verdict(_ratchet_verdict(ratchet_breach_seen=ratchet_breach_seen, beyond_tests=beyond_tests))
     if not identities and job_name in main_red_job_names:
         # Sol's P1 on #3293. A name is not a cause. Every name in `main_red_job_names` is one
         # whose main log was READ and named failing TESTS, and this job named none, so main's

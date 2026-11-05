@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
+
+from scripts.perf.ledger_row import LedgerProvenance, LedgerRowCtx, base_row
 
 CAPTURE_ID = "perf-capture"
 ROUND = "issue-1885"
@@ -16,13 +17,17 @@ SOURCE = (
     "client-telemetry login span (submit mark to first recordLibraryLoadTiming); "
     "scored value is in-app (Google consent excluded)"
 )
-METHOD = (
-    "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming "
-    "(in-app, Google excluded)"
-)
+METHOD = "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming (in-app, Google excluded)"
 SPAN_NAME = "login-submit-to-library-usable"
 RESTORED_SESSION_PREFIX = "restored-session:"
 MISSING_TELEMETRY_PREFIX = "missing-telemetry:"
+
+_PROVENANCE = LedgerProvenance(
+    round=ROUND,
+    source=SOURCE,
+    method=METHOD,
+    capture_id=CAPTURE_ID,
+)
 
 
 def classify_s13_withhold_reason(reason: str | None) -> str:
@@ -72,40 +77,13 @@ def _span_is_scorable(span: dict[str, Any]) -> tuple[bool, str | None]:
     return True, None
 
 
-@dataclass(frozen=True)
-class _LedgerRowCtx:
-    sha: str
-    machine: str
-    capture_date: date
-    note: str
-    status: str | None = None
-    measured: bool | None = None
-
-
 def _base_row(
     kpi: str,
     value: float | None,
     unit: str,
-    ctx: _LedgerRowCtx,
+    ctx: LedgerRowCtx,
 ) -> dict[str, Any]:
-    row: dict[str, Any] = {
-        "date": ctx.capture_date.isoformat(),
-        "round": ROUND,
-        "kpi": kpi,
-        "value": value,
-        "unit": unit,
-        "machine": ctx.machine,
-        "source": SOURCE,
-        "method": METHOD,
-        "sha": ctx.sha,
-        "capture_id": CAPTURE_ID,
-        "note": ctx.note,
-    }
-    if ctx.status is not None:
-        row["status"] = ctx.status
-    if ctx.measured is not None:
-        row["measured"] = ctx.measured
-    return row
+    return base_row(kpi, value, unit, ctx, _PROVENANCE)
 
 
 def span_to_ledger_rows(
@@ -119,7 +97,7 @@ def span_to_ledger_rows(
     """Convert a client-events perf-span into scored and context ledger rows."""
     if span is None:
         withheld_reason = reason or "missing library-usable mark"
-        ctx = _LedgerRowCtx(
+        ctx = LedgerRowCtx(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
@@ -135,7 +113,7 @@ def span_to_ledger_rows(
     ok, span_reason = _span_is_scorable(span)
     if not ok:
         withheld_reason = reason or span_reason or "span failed validation"
-        ctx = _LedgerRowCtx(
+        ctx = LedgerRowCtx(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
@@ -155,10 +133,13 @@ def span_to_ledger_rows(
         "browser capture against running engine; duration_ms is in-app "
         "(pre_navigate + post_navigate); full_wall is context and includes Google"
     )
-    scored_ctx = _LedgerRowCtx(
-        sha=sha, machine=machine, capture_date=capture_date, note=provenance_note,
+    scored_ctx = LedgerRowCtx(
+        sha=sha,
+        machine=machine,
+        capture_date=capture_date,
+        note=provenance_note,
     )
-    wall_ctx = _LedgerRowCtx(
+    wall_ctx = LedgerRowCtx(
         sha=sha,
         machine=machine,
         capture_date=capture_date,
@@ -178,14 +159,10 @@ def _infer_json_indent(text: str) -> int:
         if match:
             indents.append(len(match.group(1)))
     if not indents:
-        raise ValueError(
-            "cannot infer JSON indent from ledger: no indented property lines found"
-        )
+        raise ValueError("cannot infer JSON indent from ledger: no indented property lines found")
     width = min(indents)
     if width < 1:
-        raise ValueError(
-            "cannot infer JSON indent from ledger: indent width must be positive"
-        )
+        raise ValueError("cannot infer JSON indent from ledger: indent width must be positive")
     return width
 
 

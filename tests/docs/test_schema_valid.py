@@ -60,10 +60,14 @@ def test_spec_schema_passes_meta_schema() -> None:
 
 
 @pytest.mark.requirement("OPEN-03c")
-@pytest.mark.parametrize("fixture_dir", sorted(
-    [p.name for p in FIXTURE_ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")]
-    if FIXTURE_ROOT.exists() else []
-))
+@pytest.mark.parametrize(
+    "fixture_dir",
+    sorted(
+        [p.name for p in FIXTURE_ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")]
+        if FIXTURE_ROOT.exists()
+        else []
+    ),
+)
 def test_fixture_documents_parse(fixture_dir: str) -> None:
     """Every conformance fixture's expected.opendj.json is valid JSON."""
     path = FIXTURE_ROOT / fixture_dir / "expected.opendj.json"

@@ -4,6 +4,7 @@
 [if] a row names an unknown source [then] sqlite refuses it, [else stop].
 [if] the engine store migrates [then] it holds the same table, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
