@@ -505,6 +505,7 @@
 	}
 
 	async function _togglePlay(deck: DeckId, pressT0Ms?: number): Promise<void> {
+		if (getDeckState(deck).stable_id === null) return;
 		_close();
 		const playing = getDeckState(deck).playing;
 		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing }, pressT0Ms);
@@ -603,10 +604,14 @@
 				{:else if root === 'play'}
 					<div class="qd-leaf" role="menu">
 						{#each DECK_IDS as deck (deck)}
+							{@const loaded = getDeckState(deck).stable_id !== null}
 							<button
 								type="button"
 								class="qd-item qd-tall"
+								class:qd-inert={!loaded}
 								role="menuitem"
+								disabled={!loaded}
+								title={loaded ? undefined : 'no track loaded'}
 								onclick={(e) => void _togglePlay(deck, e.timeStamp)}
 							>
 								{getDeckState(deck).playing ? 'Pause' : 'Play'} CH{deck}
@@ -828,6 +833,9 @@
 	.qd-item:hover,
 	.qd-item.open {
 		background: var(--rb-select, #1d3f73);
+	}
+	.qd-item:disabled {
+		cursor: not-allowed;
 	}
 	.qd-empty {
 		padding: 8px 10px;

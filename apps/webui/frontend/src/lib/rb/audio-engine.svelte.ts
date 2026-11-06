@@ -1,5 +1,5 @@
 import { _controlSegmentAt, _emptyRuntime, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
-export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './master-election';
+export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './automatic-handoff-runners';
 import {
 	SILENT_METER_READING,
 	createMasterMeterSource,
@@ -134,6 +134,7 @@ import {
 	saveTrackRating,
 	RbApiError
 } from '$lib/rb/api-rb';
+import { normalizeRating } from '$lib/rating';
 import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
@@ -297,6 +298,7 @@ import {
 	deriveKeySyncTargetManualShift,
 	effectiveCamelotKey,
 	isKeySyncMode,
+	keySyncAudibleCamelotKey,
 	keySyncKey,
 	keySyncKeyIsGuess,
 	keySyncLeaderDeck,
@@ -396,6 +398,7 @@ export {
 	deriveKeySyncSemitones,
 	deriveKeySyncTargetManualShift,
 	effectiveCamelotKey,
+	keySyncAudibleCamelotKey,
 	masterTempoSemitones,
 	parseCamelotKey
 };
@@ -721,6 +724,11 @@ export function _configureGraphRebuildRetriesForTests(input: {
 		_rebuildRetryDelaysMs = previous.delays;
 		_rebuildRetrySleep = previous.sleep;
 	};
+}
+
+/** TEST-ONLY: read the AUDFID-03 master tap handle (iopin-12-fidelity-tap-teardown). */
+export function _fidelityTapForTests(): MasterStereoTap | null {
+	return _fidelityTap;
 }
 
 async function _rebuildAudioGraphOnce(addModuleTimeoutMs: number): Promise<void> {
@@ -1089,7 +1097,12 @@ export function keyShiftOptions(deck: DeckId, target: DeckId): KeyLadderRow[] | 
 	if (deck === target) throw new RangeError(`key options: deck ${deck} cannot target itself`);
 	const source = deckStates[deck];
 	const leader = deckStates[target];
-	const leaderKey = effectiveCamelotKey(keySyncKey(leader), leader.key_shift_semitones);
+	const leaderKey = keySyncAudibleCamelotKey(
+		keySyncKey(leader),
+		leader.pitch,
+		leader.master_tempo_enabled,
+		leader.key_shift_semitones
+	);
 	if (source.stable_id === null || leader.stable_id === null || parseCamelotKey(keySyncKey(source)) === null || parseCamelotKey(leaderKey) === null) return null;
 	return keyShiftLadder(keySyncKey(source), leaderKey);
 }
@@ -1116,7 +1129,15 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	const masterInput = _keySyncSource(masterDeck);
 	if (!keySyncPreviewAvailable(sourceInput) || !keySyncPreviewAvailable(masterInput)) return null;
 	const baseline = keySyncManualShiftBaseline(sourceInput);
-	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(sourceKey, masterKey, keySyncEffectiveAudibleSemitones(sourceInput), keySyncEffectiveAudibleSemitones(masterInput), baseline, source.key_sync_mode);
+	const masterAudibleRounded = Math.round(keySyncEffectiveAudibleSemitones(masterInput));
+	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(
+		sourceKey,
+		masterKey,
+		keySyncEffectiveAudibleSemitones(sourceInput),
+		masterAudibleRounded,
+		baseline,
+		source.key_sync_mode
+	);
 	return { masterDeck, targetManualShiftSemitones, deltaSemitones: targetManualShiftSemitones - baseline };
 }
 
@@ -1133,11 +1154,11 @@ export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	try {
 		const rating = await saveTrackRating(stable_id, next);
 		// Every path awaits (a request, or the stick store's on-demand import).
-		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = rating;
+		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = normalizeRating(rating);
 	} catch (exc) {
 		if (exc instanceof ConflictError) {
 			if (deckStates[deck].stable_id === stable_id) {
-				deckStates[deck].rating = exc.current.rating ?? null;
+				deckStates[deck].rating = normalizeRating(exc.current.rating ?? null);
 			}
 			pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
 			return;
@@ -1175,14 +1196,13 @@ import {
 	type PausedDeckControlUpdate
 } from './audio-engine-guards';
 import { createDeckVocalsSink } from './deck-vocals-sink';
+import { runAutomaticMasterElection, runAutomaticRejoin as _automaticRejoinRunner } from './automatic-handoff-runners';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
-	runAutomaticRejoin as _automaticRejoinRunner,
 	electMaster,
 	HANDOFF_TICK_MS,
 	LEVEL_HANDOFF_IDLE,
 	masterHandoffMessage,
-	runAutomaticMasterElection,
 	automaticElectionHeld,
 	autoPlayYieldsNow,
 	stepLiveLevelHandoff,
@@ -3295,6 +3315,10 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		_fidelityTap?.disconnect();
+		_fidelityTap = null;
+		_fidelityLoopStop?.();
+		_fidelityLoopStop = null;
 		releaseMasterMeterTap();
 		// The mute VALUE survives teardown on purpose: a route remount must not
 		// hand a headless agent its audio back. Only the node is released.
@@ -3512,7 +3536,7 @@ class RbAudioEngine implements AudioEngine {
 			// the deck's "unknown" null.
 			st.title = candidateTrack.title ?? null;
 			st.artist = candidateTrack.artist ?? null;
-			st.rating = candidateTrack.rating ?? null;
+			st.rating = normalizeRating(candidateTrack.rating ?? null);
 			st.key = candidateTrack.key ?? null;
 			st.key_guess = candidateTrack.key_guess ?? null;
 			st.key_source = candidateTrack.key_source ?? null; // DECK-KEY-01: the row's key_source

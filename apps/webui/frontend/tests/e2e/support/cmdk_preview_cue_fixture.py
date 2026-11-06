@@ -1,10 +1,10 @@
 """Build the throwaway library for the Cmd K cue-preview browser gate (CMDK-07..08).
 
 No mocked data, and no hand-written grid. The Cmd K cue preview jumps by bars,
-so it needs a REAL beat grid on ``/anlz`` for the highlighted track, and a
-locally ingested track has none until the own beatgrid producer has run
-(``local_anlz_payload`` leaves the rekordbox-owned blocks empty). So this
-builder does what a real library gets:
+so it needs REAL measured downbeats for the highlighted track. A locally
+ingested track has an empty ``/anlz`` grid (``local_anlz_payload`` leaves the
+rekordbox-owned blocks empty), while the production librosa analysis is served
+through ``/beatgrid-fallback``. This builder does what a real local library gets:
 
 1. Real audio is GENERATED with the same accented pulse the deckload fixture
    uses (``deckload_fixture.write_tone_and_pulse_wav``): a loud downbeat on
@@ -13,19 +13,11 @@ builder does what a real library gets:
 2. The rows are written by the REAL folder ingest
    (``python -m apps.shared.state.cli ingest-folder``), through the same
    helper the deckload fixture uses.
-3. The PRODUCTION own beatgrid producer runs over that audio
-   (``apps.analysis.run --backend own_beatgrid.backfill``: Beat This!, grid
-   fit, canonical pointer), and every track must come back ``status: ok`` at
-   its generated tempo with a beat-1 marker, or the build fails naming it.
+3. The PRODUCTION librosa analyzer runs over that audio
+   (``apps.analysis.run --backend librosa``), and every track must come back
+   with measured downbeats at its generated tempo, or the build fails naming it.
 4. ``cmdk.v2`` and ``cmdk.v2.preview`` are turned on in the data dir's own
    ``feature-flags.json``.
-
-The producer needs the verified Beat This! checkpoint. ``MDT_BEATGRID_WEIGHTS``
-names it when set; otherwise the builder fetches it once through the payload
-builder's own content-addressed, sha256-checked fetcher
-(``scripts.payload_beatgrid.fetch_checkpoint``), the same file a packaged app
-ships. A download that fails or does not match the pinned digest fails the
-build: the gate never runs on a track with no grid.
 
 The data dir is wiped and rebuilt on every run, and only after
 :func:`checked_data_dir` has accepted it (Sol r4278366173 on #6689).
@@ -40,14 +32,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
 
 from apps.webui.frontend.tests.e2e.support import deckload_fixture as deckload
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import FixtureTrack
-from scripts.payload_beatgrid import CHECKPOINT_CACHE_DIR, PayloadBeatgridError, fetch_checkpoint
 
 #: Two tracks, so the highlighted row is a choice among real rows, not the only one.
 TRACKS: tuple[FixtureTrack, ...] = (
@@ -81,30 +71,8 @@ def checked_data_dir(data_dir: Path) -> Path:
     return resolved
 
 
-def _beatgrid_weights(checkpoint_cache: Path | None) -> Path:
-    """The verified Beat This! checkpoint: MDT_BEATGRID_WEIGHTS, else the payload cache.
-
-    ``checkpoint_cache`` overrides the payload builder's cache dir, so a caller
-    running this under a sandbox HOME still reuses the checkpoint it already has.
-    """
-    named = os.environ.get(deckload.OWN_BEATGRID_WEIGHTS_ENV, "").strip()
-    if named:
-        path = Path(named)
-        if not path.is_file():
-            raise SystemExit(f"[ERROR] {deckload.OWN_BEATGRID_WEIGHTS_ENV}={named!r} is not a file")
-        return path
-    try:
-        return fetch_checkpoint(checkpoint_cache if checkpoint_cache is not None else CHECKPOINT_CACHE_DIR)
-    except PayloadBeatgridError as exc:
-        raise SystemExit(
-            f"[ERROR] UNAVAILABLE: no Beat This! checkpoint, so no track can have a beat grid "
-            f"and the cue preview cannot jump: {exc}"
-        ) from exc
-
-
-def build(data_dir: Path, checkpoint_cache: Path | None = None) -> list[tuple[str, str | None, str | None]]:
+def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
     data_dir = checked_data_dir(data_dir)
-    weights = _beatgrid_weights(checkpoint_cache)
     if data_dir.exists():
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True)
@@ -112,8 +80,7 @@ def build(data_dir: Path, checkpoint_cache: Path | None = None) -> list[tuple[st
     audio_dir = data_dir / AUDIO_SUBDIR
     files = deckload.ensure_audio(audio_dir, TRACKS)
     rows = deckload._ingest_and_verify(data_dir, audio_dir, files, "cmdk-preview-cue")
-    os.environ[deckload.OWN_BEATGRID_WEIGHTS_ENV] = str(weights)
-    deckload._run_own_beatgrid_analysis(data_dir, rows, TRACKS, "cmdk-preview-cue")
+    deckload._run_librosa_analysis(data_dir, rows, TRACKS, "cmdk-preview-cue")
     for stable_id, title, _file_path in rows:
         if title is None or SEARCH_QUERY not in title:
             raise SystemExit(
@@ -126,20 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cmdk_preview_cue_fixture", description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", required=True, help="absolute path of the throwaway data dir")
     parser.add_argument("--home", help="sandbox HOME the engine runs with, created here so the config needs no shell")
-    parser.add_argument(
-        "--checkpoint-cache",
-        type=Path,
-        help="where the Beat This! checkpoint is cached when MDT_BEATGRID_WEIGHTS is unset "
-        "(default: scripts.payload_beatgrid.CHECKPOINT_CACHE_DIR)",
-    )
     args = parser.parse_args(argv)
-    # The guard runs before anything else, so a refused path costs no download either.
+    # The guard runs before anything else, so a refused path cannot be removed.
     checked_data_dir(Path(args.data_dir))
     if args.home:
         Path(args.home).mkdir(parents=True, exist_ok=True)
-    rows = build(Path(args.data_dir), args.checkpoint_cache)
+    rows = build(Path(args.data_dir))
     print(
-        f"[OK] cmdk cue-preview fixture: {len(rows)} tracks with an own beat grid, flags {FLAGS}",
+        f"[OK] cmdk cue-preview fixture: {len(rows)} tracks with librosa fallback downbeats, flags {FLAGS}",
         file=sys.stderr,
     )
     return 0

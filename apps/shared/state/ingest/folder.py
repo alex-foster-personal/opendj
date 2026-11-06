@@ -327,6 +327,210 @@ class AnalysisDropBudget:
         return True
 
 
+@dataclasses.dataclass
+class _BoundFile:
+    stable_id: str
+    tier: str
+    duration_ms: int | None
+    metadata: audio_files.AudioMetadata | None
+    existing: tuple[Any, ...] | None
+    rows: list[tuple[Any, ...]]
+    kept_isrc: str | None
+
+
+def _bind_collision_rows(
+    entry: audio_files.AudioFile,
+    report: FolderIngestReport,
+    live_by_key: dict[str, list[tuple[Any, ...]]],
+    returned_by_key: dict[str, tuple[Any, ...]],
+    seen: set[str],
+) -> _BoundFile | None:
+    """Resolve this file onto a live or returned row, or skip a duplicate id."""
+    identified = _identify(entry, report)
+    if identified is None:
+        return None
+    stable_id, tier, duration_ms, metadata = identified
+    # Same canonical path (NFC + casefold), new mtime: tier-3 would mint
+    # a second id. Keep the row the library already has, including its
+    # tier and ISRC, even when the walked spelling differs. A fresh
+    # inferred id must not relabel an ISRC row or clear its ISRC.
+    # NATIVE-24 still does not merge rows that already exist. When more
+    # than one live row shares the canonical path, the strongest identity
+    # receives the tag refresh. The others keep their ids and, when the
+    # bytes changed, receive the new hash below.
+    key = path_collision_key(str(entry.path))
+    rows = _rows_to_write_onto(live_by_key, returned_by_key, key)
+    existing = rows[0] if rows else None
+    kept_isrc: str | None = None
+    prior_hash: str | None = None
+    if existing is not None:
+        stable_id = str(existing[0])
+        tier = str(existing[1])
+        kept_isrc = existing[2]
+        prior_hash = existing[3]
+        rows[0] = (
+            stable_id,
+            tier,
+            kept_isrc,
+            prior_hash,
+            str(entry.path),
+            *existing[5:],
+        )
+    else:
+        # Remember the id this batch just minted so a second spelling of
+        # the same path is skipped instead of inserted beside it.
+        rows = [(
+            stable_id,
+            tier,
+            kept_isrc,
+            prior_hash,
+            str(entry.path),
+            None,
+            "[]",
+            None,
+            duration_ms,
+            None,
+        )]
+    live_by_key[key] = rows
+    if stable_id in seen:
+        report.tracks_skipped += 1
+        return None
+    seen.add(stable_id)
+    return _BoundFile(
+        stable_id=stable_id,
+        tier=tier,
+        duration_ms=duration_ms,
+        metadata=metadata,
+        existing=existing,
+        rows=rows,
+        kept_isrc=kept_isrc,
+    )
+
+
+def _skip_deleted_or_restore(
+    writer: StateWriter,
+    stable_id: str,
+    audio_hash: str,
+    report: FolderIngestReport,
+    restore_removed: bool,
+) -> bool:
+    """True when a deleted match must not be written (LIBM-140 skip)."""
+    removed = deleted_tracks.find_deleted_match(
+        writer.raw_conn,
+        stable_id=stable_id,
+        content_hash=None,
+        audio_hash=audio_hash,
+    )
+    if removed is not None and not restore_removed:
+        report.tracks_skipped_deleted += 1
+        return True
+    if removed is not None:
+        report.tracks_restored += 1
+        if removed == stable_id:
+            # Same row: the explicit restore, then the upsert refreshes it.
+            writer.undelete_track(stable_id)
+        # Same audio under another id (a new path): the file is written as
+        # the new row below and the old tombstone is left as it is.
+    return False
+
+
+def _withhold_over_drop_budget(
+    conn: Any,
+    drop: bool,
+    drop_budget: AnalysisDropBudget,
+    stable_id: str,
+    rows: list[tuple[Any, ...]],
+    audio_hash: str,
+    written_at: float,
+    duration_ms: int | None,
+) -> bool:
+    """True when this rewrite is over the drop budget and must wait a cycle."""
+    if not (drop and not drop_budget.take()):
+        return False
+    _retire_analysis_of_replaced_bytes(conn, stable_id, delete=False)
+    for sibling in _siblings_that_would_drop(
+        conn, rows[1:], audio_hash, written_at, duration_ms
+    ):
+        drop_budget.withheld += 1
+        _retire_analysis_of_replaced_bytes(conn, str(sibling[0]), delete=False)
+    return True
+
+
+def _write_one_file(
+    writer: StateWriter,
+    entry: audio_files.AudioFile,
+    report: FolderIngestReport,
+    drop_budget: AnalysisDropBudget,
+    seen: set[str],
+    live_by_key: dict[str, list[tuple[Any, ...]]],
+    returned_by_key: dict[str, tuple[Any, ...]],
+    *,
+    restore_removed: bool,
+) -> bool:
+    """Write one walked file. True only when the upsert path completed."""
+    bound = _bind_collision_rows(entry, report, live_by_key, returned_by_key, seen)
+    if bound is None:
+        return False
+    audio_hash = hashing.sha256_audio_payload(entry.path)
+    if _skip_deleted_or_restore(
+        writer, bound.stable_id, audio_hash, report, restore_removed
+    ):
+        return False
+    # A changed hash drops the old analysis. A missing prior hash is not
+    # proof either way; see _analysis_may_describe_other_bytes. A new row
+    # has no analysis to drop.
+    written_at = _last_changed_at(entry.path, entry.mtime)
+    drop = (
+        bound.existing is not None
+        and bool(audio_hash)
+        and _row_may_describe_other_bytes(
+            writer.raw_conn, bound.rows[0], audio_hash, written_at, bound.duration_ms
+        )
+    )
+    if _withhold_over_drop_budget(
+        writer.raw_conn,
+        drop,
+        drop_budget,
+        bound.stable_id,
+        bound.rows,
+        audio_hash,
+        written_at,
+        bound.duration_ms,
+    ):
+        return False
+    title, artists, album, row_duration_ms = _metadata_to_write(
+        bound.existing, bound.metadata, entry, bound.duration_ms
+    )
+    changed = writer.upsert_track(
+        stable_id=bound.stable_id,
+        stable_id_tier=bound.tier,
+        title=title,
+        artists=artists,
+        album=album,
+        isrc=bound.kept_isrc,
+        duration_ms=row_duration_ms,
+        file_path=str(entry.path),
+        content_hash=bound.existing[9] if bound.existing is not None else None,
+        audio_hash=audio_hash,
+    )
+    if changed:
+        report.tracks_inserted += 1
+    else:
+        report.tracks_unchanged += 1
+    if drop:
+        _retire_analysis_of_replaced_bytes(writer.raw_conn, bound.stable_id, delete=True)
+    if bound.existing is not None and audio_hash:
+        _refresh_other_live_rows(
+            writer, bound.rows[1:], audio_hash, written_at, bound.duration_ms, drop_budget
+        )
+    report.tier_counts[bound.tier] = report.tier_counts.get(bound.tier, 0) + 1
+    write_file_tag_metadata(writer, bound.stable_id, bound.metadata, report)
+    # A folder import analyses nothing. A tag BPM / key is the file's own
+    # claim, recorded with "inferred" provenance, not an analysis result.
+    report.tracks_without_analysis += 1
+    return True
+
+
 def _write_tracks(
     writer: StateWriter,
     files: list[audio_files.AudioFile],
@@ -348,119 +552,17 @@ def _write_tracks(
     live_by_key = _live_rows_by_collision_key(writer.raw_conn)
     returned_by_key = _file_missing_strong_rows_by_collision_key(writer.raw_conn)
     for index, entry in enumerate(files, start=1):
-        identified = _identify(entry, report)
-        if identified is None:
+        if not _write_one_file(
+            writer,
+            entry,
+            report,
+            drop_budget,
+            seen,
+            live_by_key,
+            returned_by_key,
+            restore_removed=restore_removed,
+        ):
             continue
-        stable_id, tier, duration_ms, metadata = identified
-        # Same canonical path (NFC + casefold), new mtime: tier-3 would mint
-        # a second id. Keep the row the library already has, including its
-        # tier and ISRC, even when the walked spelling differs. A fresh
-        # inferred id must not relabel an ISRC row or clear its ISRC.
-        # NATIVE-24 still does not merge rows that already exist. When more
-        # than one live row shares the canonical path, the strongest identity
-        # receives the tag refresh. The others keep their ids and, when the
-        # bytes changed, receive the new hash below.
-        key = path_collision_key(str(entry.path))
-        rows = _rows_to_write_onto(live_by_key, returned_by_key, key)
-        existing = rows[0] if rows else None
-        kept_isrc: str | None = None
-        prior_hash: str | None = None
-        if existing is not None:
-            stable_id = str(existing[0])
-            tier = str(existing[1])
-            kept_isrc = existing[2]
-            prior_hash = existing[3]
-            rows[0] = (
-                stable_id,
-                tier,
-                kept_isrc,
-                prior_hash,
-                str(entry.path),
-                *existing[5:],
-            )
-        else:
-            # Remember the id this batch just minted so a second spelling of
-            # the same path is skipped instead of inserted beside it.
-            rows = [(
-                stable_id,
-                tier,
-                kept_isrc,
-                prior_hash,
-                str(entry.path),
-                None,
-                "[]",
-                None,
-                duration_ms,
-                None,
-            )]
-        live_by_key[key] = rows
-        if stable_id in seen:
-            report.tracks_skipped += 1
-            continue
-        seen.add(stable_id)
-
-        audio_hash = hashing.sha256_audio_payload(entry.path)
-        removed = deleted_tracks.find_deleted_match(
-            writer.raw_conn,
-            stable_id=stable_id,
-            content_hash=None,
-            audio_hash=audio_hash,
-        )
-        if removed is not None and not restore_removed:
-            report.tracks_skipped_deleted += 1
-            continue
-        if removed is not None:
-            report.tracks_restored += 1
-            if removed == stable_id:
-                # Same row: the explicit restore, then the upsert refreshes it.
-                writer.undelete_track(stable_id)
-            # Same audio under another id (a new path): the file is written as
-            # the new row below and the old tombstone is left as it is.
-
-        # A changed hash drops the old analysis. A missing prior hash is not
-        # proof either way; see _analysis_may_describe_other_bytes. A new row
-        # has no analysis to drop.
-        written_at = _last_changed_at(entry.path, entry.mtime)
-        drop = (
-            existing is not None
-            and bool(audio_hash)
-            and _row_may_describe_other_bytes(writer.raw_conn, rows[0], audio_hash, written_at, duration_ms)
-        )
-        if drop and not drop_budget.take():
-            _retire_analysis_of_replaced_bytes(writer.raw_conn, stable_id, delete=False)
-            for sibling in _siblings_that_would_drop(writer.raw_conn, rows[1:], audio_hash, written_at, duration_ms):
-                drop_budget.withheld += 1
-                _retire_analysis_of_replaced_bytes(writer.raw_conn, str(sibling[0]), delete=False)
-            continue
-        title, artists, album, row_duration_ms = _metadata_to_write(
-            existing, metadata, entry, duration_ms
-        )
-        changed = writer.upsert_track(
-            stable_id=stable_id,
-            stable_id_tier=tier,
-            title=title,
-            artists=artists,
-            album=album,
-            isrc=kept_isrc,
-            duration_ms=row_duration_ms,
-            file_path=str(entry.path),
-            content_hash=existing[9] if existing is not None else None,
-            audio_hash=audio_hash,
-        )
-        if changed:
-            report.tracks_inserted += 1
-        else:
-            report.tracks_unchanged += 1
-        if drop:
-            _retire_analysis_of_replaced_bytes(writer.raw_conn, stable_id, delete=True)
-        if existing is not None and audio_hash:
-            _refresh_other_live_rows(writer, rows[1:], audio_hash, written_at, duration_ms, drop_budget)
-        report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
-        write_file_tag_metadata(writer, stable_id, metadata, report)
-        # A folder import analyses nothing. A tag BPM / key is the file's own
-        # claim, recorded with "inferred" provenance, not an analysis result.
-        report.tracks_without_analysis += 1
-
         if on_progress is not None:
             on_progress(index, total, f"{index} of {total}: {entry.path.name}")
 

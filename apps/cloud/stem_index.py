@@ -52,6 +52,9 @@ retry) instead of the asset tier's conditional create or a blind overwrite.
 * [if] a refresh fetches the R2 (or hub) index [then] it is three-way merged
   into the local cache against the last fetched remote, so an entry recorded
   here but not yet published survives (issue #8891, STEM-8894).
+* [if] eviction or the upload queue needs proof that R2 holds an entry [then]
+  it reads the last fetched remote, not the merged cache, so a surviving
+  unpublished entry remains local-only (issue #8930, STEM-40).
 * [if] ``rebuild --publish`` runs [then] every referenced object is HEAD-confirmed
   (and uploaded from disk when missing) before the shared pointer is replaced.
 """
@@ -468,6 +471,16 @@ def _load_remote_base(data_dir: Path) -> StemAssetIndex | None:
         raise StemIndexError(f"{path} is unreadable: {exc}") from exc
 
 
+def load_remote_confirmed_index(data_dir: Path) -> StemAssetIndex:
+    """Read the last fetched remote pointer as R2-confirmed evidence.
+
+    Eviction, cache status and the upload queue use this snapshot as proof
+    that R2 holds a bundle. The merged cache returned by
+    :func:`load_cached_index` may also contain unpublished local entries.
+    """
+    return _load_remote_base(data_dir) or {}
+
+
 def three_way_merge_index(
     local: StemAssetIndex, remote: StemAssetIndex, base: StemAssetIndex | None
 ) -> StemAssetIndex:
@@ -613,6 +626,7 @@ __all__ = [
     "is_allowed_stem_filename",
     "load_cached_index",
     "load_cached_index_memo",
+    "load_remote_confirmed_index",
     "local_index_cache_path",
     "local_stem_roots",
     "main",

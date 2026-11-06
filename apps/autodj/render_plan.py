@@ -29,10 +29,10 @@ paths, so the same inputs always give byte-identical JSON (and so the same
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.autodj.contract.models import RenderLayout, RenderPlanError
 from apps.autodj.plan import (
     PlanEvent,
     TransitionPlan,
@@ -53,40 +53,17 @@ MAX_MS_FACTOR = 2.0
 _EQ_BANDS = {"eq_low": "low", "eq_mid": "mid", "eq_high": "high"}
 
 
-class RenderPlanError(ValueError):
-    """The plan cannot be rendered as given (no tempo, too little track)."""
-
-
-@dataclass(frozen=True)
-class RenderLayout:
-    """Where the render starts and how the incoming deck is tempo-matched."""
-
-    start_out_bar: float
-    start_out_s: float
-    in_ratio: float
-    in_fold: float
-    end_in_bar: float
-    out_bar_s: float
-
-    def out_downbeats_render_s(self, out_profile: TrackProfile, until_s: float) -> list[float]:
-        """The outgoing deck's downbeats on the render's clock (seconds from its start) up to ``until_s``.
-
-        Past the end of the outgoing track's grid the bar line continues at its
-        nominal bar length: the incoming deck's bars after the handover are
-        still counted on the clock the plan was written in.
-        """
-        downs = [d - self.start_out_s for d in out_profile.downbeats_s if d >= self.start_out_s - 1e-9]
-        if not downs:
-            raise RenderPlanError(f"{out_profile.stable_id}: no downbeat at or after the render's start")
-        while downs[-1] + self.out_bar_s <= until_s + 1e-9:
-            downs.append(downs[-1] + self.out_bar_s)
-        return [d for d in downs if d <= until_s + 1e-9]
-
-
 def _bpm(profile: TrackProfile) -> float:
     if profile.bpm is None or profile.bpm <= 0:
         raise RenderPlanError(f"{profile.stable_id}: no tempo, so sync_to_out cannot be resolved to a ratio")
     return profile.bpm
+
+
+def _judged_bpm(profile: TrackProfile) -> float:
+    value = profile.judged_bpm
+    if value is None or value <= 0:
+        raise RenderPlanError(f"{profile.stable_id}: no heard or stored tempo to judge the pair with")
+    return float(value)
 
 
 def _pitch_range_for(ratio: float) -> float:
@@ -117,17 +94,18 @@ def layout_of(
             f"{out_profile.stable_id}: the plan starts at bar {plan.out.start_bar}, too early for "
             f"{context_bars} bars of context (the render would start before bar 1)"
         )
+    out_stored, in_stored = _bpm(out_profile), _bpm(in_profile)
+    out_j, in_j = _judged_bpm(out_profile), _judged_bpm(in_profile)
+    out_ratio = out_j / out_stored
     if plan.tempo_mode == "sync_to_out":
-        out_bpm, in_bpm = _bpm(out_profile), _bpm(in_profile)
-        fold = pair_beat_sync_fold(out_bpm, in_bpm, beat_sync_reach_pct(in_profile))
-        ratio = out_bpm / in_bpm * fold
+        fold = pair_beat_sync_fold(out_j, in_j, beat_sync_reach_pct(in_profile))
+        ratio = out_j / in_j * fold
     elif plan.tempo_mode == "none":
         # Each deck runs at its own tempo, so an incoming bar is not an outgoing bar; the end is counted in
         # incoming bars below, which is only right when the two tempos agree.
-        out_bpm, in_bpm = _bpm(out_profile), _bpm(in_profile)
-        if not math.isclose(out_bpm, in_bpm, rel_tol=1e-6):
+        if not math.isclose(out_stored, in_stored, rel_tol=1e-6):
             raise RenderPlanError(
-                f"an unsynced plan across {out_bpm:g} and {in_bpm:g} BPM: its incoming end is not mapped onto "
+                f"an unsynced plan across {out_stored:g} and {in_stored:g} BPM: its incoming end is not mapped onto "
                 "the outgoing clock yet"
             )
         fold, ratio = 1.0, 1.0
@@ -145,6 +123,7 @@ def layout_of(
         in_fold=fold,
         end_in_bar=end_in_bar,
         out_bar_s=out_profile.bar_s,
+        out_ratio=out_ratio,
     )
 
 
@@ -340,12 +319,33 @@ def compile_render_plan(
         # Live decks default Master Tempo on (AGENTS.md); the Rust deck defaults it off, so it is set here.
         {"at": at0, "cmd": {"type": "master_tempo", "deck": out_deck, "enabled": LIVE_MASTER_TEMPO}},
         {"at": at0, "cmd": {"type": "master_tempo", "deck": in_deck, "enabled": LIVE_MASTER_TEMPO}},
-        {"at": at0, "cmd": {"type": "pitch_range", "deck": in_deck, "range": _pitch_range_for(layout.in_ratio)}},
-        {"at": at0, "cmd": {"type": "tempo", "deck": in_deck, "ratio": round(layout.in_ratio, 9)}},
-        {"at": at0, "cmd": {"type": "play", "deck": out_deck, "playing": True}},
     ]
-    # ADR-0135 (opt-in since round 22): a non-unity load trim is set at time zero, before the outgoing deck plays, so
-    # it is never a step on a playing deck.
+    if not math.isclose(layout.out_ratio, 1.0, rel_tol=0.0, abs_tol=1e-9):
+        r = round(layout.out_ratio, 9)
+        events.extend(
+            [
+                {"at": at0, "cmd": {"type": "pitch_range", "deck": out_deck, "range": _pitch_range_for(r)}},
+                {"at": at0, "cmd": {"type": "tempo", "deck": out_deck, "ratio": r}},
+            ]
+        )
+    for deck, profile in ((out_deck, out_profile), (in_deck, in_profile)):
+        shift = profile.heard_key_shift
+        if shift == 0:
+            continue
+        if not isinstance(shift, int) or shift < -12 or shift > 12:
+            raise RenderPlanError(
+                f"{profile.stable_id}: heard_key_shift {shift!r} is not an integer from -12 to 12 for key_nudge"
+            )
+        events.append({"at": at0, "cmd": {"type": "key_nudge", "deck": deck, "semitones": shift}})
+    events.extend(
+        [
+            {"at": at0, "cmd": {"type": "pitch_range", "deck": in_deck, "range": _pitch_range_for(layout.in_ratio)}},
+            {"at": at0, "cmd": {"type": "tempo", "deck": in_deck, "ratio": round(layout.in_ratio, 9)}},
+            {"at": at0, "cmd": {"type": "play", "deck": out_deck, "playing": True}},
+        ]
+    )
+    # ADR-0135 (opt-in since round 22): both decks get the non-unity load trim at time zero, before the outgoing deck
+    # plays, so it is never a step on a playing deck. A matched incoming trim replaces that deck's load trim.
     if DECK_LOAD_TRIM_DB != 0.0:
         events.insert(
             len(events) - 1,
@@ -354,6 +354,11 @@ def compile_render_plan(
     trim = incoming_trim_command(plan)
     if trim is not None:
         events.insert(len(events) - 1, {"at": at0, "cmd": trim})
+    elif DECK_LOAD_TRIM_DB != 0.0:
+        events.insert(
+            len(events) - 1,
+            {"at": at0, "cmd": {"type": "trim", "deck": in_deck, "value": trim_knob(DECK_LOAD_TRIM_DB)}},
+        )
     timed: list[tuple[float, int, dict[str, Any]]] = []
     bars = effective_bars(plan)
     for index, event in enumerate(plan.events):
@@ -371,7 +376,7 @@ def compile_render_plan(
     # then the incoming bars still to play after the plan, converted to outgoing bars.
     after_plan_in_bars = layout.end_in_bar - plan.in_.start_bar - incoming_played_bars(plan) * layout.in_fold
     out_bars = (plan.out.start_bar - layout.start_out_bar) + plan.bars + after_plan_in_bars / layout.in_fold
-    nominal_ms = out_bars * layout.out_bar_s * 1000.0
+    nominal_ms = out_bars * (layout.out_bar_s / layout.out_ratio) * 1000.0
     return {
         "sample_rate": RENDER_SAMPLE_RATE,
         "max_ms": math.ceil(nominal_ms * MAX_MS_FACTOR),

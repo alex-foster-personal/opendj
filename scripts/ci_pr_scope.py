@@ -124,7 +124,8 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   whenever the e2e gate will run for the same change set (`E2E_PATHS_IGNORE`, the
 #:   e2e.yml scope decision; round 2's tiers narrow the steps inside the gate, never
 #:   whether it runs), because `scripts/ci_frontend_build_acquire_from_ci.sh` refuses a
-#:   sha whose `frontend-build` job did not succeed.
+#:   sha whose `frontend-build` job failed or timed out (cancelled/skipped take the
+#:   documented UNMEASURED-upstream local-build path instead of masking a real break).
 #:
 #: - `import-contracts` (the ratchet's one hard gate, import-linter over .importlinter;
 #:   33 s of lint-imports) runs when any Python file, the contract file or the pinned

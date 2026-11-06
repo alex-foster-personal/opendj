@@ -20,7 +20,7 @@ test('AnalysisDots.svelte stays pure: no jobProgress facade, no fetch', () => {
 		readFileSync(path.join(componentsDir, 'AnalysisDots.svelte'), 'utf8')
 	);
 	// AnalysisDots legitimately imports constants/types (ANALYSIS_DOT_SLOTS,
-	// ANALYSIS_COLORS, etc) from job-progress.svelte - the purity line is
+	// ANALYSIS_LABELS, etc) from job-progress.svelte - the purity line is
 	// about the live `jobProgress` STORE and the ingest client, not the
 	// module path itself.
 	assert.ok(!/\bjobProgress\b/.test(src), 'must not reach for the live jobProgress store');

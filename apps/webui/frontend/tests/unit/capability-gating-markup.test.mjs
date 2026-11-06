@@ -35,6 +35,8 @@ const topbar = read('src/lib/components/rb/TopBar.svelte');
 const capabilities = read('src/lib/api/capabilities.svelte.ts');
 
 const PARITY_TODO = 'not implemented - see PARITY-TODO';
+const PARITY_TODO_FLEX = 'PARITY-TODO'.replace('-', '[- ]?');
+const PARITY_TODO_FLEX_RE = new RegExp(PARITY_TODO_FLEX, 'i');
 
 // -------------------------------------------------------------- one probe
 
@@ -140,11 +142,22 @@ test('a capability refusal is never dressed up as a PARITY-TODO stub', () => {
 		['progress-tree page', progressPage]
 	]) {
 		assert.equal(
-			/PARITY[- ]?TODO/i.test(source),
+			PARITY_TODO_FLEX_RE.test(source),
 			false,
 			`${name} must not borrow the PARITY-TODO wording for a capability refusal`
 		);
 	}
+});
+
+test('PARITY-TODO flex regex matches hyphen, space, glued, and case variants', () => {
+	const hyphen = 'PARITY-TODO';
+	const space = hyphen.replace('-', ' ');
+	const glued = hyphen.replace('-', '');
+	assert.equal(PARITY_TODO_FLEX_RE.test(hyphen), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(space), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(glued), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test(hyphen.toLowerCase()), true);
+	assert.equal(PARITY_TODO_FLEX_RE.test('unrelated title'), false);
 });
 
 test('every refusal names the surface AND the daemon, not just "unavailable"', () => {

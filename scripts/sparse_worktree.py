@@ -6,6 +6,7 @@ Usage::
     python -m scripts.sparse_worktree status    # SPARSE or FULL, and what is left out
     python -m scripts.sparse_worktree sparse    # make THIS linked worktree sparse
     python -m scripts.sparse_worktree full      # restore a full checkout here
+    python -m scripts.sparse_worktree frontend-deps  # install frontend dependencies here
     python -m scripts.sparse_worktree install-hook  # once per clone (`just wt-sparse-hook-install`)
 
 Why: ~70 live worktrees each carried the full 285 MB tracked tree, ~120 MB of
@@ -55,12 +56,17 @@ REQUIREMENTS (OPS-45)
       [if only `python` or the `py` launcher exists then that one is used]
       [if the checkout is a branch switch then no interpreter is needed]
       [if install-hook meets an older copy of this hook then it upgrades it]
+  R-6 (OPS-9171) Linked worktrees own their frontend dependency entry points.
+      - [if] a new add has a node_modules link [then] hook unlinks it, target stays, [else stop].
+      - [if] frontend-deps runs [then] pnpm installs into a real directory, [else stop].
+      - [if] sibling A is removed [then] B's esbuild still runs, [else stop].
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -90,6 +96,9 @@ class CFG:
     # holding it is an older revision of OUR hook, upgraded in place (#5212).
     HOOK_MARKER = b"-m scripts.sparse_worktree post-checkout"
     RESTORE_COMMAND = "git sparse-checkout disable"
+    FRONTEND_REL = Path("apps") / "webui" / "frontend"
+    NODE_MODULES_RELS = (FRONTEND_REL / "node_modules", Path("node_modules"))
+    FRONTEND_DEPS_COMMAND = "python -m scripts.sparse_worktree frontend-deps"
 
 
 class SparseCheckoutError(RuntimeError):
@@ -247,6 +256,89 @@ def tracked_bytes(repo: Path, entries: list[TrackedEntry]) -> dict[str, bytes]:
     return dict(iter_tracked_bytes(repo, entries))
 
 
+# ----- dependency isolation ------------------------------------------------------------
+
+
+def _is_windows_junction(path: Path) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        return bool(path.lstat().st_file_attributes & 0x400)
+    except OSError:
+        return False
+
+
+def _is_node_modules_link(path: Path) -> bool:
+    return path.is_symlink() or _is_windows_junction(path)
+
+
+def _unlink_node_modules_link(path: Path) -> None:
+    if path.is_symlink():
+        path.unlink()
+    else:
+        path.rmdir()
+
+
+def isolate_node_modules(repo: Path) -> list[str]:
+    """Remove only top-level node_modules links, never their target trees."""
+    unlinked: list[str] = []
+    for rel in CFG.NODE_MODULES_RELS:
+        path = repo / rel
+        if not _is_node_modules_link(path):
+            continue
+        _unlink_node_modules_link(path)
+        unlinked.append(rel.as_posix())
+    return unlinked
+
+
+def _pnpm_bin() -> str:
+    resolved = shutil.which("pnpm")
+    if resolved is None:
+        raise SparseCheckoutError("pnpm is not on PATH")
+    return resolved
+
+
+def install_frontend_deps(repo: Path) -> int:
+    try:
+        unlinked = isolate_node_modules(repo)
+    except OSError as exc:
+        print(f"[ERROR] sparse-worktree: cannot isolate node_modules ({exc})", file=sys.stderr)
+        return 1
+    for rel in unlinked:
+        print(f"[WARN] sparse-worktree: unlinked {rel}; restore with `{CFG.FRONTEND_DEPS_COMMAND}`")
+
+    frontend = repo / CFG.FRONTEND_REL
+    package_json = frontend / "package.json"
+    if not frontend.is_dir():
+        print(f"[ERROR] sparse-worktree: frontend directory is missing: {frontend}", file=sys.stderr)
+        return 1
+    if not package_json.is_file():
+        print(f"[ERROR] sparse-worktree: frontend package.json is missing: {package_json}", file=sys.stderr)
+        return 1
+    try:
+        pnpm = _pnpm_bin()
+    except SparseCheckoutError as exc:
+        print(f"[ERROR] sparse-worktree: {exc}", file=sys.stderr)
+        return 1
+
+    env = os.environ.copy()
+    env["CI"] = "true"
+    done = subprocess.run(
+        [pnpm, "install", "--frozen-lockfile"],
+        cwd=frontend,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        detail = done.stderr or done.stdout
+        print(f"[ERROR] sparse-worktree: pnpm install failed (rc={done.returncode})", file=sys.stderr)
+        if detail:
+            print(detail, file=sys.stderr, end="" if detail.endswith("\n") else "\n")
+    return done.returncode
+
+
 # ----- actions --------------------------------------------------------------------------
 
 
@@ -318,6 +410,7 @@ def _post_checkout(repo: Path, previous_head: str, checkout_flag: str) -> int:
     `git worktree add` must not report an error for it. A failure that leaves the
     worktree in a state nobody asked for (a FULL request that did not take, or a
     rollback that did not) exits 1 naming it, and `git worktree add` returns that."""
+    result = 0
     try:
         opt_out = opt_out_requested(os.environ.get(CFG.OPT_OUT_ENV))
     except ValueError as exc:
@@ -341,14 +434,27 @@ def _post_checkout(repo: Path, previous_head: str, checkout_flag: str) -> int:
         print(f"[WARN] sparse-worktree: {action.value} failed ({_describe(exc)})", file=sys.stderr)
         if action is Action.SPARSE and _rolled_back_to_full(repo):
             print("[WARN] sparse-worktree: rolled back to a FULL checkout", file=sys.stderr)
-            return 0
-        print(
-            f"[ERROR] sparse-worktree: {repo} is not in the state asked for ({action.value}); "
-            f"inspect with `just wt-sparse-status`, restore a full tree with `{CFG.RESTORE_COMMAND}`",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+        else:
+            print(
+                f"[ERROR] sparse-worktree: {repo} is not in the state asked for ({action.value}); "
+                f"inspect with `just wt-sparse-status`, restore a full tree with `{CFG.RESTORE_COMMAND}`",
+                file=sys.stderr,
+            )
+            result = 1
+    if action in (Action.SPARSE, Action.FULL):
+        try:
+            unlinked = isolate_node_modules(repo)
+        except OSError as exc:
+            print(f"[WARN] sparse-worktree: could not isolate node_modules ({exc})", file=sys.stderr)
+        else:
+            if unlinked:
+                names = ", ".join(unlinked)
+                print(
+                    f"[WARN] sparse-worktree: unlinked top-level node_modules link(s): {names}; "
+                    f"restore with `{CFG.FRONTEND_DEPS_COMMAND}`",
+                    file=sys.stderr,
+                )
+    return result
 
 
 def _status(repo: Path) -> int:
@@ -373,6 +479,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="report SPARSE or FULL and what is left out")
     sub.add_parser("sparse", help="make this linked worktree sparse")
     sub.add_parser("full", help=f"restore a full checkout ({CFG.RESTORE_COMMAND})")
+    sub.add_parser("frontend-deps", help="isolate and install frontend dependencies")
     sub.add_parser("install-hook", help="install the post-checkout hook for this clone")
     args = parser.parse_args(argv)
     repo = args.repo.resolve()
@@ -385,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
         make_sparse(repo)
     elif args.command == "full":
         make_full(repo)
+    elif args.command == "frontend-deps":
+        return install_frontend_deps(repo)
     elif args.command != "status":
         raise AssertionError(f"unhandled command {args.command}")
     return _status(repo)

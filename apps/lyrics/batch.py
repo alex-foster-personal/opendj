@@ -1,7 +1,7 @@
 """Deterministic lyric batch driver - operational-plan section 12, R1/R2.
 
 ONE driver sequencing every pipeline stage the batch-1/batch-2 rounds ran by
-hand (specs/karaoke-lyrics-alignment.md), with ZERO LLM steps in the happy
+hand ((private path)), with ZERO LLM steps in the happy
 path: corpus staging + metadata join, Modal stems (skipping tracks already
 holding a canonical bundle), register_pair immediately per pair (the batch-1
 sub-rung-A lesson: stems that miss registration are stems lost to the
@@ -68,7 +68,7 @@ BENCH_DIR: Path = REPO_ROOT / "scripts" / "bench"
 UV_PY: tuple[str, ...] = ("uv", "run", "--no-sync", "python")
 UV_MODAL_PY: tuple[str, ...] = ("uv", "run", "--with", "modal", "python")
 UV_SCRIPT: tuple[str, ...] = ("uv", "run", "--script")
-SPIKE: str = "scripts/lyrics_oltf_spike.py"
+SPIKE: str = "(private path)"
 METADATA_SCRIPT: str = "scripts/lyrics_crate_metadata.py"
 ROFORMER_SPIKE: str = "scripts/modal_roformer_spike.py"
 COVERAGE_SCRIPT: str = "scripts/lyrics_stem_coverage.py"
@@ -364,12 +364,9 @@ def _stage_corpus(cmds: Cmds, report: BatchReport, runner: Runner,
     report.stages.append("corpus")
 
 
-def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
-                progress: Progress, paths: BatchPaths) -> None:
-    """Stems (skip already-registered) -> register_pair per pair -> coverage."""
-    stems_root = paths.stems_root
-    stems_dir = cmds.dir / "stems"
-    data_dir = paths.data_dir
+def _hydrate_indexed_stems(
+    report: BatchReport, progress: Progress, data_dir: Path, stems_root: Path,
+) -> None:
     index = stem_index.load_cached_index(data_dir)
     source = resolve_stem_hydration_source(data_dir)
     for t in report.active():
@@ -394,6 +391,11 @@ def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
                 f"stems: {t.stable_id} index entry but hydrate failed: "
                 f"{outcome.reason or outcome.status}"
             )
+
+
+def _symlink_registered_stems(
+    report: BatchReport, stems_root: Path, stems_dir: Path,
+) -> None:
     for t in report.active():
         if not t.registered:
             continue
@@ -404,6 +406,26 @@ def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
             link = stems_dir / f"{t.track_id}-{part}{src.suffix.lower()}"
             if not link.is_symlink() and not link.exists():
                 link.symlink_to(src)
+
+
+def _exclude_missing_stem_pairs(
+    to_separate: list[TrackPlan], stems_dir: Path, report: BatchReport,
+) -> int:
+    produced = 0
+    for t in to_separate:
+        if any(stems_dir.glob(f"{t.track_id}-vocals.*")):
+            produced += 1
+        else:
+            report.exclude(t.track_id,
+                           "stems: stage produced no pair (policy exclusion "
+                           "or failure - see the separate stdout)")
+    return produced
+
+
+def _separate_unregistered_stems(
+    cmds: Cmds, report: BatchReport, runner: Runner, progress: Progress,
+    stems_dir: Path,
+) -> None:
     to_separate = [t for t in report.active()
                    if not t.registered and t.audio_path is not None]
     if to_separate:
@@ -415,14 +437,7 @@ def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
             runner(cmds.stems(inputs))
         except CommandFailed as exc:
             stems_error = exc
-        produced = 0
-        for t in to_separate:
-            if any(stems_dir.glob(f"{t.track_id}-vocals.*")):
-                produced += 1
-            else:
-                report.exclude(t.track_id,
-                               "stems: stage produced no pair (policy exclusion "
-                               "or failure - see the separate stdout)")
+        produced = _exclude_missing_stem_pairs(to_separate, stems_dir, report)
         # Zero produced is only a whole-stage blocker when the corpus holds NO
         # stems at all - on a resume, registered-bundle tracks are already
         # symlinked in and the run must continue past known-hopeless stragglers.
@@ -430,12 +445,26 @@ def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
             raise StageBlocked(
                 f"stems: nothing produced for {len(to_separate)} track(s)"
                 + (f" - {stems_error}" if stems_error else ""))
+
+
+def _run_stem_coverage(cmds: Cmds, report: BatchReport, runner: Runner) -> None:
+    runner(cmds.coverage())
+    report.stages.append("coverage")
+
+
+def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
+                progress: Progress, paths: BatchPaths) -> None:
+    """Stems (skip already-registered) -> register_pair per pair -> coverage."""
+    stems_root = paths.stems_root
+    stems_dir = cmds.dir / "stems"
+    data_dir = paths.data_dir
+    _hydrate_indexed_stems(report, progress, data_dir, stems_root)
+    _symlink_registered_stems(report, stems_root, stems_dir)
+    _separate_unregistered_stems(cmds, report, runner, progress, stems_dir)
     report.stages.append("stems")
     _register_pairs(stems_dir, report, progress, stems_root)
     report.stages.append("register")
-
-    runner(cmds.coverage())
-    report.stages.append("coverage")
+    _run_stem_coverage(cmds, report, runner)
 
 
 def _register_pairs(stems_dir: Path, report: BatchReport, progress: Progress,

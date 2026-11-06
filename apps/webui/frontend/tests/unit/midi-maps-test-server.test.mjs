@@ -101,13 +101,15 @@ test('a child that keeps reporting progress is waited for past the stall budget,
 	await assert.rejects(
 		startMidiMapsTestServer({
 			cwd: REPO_ROOT,
-			..._node('let n = 0; setInterval(() => console.log(`BOOT step${n++} ${n * 100}`), 100)'),
-			stallMs: 400,
-			totalMs: 1_500
+			..._node(
+				'let n = 0; const tick = () => console.log(`BOOT step${n++} ${n * 100}`); tick(); setInterval(tick, 100)'
+			),
+			stallMs: 2_000,
+			totalMs: 5_000
 		}),
-		/not listening within the 1500ms ceiling/
+		/not listening within the 5000ms ceiling/
 	);
-	assert.ok(Date.now() - t0 >= 1_400, 'progress lines must restart the stall budget');
+	assert.ok(Date.now() - t0 >= 4_900, 'progress lines must restart the stall budget');
 });
 
 test('a command that cannot be spawned fails with the spawn error', async () => {

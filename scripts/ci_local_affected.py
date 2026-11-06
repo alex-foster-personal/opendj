@@ -30,7 +30,6 @@ import contextlib
 import functools
 import importlib.util
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,6 +38,7 @@ from pathlib import Path
 import psutil
 
 from scripts.affected_tests import REPO
+from scripts.ci_path_resolve import require_on_path
 from scripts.ci_test_selection import junit_all_skipped
 from scripts.ci_test_selection_rules import FullSuite, select_tests
 
@@ -62,10 +62,7 @@ def lane_ignores(workflow_text: str) -> list[str]:
 @functools.cache
 def _git_exe() -> str:
     """git by resolved path, once (AGENTS.md: launch programs by resolved path)."""
-    git = shutil.which("git")
-    if git is None:
-        raise Unmeasured("git is not on PATH: the diff cannot be read")
-    return git
+    return require_on_path("git", Unmeasured, "git is not on PATH: the diff cannot be read")
 
 
 def _git(root: Path, *args: str, nul: bool = False) -> list[str]:

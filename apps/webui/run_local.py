@@ -15,7 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 LOOPBACK_URL = re.compile(r"^http://127\.0\.0\.1:(\d+)$")
@@ -72,7 +72,19 @@ def terminal_do_script_argv(command: str) -> list[str]:
     ]
 
 
-def tmux_start_argv(session: str, backend_cmd: str, frontend_cmd: str) -> list[list[str]]:
+#: Launch settings a long-lived tmux server would not copy from this client's
+#: environment into a new session, so each window gets them with ``-e``.
+TMUX_PASSTHROUGH_ENV: tuple[str, ...] = ("MDT_LIBRARY_MODE",)
+
+
+def _tmux_env_args(env: Mapping[str, str]) -> list[str]:
+    return [arg for name in TMUX_PASSTHROUGH_ENV if name in env for arg in ("-e", f"{name}={env[name]}")]
+
+
+def tmux_start_argv(
+    session: str, backend_cmd: str, frontend_cmd: str, env: Mapping[str, str] | None = None
+) -> list[list[str]]:
+    passthrough = _tmux_env_args(os.environ if env is None else env)
     return [
         [
             "tmux",
@@ -82,6 +94,7 @@ def tmux_start_argv(session: str, backend_cmd: str, frontend_cmd: str) -> list[l
             session,
             "-n",
             "backend",
+            *passthrough,
             backend_cmd,
         ],
         [
@@ -91,6 +104,7 @@ def tmux_start_argv(session: str, backend_cmd: str, frontend_cmd: str) -> list[l
             session,
             "-n",
             "frontend",
+            *passthrough,
             frontend_cmd,
         ],
     ]

@@ -159,5 +159,7 @@ for (const file of ['TrackPlaylistsPopoverView.svelte', 'RelocatePopoverView.sve
 		);
 		assert.match(source, /use:pointFloatingAction=\{\{ x, y \}\}/);
 		assert.doesNotMatch(source, /clampToViewport\(/);
+		assert.match(source, /from '\.\/point-floating-menu'/);
+		assert.doesNotMatch(source, /async function focusMenu/);
 	});
 }

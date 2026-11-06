@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -25,6 +26,38 @@ VALID_SCRIPT = "#!/usr/bin/env bash\nset -euo pipefail\necho ok\n"
 windows_only = pytest.mark.skipif(
     sys.platform != "win32", reason="CreateProcess order and the WSL launcher are Windows-only"
 )
+
+_REPO = Path(__file__).resolve().parents[2]
+
+
+def _probe_resolve_posix_bash(path: str, *, cwd: Path | None = None) -> dict[str, str | None]:
+    driver = (
+        "import json, shutil, sys\n"
+        "from pathlib import Path\n"
+        f"sys.path.insert(0, {str(_REPO)!r})\n"
+        "from apps.shared.posix_shell import resolve_posix_bash\n"
+        "wb = shutil.which('bash')\n"
+        "wg = shutil.which('git')\n"
+        "print('CHILD-RESULT ' + json.dumps({\n"
+        "  'which_bash': str(Path(wb).resolve()) if wb else None,\n"
+        "  'which_git': str(Path(wg).resolve()) if wg else None,\n"
+        "  'resolved': resolve_posix_bash(),\n"
+        "}))\n"
+    )
+    env = {**os.environ, "PATH": path}
+    proc = subprocess.run(
+        [sys.executable, "-c", driver],
+        env=env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("CHILD-RESULT ")]
+    assert len(lines) == 1, proc.stdout
+    return json.loads(lines[0].removeprefix("CHILD-RESULT "))
 
 
 def _system32_dir() -> Path:
@@ -59,16 +92,17 @@ def test_resolve_posix_bash_returns_an_absolute_runnable_bash() -> None:
 
 @pytest.mark.requirement("CROSS-02")
 @windows_only
-def test_resolve_posix_bash_finds_git_bash_beside_the_wsl_launcher(monkeypatch) -> None:
+def test_resolve_posix_bash_finds_git_bash_beside_the_wsl_launcher() -> None:
     """[if] PATH has only System32 and git [then] Git's own bash is returned, [else stop]."""
     # The default Git for Windows install puts only Git\cmd on PATH, so which()
     # alone sees System32's launcher; Git's own bin\bash.exe must be found.
     _require_wsl_launcher()
     git_cmd_dir = _require_git_cmd_dir()
-    monkeypatch.setenv("PATH", os.pathsep.join([str(_system32_dir()), str(git_cmd_dir)]))
-    which_bash = Path(shutil.which("bash") or "")
-    assert which_bash.parent == _system32_dir(), "control: which() must see the launcher"
-    bash = resolve_posix_bash()
+    probe = _probe_resolve_posix_bash(
+        os.pathsep.join([str(_system32_dir()), str(git_cmd_dir)])
+    )
+    assert Path(probe["which_bash"] or "").parent == _system32_dir(), "control: which() must see the launcher"
+    bash = probe["resolved"]
     assert bash is not None, "if resolve_posix_bash misses Git's bash beside git.exe then broken"
     assert Path(bash).parent.name.casefold() != "system32", f"if WSL launcher then broken: {bash}"
     proc = subprocess.run([bash, "-c", "true"], capture_output=True, timeout=30, check=False)
@@ -77,18 +111,18 @@ def test_resolve_posix_bash_finds_git_bash_beside_the_wsl_launcher(monkeypatch) 
 
 @pytest.mark.requirement("CROSS-02")
 @windows_only
-def test_resolve_posix_bash_refuses_a_lone_wsl_launcher(monkeypatch) -> None:
+def test_resolve_posix_bash_refuses_a_lone_wsl_launcher() -> None:
     """[if] the only bash is the System32 WSL launcher [then] None, [else stop]."""
     _require_wsl_launcher()
-    monkeypatch.setenv("PATH", str(_system32_dir()))
-    assert shutil.which("bash") is not None, "control: which() must see the launcher on this PATH"
-    assert shutil.which("git") is None, "control: no git on this PATH"
-    assert resolve_posix_bash() is None, "if resolve_posix_bash returns the WSL launcher then broken"
+    probe = _probe_resolve_posix_bash(str(_system32_dir()))
+    assert probe["which_bash"] is not None, "control: which() must see the launcher on this PATH"
+    assert probe["which_git"] is None, "control: no git on this PATH"
+    assert probe["resolved"] is None, "if resolve_posix_bash returns the WSL launcher then broken"
 
 
 @pytest.mark.requirement("CROSS-02")
 @windows_only
-def test_resolve_posix_bash_ignores_binaries_planted_in_the_cwd(monkeypatch, tmp_path) -> None:
+def test_resolve_posix_bash_ignores_binaries_planted_in_the_cwd(tmp_path) -> None:
     """[if] bash.exe and git.exe are planted in the CWD [then] neither is used, [else stop]."""
     # shutil.which on Windows (3.11) searches the CWD before PATH and returns a
     # relative .\bash.EXE, so a planted binary would be executed.
@@ -97,22 +131,24 @@ def test_resolve_posix_bash_ignores_binaries_planted_in_the_cwd(monkeypatch, tmp
     planted = _system32_dir() / "whoami.exe"
     for name in ("bash.exe", "git.exe"):
         shutil.copyfile(planted, tmp_path / name)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", os.pathsep.join([str(_system32_dir()), str(git_cmd_dir)]))
-    assert Path(shutil.which("bash") or "").resolve().parent == tmp_path.resolve(), (
+    probe = _probe_resolve_posix_bash(
+        os.pathsep.join([str(_system32_dir()), str(git_cmd_dir)]),
+        cwd=tmp_path,
+    )
+    assert Path(probe["which_bash"] or "").resolve().parent == tmp_path.resolve(), (
         "control: which() must pick the planted CWD binary on this Python"
     )
-    bash = resolve_posix_bash()
+    bash = probe["resolved"]
     assert bash is not None and Path(bash).is_absolute(), f"if not absolute then broken: {bash}"
     assert Path(bash).resolve().parent != tmp_path.resolve(), f"if a CWD-planted binary is resolved then broken: {bash}"
 
 
 @pytest.mark.requirement("CROSS-02")
-def test_resolve_posix_bash_is_none_with_no_bash_or_git_on_path(monkeypatch, tmp_path) -> None:
+def test_resolve_posix_bash_is_none_with_no_bash_or_git_on_path(tmp_path) -> None:
     """[if] neither bash nor git is on PATH [then] None, [else stop]."""
-    monkeypatch.setenv("PATH", str(tmp_path))
-    assert shutil.which("bash") is None and shutil.which("git") is None, "control: empty PATH"
-    assert resolve_posix_bash() is None, "if it invents a bash with none installed then broken"
+    probe = _probe_resolve_posix_bash(str(tmp_path))
+    assert probe["which_bash"] is None and probe["which_git"] is None, "control: empty PATH"
+    assert probe["resolved"] is None, "if it invents a bash with none installed then broken"
 
 
 @pytest.mark.requirement("CROSS-02")

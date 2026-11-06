@@ -14,6 +14,7 @@ import re
 import pytest
 
 from apps.b2b_pairing import b2b_pairing as bp
+from apps.shared.private_files import is_owner_only
 
 pytestmark = [pytest.mark.requirement("B2BPAIR-01"), pytest.mark.requirement("B2BPAIR-02"), pytest.mark.requirement("B2BPAIR-03")]
 
@@ -134,6 +135,7 @@ def test_record_round_trips_through_disk_with_owner_only_mode(tmp_path) -> None:
     path = tmp_path / "state" / bp.PAIRING_FILE
     bp.save_record(path, record)
     assert (path.stat().st_mode & 0o777) == 0o600
+    assert is_owner_only(path)
     assert bp.load_record(path) == record
     assert record.peer_url == "http://192.0.2.9:40002"
     bp.forget_record(path)

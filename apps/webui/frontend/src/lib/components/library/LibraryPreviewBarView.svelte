@@ -120,7 +120,7 @@
 					alt=""
 					width="36"
 					height="36"
-					data-expected-resource-error
+					data-expected-resource-error="artwork-404"
 					onload={onArtworkLoad}
 					onerror={onArtworkError}
 				/>

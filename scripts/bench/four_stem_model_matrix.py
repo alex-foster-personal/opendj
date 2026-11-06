@@ -72,10 +72,15 @@ from four_stem_common import (
     DEFAULT_MODEL,
     MODELS,
     OVERLAP,
+    ROFORMER_ARMS,
     SHIFTS,
     STEMS,
+    assert_cube_complete,
     gate_flags,
     paired_deltas,
+    paired_deltas_by_genre,
+    parse_models,
+    track_genres,
 )
 
 # ----- io ---------------------------------------------------------------------
@@ -158,6 +163,12 @@ def main() -> None:
     parser.add_argument("--json-out", required=True, type=Path)
     parser.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
     parser.add_argument(
+        "--models",
+        default=None,
+        help=f"comma-separated models (default: {','.join(MODELS)}). "
+        "bs-roformer-viperx1296 is GPU-only; use scripts.bench.four_stem_gpu_matrix.",
+    )
+    parser.add_argument(
         "--cell-cache",
         type=Path,
         default=None,
@@ -172,6 +183,16 @@ def main() -> None:
         "--track", action="append", default=None, help="repeatable; default is every dir under --tracks-dir"
     )
     args = parser.parse_args()
+
+    try:
+        active_models = parse_models(args.models)
+    except RuntimeError as exc:
+        raise SystemExit(f"error: {exc}") from exc
+    if ROFORMER_ARMS.intersection(active_models):
+        raise SystemExit(
+            "error: bs-roformer-viperx1296 runs only on Modal H100 via "
+            "scripts.bench.four_stem_gpu_matrix (not this CPU runner)."
+        )
 
     flags = gate_flags(args.gate_json)
     track_dirs = sorted(d for d in args.tracks_dir.iterdir() if d.is_dir())
@@ -211,7 +232,7 @@ def main() -> None:
         mix_mono = _mono(mix)
         floors[track] = {s: _si_sdr_db(truth_mono[s], mix_mono) for s in STEMS}
         cube[track] = {}
-        for model in MODELS:
+        for model in active_models:
             cached = done.get((track, model))
             if cached is not None:
                 print(f"[skip] {track} :: {model} (cached)", flush=True)
@@ -258,6 +279,8 @@ def main() -> None:
                     )
             print("      " + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS), flush=True)
 
+    tg = track_genres(cube.keys())
+    assert_cube_complete(cube, active_models)
     payload = {
         "question": (
             "Does the per-stem model inversion in ladder_4stem_all.json (plain htdemucs "
@@ -270,7 +293,8 @@ def main() -> None:
         "windows_chosen_by": "scripts/bench/stem_content_gate.py, before any model score existed",
         "knobs": {"overlap": OVERLAP, "shifts": SHIFTS, "sample_rate_hz": 44100},
         "default_model": DEFAULT_MODEL,
-        "models": list(MODELS),
+        "models": list(active_models),
+        "track_genres": tg,
         "device": args.device,
         "hardware": platform.platform(),
         "n_tracks": len(cube),
@@ -278,7 +302,8 @@ def main() -> None:
         "gate": {t: flags[t] for t in cube},
         "mixture_floor_si_sdr": floors,
         "si_sdr": cube,
-        "paired_deltas_vs_default": paired_deltas(cube, flags),
+        "paired_deltas_vs_default": paired_deltas(cube, flags, models=active_models),
+        "paired_deltas_vs_default_by_genre": paired_deltas_by_genre(cube, flags, tg, models=active_models),
         "timings": timings,
     }
     args.json_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -286,10 +311,10 @@ def main() -> None:
     width = max(len(t) for t in cube) + 2
     for stem in STEMS:
         print(f"\n=== {stem} (SI-SDR dB vs TRUE stem, 60s window) ===")
-        print("track".ljust(width) + "".join(m.rjust(14) for m in MODELS) + "         floor  gated")
+        print("track".ljust(width) + "".join(m.rjust(14) for m in active_models) + "         floor  gated")
         for track in sorted(cube):
             row = track.ljust(width)
-            row += "".join(f"{cube[track][m][stem]:14.3f}" for m in MODELS)
+            row += "".join(f"{cube[track][m][stem]:14.3f}" for m in active_models)
             row += f"{floors[track][stem]:14.3f}"
             row += "  yes" if flags[track]["stem_passed"][stem] else "   NO"
             print(row)

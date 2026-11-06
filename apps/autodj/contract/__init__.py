@@ -6,6 +6,61 @@ The contract imports only the standard library, pydantic and other contracts.
 
 from __future__ import annotations
 
-CONTRACT_VERSION = "autodj/1"
+from .models import (
+    ANCHOR_LEAD_BARS,
+    INTENTS,
+    STYLE_CAP,
+    VARIETY_WINDOW,
+    WIND_DOWN,
+    BassEntry,
+    ChooserCandidate,
+    HotCue,
+    KeySegment,
+    PairNotFound,
+    PairTransition,
+    PlanError,
+    PlanEvent,
+    ProfileError,
+    RenderLayout,
+    RenderPlanError,
+    Section,
+    Side,
+    StyleBars,
+    StyleParamsWire,
+    StyleSummary,
+    TrackProfile,
+    TransitionPlan,
+    ValidationResult,
+)
+from .service import AutoDjService
 
-__all__ = ["CONTRACT_VERSION"]
+CONTRACT_VERSION = "autodj/2"
+
+__all__ = [
+    "ANCHOR_LEAD_BARS",
+    "CONTRACT_VERSION",
+    "INTENTS",
+    "STYLE_CAP",
+    "VARIETY_WINDOW",
+    "WIND_DOWN",
+    "AutoDjService",
+    "BassEntry",
+    "ChooserCandidate",
+    "HotCue",
+    "KeySegment",
+    "PairNotFound",
+    "PairTransition",
+    "PlanError",
+    "PlanEvent",
+    "ProfileError",
+    "RenderLayout",
+    "RenderPlanError",
+    "Section",
+    "Side",
+    "StyleBars",
+    "StyleParamsWire",
+    "StyleSummary",
+    "TrackProfile",
+    "TransitionPlan",
+    "ValidationResult",
+]

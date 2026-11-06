@@ -109,18 +109,25 @@ test('SSR: mixed menu has no HTML disabled on any menuitem', () => {
 
 test('source: activate no-ops before onclose when run is missing', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
-	assert.match(source, /if \(item\.run === undefined\) return;/);
+	assert.match(source, /const run = item\.run;/);
+	assert.match(source, /if \(run === undefined\) return;/);
 	const activateBlock = source.slice(source.indexOf('async function activate'));
 	const beforeOnclose = activateBlock.slice(0, activateBlock.indexOf('onclose()'));
-	assert.match(beforeOnclose, /item\.run === undefined/);
+	assert.match(beforeOnclose, /run === undefined/);
 });
 
-test('source: onclick calls activate and Enter/Space on aria-disabled are swallowed', () => {
+test('source: onclick calls onItemClick and Enter/Space on aria-disabled are swallowed', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
-	assert.match(source, /onclick=\{\(\) => void activate\(item\)\}/);
+	assert.match(source, /onclick=\{\(e\) => onItemClick\(e, item\)\}/);
 	assert.match(source, /getAttribute\('aria-disabled'\) === 'true'/);
 	assert.match(source, /event\.key === 'Enter' \|\| event\.key === ' '/);
 	assert.match(source, /event\.preventDefault\(\)/);
+});
+
+test('source: item activates on pointerdown capture; outside dismiss bubbles on window', () => {
+	const source = readFileSync(MENU_PATH, 'utf8');
+	assert.match(source, /onpointerdowncapture=\{\(e\) => onItemPointerDownCapture\(e, item\)\}/);
+	assert.match(source, /<svelte:window[^>]*\bonpointerdown=\{onOutsidePointerDown\}/);
 });
 
 // REQ: DECKUX-18

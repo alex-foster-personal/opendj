@@ -44,6 +44,14 @@ from tests.ableton_link.fake_carabiner_main import write_fake_binary
 pytestmark = [pytest.mark.requirement("LINK-122"), pytest.mark.requirement("LINK-123")]
 
 linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc/<pid>/environ")
+posix_shebang_child = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="fake Carabiner argv0 is a POSIX #!/bin/sh wrapper that Win32 CreateProcess cannot exec",
+)
+sigkill_only = pytest.mark.skipif(
+    not hasattr(signal, "SIGKILL"),
+    reason="SIGKILL is POSIX-only",
+)
 
 
 def _free_port() -> int:
@@ -124,7 +132,7 @@ def test_respawn_back_off_starts_at_its_first_step_and_is_capped() -> None:
 
 
 def test_answers_status_needs_a_status_line_not_just_an_open_port() -> None:
-    sim = SimCarabiner()
+    sim = SimCarabiner(now_us=lambda: 1_000_000.0)
     try:
         assert answers_status(sim.port) is True  # positive control: a real status line
     finally:
@@ -154,7 +162,7 @@ def test_spawns_a_child_that_answers_with_the_service_id(serving: tuple[Carabine
 
 
 def test_reuses_a_carabiner_that_already_answers_and_spawns_nothing(tmp_path: Path) -> None:
-    sim = SimCarabiner()
+    sim = SimCarabiner(now_us=lambda: 1_000_000.0)
     install = Installs(write_fake_binary(tmp_path, "serve"))
     supervisor = _supervisor(sim.port, install)
     try:
@@ -167,6 +175,8 @@ def test_reuses_a_carabiner_that_already_answers_and_spawns_nothing(tmp_path: Pa
         sim.close()
 
 
+@posix_shebang_child
+@sigkill_only
 def test_a_killed_child_is_respawned_and_answers_again(serving: tuple[CarabinerSupervisor, Installs]) -> None:
     supervisor, _install = serving
     supervisor.provision()
@@ -180,6 +190,7 @@ def test_a_killed_child_is_respawned_and_answers_again(serving: tuple[CarabinerS
     print(f"[INFO] respawned as pid {status.pid} {took:.2f} s after SIGKILL of {first}")
 
 
+@posix_shebang_child
 def test_stop_terminates_the_child_and_nothing_respawns(serving: tuple[CarabinerSupervisor, Installs]) -> None:
     supervisor, _install = serving
     supervisor.provision()
@@ -194,6 +205,7 @@ def test_stop_terminates_the_child_and_nothing_respawns(serving: tuple[Carabiner
     assert refused.value.code == "spawn_failed"
 
 
+@posix_shebang_child
 def test_a_binary_that_exits_at_once_is_spawn_failed_with_its_log(tmp_path: Path) -> None:
     supervisor = _supervisor(_free_port(), Installs(write_fake_binary(tmp_path, "exit")))
     with pytest.raises(CarabinerProvisionError) as failed:
@@ -204,6 +216,7 @@ def test_a_binary_that_exits_at_once_is_spawn_failed_with_its_log(tmp_path: Path
     assert failed.value.user_message.startswith("[carabiner_spawn_failed] ")
 
 
+@posix_shebang_child
 def test_a_binary_that_never_answers_is_not_answering_and_is_stopped(tmp_path: Path) -> None:
     supervisor = _supervisor(_free_port(), Installs(write_fake_binary(tmp_path, "silent")), answer_deadline_s=1.0)
     with pytest.raises(CarabinerProvisionError) as failed:
@@ -237,6 +250,7 @@ def test_sandbox_port_holder_and_linux_never_spawn(tmp_path: Path) -> None:
     assert install.calls == 0, "a refused host fetched Carabiner"
 
 
+@posix_shebang_child
 def test_an_install_failure_is_recorded_by_code_and_a_retry_can_succeed(tmp_path: Path) -> None:
     binary = write_fake_binary(tmp_path, "serve")
     attempts: list[int] = []

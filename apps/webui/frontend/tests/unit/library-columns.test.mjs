@@ -22,10 +22,17 @@ const FRONTEND = fileURLToPath(new URL('../../', import.meta.url));
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const API_BASE = 'https://library-columns.example.test';
 let cols;
+let support;
 let widths;
 
 before(async () => {
 	cols = await loadTypeScriptModule('src/lib/rb/library-columns.ts');
+	globalThis.$derived = (value) => value;
+	try {
+		support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-support.ts');
+	} finally {
+		delete globalThis.$derived;
+	}
 	widths = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
 });
 
@@ -40,6 +47,16 @@ describe('library-columns', () => {
 		}
 		assert.equal(cols.HIDEABLE_COLUMNS.length, 15);
 		for (const col of cols.HIDEABLE_COLUMNS) assert.ok(cols.HIDEABLE_COLUMN_LABELS[col], col);
+	});
+
+	it('offers the Tags column with its user-facing label', () => {
+		assert.equal(cols.isHideableColumn('tags'), true);
+		assert.equal(cols.HIDEABLE_COLUMN_LABELS.tags, 'Tags');
+	});
+
+	it('formats the Tags cell as italic-ready hashtag text', () => {
+		assert.equal(support.formatTagsCell(['a', 'b']), '#a · #b');
+		assert.equal(support.formatTagsCell([]), '');
 	});
 
 	it('toggles a column off and back on, keeping table order', () => {
@@ -181,5 +198,11 @@ describe('TrackTable wiring', () => {
 		assert.doesNotMatch(chooser, /from '\$lib\/rb\/prefs\.svelte'/, 'the chooser must not import prefs.svelte (fan-in ceiling)');
 		assert.match(table, /Object\.entries\(shownWidths\)/);
 		assert.doesNotMatch(table, /masterFoldCenterPx\(colWidths/);
+	});
+
+	it('renders the Tags cell from the assignment store as italic text', () => {
+		assert.match(table, /formatTagsCell\(tagsCellFor\(row\.stable_id\)\)/);
+		assert.match(table, /<span class="tags-cell-text">/);
+		assert.match(table, /\.tags-cell-text\s*\{[^}]*font-style:\s*italic/s);
 	});
 });

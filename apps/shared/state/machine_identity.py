@@ -115,6 +115,27 @@ def _write_machine_id(path: Path, machine_id: str) -> bool:
         staging.unlink(missing_ok=True)
 
 
+def _replace_machine_id(path: Path, machine_id: str) -> None:
+    """Atomically replace ``path`` with a validated adopted machine id."""
+    validated = _validate_machine_id(machine_id, path)
+    staging = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        fd = os.open(staging, os.O_CREAT | os.O_EXCL | os.O_WRONLY, MACHINE_ID_MODE)
+    except OSError as exc:
+        raise MachineIdentityError(f"cannot write the machine id file at {path}: {exc}") from exc
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(validated)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.replace(staging, path)
+        except OSError as exc:
+            raise MachineIdentityError(f"cannot replace the machine id file at {path}: {exc}") from exc
+    finally:
+        staging.unlink(missing_ok=True)
+
+
 def get_or_create_machine_id(data_dir: Path) -> str:
     """Return this machine's id, minting and persisting it on first call.
 
@@ -229,8 +250,9 @@ def register_machine(
     already has that name under another machine id, registration refreshes the
     existing row and adopts its stored identity instead of changing a primary
     key that other synced rows may reference. That adoption is the INSERT path
-    only, for a machine id with no row yet. Renaming a machine id that already
-    has a row onto a name another id holds is refused with
+    only, for a machine id with no row yet, and persists the adopted id back to
+    ``<data-dir>/machine-id`` so local writers and hub hello use the same row.
+    Renaming a machine id that already has a row onto a name another id holds is refused with
     :class:`MachineNameConflictError` and nothing is written: the upsert's
     UPDATE would violate UNIQUE(name), which the second ``ON CONFLICT`` clause
     does not cover, and the raw ``IntegrityError`` used to escape as an HTTP
@@ -282,13 +304,17 @@ def register_machine(
     ).fetchone()
     if row is None:
         raise MachineIdentityError("machine registration did not return a machines row")
-    return MachineIdentity(
+    adopted = MachineIdentity(
         machine_id=str(row[0]),
         name=str(row[1]),
         platform=str(row[2]),
         is_hub=bool(row[3]),
         data_root=str(row[4]),
     )
+    if adopted.machine_id != identity.machine_id:
+        _replace_machine_id(machine_id_path(Path(data_dir)), adopted.machine_id)
+        sync_stamp.reset_machine_id_cache()
+    return adopted
 
 
 def _refuse_rename_onto_taken_name(conn: sqlite3.Connection, identity: MachineIdentity) -> None:

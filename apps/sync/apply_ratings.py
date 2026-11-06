@@ -134,6 +134,118 @@ def _verify_djay_rating(db_path: Path, uuid: str, expected: int) -> bool:
     return extract_rating_from_tsaf(row[0]) == int(expected)
 
 
+def _rating_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
+
+
+def _plan_rating_targets(
+    rows: list[dict],
+    only_tracks: set[str] | None,
+) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    targets_rb: list[tuple[str, int]] = []
+    targets_djay: list[tuple[str, int]] = []
+    for row in rows:
+        rb_id = row.get("rb_content_id", "")
+        djay_uuid = row.get("djay_uuid", "")
+        if only_tracks is not None and djay_uuid not in only_tracks and rb_id not in only_tracks:
+            continue
+        res = row.get("resolution", "")
+        rb_val = _rating_int(row.get("rb_value"))
+        djay_val = _rating_int(row.get("djay_value"))
+        if res == "accept_rb" and djay_uuid:
+            targets_djay.append((djay_uuid, rb_val))
+        elif res == "accept_djay" and rb_id:
+            targets_rb.append((rb_id, djay_val))
+    return targets_rb, targets_djay
+
+
+def _rb_rating_verifier(db, expected: dict[str, int]):
+    def _verify(track_id: str, _unused: object = None) -> bool:
+        return _verify_rb_rating(db, track_id, expected[str(track_id)])
+
+    return _verify
+
+
+def _djay_rating_verifier(db_path: Path, expected: dict[str, int]):
+    def _verify(track_id: str, _unused: object = None) -> bool:
+        return _verify_djay_rating(db_path, track_id, expected[str(track_id)])
+
+    return _verify
+
+
+def _apply_rb_rating_targets(
+    targets_rb: list[tuple[str, int]],
+    *,
+    rb_db_path: Path,
+    flag_ok: bool,
+) -> int:
+    from apps.shared.rekordbox_db import open_db
+
+    written_rb = 0
+    db = open_db(rb_db_path)
+    try:
+        # Rail 4: post-write verify is routed through the session's
+        # verifier callback. Mapping per-track track_id -> expected
+        # Rating so the callback can readback on demand.
+        rb_expected: dict[str, int] = {
+            str(cid): int(rating) for cid, rating in targets_rb
+        }
+        with LiveWriteSession(
+            target="rekordbox",
+            reason="SYNC-06 bulk ratings (RB side)",
+            flag_ok=flag_ok,
+            db_path=rb_db_path,
+            verifier=_rb_rating_verifier(db, rb_expected),
+        ) as sess:
+            for content_id, rating in targets_rb:
+                with sess.per_track(content_id) as w:
+                    ok = _write_rb_rating(db, content_id, rating)
+                    w.write(rating)
+                    if ok and w.verify_readback():
+                        w.append_reverse(
+                            f"# revert RB rating for ContentID={content_id}"
+                        )
+                        written_rb += 1
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return written_rb
+
+
+def _apply_djay_rating_targets(
+    targets_djay: list[tuple[str, int]],
+    *,
+    djay_db_path: Path,
+    flag_ok: bool,
+) -> int:
+    written_djay = 0
+    djay_expected: dict[str, int] = {
+        str(uuid): int(rating) for uuid, rating in targets_djay
+    }
+    with LiveWriteSession(
+        target="djay",
+        reason="SYNC-06 bulk ratings (djay side)",
+        flag_ok=flag_ok,
+        db_path=djay_db_path,
+        verifier=_djay_rating_verifier(djay_db_path, djay_expected),
+    ) as sess:
+        for uuid, rating in targets_djay:
+            with sess.per_track(uuid) as w:
+                ok = _write_djay_rating(djay_db_path, uuid, rating)
+                w.write(rating)
+                if ok and w.verify_readback():
+                    w.append_reverse(
+                        f"# revert djay rating for uuid={uuid}"
+                    )
+                    written_djay += 1
+    return written_djay
+
+
 def live_run(
     rows: list[dict],
     *,
@@ -149,97 +261,17 @@ def live_run(
     # _live_djay_db_path would silently operate on the working copy even
     # when the user asked for --live. That was issue #1 (Phase 2 [I1]).
     # Keeping these required turns the footgun into an immediate TypeError.
-    targets_rb: list[tuple[str, int]] = []
-    targets_djay: list[tuple[str, int]] = []
-
-    for row in rows:
-        rb_id = row.get("rb_content_id", "")
-        djay_uuid = row.get("djay_uuid", "")
-        if only_tracks is not None and djay_uuid not in only_tracks and rb_id not in only_tracks:
-            continue
-        res = row.get("resolution", "")
-        try:
-            rb_val = int(row.get("rb_value") or 0)
-        except ValueError:
-            rb_val = 0
-        try:
-            djay_val = int(row.get("djay_value") or 0)
-        except ValueError:
-            djay_val = 0
-        if res == "accept_rb" and djay_uuid:
-            targets_djay.append((djay_uuid, rb_val))
-        elif res == "accept_djay" and rb_id:
-            targets_rb.append((rb_id, djay_val))
-
+    targets_rb, targets_djay = _plan_rating_targets(rows, only_tracks)
     written_rb = 0
     written_djay = 0
-
     if targets_rb:
-        from apps.shared.rekordbox_db import open_db
-
-        db = open_db(rb_db_path)
-        try:
-            # Rail 4: post-write verify is routed through the session's
-            # verifier callback. Mapping per-track track_id -> expected
-            # Rating so the callback can readback on demand.
-            rb_expected: dict[str, int] = {
-                str(cid): int(rating) for cid, rating in targets_rb
-            }
-
-            def rb_verifier(track_id: str, _unused: object = None) -> bool:
-                return _verify_rb_rating(
-                    db, track_id, rb_expected[str(track_id)],
-                )
-
-            with LiveWriteSession(
-                target="rekordbox",
-                reason="SYNC-06 bulk ratings (RB side)",
-                flag_ok=flag_ok,
-                db_path=rb_db_path,
-                verifier=rb_verifier,
-            ) as sess:
-                for content_id, rating in targets_rb:
-                    with sess.per_track(content_id) as w:
-                        ok = _write_rb_rating(db, content_id, rating)
-                        w.write(rating)
-                        if ok and w.verify_readback():
-                            w.append_reverse(
-                                f"# revert RB rating for ContentID={content_id}"
-                            )
-                            written_rb += 1
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
-
+        written_rb = _apply_rb_rating_targets(
+            targets_rb, rb_db_path=rb_db_path, flag_ok=flag_ok,
+        )
     if targets_djay:
-        djay_expected: dict[str, int] = {
-            str(uuid): int(rating) for uuid, rating in targets_djay
-        }
-
-        def djay_verifier(track_id: str, _unused: object = None) -> bool:
-            return _verify_djay_rating(
-                djay_db_path, track_id, djay_expected[str(track_id)],
-            )
-
-        with LiveWriteSession(
-            target="djay",
-            reason="SYNC-06 bulk ratings (djay side)",
-            flag_ok=flag_ok,
-            db_path=djay_db_path,
-            verifier=djay_verifier,
-        ) as sess:
-            for uuid, rating in targets_djay:
-                with sess.per_track(uuid) as w:
-                    ok = _write_djay_rating(djay_db_path, uuid, rating)
-                    w.write(rating)
-                    if ok and w.verify_readback():
-                        w.append_reverse(
-                            f"# revert djay rating for uuid={uuid}"
-                        )
-                        written_djay += 1
-
+        written_djay = _apply_djay_rating_targets(
+            targets_djay, djay_db_path=djay_db_path, flag_ok=flag_ok,
+        )
     print(
         f"[apply_ratings] wrote rb={written_rb} djay={written_djay} "
         f"of {len(targets_rb) + len(targets_djay)} planned"

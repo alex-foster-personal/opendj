@@ -6,7 +6,9 @@
 	// 1.5). The Column View tab (column-view lane) swaps this panel's body
 	// for ColumnBrowser - self-contained (own library fetch), same pattern
 	// as the smartlist self-fetch below.
+	import { tick } from 'svelte';
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { playlistReveal } from '$lib/rb/playlist-reveal.svelte';
 	import { formatMostlyBrokenTooltip } from '$lib/rb/runtime-policy.svelte';
 	import ColumnBrowser from './ColumnBrowser.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
@@ -223,6 +225,20 @@
 	// container and the row elements the tracker watches, so it wires them
 	// up via the tracker's exposed fields/action/handler.
 	const foldTracker = new TreeFoldTracker();
+	let playlistsOpen = $state(true);
+
+	/** CMDK-6848: open the Playlists section, bring the asked row into view, and clear the request. */
+	$effect(() => {
+		const id = playlistReveal.id;
+		if (id === null) return;
+		playlistReveal.id = null;
+		playlistsOpen = true;
+		void tick().then(() =>
+			foldTracker.scrollEl
+				?.querySelector(`[data-playlist-id="${CSS.escape(id)}"]`)
+				?.scrollIntoView({ block: 'nearest' })
+		);
+	});
 </script>
 
 {#snippet contextMenu()}
@@ -254,6 +270,7 @@
 	{columnMounted}
 	{dropTargetId}
 	{folderDropActive}
+	bind:playlistsOpen
 	foldCurrent={foldTracker.current}
 	bind:scrollEl={foldTracker.scrollEl}
 	bind:viewportHeight={foldTracker.viewportHeight}

@@ -22,6 +22,7 @@ import {
 	type TrackIndexItemWire,
 	type TrackListItemWire
 } from '$lib/rb/api-rb';
+import { normalizeRating } from '$lib/rating';
 import { playFactsFromUnknown } from './last-played';
 import type { BrowserRow } from './pane-contract.svelte';
 import {
@@ -243,7 +244,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		artist: wire.artist,
 		key: wire.key,
 		bpm: wire.bpm,
-		rating: wire.rating,
+		rating: normalizeRating(wire.rating),
 		etag: wire.etag,
 		comments: wire.comments,
 		duration_ms: wire.duration_ms,
@@ -339,7 +340,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		artist: track.artist ?? null,
 		key: track.key ?? null,
 		bpm: track.bpm ?? null,
-		rating: track.rating ?? null,
+		rating: normalizeRating(track.rating ?? null),
 		// List items carry no ETag; rating edits lazily fetch one.
 		etag: '',
 		comments: track.notes ?? null,

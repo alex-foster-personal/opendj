@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import { STEM_CONTROLS } from '$lib/rb/stem-graph';
 	import StemWaveRow from './StemWaveRow.svelte';
+	import StemWaveStackView from './StemWaveStackView.svelte';
 
 	let {
 		deck,
@@ -21,19 +21,8 @@
 	} = $props();
 </script>
 
-{#if showStems && deck.stable_id !== null}
-	<div class="stem-wave-stack" data-testid={`stem-wave-stack-deck-${deck.deck_id}`}>
-		{#each STEM_CONTROLS as stem (stem)}
-			<StemWaveRow {deck} {stem} {showStems} {scrollPx} {canvasWidth} {windowS} {playheadFrac} />
-		{/each}
-	</div>
-{/if}
-
-<style>
-	.stem-wave-stack {
-		display: flex;
-		flex-direction: column;
-		flex: 1;
-		min-width: 0;
-	}
-</style>
+<StemWaveStackView deckId={deck.deck_id} visible={showStems && deck.stable_id !== null}>
+	{#snippet row(stem)}
+		<StemWaveRow {deck} {stem} {showStems} {scrollPx} {canvasWidth} {windowS} {playheadFrac} />
+	{/snippet}
+</StemWaveStackView>

@@ -32,6 +32,7 @@ import {
 	libraryRescueHold,
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
+import { isExpectedStemsLoadingMessage } from '$lib/rb/deck-banner-policy';
 import { pushToast } from '$lib/stores.svelte';
 import { planReloadResumeOffer } from '$lib/rb/reload-resume';
 import { offerReloadResume } from '$lib/rb/reload-resume.svelte';
@@ -260,6 +261,7 @@ async function _restoreDeck(
 		// than toasting one error per remaining deck; the next promotion resumes it.
 		if (exc instanceof Error && exc.message === RESTORE_DISPOSED) throw exc;
 		const message = exc instanceof Error ? exc.message : String(exc);
+		if (isExpectedStemsLoadingMessage(message)) return;
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
 	}
 }

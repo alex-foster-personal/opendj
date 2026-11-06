@@ -25,7 +25,8 @@ import { fileURLToPath } from 'node:url';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../../../', import.meta.url));
 const GUARD = join(REPOSITORY_ROOT, 'scripts', 'server_owner_guard.py');
-const VENV_PYTHON = join(REPOSITORY_ROOT, '.venv', 'bin', 'python');
+/** The repository venv interpreter; launchers use this resolved path, never a bare `uv` or `python3`. */
+export const VENV_PYTHON = join(REPOSITORY_ROOT, '.venv', 'bin', 'python');
 
 export function shellArgument(value: string): string {
 	return `'${value.replaceAll("'", "'\"'\"'")}'`;

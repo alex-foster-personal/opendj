@@ -103,6 +103,8 @@ def _read_pending_rows(state_db_path: Path, playlist_id: str) -> list[sqlite3.Ro
     try:
         conn = state_db.open_ro(state_db_path)
     except (FileNotFoundError, sqlite3.DatabaseError) as exc:
+        if state_db.is_sqlite_busy(exc):
+            raise
         raise _server_error("STATE_DB_UNAVAILABLE", str(exc)) from exc
 
     try:
@@ -125,6 +127,8 @@ def _read_pending_rows(state_db_path: Path, playlist_id: str) -> list[sqlite3.Ro
             (playlist_id,),
         ))
     except sqlite3.DatabaseError as exc:
+        if state_db.is_sqlite_busy(exc):
+            raise
         raise _server_error("PENDING_TRACKS_READ_FAILED", str(exc)) from exc
     finally:
         conn.close()
@@ -458,6 +462,17 @@ class ConnectStatusOut(BaseModel):
 _CONNECT_FLOW_LOCK = threading.Lock()
 
 
+def _token_cache_path(request: Request) -> Path:
+    """Where the PKCE token cache lives: test seam, then ConnectFlow, else default."""
+    explicit = getattr(request.app.state, "spotify_token_path", None)
+    if explicit is not None:
+        return Path(explicit)
+    flow = getattr(request.app.state, "spotify_connect_flow", None)
+    if flow is not None:
+        return flow._token_path
+    return TOKEN_CACHE_PATH
+
+
 def _connect_flow(request: Request) -> spotify_account.ConnectFlow:
     with _CONNECT_FLOW_LOCK:
         flow = getattr(request.app.state, "spotify_connect_flow", None)
@@ -538,18 +553,30 @@ def put_account_client_id(body: ClientIdIn, request: Request) -> ClientIdOut:
     """Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).
 
     A PKCE client id is public, not a secret; it only names the app the user
-    registered with redirect URI http://127.0.0.1:8888/callback.
+    registered with redirect URI http://127.0.0.1:8888/callback. Saving an id
+    that differs from the one already on disk clears the cached sign-in so
+    listing reports not signed in rather than refreshing the previous app's
+    token under the new id.
     """
     try:
         client_id = spotify_account.normalize_client_id(body.client_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "SPOTIFY_CLIENT_ID_INVALID", "message": str(exc)}) from exc
     # Tests point this at tmp_path; production writes ~/.music-dj-tools/spotify-client.json.
-    path = getattr(request.app.state, "spotify_client_id_path", None)
+    cid_path = getattr(request.app.state, "spotify_client_id_path", None)
     try:
-        spotify_account.save_client_id(client_id, path)
+        changed = spotify_account.replace_client_id(client_id, cid_path)
     except OSError as exc:
         raise _server_error("SPOTIFY_CLIENT_ID_WRITE_FAILED", f"could not save the Spotify client id: {exc}") from exc
+    if changed:
+        token_path = _token_cache_path(request)
+        try:
+            token_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise _server_error(
+                "SPOTIFY_TOKEN_CACHE_DELETE_FAILED",
+                f"could not clear the Spotify sign-in cache: {exc}",
+            ) from exc
     return ClientIdOut(saved=True)
 
 

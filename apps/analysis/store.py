@@ -49,6 +49,7 @@ from .bpm_status import bpm_status_for
 from .canonical import canonical_pointer, refresh_for_record
 from .lane_enums import LANE_STATUSES
 from .lane_payloads_shared import bar_phase_untrusted
+from .native_tables_sql import NATIVE_ANALYSIS_V1_SQL
 from .record import AnalysisRecord, StoredRecordError, validate_record_contract
 from .time_iso import datetime_to_utc_iso, utc_now_iso
 
@@ -87,63 +88,7 @@ _ANALYSIS_TABLES_SQL: list[str] = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_type   ON analysis_events(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_stable ON analysis_events(stable_id)",
-    # --- native-analysis v1 (spec section 3, "Record") -------------------
-    # The deterministic canonical pointer. Rows in `analysis` never
-    # overwrite across producers, so which row a reader gets cannot be a
-    # last-writer-wins column; it is recomputed from ALL rows on every
-    # upsert by one rule (highest semver, tie -> inapp over backfill, cand
-    # never eligible). That is what makes the pointer a function of what
-    # was produced rather than of the order it was produced in.
-    """
-    CREATE TABLE IF NOT EXISTS analysis_canonical (
-        stable_id        TEXT NOT NULL,
-        lane             TEXT NOT NULL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        updated_at       TEXT NOT NULL,
-        PRIMARY KEY (stable_id, lane)
-    )
-    """,
-    # The read-time projection of own scalars. Every scalar reader goes
-    # through effective_fields() (apps/analysis/selection.py), which reads
-    # THIS table for a lane on own and track_fields for a lane on rbx.
-    # Nothing here is ever written into track_fields, so no own value can
-    # enter track_field_history or the sync path.
-    """
-    CREATE TABLE IF NOT EXISTS analysis_projection (
-        stable_id        TEXT NOT NULL,
-        field            TEXT NOT NULL,
-        -- Deliberately typeless: SQLite gives an untyped column BLOB (none)
-        -- affinity, so a REAL bpm stays a REAL and a TEXT camelot stays TEXT.
-        -- Declaring it TEXT would coerce 128.0 to '128.0' and make every
-        -- smartlist numeric operator a lexical comparison, which is the same
-        -- class of silent wrongness as sorting 0.10.0 below 0.9.0.
-        value,
-        status           TEXT NOT NULL,
-        reason           TEXT,
-        confidence       REAL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        updated_at       TEXT NOT NULL,
-        PRIMARY KEY (stable_id, field)
-    )
-    """,
-    # Spec section 3: the filters on these fields must not scan records.
-    "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
-    "ON analysis_projection(field, value)",
-    # The persisted per-lane source default: what a PROMOTION writes, and the
-    # only half of the selection surface that survives a relaunch. Declared
-    # HERE, with the other analysis-domain tables, rather than provisioned by
-    # the endpoint that writes it: a durable configuration table the schema
-    # authority does not know about is invisible to adoption, to the drift
-    # checks and to the database documentation (Codex P2, PR #1549).
-    """
-    CREATE TABLE IF NOT EXISTS analysis_source_default (
-        lane        TEXT PRIMARY KEY,
-        source      TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
-    )
-    """,
+    *NATIVE_ANALYSIS_V1_SQL,
 ]
 
 
@@ -348,16 +293,15 @@ def _atomic(conn: sqlite3.Connection) -> Iterator[None]:
     Named uniquely per entry so a nested use cannot release an outer
     savepoint of the same name, which SQLite would accept and which would
     silently widen the unit being committed.
+
+    Idle connections go through :func:`state_db.write_unit` (``BEGIN
+    IMMEDIATE``) so a peer commit between the unit's first read and first
+    write waits inside ``busy_timeout`` instead of raising SQLITE_BUSY_SNAPSHOT
+    (STATE-15). Nested units stay SAVEPOINTs.
     """
     name = f"analysis_upsert_{next(_SAVEPOINT_SEQ)}"
-    conn.execute(f"SAVEPOINT {name}")
-    try:
+    with state_db.write_unit(conn, name):
         yield
-    except BaseException:
-        conn.execute(f"ROLLBACK TO {name}")
-        conn.execute(f"RELEASE {name}")
-        raise
-    conn.execute(f"RELEASE {name}")
 
 
 def upsert(
@@ -385,53 +329,54 @@ def upsert(
     if conn is None:
         conn = open_conn(db_path)
     try:
-        row = conn.execute(
-            """
-            SELECT record_json FROM analysis
-            WHERE stable_id = ? AND backend = ? AND backend_version = ?
-            """,
-            (record.stable_id, record.backend, record.backend_version),
-        ).fetchone()
         new_json = _record_to_json(record)
         _beatgrid_payload(new_json, f"new analysis record for {record.stable_id!r}")
         # Rows of bytes the file no longer holds (folder ingest's whole-record
         # marker): their grid describes other audio, so it is never kept.
         retired = queue_store.stale_rows(conn, record.stable_id, WHOLE_RECORD)
-        # The trusted grid this write could displace: the same row's when it
-        # holds one, else the one the canonical pointer serves now. A
-        # producer-version bump (1.6.0 -> 1.7.0) writes a NEW row, and a
-        # same-version row whose grid failed or is absent is not served, so
-        # checking only that row would let an untrusted 1.7.0 grid outrank a
-        # trusted 1.6.0 one on the pointer.
-        trusted_json = next(
-            (
-                candidate
-                for candidate in (
-                    row[0] if row is not None and (record.backend, record.backend_version) not in retired else None,
-                    _served_beatgrid_json(conn, record.stable_id, retired),
-                )
-                if candidate is not None
-                and _untrusted_bar_phase_would_replace_trusted(candidate, new_json, record.stable_id)
-            ),
-            None,
-        )
-        if trusted_json is not None:
-            # Only the grid (and the tempo it carries) is refused; every other
-            # lane and scalar in this record still lands.
-            record = _with_stored_grid(record, AnalysisRecord.from_json(trusted_json))
-            new_json = _record_to_json(record)
-        unchanged = row is not None and _semantic_equal(row[0], new_json)
-
-        # ONE atomic unit: the record row, the canonical pointer, and the
-        # whole projection rebuild. open_rw hands back an AUTOCOMMIT
-        # connection (isolation_level=None, the Phase 5 shared-connection
-        # contract), so without this each statement lands durably on its
-        # own and a failure part-way through refresh_for_record would leave
-        # a pointer naming a record whose projected fields are missing or
-        # stale -- durable, and invisible to the caller that saw the raise.
-        # A SAVEPOINT rather than BEGIN because a batch driver may pass a
-        # `conn` that is already inside a transaction; savepoints nest.
+        # ONE atomic unit: the lookup, the record row, the canonical pointer,
+        # and the whole projection rebuild. The SELECT used to run before the
+        # unit, which pinned a DEFERRED WAL snapshot; a peer commit then made
+        # the first write SQLITE_BUSY_SNAPSHOT (STATE-15 / OPEN-DJ-BE-7A).
+        # write_unit takes the writer lock first on an idle connection.
+        # Nested callers still get a SAVEPOINT.
         with _atomic(conn):
+            row = conn.execute(
+                """
+                SELECT record_json FROM analysis
+                WHERE stable_id = ? AND backend = ? AND backend_version = ?
+                """,
+                (record.stable_id, record.backend, record.backend_version),
+            ).fetchone()
+            # The trusted grid this write could displace: the same row's when it
+            # holds one, else the one the canonical pointer serves now. A
+            # producer-version bump (1.6.0 -> 1.7.0) writes a NEW row, and a
+            # same-version row whose grid failed or is absent is not served, so
+            # checking only that row would let an untrusted 1.7.0 grid outrank a
+            # trusted 1.6.0 one on the pointer.
+            trusted_json = next(
+                (
+                    candidate
+                    for candidate in (
+                        row[0]
+                        if row is not None
+                        and (record.backend, record.backend_version) not in retired
+                        else None,
+                        _served_beatgrid_json(conn, record.stable_id, retired),
+                    )
+                    if candidate is not None
+                    and _untrusted_bar_phase_would_replace_trusted(
+                        candidate, new_json, record.stable_id
+                    )
+                ),
+                None,
+            )
+            if trusted_json is not None:
+                # Only the grid (and the tempo it carries) is refused; every other
+                # lane and scalar in this record still lands.
+                record = _with_stored_grid(record, AnalysisRecord.from_json(trusted_json))
+                new_json = _record_to_json(record)
+            unchanged = row is not None and _semantic_equal(row[0], new_json)
             if not unchanged:
                 conn.execute(
                     """

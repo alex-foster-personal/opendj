@@ -133,54 +133,16 @@ def _is_excluded(rel: PurePosixPath, exclusions: Iterable[str]) -> bool:
     return False
 
 
-def compute_plan(
+def _copy_and_update_ops(
     *,
     profile: Profile,
-    canonical: list[CanonicalTrack],
+    expected: dict[PurePosixPath, tuple[CanonicalTrack, int]],
+    existing_by_rel: dict[PurePosixPath, Path],
     drive_root: Path,
-) -> Plan:
-    """Build a :class:`Plan` for the given profile + canonical set."""
+) -> tuple[list[Op], int, int, list[str]]:
+    """Emit copy / overwrite / skip ops for expected tracks."""
     ops: list[Op] = []
     warnings: list[str] = []
-
-    # --- 1. Compute per-playlist track_index and dst path for each track.
-    grouped = group_by_playlist(canonical)
-    expected: dict[PurePosixPath, tuple[CanonicalTrack, int]] = {}
-    case_buckets: dict[str, list[PurePosixPath]] = defaultdict(list)
-
-    for playlist, tracks in grouped.items():
-        for idx, t in enumerate(tracks, start=1):
-            rel = dst_relpath(
-                layout=profile.layout,
-                format_=profile.format,
-                playlist=playlist,
-                track_index=idx,
-                artist=t.artist,
-                album=t.album,
-                title=t.title,
-                src=t.source_path,
-            )
-            # Duplicate stable_ids across playlists (layout=Artist/Album/Track
-            # is playlist-agnostic): keep the first mapping, warn once.
-            if rel in expected:
-                warnings.append(f"track duplicated across playlists mapping to {rel}: {t.stable_id}")
-                continue
-            expected[rel] = (t, idx)
-            case_buckets[str(rel).lower()].append(rel)
-
-    # --- 2. Case-collision check.
-    for _key, variants in case_buckets.items():
-        if len(variants) > 1:
-            warnings.append("case collision: " + ", ".join(sorted(str(v) for v in variants)))
-
-    # --- 3. Existing files on drive.
-    existing = enumerate_drive_files(drive_root)
-    existing_by_rel: dict[PurePosixPath, Path] = {}
-    for p in existing:
-        rel = PurePosixPath(p.relative_to(drive_root).as_posix())
-        existing_by_rel[rel] = p
-
-    # --- 4. Emit copy / overwrite / skip ops.
     total_bytes = 0
     existing_bytes = 0
     for rel, (track, _idx) in expected.items():
@@ -234,13 +196,21 @@ def compute_plan(
                 )
             )
             total_bytes += track.size_bytes
+    return ops, total_bytes, existing_bytes, warnings
 
-    # --- 5. Emit delete ops for drive-only files (respecting exclusions).
-    expected_rels = set(expected.keys())
+
+def _removal_ops(
+    *,
+    expected_rels: set[PurePosixPath],
+    existing_by_rel: dict[PurePosixPath, Path],
+    exclusions: Iterable[str],
+) -> list[Op]:
+    """Emit delete ops for drive-only files (respecting exclusions)."""
+    ops: list[Op] = []
     for rel, abs_path in existing_by_rel.items():
         if rel in expected_rels:
             continue
-        if _is_excluded(rel, profile.exclusions):
+        if _is_excluded(rel, exclusions):
             continue
         try:
             sz = abs_path.stat().st_size
@@ -258,6 +228,67 @@ def compute_plan(
                 bytes_estimate=sz,
             )
         )
+    return ops
+
+
+def compute_plan(
+    *,
+    profile: Profile,
+    canonical: list[CanonicalTrack],
+    drive_root: Path,
+) -> Plan:
+    """Build a :class:`Plan` for the given profile + canonical set."""
+    warnings: list[str] = []
+
+    # --- 1. Compute per-playlist track_index and dst path for each track.
+    grouped = group_by_playlist(canonical)
+    expected: dict[PurePosixPath, tuple[CanonicalTrack, int]] = {}
+    case_buckets: dict[str, list[PurePosixPath]] = defaultdict(list)
+
+    for playlist, tracks in grouped.items():
+        for idx, t in enumerate(tracks, start=1):
+            rel = dst_relpath(
+                layout=profile.layout,
+                format_=profile.format,
+                playlist=playlist,
+                track_index=idx,
+                artist=t.artist,
+                album=t.album,
+                title=t.title,
+                src=t.source_path,
+            )
+            # Duplicate stable_ids across playlists (layout=Artist/Album/Track
+            # is playlist-agnostic): keep the first mapping, warn once.
+            if rel in expected:
+                warnings.append(f"track duplicated across playlists mapping to {rel}: {t.stable_id}")
+                continue
+            expected[rel] = (t, idx)
+            case_buckets[str(rel).lower()].append(rel)
+
+    # --- 2. Case-collision check.
+    for _key, variants in case_buckets.items():
+        if len(variants) > 1:
+            warnings.append("case collision: " + ", ".join(sorted(str(v) for v in variants)))
+
+    # --- 3. Existing files on drive.
+    existing = enumerate_drive_files(drive_root)
+    existing_by_rel: dict[PurePosixPath, Path] = {}
+    for p in existing:
+        rel = PurePosixPath(p.relative_to(drive_root).as_posix())
+        existing_by_rel[rel] = p
+
+    copy_ops, total_bytes, existing_bytes, skip_warnings = _copy_and_update_ops(
+        profile=profile,
+        expected=expected,
+        existing_by_rel=existing_by_rel,
+        drive_root=drive_root,
+    )
+    warnings.extend(skip_warnings)
+    ops = copy_ops + _removal_ops(
+        expected_rels=set(expected.keys()),
+        existing_by_rel=existing_by_rel,
+        exclusions=profile.exclusions,
+    )
 
     # --- 6. Free-bytes estimate (10% headroom).
     free_bytes_needed = int(total_bytes * 1.10)

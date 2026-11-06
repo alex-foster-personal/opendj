@@ -64,4 +64,18 @@ def test_macos_and_tmux_argv_are_literal() -> None:
     assert new_window[:5] == ["tmux", "new-window", "-t", session, "-n"]
     assert new_window[-1] == frontend
 
+
+@pytest.mark.requirement("DEVOPS-5871")
+def test_tmux_windows_get_the_library_mode_the_client_was_given() -> None:
+    """[if] the caller has MDT_LIBRARY_MODE [then] each tmux window gets it with -e, [else stop]."""
+    new_session, new_window = tmux_start_argv(
+        "mdt-webui-9400", "backend", "frontend", env={"MDT_LIBRARY_MODE": "local", "OTHER": "x"}
+    )
+    for argv in (new_session, new_window):
+        assert argv[-3:-1] == ["-e", "MDT_LIBRARY_MODE=local"]
+        assert "OTHER=x" not in argv
+    bare_session, _ = tmux_start_argv("mdt-webui-9400", "backend", "frontend", env={})
+    assert "-e" not in bare_session
+
+
 pytestmark = pytest.mark.rb_parity

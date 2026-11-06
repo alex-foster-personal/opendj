@@ -371,7 +371,8 @@ export interface CmdkSnapshot {
 	target: DeckId;
 	/** The rows drawn, in order: tracks by stable_id (a master's pair says aligned or loose), settings and commands by id. */
 	rows: Array<{
-		kind: 'track' | 'setting' | 'command';
+		/** CMDK-6848: a `playlist` row is a library playlist, by its playlist id; picking it opens it as a tree click does. */
+		kind: 'track' | 'playlist' | 'setting' | 'command';
 		id: string;
 		label: string;
 		pair?: 'aligned' | 'loose';

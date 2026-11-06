@@ -17,6 +17,7 @@ import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { resolveArmAtPosition, TempoOutOfSyncRangeError } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/automatic-handoff-runners';
 import {
 	autoPlayYieldsNow,
 	electMaster,
@@ -24,8 +25,6 @@ import {
 	LEVEL_HANDOFF_IDLE,
 	masterHandoffMessage,
 	reportLevelHandoffFailure,
-	runAutomaticMasterElection,
-	runAutomaticRejoin,
 	stepLiveLevelHandoff,
 	type LevelHandoffStep
 } from '$lib/rb/master-election';

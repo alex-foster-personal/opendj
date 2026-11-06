@@ -9,7 +9,8 @@ precedence:
 
 Phase 12 + Rekordbox + djay are stub-policy wired. When the source is
 not yet available, ``load_session_context`` falls through gracefully
-and returns the next source's payload (or an empty context).
+and returns the next source's payload (or an empty context). A
+present-but-unparseable phase12 ``played_at`` raises ``ValueError``.
 """
 
 from __future__ import annotations
@@ -54,9 +55,16 @@ class SessionContext:
 
 
 def _parse_played_at(raw: object) -> datetime:
-    if isinstance(raw, str):
+    if not isinstance(raw, str):
+        raise ValueError(  # noqa: TRY004 - issue #7676 and its tests mandate ValueError
+            f"session_events.played_at must be an ISO-8601 string; got {type(raw).__name__}: {raw!r}"
+        )
+    try:
         return datetime.fromisoformat(raw)
-    return datetime.now(UTC)
+    except ValueError as exc:
+        raise ValueError(
+            f"session_events.played_at is not a valid ISO-8601 timestamp: {raw!r}"
+        ) from exc
 
 
 def _load_phase12(conn: sqlite3.Connection, limit: int) -> list[PlayedTrack]:
@@ -98,7 +106,10 @@ def load_session_context(
     limit: int = 12,
     manual: list[PlayedTrack] | None = None,
 ) -> SessionContext:
-    """Best-effort loader. Never raises.
+    """Load the recent-plays tail from the requested source.
+
+    Raises ValueError when a phase12 ``played_at`` is not a valid ISO-8601
+    string; source unavailability still falls through.
 
     ``source="auto"`` tries phase12 -> rekordbox_history -> djay_history
     -> empty in order. Phase 13 wires phase12 + empty; the vendor

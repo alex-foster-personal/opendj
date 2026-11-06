@@ -15,6 +15,7 @@ control:
 """
 from __future__ import annotations
 
+import errno
 import os
 import sys
 import threading
@@ -415,13 +416,35 @@ def test_the_windows_lock_waits_past_msvcrt_ten_second_limit(tmp_path: Path):
     def busy_for_25(fd: int, mode: int, nbytes: int) -> None:
         calls.append((handle.tell(), mode, nbytes))
         if len(calls) <= 25:
-            raise OSError("locked by another process")
+            raise OSError(errno.EACCES, "locked by another process")
 
     with (tmp_path / "x.lock").open("a+b") as handle:
         lock_region_until_acquired(handle, busy_for_25, 2, retry_s=0)
 
     assert len(calls) == 26
     assert set(calls) == {(0, 2, 1)}
+
+
+@pytest.mark.requirement("STEM-42")
+def test_the_windows_lock_reraises_an_error_that_is_not_contention(tmp_path: Path):
+    """[if] the lock fails for a reason other than contention [then] it is raised, [else stop].
+
+    A permission or invalid-handle error is not another holder. Retrying it
+    would spin until a deadline, then read as a lock held elsewhere. MUTATION
+    TARGET: retry every OSError and this loops until the test times out.
+    """
+    from apps.cloud.stem_upload_queue import lock_region_until_acquired
+
+    calls: list[int] = []
+
+    def permission_denied(fd: int, mode: int, nbytes: int) -> None:
+        calls.append(mode)
+        raise OSError(errno.EBADF, "invalid handle")
+
+    with (tmp_path / "x.lock").open("a+b") as handle, pytest.raises(OSError, match="invalid handle"):
+        lock_region_until_acquired(handle, permission_denied, 2, retry_s=0)
+
+    assert calls == [2]
 
 
 @pytest.mark.requirement("STEM-58")

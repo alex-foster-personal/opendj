@@ -50,7 +50,7 @@ from apps.analysis_structure.http import build_segment_bench
 from apps.analysis_waveform.decode import DETAIL_COLUMNS_PER_S, decode_peaks_from, select_decoder
 from apps.analysis_waveform.local_waveform import peaks_version
 
-from .corpus import _lane_off, _lane_ok
+from .corpus import _lane_off, _lane_ok, _memoized_segments
 
 # The package's own algorithms, reached through its delivery entry point (ADR-NEW-module-contracts).
 _BENCH = build_segment_bench()
@@ -397,17 +397,7 @@ class Library:
         return hit[1] if hit is not None and hit[0] == self._stamp(stable_id) else None
 
     def segments(self, stable_id: str) -> dict[str, Any]:
-        self.track(stable_id)
-        with self._lock:
-            track_lock = self._track_locks.setdefault(stable_id, threading.Lock())
-        with track_lock:
-            doc = self._cached(stable_id)
-            if doc is not None:
-                return doc
-            doc = library_segments(self, stable_id)
-            with self._lock:
-                self._cache[stable_id] = (self._stamp(stable_id), doc)
-        return doc
+        return _memoized_segments(self, stable_id, library_segments)
 
     def row(self, stable_id: str) -> dict[str, Any]:
         t = self.track(stable_id)

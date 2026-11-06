@@ -27,6 +27,7 @@
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
 	import { devicePixelRatioNow, startDevicePixelRatioWatch } from '$lib/ui/device-pixel-ratio.svelte';
 	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
@@ -425,7 +426,7 @@
 	</div>
 
 	<div class="side-buttons">
-		<ControlExplainer title={qTitle} bullets={qGridBullets}>
+		<ControlExplainer title={qTitle} bullets={qGridBullets} tooltip={TOOLTIP_ISOLATED}>
 			{#snippet action()}
 				<div class="q-grid-options" role="group" aria-label={`quantize grid deck ${deck.deck_id}`}>
 					{#each [1, 4, 8] as const as beats (beats)}
@@ -465,13 +466,12 @@
 				data-testid={`quantize-deck-${deck.deck_id}`}
 				aria-label={`quantize deck ${deck.deck_id}`}
 				data-state={gridless ? 'inert' : deck.quantize_enabled ? 'on' : 'off'}
-				title={qTitle}
 				onclick={async () => await onQuantize()}
 			>
 				{qLabel}
 			</button>
 		</ControlExplainer>
-		<ControlExplainer title={slipTitle} bullets={slipBullets} demo="slip">
+		<ControlExplainer title={slipTitle} bullets={slipBullets} demo="slip" tooltip={TOOLTIP_ISOLATED}>
 			<button
 				class="rb-lit-button"
 				class:lit={deck.slip_enabled}
@@ -482,7 +482,6 @@
 				data-testid={`slip-deck-${deck.deck_id}`}
 				aria-label={`slip deck ${deck.deck_id}`}
 				data-state={deck.slip_active ? 'active' : deck.slip_enabled ? 'armed' : 'off'}
-				title={slipTitle}
 				onclick={async () => await onSlip()}
 			>
 				SLIP

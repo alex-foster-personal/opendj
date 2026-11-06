@@ -1,9 +1,13 @@
 <script lang="ts">
 	// RelocatePopover's menu as props only: the container finds candidates
 	// and applies the pick; this owns placement, focus and dismissal.
-	import { tick } from 'svelte';
 	import { pointFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import type { RelocateCandidate } from '$lib/reconcile-api';
+	import {
+		closePointFloatingMenuOnEscape,
+		closePointFloatingMenuOnOutsidePointer,
+		focusPointFloatingMenu
+	} from './point-floating-menu';
 
 	let {
 		x,
@@ -30,35 +34,17 @@
 
 	let menu = $state<HTMLDivElement | null>(null);
 
-	// Placement is pointFloatingAction's job, not a one-shot clamp here: the
-	// menu opens on a single loading row and grows once its items arrive, so
-	// a clamp measured at open left the grown menu hanging off the viewport
-	// bottom (unclickable - a fixed node cannot be scrolled into view). The
-	// action re-clamps from (x, y) on every size change.
-	async function focusMenu(): Promise<void> {
-		await tick();
-		menu?.focus();
-	}
-
 	$effect(() => {
 		void x;
 		void y;
-		void focusMenu();
+		void focusPointFloatingMenu(menu);
 	});
-
-	function onKeydown(event: KeyboardEvent): void {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onclose();
-		}
-	}
-
-	function onOutsidePointerDown(event: PointerEvent): void {
-		if (menu !== null && event.target instanceof Node && !menu.contains(event.target)) onclose();
-	}
 </script>
 
-<svelte:window onkeydown={onKeydown} onpointerdowncapture={onOutsidePointerDown} />
+<svelte:window
+	onkeydown={(event) => closePointFloatingMenuOnEscape(event, onclose)}
+	onpointerdowncapture={(event) => closePointFloatingMenuOnOutsidePointer(event, menu, onclose)}
+/>
 
 <div
 	bind:this={menu}

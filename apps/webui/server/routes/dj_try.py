@@ -48,10 +48,7 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.autodj import try_picks
-from apps.autodj.plan import parse_plan
-from apps.autodj.profile import TrackProfile
-from apps.autodj.render_plan import RenderPlanError, compile_render_plan, layout_of
+from apps.autodj.http import RenderPlanError, TrackProfile, build_service, try_picks
 from apps.shared import file_lock
 from apps.shared.engine_origin import EngineOrigin
 from apps.transition_score import SCORER_VERSION, Candidate, TryResult, best_candidate, try_pair
@@ -208,7 +205,7 @@ class ServingTrackSource(EngineTrackSource):
     state_db: Path = field(kw_only=True)
 
     def __post_init__(self) -> None:
-        self._service = EngineProfiles(self.origin)
+        self._service = EngineProfiles(self.origin, self.autodj)
 
     def audio_path(self, stable_id: str) -> Path:
         # The shared resolver reads <data_dir>/state/state.db only. A server configured with a
@@ -418,7 +415,8 @@ def start_try(
     renders = data_dir / TRY_JOB_RENDERS
     job_renders = renders / job_id
     try:
-        source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
+        autodj = build_service()
+        source = ServingTrackSource(data_dir, autodj, origin=_serving_origin(request, state_db), state_db=state_db)
         result = runner(
             body.out_id,
             body.in_id,
@@ -427,6 +425,7 @@ def start_try(
             data_dir=data_dir,
             source=source,
             keep_renders_in=job_renders,
+            autodj=autodj,
         )
     except (TrackUnavailable, AudioUnavailable) as error:
         _discard_job_renders(job_renders)
@@ -569,16 +568,22 @@ def _candidate_lanes(
 ) -> Lanes | JSONResponse:
     """The lanes of one kept render, or the 422 that says why they cannot be drawn."""
     try:
-        plan = parse_plan(candidate["plan"])
+        plan = source.autodj.parse_plan(candidate["plan"])
         out_profile, in_profile = source.profile(job.out_id), source.profile(job.in_id)
         # Every render of the job starts at the bar its earliest plan needs (try_plans), not at this plan's own.
         start = shared_start_out_bar(
-            [parse_plan(c["plan"]) for c in job.candidates], out_profile, in_profile, job.context_bars
+            [source.autodj.parse_plan(c["plan"]) for c in job.candidates],
+            out_profile,
+            in_profile,
+            job.context_bars,
+            autodj=source.autodj,
         )
-        layout = layout_of(plan, out_profile, in_profile, job.context_bars, start_out_bar=start)
+        layout = source.autodj.layout_of(
+            plan, out_profile, in_profile, job.context_bars, start_out_bar=start
+        )
         # The audio paths only have to be absolute here: the document is read for its timing, never rendered.
         anchor = Path(Path.cwd().anchor)
-        document = compile_render_plan(
+        document = source.autodj.compile_render_plan(
             plan, out_profile, in_profile, job.context_bars, out_audio=anchor, in_audio=anchor, start_out_bar=start
         )
         lanes = build_lanes(kept.parent, document, plan.out.deck, out_profile, layout, columns)
@@ -614,7 +619,9 @@ def candidate_lanes(
     if isinstance(found, JSONResponse):
         return found
     candidate, kept = found
-    source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
+    source = ServingTrackSource(
+        data_dir, build_service(), origin=_serving_origin(request, state_db), state_db=state_db
+    )
     lanes = _candidate_lanes(job, candidate, kept, source, columns)
     if isinstance(lanes, JSONResponse):
         return lanes

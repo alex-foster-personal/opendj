@@ -49,9 +49,6 @@ DELIVERABLE_UPLOADS = {
     ("macos-native-companion.yml", "Upload macOS production wheel"),
     ("release-check.yml", "Upload built dists"),
     ("ci.yml", "Upload production frontend artifact"),
-    # The published ledger IS the job: ci.yml installs it, so a silent failure
-    # here would leave CI splitting on a stale seed with nothing red.
-    ("durations-ledger.yml", "Publish the ledger for ci.yml"),
 }
 
 
@@ -227,14 +224,18 @@ def test_the_action_gives_macos_the_system_ca_bundle() -> None:
 
 def test_a_green_job_cannot_lose_its_deliverable() -> None:
     """[if] a green job can upload nothing and still pass [then] fail, [else stop]."""
-    found = []
+    found: set[tuple[str, str]] = set()
     for workflow in _all_workflows():
         for job, step in _upload_steps(workflow):
-            if (workflow, step.get("name")) in DELIVERABLE_UPLOADS:
-                found.append(step)
+            key = (workflow, step.get("name"))
+            if key in DELIVERABLE_UPLOADS:
+                found.add(key)
                 missing = (step.get("with") or {}).get("if-no-files-found", "error")
-                assert missing in MISSING_DELIVERABLE_VALUES, f"{workflow}:{job}:{step.get('name')} reads {missing!r}"
-    assert found, "no deliverable upload was checked"
+                assert missing in MISSING_DELIVERABLE_VALUES, (
+                    f"{workflow}:{job}:{step.get('name')} reads {missing!r}"
+                )
+    absent = DELIVERABLE_UPLOADS - found
+    assert not absent, f"declared deliverable upload missing: {sorted(absent)}"
 
 
 def _env_blocks(workflow: dict) -> list[dict]:

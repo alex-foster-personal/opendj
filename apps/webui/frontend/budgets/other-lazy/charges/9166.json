@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 474122,
+  "measured_with_pr": 474283,
+  "sha": "49c247f4a6",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9166 paints the partner deck's dynamic tempo curve in split waveform rows by requesting and passing that deck's tempo-stability data. CI measured other-lazy 474122 -> 474283, +161 B gzip, above the 128 B PR-delta noise floor.",
+  "payback": "none planned; the fix reuses the existing tempo-stability request and split-frame renderer contracts"
+}

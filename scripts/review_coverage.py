@@ -1,5 +1,9 @@
 """Reviewer COVERAGE preflight: did the bot reviewers actually review this PR?
 
+PR bodies that cite a stable error id must carry FEATURE or FIX EVIDENCE; see
+``scripts/error_id_evidence_check`` and job ``error_id_evidence`` in
+``.github/workflows/pr-body-gates.yml`` (issue #2325). This module does not read the PR body.
+
 Companion to ``review_thread_triage``, which is a silence detector: it asks
 whether every bot review THREAD reached a disposition. That is the right
 question, and it has a precondition nobody was checking. On a PR where no

@@ -52,17 +52,19 @@ class SyncResult:
     #: the two sides still moving (a third machine pushed, or a local write
     #: landed mid-sync) and the sync settled instead of raising.
     rounds: int = 1
-    #: Rows THIS SYNC'S FENCE selected and could not put on the wire, because
-    #: a stored stamp on them cannot be ordered (round 5). Fence-scoped, so it
-    #: reads 0 on a machine whose fence selected nothing while rows still sit
-    #: outside the sync set; :attr:`quarantined_rows` is that number. Non-zero
-    #: is not a failure -- every other row synced.
+    #: Rows THIS SYNC'S FENCE selected and could not put on the wire (any
+    #: hold kind: stamp fault, identity-dup, identity-hold, or FK cascade).
+    #: Fence-scoped, so it reads 0 on a machine whose fence selected nothing
+    #: while rows still sit outside the sync set; :attr:`quarantined_rows`
+    #: is that number. Non-zero is not a failure -- every other row synced.
     quarantined: int = 0
     #: Rows outside this machine's sync set ALTOGETHER, off the local digest
     #: every sync computes. Fence-independent, which is why it is the number
     #: that belongs beside :attr:`digest_inconclusive`: "nothing held back,
     #: yet inconclusive" cannot be two readings of one machine. Cleared by
-    #: ``python -m apps.shared.state.normalize_stamps --live``.
+    #: the remedy for each hold kind
+    #: (:func:`apps.sync_hub.sync_set.remedy_for` /
+    #: :func:`apps.sync_hub.sync_set.inconclusive_remedy`).
     quarantined_rows: int = 0
     #: Incoming rows this machine REFUSED because the local row they would be
     #: compared against cannot be ordered. Separate from ``quarantined``

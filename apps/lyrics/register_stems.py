@@ -189,44 +189,38 @@ def _publish_staged(tmp_dir: Path, out_dir: Path) -> None:
             raise
 
 
-def register_pair(
-    *,
-    stable_id: str,
-    vocals: Path,
-    instrumental: Path,
-    model_name: str,
-    model_version: str,
-    source_path: str,
-    storage: RegisterPairStorage | None = None,
-    root: Path | None = None,
-    s3: AssetS3Client | None = None,
-    cfg: CloudConfig | None = None,
-    conn: sqlite3.Connection | None = None,
-) -> Path:
-    """Write ONE canonical roformer2 bundle and verify it with the strict
-    loader. Returns the bundle dir. Raises on any inconsistency - a bundle
-    the app cannot read back must never be left behind (the tmp dir is
-    removed on failure)."""
+def _resolve_register_pair_storage(
+    storage: RegisterPairStorage | None,
+    root: Path | None,
+    s3: AssetS3Client | None,
+    cfg: CloudConfig | None,
+    conn: sqlite3.Connection | None,
+) -> RegisterPairStorage:
     if any(value is not None for value in (root, s3, cfg, conn)):
         if storage is not None:
             raise TypeError(
                 "register_pair accepts storage= or legacy storage keywords, not both"
             )
-        store = RegisterPairStorage(
+        return RegisterPairStorage(
             root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
         )
-    else:
-        store = _storage_for_register_pair(storage, root)
-    root = store.root
-    s3 = store.s3
-    cfg = store.cfg
-    conn = store.conn
+    return _storage_for_register_pair(storage, root)
+
+
+def _validate_register_pair_parts(
+    stable_id: str,
+    vocals: Path,
+    instrumental: Path,
+) -> tuple[AudioProbe, AudioProbe]:
     if vocals.suffix.lower() != instrumental.suffix.lower():
         raise ValueError(
             f"{stable_id}: parts mix codecs ({vocals.suffix} vs {instrumental.suffix})"
         )
     voc_probe, ins_probe = _probe_audio(vocals), _probe_audio(instrumental)
-    if (voc_probe.sample_rate, voc_probe.channels) != (ins_probe.sample_rate, ins_probe.channels):
+    if (voc_probe.sample_rate, voc_probe.channels) != (
+        ins_probe.sample_rate,
+        ins_probe.channels,
+    ):
         raise ValueError(f"{stable_id}: parts disagree on sample_rate/channels")
     frame_gap = abs(voc_probe.frame_count - ins_probe.frame_count)
     if frame_gap > FRAME_MISMATCH_TOL_S * voc_probe.sample_rate:
@@ -234,28 +228,16 @@ def register_pair(
             f"{stable_id}: frame counts differ by {frame_gap} frames "
             f"(> {FRAME_MISMATCH_TOL_S}s) - refusing to declare alignment"
         )
+    return voc_probe, ins_probe
 
-    src = Path(source_path)
-    manifest: dict = {
-        "schema_version": 3,
-        "stable_id": stable_id,
-        "layout": "roformer2",
-        "model": {"name": model_name, "version": model_version},
-        "source": {
-            "path": source_path,
-            "sha256": sha256_file_hex(src) if src.is_file() else "0" * 64,
-        },
-        "files": {
-            "vocals": f"vocals{vocals.suffix.lower()}",
-            "instrumental": f"instrumental{instrumental.suffix.lower()}",
-        },
-        "audio": {
-            "sample_rate": voc_probe.sample_rate,
-            "channels": voc_probe.channels,
-            "frame_count": min(voc_probe.frame_count, ins_probe.frame_count),
-        },
-    }
 
+def _write_verified_register_pair(
+    root: Path,
+    stable_id: str,
+    vocals: Path,
+    instrumental: Path,
+    manifest: dict,
+) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     out_dir = root / stable_id
     tmp_dir = root / f"{stable_id}.tmp-{os.getpid()}"
@@ -266,7 +248,8 @@ def register_pair(
         shutil.copy2(vocals, tmp_dir / manifest["files"]["vocals"])
         shutil.copy2(instrumental, tmp_dir / manifest["files"]["instrumental"])
         manifest["files_sha256"] = {
-            part: sha256_file_hex(tmp_dir / rel) for part, rel in manifest["files"].items()
+            part: sha256_file_hex(tmp_dir / rel)
+            for part, rel in manifest["files"].items()
         }
         (tmp_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
@@ -275,7 +258,17 @@ def register_pair(
         remove_staging(tmp_dir, "RoFormer staging directory")
         raise
     _publish_staged(tmp_dir, out_dir)
+    return out_dir
 
+
+def _push_register_pair_if_cloud(
+    out_dir: Path,
+    manifest: dict,
+    *,
+    s3: AssetS3Client | None = None,
+    cfg: CloudConfig | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> None:
     if policy.CFG.mode == "cloud":
         client: AssetS3Client
         config: CloudConfig
@@ -297,7 +290,7 @@ def register_pair(
         try:
             _push_bundle_parts(
                 db_conn,
-                stable_id=stable_id,
+                stable_id=manifest["stable_id"],
                 bundle_dir=out_dir,
                 manifest=manifest,
                 s3=client,
@@ -306,6 +299,58 @@ def register_pair(
         finally:
             if own_conn:
                 db_conn.close()
+
+
+def register_pair(
+    *,
+    stable_id: str,
+    vocals: Path,
+    instrumental: Path,
+    model_name: str,
+    model_version: str,
+    source_path: str,
+    storage: RegisterPairStorage | None = None,
+    root: Path | None = None,
+    s3: AssetS3Client | None = None,
+    cfg: CloudConfig | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> Path:
+    """Write ONE canonical roformer2 bundle and verify it with the strict
+    loader. Returns the bundle dir. Raises on any inconsistency - a bundle
+    the app cannot read back must never be left behind (the tmp dir is
+    removed on failure)."""
+    store = _resolve_register_pair_storage(storage, root, s3, cfg, conn)
+    root = store.root
+    s3 = store.s3
+    cfg = store.cfg
+    conn = store.conn
+    voc_probe, ins_probe = _validate_register_pair_parts(
+        stable_id, vocals, instrumental
+    )
+    src = Path(source_path)
+    manifest: dict = {
+        "schema_version": 3,
+        "stable_id": stable_id,
+        "layout": "roformer2",
+        "model": {"name": model_name, "version": model_version},
+        "source": {
+            "path": source_path,
+            "sha256": sha256_file_hex(src) if src.is_file() else "0" * 64,
+        },
+        "files": {
+            "vocals": f"vocals{vocals.suffix.lower()}",
+            "instrumental": f"instrumental{instrumental.suffix.lower()}",
+        },
+        "audio": {
+            "sample_rate": voc_probe.sample_rate,
+            "channels": voc_probe.channels,
+            "frame_count": min(voc_probe.frame_count, ins_probe.frame_count),
+        },
+    }
+    out_dir = _write_verified_register_pair(
+        root, stable_id, vocals, instrumental, manifest
+    )
+    _push_register_pair_if_cloud(out_dir, manifest, s3=s3, cfg=cfg, conn=conn)
     return out_dir
 
 

@@ -8,17 +8,17 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const jogDialSource = readFileSync(`${SRC}/lib/components/rb/deck/JogDial.svelte`, 'utf8');
-const renderSource = readFileSync(`${SRC}/lib/components/rb/wave/render.ts`, 'utf8');
+const ampSource = readFileSync(`${SRC}/lib/components/rb/wave/wave-amp.ts`, 'utf8');
 
 let radial;
 
-test('amp shaping constants still match wave/render.ts', async () => {
+test('amp shaping constants still match wave/wave-amp.ts', async () => {
 	radial = await loadTypeScriptModule('src/lib/components/rb/deck/jog-radial-render.ts');
-	const gamma = renderSource.match(/const AMP_GAMMA = ([0-9.]+)/);
-	const high = renderSource.match(/const HIGH_BAND_SCALE = ([0-9.]+)/);
-	const mid = renderSource.match(/const MID_BAND_SCALE = ([0-9.]+)/);
-	const floor = renderSource.match(/const NORM_FLOOR = ([0-9.]+)/);
-	assert.ok(gamma && high && mid && floor, 'render.ts must declare the four amp constants');
+	const gamma = ampSource.match(/const AMP_GAMMA = ([0-9.]+)/);
+	const high = ampSource.match(/const HIGH_BAND_SCALE = ([0-9.]+)/);
+	const mid = ampSource.match(/const MID_BAND_SCALE = ([0-9.]+)/);
+	const floor = ampSource.match(/const NORM_FLOOR = ([0-9.]+)/);
+	assert.ok(gamma && high && mid && floor, 'wave-amp.ts must declare the four amp constants');
 	assert.equal(radial.JOG_RADIAL_AMP_GAMMA, Number(gamma[1]));
 	assert.equal(radial.JOG_RADIAL_HIGH_BAND_SCALE, Number(high[1]));
 	assert.equal(radial.JOG_RADIAL_MID_BAND_SCALE, Number(mid[1]));

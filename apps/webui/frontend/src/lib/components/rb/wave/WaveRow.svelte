@@ -75,6 +75,7 @@
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { paintBandGains } from '$lib/rb/wave-eq-gains.svelte';
 	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { sectionsApiFor } from './sections-lazy.svelte';
@@ -390,6 +391,19 @@
 		if (tempoKey !== null && deck.stable_id !== null) requestTempoStability(deck.stable_id, tempoKey);
 	});
 	const tempoSegments = $derived(tempoCurveData(tempoKey === null ? null : tempoStabilityFor(tempoKey)));
+	const partnerTempoKey: string | null = $derived(
+		partnerState === null || partnerState.stable_id === null || partnerAnlz === null
+			? null
+			: tempoStabilityKey(partnerState.stable_id, partnerAnlz.beatgrid)
+	);
+	$effect(() => {
+		if (partnerTempoKey !== null && partnerState !== null && partnerState.stable_id !== null) {
+			requestTempoStability(partnerState.stable_id, partnerTempoKey);
+		}
+	});
+	const partnerTempoSegments = $derived(
+		tempoCurveData(partnerTempoKey === null ? null : tempoStabilityFor(partnerTempoKey))
+	);
 	const tempoScale = $derived(uiPrefs.tempo_lane_scale);
 	const hideTempo = $derived(!uiPrefs.show_tempo_lane);
 	const tempoColors = $derived(TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)]);
@@ -554,7 +568,11 @@
 		const view = _zoomView(paintPositionMs);
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, view.windowS, deck.pitch);
 		const ghost = ghostSeekFrame(waveformSeekArmed, performance.now());
+		// WAVE-EQ-5230: identity changes only when a gain moves, so a paused deck
+		// repaints on an EQ turn and never otherwise.
+		const bandGains = paintBandGains(deckId, uiPrefs.wave_eq_reflect);
 		const partnerPaintMs = splitPartner === null || partnerState === null ? null : _partnerPaintMs(splitPartner.id, partnerState);
+		const partnerGains = splitPartner === null ? null : paintBandGains(splitPartner.id, uiPrefs.wave_eq_reflect);
 		const visualInputs = [
 			ghost.blinkPhase,
 			deck.stable_id,
@@ -566,16 +584,19 @@
 			cssW,
 			cssH,
 			palette,
+			bandGains,
 			uiPrefs.show_sections,
 			splitPartner?.id ?? null,
 			partnerAnlz,
 			partnerPaintMs,
 			partnerState?.pitch ?? null,
+			partnerGains,
 			Math.round(view.windowS * 1000),
 			Math.round(view.frac * cssW),
 			planCurves,
 			partnerPlanCurves,
 			tempoSegments,
+			partnerTempoSegments,
 			tempoColors,
 			tempoScale,
 			hideTempo
@@ -615,7 +636,12 @@
 					loop: partnerState.loop,
 					playheadTone: partnerState.is_master ? 'master' : partnerState.audible ? 'now' : 'stopped',
 					playheadTimeMs: performance.now(),
-					planCurves: partnerPlanCurves
+					bandGains: partnerGains,
+					planCurves: partnerPlanCurves,
+					tempo: partnerTempoSegments,
+					tempoColors,
+					tempoScale,
+					hideTempo
 				},
 				{
 					...common,
@@ -628,6 +654,7 @@
 					playheadTimeMs: performance.now(),
 					ghostSeekMs: ghost.ghostSeekMs,
 					ghostSeekVisible: ghost.ghostSeekVisible,
+					bandGains,
 					planCurves,
 					tempo: tempoSegments,
 					tempoColors,
@@ -656,6 +683,7 @@
 			masterBeatGhost,
 			ghostSeekMs: ghost.ghostSeekMs,
 			ghostSeekVisible: ghost.ghostSeekVisible,
+			bandGains,
 			windowS: view.windowS,
 			playheadFrac: view.frac,
 			...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }),
@@ -749,6 +777,7 @@
 		void planCurves;
 		void partnerPlanCurves;
 		void tempoSegments;
+		void partnerTempoSegments;
 		void tempoColors;
 		void tempoScale;
 		void hideTempo;
@@ -766,6 +795,9 @@
 		// bands paint as soon as it lands after the pref turns on.
 		void sectionsApiFor(uiPrefs.show_sections);
 		void palette;
+		// WAVE-EQ-5230: a paused deck repaints when its EQ or filter moves.
+		void paintBandGains(deckId, uiPrefs.wave_eq_reflect);
+		if (splitPartner !== null) void paintBandGains(splitPartner.id, uiPrefs.wave_eq_reflect);
 		draw(true);
 	});
 

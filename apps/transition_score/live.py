@@ -34,14 +34,17 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from apps.autodj.choose import STYLE_CAP, VARIETY_WINDOW, choose_for_set
-from apps.autodj.choose import Candidate as ChooserCandidate
-from apps.autodj.compile import compile_plan
-from apps.autodj.live import ANCHOR_LEAD_BARS, heard_on_deck, lead_short, live_bar, with_in_track
-from apps.autodj.pair_memory import PairTransition, on_decks
-from apps.autodj.plan import PlanError, TransitionPlan, live_mapping, parse_plan, validate_plan
-from apps.autodj.profile import TrackProfile
-from apps.autodj.propose import match_live_trim_db, parse_intent, propose_transition
+from apps.autodj.contract import (
+    ANCHOR_LEAD_BARS,
+    STYLE_CAP,
+    VARIETY_WINDOW,
+    AutoDjService,
+    ChooserCandidate,
+    PairTransition,
+    PlanError,
+    TrackProfile,
+    TransitionPlan,
+)
 from apps.transition_score.contract import Candidate
 from apps.transition_score.tryer import PairNotTryable, TrackSource, TryError, renderable_plans, try_plans
 
@@ -89,6 +92,8 @@ class LiveAnswer:
     order: dict[str, Any] | None
     reason: str
     intent: str
+    #: When ``scored`` is true, ``candidate.plan`` is the live-trimmed transition document compiled into ``order``;
+    #: ``plan_sha256`` on that candidate remains the scorer hash of the prepared plan document.
     candidate: Candidate | None = None
     out_bar_now: float | None = None
     considered: int = 0
@@ -173,9 +178,9 @@ class PlanCache:
             entry.state, entry.reason = state, reason
 
 
-def _deck(mirror: Mapping[str, Any], deck: int) -> Mapping[str, Any]:
-    return live_mapping(
-        live_mapping(mirror.get("decks"), "live mirror decks").get(str(deck)), f"live mirror deck {deck}"
+def _deck(autodj: AutoDjService, mirror: Mapping[str, Any], deck: int) -> Mapping[str, Any]:
+    return autodj.live_mapping(
+        autodj.live_mapping(mirror.get("decks"), "live mirror decks").get(str(deck)), f"live mirror deck {deck}"
     )
 
 
@@ -188,15 +193,15 @@ def _as_planned(mirror: Mapping[str, Any], request: LiveRequest) -> Mapping[str,
     return {**mirror, "decks": decks}
 
 
-def _bar_now(profile: TrackProfile, mirror: Mapping[str, Any], deck: int) -> float:
-    bar = live_bar(profile, _deck(mirror, deck))
+def _bar_now(autodj: AutoDjService, profile: TrackProfile, mirror: Mapping[str, Any], deck: int) -> float:
+    bar = autodj.live_bar(profile, _deck(autodj, mirror, deck))
     if bar is None:
         raise DeckNotPlannable(f"deck {deck} reports no playhead")
     return bar
 
 
-def _track(mirror: Mapping[str, Any], deck: int) -> str:
-    stable_id = _deck(mirror, deck).get("stable_id")
+def _track(autodj: AutoDjService, mirror: Mapping[str, Any], deck: int) -> str:
+    stable_id = _deck(autodj, mirror, deck).get("stable_id")
     if not isinstance(stable_id, str) or not stable_id:
         raise DeckNotPlannable(f"deck {deck} holds no track")
     return stable_id
@@ -242,42 +247,44 @@ def _reason(style: str, bars: int, score: float | None, intent: str, recent: Seq
     return f"intent {intent}: {style} over {bars} bars, {measured}, {len(recent[-VARIETY_WINDOW:])} recent styles, cap {STYLE_CAP}"
 
 
-def _heard_pair(source: TrackSource, key: PrepareKey, read: Mapping[str, Any]) -> tuple[TrackProfile, TrackProfile]:
+def _heard_pair(
+    autodj: AutoDjService, source: TrackSource, key: PrepareKey, read: Mapping[str, Any]
+) -> tuple[TrackProfile, TrackProfile]:
     """AUTOPLAY-HEARD: the pair as the decks play it: the master at its applied key shift and pitch, the incoming
     track at the key shift it was loaded with. A pair is never judged on a key its deck is not playing."""
     return (
-        heard_on_deck(source.profile(key.out_id), _deck(read, key.out_deck), with_tempo=True),
-        heard_on_deck(source.profile(key.in_id), _deck(read, key.in_deck), with_tempo=False),
+        autodj.heard_on_deck(source.profile(key.out_id), _deck(autodj, read, key.out_deck), with_tempo=True),
+        autodj.heard_on_deck(source.profile(key.in_id), _deck(autodj, read, key.in_deck), with_tempo=False),
     )
 
 
-def _key(request: LiveRequest, mirror: Mapping[str, Any]) -> PrepareKey:
+def _key(autodj: AutoDjService, request: LiveRequest, mirror: Mapping[str, Any]) -> PrepareKey:
     return PrepareKey(
-        _track(mirror, request.out_deck),
-        _track(mirror, request.in_deck),
+        _track(autodj, mirror, request.out_deck),
+        _track(autodj, mirror, request.in_deck),
         request.out_deck,
         request.in_deck,
-        parse_intent(request.intent),
-        _deck_key_shift(mirror, request.out_deck),
-        _deck_pitch(mirror, request.out_deck),
-        _deck_key_shift(mirror, request.in_deck),
-        _deck_pitch_range(mirror, request.in_deck),
+        autodj.parse_intent(request.intent),
+        _deck_key_shift(autodj, mirror, request.out_deck),
+        _deck_pitch(autodj, mirror, request.out_deck),
+        _deck_key_shift(autodj, mirror, request.in_deck),
+        _deck_pitch_range(autodj, mirror, request.in_deck),
     )
 
 
-def _deck_key_shift(mirror: Mapping[str, Any], deck: int) -> int:
-    key_sync = _deck(mirror, deck).get("key_sync")
+def _deck_key_shift(autodj: AutoDjService, mirror: Mapping[str, Any], deck: int) -> int:
+    key_sync = _deck(autodj, mirror, deck).get("key_sync")
     shift = key_sync.get("shift_semitones") if isinstance(key_sync, Mapping) else None
     return shift if isinstance(shift, int) and not isinstance(shift, bool) else 0
 
 
-def _deck_pitch_range(mirror: Mapping[str, Any], deck: int) -> float:
-    pitch_range = _deck(mirror, deck).get("pitch_range")
+def _deck_pitch_range(autodj: AutoDjService, mirror: Mapping[str, Any], deck: int) -> float:
+    pitch_range = _deck(autodj, mirror, deck).get("pitch_range")
     return float(pitch_range) if isinstance(pitch_range, (int, float)) and pitch_range > 0 else 0.0
 
 
-def _deck_pitch(mirror: Mapping[str, Any], deck: int) -> float:
-    pitch = _deck(mirror, deck).get("pitch")
+def _deck_pitch(autodj: AutoDjService, mirror: Mapping[str, Any], deck: int) -> float:
+    pitch = _deck(autodj, mirror, deck).get("pitch")
     return float(pitch) if isinstance(pitch, (int, float)) and pitch > 0 else 1.0
 
 
@@ -292,6 +299,7 @@ def _playing_out(mirror: Mapping[str, Any], out_deck: int) -> Mapping[str, Any]:
 class _Proposer:
     """One prepare's proposal call: the pair, its decks and the mirror it plans against."""
 
+    autodj: AutoDjService
     out_profile: TrackProfile
     in_profile: TrackProfile
     request: LiveRequest
@@ -300,7 +308,7 @@ class _Proposer:
     live: dict[str, Any]
 
     def plans(self, around: float | None) -> list[TransitionPlan]:
-        rows = propose_transition(
+        rows = self.autodj.propose_transition(
             self.out_profile,
             self.in_profile,
             out_deck=self.request.out_deck,
@@ -311,7 +319,7 @@ class _Proposer:
             top=None,
             around_bar=around,
         )["proposals"]
-        return [parse_plan(row["plan"]) for row in rows]
+        return [self.autodj.parse_plan(row["plan"]) for row in rows]
 
 
 def _by_window(plans: list[TransitionPlan]) -> list[list[TransitionPlan]]:
@@ -341,6 +349,7 @@ def prepare_live(
     request: LiveRequest,
     key: PrepareKey,
     *,
+    autodj: AutoDjService,
     mirror: Callable[[], Mapping[str, Any]],
     source: TrackSource,
     cache: PlanCache,
@@ -349,18 +358,20 @@ def prepare_live(
     """Render and score candidates for ``request``'s pair into ``cache``, one window at a time. Runs off the request."""
     try:
         read = _playing_out(_as_planned(mirror(), request), request.out_deck)
-        if _key(request, read) != key:
+        if _key(autodj, request, read) != key:
             cache.finish(key, "failed", "a deck changed track before the prepare started")
             return
-        out_profile, in_profile = _heard_pair(source, key, read)
-        bar_now = _bar_now(out_profile, read, request.out_deck)
-        live = with_in_track(read, request.in_deck, key.in_id, in_profile.bpm)
+        out_profile, in_profile = _heard_pair(autodj, source, key, read)
+        bar_now = _bar_now(autodj, out_profile, read, request.out_deck)
+        live = autodj.with_in_track(read, request.in_deck, key.in_id, in_profile.bpm)
         min_out_bar = bar_now + ANCHOR_LEAD_BARS + PLANNING_LEAD_BARS
-        proposer = _Proposer(out_profile, in_profile, request, key.intent, min_out_bar, live)
+        proposer = _Proposer(autodj, out_profile, in_profile, request, key.intent, min_out_bar, live)
         cache.note_cue(key, in_profile.transition_in_bar)
 
         def score(group: list[TransitionPlan]) -> tuple[list[Candidate], float]:
-            renderable, _refused = renderable_plans(group, out_profile, in_profile, LIVE_CONTEXT_BARS)
+            renderable, _refused = renderable_plans(
+                group, out_profile, in_profile, LIVE_CONTEXT_BARS, autodj=autodj
+            )
             started = time.perf_counter()
             scored = try_plans(
                 renderable,
@@ -369,6 +380,7 @@ def prepare_live(
                 (source.audio_path(key.out_id), source.audio_path(key.in_id)),
                 context_bars=LIVE_CONTEXT_BARS,
                 binary=binary,
+                autodj=autodj,
             )
             ids = [replace(c, id=f"w{renderable[0].out.start_bar}-{c.id}") for c in scored]
             return ids, (time.perf_counter() - started) * 1000.0
@@ -401,6 +413,7 @@ def prepare_live(
 
 
 def _pick(
+    autodj: AutoDjService,
     pool: list[ChooserCandidate],
     plans: Mapping[str, TransitionPlan],
     request: LiveRequest,
@@ -409,7 +422,7 @@ def _pick(
     """The chooser's pick that still validates, and why the ones before it did not. Only picks are validated."""
     dropped: list[str] = []
     remaining = list(pool)
-    while (pick := choose_for_set(remaining, request.intent, request.recent_styles)) is not None:
+    while (pick := autodj.choose_for_set(remaining, request.intent, request.recent_styles)) is not None:
         why = validate(plans[pick.cid])
         if why is None:
             return pick, dropped
@@ -419,6 +432,7 @@ def _pick(
 
 
 def _live_trim(
+    autodj: AutoDjService,
     plan: TransitionPlan,
     out_profile: TrackProfile,
     in_profile: TrackProfile,
@@ -427,11 +441,11 @@ def _live_trim(
     in_deck: int,
 ) -> TransitionPlan:
     """A scored plan with its loudness match redone on the live outgoing trim: it was matched when the prepare ran."""
-    trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, mirror, out_deck, in_deck)
-    document = plan.to_json()
+    trim_db, trim_reason = autodj.match_live_trim_db(out_profile, in_profile, mirror, out_deck, in_deck)
+    document = plan.to_document()
     document["in"]["trim_db"] = trim_db
     document["in"]["trim_reason"] = trim_reason
-    return parse_plan(document)
+    return autodj.parse_plan(document)
 
 
 def _reanchored(
@@ -453,6 +467,7 @@ def _reanchored(
 
 
 def _replay_saved(
+    autodj: AutoDjService,
     saved: PairTransition,
     request: LiveRequest,
     profiles: tuple[TrackProfile, TrackProfile],
@@ -464,11 +479,11 @@ def _replay_saved(
     min_out_bar, around = bounds
     try:
         document = _reanchored(
-            on_decks(saved.plan, request.out_deck, request.in_deck), out_profile, min_out_bar, around
+            autodj.on_decks(saved.plan, request.out_deck, request.in_deck), out_profile, min_out_bar, around
         )
         if document is None:
             return None
-        plan = parse_plan(document)
+        plan = autodj.parse_plan(document)
     except PlanError as error:
         _log.warning("saved plan for %s -> %s no longer parses: %s", saved.out_track_id, saved.in_track_id, error)
         return None
@@ -483,6 +498,7 @@ def _replay_saved(
 def plan_live(
     request: LiveRequest,
     *,
+    autodj: AutoDjService,
     mirror: Callable[[], Mapping[str, Any]],
     source: TrackSource,
     cache: PlanCache,
@@ -491,72 +507,91 @@ def plan_live(
     """The pair's saved plan if it can run, else the chooser's pick, as a page order from the playhead ``mirror`` reports.
     Never renders."""
     started = time.perf_counter()
-    intent = parse_intent(request.intent)
+    intent = autodj.parse_intent(request.intent)
     read = _as_planned(mirror(), request)
-    if _deck(read, request.in_deck).get("playing") is True:
+    if _deck(autodj, read, request.in_deck).get("playing") is True:
         return LiveAnswer(
             None, f"deck {request.in_deck} is already playing, so it cannot start a planned transition", intent
         )
-    key = _key(request, read)
+    key = _key(autodj, request, read)
     try:
-        out_profile, in_profile = _heard_pair(source, key, read)
+        out_profile, in_profile = _heard_pair(autodj, source, key, read)
     except (PairNotTryable, TryError) as error:
         _log.warning("live plan: no pick for %s -> %s: %s", key.out_id, key.in_id, error)
         return LiveAnswer(None, str(error), intent)
-    bar_now = _bar_now(out_profile, read, request.out_deck)
+    bar_now = _bar_now(autodj, out_profile, read, request.out_deck)
     around = None if request.from_ms is None else out_profile.bar_at(request.from_ms / 1000.0)
     min_out_bar = bar_now + ANCHOR_LEAD_BARS + PLANNING_LEAD_BARS
     base = LiveAnswer(None, "", intent, out_bar_now=round(bar_now, 2))
     too_close = None if around is None else _inside_lead(out_profile, around, min_out_bar)
     if too_close is not None:
         return replace(base, reason=too_close)
-    validate = _plan_validator(out_profile, in_profile, read, bar_now)
+    validate = _plan_validator(autodj, out_profile, in_profile, read, bar_now)
     saved = saved_for(key.out_id, key.in_id)
     replay = (
         None
         if saved is None
-        else _replay_saved(saved, request, (out_profile, in_profile), (min_out_bar, around), validate)
+        else _replay_saved(autodj, saved, request, (out_profile, in_profile), (min_out_bar, around), validate)
     )
     if replay is not None:
         plan, reason = replay
-        order = compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
+        order = autodj.compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
         ms = round((time.perf_counter() - started) * 1000.0, 1)
         return replace(base, order=order, reason=reason, unscored_plan=plan.to_json(), saved=True, plan_ms=ms)
 
     # A scored window further off than the phrase the user pointed at is not this transition: that phrase plans fresh.
     wanted = None if around is None else _nearest_phrase(out_profile, around)
-    scored, by_id, plans = _scored_in_reach(cache.get(key), in_profile, min_out_bar, wanted)
+    scored, by_id, plans = _scored_in_reach(autodj, cache.get(key), in_profile, min_out_bar, wanted)
     pool = [ChooserCandidate(c.id, c.style, float(c.score or 0.0), bool(c.vetoes)) for c in by_id.values()]
-    pick, dropped = _pick(pool, plans, request, validate)
+    pick, dropped = _pick(autodj, pool, plans, request, validate)
     if pick is not None:
         chosen = by_id[pick.cid]
-        plan = _live_trim(plans[pick.cid], out_profile, in_profile, read, request.out_deck, request.in_deck)
-        order = compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
+        plan = _live_trim(
+            autodj, plans[pick.cid], out_profile, in_profile, read, request.out_deck, request.in_deck
+        )
+        order = autodj.compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
         reason = _reason(plan.style, plan.bars, chosen.score, intent, request.recent_styles)
         ms = round((time.perf_counter() - started) * 1000.0, 1)
+        candidate_out = replace(chosen, plan=plan.to_document())
         return replace(
-            base, order=order, reason=reason, candidate=chosen, rendered=len(scored), scored=True, plan_ms=ms
+            base,
+            order=order,
+            reason=reason,
+            candidate=candidate_out,
+            rendered=len(scored),
+            scored=True,
+            plan_ms=ms,
         )
-    return _plan_unscored(base, request, read, (out_profile, in_profile), (min_out_bar, around), started, dropped)
+    return _plan_unscored(
+        autodj, base, request, read, (out_profile, in_profile), (min_out_bar, around), started, dropped
+    )
 
 
 def _plan_validator(
-    out_profile: TrackProfile, in_profile: TrackProfile, read: Mapping[str, Any], bar_now: float
+    autodj: AutoDjService,
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    read: Mapping[str, Any],
+    bar_now: float,
 ) -> Callable[[TransitionPlan], str | None]:
     def validate(plan: TransitionPlan) -> str | None:
-        validation = validate_plan(plan, out_profile, in_profile, live=read)
-        short = lead_short(plan, bar_now)
+        validation = autodj.validate_plan(plan, out_profile, in_profile, live=read)
+        short = autodj.lead_short(plan, bar_now)
         return None if validation.ok and short is None else "; ".join([*validation.errors, *([short] if short else [])])
 
     return validate
 
 
 def _scored_in_reach(
-    entry: Prepared | None, in_profile: TrackProfile, min_out_bar: float, wanted: int | None
+    autodj: AutoDjService,
+    entry: Prepared | None,
+    in_profile: TrackProfile,
+    min_out_bar: float,
+    wanted: int | None,
 ) -> tuple[list[Candidate], dict[str, Candidate], dict[str, TransitionPlan]]:
     """The prepared scored candidates, those still ahead of the playhead by id, and their parsed plans."""
     scored = _still_scored(entry, in_profile)
-    parsed = {c.id: parse_plan(c.plan) for c in scored}
+    parsed = {c.id: autodj.parse_plan(c.plan) for c in scored}
     plans = {
         cid: plan
         for cid, plan in parsed.items()
@@ -573,6 +608,7 @@ def _still_scored(entry: Prepared | None, in_profile: TrackProfile) -> list[Cand
 
 
 def _plan_unscored(
+    autodj: AutoDjService,
     base: LiveAnswer,
     request: LiveRequest,
     read: Mapping[str, Any],
@@ -584,18 +620,18 @@ def _plan_unscored(
     """Nothing scored fits: the intent's first valid style from the profiles, with M reported as not measured."""
     out_profile, in_profile = profiles
     min_out_bar, around = bounds
-    proposed = propose_transition(
+    proposed = autodj.propose_transition(
         out_profile,
         in_profile,
         out_deck=request.out_deck,
         in_deck=request.in_deck,
         intent=request.intent,
         min_out_bar=min_out_bar,
-        live=with_in_track(read, request.in_deck, in_profile.stable_id, in_profile.bpm),
+        live=autodj.with_in_track(read, request.in_deck, in_profile.stable_id, in_profile.bpm),
         top=None,
         around_bar=around,
     )
-    plans = _nearest([parse_plan(row["plan"]) for row in proposed["proposals"]], around)
+    plans = _nearest([autodj.parse_plan(row["plan"]) for row in proposed["proposals"]], around)
     considered = int(proposed["considered"])
     ms = round((time.perf_counter() - started) * 1000.0, 1)
     if not plans:
@@ -606,10 +642,10 @@ def _plan_unscored(
         return replace(base, reason=reason, considered=considered, plan_ms=ms)
     by_id = {f"p{index}": plan for index, plan in enumerate(plans)}
     pool = [ChooserCandidate(cid, plan.style, 1.0, False) for cid, plan in by_id.items()]
-    pick = choose_for_set(pool, request.intent, request.recent_styles)
+    pick = autodj.choose_for_set(pool, request.intent, request.recent_styles)
     assert pick is not None  # every candidate shares one M and none is vetoed, so the pool cannot empty
     plan = by_id[pick.cid]
-    order = compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
+    order = autodj.compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
     reason = _reason(plan.style, plan.bars, None, base.intent, request.recent_styles)
     return replace(
         base,

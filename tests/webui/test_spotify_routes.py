@@ -364,21 +364,17 @@ def test_a_damaged_client_id_file_is_a_500_not_a_setup_prompt(tmp_path: Path) ->
     assert cid.read_text(encoding="utf-8") == "{not json"
 
 
-@pytest.mark.requirement("SPOT-6555")
-def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> None:
-    """[if] a fresh install has no env id and no saved id [then] the panel can
-     save one and Connect starts with it, [else] sign-in can never bootstrap
-    ."""
+def _spotify_client_id_put_app(tmp_path: Path) -> tuple[FastAPI, Path, Path]:
+    """FastAPI app with the same seams every PUT /account/client-id test uses."""
     from http.server import HTTPServer
 
     from apps.spotify import account
 
-    # A fresh install: no SPOTIFY_CLIENT_ID (an empty environment, handed to the
-    # production opener and ConnectFlow) and no saved id file.
     cid = tmp_path / "cid.json"
     token = tmp_path / "token.json"
     app = FastAPI()
     app.state.spotify_client_id_path = cid
+    app.state.spotify_token_path = token
     app.state.spotify_account_opener = lambda: account.open_account_client(env={}, token_path=token, client_id_path=cid)
 
     def factory(_addr: tuple[str, int], handler: type) -> HTTPServer:
@@ -388,6 +384,19 @@ def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> N
         token_path=token, client_id_path=cid, server_factory=factory, timeout_s=1, env={}
     )
     app.include_router(router, prefix="/api/v1")
+    return app, cid, token
+
+
+@pytest.mark.requirement("SPOT-6555")
+def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> None:
+    """[if] a fresh install has no env id and no saved id [then] the panel can
+     save one and Connect starts with it, [else] sign-in can never bootstrap
+    ."""
+    from apps.spotify import account
+
+    # A fresh install: no SPOTIFY_CLIENT_ID (an empty environment, handed to the
+    # production opener and ConnectFlow) and no saved id file.
+    app, cid, _token = _spotify_client_id_put_app(tmp_path)
     client = TestClient(app)
 
     assert client.get("/api/v1/spotify/account/playlists").json()["reason"] == "no_client_id"
@@ -406,6 +415,74 @@ def test_a_fresh_install_saves_a_client_id_then_can_connect(tmp_path: Path) -> N
     assert client.get("/api/v1/spotify/account/playlists").json()["reason"] == "not_signed_in"
     url = client.post("/api/v1/spotify/account/connect").json()["authorize_url"]
     assert f"client_id={good.lower()}" in url
+
+
+@pytest.mark.requirement("SPOT-6555")
+def test_put_client_id_different_clears_token_cache_not_refresh_failure(tmp_path: Path) -> None:
+    """[if] a token cache exists and a different client id is saved [then] the cache is gone and listing says not signed in,
+    [else stop]."""
+    from apps.spotify import account
+    from tests.spotify.spotify_loopback import write_token
+
+    app, cid, token = _spotify_client_id_put_app(tmp_path)
+    client = TestClient(app)
+    try:
+        id_a = "0123456789abcdef0123456789abcdef"
+        id_b = "fedcba9876543210fedcba9876543210"
+        assert client.put("/api/v1/spotify/account/client-id", json={"client_id": id_a}).status_code == 200
+        write_token(token)
+        assert token.is_file()
+        resp = client.put("/api/v1/spotify/account/client-id", json={"client_id": id_b})
+        assert resp.status_code == 200 and resp.json() == {"saved": True}
+        assert not token.exists()
+        assert account.resolve_client_id({}, cid) == id_b
+        playlists = client.get("/api/v1/spotify/account/playlists").json()
+        assert playlists["connected"] is False
+        assert playlists["reason"] == "not_signed_in"
+        assert playlists["playlists"] == []
+    finally:
+        client.close()
+
+
+@pytest.mark.requirement("SPOT-6555")
+def test_put_client_id_same_keeps_token_cache_bytes(tmp_path: Path) -> None:
+    """[if] the same client id is saved again [then] the token file stays and is unchanged, [else stop]."""
+    from tests.spotify.spotify_loopback import write_token
+
+    app, _, token = _spotify_client_id_put_app(tmp_path)
+    client = TestClient(app)
+    try:
+        id_a = "0123456789abcdef0123456789abcdef"
+        assert client.put("/api/v1/spotify/account/client-id", json={"client_id": id_a}).status_code == 200
+        write_token(token)
+        snapshot = token.read_bytes()
+        resp = client.put("/api/v1/spotify/account/client-id", json={"client_id": id_a})
+        assert resp.status_code == 200 and resp.json() == {"saved": True}
+        assert token.read_bytes() == snapshot
+    finally:
+        client.close()
+
+
+@pytest.mark.requirement("SPOT-6555")
+def test_put_client_id_reports_cache_delete_failure(tmp_path: Path) -> None:
+    """[if] the token path is not a file [then] delete fails and the route errors, [else stop]."""
+    from apps.spotify import account
+
+    app, cid, token = _spotify_client_id_put_app(tmp_path)
+    client = TestClient(app)
+    try:
+        id_a = "0123456789abcdef0123456789abcdef"
+        id_b = "fedcba9876543210fedcba9876543210"
+        assert client.put("/api/v1/spotify/account/client-id", json={"client_id": id_a}).status_code == 200
+        token.unlink(missing_ok=True)
+        token.mkdir()
+        resp = client.put("/api/v1/spotify/account/client-id", json={"client_id": id_b})
+        assert resp.status_code == 500
+        assert resp.json()["detail"]["code"] == "SPOTIFY_TOKEN_CACHE_DELETE_FAILED"
+        assert account.resolve_client_id({}, cid) == id_b
+        assert token.is_dir()
+    finally:
+        client.close()
 
 
 def _playlist_out(**extra: object) -> dict[str, object]:

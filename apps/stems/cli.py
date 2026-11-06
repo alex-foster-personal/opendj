@@ -262,7 +262,10 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     for i, tr in enumerate(batch, 1):
         assert tr.audio_path is not None
         out = root / tr.stable_id
-        print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} -> {out}")
+        reason = (
+            "; no stored length in state.db, sorts last" if tr.length_s == 0 else ""
+        )
+        print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} -> {out}{reason}")
         if not live:
             continue
         t0 = time.perf_counter()

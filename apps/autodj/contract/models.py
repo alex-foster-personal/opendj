@@ -6,7 +6,13 @@ receives, so a module can move out of process without its callers changing.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+import bisect as _bisect
+import json as _json
+import math as _math
+import statistics as _statistics
+from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 
 class _Wire(BaseModel):
@@ -48,3 +54,384 @@ class StyleSummary(_Wire):
     # min_body_fade_bars, pre_hit_db), null for a fixed style; the Spotify transition it mirrors, or null.
     params: StyleParamsWire | None
     spotify: str | None
+
+
+VOCAL_BAR_THRESHOLD = 0.25
+ANCHOR_LEAD_BARS = 1.0
+STYLE_CAP = 2
+VARIETY_WINDOW = 10
+SMOOTH = "smooth"
+ENERGY_UP = "energy_up"
+WIND_DOWN = "wind_down"
+SHOWY = "showy"
+VOCALS_CLEAN = "vocals_clean"
+INTENTS: tuple[str, ...] = (SMOOTH, ENERGY_UP, WIND_DOWN, SHOWY, VOCALS_CLEAN)
+
+
+class ProfileError(ValueError):
+    """The documents cannot describe a mixable track."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class PlanError(ValueError):
+    """The document is not a transition plan."""
+
+    path: str | None
+
+    def __init__(self, message: str, *, path: str | None = None) -> None:
+        super().__init__(message)
+        self.path = path
+
+
+class RenderPlanError(ValueError):
+    """The plan cannot be rendered as given."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class PairNotFound(LookupError):
+    """No transition is saved for this pair."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class Section:
+    index: int
+    label: str
+    raw: str
+    start_bar: int
+    bars: int
+    start_s: float
+    end_s: float
+    energy: float | None
+    bass: float | None
+    vocal_bars: int | None
+
+    @property
+    def end_bar(self) -> int:
+        return self.start_bar + self.bars
+
+    def summary(self) -> dict[str, JsonValue]:
+        return {
+            "label": self.label,
+            "raw": self.raw,
+            "start_bar": self.start_bar,
+            "bars": self.bars,
+            "energy": None if self.energy is None else round(self.energy, 2),
+            "bass": None if self.bass is None else round(self.bass, 2),
+            "vocal_bars": self.vocal_bars,
+        }
+
+
+@dataclass(frozen=True)
+class KeySegment:
+    start_bar: int | float | None
+    end_bar: int | float | None
+    key: str | None
+    confidence: float | None = None
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "start_bar": self.start_bar,
+            "end_bar": self.end_bar,
+            "key": self.key,
+            "confidence": self.confidence,
+        }
+
+
+@dataclass(frozen=True)
+class HotCue:
+    slot: int | str | None
+    in_ms: int | float | None
+    comment: str | None
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {"slot": self.slot, "in_ms": self.in_ms, "comment": self.comment}
+
+
+@dataclass(frozen=True)
+class TrackProfile:
+    stable_id: str
+    title: str | None
+    artist: str | None
+    bpm: float | None
+    key: str | None
+    duration_s: float
+    downbeats_s: tuple[float, ...]
+    grid_trusted: bool
+    grid_note: str | None
+    sections: tuple[Section, ...]
+    sections_source: str
+    bar_energy: tuple[float, ...] | None
+    bar_bass: tuple[float, ...] | None
+    bar_vocals: tuple[float, ...] | None
+    vocals_status: str
+    key_segments: tuple[KeySegment, ...] = ()
+    hot_cues: tuple[HotCue, ...] = ()
+    stems_available: bool | None = None
+    notes: tuple[str, ...] = ()
+    lufs: float | None = None
+    lufs_reason: str | None = None
+    transition_in_bar: int | None = None
+    heard_bpm: float | None = None
+    deck_pitch_range_pct: float | None = None
+    #: Integer key shift applied on deck (for offline render commands); runtime-only, not in ``summary()``.
+    heard_key_shift: int = 0
+
+    @property
+    def judged_bpm(self) -> float | None:
+        return self.heard_bpm if self.heard_bpm is not None else self.bpm
+
+    @property
+    def bars(self) -> int:
+        return len(self.downbeats_s)
+
+    @property
+    def bar_s(self) -> float:
+        if self.bpm is not None and self.bpm > 0:
+            return 240.0 / self.bpm
+        if len(self.downbeats_s) >= 2:
+            return _statistics.median(b - a for a, b in zip(self.downbeats_s, self.downbeats_s[1:], strict=False))
+        raise ProfileError(f"{self.stable_id}: no tempo to size a bar")
+
+    def time_of_bar(self, bar: float) -> float:
+        if not self.downbeats_s:
+            raise ProfileError(f"{self.stable_id}: no downbeats")
+        index = bar - 1.0
+        whole = _math.floor(index)
+        frac = index - whole
+        if whole < 0:
+            return self.downbeats_s[0] + index * self.bar_s
+        if whole >= len(self.downbeats_s) - 1:
+            last = len(self.downbeats_s) - 1
+            return self.downbeats_s[last] + (index - last) * self.bar_s
+        start = self.downbeats_s[whole]
+        return start + frac * (self.downbeats_s[whole + 1] - start)
+
+    def bar_at(self, seconds: float) -> float:
+        if not self.downbeats_s:
+            raise ProfileError(f"{self.stable_id}: no downbeats")
+        first = self.downbeats_s[0]
+        if seconds < first:
+            return 1.0 + (seconds - first) / self.bar_s
+        index = _bisect.bisect_right(self.downbeats_s, seconds) - 1
+        if index >= len(self.downbeats_s) - 1:
+            last = len(self.downbeats_s) - 1
+            return 1.0 + last + (seconds - self.downbeats_s[last]) / self.bar_s
+        start, end = self.downbeats_s[index], self.downbeats_s[index + 1]
+        return 1.0 + index + (seconds - start) / (end - start)
+
+    def section_at(self, bar: float) -> Section | None:
+        return next((section for section in self.sections if section.start_bar <= bar < section.end_bar), None)
+
+    def vocal_bars_between(self, start_bar: int, bars: int) -> int | None:
+        if self.bar_vocals is None:
+            return None
+        lo = max(0, start_bar - 1)
+        hi = min(len(self.bar_vocals), start_bar - 1 + bars)
+        return sum(1 for value in self.bar_vocals[lo:hi] if value >= VOCAL_BAR_THRESHOLD)
+
+    def mean_between(self, series: tuple[float, ...] | None, start_bar: int, bars: int) -> float | None:
+        if series is None:
+            return None
+        lo = max(0, start_bar - 1)
+        hi = min(len(series), start_bar - 1 + bars)
+        return None if hi <= lo else sum(series[lo:hi]) / (hi - lo)
+
+    def summary(self) -> dict[str, JsonValue]:
+        return {
+            "stable_id": self.stable_id,
+            "title": self.title,
+            "artist": self.artist,
+            "bpm": self.bpm,
+            "key": self.key,
+            "duration_s": round(self.duration_s, 2),
+            "bars": self.bars,
+            "grid_trusted": self.grid_trusted,
+            "grid_note": self.grid_note,
+            "sections_source": self.sections_source,
+            "sections": [section.summary() for section in self.sections],
+            "vocals_status": self.vocals_status,
+            "key_segments": [segment.to_json() for segment in self.key_segments],
+            "hot_cues": [cue.to_json() for cue in self.hot_cues],
+            "stems_available": self.stems_available,
+            "loudness": {"lufs": self.lufs, "reason": self.lufs_reason},
+            "transition_in_bar": self.transition_in_bar,
+            "notes": list(self.notes),
+        }
+
+
+@dataclass(frozen=True)
+class Side:
+    deck: int
+    track: str
+    start_bar: int
+    bars: int
+    trim_db: float | None = None
+    trim_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PlanEvent:
+    at_bar: float
+    deck: int | None
+    kind: str
+    name: str
+    value: float | None = None
+    over_bars: float = 0.0
+
+    def target(self) -> float:
+        value = self.value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not _math.isfinite(value):
+            raise ValueError(f"{self.kind} {self.name} at bar {self.at_bar:g} has no numeric value: {value!r}")
+        return float(value)
+
+    def to_json(self) -> dict[str, JsonValue]:
+        document: dict[str, JsonValue] = {"at_bar": self.at_bar, "deck": self.deck}
+        if self.kind == "do":
+            document["do"] = self.name
+        else:
+            document[self.kind] = {self.name: self.value}
+            if self.kind == "ramp":
+                document["over_bars"] = self.over_bars
+        return document
+
+
+@dataclass(frozen=True)
+class BassEntry:
+    in_bar: int | None
+    entry_plan_bar: float | None
+    hit_plan_bar: float
+    note: str
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "in_bar": self.in_bar,
+            "entry_plan_bar": self.entry_plan_bar,
+            "hit_plan_bar": self.hit_plan_bar,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class TransitionPlan:
+    out: Side
+    in_: Side
+    style: str
+    events: tuple[PlanEvent, ...]
+    tempo_mode: str = "sync_to_out"
+    anchor: str = "window"
+    intent: str | None = None
+    rationale: str | None = None
+    bass_entry: BassEntry | None = None
+    shape: str | None = None
+    extra_json: str = "{}"
+
+    @property
+    def extra(self) -> dict[str, JsonValue]:
+        """Extension keys as a fresh JSON object; the stored contract value remains immutable."""
+        return _json.loads(self.extra_json)
+
+    @property
+    def bars(self) -> int:
+        return self.out.bars
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "out": {
+                "deck": self.out.deck,
+                "track": self.out.track,
+                "window": {"start_bar": self.out.start_bar, "bars": self.out.bars},
+            },
+            "in": {
+                "deck": self.in_.deck,
+                "track": self.in_.track,
+                "window": {"start_bar": self.in_.start_bar, "bars": self.in_.bars},
+                "trim_db": self.in_.trim_db,
+                "trim_reason": self.in_.trim_reason,
+            },
+            "anchor": self.anchor,
+            "style": self.style,
+            "tempo": {"mode": self.tempo_mode},
+            "events": [event.to_json() for event in self.events],
+            "intent": self.intent,
+            "rationale": self.rationale,
+            "bass_entry": None if self.bass_entry is None else self.bass_entry.to_json(),
+            "shape": self.shape,
+        }
+
+    def to_document(self) -> dict[str, JsonValue]:
+        return {**self.extra, **self.to_json()}
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    """The validation information the transition-score domain consumes."""
+
+    ok: bool
+    errors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RenderLayout:
+    start_out_bar: float
+    start_out_s: float
+    in_ratio: float
+    in_fold: float
+    end_in_bar: float
+    out_bar_s: float
+    #: Heard outgoing tempo / stored bar clock (1.0 when no pitch).
+    out_ratio: float = 1.0
+
+    def out_downbeats_render_s(self, out_profile: TrackProfile, until_s: float) -> list[float]:
+        downs = [(d - self.start_out_s) / self.out_ratio for d in out_profile.downbeats_s if d >= self.start_out_s - 1e-9]
+        if not downs:
+            raise RenderPlanError(f"{out_profile.stable_id}: no downbeat at or after the render's start")
+        step = self.out_bar_s / self.out_ratio
+        while downs[-1] + step <= until_s + 1e-9:
+            downs.append(downs[-1] + step)
+        return [d for d in downs if d <= until_s + 1e-9]
+
+
+@dataclass(frozen=True)
+class ChooserCandidate:
+    cid: str
+    style: str
+    m: float
+    vetoed: bool
+
+
+@dataclass(frozen=True)
+class PairTransition:
+    out_track_id: str
+    in_track_id: str
+    plan_json: str
+    source: str
+    style: str
+    created_at: str
+    updated_at: str
+    times_played: int
+
+    @property
+    def plan(self) -> dict[str, JsonValue]:
+        """The saved plan as a fresh JSON object; the stored contract value remains immutable."""
+        return _json.loads(self.plan_json)
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "plan": self.plan,
+            "meta": {
+                "out_track_id": self.out_track_id,
+                "in_track_id": self.in_track_id,
+                "source": self.source,
+                "style": self.style,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+                "times_played": self.times_played,
+            },
+        }

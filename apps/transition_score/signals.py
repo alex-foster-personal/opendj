@@ -29,6 +29,11 @@ TRUE_PEAK_OVERSAMPLE = 4
 _SILENCE_FLOOR = 1e-12
 
 
+def envelope_hop_s(sr: int) -> float:
+    """Seconds between :data:`ENVELOPE_HOP` samples at ``sr``."""
+    return ENVELOPE_HOP / sr
+
+
 def mono(audio: np.ndarray) -> np.ndarray:
     """Average the channels (a mono array passes through)."""
     return audio if audio.ndim == 1 else audio.mean(axis=1)

@@ -49,7 +49,7 @@ const BRAND_SURFACES = [
 	['lib/components/rb/IngestDropModal.svelte', '.m-title'],
 	['lib/components/rb/PlaylistFolderDupModal.svelte', '.m-title'],
 	// DECKUX-40 (the maintainer, Tue 6 Oct 2026): "deck number being large and obvious ... in opendj font".
-	['lib/components/rb/wave/WaveGutter.svelte', '.deck-num'],
+	['lib/components/rb/wave/WaveGutterView.svelte', '.deck-num'],
 	// BACKSTAGE-6529b (the maintainer, Tue 13 Oct 2026): the Backstage sidebar wordmark and its section label.
 	['lib/shell/BackstageNav.svelte', '.brand'],
 	['lib/shell/BackstageNav.svelte', '.bs-label']

@@ -21,6 +21,8 @@
 
 	let menu = $state<HTMLDivElement | null>(null);
 	let position = $state({ x: 0, y: 0 });
+	/** Primary `pointerdown` already ran `activate`; swallow the follow-up `click` so we do not double-toggle (#8887). */
+	let suppressNextPrimaryClick = $state(false);
 
 	async function placeMenu(): Promise<void> {
 		await tick();
@@ -42,9 +44,45 @@
 	});
 
 	async function activate(item: ContextMenuItem): Promise<void> {
-		if (item.run === undefined) return;
+		const run = item.run;
+		if (run === undefined) return;
+		// Close after `run` so we do not unmount the row during `pointerdown` / `click`
+		// dispatch (#8887). `toggleLibraryColumn` is sync; async runners still complete first.
+		await run();
 		onclose();
-		await item.run();
+	}
+
+	/** Primary mouse / pen: activate on capture `pointerdown` so it runs before bubble
+	 * `pointerdown` on `window` dismisses outside (#8887). */
+	function onItemPointerDownCapture(event: PointerEvent, item: ContextMenuItem): void {
+		if (!event.isPrimary || event.button !== 0) return;
+		if (item.run === undefined) return;
+		event.preventDefault();
+		suppressNextPrimaryClick = true;
+		void activate(item);
+	}
+
+	function onItemClick(event: MouseEvent, item: ContextMenuItem): void {
+		if (suppressNextPrimaryClick) {
+			suppressNextPrimaryClick = false;
+			event.preventDefault();
+			return;
+		}
+		void activate(item);
+	}
+
+	function pressIsInsideMenu(event: PointerEvent): boolean {
+		if (menu === null) return false;
+		const t = event.target;
+		if (t instanceof Node && menu.contains(t)) return true;
+		return event.composedPath().some((n) => n === menu || (n instanceof Node && menu!.contains(n)));
+	}
+
+	/** Bubble phase only: runs after `onpointerdowncapture` on a row activates (#8887). */
+	function onOutsidePointerDown(event: PointerEvent): void {
+		if (menu === null || !event.isPrimary) return;
+		if (pressIsInsideMenu(event)) return;
+		onclose();
 	}
 
 	function menuItems(): HTMLElement[] {
@@ -107,12 +145,9 @@
 		}
 	}
 
-	function onOutsidePointerDown(event: PointerEvent): void {
-		if (menu !== null && event.target instanceof Node && !menu.contains(event.target)) onclose();
-	}
 </script>
 
-<svelte:window onkeydown={onKeydown} onpointerdowncapture={onOutsidePointerDown} />
+<svelte:window onkeydown={onKeydown} onpointerdown={onOutsidePointerDown} />
 
 <div bind:this={menu} class="context-menu" data-testid="context-menu" role="menu" tabindex="-1" style={`left:${position.x}px;top:${position.y}px`}>
 	{#each items as item (item.id)}
@@ -127,7 +162,8 @@
 			aria-checked={typeof item.checked === 'boolean' ? item.checked : undefined}
 			aria-describedby={unavailable ? descId : undefined}
 			title={explanation}
-			onclick={() => void activate(item)}
+			onpointerdowncapture={(e) => onItemPointerDownCapture(e, item)}
+			onclick={(e) => onItemClick(e, item)}
 		>{item.label}</button>
 		{#if unavailable}
 			<span id={descId} class="visually-hidden">{explanation}</span>

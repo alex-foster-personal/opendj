@@ -121,6 +121,27 @@ def test_row_pk_encoding_matches_the_hub_protocol() -> None:
         assert sync_stamp.encode_row_pk(values) == hub_protocol.encode_row_pk(values)
 
 
+def test_row_pk_decoding_matches_the_hub_protocol() -> None:
+    """Shared decode_row_pk stays byte-identical to the hub wrapper."""
+    for values in (
+        ("trk-1",),
+        ("trk-1", "bpm"),
+        ("pl-1", 0),
+        ("a,b", '["forged"]'),
+        (None, "x"),
+    ):
+        shared = sync_stamp.decode_row_pk(sync_stamp.encode_row_pk(values))
+        hub = hub_protocol.decode_row_pk(hub_protocol.encode_row_pk(values))
+        assert shared == hub
+        assert all(part is None or isinstance(part, str) for part in shared)
+
+    for bad in ("not-json", "{}"):
+        with pytest.raises(sync_stamp.SyncStampError):
+            sync_stamp.decode_row_pk(bad)
+        with pytest.raises(hub_protocol.SyncProtocolError):
+            hub_protocol.decode_row_pk(bad)
+
+
 def test_row_pk_cannot_be_forged_by_a_delimiter() -> None:
     assert sync_stamp.encode_row_pk(('a", "b',)) != sync_stamp.encode_row_pk(("a", "b"))
 

@@ -9,10 +9,11 @@
  * decoder and fixture library (playwright.cmdk-preview-cue.config.ts), the
  * bar's own key handling, the dispatcher's `preview_cue` / `preview_stop`, and
  * assertions on the real performance state
- * (`window.musicDjToolsPerformance.query().preview`). The beat grid the jump
- * needs is the production own beatgrid producer's, measured on the fixture's
- * generated audio (support/cmdk_preview_cue_fixture.py); nothing is routed,
- * rewritten or fabricated.
+ * (`window.musicDjToolsPerformance.query().preview`). The downbeats the jump
+ * needs are measured by the production librosa analyzer on the fixture's
+ * generated audio and served by `/beatgrid-fallback` when `/anlz` is empty
+ * (support/cmdk_preview_cue_fixture.py); nothing is routed, rewritten or
+ * fabricated.
  *
  * Regression lines:
  * - if → on a highlighted row does not start that track in the cue through the dispatcher then broken
@@ -20,7 +21,7 @@
  * - if the first → does not land on bar 1, or a second → does not move the voice to the next 4-bar stop, then broken
  * - if Esc does not stop a sounding preview, or closing the bar leaves it sounding, then broken
  * - if a cue preview loads, moves or starts a deck then broken
- * - if /anlz serves the fixture no beat grid then the gate fails as UNAVAILABLE, naming it, rather than skipping
+ * - if neither /anlz nor /beatgrid-fallback serves enough downbeats then the gate fails as UNAVAILABLE, naming both
  * - if the bar's /anlz warm-up runs tracked in its effect then the effect reruns on its own cache write,
  *   Svelte aborts with effect_update_depth_exceeded and the preview state is dropped: broken (found by this spec)
  */
@@ -38,6 +39,10 @@ const PREVIEW_START_MS = 30_000;
 interface AnlzBeat {
 	n: number;
 	t: number;
+}
+
+interface GridPayload {
+	beatgrid: { source?: string; beats: AnlzBeat[] };
 }
 
 async function query(page: Page): Promise<PerformanceState> {
@@ -100,11 +105,14 @@ test('→ previews the highlighted track in the cue through the dispatcher, Esc 
 }) => {
 	// The dev server compiles /performance on this first visit.
 	test.setTimeout(240_000);
-	// Every /anlz answer the page gets, so the grid the bar jumps on is read from the real response.
+	// Every grid answer the page gets, so the grid the bar jumps on is read from the real response.
 	const anlz = new Map<string, Response>();
+	const fallback = new Map<string, Response>();
 	page.on('response', (response) => {
-		const match = /\/api\/v1\/tracks\/([^/]+)\/anlz(?:\?|$)/.exec(response.url());
-		if (match !== null && response.ok()) anlz.set(decodeURIComponent(match[1]), response);
+		const anlzMatch = /\/api\/v1\/tracks\/([^/]+)\/anlz(?:\?|$)/.exec(response.url());
+		if (anlzMatch !== null && response.ok()) anlz.set(decodeURIComponent(anlzMatch[1]), response);
+		const fallbackMatch = /\/api\/v1\/tracks\/([^/]+)\/beatgrid-fallback(?:\?|$)/.exec(response.url());
+		if (fallbackMatch !== null && response.ok()) fallback.set(decodeURIComponent(fallbackMatch[1]), response);
 	});
 
 	// A Svelte runtime error (an effect that reruns on its own write aborts the whole flush and
@@ -142,19 +150,41 @@ test('→ previews the highlighted track in the cue through the dispatcher, Esc 
 		timeout: 30_000
 	});
 
-	// The grid the jump needs: the bar's own /anlz read for this track, after its dwell.
-	await expect
-		.poll(() => anlz.has(id), { timeout: 30_000, message: `the bar never read /anlz for the highlighted track ${id}` })
-		.toBe(true);
-	const payload = (await (anlz.get(id) as Response).json()) as { beatgrid: { source?: string; beats: AnlzBeat[] } };
-	const downbeats = payload.beatgrid.beats.filter((beat) => beat.n === 1).map((beat) => beat.t);
-	if (downbeats.length <= STEP_BARS) {
+	// The jump prefers a real /anlz grid, then uses the same /beatgrid-fallback
+	// downbeats as the deck waveform when /anlz is empty.
+	const readDownbeats = async (response: Response | undefined): Promise<{ payload: GridPayload; downbeats: number[] } | null> => {
+		if (response === undefined) return null;
+		const payload = (await response.json()) as GridPayload;
+		return { payload, downbeats: payload.beatgrid.beats.filter((beat) => beat.n === 1).map((beat) => beat.t) };
+	};
+	const usableGrid = async (): Promise<{ endpoint: '/anlz' | '/beatgrid-fallback'; downbeats: number[] } | null> => {
+		const primary = await readDownbeats(anlz.get(id));
+		if (primary !== null && primary.payload.beatgrid.beats.length > 1 && primary.downbeats.length > STEP_BARS)
+			return { endpoint: '/anlz', downbeats: primary.downbeats };
+		const rescue = await readDownbeats(fallback.get(id));
+		if (rescue !== null && rescue.downbeats.length > STEP_BARS)
+			return { endpoint: '/beatgrid-fallback', downbeats: rescue.downbeats };
+		return null;
+	};
+	try {
+		await expect
+			.poll(async () => (await usableGrid())?.endpoint ?? null, {
+				timeout: 30_000,
+				message: `the bar found no usable /anlz or /beatgrid-fallback grid for ${id}`
+			})
+			.not.toBeNull();
+	} catch (error) {
+		const primary = await readDownbeats(anlz.get(id));
+		const rescue = await readDownbeats(fallback.get(id));
 		throw new Error(
-			`UNAVAILABLE: /anlz serves ${id} a beat grid with ${downbeats.length} downbeats ` +
-				`(source ${payload.beatgrid.source ?? 'unstated'}), so the bar cannot jump by bars; ` +
-				'the fixture builder must run the own beatgrid producer'
+			`UNAVAILABLE: ${id} has ${primary?.downbeats.length ?? 'no'} /anlz downbeats and ` +
+				`${rescue?.downbeats.length ?? 'no'} /beatgrid-fallback downbeats; the bar cannot jump by bars`,
+			{ cause: error }
 		);
 	}
+	const selectedGrid = await usableGrid();
+	if (selectedGrid === null) throw new Error(`UNAVAILABLE: the usable grid for ${id} disappeared`);
+	const downbeats = selectedGrid.downbeats;
 	// Let the page publish that answer into its cache before the key that reads it.
 	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 

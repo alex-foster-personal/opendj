@@ -57,6 +57,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+from apps.shared.posix_shell import resolve_posix_bash
+
 
 class CFG:
     SHFMT_VERSION: str = "3.14.1"
@@ -167,15 +169,27 @@ def _syntax_shell(data: bytes) -> str:
     return "sh" if CFG.POSIX_SHEBANG_RE.match(data) else "bash"
 
 
+def _resolve_syntax_shell(name: str) -> str | None:
+    """Absolute path of the `-n` interpreter, or None when this host has none.
+
+    bash goes through resolve_posix_bash so Windows never launches System32's WSL
+    launcher. sh has no System32 sh.exe, so PATH which is enough.
+    """
+    if name == "bash":
+        return resolve_posix_bash()
+    return shutil.which(name)
+
+
 def _missing_syntax_shell(*sides: bytes) -> str | None:
-    """The first `-n` interpreter a side needs that is not on PATH (a Windows runner with shfmt.exe, no Bash)."""
-    return next((shell for shell in map(_syntax_shell, sides) if shutil.which(shell) is None), None)
+    """The first `-n` interpreter a side needs that is not resolvable (Windows with shfmt.exe, no Bash)."""
+    return next((shell for shell in map(_syntax_shell, sides) if _resolve_syntax_shell(shell) is None), None)
 
 
 def _syntax_ok(path: str, data: bytes) -> bool:
-    interpreter = shutil.which(_syntax_shell(data))
+    name = _syntax_shell(data)
+    interpreter = _resolve_syntax_shell(name)
     if interpreter is None:
-        raise RuntimeError(f"no {_syntax_shell(data)} on PATH: check _missing_syntax_shell first")
+        raise RuntimeError(f"no {name} on PATH: check _missing_syntax_shell first")
     with tempfile.TemporaryDirectory() as tmp:
         script = Path(tmp, Path(path).name)
         script.write_bytes(data)

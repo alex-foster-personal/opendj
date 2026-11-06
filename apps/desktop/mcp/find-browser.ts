@@ -82,7 +82,10 @@ export function playwrightChromium(
  * CDP_TEST_BROWSER, else a Playwright Chromium, else Google Chrome on macOS, always as an
  * absolute path. None found throws, so the suite fails loudly rather than skipping.
  */
-export function findBrowser(env: NodeJS.ProcessEnv = process.env): string {
+export function findBrowser(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const explicit = env.CDP_TEST_BROWSER;
   if (explicit) {
     if (!existsSync(explicit)) throw new Error(`CDP_TEST_BROWSER=${explicit} does not exist`);
@@ -90,7 +93,9 @@ export function findBrowser(env: NodeJS.ProcessEnv = process.env): string {
   }
   const playwright = playwrightChromium(playwrightRoots(env));
   if (playwright) return playwright;
-  const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-  if (existsSync(chrome)) return chrome;
+  if (platform === "darwin") {
+    const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+    if (existsSync(chrome)) return chrome;
+  }
   throw new Error("no Chromium binary found: set CDP_TEST_BROWSER, or install Playwright's chromium");
 }

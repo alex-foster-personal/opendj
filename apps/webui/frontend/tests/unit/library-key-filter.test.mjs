@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { afterEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const PREFS_LIFECYCLE_API = 'https://library-key-filter-lifecycle.example.test';
 
 const FRONTEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const BROWSER_PANEL = readFileSync(
@@ -191,6 +193,7 @@ test('an agent write (ui_prefs event) re-reads the key filter into the open tabl
 		/aria-label=\{syncError === null \? undefined : `\$\{triggerLabel\}: \$\{syncError\}`\}/
 	);
 	const prefs = readFileSync(join(FRONTEND_ROOT, 'src/lib/rb/prefs.svelte.ts'), 'utf8');
+	assert.match(prefs, /if \(isPageGoingAway\(\)\) return;\s*console\.error\('\[library-key-filter\] disk re-read failed'/);
 	assert.match(prefs, /libraryKeyFilterSync\.error = `Key filter could not be re-read from disk/);
 	// Only the latest re-read may change the error (Sol P1, #7743).
 	assert.match(
@@ -345,6 +348,12 @@ test('boot hydration rejects malformed disk library_key_filter and keeps the loc
 	}
 });
 
+let prefsLifecycleMod;
+
+afterEach(() => {
+	if (prefsLifecycleMod?._resetPageGoingAwayForTests) prefsLifecycleMod._resetPageGoingAwayForTests();
+});
+
 test('agent-triggered key-filter re-read surfaces malformed disk state without changing selection', async () => {
 	const originalFetch = globalThis.fetch;
 	const originalError = console.error;
@@ -368,6 +377,32 @@ test('agent-triggered key-filter re-read surfaces malformed disk state without c
 			logged.some((line) => line.includes('disk re-read failed')),
 			`expected console.error report, got ${JSON.stringify(logged)}`
 		);
+	} finally {
+		globalThis.fetch = originalFetch;
+		console.error = originalError;
+	}
+});
+
+test('key-filter re-read stays quiet when the page is going away', async () => {
+	const originalFetch = globalThis.fetch;
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async () => {
+		throw new TypeError('Failed to fetch');
+	};
+	try {
+		prefsLifecycleMod = await loadTypeScriptModule('tests/unit/fixtures/prefs-lifecycle-entry.ts', {
+			viteApiBase: PREFS_LIFECYCLE_API
+		});
+		prefsLifecycleMod.markPageGoingAwayForTests();
+		prefsLifecycleMod.uiPrefs.library_key_filter = ['8A'];
+		prefsLifecycleMod.rereadLibraryKeyFilter();
+		for (let i = 0; i < 20; i += 1) {
+			await new Promise((resolve) => setImmediate(resolve));
+		}
+		assert.equal(prefsLifecycleMod.libraryKeyFilterSync.error, null);
+		assert.equal(logged.length, 0);
 	} finally {
 		globalThis.fetch = originalFetch;
 		console.error = originalError;

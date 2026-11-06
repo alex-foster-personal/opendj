@@ -88,6 +88,7 @@ def _sign(*args: str, **overrides: str) -> subprocess.CompletedProcess[str]:
             "MDT_MACOS_SIGNING_IDENTITY",
             "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE",
             "MDT_MACOS_NOTARY_KEYCHAIN",
+            "MDT_MACOS_SIGNING_KEYCHAIN",
         }
     }
     env.update(overrides)
@@ -554,6 +555,6 @@ def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() ->
 
 
 # The notary --keychain tests moved to test_macos_signing_notary_keychain.py
-# (this file was at 547 lines; appending them would have crossed the repo's
-# 600-line-per-test-file ratchet). They import `_sign` and
-# `UNRESOLVABLE_IDENTITY` from here.
+# and the signing --keychain tests to test_macos_signing_keychain.py (this file
+# was at 547 lines; appending them would have crossed the repo's 600-line-per-test-file
+# ratchet). They import `_sign` and `UNRESOLVABLE_IDENTITY` from here.

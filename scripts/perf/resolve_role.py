@@ -29,6 +29,8 @@ FILE REQUIREMENTS (mini-PRD)
   - if the app is not running then this exits non-zero saying so, and prints no
     pid, because a profiler must not be handed a stale number
   - if the role exists but no process currently fills it then it exits non-zero
+  - if a role is requested and it cannot be resolved for any reason then the
+    error names that role
 * R2 an unknown role fails loudly and lists the roles that do exist.
   Status: OK, run, works as expected.
   - if a caller typos `python-engin` then nothing is sampled and the exit is 2
@@ -45,6 +47,7 @@ import sys
 
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.diagnostics.probe_process_family import (
+    NAMED_CHILD_ROLES,
     ProcessRow,
     associate_process_family,
     find_shell,
@@ -62,6 +65,7 @@ PROFILABLE_ROLES = (
     "webkit-webcontent",
     "webkit-gpu",
     "webkit-networking",
+    *NAMED_CHILD_ROLES,
 )
 
 
@@ -144,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         live = resolve_roles(args.shell_pid)
     except RoleUnresolved as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
+        print(f"[ERROR] cannot resolve role {args.role!r}: {exc}", file=sys.stderr)
         return 3
 
     wanted = PROFILABLE_ROLES if args.role == "all" else (args.role,)

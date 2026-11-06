@@ -781,8 +781,10 @@ test('CMDK-19: rows that arrive after the bar opened keep the highlight on its e
 	assert.equal(pairs.reanchorSelection(null, after, 2), 2);
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
 	// Only while the query is unchanged: typing still puts the highlight back on the first row.
-	assert.match(bar, /if \(list !== anchoredList && query === anchoredQuery\) \{\s*const moved = reanchorSelection\(anchor, list\.map\(cmdkEntryKey\), at\);/);
-	assert.match(bar, /anchor = list\[at\] === undefined \? null : cmdkEntryKey\(list\[at\]\);/);
+	assert.match(bar, /if \(list !== anchoredList && query === anchoredQuery\) \{\s*const moved = reanchorSelection\(anchor, list\.map\(flatEntryKey\), at\);/);
+	assert.match(bar, /anchor = list\[at\] === undefined \? null : flatEntryKey\(list\[at\]\);/);
+	// CMDK-6848: a playlist row keys by its id, every other row as before.
+	assert.match(bar, /if \(entry\.kind === 'list'\) return `pl:\$\{entry\.list\.playlist_id\}`;\s*return cmdkEntryKey\(entry\);/);
 });
 
 test('CMDK-16: the deck picker lets a queued load land before it asks to replace a playing deck (Codex r4278029265)', () => {

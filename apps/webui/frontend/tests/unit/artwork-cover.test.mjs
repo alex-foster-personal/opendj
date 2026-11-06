@@ -12,7 +12,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SITES = [
 	'src/lib/components/rb/Mixer.svelte',
-	'src/lib/components/rb/wave/WaveTrackSummary.svelte',
+	'src/lib/components/rb/wave/WaveTrackSummaryView.svelte',
 	'src/lib/components/rb/deck/DeckHeader.svelte',
 	'src/lib/components/rb/TrackifyPlayer.svelte',
 	'src/lib/components/library/TrackInspectorView.svelte',
@@ -85,14 +85,25 @@ test('if a reset does not cancel the pending retry timer, a stale timer fires in
 test('if an artwork img site keeps its own failed flag or lacks the expected-404 mark, it never retries or logs a client error', () => {
 	for (const path of SITES) {
 		const src = readFileSync(path, 'utf8');
-		assert.match(src, /data-expected-resource-error/, `${path}: 404 must not be a client error`);
-		assert.doesNotMatch(src, /artFailed|artworkFailed/, `${path}: private failed flag never retries`);
+		assert.match(
+			src,
+			/data-expected-resource-error="artwork-404"/,
+			`${path}: 404 must not be a client error`
+		);
+		assert.doesNotMatch(
+			src,
+			/artFailed|artworkFailed/,
+			`${path}: private failed flag never retries`
+		);
 	}
-	// LibraryPreviewBarView and TrackInspectorView are props-only
-	// (storybook-stories.test.mjs), so their containers own the helper calls and
-	// the views only carry the expected-404 mark and the callbacks.
+	// LibraryPreviewBarView, TrackInspectorView and WaveTrackSummaryView are
+	// props-only (storybook-stories.test.mjs), so their containers own the helper
+	// calls and the views only carry the expected-404 mark and the callbacks.
 	for (const path of SITES.filter((p) => !p.endsWith('TrackTable.svelte'))) {
-		const src = readFileSync(path.replace(/(LibraryPreviewBar|TrackInspector)View\.svelte$/, '$1.svelte'), 'utf8');
+		const src = readFileSync(
+			path.replace(/(LibraryPreviewBar|TrackInspector|WaveTrackSummary)View\.svelte$/, '$1.svelte'),
+			'utf8'
+		);
 		assert.match(src, /coverFailed\(/, `${path}: error goes to the shared helper`);
 		assert.match(src, /coverVisible\(/, `${path}: placeholder comes from the shared helper`);
 	}

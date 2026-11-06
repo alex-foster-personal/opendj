@@ -46,7 +46,7 @@ const deckWith = (stems: StemDeckState): DeckState =>
 	({
 		deck_id: 1,
 		stable_id: 'a'.repeat(40),
-		source_path: '/music/Music/Lumen Fields - Night Drive (Extended Mix).flac',
+		source_path: '/music/Lumen Fields - Night Drive (Extended Mix).flac',
 		title: TRACK_TITLE,
 		artist: 'Lumen Fields',
 		rating: 4,

@@ -131,7 +131,10 @@ def test_a_missing_share_dir_is_reported_separately(
 def test_an_encrypted_source_without_a_key_is_a_key_blocker(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     working = data_dir / detect.WORKING_COPY_NAME
     working.write_bytes(b"\x00ciphertext" * 32)
-    monkeypatch.setattr(detect, "key_status", lambda: (False, "no key on this machine"))
+    monkeypatch.setattr(
+        "apps.shared.setup.detect.key_status",
+        lambda: (False, "no key on this machine"),
+    )
     found = detect.detect_rekordbox(data_dir)
     assert found.import_source_encrypted is True
     assert detect.CODE_KEY_UNAVAILABLE in found.blockers

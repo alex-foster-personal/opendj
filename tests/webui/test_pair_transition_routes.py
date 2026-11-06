@@ -151,6 +151,14 @@ def test_played_with_a_plan_for_another_pair_is_refused(client: TestClient) -> N
     assert (response.status_code, response.json()["error"]) == (422, "plan_invalid")
 
 
+@pytest.mark.requirement("MEMORY-03")
+def test_played_source_without_a_plan_is_refused(client: TestClient) -> None:
+    client.put(PATH, json={"plan": plan_document(), "source": "planner", "style": "crossfade"})
+    response = client.post(f"{PATH}/played", json={**PAIR, "source": "planner"})
+    assert (response.status_code, response.json()["error"]) == (422, "plan_invalid")
+    assert client.get(PATH, params=PAIR).json()["meta"]["times_played"] == 0
+
+
 @pytest.mark.requirement("MEMORY-06")
 def test_a_hand_mix_through_the_mirror_route_is_the_pairs_default(client: TestClient) -> None:
     _hand_crossfade(client)

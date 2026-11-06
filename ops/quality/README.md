@@ -428,8 +428,11 @@ over that limit. The count is ratcheted and can fail the gate.
 
 The soft limit is 1000 lines. `file_size.soft_over_python` and
 `file_size.soft_over_frontend` are report only: the gate prints them with the
-list of files, and they appear in the `--json` and markdown report. They never
-fail the gate and are never written to `baseline.json`.
+list of files, and they appear as numeric top-level fields in the `--json` and
+markdown report. The JSON `offenders` object maps those metric keys to capped
+arrays of repo-relative `path (N lines)` strings, ending with `+N more` when
+additional files are hidden. The soft metrics never fail the gate and are
+never written to `baseline.json`.
 
 ## Why the frontend graph is hand-rolled
 

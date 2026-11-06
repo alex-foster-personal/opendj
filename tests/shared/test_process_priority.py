@@ -65,20 +65,15 @@ def test_ahead_analysis_starts_its_queue_child_through_the_seam(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen.update(kwargs, via="run")
-        return subprocess.CompletedProcess(argv, 0, "", "")
-
     def fake_popen(argv: list[str], **kwargs: Any) -> Any:
         seen.update(kwargs, via="Popen")
         return _FinishedChild()
 
     monkeypatch.setattr(process_priority.sys, "platform", "win32")
     monkeypatch.setattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x4000, raising=False)
-    monkeypatch.setattr(aa.subprocess, "run", fake_run)
     monkeypatch.setattr(aa.subprocess, "Popen", fake_popen)
     assert aa._queue_cli(["status"], os.devnull, (lambda: False) if stoppable else None)[0] == 0
-    assert seen["via"] == ("Popen" if stoppable else "run")
+    assert seen["via"] == "Popen"
     assert "preexec_fn" not in seen and seen["creationflags"] == 0x4000
 
 

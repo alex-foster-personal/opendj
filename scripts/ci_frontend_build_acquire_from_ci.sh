@@ -11,8 +11,10 @@
 #   - artifact already published            -> download it from R2 (unchanged)
 #   - job queued / no CI run yet / budget expired -> build locally at once
 #   - job in_progress or completed success   -> keep polling for the artifact
-#   - job completed failure/cancelled/timed_out -> refuse, never rebuild over
+#   - job completed failure or timed_out     -> refuse, never rebuild over
 #     a real CI failure
+#   - job completed cancelled or skipped     -> UNMEASURED-upstream local build
+#   - job completed any other conclusion     -> refuse, never guess
 #   - CI's state cannot be read at all       -> refuse, never guess
 #
 # Pinned by (private path).
@@ -72,8 +74,13 @@ _download_and_assert() {
 #                 job has not been created/started yet (queued)
 #   running     - the build job is in_progress
 #   success     - the build job completed successfully (artifact is uploading)
-#   failed      - the build job completed without success; CI_JOB_CONCLUSION
-#                 carries the conclusion
+#   failed      - the build job completed with failure or timed_out;
+#                 CI_JOB_CONCLUSION carries the conclusion
+#   unmeasured  - the build job completed with cancelled or skipped; not a
+#                 measured build break (superseded run, or skipped producer)
+#   unknown     - the build job completed with a conclusion we do not treat
+#                 as success, a real failure, or unmeasured; CI_JOB_CONCLUSION
+#                 carries the literal (never guessed)
 #   unreadable  - a `gh api` call failed; never guessed, always a hard stop
 CI_JOB_STATE=""
 CI_JOB_CONCLUSION=""
@@ -110,12 +117,51 @@ _probe_ci_job_state() {
             CI_JOB_STATE="running"
             ;;
         completed)
-            if [ "$conclusion" = "success" ]; then
-                CI_JOB_STATE="success"
-            else
-                CI_JOB_STATE="failed"
-                CI_JOB_CONCLUSION="$conclusion"
-            fi
+            case "$conclusion" in
+                success)
+                    CI_JOB_STATE="success"
+                    ;;
+                failure)
+                    CI_JOB_STATE="failed"
+                    CI_JOB_CONCLUSION="failure"
+                    ;;
+                timed_out)
+                    CI_JOB_STATE="failed"
+                    CI_JOB_CONCLUSION="timed_out"
+                    ;;
+                cancelled)
+                    CI_JOB_STATE="unmeasured"
+                    CI_JOB_CONCLUSION="cancelled"
+                    ;;
+                skipped)
+                    CI_JOB_STATE="unmeasured"
+                    CI_JOB_CONCLUSION="skipped"
+                    ;;
+                neutral)
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION="neutral"
+                    ;;
+                stale)
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION="stale"
+                    ;;
+                action_required)
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION="action_required"
+                    ;;
+                startup_failure)
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION="startup_failure"
+                    ;;
+                "")
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION=""
+                    ;;
+                *)
+                    CI_JOB_STATE="unknown"
+                    CI_JOB_CONCLUSION="$conclusion"
+                    ;;
+            esac
             ;;
         *)
             CI_JOB_STATE="unreadable"
@@ -151,6 +197,14 @@ while true; do
             ;;
         failed)
             echo "::error::CI's '${CI_JOB_NAME}' job for ${SHA} completed with conclusion '${CI_JOB_CONCLUSION}'; refusing to rebuild over a real CI failure"
+            exit 1
+            ;;
+        unmeasured)
+            _build_locally "UNMEASURED-upstream: CI's '${CI_JOB_NAME}' job for ${SHA} completed with conclusion '${CI_JOB_CONCLUSION}' (upstream outcome is not a measured build break)"
+            exit 0
+            ;;
+        unknown)
+            echo "::error::CI's '${CI_JOB_NAME}' job for ${SHA} completed with unknown or non-actionable conclusion '${CI_JOB_CONCLUSION}'; refusing to guess"
             exit 1
             ;;
         unreadable)

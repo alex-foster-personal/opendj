@@ -79,9 +79,14 @@ def read_snapshot_pin_ids(root: Path, snapshot_paths: list[str], builds: set[str
         data = json.loads((root / rel).read_text(encoding="utf-8"))
         if "stores" in data:
             for store in data["stores"]:
-                ids |= _preview_ids(store["pins"], builds)
+                # Only top-level feedback pins carry ledger ids. Nested objects (for example
+                # attachment metadata under a pin) also use ``id`` keys and must not be merged
+                # into the pin set.
+                ids |= _preview_ids(store.get("pins", []), builds)
                 if "general_note" in store:
-                    ids.add(f"general-note-{store['general_note']['build']['git_sha']}")
+                    sha = (store["general_note"].get("build") or {}).get("git_sha", "")[:8]
+                    if sha in builds:
+                        ids.add(f"general-note-{sha}")
         elif "pins" in data:
             ids |= _preview_ids(data["pins"], builds)
         elif "comments" in data:

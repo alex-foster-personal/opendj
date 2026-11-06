@@ -683,7 +683,7 @@ def pull(
                 _refuse_unless_capable(
                     capabilities_,
                     "pull",
-                    service_shortfall.pull_shortfall(batch),
+                    service_shortfall.pull_shortfall(batch, conn),
                 )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
@@ -784,7 +784,7 @@ def digest(
             with _transaction(conn):
                 computed = protocol.sync_digest(conn, seq=engine.current_seq(conn))
             _refuse_unless_capable(
-                capabilities_, "digest", service_shortfall.digest_shortfall(computed)
+                capabilities_, "digest", service_shortfall.digest_shortfall(computed, conn)
             )
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc

@@ -61,6 +61,7 @@ __all__ = [
     "FixtureContractMismatch",
     "FixtureNotAvailable",
     "external_host",
+    "external_host_available",
     "fixture_path",
     "verify_fixture_contract",
 ]
@@ -98,6 +99,20 @@ class FixtureContractMismatch(Exception):
 def external_host() -> Path:
     """Return the external host root, honouring ``MUX_FIXTURE_HOST``."""
     return Path(os.environ.get("MUX_FIXTURE_HOST", str(DEFAULT_EXTERNAL_HOST)))
+
+
+def external_host_available(host: Path | None = None) -> bool:
+    """Return whether the configured external fixture host is usable right now.
+
+    True when the host path exists as a directory (the normal "tree is
+    present" case, including a ``MUX_FIXTURE_HOST`` override). Otherwise
+    true only when the host path or its immediate parent is a mount point
+    (so an empty or not-yet-populated volume still counts as "there").
+    """
+    resolved = host if host is not None else external_host()
+    if resolved.is_dir():
+        return True
+    return os.path.ismount(resolved) or os.path.ismount(resolved.parent)
 
 
 def _read_extern_marker(marker: Path) -> str:

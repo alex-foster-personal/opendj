@@ -20,18 +20,7 @@ QA - without GPU (`?simulateJob=1` or Vite DEV):
 - Right-click row -> "Simulate job bar", or
   `jobProgress.simulate('vocals', stableId, 3000)` / `window.__jobProgressSimulate(...)`.
 */
-export type AnalysisKind =
-	| 'vocals'
-	| 'beatgrid'
-	| 'key'
-	| 'cues'
-	| 'waveform'
-	| 'phrase'
-	| 'loudness'
-	| 'stems'
-	| 'lyrics'
-	| 'load'
-	| 'other';
+import type { AnalysisKind } from './analysis-kinds';
 
 /** Slot order for the 3x3 LHS dots (row-major). `load` is deck/audio only - not a coverage badge. */
 export const ANALYSIS_DOT_SLOTS: readonly (AnalysisKind | null)[] = [
@@ -61,19 +50,7 @@ export const ANALYSIS_LABELS: Record<AnalysisKind, string> = {
 	other: 'Other'
 };
 
-export const ANALYSIS_COLORS: Record<AnalysisKind, string> = {
-	vocals: '#5b8cff',
-	beatgrid: '#3ecf8e',
-	key: '#c9a227',
-	cues: '#e87d3e',
-	waveform: '#9b7bff',
-	phrase: '#2ec4b6',
-	loudness: '#f2545b',
-	stems: '#adb5bd',
-	lyrics: '#c77dff',
-	load: '#4cc9f0',
-	other: '#868e96'
-};
+import { ANALYSIS_COLORS } from './analysis-kinds';
 
 /** Visible seed so a just-started bar is not an empty row. */
 export const FAKE_PROGRESS_START = 0.02;

@@ -14,6 +14,10 @@ export function sidebarArtEnabledIn(flags: readonly { flag_id: string; enabled: 
 	return flags.find((flag) => flag.flag_id === ART_THUMBNAILS_FLAG_ID)?.enabled === true;
 }
 
-export function playlistThumbnailUrl(playlistId: string, size: ThumbnailSize): string {
-	return `${API_BASE}/api/v1/playlists/${encodeURIComponent(playlistId)}/thumbnail?size=${size}`;
+export function playlistThumbnailUrl(playlistId: string, size: ThumbnailSize, rev?: string | null): string {
+	const base = `${API_BASE}/api/v1/playlists/${encodeURIComponent(playlistId)}/thumbnail?size=${size}`;
+	if (rev != null && rev !== '') {
+		return `${base}&v=${encodeURIComponent(rev)}`;
+	}
+	return base;
 }

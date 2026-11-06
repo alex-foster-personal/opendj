@@ -270,7 +270,72 @@ def _resolve_local_audio_path(stable_id: str) -> Path | None:
         state.close()
 
 
-def local_artwork(stable_id: str, *, online: bool = False) -> tuple[bytes, str]:
+def _local_artwork_source(
+    stable_id: str,
+    resolved: Path | None,
+    file_path: str | None,
+    duration_ms: int | None,
+    *,
+    online: bool,
+) -> tuple[bytes, str, bool]:
+    """Resolve raw artwork bytes; the bool is True when the source was embedded-only."""
+    from apps.shared import artwork_sources
+    from apps.shared import audio_files as _audio_files
+
+    if resolved is not None:
+        embedded = _audio_files.read_embedded_artwork(resolved)
+        if embedded is not None:
+            return (*embedded, True)
+        sidecar = artwork_sources.sidecar_artwork(resolved)
+        if sidecar is not None:
+            return (*sidecar, False)
+    cache = online_artwork_cache()
+    found = cache.get(stable_id)
+    if found is None and online:
+        found = artwork_sources.online_cover(cache, stable_id, _track_query(stable_id, duration_ms))
+    if found is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"track {stable_id} has no artwork: no embedded picture, no cover image "
+            f"beside the file and no online cover (file_path={file_path!r})",
+        )
+    return (*found, False)
+
+
+def _sized_local_artwork(
+    stable_id: str,
+    resolved: Path | None,
+    file_path: str | None,
+    duration_ms: int | None,
+    size: str,
+    *,
+    online: bool,
+) -> tuple[bytes, str]:
+    from apps.shared import artwork_resize
+
+    cache = resized_artwork_cache()
+    identity: str | None = None
+    if resolved is not None:
+        identity = artwork_resize.source_identity(stable_id, resolved, size)
+        if identity is not None:
+            hit = cache.indexed(identity)
+            if hit is not None:
+                return hit, "image/jpeg"
+
+    data, mime, from_embedded = _local_artwork_source(
+        stable_id, resolved, file_path, duration_ms, online=online
+    )
+    out = cache.sized(data, size)
+    if out is None:
+        return data, mime
+    if from_embedded and identity is not None:
+        cache.remember(identity, data, size)
+    return out, "image/jpeg"
+
+
+def local_artwork(
+    stable_id: str, *, online: bool = False, size: str = "orig",
+) -> tuple[bytes, str]:
     """Artwork for a track rekordbox holds none for, or 404 ``ARTWORK_NOT_FOUND``.
 
     The chain after rekordbox's own jpg, first hit wins:
@@ -286,32 +351,33 @@ def local_artwork(stable_id: str, *, online: bool = False) -> tuple[bytes, str]:
        is held to MusicBrainz's one request per second, so only the decks
        ask.
 
-    Never a generated or placeholder image, and never resized: there is no
-    pre-rendered s/m variant for these, unlike the rekordbox path. Nothing
-    is written into the library or the audio file.
+    Never a generated or placeholder image. For ``size`` ``s``/``m``, the
+    longest edge is scaled down (never up) to 80 or 240 px, JPEG, with alpha
+    flattened onto the slate tile colour ``#22262c``. Renders are cached under
+    ``<state dir>/artwork-resized/`` keyed by the source bytes' sha256 and
+    ``size``; a repeat request for an embedded cover reads the cache after
+    one stat of the audio file, without re-reading the tags. ``orig`` is the
+    source as found. Nothing is written into the library or the audio file.
     """
-    from apps.shared import artwork_sources
-    from apps.shared import audio_files as _audio_files
-
     file_path, duration_ms = local_track_row(stable_id)
     resolved = _resolve_local_audio_path(stable_id)
-    if resolved is not None:
-        found = _audio_files.read_embedded_artwork(resolved) or artwork_sources.sidecar_artwork(
-            resolved
+    if size == "orig":
+        data, mime, _from_embedded = _local_artwork_source(
+            stable_id, resolved, file_path, duration_ms, online=online
         )
-        if found is not None:
-            return found
-    cache = online_artwork_cache()
-    found = cache.get(stable_id)
-    if found is None and online:
-        found = artwork_sources.online_cover(cache, stable_id, _track_query(stable_id, duration_ms))
-    if found is None:
-        raise not_found(
-            "ARTWORK_NOT_FOUND",
-            f"track {stable_id} has no artwork: no embedded picture, no cover image "
-            f"beside the file and no online cover (file_path={file_path!r})",
-        )
-    return found
+        return data, mime
+    return _sized_local_artwork(
+        stable_id, resolved, file_path, duration_ms, size, online=online
+    )
+
+
+def resized_artwork_cache() -> Any:
+    """Content-addressed JPEG cache for ``local_artwork`` s/m sizes (under state dir)."""
+    from apps.shared import artwork_resize
+
+    return artwork_resize.ResizedArtworkCache(
+        config.STATE_DB.parent / artwork_resize.CACHE_DIR_NAME,
+    )
 
 
 def online_artwork_cache() -> Any:
@@ -837,6 +903,7 @@ __all__ = [
     "local_audio_file",
     "local_track_file_tags",
     "local_track_row",
+    "resized_artwork_cache",
     "resolve_asset_path",
     "resolve_content",
     "resolve_playable_audio",

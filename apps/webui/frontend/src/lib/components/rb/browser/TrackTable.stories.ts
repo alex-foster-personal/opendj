@@ -8,7 +8,10 @@ import { browserRows } from '../../../../sandbox/fixtures/browser-rows';
 import { createPaneStore, makeClientRowProvider } from './pane-contract.svelte';
 import { applyOptimisticEntriesMove } from '$lib/library/entries-move-local';
 import { arrangeSections } from '$lib/library/playlist-sections';
+import { browseScrollTarget } from './browse-scroll';
+import TrackTableScrollStoryDock from './TrackTableScrollStoryDock.svelte';
 import TrackTable from './TrackTable.svelte';
+import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
 
 /**
  * TrackTable UI contracts. The real 3k-line table, fed through its typed
@@ -35,6 +38,26 @@ const meta = {
 	parameters: {
 		msw: {
 			handlers: [
+				http.get('/api/v1/settings', () =>
+					HttpResponse.json({
+						groups: [
+							{
+								group: 'Runtime policy',
+								items: [
+									{ key: 'hide_broken_playlist_min_available_tracks', value: 4, tbd: false },
+									{ key: 'anlz_points_default', value: 38400, tbd: false },
+									{ key: 'anlz_points_min', value: 100, tbd: false },
+									{ key: 'anlz_points_max', value: 38400, tbd: false },
+									{ key: 'file_exists_ttl_s', value: 30, tbd: false }
+								]
+							}
+						]
+					})
+				),
+				http.post('/api/v1/client-errors', () => new HttpResponse(null, { status: 204 })),
+				http.get('/api/v1/mytags/catalog', () => HttpResponse.json({ tags: [] })),
+				http.get('/api/v1/mytags/assignments', () => HttpResponse.json({ tracks: {} })),
+				http.get('/api/v1/tag-types', () => HttpResponse.json({ rows: [] })),
 				http.post('/api/v1/library/row-assets', () => HttpResponse.json(NO_LIBRARY_ASSETS)),
 				// The Last Played cell reads each row's play counts after it renders, so
 				// a slow story caught the previous story's late reads as unhandled.
@@ -85,6 +108,103 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/** Scrollport for the virtualized body (LIBUX-2606 contract: shrink without remount). */
+function tableWrap(root: HTMLElement): HTMLElement {
+	const el = root.querySelector<HTMLElement>('.table-wrap');
+	if (el === null) throw new Error('no .table-wrap');
+	return el;
+}
+
+/**
+ * LIBUX-2606 / issue #8876: after scrolling to row N, shrinking the wrap must not
+ * replay stale browseScroll (revision already applied) or unmount N; Home then
+ * scroll-back must restore N without a stale overwrite.
+ */
+export const KeepsScrollWindowAcrossDeckLoad: Story = {
+	parameters: { layout: 'fullscreen' },
+	decorators: [() => ({ Component: TrackTableScrollStoryDock })],
+	args: {
+		provider: makeClientRowProvider(() => browserRows(80), () => false),
+		loadedIds: new Set(['fixture-5']),
+		browseScroll: { order: 5, direction: 1, revision: 1 },
+		scrollTop: 0,
+		restoreKey: 0
+	},
+	play: async ({ canvasElement }) => {
+		const rowHeight = 22;
+		const headerOffsetPx = TRACK_TABLE_THEAD_PX;
+		const viewportTall = 220;
+		const staleRequest = { order: 5, direction: 1 as const, revision: 1 };
+		const rowsFixture = browserRows(80);
+		const slotOfRow = (i: number) => i;
+
+		const canvas = within(canvasElement);
+		await canvas.findByTestId('track-table');
+		const dock = canvasElement.ownerDocument.querySelector<HTMLElement>(
+			'[data-testid="track-table-scroll-dock"]'
+		);
+		await expect(dock, 'story decorator must render TrackTableScrollStoryDock').not.toBeNull();
+		const wrap = tableWrap(canvasElement);
+
+		await waitFor(() => expect(wrap.clientHeight).toBeGreaterThan(100));
+		await waitFor(() => {
+			expect(canvas.getAllByText(/^Track \d+$/).length).toBeLessThan(80);
+		});
+
+		await expect(await canvas.findByText('Track 5')).toBeVisible();
+
+		const scrollToOrder40 = scrollTopForRowIndex({
+			rowIndex: 39,
+			rowHeight,
+			headerOffsetPx,
+			offsetFromTopPx: viewportTall * 0.35
+		});
+		wrap.scrollTop = scrollToOrder40;
+		wrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+
+		await expect(await canvas.findByText('Track 40')).toBeVisible();
+
+		const replayIfStaleAtTall = browseScrollTarget({
+			request: staleRequest,
+			rows: rowsFixture,
+			viewportHeight: wrap.clientHeight,
+			rowHeight,
+			headerOffsetPx,
+			slotOfRow
+		});
+		await expect(wrap.scrollTop).toBeGreaterThan((replayIfStaleAtTall ?? 0) + 30);
+
+		dock!.style.height = '160px';
+		await waitFor(() => expect(wrap.clientHeight).toBeLessThan(170));
+
+		await expect(await canvas.findByText('Track 40')).toBeVisible();
+		const keptAfterShrink = wrap.scrollTop;
+
+		const replayShort = browseScrollTarget({
+			request: staleRequest,
+			rows: rowsFixture,
+			viewportHeight: 160,
+			rowHeight,
+			headerOffsetPx,
+			slotOfRow
+		});
+		await expect(replayShort).not.toBeNull();
+		await expect(Math.abs(wrap.scrollTop - replayShort!)).toBeGreaterThan(25);
+
+		const row40tr = canvas.getByText('Track 40').closest('tr');
+		await expect(row40tr).not.toBeNull();
+		await userEvent.click(row40tr!.querySelector('td.c-title') as HTMLElement);
+		await userEvent.keyboard('{Home}');
+		await waitFor(() => expect(wrap.scrollTop).toBeLessThan(40));
+		await expect(await canvas.findByText('Track 1')).toBeVisible();
+
+		wrap.scrollTop = keptAfterShrink;
+		wrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+		await expect(await canvas.findByText('Track 40')).toBeVisible();
+		await expect(Math.abs(wrap.scrollTop - replayShort!)).toBeGreaterThan(25);
+	}
+};
 
 /** Every provider row renders as a table row, in provider order. */
 export const RendersEveryRow: Story = {
@@ -198,7 +318,7 @@ export const RowDragReordersPlaylist: Story = {
 	}
 };
 
-// ------------------------------------- insertion line + no flash (REORDER-ROW-02)
+// ------------------------------------- animated gap (transform only, REORDER-ROW-02, LIBUX-53)
 
 /** A pointer y inside the table body that opens gap `gap` (gapFromPointer). */
 function yForGap(root: HTMLElement, gap: number): number {
@@ -207,9 +327,27 @@ function yForGap(root: HTMLElement, gap: number): number {
 	return body.top + gap * rowHeight + 2;
 }
 
-/** the maintainer, Thu 5 Nov 2026: "there's no thick line indicating the insertion point
- * beforehand." While a move drag is over the list a 3 px accent line marks the
- * gap the drop fills; it follows the pointer and goes on drop, leave or end. */
+function rowIndex(tr: HTMLElement): number {
+	const raw = tr.dataset.rowIndex;
+	if (raw === undefined) throw new Error('track row missing data-row-index');
+	return Number(raw);
+}
+
+function translateYPx(style: string | undefined | null): number | null {
+	if (style === undefined || style === null || style === '') return null;
+	const m = /^translateY\((-?\d+(?:\.\d+)?)px\)$/.exec(style.trim());
+	return m === null ? null : Number(m[1]);
+}
+
+function rowStyle(root: HTMLElement, index: number): string {
+	const tr = [...root.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')].find(
+		(r) => rowIndex(r) === index
+	);
+	if (tr === undefined) throw new Error(`no track row with data-row-index ${index}`);
+	return tr.style.transform;
+}
+
+/** While a move drag hovers, rows at the gap and below gain translateY only (#8755). */
 export const MoveDragDrawsTheInsertionLine: Story = {
 	args: { reorderable: true, provider: memberProvider(), onmoveentries: fn() },
 	play: async ({ canvasElement, args }) => {
@@ -217,28 +355,22 @@ export const MoveDragDrawsTheInsertionLine: Story = {
 		const source = rowByOrder(canvasElement, 2).querySelector<HTMLElement>('td.c-title')!;
 		const target = rowByOrder(canvasElement, 5).querySelector<HTMLElement>('td.c-title')!;
 		const dataTransfer = new DataTransfer();
+		const rowHeight = target.closest('tr')!.getBoundingClientRect().height;
 		await fireEvent.dragStart(source, { dataTransfer });
 		await expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).toBeNull();
 		await fireEvent.dragOver(target, { dataTransfer, clientY: yForGap(canvasElement, 4) });
-		const line = await waitFor(() => {
-			const el = canvasElement.querySelector<HTMLElement>('[data-testid="tt-drop-line"]');
-			expect(el).not.toBeNull();
-			return el!;
-		});
-		await expect(line.dataset.gap).toBe('4');
-		await expect(line.getBoundingClientRect().height).toBe(3);
-		const firstTop = line.getBoundingClientRect().top;
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBe(rowHeight));
 		await fireEvent.dragOver(target, { dataTransfer, clientY: yForGap(canvasElement, 6) });
-		await waitFor(() => expect(line.dataset.gap).toBe('6'));
-		await expect(line.getBoundingClientRect().top).toBeGreaterThan(firstTop);
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 6))).toBe(rowHeight));
 		await fireEvent.drop(target, { dataTransfer, clientY: yForGap(canvasElement, 6) });
-		await waitFor(() => expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBeNull());
 		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-2'], section_ids: [], before_item_id: 'item-7' });
 		await fireEvent.dragEnd(source, { dataTransfer });
 	}
 };
 
-/** A drag leaving the list, or ending without a drop, clears the line. */
+/** A drag leaving the list, or ending without a drop, clears the transform gap. */
 export const MoveDragLineClearsOnLeaveAndEnd: Story = {
 	args: { reorderable: true, provider: memberProvider(), onmoveentries: fn() },
 	play: async ({ canvasElement }) => {
@@ -246,22 +378,22 @@ export const MoveDragLineClearsOnLeaveAndEnd: Story = {
 		const source = rowByOrder(canvasElement, 2).querySelector<HTMLElement>('td.c-title')!;
 		const target = rowByOrder(canvasElement, 5).querySelector<HTMLElement>('td.c-title')!;
 		const dataTransfer = new DataTransfer();
+		const rowHeight = target.closest('tr')!.getBoundingClientRect().height;
 		await fireEvent.dragStart(source, { dataTransfer });
 		await fireEvent.dragOver(target, { dataTransfer, clientY: yForGap(canvasElement, 4) });
-		await waitFor(() => expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).not.toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBe(rowHeight));
 		await fireEvent.dragLeave(target, { dataTransfer, clientX: -50, clientY: -50 });
-		await waitFor(() => expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBeNull());
 		await fireEvent.dragOver(target, { dataTransfer, clientY: yForGap(canvasElement, 4) });
-		await waitFor(() => expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).not.toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBe(rowHeight));
 		await fireEvent.dragEnd(source, { dataTransfer });
-		await waitFor(() => expect(canvasElement.querySelector('[data-testid="tt-drop-line"]')).toBeNull());
+		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBeNull());
 	}
 };
 
 const SECTIONED = arrangeSections(MEMBERS.slice(0, 12), [{ id: 'S1', title: 'Peak', before_position: 4 }], new Set());
 
-/** Section boundaries: the gap just below a divider is the section's first
- * place, and the line is drawn there, below the divider and inside it. */
+/** Section boundaries: the gap just below a divider shifts that section's rows. */
 export const MoveDragLineInsideASection: Story = {
 	args: {
 		reorderable: true,
@@ -278,21 +410,14 @@ export const MoveDragLineInsideASection: Story = {
 		const source = rowByOrder(canvasElement, 1).querySelector<HTMLElement>('td.c-title')!;
 		const firstInSection = rowByOrder(canvasElement, 5);
 		const dataTransfer = new DataTransfer();
+		const gapSlot = header.slot + 1;
+		const rowHeight = firstInSection.getBoundingClientRect().height;
 		await fireEvent.dragStart(source, { dataTransfer });
-		await fireEvent.dragOver(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, header.slot + 1) });
-		const line = await waitFor(() => {
-			const el = canvasElement.querySelector<HTMLElement>('[data-testid="tt-drop-line"]');
-			expect(el).not.toBeNull();
-			return el!;
-		});
+		await fireEvent.dragOver(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, gapSlot) });
+		await waitFor(() => expect(translateYPx(firstInSection.style.transform)).toBe(rowHeight));
 		const divider = canvasElement.querySelector<HTMLElement>('tbody tr:not([data-testid="track-row"]):not(.tt-spacer)')!;
-		await expect(line.getBoundingClientRect().top).toBeGreaterThan(divider.getBoundingClientRect().bottom - 1);
-		// The gap opens directly under the divider (the section's first place), and
-		// the line sits inside that open slot, not above the divider.
-		const dividerBox = divider.getBoundingClientRect();
-		await expect(line.dataset.gap).toBe(String(header.slot + 1));
-		await expect(line.getBoundingClientRect().bottom).toBeLessThan(dividerBox.bottom + dividerBox.height);
-		await fireEvent.drop(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, header.slot + 1) });
+		await expect(firstInSection.getBoundingClientRect().top).toBeGreaterThan(divider.getBoundingClientRect().bottom - 1);
+		await fireEvent.drop(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, gapSlot) });
 		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-1'], section_ids: [], before_item_id: 'item-5' });
 		await fireEvent.dragEnd(source, { dataTransfer });
 	}

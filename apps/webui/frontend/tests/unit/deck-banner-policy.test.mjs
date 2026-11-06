@@ -41,3 +41,10 @@ test('[if] the stems-loading text is shown [then] the headline is plain words, n
 	assert.equal(shown.headline, 'Deck 1 stems are still loading');
 	assert.equal(shown.detail, STEMS_LOADING);
 });
+
+test('isExpectedStemsLoadingMessage classifies session-restore inner text and excludes other failures', () => {
+	assert.equal(policy.isExpectedStemsLoadingMessage('deck 2 stems are loading: no aligned artifact'), true);
+	assert.equal(policy.isExpectedStemsLoadingMessage('Error: deck 1 stems are loading: no aligned artifact'), true);
+	assert.equal(policy.isExpectedStemsLoadingMessage('deck 2 stem restore failed: decode failed'), false);
+	assert.equal(policy.isExpectedStemsLoadingMessage('session restore deck 2 failed: boom'), false);
+});

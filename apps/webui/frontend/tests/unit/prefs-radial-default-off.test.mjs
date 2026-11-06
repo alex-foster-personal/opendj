@@ -26,6 +26,8 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
 // Cold import of the server app can be slow on a loaded host; startup tolerance only.
 const START_TIMEOUT_MS = 60_000;
+/** Wall-clock cap for held-GET to observe PUT ack (CI hosts can exceed 2 s). */
+const HELD_GET_ACK_TIMEOUT_MS = 20_000;
 
 const realFetch = globalThis.fetch;
 let backendProc;
@@ -35,6 +37,8 @@ let dataDir;
 let prefsFile;
 let writesRefused = false;
 let inFlight = 0;
+/** Resolvers waiting for `inFlight` to reach 0 (drain in `settle()`). */
+const idleWaiters = [];
 let ackedPuts = 0;
 /** When set, a real GET response is handed back only after a PUT is acknowledged,
  * which is the GET/PUT race a boot can lose (Codex P1, PR #6829). */
@@ -108,7 +112,8 @@ async function recordingFetch(input, init) {
 		getStatuses.push(response.status);
 		if (holdGetsUntilPutAcked) {
 			const ackedBefore = ackedPuts;
-			for (let i = 0; i < 400 && ackedPuts === ackedBefore; i += 1) {
+			const deadline = Date.now() + HELD_GET_ACK_TIMEOUT_MS;
+			while (ackedPuts === ackedBefore && Date.now() < deadline) {
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
 			assert.ok(ackedPuts > ackedBefore, 'the held GET never saw a PUT acknowledged');
@@ -118,7 +123,18 @@ async function recordingFetch(input, init) {
 		return response;
 	} finally {
 		inFlight -= 1;
+		notifyIdle();
 	}
+}
+
+function notifyIdle() {
+	if (inFlight !== 0) return;
+	for (const wake of idleWaiters.splice(0)) wake();
+}
+
+function whenIdle() {
+	if (inFlight === 0) return Promise.resolve();
+	return new Promise((resolve) => idleWaiters.push(resolve));
 }
 
 before(async () => {
@@ -142,6 +158,7 @@ afterEach(() => {
 	writesRefused = false;
 	holdGetsUntilPutAcked = false;
 	duringHeldGet = null;
+	idleWaiters.length = 0;
 });
 
 /** Start a phase: what the daemon's disk holds (undefined = no file), whether
@@ -162,11 +179,77 @@ const diskRadial = () => JSON.parse(readFileSync(prefsFile, 'utf8')).jog_radial_
 
 /** Let the boot-time daemon write and its acknowledgement settle. */
 async function settle() {
-	for (let quiet = 0, i = 0; quiet < 20 && i < 2_000; i += 1) {
-		await new Promise((resolve) => setTimeout(resolve, inFlight > 0 ? 5 : 0));
-		quiet = inFlight > 0 ? 0 : quiet + 1;
+	const deadline = Date.now() + 30_000;
+
+	/** Wait for `inFlight` to hit 0, or assert the hang message at `deadline` if still stuck. */
+	async function whenIdleBeforeDeadline() {
+		const ms = deadline - Date.now();
+		if (ms <= 0) {
+			assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+			return;
+		}
+		return new Promise((resolve, reject) => {
+			let done = false;
+			let hangTimer;
+			const cleanup = () => {
+				if (hangTimer !== undefined) {
+					clearTimeout(hangTimer);
+					hangTimer = undefined;
+				}
+			};
+			hangTimer = setTimeout(() => {
+				if (done) return;
+				done = true;
+				cleanup();
+				try {
+					assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+					resolve();
+				} catch (err) {
+					reject(err);
+				}
+			}, ms);
+
+			whenIdle()
+				.then(() => {
+					if (done) return;
+					done = true;
+					cleanup();
+					resolve();
+				})
+				.catch(reject);
+		});
 	}
-	assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+
+	for (;;) {
+		if (Date.now() >= deadline) {
+			assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+			return;
+		}
+		while (inFlight > 0) {
+			await whenIdleBeforeDeadline();
+			if (Date.now() >= deadline) {
+				assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+				return;
+			}
+		}
+		let quiet = 0;
+		while (quiet < 20) {
+			if (Date.now() >= deadline) {
+				assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+				return;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			if (inFlight > 0) {
+				quiet = 0;
+				break;
+			}
+			quiet += 1;
+		}
+		if (quiet === 20) {
+			assert.equal(inFlight, 0, 'a real request was still in flight after settling');
+			return;
+		}
+	}
 }
 
 function installBrowser(store = new Map()) {

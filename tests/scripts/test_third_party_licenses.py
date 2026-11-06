@@ -26,15 +26,18 @@ from scripts.license_verify import ECOSYSTEMS, verify_bundled_licenses
 from scripts.third_party_licenses import (
     PYTHON_SITES_RELATIVE,
     RUST_CRATES,
+    RUST_TARGET_TRIPLE,
     Cat,
     Component,
     LicenseInventoryError,
     attach_reviewed_license_texts,
     classify_license,
+    collect_all,
     flag_report,
     python_components,
     render_licenses,
     require_license_texts,
+    rust_components,
     supplement_components,
     unreviewed_textless_components,
     vendored_source_components,
@@ -360,6 +363,13 @@ def test_write_payload_license_files_is_wired_to_the_textless_guard() -> None:
         "write_payload_license_files no longer runs the textless guard on what collect_all returns"
     )
     assert _calls(inspect.getsource(require_license_texts), "unreviewed_textless_components")
+
+
+def test_rust_inventory_defaults_to_the_macos_target_triple_and_accepts_a_windows_one() -> None:
+    assert RUST_TARGET_TRIPLE == "aarch64-apple-darwin"
+    assert inspect.signature(rust_components).parameters["target_triple"].default == RUST_TARGET_TRIPLE
+    assert inspect.signature(collect_all).parameters["rust_target_triple"].default == RUST_TARGET_TRIPLE
+    assert inspect.signature(write_payload_license_files).parameters["rust_target_triple"].default == RUST_TARGET_TRIPLE
 
 
 def test_textless_guard_wiring_check_fires_when_either_call_is_removed() -> None:

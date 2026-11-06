@@ -12,45 +12,15 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from apps.autodj.contract.models import PairNotFound, PairTransition
 from apps.autodj.plan import PlanError, parse_plan
 from apps.shared.state.migrations_v25 import PAIR_TRANSITION_SOURCES
 from apps.shared.state.migrations_v28 import PAIR_VERDICTS
 
 _COLUMNS = "out_track_id, in_track_id, plan_json, source, style, created_at, updated_at, times_played"
-
-
-class PairNotFound(LookupError):
-    """No transition is saved for this pair."""
-
-
-@dataclass(frozen=True)
-class PairTransition:
-    out_track_id: str
-    in_track_id: str
-    plan: dict[str, Any]
-    source: str
-    style: str
-    created_at: str
-    updated_at: str
-    times_played: int
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "plan": self.plan,
-            "meta": {
-                "out_track_id": self.out_track_id,
-                "in_track_id": self.in_track_id,
-                "source": self.source,
-                "style": self.style,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "times_played": self.times_played,
-            },
-        }
 
 
 # ----- helpers -------------------------------------------------------------
@@ -61,7 +31,7 @@ def _now() -> str:
 
 
 def _row(row: tuple[Any, ...]) -> PairTransition:
-    return PairTransition(row[0], row[1], json.loads(row[2]), row[3], row[4], row[5], row[6], row[7])
+    return PairTransition(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
 
 
 def _canonical(plan: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
@@ -140,10 +110,12 @@ def record_played(
     """Save-on-run: the transition between this pair just completed.
 
     With ``plan`` (and its ``source`` and ``style``), that plan becomes the pair's default, unless it is the plan already
-    saved, which only counts another run and keeps its source. Without one, the saved plan ran again;
-    :class:`PairNotFound` when there is none.
+    saved, which only counts another run and keeps its source. Without one, the saved plan ran again; source or style
+    without a plan is refused. :class:`PairNotFound` when there is none.
     """
     if plan is None:
+        if source is not None or style is not None:
+            raise PlanError("source or style without a plan is not a replay")
         return _bumped(conn, _saved(conn, out_track_id, in_track_id))
     if source is None or style is None:
         raise PlanError("a played plan needs its source and style")

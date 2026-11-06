@@ -19,6 +19,7 @@ same primitive ``apps.webui.server.dedup_decisions.decision_file_lock`` uses.
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import sys
 import threading
@@ -69,7 +70,9 @@ def lock_region_until_acquired(
         handle.seek(0)
         try:
             locking(handle.fileno(), nonblocking_mode, 1)
-        except OSError:
+        except OSError as exc:
+            if not _lock_contended(exc):
+                raise
             time.sleep(retry_s)
             continue
         return
@@ -86,6 +89,60 @@ def exclusive_file_lock(lock_path: Path) -> Iterator[None]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield
+        finally:
+            if sys.platform == "win32":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+#: errnos a non-blocking lock attempt sets when another holder has the lock:
+#: ``flock`` gives EAGAIN (BlockingIOError); ``msvcrt.locking`` gives EACCES,
+#: and EDEADLOCK once its retries run out. EDEADLOCK is spelled EDEADLK here:
+#: the same value on Windows and Linux, and the only name macOS defines.
+_CONTENTION_ERRNOS = frozenset({errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, errno.EDEADLK})
+
+
+def _lock_contended(exc: OSError) -> bool:
+    """Whether a failed non-blocking lock attempt means another holder has the lock.
+
+    Only that is retried. Any other OSError (a permission or invalid-handle
+    failure) is a real error, and the caller re-raises it.
+    """
+    return exc.errno in _CONTENTION_ERRNOS
+
+
+@contextlib.contextmanager
+def exclusive_file_lock_within(
+    lock_path: Path, timeout_s: float, *, retry_s: float = 0.01
+) -> Iterator[bool]:
+    """Take the lock :func:`exclusive_file_lock` takes, waiting at most ``timeout_s``.
+
+    Yields whether it was taken; ``timeout_s=0`` tries once. On POSIX a held
+    lock raises BlockingIOError; on Windows ``msvcrt.locking`` raises OSError
+    with EACCES. Any other lock error propagates.
+    """
+    deadline = time.monotonic() + timeout_s
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        while True:
+            try:
+                if sys.platform == "win32":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if not _lock_contended(exc):
+                    raise
+                if time.monotonic() >= deadline:
+                    yield False
+                    return
+                time.sleep(retry_s)
+        try:
+            yield True
         finally:
             if sys.platform == "win32":
                 handle.seek(0)

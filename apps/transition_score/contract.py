@@ -15,6 +15,7 @@ every factor that was not measured and why; it is never read as a pass.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -65,6 +66,11 @@ class Measured:
 
     def to_json(self) -> dict[str, int]:
         return {"k": self.k, "n": self.n}
+
+
+def core_measured(factors: Mapping[str, float]) -> Measured:
+    """How many core layer-1 factors were measured in ``factors`` (k of n)."""
+    return Measured(k=sum(1 for name in CORE_FACTORS if name in factors), n=len(CORE_FACTORS))
 
 
 @dataclass(frozen=True)

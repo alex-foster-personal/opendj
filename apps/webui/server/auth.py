@@ -412,7 +412,7 @@ class SessionStore:
         token = secrets.token_urlsafe(32)
         conn = self._connect()
         try:
-            conn.execute("BEGIN")
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 """
                 INSERT INTO users(

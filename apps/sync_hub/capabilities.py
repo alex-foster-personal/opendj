@@ -140,8 +140,7 @@ def refusal(endpoint: str, detail: str, advertised: Sequence[str] | None) -> str
         f"a partial {endpoint} answer: a client that ignores the shortfall "
         f"records every offered row as delivered and loses the held one. "
         f"Refusing the whole {endpoint} instead. Upgrade the caller to a "
-        f"build that advertises {QUARANTINE_V1!r}, or repair this hub with "
-        f"`python -m apps.shared.state.normalize_stamps --live`."
+        f"build that advertises {QUARANTINE_V1!r}."
     )
 
 

@@ -1,7 +1,9 @@
 import { api } from './api/client';
+import { apiErrorFrom } from './api/errors';
 import { type PerfEvent, setPerfEventEscalator } from './rb/perf-event-log';
 
 export const EXPECTED_RESOURCE_ERROR_ATTR = 'data-expected-resource-error';
+export const EXPECTED_ARTWORK_404_VALUE = 'artwork-404';
 
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 const MAX_QUEUE = 20;
@@ -270,22 +272,31 @@ function resourceTarget(event: Event): EventTarget | null {
 	return null;
 }
 
-function resourceDeclaresExpectedError(target: EventTarget): boolean {
+function artwork404MarkValue(target: EventTarget): string | null {
 	const named = target as EventTarget & {
-		hasAttribute?: (name: string) => boolean;
 		getAttribute?: (name: string) => string | null;
 		dataset?: DOMStringMap;
 	};
-	if (typeof named.hasAttribute === 'function') {
-		return named.hasAttribute(EXPECTED_RESOURCE_ERROR_ATTR);
-	}
 	if (typeof named.getAttribute === 'function') {
-		return named.getAttribute(EXPECTED_RESOURCE_ERROR_ATTR) !== null;
+		const value = named.getAttribute(EXPECTED_RESOURCE_ERROR_ATTR);
+		return value === EXPECTED_ARTWORK_404_VALUE ? value : null;
 	}
 	if (named.dataset !== undefined && named.dataset !== null) {
-		return 'expectedResourceError' in named.dataset;
+		const value = named.dataset.expectedResourceError;
+		return value === EXPECTED_ARTWORK_404_VALUE ? value : null;
 	}
-	return false;
+	return null;
+}
+
+async function confirmArtwork404Expected(source: string): Promise<boolean> {
+	try {
+		const response = await fetch(source, { credentials: 'same-origin' });
+		if (response.status !== 404) return false;
+		const err = await apiErrorFrom(response);
+		return err.code === 'ARTWORK_NOT_FOUND';
+	} catch {
+		return false;
+	}
 }
 
 function resourceSource(target: EventTarget): string | null {
@@ -299,11 +310,7 @@ function resourceSource(target: EventTarget): string | null {
 	return named.src ?? named.href ?? null;
 }
 
-function handleResourceError(event: Event): void {
-	const target = resourceTarget(event);
-	if (target === null) return;
-	if (resourceDeclaresExpectedError(target)) return;
-	const source = resourceSource(target) ?? 'unknown';
+function postResourceError(target: EventTarget, source: string): void {
 	const tagName =
 		typeof Element !== 'undefined' && target instanceof Element
 			? target.tagName
@@ -318,6 +325,23 @@ function handleResourceError(event: Event): void {
 		},
 		'resource-error'
 	);
+}
+
+function handleResourceError(event: Event): void {
+	const target = resourceTarget(event);
+	if (target === null) return;
+	const source = resourceSource(target) ?? 'unknown';
+	if (artwork404MarkValue(target) !== null) {
+		void confirmArtwork404Expected(source)
+			.then((skip) => {
+				if (!skip) postResourceError(target, source);
+			})
+			.catch(() => {
+				postResourceError(target, source);
+			});
+		return;
+	}
+	postResourceError(target, source);
 }
 
 function handleCspViolation(event: Event): void {

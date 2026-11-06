@@ -12,12 +12,16 @@ document never touches keeps the deck's power-on value (``deck.rs`` ``Deck::new`
 Requirements:
   ✔︎ peaks are per-column maxima of |sample| over one deck's render, 0..1 of full scale, never renormalized
   ✔︎ set and ramp events become breakpoints at their render times; a knob untouched stays at its power-on value
+  ✔︎ an in-flight ramp interrupted by a later set or ramp on the same knob is cut at that bar and the new move
+      starts from the value then
   ✔︎ an event the curves cannot place (an unknown at, a ramp on another clock) raises LaneError, never skipped
 Acceptance:
-  [if] a deck render is missing [then ⛔️] LaneError naming the deck
+  [if] a deck render is missing [then ⛔️] LaneError naming the missing deckN.wav
   [if] a ramp is clocked on a deck other than the outgoing one [then ⛔️] LaneError
   [if] the document sets the incoming fader to 0 at bar 0 and ramps it to 1 over 8 bars [then] its curve has
       (t0, 0.0) and (t0 + 8 bars, 1.0)
+  [if] an 8-bar fader ramp from 1.0 to 0.0 is interrupted at bar 4 by a set to 0.8 [then] its curve times are
+      non-decreasing and the value at bar 4 is 0.5 before the jump to 0.8
 """
 
 from __future__ import annotations
@@ -26,12 +30,11 @@ import wave
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
-from apps.autodj.profile import TrackProfile
-from apps.autodj.render_plan import RenderLayout
+from apps.autodj.contract import RenderLayout, TrackProfile
 
 #: Knobs drawn as lines, by the name the panel shows.
 DRAWN_KNOBS: tuple[str, ...] = ("fader", "eq_low", "filter")
@@ -122,7 +125,9 @@ def playing_spans(
             continue
         deck = int(body["deck"])
         at = round(
-            out_profile.time_of_bar(_event_bar(event["at"], out_deck, layout.start_out_bar)) - layout.start_out_s, 4
+            (out_profile.time_of_bar(_event_bar(event["at"], out_deck, layout.start_out_bar)) - layout.start_out_s)
+            / layout.out_ratio,
+            4,
         )
         if body["playing"] and deck not in since:
             since[deck] = at
@@ -181,15 +186,23 @@ def beat_grid(
     return beats
 
 
+class _InFlightRamp(NamedTuple):
+    start_bar: float
+    start_val: float
+    end_bar: float
+    target: float
+
+
 def knob_curves(
     document: dict[str, Any], out_deck: int, out_profile: TrackProfile, layout: RenderLayout
 ) -> dict[int, dict[str, list[tuple[float, float]]]]:
     """Breakpoints per deck and drawn knob from a compiled render document, in event order."""
 
     def seconds(bar: float) -> float:
-        return round(out_profile.time_of_bar(bar) - layout.start_out_s, 4)
+        return round((out_profile.time_of_bar(bar) - layout.start_out_s) / layout.out_ratio, 4)
 
     current: dict[tuple[int, str], float] = {}
+    in_flight: dict[tuple[int, str], _InFlightRamp] = {}
     curves: dict[int, dict[str, list[tuple[float, float]]]] = {}
     for event in document["events"]:
         body = event.get("cmd") or event.get("ramp")
@@ -199,8 +212,9 @@ def knob_curves(
         if knob is None:
             continue
         deck = int(body["deck"])
+        key = (deck, knob)
         bar = _event_bar(event["at"], out_deck, layout.start_out_bar)
-        before = current.get((deck, knob), POWER_ON[knob])
+        before = current.get(key, POWER_ON[knob])
         points = curves.setdefault(deck, {}).setdefault(knob, [(0.0, POWER_ON[knob])])
         if "cmd" in event:
             target, end_bar = float(body["value"]), bar
@@ -209,9 +223,37 @@ def knob_curves(
             if over.get("deck") != out_deck or "bars" not in over:
                 raise LaneError(f"ramp clocked on {over!r}, not the outgoing deck's bars")
             target, end_bar = float(body["to"]), bar + float(over["bars"])
+        ramp = in_flight.get(key)
+        if ramp is not None and bar < ramp.end_bar:
+            span = ramp.end_bar - ramp.start_bar
+            before = (
+                ramp.start_val
+                if span <= 0.0
+                else ramp.start_val
+                + (ramp.target - ramp.start_val) * (bar - ramp.start_bar) / span
+            )
+            before = round(before, 10)
+            points.pop()
+        elif ramp is not None and bar >= ramp.end_bar:
+            in_flight.pop(key, None)
         points.extend([(seconds(bar), before), (seconds(end_bar), target)])
-        current[(deck, knob)] = target
+        current[key] = target
+        if end_bar > bar:
+            in_flight[key] = _InFlightRamp(bar, before, end_bar, target)
+        else:
+            in_flight.pop(key, None)
     return curves
+
+
+def _loaded_decks(document: dict[str, Any]) -> list[int]:
+    """The decks the document loads: the ones --decks-out writes as decks/deck<N>.wav."""
+    return sorted(
+        {
+            int(event["cmd"]["deck"])
+            for event in document["events"]
+            if (cmd := event.get("cmd")) is not None and cmd.get("type") == "load"
+        }
+    )
 
 
 def build_lanes(
@@ -224,9 +266,13 @@ def build_lanes(
 ) -> Lanes:
     """Both decks' peaks and curves for one kept render folder."""
     curves = knob_curves(document, out_deck, out_profile, layout)
-    decks = sorted(int(p.stem.removeprefix("deck")) for p in (render_dir / "decks").glob("deck*.wav"))
+    decks_dir = render_dir / "decks"
+    decks = _loaded_decks(document)
     if not decks:
-        raise LaneError(f"no deck renders under {render_dir.name}/decks")
+        raise LaneError(f"the render document loads no decks, so {render_dir.name}/decks holds nothing to draw")
+    missing = [f"deck{deck}.wav" for deck in decks if not (decks_dir / f"deck{deck}.wav").is_file()]
+    if missing:
+        raise LaneError(f"deck renders missing under {render_dir.name}/decks: {', '.join(missing)}")
     lanes, duration = [], 0.0
     for deck in decks:
         peaks, duration = deck_peaks(render_dir / "decks" / f"deck{deck}.wav", columns)

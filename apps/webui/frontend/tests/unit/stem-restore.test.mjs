@@ -135,3 +135,48 @@ test('a deck that loads another track mid-wait refuses the old controls', async 
 	);
 	assert.deepEqual(deck.state.dispatched, []);
 });
+
+test('restore waits between stem dispatches when the first command puts stems back in loading', async () => {
+	const state = {
+		nowMs: 0,
+		sleeps: 0,
+		stableId: 'a'.repeat(40),
+		generation: 1,
+		dispatched: [],
+		stems: READY
+	};
+	const query = () => ({
+		decks: {
+			1: {
+				stable_id: state.stableId,
+				load_generation: state.generation,
+				stems: state.stems
+			}
+		}
+	});
+	const dispatch = async (command) => {
+		state.dispatched.push(command);
+		if (
+			(command.type === 'stem_mute' || command.type === 'stem_solo' || command.type === 'stem_gain') &&
+			command.deck === 1
+		) {
+			state.stems = LOADING;
+		}
+		return {};
+	};
+	const clock = {
+		now: () => state.nowMs,
+		sleep: async (ms) => {
+			state.nowMs += ms;
+			state.sleeps += 1;
+			if (state.stems === LOADING) state.stems = READY;
+		}
+	};
+	await restore.restoreStemControls(dispatch, query, 1, SAVED, clock);
+	assert.ok(state.sleeps >= 1, 'expected at least one poll while stems returned to loading');
+	assert.deepEqual(state.dispatched, [
+		{ type: 'stem_mute', deck: 1, stem: 'vocal', muted: true },
+		{ type: 'stem_solo', deck: 1, stem: 'vocal', solo: false },
+		{ type: 'stem_gain', deck: 1, stem: 'vocal', value: 0.25 }
+	]);
+});

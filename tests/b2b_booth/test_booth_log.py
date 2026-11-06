@@ -173,6 +173,39 @@ def test_random_drops_on_the_way_to_the_joiner_always_heal() -> None:
     assert b.joiner.state.seq == b.inviter.state.seq == 300
 
 
+def test_a_replaced_joiner_proposes_again_after_adopting_the_inviters_snapshot() -> None:
+    b = Pair()
+    b.act("joiner", _play(3, T0 + 1), T0 + 1)
+    assert b.inviter._last_peer_pid == 1
+    dup_before = b.inviter.counters.proposals_dup
+    b.joiner = BoothCore("joiner", None, T0 + 2 + b.offset_us)
+    b.joiner.peer_clock.add(T0 + 2 + b.offset_us, T0 + 2, T0 + 2 + b.offset_us)
+    b.joiner.receive(wire("ops", [b.inviter.snapshot_message()]), T0 + 3, reply=True)
+    assert b.joiner.epoch == E1
+    assert b.joiner.state.seq == b.inviter.state.seq == 1
+    applied = b.act("joiner", _play(3, T0 + 2), T0 + 2)
+    assert len(applied) == 1
+    assert applied[0]["op"]["op"] == "play"
+    assert applied[0]["seq"] == 2
+    assert b.inviter.counters.proposals_dup == dup_before
+    assert same_booth(b.inviter, b.joiner)
+
+
+def test_a_replaced_joiner_hello_does_not_reuse_the_old_sessions_refusals() -> None:
+    b = Pair()
+    proposal = wire(
+        "ops",
+        b.joiner.intent_op({"op": "setting", "side": "inviter", "lock_half_on_turn": True}, T0).ops,
+    )
+    first = b.inviter.receive(proposal, T0)
+    assert first.answers == [{"pid": 1, "refused": "not_your_setting"}]
+    b.replace_joiner(T0 + 1, hello=True)
+    applied = b.act("joiner", _play(3, T0 + 2), T0 + 2)
+    assert len(applied) == 1
+    assert applied[0]["op"]["op"] == "play"
+    assert same_booth(b.inviter, b.joiner)
+
+
 def test_a_retried_proposal_is_committed_once_and_answered_the_same() -> None:
     b = Pair()
     proposal = wire("ops", b.joiner.intent_op({"op": "setting", "side": "inviter", "lock_half_on_turn": True}, T0).ops)

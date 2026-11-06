@@ -9,9 +9,12 @@ Sources:
 - Panel size 482.6 x 272.4 mm: DDJ-FLX4 operating instructions, Specifications.
 - Wire identities: apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts, itself transcribed
   from the official "DDJ-FLX4 List of MIDI messages" PDF v1.0 E1 (fig numbers kept as `fig`).
-- Positions: a schematic trace of the manual's top-panel figure (control order and grouping),
-  NOT measured; scripts/skins/control_position_error.py reports UNKNOWN until a measured
-  reference table exists.
+- Positions: measured from the top-panel photo on page 1, embedded image 0, of that PDF
+  (sha256 e03ac376ebaa2d461c1a2c832c3c182e3579c893a1531944ebac1b5ce620388f), calibrated with
+  separate x and y mm-per-px scales, normalised for the renderer (0.5 mm centres, whole-mm
+  sizes, row or column mates aligned to within 1.5 mm). Deck 2 and channel 2 are translations
+  of deck 1 and channel 1, not mirrors. Scored against `devices/ddj-flx4/panel.reference.json`
+  by `scripts/skins/control_position_error.py` (ADR-0137).
 
 Run: uv run --locked python tools/deck-diagrams/scripts/build_flx4_panel.py
 """
@@ -50,13 +53,98 @@ class Control:
     shift_midi: Wire | None = None
 
 
-Row = tuple[str, str, str, str, float, float, float, float, str, int]
+Row = tuple[str, str, str, str, str, int]
+
+# Measured layout (mm). One entry per control id; order in build() is unchanged from v1.
+_POS: dict[str, tuple[float, float, float, float]] = {
+    "d1-in": (14.0, 22.5, 18.0, 9.0),
+    "d1-out": (39.0, 22.5, 18.0, 9.0),
+    "d1-4-beat-exit": (64.0, 22.5, 18.0, 9.0),
+    "d1-call-prev": (91.5, 22.5, 14.0, 9.0),
+    "d1-call-next": (113.5, 22.5, 14.0, 9.0),
+    "d1-beat-sync": (133.0, 22.5, 22.0, 9.0),
+    "d1-jog": (23.0, 57.0, 120.0, 120.0),
+    "d1-hot-cue": (41.0, 197.0, 18.0, 8.0),
+    "d1-pad-fx": (63.5, 197.0, 18.0, 8.0),
+    "d1-beat-jump": (85.5, 197.0, 18.0, 8.0),
+    "d1-sampler": (108.0, 197.0, 18.0, 8.0),
+    "d1-shift": (7.5, 178.5, 30.0, 12.0),
+    "d1-cue": (7.5, 204.0, 30.0, 18.0),
+    "d1-play-pause": (7.5, 232.5, 30.0, 18.0),
+    "d1-tempo": (138.5, 156.0, 12.0, 120.0),
+    "d1-pad-1": (40.5, 214.0, 19.0, 19.0),
+    "d1-pad-2": (62.5, 214.0, 19.0, 19.0),
+    "d1-pad-3": (85.0, 214.0, 19.0, 19.0),
+    "d1-pad-4": (107.5, 214.0, 19.0, 19.0),
+    "d1-pad-5": (40.5, 236.5, 19.0, 19.0),
+    "d1-pad-6": (62.5, 236.5, 19.0, 19.0),
+    "d1-pad-7": (85.0, 236.5, 19.0, 19.0),
+    "d1-pad-8": (107.5, 236.5, 19.0, 19.0),
+    "d2-in": (329.0, 22.5, 18.0, 9.0),
+    "d2-out": (354.0, 22.5, 18.0, 9.0),
+    "d2-4-beat-exit": (379.0, 22.5, 18.0, 9.0),
+    "d2-call-prev": (406.5, 22.5, 14.0, 9.0),
+    "d2-call-next": (428.5, 22.5, 14.0, 9.0),
+    "d2-beat-sync": (448.0, 22.5, 22.0, 9.0),
+    "d2-jog": (338.0, 57.0, 120.0, 120.0),
+    "d2-hot-cue": (356.0, 197.0, 18.0, 8.0),
+    "d2-pad-fx": (378.5, 197.0, 18.0, 8.0),
+    "d2-beat-jump": (400.5, 197.0, 18.0, 8.0),
+    "d2-sampler": (423.0, 197.0, 18.0, 8.0),
+    "d2-shift": (322.5, 178.5, 30.0, 12.0),
+    "d2-cue": (322.5, 204.0, 30.0, 18.0),
+    "d2-play-pause": (322.5, 232.5, 30.0, 18.0),
+    "d2-tempo": (453.5, 156.0, 12.0, 120.0),
+    "d2-pad-1": (355.5, 214.0, 19.0, 19.0),
+    "d2-pad-2": (377.5, 214.0, 19.0, 19.0),
+    "d2-pad-3": (400.0, 214.0, 19.0, 19.0),
+    "d2-pad-4": (422.5, 214.0, 19.0, 19.0),
+    "d2-pad-5": (355.5, 236.5, 19.0, 19.0),
+    "d2-pad-6": (377.5, 236.5, 19.0, 19.0),
+    "d2-pad-7": (400.0, 236.5, 19.0, 19.0),
+    "d2-pad-8": (422.5, 236.5, 19.0, 19.0),
+    "ch1-trim": (213.5, 32.0, 14.0, 14.0),
+    "ch1-hi": (213.5, 56.0, 14.0, 14.0),
+    "ch1-mid": (213.5, 81.0, 14.0, 14.0),
+    "ch1-low": (213.5, 105.5, 14.0, 14.0),
+    "ch1-cfx": (213.5, 131.0, 14.0, 14.0),
+    "ch1-ch-cue": (212.0, 160.5, 18.0, 8.0),
+    "ch1-ch-fader": (216.0, 174.5, 10.0, 62.0),
+    "ch2-trim": (254.5, 32.0, 14.0, 14.0),
+    "ch2-hi": (254.5, 56.0, 14.0, 14.0),
+    "ch2-mid": (254.5, 81.0, 14.0, 14.0),
+    "ch2-low": (254.5, 105.5, 14.0, 14.0),
+    "ch2-cfx": (254.5, 131.0, 14.0, 14.0),
+    "ch2-ch-cue": (253.0, 160.5, 18.0, 8.0),
+    "ch2-ch-fader": (257.0, 174.5, 10.0, 62.0),
+    "browse": (231.0, 4.5, 20.0, 20.0),
+    "load-1": (198.5, 12.5, 20.0, 10.0),
+    "load-2": (263.5, 12.5, 20.0, 10.0),
+    "master": (291.0, 30.0, 14.0, 14.0),
+    "master-cue": (289.0, 60.0, 18.0, 8.0),
+    "phones-mix": (177.0, 161.5, 14.0, 14.0),
+    "phones-level": (177.0, 188.0, 14.0, 14.0),
+    "mic-level": (177.0, 82.0, 14.0, 14.0),
+    "smart-cfx": (175.0, 135.0, 18.0, 8.0),
+    "smart-fader": (175.0, 220.5, 18.0, 8.0),
+    "crossfader": (211.0, 250.0, 60.0, 10.0),
+    "fx-ch": (290.0, 108.5, 16.0, 8.0),
+    "fx-select": (290.0, 134.5, 16.0, 8.0),
+    "beat-prev": (283.5, 160.0, 14.0, 8.0),
+    "beat-next": (299.0, 160.0, 14.0, 8.0),
+    "level-depth": (291.5, 187.5, 13.0, 13.0),
+    "fx-on": (289.0, 220.5, 18.0, 8.0),
+}
 
 # ----------------------------------------------------------------- helpers
 
 
-def _mirror_x(x: float, w: float) -> float:
-    return round(PANEL_W_MM - x - w, 1)
+def _at(cid: str) -> tuple[float, float, float, float]:
+    try:
+        x, y, w, h = _POS[cid]
+    except KeyError as e:
+        raise SystemExit(f"[ERROR] missing _POS entry for {cid!r}") from e
+    return round(x, 1), round(y, 1), w, h
 
 
 def _slug(label: str) -> str:
@@ -70,44 +158,46 @@ def _slug(label: str) -> str:
 # ----------------------------------------------------------------- deck strips
 
 _DECK_ROWS: list[Row] = [
-    # fig, type, label, does, x, y, w, h, kind, id
-    ("1-5", "button", "IN", "Set the loop in point", 20, 22, 18, 9, "note", 0x10),
-    ("1-6", "button", "OUT", "Set the loop out point", 42, 22, 18, 9, "note", 0x11),
-    ("1-7", "button", "4 BEAT/EXIT", "Exit the active loop", 64, 22, 18, 9, "note", 0x4D),
-    ("1-8", "button", "CALL <", "Call the previous cue or loop", 86, 22, 14, 9, "note", 0x51),
-    ("1-9", "button", "CALL >", "Call the next cue or loop", 104, 22, 14, 9, "note", 0x53),
-    ("1-10", "button", "BEAT SYNC", "Match tempo to the other deck", 140, 22, 22, 9, "note", 0x58),
-    ("1-4", "jog", "JOG", "Scratch or nudge the track", 25, 42, 120, 120, "cc", 0x22),
-    ("5-1", "button", "HOT CUE", "Pad mode: hot cues", 60, 170, 18, 8, "note", 0x1B),
-    ("5-2", "button", "PAD FX", "Pad mode: pad effects", 82, 170, 18, 8, "note", 0x1E),
-    ("5-3", "button", "BEAT JUMP", "Pad mode: beat jump", 104, 170, 18, 8, "note", 0x20),
-    ("5-4", "button", "SAMPLER", "Pad mode: sampler", 126, 170, 18, 8, "note", 0x22),
-    ("1-3", "button", "SHIFT", "Hold for each control's second function", 15, 184, 30, 12, "note", 0x3F),
-    ("1-2", "button", "CUE", "Set or return to the cue point", 15, 206, 30, 18, "note", 0x0C),
-    ("1-1", "button", "PLAY/PAUSE", "Start or pause the deck", 15, 232, 30, 18, "note", 0x0B),
+    # fig, type, label, does, kind, hex id
+    ("1-5", "button", "IN", "Set the loop in point", "note", 0x10),
+    ("1-6", "button", "OUT", "Set the loop out point", "note", 0x11),
+    ("1-7", "button", "4 BEAT/EXIT", "Exit the active loop", "note", 0x4D),
+    ("1-8", "button", "CALL <", "Call the previous cue or loop", "note", 0x51),
+    ("1-9", "button", "CALL >", "Call the next cue or loop", "note", 0x53),
+    ("1-10", "button", "BEAT SYNC", "Match tempo to the other deck", "note", 0x58),
+    ("1-4", "jog", "JOG", "Scratch or nudge the track", "cc", 0x22),
+    ("5-1", "button", "HOT CUE", "Pad mode: hot cues", "note", 0x1B),
+    ("5-2", "button", "PAD FX", "Pad mode: pad effects", "note", 0x1E),
+    ("5-3", "button", "BEAT JUMP", "Pad mode: beat jump", "note", 0x20),
+    ("5-4", "button", "SAMPLER", "Pad mode: sampler", "note", 0x22),
+    ("1-3", "button", "SHIFT", "Hold for each control's second function", "note", 0x3F),
+    ("1-2", "button", "CUE", "Set or return to the cue point", "note", 0x0C),
+    ("1-1", "button", "PLAY/PAUSE", "Start or pause the deck", "note", 0x0B),
 ]
 
 
 def _deck(deck: int) -> list[Control]:
     pad_ch = 8 if deck == 1 else 10
-    out = [
-        Control(
-            f"d{deck}-{_slug(label)}",
-            fig,
-            typ,
-            label,
-            f"{does} (deck {deck})",
-            x if deck == 1 else _mirror_x(x, w),
-            y,
-            w,
-            h,
-            "deck",
-            Wire(deck, kind, num),
+    out: list[Control] = []
+    for fig, typ, label, does, kind, num in _DECK_ROWS:
+        cid = f"d{deck}-{_slug(label)}"
+        x, y, w, h = _at(cid)
+        out.append(
+            Control(
+                cid,
+                fig,
+                typ,
+                label,
+                f"{does} (deck {deck})",
+                x,
+                y,
+                w,
+                h,
+                "deck",
+                Wire(deck, kind, num),
+            )
         )
-        for fig, typ, label, does, x, y, w, h, kind, num in _DECK_ROWS
-    ]
-    # TEMPO sits to the right of the jog on both decks, so it is translated, not mirrored.
-    tempo_x = 160.0 if deck == 1 else 160.0 + 241.3
+    tx, ty, tw, th = _at(f"d{deck}-tempo")
     out.append(
         Control(
             f"d{deck}-tempo",
@@ -115,27 +205,28 @@ def _deck(deck: int) -> list[Control]:
             "fader",
             "TEMPO",
             f"Tempo fader (deck {deck})",
-            round(tempo_x, 1),
-            48,
-            12,
-            120,
+            tx,
+            ty,
+            tw,
+            th,
             "deck",
             Wire(deck, "cc", 0x00),
         )
     )
     for pad in range(8):
-        x = 60 + (pad % 4) * 22
+        cid = f"d{deck}-pad-{pad + 1}"
+        px, py, pw, ph = _at(cid)
         out.append(
             Control(
-                f"d{deck}-pad-{pad + 1}",
+                cid,
                 "5-5",
                 "pad",
                 f"PAD {pad + 1}",
                 f"Hot cue {'ABCDEFGH'[pad]} (deck {deck}, HOT CUE mode)",
-                x if deck == 1 else _mirror_x(x, 19),
-                184 + (pad // 4) * 24,
-                19,
-                19,
+                px,
+                py,
+                pw,
+                ph,
                 "performance",
                 Wire(pad_ch, "note", pad),
             )
@@ -144,57 +235,63 @@ def _deck(deck: int) -> list[Control]:
 
 
 def _channel(deck: int) -> list[Control]:
-    rows: list[tuple[str, str, str, str, float, float, float, float, str, int, int]] = [
-        ("3-3", "knob", "TRIM", "Channel gain", 205, 44, 14, 14, "cc", deck, 0x04),
-        ("3-4", "knob", "HI", "EQ high band", 205, 64, 14, 14, "cc", deck, 0x07),
-        ("3-4", "knob", "MID", "EQ mid band", 205, 84, 14, 14, "cc", deck, 0x0B),
-        ("3-4", "knob", "LOW", "EQ low band", 205, 104, 14, 14, "cc", deck, 0x0F),
-        ("3-5", "knob", "CFX", "Color filter", 205, 124, 14, 14, "cc", 7, 0x17 if deck == 1 else 0x18),
-        ("3-6", "button", "CH CUE", "Headphone cue for this channel", 203, 144, 18, 8, "note", deck, 0x54),
-        ("3-7", "fader", "CH FADER", "Channel volume", 207, 158, 10, 62, "cc", deck, 0x13),
+    rows: list[tuple[str, str, str, str, str, int, int]] = [
+        ("3-3", "knob", "TRIM", "Channel gain", "cc", deck, 0x04),
+        ("3-4", "knob", "HI", "EQ high band", "cc", deck, 0x07),
+        ("3-4", "knob", "MID", "EQ mid band", "cc", deck, 0x0B),
+        ("3-4", "knob", "LOW", "EQ low band", "cc", deck, 0x0F),
+        ("3-5", "knob", "CFX", "Color filter", "cc", 7, 0x17 if deck == 1 else 0x18),
+        ("3-6", "button", "CH CUE", "Headphone cue for this channel", "note", deck, 0x54),
+        ("3-7", "fader", "CH FADER", "Channel volume", "cc", deck, 0x13),
     ]
-    return [
-        Control(
-            f"ch{deck}-{_slug(label)}",
-            fig,
-            typ,
-            label,
-            f"{does} (channel {deck})",
-            x if deck == 1 else _mirror_x(x, w),
-            y,
-            w,
-            h,
-            "mixer",
-            Wire(ch, kind, num),
+    out: list[Control] = []
+    for fig, typ, label, does, kind, ch, num in rows:
+        cid = f"ch{deck}-{_slug(label)}"
+        x, y, w, h = _at(cid)
+        out.append(
+            Control(
+                cid,
+                fig,
+                typ,
+                label,
+                f"{does} (channel {deck})",
+                x,
+                y,
+                w,
+                h,
+                "mixer",
+                Wire(ch, kind, num),
+            )
         )
-        for fig, typ, label, does, x, y, w, h, kind, ch, num in rows
-    ]
+    return out
 
 
 def _globals() -> list[Control]:
-    rows: list[tuple[str, str, str, str, float, float, float, float, str, int, str, int]] = [
-        ("4-1", "encoder", "BROWSE", "Scroll the library", 231.3, 14, 20, 20, "browse", 7, "cc", 0x40),
-        ("4-2", "button", "LOAD 1", "Load the selected track to deck 1", 200, 18, 20, 10, "browse", 7, "note", 0x46),
-        ("4-3", "button", "LOAD 2", "Load the selected track to deck 2", 262.6, 18, 20, 10, "browse", 7, "note", 0x47),
-        ("3-1", "knob", "MASTER", "Master output level", 234.3, 44, 14, 14, "mixer", 7, "cc", 0x08),
-        ("3-2", "button", "MASTER CUE", "Hear the master in headphones", 232.3, 62, 18, 8, "mixer", 7, "note", 0x63),
-        ("3-11", "knob", "PHONES MIX", "Headphone cue and master blend", 234.3, 76, 14, 14, "mixer", 7, "cc", 0x0C),
-        ("3-12", "knob", "PHONES LEVEL", "Headphone level", 234.3, 94, 14, 14, "mixer", 7, "cc", 0x0D),
-        ("3-9", "knob", "MIC LEVEL", "Microphone level", 234.3, 112, 14, 14, "mixer", 7, "cc", 0x05),
-        ("3-10", "button", "SMART CFX", "Smart color effect", 232.3, 132, 18, 8, "mixer", 7, "note", 0x00),
-        ("3-13", "button", "SMART FADER", "Smart fader", 232.3, 144, 18, 8, "mixer", 7, "note", 0x01),
-        ("3-8", "crossfader", "CROSSFADER", "Blend deck 1 and deck 2", 211.3, 236, 60, 10, "mixer", 7, "cc", 0x1F),
-        ("2-1", "button", "FX CH", "Pick the channel the beat effect hits", 300, 6, 16, 8, "effect", 5, "note", 0x10),
-        ("2-2", "button", "FX SELECT", "Pick the beat effect", 320, 6, 16, 8, "effect", 5, "note", 0x4A),
-        ("2-3", "button", "BEAT <", "Shorter effect beat", 340, 6, 14, 8, "effect", 5, "note", 0x4B),
-        ("2-4", "button", "BEAT >", "Longer effect beat", 358, 6, 14, 8, "effect", 5, "note", 0x4C),
-        ("2-5", "knob", "LEVEL/DEPTH", "Beat effect amount", 380, 3, 13, 13, "effect", 6, "cc", 0x02),
-        ("2-6", "button", "FX ON", "Beat effect on or off", 400, 6, 18, 8, "effect", 5, "note", 0x47),
+    rows: list[tuple[str, str, str, str, str, int, str, int]] = [
+        ("4-1", "encoder", "BROWSE", "Scroll the library", "browse", 7, "cc", 0x40),
+        ("4-2", "button", "LOAD 1", "Load the selected track to deck 1", "browse", 7, "note", 0x46),
+        ("4-3", "button", "LOAD 2", "Load the selected track to deck 2", "browse", 7, "note", 0x47),
+        ("3-1", "knob", "MASTER", "Master output level", "mixer", 7, "cc", 0x08),
+        ("3-2", "button", "MASTER CUE", "Hear the master in headphones", "mixer", 7, "note", 0x63),
+        ("3-11", "knob", "PHONES MIX", "Headphone cue and master blend", "mixer", 7, "cc", 0x0C),
+        ("3-12", "knob", "PHONES LEVEL", "Headphone level", "mixer", 7, "cc", 0x0D),
+        ("3-9", "knob", "MIC LEVEL", "Microphone level", "mixer", 7, "cc", 0x05),
+        ("3-10", "button", "SMART CFX", "Smart color effect", "mixer", 7, "note", 0x00),
+        ("3-13", "button", "SMART FADER", "Smart fader", "mixer", 7, "note", 0x01),
+        ("3-8", "crossfader", "CROSSFADER", "Blend deck 1 and deck 2", "mixer", 7, "cc", 0x1F),
+        ("2-1", "button", "FX CH", "Pick the channel the beat effect hits", "effect", 5, "note", 0x10),
+        ("2-2", "button", "FX SELECT", "Pick the beat effect", "effect", 5, "note", 0x4A),
+        ("2-3", "button", "BEAT <", "Shorter effect beat", "effect", 5, "note", 0x4B),
+        ("2-4", "button", "BEAT >", "Longer effect beat", "effect", 5, "note", 0x4C),
+        ("2-5", "knob", "LEVEL/DEPTH", "Beat effect amount", "effect", 6, "cc", 0x02),
+        ("2-6", "button", "FX ON", "Beat effect on or off", "effect", 5, "note", 0x47),
     ]
-    return [
-        Control(_slug(label), fig, typ, label, does, x, y, w, h, section, Wire(ch, kind, num))
-        for fig, typ, label, does, x, y, w, h, section, ch, kind, num in rows
-    ]
+    out: list[Control] = []
+    for fig, typ, label, does, section, ch, kind, num in rows:
+        cid = _slug(label)
+        x, y, w, h = _at(cid)
+        out.append(Control(cid, fig, typ, label, does, x, y, w, h, section, Wire(ch, kind, num)))
+    return out
 
 
 # ----------------------------------------------------------------- SHIFT layer
@@ -245,6 +342,10 @@ def build() -> dict[str, object]:
     base = [*_deck(1), *_deck(2), *_channel(1), *_channel(2), *_globals()]
     controls = [replace(c, shift_midi=_shift_wire(c)) for c in base]
     known = {c.id for c in controls}
+    missing_pos = sorted(known - set(_POS))
+    extra_pos = sorted(set(_POS) - known)
+    if missing_pos or extra_pos:
+        raise SystemExit(f"[ERROR] _POS mismatch: missing={missing_pos} extra={extra_pos}")
     missing = sorted(set(_GLOBAL_SHIFT) - known)
     if missing:
         raise SystemExit(f"[ERROR] shift rows name unknown controls: {missing}")
@@ -262,7 +363,10 @@ def build() -> dict[str, object]:
         "sources": {
             "panel_size": "DDJ-FLX4 operating instructions, Specifications (482.6 x 272.4 mm)",
             "wire": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts (DDJ-FLX4 List of MIDI messages v1.0 E1)",
-            "positions": "schematic trace of the manual's top-panel figure, not measured (ADR-0137)",
+            "positions": (
+                "measured trace of the official top-panel photo, normalised for the renderer; "
+                "reference: devices/ddj-flx4/panel.reference.json (ADR-0137)"
+            ),
         },
         "out_of_scope": [
             "pad modes other than HOT CUE: pads carry the HOT CUE wire identity",

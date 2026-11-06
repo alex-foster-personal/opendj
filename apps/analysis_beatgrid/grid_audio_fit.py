@@ -26,6 +26,8 @@ Requirements (mini-PRD):
     [if] the grid is moved 50 ms [then] shifted with the offset ⛔️ fit
     [if] noise, or no kick on the beats [then] no_verdict ⛔️ any finding
     [if] a half-beat grid with no logits [then] never off_beat ⛔️ guessed
+    [if] the grid's marker tempos vary by more than max_grid_bpm_spread [then] no_verdict,
+      reason naming the spread ⛔️ wrong_bpm at the median
   ✔︎ ✅ 🎯 rule_version(): changes with any threshold.
 
 -Claude
@@ -73,6 +75,8 @@ class GridAudioFitThresholds:
     kick_search_s: float = 0.09
     #: wrong_bpm: the audio tempo is at least this far from the grid's ...
     min_bpm_error: float = 0.1
+    #: no_verdict: marker tempos spread more than this (BPM); no single tempo to judge.
+    max_grid_bpm_spread: float = 0.1
     #: ... AND folds at least this much sharper than the grid tempo does.
     min_fold_gain: float = 1.5
     #: Where kicks sit relative to a good rekordbox grid with this detector
@@ -109,6 +113,8 @@ class GridAudioFit:
     verdict: Verdict
     #: The grid's stored marker tempo (median over beats).
     grid_bpm: float
+    #: Max marker BPM minus min (2 dp); production PQTZ markers are 2 dp.
+    grid_bpm_spread: float
     #: The audio's best constant tempo near the grid's; None without a pulse.
     audio_bpm: float | None
     fold_sharpness_audio: float
@@ -119,6 +125,8 @@ class GridAudioFit:
     kick_coverage: float
     #: Model activation on the grid lines over the half-beats; None without logits.
     onbeat_ratio: float | None
+    #: Set when the rule abstains with detail (e.g. variable-tempo grid).
+    reason: str | None = None
 
 
 # ------------------------------------------------------------ envelope
@@ -237,6 +245,8 @@ def _verdict(fit: GridAudioFit, th: GridAudioFitThresholds) -> Verdict:
     kicks away from the grid lines, so kick coverage may only gate the shift
     judgement, never these two.
     """
+    if fit.grid_bpm_spread > th.max_grid_bpm_spread:
+        return "no_verdict"
     if fit.audio_bpm is None:
         return "no_verdict"
     if (
@@ -263,7 +273,18 @@ def _measure(
 ) -> GridAudioFit:
     """Every fact the rule reads, with the verdict still undecided (`no_verdict`)."""
     beats = np.array([b.t for b in grid], dtype=float)
-    grid_bpm = float(np.median([b.bpm for b in grid]))
+    bpms = [b.bpm for b in grid]
+    spread = round(max(bpms) - min(bpms), 2)
+    grid_bpm = float(np.median(bpms))
+    lo, hi = min(bpms), max(bpms)
+    reason = (
+        (
+            f"variable tempo grid: markers {lo:.2f} to {hi:.2f} BPM (spread {spread:.2f} BPM > "
+            f"{th.max_grid_bpm_spread:.2f}); no single tempo to judge"
+        )
+        if spread > th.max_grid_bpm_spread
+        else None
+    )
     frame_s = max(1, round(th.hop_s * sr)) / sr
     env = kick_onset_envelope(np.asarray(pcm, dtype=np.float32), sr, th)
     period_s = 60.0 / grid_bpm
@@ -274,6 +295,7 @@ def _measure(
     return GridAudioFit(
         verdict="no_verdict",
         grid_bpm=grid_bpm,
+        grid_bpm_spread=spread,
         # No pulse sharp enough to name a tempo: no tempo, and so no verdict.
         audio_bpm=audio_bpm if fold_audio >= th.min_fold_sharpness else None,
         fold_sharpness_audio=fold_audio,
@@ -282,6 +304,7 @@ def _measure(
         kick_spread_ms=float(np.median(np.abs(offsets - offset))) if offset is not None else None,
         kick_coverage=len(offsets) / in_range if in_range else 0.0,
         onbeat_ratio=_onbeat_ratio(beat_logits, logits_fps, beats, period_s) if beat_logits is not None else None,
+        reason=reason,
     )
 
 

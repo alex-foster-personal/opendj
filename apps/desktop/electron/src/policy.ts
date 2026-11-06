@@ -339,6 +339,43 @@ export function isTrustedPage(url: string): boolean {
 	return isLoopbackHttp(url) || isAppPage(url);
 }
 
+// ----- renderer crash recovery (parity row 72, issue #9390) -----------------------
+
+/** Reload incidents allowed in a rolling window before the shell gives up. */
+export const RENDERER_RELOAD_LIMIT = 3;
+export const RENDERER_RELOAD_WINDOW_MS = 60_000;
+
+export type RendererGoneAction = 'reload' | 'give-up' | 'ignore';
+
+export interface RendererGone {
+	/** Electron `RenderProcessGoneDetails.reason` (`crashed`, `oom`, `clean-exit`, ...). */
+	reason: string;
+	nowMs: number;
+	/** Timestamps of reload decisions still inside the rolling window. */
+	reloadsMs: readonly number[];
+	/** Shell is quitting: a renderer exit is expected. */
+	quitting: boolean;
+}
+
+/**
+ * Decide whether to reload, give up, or ignore a dead renderer. `reloadsMs` is
+ * the history carried forward; a timestamp older than `RENDERER_RELOAD_WINDOW_MS`
+ * is dropped (strict `<` on the age).
+ */
+export function rendererGoneDecision(gone: RendererGone): { action: RendererGoneAction; reloadsMs: number[] } {
+	const recent = gone.reloadsMs.filter((at) => gone.nowMs - at < RENDERER_RELOAD_WINDOW_MS);
+	if (gone.reason === 'clean-exit' || gone.quitting) return { action: 'ignore', reloadsMs: recent };
+	if (recent.length >= RENDERER_RELOAD_LIMIT) return { action: 'give-up', reloadsMs: recent };
+	return { action: 'reload', reloadsMs: [...recent, gone.nowMs] };
+}
+
+/** Page to load after a crash: current URL if trusted, else last trusted, else bootstrap. */
+export function rendererReloadTarget(currentUrl: string, lastTrustedUrl: string | null): string {
+	if (isTrustedPage(currentUrl)) return currentUrl;
+	if (lastTrustedUrl !== null && isTrustedPage(lastTrustedUrl)) return lastTrustedUrl;
+	return `${APP_ORIGIN}/index.html`;
+}
+
 /** Chromium permissions granted to trusted pages; everything else is refused. */
 export const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set([
 	// Web MIDI: a stopgap until MIDI moves into the Rust audio engine (D9). No 'midiSysex':

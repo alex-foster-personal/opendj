@@ -1,3 +1,5 @@
+import { normalizeRating } from '$lib/rating';
+
 export const MIXED_READOUT = 'Multiple';
 
 export type FieldConsensus<T> = { kind: 'shared'; value: T } | { kind: 'mixed' };
@@ -47,7 +49,7 @@ export function bulkEditFieldValues(
 	const notes: string[] = [];
 	for (const id of stableIds) {
 		const row = rowById.get(id);
-		ratings.push(row?.rating ?? null);
+		ratings.push(normalizeRating(row?.rating ?? null));
 		notes.push(_normalizeNotes(row?.comments));
 	}
 

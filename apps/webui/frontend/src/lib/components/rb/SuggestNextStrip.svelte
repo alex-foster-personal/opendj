@@ -50,14 +50,13 @@
 	import { isUsbTrackId, withoutUsbTrackIds } from '$lib/rb/track-source';
 	import { visibleRationaleTags } from '$lib/rb/suggest-tags';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import { TOOLTIP_PACKED, tooltipTiming } from '$lib/ui/tooltip-timing';
 	import PeakPressureCoach from './PeakPressureCoach.svelte';
 
-	// Pin 946e04da2d0d: several of these chevrons sit edge to edge, so a fast
-	// pointer skim across the strip would otherwise flash a popover per tile.
-	// 50ms is enough to swallow a skim without being felt as lag on a
-	// deliberate hover (the existing keystroke-debounce convention in this
-	// codebase - see LOCAL_FILTER_DEBOUNCE_MS - runs the same 60-100ms band).
-	const CHEVRON_EXPLAIN_DELAY_MS = 50;
+	const CHEVRON_EXPLAIN_DELAY_MS = tooltipTiming({
+		delay: 50,
+		why: 'Several chevrons sit edge to edge; 50 ms swallows a pointer flyby without lag on a deliberate hover (pin 946e04da2d0d).'
+	});
 
 	interface SuggestionWire {
 		stable_id: string;
@@ -308,7 +307,7 @@
 					<ControlExplainer
 						title={chevronExplain.title}
 						bullets={chevronExplain.bullets}
-						showDelayMs={CHEVRON_EXPLAIN_DELAY_MS}
+						tooltip={CHEVRON_EXPLAIN_DELAY_MS}
 					>
 						<button
 							type="button"

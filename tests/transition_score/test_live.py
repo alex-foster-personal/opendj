@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from apps.autodj.contract import ValidationResult
+from apps.autodj.http import build_service
 from apps.autodj.pair_memory import PairTransition
-from apps.autodj.plan import Validation, parse_plan
+from apps.autodj.plan import parse_plan
+from apps.autodj.profile import trim_db_of_knob
 from apps.autodj.propose import propose_transition
 from apps.transition_score import SCORER_VERSION, Candidate, Measured
 from apps.transition_score import live as live_module
@@ -18,6 +23,9 @@ from apps.transition_score.tryer import TryError
 from tests.autodj.fixtures import profile
 
 OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
+_AUTODJ = build_service()
+plan_live = partial(plan_live, autodj=_AUTODJ)
+prepare_live = partial(prepare_live, autodj=_AUTODJ)
 
 
 class _Source:
@@ -62,7 +70,7 @@ def _scored(plan: Any, cid: str, score: float | None, *, vetoed: bool = False) -
 
     return Candidate(
         id=cid,
-        plan=plan.to_json(),
+        plan=plan.to_document(),
         plan_sha256=f"sha-{cid}",
         style=plan.style,
         bars=plan.bars,
@@ -213,17 +221,17 @@ def test_a_window_the_playhead_passed_is_never_picked(monkeypatch: pytest.Monkey
 def test_a_pick_that_fails_live_validation_is_dropped_for_the_next(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the chooser's first pick does not validate [then] the next is compiled and only picks are validated, [else stop]."""
     cache, _rendered = _prepared(monkeypatch)
-    real = live_module.validate_plan
+    real = _AUTODJ.validate_plan
     calls: list[str] = []
 
     def refuse_first(plan: Any, *args: Any, **kwargs: Any) -> Any:
         calls.append(plan.style)
         result = real(plan, *args, **kwargs)
         if len(calls) == 1:
-            result.errors.append("control: refused")
+            return ValidationResult(ok=False, errors=(*result.errors, "control: refused"))
         return result
 
-    monkeypatch.setattr(live_module, "validate_plan", refuse_first)
+    monkeypatch.setattr(_AUTODJ, "validate_plan", refuse_first)
     answer = plan_live(_request(), mirror=_mirror, source=_Source(), cache=cache)
     assert answer.order is not None and len(calls) == 2
 
@@ -328,7 +336,16 @@ def test_a_prepare_with_nothing_to_offer_is_not_ready(monkeypatch: pytest.Monkey
 
 def _saved(plan_document: dict[str, Any], times: int = 3) -> PairTransition:
     stamp = "2026-10-30T09:00:00+00:00"
-    return PairTransition("trk-out", "trk-in", plan_document, "planner", plan_document["style"], stamp, stamp, times)
+    return PairTransition(
+        "trk-out",
+        "trk-in",
+        json.dumps(plan_document, sort_keys=True, separators=(",", ":")),
+        "planner",
+        plan_document["style"],
+        stamp,
+        stamp,
+        times,
+    )
 
 
 def _saved_document(start: int = 97) -> dict[str, Any]:
@@ -373,11 +390,13 @@ def test_a_saved_plan_past_the_playhead_moves_to_the_next_phrase(monkeypatch: py
 def test_a_saved_plan_that_cannot_run_gives_way_to_the_chooser(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the saved plan fails live validation [then] the chooser decides, never an error, [else stop]."""
     _fail_on_render(monkeypatch)
-    real = live_module.validate_plan
+    real = _AUTODJ.validate_plan
     monkeypatch.setattr(
-        live_module,
+        _AUTODJ,
         "validate_plan",
-        lambda plan, *a, **k: Validation(errors=["control"]) if plan.bars == 7 else real(plan, *a, **k),
+        lambda plan, *a, **k: ValidationResult(ok=False, errors=("control",))
+        if plan.bars == 7
+        else real(plan, *a, **k),
     )
     document = _saved_document()
     document["out"]["window"]["bars"] = document["in"]["window"]["bars"] = 7
@@ -443,6 +462,56 @@ def test_a_cached_pick_takes_the_live_outgoing_trim(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.requirement("AGENT-31")
+@pytest.mark.requirement("MEMORY-03")
+def test_scored_candidate_plan_matches_live_trim_for_save_on_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the outgoing trim is lower at press than at prepare [then] candidate.plan.in.trim_db matches the compiled trim, [else stop]."""
+    loud = replace(IN, lufs=-8.0, lufs_reason=None)
+    source = _Source()
+    source.tracks[IN.stable_id] = loud
+    source.tracks[OUT.stable_id] = replace(OUT, lufs=-10.0, lufs_reason=None)
+    _patch_renders(monkeypatch)
+    cache = PlanCache()
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
+    cache.begin(key)
+    prepare_live(_request(), key, mirror=_mirror, source=source, cache=cache)
+    entry = cache.get(key)
+    assert entry is not None and entry.candidates
+
+    def turned_down() -> dict[str, Any]:
+        document = _mirror()
+        document["mixer"]["channels"]["1"]["trim"] = 0.25
+        return document
+
+    answer = plan_live(_request(), mirror=turned_down, source=source, cache=cache)
+    assert answer.order is not None and answer.candidate is not None
+    prepared = next(c for c in entry.candidates if c.id == answer.candidate.id)
+    prepared_in_trim = prepared.plan["in"]["trim_db"]
+    trim_cmds = [c for c in answer.order["plan"]["prepare"] if c["type"] == "trim"]
+    assert trim_cmds
+    played_db = trim_db_of_knob(trim_cmds[0]["value"])
+    plan_db = answer.candidate.plan["in"]["trim_db"]
+    assert plan_db is not None and played_db == pytest.approx(float(plan_db), abs=0.02)
+    assert prepared_in_trim is not None and float(prepared_in_trim) != pytest.approx(float(plan_db), abs=0.02)
+
+
+@pytest.mark.requirement("AGENT-31")
+@pytest.mark.requirement("MEMORY-03")
+def test_scored_candidate_plan_unchanged_when_trim_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the mirror trim matches prepare [then] candidate.plan equals the cache candidate's plan document, [else stop]."""
+    _patch_renders(monkeypatch)
+    cache = PlanCache()
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
+    cache.begin(key)
+    prepare_live(_request(), key, mirror=_mirror, source=_Source(), cache=cache)
+    entry = cache.get(key)
+    assert entry is not None and entry.candidates
+    answer = plan_live(_request(), mirror=_mirror, source=_Source(), cache=cache)
+    assert answer.candidate is not None
+    prepared = next(c for c in entry.candidates if c.id == answer.candidate.id)
+    assert answer.candidate.plan == prepared.plan
+
+
+@pytest.mark.requirement("AGENT-31")
 def test_live_trim_recomputes_match_with_auto_gain_on_the_mirror() -> None:
     """[if] auto_gain is on the mirror [then] _live_trim uses both decks' offsets, [else stop]."""
     out_p = replace(OUT, lufs=-6.0, lufs_reason=None)
@@ -454,10 +523,10 @@ def test_live_trim_recomputes_match_with_auto_gain_on_the_mirror() -> None:
         "1": {"state": "ready", "value": {"stable_id": "trk-out", "effective_offset_db": -6.0}},
         "2": {"state": "ready", "value": {"stable_id": "trk-in", "effective_offset_db": 0.0}},
     }
-    trimmed = live_module._live_trim(plan, out_p, in_p, mirror, 1, 2)
+    trimmed = live_module._live_trim(_AUTODJ, plan, out_p, in_p, mirror, 1, 2)
     assert trimmed.in_.trim_db == pytest.approx(0.0)
     del mirror["auto_gain"]
-    trimmed = live_module._live_trim(plan, out_p, in_p, mirror, 1, 2)
+    trimmed = live_module._live_trim(_AUTODJ, plan, out_p, in_p, mirror, 1, 2)
     assert trimmed.in_.trim_db == pytest.approx(6.0)
     assert "the live mirror carries no auto_gain" in (trimmed.in_.trim_reason or "")
 
@@ -471,7 +540,7 @@ def test_a_prepare_that_names_a_point_scores_that_window_first(monkeypatch: pyte
         scored.append(plans[0].out.start_bar)
         return []
 
-    monkeypatch.setattr(live_module, "renderable_plans", lambda group, *_args: (group, []))
+    monkeypatch.setattr(live_module, "renderable_plans", lambda group, *_args, **_kwargs: (group, []))
     monkeypatch.setattr(live_module, "try_plans", record)
     request = LiveRequest(1, 2, "smooth", (), OUT.time_of_bar(65) * 1000.0)
     key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)

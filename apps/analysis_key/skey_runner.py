@@ -91,6 +91,7 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -165,29 +166,141 @@ def _skey_label_to_rekordbox_style(label: str) -> str:
     raise ValueError(f"not a skey key_map label: {label!r}")
 
 
+@dataclass(frozen=True)
+class _SkeyModelParts:
+    """Loaded hcqt, chromanet, crop_fn and device (reduces analyze_one arity)."""
+
+    hcqt: Any
+    chromanet: Any
+    crop_fn: Any
+    device: torch.device
+
+
 # -----------------------------------------------------------------------------
-def analyze_one(path: str, hcqt, chromanet, crop_fn, sample_rate: int, device: torch.device) -> dict[str, Any]:
+def _window_bounds(
+    duration_s: float,
+    *,
+    window_s: float,
+    hop_s: float,
+) -> list[tuple[float, float]]:
+    """Half-open [start, end) windows; mirrors apps.analysis_key.skey_windows."""
+    if duration_s <= 0:
+        raise ValueError(f"duration_s must be positive, got {duration_s}")
+    if duration_s <= window_s:
+        return [(0.0, duration_s)]
+    bounds: list[tuple[float, float]] = []
+    start = 0.0
+    while start < duration_s:
+        end = min(start + window_s, duration_s)
+        bounds.append((start, end))
+        if end >= duration_s:
+            break
+        start += hop_s
+    return bounds
+
+
+def analyze_one(
+    path: str,
+    parts: _SkeyModelParts,
+    sample_rate: int,
+    *,
+    windows: bool = False,
+    window_s: float = 15.0,
+    hop_s: float = 1.875,
+) -> dict[str, Any]:
     from skey.key_detection import infer_key
 
+    device = parts.device
     started = time.time()
     waveform = load_audio(path, sample_rate).to(device)
-    label = infer_key(hcqt, chromanet, crop_fn, waveform, device)
+    label = infer_key(parts.hcqt, parts.chromanet, parts.crop_fn, waveform, device)
     elapsed_s = round(time.time() - started, 3)
+    base: dict[str, Any]
     if label == "error":
-        return {
+        base = {
             "audio": path,
             "label": None,
             "key_rekordbox_style": None,
             "inference_s": elapsed_s,
             "error": "skey infer_key returned its own 'error' sentinel (likely audio too short)",
         }
-    return {
-        "audio": path,
-        "label": label,
-        "key_rekordbox_style": _skey_label_to_rekordbox_style(label),
-        "inference_s": elapsed_s,
-        "error": None,
-    }
+    else:
+        base = {
+            "audio": path,
+            "label": label,
+            "key_rekordbox_style": _skey_label_to_rekordbox_style(label),
+            "inference_s": elapsed_s,
+            "error": None,
+        }
+    if not windows:
+        return base
+
+    n_samples = waveform.shape[-1]
+    duration_s = float(n_samples) / float(sample_rate)
+    window_rows: list[dict[str, Any]] = []
+    for start_s, end_s in _window_bounds(duration_s, window_s=window_s, hop_s=hop_s):
+        start_idx = round(start_s * sample_rate)
+        end_idx = round(end_s * sample_rate)
+        if end_idx <= start_idx:
+            end_idx = min(n_samples, start_idx + 1)
+        chunk = waveform[..., start_idx:end_idx]
+        w_started = time.time()
+        try:
+            w_label = infer_key(
+                parts.hcqt, parts.chromanet, parts.crop_fn, chunk, device
+            )
+        except Exception as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"[:300]
+            window_rows.append(
+                {
+                    "start_s": start_s,
+                    "end_s": end_s,
+                    "label": None,
+                    "key_rekordbox_style": None,
+                    "error": err,
+                    "inference_s": round(time.time() - w_started, 3),
+                }
+            )
+            continue
+        w_elapsed = round(time.time() - w_started, 3)
+        if w_label == "error":
+            window_rows.append(
+                {
+                    "start_s": start_s,
+                    "end_s": end_s,
+                    "label": None,
+                    "key_rekordbox_style": None,
+                    "error": "skey infer_key returned its own 'error' sentinel (likely window too short)",
+                    "inference_s": w_elapsed,
+                }
+            )
+        else:
+            try:
+                rb = _skey_label_to_rekordbox_style(w_label)
+            except ValueError as exc:
+                window_rows.append(
+                    {
+                        "start_s": start_s,
+                        "end_s": end_s,
+                        "label": w_label,
+                        "key_rekordbox_style": None,
+                        "error": str(exc)[:300],
+                        "inference_s": w_elapsed,
+                    }
+                )
+            else:
+                window_rows.append(
+                    {
+                        "start_s": start_s,
+                        "end_s": end_s,
+                        "label": w_label,
+                        "key_rekordbox_style": rb,
+                        "error": None,
+                        "inference_s": w_elapsed,
+                    }
+                )
+    base["windows"] = window_rows
+    return base
 
 
 # -----------------------------------------------------------------------------
@@ -243,6 +356,13 @@ def main() -> int:
     ap.add_argument("--device", default="auto", choices=["auto", "cpu", "mps", "cuda"])
     ap.add_argument("--checkpoint", default=str(DEFAULT_CHECKPOINT_PATH))
     ap.add_argument("--skip-onnx-export", action="store_true", help="skip the (slow) export attempts")
+    ap.add_argument(
+        "--windows",
+        action="store_true",
+        help="emit per-window keys (bench candidate; same schedule as skey_windows)",
+    )
+    ap.add_argument("--window-s", type=float, default=15.0)
+    ap.add_argument("--hop-s", type=float, default=1.875)
     args = ap.parse_args()
 
     device_name = resolve_device(args.device)
@@ -263,7 +383,15 @@ def main() -> int:
     results: dict[str, Any] = {}
     for path in args.audio:
         try:
-            results[path] = analyze_one(path, hcqt, chromanet, crop_fn, sample_rate, device)
+            parts = _SkeyModelParts(hcqt, chromanet, crop_fn, device)
+            results[path] = analyze_one(
+                path,
+                parts,
+                sample_rate,
+                windows=args.windows,
+                window_s=args.window_s,
+                hop_s=args.hop_s,
+            )
         except Exception as exc:  # noqa: BLE001 - a per-track failure is a result, not an abort
             error = f"{type(exc).__name__}: {exc}"[:300]
             results[path] = {
@@ -300,6 +428,8 @@ def main() -> int:
         "onnx_export": onnx_export,
         "n_tracks": len(args.audio),
         "n_failed": sum(1 for r in results.values() if r.get("error")),
+        "window_s": args.window_s if args.windows else None,
+        "hop_s": args.hop_s if args.windows else None,
         "results": results,
     }
     with open(args.out, "w", encoding="utf-8") as fh:

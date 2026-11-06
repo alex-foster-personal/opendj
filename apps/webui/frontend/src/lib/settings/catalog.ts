@@ -19,6 +19,7 @@ import { AUTO_GAIN_ENABLED_SETTING, AUTO_GAIN_TARGET_SETTING } from './auto-gain
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
+import { WAVE_EQ_REFLECT_SETTING } from './wave-eq-reflect-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
@@ -397,6 +398,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	WAVE_PALETTE_SETTING,
+	WAVE_EQ_REFLECT_SETTING,
 	UI_SKIN_SETTING,
 	WAVE_SPLIT_MASTER_SETTING,
 	...WAVE_ZOOM_SETTINGS,

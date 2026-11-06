@@ -15,7 +15,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -644,6 +643,29 @@ def _hold_pending_wal(store: Path) -> sqlite3.Connection:
     return writer
 
 
+def _commit_truncated_row_after_first_fingerprint(
+    monkeypatch: pytest.MonkeyPatch, store: Path, writer: sqlite3.Connection
+) -> None:
+    """Commit+TRUNCATE after the opening digest, before the snapshot reader is held.
+
+    A live TRUNCATE writer cannot overlap an open snapshot reader on Linux, so
+    the write is injected after the opening hash rather than raced from a thread.
+    """
+    seen = {"n": 0}
+    original = backfill._quiescent_store_state
+
+    def once(path: Path) -> str:
+        digest = original(path)
+        seen["n"] += 1
+        if seen["n"] == 1 and path == store:
+            writer.execute("INSERT INTO ZSONG (ZNAME) VALUES ('live-write')")
+            writer.commit()
+            writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return digest
+
+    monkeypatch.setattr(backfill, "_quiescent_store_state", once)
+
+
 def test_a_store_with_unmerged_wal_changes_is_refused(lib: Lib, staged_batch) -> None:
     """if collect reads a store whose -wal holds changes the main file's fingerprint never saw then broken."""
     batch, store = staged_batch
@@ -720,39 +742,22 @@ def test_a_store_written_during_its_snapshot_is_refused(lib: Lib, staged_batch) 
         writer.close()
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux"),
-    reason="quarantined on Linux (tech-debt #7695): the snapshot change check never trips there while a writer"
-    " checkpoints with TRUNCATE after each commit, even given 60 s; cause not yet known",
-)
-def test_copy_store_first_refuses_a_snapshot_raced_by_a_live_writer(lib: Lib, staged_batch) -> None:
+def test_copy_store_first_refuses_a_snapshot_raced_by_a_live_writer(
+    lib: Lib, staged_batch, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """if collect snapshots a store a live writer commits to mid-backup and loads it anyway then broken."""
     _batch, store = staged_batch
-    stop = threading.Event()
-
-    def keep_committing() -> None:
-        writer = sqlite3.connect(store)
-        writer.execute("PRAGMA journal_mode=WAL")
-        while not stop.is_set():
-            writer.execute("INSERT INTO ZSONG (ZNAME) VALUES ('live-write')")
-            writer.commit()
-            writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # keep the -wal empty so only the recheck can see it
-        writer.close()
-
-    thread = threading.Thread(target=keep_committing)
-    thread.start()
-    refused, deadline = False, time.monotonic() + 10
+    writer = _hold_pending_wal(store)
     try:
-        while not refused and time.monotonic() < deadline:
-            try:
-                with backfill._store_to_read(store, copy_first=True) as readable:
-                    backfill.read_store(readable)  # as collect does: the recheck brackets the read
-            except backfill.BackfillError as error:
-                refused = "changed while it was being snapshotted" in str(error)
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # MIK open and idle: the opening WAL check passes
+        _commit_truncated_row_after_first_fingerprint(monkeypatch, store, writer)
+        with (
+            pytest.raises(backfill.BackfillError, match="changed while it was being snapshotted"),
+            backfill._store_to_read(store, copy_first=True) as readable,
+        ):
+            backfill.read_store(readable)
     finally:
-        stop.set()
-        thread.join()
-    assert refused, "no snapshot was refused in 10 s of concurrent commits"
+        writer.close()
 
 
 def test_a_live_collect_closes_the_sources_it_delivered(lib: Lib, make_mik_store, write_verdicts) -> None:
@@ -837,39 +842,22 @@ def test_a_plan_whose_still_valid_check_fails_under_the_lock_writes_nothing(lib:
     assert not accepted.stale_plan and accepted.fields_written == 1  # control: a passing check writes
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux"),
-    reason="quarantined on Linux (tech-debt #7695): the snapshot change check never trips there while a writer"
-    " checkpoints with TRUNCATE after each commit, even given 60 s; cause not yet known",
-)
-def test_a_direct_read_refuses_a_store_written_while_it_was_read(lib: Lib, staged_batch) -> None:
+def test_a_direct_read_refuses_a_store_written_while_it_was_read(
+    lib: Lib, staged_batch, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """if a direct (non-snapshot) read of a store a live writer commits to mid-read is accepted then broken."""
     _batch, store = staged_batch
-    stop = threading.Event()
-
-    def keep_committing() -> None:
-        writer = sqlite3.connect(store)
-        writer.execute("PRAGMA journal_mode=WAL")
-        while not stop.is_set():
-            writer.execute("INSERT INTO ZSONG (ZNAME) VALUES ('live-write')")
-            writer.commit()
-            writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # keep the -wal empty so only the recheck can see it
-        writer.close()
-
-    thread = threading.Thread(target=keep_committing)
-    thread.start()
-    refused, deadline = False, time.monotonic() + 10
+    writer = _hold_pending_wal(store)
     try:
-        while not refused and time.monotonic() < deadline:
-            try:
-                with backfill._store_to_read(store, copy_first=False) as readable:
-                    backfill.read_store(readable)
-            except backfill.BackfillError as error:
-                refused = "changed while" in str(error)
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # MIK open and idle: the opening WAL check passes
+        _commit_truncated_row_after_first_fingerprint(monkeypatch, store, writer)
+        with (
+            pytest.raises(backfill.BackfillError, match="changed while"),
+            backfill._store_to_read(store, copy_first=False) as readable,
+        ):
+            backfill.read_store(readable)
     finally:
-        stop.set()
-        thread.join()
-    assert refused, "no direct read was refused in 10 s of concurrent commits"
+        writer.close()
 
 
 def test_collect_refuses_sharing_to_a_row_deleted_between_planning_and_the_lock(

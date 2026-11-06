@@ -248,6 +248,14 @@ function pointer(type, target, relatedTarget = null) {
 	target.dispatchEvent({ type, relatedTarget, target });
 }
 
+function focus(type, target, relatedTarget = null) {
+	target.dispatchEvent({ type, relatedTarget, target });
+}
+
+async function waitPackedDelay() {
+	await new Promise((r) => setTimeout(r, 55));
+}
+
 function tip() {
 	return doc.body.children.find((c) => c.getAttribute('role') === 'tooltip' && c.hidden !== true);
 }
@@ -257,7 +265,7 @@ test('hovering help text shows our tooltip and parks title, then restores it', a
 	button.setAttribute('title', 'Beat grid: 128.0 from the file');
 	doc.body.appendChild(button);
 	pointer('pointerover', button);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(button.hasAttribute('title'), false);
 	assert.equal(button.getAttribute('data-tip'), 'Beat grid: 128.0 from the file');
 	assert.equal(button.hasAttribute('data-tip-parked'), true);
@@ -280,7 +288,7 @@ test('[if] a readout title changes under the pointer [then] leave keeps the new 
 	button.setAttribute('title', 'Grid adjust. Now: 0 ms');
 	doc.body.appendChild(button);
 	pointer('pointerover', button);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(button.getAttribute('data-tip'), 'Grid adjust. Now: 0 ms');
 	button.setAttribute('title', 'Grid adjust. Now: +30 ms');
 	pointer('pointerout', button, doc.body);
@@ -319,7 +327,7 @@ test('the rust-inert title observer does not restore title or loop during the pa
 	});
 	guard.observe(button, { attributes: true, attributeFilter: ['title'] });
 	pointer('pointerover', button);
-	await Promise.resolve();
+	await waitPackedDelay();
 	await Promise.resolve();
 	assert.equal(button.hasAttribute('title'), false, 'parked title stays off while our tooltip is up');
 	assert.equal(button.getAttribute('data-tip'), rust.RUST_INERT_TITLE);
@@ -354,7 +362,7 @@ test('a titled button inside a hover-card host shows no second box (AutoPlay sha
 	const wrap = build('span', { 'data-custom-tip': '' });
 	const button = build('button', { title: 'AutoPlay OFF - No automatic next-track handoff.' }, wrap);
 	pointer('pointerover', button);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(visibleTip(), undefined, 'the card is the one explainer');
 	assert.equal(button.hasAttribute('title'), false, 'native tooltip parked too');
 	pointer('pointerout', button, doc.body);
@@ -367,7 +375,7 @@ test('a titled ANCESTOR of a hover-card host shows no second box (compatible-fil
 	const host = build('div', { 'data-custom-tip': '' }, label);
 	const input = build('input', {}, host);
 	pointer('pointerover', input);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(visibleTip(), undefined);
 	assert.equal(label.hasAttribute('title'), false);
 	pointer('pointerout', input, doc.body);
@@ -381,7 +389,7 @@ test('a titled sub-control inside the card body keeps its own box (it is another
 	const card = build('div', { 'data-hover-card': '' }, wrap);
 	const row = build('button', { title: 'Two-track AutoPlay - planned' }, card);
 	pointer('pointerover', row);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(visibleTip()?.textContent, 'Two-track AutoPlay - planned');
 	pointer('pointerout', row, doc.body);
 	await Promise.resolve();
@@ -418,7 +426,7 @@ test('nested titles: no element in the hovered chain keeps a live title, all res
 	const plain = build('span', {}, stems);
 	const chip = build('button', { title: 'VOCAL: no stem bundle' }, plain);
 	pointer('pointerover', chip);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.deepEqual(liveTitlesInChain(chip), [], 'no native tooltip can draw from any ancestor');
 	assert.equal(visibleTip()?.textContent, 'VOCAL: no stem bundle', 'the hovered chip owns the one tip');
 	assert.equal(stems.getAttribute('aria-describedby'), null, 'ancestors are not described by the tip');
@@ -439,10 +447,10 @@ test('nested titles: moving from the chip onto its titled row hands the tip to t
 	const stems = build('div', { title: 'Stems row help' });
 	const chip = build('button', { title: 'Chip help' }, stems);
 	pointer('pointerover', chip);
-	await Promise.resolve();
+	await waitPackedDelay();
 	pointer('pointerout', chip, stems);
 	pointer('pointerover', stems);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(visibleTip()?.textContent, 'Stems row help');
 	assert.equal(chip.getAttribute('title'), 'Chip help', 'the chip is restored once the pointer leaves it');
 	assert.equal(stems.hasAttribute('title'), false);
@@ -456,7 +464,7 @@ test('single title under untitled ancestors: only the host is parked, as before'
 	const outer = build('div');
 	const button = build('button', { title: 'Loop length' }, outer);
 	pointer('pointerover', button);
-	await Promise.resolve();
+	await waitPackedDelay();
 	assert.equal(button.hasAttribute('title'), false);
 	assert.equal(outer.hasAttribute('data-tip-parked'), false);
 	assert.equal(outer.hasAttribute('data-tip'), false);
@@ -465,4 +473,31 @@ test('single title under untitled ancestors: only the host is parked, as before'
 	await Promise.resolve();
 	assert.equal(button.getAttribute('title'), 'Loop length');
 	outer.remove();
+});
+
+test('focusin on a titled host parks title and shows the tip after the packed delay', async () => {
+	const button = doc.createElement('button');
+	button.setAttribute('title', 'Keyboard help');
+	doc.body.appendChild(button);
+	focus('focusin', button);
+	await waitPackedDelay();
+	assert.equal(button.hasAttribute('title'), false);
+	assert.equal(tip()?.textContent, 'Keyboard help');
+	focus('focusout', button, doc.body);
+	await Promise.resolve();
+	assert.equal(button.getAttribute('title'), 'Keyboard help');
+	button.remove();
+});
+
+test('pointer flyby before the packed delay ends shows no tip', async () => {
+	const button = doc.createElement('button');
+	button.setAttribute('title', 'Flyby');
+	doc.body.appendChild(button);
+	pointer('pointerover', button);
+	await Promise.resolve();
+	pointer('pointerout', button, doc.body);
+	await waitPackedDelay();
+	assert.equal(tip(), undefined);
+	assert.equal(button.getAttribute('title'), 'Flyby');
+	button.remove();
 });

@@ -8,7 +8,8 @@
 
 ``out_deck`` and ``in_deck`` ask for the saved plan moved onto the decks the pair is loaded on now.
 ``POST /played`` is save-on-run: the executor sends the plan that just completed and it becomes the pair's default, or
-sends no plan when the saved one replayed. A document that is not a plan is a 422 ``plan_invalid``.
+sends no plan when the saved one replayed. Source or style without a plan is a 422 ``plan_invalid``.
+A document that is not a plan is a 422 ``plan_invalid``.
 """
 
 from __future__ import annotations
@@ -23,16 +24,16 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.autodj.pair_memory import (
+from apps.autodj.http import (
     PairNotFound,
     PairTransition,
+    PlanError,
     clear_pair_transition,
     get_pair_transition,
     on_decks,
     record_played,
     save_pair_transition,
 )
-from apps.autodj.plan import PlanError
 from apps.shared.state import db as state_db
 
 from .. import pair_capture

@@ -49,12 +49,16 @@ blocked half.  ``(private path)`` iterates it, so:
   ------------------------------------------- -------------------------------
   http.playlists.writeback.apply              live master.db playlist members
   http.playlists.writeback.rollback           live master.db  [UNGATED]
+  http.rekordbox.analyse.apply                live master.db new tracks plus
+                                              the ANALYSE-ME playlist
   http.relocate.apply                         live master.db djmdContent.FolderPath
   http.usb-export.apply                       USB volume exportLibrary.db
   module.relocate.write_folder_path           live master.db FolderPath patch
   module.playlist_writeback.service_apply     live master.db (service layer)
   module.playlist_writeback.service_rollback  live master.db  [UNGATED]
   module.smartlists.rb_writer                 live master.db playlists
+  module.rekordbox_analyse.apply              live master.db new tracks plus
+                                              the ANALYSE-ME playlist
   module.sync.rb_writer.write_cues            live master.db djmdCue, on an
                                               INJECTED db handle (no path)
   module.sync.apply_ratings                   live master.db ratings
@@ -199,6 +203,13 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         guard_site="apps/webui/server/routes/playlist_writeback.py",
     ),
     WriteSurface(
+        surface_id="http.rekordbox.analyse.apply",
+        kind="http",
+        entrypoint="POST /api/v1/rekordbox/analyse/apply",
+        target="live master.db new tracks plus ANALYSE-ME and Viva playlist members",
+        guard_site="apps/rekordbox_analyse/http.py",
+    ),
+    WriteSurface(
         surface_id="http.playlists.writeback.rollback",
         kind="http",
         entrypoint="POST /api/v1/playlists/{playlist_id}/writeback/rollback",
@@ -282,6 +293,13 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         entrypoint="apps.smartlists.rb_writer.RBPlaylistWriter._assert_safe_to_write",
         target="live master.db playlists (create / diff / apply)",
         guard_site="apps/smartlists/rb_writer.py",
+    ),
+    WriteSurface(
+        surface_id="module.rekordbox_analyse.apply",
+        kind="module",
+        entrypoint="apps.rekordbox_analyse.writer.apply_plan",
+        target="live master.db djmdContent rows plus ANALYSE-ME and Viva playlist members",
+        guard_site="apps/rekordbox_analyse/writer.py",
     ),
     WriteSurface(
         surface_id="module.rekordbox_ingestion.create_blank_playlists",

@@ -24,209 +24,39 @@ import bisect
 import math
 import statistics
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from itertools import pairwise
 from typing import Any
 
+from apps.autodj.contract.models import VOCAL_BAR_THRESHOLD, HotCue, KeySegment, ProfileError, Section, TrackProfile
 from apps.autodj.sections import UNKNOWN, phrase_label
 from apps.shared.harmonic import key_to_camelot
 
-#: Vocal coverage of a bar above which the bar counts as "has vocals".
-VOCAL_BAR_THRESHOLD = 0.25
 
+def heard_profile(
+    profile: TrackProfile,
+    *,
+    key_shift: int = 0,
+    heard_bpm: float | None = None,
+    pitch_range_pct: float | None = None,
+) -> TrackProfile:
+    """Return ``profile`` as a deck plays it without putting harmonic policy in the contract."""
+    if key_shift == 0 and heard_bpm is None and pitch_range_pct is None:
+        return profile
+    from apps.shared.harmonic import shift_camelot
 
-class ProfileError(ValueError):
-    """The documents cannot describe a mixable track (no grid, no length)."""
+    def shifted(key: Any) -> Any:
+        return shift_camelot(key, key_shift) if isinstance(key, str) and key else key
 
-
-@dataclass(frozen=True)
-class Section:
-    """One labelled phrase, on bars."""
-
-    index: int
-    label: str
-    raw: str
-    start_bar: int
-    bars: int
-    start_s: float
-    end_s: float
-    energy: float | None
-    bass: float | None
-    vocal_bars: int | None
-
-    @property
-    def end_bar(self) -> int:
-        """The first bar AFTER this section."""
-        return self.start_bar + self.bars
-
-    def summary(self) -> dict[str, Any]:
-        return {
-            "label": self.label,
-            "raw": self.raw,
-            "start_bar": self.start_bar,
-            "bars": self.bars,
-            "energy": _round(self.energy),
-            "bass": _round(self.bass),
-            "vocal_bars": self.vocal_bars,
-        }
-
-
-@dataclass(frozen=True)
-class TrackProfile:
-    """Compact musical facts about one track (``get_track_profile``)."""
-
-    stable_id: str
-    title: str | None
-    artist: str | None
-    bpm: float | None
-    key: str | None
-    duration_s: float
-    downbeats_s: tuple[float, ...]
-    grid_trusted: bool
-    grid_note: str | None
-    sections: tuple[Section, ...]
-    sections_source: str
-    bar_energy: tuple[float, ...] | None
-    bar_bass: tuple[float, ...] | None
-    bar_vocals: tuple[float, ...] | None
-    vocals_status: str
-    key_segments: tuple[dict[str, Any], ...] = ()
-    hot_cues: tuple[dict[str, Any], ...] = ()
-    stems_available: bool | None = None
-    notes: tuple[str, ...] = field(default_factory=tuple)
-    #: AGENT-31: integrated loudness (``apps/loudness`` scan, the ``loudness_lufs`` lane), or None with ``lufs_reason``.
-    lufs: float | None = None
-    lufs_reason: str | None = None
-    #: AGENT-51: the bar the user's transition-in cue sits on (Traktor Fade In,
-    #: Mixxx intro start), or None when the track has none. ``mix_windows``
-    #: makes it THE in window when present.
-    transition_in_bar: int | None = None
-    #: AUTOPLAY-HEARD: the tempo a deck plays this track at (its BPM times the deck's pitch), when it is on one; None
-    #: means its own BPM. Only the pair judgement reads it: the bar clock stays on ``bpm``.
-    heard_bpm: float | None = None
-    #: AUTOPLAY-REACH: the +-percent pitch range of the deck this track plays on (the engine's real Beat Sync bound,
-    #: ``tempoBoundsFromPitchRange``); None when no deck reports one, and the planner keeps its 6% default.
-    deck_pitch_range_pct: float | None = None
-
-    @property
-    def judged_bpm(self) -> float | None:
-        """The tempo the pair is judged at: the heard tempo when a deck reports one, else the track's own."""
-        return self.heard_bpm if self.heard_bpm is not None else self.bpm
-
-    def as_heard(
-        self, *, key_shift: int = 0, heard_bpm: float | None = None, pitch_range_pct: float | None = None
-    ) -> TrackProfile:
-        """AUTOPLAY-HEARD: this profile as a deck plays it: keys shifted by ``key_shift`` semitones, ``heard_bpm`` set,
-        and (AUTOPLAY-REACH) the deck's pitch range as its Beat Sync reach."""
-        if key_shift == 0 and heard_bpm is None and pitch_range_pct is None:
-            return self
-        from apps.shared.harmonic import shift_camelot
-
-        def shifted(key: Any) -> Any:
-            return shift_camelot(key, key_shift) if isinstance(key, str) and key else key
-
-        segments = tuple({**segment, "key": shifted(segment.get("key"))} for segment in self.key_segments)
-        return replace(
-            self,
-            key=shifted(self.key),
-            key_segments=segments,
-            heard_bpm=heard_bpm,
-            deck_pitch_range_pct=pitch_range_pct,
-        )
-
-    # ----- bar arithmetic -------------------------------------------------
-    @property
-    def bars(self) -> int:
-        """How many whole bars the grid holds."""
-        return len(self.downbeats_s)
-
-    @property
-    def bar_s(self) -> float:
-        """Nominal seconds per bar (4 beats at the track's BPM)."""
-        if self.bpm is not None and self.bpm > 0:
-            return 240.0 / self.bpm
-        if len(self.downbeats_s) >= 2:
-            return statistics.median(b - a for a, b in zip(self.downbeats_s, self.downbeats_s[1:], strict=False))
-        raise ProfileError(f"{self.stable_id}: no tempo to size a bar")
-
-    def time_of_bar(self, bar: float) -> float:
-        """Track seconds at a 1-based, possibly fractional, bar."""
-        if not self.downbeats_s:
-            raise ProfileError(f"{self.stable_id}: no downbeats")
-        index = bar - 1.0
-        whole = int(index // 1)
-        frac = index - whole
-        if whole < 0:
-            return self.downbeats_s[0] + index * self.bar_s
-        if whole >= len(self.downbeats_s) - 1:
-            last = len(self.downbeats_s) - 1
-            return self.downbeats_s[last] + (index - last) * self.bar_s
-        start = self.downbeats_s[whole]
-        return start + frac * (self.downbeats_s[whole + 1] - start)
-
-    def bar_at(self, seconds: float) -> float:
-        """1-based fractional bar at a track time (inverse of :meth:`time_of_bar`)."""
-        if not self.downbeats_s:
-            raise ProfileError(f"{self.stable_id}: no downbeats")
-        first = self.downbeats_s[0]
-        if seconds < first:
-            return 1.0 + (seconds - first) / self.bar_s
-        index = bisect.bisect_right(self.downbeats_s, seconds) - 1
-        if index >= len(self.downbeats_s) - 1:
-            last = len(self.downbeats_s) - 1
-            return 1.0 + last + (seconds - self.downbeats_s[last]) / self.bar_s
-        start, end = self.downbeats_s[index], self.downbeats_s[index + 1]
-        return 1.0 + index + (seconds - start) / (end - start)
-
-    def section_at(self, bar: float) -> Section | None:
-        for section in self.sections:
-            if section.start_bar <= bar < section.end_bar:
-                return section
-        return None
-
-    def vocal_bars_between(self, start_bar: int, bars: int) -> int | None:
-        """Bars in ``[start_bar, start_bar + bars)`` that carry vocals."""
-        if self.bar_vocals is None:
-            return None
-        lo = max(0, start_bar - 1)
-        hi = min(len(self.bar_vocals), start_bar - 1 + bars)
-        return sum(1 for value in self.bar_vocals[lo:hi] if value >= VOCAL_BAR_THRESHOLD)
-
-    def mean_between(self, series: tuple[float, ...] | None, start_bar: int, bars: int) -> float | None:
-        if series is None:
-            return None
-        lo = max(0, start_bar - 1)
-        hi = min(len(series), start_bar - 1 + bars)
-        if hi <= lo:
-            return None
-        return sum(series[lo:hi]) / (hi - lo)
-
-    def summary(self) -> dict[str, Any]:
-        """The compact JSON an agent reads; never a full beatgrid or waveform."""
-        return {
-            "stable_id": self.stable_id,
-            "title": self.title,
-            "artist": self.artist,
-            "bpm": self.bpm,
-            "key": self.key,
-            "duration_s": round(self.duration_s, 2),
-            "bars": self.bars,
-            "grid_trusted": self.grid_trusted,
-            "grid_note": self.grid_note,
-            "sections_source": self.sections_source,
-            "sections": [section.summary() for section in self.sections],
-            "vocals_status": self.vocals_status,
-            "key_segments": list(self.key_segments),
-            "hot_cues": list(self.hot_cues),
-            "stems_available": self.stems_available,
-            "loudness": {"lufs": self.lufs, "reason": self.lufs_reason},
-            "transition_in_bar": self.transition_in_bar,
-            "notes": list(self.notes),
-        }
-
-
-def _round(value: float | None, places: int = 2) -> float | None:
-    return None if value is None else round(value, places)
+    segments = tuple(replace(segment, key=shifted(segment.key)) for segment in profile.key_segments)
+    return replace(
+        profile,
+        key=shifted(profile.key),
+        key_segments=segments,
+        heard_bpm=heard_bpm,
+        deck_pitch_range_pct=pitch_range_pct,
+        heard_key_shift=key_shift,
+    )
 
 
 def _camelot(raw: object) -> str | None:
@@ -377,9 +207,9 @@ def _sections(
     return tuple(rows)
 
 
-def _hot_cues(cues: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+def _hot_cues(cues: Sequence[Mapping[str, Any]]) -> tuple[HotCue, ...]:
     return tuple(
-        {"slot": cue.get("slot"), "in_ms": cue.get("in_ms"), "comment": cue.get("comment")}
+        HotCue(slot=cue.get("slot"), in_ms=cue.get("in_ms"), comment=cue.get("comment"))
         for cue in cues
         if cue.get("kind") == "hot_cue"
     )
@@ -425,7 +255,9 @@ def _key_segments(anlz: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
     # inclusive, so a segment [s, e) covers profile bars s+1 through e.
     return tuple(
         {
-            "start_bar": segment["start_bar"] + 1 if _is_bar(segment.get("start_bar")) else segment.get("start_bar"),
+            "start_bar": segment["start_bar"] + 1
+            if _is_bar(segment.get("start_bar"))
+            else segment.get("start_bar"),
             "end_bar": segment.get("end_bar"),
             "key": segment.get("key_camelot"),
             "confidence": segment.get("confidence"),
@@ -542,7 +374,7 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         bar_bass=bass,
         bar_vocals=vocal_series,
         vocals_status=vocals_status,
-        key_segments=_key_segments(anlz),
+        key_segments=tuple(KeySegment(**segment) for segment in _key_segments(anlz)),
         hot_cues=_hot_cues(_records(anlz.get("cues"))),
         transition_in_bar=_transition_in_bar(stable_id, _records(anlz.get("cues")), downbeats),
         stems_available=stems if isinstance(stems, bool) else None,

@@ -11,7 +11,7 @@ from typing import Any
 
 from apps.analysis_bench.scorers.key_lane import weighted_score
 from apps.analysis_key import canon
-from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n, mean_of
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_score_id_fields, lane_scored_n, mean_of
 from apps.parity.lanes import DENOMINATOR_NAME
 
 _SENTINEL_SCALE_NAMES = frozenset({"All", "all", ""})
@@ -88,9 +88,11 @@ def score_key(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
         mirex_mean=mirex_mean,
         failed_own_n=len(failed_ids),
         no_own_n=len(no_own_ids),
-        agree_ids=tuple(agree_ids),
-        disagree_ids=tuple(disagree_ids),
-        no_own_ids=tuple(no_own_ids),
-        ungradable_ids=tuple(ungradable_ids),
+        **lane_score_id_fields(
+            agree_ids=agree_ids,
+            disagree_ids=disagree_ids,
+            no_own_ids=no_own_ids,
+            ungradable_ids=ungradable_ids,
+        ),
         ungradable={"missing_rb_key": len(ungradable_ids)},
     )

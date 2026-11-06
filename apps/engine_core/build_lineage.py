@@ -45,8 +45,10 @@ Acceptance tests (tests/engine_core/test_build_lineage.py):
 
 from __future__ import annotations
 
+import functools
 import json
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -143,8 +145,16 @@ def lineage_color(config: LineageConfig, shares: dict[str, float]) -> tuple[str,
 
 
 # ----- git ------------------------------------------------------------------
+@functools.cache
+def _git_executable() -> str:
+    git = shutil.which("git")
+    if git is None:
+        raise LineageError("git is not on PATH, so lineage cannot be stated")
+    return git
+
+
 def _git(repo_root: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, check=False)
+    result = subprocess.run([_git_executable(), *args], cwd=repo_root, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise LineageError(f"git {' '.join(args)} failed in {repo_root}: {result.stderr.strip() or result.returncode}")
     return result.stdout.strip()
@@ -156,7 +166,7 @@ def _count(repo_root: Path, *revs: str) -> int:
 
 def _resolve(repo_root: Path, ref: str) -> str | None:
     result = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        [_git_executable(), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
         cwd=repo_root, capture_output=True, text=True, check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else None

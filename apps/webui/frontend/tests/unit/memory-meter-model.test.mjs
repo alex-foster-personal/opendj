@@ -180,6 +180,30 @@ const ENGINE_SIDE = [
 	{ label: 'unnamed', mb: 42, role: null }
 ];
 
+test('ten members of 0.4 MB each total 4 MB after the family sum', () => {
+	const processes = Array.from({ length: 10 }, (_, i) => ({
+		label: i === 0 ? 'opendj-webcontent' : `opendj-sidecar-${i}`,
+		mb: 0.4,
+		role: i === 0 ? 'webkit-webcontent' : null
+	}));
+	const out = model.memoryReadout({ ...PCM_ONLY, pcmMB: 0, processes });
+	assert.equal(out.totalMB, 4, 'if members are rounded before the sum, this is 0');
+	assert.equal(out.text, '4M');
+	assert.equal(out.processesMB, 4);
+});
+
+test('a single 12.6 MB member displays as 13 MB and the hover keeps tenths', () => {
+	const out = model.memoryReadout({
+		...PCM_ONLY,
+		pcmMB: 0,
+		processes: [{ label: 'opendj-webcontent', mb: 12.6, role: 'webkit-webcontent' }]
+	});
+	assert.equal(out.totalMB, 13);
+	assert.equal(out.text, '13M');
+	assert.equal(out.processesMB, 13);
+	assert.match(out.hover, /12\.6 MB/);
+});
+
 test('the figure adds the engine and sidecar processes to the page', () => {
 	const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes: ENGINE_SIDE });
 	assert.equal(out.pageMB, 268 + 485);
@@ -204,7 +228,7 @@ test('a measured page process replaces the page estimate instead of adding to it
 		{ label: 'opendj-engine', mb: 600, role: null },
 		{ label: 'opendj-webcontent', mb: 900, role: 'webkit-webcontent' }
 	];
-	const out = model.memoryReadout({ ...PCM_ONLY, processes: desktop });
+	const out = model.memoryReadout({ ...PCM_ONLY, processes: desktop, shellKind: 'tauri' });
 	assert.equal(out.totalMB, 1500, 'the WebContent footprint already holds the heap and PCM');
 	assert.equal(out.text, '1500M', 'a measured page process is not missing its heap term');
 	assert.match(out.hover, /this page measured in its own process/);
@@ -235,7 +259,12 @@ test('under Electron the renderer in the family holds the page, so the page term
 		{ label: 'opendj-engine', mb: 600, role: null },
 		{ label: 'unnamed', mb: 700, role: 'electron-renderer' }
 	];
-	const out = model.memoryReadout({ ...PCM_ONLY, jsHeapMB: 268, processes: electron });
+	const out = model.memoryReadout({
+		...PCM_ONLY,
+		jsHeapMB: 268,
+		processes: electron,
+		shellKind: 'electron'
+	});
 	assert.equal(out.totalMB, 1600, 'the renderer resident MB already holds the heap and PCM');
 	assert.match(out.hover, /this page measured in its own process/);
 	assert.match(out.hover, /JS heap: 268 MB \(inside the measured page process listed below, not added again\)/);
@@ -248,6 +277,50 @@ test('under Electron the renderer in the family holds the page, so the page term
 	assert.match(tab.hover, /• JS heap: 268 MB\n/);
 	assert.match(tab.hover, /Task Manager/);
 	assert.equal(out.level, tab.level, 'the level is judged on the page term either way');
+});
+
+// Issue #9318: a browser tab talking to an engine that also serves the desktop
+// shell still sees that shell's renderer in /processes. The page term is
+// suppressed only when THIS page is itself in that native shell.
+test('a browser tab sharing a desktop engine keeps the page term when electron-renderer is listed', () => {
+	const electron = [
+		{ label: 'unnamed', mb: 180, role: null },
+		{ label: 'unnamed', mb: 120, role: null },
+		{ label: 'opendj-engine', mb: 600, role: null },
+		{ label: 'unnamed', mb: 700, role: 'electron-renderer' }
+	];
+	const sample = { ...PCM_ONLY, jsHeapMB: 268, processes: electron };
+	const withNull = model.memoryReadout({ ...sample, shellKind: null });
+	const omitted = model.memoryReadout(sample);
+	for (const out of [withNull, omitted]) {
+		assert.equal(out.totalMB, 1600 + 268 + 485, 'the tab still adds heap + PCM');
+		assert.match(out.hover, /this page ~753 MB \(JS heap \+ decoded PCM\)/);
+		assert.match(out.hover, /Task Manager/);
+		assert.doesNotMatch(out.hover, /this page measured in its own process/);
+	}
+	const native = model.memoryReadout({ ...sample, shellKind: 'electron' });
+	assert.equal(native.totalMB, 1600, 'the Electron shell does not add the page twice');
+	assert.match(native.hover, /this page measured in its own process/);
+	assert.match(
+		native.hover,
+		/JS heap: 268 MB \(inside the measured page process listed below, not added again\)/
+	);
+	assert.equal(withNull.level, native.level, 'the level is judged on the page term either way');
+});
+
+test('a browser tab sharing a desktop engine keeps the page term when webkit-webcontent is listed', () => {
+	const desktop = [
+		{ label: 'opendj-engine', mb: 600, role: null },
+		{ label: 'opendj-webcontent', mb: 900, role: 'webkit-webcontent' }
+	];
+	const browser = model.memoryReadout({ ...PCM_ONLY, processes: desktop, shellKind: null });
+	assert.equal(browser.totalMB, 1500 + 485, 'the tab still adds the PCM-only page term');
+	assert.match(browser.hover, /the figure above is decoded PCM only/);
+	assert.match(browser.hover, /Task Manager/);
+	assert.doesNotMatch(browser.hover, /this page measured in its own process/);
+	const native = model.memoryReadout({ ...PCM_ONLY, processes: desktop, shellKind: 'tauri' });
+	assert.equal(native.totalMB, 1500);
+	assert.equal(browser.level, native.level, 'the level is judged on the page term either way');
 });
 
 test('an unreadable process is named and left out, never summed as 0', () => {

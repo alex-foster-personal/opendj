@@ -28,6 +28,8 @@ Regression lines:
     unverifiable, so broken
   - if a seam is invoked through .call, .apply or .bind then the guard checks
     the seam the call reads, so broken
+  - if a seam is invoked through a computed member whose key is a const
+    string then the guard checks the seam the key resolves to, so broken
 """
 
 from __future__ import annotations
@@ -662,6 +664,41 @@ def test_existing_seam_invoked_through_call_passes_and_is_counted() -> None:
             "  reset.apply(null, []);",
             "  const notASeam = { call() {} };",
             "  notASeam.call();",
+            "});",
+        ],
+    )
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["seamsChecked"] == live["seamsChecked"] + 2, (summary, live)
+
+
+def test_computed_const_key_missing_seam_is_reported() -> None:
+    """[if] a missing seam is invoked as mod[key]() with a const *ForTests key [then] the guard names it, [else stop]."""
+    result = _scan_scratch(
+        "computed-missing.test.mjs",
+        [
+            *_LOADER_IMPORTS,
+            f"const mod = await loadTypeScriptModule('{_GLUE}');",
+            "const key = '_missingForTests';",
+            "test('computed', () => { mod[key](); });",
+        ],
+    )
+    assert result.returncode == 1, result.stdout
+    assert f"missing export _missingForTests on {_GLUE} as _missingForTests " in result.stderr, result.stderr
+
+
+def test_computed_const_key_existing_seam_passes_and_direct_call_still_collected() -> None:
+    """[if] a real seam is invoked as mod[key]() and as mod._xForTests() [then] both are verified and counted, [else stop]."""
+    live = _live_summary()
+    result = _scan_scratch(
+        "computed-valid.test.mjs",
+        [
+            *_LOADER_IMPORTS,
+            f"const mod = await loadTypeScriptModule('{_GLUE}');",
+            "const key = '_resetMasterCueForTests';",
+            "test('computed', () => {",
+            "  mod[key]();",
+            "  mod._resetMasterCueForTests();",
             "});",
         ],
     )

@@ -9,6 +9,7 @@
  */
 
 import { API_BASE, ApiError, api } from '$lib/api/client';
+import { normalizeRating } from '$lib/rating';
 import type { paths } from '$lib/api-types';
 
 import type {
@@ -108,7 +109,7 @@ function parseMember(value: unknown, context: string) {
 		bpm: asNumberOrNull(object.bpm, `${context}.bpm`),
 		key: asStringOrNull(object.key, `${context}.key`),
 		duration_ms: asNumberOrNull(object.duration_ms, `${context}.duration_ms`),
-		rating: asNumberOrNull(object.rating, `${context}.rating`),
+		rating: normalizeRating(asNumberOrNull(object.rating, `${context}.rating`)),
 		file_exists: asBoolean(object.file_exists, `${context}.file_exists`),
 		cue_count: asInteger(object.cue_count, `${context}.cue_count`),
 		hot_cue_count: asInteger(object.hot_cue_count, `${context}.hot_cue_count`),

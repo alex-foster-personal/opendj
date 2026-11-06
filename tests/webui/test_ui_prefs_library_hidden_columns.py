@@ -7,6 +7,7 @@ The track table header's right-click chooser drives this key, so PUT
 - [if] a hidden-column list is PUT [then] it lands in ui-prefs.json in table order, [else stop].
 - [if] an unknown, repeated or unhashable id is sent or stored [then] the answer is 422, [else stop].
 - [if] the server and browser column lists differ [then] fail, [else stop].
+- [if] Tags is PUT as hidden [then] it persists through the next GET, [else stop].
 """
 
 from __future__ import annotations
@@ -66,6 +67,17 @@ def test_showing_every_column_again_stores_an_empty_list(prefs_client: TestClien
     assert put.json()["library_hidden_columns"] == []
 
 
+def test_tags_column_round_trips_to_disk(prefs_client: TestClient, tmp_path: Path) -> None:
+    put = prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": ["tags"]})
+    assert put.status_code == 200, put.text
+    assert put.json()["library_hidden_columns"] == ["tags"]
+    on_disk = json.loads(
+        (tmp_path / "data" / "state" / "ui-prefs.json").read_text(encoding="utf-8")
+    )
+    assert on_disk["library_hidden_columns"] == ["tags"]
+    assert prefs_client.get("/api/v1/ui-prefs").json()["library_hidden_columns"] == ["tags"]
+
+
 @pytest.mark.parametrize(
     "bad",
     [["title"], ["lyrics"], ["key", "key"], "key", [1]],
@@ -99,4 +111,5 @@ def test_server_and_browser_list_the_same_columns_in_the_same_order() -> None:
     block = re.search(r"export const HIDEABLE_COLUMNS = \[(.*?)\] as const", source, re.S)
     assert block is not None, "HIDEABLE_COLUMNS not found in library-columns.ts"
     browser = tuple(re.findall(r"'([a-z]+)'", block.group(1)))
+    assert "tags" in browser
     assert browser == _LIBRARY_HIDEABLE_COLUMNS

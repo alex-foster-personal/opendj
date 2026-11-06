@@ -36,6 +36,7 @@ test('the chevron button keeps aria-label but drops the duplicate native title',
 	assert.doesNotMatch(playBtnBlock, /\btitle=\{/, 'a native title left on an element with a rich explainer is exactly the overlap dd4f0f5ae33f flagged');
 });
 
-test('the reused explainer popover keeps its existing z-index convention rather than a new magic number', () => {
-	assert.match(explainerSource, /z-index:\s*80/, 'ControlExplainer already established z-index:80 as the in-panel popover layer elsewhere in the app (FeedbackWidget, IngestDropModal, TrackTable); reuse it rather than inventing a new value');
+test('the explainer popover uses OVERLAY_Z_INDEX.tooltip rather than a local magic z-index', () => {
+	assert.match(explainerSource, /OVERLAY_Z_INDEX\.tooltip/);
+	assert.doesNotMatch(explainerSource, /z-index:\s*80/);
 });

@@ -25,6 +25,7 @@ def _build_default_app() -> FastAPI:
         analysis_autostart,
         boot_grace,
         coverage_drain,
+        grid_phase_precompute,
         library_jobs_autostart,
         lyric_index_autostart,
     )
@@ -88,6 +89,7 @@ def _build_default_app() -> FastAPI:
         auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
         # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
         auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
+        auto_grid_phase_precompute=grid_phase_precompute.arm_from_environ(os.environ),
         stem_hydration=True,
     )
     # PERF-BOOT-01: the background scanners hold their first pass until the

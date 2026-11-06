@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 474410,
+  "measured_with_pr": 474570,
+  "sha": "a7b84fb759",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #6657 splits the wave, hotkeys and library-jobs components into a store-reading container and a props-only view for Storybook; the extra component boundaries on lazy routes cost +160 B gzip in CI, above the 128 B PR-delta noise floor",
+  "payback": "none planned; the container and view split is the intended shape for Storybook coverage"
+}

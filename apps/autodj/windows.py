@@ -230,10 +230,13 @@ def _transition_in_window(profile: TrackProfile, bar: int) -> MixWindow:
     return replace(_in_window(profile, bar, label, why), score=USER_CUE_SCORE, pinned=True)
 
 
-def mix_windows(profile: TrackProfile, role: Role, *, limit: int = 5) -> list[MixWindow]:
+def mix_windows(
+    profile: TrackProfile, role: Role, *, limit: int = 5, min_start_bar: float | None = None
+) -> list[MixWindow]:
     """Ranked windows for ``role``, best first, at most ``limit``.
 
     For ``in``, a track with a transition-in cue returns that one window.
+    When ``min_start_bar`` is set, windows with ``start_bar <= min_start_bar`` are dropped before the cap.
     """
     if role not in ROLES:
         raise ValueError(f"role must be 'out' or 'in', got {role!r}")
@@ -251,6 +254,8 @@ def mix_windows(profile: TrackProfile, role: Role, *, limit: int = 5) -> list[Mi
     else:
         _offer_in_windows(profile, candidates, offer)
     ranked = sorted(candidates.values(), key=lambda window: (-window.score, window.start_bar))
+    if min_start_bar is not None:
+        ranked = [window for window in ranked if window.start_bar > min_start_bar]
     return ranked[: max(1, limit)]
 
 

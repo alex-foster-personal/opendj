@@ -41,6 +41,22 @@ def lane_scored_n(agree_n: int, disagree_n: int) -> int:
     return agree_n + disagree_n
 
 
+def lane_score_id_fields(
+    *,
+    agree_ids: list[str],
+    disagree_ids: list[str],
+    no_own_ids: list[str],
+    ungradable_ids: list[str],
+) -> dict[str, tuple[str, ...]]:
+    """The four id-list fields every scored lane copies into LaneFigure."""
+    return {
+        "agree_ids": tuple(agree_ids),
+        "disagree_ids": tuple(disagree_ids),
+        "no_own_ids": tuple(no_own_ids),
+        "ungradable_ids": tuple(ungradable_ids),
+    }
+
+
 def mean_of(values: list[float]) -> float | None:
     if not values:
         return None

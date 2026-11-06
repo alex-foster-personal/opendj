@@ -16,6 +16,10 @@ import pytest
 
 from apps.cloud import stem_cache_budget as budget
 from apps.cloud.stem_hydration import OPEN_DECKS
+from apps.cloud.stem_index import (
+    merge_remote_into_cached_index,
+    upsert_cached_index_entries,
+)
 from tests.cloudsync.stem_cache_rig import disk_usage, make_bundle
 
 
@@ -50,12 +54,14 @@ def test_hydrate_one_enforces_the_disk_budget_after_it_lands(
             (new_dir / "new-track" / filename).read_bytes(),
         )
     monkeypatch.setattr(budget, "measure_disk", lambda _path: disk_usage(free=0))
+    confirmed = {"new-track": new_entry, "old-indexed": old_entry}
+    merge_remote_into_cached_index(data_dir, confirmed)
 
     outcome = hydrate_one(
         "new-track",
         data_dir=data_dir,
         source=DirectR2Source(cfg=cfg, s3=fake_s3),
-        index={"new-track": new_entry, "old-indexed": old_entry},
+        index=confirmed,
         stems_dir=stems_dir,
     )
 
@@ -95,12 +101,14 @@ def test_hydrate_one_gives_back_only_what_it_took(tmp_path: Path, fake_s3, cfg, 
             (tmp_path / "seed" / "new-track" / filename).read_bytes(),
         )
     monkeypatch.setattr(budget, "measure_disk", lambda _path: disk_usage(free=0))
+    confirmed = {**index, "new-track": new_entry}
+    merge_remote_into_cached_index(data_dir, confirmed)
 
     outcome = hydrate_one(
         "new-track",
         data_dir=data_dir,
         source=DirectR2Source(cfg=cfg, s3=fake_s3),
-        index={**index, "new-track": new_entry},
+        index=confirmed,
         stems_dir=stems_dir,
     )
 
@@ -133,14 +141,55 @@ def test_a_hydrate_outside_the_engine_evicts_nothing(tmp_path: Path, fake_s3, cf
             (new_dir / "new-track" / filename).read_bytes(),
         )
     monkeypatch.setattr(budget, "measure_disk", lambda _path: disk_usage(free=0))
+    confirmed = {"new-track": new_entry, "old-indexed": old_entry}
+    merge_remote_into_cached_index(data_dir, confirmed)
 
     outcome = hydrate_one(
         "new-track",
         data_dir=data_dir,
         source=DirectR2Source(cfg=cfg, s3=fake_s3),
-        index={"new-track": new_entry, "old-indexed": old_entry},
+        index=confirmed,
         stems_dir=stems_dir,
     )
 
     assert outcome.status == "hydrated"
     assert (stems_dir / "old-indexed").exists()
+
+
+@pytest.mark.requirement("STEM-40")
+def test_post_hydrate_enforce_keeps_unpublished_merged_cache_neighbor(
+    tmp_path: Path, fake_s3, cfg, monkeypatch: pytest.MonkeyPatch
+):
+    """Post-hydrate enforcement keeps unpublished neighbors.
+
+    [if] a hydrate lands by unpublished data [then] the neighbor survives, [else stop].
+    """
+    from apps.cloud.asset_store import asset_object_key
+    from apps.cloud.stem_hydration import hydrate_one
+    from apps.cloud.stem_source import DirectR2Source
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    unpublished = make_bundle(stems_dir, "local-only", atime=1_000_000)
+    new_dir = tmp_path / "seed"
+    new_entry = make_bundle(new_dir, "new-track", atime=1_000_000)
+    for filename, digest in new_entry.items():
+        fake_s3.put_object_if_none_match(
+            cfg.audio_bucket,
+            asset_object_key(digest),
+            (new_dir / "new-track" / filename).read_bytes(),
+        )
+    confirmed = {"new-track": new_entry}
+    merge_remote_into_cached_index(data_dir, confirmed)
+    upsert_cached_index_entries(data_dir, {"local-only": unpublished})
+    monkeypatch.setattr(budget, "measure_disk", lambda _path: disk_usage(free=0))
+
+    outcome = hydrate_one(
+        "new-track",
+        data_dir=data_dir,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
+        index={**confirmed, "local-only": unpublished},
+        stems_dir=stems_dir,
+    )
+
+    assert outcome.status == "hydrated"
+    assert (stems_dir / "local-only").exists()

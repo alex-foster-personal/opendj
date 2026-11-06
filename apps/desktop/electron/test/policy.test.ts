@@ -26,6 +26,12 @@ import {
 	permissionAllowed,
 	readAudioEngineChoice,
 	readBuildStamp,
+	RENDERER_RELOAD_LIMIT,
+	RENDERER_RELOAD_WINDOW_MS,
+	type RendererGoneAction,
+	APP_ORIGIN,
+	rendererGoneDecision,
+	rendererReloadTarget,
 	shellBuildIdentity,
 	startingWindowSize,
 	validateDataDirContainedInHome,
@@ -99,6 +105,85 @@ test('loopback http and the bundled page are trusted', () => {
 	assert.equal(isTrustedPage(`http://localhost:${anyPort}/`), true);
 	assert.equal(isTrustedPage('opendj://app/index.html?fatal=1'), true);
 });
+// ----- renderer crash recovery (row 72, issue #9390) ------------------------------
+function sequenceRendererGone(reason: string, timesMs: readonly number[]): RendererGoneAction[] {
+	const actions: RendererGoneAction[] = [];
+	let reloadsMs: number[] = [];
+	for (const t of timesMs) {
+		const { action, reloadsMs: next } = rendererGoneDecision({
+			reason,
+			nowMs: t,
+			reloadsMs,
+			quitting: false
+		});
+		actions.push(action);
+		reloadsMs = next;
+	}
+	return actions;
+}
+
+test('a crashed or out-of-memory renderer reloads three times in 60 s and gives up on the fourth (row 72)', () => {
+	const times = [0, 10_000, 20_000, 30_000];
+	for (const reason of ['crashed', 'oom'] as const) {
+		assert.deepEqual(sequenceRendererGone(reason, times), ['reload', 'reload', 'reload', 'give-up']);
+	}
+});
+
+test('a clean renderer exit is ignored, and so is any exit while the shell quits', () => {
+	assert.deepEqual(
+		sequenceRendererGone('clean-exit', [0]),
+		['ignore'],
+		'clean-exit never counts toward the limit'
+	);
+	// Three reloads would normally force give-up on the next crash; clean-exit still ignores.
+	let reloadsMs: number[] = [0, 10_000, 20_000];
+	const afterClean = rendererGoneDecision({
+		reason: 'clean-exit',
+		nowMs: 30_000,
+		reloadsMs,
+		quitting: false
+	});
+	assert.equal(afterClean.action, 'ignore');
+	assert.deepEqual(afterClean.reloadsMs, reloadsMs);
+	assert.equal(
+		rendererGoneDecision({ reason: 'crashed', nowMs: 40_000, reloadsMs, quitting: true }).action,
+		'ignore'
+	);
+});
+
+test('a fourth crash 61 s after the first reloads, because the first has left the 60 s window', () => {
+	const times = [0, 10_000, 20_000, 61_000];
+	assert.deepEqual(sequenceRendererGone('crashed', times), ['reload', 'reload', 'reload', 'reload']);
+	// Boundary: first reload at 0 is exactly RENDERER_RELOAD_WINDOW_MS old, so it drops out.
+	const boundarySecond = rendererGoneDecision({
+		reason: 'crashed',
+		nowMs: RENDERER_RELOAD_WINDOW_MS,
+		reloadsMs: [0],
+		quitting: false
+	});
+	assert.equal(boundarySecond.action, 'reload');
+	assert.deepEqual(boundarySecond.reloadsMs, [RENDERER_RELOAD_WINDOW_MS]);
+});
+
+test('the crash reload target is the last trusted page, never an untrusted one (row 72)', () => {
+	const trustedLoopback = `http://127.0.0.1:${anyPort}/library`;
+	const trustedLast = `http://localhost:${anyPort}/performance`;
+	assert.equal(rendererReloadTarget(trustedLoopback, null), trustedLoopback);
+	for (const badCurrent of ['https://example.com/', 'file:///tmp/x', '']) {
+		assert.equal(rendererReloadTarget(badCurrent, trustedLast), trustedLast);
+	}
+	assert.equal(rendererReloadTarget('https://evil.example/', null), `${APP_ORIGIN}/index.html`);
+	assert.equal(
+		rendererReloadTarget('https://example.com/', 'https://evil.example/'),
+		`${APP_ORIGIN}/index.html`,
+		'never returns an untrusted last URL'
+	);
+	for (const u of [trustedLoopback, trustedLast, `${APP_ORIGIN}/index.html`]) {
+		assert.equal(isTrustedPage(rendererReloadTarget(u, null)), true);
+		assert.equal(isTrustedPage(rendererReloadTarget('', u)), true);
+	}
+});
+
 test('anything else is not: other hosts, https, file, lookalikes', () => {
 	for (const url of [
 		`https://127.0.0.1:${anyPort}/`,
@@ -260,7 +345,7 @@ test('an unknown audio engine choice is refused on write and on read, never defa
 const isolatedHome = (): string => path.join(scratchDir('home-6068'), 'home');
 
 test('the macOS data dir parent is HOME/Library/Application Support, as Tauri resolves it', () => {
-	const home = path.join(path.sep, 'Users', 'dj');
+	const home = isolatedHome();
 	assert.equal(
 		path.join(macAppSupportDir(home), 'com.opendj.desktop'),
 		path.join(home, 'Library', 'Application Support', 'com.opendj.desktop')

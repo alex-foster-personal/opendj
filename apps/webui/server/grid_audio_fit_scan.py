@@ -18,6 +18,7 @@ Requirements (mini-PRD):
     [if] the track has no rekordbox grid or no audio here [then] unknown with
       that reason ⛔️ a guessed verdict or a crash
     [if] the decoder cannot read the file [then] unknown, decode_failed ⛔️ fit
+    [if] the rule returns a reason [then] the stored row carries it ⛔️ reason null on a judged fit
   ✔︎ ✅ 🎯 scan_library(): every present track, incremental.
     [if] nothing changed since the last scan [then] nothing is decoded ⛔️
     [if] the audio file changed [then] re-judged ⛔️ a stale verdict
@@ -127,8 +128,12 @@ def _beat_logits(stable_id: str, resolver: AssetResolver) -> tuple[np.ndarray, f
         # library never analyzed has none, which means "no activations", not an error.
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis'").fetchone() is None:
             return None
+        # Several (stable_id, backend, backend_version) rows are legal; pick the newest.
         row = conn.execute(
-            "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ?",
+            "SELECT record_json FROM analysis"
+            " WHERE stable_id = ? AND backend = ?"
+            " ORDER BY analyzed_at DESC, backend_version DESC"
+            " LIMIT 1",
             (stable_id, _OWN_BEATGRID_BACKEND),
         ).fetchone()
     finally:
@@ -215,7 +220,7 @@ def _judge(subject: _Subject, rule: str, resolver: AssetResolver) -> StoredGridA
         beat_logits=logits[0] if logits else None,
         logits_fps=logits[1] if logits else 50.0,
     )
-    return _row(subject, rule, fit, None)
+    return _row(subject, rule, fit, fit.reason)
 
 
 def judge_track(stable_id: str, *, force: bool = False) -> StoredGridAudioFit:

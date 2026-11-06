@@ -115,9 +115,8 @@ def _capture_transcripts(_args: argparse.Namespace):
                     yield t.text
 
 
-def _cmd_run(args: argparse.Namespace) -> int:
-    """Start the voice daemon: wake-word -> STT -> grammar -> dispatch."""
-    from apps.voice import actions, bus, grammar
+def _prepare_run_daemon(args: argparse.Namespace):
+    from apps.voice import actions, bus
     from apps.voice import context as ctx_mod
 
     # P14-F03 (retained from master #102): honour --dry-bus and
@@ -138,8 +137,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("[voice] --echo mode requested; transcripts will be echoed.")
 
     max_iters = getattr(args, "max_iters", None)
-    iters = 0
+    return ctx, registry, max_iters
 
+
+def _install_run_sigterm() -> tuple[dict[str, bool], object | None]:
     # Install a SIGTERM handler that flips a flag checked by the capture loop
     # (and, more importantly, converts SIGTERM into a KeyboardInterrupt-like
     # clean exit instead of the default abrupt termination).
@@ -156,6 +157,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
         # signal.signal() only works on the main thread; tests that invoke
         # _cmd_run from a worker thread should still succeed.
         prev_handler = None
+    return _shutdown, prev_handler
+
+
+def _restore_run_sigterm(prev_handler: object | None) -> None:
+    if prev_handler is not None:
+        try:
+            signal.signal(signal.SIGTERM, prev_handler)
+        except (ValueError, OSError):
+            pass
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Start the voice daemon: wake-word -> STT -> grammar -> dispatch."""
+    from apps.voice import grammar
+
+    ctx, registry, max_iters = _prepare_run_daemon(args)
+    shutdown, prev_handler = _install_run_sigterm()
+    iters = 0
 
     # Phase 5/VOICE-01: when sounddevice is unavailable, ``_capture_transcripts``
     # prints a single-line warning and returns immediately, so the daemon
@@ -175,7 +194,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     f"[voice] {intent.kind} -> {response.reply!r} "
                     f"(published={response.published})"
                 )
-            if _shutdown["requested"]:
+            if shutdown["requested"]:
                 break
             if max_iters is not None and iters >= max_iters:
                 break
@@ -187,11 +206,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"[voice] daemon error: {exc}", file=sys.stderr)
         return 2
     finally:
-        if prev_handler is not None:
-            try:
-                signal.signal(signal.SIGTERM, prev_handler)
-            except (ValueError, OSError):
-                pass
+        _restore_run_sigterm(prev_handler)
     return 0
 
 

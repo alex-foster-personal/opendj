@@ -19,15 +19,27 @@ from pathlib import Path
 import psutil
 import pytest
 
+from scripts import ci_local_affected as ci_local
 from scripts.affected_tests import REPO
 from scripts.ci_local_affected import Unmeasured, _freeze_tree, changed_paths, lane_ignores, main
 
 
-def _git_exe() -> str:
+def _host_git() -> str:
     """git by resolved path (AGENTS.md: launch programs by resolved path); none is a failure, not a skip."""
     git = shutil.which("git")
     assert git is not None, "these tests build real git repositories and need git on PATH"
     return git
+
+
+def test_git_exe_missing_from_path_is_unmeasured(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] git is not on PATH [then] diff selection raises Unmeasured with the exact message, [else stop]."""
+    ci_local._git_exe.cache_clear()
+    monkeypatch.setenv("PATH", str(tmp_path))
+    try:
+        with pytest.raises(Unmeasured, match=r"^git is not on PATH: the diff cannot be read$"):
+            ci_local._git_exe()
+    finally:
+        ci_local._git_exe.cache_clear()
 
 
 def test_reads_every_ignore_the_shard_lane_passes() -> None:
@@ -45,7 +57,7 @@ def test_a_workflow_without_the_block_is_unmeasured_not_empty() -> None:
 
 def test_an_empty_diff_is_unmeasured(tmp_path: Path) -> None:
     def git(*args: str) -> None:
-        subprocess.run([_git_exe(), *args], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run([_host_git(), *args], cwd=tmp_path, check=True, capture_output=True)
 
     git("init", "-q", "-b", "main")
     (tmp_path / "a.txt").write_text("a", encoding="utf-8", newline="\n")
@@ -69,7 +81,7 @@ def test_a_base_ahead_of_head_is_unmeasured(tmp_path: Path) -> None:
     """[if] the base has commits HEAD lacks [then] CI selects on a merged tree this one is not, so fail, [else stop]."""
 
     def git(*args: str) -> None:
-        subprocess.run([_git_exe(), *args], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run([_host_git(), *args], cwd=tmp_path, check=True, capture_output=True)
 
     git("init", "-q", "-b", "main")
     for name in ("a.txt", "b.txt"):
@@ -109,7 +121,7 @@ def _tiny_repo(root: Path, test_body: str, conftest: str = "") -> Path:
         (root / rel).write_text(text, encoding="utf-8", newline="\n")
 
     def git(*args: str) -> None:
-        subprocess.run([_git_exe(), *args], cwd=root, check=True, capture_output=True)
+        subprocess.run([_host_git(), *args], cwd=root, check=True, capture_output=True)
 
     git("init", "-q", "-b", "main")
     git("add", "-A")

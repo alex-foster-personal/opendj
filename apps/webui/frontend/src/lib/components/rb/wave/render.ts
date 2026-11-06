@@ -16,6 +16,26 @@ import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
+import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
+import {
+	AMP_GAMMA,
+	ampOf,
+	bandHeightScale,
+	bucketMax,
+	HIGH_BAND_SCALE,
+	MID_BAND_SCALE,
+	mirrorRect,
+	normsFor,
+	type BandNorms
+} from './wave-amp';
+import {
+	BAND_ORDER,
+	blitBandLayers,
+	cachedBandLayers,
+	drawBandLayer,
+	newBandCanvas,
+	resetBandLayerCache
+} from './wave-band-layers';
 import {
 	beatLineStrideForWindow,
 	LOOP_MIN_BAND_PX,
@@ -126,12 +146,6 @@ export function vocalAlpha(intensity: number): number {
 export { WAVE_WINDOW_S } from './wave-window';
 import { WAVE_WINDOW_S } from './wave-window';
 
-/** Rendering style only (matches rekordbox's white core): highs are drawn
- * at reduced height so the white band reads as the inner core. The band
- * DATA is untouched. */
-const HIGH_BAND_SCALE = 0.6;
-const MID_BAND_SCALE = 0.85;
-
 /** 'blocks' design geometry: BLOCK_BAR_PX-wide bars on a BLOCK_PITCH_PX
  * pitch, i.e. a 1px gap. A full deck row paints them MIRRORED about the
  * centerline (the standard waveform, the maintainer Tue 6 Oct 2026); each half of a
@@ -200,28 +214,6 @@ export const BLOCKS_CFG = {
 	SNAP_DEFAULT: true
 } as const;
 
-/** Perceptual amplitude shaping (rendering only, the band DATA is never
- * modified). Raw PWV6/PWV7 bytes sit mostly in the 0.3-0.7 range after
- * /127 scaling, which painted linearly reads as a thin ribbon in a 40px
- * row; rekordbox draws visibly denser. Two standard display steps:
- *   1. per-track per-band normalization to the band's own 99th percentile
- *      (loud parts of THIS track reach full height; relative dynamics -
- *      quiet intros vs drops - are preserved);
- *   2. gamma lift v^0.45 to widen the mid range.
- * Zero stays zero; nothing is drawn where the analysis is silent. */
-const AMP_GAMMA = 0.45;
-/** Floor for the p99 divisor so near-silent bands cannot blow up noise. */
-const NORM_FLOOR = 0.1;
-
-interface BandNorms {
-	low: number;
-	mid: number;
-	high: number;
-}
-
-/** Per-waveform normalization cache - computed once per anlz payload. */
-const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
-
 interface WaveBandImage {
 	/** Tiles of the whole-track image, built on first sight (WAVEZOOM-01). */
 	tiles: Map<number, HTMLCanvasElement>;
@@ -279,30 +271,13 @@ export const BAND_CACHE_CFG = {
 export function resetWaveBandCacheForTest(): void {
 	// WeakMap has no clear(), so replace it for deterministic isolated tests.
 	_bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
+	resetBandLayerCache();
 }
 
 let _bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
 
-function _p99(values: number[]): number {
-	const nonZero = values.filter((v) => v > 0);
-	if (nonZero.length === 0) return 1;
-	const sorted = nonZero.slice().sort((a, b) => a - b);
-	const p99 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))];
-	return Math.min(1, Math.max(NORM_FLOOR, p99));
-}
-
-export function bandNormsFor(waveform: AnlzWaveform): BandNorms {
-	const cached = _normCache.get(waveform);
-	if (cached !== undefined) return cached;
-	const bands = waveform.detail;
-	const norms: BandNorms = {
-		low: _p99(bands.low),
-		mid: _p99(bands.mid),
-		high: _p99(bands.high)
-	};
-	_normCache.set(waveform, norms);
-	return norms;
-}
+/** Per-band p99 norms (wave-amp.ts normsFor), shared with the band layers. */
+export const bandNormsFor = normsFor;
 
 /** Per-waveform true peak cache - computed once per anlz payload. */
 const _peakCache = new WeakMap<AnlzWaveform, BandNorms>();
@@ -324,11 +299,6 @@ export function bandPeaksFor(waveform: AnlzWaveform): BandNorms {
 	const peaks: BandNorms = { low: _peak(bands.low), mid: _peak(bands.mid), high: _peak(bands.high) };
 	_peakCache.set(waveform, peaks);
 	return peaks;
-}
-
-function _amp(v: number, norm: number): number {
-	if (v <= 0) return 0;
-	return Math.pow(Math.min(1, v / norm), AMP_GAMMA);
 }
 
 /** One frame's inputs. anlz null = loaded track without (or awaiting)
@@ -374,6 +344,9 @@ export interface WaveRowFrame {
 	/** Pending deferred seek ghost playhead (ms). */
 	ghostSeekMs?: number | null;
 	ghostSeekVisible?: boolean;
+	/** WAVE-EQ-5230: the deck's live EQ/filter band gains as the engine reports
+	 * them; null or absent draws the analysis unscaled. */
+	bandGains?: BandGains | null;
 	/** WAVEZOOM-6802: wall-clock seconds across the row. Required: legacy callers pass WAVE_WINDOW_S. */
 	windowS: number;
 	/** WAVEZOOM-6802c: playhead position across the row, 0..1. Required: legacy callers pass 0.5 (centered). */
@@ -451,7 +424,23 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			barPhaseUntrusted: frame.anlz.beatgrid?.bar_phase_untrusted === true
 		};
 		const cachePxPerS = frame.cacheWindowS === undefined ? pxPerS : w / (frame.cacheWindowS * pitch);
-		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks, cachePxPerS, originPx);
+		_drawCachedBands(
+			ctx,
+			frame.anlz.waveform,
+			sectionsApi,
+			spans,
+			tLeft,
+			pxPerS,
+			durS,
+			w,
+			h,
+			palette,
+			design,
+			blocks,
+			frame.bandGains ?? null,
+			cachePxPerS,
+			originPx
+		);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
@@ -585,6 +574,8 @@ function _bucketMax(values: number[], p0: number, p1: number): number {
 	return max;
 }
 
+const _amp = ampOf;
+
 function _mirrorRect(path: Path2D, x: number, centerY: number, halfHeight: number): void {
 	path.rect(x, centerY - halfHeight, 1, halfHeight * 2);
 }
@@ -601,6 +592,29 @@ function _sectionPaletteKey(p: SectionPalette): string {
 	return key;
 }
 
+/** Within this of 1 a band gain is drawn as untouched: far below one pixel
+ * of height on any row, and it absorbs float noise in a flat strip's response. */
+const UNITY_GAIN_EPS = 1e-6;
+
+function isUnityGains(g: BandGains): boolean {
+	return (
+		Math.abs(g.low - 1) < UNITY_GAIN_EPS &&
+		Math.abs(g.mid - 1) < UNITY_GAIN_EPS &&
+		Math.abs(g.high - 1) < UNITY_GAIN_EPS
+	);
+}
+
+/** A baked image's gains, as the drawn half-height they produce in half-pixel
+ * steps of that image (`h` css px tall). Any gain move that shifts a bar
+ * by half a pixel or more rebuilds; float jitter below that, which could not
+ * change a pixel, reuses the image instead of a full-track rebuild per state
+ * message. */
+function _bakedGainsKey(g: BandGains, h: number): string {
+	const halfSteps = 2 * ((h - MARKER_BAND_PX) / 2 - 1);
+	const q = (gain: number): number => Math.round(bandHeightScale(gain) * halfSteps);
+	return `${q(g.low)}:${q(g.mid)}:${q(g.high)}`;
+}
+
 function _drawCachedBands(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
@@ -614,11 +628,19 @@ function _drawCachedBands(
 	palette: WavePalette,
 	design: WaveformDesign,
 	blocks: BlocksSpec,
+	gains: BandGains | null,
 	cachePxPerS: number = pxPerS,
 	originPx?: number
 ): void {
-	// The snapper loads on first use (block-layout-lazy.svelte.ts); until then
-	// the row paints the fixed pitch and the key below rebuilds it once it lands.
+	// Separable bands: a tri-band payload in a bar design. A 'mono' payload has
+	// heights only, so no band to scale; the line and blocks designs combine
+	// the three bands per column, so their gains are baked into the build.
+	// Unity gains (every knob centred, the common case) take the single
+	// combined image, so a flat deck costs exactly what it did before.
+	const scaled = gains !== null && !isUnityGains(gains) && waveform.kind !== 'mono';
+	const layered = scaled && design !== 'line' && design !== 'blocks';
+	const bakedGains = scaled && !layered ? gains : null;
+
 	const snapApi = blockSnapApiFor(design === 'blocks' && blocks.snap);
 	const snapStride =
 		snapApi !== null && blocks.beats !== null
@@ -628,16 +650,44 @@ function _drawCachedBands(
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
 	if (typeof document === 'undefined') {
+		if (layered) {
+			for (const band of BAND_ORDER) {
+				drawBandLayer(ctx, waveform, w, h, palette, design, band, gains![band]);
+			}
+			return;
+		}
 		if (sectionsApi !== null && sections !== null) {
 			sectionsApi.drawSectionBands(ctx, sections, tLeft, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
 		}
+		const gainedWf =
+			bakedGains === null ? waveform : { ...waveform, detail: _gainedBands(waveform.detail, bakedGains) };
 		const cols =
 			design === 'blocks'
-				? _blockColumns(waveform, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks, snapStride))
+				? _blockColumns(gainedWf, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks, snapStride), waveform)
 				: null;
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks, MARKER_BAND_PX, { x0: 0, x1: w, blockColumns: cols });
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks, MARKER_BAND_PX, { x0: 0, x1: w, blockColumns: cols }, bakedGains);
 		return;
 	}
+
+	if (layered) {
+		const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
+		const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted);
+		const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
+		const layers = cachedBandLayers(
+			waveform,
+			key,
+			cachePxPerS,
+			durS,
+			h,
+			palette,
+			design,
+			bandImageScaleReusable,
+			BAND_CACHE_CFG.TILE_PX
+		);
+		blitBandLayers(ctx, layers, gains!, tLeft, pxPerS, w, h, design);
+		return;
+	}
+
 	const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
 	// Snapped edges follow the beat grid itself, not only its period, so a grid
 	// edit (a new beats array) rebuilds the image; live stride is keyed separately.
@@ -647,7 +697,8 @@ function _drawCachedBands(
 			: snapStride === undefined
 				? snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)
 				: `${snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)}:st${snapStride}`;
-	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
+	const bakedKey = bakedGains === null ? '' : `:${_bakedGainsKey(bakedGains, h)}`;
+	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}${bakedKey}`;
 	let image = _bandImages.get(waveform);
 	if (
 		image === undefined ||
@@ -690,7 +741,21 @@ function _drawCachedBands(
 	for (let i = first; i <= last; i++) {
 		let canvas = image.tiles.get(i);
 		if (canvas === undefined) {
-			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks, snapApi, snapStride);
+			canvas = _buildBandTile(
+				image,
+				i,
+				waveform,
+				sectionsApi,
+				sections,
+				durS,
+				h,
+				palette,
+				design,
+				blocks,
+				snapApi,
+				bakedGains,
+				snapStride
+			);
 			image.tiles.set(i, canvas);
 		}
 		const x0 = i * tile;
@@ -747,6 +812,7 @@ function _buildBandTile(
 	design: WaveformDesign,
 	blocks: BlocksSpec,
 	snapApi: BlockSnapApi | null,
+	bakedGains: BandGains | null,
 	snapStride?: number
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
@@ -763,20 +829,25 @@ function _buildBandTile(
 		sectionsApi.drawSectionBands(ctx, sections, x0 / image.pxPerS, image.pxPerS, tileW, h, palette.sections, MARKER_BAND_PX);
 	}
 	if (design === 'blocks' && image.blocks === null) {
+		const wf =
+			bakedGains === null
+				? waveform
+				: { ...waveform, detail: _gainedBands(waveform.detail, bakedGains) };
 		image.blocks = _blockColumns(
-			waveform,
+			wf,
 			image.pxPerS,
 			image.fullW,
 			design,
 			blocks,
-			_edgesFor(snapApi, waveform, image.pxPerS, durS, image.fullW, blocks, snapStride)
+			_edgesFor(snapApi, waveform, image.pxPerS, durS, image.fullW, blocks, snapStride),
+			waveform
 		);
 	}
 	_drawBands(ctx, waveform, image.pxPerS, durS, image.fullW, h, palette, design, blocks, MARKER_BAND_PX, {
 		x0,
 		x1: x0 + tileW,
 		blockColumns: image.blocks
-	});
+	}, bakedGains);
 	return canvas;
 }
 
@@ -815,7 +886,8 @@ function _drawBands(
 	design: WaveformDesign,
 	blocks: BlocksSpec = _DEFAULT_BLOCKS,
 	topPx: number = MARKER_BAND_PX,
-	span: BandSpan | null = null
+	span: BandSpan | null = null,
+	bakedGains: BandGains | null = null
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -835,7 +907,17 @@ function _drawBands(
 	if (design === 'blocks') {
 		// True peaks, not p99 (B5), for rekordbox waveforms: a block is a bucket
 		// MAX of several points, so p99 puts loud sections past full scale.
-		const cols = span?.blockColumns ?? _blockColumns(waveform, pxPerS, w, design, blocks);
+		let cols = span?.blockColumns;
+		if (cols === null || cols === undefined) {
+			const wf =
+				bakedGains === null
+					? waveform
+					: { ...waveform, detail: _gainedBands(bands, bakedGains) };
+			cols = _blockColumns(wf, pxPerS, w, design, blocks, undefined, waveform);
+		}
+		if (bakedGains !== null) {
+			for (let b = 0; b < cols.heights.length; b++) cols.heights[b] = Math.min(1, cols.heights[b]);
+		}
 		const e = cols.edges;
 		const range =
 			e === undefined
@@ -855,9 +937,13 @@ function _drawBands(
 	const lineYs = (x: number): [number, number] => {
 		const p0 = Math.max(0, Math.floor((x / w) * n));
 		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
-		const v = _amp(
-			Math.max(_bucketMax(bands.low, p0, p1), _bucketMax(bands.mid, p0, p1), _bucketMax(bands.high, p0, p1)),
-			monoNorm
+		const v = Math.min(
+			1,
+			Math.max(
+				_amp(_bucketMax(bands.low, p0, p1), monoNorm) * bandHeightScale(bakedGains?.low ?? 1),
+				_amp(_bucketMax(bands.mid, p0, p1), monoNorm) * bandHeightScale(bakedGains?.mid ?? 1),
+				_amp(_bucketMax(bands.high, p0, p1), monoNorm) * bandHeightScale(bakedGains?.high ?? 1)
+			)
 		);
 		return [centerY - v * halfH, centerY + v * halfH];
 	};
@@ -888,20 +974,20 @@ function _drawBands(
 		if (mono) {
 			// Heights only (PWAV/PWV3): the contract does not pin which band
 			// array carries them, so take the per-point max across all three.
-			const v = _amp(
+			const v = ampOf(
 				Math.max(
-					_bucketMax(bands.low, p0, p1),
-					_bucketMax(bands.mid, p0, p1),
-					_bucketMax(bands.high, p0, p1)
+					bucketMax(bands.low, p0, p1),
+					bucketMax(bands.mid, p0, p1),
+					bucketMax(bands.high, p0, p1)
 				),
 				monoNorm
 			);
 			if (v > 0) _mirrorRect(lowPath, px, centerY, v * halfH);
 			continue;
 		}
-		const lo = _amp(_bucketMax(bands.low, p0, p1), norms.low);
-		const mi = _amp(_bucketMax(bands.mid, p0, p1), norms.mid);
-		const hi = _amp(_bucketMax(bands.high, p0, p1), norms.high);
+		const lo = Math.min(1, _amp(_bucketMax(bands.low, p0, p1), norms.low) * bandHeightScale(bakedGains?.low ?? 1));
+		const mi = Math.min(1, _amp(_bucketMax(bands.mid, p0, p1), norms.mid) * bandHeightScale(bakedGains?.mid ?? 1));
+		const hi = Math.min(1, _amp(_bucketMax(bands.high, p0, p1), norms.high) * bandHeightScale(bakedGains?.high ?? 1));
 		if (lo > 0) _mirrorRect(lowPath, px, centerY, lo * halfH);
 		if (mi > 0) _mirrorRect(midPath, px, centerY, mi * halfH * MID_BAND_SCALE);
 		if (hi > 0) _mirrorRect(highPath, px, centerY, hi * halfH * HIGH_BAND_SCALE);
@@ -946,10 +1032,12 @@ function _blockColumns(
 	w: number,
 	design: WaveformDesign,
 	blocks: BlocksSpec,
-	edges?: Int32Array
+	edges?: Int32Array,
+	/** The UNGAINED waveform: a baked gain must not move the divisors, or it cancels out. */
+	normsFrom: AnlzWaveform = waveform
 ): BlockColumns {
 	const mono = design === 'mono' || waveform.kind === 'mono';
-	const divisors = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
+	const divisors = _blocksDivisors(blocks.curve, normsFrom, bandNormsFor(normsFrom));
 	const blocksPerBeat = blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
 	return {
 		heights: blockHeights(waveform.detail, w, divisors, blocks.variant, blocksPerBeat, blocks.curve, edges),
@@ -975,6 +1063,25 @@ function _blocksDivisors(curve: BlocksCurve, waveform: AnlzWaveform, norms: Band
 	else if (curve === 'legacy-p99') return norms;
 	const _exhaustive: never = curve;
 	throw new Error(`Unhandled blocks curve: ${String(_exhaustive)}`);
+}
+
+/** WAVE-EQ-5230 for 'blocks': each band's data scaled so its gain lands on the
+ * DRAWN height after the AMP_GAMMA curve (gain^(1/gamma) before v^gamma), the
+ * same linear-height rule the bar designs follow. A kill drops the band out
+ * of every block it led and out of the stacked shares. Built once per baked
+ * image, never per frame. */
+function _gainedBands(bands: AnlzWaveform['detail'], g: BandGains | null): AnlzWaveform['detail'] {
+	if (g === null) return bands;
+	const f = (gain: number): number => Math.pow(bandHeightScale(gain), 1 / AMP_GAMMA);
+	const fl = f(g.low);
+	const fm = f(g.mid);
+	const fh = f(g.high);
+	return {
+		...bands,
+		low: bands.low.map((v) => v * fl),
+		mid: bands.mid.map((v) => v * fm),
+		high: bands.high.map((v) => v * fh)
+	};
 }
 
 function _defaultVariant(curve: BlocksCurve): BlocksVariant {

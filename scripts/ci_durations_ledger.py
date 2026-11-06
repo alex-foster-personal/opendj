@@ -64,6 +64,8 @@ from pathlib import Path
 from typing import Protocol
 
 from scripts import r2_artifact
+from scripts.gh_api import gh_api
+from scripts.gh_api_send import gh_send
 
 SHARDS = 5
 SHARD_ARTIFACT = "test-durations-shard-{n}"
@@ -167,13 +169,7 @@ def _read_json(path: Path) -> object:
 
 
 def _gh(path: str, timeout: float = 120) -> bytes:
-    gh = shutil.which("gh")
-    if gh is None:
-        raise LedgerError("gh is not on PATH")
-    done = subprocess.run([gh, "api", path], capture_output=True, timeout=timeout, check=False)
-    if done.returncode != 0:
-        raise LedgerError(f"gh api {path} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
-    return done.stdout
+    return gh_api(path, timeout=timeout, error_cls=LedgerError)
 
 
 def _gh_json(api: Api, path: str) -> dict:
@@ -248,21 +244,7 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
 
 def _gh_send(method: str, path: str, body: dict, timeout: float = 120) -> bytes:
     """`gh api -X <method> <path>` with a JSON body on stdin (the ledger is 2.5 MB)."""
-    gh = shutil.which("gh")
-    if gh is None:
-        raise LedgerError("gh is not on PATH")
-    done = subprocess.run(
-        [gh, "api", "-X", method, path, "--input", "-"],
-        input=json.dumps(body).encode(),
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise LedgerError(
-            f"gh api -X {method} {path} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}"
-        )
-    return done.stdout
+    return gh_send(method, path, body, timeout, error=LedgerError)
 
 
 def publish(repo: str, ledger_path: Path, send: Send = _gh_send) -> str:

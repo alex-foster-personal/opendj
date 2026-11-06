@@ -28,18 +28,51 @@ import pytest
 from scripts.icon_composer_asset import PayloadBuildError, find_actool
 from tests.scripts.icon_composer_harness import path_without_actool_resolver
 
-pytestmark = [pytest.mark.requirement("OPS-11"), pytest.mark.requirement("INSTALL-20")]
-
 REPO = Path(__file__).resolve().parents[2]
 PREFLIGHT = REPO / "scripts" / "dmg_preflight.sh"
 ICON_SOURCE = REPO / "apps/desktop/shared/icons/AppIcon.icon"
 COMMITTED_CAR = ICON_SOURCE / "Assets.car"
 COMMITTED_SIDECAR = ICON_SOURCE / "Assets.car.source.sha256"
 
+
+def _is_dmg_preflight_host() -> bool:
+    """True when this machine is the DMG build host or opted in via env."""
+    if os.environ.get("OPEN_DJ_DMG_HOST", "").strip():
+        return True
+    short = socket.gethostname().lower()
+    nodename = os.uname().nodename.lower()
+    haystack = f"{short} {nodename}"
+    return any(
+        hint in haystack for hint in ("mac-studio", "mac studio", "silver")
+    )
+
+
 darwin_only = pytest.mark.skipif(
     sys.platform != "darwin",
     reason="UNAVAILABLE: Icon Composer preflight checks need macOS",
 )
+xcrun_on_path = pytest.mark.skipif(
+    shutil.which("xcrun") is None,
+    reason=(
+        "UNAVAILABLE: xcrun is not on PATH, so Icon Composer preflight "
+        "isolation cannot be measured"
+    ),
+)
+dmg_preflight_host = pytest.mark.skipif(
+    not _is_dmg_preflight_host(),
+    reason=(
+        "UNAVAILABLE: Icon Composer preflight host checks run on the DMG host; "
+        "set OPEN_DJ_DMG_HOST to measure elsewhere"
+    ),
+)
+
+pytestmark = [
+    pytest.mark.requirement("OPS-11"),
+    pytest.mark.requirement("INSTALL-20"),
+    darwin_only,
+    xcrun_on_path,
+    dmg_preflight_host,
+]
 
 
 def _disposable_icon_tree(tmp_path: Path, *, include_fallback: bool) -> Path:
@@ -91,7 +124,6 @@ def _report_line(out: str) -> str:
     return lines[0]
 
 
-@darwin_only
 def test_native_actool_resolves_without_the_shim() -> None:
     """Positive control: find_actool() succeeds on an unshimmed PATH when actool
     exists, so the other tests' shimmed-PATH failures are known to come from
@@ -105,26 +137,25 @@ def test_native_actool_resolves_without_the_shim() -> None:
     assert found.is_file(), found
 
 
-@darwin_only
 def test_no_actool_without_fallback_is_refused_before_compile(tmp_path: Path) -> None:
     """Absent actool with no valid committed fallback fails in the preflight."""
     path = path_without_actool_resolver()
     if path is None:
         pytest.skip("UNAVAILABLE: xcrun is not on PATH, so actool isolation cannot be measured")
     root = _disposable_icon_tree(tmp_path, include_fallback=False)
-    host = socket.gethostname()
+    host_sock = socket.gethostname()
+    host_uname = os.uname().nodename
     result = _run_preflight(path=path, extra_env={"MDT_REPO_ROOT": str(root)})
     out = result.stdout + result.stderr
 
     assert result.returncode == 1, out
     assert "=== J. Icon Composer compiled asset" in out, out
     assert "actool" in out.lower(), out
-    assert host in out, out
+    assert host_sock in out or host_uname in out, out
     assert "Icon Composer asset" in _report_line(out), out
     assert "=== summary ===" in out, out
 
 
-@darwin_only
 def test_no_actool_with_current_fallback_reports_reuse_readiness(tmp_path: Path) -> None:
     """A verified committed fallback lets a no-actool host proceed."""
     if not COMMITTED_CAR.is_file() or not COMMITTED_SIDECAR.is_file():
@@ -141,7 +172,6 @@ def test_no_actool_with_current_fallback_reports_reuse_readiness(tmp_path: Path)
     assert "Icon Composer asset" not in _report_line(out), out
 
 
-@darwin_only
 def test_icon_composer_failure_does_not_truncate_the_report(tmp_path: Path) -> None:
     """A missing icon capability must not end the report before later sections."""
     path = path_without_actool_resolver()

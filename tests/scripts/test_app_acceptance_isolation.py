@@ -8,7 +8,6 @@ import inspect
 import json
 import os
 import plistlib
-import pwd
 import shutil
 import subprocess
 import sys
@@ -207,8 +206,23 @@ def test_the_check_runs_before_the_run_home_and_before_the_launch() -> None:
     assert "env=env, account_home=account_home" in orchestration
 
 
+def test_account_home_imports_pwd_only_after_the_windows_arm() -> None:
+    """if _account_home imports pwd before the Windows arm then broken"""
+    src = inspect.getsource(acc._account_home)
+    windows_arm = src.index('if os.name == "nt"')
+    posix_import = src.index("import pwd")
+    assert windows_arm < posix_import
+    assert "Path.home()" in src[windows_arm:posix_import]
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="pwd and os.getuid read the POSIX user database; Windows has no pwd module",
+)
 def test_the_account_home_comes_from_the_user_database_not_from_home(tmp_path: Path) -> None:
     """if the account home comes from HOME instead of the user database then broken"""
+    import pwd
+
     decoy = str(tmp_path / "decoy-home")
     expected = pwd.getpwuid(os.getuid()).pw_dir
     assert expected != decoy

@@ -14,10 +14,13 @@ Requirements:
   ✔︎ a cached profile is exactly what the engine documents build (same function, same points)
   ✔︎ a track with no snapshot is an explicit error naming the snapshot command, never a skip or a default
   ✔︎ a snapshot never overwrites one already taken
+  ✔︎ a snapshot whose document stable_id does not match the requested track (or has no stable_id) is an explicit error, never served as that track
 Acceptance:
   [if] no snapshot exists for a track [then ⛔️] CachedProfileMissing names it and the command
   [if] a snapshot holds no usable grid [then] PairNotTryable, as from the engine (the pair is skipped)
   [if] snapshot meets an existing file [then ⛔️] refuse
+  [if] a snapshot's document stable_id does not match the requested id, or the field is missing [then ⛔️]
+      CachedProfileMissing names the path, the expected id and the found id
 """
 
 from __future__ import annotations
@@ -31,13 +34,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from apps.autodj.profile import ProfileError, TrackProfile, profile_from_payloads
+from apps.autodj.http import ProfileError, TrackProfile, build_service
 from apps.shared.engine_origin import resolve_origin
 from apps.transition_score.tryer import PROFILE_POINTS, EngineProfiles, PairNotTryable
 from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, load_pairs_verified
 
 PROFILES_DIR: Path = Path(__file__).parent / "profiles"
 SNAPSHOT_SCHEMA = 1
+_AUTODJ = build_service()
 
 
 class CachedProfileMissing(RuntimeError):
@@ -71,8 +75,13 @@ class CachedProfiles:
             raise CachedProfileMissing(
                 f"{path}: snapshot schema {document.get('schema')!r}, expected {SNAPSHOT_SCHEMA}"
             )
+        found_id = document.get("stable_id")
+        if found_id != stable_id:
+            raise CachedProfileMissing(
+                f"{path}: snapshot stable_id {found_id!r}, expected {stable_id!r}"
+            )
         try:
-            built = profile_from_payloads(document["anlz"], document["track"])
+            built = _AUTODJ.profile_from_payloads(document["anlz"], document["track"])
         except ProfileError as error:
             raise PairNotTryable(f"{stable_id}: no usable analysis: {error}") from error
         self._profiles[stable_id] = built
@@ -89,7 +98,7 @@ def snapshot(stable_ids: list[str], lock: Path, directory: Path = PROFILES_DIR) 
     if taken:
         raise FileExistsError(f"refusing to overwrite existing snapshots: {taken}")
     origin = resolve_origin(lock)
-    engine = EngineProfiles(origin)
+    engine = EngineProfiles(origin, _AUTODJ)
     directory.mkdir(parents=True, exist_ok=True)
     written = []
     for stable_id, target in zip(stable_ids, targets, strict=True):

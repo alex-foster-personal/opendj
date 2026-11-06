@@ -7,6 +7,8 @@ import sqlite3
 from dataclasses import dataclass, field, fields
 from typing import Any
 
+from ._helpers import json_list_column
+
 
 @dataclass(frozen=True)
 class ProposalRow:
@@ -95,21 +97,21 @@ def _proposal_from_row(row: sqlite3.Row) -> ProposalRow:
         created_at=row["created_at"],
         original_title=row["original_title"],
         original_artist=row["original_artist"],
-        original_artists=json.loads(row["original_artists_json"]),
+        original_artists=json_list_column(row, "original_artists_json"),
         proposed_title=row["proposed_title"],
         proposed_artist=row["proposed_artist"],
         original_artist_credit=row["original_artist_credit"],
-        tags=json.loads(row["tags_json"]),
+        tags=json_list_column(row, "tags_json"),
         fixer_status=row["fixer_status"],
         source=row["source"],
         confidence=row["confidence"],
         jev_kind=row["jev_kind"],
-        notes=json.loads(row["notes_json"]),
+        notes=json_list_column(row, "notes_json"),
         error=row["error"],
         cost_usd=row["cost_usd"],
         state=row["state"],
         batch_id=row["batch_id"],
-        tags_added=json.loads(row["tags_added_json"]),
+        tags_added=json_list_column(row, "tags_added_json"),
         decided_at=row["decided_at"],
     )
 

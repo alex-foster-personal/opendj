@@ -61,3 +61,38 @@ def test_snapshot_refuses_before_any_request_when_one_exists(tmp_path: Path) -> 
     with pytest.raises(FileExistsError):
         snapshot(["trk-b", "trk-a"], tmp_path / "no-such.lock", tmp_path)
     assert not (tmp_path / "trk-b.json").exists(), "if the refusal wrote the first track then it was not up front"
+
+
+@pytest.mark.requirement("TRYER-22")
+def test_a_snapshot_named_for_one_id_with_another_id_is_refused(tmp_path: Path) -> None:
+    """[if] a snapshot named for one id holds another [then] CachedProfileMissing names both, [else stop]."""
+    document = {
+        "schema": SNAPSHOT_SCHEMA,
+        "stable_id": "b",
+        "track": track_row("b"),
+        "anlz": anlz_payload("b"),
+    }
+    path = tmp_path / "a.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CachedProfileMissing) as missing:
+        CachedProfiles(tmp_path).profile("a")
+    message = str(missing.value)
+    assert "a" in message and "b" in message
+    assert "a.json" in message
+
+
+@pytest.mark.requirement("TRYER-22")
+def test_a_snapshot_without_stable_id_is_refused(tmp_path: Path) -> None:
+    """[if] a snapshot has no stable_id [then] CachedProfileMissing names the path and None, [else stop]."""
+    document = {
+        "schema": SNAPSHOT_SCHEMA,
+        "track": track_row("a"),
+        "anlz": anlz_payload("a"),
+    }
+    path = tmp_path / "a.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CachedProfileMissing) as missing:
+        CachedProfiles(tmp_path).profile("a")
+    message = str(missing.value)
+    assert "a" in message and "None" in message
+    assert "a.json" in message

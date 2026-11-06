@@ -84,6 +84,7 @@ from apps.adapters.rekordbox.sidecar_schema import (
     VENDOR_SIDECAR_TABLES,
     ensure_vendor_sidecar_tables,
 )
+from apps.analysis.native_tables_sql import NATIVE_ANALYSIS_V1_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.shared.pairings.schema_sql import (
     migrate_pairings_snapshot_json,
@@ -96,13 +97,14 @@ from apps.shared.state.migrations_v25 import _V25 as _LEGACY_V25
 from apps.shared.state.migrations_v26 import _V26 as _LEGACY_V26
 from apps.shared.state.migrations_v27 import _V27 as _LEGACY_V27
 from apps.shared.state.migrations_v28 import _V28 as _LEGACY_V28
+from apps.shared.state.migrations_v29 import _V29 as _LEGACY_V29
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 17
+SCHEMA_VERSION: int = 18
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -483,9 +485,10 @@ _ANALYSIS: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: native-analysis v1 -- canonical pointer, read-time projection, and
 # the persisted per-lane source default.
-# Legacy sources: apps/analysis/store.py (_ANALYSIS_TABLES_SQL) and
-# apps/analysis/selection.py (_SOURCE_DEFAULT_TABLE_SQL, created on the
-# first promotion).
+# DDL home: apps/analysis/native_tables_sql.py (NATIVE_ANALYSIS_V1_SQL),
+# assembled into apps/analysis/store.py (_ANALYSIS_TABLES_SQL) and mirrored
+# here. apps/analysis/selection.py also references the source-default table
+# shape.
 #
 # Kept as its own tuple rather than appended to _ANALYSIS because it is BOTH
 # the fresh-DB DDL and the body of migration v2: appending it to _V1 alone
@@ -495,60 +498,7 @@ _ANALYSIS: tuple[str, ...] = (
 # ==========================================================================
 
 _NATIVE_ANALYSIS_V1: tuple[str, ...] = (
-    # The deterministic canonical pointer. Rows in `analysis` never
-    # overwrite across producers, so which row a reader gets cannot be a
-    # last-writer-wins column; it is recomputed from ALL rows on every
-    # upsert by one rule (highest semver, tie -> inapp over backfill, cand
-    # never eligible). That is what makes the pointer a function of what
-    # was produced rather than of the order it was produced in.
-    """
-    CREATE TABLE IF NOT EXISTS analysis_canonical (
-        stable_id        TEXT NOT NULL,
-        lane             TEXT NOT NULL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        updated_at       TEXT NOT NULL,
-        PRIMARY KEY (stable_id, lane)
-    )
-    """,
-    # The read-time projection of own scalars. Every scalar reader goes
-    # through effective_fields() (apps/analysis/selection.py), which reads
-    # THIS table for a lane on own and track_fields for a lane on rbx.
-    # Nothing here is ever written into track_fields, so no own value can
-    # enter track_field_history or the sync path.
-    """
-    CREATE TABLE IF NOT EXISTS analysis_projection (
-        stable_id        TEXT NOT NULL,
-        field            TEXT NOT NULL,
-        -- Deliberately typeless: SQLite gives an untyped column BLOB (none)
-        -- affinity, so a REAL bpm stays a REAL and a TEXT camelot stays TEXT.
-        -- Declaring it TEXT would coerce 128.0 to '128.0' and make every
-        -- smartlist numeric operator a lexical comparison, which is the same
-        -- class of silent wrongness as sorting 0.10.0 below 0.9.0.
-        value,
-        status           TEXT NOT NULL,
-        reason           TEXT,
-        confidence       REAL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        updated_at       TEXT NOT NULL,
-        PRIMARY KEY (stable_id, field)
-    )
-    """,
-    # Spec section 3: the filters on these fields must not scan records.
-    "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
-    "ON analysis_projection(field, value)",
-    # The persisted per-lane source default: what a PROMOTION writes, and the
-    # only half of the selection surface that survives a relaunch. Created by
-    # apps/analysis/selection.py on first use; declared here so schema
-    # adoption, drift checks and the fresh-database inventory all know it.
-    """
-    CREATE TABLE IF NOT EXISTS analysis_source_default (
-        lane        TEXT PRIMARY KEY,
-        source      TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
-    )
-    """,
+    *NATIVE_ANALYSIS_V1_SQL,
     # The backfill queue (spec section 3 "Queue") and the staleness table,
     # SPLICED IN from the modules that own them rather than restated. They
     # were written out here as well until Thu 10 Sep 2026 and the two copies
@@ -1294,9 +1244,12 @@ _V16: list[str] = list(_LEGACY_V27)
 _V17: list[str] = list(_LEGACY_V28)
 """16 -> 17: AutoPlay decision record and verdict (legacy ladder v28, ADR-0139)."""
 
+_V18: list[str] = list(_LEGACY_V29)
+"""17 -> 18: live membership lookup by stable_id (legacy ladder v29, issue #8785)."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14, _V15, _V16, _V17,
+    _V14, _V15, _V16, _V17, _V18,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]

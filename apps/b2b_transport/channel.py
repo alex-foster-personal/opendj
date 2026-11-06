@@ -9,6 +9,11 @@ relay and the booth signalling all keep their existing response handling. A part
 be reached on either path raises ``ChannelUnreachable``, an ``httpx.TransportError``, so the
 existing ``except httpx.HTTPError`` handlers name it exactly as they name a LAN partner that is
 down. Nothing here picks a path; ``routes/b2b_channel.py`` does (LAN first, else internet).
+
+The Link relay uses ``post_sealed`` for frames that authenticate themselves with a key derived
+from the local pairing token. On LAN that operation omits the ordinary bearer header, so the
+token never crosses the plaintext HTTP connection; the internet door keeps its existing sealed
+room transport.
 """
 
 from __future__ import annotations
@@ -55,6 +60,8 @@ class PairedChannel(Protocol):
 
     def post(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response: ...
 
+    def post_sealed(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response: ...
+
     def bind(self, client: httpx.Client) -> PairedChannel: ...
 
 
@@ -83,7 +90,12 @@ class LanChannel:
             return self.client.get(f"{self.url}{path}", headers=self._headers(), timeout=timeout)
 
     def post(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
-        headers = {**self._headers(), "content-type": "application/json"}
+        return self._post(path, body, timeout, {**self._headers(), "content-type": "application/json"})
+
+    def post_sealed(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
+        return self._post(path, body, timeout, {"content-type": "application/json"})
+
+    def _post(self, path: str, body: bytes, timeout: Timeout, headers: dict[str, str]) -> httpx.Response:
         return self.client.post(f"{self.url}{path}", content=body, headers=headers, timeout=timeout)
 
     def bind(self, client: httpx.Client) -> LanChannel:
@@ -104,6 +116,9 @@ class InternetChannel:
         return self._ask(DoorRequest("GET", route, query), timeout)
 
     def post(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
+        return self._ask(DoorRequest("POST", path, "", body), timeout)
+
+    def post_sealed(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
         return self._ask(DoorRequest("POST", path, "", body), timeout)
 
     def bind(self, client: httpx.Client) -> InternetChannel:  # noqa: ARG002 - the Protocol's signature

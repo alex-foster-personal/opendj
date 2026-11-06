@@ -4,6 +4,7 @@
  * Worker-safe, no DOM. Union within group via Set union; intersection across
  * groups via Set intersection on posting lists (O(posting), not O(n) rescan).
  */
+import { normalizeRating } from '$lib/rating';
 import {
 	BPM_GE200_ID,
 	BPM_LT60_ID,
@@ -43,8 +44,9 @@ export function bpmBucketKey(bpm: number | null): string {
 }
 
 export function ratingBucketKey(rating: number | null): string {
-	if (rating === null || rating === 0) return RATING_UNRATED_ID;
-	return String(rating);
+	const stars = normalizeRating(rating);
+	if (stars === null || stars === 0) return RATING_UNRATED_ID;
+	return String(stars);
 }
 
 function genreKey(genre: string | null): string {

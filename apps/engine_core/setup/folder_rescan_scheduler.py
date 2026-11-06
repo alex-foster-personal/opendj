@@ -141,9 +141,18 @@ class FolderRescanScheduler:
                 report = self._reconcile_fn(writer, roots, self._signature)
             finally:
                 writer.close()
-        except Exception:
+        except Exception as exc:
             self.consecutive_failures += 1
-            log.exception("folder-rescan round failed (%d in a row)", self.consecutive_failures)
+            if isinstance(exc, state_db.StateStoreBusyError) or state_db.is_sqlite_busy(exc):
+                log.info(
+                    "folder-rescan round deferred, state db busy (%d in a row): %s",
+                    self.consecutive_failures,
+                    exc,
+                )
+            else:
+                log.exception(
+                    "folder-rescan round failed (%d in a row)", self.consecutive_failures
+                )
             return "error"
         finally:
             if conn is not None:

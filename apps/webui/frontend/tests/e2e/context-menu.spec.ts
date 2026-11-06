@@ -77,7 +77,10 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	await expect(page.locator(MENU)).toContainText('Load to deck 1');
 	await page.keyboard.press('Escape');
 
-	const playlist = page.locator('[data-testid="playlist-row"]').first();
+	// Inbox (`_incoming`) omits Duplicate in the tree menu; skip it for this check.
+	const playlist = page
+		.locator('[data-testid="playlist-row"]:not([data-playlist-id="_incoming"])')
+		.first();
 	await expect(playlist).toBeVisible();
 	await playlist.click({ button: 'right' });
 	await expect(page.locator(MENU)).toContainText('New playlist');

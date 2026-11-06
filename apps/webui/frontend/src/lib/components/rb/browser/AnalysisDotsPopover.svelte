@@ -80,15 +80,14 @@
 	 */
 	import {
 		ANALYSIS_DOT_SLOTS,
-		ANALYSIS_COLORS,
 		ANALYSIS_ISSUE_COLORS,
 		ANALYSIS_LABELS,
 		analysisStatus,
 		jobProgress,
 		type AnalysisBadge,
-		type AnalysisIssues,
-		type AnalysisKind
+		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
+	import { ANALYSIS_COLORS, type AnalysisKind } from '$lib/rb/analysis-kinds';
 	import { getTrackAnalysisOrders, orderTrackAnalysis } from '$lib/rb/api-ingest';
 	import { runAnalysisOrder } from '$lib/rb/analysis-order';
 	import { pushToast } from '$lib/stores.svelte';

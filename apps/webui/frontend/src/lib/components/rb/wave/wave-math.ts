@@ -4,6 +4,10 @@
  */
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 
+/** Single definition lives in wave-window.ts (base decision); re-exported so
+ * existing importers of wave-math keep working. */
+export { WAVE_WINDOW_S } from './wave-window';
+
 /** Index of the FIRST beat with t >= tSec (== beats.length when none).
  * beats MUST be ordered by t (contract: AnlzBeatgrid.beats is ordered). */
 export function firstBeatAtOrAfter(beats: readonly AnlzBeat[], tSec: number): number {

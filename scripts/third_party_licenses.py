@@ -64,6 +64,7 @@ from pathlib import Path
 
 import yaml
 
+from scripts.ci_path_resolve import require_on_path
 from scripts.license_bundled import supplement_components, vendored_source_components
 from scripts.license_classify import FLAGGED, RANK, Cat, classify_license
 from scripts.license_mirrors import KNOWN_TEXTLESS, REVIEWED_LICENSE_TEXTS
@@ -248,12 +249,12 @@ def js_closure(frontend_dir: Path) -> tuple[list[str], set[str]]:
 
 
 def _pnpm_bin() -> str:
-    """Absolute path to pnpm; see scripts/quality_gate.py:_pnpm_bin for why a bare
-    ``pnpm`` never launches on Windows (CreateProcess ignores PATHEXT)."""
-    path = shutil.which("pnpm")
-    if path is None:
-        raise LicenseInventoryError("pnpm is not on PATH; required to inventory JS licenses")
-    return path
+    """Absolute path to pnpm; resolved via :func:`scripts.ci_path_resolve.require_on_path`."""
+    return require_on_path(
+        "pnpm",
+        LicenseInventoryError,
+        "pnpm is not on PATH; required to inventory JS licenses",
+    )
 
 
 _INDEX_ERROR = "ERR_PNPM_MISSING_PACKAGE_INDEX_FILE"
@@ -334,7 +335,7 @@ def js_components(frontend_dir: Path) -> list[Component]:
 
 
 # ----- rust ---------------------------------------------------------------
-def rust_components(repo_root: Path) -> list[Component]:
+def rust_components(repo_root: Path, target_triple: str = RUST_TARGET_TRIPLE) -> list[Component]:
     cargo_bin = shutil.which("cargo")
     if cargo_bin is None:
         raise LicenseInventoryError("cargo is not on PATH")
@@ -349,7 +350,7 @@ def rust_components(repo_root: Path) -> list[Component]:
                 "--format-version",
                 "1",
                 "--filter-platform",
-                RUST_TARGET_TRIPLE,
+                target_triple,
                 *extra_args,
             ],
             cwd=crate,
@@ -411,7 +412,10 @@ def attach_reviewed_license_texts(repo_root: Path, components: list[Component]) 
         if entry is None or any(text.strip() for _, text in c.license_texts):
             continue
         text_path = repo_root / entry.text_relative
-        if not text_path.is_file() or hashlib.sha256(text_path.read_bytes()).hexdigest() != entry.sha256:
+        if (
+            not text_path.is_file()
+            or hashlib.sha256(text_path.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != entry.sha256
+        ):
             raise LicenseInventoryError(f"{text_path} is missing or not the reviewed text (sha256 {entry.sha256})")
         c.texts.append((text_path.name, _read_text(text_path)))
         c.note = f"Canonical text from {entry.source_url} (fetched {entry.fetched}): {entry.reason}. {entry.issue}"
@@ -419,13 +423,13 @@ def attach_reviewed_license_texts(repo_root: Path, components: list[Component]) 
 
 
 # ----- rendering ----------------------------------------------------------
-def collect_all(repo_root: Path, payload_dir: Path) -> list[Component]:
+def collect_all(repo_root: Path, payload_dir: Path, rust_target_triple: str = RUST_TARGET_TRIPLE) -> list[Component]:
     return attach_reviewed_license_texts(
         repo_root,
         [
             *python_components(payload_dir),
             *js_components(repo_root / FRONTEND_RELATIVE),
-            *rust_components(repo_root),
+            *rust_components(repo_root, rust_target_triple),
             *supplement_components(repo_root, payload_dir),
         ],
     )
@@ -538,13 +542,15 @@ def require_license_texts(components: list[Component]) -> None:
         )
 
 
-def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str, object]:
+def write_payload_license_files(
+    repo_root: Path, payload_dir: Path, rust_target_triple: str = RUST_TARGET_TRIPLE
+) -> dict[str, object]:
     """Stage THIRD-PARTY-LICENSES.txt, the flag report, LICENSE and NOTICE.
 
     Raises (never returns a partial result) when any inventory cannot be
     measured, so the dmg build fails rather than shipping without attribution.
     """
-    components = collect_all(repo_root, payload_dir)
+    components = collect_all(repo_root, payload_dir, rust_target_triple)
     require_license_texts(components)
     (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8", newline="\n")
     (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8", newline="\n")

@@ -28,6 +28,12 @@ WAVE_GUTTER = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveGu
 WAVE_TRACK_SUMMARY = (
     REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveTrackSummary.svelte"
 )
+# The gutter and summary markup lives in props-only views (Storybook split);
+# the containers above keep the store reads and mount them.
+WAVE_GUTTER_VIEW = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveGutterView.svelte"
+WAVE_TRACK_SUMMARY_VIEW = (
+    REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveTrackSummaryView.svelte"
+)
 
 # The deck number span may carry extra attributes (the explainer audit added a
 # hover `title`), but it must keep its class and still render the deck id.
@@ -50,13 +56,14 @@ def test_every_wavestack_row_carries_its_deck_identity() -> None:
     """[if] a wavestack row drops its deck id span [then] fail, [else stop]."""
     source = _source(WAVE_ROW)
 
-    gutter = _source(WAVE_GUTTER)
+    gutter = _source(WAVE_GUTTER_VIEW)
 
     assert 'class="rb-waverow"' in source
     assert "data-deck={deckId}" in source
     assert "<WaveGutter {deck} {deckId} />" in source
+    assert "<WaveGutterView {deckId} {loaded}>" in _source(WAVE_GUTTER)
     assert DECK_NUM_SPAN.search(gutter), (
-        f"{WAVE_GUTTER.name} must render the deck id inside a .deck-num span; "
+        f"{WAVE_GUTTER_VIEW.name} must render the deck id inside a .deck-num span; "
         f"no match in:\n{gutter}"
     )
 
@@ -83,10 +90,12 @@ def test_waveform_seek_canvas_remains_an_accessible_bounded_slider() -> None:
 
 
 def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
-    source = _source(WAVE_TRACK_SUMMARY)
+    container = _source(WAVE_TRACK_SUMMARY)
+    source = _source(WAVE_TRACK_SUMMARY_VIEW)
 
     # PARITY-14: the deck asks for the online lookup too, so no local-miss skip.
-    assert "deckArtworkUrl(deck.stable_id, 's')" in source
+    assert "deckArtworkUrl(deck.stable_id, 's')" in container
+    assert "<WaveTrackSummaryView" in container
     assert 'class="wave-art"' in source
     assert 'class="wave-track-name"' in source
     assert "trackNameScrubPx" in source
@@ -97,13 +106,17 @@ def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
 def test_waveform_gutter_labels_empty_and_unavailable_artwork_states() -> None:
     """DECKUX-40: an empty deck shows only its number, which says why in its
     hover title; the track summary (and its artwork square) is not mounted."""
-    gutter = _source(WAVE_GUTTER)
-    source = _source(WAVE_TRACK_SUMMARY)
+    gutter = _source(WAVE_GUTTER_VIEW)
+    source = _source(WAVE_TRACK_SUMMARY_VIEW)
 
     assert "no track loaded" in gutter
-    assert "{#if loaded}<WaveTrackSummary {deck} />{/if}" in gutter
+    assert "{#if loaded}{@render summary()}{/if}" in gutter
+    assert "{#snippet summary()}<WaveTrackSummary {deck} />{/snippet}" in _source(WAVE_GUTTER)
     assert "No artwork found" in source
     # The shared cover module owns the failed-load state since the artwork retry fix.
-    assert "coverFailed(sid)" in source
-    assert "coverVisible(deck.stable_id)" in source
-    assert "loaded deck ${deck.stable_id} is missing a title" in source
+    # Storybook split: the view is props-only, so the container that owns the
+    # stable id reads the cover state and the missing-title throw.
+    container = _source(WAVE_TRACK_SUMMARY)
+    assert "coverFailed(loadedStableId())" in container
+    assert "coverVisible(sid)" in container
+    assert "loaded deck ${deck.stable_id} is missing a title" in container

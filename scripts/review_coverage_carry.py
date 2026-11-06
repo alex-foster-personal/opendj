@@ -23,13 +23,13 @@ from __future__ import annotations
 
 import functools
 import re
-import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from scripts.ci_path_resolve import require_on_path
 from scripts.review_claude import CLAUDE, CLAUDE_LOGINS, CLAUDE_MARKER
 from scripts.review_coverage_base_merge import (
     CarryUnknown,
@@ -56,10 +56,7 @@ def debt_file_path(pr: str) -> str:
 @functools.cache
 def _git() -> str:
     """git by resolved path, once (AGENTS.md: launch programs by resolved path)."""
-    git = shutil.which("git")
-    if git is None:
-        raise TriageError("git is not on PATH: the debt-only carry cannot be measured")
-    return git
+    return require_on_path("git", TriageError, "git is not on PATH: the debt-only carry cannot be measured")
 
 
 def _object_exists(root: Path, sha: str) -> bool:

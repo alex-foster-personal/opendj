@@ -455,7 +455,7 @@ FIXTURE_MANIFEST_PATH = FIXTURE_PATH.with_suffix(".manifest.json")
 """The locked ``{schema, sha256}`` declaration :func:`apps.equivalence.known.
 load_fixture` checks the release-gating fixture against. Regenerate with
 ``python -m apps.equivalence.known --write-manifest`` after a REVIEWED
-change to ``known_answers.json``, never as a convenience workaround for a
+change to ``known_answers.json``, never as a convenience edit to silence a
 checksum mismatch."""
 
 

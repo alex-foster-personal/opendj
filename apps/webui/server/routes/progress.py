@@ -572,6 +572,120 @@ def _now_iso() -> str:
     )
 
 
+def _require_matching_etag(if_match: str, current_etag: str) -> None:
+    if if_match != current_etag:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "conflict",
+                "message": "If-Match does not match the current progress ledger ETag",
+                "etag": current_etag,
+            },
+            headers={"ETag": current_etag},
+        )
+
+
+def _apply_status_change(
+    node: dict[str, Any],
+    patch: NodePatch,
+    effective_status: str | None,
+) -> bool:
+    status_changing = (
+        effective_status is not None and effective_status != node["status"]
+    )
+    if status_changing:
+        if (
+            effective_status not in _STATUSES_WITHOUT_COMMITS
+            and not patch.commits_append
+        ):
+            raise _http_error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "status_change_needs_commits",
+                f"changing status {node['status']!r} -> "
+                f"{effective_status!r} requires commits_append (only "
+                "missing/spiked are exempt: they carry no code to cite)",
+            )
+        if effective_status == "user-finalized" and patch.verified is None:
+            raise _http_error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "user_finalized_needs_verified",
+                "changing status to user-finalized requires a verified "
+                "{by, method} block in the same PATCH -- it marks the maintainer's "
+                "personal QA blessing, the top of the status lifecycle",
+            )
+        node["status"] = effective_status
+    return status_changing
+
+
+def _apply_node_fields(node: dict[str, Any], patch: NodePatch) -> None:
+    if patch.note is not None:
+        node["notes"] = patch.note
+    if patch.commits_append:
+        node.setdefault("commits", [])
+        node["commits"].extend(
+            commit.model_dump() for commit in patch.commits_append
+        )
+    if patch.tests_append:
+        node.setdefault("tests", [])
+        node["tests"].extend(patch.tests_append)
+    if patch.verified is not None:
+        node["verified"] = {
+            "by": patch.verified.by,
+            "date": _now_iso(),
+            "method": patch.verified.method,
+        }
+    if patch.build is not None:
+        node.setdefault("build", {})
+        node["build"].update(patch.build.model_dump(exclude_none=True))
+        node["build"]["updated"] = _now_iso()
+    if patch.links is not None:
+        node.setdefault("links", {})
+        node["links"].update(patch.links.model_dump(exclude_none=True))
+    if patch.buildable is not None:
+        node["buildable"] = patch.buildable.model_dump()
+
+
+def _apply_patch_nags(
+    node: dict[str, Any],
+    node_id: str,
+    alias_used: bool,
+    status_changing: bool,
+    effective_status: str | None,
+) -> None:
+    if alias_used:
+        _append_note(
+            node,
+            "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
+            "(alias sunset tracked in (private path))",
+        )
+        logger.warning(
+            "progress PATCH %s: deprecated status alias 'working' coerced to 'built'",
+            node_id,
+        )
+    if status_changing and effective_status == "building":
+        build = node.get("build") or {}
+        if not build.get("branch") and not build.get("pr"):
+            _append_note(node, "building without branch/pr recorded")
+
+
+def _apply_node_patch(
+    node: dict[str, Any],
+    patch: NodePatch,
+    effective_status: str | None,
+    alias_used: bool,
+    node_id: str,
+) -> None:
+    status_changing = _apply_status_change(node, patch, effective_status)
+    _apply_node_fields(node, patch)
+    _apply_patch_nags(
+        node,
+        node_id,
+        alias_used,
+        status_changing,
+        effective_status,
+    )
+
+
 def _patch_progress_file(
     progress_file: Path,
     node_id: str,
@@ -590,81 +704,12 @@ def _patch_progress_file(
 
     with _progress_file_lock(progress_file):
         tree, current_etag, current_text = _read_tree_snapshot(progress_file)
-        if if_match != current_etag:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error": "conflict",
-                    "message": "If-Match does not match the current progress ledger ETag",
-                    "etag": current_etag,
-                },
-                headers={"ETag": current_etag},
-            )
+        _require_matching_etag(if_match, current_etag)
         for commit in patch.commits_append or []:
             _require_resolvable_sha(commit.sha)
 
         node = _find_node(tree, node_id)
-        status_changing = effective_status is not None and effective_status != node["status"]
-        if status_changing:
-            if effective_status not in _STATUSES_WITHOUT_COMMITS and not patch.commits_append:
-                raise _http_error(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    "status_change_needs_commits",
-                    f"changing status {node['status']!r} -> "
-                    f"{effective_status!r} requires commits_append (only "
-                    "missing/spiked are exempt: they carry no code to cite)",
-                )
-            if effective_status == "user-finalized" and patch.verified is None:
-                raise _http_error(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    "user_finalized_needs_verified",
-                    "changing status to user-finalized requires a verified "
-                    "{by, method} block in the same PATCH -- it marks the maintainer's "
-                    "personal QA blessing, the top of the status lifecycle",
-                )
-            node["status"] = effective_status
-
-        if patch.note is not None:
-            node["notes"] = patch.note
-        if patch.commits_append:
-            node.setdefault("commits", [])
-            node["commits"].extend(commit.model_dump() for commit in patch.commits_append)
-        if patch.tests_append:
-            node.setdefault("tests", [])
-            node["tests"].extend(patch.tests_append)
-        if patch.verified is not None:
-            node["verified"] = {
-                "by": patch.verified.by,
-                "date": _now_iso(),
-                "method": patch.verified.method,
-            }
-        if patch.build is not None:
-            node.setdefault("build", {})
-            node["build"].update(patch.build.model_dump(exclude_none=True))
-            node["build"]["updated"] = _now_iso()
-        if patch.links is not None:
-            node.setdefault("links", {})
-            node["links"].update(patch.links.model_dump(exclude_none=True))
-        if patch.buildable is not None:
-            node["buildable"] = patch.buildable.model_dump()
-
-        # Preserve the deprecation note even when the same PATCH sets note.
-        if alias_used:
-            _append_note(
-                node,
-                "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
-                "(alias sunset tracked in (private path))",
-            )
-            logger.warning(
-                "progress PATCH %s: deprecated status alias 'working' coerced to 'built'",
-                node_id,
-            )
-
-        # Building without a branch/PR is a visible nag, not a write block.
-        if status_changing and effective_status == "building":
-            build = node.get("build") or {}
-            if not build.get("branch") and not build.get("pr"):
-                _append_note(node, "building without branch/pr recorded")
+        _apply_node_patch(node, patch, effective_status, alias_used, node_id)
 
         tree["meta"]["updated"] = _now_iso()
         new_etag = _dump_tree_atomic(progress_file, tree, current_text)

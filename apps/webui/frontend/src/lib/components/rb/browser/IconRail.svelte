@@ -64,7 +64,8 @@
 		},
 		{
 			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a).
-			// TODO entry: the usb-export routes exist, the UI does not yet.
+			// Planned entry (PARITY-TODO, id usb-export): the usb-export routes exist;
+			// the UI is not built, so this glyph stays inert.
 			plannedId: 'usb-export',
 			color: 'currentColor',
 			d: 'M5 2h6.5L13 3.5V14H5zM6.2 3.2v2.6M8 3.2v2.6M9.8 3.2v2.6M11.6 3.7v2.1',
@@ -72,7 +73,8 @@
 		},
 		{
 			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a).
-			// TODO entry: set sessions exist (apps/sets), the in-browser list does not.
+			// Planned entry (PARITY-TODO, id play-history): set sessions exist in
+			// apps/sets; the in-browser list is not built, so this glyph stays inert.
 			plannedId: 'play-history',
 			color: 'currentColor',
 			d: 'M6.5 1.5h3M8 1.5v2M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 8.5V5.5M8 8.5l2 1.5',

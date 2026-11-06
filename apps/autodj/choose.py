@@ -21,30 +21,15 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
 
+from apps.autodj.contract.models import STYLE_CAP, VARIETY_WINDOW
+from apps.autodj.contract.models import ChooserCandidate as Candidate
 from apps.autodj.propose import _PREFERENCES, parse_intent
 
 #: Provisional: a candidate is eligible at 0.6 of the pair's best unvetoed M. Relative, because M on real pairs spans
 #: 0 to about 0.45 with five of seven factors measured, so no absolute value is comparable across pairs yet. Not fitted
 #: to the maintainer's verdicts (they steer direction only); revisit once M measures all seven factors.
 FLOOR_SHARE = 0.6
-#: Variety across a set: a style plays at most this often (the bench's viva26 set, round 22).
-STYLE_CAP = 2
-#: A live set has no end, so the cap counts the last transitions, about one bench set's worth.
-VARIETY_WINDOW = 10
-
-
-@dataclass(frozen=True)
-class Candidate:
-    """One rendered candidate: its style, its M score and whether any veto fired."""
-
-    cid: str
-    style: str
-    m: float
-    vetoed: bool
-
-
 def eligible(candidates: list[Candidate]) -> list[Candidate]:
     """The unvetoed candidates at or above FLOOR_SHARE of the best unvetoed M."""
     clean = [c for c in candidates if not c.vetoed]

@@ -134,12 +134,9 @@ def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
     return _best_occurrence_among(tracks, goal, allowed)
 
 
-def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, SlotReservation]:
-    """Plan fixed slot assignments for pinned roles."""
+def _require_pins_satisfiable(tracks: list[TrackFeature], goal: SetGoal) -> None:
+    """Raise if pinned stable_ids are missing or need more slots than tracks."""
     total = len(tracks)
-    if total == 0:
-        return {}
-
     all_pins = list(goal.peak_pins) + list(goal.opener_pins)
     if goal.closer_pin is not None:
         all_pins.append(goal.closer_pin)
@@ -154,6 +151,48 @@ def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, Sl
         distinct_slots += 1
     if distinct_slots > total:
         raise PinUnsatisfiableError("playlist_too_short")
+
+
+def _reserve_peak_slots(
+    tracks: list[TrackFeature],
+    goal: SetGoal,
+    reservations: dict[int, SlotReservation],
+) -> None:
+    """Append peak-role SlotReservations for assign_peak_pin_slots(goal, total)."""
+    total = len(tracks)
+    for slot, stable_id in assign_peak_pin_slots(goal, total).items():
+        occurrence = _first_occurrence(tracks, stable_id)
+        assert occurrence is not None
+        reservations[slot] = SlotReservation(
+            slot=slot,
+            occurrence=occurrence,
+            stable_id=stable_id,
+            role="peak",
+        )
+
+
+def _reject_occurrence_collisions(reservations: dict[int, SlotReservation]) -> None:
+    """Raise if two reserved slots claim the same playlist occurrence."""
+    seen_occurrence: dict[int, SlotReservation] = {}
+    for slot in sorted(reservations):
+        reservation = reservations[slot]
+        prior = seen_occurrence.get(reservation.occurrence)
+        if prior is not None and prior.slot != slot:
+            if reservation.role == "closer" or prior.role == "closer":
+                raise PinUnsatisfiableError("closer_unsatisfiable")
+            if reservation.role == "opener" or prior.role == "opener":
+                raise PinUnsatisfiableError("opener_unsatisfiable")
+            raise PinUnsatisfiableError("peak_window_too_small")
+        seen_occurrence[reservation.occurrence] = reservation
+
+
+def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, SlotReservation]:
+    """Plan fixed slot assignments for pinned roles."""
+    total = len(tracks)
+    if total == 0:
+        return {}
+
+    _require_pins_satisfiable(tracks, goal)
 
     reservations: dict[int, SlotReservation] = {}
 
@@ -177,27 +216,8 @@ def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, Sl
             role="closer",
         )
 
-    for slot, stable_id in assign_peak_pin_slots(goal, total).items():
-        occurrence = _first_occurrence(tracks, stable_id)
-        assert occurrence is not None
-        reservations[slot] = SlotReservation(
-            slot=slot,
-            occurrence=occurrence,
-            stable_id=stable_id,
-            role="peak",
-        )
-
-    seen_occurrence: dict[int, SlotReservation] = {}
-    for slot in sorted(reservations):
-        reservation = reservations[slot]
-        prior = seen_occurrence.get(reservation.occurrence)
-        if prior is not None and prior.slot != slot:
-            if reservation.role == "closer" or prior.role == "closer":
-                raise PinUnsatisfiableError("closer_unsatisfiable")
-            if reservation.role == "opener" or prior.role == "opener":
-                raise PinUnsatisfiableError("opener_unsatisfiable")
-            raise PinUnsatisfiableError("peak_window_too_small")
-        seen_occurrence[reservation.occurrence] = reservation
+    _reserve_peak_slots(tracks, goal, reservations)
+    _reject_occurrence_collisions(reservations)
 
     if goal.opener_pins and 0 not in reservations:
         raise PinUnsatisfiableError("opener_unsatisfiable")

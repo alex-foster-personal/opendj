@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 324884,
+  "measured_with_pr": 325082,
+  "sha": "205611c83c",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #5230 makes deck waveforms follow live EQ and filter (WAVE-EQ-01): the wave-eq-reflect setting and its catalog entry load with the library shell. Measured: local vite build of main 0891b4c991 and of 205611c83c (that main merged), +198 B gzip; ceiled to KiB",
+  "payback": "none planned; the setting is one catalog entry and its apply hook"
+}

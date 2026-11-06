@@ -252,6 +252,15 @@ class TraktorAdapter:
     def _write_entry(
         self, entry: NMLEntry, track: Track, report: AdapterReport
     ) -> None:
+        self._write_entry_fields(entry, track)
+        self._write_cues(entry, track, report)
+        if self.options.preserve_extended_data:
+            ext = track.extensions.get("x_traktor_extended_data")
+            if isinstance(ext, str) and ext:
+                el = ET.SubElement(entry.element, "EXTENDEDDATA")
+                el.text = ext
+
+    def _write_entry_fields(self, entry: NMLEntry, track: Track) -> None:
         if track.title:
             entry.title = track.title
         artist_str = " & ".join(track.artists) if track.artists else ""
@@ -260,12 +269,9 @@ class TraktorAdapter:
         # LOCATION -- split path into volume + directory + file.
         location = ET.SubElement(entry.element, "LOCATION")
         volume, directory, filename = _split_location(track.file_path)
-        if volume:
-            location.set("VOLUME", volume)
-        if directory:
-            location.set("DIR", directory)
-        if filename:
-            location.set("FILE", filename)
+        for attr, value in (("VOLUME", volume), ("DIR", directory), ("FILE", filename)):
+            if value:
+                location.set(attr, value)
         if track.album:
             ET.SubElement(entry.element, "ALBUM", {"TITLE": track.album})
         info_attrs: dict[str, str] = {}
@@ -281,7 +287,10 @@ class TraktorAdapter:
         key_int = camelot_to_traktor_key(track.key_camelot)
         if key_int is not None:
             ET.SubElement(entry.element, "MUSICAL_KEY", {"VALUE": str(key_int)})
-        # Cue points.
+
+    def _write_cues(
+        self, entry: NMLEntry, track: Track, report: AdapterReport
+    ) -> None:
         for cue in track.cues:
             attrs = {
                 "NAME": cue.name,
@@ -299,11 +308,6 @@ class TraktorAdapter:
                     action="downgraded",
                     reason=f"Traktor paints cue type {cue.type!r} with fixed palette; user color discarded.",
                 )
-        if self.options.preserve_extended_data:
-            ext = track.extensions.get("x_traktor_extended_data")
-            if isinstance(ext, str) and ext:
-                el = ET.SubElement(entry.element, "EXTENDEDDATA")
-                el.text = ext
 
     # -------------------------------------------------------------- playlists
 

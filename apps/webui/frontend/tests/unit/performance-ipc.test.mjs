@@ -1780,6 +1780,7 @@ test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
+		ipc.getDeckState(2).stable_id = 'quantize-fixture';
 		await window.musicDjToolsPerformance.dispatch({
 			type: 'play',
 			deck: 2,
@@ -1796,9 +1797,24 @@ test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed
 		clockSec = 12.26;
 		assert.equal(ipc.queryPerformanceState().decks[2].quantized_launch_armed, null);
 	} finally {
+		ipc.getDeckState(2).stable_id = null;
 		uninstall();
 		resetDriver();
 		ipc.resetQuantizedLaunchArmedForTest();
+		delete globalThis.window;
+	}
+});
+
+test('play parse rejects a command that omits playing', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1 }),
+			/playing must be boolean/
+		);
+	} finally {
+		uninstall();
 		delete globalThis.window;
 	}
 });
@@ -1815,6 +1831,60 @@ test('LATENCY-02 play parse accepts omitted quantize and rejects unknown fields'
 				extra: true
 			}),
 			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+// DECKUX-4985 / Sentry OPEN-DJ-BE-6Y
+// [if] play is dispatched on an empty deck [then] IPC refuses before engine throw
+test('DECKUX-4985 play on an empty deck refuses without play: no track loaded', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		assert.equal(ipc.getDeckState(1).stable_id, null);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true }),
+			/Deck 1 is empty - load a track before play/
+		);
+		assert.match(ipc.performanceCommandStatus.last_error ?? '', /Deck 1 is empty/);
+		assert.doesNotMatch(
+			ipc.performanceCommandStatus.last_error ?? '',
+			/no track loaded on deck/
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('DECKUX-4985 pause on an empty deck is a no-op', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		assert.equal(ipc.getDeckState(1).stable_id, null);
+		await window.musicDjToolsPerformance.dispatch({
+			type: 'play',
+			deck: 1,
+			playing: false
+		});
+		assert.equal(ipc.queryPerformanceState().command_pending, false);
+		assert.equal(ipc.performanceCommandStatus.last_error, null);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('DECKUX-4985 cue on an empty deck refuses like MIDI', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'cue', deck: 1 }),
+			/Deck 1 is empty - load a track before cueing/
 		);
 	} finally {
 		uninstall();

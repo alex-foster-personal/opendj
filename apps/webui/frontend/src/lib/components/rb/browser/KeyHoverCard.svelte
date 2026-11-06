@@ -48,7 +48,10 @@
 
 	$effect(() => {
 		const node = el;
-		if (node === null || typeof ResizeObserver === 'undefined') return;
+		if (node === null) return;
+		if (typeof ResizeObserver === 'undefined') {
+			throw new Error('KeyHoverCard requires ResizeObserver');
+		}
 		const ro = new ResizeObserver(() => {
 			// Fractional size, not offsetWidth/offsetHeight: those round, so a
 			// 273.17px-wide box measured as 273 lands 0.17px past the inset

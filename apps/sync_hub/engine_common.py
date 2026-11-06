@@ -12,7 +12,10 @@ instead of on each other, keeping the split acyclic.
 from __future__ import annotations
 
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
-from apps.sync_hub.protocol import SPEC_BY_TABLE, SYNC_TABLES, TableSpec
+from apps.shared.state.sync_tables import (
+    pk_predicate as _pk_predicate,  # noqa: F401  # re-exported: engine_apply/engine_changes import through here
+)
+from apps.sync_hub.protocol import SPEC_BY_TABLE, SYNC_TABLES
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 
@@ -76,10 +79,6 @@ def apply_rank(table: str, *, source: str) -> int:
             f"{source} references table {table!r}, which is not in the sync "
             f"set; the sync set is {sorted(SPEC_BY_TABLE)}"
         ) from None
-
-
-def _pk_predicate(spec: TableSpec) -> str:
-    return " AND ".join(f"{column} = ?" for column in spec.pk)
 
 
 __all__ = [

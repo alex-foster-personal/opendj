@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
+import psutil
 import pytest
 
 from apps.webui import port_config
@@ -731,6 +732,83 @@ def test_claim_moves_when_foreign_backend_and_own_ui_hold_pair(
             requested=configured,
         )
     assert claimed != configured
+
+
+def _deny_system_wide_net_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _denied(*_args: object, **_kwargs: object) -> list[object]:
+        raise psutil.AccessDenied()
+
+    monkeypatch.setattr("apps.webui.port_config.psutil.net_connections", _denied)
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_keeps_remembered_pair_when_net_connections_denied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] own UI and net_connections denied [then] keep pair, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    dotenv = repo_root / ".env"
+    first_text = dotenv.read_text(encoding="utf-8")
+    first_stat = dotenv.stat()
+    _deny_system_wide_net_connections(monkeypatch)
+    with _own_ui_listener(first.frontend, repo_root):
+        second = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert second == first
+    assert dotenv.read_text(encoding="utf-8") == first_text
+    assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
+    assert dotenv.stat().st_ino == first_stat.st_ino
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_moves_when_foreign_ui_and_net_connections_denied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] foreign UI and net_connections denied [then] pair moves, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    foreign_root = _git_worktree(tmp_path / "repo-b")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
+    _deny_system_wide_net_connections(monkeypatch)
+    with _own_ui_listener(configured.frontend, foreign_root):
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+    assert claimed != configured
+
+
+@pytest.mark.requirement("INFRA-8900")
+def test_claim_keeps_own_ui_and_matching_backend_when_connections_denied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] own UI plus matching backend, connections denied [then] keep, [else stop]."""
+    repo_root = _git_worktree(tmp_path / "repo-a")
+    common_dir = tmp_path / "common"
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    monkeypatch.setattr(
+        "apps.webui.port_config._backend_listener_matches_pair",
+        lambda ports: ports == first,
+    )
+    _deny_system_wide_net_connections(monkeypatch)
+    with (
+        _own_ui_listener(first.frontend, repo_root),
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM) as engine,
+    ):
+        engine.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        engine.bind(("127.0.0.1", first.backend))
+        engine.listen()
+        second = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert second == first
 
 
 def test_two_runner_clones_with_distinct_lanes_never_select_the_same_pair(

@@ -62,6 +62,23 @@ test('the memory figure counts the engine processes and the closed bar refreshes
 	);
 	assert.match(meters, /PROCESS_SNAPSHOT_MAX_AGE_MS/, 'a stale walk must not be shown as current');
 	assert.match(meters, /memoryMB: memoryTotalMB/, 'the chart plots the same figure the meter shows');
+	assert.match(
+		meters,
+		/from '\$lib\/shell\/native-shell'/,
+		'the compact figure and the breakdown both ask nativeShellKind'
+	);
+	const readoutCall = /memoryReadout\(\{[\s\S]*?\n\t\t\}\)/.exec(meters)?.[0] ?? '';
+	assert.match(
+		readoutCall,
+		/shellKind: nativeShellKind\(\)/,
+		'the compact figure must pass this page\'s shell or a shared-engine tab drops the page term'
+	);
+	const breakdownCall = /breakdownLines\(\{[\s\S]*?\n\t\t\}\)/.exec(meters)?.[0] ?? '';
+	assert.match(
+		breakdownCall,
+		/shellKind: nativeShellKind\(\)/,
+		'the pinned breakdown must ask the same shell-kind question as the compact figure'
+	);
 });
 
 test('every reader that shows the processes as current goes through the expiry rule (PERF-UI-6785)', () => {

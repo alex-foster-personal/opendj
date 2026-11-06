@@ -83,9 +83,10 @@ test('SuggestNextStrip imports the existing ControlExplainer instead of inventin
 	assert.match(stripSource, /import ControlExplainer from '\.\/deck\/ControlExplainer\.svelte';/);
 });
 
-test('the chevron is wrapped in ControlExplainer with a named 50ms show debounce constant', () => {
-	assert.match(stripSource, /const CHEVRON_EXPLAIN_DELAY_MS = 50;/, 'the debounce should be a named, documented constant, matching the *_DEBOUNCE_MS convention used elsewhere in this codebase');
-	assert.match(stripTemplate, /<ControlExplainer[^>]*showDelayMs=\{CHEVRON_EXPLAIN_DELAY_MS\}[\s\S]*?<\/ControlExplainer>/);
+test('the chevron is wrapped in ControlExplainer with a named 50ms TooltipTiming constant', () => {
+	assert.match(stripSource, /const CHEVRON_EXPLAIN_DELAY_MS = tooltipTiming\(/);
+	assert.match(stripSource, /delay:\s*50/);
+	assert.match(stripTemplate, /<ControlExplainer[^>]*tooltip=\{CHEVRON_EXPLAIN_DELAY_MS\}[\s\S]*?<\/ControlExplainer>/);
 });
 
 test('the chevron explainer bullets say what pressing the button actually does, not just its destination', () => {
@@ -94,21 +95,14 @@ test('the chevron explainer bullets say what pressing the button actually does, 
 });
 
 // ------------------------------------------------------- ControlExplainer
-// The debounce is opt-in per caller ("each has a chosen debounce + reason"),
-// so existing ControlExplainer consumers (DeckHeader, JogDial, TransportCluster,
-// StemTags) must keep their current instant-show behavior.
 
-test('ControlExplainer exposes an opt-in showDelayMs prop that defaults to 0 (no behavior change for existing callers)', () => {
-	assert.match(explainerSource, /showDelayMs\s*=\s*0/);
-});
-
-test('ControlExplainer only debounces the show when showDelayMs is greater than 0', () => {
-	assert.match(explainerSource, /showDelayMs\s*>\s*0/);
+test('ControlExplainer requires tooltip.delay for show debounce', () => {
+	assert.match(explainerSource, /tooltip:\s*TooltipTiming/);
+	assert.match(explainerSource, /tooltip\.delay\s*>\s*0/);
 });
 
 test('a pending debounced show is cancelled on close, so a quick hover-out never opens the popover late', () => {
 	assert.match(explainerSource, /showTimer/);
-	// _close must clear the show timer, not just the hide timer.
 	const closeFn = explainerSource.match(/function _close\(\)[^}]*\}/s)?.[0] ?? '';
 	assert.match(closeFn, /showTimer/, 'if _close does not clear a pending showTimer, a cancelled hover can still pop the tooltip open late');
 });

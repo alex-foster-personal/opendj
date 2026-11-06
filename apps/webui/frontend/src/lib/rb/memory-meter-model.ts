@@ -18,6 +18,8 @@
  * pair per measurement.
  */
 
+import type { NativeShellKind } from '../shell/native-shell';
+
 // ------------------------------------------------------------- thresholds
 
 /**
@@ -76,6 +78,8 @@ export interface MemorySample {
 	 * footprints were left out of `processes`; the hover says so.
 	 */
 	probeStale?: { ageSeconds: number | null } | null;
+	/** Which native shell hosts this page, or null/omitted in a browser tab. */
+	shellKind?: NativeShellKind | null;
 }
 
 /** One process of the app's family, as GET .../telemetry/processes reports it. */
@@ -88,28 +92,44 @@ export interface AppProcess {
 }
 
 /**
- * Roles that ARE this page's own renderer: the Tauri shell's WebKit content
- * process (`webkit-webcontent`, from the native probe) and the Electron
- * shell's Chromium renderer (`electron-renderer`, from the engine's own walk,
- * set only for a `--type=renderer` child of the shell that stamped its pid
- * into the engine's environment). When one is measured the page's memory is
- * already inside the process total, so the in-page estimate is not added on
- * top of it. A plain browser tab is never in the family, so there the page
- * term is still added.
+ * Roles that ARE this page's own renderer, keyed by the shell that hosts
+ * this page: the Tauri shell's WebKit content process (`webkit-webcontent`,
+ * from the native probe) and the Electron shell's Chromium renderer
+ * (`electron-renderer`, from the engine's own walk, set only for a
+ * `--type=renderer` child of the shell that stamped its pid into the
+ * engine's environment). A matching role is this page only when this page
+ * is in that shell. A browser tab sharing the engine still sees the desktop
+ * renderer in `/processes` and still adds heap + PCM.
  */
-const PAGE_PROCESS_ROLES: ReadonlySet<string> = new Set(['webkit-webcontent', 'electron-renderer']);
+const PAGE_PROCESS_ROLES: Readonly<Record<NativeShellKind, string>> = {
+	electron: 'electron-renderer',
+	tauri: 'webkit-webcontent'
+};
 
 /**
  * The measured member that IS this page's own process, or null. Both the
  * compact figure and the pinned breakdown ask this one question, so they
  * cannot disagree about whether the heap is already counted.
+ *
+ * - `shellKind === null`: explicit browser tab - never match a listed renderer
+ *   (#9318); the tab still adds the page estimate.
+ * - `shellKind === undefined`: shell unknown - treat `webkit-webcontent` as the
+ *   page when present (legacy samples and fractional family sums); do not match
+ *   `electron-renderer` (browser tab talking to a desktop engine lists that row
+ *   but it is not this tab).
+ * - `electron` / `tauri`: match the native page role for that shell only.
  */
 export function measuredPageProcess<T extends { mb: number | null; role?: string | null }>(
-	members: readonly T[] | null | undefined
+	members: readonly T[] | null | undefined,
+	shellKind?: NativeShellKind | null
 ): T | null {
-	return (
-		members?.find((p) => p.mb !== null && p.role != null && PAGE_PROCESS_ROLES.has(p.role)) ?? null
-	);
+	if (shellKind === null) return null;
+	if (shellKind === 'electron' || shellKind === 'tauri') {
+		const role = PAGE_PROCESS_ROLES[shellKind];
+		return members?.find((p) => p.mb !== null && p.role === role) ?? null;
+	}
+	// shellKind is undefined
+	return members?.find((p) => p.mb !== null && p.role === 'webkit-webcontent') ?? null;
 }
 
 export interface MemoryReadout {
@@ -154,9 +174,12 @@ export function memoryReadout(sample: MemorySample): MemoryReadout {
 
 	const processes = sample.processes ?? null;
 	const measured = processes?.filter((p) => p.mb !== null) ?? [];
-	const processesMB = processes === null ? null : measured.reduce((sum, p) => sum + (p.mb ?? 0), 0);
-	const pageInProcesses = measuredPageProcess(processes) !== null;
-	const totalMB = (processesMB ?? 0) + (pageInProcesses ? 0 : pageMB);
+	const rawProcessesMB = processes === null ? null : measured.reduce((sum, p) => sum + (p.mb ?? 0), 0);
+	const processesMB = rawProcessesMB === null ? null : Math.round(rawProcessesMB);
+	const pageInProcesses = measuredPageProcess(processes, sample.shellKind) !== null;
+	// Round only the aggregates, from the unrounded sum, so ten 0.4 MB members
+	// total 4 and a 12.6 plus a 0.3 page term is 13, not 13.3.
+	const totalMB = Math.round((rawProcessesMB ?? 0) + (pageInProcesses ? 0 : pageMB));
 	// The marker flags a figure missing a term it should have: the heap, when
 	// the page's own process was not measured either.
 	const marked = !heapMeasured && !pageInProcesses;

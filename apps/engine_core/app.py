@@ -104,6 +104,7 @@ from apps.webui.server import (
     analysis_autostart,
     coverage_drain,
     coverage_stems_jobs,
+    grid_phase_precompute,
     library_jobs_autostart,
 )
 from apps.webui.server.app import _SpaStaticFiles
@@ -360,6 +361,7 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # NATIVE-21: fill Preview strips and own_* lanes ahead of use.
         # MUSIC_DJ_AHEAD_ANALYSIS (on/off, default on).
         auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
+        auto_grid_phase_precompute=grid_phase_precompute.arm_from_environ(os.environ),
         # STEM-31 / ADR-0051: on-demand stem hydration (ADR-0024). Armed is not
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,

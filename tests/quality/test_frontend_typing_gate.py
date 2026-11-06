@@ -54,6 +54,8 @@ sensitivity, slash counts, suffix tolerance, block-comment line/prefix rules)
 live in test_frontend_typing_directives.py -- split out to keep this file
 under worker-rules' 600-line-per-Python-file ratchet floor after five
 straight review rounds of test additions here.
+
+[if] ts escape hatch or compiler-flag guards regress [then] fail, [else stop].
 """
 
 from __future__ import annotations

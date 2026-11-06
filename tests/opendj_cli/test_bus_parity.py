@@ -190,6 +190,15 @@ def test_set_waveform_design_builds_the_bus_command() -> None:
         parse_invocation(["set_waveform_design", "rainbow"])
 
 
+def test_wave_eq_reflect_builds_the_bus_command() -> None:
+    assert parse_invocation(["wave_eq_reflect", "false"]).command == {
+        "type": "wave_eq_reflect",
+        "enabled": False,
+    }
+    with pytest.raises(InvocationError):
+        parse_invocation(["wave_eq_reflect", "maybe"])
+
+
 def test_leftover_tokens_are_refused_rather_than_dropped() -> None:
     with pytest.raises(InvocationError, match="does not take"):
         parse_invocation(["cue", "1", "extra"])

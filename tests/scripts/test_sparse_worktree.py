@@ -9,7 +9,6 @@ Real repositories in tmp_path, the real hook through core.hooksPath, no mocks.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -22,13 +21,20 @@ from tests.scripts.sparse_worktree_fixtures import (
     add_worktree,
     build_primary,
     git,
+    isolate_process_git_env,
     on_disk,
+    scrubbed_git_env,
     tags,
 )
 
 pytestmark = pytest.mark.requirement("OPS-45")
 
 NULL = "0" * 40
+
+
+@pytest.fixture(autouse=True)
+def _isolate_git_env_for_sparse_worktree_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    isolate_process_git_env(monkeypatch)
 
 
 @pytest.fixture
@@ -155,7 +161,7 @@ def test_require_materialized_names_skipped_paths(primary: Path, tmp_path: Path)
     """[if] a disk-only scope holds skipped paths [then] the refusal names them, [else stop]."""
     worktree = tmp_path / "wt-req"
     add_worktree(primary, worktree)
-    with pytest.raises(sw.SparseCheckoutError, match=r"blog/next-hero-set/hero\.png") as raised:
+    with pytest.raises(sw.SparseCheckoutError, match=r"(private path)\.png") as raised:
         sw.require_materialized(worktree, [*KEPT, EXCLUDED[0]], purpose="probe")
     assert sw.CFG.RESTORE_COMMAND in str(raised.value)
     sw.require_materialized(worktree, list(KEPT), purpose="probe")
@@ -165,19 +171,30 @@ def test_tracked_bytes_keeps_reading_local_edits_from_disk(primary: Path, tmp_pa
     """[if] a materialized file has a local edit [then] the reader sees the edit, [else stop]."""
     worktree = tmp_path / "wt-edit"
     add_worktree(primary, worktree)
-    (worktree / "blog/post.md").write_text("edited\n")
+    (worktree / "(private path)").write_text("edited\n")
     content = sw.tracked_bytes(worktree, sw.tracked_entries(worktree, "blog"))
-    assert content["blog/post.md"] == b"edited\n"
-    assert content["blog/next-hero-set/hero.png"].startswith(b"render notes"), "control"
+    assert content["(private path)"] == b"edited\n"
+    assert content["(private path)"].startswith(b"render notes"), "control"
 
 
-def test_install_hook_copies_and_refuses_to_clobber(tmp_path: Path) -> None:
+def test_install_hook_copies_and_refuses_to_clobber(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """[if] install-hook meets a foreign post-checkout [then] it refuses, [else stop]."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", str(elsewhere))
     repo = tmp_path / "clone"
     git(tmp_path, "init", "-q", str(repo))
+    isolate_process_git_env(monkeypatch)
     installed = sw.install_hook(repo)
+    assert installed.resolve().is_relative_to(tmp_path.resolve()), installed
+    assert list(elsewhere.iterdir()) == [], "lane GIT_CONFIG_* must not steer hook path outside tmp_path"
     assert installed.read_bytes() == sw.CFG.HOOK_SOURCE.read_bytes()
     assert sw.install_hook(repo) == installed, "re-install of the same hook must be a no-op"
+    assert installed.resolve().is_relative_to(tmp_path.resolve()), installed
     installed.write_text("#!/bin/sh\necho someone else's hook\n")
     with pytest.raises(sw.SparseCheckoutError, match="different post-checkout"):
         sw.install_hook(repo)
@@ -243,7 +260,7 @@ def test_hook_script_passes_a_setup_failure_to_git(primary: Path, tmp_path: Path
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, sw.CFG.OPT_OUT_ENV: "1"},
+        env=scrubbed_git_env({sw.CFG.OPT_OUT_ENV: "1"}),
     )
     assert done.returncode == 1, (done.returncode, done.stderr)
     assert "[ERROR] sparse-worktree" in done.stderr, done.stderr

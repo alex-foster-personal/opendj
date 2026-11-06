@@ -5,14 +5,15 @@ service (``b2b_service.PairingService``), whose LAN door and pairing record it r
 
 - **Listed nearby.** While running it advertises ``_opendj-b2b._tcp`` with TXT ``v``, ``id``
   (the per-boot device id), ``nv`` (this protocol), ``name`` (the DJ name, percent-encoded),
-  ``acc`` (accepting requests, 1/0) and, when paired, ``pt`` (a tag derived from the shared
-  token, so only the remembered partner recognizes it). It browses the same type and lists
-  every OTHER instance that carries ``nv``.
+  ``acc`` (accepting requests, 1/0), ``pk`` (this laptop's X25519 identity public, urlsafe-b64)
+  and, when paired, ``pt`` (a tag derived from the shared token, so only the remembered partner
+  recognizes it). It browses the same type and lists every OTHER instance that carries ``nv``.
 - **Ask to B2B.** The asker posts ``/b2b-nearby/request`` to the other door with an X25519
   public key. The other laptop holds it as an incoming request (60 s, rate-limited) until a
-  person presses Accept or Decline. Accept generates the long-lived token, seals it under an
-  ECDH key (X25519, HKDF-SHA256, AES-GCM, the request id as associated data) and posts it to
-  the asker's door ``/b2b-nearby/answer``; both then hold the same pairing record the invite
+  person presses Accept or Decline. Accept generates the long-lived token, seals it under this
+  laptop's advertised X25519 identity (ECDH with the asker's request key, HKDF-SHA256, AES-GCM,
+  the request id as associated data) and posts it to the asker's door ``/b2b-nearby/answer``;
+  the asker opens with the listing's ``pk``. Both then hold the same pairing record the invite
   code makes. Decline tells the asker only ``declined``. Nothing pairs without Accept.
 - **Reconnect.** Two laptops that both still hold the same token prove it to each other by
   HMAC challenge-response (``/b2b-nearby/challenge`` then ``/b2b-nearby/reconnect``) and
@@ -103,13 +104,14 @@ def pairing_tag(token: str) -> str:
     return hmac.new(token.encode(), b"opendj-b2b nearby tag v1", hashlib.sha256).hexdigest()[:16]
 
 
-def build_txt(device_id: str, label: str, accepting: bool, tag: str | None) -> dict[str, str]:
+def build_txt(device_id: str, label: str, accepting: bool, tag: str | None, pub: bytes) -> dict[str, str]:
     txt = {
         "v": PROTOCOL_VERSION,
         "id": device_id,
         "nv": NEARBY_VERSION,
         "name": quote(label, safe=""),
         "acc": "1" if accepting else "0",
+        "pk": _b64(pub),
     }
     if tag is not None:
         txt["pt"] = tag
@@ -150,9 +152,25 @@ def seal_token(
     return {"pub": _b64(private.public_key().public_bytes_raw()), "nonce": _b64(nonce), "sealed": _b64(sealed)}
 
 
-def open_token(private: X25519PrivateKey, request_id: str, answer: dict[str, Any]) -> dict[str, Any]:
+def open_token(
+    private: X25519PrivateKey, request_id: str, answer: dict[str, Any], peer_public: bytes
+) -> dict[str, Any]:
+    claimed = answer.get("pub")
+    if claimed is not None:
+        try:
+            claimed_pub = _unb64(str(claimed))
+        except PairingError as exc:
+            raise PairingError(
+                "wrong_answerer", "The answer did not come from the laptop that was asked", 403
+            ) from exc
+        if (
+            len(claimed_pub) != 32
+            or len(peer_public) != 32
+            or not hmac.compare_digest(claimed_pub, peer_public)
+        ):
+            raise PairingError("wrong_answerer", "The answer did not come from the laptop that was asked", 403)
     try:
-        key = _seal_key(private, _unb64(answer["pub"]), request_id)
+        key = _seal_key(private, peer_public, request_id)
         plain = AESGCM(key).decrypt(_unb64(answer["nonce"]), _unb64(answer["sealed"]), request_id.encode())
     except (InvalidTag, KeyError) as exc:
         raise PairingError("bad_seal", "The sealed token did not open: the answer was tampered with", 400) from exc
@@ -177,6 +195,8 @@ class NearbyPeer:
     instance: str
     #: THIS laptop's interface the best address answered on (the path is named from this side).
     via: str | None = None
+    #: Advertised X25519 identity public (TXT ``pk``); None when missing or unusable.
+    pub: bytes | None = None
 
     def view(self) -> dict[str, Any]:
         best = self.addresses[0] if self.addresses else (None, None)
@@ -214,6 +234,7 @@ class OutgoingRequest:
     path: str
     private: X25519PrivateKey
     deadline: float
+    peer_pub: bytes
     state: OutgoingState = "pending"
     detail: str | None = None
     created_at: str = field(default_factory=_now_iso)
@@ -256,6 +277,7 @@ class NearbyService:
         self._recent: dict[str, deque[float]] = {}
         self._challenges: dict[str, float] = {}
         self.outgoing: OutgoingRequest | None = None
+        self._identity = X25519PrivateKey.generate()
 
     # ------------------------------------------------------------ lifecycle
 
@@ -297,6 +319,7 @@ class NearbyService:
             self.pairing.label,
             self.accepting,
             pairing_tag(record.token) if record is not None else None,
+            self._identity.public_key().public_bytes_raw(),
         )
         if self._advertiser is not None and self._advertiser.alive() and txt == self._advertised_txt:
             return
@@ -470,6 +493,15 @@ class NearbyService:
             addresses = [(ip, dev) for ip, dev in resolved.addresses if _is_ipv4(ip)]
             ranked = rank_addresses([(ip, classify_interface(dev, hardware.get(dev))) for ip, dev in addresses])
             devices = dict(addresses)
+            peer_pub: bytes | None = None
+            raw_pk = txt.get("pk")
+            if raw_pk:
+                try:
+                    decoded = _unb64(raw_pk)
+                except PairingError:
+                    decoded = b""
+                if len(decoded) == 32:
+                    peer_pub = decoded
             peers.append(NearbyPeer(
                 id=peer_id,
                 label=unquote(txt.get("name", ""))[:LABEL_MAX] or "Open DJ",
@@ -479,6 +511,7 @@ class NearbyService:
                 addresses=ranked,
                 instance=resolved.instance,
                 via=devices[ranked[0][0]] if ranked else None,
+                pub=peer_pub,
             ))
         return peers
 
@@ -496,6 +529,11 @@ class NearbyService:
         peer = self._peer(peer_id)
         if not peer.accepting:
             raise PairingError("not_accepting", f"{peer.label} is not accepting B2B requests", 409)
+        peer_pub = peer.pub
+        if peer_pub is None or len(peer_pub) != 32:
+            raise PairingError(
+                "no_peer_key", f"{peer.label} did not advertise a pairing key: update Open DJ, or use a code", 409
+            )
         with self._lock:
             if self.outgoing is not None and self._outgoing_state() == "pending":
                 raise PairingError(
@@ -521,6 +559,7 @@ class NearbyService:
                 path=path,
                 private=private,
                 deadline=self._clock() + float(answer["expires_in_s"]),
+                peer_pub=peer_pub,
             )
         return self.snapshot()
 
@@ -571,10 +610,10 @@ class NearbyService:
                 outgoing.state = "declined"
                 return {"ok": True}
             try:
-                data = open_token(outgoing.private, outgoing.id, body)
-            except PairingError:
+                data = open_token(outgoing.private, outgoing.id, body, outgoing.peer_pub)
+            except PairingError as exc:
                 outgoing.state = "failed"
-                outgoing.detail = "bad_seal"
+                outgoing.detail = exc.code
                 raise
             if data["device_id"] != outgoing.to_id:
                 outgoing.state = "failed"
@@ -638,7 +677,7 @@ class NearbyService:
         request = self._take_incoming(request_id)
         token = secrets.token_urlsafe(32)
         sealed = seal_token(
-            X25519PrivateKey.generate(),
+            self._identity,
             request.pub,
             request.id,
             {"token": token, "device_id": self.pairing.device_id, "label": self.pairing.label},

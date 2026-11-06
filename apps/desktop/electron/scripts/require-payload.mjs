@@ -26,7 +26,7 @@ if (!isFile(launcher)) {
 	console.error(
 		`require-payload: ${launcher} does not exist, so this would pack an empty payload (an app with no engine). ` +
 			'Build the payload first: set ODJ_PAYLOAD_SRC to the repo checkout to bundle and run `pnpm pack:win`, ' +
-			'which builds it and then packs. (pack:win arrives with the engine payload PR.)'
+			'which builds it and then packs.'
 	);
 	process.exit(1);
 }

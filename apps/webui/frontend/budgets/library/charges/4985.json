@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 324884,
+  "measured_with_pr": 325144,
+  "sha": "e4c186bf04",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #4985 refuses play on an empty deck before the Sentry throw (OPEN-DJ-BE-6Y): the guard and its notice in QuickDrawMenu, TrackifyPlayer and performance-ipc ride on the initial library load. Measured: local vite build of main 0891b4c991 and of e4c186bf04 (that main merged), +260 B gzip; ceiled to KiB",
+  "payback": "none planned; the guard is a few branches on the play path"
+}

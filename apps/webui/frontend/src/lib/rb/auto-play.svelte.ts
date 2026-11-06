@@ -102,6 +102,9 @@ import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autop
 import { autoPlayKeyShift } from '$lib/rb/auto-play-chain';
 import { effectiveCamelotKey } from '$lib/player/key/camelot';
 
+/** Master deck snap for an armed tick (`stable_id` set after null guards). */
+type AutoPlaySourceSnap = AutoPlayDeckSnap & { stable_id: string };
+
 const POLL_MS = 250;
 /** Failed load/play attempts per source track before stopping. */
 const MAX_HANDOFF_ATTEMPTS = 3;
@@ -428,25 +431,8 @@ function _pollEarlyDecision(
 	});
 }
 
-async function _tick(): Promise<void> {
-	if (!uiPrefs.auto_play_enabled) {
-		_clearChartedOrder();
-		_pendingMaster = null;
-		resetAutoPlayIdleClock();
-		return;
-	}
-	// AUTOPLAN-04: before the yield, because the plan it follows is the one AutoPlay is yielding to.
-	syncAutoPlayDecision();
-	// AGENT-29: a scheduled or running agent plan owns the mix: no promotion and no handoff until it ends.
-	if (autoPlayYieldsNow()) return;
-	// Row 18: runs on every poll, including while a handoff is in flight.
-	await _promoteMaster();
-	// A plan scheduled during that await owns the mix now: checked again before any handoff is started.
-	if (autoPlayYieldsNow()) return;
-	if (_inFlight) return;
-
-	const snaps = _snaps();
-	const anyPlaying = snaps.some((d) => d.playing);
+/** Record armed-empty, playback-started, and idle-clock signals for this poll. */
+function _trackTickLiveness(snaps: readonly AutoPlayDeckSnap[], anyPlaying: boolean): void {
 	noteAutoPlayArmedEmptyOnEnable({
 		enabled: uiPrefs.auto_play_enabled,
 		any_playing: anyPlaying,
@@ -467,7 +453,10 @@ async function _tick(): Promise<void> {
 		engine_recovery_stop: engineRecoveryStopReason(),
 		now_ms: Date.now()
 	});
+}
 
+/** Raise a silent-idle stall when the armed-empty clock says it is due. */
+function _raiseSilentStallIfDue(snaps: readonly AutoPlayDeckSnap[], anyPlaying: boolean): void {
 	const sourceStableId =
 		_lastSourceStableId ?? snaps.find((d) => d.stable_id !== null)?.stable_id ?? null;
 	if (
@@ -486,62 +475,58 @@ async function _tick(): Promise<void> {
 	) {
 		noteAutoPlaySilentIdle({ source_stable_id: sourceStableId!, blocked: [] });
 	}
+}
 
+/** Resolve the master source for this tick and refresh no-master stall state. */
+function _resolveTickSource(snaps: readonly AutoPlayDeckSnap[]): {
+	source: AutoPlayDeckSnap | null;
+	remainingOverride: number | null;
+} {
 	const resolved = resolveAutoPlaySourceForTick(snaps, pickSourceDeck);
 	const source = resolved.source;
 	if (source !== null && source.stable_id !== null) {
 		_lastSourceStableId = source.stable_id;
 	}
 	_noteNoPlayingMaster(source === null || source.stable_id === null, snaps);
-	if (source === null || source.stable_id === null) {
-		// Row 1, but NOT while a promotion is still settling: between the old
-		// master being demoted and the new one being flagged there is a poll or
-		// two with no master at all. Disarming there would let the outgoing
-		// track - still inside its window - arm a second time and hand off
-		// again. Only a genuine idle state clears the arm.
-		if (_pendingMaster === null) {
-			_triggeredFor = null;
-			_exhaustedFeedEpoch = null;
-			_waitingFollowerFor = null;
-			_waitingEmptyFeedEpoch = null;
-		}
-		_clearChartedOrder();
-		return;
-	}
+	return resolved;
+}
 
+/** Sync played set, chart order, and optional early-decision hold for this source. */
+function _settleTickFeed(
+	source: AutoPlaySourceSnap,
+	snaps: readonly AutoPlayDeckSnap[]
+): { excludeIds: ReadonlySet<string>; earlyHeld: boolean } {
 	_syncPlayedSet();
 	retireAutoPlayStallIfAudible(source.stable_id, deckStates[source.id].audible);
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
-	if (uiPrefs.auto_play_early_planning && _pollEarlyDecision(source, snaps, excludeIds)) return;
+	const earlyHeld =
+		uiPrefs.auto_play_early_planning && _pollEarlyDecision(source, snaps, excludeIds);
+	return { excludeIds, earlyHeld };
+}
 
-	const rem =
-		resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
-	// min(constant, duration/2): a track shorter than the constant window must
-	// not arm at t=0 (it used to load the next track over its own first beat).
-	const windowMs = effectiveAutoPlayThresholdMs(source.duration_ms);
+/** Disarm when the source seeked back outside the handoff window. */
+function _disarmOutsideWindow(
+	source: AutoPlaySourceSnap,
+	rem: number | null,
+	windowMs: number | null
+): boolean {
 	if (rem !== null && windowMs !== null && rem > windowMs) {
 		// Seek back out of the window: allow a later re-arm for same track.
 		if (_triggeredFor === source.stable_id) _triggeredFor = null;
 		if (_triggeredFor === null) _exhaustedFeedEpoch = null;
 		if (_waitingFollowerFor === source.stable_id) _waitingFollowerFor = null;
 		_waitingEmptyFeedEpoch = null;
-		return;
+		return true;
 	}
+	return false;
+}
 
-	if (
-		!shouldTriggerAutoPlay({
-			enabled: true,
-			remaining_ms: rem,
-			threshold_ms: windowMs ?? AUTO_PLAY_THRESHOLD_MS,
-			source_stable_id: source.stable_id,
-			already_triggered_for: _triggeredFor,
-			in_flight: _inFlight
-		})
-	) {
-		return;
-	}
-
+/** Pick a follower deck or toast once when none is free. */
+function _pickFollowerOrToast(
+	snaps: readonly AutoPlayDeckSnap[],
+	source: AutoPlaySourceSnap
+): DeckId | null {
 	const follower = pickFollowerDeck(snaps, source.id, uiPrefs.auto_play_two_deck);
 	if (follower === null) {
 		// Do not pin _triggeredFor - retry when a deck frees; toast once.
@@ -549,12 +534,18 @@ async function _tick(): Promise<void> {
 			pushToast('auto-play: no free/stopped follower deck', 'error');
 			_waitingFollowerFor = source.stable_id;
 		}
-		return;
+		return null;
 	}
 	_waitingFollowerFor = null;
+	return follower;
+}
 
-	// AUTOPLAN-04: a plan owns the handoff, so reaching here means there is none, and it says why.
-	console.info(`[autoplay] end-of-track handoff: ${autoPlayFallbackReason()}`);
+/** Pick the next track or report feed exhaustion without arming a handoff. */
+function _resolveNextOrReportExhaustion(
+	source: AutoPlaySourceSnap,
+	follower: DeckId,
+	excludeIds: ReadonlySet<string>
+): string | null {
 	const nextId = autoPlayDecisionCuedTrack(follower) ?? _pickNext(source, follower, excludeIds);
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
@@ -576,7 +567,7 @@ async function _tick(): Promise<void> {
 			// This is not a committed handoff. BrowserPanel deliberately publishes
 			// [] while a playlist switch hydrates, then publishes the new rows with
 			// a new epoch. Keep the source unarmed so that later feed can proceed.
-			return;
+			return null;
 		}
 		_waitingEmptyFeedEpoch = null;
 		// ONE derivation for the toast and the durable state: the toast is what
@@ -590,16 +581,21 @@ async function _tick(): Promise<void> {
 		pushToast(autoPlayExhaustionToast(reason), 'error');
 		// The tracks worth NAMING differ by cause: for a load failure they are
 		// the quarantined candidates, which `remaining` has already excluded.
-		const blocked = reason === 'candidates-failed-to-load'
-			? feed.filter((row) => _attemptsFor.failed_ids.includes(row.stable_id))
-			: remaining;
+		const blocked =
+			reason === 'candidates-failed-to-load'
+				? feed.filter((row) => _attemptsFor.failed_ids.includes(row.stable_id))
+				: remaining;
 		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
 		noteAutoPlayExhaustion({ source_stable_id: source.stable_id, reason, blocked });
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
-		return;
+		return null;
 	}
+	return nextId;
+}
 
+/** Arm and claim the handoff candidate before dispatch (matrix row 4). */
+function _claimHandoff(source: AutoPlaySourceSnap, nextId: string): number {
 	// Row 4/c: arm and claim BEFORE dispatching anything. Both are one-way for
 	// the life of this source track. Recording them only on success is what let
 	// a late failure roll the trigger back and load a second track.
@@ -611,6 +607,16 @@ async function _tick(): Promise<void> {
 	_claimedIds.add(nextId);
 	_playedIds.add(source.stable_id);
 	_playedIds.add(nextId);
+	return generation;
+}
+
+/** Run the handoff dispatch and handle retryable vs committed failures. */
+async function _runHandoff(
+	source: AutoPlaySourceSnap,
+	follower: DeckId,
+	nextId: string,
+	generation: number
+): Promise<void> {
 	try {
 		await _handoff(source, follower, nextId, generation);
 		_attemptsFor = { source: '', failed_ids: [] };
@@ -690,6 +696,83 @@ async function _tick(): Promise<void> {
 	}
 }
 
+async function _tick(): Promise<void> {
+	if (!uiPrefs.auto_play_enabled) {
+		_clearChartedOrder();
+		_pendingMaster = null;
+		resetAutoPlayIdleClock();
+		return;
+	}
+	// AUTOPLAN-04: before the yield, because the plan it follows is the one AutoPlay is yielding to.
+	syncAutoPlayDecision();
+	// AGENT-29: a scheduled or running agent plan owns the mix: no promotion and no handoff until it ends.
+	if (autoPlayYieldsNow()) return;
+	// Row 18: runs on every poll, including while a handoff is in flight.
+	await _promoteMaster();
+	// A plan scheduled during that await owns the mix now: checked again before any handoff is started.
+	if (autoPlayYieldsNow()) return;
+	if (_inFlight) return;
+
+	const snaps = _snaps();
+	const anyPlaying = snaps.some((d) => d.playing);
+	_trackTickLiveness(snaps, anyPlaying);
+	_raiseSilentStallIfDue(snaps, anyPlaying);
+
+	const resolved = _resolveTickSource(snaps);
+	const source = resolved.source;
+	if (source === null || source.stable_id === null) {
+		// Row 1, but NOT while a promotion is still settling: between the old
+		// master being demoted and the new one being flagged there is a poll or
+		// two with no master at all. Disarming there would let the outgoing
+		// track - still inside its window - arm a second time and hand off
+		// again. Only a genuine idle state clears the arm.
+		if (_pendingMaster === null) {
+			_triggeredFor = null;
+			_exhaustedFeedEpoch = null;
+			_waitingFollowerFor = null;
+			_waitingEmptyFeedEpoch = null;
+		}
+		_clearChartedOrder();
+		return;
+	}
+	// Guard above proves stable_id is set for the handoff path.
+	const armedSource = source as AutoPlaySourceSnap;
+
+	const settled = _settleTickFeed(armedSource, snaps);
+	if (settled.earlyHeld) return;
+
+	const rem =
+		resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
+	// min(constant, duration/2): a track shorter than the constant window must
+	// not arm at t=0 (it used to load the next track over its own first beat).
+	const windowMs = effectiveAutoPlayThresholdMs(source.duration_ms);
+	if (_disarmOutsideWindow(armedSource, rem, windowMs)) return;
+
+	if (
+		!shouldTriggerAutoPlay({
+			enabled: true,
+			remaining_ms: rem,
+			threshold_ms: windowMs ?? AUTO_PLAY_THRESHOLD_MS,
+			source_stable_id: armedSource.stable_id,
+			already_triggered_for: _triggeredFor,
+			in_flight: _inFlight
+		})
+	) {
+		return;
+	}
+
+	const follower = _pickFollowerOrToast(snaps, armedSource);
+	if (follower === null) return;
+
+	// AUTOPLAN-04: a plan owns the handoff, so reaching here means there is none, and it says why.
+	console.info(`[autoplay] end-of-track handoff: ${autoPlayFallbackReason()}`);
+	const nextId = _resolveNextOrReportExhaustion(armedSource, follower, settled.excludeIds);
+	if (nextId === null) return;
+
+	const generation = _claimHandoff(armedSource, nextId);
+	await _runHandoff(armedSource, follower, nextId, generation);
+}
+
 function _startPoll(): void {
 	if (_timer !== null) return;
 	_timer = setInterval(() => {
@@ -746,6 +829,11 @@ export function installAutoPlay(): () => void {
 				// PLAY-18: only a user turns AutoPlay off, so a stall has
 				// nothing left to explain once they have.
 				clearAutoPlayStall();
+			}
+		});
+		$effect(() => {
+			if (!uiPrefs.auto_play_early_planning) {
+				untrack(() => void cancelAutoPlayDecision());
 			}
 		});
 	});

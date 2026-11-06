@@ -11,9 +11,13 @@ from __future__ import annotations
 import argparse
 
 from apps.shared.pairings import PairingsError
-from apps.shared.pairings.models import DIRECTIONS, SOURCES
 
-from ._common import add_db_argument, add_from_to_arguments
+from ._common import (
+    add_db_argument,
+    add_direction_argument,
+    add_from_to_arguments,
+    add_source_argument,
+)
 from ._session import pairing_repo, pairings_error_exit
 
 
@@ -27,10 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
         from_help="stable_id of the source track",
         to_help="stable_id of the destination track",
     )
-    p.add_argument("--direction", default="either", choices=list(DIRECTIONS),
-                   help="edge direction (default: either)")
-    p.add_argument("--source", default="manual", choices=list(SOURCES),
-                   help="provenance tag (default: manual)")
+    add_direction_argument(p, help="edge direction (default: either)")
+    add_source_argument(p, help="provenance tag (default: manual)")
     p.add_argument("--notes", default=None,
                    help="free-text note describing the transition")
     p.add_argument("--confidence", type=float, default=None,

@@ -273,8 +273,11 @@ def _before_send(
     """Stamp error id / host / sha, hold while live, spend the budget, then scrub.
 
     Order matters. The sink row is written FIRST so the local record is
-    complete whatever happens next; the live-set gate runs BEFORE the budget
-    so a mid-mix fault does not spend quota on an event that is not sent.
+    complete whatever happens next. SQLITE_BUSY / ``database is locked``
+    (OBS-5380) is dropped after that row, before the live-set gate and budget,
+    because STATE-14 already published it as HTTP 503. The live-set gate runs
+    BEFORE the budget so a mid-mix fault does not spend quota on an event
+    that is not sent.
     """
     from apps.shared.telemetry.budget import SENTRY_BUDGET
     from apps.shared.telemetry.sink import enrich_sentry_event, event_error_id
@@ -283,6 +286,16 @@ def _before_send(
         enrich_sentry_event(event, hint)
     except Exception:
         log.warning("error-sink enrich failed", exc_info=True)
+    from apps.shared.telemetry.sqlite_busy import (
+        exception_from_sentry_hint,
+        is_local_only_sqlite_busy,
+    )
+
+    if is_local_only_sqlite_busy(
+        exc=exception_from_sentry_hint(hint),
+        event=event,
+    ):
+        return None
     # A forwarded browser error already passed the gate in capture_browser_error
     # on the page's own flag, which outranks the engine's mirror read; asking
     # the probe again here would let a stale "playing" mirror overrule it.

@@ -275,6 +275,17 @@ describe('UI wiring (source)', () => {
 		assert.doesNotMatch(card, /translate\(-50%/);
 	});
 
+	it('KeyHoverCard throws when ResizeObserver is unavailable', async () => {
+		const card = await read('components/rb/browser/KeyHoverCard.svelte');
+		assert.match(card, /if \(node === null\) return;/);
+		assert.doesNotMatch(
+			card,
+			/if \(node === null \|\| typeof ResizeObserver === 'undefined'\) return;/
+		);
+		assert.match(card, /if \(typeof ResizeObserver === 'undefined'\) \{/);
+		assert.match(card, /throw new Error\('KeyHoverCard requires ResizeObserver'\);/);
+	});
+
 	it('a library load carries the row key shift, and the dispatcher applies it after the load', async () => {
 		const panel = await read('components/rb/BrowserPanel.svelte');
 		assert.match(panel, /\.\.\.\(keyShift !== 0 \? \{ key_shift: keyShift \} : \{\}\)/);

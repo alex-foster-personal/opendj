@@ -223,6 +223,27 @@ class CarabinerClient:
         if thread is not None:
             thread.join(timeout=2.0)
 
+    def chain_session_change(self, extra: Callable[[], None]) -> Callable[[], None]:
+        """Run ``extra`` after any existing session-change callback; return ``restore`` to undo only this link.
+
+        ``_handle`` calls a single delegate; assigning ``_on_session_change`` replaces it. Callers that
+        need both their hook and a prior one must chain here instead of overwriting the attribute.
+        """
+        prior = self._on_session_change
+
+        def combined() -> None:
+            if prior is not None:
+                prior()
+            extra()
+
+        self._on_session_change = combined
+
+        def restore() -> None:
+            if self._on_session_change is combined:
+                self._on_session_change = prior
+
+        return restore
+
     def set_bpm(self, bpm: float) -> None:
         """Propose ``bpm`` as the session tempo to every Link peer."""
         if not math.isfinite(bpm) or not MIN_LINK_BPM <= bpm <= MAX_LINK_BPM:

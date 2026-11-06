@@ -263,6 +263,8 @@ class BoothCore:
                 self._adopt_snapshot(epoch, message["ops"], now_us, out)
                 continue
             if kind == "resend" and self.sequencer is not None and (epoch is None or epoch != self.epoch):
+                if epoch is None:
+                    self._reset_peer_proposals()
                 out.replies.append(self.snapshot_message())
                 continue
             if not self.applier.admits(epoch):
@@ -279,9 +281,22 @@ class BoothCore:
             # A new epoch: the page starts over from one snapshot event, not op by op.
             self._restart(epoch, now_us)
             self._apply(self.applier.offer(ops).apply, now_us, Out())
+            self._pid = max(
+                (
+                    int(c["pid"])
+                    for c in self.history
+                    if c.get("by") == self.side and c.get("pid") is not None
+                ),
+                default=0,
+            )
             out.events.append(self.page_snapshot())
             return
         self._apply(self.applier.offer(ops).apply, now_us, out)
+
+    def _reset_peer_proposals(self) -> None:
+        """Inviter: a joiner hello starts a new proposal session on that engine."""
+        self._last_peer_pid = 0
+        self._refusals.clear()
 
     def _restart(self, epoch: str, now_us: int) -> None:
         """Joiner: the inviter's (new) epoch; everything applied so far belonged to the old one."""

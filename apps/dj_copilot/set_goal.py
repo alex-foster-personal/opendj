@@ -49,6 +49,12 @@ class SetGoal:
     closer_pin: str | None = None
 
     def __post_init__(self) -> None:
+        self._normalize_and_validate_pins()
+        self._validate_duration_and_peak()
+        self._validate_energy_bounds()
+        self._validate_open_on_key()
+
+    def _normalize_and_validate_pins(self) -> None:
         object.__setattr__(self, "peak_pins", _normalize_pin_tuple(self.peak_pins))
         object.__setattr__(self, "opener_pins", _normalize_pin_tuple(self.opener_pins))
         if self.closer_pin is not None:
@@ -64,6 +70,8 @@ class SetGoal:
             overlap |= set(self.opener_pins) & {self.closer_pin}
         if overlap:
             raise ValueError(f"stable_id may appear in at most one pin role: {sorted(overlap)!r}")
+
+    def _validate_duration_and_peak(self) -> None:
         if not isinstance(self.duration_min, int):
             raise ValueError(f"duration_min must be int, got {self.duration_min!r}")
         if not (_MIN_DURATION_MIN <= self.duration_min <= _MAX_DURATION_MIN):
@@ -73,6 +81,8 @@ class SetGoal:
                 raise ValueError(f"peak_at_min must be int or None, got {self.peak_at_min!r}")
             if not (0 <= self.peak_at_min <= self.duration_min):
                 raise ValueError(f"peak_at_min {self.peak_at_min} outside [0, duration_min={self.duration_min}]")
+
+    def _validate_energy_bounds(self) -> None:
         for name, val in (
             ("floor_energy", self.floor_energy),
             ("ceiling_energy", self.ceiling_energy),
@@ -88,6 +98,8 @@ class SetGoal:
                 raise ValueError(f"close_on_energy must be int or None, got {self.close_on_energy!r}")
             if not (_MIN_ENERGY <= self.close_on_energy <= _MAX_ENERGY):
                 raise ValueError(f"close_on_energy {self.close_on_energy} outside [{_MIN_ENERGY}, {_MAX_ENERGY}]")
+
+    def _validate_open_on_key(self) -> None:
         if self.open_on_key is not None and not isinstance(self.open_on_key, str):
             raise ValueError(f"open_on_key must be str or None, got {self.open_on_key!r}")
 

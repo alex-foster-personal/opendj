@@ -17,7 +17,9 @@
 // named, namespace and `export *` re-exports, to the production module under
 // the ORIGINAL export name; a re-export cycle fails as unverifiable. A seam
 // invoked as `fn.call(...)`, `fn.apply(...)` or `fn.bind(...)` is checked as
-// `fn`.
+// `fn`. A callee reached through a computed member whose key is a const string
+// (`const key = '_xForTests'; mod[key]()`) is also a seam call, using the
+// resolved key.
 //
 // ENV:
 //   UNIT_TEST_SEAM_EXTRA - comma-separated extra test file paths (repo-relative
@@ -941,23 +943,23 @@ function _collectSeamCalls(fileAbs, text, testFileRel) {
 			const callee = _unwrapExpression(node.expression);
 			const invoked = _invokedFunction(callee);
 			const spelled = _seamNameOfCallee(invoked);
-			if (spelled) {
-				const outcomes = _dedupe(resolver.resolveValue(invoked));
-				// An alias (`import { _xForTests as reset }`, `const { _xForTests:
-				// reset } = mod`) is still a seam call: the member it resolves
-				// through names the seam even though the callee does not.
-				const aliased = outcomes.map(_lastKey).find((key) => key && FOR_TESTS_RE.test(key));
-				const seamName = FOR_TESTS_RE.test(spelled) ? spelled : aliased;
-				if (seamName) {
-					const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-					calls.push({
-						seamName,
-						callee: callee.getText(sourceFile),
-						outcomes,
-						testFile: testFileRel,
-						line: line + 1
-					});
-				}
+			const outcomes = _dedupe(resolver.resolveValue(invoked));
+			// An alias (`import { _xForTests as reset }`, `const { _xForTests:
+			// reset } = mod`) is still a seam call: the member it resolves
+			// through names the seam even though the callee does not. A
+			// computed callee (`const key = '_xForTests'; mod[key]()`) has no
+			// spelled name; `_lastKey` names the seam once the key is resolved.
+			const aliased = outcomes.map(_lastKey).find((key) => key && FOR_TESTS_RE.test(key));
+			const seamName = spelled && FOR_TESTS_RE.test(spelled) ? spelled : aliased;
+			if (seamName) {
+				const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+				calls.push({
+					seamName,
+					callee: callee.getText(sourceFile),
+					outcomes,
+					testFile: testFileRel,
+					line: line + 1
+				});
 			}
 		}
 		ts.forEachChild(node, visit);

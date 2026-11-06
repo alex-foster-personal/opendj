@@ -59,4 +59,4 @@ def test_every_pnpm_cache_is_hosted_only_not_removed() -> None:
     guarded = [
         (wf, job) for wf, job, step in _setup_node_steps() if (step.get("with") or {}).get("cache") == HOSTED_ONLY_CACHE
     ]
-    assert len(guarded) >= 3, f"expected the frontend, e2e and packaging caches to stay, got {guarded}"
+    assert len(guarded) >= 3, f"expected the frontend and e2e caches to stay, got {guarded}"

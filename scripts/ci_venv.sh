@@ -95,7 +95,7 @@ fi
 
 if $do_sync; then
     echo "[venv] syncing dependencies"
-    uv sync --exact --python "$venv/bin/python"
+    uv sync --python "$venv/bin/python"
 fi
 
 if [ -n "$lock" ]; then

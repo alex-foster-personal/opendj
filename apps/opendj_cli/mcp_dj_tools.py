@@ -35,10 +35,20 @@ from typing import Any
 
 from pydantic import StrictInt
 
-from apps.autodj.http import build_service
-from apps.autodj.notation import ScoreError, looks_like_score, print_score, render_grid, score_document
-from apps.autodj.plan import PlanError, parse_plan
-from apps.autodj.setscore import SetPlan, parse_set, print_set_score, read_set
+from apps.autodj.http import (
+    PlanError,
+    ScoreError,
+    SetPlan,
+    build_service,
+    looks_like_score,
+    parse_plan,
+    parse_set,
+    print_score,
+    print_set_score,
+    read_set,
+    render_grid,
+    score_document,
+)
 from apps.opendj_cli.dj_service import DjError, DjService
 from apps.opendj_cli.mcp_dj_try_tools import register_try_tools
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError

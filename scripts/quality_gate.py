@@ -143,6 +143,8 @@ REG  Q-14 Report a 1000-line soft file count and the files in it, and never
           [if --update-baseline rewrites baseline.json then
            file_size.soft_over_python and file_size.soft_over_frontend are
            absent from it]
+          [if --json writes soft file metrics then their numeric fields stay
+           flat and offenders contains their capped path-and-line arrays]
 REG  Q-15 Ratchet agent skill size and reference depth via
           scripts/skill_tree_lint.py: SKILL.md files at 500 lines or more, the
           deepest file chain inside one skill, the deepest chain of skills
@@ -190,6 +192,7 @@ if TYPE_CHECKING:
 
 try:
     from scripts import quality_latency, shell_construct_lint
+    from scripts.ci_path_resolve import require_on_path
     from scripts.sparse_worktree import require_materialized
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -415,6 +418,7 @@ class Metric:
     value: float
     unit: str
     detail: str = ""
+    offenders: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -527,23 +531,12 @@ def _uv(
 
 
 def _pnpm_bin() -> str:
-    """Absolute path to pnpm, because a bare `pnpm` never launches on Windows.
-
-    npm's global install ships `pnpm.cmd` beside an extensionless `pnpm` shim
-    for POSIX shells. An argv list without `shell=True` goes straight to
-    `CreateProcess`, which appends `.exe` to a bare name and searches for
-    that alone; it never consults PATHEXT, so `pnpm.cmd` is invisible to it
-    and the launch raises `FileNotFoundError: [WinError 2]`. `shutil.which`
-    does honor PATHEXT and resolves `pnpm.CMD`, and launching that path
-    works. Measured Tue 22 Sep 2026 on bifrost2 from PowerShell and Git Bash
-    alike, so it is the process launcher, not the shell. `shell=True` would
-    also work but routes every argument through cmd.exe quoting, which the
-    SAST scan flags, so the resolved path is the fix.
-    """
-    path = shutil.which("pnpm")
-    if path is None:
-        raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
-    return path
+    """Absolute path to pnpm; resolved via :func:`scripts.ci_path_resolve.require_on_path`."""
+    return require_on_path(
+        "pnpm",
+        RuntimeError,
+        "pnpm is not on PATH but a frontend evaluator was selected",
+    )
 
 
 def _pnpm(*args: str, allow_fail: bool = False) -> tuple[int, str]:
@@ -1330,18 +1323,18 @@ def _line_counts(files: list[Path]) -> list[tuple[int, Path]]:
     return sizes
 
 
-def _soft_over_detail(
+def _soft_over_offenders(
     sizes: list[tuple[int, Path]],
     limit: int,
     *,
     repo: Path,
     list_max: int,
-) -> tuple[int, str]:
-    """Count of files past `limit`, plus a longest-first name list.
+) -> tuple[int, tuple[str, ...]]:
+    """Count of files past `limit`, plus longest-first rendered offenders.
 
     The list keeps `list_max` names, relative to `repo`, and then ends with
-    "+K more". The count is the true total. Callers print this string in
-    full; nothing downstream truncates it.
+    "+K more". The count is the true total. Nothing downstream truncates the
+    returned tuple.
     """
     if list_max < 1:
         raise ValueError(f"soft list cap must be at least 1, got {list_max}")
@@ -1353,7 +1346,7 @@ def _soft_over_detail(
     hidden = len(over) - len(shown)
     if hidden:
         parts.append(f"+{hidden} more")
-    return len(over), "; ".join(parts)
+    return len(over), tuple(parts)
 
 
 def _language_size_metrics(
@@ -1373,7 +1366,7 @@ def _language_size_metrics(
     sizes = _line_counts(files)
     worst_count, worst = sizes[0]
     strict_over = sum(1 for count, _path in sizes if count > strict_limit)
-    soft_over, soft_detail = _soft_over_detail(
+    soft_over, soft_offenders = _soft_over_offenders(
         sizes, soft_limit, repo=repo, list_max=list_max
     )
     return [
@@ -1392,7 +1385,8 @@ def _language_size_metrics(
             f"file_size.soft_over_{language}",
             soft_over,
             f"files > {soft_limit} lines (soft)",
-            soft_detail,
+            "; ".join(soft_offenders),
+            offenders=soft_offenders,
         ),
     ]
 
@@ -2475,6 +2469,24 @@ def _measurement_exit_code(
     return 2 if failures else ratchet_exit_code
 
 
+def _json_payload(
+    metrics: list[Metric], failures: list[MeasurementFailure]
+) -> dict[str, Any]:
+    """Keep flat metric values while adding structured artifact detail."""
+    payload: dict[str, Any] = {metric.key: metric.value for metric in metrics}
+    payload["offenders"] = {
+        metric.key: list(metric.offenders)
+        for metric in metrics
+        if metric.offenders
+    }
+    if failures:
+        payload["measurements"] = {
+            failure.dimension: {"status": "UNKNOWN", "error": failure.detail}
+            for failure in failures
+        }
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--only", help="comma separated evaluator names")
@@ -2562,12 +2574,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {m.key: m.value for m in metrics}
-        if measurement_failures:
-            payload["measurements"] = {
-                failure.dimension: {"status": "UNKNOWN", "error": failure.detail}
-                for failure in measurement_failures
-            }
+        payload = _json_payload(metrics, measurement_failures)
         args.json.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"[quality] metrics written to {args.json.resolve()}")
 

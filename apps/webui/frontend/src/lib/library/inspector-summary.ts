@@ -7,6 +7,8 @@
  * with a guess.
  */
 
+import { normalizeRating } from '$lib/rating';
+
 export type FieldReadout<T> =
 	| { kind: 'empty' }
 	| { kind: 'same'; value: T }
@@ -96,7 +98,7 @@ export function summarizeSelection(rows: ReadonlyArray<InspectorRow>): Selection
 		keys: [...keys].sort(compareCamelot),
 		genre: readField(rows.map((row) => row.genre)),
 		artist: readField(rows.map((row) => row.artist)),
-		rating: readField(rows.map((row) => row.rating)),
+		rating: readField(rows.map((row) => normalizeRating(row.rating))),
 		comments: readField(rows.map((row) => row.comments))
 	};
 }

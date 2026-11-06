@@ -8,9 +8,12 @@ sets MDT_REQUIRE_AUDIO_ENGINE_BUILD=1, where a missing engine fails.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import json
 import os
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -18,13 +21,18 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from apps.autodj.plan import parse_plan
+from apps.autodj.http import build_service
+from apps.autodj.plan import BassEntry, parse_plan
+from apps.autodj.profile import heard_profile
 from apps.autodj.propose import propose_transition
 from apps.autodj.render_plan import RenderPlanError, compile_render_plan, layout_of
-from apps.shared.odj_audio_binary import OdjAudioUnavailable
+from apps.transition_score import tryer
 from apps.transition_score.contract import SCORER_VERSION
 from apps.transition_score.scorer import score_render
 from apps.transition_score.tryer import (
+    TryError,
+    content_bass_entry_bar,
+    incoming_on_render_clock,
     odj_audio_binary,
     read_render,
     render_context,
@@ -39,6 +47,10 @@ from tests.transition_score.synth import track_audio
 
 ARRANGEMENT = ((INTRO, 16, 0.4, 0.3, False), (CHORUS, 16, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.8, False))
 OUT_BPM, IN_BPM = 124.0, 126.0
+_AUTODJ = build_service()
+render_context = partial(render_context, autodj=_AUTODJ)
+rendered_steps = partial(rendered_steps, autodj=_AUTODJ)
+try_plans = partial(try_plans, autodj=_AUTODJ)
 
 
 def _profiles():  # type: ignore[no-untyped-def]
@@ -145,6 +157,73 @@ def test_compile_is_deterministic() -> None:
     assert json.dumps(docs[0], sort_keys=True) == json.dumps(docs[1], sort_keys=True)
 
 
+@pytest.mark.requirement("AUTOPLAY-8868b")
+def test_layout_and_compile_use_judged_bpm_for_ratios_and_heard_outgoing_tempo() -> None:
+    """[if] the master is heard faster than stored [then] in_ratio and render tempos use heard BPM, [else stop]."""
+    out_stored = profile("fixture-out-heard", bpm=120.0, arrangement=ARRANGEMENT)
+    in_profile = profile("fixture-in-heard", bpm=134.0, key="9A", arrangement=ARRANGEMENT)
+    out_heard = heard_profile(out_stored, heard_bpm=127.2)
+    proposed = propose_transition(out_heard, in_profile, out_deck=1, in_deck=2, top=6)
+    plan = parse_plan(proposed["proposals"][0]["plan"])
+    layout = layout_of(plan, out_heard, in_profile, 4)
+    assert layout.in_ratio == pytest.approx(127.2 / 134.0)
+    assert layout.out_ratio == pytest.approx(127.2 / 120.0)
+    doc = compile_render_plan(plan, out_heard, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    at0 = [e["cmd"] for e in doc["events"] if e.get("at") == {"ms": 0} and "cmd" in e]
+    out_tempos = [c["ratio"] for c in at0 if c["type"] == "tempo" and c["deck"] == plan.out.deck]
+    in_tempos = [c["ratio"] for c in at0 if c["type"] == "tempo" and c["deck"] == plan.in_.deck]
+    assert len(out_tempos) == 1 and out_tempos[0] == pytest.approx(layout.out_ratio)
+    assert len(in_tempos) == 1 and in_tempos[0] == pytest.approx(layout.in_ratio)
+    assert not any(c.get("type") == "key_nudge" for c in at0)
+
+
+@pytest.mark.requirement("AUTOPLAY-8868")
+def test_compile_emits_key_nudge_after_load_for_heard_key_shift() -> None:
+    """[if] a profile carries a non-zero heard key shift [then] compile adds key_nudge after load, [else stop]."""
+    out_profile, in_profile = _profiles()
+    in_shifted = heard_profile(in_profile, key_shift=1)
+    plan = _plans()[0]
+    doc = compile_render_plan(plan, out_profile, in_shifted, 4, out_audio=A_WAV, in_audio=B_WAV)
+    loads = [i for i, e in enumerate(doc["events"]) if e.get("cmd", {}).get("type") == "load"]
+    nudges = [
+        i for i, e in enumerate(doc["events"]) if e.get("cmd", {}).get("type") == "key_nudge" and e.get("at") == {"ms": 0}
+    ]
+    assert nudges and all(loads[0] < i for i in nudges)
+    cmd = next(e["cmd"] for e in doc["events"] if e.get("cmd", {}).get("type") == "key_nudge")
+    assert cmd == {"type": "key_nudge", "deck": plan.in_.deck, "semitones": 1}
+
+
+def test_render_context_allows_constant_heard_outgoing_ratios_in_telemetry() -> None:
+    """[if] outgoing tempo telemetry is only 1.0 and the heard load ratio [then] render_context accepts, [else stop]."""
+    from apps.transition_score.tryer import TryError
+
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    layout = layout_of(plan, out_profile, in_profile, 4)
+    layout = dataclasses.replace(layout, out_ratio=1.06)
+    summary = {
+        "tempo": [
+            {"deck": plan.out.deck, "tempo": 1.0},
+            {"deck": plan.out.deck, "tempo": 1.06},
+            {"deck": plan.in_.deck, "tempo": 0.95},
+        ],
+        "sample_rate": 48000,
+        "frames": 2_880_000,
+        "master_tempo": True,
+        "pcm16_gain_db": 0.0,
+    }
+    render_context(plan, out_profile, layout, summary)
+    bad = {
+        **summary,
+        "tempo": [
+            *summary["tempo"],
+            {"deck": plan.out.deck, "tempo": 1.12},
+        ],
+    }
+    with pytest.raises(TryError, match="outgoing deck's tempo moves"):
+        render_context(plan, out_profile, layout, bad)
+
+
 def test_too_little_track_before_the_plan_is_refused_not_clamped() -> None:
     out_profile, in_profile = _profiles()
     plan = _plans()[0]
@@ -157,6 +236,26 @@ def test_workers_leave_two_cores() -> None:
     assert worker_count(1) == 1
 
 
+@pytest.mark.requirement("TRYER-01")
+def test_a_beat_exactly_3_db_under_solo_counts_as_both_full() -> None:
+    """[if] both lows sit at -3.0 dB vs solo [then] the beat counts as both-full, [else stop]."""
+    from apps.transition_score.scorer import BASS_BOTH_FULL_DB, _count_both_full_beats
+
+    assert BASS_BOTH_FULL_DB == -3.0
+    assert _count_both_full_beats(np.array([-3.0]), np.array([-3.0])) == 1
+    assert _count_both_full_beats(np.array([0.0]), np.array([0.0])) == 1
+
+
+@pytest.mark.requirement("TRYER-01")
+def test_a_beat_3_01_db_under_solo_on_either_deck_is_not_both_full() -> None:
+    """[if] either low sits 3.01 dB under solo [then] the beat is not both-full, [else stop]."""
+    from apps.transition_score.scorer import _count_both_full_beats
+
+    assert _count_both_full_beats(np.array([-3.01]), np.array([-3.0])) == 0
+    assert _count_both_full_beats(np.array([-3.0]), np.array([-3.01])) == 0
+    assert _count_both_full_beats(np.array([-3.01]), np.array([-3.01])) == 0
+
+
 # ----- the real renderer -------------------------------------------------------------
 
 
@@ -164,7 +263,7 @@ def test_workers_leave_two_cores() -> None:
 def engine() -> Path:
     try:
         return odj_audio_binary()
-    except OdjAudioUnavailable as error:
+    except TryError as error:
         if os.environ.get("MDT_REQUIRE_AUDIO_ENGINE_BUILD") == "1":
             raise
         # Raised, not called: the gate's isolated mypy has no pytest stubs, so pytest.skip() reads as returning.
@@ -263,7 +362,7 @@ def test_bench_without_an_engine_exits_nonzero_naming_why(
     from apps.transition_score import bench
 
     monkeypatch.setenv("OPENDJ_LIVE_LOCK_PATH", str(tmp_path / "absent.lock"))
-    code = bench.main(["--pair", "a", "b", "--data-dir", str(tmp_path)])
+    code = bench.main(_AUTODJ, ["--pair", "a", "b", "--data-dir", str(tmp_path)])
     err = capsys.readouterr().err
     assert code == 1
     assert f"[ERROR] EngineNotRunning: no engine lock file at {tmp_path / 'absent.lock'}" in err, err
@@ -314,7 +413,7 @@ def test_render_context_marks_the_incoming_start_as_a_seam() -> None:
     }
     ctx = render_context(plan, out_profile, layout, summary)
     play_bars = [e.at_bar for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck]
-    expected = out_profile.time_of_bar(plan.out.start_bar + play_bars[0]) - layout.start_out_s
+    expected = (out_profile.time_of_bar(plan.out.start_bar + play_bars[0]) - layout.start_out_s) / layout.out_ratio
     assert any(abs(s - expected) < 1e-9 for s in ctx.seams_s), (
         "if the deck start is not a seam then its click is never looked for"
     )
@@ -343,6 +442,85 @@ def test_render_context_carries_the_plans_parsed_intent_and_never_assumes_one(
     ctx = render_context(plan, out_profile, layout, summary)
     assert ctx.intent == parsed
     assert ctx.shape is None, "a plan with no shape (main's plans) must reach the scorer as None, never lull_then_drop"
+
+
+@pytest.mark.requirement("TRYER-03")
+def test_a_recorded_candidate_plan_keeps_shape_bass_entry_and_extra() -> None:
+    """[if] a candidate plan is recorded [then] its full document and hash are kept, [else stop]."""
+    base = _plans()[0]
+    plan = dataclasses.replace(
+        base,
+        shape="lull_then_drop",
+        bass_entry=BassEntry(in_bar=33, entry_plan_bar=8.0, hit_plan_bar=8.0, note="test"),
+        extra_json=json.dumps({"seed": 7}),
+    )
+
+    document, digest = tryer._recorded_plan(plan)
+    parsed = parse_plan(document)
+
+    assert document["shape"] == "lull_then_drop"
+    assert document["bass_entry"]["hit_plan_bar"] == 8.0
+    assert document["seed"] == 7
+    assert parsed.shape == "lull_then_drop"
+    assert parsed.bass_entry == plan.bass_entry
+    assert dict(parsed.extra) == {"seed": 7}
+    assert digest == hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
+    assert document["shape"] == plan.to_json()["shape"]
+    assert "seed" not in plan.to_json()
+
+
+@pytest.mark.requirement("TRYER-03")
+def test_a_refused_candidate_records_the_full_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] rendering is refused [then] the candidate keeps its full plan document, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = dataclasses.replace(
+        _plans()[0],
+        shape="lull_then_drop",
+        bass_entry=BassEntry(in_bar=33, entry_plan_bar=8.0, hit_plan_bar=8.0, note="test"),
+        extra_json=json.dumps({"seed": 7}),
+    )
+    start_out_bar = tryer.shared_start_out_bar((plan,), out_profile, in_profile, 4, autodj=_AUTODJ)
+    job = tryer._Job(_AUTODJ, out_profile, in_profile, (A_WAV, B_WAV), 4, start_out_bar, A_WAV)
+
+    def refuse_render(*args: Any, **kwargs: Any) -> None:
+        raise tryer.TryError("refused")
+
+    monkeypatch.setattr(tryer, "render_plan_json", refuse_render)
+    candidate = tryer._candidate_or_refusal(0, plan, job)
+
+    assert candidate.refused == "refused"
+    assert candidate.plan["shape"] == "lull_then_drop"
+    assert candidate.plan["bass_entry"]["hit_plan_bar"] == 8.0
+    assert candidate.plan["seed"] == 7
+    assert candidate.plan_sha256 == hashlib.sha256(
+        json.dumps(candidate.plan, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def test_render_context_reads_shape_and_bass_entry_from_the_typed_plan() -> None:
+    """[if] typed scoring fields exist [then] render context reads them over extra, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = dataclasses.replace(
+        _plans()[0],
+        shape="lull_then_drop",
+        bass_entry=BassEntry(in_bar=33, entry_plan_bar=8.0, hit_plan_bar=8.0, note="test"),
+    )
+    layout = layout_of(plan, out_profile, in_profile, 4)
+    summary = {
+        "tempo": [{"deck": 1, "tempo": 1.0}, {"deck": 2, "tempo": 0.99}],
+        "sample_rate": 48000,
+        "frames": 2_880_000,
+        "master_tempo": False,
+        "pcm16_gain_db": 0.0,
+    }
+
+    ctx = render_context(plan, out_profile, layout, summary)
+    assert ctx.shape == "lull_then_drop"
+    assert isinstance(ctx.bass_hit_s, float)
+
+    overridden = dataclasses.replace(plan, extra_json=json.dumps({"shape": "wind_down"}))
+    overridden_ctx = render_context(overridden, out_profile, layout, summary)
+    assert overridden_ctx.shape == "lull_then_drop"
 
 
 def test_outgoing_natural_is_the_outgoing_source_on_the_render_clock(tmp_path: Path) -> None:
@@ -376,7 +554,7 @@ def test_an_off_grid_play_seam_is_scored_where_the_render_starts_it() -> None:
     _, seams = rendered_steps(shifted, out_profile, layout)
 
     def at(bar: float) -> float:
-        return out_profile.time_of_bar(plan.out.start_bar + bar) - layout.start_out_s
+        return (out_profile.time_of_bar(plan.out.start_bar + bar) - layout.start_out_s) / layout.out_ratio
 
     assert any(abs(s - at(play.at_bar + 1)) < 1e-9 for s in seams), seams  # the quantized downbeat
     assert not any(abs(s - at(late.at_bar)) < 1e-9 for s in seams), seams  # never the authored bar
@@ -394,9 +572,10 @@ sys.meta_path.insert(0, Block())
 import apps.transition_score as ts
 import apps.transition_score.tryer as tryer
 import apps.transition_score.bench
+from apps.autodj.http import build_service
 assert "soundfile" not in sys.modules and "scipy" not in sys.modules, sorted(m for m in sys.modules if m.startswith(("scipy", "soundfile")))
 try:
-    tryer.try_plans([object()], None, None, (None, None), context_bars=4, )
+    tryer.try_plans([object()], None, None, (None, None), context_bars=4, autodj=build_service())
 except tryer.TryError as error:
     print("TRYERROR", error)
 """
@@ -455,7 +634,7 @@ def test_in_trim_db_is_the_incoming_trim_at_time_zero_with_the_page_mapping() ->
     assert doc["events"].index(trims[0]) < first_play
 
 
-def test_no_trim_db_sends_no_trim_and_an_authored_trim_beside_it_is_refused() -> None:
+def test_no_trim_db_sends_the_load_trim_and_an_authored_trim_beside_it_is_refused() -> None:
     import dataclasses
 
     from apps.autodj.plan import PlanEvent
@@ -466,8 +645,11 @@ def test_no_trim_db_sends_no_trim_and_an_authored_trim_beside_it_is_refused() ->
         plan, in_=dataclasses.replace(plan.in_, trim_db=None, trim_reason="no LUFS for fixture-in")
     )
     doc = compile_render_plan(bare, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
-    # ADR-0135: only the outgoing's headroom pre-gain; no incoming trim without trim_db.
-    assert not [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 2]
+    # ADR-0135: both decks load at the shared headroom default when there is no matched in.trim_db.
+    trims = [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 2]
+    assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 2, "value": 0.250594}}]
+    first_play = next(i for i, e in enumerate(doc["events"]) if e.get("cmd", {}).get("type") == "play")
+    assert doc["events"].index(trims[0]) < first_play
     both = dataclasses.replace(
         plan,
         in_=dataclasses.replace(plan.in_, trim_db=-1.0),
@@ -687,6 +869,45 @@ def test_measured_but_all_vetoed_yields_no_best_and_never_falls_back_to_unknown(
     assert best is None and "vetoed or unscored" in why
 
 
+@pytest.mark.requirement("TRYER-03")
+def test_engine_profiles_httpx_client_disables_env_proxy_for_self_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] HTTP_PROXY is set [then] EngineProfiles reads via httpx.Client with trust_env=False and GETs the quoted origin track URL, [else stop]."""
+    import httpx
+
+    from apps.shared.engine_origin import EngineOrigin
+    from apps.transition_score import tryer
+
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    seen_urls: list[str] = []
+
+    class _Client:
+        def __init__(
+            self, *, timeout: float, transport: httpx.BaseTransport | None = None, trust_env: bool
+        ) -> None:
+            assert trust_env is False
+            self._timeout = timeout
+            self._transport = transport
+
+        def __enter__(self) -> _Client:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def get(self, url: str) -> httpx.Response:
+            seen_urls.append(url)
+            return httpx.Response(404, text="no such track")
+
+    monkeypatch.setattr(tryer.httpx, "Client", _Client)
+    reader = tryer.EngineProfiles(
+        EngineOrigin(host="127.0.0.1", port=1, lock_path=Path("/x.lock"), pid=None, role=None, boot_id=None),
+        _AUTODJ,
+    )
+    with pytest.raises(tryer.TryError, match="404"):
+        reader.profile("a b")
+    assert seen_urls[0] == "http://127.0.0.1:1/api/v1/tracks/a%20b"
+
+
 def test_engine_profiles_read_the_same_payloads_as_opendj_dj_without_importing_the_cli() -> None:
     """[if] the try-er reads a profile [then] it uses the engine's track and anlz payloads at the CLI's
     point count, from inside the domain layer (import-linter webui-is-the-top-layer), else stop."""
@@ -705,6 +926,7 @@ def test_engine_profiles_read_the_same_payloads_as_opendj_dj_without_importing_t
 
     reader = tryer.EngineProfiles(
         EngineOrigin(host="127.0.0.1", port=1, lock_path=Path("/x.lock"), pid=None, role=None, boot_id=None),
+        _AUTODJ,
         transport=httpx.MockTransport(answer),
     )
     with pytest.raises(tryer.TryError, match="404"):
@@ -719,19 +941,19 @@ def test_one_unrenderable_proposal_does_not_sink_the_pair(tmp_path: Path, monkey
 
     plans = _plans()
     out_profile, in_profile = _profiles()
-    real_layout = tryer.layout_of
+    real_layout = _AUTODJ.layout_of
 
     def layout_refusing_the_first(plan: Any, *args: Any, **kwargs: Any) -> Any:
         if plan is plans[0]:
             raise RenderPlanError("not enough incoming context")
         return real_layout(plan, *args, **kwargs)
 
-    monkeypatch.setattr(tryer, "layout_of", layout_refusing_the_first)
-    kept, refused = tryer.renderable_plans(plans, out_profile, in_profile, 4)
+    monkeypatch.setattr(_AUTODJ, "layout_of", layout_refusing_the_first)
+    kept, refused = tryer.renderable_plans(plans, out_profile, in_profile, 4, autodj=_AUTODJ)
     assert kept == plans[1:] and len(refused) == 1 and "context" in refused[0]
-    monkeypatch.setattr(tryer, "layout_of", lambda *a, **k: (_ for _ in ()).throw(RenderPlanError("no")))
+    monkeypatch.setattr(_AUTODJ, "layout_of", lambda *a, **k: (_ for _ in ()).throw(RenderPlanError("no")))
     with pytest.raises(tryer.TryError, match=f"none of {len(plans)} "):
-        tryer.renderable_plans(plans, out_profile, in_profile, 4)
+        tryer.renderable_plans(plans, out_profile, in_profile, 4, autodj=_AUTODJ)
 
 
 def test_an_unsynced_plan_across_different_bpms_is_refused() -> None:
@@ -784,6 +1006,7 @@ def test_try_plans_resolves_audio_to_real_absolute_paths_and_refuses_a_missing_o
             (Path(tracks[0].name), link),
             context_bars=4,
             binary=tracks[0],
+            autodj=_AUTODJ,
         )
     assert seen == [(tracks[0].resolve(), tracks[1].resolve())]
     with pytest.raises(tryer.AudioUnavailable, match="fixture-out"):  # the track, never the path
@@ -792,6 +1015,7 @@ def test_try_plans_resolves_audio_to_real_absolute_paths_and_refuses_a_missing_o
             out_profile,
             in_profile,
             (tmp_path / "missing.mp3", link),
+            autodj=_AUTODJ,
             context_bars=4,
             binary=tracks[0],
         )
@@ -857,7 +1081,9 @@ def test_hoisted_incoming_sets_are_scored_at_render_zero_not_their_nominal_bar()
         if not hoisted:
             continue
         without = dataclasses.replace(plan, events=tuple(e for e in plan.events if e not in hoisted))
-        assert tryer.rendered_steps(plan, out_profile, layout) == tryer.rendered_steps(without, out_profile, layout)
+        assert tryer.rendered_steps(plan, out_profile, layout, autodj=_AUTODJ) == tryer.rendered_steps(
+            without, out_profile, layout, autodj=_AUTODJ
+        )
         checked += 1
     assert checked, "control: some proposal hoists a level set"
 
@@ -1180,6 +1406,89 @@ def test_the_render_deadline_covers_the_whole_render_clock_whatever_the_launch_b
     assert shifted["max_ms"] == base["max_ms"]
 
 
+def _incoming_play(plan: Any) -> Any:
+    return next(e for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck)
+
+
+def _with_incoming_play_bar(plan: Any, at_bar: float) -> Any:
+    play = _incoming_play(plan)
+    return dataclasses.replace(
+        plan, events=tuple(dataclasses.replace(e, at_bar=at_bar) if e is play else e for e in plan.events)
+    )
+
+
+def _clock(plan: Any, out_profile: Any, in_profile: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, float, float, float | None, np.ndarray]:
+    """Call incoming_on_render_clock with outgoing_natural stubbed to record start_s and return ones."""
+    layout = layout_of(plan, out_profile, in_profile, 4)
+    play_bar = _incoming_play(plan).at_bar
+    play_s = out_profile.time_of_bar(plan.out.start_bar + play_bar) - layout.start_out_s
+    frames = max(0, round(play_s * 48000)) + 48000
+    captured: list[float] = []
+
+    def capture(_path: Path, start_s: float, n: int, _sr: int) -> np.ndarray:
+        captured.append(start_s)
+        return np.ones((n, 2), dtype=np.float32)
+
+    monkeypatch.setattr(tryer, "outgoing_natural", capture)
+    dummy = Path(Path.cwd().anchor) / "in.wav"
+    entry_s, placed = incoming_on_render_clock(
+        plan, out_profile, in_profile, layout, dummy, frames, autodj=_AUTODJ
+    )
+    assert captured, "outgoing_natural must run"
+    return layout, play_s, captured[0], entry_s, placed
+
+
+@pytest.mark.requirement("TRYER-9486")
+def test_a_delayed_incoming_play_cuts_source_from_the_cued_start_bar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] incoming play is at plan bar 4 [then] the source starts at the cued start bar, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _with_incoming_play_bar(_plans()[0], 4.0)
+    _layout, play_s, in_start, _entry_s, placed = _clock(plan, out_profile, in_profile, monkeypatch)
+    assert in_start == pytest.approx(in_profile.time_of_bar(plan.in_.start_bar))
+    start = max(0, round(play_s * 48000))
+    assert start > 0 and start < len(placed)
+    assert float(np.abs(placed[:start]).max()) == 0.0
+    assert float(np.abs(placed[start : start + 100]).mean()) > 0.5
+
+
+@pytest.mark.requirement("TRYER-9486")
+def test_a_delayed_incoming_play_reports_bass_entry_later_by_the_skipped_bars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] incoming play is at plan bar 4 [then] bass entry moves later by 4 plan bars, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _with_incoming_play_bar(_plans()[0], 4.0)
+    layout, play_s, in_start, entry_s, _placed = _clock(plan, out_profile, in_profile, monkeypatch)
+    entry = content_bass_entry_bar(in_profile)
+    assert entry is not None and entry_s is not None
+    old_in_start = in_profile.time_of_bar(plan.in_.start_bar + 4.0 * layout.in_fold)
+    cued_start = in_profile.time_of_bar(plan.in_.start_bar)
+    old_entry_s = play_s + (in_profile.time_of_bar(entry) - old_in_start) / layout.in_ratio
+    new_entry_s = play_s + (in_profile.time_of_bar(entry) - cued_start) / layout.in_ratio
+    assert in_start == pytest.approx(cued_start)
+    assert entry_s == pytest.approx(new_entry_s)
+    assert entry_s - old_entry_s == pytest.approx((old_in_start - cued_start) / layout.in_ratio)
+
+
+@pytest.mark.requirement("TRYER-9486")
+def test_a_bar_zero_incoming_play_keeps_the_cued_start_and_bass_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] incoming play is at plan bar 0 [then] start and bass entry match the old cut, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    assert _incoming_play(plan).at_bar == 0.0
+    layout, play_s, in_start, entry_s, _placed = _clock(plan, out_profile, in_profile, monkeypatch)
+    entry = content_bass_entry_bar(in_profile)
+    old_in_start = in_profile.time_of_bar(plan.in_.start_bar + 0.0 * layout.in_fold)
+    old_entry_s = None if entry is None else play_s + (in_profile.time_of_bar(entry) - old_in_start) / layout.in_ratio
+    assert in_start == pytest.approx(old_in_start)
+    assert in_start == pytest.approx(in_profile.time_of_bar(plan.in_.start_bar))
+    assert entry_s == pytest.approx(old_entry_s)
+
+
 def test_a_candidate_refused_after_rendering_keeps_no_folder(
     engine: Path, tracks: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1262,9 +1571,35 @@ def test_engine_source_turns_missing_audio_into_audio_unavailable(
 
     monkeypatch.setattr("apps.stems.cli.resolve_audio_path", no_audio)
     with pytest.raises(AudioUnavailable) as gone:
-        EngineTrackSource(tmp_path).audio_path("trk-in")
+        EngineTrackSource(tmp_path, _AUTODJ).audio_path("trk-in")
     assert gone.value.stable_id == "trk-in"
     assert "/srv" not in str(gone.value) and str(tmp_path) not in str(gone.value)
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_empty_propose_names_the_not_offered_bound(tmp_path: Path) -> None:
+    """[if] try_pair gets no proposals [then] PairNotTryable names the first not_offered reason, [else stop]."""
+    from apps.transition_score.tryer import PairNotTryable, try_pair
+
+    reason = "in-window max_bars=1 < filter_sweep min_bars=12 (first vocal at bar 2)"
+
+    class _Autodj:
+        def propose_transition(self, *_args: object, **_kwargs: object) -> dict[str, Any]:
+            return {"proposals": [], "considered": 0, "not_offered": [{"reason": reason}]}
+
+        def parse_plan(self, plan: object) -> object:
+            return plan
+
+    class _Source:
+        def profile(self, stable_id: str) -> object:
+            return profile(stable_id, arrangement=ARRANGEMENT)
+
+        def audio_path(self, stable_id: str) -> Path:
+            return tmp_path / f"{stable_id}.wav"
+
+    with pytest.raises(PairNotTryable, match="0 considered; in-window max_bars=1") as refused:
+        try_pair("trk-out", "trk-in", data_dir=tmp_path, source=_Source(), autodj=_Autodj())
+    assert reason in str(refused.value)
 
 
 def test_only_pair_level_refusals_are_pair_not_tryable(
@@ -1298,3 +1633,17 @@ def test_the_outgoing_deck_loads_at_the_shared_headroom_default() -> None:
     events = doc["events"]
     trims = [e for e in events if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 1]
     assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 1, "value": 0.250594}}]
+
+
+@pytest.mark.requirement("AGENT-47")
+def test_an_unmatched_incoming_deck_loads_at_the_shared_headroom_default() -> None:
+    """[if] render has no in.trim_db [then] incoming TRIM uses shared load, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    plan = dataclasses.replace(plan, in_=dataclasses.replace(plan.in_, trim_db=None))
+    doc = compile_render_plan(plan, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    events = doc["events"]
+    trims = [e for e in events if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 2]
+    assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 2, "value": 0.250594}}]
+    first_play = next(i for i, e in enumerate(events) if e.get("cmd", {}).get("type") == "play")
+    assert events.index(trims[0]) < first_play

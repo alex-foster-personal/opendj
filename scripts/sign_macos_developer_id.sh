@@ -41,6 +41,11 @@
 #       Air, Wed 30 Sep 2026, "keychainLocked(keychainName: \"default\")"
 #       while the profile sat unlocked in opendj-signing.keychain-db. Set, it
 #       must name an existing file, and every notarytool call passes it.
+#   MDT_MACOS_SIGNING_KEYCHAIN        optional path of the keychain that holds
+#       the Developer ID Application identity. Without it codesign resolves
+#       the identity through the default keychain search list. Set, it must
+#       name an existing file, and every codesign invocation that carries
+#       --sign passes --keychain with that path.
 #
 # Every subcommand fails loudly rather than degrading. There is no path
 # through this script that produces an unsigned artifact and reports success.
@@ -112,6 +117,17 @@ _resolve_notary_keychain() {
     NOTARY_KEYCHAIN_ARGS=(--keychain "$MDT_MACOS_NOTARY_KEYCHAIN")
 }
 
+# codesign's --keychain, as an argument list, when MDT_MACOS_SIGNING_KEYCHAIN
+# names one. Callers expand "${SIGNING_KEYCHAIN_ARGS[@]+"${SIGNING_KEYCHAIN_ARGS[@]}"}",
+# the bash 3.2-safe form for an array that may be empty under set -u.
+_resolve_signing_keychain() {
+    SIGNING_KEYCHAIN_ARGS=()
+    [ -n "${MDT_MACOS_SIGNING_KEYCHAIN:-}" ] || return 0
+    [ -f "$MDT_MACOS_SIGNING_KEYCHAIN" ] || die \
+        "MDT_MACOS_SIGNING_KEYCHAIN names $MDT_MACOS_SIGNING_KEYCHAIN, which is not a file"
+    SIGNING_KEYCHAIN_ARGS=(--keychain "$MDT_MACOS_SIGNING_KEYCHAIN")
+}
+
 _require_tool() {
     command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH; this step needs the Xcode command line tools"
 }
@@ -137,6 +153,7 @@ cmd_payload() {
     # reporting a path problem instead would send the operator hunting in the
     # wrong place.
     _require_identity
+    _resolve_signing_keychain
     _require_tool codesign
     [ -d "$payload" ] || die "no staged payload directory at $payload"
 
@@ -148,6 +165,7 @@ cmd_payload() {
     started=$(date +%s)
     macho_files "$payload" | xargs -0 -P 4 -n 1 \
         codesign --force --timestamp --options runtime \
+        ${SIGNING_KEYCHAIN_ARGS[@]+"${SIGNING_KEYCHAIN_ARGS[@]}"} \
         --sign "$MDT_MACOS_SIGNING_IDENTITY" ||
         die "codesign failed inside the payload; the outer bundle would have been sealed around an unsigned Mach-O"
     _sign_engine_executables "$payload"
@@ -167,6 +185,7 @@ _sign_engine_executables() {
         *executable*)
             codesign --force --timestamp --options runtime \
                 --entitlements "$ENGINE_ENTITLEMENTS" \
+                ${SIGNING_KEYCHAIN_ARGS[@]+"${SIGNING_KEYCHAIN_ARGS[@]}"} \
                 --sign "$MDT_MACOS_SIGNING_IDENTITY" "$exe" ||
                 die "codesign failed applying the engine entitlements to $exe"
             signed_entitlements="$(codesign -d --entitlements - --xml "$exe" 2>/dev/null)" ||
@@ -354,10 +373,13 @@ cmd_dmg() {
     local dmg="${1:-}"
     [ -n "$dmg" ] || die "usage: $0 dmg <dmg>"
     _require_identity
+    _resolve_signing_keychain
     _require_tool codesign
     [ -f "$dmg" ] || die "no dmg at $dmg"
 
-    codesign --force --timestamp --sign "$MDT_MACOS_SIGNING_IDENTITY" "$dmg" ||
+    codesign --force --timestamp \
+        ${SIGNING_KEYCHAIN_ARGS[@]+"${SIGNING_KEYCHAIN_ARGS[@]}"} \
+        --sign "$MDT_MACOS_SIGNING_IDENTITY" "$dmg" ||
         die "codesign failed on the image"
     codesign --verify --strict --verbose=2 "$dmg" ||
         die "the image signature does not verify"

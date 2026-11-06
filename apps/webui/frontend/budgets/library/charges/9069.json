@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 326961,
+  "measured_with_pr": 327933,
+  "sha": "b3db42f813",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9069 applies one tooltip standard (UX-9069, issue #927): the shared tooltip timing contract (tooltip-timing.ts, single-hover-tooltip, ControlExplainer portal) loads with the library shell. Measured: CI bundle check of b3db42f813, +972 B gzip; ceiled to KiB",
+  "payback": "none planned; the standard replaces per-control native titles and is the intended shape"
+}

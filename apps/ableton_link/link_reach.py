@@ -106,7 +106,9 @@ class LinkReachListener:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            reuseport = getattr(socket, "SO_REUSEPORT", None)
+            if reuseport is not None:
+                sock.setsockopt(socket.SOL_SOCKET, reuseport, 1)
             # A multicast group listener: Linux delivers group datagrams only to a socket bound to
             # the wildcard (or the group) address, and membership is joined per interface below.
             # nosemgrep: python.lang.security.audit.network.bind.avoid-bind-to-all-interfaces

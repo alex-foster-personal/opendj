@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 400029,
+  "measured_with_pr": 403316,
+  "sha": "4a3850a6b5",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #5230 makes deck waveforms follow live EQ and filter (WAVE-EQ-01): wave-eq-gains, the band-layer gain path in WaveRow and StripWaveform render, and the rust-engine wave_gains wiring are on the performance surface. Measured: CI bundle job on 4a3850a6b5 (main merged), +3287 B gzip against main 400029; an earlier local vite build measured +2085 B; ceiled to KiB",
+  "payback": "none planned; the gain path runs per frame on the deck waveforms, so it cannot be lazy"
+}

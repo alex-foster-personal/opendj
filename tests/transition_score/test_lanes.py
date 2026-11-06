@@ -5,13 +5,16 @@ Pure: profiles from the AutoDJ fixtures, plans from the real proposer, deck rend
 
 from __future__ import annotations
 
+import dataclasses
 import wave
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from apps.autodj.http import build_service
 from apps.autodj.plan import parse_plan
+from apps.autodj.profile import heard_profile
 from apps.autodj.propose import propose_transition
 from apps.autodj.render_plan import compile_render_plan, layout_of
 from apps.transition_score.lanes import (
@@ -75,7 +78,7 @@ def test_incoming_fader_curve_rises_from_zero_on_the_render_clock() -> None:
     times = [t for t, _ in fader]
     assert times == sorted(times), "if breakpoints go backwards in time then events were placed on the wrong clock"
     first_zero = times[values.index(0.0)]
-    expected = out_profile.time_of_bar(plan.out.start_bar) - layout.start_out_s
+    expected = (out_profile.time_of_bar(plan.out.start_bar) - layout.start_out_s) / layout.out_ratio
     assert first_zero == pytest.approx(expected, abs=1e-3), "if bar 0 is not the plan's first bar then lines drift"
 
 
@@ -101,6 +104,7 @@ def test_build_lanes_reads_both_decks_and_their_play_spans(tmp_path: Path) -> No
     plan, out_profile, layout, document = _case("crossfade")
     for deck in (1, 2):
         _write_wav(tmp_path / "decks" / f"deck{deck}.wav", 0.5 * np.ones(48000 * 30))
+    _write_wav(tmp_path / "decks" / f"deck{plan.in_.deck + 1}.wav", 0.5 * np.ones(48000 * 30))
     lanes = build_lanes(tmp_path, document, plan.out.deck, out_profile, layout, 50)
     assert [lane.deck for lane in lanes.decks] == [1, 2]
     incoming = lanes.decks[1]
@@ -112,7 +116,14 @@ def test_build_lanes_reads_both_decks_and_their_play_spans(tmp_path: Path) -> No
 
 def test_build_lanes_without_deck_renders_fails_loud(tmp_path: Path) -> None:
     plan, out_profile, layout, document = _case("crossfade")
-    with pytest.raises(LaneError):
+    with pytest.raises(LaneError, match=r"deck1\.wav.*deck2\.wav"):
+        build_lanes(tmp_path, document, plan.out.deck, out_profile, layout, 50)
+
+
+def test_a_render_missing_the_incoming_deck_is_refused_naming_it(tmp_path: Path) -> None:
+    plan, out_profile, layout, document = _case("crossfade")
+    _write_wav(tmp_path / "decks" / f"deck{plan.out.deck}.wav", 0.5 * np.ones(48000 * 30))
+    with pytest.raises(LaneError, match=rf"deck{plan.in_.deck}\.wav"):
         build_lanes(tmp_path, document, plan.out.deck, out_profile, layout, 50)
 
 
@@ -133,6 +144,94 @@ def test_incoming_beat_grid_starts_on_its_downbeat_at_its_play_time_and_runs_at_
     assert round(downbeats[0], 2) in out_downbeats, "if the decks' bar lines do not meet then the grids are misplaced"
 
 
+def _seconds(bar: float, out_profile, layout) -> float:
+    return round(out_profile.time_of_bar(bar) - layout.start_out_s, 4)
+
+
+@pytest.mark.requirement("TRYER-16")
+def test_knob_curves_set_interrupts_ramp_truncates_future_endpoint() -> None:
+    """[if] an 8-bar fader ramp is cut at bar 4 by a set [then] times stay sorted and bar 4 is 0.5 then 0.8, [else stop]."""
+    plan, out_profile, layout, _full_document = _case("crossfade")
+    out_deck = plan.out.deck
+    b0 = layout.start_out_bar
+    document = {
+        "events": [
+            {
+                "at": {"deck": out_deck, "bar": b0},
+                "ramp": {"type": "fader", "deck": out_deck, "to": 0.0, "over": {"deck": out_deck, "bars": 8}},
+            },
+            {
+                "at": {"deck": out_deck, "bar": b0 + 4},
+                "cmd": {"type": "fader", "deck": out_deck, "value": 0.8},
+            },
+        ]
+    }
+    curves = knob_curves(document, plan.out.deck, out_profile, layout)
+    fader = curves[out_deck]["fader"]
+    times = [t for t, _ in fader]
+    assert times == sorted(times), "if breakpoints go backwards in time then interrupted ramps were not truncated"
+    t4 = _seconds(b0 + 4, out_profile, layout)
+    at4 = [(t, v) for t, v in fader if t == t4]
+    assert len(at4) >= 2, "if bar 4 has no jump then the set was not applied at the ramp interrupt"
+    assert at4[0][1] == pytest.approx(0.5), (
+        "if the value at bar 4 is not half the ramp then the curve did not interpolate at the interrupt"
+    )
+    assert at4[-1][1] == pytest.approx(0.8), "if the set value is missing at bar 4 then the jump was lost"
+    t8 = _seconds(b0 + 8, out_profile, layout)
+    assert not any(abs(t - t8) < 1e-6 and v == pytest.approx(0.0) for t, v in fader), (
+        "if the cancelled ramp end (0.0) remains at the original end bar then the superseded endpoint was kept"
+    )
+
+
+@pytest.mark.requirement("TRYER-16")
+def test_knob_curves_ramp_interrupts_ramp_starts_from_interpolated_value() -> None:
+    """[if] a second ramp interrupts the first at bar 4 [then] the new ramp starts from 0.5, [else stop]."""
+    plan, out_profile, layout, _full_document = _case("crossfade")
+    out_deck = plan.out.deck
+    b0 = layout.start_out_bar
+    document = {
+        "events": [
+            {
+                "at": {"deck": out_deck, "bar": b0},
+                "ramp": {"type": "fader", "deck": out_deck, "to": 0.0, "over": {"deck": out_deck, "bars": 8}},
+            },
+            {
+                "at": {"deck": out_deck, "bar": b0 + 4},
+                "ramp": {"type": "fader", "deck": out_deck, "to": 1.0, "over": {"deck": out_deck, "bars": 2}},
+            },
+        ]
+    }
+    curves = knob_curves(document, plan.out.deck, out_profile, layout)
+    fader = curves[out_deck]["fader"]
+    times = [t for t, _ in fader]
+    assert times == sorted(times), "if breakpoints go backwards in time then interrupted ramps were not truncated"
+    t4 = _seconds(b0 + 4, out_profile, layout)
+    t6 = _seconds(b0 + 6, out_profile, layout)
+    t8 = _seconds(b0 + 8, out_profile, layout)
+    assert any(abs(t - t4) < 1e-6 and v == pytest.approx(0.5) for t, v in fader), (
+        "if bar 4 does not read 0.5 then the second ramp did not start from the interrupted ramp level"
+    )
+    assert any(abs(t - t6) < 1e-6 and v == pytest.approx(1.0) for t, v in fader), (
+        "if the second ramp does not end at 1.0 at bar 6 then its endpoint was misplaced"
+    )
+    assert not any(abs(t - t8) < 1e-6 and v == pytest.approx(0.0) for t, v in fader), (
+        "if the first ramp's far endpoint 0.0 remains at bar 8 then the superseded endpoint was not dropped"
+    )
+
+
+@pytest.mark.requirement("TRYER-16")
+def test_knob_curves_fixture_curves_have_non_decreasing_times() -> None:
+    """[if] crossfade fixture knob curves are built [then] every knob has non-decreasing times, [else stop]."""
+    plan, out_profile, layout, document = _case("crossfade")
+    curves = knob_curves(document, plan.out.deck, out_profile, layout)
+    for deck_curves in curves.values():
+        for points in deck_curves.values():
+            times = [t for t, _ in points]
+            assert times == sorted(times), (
+                "if breakpoints go backwards in time then events were placed on the wrong clock or ramps not truncated"
+            )
+
+
 def test_a_tempo_change_mid_render_refuses_the_grid() -> None:
     plan, out_profile, layout, document = _case("crossfade")
     later = next(e for e in document["events"] if e["at"] != {"ms": 0})
@@ -150,7 +249,9 @@ def test_lanes_follow_the_jobs_shared_start_not_the_plans_own() -> None:
     plan, out_profile, layout, document = _case("crossfade")
     own = knob_curves(document, plan.out.deck, out_profile, layout)[plan.in_.deck]["fader"]
     earlier = layout.start_out_bar - 1.0
-    assert shared_start_out_bar([plan], out_profile, out_profile, 4) == layout.start_out_bar
+    assert shared_start_out_bar(
+        [plan], out_profile, out_profile, 4, autodj=build_service()
+    ) == layout.start_out_bar
     shifted_layout = layout_of(plan, out_profile, out_profile, 4, start_out_bar=earlier)
     shifted_doc = compile_render_plan(
         plan, out_profile, out_profile, 4, out_audio=ANCHOR, in_audio=ANCHOR, start_out_bar=earlier
@@ -158,6 +259,26 @@ def test_lanes_follow_the_jobs_shared_start_not_the_plans_own() -> None:
     shifted = knob_curves(shifted_doc, plan.out.deck, out_profile, shifted_layout)[plan.in_.deck]["fader"]
     first_zero = next(t for t, v in own if v == 0.0)
     shifted_zero = next(t for t, v in shifted if v == 0.0)
-    assert shifted_zero - first_zero == pytest.approx(out_profile.bar_s, abs=1e-3), (
+    assert shifted_zero - first_zero == pytest.approx(out_profile.bar_s / layout.out_ratio, abs=1e-3), (
         "if an earlier shared start does not move the lines by the bars between then lanes drift from the audio"
     )
+
+
+def test_knob_breakpoints_use_render_clock_when_outgoing_is_heard_pitched() -> None:
+    """[if] the outgoing deck is heard faster than stored [then] lane times divide by out_ratio, [else stop]."""
+    out_stored = profile("fixture-out-heard-lane", bpm=120.0, arrangement=ARRANGEMENT)
+    out_heard = heard_profile(out_stored, heard_bpm=127.2)
+    in_profile = profile("fixture-in-heard-lane", bpm=124.0, key="9A", arrangement=ARRANGEMENT)
+    proposals = propose_transition(out_heard, in_profile, out_deck=1, in_deck=2, top=12)["proposals"]
+    plan = next(parse_plan(p["plan"]) for p in proposals if p["plan"]["style"] == "crossfade")
+    layout = layout_of(plan, out_heard, in_profile, 4)
+    assert layout.out_ratio == pytest.approx(127.2 / 120.0)
+    document = compile_render_plan(plan, out_heard, in_profile, 4, out_audio=ANCHOR, in_audio=ANCHOR)
+    curves = knob_curves(document, plan.out.deck, out_stored, layout)
+    fader = curves[plan.in_.deck]["fader"]
+    values = [v for _, v in fader]
+    times = [t for t, _ in fader]
+    first_zero = times[values.index(0.0)]
+    plain_layout = dataclasses.replace(layout, out_ratio=1.0)
+    expected_plain = out_stored.time_of_bar(plan.out.start_bar) - plain_layout.start_out_s
+    assert first_zero == pytest.approx(expected_plain / layout.out_ratio, abs=1e-2)

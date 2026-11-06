@@ -64,11 +64,20 @@ PREDATES_ADR = frozenset(
 
 # Packages that landed after the ADR WITHOUT a contract, each named with the tech-debt issue that
 # owes it. This is not PREDATES_ADR (never add there). A name here must leave in the PR that adds it
-# to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj (#7681)
-# cannot be enforced until apps/transition_score (#7708) stops reaching its planner modules.
+# to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj is now
+# enforced; apps/transition_score still owes its own contract in #7708.
 # apps/plugins came in with #6522 (plugin store) and owes its contract, a Protocol over frozen
 # models for the engine and webui importers, before it can be enforced.
-OWED_CONTRACT = {"ableton_link": "#7949", "autodj": "#7681", "b2b_booth": "#7949", "b2b_pairing": "#7949", "b2b_session": "#7949", "b2b_sync": "#7949", "b2b_transport": "#7949", "transition_score": "#7708", "plugins": "#6522"}
+OWED_CONTRACT = {
+    "ableton_link": "#7949",
+    "b2b_booth": "#7949",
+    "b2b_pairing": "#7949",
+    "b2b_session": "#7949",
+    "b2b_sync": "#7949",
+    "b2b_transport": "#7949",
+    "plugins": "#6522",
+    "transition_score": "#7708",
+}
 
 
 def _check(*pairs: tuple[str, str], enforced: tuple[str, ...] = ("lib",)) -> list[Violation]:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ from apps.engine_core.build_lineage import (
     LineageConfig,
     LineageError,
     LineSpec,
+    _git_executable,
     compute_lineage,
     lineage_color,
     load_lineage_config,
@@ -54,6 +56,13 @@ def _commit(repo: Path, name: str) -> str:
     _git(repo, "add", name)
     _git(repo, "commit", "-q", "-m", name)
     return _git(repo, "rev-parse", "HEAD")
+
+
+@pytest.fixture
+def fresh_git_executable() -> Iterator[None]:
+    _git_executable.cache_clear()
+    yield
+    _git_executable.cache_clear()
 
 
 @pytest.fixture
@@ -141,3 +150,21 @@ def test_unknowable_lineage_fails_loudly(repo: Path, tmp_path: Path) -> None:
     bad.write_text(json.dumps({"trunk": "main", "lines": [{"name": "main", "ref": "x", "color": "mauve"}], "palette": {}}))
     with pytest.raises(LineageError, match="not in the palette"):
         load_lineage_config(bad)
+
+
+@pytest.mark.requirement("INSTALL-44")
+@pytest.mark.usefixtures("fresh_git_executable")
+def test_missing_git_fails_loudly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] git is not on PATH [then] lineage fails loudly with LineageError, [else stop]."""
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(LineageError, match="git is not on PATH"):
+        compute_lineage(tmp_path, previous_git_sha_full=None, config=CONFIG)
+
+
+@pytest.mark.requirement("INSTALL-44")
+@pytest.mark.usefixtures("fresh_git_executable")
+def test_lineage_resolves_git_to_an_absolute_path() -> None:
+    """[if] lineage resolves git [then] it is an absolute executable path, [else stop]."""
+    git = _git_executable()
+    assert Path(git).is_absolute(), git
+    assert Path(git).name.lower().startswith("git"), git

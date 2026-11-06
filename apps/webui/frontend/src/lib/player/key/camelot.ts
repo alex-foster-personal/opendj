@@ -559,6 +559,22 @@ export function composeStretchSemitones(
 	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 
+/**
+ * Listener-facing Camelot for KEY SYNC ladder and copy: catalog/guess key plus
+ * rounded integer stretch (manual shift + Master Tempo-off tempo pitch). When
+ * Master Tempo is on, tempo pitch is zero and the label matches catalog + shift.
+ */
+export function keySyncAudibleCamelotKey(
+	key: string | null,
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	keyShiftSemitones: number
+): string | null {
+	const rounded = Math.round(composeStretchSemitones(tempoRatio, masterTempoEnabled, keyShiftSemitones));
+	_assertKeyShift(rounded);
+	return effectiveCamelotKey(key, rounded);
+}
+
 //----------------------------------------------------------------- KEY SYNC ladder (KEYSYNC-01)
 // The chevron beside KEY SYNC lists every shift -6..+6 with the key it lands
 // on and, when that key mixes harmonically with the target, the pattern name.

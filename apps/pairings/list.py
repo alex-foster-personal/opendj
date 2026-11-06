@@ -12,9 +12,9 @@ import sys
 from collections.abc import Iterable
 from typing import TextIO
 
-from apps.shared.pairings.models import SOURCES, PairingEdge
+from apps.shared.pairings.models import PairingEdge
 
-from ._common import add_db_argument
+from ._common import add_db_argument, add_from_filter_argument, add_source_argument
 from ._emit import (
     CSV_ROW_OPTS,
     COLUMNS,
@@ -30,10 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m apps.pairings.list",
         description="List pairing edges, optionally filtered.",
     )
-    p.add_argument("--from", dest="from_id", default=None,
-                   help="only list edges starting from this stable_id")
-    p.add_argument("--source", default=None, choices=list(SOURCES),
-                   help="filter by provenance")
+    add_from_filter_argument(
+        p,
+        help="only list edges starting from this stable_id",
+    )
+    add_source_argument(p, default=None, help="filter by provenance")
     p.add_argument("--format", default="table",
                    choices=["table", "csv", "json"])
     add_db_argument(p)

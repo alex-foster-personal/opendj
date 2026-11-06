@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import math
 import shutil
-import struct
-import wave
 from pathlib import Path
 
 import pytest
@@ -19,6 +17,7 @@ from apps.analysis_loudness import contract
 from apps.analysis_loudness.backfill import produce_lane_result
 from apps.analysis_loudness.http import build_service
 from apps.loudness.scan import LoudnessError
+from tests.analysis_loudness.ffmpeg_fixtures import write_sine_wav
 
 
 def test_service_satisfies_the_protocol() -> None:
@@ -36,19 +35,6 @@ def test_contract_producer_identity_matches_the_lane_naming_scheme() -> None:
     assert contract.CONTRACT_VERSION == "analysis_loudness/1"
 
 
-def _sine_wav(path: Path, seconds: float = 3.0, rate: int = 44100) -> Path:
-    frames = b"".join(
-        struct.pack("<h", int(0.5 * 32767 * math.sin(2 * math.pi * 1000 * n / rate)))
-        for n in range(int(seconds * rate))
-    )
-    with wave.open(str(path), "wb") as out:
-        out.setnchannels(1)
-        out.setsampwidth(2)
-        out.setframerate(rate)
-        out.writeframes(frames)
-    return path
-
-
 def _ffmpeg() -> str:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -60,7 +46,7 @@ def _ffmpeg() -> str:
 
 def test_service_measures_through_the_real_producer(tmp_path: Path) -> None:
     ffmpeg = _ffmpeg()
-    wav = _sine_wav(tmp_path / "sine.wav")
+    wav = write_sine_wav(tmp_path / "sine.wav", duration_s=3.0)
     via_contract = build_service().produce_lane_result(wav, binary=ffmpeg)
     assert via_contract.status == "ok"
     assert via_contract == produce_lane_result(wav, binary=ffmpeg)

@@ -641,12 +641,21 @@ class AssetResolver:
 
     def __init__(self) -> None:
         self._cache: dict[tuple[str, str, bool, str], MappedPath] = {}
+        #: First-step memo: ``resolve_library_path`` per distinct vendor string
+        # (pin ad59ac). Containment still runs through :meth:`_contained`; this
+        # only dedupes the mapping pass repeated for every row on a page.
+        self._library: dict[tuple[str, int | None], MappedPath] = {}
 
     def resolve_asset_path(
         self, asset_path: str, *, path_map: PathMap | None = None
     ) -> MappedPath:
         """Memoised counterpart of the module-level :func:`resolve_asset_path`."""
-        mapped = resolve_library_path(asset_path, path_map=path_map)
+        pm_id = id(path_map) if path_map is not None else None
+        lib_key = (asset_path, pm_id)
+        mapped = self._library.get(lib_key)
+        if mapped is None:
+            mapped = resolve_library_path(asset_path, path_map=path_map)
+            self._library[lib_key] = mapped
         if mapped.resolved is None:
             return mapped
         return self._contained(mapped, mapped.resolved)

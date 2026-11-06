@@ -23,10 +23,16 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.autodj.live import heard_on_deck
-from apps.autodj.lookahead import Decision, decide
-from apps.autodj.pair_memory import PairTransition, get_pair_transition, save_decision
-from apps.autodj.profile import TrackProfile
+from apps.autodj.http import (
+    Decision,
+    PairTransition,
+    TrackProfile,
+    build_service,
+    decide,
+    get_pair_transition,
+    heard_profile,
+    save_decision,
+)
 from apps.shared.state import db as state_db_module
 from apps.transition_score.live import (
     DeckNotPlannable,
@@ -269,7 +275,8 @@ def plan_transition(
 ) -> TransitionPlanOut | JSONResponse:
     if body.out_deck == body.in_deck:
         return _refusal(422, "same_deck", f"out_deck and in_deck are both {body.out_deck}")
-    source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
+    autodj = build_service()
+    source = ServingTrackSource(data_dir, autodj, origin=_serving_origin(request, state_db), state_db=state_db)
     live = LiveRequest(
         body.out_deck, body.in_deck, body.intent, tuple(body.recent_styles), body.from_ms, body.take_incoming
     )
@@ -283,7 +290,12 @@ def plan_transition(
 
     try:
         answer = plan_live(
-            live, mirror=_mirror_reader(request), source=source, cache=_plan_cache(request), saved_for=saved_for
+            live,
+            autodj=autodj,
+            mirror=_mirror_reader(request),
+            source=source,
+            cache=_plan_cache(request),
+            saved_for=saved_for,
         )
         return _document(answer)
     except LookupError as error:
@@ -352,12 +364,15 @@ def decide_transition(
     mirror = _published_mirror(request)
     if mirror is None:
         return _refusal(status.HTTP_409_CONFLICT, "no_performance_page", "no page has published a mirror")
-    source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
+    autodj = build_service()
+    source = ServingTrackSource(data_dir, autodj, origin=_serving_origin(request, state_db), state_db=state_db)
     live = LiveRequest(body.out_deck, body.in_deck, body.intent, tuple(body.recent_styles))
     try:
-        out_id = _track(mirror, body.out_deck)
-        out_profile = heard_on_deck(source.profile(out_id), _deck_state(mirror, body.out_deck), with_tempo=True)
-        bar_now = _bar_now(out_profile, mirror, body.out_deck)
+        out_id = _track(autodj, mirror, body.out_deck)
+        out_profile = autodj.heard_on_deck(
+            source.profile(out_id), _deck_state(mirror, body.out_deck), with_tempo=True
+        )
+        bar_now = _bar_now(autodj, out_profile, mirror, body.out_deck)
     except DeckNotPlannable as error:
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "deck_empty", str(error))
     except (PairNotTryable, TryError) as error:
@@ -366,7 +381,9 @@ def decide_transition(
     follower_range = _deck_state(mirror, body.in_deck).get("pitch_range")
     reach = float(follower_range) if isinstance(follower_range, (int, float)) and follower_range > 0 else None
     profiles = [
-        profile.as_heard(key_shift=body.in_key_shifts.get(profile.stable_id, 0), pitch_range_pct=reach)
+        heard_profile(
+            profile, key_shift=body.in_key_shifts.get(profile.stable_id, 0), pitch_range_pct=reach
+        )
         for profile in profiles
     ]
     decision = decide(
@@ -418,16 +435,17 @@ def prepare_transition(
     cache = _plan_cache(request)
     live = LiveRequest(body.out_deck, body.in_deck, body.intent, (), body.from_ms)
     try:
-        key = _key(live, read())
+        autodj = build_service()
+        key = _key(autodj, live, read())
     except LookupError as error:
         return _refusal(status.HTTP_409_CONFLICT, "no_performance_page", str(error))
     except DeckNotPlannable as error:
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "deck_empty", str(error))
     if not (body.status_only and cache.get(key) is not None) and cache.begin(key):
-        source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
-        _PREPARE_POOL.submit(prepare_live, live, key, mirror=read, source=source, cache=cache).add_done_callback(
-            _log_failure
-        )
+        source = ServingTrackSource(data_dir, autodj, origin=_serving_origin(request, state_db), state_db=state_db)
+        _PREPARE_POOL.submit(
+            prepare_live, live, key, autodj=autodj, mirror=read, source=source, cache=cache
+        ).add_done_callback(_log_failure)
     entry = cache.get(key)
     if entry is None:
         return TransitionPrepareOut(state="warming", candidates=0, reason="", render_ms=0.0, in_track=key.in_id)

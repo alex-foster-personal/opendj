@@ -3,6 +3,7 @@
 [if] a noisy hand crossfade goes in [then] the exact golden plan comes out, [else stop].
 [if] a lane only jitters [then] it leaves no event, [else stop].
 [if] nothing moved [then] simplify refuses, never an empty plan, [else stop].
+[if] an incoming lane is held constant [then] the plan seeds that start even at unity or flat, [else stop].
 """
 
 from __future__ import annotations
@@ -195,6 +196,69 @@ def test_the_plan_ends_where_the_outgoing_deck_went_quiet() -> None:
 def test_nothing_moved_is_refused() -> None:
     with pytest.raises(SimplifyError, match="no control moved"):
         simplify(_mix({(OUT_DECK, "fader"): _noisy(lambda _bar: 1.0, 16, seed=15)}))
+
+
+def test_constant_incoming_fader_unity_is_seeded_in_prepare() -> None:
+    """Incoming fader held at 1.0 (neutral) still seeds prepare so replay does not inherit a zeroed fader."""
+    plan = simplify(
+        _mix(
+            {
+                (OUT_DECK, "fader"): _noisy(_ramp(1.0, 0.0, 0.0, 16.0), 16, seed=20),
+                (IN_DECK, "fader"): _noisy(lambda _bar: 1.0, 16, seed=21, noise=KNOB_TOLERANCE * 0.4),
+            }
+        )
+    )
+    presets = [e for e in plan.events if e.at_bar < 0 and e.deck == IN_DECK and e.name == "fader"]
+    assert len(presets) == 1
+    assert presets[0].kind == "set"
+    assert presets[0].value == pytest.approx(1.0, abs=KNOB_TOLERANCE)
+
+
+def test_constant_incoming_eq_flat_and_trim_flat_are_seeded() -> None:
+    plan = simplify(
+        _mix(
+            {
+                (OUT_DECK, "fader"): _noisy(_ramp(1.0, 0.0, 0.0, 16.0), 16, seed=22),
+                (IN_DECK, "eq_low"): _noisy(lambda _bar: 0.5, 16, seed=23, noise=KNOB_TOLERANCE * 0.4),
+                (IN_DECK, "trim"): _noisy(lambda _bar: 0.5, 16, seed=24, noise=KNOB_TOLERANCE * 0.4),
+            }
+        )
+    )
+    prepare_bar = min(e.at_bar for e in plan.events)
+    flat_presets = [
+        e
+        for e in plan.events
+        if e.at_bar == prepare_bar and e.deck == IN_DECK and e.kind == "set" and e.name in ("eq_low", "trim")
+    ]
+    by_name = {e.name: e.value for e in flat_presets}
+    assert by_name["eq_low"] == pytest.approx(0.5, abs=KNOB_TOLERANCE)
+    assert by_name["trim"] == pytest.approx(0.5, abs=KNOB_TOLERANCE)
+
+
+def test_constant_incoming_non_neutral_value_is_seeded_as_before() -> None:
+    plan = simplify(
+        _mix(
+            {
+                (OUT_DECK, "fader"): _noisy(_ramp(1.0, 0.0, 0.0, 16.0), 16, seed=25),
+                (IN_DECK, "eq_high"): _noisy(lambda _bar: 0.3, 16, seed=26, noise=KNOB_TOLERANCE * 0.4),
+            }
+        )
+    )
+    presets = [e for e in plan.events if e.at_bar < 0 and e.deck == IN_DECK and e.name == "eq_high"]
+    assert len(presets) == 1
+    assert presets[0].value == pytest.approx(0.3, abs=KNOB_TOLERANCE)
+
+
+def test_constant_outgoing_lane_is_not_seeded() -> None:
+    plan = simplify(
+        _mix(
+            {
+                (OUT_DECK, "fader"): _noisy(_ramp(1.0, 0.0, 0.0, 16.0), 16, seed=27),
+                (OUT_DECK, "eq_low"): _noisy(lambda _bar: 0.5, 16, seed=28, noise=KNOB_TOLERANCE * 0.4),
+            }
+        )
+    )
+    assert not any(e.at_bar < 0 and e.deck == OUT_DECK for e in plan.events)
 
 
 def _crossfade_lanes(delay_bars: float) -> dict[tuple[int | None, str], tuple[Sample, ...]]:

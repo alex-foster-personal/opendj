@@ -25,14 +25,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.genre_infer import display as genre_display
 from apps.genre_infer import library_tags
-from apps.shared.state.db import is_sqlite_busy
+from apps.shared.state.db import DEFAULT_BUSY_TIMEOUT_S, is_sqlite_busy
 from apps.webui.soft_deletes import has_soft_deletes
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _EAV_FIELDS: tuple[str, ...] = ("comments", "notes", "tags")
 _SOURCE_READ_ATTEMPTS = 3
 
@@ -65,9 +67,30 @@ def build_fts_query(q: str) -> str | None:
 
 def _open_index(index_db_path: Path) -> sqlite3.Connection:
     index_db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(index_db_path))
-    conn.execute("PRAGMA journal_mode = WAL")
+    conn = sqlite3.connect(str(index_db_path), timeout=DEFAULT_BUSY_TIMEOUT_S)
+    try:
+        _enable_wal(conn)
+    except Exception:
+        conn.close()
+        raise
+    conn.execute(f"PRAGMA busy_timeout = {round(DEFAULT_BUSY_TIMEOUT_S * 1000)}")
     return conn
+
+
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    # Two connections switching a brand-new file to WAL at once: SQLite answers
+    # the loser SQLITE_BUSY at once, without calling the busy handler (its lock
+    # upgrade would deadlock). Retry within the same busy budget, then raise.
+    deadline = time.monotonic() + DEFAULT_BUSY_TIMEOUT_S
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.OperationalError as exc:
+            if not is_sqlite_busy(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.01)
+        else:
+            return
 
 
 def _source_fingerprint(state_db_path: Path) -> str:
@@ -166,8 +189,12 @@ def _read_source(
         if modern_schema:
             row_genres = genre_display.read_for_rows(state, stable_ids)
             genre_fields = library_tags.field_genres(state, stable_ids)
+            rekordbox = library_tags.rekordbox_genres(
+                state, stable_ids, rb_config.MASTER_PLAIN_DB
+            )
             for stable_id in stable_ids:
-                user_genre, library_genre = genre_fields.get(stable_id, (None, None))
+                user_genre, imported = genre_fields.get(stable_id, (None, None))
+                library_genre = rekordbox.get(stable_id) or imported
                 chosen = row_genres.chosen(
                     stable_id,
                     user_genre=user_genre,
@@ -197,7 +224,6 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
         if _source_fingerprint(state_db_path) == source_fingerprint:
             break
 
-    conn.execute("BEGIN")
     try:
         conn.execute("DROP TABLE IF EXISTS tracks_fts")
         conn.execute("DROP TABLE IF EXISTS search_meta")
@@ -252,8 +278,19 @@ def ensure_index(state_db_path: Path, index_db_path: Path | None = None) -> Path
         target = index_db_path or index_path_for(state_db_path)
         source_fingerprint = _source_fingerprint(state_db_path)
         conn = _open_index(target)
-        if _current_meta(conn) != (_SCHEMA_VERSION, source_fingerprint):
+        if _current_meta(conn) == (_SCHEMA_VERSION, source_fingerprint):
+            return target
+
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            source_fingerprint = _source_fingerprint(state_db_path)
+            if _current_meta(conn) == (_SCHEMA_VERSION, source_fingerprint):
+                conn.rollback()
+                return target
             _rebuild(conn, state_db_path)
+        except Exception:
+            conn.rollback()
+            raise
     except (OSError, sqlite3.Error) as exc:
         raise SearchIndexUnavailable(
             f"search index unavailable for {state_db_path}: {exc}"

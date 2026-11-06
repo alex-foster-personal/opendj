@@ -24,13 +24,20 @@
 	// tracks join from two. Holding Cmd (Ctrl off macOS) numbers the first nine
 	// rows for a quick pick. The bar also answers `cmdk_open` / `cmdk_close`
 	// through the dispatcher and shows agents its state in `query().cmdk`.
+	//
+	// CMDK-24 (issue #6848): typed search also lists library playlists to open.
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { revealPlaylist } from '$lib/rb/playlist-reveal.svelte';
 	import { deckStates as decks, DECK_IDS, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import {
 		searchGroups,
 		rowKeys,
 		warmHaystacks,
+		cmdkGroupStarts,
+		cmdkListSpliceAt,
+		matchLists,
 		matchedVia,
 		queryTokens,
 		fillSearchFields,
@@ -90,12 +97,16 @@
 	import { previewAssets, requestPreviewAssets, watchPreview } from '$lib/rb/cmdk-preview-data.svelte';
 	import { createCuePreview, type CuePreviewCommand, type CuePreviewTrack } from '$lib/rb/cmdk-cue-preview.svelte';
 	import { barPhase, downbeatTimes, snapStops } from '$lib/rb/cmdk-preview-grid';
+	import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
+	import { shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
 	import { guardHolds, pickGuard, pickerAction, pickerArrow, pickerOrder, pickerStart, pickerStep, replaceGuard, type ReplaceGuard } from '$lib/rb/cmdk-deck-picker';
 	import { previewCue } from '$lib/player/preview-cue.svelte';
 	import type { AnlzBeat, AnlzData } from '$lib/rb/cmdk-preview-grid';
 	import { effectiveWaveformDesign, type UiSkin } from '$lib/rb/ui-skin';
 	import type { WaveformDesignPref } from '$lib/rb/waveform-design';
 	import { ensureAnlzPrefetch, getAnlzEntry } from './wave/anlz-cache.svelte';
+	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './wave/beatgrid-fallback-cache.svelte';
+	import { beatgridFallbackGate, paintAnlzForRow, readyBeatgridFallback } from './wave/wave-row-beatgrid-fallback';
 	import { sectionSpans } from './wave/sections';
 
 	/** What a row needs to be searched, filtered and loaded. */
@@ -107,10 +118,15 @@
 			duration_ms?: number | null;
 		};
 
+	/** One selectable line: a track to load, or a library playlist to open. */
+	type CmdkItem = { kind: 'track'; row: CmdkRow; pair?: CmdkPairTag | undefined } | { kind: 'list'; list: PlaylistNode } | { kind: 'action'; action: CmdkAction };
+
 	let {
 		rows,
 		playlistTitle,
 		hideBroken,
+		playlists,
+		openPlaylist,
 		load,
 		fetchMeta,
 		reservation,
@@ -134,6 +150,9 @@
 		playlistTitle: string;
 		/** The broken filter as the open pane resolved it (Missing Tracks is exempt). */
 		hideBroken: boolean;
+		playlists: readonly PlaylistNode[];
+		/** CMDK-6848: opens the playlist as a click on its tree row does. */
+		openPlaylist: (list: PlaylistNode) => void;
 		/** The browser's load path for a settled row (a refusal returns normally). */
 		load: (row: CmdkRow, deck: DeckId, stillNewest?: LoadGuard) => Promise<void>;
 		/** The table's own retrying rb-meta fetch, to settle a pending pick. */
@@ -184,6 +203,8 @@
 
 	/** Rows each group draws at once; the header count says when there are more. */
 	const GROUP_LIMIT = 50;
+	/** Playlists drawn at once, kept short so the collection group stays in reach. */
+	const LIST_LIMIT = 5;
 
 	let open = $state(false);
 	let query = $state('');
@@ -253,6 +274,7 @@
 	);
 	/** A playlist can hold one track twice (LIBM-03), so its rows are keyed by membership. */
 	const playlistKeys = $derived(rowKeys(groups.playlist.rows));
+	const lists = $derived(matchLists(playlists, query, LIST_LIMIT));
 
 	// ---- CMDK-11..16: settings and commands as results ----
 
@@ -506,19 +528,21 @@
 		}
 		return { groups: out, keepTyping: false };
 	});
+	/** Inserted library-playlist rows count toward flat indices only in plain mode with actions off. */
+	const cmdkListRowCount = $derived(mode === 'plain' && !actionsOn ? lists.rows.length : 0);
 	/** Each group's first index into `flat`. */
-	const groupStart = $derived.by((): number[] => {
-		const starts: number[] = [];
-		let at = 0;
-		for (const group of layout.groups) {
-			starts.push(at);
-			at += group.entries.length;
-		}
-		return starts;
-	});
+	const groupStart = $derived(cmdkGroupStarts(layout.groups, cmdkListRowCount));
 	/** Every selectable row, in the order drawn. */
-	const flat = $derived(layout.groups.flatMap((group) => group.entries));
-	const selectedEntry = $derived<CmdkEntry<CmdkRow> | undefined>(flat[selected]);
+	const flat = $derived.by((): CmdkItem[] => {
+		const entries = layout.groups.flatMap((group) => group.entries) as CmdkItem[];
+		if (cmdkListRowCount === 0) return entries;
+		const playlistTracks = cmdkListSpliceAt(layout.groups);
+		const before = entries.slice(0, playlistTracks);
+		const after = entries.slice(playlistTracks);
+		const listPart = lists.rows.map((list) => ({ kind: 'list' as const, list }));
+		return [...before, ...listPart, ...after];
+	});
+	const selectedEntry = $derived(flat[selected]);
 	/** The highlighted row when it is a track. */
 	const selectedTrack = $derived(selectedEntry?.kind === 'track' ? selectedEntry.row : undefined);
 
@@ -648,12 +672,16 @@
 	}
 
 	/** Enter, a click or a quick pick on any row. */
-	function activate(entry: CmdkEntry<CmdkRow> | undefined, shift: boolean): void {
+	function activate(entry: CmdkItem | undefined, shift: boolean): void {
 		if (entry === undefined) return;
 		// Until the settings module lands, its results are missing from the list, so Enter would pick the next
 		// row by mistake (Sol P1, #6689). It waits instead.
 		if (settingsLoading) {
 			actionError = 'Settings are still loading; press Enter again in a moment';
+			return;
+		}
+		if (entry.kind === 'list') {
+			void openPlaylistRow(entry.list);
 			return;
 		}
 		if (entry.kind === 'action') {
@@ -662,6 +690,12 @@
 		}
 		if (previewMode !== 'off') openPicker(entry.row, shift, entry.pair);
 		else void choose(entry.row, shift, entry.pair, false);
+	}
+
+	function openPlaylistRow(list: PlaylistNode): void {
+		closeBar();
+		openPlaylist(list);
+		revealPlaylist(list.playlist_id);
 	}
 
 	// The no-key toast goes through the page's pushToast, so neither this bar nor "/" first paint loads it.
@@ -700,6 +734,10 @@
 				if (targetMoved()) throw new Error(`the target deck is now ${target}, not ${targetAt}; read query() and pick again`);
 				const entry = flat[index];
 				if (entry === undefined) throw new Error(`there is no row ${index}; the bar shows ${flat.length}`);
+				if (entry.kind === 'list') {
+					openPlaylistRow(entry.list);
+					return;
+				}
 				// Rows can arrive after query() was read (pair rows land asynchronously): a pick pinned to the
 				// row it read is refused once that index holds another row (Codex r4279465774); a pair row has its
 				// own id, so a plain row replaced by the same track's pair row is refused too (Codex r4279717126).
@@ -767,26 +805,28 @@
 				// The deck an omitted `deck` loads to, so an agent names the same deck the visible rings show (Codex P2 BLOCKING, #6691).
 				target,
 				rows: flat.map((entry) =>
-					entry.kind === 'track'
-						? {
-								kind: 'track' as const,
-								id: cmdkWireId(entry),
-								label: entry.row.title ?? '(untitled)',
-								...(entry.pair === undefined ? {} : { pair: entry.pair.aligned ? ('aligned' as const) : ('loose' as const) }),
-								...fitOf(entry.row.stable_id)
-							}
-						: entry.action.kind === 'setting'
+					entry.kind === 'list'
+						? { kind: 'playlist' as const, id: String(entry.list.playlist_id), label: entry.list.name }
+						: entry.kind === 'track'
 							? {
-									kind: 'setting' as const,
-									// The id a pick validates against, so a row id read here is accepted by cmdk_pick (Codex P2 BLOCKING, #6692).
+									kind: 'track' as const,
 									id: cmdkWireId(entry),
-									label: entry.action.label,
-									// The value the row shows and what Enter does to it, as the row's own hint reads (Codex P2 BLOCKING, #6691).
-									value: settingValueLabel(entry.action.def, entry.action.value),
-									action: settingVerb(entry.action.def, entry.action.value, settingTokens)
+									label: entry.row.title ?? '(untitled)',
+									...(entry.pair === undefined ? {} : { pair: entry.pair.aligned ? ('aligned' as const) : ('loose' as const) }),
+									...fitOf(entry.row.stable_id)
 								}
-							: // The id a pick validates, as for a setting, so an Open settings row read with its query is accepted (Codex P2 BLOCKING, #6691).
-								{ kind: 'command' as const, id: cmdkWireId(entry), label: entry.action.label }
+							: entry.action.kind === 'setting'
+								? {
+										kind: 'setting' as const,
+										// The id a pick validates against, so a row id read here is accepted by cmdk_pick (Codex P2 BLOCKING, #6692).
+										id: cmdkWireId(entry),
+										label: entry.action.label,
+										// The value the row shows and what Enter does to it, as the row's own hint reads (Codex P2 BLOCKING, #6691).
+										value: settingValueLabel(entry.action.def, entry.action.value),
+										action: settingVerb(entry.action.def, entry.action.value, settingTokens)
+									}
+								: // The id a pick validates, as for a setting, so an Open settings row read with its query is accepted (Codex P2 BLOCKING, #6691).
+									{ kind: 'command' as const, id: cmdkWireId(entry), label: entry.action.label }
 				),
 				mode,
 				ai: aiShown,
@@ -826,6 +866,11 @@
 		})
 	);
 
+	function flatEntryKey(entry: CmdkItem): string {
+		if (entry.kind === 'list') return `pl:${entry.list.playlist_id}`;
+		return cmdkEntryKey(entry);
+	}
+
 	// Rows that arrive after the bar opened (the pairs group, a refreshed index) keep the
 	// highlight on the entry it was on, for the same query: the index alone would slide it onto
 	// another track, and Enter would load that one (Codex r4277873858).
@@ -836,7 +881,7 @@
 		const list = flat;
 		const at = selected;
 		if (list !== anchoredList && query === anchoredQuery) {
-			const moved = reanchorSelection(anchor, list.map(cmdkEntryKey), at);
+			const moved = reanchorSelection(anchor, list.map(flatEntryKey), at);
 			anchoredList = list;
 			if (moved !== at) {
 				selected = moved;
@@ -845,7 +890,7 @@
 		}
 		anchoredList = list;
 		anchoredQuery = query;
-		anchor = list[at] === undefined ? null : cmdkEntryKey(list[at]);
+		anchor = list[at] === undefined ? null : flatEntryKey(list[at]);
 	});
 
 	// A refreshed index can shorten the list under a highlight further down it;
@@ -876,10 +921,37 @@
 		previewMode === 'off' ? null : (picker?.row ?? (touched ? (selectedTrack ?? null) : null))
 	);
 	const previewId = $derived(previewRow?.stable_id ?? null);
+	const previewAnlzEntry = $derived(previewId === null ? undefined : getAnlzEntry(previewId));
 	const previewAnlz = $derived.by((): AnlzData | null => {
-		if (previewId === null) return null;
-		const entry = getAnlzEntry(previewId);
+		const entry = previewAnlzEntry;
 		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
+	});
+	const previewAnlzErrorCode = $derived(
+		previewAnlzEntry !== undefined && previewAnlzEntry.status === 'error' ? previewAnlzEntry.code : null
+	);
+	const previewFallbackGate = $derived(
+		beatgridFallbackGate({
+			anlzErrorCode: previewAnlzErrorCode,
+			anlz: previewAnlz,
+			effectiveSource: analysisSourceState.features.beatgrid
+		})
+	);
+	/** The row the dwell last fired for; null from the moment the highlight moves. */
+	let dwelled = $state<string | null>(null);
+	$effect(() => {
+		const id = previewId;
+		if (id !== null && dwelled === id && shouldUseBeatgridFallback(previewFallbackGate)) ensureBeatgridFallback(id);
+	});
+	const previewBeatgridFallback = $derived(
+		readyBeatgridFallback(previewId, previewFallbackGate, getBeatgridFallbackEntry)
+	);
+	const previewPaintAnlz = $derived(paintAnlzForRow(previewAnlz, previewBeatgridFallback));
+	const previewGridPending = $derived.by(() => {
+		if (previewId === null) return false;
+		if (previewAnlzEntry === undefined || previewAnlzEntry.status === 'loading') return true;
+		if (!shouldUseBeatgridFallback(previewFallbackGate)) return false;
+		const fallbackEntry = getBeatgridFallbackEntry(previewId);
+		return fallbackEntry === undefined || fallbackEntry.status === 'loading';
 	});
 	const previewData = $derived(previewId === null ? undefined : previewAssets(previewId));
 	const previewDuration = $derived(
@@ -904,7 +976,7 @@
 
 	const cueTrack = $derived.by((): CuePreviewTrack | null => {
 		if (previewRow === null) return null;
-		const downbeats = previewAnlz === null ? [] : downbeatsOf(previewAnlz);
+		const downbeats = previewPaintAnlz === null ? [] : downbeatsOf(previewPaintAnlz);
 		const vocals =
 			previewData?.status === 'ready' && (previewData.vocals.status === 'rekordbox' || previewData.vocals.status === 'demucs')
 				? previewData.vocals.regions
@@ -912,12 +984,12 @@
 		return {
 			stable_id: previewRow.stable_id,
 			downbeats,
-			stops: previewAnlz === null ? [] : snapStops(downbeats, sectionSpans(previewAnlz.phrases), vocals),
+			stops: previewPaintAnlz === null ? [] : snapStops(downbeats, sectionSpans(previewPaintAnlz.phrases), vocals),
 			duration_s: previewDuration,
 			bpm: previewRow.bpm,
-			// Not read yet (the dwell has not fired) or still loading: a press is held until it answers.
-			gridPending: previewAnlz === null && getAnlzEntry(previewRow.stable_id)?.status !== 'error',
-			untrusted: previewAnlz?.beatgrid.bar_phase_untrusted === true
+			// /anlz and, when its grid is empty, /beatgrid-fallback are one pending read.
+			gridPending: previewGridPending,
+			untrusted: previewPaintAnlz?.beatgrid.bar_phase_untrusted === true
 		};
 	});
 
@@ -937,8 +1009,6 @@
 	});
 	$effect(() => cue.setTrack(cueTrack));
 
-	/** The row the dwell last fired for; null from the moment the highlight moves. */
-	let dwelled = $state<string | null>(null);
 	// Ask for the overview only after a rest on the row, so arrowing past rows fetches nothing.
 	$effect(() => {
 		const id = previewId;
@@ -2023,13 +2093,32 @@
 	</li>
 {/snippet}
 
+{#snippet listView(list: PlaylistNode, i: number)}
+	{@const playable = list.track_count - list.broken_count}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<li
+		id={`cmdk2-row-${i}`}
+		role="option"
+		aria-selected={i === selected}
+		class="row"
+		class:selected={i === selected}
+		data-testid="command-bar-playlist"
+		data-playlist-id={list.playlist_id}
+		onmousemove={() => (selected = i)}
+		onclick={() => activate({ kind: 'list', list }, false)}
+	>
+		<span class="t">{@render hl(list.name)}</span>
+		<span class="m" title={`${playable} non-broken tracks, ${list.broken_count} broken tracks`}>{playable} tracks</span>
+	</li>
+{/snippet}
+
 {#snippet strip(variant: 'above' | 'inline')}
 	{#if previewRow !== null}
 		<CmdkPreviewStrip
 			{variant}
 			title={`${previewRow.title ?? '(untitled)'}${previewRow.artist ? ` · ${previewRow.artist}` : ''}`}
 			assets={previewData}
-			anlz={previewAnlz}
+			anlz={previewPaintAnlz}
 			duration_s={previewDuration}
 			design={waveDesign}
 			playhead={cuePlayhead}
@@ -2079,7 +2168,11 @@
 						aria-activedescendant={flat.length > 0 ? `cmdk2-row-${selected}` : undefined}
 						autocomplete="off"
 						spellcheck="false"
-						placeholder={mode === 'ai' ? 'Describe what you want next, e.g. uplifting vocal house' : actionsOn ? 'Find a track, setting or command' : 'Find a track'}
+						placeholder={mode === 'ai'
+							? 'Describe what you want next, e.g. uplifting vocal house'
+							: actionsOn
+								? 'Find a track, setting or command'
+								: 'Find a track or playlist'}
 						data-testid="command-bar-input"
 					/>
 					<div class="filters"><CmdkFilterRow {states} onToggle={toggleFilter} /></div>
@@ -2150,6 +2243,15 @@
 						</li>
 						{#if group.id === 'playlist'}
 							{#each group.entries as entry, i (playlistKeys[i])}{#if entry.kind === 'track'}{@render rowView(entry.row, groupStart[g] + i)}{/if}{/each}
+							{#if lists.rows.length > 0}
+								<li class="group" role="presentation">
+									<span>Playlists</span>
+									<span title="Library playlists whose name matches">{lists.total}</span>
+								</li>
+								{#each lists.rows as list, li (list.playlist_id)}
+									{@render listView(list, groupStart[g] + group.entries.length + li)}
+								{/each}
+							{/if}
 						{:else}
 							{#each group.entries as entry, i (entry.kind === 'track' ? `t-${entry.row.stable_id}` : `a-${entry.action.id}`)}
 								{#if entry.kind === 'track'}{@render rowView(entry.row, groupStart[g] + i, entry.pair)}{:else}{@render actionView(entry.action, groupStart[g] + i)}{/if}
@@ -2194,6 +2296,7 @@
 					{#if layout.keepTyping}
 						<li class="hint" role="presentation" data-testid="command-bar-keep-typing">Keep typing to search tracks</li>
 					{/if}
+					{/if}
 					{#if groups.hiddenByFilters > 0}
 						<li class="hint" role="presentation" data-testid="command-bar-hidden">
 							<span title="Tracks that match the text but a library filter hides">{groups.hiddenByFilters}</span>
@@ -2204,9 +2307,8 @@
 						<li class="hint" role="presentation" data-testid="command-bar-loading">
 							{collectionError !== null ? 'Search is unavailable until the collection loads (close and reopen to retry)' : 'Loading the collection...'}
 						</li>
-					{:else if trackSearch && groups.playlist.rows.length + groups.collection.rows.length === 0 && tokens.length > 0 && groups.hiddenByFilters === 0}
-						<li class="hint" role="presentation">No tracks match "{query}"</li>
-					{/if}
+					{:else if trackSearch && flat.length === 0 && tokens.length > 0 && groups.hiddenByFilters === 0}
+						<li class="hint" role="presentation">No tracks or playlists match "{query}"</li>
 					{/if}
 				</ul>
 				{/if}
@@ -2250,7 +2352,7 @@
 						{/if}
 					{:else}
 						<span><b>↑↓</b> pick</span>
-						<span><b>Enter</b> load to deck {target}</span>
+						<span><b>Enter</b> {flat[selected]?.kind === 'list' ? 'open playlist' : `load to deck ${target}`}</span>
 						<span><b>⇧Enter</b> vocals only</span>
 						<span><b>Alt 1-4</b> deck</span>
 						<span><b>Alt</b>+letter filter (hover an icon for its key)</span>

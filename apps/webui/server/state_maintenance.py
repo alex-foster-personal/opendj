@@ -195,6 +195,10 @@ _ACTIVE: dict[str, StateMaintenance] = {}
 
 
 def start_for_state_db(state_db_path: Path) -> None:
+    previous = _ACTIVE.pop("maintenance", None)
+    if previous is not None:
+        # Overlapping lifespans must not orphan the replaced thread (issue #8179).
+        previous.stop()
     _ACTIVE["maintenance"] = StateMaintenance(state_db_path=state_db_path)
     _ACTIVE["maintenance"].start()
 

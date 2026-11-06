@@ -385,6 +385,7 @@ def test_a_failed_build_leaves_no_session_and_a_good_one_lands_whole(
         ("dj-not-found", True),
         ("renderer", False),
         ("dj-engine", False),
+        ("clip", False),
     ],
 )
 def test_only_pair_level_failures_skip_a_pair(
@@ -403,6 +404,7 @@ def test_only_pair_level_failures_skip_a_pair(
         "dj-not-found": DjError("not_found", "GET /tracks/x -> 404"),
         "renderer": TryError("odj-audio could not start"),
         "dj-engine": DjError("engine_not_running", "no engine"),
+        "clip": ClipError("candidate c1 missing deck2.wav"),
     }
 
     def failing_build_pair(*_args: object, **_kwargs: object) -> None:
@@ -464,6 +466,44 @@ def test_deck_slices_are_bit_exact_and_the_anchor_delays_only_its_incoming_deck(
     )
 
 
+def _kept_candidate(tmp_path: Path, cid: str = "c1") -> tuple[Candidate, Path]:
+    """A candidate whose mix sits at ``tmp_path/kept/<cid>/mix.wav`` (decks sibling optional)."""
+    render = tmp_path / "kept" / cid
+    render.mkdir(parents=True)
+    (render / "mix.wav").write_bytes(b"")
+    candidate = dataclasses.replace(_candidate(cid, "blend", 0.5), render_path=str(render / "mix.wav"))
+    return candidate, render
+
+
+def _write_pcm16_deck(render: Path, n: int, rate: int = 48000) -> None:
+    decks = render / "decks"
+    decks.mkdir(parents=True, exist_ok=True)
+    samples = np.zeros((rate, 2), dtype=np.int16)
+    soundfile.write(str(decks / f"deck{n}.wav"), samples, rate, subtype="PCM_16")
+
+
+@pytest.mark.requirement("TRYER-22")
+def test_copy_decks_raises_when_only_the_outgoing_deck_wav_is_kept(tmp_path: Path) -> None:
+    """[if] a clip's incoming deck render is missing [then] ClipError names the candidate and file, [else stop]."""
+    candidate, render = _kept_candidate(tmp_path)
+    _write_pcm16_deck(render, 1)
+    clips = tmp_path / "clips"
+    with pytest.raises(ClipError, match=r"candidate c1 missing deck2\.wav"):
+        builder._copy_decks(candidate, clips, "aa", (1.0, 3.0))
+    assert not (clips / "aa" / "decks").exists()
+    assert ClipError not in builder.SKIPPABLE_PAIR_ERRORS
+
+
+@pytest.mark.requirement("TRYER-22")
+def test_copy_decks_raises_when_the_decks_directory_is_missing(tmp_path: Path) -> None:
+    """[if] a clip's decks directory is missing [then] ClipError names the candidate and first missing file, [else stop]."""
+    candidate, _render = _kept_candidate(tmp_path)
+    clips = tmp_path / "clips"
+    with pytest.raises(ClipError, match=r"candidate c1 missing deck1\.wav"):
+        builder._copy_decks(candidate, clips, "aa", (1.0, 3.0))
+    assert not (clips / "aa" / "decks").exists()
+
+
 @pytest.mark.requirement("AGENT-39")
 def test_a_lull_then_drop_candidate_is_added_beside_the_taste_variants_never_into_them() -> None:
     """[if] a pair renders lull_then_drop candidates [then] the first by plan_sha256 is added beside the factorial, [else stop].
@@ -486,3 +526,37 @@ def test_a_lull_then_drop_candidate_is_added_beside_the_taste_variants_never_int
     lull = lull_candidate(TryResult("o", "i", ranked), selection.variants)
     assert lull is not None and lull.id == "c4"
     assert lull_candidate(TryResult("o", "i", ranked[:3]), selection.variants) is None
+
+
+@pytest.mark.requirement("AGENT-39")
+def test_lull_then_drop_stays_out_of_taste_when_only_one_core_lane_family() -> None:
+    """[if] only one core-lane family is rendered plus a lull [then] the lull stays out of taste, [else stop].
+
+    Crossfades at two exits plus a lull at the first exit cannot factorial in CORE_LANES; the any-family
+    retry would otherwise take the lull as family B."""
+    from scripts.bench.tryer_calibration.build_manifest import lull_candidate
+
+    ranked = (
+        _candidate("cx", "crossfade", 0.5, out_bar=161),
+        _candidate("cy", "crossfade", 0.4, out_bar=169),
+        _candidate("lx", "lull_then_drop", 0.3, out_bar=161),
+    )
+    selection = select_taste_variants(TryResult("o", "i", ranked))
+    assert not isinstance(selection, str)
+    assert all(c.style != "lull_then_drop" for c in selection.variants)
+    assert all(c.style == "crossfade" for c in selection.variants)
+    lull = lull_candidate(TryResult("o", "i", ranked), selection.variants)
+    assert lull is not None and lull.id == "lx"
+
+
+@pytest.mark.requirement("AGENT-39")
+def test_only_lull_then_drop_candidates_return_no_taste_contrast() -> None:
+    """[if] every rendered candidate is lull_then_drop [then] select_taste_variants returns no-contrast, [else stop].
+
+    Two lulls at different exits would otherwise become a 2-clip v1-walk Selection."""
+    lulls = (
+        _candidate("l1", "lull_then_drop", 0.3, out_bar=161),
+        _candidate("l2", "lull_then_drop", 0.2, out_bar=169),
+    )
+    got = select_taste_variants(TryResult("o", "i", lulls))
+    assert isinstance(got, str) and "no taste contrast" in got

@@ -101,6 +101,7 @@ import {
 	canonicalizeLibraryKeyFilter,
 	validateLibraryKeyFilterField
 } from './library-key-filter';
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import {
@@ -342,6 +343,9 @@ export interface RbUiPrefs
 	/** DECKUX-20: tri-band, mono envelope, line outline or blocks, or 'auto'
 	 * (default) to follow the skin (ui-skin.ts SKIN_WAVE_LOOK). */
 	waveform_design: WaveformDesignPref;
+	/** WAVE-EQ-5230: deck waveforms follow each deck's live EQ and filter, as the
+	 * audio engine reports them. Default on. */
+	wave_eq_reflect: boolean;
 	/** Issue #4219: waveform band colors. 'rekordbox' (default) is CDJ 3Band:
 	 * dark blue low, amber mid, white high; 'legacy' is the pre-#4219 orange
 	 * low, blue mid, near-white high. 'auto' (default) follows the skin. The
@@ -454,6 +458,7 @@ const DEFAULTS: RbUiPrefs = {
 	library_key_filter: [],
 	library_watcher_folders: [],
 	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
+	wave_eq_reflect: true,
 	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
@@ -810,6 +815,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.wave_eq_reflect !== undefined && typeof parsed.wave_eq_reflect !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (wave_eq_reflect is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.mixer_stems !== undefined && typeof parsed.mixer_stems !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (mixer_stems is not a boolean) - ` +
@@ -983,6 +994,7 @@ function _assembleLoadedPrefs(
 		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		...skinLook,
+		wave_eq_reflect: parsed.wave_eq_reflect ?? DEFAULTS.wave_eq_reflect,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...confirm },
 		last_playlist: lastPlaylist,
@@ -1385,6 +1397,12 @@ export function setWaveformDesign(next: WaveformDesignPref): void {
 	_persist();
 }
 
+export function setWaveEqReflect(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError(`wave_eq_reflect must be a boolean, got ${String(next)}`);
+	uiPrefs.wave_eq_reflect = next;
+	_persist();
+}
+
 /** 'auto' follows the active skin; a concrete palette overrides it. */
 export function setWavePalette(next: WavePalettePref): void {
 	if (parseWavePalettePref(next) === undefined) {
@@ -1590,6 +1608,7 @@ export function rereadLibraryKeyFilter(): void {
 			if (gen === _libraryKeyFilterRereadGen) libraryKeyFilterSync.error = null;
 		},
 		(err: unknown) => {
+			if (isPageGoingAway()) return;
 			console.error('[library-key-filter] disk re-read failed', err);
 			if (gen !== _libraryKeyFilterRereadGen) return;
 			const detail = err instanceof Error ? err.message : String(err);

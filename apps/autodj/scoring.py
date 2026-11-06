@@ -81,7 +81,7 @@ class PairScore:
 def key_at(profile: TrackProfile, bar: int) -> str | None:
     """The key at a bar: a key segment covering it, else the track key."""
     for segment in profile.key_segments:
-        start, end, key = segment.get("start_bar"), segment.get("end_bar"), segment.get("key")
+        start, end, key = segment.start_bar, segment.end_bar, segment.key
         if (
             isinstance(start, (int, float))
             and isinstance(end, (int, float))

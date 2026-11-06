@@ -15,6 +15,13 @@
  *   the config loads.
  * - [if] the resolved data dir has no ``state/state.db`` [then ⛔️] the run starts.
  * - [if] ``SAVEPOINT_SMOKE_DATA_DIR`` is set [then] it wins over the Git-derived dir.
+ * - ✔︎ UI-state publication uses an exact-path allowlist so mirror/prefs writes
+ *   are not mistaken for library/catalog mutations.
+ *
+ * Acceptance tests (UI-state writes):
+ *
+ * - [if] method+path match an allowlisted UI-state pair [then] isUiStateWrite is true.
+ * - [if] path differs by segment, suffix, traversal, or verb [then ⛔️] false.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -106,4 +113,25 @@ export function requireRealLibraryDataDir(repositoryRoot: string): string {
 		);
 	}
 	return dataDir;
+}
+
+/** Exact (method, path) pairs that publish UI chrome, not catalog rows. */
+export const UI_STATE_WRITES: readonly { method: string; path: string }[] = [
+	{ method: 'PUT', path: '/api/v1/ui-prefs' },
+	{ method: 'PUT', path: '/api/v1/state/ui-mirror' },
+	{ method: 'DELETE', path: '/api/v1/state/ui-mirror' }
+];
+
+/**
+ * True when the request is an allowlisted UI-state write (mirror or prefs), not
+ * a library/catalog mutation.
+ */
+export function isUiStateWrite(method: string, url: string): boolean {
+	let pathname: string;
+	try {
+		pathname = new URL(url, 'http://127.0.0.1').pathname;
+	} catch {
+		return false;
+	}
+	return UI_STATE_WRITES.some((entry) => entry.method === method && entry.path === pathname);
 }

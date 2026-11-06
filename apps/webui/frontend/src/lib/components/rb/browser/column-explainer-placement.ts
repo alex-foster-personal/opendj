@@ -1,4 +1,6 @@
 import { clampToViewport, VIEWPORT_MARGIN_PX } from '$lib/ui/clamp-to-viewport';
+import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
+import { TOOLTIP_PACKED, type TooltipTiming } from '$lib/ui/tooltip-timing';
 
 /** Shared fixed-position placement for interactive column-header explainers. */
 export type ColumnExplainerPlacement = 'above' | 'below';
@@ -8,10 +10,10 @@ interface ColumnExplainerOptions {
 	text: string;
 	/** Headers teach above the table unless that would leave the viewport. */
 	placement?: ColumnExplainerPlacement;
+	tooltip?: TooltipTiming;
 }
 
 const PANEL_GAP_PX = 6;
-const PANEL_Z_INDEX = 100;
 
 export function columnExplainerStyle(
 	rect: Pick<DOMRect, 'left' | 'top' | 'bottom'>,
@@ -36,7 +38,7 @@ export function columnExplainerStyle(
 		{ width: panel.width, height: panel.height },
 		{ width: viewport.innerWidth, height: viewport.innerHeight }
 	);
-	return `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px;z-index:${PANEL_Z_INDEX};`;
+	return `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px;z-index:${OVERLAY_Z_INDEX.tooltip};`;
 }
 
 let nextExplainerId = 0;
@@ -51,8 +53,9 @@ export function columnExplainer(
 	node: HTMLElement,
 	initial: ColumnExplainerOptions
 ): { update: (next: ColumnExplainerOptions) => void; destroy: () => void } {
-	let options = initial;
+	let options = { tooltip: TOOLTIP_PACKED, ...initial };
 	let panel: HTMLDivElement | null = null;
+	let showTimer: ReturnType<typeof setTimeout> | undefined;
 	const previousTabIndex = node.getAttribute('tabindex');
 	const previousLabel = node.getAttribute('aria-label');
 	const previousDescription = node.getAttribute('aria-describedby');
@@ -63,6 +66,8 @@ export function columnExplainer(
 	}
 
 	function close(): void {
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
 		if (panel === null) return;
 		panel.remove();
 		panel = null;
@@ -79,23 +84,29 @@ export function columnExplainer(
 		);
 	}
 
-	function show(): void {
+	function openNow(): void {
+		showTimer = undefined;
 		if (panel !== null) return;
 		const next = document.createElement('div');
 		next.id = `column-explainer-${nextExplainerId++}`;
 		next.className = 'column-explain-panel';
 		next.setAttribute('role', 'tooltip');
 		next.textContent = options.text;
-		// Portal inside the nearest .perf-root ancestor (falling back to body
-		// when none exists) rather than always document.body: --rb-border/
-		// --rb-text/--rb-panel-raised are scoped to .perf-root (light/dark
-		// palette swap lives there), and position:fixed still measures from
-		// the viewport regardless of DOM parent since no ancestor here sets
-		// a transform/filter/perspective containing block.
 		(node.closest('.perf-root') ?? document.body).appendChild(next);
 		panel = next;
 		node.setAttribute('aria-describedby', next.id);
 		place();
+	}
+
+	function show(): void {
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
+		const timing = options.tooltip ?? TOOLTIP_PACKED;
+		if (timing.delay > 0) {
+			showTimer = setTimeout(openNow, timing.delay);
+		} else {
+			openNow();
+		}
 	}
 
 	function updateAccessibility(): void {
@@ -124,7 +135,7 @@ export function columnExplainer(
 
 	return {
 		update(next: ColumnExplainerOptions): void {
-			options = next;
+			options = { tooltip: TOOLTIP_PACKED, ...next };
 			updateAccessibility();
 			if (panel !== null) {
 				panel.textContent = options.text;

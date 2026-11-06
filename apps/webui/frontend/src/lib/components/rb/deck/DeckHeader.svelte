@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { truncationTip } from '$lib/ui/truncation-tip';
 	import { shownKey } from '$lib/rb/key-notation';
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
@@ -28,6 +29,7 @@
 		deckEffectiveBpm,
 		deckStates,
 		keyShiftOptions,
+		keySyncAudibleCamelotKey,
 		keySyncPreview,
 		keySyncStatus,
 		pitchRanges,
@@ -44,6 +46,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { TOOLTIP_DECK_CHROME, TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import BpmDisputeMarker from '../BpmDisputeMarker.svelte';
 	import { bpmDisputeText, otherAlternative, useAlternativeLabel } from '$lib/rb/bpm-dispute';
 	import { putBpmPick } from '$lib/rb/api-rb';
@@ -136,10 +139,21 @@
 		gridless ? null : (beatSyncGridWarning(deck.anlz?.beatgrid.beats ?? [])?.message ?? null)
 	);
 	// GRIDFIT-03: whether the grid matches the audio is judged by the engine,
-	// asked once per track and only after the grid has arrived (never during
-	// the load itself); its finding leads the same orange ! and title.
+	// asked once per successful verdict per page session and only after the
+	// grid has arrived (never during the load itself); a failed ask retries
+	// on the next load of that id. Cleanup cancels the delayed ask when this
+	// deck changes track or unloads. Keyed on stable_id plus a boolean so an
+	// anlz object replacement (grid edit, phase refine, bpm pick) does not
+	// restart the delay.
+	// untrack: requestGridAudioFit reads and writes the reactive `_entries`
+	// cache; a tracked call re-enters on pending and on failed, which loops
+	// or retries without another load. The effect's real dependencies are
+	// stable_id and anlz-present.
+	const gridFitAnlzPresent = $derived(deck.anlz !== null);
 	$effect(() => {
-		if (deck.stable_id !== null && deck.anlz) requestGridAudioFit(deck.stable_id);
+		const id = deck.stable_id;
+		if (id === null || !gridFitAnlzPresent) return;
+		return untrack(() => requestGridAudioFit(id));
 	});
 	const gridWarning: string | null = $derived(
 		gridless ? null : deckGridWarningText(gridShapeWarning, gridAudioFitFor(deck.stable_id))
@@ -247,8 +261,12 @@
 	const masterEffectiveKey: string | null = $derived.by(() => {
 		if (keySyncPlan === null) return null;
 		const master = deckStates[keySyncPlan.masterDeck];
-		const display = deckKeyAtPlayheadNow(master).display;
-		return display === null || display === '--' ? keySyncKey(master) : display;
+		return keySyncAudibleCamelotKey(
+			keySyncKey(master),
+			master.pitch,
+			master.master_tempo_enabled,
+			master.key_shift_semitones
+		);
 	});
 	const followerEffectiveKey: string | null = $derived(keyText === '--' ? null : keyText);
 	const keySyncDeltaText: string | null = $derived.by(() => {
@@ -351,6 +369,8 @@
 		const target = deckStates[ladderTargetDeck];
 		void target.key;
 		void target.key_shift_semitones;
+		void target.pitch;
+		void target.master_tempo_enabled;
 		void target.stable_id;
 		void deck.key;
 		return keyShiftOptions(deckId, ladderTargetDeck);
@@ -575,7 +595,7 @@
 						class="art"
 						src={coverSrc(artSrc, sid)}
 						alt=""
-						data-expected-resource-error
+						data-expected-resource-error="artwork-404"
 						onload={() => coverLoaded(sid)}
 						onerror={() => coverFailed(sid)}
 					/>
@@ -645,7 +665,7 @@
 			bullets={resetBullets}
 			warning={bpmDisputeLine}
 			action={deck.stable_id === null ? null : resetToOriginalAction}
-			showDelayMs={150}
+			tooltip={TOOLTIP_DECK_CHROME}
 		>
 			<div class="readout">
 				{#if keyChanged}
@@ -654,16 +674,16 @@
 						<span class="from">
 							 (from <span
 								style={origKeyColor !== null ? `color:${origKeyColor}` : undefined}
-								title={origKeyHover ?? undefined}>{origKeyShown}</span>)
+								aria-label={origKeyHover ?? undefined}
+								>{origKeyShown}</span>)
 						</span>
 					</span>
 				{/if}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<span
 					class="bpm"
-					title={bpmTitle}
 					data-testid={`tempo-readout-deck-${deckId}`}
-					aria-label={`tempo readout deck ${deckId}`}
+					aria-label={bpmTitle}
 					ondblclick={onTempoReadoutDblClick}
 				>{bpmText}</span>{#if bpmDisputed}<span class="bpm-dispute" data-testid={`bpm-dispute-marker-deck-${deckId}`} role="img" aria-label="tempo disputed with Mixed In Key"><BpmDisputeMarker /></span>{/if}
 				{#if tempoChanged}
@@ -703,6 +723,7 @@
 						bullets={keySyncBullets}
 						warning={keySyncWarning}
 						action={keySyncWarning === null ? null : masterTempoAction}
+						tooltip={TOOLTIP_ISOLATED}
 					>
 						<button
 							class="rb-lit-button keysync"
@@ -715,7 +736,6 @@
 							aria-label={`key sync deck ${deckId}`}
 							data-state={keySyncState === 'following' ? 'on' : keySyncState === 'off' ? 'off' : 'armed'}
 							data-key-sync-status={keySyncState}
-							title={keySyncTitle}
 							onclick={async () => await onKeySync()}
 						>
 							KEY SYNC
@@ -854,7 +874,7 @@
 			</div>
 
 			<div class="sync-col">
-				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets} warning={gridWarning}>
+				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets} warning={gridWarning} tooltip={TOOLTIP_ISOLATED}>
 					<button
 						class="rb-lit-button"
 						class:lit={deck.beat_sync_enabled && !gridless}
@@ -866,7 +886,6 @@
 						data-testid={`beat-sync-deck-${deckId}`}
 						aria-label={`beat sync deck ${deckId}`}
 						data-state={gridless ? 'inert' : deck.beat_sync_enabled ? 'on' : 'off'}
-						title={beatSyncTitle}
 						onclick={async () => await onBeatSync()}
 					>
 						BEAT SYNC
@@ -874,12 +893,13 @@
 							<span
 								class="grid-warn"
 								data-testid={`beat-sync-grid-warning-deck-${deckId}`}
-								title={gridWarning}>!</span
+								aria-label={gridWarning}
+								>!</span
 							>
 						{/if}
 					</button>
 				</ControlExplainer>
-				<ControlExplainer title={masterTitle} bullets={masterBullets}>
+				<ControlExplainer title={masterTitle} bullets={masterBullets} tooltip={TOOLTIP_ISOLATED}>
 					<button
 						class="rb-lit-button master-btn"
 						class:lit={deck.is_master}
@@ -891,7 +911,6 @@
 						aria-label={masterAriaLabel}
 						data-state={masterDataState}
 						data-master-mode={masterMode}
-						title={masterTitle}
 						onpointerdown={startMasterHold}
 						onpointerup={cancelMasterHold}
 						onpointerleave={cancelMasterHold}

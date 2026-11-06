@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import inspect
 import json
 import sqlite3
 from pathlib import Path
@@ -479,6 +480,34 @@ def test_partial_batch_write_skips_mass_missing_guard(
         "SELECT state FROM track_availability WHERE stable_id = ?", ("a" * 40,)
     ).fetchone()[0]
     assert state == "absent"
+
+
+def test_commit_availability_batch_on_idle_connection_commits(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    """Idle connections must enter writer.transaction() before upsert."""
+    src = inspect.getsource(avail.commit_availability_batch)
+    assert "writer.transaction(" in src
+    assert "immediate_transaction" not in src
+    empty = avail.commit_availability_batch(state_conn, [])
+    assert empty.total == 0
+
+    audio = tmp_path / "one.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = "a" * 40
+    add_track(stable_id, file_path=str(audio))
+    row = avail.AvailabilityRow(
+        stable_id=stable_id, state="present", checked_path=str(audio)
+    )
+    avail.commit_availability_batch(
+        state_conn, [row], apply_mass_missing_guard=False
+    )
+    stored = state_conn.execute(
+        "SELECT state FROM track_availability WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchone()
+    assert stored is not None and stored[0] == "present"
+    assert state_conn.in_transaction is False
 
 
 def test_round_present_drop_refuses_a_background_batch(

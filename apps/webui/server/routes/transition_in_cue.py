@@ -29,7 +29,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, StrictInt
 
-from apps.autodj.profile import ProfileError, downbeats_of, snap_to_downbeat
+from apps.autodj.http import ProfileError, downbeats_of, snap_to_downbeat
 from apps.shared import runtime_policy
 from apps.shared.events import publish
 from apps.shared.state import cue_store

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 
 	let {
 		cue,
@@ -18,6 +19,7 @@
 			'Metadata energy is not crowd response.',
 			'Advisory only. Your ears and the room win.'
 		]}
+		tooltip={TOOLTIP_ISOLATED}
 	>
 		<span
 			class="coach"

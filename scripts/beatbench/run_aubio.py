@@ -12,13 +12,13 @@ frame by frame, with no global prior, so unlike librosa it CAN follow a tempo
 that moves. What it gives up for that is stability: a causal tracker has no
 opportunity to revise an early mistake once the track continues.
 
-BUILDING THIS ON ARM64 MACOS NEEDS TWO WORKAROUNDS, both recorded here because
+BUILDING THIS ON ARM64 MACOS NEEDS TWO BUILD FIXES, both recorded here because
 they are non-obvious and cost real time to rediscover. aubio 0.4.9 is from 2019
 and its sole wheel-less source build breaks twice on a current toolchain:
 
   1. clang 16 promoted incompatible function pointer types from warning to
      error, which kills python/ext/ufuncs.c. Fixed by
-     CFLAGS=-Wno-incompatible-function-pointer-types.
+     CFLAGS=-Wno-incompatible-function-pointer-types -Wno-int-conversion.
   2. aubio's optional ffmpeg audio input targets the ffmpeg 4 API, and a
      current brew ffmpeg no longer has it, so src/io/source_avcodec.c fails.
      Fixed by pointing PKG_CONFIG_LIBDIR at nothing, so the build finds no

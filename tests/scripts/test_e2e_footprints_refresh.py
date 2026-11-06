@@ -9,7 +9,9 @@ Regression lines:
   - [if] a failed or timed-out spec reads as measured, or a skipped one as unmeasured [then] fail.
   - [if] a spec on disk the run never collected is missing from `ignored` [then] the
     selector runs it on every head, so fail.
-  - [if] an empty request or test log builds a map [then] fail.
+  - [if] an empty root request or test log builds a map [then] fail.
+  - [if] a named gate has a tests log and a missing or empty request log, or an empty tests log,
+    and the map build aborts or records that gate as measured [then] fail.
   - [if] `publish` writes anything but one parentless commit moved by force [then] fail.
   - [if] `fetch` writes a file on a failed exchange [then] the scope job selects over
     garbage, so fail.
@@ -148,6 +150,52 @@ def test_build_records_a_named_gate_from_its_own_directory(tmp_path: Path) -> No
     assert footprints["gates"].keys() == {"rekordbox"}
     (gate / "collected.json").write_text(json.dumps([spec]), encoding="utf-8", newline="\n")
     assert build(run, SHA, _repo(tmp_path), NOW)["gates"]["rekordbox"]["status"] == "passed"
+
+
+_UNMEASURED_GATE = {"status": "unmeasured", "seconds": 0.0, "specs": [], "files": []}
+
+
+@pytest.mark.parametrize("write_requests", [False, True])
+def test_named_gate_missing_or_empty_request_log_is_unmeasured(tmp_path: Path, write_requests: bool) -> None:
+    run = _run_dir(tmp_path)
+    gate = run / "gates" / "preflight"
+    gate.mkdir(parents=True)
+    spec = "tests/e2e/preflight-smoke.spec.ts"
+    (gate / "tests.jsonl").write_text(
+        json.dumps({"spec": spec, "start": 10, "end": 2000, "status": "passed"}) + "\n", encoding="utf-8", newline="\n"
+    )
+    if write_requests:
+        (gate / "requests.jsonl").write_text("", encoding="utf-8", newline="\n")
+    footprints = build(run, SHA, _repo(tmp_path), NOW)
+    assert footprints["gates"]["preflight"] == _UNMEASURED_GATE
+    assert len(footprints["specs"]) == 4
+
+
+def test_named_gate_empty_tests_log_is_unmeasured_and_paths_exclude_gate_requests(tmp_path: Path) -> None:
+    run = _run_dir(tmp_path)
+    gate = run / "gates" / "preflight"
+    gate.mkdir(parents=True)
+    (gate / "tests.jsonl").write_text("", encoding="utf-8", newline="\n")
+    (gate / "requests.jsonl").write_text(
+        json.dumps({"t": 500, "path": "src/gate-empty.ts"}) + "\n", encoding="utf-8", newline="\n"
+    )
+    footprints = build(run, SHA, _repo(tmp_path), NOW)
+    assert footprints["gates"]["preflight"] == _UNMEASURED_GATE
+    assert "src/gate-empty.ts" not in footprints["paths"]
+
+
+def test_named_gate_requests_path_as_directory_raises_unreadable(tmp_path: Path) -> None:
+    run = _run_dir(tmp_path)
+    gate = run / "gates" / "preflight"
+    gate.mkdir(parents=True)
+    (gate / "tests.jsonl").write_text(
+        json.dumps({"spec": "tests/e2e/x.spec.ts", "start": 10, "end": 20, "status": "passed"}) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (gate / "requests.jsonl").mkdir()
+    with pytest.raises(MapError, match="unreadable"):
+        build(run, SHA, _repo(tmp_path), NOW)
 
 
 def test_a_passed_spec_that_fetched_nothing_is_unmeasured(tmp_path: Path) -> None:

@@ -12,13 +12,8 @@ const TRACK_TABLE_PATH = join(
 	'../../src/lib/components/rb/browser/TrackTable.svelte'
 );
 
-// issue #2606 / LIBUX-2606. Regression lines:
-// - if the operator is scrolled to row N, a deck load of row M replays a
-//   stale browseScroll request, and N leaves the mounted window, then broken
-// - if after that load Home then a scroll back cannot bring N into the
-//   window because the stale request re-applies, then broken
-// - if an exact stable_id / order reveal of an off-window row does not
-//   compute a scrollTop whose virtual window contains that row, then broken
+// issue #2606 / LIBUX-2606 browse-scroll module invariants and TrackTable wiring.
+// End-to-end scroll preservation lives in TrackTable.stories.ts KeepsScrollWindowAcrossDeckLoad.
 
 const rowHeight = 22;
 const overscan = 10;
@@ -31,7 +26,6 @@ const M = 5;
 
 let vw;
 let bs;
-let kb;
 
 function makeRows(count) {
 	return Array.from({ length: count }, (_, i) => ({ order: i }));
@@ -55,29 +49,24 @@ function rowContains(w, index) {
 before(async () => {
 	vw = await loadTypeScriptModule('src/lib/components/rb/browser/virtual-window.ts');
 	bs = await loadTypeScriptModule('src/lib/components/rb/browser/browse-scroll.ts');
-	kb = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-keyboard.ts');
 });
 
-test('acceptance (1): row N stays mounted after load M without replaying stale browseScroll', () => {
+test('stale browseScroll revision must not re-apply; replay at short viewport would unmount N', () => {
 	const rows = makeRows(rowCount);
 	const slotOfRow = (index) => index;
-	const scrollTopN = vw.scrollTopForRowIndex({
-		rowIndex: N,
-		rowHeight,
-		headerOffsetPx,
-		offsetFromTopPx: viewportTall * 0.35
-	});
-	const wBefore = windowAt(scrollTopN, viewportTall);
-	assert.ok(rowContains(wBefore, N), 'N mounted before load');
-
 	const staleRequest = { order: M, direction: 1, revision: 1 };
 	assert.equal(bs.shouldApplyBrowseScroll(staleRequest, 1), false);
 
-	const keptScrollTop = scrollTopN;
-	const wAfter = windowAt(keptScrollTop, viewportShort);
-	assert.ok(rowContains(wAfter, N), 'N still mounted after viewport shrink without replay');
+	const operatorAtN = vw.scrollTopForRowIndex({
+		rowIndex: N,
+		rowHeight,
+		headerOffsetPx,
+		offsetFromTopPx: viewportShort * 0.35
+	});
+	const wKept = windowAt(operatorAtN, viewportShort);
+	assert.ok(rowContains(wKept, N), 'virtual window at operator scroll still contains N after shrink');
 
-	const wouldJump = bs.browseScrollTarget({
+	const replayTarget = bs.browseScrollTarget({
 		request: staleRequest,
 		rows,
 		viewportHeight: viewportShort,
@@ -85,42 +74,9 @@ test('acceptance (1): row N stays mounted after load M without replaying stale b
 		headerOffsetPx,
 		slotOfRow
 	});
-	const wIfReplay = windowAt(wouldJump, viewportShort);
-	assert.ok(!rowContains(wIfReplay, N), 'stale replay would unmount N (proves guard matters)');
-});
-
-test('acceptance (2): Home then scroll back reaches N without stale browseScroll overwrite', () => {
-	const rows = makeRows(rowCount);
-	const slotOfRow = (index) => index;
-	const staleRequest = { order: M, direction: 1, revision: 1 };
-	assert.equal(bs.shouldApplyBrowseScroll(staleRequest, 1), false);
-
-	const homeIndex = kb.nextTrackTableIndex({
-		current: N,
-		nav: 'home',
-		rowCount,
-		pageSize: kb.trackTablePageSize(Math.ceil((viewportShort - headerOffsetPx) / rowHeight))
-	});
-	assert.equal(homeIndex, 0);
-
-	const homeScroll = kb.scrollTopToRevealRow({
-		rowIndex: homeIndex,
-		scrollTop: 0,
-		viewportHeight: viewportShort,
-		rowHeight,
-		headerOffsetPx
-	});
-	assert.equal(homeScroll, 0);
-	assert.equal(bs.shouldApplyBrowseScroll(staleRequest, 1), false);
-
-	const backScroll = vw.scrollTopForRowIndex({
-		rowIndex: N,
-		rowHeight,
-		headerOffsetPx,
-		offsetFromTopPx: viewportShort * 0.35
-	});
-	const wBack = windowAt(backScroll, viewportShort);
-	assert.ok(rowContains(wBack, N), 'scroll back to N mounts N');
+	assert.ok(replayTarget !== null);
+	const wIfReplay = windowAt(replayTarget, viewportShort);
+	assert.ok(!rowContains(wIfReplay, N), 'applying stale browseScroll scrollTop would unmount N');
 });
 
 test('exact reveal of off-window row via new browseScroll revision', () => {

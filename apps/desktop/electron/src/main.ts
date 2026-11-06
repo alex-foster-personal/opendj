@@ -58,6 +58,9 @@ import {
 	permissionAllowed,
 	readAudioEngineChoice,
 	readBuildStamp,
+	RENDERER_RELOAD_LIMIT,
+	rendererGoneDecision,
+	rendererReloadTarget,
 	shellBuildIdentity,
 	startingWindowSize,
 	validateDataDirContainedInHome,
@@ -232,6 +235,8 @@ function main(): void {
 	let supervisor: EngineSupervisor | null = null;
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
+	let rendererReloadsMs: number[] = [];
+	let lastTrustedUrl: string | null = null;
 	let dataDir: string;
 	try {
 		dataDir = engineDataDir(identifier);
@@ -571,7 +576,10 @@ function main(): void {
 			contents.on('did-start-navigation', (details) => {
 				if (details.isMainFrame) appendShellLog('webview', `navigation started: ${details.url}`);
 			});
-			contents.on('did-navigate', (_event, url) => appendShellLog('webview', `navigation finished: ${url}`));
+			contents.on('did-navigate', (_event, url) => {
+				appendShellLog('webview', `navigation finished: ${url}`);
+				if (isTrustedPage(url)) lastTrustedUrl = url;
+			});
 			installEditContextMenu(contents);
 			const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
 				const action = classifyMainFrameNavigation(url);
@@ -582,6 +590,38 @@ function main(): void {
 			};
 			contents.on('will-navigate', (event, url) => guardNavigation(event, url));
 			contents.on('will-redirect', (event, url) => guardNavigation(event, url));
+			// Row 72: a dead renderer leaves a blank window over a live engine; reload, then give up.
+			contents.on('render-process-gone', (_event, details) => {
+				const decision = rendererGoneDecision({
+					reason: details.reason,
+					nowMs: Date.now(),
+					reloadsMs: rendererReloadsMs,
+					quitting: quitAllowed || shuttingDown !== null
+				});
+				rendererReloadsMs = decision.reloadsMs;
+				if (decision.action === 'ignore') return;
+				appendShellLog('WARN', `renderer gone: ${details.reason} exitCode=${details.exitCode}`);
+				if (decision.action === 'reload') {
+					const target = rendererReloadTarget(contents.getURL(), lastTrustedUrl);
+					appendShellLog('webview', `reloading after renderer crash: ${target}`);
+					contents.loadURL(target).catch((error: unknown) => {
+						appendShellLog('webview', `crash reload settled early: ${String(error)}`);
+					});
+					return;
+				}
+				const error = new EngineError(
+					"Open DJ's window crashed repeatedly.",
+					`The page renderer went away ${RENDERER_RELOAD_LIMIT + 1} times in 60 seconds (last: ${details.reason}, exit code ${details.exitCode}). See logs/engine.log.`
+				);
+				quitAllowed = true;
+				void shutdownAll('renderer crash loop')
+					.catch((stopError: unknown) =>
+						appendShellLog('shutdown', `[ERROR] shell exit: ${(stopError as Error).message}`)
+					)
+					.finally(() => {
+						reportFatal(error);
+					});
+			});
 			contents.setWindowOpenHandler(({ url }) => {
 				if (classifyMainFrameNavigation(url) === 'open-external') void shell.openExternal(url);
 				return { action: 'deny' };

@@ -122,6 +122,8 @@ let _retryAtMs = 0;
 let _loading = false;
 /** Bumped by every new decision and cancel, so a stale await does nothing. */
 let _token = 0;
+/** True only while this decision is the caller that armed AutoPlay Next. */
+let _ownsArm = false;
 
 export function autoPlayDecisionLoading(): boolean {
 	return _loading;
@@ -131,7 +133,9 @@ function _replace(next: Partial<AutoPlayDecision>): void {
 	Object.assign(autoPlayDecision, next);
 }
 
-function _endWithFallback(reason: string): void {
+function _endWithFallback(reason: string, token?: number): void {
+	if (token !== undefined && token !== _token) return;
+	_ownsArm = false;
 	console.info(
 		`[autoplay] no planned handoff for ${autoPlayDecision.source?.slice(0, 12)}: ${reason}`
 	);
@@ -142,6 +146,7 @@ function _endWithFallback(reason: string): void {
 function _stale(token: number, poll: EarlyPoll): string | null {
 	if (token !== _token) return 'superseded';
 	if (!poll.stillArmed()) return 'AutoPlay was switched off';
+	if (!uiPrefs.auto_play_early_planning) return 'early planning is off';
 	if (deckStates[poll.source.deck].stable_id !== poll.source.stable_id)
 		return 'the master changed track';
 	if (autoPlayYieldsNow()) return 'another plan took the mix';
@@ -152,10 +157,16 @@ async function _pause(ms: number): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Put the track on the follower, unless it is there already. Throws what the deck refused. */
-async function _cue(deck: DeckId, track: string, keyShift: number): Promise<void> {
+/** Put the track on the follower, unless it is there already. False means the DJ took the deck. */
+async function _cue(
+	deck: DeckId,
+	track: string,
+	keyShift: number,
+	heldAtStart: string | null
+): Promise<boolean> {
 	const held = deckStates[deck].stable_id;
-	if (held === track) return;
+	if (held === track) return true;
+	if (deckStates[deck].playing || (held !== null && held !== heldAtStart)) return false;
 	if (held !== null)
 		await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
 	await dispatchPerformanceCommand(
@@ -163,6 +174,7 @@ async function _cue(deck: DeckId, track: string, keyShift: number): Promise<void
 		undefined,
 		'autoplay-handoff'
 	);
+	return true;
 }
 
 async function _deckReady(deck: DeckId, track: string, deadlineMs: number): Promise<boolean> {
@@ -208,6 +220,7 @@ async function _run(
 	token: number
 ): Promise<void> {
 	const { source } = poll;
+	const heldAtStart = deckStates[follower].stable_id;
 	const answer = await requestDecision({
 		out_deck: source.deck,
 		in_deck: follower,
@@ -219,8 +232,8 @@ async function _run(
 		target_ms: targetMs
 	});
 	const staleAfterAsk = _stale(token, poll);
-	if (staleAfterAsk !== null) return _endWithFallback(staleAfterAsk);
-	if (answer.track === null) return _endWithFallback(answer.reason);
+	if (staleAfterAsk !== null) return _endWithFallback(staleAfterAsk, token);
+	if (answer.track === null) return _endWithFallback(answer.reason, token);
 	poll.claim(source.stable_id, answer.track);
 	_replace({
 		phase: 'cueing',
@@ -234,17 +247,24 @@ async function _run(
 	_loading = true;
 	holdAutoPlayNextPrepare(true);
 	try {
-		await _cue(follower, answer.track, poll.keyShiftFor(answer.track));
+		const cued = await _cue(follower, answer.track, poll.keyShiftFor(answer.track), heldAtStart);
+		if (token !== _token) return;
+		if (!cued)
+			return _endWithFallback(`deck ${follower} was taken before the next track loaded`, token);
 	} catch (error) {
+		if (token !== _token) return;
 		_replace({ track: null });
 		return _endWithFallback(
-			`could not load the next track: ${error instanceof Error ? error.message : String(error)}`
+			`could not load the next track: ${error instanceof Error ? error.message : String(error)}`,
+			token
 		);
 	} finally {
-		_loading = false;
+		if (token === _token) _loading = false;
 	}
-	if (!(await _deckReady(follower, answer.track, performance.now() + CUE_BUDGET_MS * 2))) {
-		return _endWithFallback(`deck ${follower} did not settle on the next track`);
+	const ready = await _deckReady(follower, answer.track, performance.now() + CUE_BUDGET_MS * 2);
+	if (token !== _token) return;
+	if (!ready) {
+		return _endWithFallback(`deck ${follower} did not settle on the next track`, token);
 	}
 	_replace({ phase: 'preparing' });
 	const taken = (): boolean =>
@@ -259,15 +279,23 @@ async function _run(
 		() => taken() || _stale(token, poll) !== null
 	);
 	const stale = _stale(token, poll);
-	if (stale !== null) return _endWithFallback(stale);
-	if (taken()) return _endWithFallback(`deck ${follower} was taken while the transition prepared`);
+	if (stale !== null) return _endWithFallback(stale, token);
+	if (taken())
+		return _endWithFallback(`deck ${follower} was taken while the transition prepared`, token);
+	if (autoPlayNextState.armed) {
+		return _endWithFallback(autoPlayNextState.run?.reason ?? 'the plan was not armed', token);
+	}
+	_ownsArm = true;
 	const armed = await armAutoPlayNext({
 		outDeck: source.deck,
 		inDeck: follower,
 		fromMs: answer.window.start_ms
 	});
 	if (token !== _token) return;
-	if (!armed) return _endWithFallback(autoPlayNextState.run?.reason ?? 'the plan was not armed');
+	if (!armed) {
+		_ownsArm = false;
+		return _endWithFallback(autoPlayNextState.run?.reason ?? 'the plan was not armed', token);
+	}
 	// The planner has the last word, over rendered audio: the readout says what will play, not what was provisional.
 	const { run } = autoPlayNextState;
 	_replace({
@@ -319,9 +347,11 @@ function _start(poll: EarlyPoll, dueMs: number): void {
 	void _run(poll, shortlist, follower, targetMs, token)
 		.catch((error: unknown) => {
 			if (token === _token)
-				_endWithFallback(error instanceof Error ? error.message : String(error));
+				_endWithFallback(error instanceof Error ? error.message : String(error), token);
 		})
-		.finally(() => holdAutoPlayNextPrepare(false));
+		.finally(() => {
+			if (token === _token) holdAutoPlayNextPrepare(false);
+		});
 }
 
 /**
@@ -337,6 +367,7 @@ export function syncAutoPlayDecision(): void {
 	}
 	const { ended } = autoPlayNextState;
 	if (ended === 'done') {
+		_ownsArm = false;
 		_replace({ phase: 'done' });
 		_running = null;
 		return;
@@ -411,8 +442,10 @@ export async function cancelAutoPlayDecision(): Promise<void> {
 	_token += 1;
 	_running = null;
 	_loading = false;
+	holdAutoPlayNextPrepare(false);
 	const { phase } = autoPlayDecision;
 	if (phase === 'running') return;
-	if (phase === 'scheduled') await cancelAutoPlayNext();
+	if (phase === 'scheduled' || _ownsArm) await cancelAutoPlayNext();
+	_ownsArm = false;
 	_replace(_idle());
 }

@@ -19,8 +19,10 @@ the format changes or the published map is lost (`run` below builds one).
 Subcommands (standard library only, so a bare runner `python3` can run them):
 
 - `build`: join `$E2E_FOOTPRINTS_DIR` (requests.jsonl, tests.jsonl, collected.json) into
-  a map for the given SHA. Refuses an empty log on either side: a run that collected
-  nothing is not a map.
+  a map for the given SHA. Refuses an empty root request or tests log: a root run that
+  collected nothing is not a map. A named gate under `gates/<name>/` with a tests log but
+  a missing or empty request log, or an empty tests log, is recorded `unmeasured` with
+  no files instead of aborting the map.
 - `publish`: store a built map on `ci-data-e2e` (force-moved, no history kept).
 - `fetch`: download the published map with `gh api` and write it to `--dest`; prints
   its SHA and build time. Nothing written on any failure, so the scope job's fallback
@@ -59,6 +61,8 @@ from pathlib import Path
 from typing import Protocol
 
 from scripts import r2_artifact
+from scripts.gh_api import gh_api
+from scripts.gh_api_send import gh_send
 
 SCHEMA = 1
 MAP_FILE = ".spec_footprints.json"
@@ -139,6 +143,17 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+def _read_jsonl_or_empty(path: Path) -> list[dict]:
+    """Named-gate logs: missing or all-blank lines is no rows; any other OSError is MapError."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        raise MapError(f"{path}: unreadable ({exc})") from exc
+    return [json.loads(line) for line in lines if line.strip()]
+
+
 def _spec_windows(tests: list[dict]) -> list[tuple[str, int, int, str, float, int]]:
     """Per spec, in run order: (spec, start, end, status, seconds, tests).
 
@@ -208,22 +223,38 @@ def _gate_entry(specs: dict[str, dict], collected: list[str]) -> dict:
 
 def build(footprints_dir: Path, sha: str, repo_root: Path, now: datetime) -> dict:
     """The map from a run's logs: the root suite at the top of `footprints_dir`, and one
-    named gate per `gates/<name>/` directory beneath it (absent gates stay unmeasured)."""
+    named gate per `gates/<name>/` directory beneath it (absent gates stay unmeasured).
+    A gate directory with `tests.jsonl` but a missing or empty request log, or an empty
+    tests log, is recorded `unmeasured` with no files."""
     if not HEX40.match(sha):
         raise MapError(f"sha {sha!r} is not a 40-hex commit")
     requests, tests, collected = _run_logs(footprints_dir)
-    gate_logs = {
-        name: _run_logs(footprints_dir / GATES_DIR / name)
-        for name in sorted(GATES)
-        if (footprints_dir / GATES_DIR / name / TESTS_LOG).exists()
-    }
-    gate_requests = [row for logs in gate_logs.values() for row in logs[0]]
-    paths = sorted({row["path"] for row in requests} | {row["path"] for row in gate_requests})
+    path_set = {row["path"] for row in requests}
+    gates: dict[str, dict] = {}
+    measured: list[tuple[str, list[dict], list[dict], list[str]]] = []
+    for name in sorted(GATES):
+        gate_dir = footprints_dir / GATES_DIR / name
+        if not (gate_dir / TESTS_LOG).exists():
+            continue
+        gate_requests = _read_jsonl_or_empty(gate_dir / REQUESTS_LOG)
+        gate_tests = _read_jsonl_or_empty(gate_dir / TESTS_LOG)
+        if not gate_requests or not gate_tests:
+            gates[name] = {"status": "unmeasured", "seconds": 0.0, "specs": [], "files": []}
+            continue
+        try:
+            gate_collected = json.loads((gate_dir / COLLECTED).read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise MapError(f"{gate_dir / COLLECTED}: unreadable ({exc})") from exc
+        for row in gate_requests:
+            path_set.add(row["path"])
+        measured.append((name, gate_requests, gate_tests, gate_collected))
+    paths = sorted(path_set)
     index_of = {path: i for i, path in enumerate(paths)}
     specs = _footprints_of(requests, tests, index_of)
     for spec in collected:
         specs.setdefault(spec, {"status": "unmeasured", "seconds": 0.0, "tests": 0, "files": []})
-    gates = {name: _gate_entry(_footprints_of(logs[0], logs[1], index_of), logs[2]) for name, logs in gate_logs.items()}
+    for name, gate_requests, gate_tests, gate_collected in measured:
+        gates[name] = _gate_entry(_footprints_of(gate_requests, gate_tests, index_of), gate_collected)
     on_disk = sorted(f"tests/e2e/{p.name}" for p in (repo_root / FRONTEND / "tests" / "e2e").glob("*.spec.ts"))
     ignored = [spec for spec in on_disk if spec not in specs]
     return {
@@ -262,31 +293,11 @@ def validate(raw: object, label: str) -> dict:
 
 
 def _gh(path: str, timeout: float = 120) -> bytes:
-    gh = shutil.which("gh")
-    if gh is None:
-        raise MapError("gh is not on PATH")
-    done = subprocess.run([gh, "api", path], capture_output=True, timeout=timeout, check=False)
-    if done.returncode != 0:
-        raise MapError(f"gh api {path} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}")
-    return done.stdout
+    return gh_api(path, timeout=timeout, error_cls=MapError)
 
 
 def _gh_send(method: str, path: str, body: dict, timeout: float = 120) -> bytes:
-    gh = shutil.which("gh")
-    if gh is None:
-        raise MapError("gh is not on PATH")
-    done = subprocess.run(
-        [gh, "api", "-X", method, path, "--input", "-"],
-        input=json.dumps(body).encode(),
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise MapError(
-            f"gh api -X {method} {path} exited {done.returncode}: {done.stderr.decode(errors='replace').strip()}"
-        )
-    return done.stdout
+    return gh_send(method, path, body, timeout, error=MapError)
 
 
 def _bounded_gh(path: str) -> bytes:

@@ -21,7 +21,18 @@ BODY = {"out_deck": 1, "in_deck": 2, "intent": "energy_up", "recent_styles": ["w
 def _candidate() -> Candidate:
     return Candidate(
         id="c2",
-        plan={"style": "long_blend", "out": {"window": {"start_bar": 97, "bars": 32}}, "rationale": "leave at bar 97"},
+        plan={
+            "style": "long_blend",
+            "out": {"deck": 1, "track": "out", "window": {"start_bar": 97, "bars": 32}},
+            "in": {
+                "deck": 2,
+                "track": "in",
+                "window": {"start_bar": 40, "bars": 32},
+                "trim_db": -1.0,
+                "trim_reason": "save-on-run match",
+            },
+            "rationale": "leave at bar 97",
+        },
         plan_sha256="sha",
         style="long_blend",
         bars=32,
@@ -50,7 +61,9 @@ def app(tmp_path: Path) -> FastAPI:
 def _planner(monkeypatch: pytest.MonkeyPatch, answer: LiveAnswer) -> list[LiveRequest]:
     calls: list[LiveRequest] = []
 
-    def fake(request: LiveRequest, *, mirror: Any, source: Any, cache: Any, saved_for: Any) -> LiveAnswer:
+    def fake(
+        request: LiveRequest, *, autodj: Any, mirror: Any, source: Any, cache: Any, saved_for: Any
+    ) -> LiveAnswer:
         mirror()  # the route's own reader runs: a closed page must surface as its 409
         calls.append(request)
         return answer
@@ -72,6 +85,20 @@ def test_an_order_comes_back_with_the_pick(app: FastAPI, monkeypatch: pytest.Mon
     assert document["order"] == {"plan": {"id": "plan-1"}}
     assert document["pick"]["style"] == "long_blend" and document["pick"]["out_start_bar"] == 97
     assert calls == [LiveRequest(1, 2, "energy_up", ("wave", "melt"), None, False)]
+
+
+@pytest.mark.requirement("MEMORY-03")
+def test_plan_response_carries_candidate_plan_for_played(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the planner returns a scored pick [then] plan matches candidate.plan for save-on-run, [else stop]."""
+    cand = _candidate()
+    answer = LiveAnswer(
+        {"plan": {"id": "plan-1"}}, "intent energy_up", "energy_up", cand, 40.2, 42, 9, 11.0, 22.0, scored=True
+    )
+    _planner(monkeypatch, answer)
+    response = TestClient(app, base_url="http://127.0.0.1:8685").post(URL, json=BODY)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan"] == cand.plan
 
 
 @pytest.mark.requirement("AGENT-48")
@@ -121,7 +148,9 @@ def test_prepare_runs_once_per_pair_and_reports_progress(app: FastAPI, monkeypat
     app.state.ui_mirror = {"decks": {"1": {"stable_id": "a"}, "2": {"stable_id": "b"}}}
     jobs: list[LiveRequest] = []
 
-    def fake(request: LiveRequest, key: Any, *, mirror: Any, source: Any, cache: PlanCache) -> None:
+    def fake(
+        request: LiveRequest, key: Any, *, autodj: Any, mirror: Any, source: Any, cache: PlanCache
+    ) -> None:
         jobs.append(request)
         cache.finish(key, "ready")
 

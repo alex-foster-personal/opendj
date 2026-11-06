@@ -11,5 +11,6 @@
  * globalThis.fetch, which the probe and the status call both go through.
  */
 export * from '$lib/api/capabilities.svelte';
+export { markPageGoingAwayForTests, _resetPageGoingAwayForTests } from '$lib/api/lifecycle-abort';
 export * from '$lib/setup/first-run';
 export * from '$lib/setup/setup-api';

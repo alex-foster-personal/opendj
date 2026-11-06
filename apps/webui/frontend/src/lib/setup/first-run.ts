@@ -27,6 +27,7 @@
  *     [if] a 500 from /setup/status raises the overlay [then ⛔️] broken
  */
 
+import { isPageGoingAway } from '../api/lifecycle-abort';
 import { capabilities } from '../api/capabilities.svelte';
 import { type SetupStatus, finalSetupRefusal, getSetupStatus } from './setup-api';
 
@@ -104,7 +105,7 @@ export async function resolveFirstRunWithMeta(
 	try {
 		return { show: shouldShowFirstRun(refusal, await getSetupStatus()), error: null };
 	} catch (exc) {
-		console.error('[library] first-run check failed', exc);
+		if (!isPageGoingAway()) console.error('[library] first-run check failed', exc);
 		return { show: false, error: null };
 	}
 }
@@ -127,7 +128,7 @@ export async function resolveFirstRun(options: { timeoutMs?: number } = {}): Pro
 			try {
 				return shouldShowFirstRun(null, await getSetupStatus());
 			} catch (exc) {
-				console.error('[library] first-run check failed', exc);
+				if (!isPageGoingAway()) console.error('[library] first-run check failed', exc);
 				return false;
 			}
 		}

@@ -15,8 +15,11 @@ merge base with `--base`, minus the factory scaffolding stamped into the worktre
                builder's to fix.
     typecheck  svelte-check (`pnpm run check`) when a frontend file changed.
     build      the frontend production build (`pnpm run build`) when a frontend file changed.
-    test       affected pytest modules (scripts/affected_tests.py, the static import graph)
-               plus any changed frontend unit test file. Never the full suite.
+    test       affected pytest modules (scripts/affected_tests.py, the static import graph),
+               the new-module registry guards when the change adds a `.py` file under apps/ or
+               scripts/ (scripts/ci_test_selection_rules.py `NEW_MODULE_REGISTRY_GUARDS`, the
+               rule CI's PR-head selection applies), plus any changed frontend unit test file.
+               Never the full suite.
 
 Exit codes: 0 PASS, 1 FAIL, 3 UNMEASURED. UNMEASURED covers a block with nothing to check in
 this change, a selection of zero tests, a selection over the time budget, and a tool that ran
@@ -34,6 +37,10 @@ Requirements (statuses: ? todo, done, done+ran, done+ran+tests):
       [if] no test module reaches the change [then] exit 3 and say 0 tests selected [then ⛔️]
       [if] every selected test is skipped [then] exit 3, not 0 [then ⛔️]
       [if] a block has nothing to check [then] exit 3 naming why [then ⛔️]
+  - done+ran+tests: an added module runs the registry guards it must be classified in.
+      [if] the change adds a .py file under apps/ or scripts/ [then] both registry guards are selected [then ⛔️]
+      [if] the change only modifies existing modules [then] neither registry guard is selected [then ⛔️]
+      [if] a new module is untracked, uncommitted or a rename target [then] it counts as added [then ⛔️]
   - done+ran+tests: lint scores the delta, not the debt.
       [if] a touched file already had violations and gained none [then] PASS [then ⛔️]
       [if] a rule count rises in a changed file [then] FAIL naming the new finding [then ⛔️]
@@ -55,6 +62,7 @@ from pathlib import Path
 from typing import Literal
 
 from scripts.affected_tests import UnresolvedPaths, affected_tests
+from scripts.ci_test_selection_rules import new_module_guards_for
 
 REPO = Path(__file__).resolve().parents[1]
 # Self-hosted runner fixture root (ci/runner-toolset.yml item 10).
@@ -112,7 +120,19 @@ def changed_paths(merge_base: str) -> list[str]:
     see nothing. `git diff <merge-base>` compares the WORKING TREE, and `ls-files --others`
     adds new files git has not been told about. `--no-renames` lists a rename's old path too.
     """
-    tracked = _git("diff", "--name-only", "--no-renames", merge_base).splitlines()
+    return _since_merge_base(merge_base)
+
+
+def added_paths(merge_base: str) -> list[str]:
+    """The paths among `changed_paths` the change adds: new tracked files and untracked ones.
+
+    `--no-renames` reports a rename as a delete plus an add, so a renamed module counts as added.
+    """
+    return _since_merge_base(merge_base, "--diff-filter=A")
+
+
+def _since_merge_base(merge_base: str, *filters: str) -> list[str]:
+    tracked = _git("diff", "--name-only", "--no-renames", *filters, merge_base).splitlines()
     untracked = _git("ls-files", "--others", "--exclude-standard").splitlines()
     return sorted(
         {p for p in tracked + untracked if p and not p.startswith(CFG.FACTORY_SCAFFOLD_PREFIXES)}
@@ -421,10 +441,18 @@ class Tests:
         return Verdict("PASS", f"pytest: {summary} across {modules} affected module(s)")
 
     @staticmethod
-    def run(changed: list[str]) -> Verdict:
+    def selection(changed: list[str], added: list[str]) -> list[str]:
+        """Affected modules plus the registry guards an added module feeds; UnresolvedPaths propagates."""
+        python_changed = _python(changed)
+        affected = affected_tests(python_changed, root=REPO) if python_changed else []
+        guards = [guard.module for guard in new_module_guards_for(added)]
+        return sorted({*affected, *guards})
+
+    @staticmethod
+    def run(changed: list[str], added: list[str]) -> Verdict:
         python_changed = _python(changed)
         try:
-            selection = affected_tests(python_changed, root=REPO) if python_changed else []
+            selection = Tests.selection(changed, added)
         except UnresolvedPaths as unresolved:
             return Verdict(
                 "UNMEASURED",
@@ -462,7 +490,7 @@ BLOCKS: dict[str, Callable[[list[str], str], Verdict]] = {
     "lint": Lint.run,
     "typecheck": lambda changed, _merge_base: Front.typecheck(changed),
     "build": lambda changed, _merge_base: Front.build(changed),
-    "test": lambda changed, _merge_base: Tests.run(changed),
+    "test": lambda changed, merge_base: Tests.run(changed, added_paths(merge_base)),
 }
 
 

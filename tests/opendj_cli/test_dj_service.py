@@ -12,14 +12,18 @@ import copy
 import json
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
+from apps.autodj import http as autodj_http
+from apps.autodj import propose as autodj_propose
+from apps.autodj import setscore as autodj_setscore
 from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED, EXIT_NO_PAGE, EXIT_UNCONFIRMED, dj_cli
+from apps.opendj_cli import dj_service as _dj_service_mod
 from apps.opendj_cli.client import NoPerformancePage
 from apps.opendj_cli.dj_service import DjError, DjService, _held_deck
 from apps.opendj_cli.origin import EngineOrigin
@@ -159,6 +163,52 @@ class FakePage:
 @pytest.fixture
 def requests() -> list[str]:
     return []
+
+
+_PROPOSE_TRANSITION_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _propose_transition_cache_key(args: tuple[object, ...], kwargs: Mapping[str, Any]) -> str:
+    # Omit `live`: the search already gets the playhead as min_out_bar, and these tests share one mixer.
+    # Round the playhead so a bar→ms→bar round-trip still hits.
+    out_profile = args[0] if args else kwargs.get("out_profile")
+    in_profile = args[1] if len(args) > 1 else kwargs.get("in_profile")
+    min_out_bar = kwargs.get("min_out_bar")
+    if isinstance(min_out_bar, (int, float)) and not isinstance(min_out_bar, bool):
+        min_out_bar = round(float(min_out_bar), 3)
+    around_bar = kwargs.get("around_bar")
+    if isinstance(around_bar, (int, float)) and not isinstance(around_bar, bool):
+        around_bar = round(float(around_bar), 3)
+    payload = {
+        "out": getattr(out_profile, "stable_id", None),
+        "in": getattr(in_profile, "stable_id", None),
+        "out_deck": kwargs.get("out_deck"),
+        "in_deck": kwargs.get("in_deck"),
+        "intent": kwargs.get("intent"),
+        "min_out_bar": min_out_bar,
+        "top": kwargs.get("top"),
+        "around_bar": around_bar,
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+@pytest.fixture(autouse=True)
+def _reuse_deterministic_proposals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reuse propose_transition results: it is deterministic and ~5s, and this module calls it
+    dozens of times. Recheck still runs on a deep copy. Without this, the file exceeds the
+    pre-PR gate's 420s wall clock."""
+    real = autodj_propose.propose_transition
+
+    def cached(*args: object, **kwargs: object) -> dict[str, Any]:
+        key = _propose_transition_cache_key(args, kwargs)
+        hit = _PROPOSE_TRANSITION_CACHE.get(key)
+        if hit is None:
+            hit = real(*args, **kwargs)
+            _PROPOSE_TRANSITION_CACHE[key] = hit
+        return copy.deepcopy(hit)  # callers mutate the document; the cache keeps a clean copy
+
+    for module in (autodj_propose, autodj_setscore, autodj_http, _dj_service_mod):
+        monkeypatch.setattr(module, "propose_transition", cached)
 
 
 def _service(page: FakePage, requests: list[str], audio: str | None = None) -> DjService:
@@ -1472,6 +1522,27 @@ def test_propose_refuses_a_malformed_mirror_on_the_final_reread(
     with pytest.raises(DjError) as malformed:
         _propose_with_mirror_changed(change, requests)
     assert malformed.value.code == "mirror_malformed", level
+
+
+def test_propose_does_not_report_a_bad_proposal_plan_as_mirror_malformed(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a generated proposal's plan fails parse_plan [then] propose raises ValueError or a DjError
+    that is not mirror_malformed, [else stop]. Issue #9314 / review follow-up #7657."""
+    from apps.opendj_cli import dj_service as dj_mod
+
+    real = dj_mod.propose_transition
+
+    def poison(*args: object, **kwargs: object) -> dict[str, Any]:
+        result = real(*args, **kwargs)
+        assert result["proposals"], "search must return a row so recheck hits parse_plan"
+        first = {**result["proposals"][0], "plan": "not-a-plan"}
+        return {**result, "proposals": [first, *result["proposals"][1:]]}
+
+    monkeypatch.setattr(dj_mod, "propose_transition", poison)
+    with pytest.raises((ValueError, DjError)) as raised:
+        _service(FakePage(out_bar=100.0), requests).propose("trk-in", intent="smooth")
+    assert getattr(raised.value, "code", None) != "mirror_malformed"
 
 
 def test_propose_revalidates_candidates_against_the_fresh_mirror(requests: list[str]) -> None:

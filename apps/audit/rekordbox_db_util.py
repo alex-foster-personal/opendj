@@ -4,11 +4,8 @@ from __future__ import annotations
 
 
 def close_db_quietly(db) -> None:
-    """Close a pyrekordbox handle without raising during CLI teardown."""
-    try:
-        db.close()
-    except Exception:
-        pass
+    """Close a pyrekordbox handle. Close failures propagate to the caller."""
+    db.close()
 
 
 __all__ = ["close_db_quietly"]

@@ -425,13 +425,17 @@ def local_paths(paths: Iterable[str | None]) -> list[str]:
 
 
 def _alternate_paths(
-    folder_by_sid: Mapping[str, str | None], stable_ids: Sequence[str]
+    folder_by_sid: Mapping[str, str | None],
+    stable_ids: Sequence[str],
+    *,
+    state_db_path: Path | None = None,
 ) -> dict[str, list[str]]:
     """Every path but the primary from the ONE playable-candidate list the
     deck-load audio route also picks from (issue #3934)."""
-    if not stable_ids or not config.STATE_DB.exists():
+    db_path = _state_db(state_db_path)
+    if not stable_ids or not db_path.exists():
         return {}
-    state = _open_ro(config.STATE_DB, "STATE_DB")
+    state = _open_ro(db_path, "STATE_DB")
     try:
         candidates = track_locations.playable_candidate_paths(
             state, {sid: folder_by_sid.get(sid) for sid in stable_ids}
@@ -502,16 +506,19 @@ def _is_present(result: PathProbeResult | None) -> bool:
     return result is not None and result.status == "present"
 
 
-def sids_without_availability_row(stable_ids: Sequence[str]) -> set[str]:
+def sids_without_availability_row(
+    stable_ids: Sequence[str], *, state_db_path: Path | None = None
+) -> set[str]:
     """Stable ids with no ``track_availability`` row (unchecked).
 
     No row is unknown, not present. A missing table or database treats every
     id as unchecked so a listing cannot promote it from an index hit.
     """
     wanted = list(dict.fromkeys(sid for sid in stable_ids if sid))
-    if not wanted or not config.STATE_DB.exists():
+    db_path = _state_db(state_db_path)
+    if not wanted or not db_path.exists():
         return set(wanted)
-    conn = _open_ro(config.STATE_DB, "STATE_DB")
+    conn = _open_ro(db_path, "STATE_DB")
     known: set[str] = set()
     try:
         # One placeholder per id blows past SQLITE_LIMIT_VARIABLE_NUMBER
@@ -541,6 +548,7 @@ def classify_rows(
     *,
     distrust_index_sids: set[str] | None = None,
     selected_probes: dict[str, PathProbeResult] | None = None,
+    state_db_path: Path | None = None,
 ) -> dict[str, FileAvailabilityStatus]:
     """Status per stable_id, consulting ``track_locations`` alternates for
     every row whose primary path is not already known present. Alternates
@@ -553,7 +561,7 @@ def classify_rows(
     awaiting = _awaiting_volume(folder_by_sid)
     primary = _primary_results(folder_by_sid, probed, awaiting)
     unresolved = [sid for sid, result in primary.items() if not _is_present(result)]
-    alternates = _alternate_paths(folder_by_sid, unresolved)
+    alternates = _alternate_paths(folder_by_sid, unresolved, state_db_path=state_db_path)
     trusted = [
         path
         for sid, paths in alternates.items()
@@ -566,9 +574,11 @@ def classify_rows(
         if sid in distrust
         for path in paths
     ]
-    alt_probed = bulk_probe_paths(trusted, budget=budget)
+    alt_probed = bulk_probe_paths(trusted, budget=budget, state_db_path=state_db_path)
     if forced:
-        alt_probed.update(bulk_probe_paths(forced, budget=budget, trust_index=False))
+        alt_probed.update(
+            bulk_probe_paths(forced, budget=budget, trust_index=False, state_db_path=state_db_path)
+        )
     results_by_sid = {
         sid: [primary[sid], *(alt_probed.get(p) for p in alternates.get(sid, []))]
         for sid in folder_by_sid

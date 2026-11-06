@@ -30,6 +30,7 @@
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
+	import { paintBandGains } from '$lib/rb/wave-eq-gains.svelte';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -250,6 +251,7 @@
 					: null,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			bandColors: resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin)),
+			bandGains: paintBandGains(deck.deck_id, uiPrefs.wave_eq_reflect),
 			tempo: uiPrefs.show_tempo_lane ? tempoCurveData(tempoView) : null,
 			tempoColors: TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)],
 			tempoScale: uiPrefs.tempo_lane_scale,

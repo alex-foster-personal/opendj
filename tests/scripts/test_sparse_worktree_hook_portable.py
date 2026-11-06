@@ -23,7 +23,9 @@ from tests.scripts.sparse_worktree_fixtures import (
     add_worktree,
     build_primary,
     git,
+    isolate_process_git_env,
     on_disk,
+    scrubbed_git_env,
     tags,
 )
 
@@ -32,6 +34,11 @@ pytestmark = pytest.mark.requirement("OPS-45")
 NULL = "0" * 40
 NAMED_ERROR = "SPARSE_HOOK_PYTHON_UNAVAILABLE"
 HOOK_EXIT_UNAVAILABLE = 3
+
+
+@pytest.fixture(autouse=True)
+def _isolate_git_env_for_hook_portable_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    isolate_process_git_env(monkeypatch)
 
 
 def _resolved(program: str) -> str:
@@ -55,7 +62,9 @@ def _bin_dir(tmp_path: Path, links: dict[str, str]) -> Path:
 
 
 def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k not in ("MDT_SPARSE_HOOK_PYTHON", sw.CFG.OPT_OUT_ENV)}
+    env = scrubbed_git_env()
+    env.pop("MDT_SPARSE_HOOK_PYTHON", None)
+    env.pop(sw.CFG.OPT_OUT_ENV, None)
     env["PATH"] = str(bin_dir)
     env.update(extra)
     return env
@@ -154,8 +163,9 @@ def test_branch_switch_needs_no_interpreter(primary: Path, tmp_path: Path) -> No
 def test_install_hook_upgrades_an_older_copy_of_itself(tmp_path: Path) -> None:
     """[if] install-hook meets an older copy of this hook [then] it is upgraded, [else stop]."""
     repo = tmp_path / "repo"
-    subprocess.run([_resolved("git"), "init", "-q", str(repo)], check=True)
+    git(tmp_path, "init", "-q", str(repo))
     installed = sw.install_hook(repo)
+    assert installed.resolve().is_relative_to(tmp_path.resolve()), installed
     older = (
         "#!/usr/bin/env bash\n"
         "command -v python3 >/dev/null 2>&1 || exit 0\n"

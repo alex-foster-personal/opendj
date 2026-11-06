@@ -46,15 +46,14 @@ from typing import Any
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from apps.autodj.propose import INTENTS, WIND_DOWN
+from apps.autodj.contract import INTENTS, WIND_DOWN
 from apps.transition_score import signals
 from apps.transition_score.contract import (
-    CORE_FACTORS,
     MIN_CORE_MEASURED,
     SCORER_VERSION,
-    Measured,
     ScoreResult,
     Veto,
+    core_measured,
 )
 
 # ----- layer 0 thresholds (file 15 section 2; spec 10 section 3) -------------
@@ -208,7 +207,7 @@ class RenderContext:
     out_downbeats_s: tuple[float, ...]
     #: Every tempo ratio the decks played at, from the renderer's telemetry; required, never assumed.
     tempo_ratios: tuple[float, ...]
-    #: The plan's parsed intent (one of ``apps.autodj.propose.INTENTS``), or None when the plan states none. Required,
+    #: The plan's parsed intent (one of ``apps.autodj.contract.INTENTS``), or None when the plan states none. Required,
     #: never assumed: only an explicit ``wind_down`` skips the loudness-loss veto (round 14).
     intent: str | None
     #: The plan's ``shape`` (``LULL_THEN_DROP`` or another proposer shape), or None when the plan carries none; required
@@ -316,7 +315,7 @@ def _time_at(band: _Band, center: int, ctx: RenderContext, lag_beats: float = 0.
     incoming onsets over `lag_beats` either side (half a beat on the kick band), and the correlation must
     have one dominant peak that is not at the edge of that window.
     """
-    hop_s = signals.ENVELOPE_HOP / ctx.sample_rate
+    hop_s = signals.envelope_hop_s(ctx.sample_rate)
     half = int(ctx.beat_s / 2 / hop_s)
     quarter = int(ctx.beat_s / 4 / hop_s)
     guard = int(ctx.beat_s / 8 / hop_s)
@@ -357,7 +356,7 @@ def beat_offsets_ms(low: _Band, high: _Band | None, ctx: RenderContext) -> tuple
     present but ambiguous (a bass-led section) is NOT handed to the high band: the round 6 refusal stands.
     A beat is considered when either band is present on both decks.
     """
-    hop_s = signals.ENVELOPE_HOP / ctx.sample_rate
+    hop_s = signals.envelope_hop_s(ctx.sample_rate)
     start, end = ctx.overlap_s
     offsets: list[tuple[float, float, str]] = []
     considered = 0
@@ -389,7 +388,7 @@ def bar_lag_beats(out_onsets: np.ndarray, in_onsets: np.ndarray, ctx: RenderCont
     deck over its solo span and the overlap, the incoming over the overlap and
     its solo span), and the two folds are circularly cross-correlated.
     """
-    hop_s = signals.ENVELOPE_HOP / ctx.sample_rate
+    hop_s = signals.envelope_hop_s(ctx.sample_rate)
     bins = 4 * PHASE_BINS_PER_BEAT
     start, end = ctx.overlap_s
     downs = np.asarray(ctx.out_downbeats_s)
@@ -684,13 +683,13 @@ def loudness_checks(mix: np.ndarray, ctx: RenderContext) -> ScoreResult:
     result carries those terms only; its ``score`` is None, never a composite."""
     t = _Tally()
     _loudness(t, mix, ctx)
-    measured = Measured(k=sum(1 for name in CORE_FACTORS if name in t.factors), n=len(CORE_FACTORS))
+    measured = core_measured(t.factors)
     return ScoreResult(t.metrics, t.factors, tuple(t.vetoes), measured, t.unknown, None, SCORER_VERSION)
 
 
 def _bar_low_db(deck: np.ndarray, sr: int, edges: list[tuple[float, float]]) -> np.ndarray:
     env = signals.band_envelope(deck, sr, LOW_BAND_HZ)
-    hop_s = signals.ENVELOPE_HOP / sr
+    hop_s = signals.envelope_hop_s(sr)
     return np.array(
         [20.0 * math.log10(max(float(env[int(a / hop_s) : int(b / hop_s)].mean()), 1e-10)) for a, b in edges]
     )
@@ -723,6 +722,11 @@ def _by_position(levels: np.ndarray, beats: list[tuple[tuple[float, float], int]
     its own position's level, so a bar's accent pattern is not read as a hole or a pile-up)."""
     positions = np.array([k for _, k in beats])
     return np.array([float(np.median(levels[positions == k])) if (positions == k).any() else np.nan for k in range(4)])
+
+
+def _count_both_full_beats(out_beats: np.ndarray, in_beats: np.ndarray) -> int:
+    """Beats where both decks' lows are within BASS_BOTH_FULL_DB of their own solo, inclusive of the 3 dB line."""
+    return int(np.sum((out_beats >= BASS_BOTH_FULL_DB) & (in_beats >= BASS_BOTH_FULL_DB)))
 
 
 def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx: RenderContext) -> None:
@@ -769,7 +773,7 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
     in_ref = _by_position(_beat_levels(in_low, sr, in_solo), in_solo)[positions]
     out_beats = _beat_levels(out_low, sr, overlap_beats) - out_ref
     in_beats = _beat_levels(in_low, sr, overlap_beats) - in_ref
-    both = int(np.sum((out_beats > BASS_BOTH_FULL_DB) & (in_beats > BASS_BOTH_FULL_DB)))
+    both = _count_both_full_beats(out_beats, in_beats)
     t.metrics["bass_both_full_beats"] = both
     t.factors["bass_overlap"] = squash(float(both), BASS_BOTH_FULL_KNEE_BEATS)
     raw_out, raw_in = out_beats + out_ref, in_beats + in_ref
@@ -1037,7 +1041,7 @@ def score_render(mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx
     _vocal_overlap(t, ctx)
     _cut_to_downbeat(t, {"out": out_deck, "in": in_deck}, ctx)
     _seam_clicks(t, mix, ctx)
-    measured = Measured(k=sum(1 for name in CORE_FACTORS if name in t.factors), n=len(CORE_FACTORS))
+    measured = core_measured(t.factors)
     if t.vetoes:
         score: float | None = 0.0
     elif measured.k < MIN_CORE_MEASURED:

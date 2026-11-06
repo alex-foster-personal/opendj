@@ -38,6 +38,13 @@ test('mixed ratings 4 and 5 with shared notes', () => {
 	assert.deepEqual(notes, { kind: 'shared', value: 'warmup' });
 });
 
+test('POPM 153 and canonical 3 are shared rating 3 (issue #2572)', () => {
+	const ids = ['a', 'b'];
+	const rows = [row('a', 153, ''), row('b', 3, '')];
+	const { rating } = bulkEditFieldValues(ids, rows);
+	assert.deepEqual(rating, { kind: 'shared', value: 3 });
+});
+
 test('mixed notes a and b with shared rating', () => {
 	const ids = ['a', 'b'];
 	const rows = [row('a', 4, 'a'), row('b', 4, 'b')];

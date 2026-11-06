@@ -23,6 +23,7 @@
 	} from '$lib/rb/feedback-store.svelte';
 	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
 
 	let { overlay = false }: { overlay?: boolean } = $props();
@@ -98,6 +99,7 @@
 		action={pinVisibilityActions}
 		placement={overlay ? 'above' : 'below'}
 		disabled={feedbackState.placementArmed}
+		tooltip={TOOLTIP_ISOLATED}
 	>
 		<button
 			type="button"
@@ -106,7 +108,6 @@
 			class:rb-inert={unavailable}
 			class:armed={feedbackState.placementArmed}
 			disabled={unavailable}
-			title={commentPinTitle}
 			aria-label="Drop a comment pin"
 			aria-describedby={summaryId}
 			aria-pressed={feedbackState.placementArmed}

@@ -21,6 +21,11 @@
 	import { levelBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import {
+		TOOLTIP_HEADPHONE_CLUSTER,
+		TOOLTIP_HEADPHONE_STACK,
+		TOOLTIP_INFREQUENT
+	} from '$lib/ui/tooltip-timing';
 	import CueAlignModal from './CueAlignModal.svelte';
 	import SpeakerLinkSection from './SpeakerLinkSection.svelte';
 	import { CLOSE_PATH, PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
@@ -579,7 +584,7 @@
 {/snippet}
 
 <div class="hp" data-performance-control="headphones">
-	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" showDelayMs={60}>
+	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" tooltip={TOOLTIP_HEADPHONE_CLUSTER}>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
 			label="MIX"
@@ -592,7 +597,7 @@
 			accentColor={headphoneMixAccent(headphoneState.mix)}
 		/>
 	</ControlExplainer>
-	<ControlExplainer title="VOL" bullets={levelBullets} showDelayMs={60}>
+	<ControlExplainer title="VOL" bullets={levelBullets} tooltip={TOOLTIP_HEADPHONE_CLUSTER}>
 		<Knob
 			knobId={knobId('hp', 'hp-level')}
 			label="VOL"
@@ -605,7 +610,7 @@
 	<ControlExplainer
 		title="Audio I/O quick settings"
 		bullets={ioBullets}
-		showDelayMs={100}
+		tooltip={TOOLTIP_INFREQUENT}
 		compact={true}
 		disabled={ioSurface.open}
 		dismiss="instant"
@@ -623,7 +628,7 @@
 	<ControlExplainer
 		title="MIDI"
 		bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
-		showDelayMs={60}
+		tooltip={TOOLTIP_HEADPHONE_CLUSTER}
 	>
 		<button
 			type="button"
@@ -647,18 +652,18 @@
 		</header>
 		<div class="hp-panel-body">
 			<section class="hp-section" aria-label="Output routing">
-				<h3>Routing <ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}><span class="hp-mode" data-output-mode={headphoneState.output_mode}>{modeLabel}</span></ControlExplainer></h3>
+				<h3>Routing <ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" tooltip={TOOLTIP_HEADPHONE_CLUSTER}><span class="hp-mode" data-output-mode={headphoneState.output_mode}>{modeLabel}</span></ControlExplainer></h3>
 				<div class="hp-mode-choices">
-					<ControlExplainer title="ONE OUTPUT" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>One output</button></ControlExplainer>
+					<ControlExplainer title="ONE OUTPUT" bullets={mainBullets} demo="headphone-practice" tooltip={TOOLTIP_HEADPHONE_CLUSTER}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>One output</button></ControlExplainer>
 					<button type="button" aria-label="Two outputs output mode" aria-pressed={headphoneState.output_mode === 'two_outputs'} onclick={() => onmode('two_outputs')}>Two outputs</button>
-					<ControlExplainer title="SPLIT L/R" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right on one output: a DJ splitter cable, or MAIN and CUE on the same device" onclick={() => onmode('split_cable')}>Split L/R</button></ControlExplainer>
+					<ControlExplainer title="SPLIT L/R" bullets={splitBullets} demo="headphone-split" tooltip={TOOLTIP_HEADPHONE_CLUSTER}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} onclick={() => onmode('split_cable')}>Split L/R</button></ControlExplainer>
 				</div>
 				<p class="hp-context">{modeBullets[headphoneState.output_mode === 'practice' ? 0 : headphoneState.output_mode === 'two_outputs' ? 1 : 2]}</p>
 				{#if audioOutputStatus.fallback !== null}<p class="hp-warn" role="status" data-djio-fallback-notice title={djioFallbackTitle(audioOutputStatus.fallback)}>{audioOutputStatus.fallback.message}</p>{/if}
 				{#if headphoneState.output_mode === 'split_cable' && headphoneState.split_reason === 'same_device'}
 					<p class="hp-context" role="status" data-split-same-device>MAIN and HEADPHONE CUE are the same output, so the room mix plays mono on the left and the cue mono on the right. Pick a different MAIN to get two outputs.</p>
 				{:else if headphoneState.output_mode === 'split_cable'}
-					<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}><p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
+					<ControlExplainer title="SPLIT warning" bullets={splitBullets} tooltip={TOOLTIP_HEADPHONE_CLUSTER}><p class="hp-warn" role="status">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Future routing options">
@@ -672,7 +677,7 @@
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
-				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
+				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} tooltip={TOOLTIP_INFREQUENT}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
 				<div class="hp-access" data-io-device-access={access.status}>
@@ -702,7 +707,7 @@
 					<h3>Cue alignment</h3>
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
 					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
-					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
+					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} tooltip={TOOLTIP_INFREQUENT}>
 						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onkeydown={keyDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
 					<p class="hp-context">Click the value, then use ↑/↓ or two-finger scroll. Hover HEAD DELAY for timing guidance.</p>
@@ -749,7 +754,7 @@
 
 {#snippet outputMenu()}
 	<div class="hp-menu">
-		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40} placement="right">
+		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} tooltip={TOOLTIP_HEADPHONE_STACK} placement="right">
 			<span class="hp-pick">
 				<span class="hp-pick-name">MASTER / MAIN</span>
 				<span class="hp-pick-row">
@@ -768,7 +773,7 @@
 				</span>
 			</span>
 		</ControlExplainer>
-		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
+		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} tooltip={TOOLTIP_HEADPHONE_STACK} placement="right">
 			<span class="hp-pick">
 				<span class="hp-pick-name">HEADPHONE CUE</span>
 				<span class="hp-pick-row">
@@ -790,7 +795,7 @@
 		{#if wirelessMain !== null}<p class="hp-context" data-wireless-main-note>{wirelessMain}</p>{/if}
 		{#if selectedLabel !== null && monitorLabelIsBluetooth(selectedLabel)}<p class="hp-context">Bluetooth CUE can drift against MASTER. Use CALIBRATE for a measured starting offset.</p>{/if}
 		{#if livenessAlert !== null}<p class="hp-liveness-alert" role="alert" data-headphone-liveness-alert>{livenessAlert}</p>{/if}
-		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40} placement="right">
+		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} tooltip={TOOLTIP_HEADPHONE_STACK} placement="right">
 			<span class="hp-pick">
 				<span class="hp-pick-name">AUDIO IN</span>
 				<span class="hp-pick-row">
@@ -815,7 +820,7 @@
 		{#if inputMeterNote !== null}<p class="hp-context" role="status" data-input-meter-note>{inputMeterNote}</p>{/if}
 		{#if inputMeterError !== null}<p class="hp-context" role="status" data-input-meter-error>Live input meter unavailable: {inputMeterError}</p>{/if}
 		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
-		<ControlExplainer title="MIDI" showDelayMs={40} placement="right"
+		<ControlExplainer title="MIDI" tooltip={TOOLTIP_HEADPHONE_STACK} placement="right"
 			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}>
 			<button
 				type="button"

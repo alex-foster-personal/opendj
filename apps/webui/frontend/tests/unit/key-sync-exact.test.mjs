@@ -15,11 +15,18 @@
  * - if an exact-mode mode mismatch reads 'following' then the light comes on over a key it cannot match
  * - if a guessed key ('8A?' via key_guess) cannot be followed then a guessed-key deck can never key sync
  * - if a target deck is ignored then KEY SYNC can only follow MASTER
+ * - if exact KEY SYNC ignores Master Tempo-off tempo pitch on the target then an 8A target at +6% follows as catalog 8A instead of audible 3A
+ * - if the ladder uses catalog only for the target at +6% MT off then `key_options` rows disagree with exact sync
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const _frontendRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 let mod;
 
@@ -110,6 +117,32 @@ test('the engine target derivation uses the mode and accounts for the leader aud
 		mod.deriveKeySyncTargetManualShift('8A', '3A', 0, 0, 0, 'compatible')
 	);
 	assert.throws(() => mod.deriveKeySyncTargetManualShift('8A', '3B', 0, 0, 0, 'exact'), /relative/i);
+});
+
+test('KEYSYNC-01 target tempo pitch: 8A at +6% MT off is audible 3A; MT on stays 8A', () => {
+	const r = 1.06;
+	assert.equal(Math.round(mod.composeStretchSemitones(r, false, 0)), 1);
+	assert.equal(mod.keySyncAudibleCamelotKey('8A', r, false, 0), '3A');
+	assert.equal(mod.keySyncAudibleCamelotKey('8A', r, true, 0), '8A');
+	assert.equal(mod.deriveKeySyncTargetManualShift('8A', '8A', 0, 1, 0, 'exact'), 1);
+	assert.equal(mod.deriveKeySyncTargetManualShift('8A', '8A', 0, 0, 0, 'exact'), 0);
+	const ladderMtOff = mod.keyShiftLadder('8A', mod.keySyncAudibleCamelotKey('8A', r, false, 0));
+	const byShiftOff = Object.fromEntries(ladderMtOff.map((row) => [row.shift, row]));
+	assert.deepEqual(byShiftOff[1], { shift: 1, key: '3A', pattern: 'exact', desirable: true });
+	const ladderMtOn = mod.keyShiftLadder('8A', mod.keySyncAudibleCamelotKey('8A', r, true, 0));
+	const byShiftOn = Object.fromEntries(ladderMtOn.map((row) => [row.shift, row]));
+	assert.deepEqual(byShiftOn[0], { shift: 0, key: '8A', pattern: 'exact', desirable: true });
+	assert.deepEqual(byShiftOn[1], { shift: 1, key: '3A', pattern: '+7 dominant', desirable: true });
+});
+
+test('KEYSYNC-01 wiring: ladder and DeckHeader track tempo + key lock for audible target', () => {
+	const engineSrc = readFileSync(join(_frontendRoot, 'src/lib/rb/audio-engine.svelte.ts'), 'utf8');
+	assert.match(engineSrc, /keySyncAudibleCamelotKey/);
+	assert.match(engineSrc, /leader\.pitch/);
+	assert.match(engineSrc, /leader\.master_tempo_enabled/);
+	const headerSrc = readFileSync(join(_frontendRoot, 'src/lib/components/rb/deck/DeckHeader.svelte'), 'utf8');
+	assert.match(headerSrc, /void target\.pitch/);
+	assert.match(headerSrc, /void target\.master_tempo_enabled/);
 });
 
 function decks(overrides) {

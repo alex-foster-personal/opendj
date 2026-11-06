@@ -6,8 +6,8 @@ Flow per pair (spec 10 section 3, the render loop):
    (the running engine's ``/tracks/{id}`` and ``/anlz`` routes, the same
    documents ``opendj dj`` plans from, and ``data_dir``'s state.db for the
    audio file);
-2. ``apps.autodj.propose.propose_transition`` for ``n`` plans;
-3. ``apps.autodj.render_plan.compile_render_plan`` for each, every candidate
+2. the injected AutoDJ service for ``n`` plans;
+3. the same service compiles each render plan, every candidate
    starting at the same outgoing bar (so switching candidates mid-audition
    keeps the musical position);
 4. ``odj-audio render --plan --decks-out`` in a subprocess, one per worker,
@@ -45,19 +45,16 @@ from urllib.parse import quote
 import httpx
 import numpy as np
 
-from apps.autodj.plan import TransitionPlan, parse_plan
-from apps.autodj.profile import ProfileError, TrackProfile, profile_from_payloads
-from apps.autodj.propose import parse_intent, propose_transition
-from apps.autodj.render_plan import (
+from apps.autodj.contract import (
+    AutoDjService,
+    ProfileError,
     RenderLayout,
     RenderPlanError,
-    compile_render_plan,
-    effective_bars,
-    layout_of,
-    renders_at_start,
+    TrackProfile,
+    TransitionPlan,
 )
 from apps.shared.engine_origin import EngineOrigin, resolve_origin, unreachable
-from apps.shared.odj_audio_binary import find_binary
+from apps.shared.odj_audio_binary import OdjAudioUnavailable, find_binary
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.transition_score.contract import CORE_FACTORS, SCORER_VERSION, Candidate, Measured, TryResult, rank_key
 
@@ -139,18 +136,26 @@ class EngineProfiles:
     """Track profiles from a running engine's HTTP API: the track and anlz payloads ``opendj dj`` reads.
 
     Lives here, not as a call into apps.opendj_cli, because the CLI layer sits above this domain
-    package (import-linter ``webui-is-the-top-layer``); both build the profile with
-    ``apps.autodj.profile.profile_from_payloads``.
+    package (import-linter ``webui-is-the-top-layer``); both build the profile through
+    :class:`apps.autodj.contract.AutoDjService`.
     """
 
-    def __init__(self, origin: EngineOrigin, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, origin: EngineOrigin, autodj: AutoDjService, transport: httpx.BaseTransport | None = None
+    ) -> None:
         self.origin = origin
+        self._autodj = autodj
         self._transport = transport
         self._profiles: dict[str, TrackProfile] = {}
 
     def _get(self, path: str) -> Any:
         try:
-            with httpx.Client(timeout=HTTP_TIMEOUT_S, transport=self._transport) as client:
+            # trust_env=False: the origin names this engine's own address, so an
+            # HTTP(S)_PROXY / ALL_PROXY in the environment must never carry the
+            # read elsewhere (a refusing proxy would read as a failed fetch).
+            with httpx.Client(
+                timeout=HTTP_TIMEOUT_S, transport=self._transport, trust_env=False
+            ) as client:
                 response = client.get(f"{self.origin.base_url}{path}")
         except httpx.TransportError as error:
             raise unreachable(self.origin, error) from error
@@ -164,7 +169,7 @@ class EngineProfiles:
             track = self._get(f"/api/v1/tracks/{quoted}")
             anlz = self._get(f"/api/v1/tracks/{quoted}/anlz?points={PROFILE_POINTS}")
             try:
-                self._profiles[stable_id] = profile_from_payloads(anlz, track)
+                self._profiles[stable_id] = self._autodj.profile_from_payloads(anlz, track)
             except ProfileError as error:
                 raise PairNotTryable(f"{stable_id}: no usable analysis: {error}") from error
         return self._profiles[stable_id]
@@ -175,9 +180,10 @@ class EngineTrackSource:
     """Profiles from the running engine (as ``opendj dj`` reads them), audio from ``data_dir``'s state.db."""
 
     data_dir: Path
+    autodj: AutoDjService
 
     def __post_init__(self) -> None:
-        self._service: ProfileReader = EngineProfiles(resolve_origin())
+        self._service: ProfileReader = EngineProfiles(resolve_origin(), self.autodj)
 
     def profile(self, stable_id: str) -> TrackProfile:
         return self._service.profile(stable_id)
@@ -197,7 +203,10 @@ class EngineTrackSource:
 
 def odj_audio_binary() -> Path:
     """The renderer: ``ODJ_AUDIO_BIN``, else the newest cargo build in this checkout."""
-    return find_binary(os.environ, PROJECT_ROOT).path
+    try:
+        return find_binary(os.environ, PROJECT_ROOT).path
+    except OdjAudioUnavailable as error:
+        raise TryError(str(error)) from error
 
 
 def worker_count(jobs: int) -> int:
@@ -412,11 +421,11 @@ def render_plan_json(document: Mapping[str, Any], directory: Path, binary: Path 
 
 
 def _render_s(plan_bar: float, plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout) -> float:
-    return out_profile.time_of_bar(plan.out.start_bar + plan_bar) - layout.start_out_s
+    return (out_profile.time_of_bar(plan.out.start_bar + plan_bar) - layout.start_out_s) / layout.out_ratio
 
 
 def rendered_steps(
-    plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout
+    plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout, *, autodj: AutoDjService
 ) -> tuple[tuple[Any, ...], tuple[float, ...]]:
     """(level steps, transport seams) at the times the render applied them, after render time zero.
 
@@ -425,9 +434,14 @@ def rendered_steps(
     ``renders_at_start``) is not a step in the overlap, so it is not scored at its nominal bar."""
     from apps.transition_score.scorer import Step
 
-    bars = effective_bars(plan)
+    bars = autodj.effective_bars(plan)
     timed = [
-        (event, 0.0 if renders_at_start(event, plan, layout) else _render_s(bars[index], plan, out_profile, layout))
+        (
+            event,
+            0.0
+            if autodj.renders_at_start(event, plan, layout)
+            else _render_s(bars[index], plan, out_profile, layout),
+        )
         for index, event in enumerate(plan.events)
     ]
     after_zero = [(e, at) for e, at in timed if at > 0]
@@ -445,19 +459,25 @@ def _is_transport_seam(event: Any) -> bool:
 
 
 def render_context(
-    plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout, summary: Mapping[str, Any]
+    plan: TransitionPlan,
+    out_profile: TrackProfile,
+    layout: RenderLayout,
+    summary: Mapping[str, Any],
+    *,
+    autodj: AutoDjService,
 ) -> RenderContext:
     """What the plan meant, on the render's clock, for the scorer."""
     from apps.transition_score.scorer import RenderContext
 
     telemetry = parse_telemetry(summary, (plan.out.deck, plan.in_.deck))
     out_tempos = {round(ratio, 9) for deck, ratio in telemetry.tempo if deck == plan.out.deck}
-    if out_tempos - {1.0}:
+    allowed_out = {1.0, round(layout.out_ratio, 9)}
+    if out_tempos - allowed_out:
         raise TryError(
             f"the outgoing deck's tempo moves in this plan ({sorted(out_tempos)}); its grid on the render clock is not mapped yet"
         )
 
-    steps, seams = rendered_steps(plan, out_profile, layout)
+    steps, seams = rendered_steps(plan, out_profile, layout, autodj=autodj)
     return RenderContext(
         seams_s=seams,
         sample_rate=telemetry.sample_rate,
@@ -469,16 +489,17 @@ def render_context(
         pitch_follows_tempo=not telemetry.master_tempo,
         # Round 14: the scorer skips its loudness-loss veto only for an explicit wind-down plan; free text is read as
         # the proposer reads it, and a plan with no intent stays None (never assumed to be one).
-        intent=None if plan.intent is None else parse_intent(plan.intent),
-        # The proposer's plan shape (#7818 D13: ``lull_then_drop`` asks for the outgoing's lull); None when absent.
-        shape={**plan.to_json(), **plan.extra}.get("shape"),  # #7827: shape lives in plan.extra
+        intent=None if plan.intent is None else autodj.parse_intent(plan.intent),
+        # D13: lull_then_drop asks for the outgoing's lull. First-class on TransitionPlan; extra cannot override.
+        shape=plan.to_document().get("shape"),
         bass_hit_s=_bass_hit_s(plan, out_profile, layout),
     )
 
 
 def _bass_hit_s(plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout) -> float | None:
     """The plan's incoming bass hit on the render clock (#7818 D11 ``bass_entry.hit_plan_bar``), or None without one."""
-    entry = {**plan.to_json(), **plan.extra}.get("bass_entry")  # #7827: bass_entry lives in plan.extra
+    # D11: incoming bass hit on the render clock (`bass_entry.hit_plan_bar`), or None without one.
+    entry = plan.to_document().get("bass_entry")
     if not isinstance(entry, Mapping) or entry.get("hit_plan_bar") is None:
         return None
     return _render_s(float(entry["hit_plan_bar"]), plan, out_profile, layout)
@@ -501,17 +522,21 @@ def incoming_on_render_clock(
     in_audio: Path,
     frames: int,
     sample_rate: int = 48000,
+    *,
+    autodj: AutoDjService,
 ) -> tuple[float | None, np.ndarray]:
     """(the incoming's content bass entry on the render clock or None, its source audio placed at its play and
-    tempo-matched to the render) for round 15's early_handover and low_hole."""
+    tempo-matched to the render) for round 15's early_handover and low_hole. The source cut is always the cued
+    ``plan.in_.start_bar`` (the same seek ``compile_render_plan`` and live ``compile_plan`` apply at time zero);
+    ``play_s`` is where that paused cue begins on the render clock."""
     from scipy.signal import resample_poly
 
-    bars = effective_bars(plan)
+    bars = autodj.effective_bars(plan)
     play_bar = next(
         bars[i] for i, e in enumerate(plan.events) if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck
     )
     play_s = _render_s(play_bar, plan, out_profile, layout)
-    in_start = in_profile.time_of_bar(plan.in_.start_bar + play_bar * layout.in_fold)
+    in_start = in_profile.time_of_bar(plan.in_.start_bar)
     entry = content_bass_entry_bar(in_profile)
     entry_s = None if entry is None else play_s + (in_profile.time_of_bar(entry) - in_start) / layout.in_ratio
     need = int((frames / sample_rate - play_s) * layout.in_ratio * sample_rate) + sample_rate
@@ -524,10 +549,12 @@ def incoming_on_render_clock(
     return entry_s, placed
 
 
-def outgoing_natural(path: Path, start_s: float, frames: int, sample_rate: int) -> np.ndarray:
+def outgoing_natural(
+    path: Path, start_s: float, frames: int, sample_rate: int, out_ratio: float = 1.0
+) -> np.ndarray:
     """The outgoing track's own audio from ``start_s`` for ``frames`` at ``sample_rate`` (round 14): what it would be
-    playing alone, the level the scorer holds the mix to. The try-er never moves the outgoing tempo (render_context
-    refuses it), so its source and the render share one clock; past the file's end it is silence."""
+    playing alone, the level the scorer holds the mix to. A constant heard load ratio resamples like the incoming
+    deck; past the file's end it is silence."""
     from math import gcd
 
     from scipy.signal import resample_poly
@@ -535,11 +562,14 @@ def outgoing_natural(path: Path, start_s: float, frames: int, sample_rate: int) 
     soundfile = _audio_stack()
     with soundfile.SoundFile(str(path)) as source:
         rate = source.samplerate
+        need_source = math.ceil(frames * rate / sample_rate * out_ratio) + 64
         source.seek(min(source.frames, round(start_s * rate)))
-        audio = source.read(math.ceil(frames * rate / sample_rate) + 64, dtype="float32", always_2d=True)
+        audio = source.read(need_source, dtype="float32", always_2d=True)
     if rate != sample_rate:
         common = gcd(rate, sample_rate)
         audio = resample_poly(audio, sample_rate // common, rate // common, axis=0).astype(np.float32)
+    if not math.isclose(out_ratio, 1.0, rel_tol=0.0, abs_tol=1e-12):
+        audio = resample_poly(audio, 10000, round(10000 * out_ratio), axis=0).astype(np.float32)
     if len(audio) < frames:
         audio = np.concatenate([audio, np.zeros((frames - len(audio), audio.shape[1]), dtype=np.float32)])
     return audio[:frames]
@@ -549,6 +579,7 @@ def outgoing_natural(path: Path, start_s: float, frames: int, sample_rate: int) 
 class _Job:
     """What every candidate of one try shares."""
 
+    autodj: AutoDjService
     out_profile: TrackProfile
     in_profile: TrackProfile
     audio: tuple[Path, Path]
@@ -578,13 +609,24 @@ def _keep_render(render: Render, cid: str, job: _Job) -> Path | None:
     return target / "mix.wav"
 
 
+def _recorded_plan(plan: TransitionPlan) -> tuple[dict[str, Any], str]:
+    """The plan JSON a Candidate stores, and the sha256 of its canonical bytes.
+
+    Typed fields plus extra, typed winning (``TransitionPlan.to_document``): the same
+    document ``render_context`` reads, so calibration rescore rebuilds shape and bass_entry.
+    """
+    document = plan.to_document()
+    digest = hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
+    return document, digest
+
+
 def _candidate(index: int, plan: TransitionPlan, job: _Job) -> Candidate:
     out_profile, in_profile, audio = job.out_profile, job.in_profile, job.audio
     context_bars, start_out_bar = job.context_bars, job.start_out_bar
-    document = compile_render_plan(
+    document = job.autodj.compile_render_plan(
         plan, out_profile, in_profile, context_bars, out_audio=audio[0], in_audio=audio[1], start_out_bar=start_out_bar
     )
-    layout = layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
+    layout = job.autodj.layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
     with tempfile.TemporaryDirectory(prefix=RENDER_TMP_PREFIX) as scratch:
         render = render_plan_json(document, Path(scratch) / "render", job.binary)
         with _refused_on_bad_renderer_output():
@@ -593,20 +635,22 @@ def _candidate(index: int, plan: TransitionPlan, job: _Job) -> Candidate:
             in_deck = read_render(render.deck_path(plan.in_.deck), render.summary)
         from apps.transition_score.scorer import score_render
 
-        context = render_context(plan, out_profile, layout, render.summary)
-        natural = outgoing_natural(audio[0], layout.start_out_s, len(mix), context.sample_rate)
-        in_entry, in_natural = incoming_on_render_clock(plan, out_profile, in_profile, layout, audio[1], len(mix))
+        context = render_context(plan, out_profile, layout, render.summary, autodj=job.autodj)
+        natural = outgoing_natural(audio[0], layout.start_out_s, len(mix), context.sample_rate, layout.out_ratio)
+        in_entry, in_natural = incoming_on_render_clock(
+            plan, out_profile, in_profile, layout, audio[1], len(mix), autodj=job.autodj
+        )
         context = dataclasses.replace(context, out_natural=natural, in_bass_entry_s=in_entry, in_natural=in_natural)
         started = time.perf_counter()  # the scorer alone: no WAV reads, no keep copy, no temp cleanup
         result = score_render(mix, out_deck, in_deck, context)
         score_ms = round((time.perf_counter() - started) * 1000.0, 1)
         # Kept only once validated and scored: a refusal before this point leaves no folder behind.
         kept = _keep_render(render, f"c{index + 1}", job)
-    plan_json = plan.to_json()
+    plan_json, plan_sha256 = _recorded_plan(plan)
     return Candidate(
         id=f"c{index + 1}",
         plan=plan_json,
-        plan_sha256=hashlib.sha256(json.dumps(plan_json, sort_keys=True).encode()).hexdigest(),
+        plan_sha256=plan_sha256,
         style=plan.style,
         bars=plan.bars,
         metrics={**result.metrics, "in_trim_db": plan.in_.trim_db, "in_trim_reason": plan.in_.trim_reason},
@@ -628,11 +672,11 @@ def _candidate_or_refusal(index: int, plan: TransitionPlan, job: _Job) -> Candid
     try:
         return _candidate(index, plan, job)
     except (TryError, RenderPlanError) as error:
-        plan_json = plan.to_json()
+        plan_json, plan_sha256 = _recorded_plan(plan)
         return Candidate(
             id=f"c{index + 1}",
             plan=plan_json,
-            plan_sha256=hashlib.sha256(json.dumps(plan_json, sort_keys=True).encode()).hexdigest(),
+            plan_sha256=plan_sha256,
             style=plan.style,
             bars=plan.bars,
             metrics={},
@@ -670,6 +714,7 @@ def try_plans(
     context_bars: int,
     binary: Path | None = None,
     keep_renders_in: Path | None = None,
+    autodj: AutoDjService,
 ) -> tuple[Candidate, ...]:
     """Render and score already-proposed plans, best first; all start at the same outgoing bar.
 
@@ -682,9 +727,9 @@ def try_plans(
     _refuse_taken_keep_folders(keep_renders_in, len(plans))
     _audio_stack()  # fail before any render when the extra is missing
     audio = _real_audio_paths(audio, (out_profile.stable_id, in_profile.stable_id))
-    start = shared_start_out_bar(plans, out_profile, in_profile, context_bars)
+    start = shared_start_out_bar(plans, out_profile, in_profile, context_bars, autodj=autodj)
     engine = binary or odj_audio_binary()
-    job = _Job(out_profile, in_profile, audio, context_bars, start, engine, keep_renders_in)
+    job = _Job(autodj, out_profile, in_profile, audio, context_bars, start, engine, keep_renders_in)
     with ThreadPoolExecutor(max_workers=worker_count(len(plans))) as pool:
         futures = [pool.submit(_candidate_or_refusal, i, p, job) for i, p in enumerate(plans)]
         candidates = [f.result() for f in futures]
@@ -704,17 +749,24 @@ def _refuse_taken_keep_folders(keep_renders_in: Path | None, count: int) -> None
 
 
 def renderable_plans(
-    plans: list[TransitionPlan], out_profile: TrackProfile, in_profile: TrackProfile, context_bars: int
+    plans: list[TransitionPlan],
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    context_bars: int,
+    *,
+    autodj: AutoDjService,
 ) -> tuple[list[TransitionPlan], list[str]]:
     """(the plans the render can lay out, why each other one cannot); TryError when none can."""
     kept: list[TransitionPlan] = []
     refused: list[str] = []
     for plan in plans:
         try:
-            layout_of(plan, out_profile, in_profile, context_bars)
+            autodj.layout_of(plan, out_profile, in_profile, context_bars)
             # The plan's own refusals only: the audio is checked by try_plans, so any absolute stand-in works here.
             stand_in = Path(Path.cwd().anchor)
-            compile_render_plan(plan, out_profile, in_profile, context_bars, out_audio=stand_in, in_audio=stand_in)
+            autodj.compile_render_plan(
+                plan, out_profile, in_profile, context_bars, out_audio=stand_in, in_audio=stand_in
+            )
         except RenderPlanError as error:
             refused.append(f"{plan.style}: {error}")
             continue
@@ -725,14 +777,19 @@ def renderable_plans(
 
 
 def shared_start_out_bar(
-    plans: Sequence[TransitionPlan], out_profile: TrackProfile, in_profile: TrackProfile, context_bars: int
+    plans: Sequence[TransitionPlan],
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    context_bars: int,
+    *,
+    autodj: AutoDjService,
 ) -> float:
     """The one outgoing bar every render of a job starts at: the earliest any of its plans needs, so all candidates
     share a clock (switching keeps the playback position). Anything drawn over a render must use this, not a plan's own."""
-    return min(layout_of(p, out_profile, in_profile, context_bars).start_out_bar for p in plans)
+    return min(autodj.layout_of(p, out_profile, in_profile, context_bars).start_out_bar for p in plans)
 
 
-def try_pair(
+def try_pair(  # noqa: PLR0913 - the public bench operation has keyword-only execution controls
     out_id: str,
     in_id: str,
     *,
@@ -742,18 +799,22 @@ def try_pair(
     source: TrackSource | None = None,
     binary: Path | None = None,
     keep_renders_in: Path | None = None,
+    autodj: AutoDjService,
 ) -> TryResult:
     """Propose ``n`` candidates, render and score each, return them ranked."""
-    tracks = source or EngineTrackSource(Path(data_dir))
+    tracks = source or EngineTrackSource(Path(data_dir), autodj)
     out_profile, in_profile = tracks.profile(out_id), tracks.profile(in_id)
-    proposed = propose_transition(out_profile, in_profile, out_deck=OUT_DECK, in_deck=IN_DECK, top=n)
-    plans = [parse_plan(p["plan"]) for p in proposed["proposals"]]
+    proposed = autodj.propose_transition(out_profile, in_profile, out_deck=OUT_DECK, in_deck=IN_DECK, top=n)
+    plans = [autodj.parse_plan(p["plan"]) for p in proposed["proposals"]]
     if not plans:
+        skips = proposed.get("not_offered") or []
+        first_reason = skips[0].get("reason") if skips else None
+        suffix = f"; {first_reason}" if first_reason else ""
         raise PairNotTryable(
-            f"no valid transition proposed for {out_id} -> {in_id} ({proposed['considered']} considered)"
+            f"no valid transition proposed for {out_id} -> {in_id} ({proposed['considered']} considered{suffix})"
         )
     proposed_count = len(plans)
-    plans, refused = renderable_plans(plans, out_profile, in_profile, context_bars)
+    plans, refused = renderable_plans(plans, out_profile, in_profile, context_bars, autodj=autodj)
     candidates = try_plans(
         plans,
         out_profile,
@@ -762,6 +823,7 @@ def try_pair(
         context_bars=context_bars,
         binary=binary,
         keep_renders_in=keep_renders_in,
+        autodj=autodj,
     )
     notes = (
         f"{proposed_count} of {n} requested candidates proposed ({proposed['considered']} considered)",

@@ -481,10 +481,15 @@ def test_the_next_exit_starts_half_a_bar_after_the_last_blend_ends(
     ends = int(in_end_bar(plan_set(PROFILES[:2]).transitions[0]))
     real = propose_module.mix_windows
 
-    def only_exit(profile: Any, role: Any, *, limit: int = 5) -> list[Any]:
+    def only_exit(
+        profile: Any, role: Any, *, limit: int = 5, min_start_bar: float | None = None
+    ) -> list[Any]:
         if profile.stable_id == "trk-b" and role == "out":
-            return [window_at(profile, "out", ends + offset)]
-        return real(profile, role, limit=limit)
+            windows = [window_at(profile, "out", ends + offset)]
+            if min_start_bar is not None:
+                windows = [w for w in windows if w.start_bar > min_start_bar]
+            return windows[: max(1, limit)]
+        return real(profile, role, limit=limit, min_start_bar=min_start_bar)
 
     monkeypatch.setattr(propose_module, "mix_windows", only_exit)
     if planned:

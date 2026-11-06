@@ -13,10 +13,12 @@
 -->
 <script lang="ts">
 	import type { TrackQuality } from '$lib/rb/library-types';
-	import { gradeView } from '$lib/rb/quality-grade';
+	import { gradeView, qualityHoverStateKey } from '$lib/rb/quality-grade';
 
 	interface Props {
 		quality: TrackQuality | null;
+		/** Stable track id for hover-state key so a reused row with the same grade does not keep another track's measurements (QLTSCAN-05). */
+		trackKey?: string;
 		/** Hide the container suffix where the row is very tight. */
 		showContainer?: boolean;
 		/** Initial only (C, W, S...) instead of the rung name. The colour and
@@ -30,16 +32,16 @@
 		loadHover?: (() => Promise<string>) | undefined;
 	}
 
-	const { quality, showContainer = true, compact = false, loadHover }: Props = $props();
+	const { quality, trackKey = '', showContainer = true, compact = false, loadHover }: Props = $props();
 	let hoverText = $state<string | null>(null);
 	let hoverKey = $state<string | null>(null);
-	const gradeKey = $derived(JSON.stringify(quality?.grade ?? null));
+	const hoverStateKey = $derived(qualityHoverStateKey(trackKey, quality?.grade));
 
 	function _requestHover(): void {
 		if (loadHover === undefined) return;
-		const key = gradeKey;
+		const key = hoverStateKey;
 		void loadHover().then((text) => {
-			if (key === gradeKey) {
+			if (key === hoverStateKey) {
 				hoverText = text;
 				hoverKey = key;
 			}
@@ -81,7 +83,7 @@
 {#if graded}
 	<span
 		class={graded.classes}
-		title={hoverKey === gradeKey && hoverText ? hoverText : graded.title}
+		title={hoverKey === hoverStateKey && hoverText ? hoverText : graded.title}
 		data-venue={rung}
 		data-grade={graded.dataGrade}
 		onmouseenter={_requestHover}

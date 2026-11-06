@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import { SEARCH_PLACEHOLDER, SEARCH_QUERY_HELP } from '$lib/rb/browser-search-query';
 
 	// Browser pane search (SCREENSHOT-SPEC 5c). Modes:
@@ -80,7 +81,7 @@
 <!-- Native `title` dropped in favor of aria-label: ControlExplainer's own
      popover heading carries this text, and the doc comment on that
      component names exactly this overlap as the thing to avoid. -->
-<ControlExplainer title="Search syntax" bullets={[modeTitle, ...SEARCH_EXPLAINER_BULLETS]}>
+<ControlExplainer title="Search syntax" bullets={[modeTitle, ...SEARCH_EXPLAINER_BULLETS]} tooltip={TOOLTIP_ISOLATED}>
 	<label class="rb-search" class:find={mode === 'find'} class:all={mode === 'collection'} aria-label={modeTitle}>
 		<span class="mode" aria-hidden="true">{modeLabel}</span>
 		<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
@@ -117,7 +118,6 @@
 			<button
 				type="button"
 				class="clear"
-				title="Clear search and return"
 				aria-label="Clear search"
 				onclick={(e) => {
 					e.preventDefault();

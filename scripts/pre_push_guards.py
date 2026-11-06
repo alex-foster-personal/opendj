@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -227,7 +228,10 @@ def replace_carry_block(text: str, paths: frozenset[str]) -> str:
 
 
 def _run(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> tuple[int, str]:
-    result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False, env=env)
+    try:
+        result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False, env=env)
+    except FileNotFoundError:
+        return 127, f"executable not found: {argv[0]}"
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
@@ -284,7 +288,15 @@ def _guard_bundle(changes: tuple[Change, ...], root: Path) -> tuple[str, str]:
             "no build newer than the changed frontend files, so the budget is UNMEASURED here;"
             " `just pre-push` step 8 builds and measures it, or run: just bundle-budget"
         )
-    code, out = _run(["bash", "scripts/check-bundle-size.sh"], frontend)
+    node = shutil.which("node")
+    if node is None:
+        return "WARN", (
+            "node executable not on PATH, so the budget is UNMEASURED here;"
+            " `just pre-push` step 8 builds and measures it, or run: just bundle-budget"
+        )
+    code, out = _run([node, "scripts/bundle-budget.mjs"], frontend)
+    if out.startswith("executable not found:"):
+        return "WARN", f"{out}; run: just bundle-budget"
     return ("PASS" if code == 0 else "FAIL"), _tail(out)
 
 

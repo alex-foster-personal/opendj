@@ -117,6 +117,7 @@ import math
 import os
 import plistlib
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -400,7 +401,12 @@ def _account_home() -> Path:
     return Path(pwd.getpwuid(os.getuid()).pw_dir)
 
 
-def refuse_unisolated_launch(shell: Shell, home: Path, env: dict[str, str], account_home: Path) -> Path:
+def refuse_unisolated_launch(
+    shell: Shell,
+    home: Path,
+    env: dict[str, str],
+    account_home: Path,
+) -> Path:
     """Refuse unless the data dir this launch would use is inside the run home and is not the real one.
 
     Every path is resolved when this is called, so a symlink is followed as
@@ -2327,18 +2333,39 @@ def _port_listening(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _stage_fixture_library(src: Path, dest: Path) -> None:
-    """Copy the fixture library. A ditto failure is a REFUSED result, not a crash."""
+def _preflight_fixture_library_tree(src: Path, record: FixtureRecord | None = None) -> None:
+    """Refuse when any library file cannot be read (extras ditto might skip still fail closed)."""
+    for path in sorted(src.rglob("*")):
+        if path.is_file():
+            # Mode 000 is unreadable even when the owner could still open it as root; refuse
+            # before copy so the result carries the load-time fixture record (OPS-56).
+            if (path.stat().st_mode & 0o444) == 0:
+                raise Refused(f"fixture staging failed: {path}: [Errno 13] Permission denied", record)
+            try:
+                path.read_bytes()
+            except OSError as exc:
+                raise Refused(f"fixture staging failed: {path}: {exc}", record) from exc
+
+
+def _stage_fixture_library(src: Path, dest: Path, record: FixtureRecord | None = None) -> None:
+    """Copy the fixture library. A copy failure is a REFUSED result, not a crash."""
+    _preflight_fixture_library_tree(src, record)
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(["/usr/bin/ditto", str(src), str(dest)], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            message = f"fixture staging failed (ditto exit {exc.returncode})"
+            if detail:
+                message = f"{message}: {detail[:400]}"
+            raise Refused(message, record) from exc
+        except OSError as exc:
+            raise Refused(f"fixture staging failed: /usr/bin/ditto: {exc}", record) from exc
+        return
     try:
-        subprocess.run(["/usr/bin/ditto", str(src), str(dest)], check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "").strip()
-        message = f"fixture staging failed (ditto exit {exc.returncode})"
-        if detail:
-            message = f"{message}: {detail[:400]}"
-        raise Refused(message) from exc
+        shutil.copytree(src, dest, dirs_exist_ok=False)
     except OSError as exc:
-        raise Refused(f"fixture staging failed: /usr/bin/ditto: {exc}") from exc
+        raise Refused(f"fixture staging failed: {exc}", record) from exc
 
 
 def verify_staged_library(staged_library: Path, fixture: Fixture) -> None:
@@ -2409,20 +2436,20 @@ def bind_staged_fixture_identity(staged_library: Path, record: FixtureRecord) ->
         path.write_text(json.dumps(record.as_dict()) + "\n", encoding="utf-8", newline="\n")
     except OSError as exc:
         raise Refused(f"staged fixture identity {path} could not be written: {exc}", record) from exc
-    return read_staged_fixture_identity(staged_library)
+    return read_staged_fixture_identity(staged_library, record)
 
 
-def read_staged_fixture_identity(staged_library: Path) -> FixtureRecord:
+def read_staged_fixture_identity(staged_library: Path, record: FixtureRecord | None = None) -> FixtureRecord:
     path = staged_library / STAGED_FIXTURE_IDENTITY
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise Refused(f"staged fixture identity {path} unreadable: {exc}") from exc
+        raise Refused(f"staged fixture identity {path} unreadable: {exc}", record) from exc
     if not isinstance(data, dict):
-        raise Refused(f"staged fixture identity {path} must be a JSON object")
+        raise Refused(f"staged fixture identity {path} must be a JSON object", record)
     schema, manifest, content = data.get("schema"), data.get("manifest_sha256"), data.get("content_sha256")
     if not all(isinstance(value, str) and value for value in (schema, manifest, content)):
-        raise Refused(f"staged fixture identity {path} is incomplete")
+        raise Refused(f"staged fixture identity {path} is incomplete", record)
     return FixtureRecord(schema, manifest, content)
 
 
@@ -2437,7 +2464,10 @@ def _capture_fixture_record(root: Path) -> FixtureRecord:
 # ----- orchestration ----------------------------------------------------------------
 def _boot(run: Run) -> str | None:
     """Launch and wait for a healthy engine in the isolated data dir. None = ok."""
-    refuse_unisolated_launch(run.shell, run.home, run.env, run.account_home)
+    try:
+        refuse_unisolated_launch(run.shell, run.home, run.env, run.account_home)
+    except Refused as exc:
+        raise Refused(str(exc), run.fixture.record()) from exc
     run.pids_before_launch = {p.pid for p in _ps()}
     run.launched_at = time.monotonic()
     run.shell.launch(run.env)
@@ -2461,9 +2491,7 @@ def run_acceptance(args: argparse.Namespace) -> tuple[dict[str, Any], int, Fixtu
     try:
         return _begin_acceptance(args, source)
     except Refused as exc:
-        record = exc.fixture_record
-        if record is None:
-            record = _capture_fixture_record(source)
+        record = exc.fixture_record if exc.fixture_record is not None else FixtureRecord()
         raise Refused(str(exc), record) from exc
 
 
@@ -2480,11 +2508,11 @@ def _fresh_home(home: Path, captured: FixtureRecord) -> Path:
 
 def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str, Any], int, FixtureRecord]:
     app = Path(args.app).resolve()
-    host = _host_name()
-    if host_refused(host):
-        raise Refused(f"host {host!r} is silver: the acceptance never runs there (the maintainer's live store)")
     fixture = Fixture.load(source)
     captured = fixture.record()
+    host = _host_name()
+    if host_refused(host):
+        raise Refused(f"host {host!r} is silver: the acceptance never runs there (the maintainer's live store)", captured)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     root = Path(args.run_root).resolve() if args.run_root else ACCEPTANCE_ROOT / stamp
     home = root / "home"
@@ -2496,7 +2524,10 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
         raise Refused(str(exc), captured) from exc
     env = shell.launch_env(home)
     account_home = _account_home()
-    refuse_unisolated_launch(shell, home, env, account_home)
+    try:
+        refuse_unisolated_launch(shell, home, env, account_home)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
     try:
         running = _running_same_identifier(shell)
     except Refused as exc:
@@ -2511,9 +2542,10 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     home = _fresh_home(home, captured)
     staged = home / "fixture-library"
     try:
-        _stage_fixture_library(fixture.root / "library", staged)
+        _stage_fixture_library(fixture.root / "library", staged, captured)
     except Refused as exc:
-        raise Refused(str(exc), captured) from exc
+        record = exc.fixture_record if exc.fixture_record is not None else captured
+        raise Refused(str(exc), record) from exc
     try:
         fixture = stage_negative_control(fixture, home)
         verify_staged_library(staged, fixture)
@@ -2535,7 +2567,8 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
         finished, code = _launch_and_check(run, result, checks, real_before)
     except Exception as exc:  # the app must never outlive the harness
         if isinstance(exc, Refused) and not run.launched_at:
-            raise  # launch-time isolation refused: nothing launched, nothing to clean up
+            record = exc.fixture_record if exc.fixture_record is not None else captured
+            raise Refused(str(exc), record) from exc
         checks.append(Check("harness").set(UNKNOWN, f"harness error {type(exc).__name__}: {exc}"))
         finished, code = _finish(result, checks, run, real_before)
     return finished, code, captured

@@ -25,6 +25,7 @@ import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import { rememberOptionalResources } from './rb/optional-resource-availability';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickWrite, trackApiPath } from './rb/track-source';
+import { normalizeRating } from './rating';
 
 export { API_BASE } from './api/client';
 export {
@@ -67,8 +68,10 @@ export type PerformanceFeedbackMark = components['schemas']['PerformanceFeedback
 export type PerformanceFeedbackSummary = components['schemas']['PerformanceFeedbackMarksOut'];
 
 export class ConflictError extends Error {
-	constructor(public current: Track, public etag: string) {
+	current: Track;
+	constructor(current: Track, public etag: string) {
 		super('If-Match mismatch');
+		this.current = _trackWithNormalizedRating(current);
 	}
 }
 
@@ -111,13 +114,39 @@ export class PlaylistConflictError extends Error {
 	}
 }
 
+function _trackWithNormalizedRating(track: Track): Track {
+	const rating = normalizeRating(track.rating);
+	if (rating === track.rating) return track;
+	if (rating === null && track.rating == null) return track;
+	if (rating === null) {
+		const { rating: _removed, ...rest } = track;
+		return rest as Track;
+	}
+	return { ...track, rating };
+}
+
+function _listItemWithNormalizedRating<T extends { rating?: number | null | undefined }>(item: T): T {
+	const rating = normalizeRating(item.rating);
+	if (rating === item.rating) return item;
+	if (rating === null && item.rating == null) return item;
+	if (rating === null) {
+		const { rating: _removed, ...rest } = item;
+		return rest as T;
+	}
+	return { ...item, rating };
+}
+
 export async function listTracks(params: Record<string, string | number | undefined | null> = {}): Promise<TracksPage> {
 	// The client drops undefined and null query keys for us; the empty string is
 	// ours to drop, and dropping it here keeps `?q=` off the wire as before.
 	const query = Object.fromEntries(
 		Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
 	) as TrackListQuery;
-	return unwrap(api.GET('/api/v1/tracks', { params: { query } }));
+	const page = await unwrap(api.GET('/api/v1/tracks', { params: { query } }));
+	return {
+		...page,
+		items: page.items.map(_listItemWithNormalizedRating)
+	};
 }
 
 function _rememberTrackOptionalResources(track: Track): void {
@@ -149,7 +178,8 @@ export async function getTrack(stable_id: string): Promise<{ track: Track; etag:
 		? await _getUsbTrack(stable_id)
 		: requireBody(await api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } }));
 	_rememberTrackOptionalResources(data);
-	return { track: data, etag: response.headers.get('etag') ?? '' };
+	const track = _trackWithNormalizedRating(data);
+	return { track, etag: response.headers.get('etag') ?? '' };
 }
 
 /** Spec 4b: a stick track's TrackOut comes from GET /api/v1/usb/tracks/{id}
@@ -163,7 +193,8 @@ async function _getUsbTrack(stable_id: string): Promise<{ data: Track; response:
 	});
 	if (!response.ok) throw await apiErrorFrom(response);
 	const { data } = requireBody({ data: (await response.json()) as Track | null, response });
-	return { data: (await loadStickSessionEdits()).withSessionRating(stable_id, data), response };
+	const merged = (await loadStickSessionEdits()).withSessionRating(stable_id, data);
+	return { data: _trackWithNormalizedRating(merged), response };
 }
 
 export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];
@@ -201,7 +232,8 @@ export async function patchTrack(
 	}
 	const { data, response } = requireBody(call);
 	_rememberTrackOptionalResources(data);
-	return { track: data, etag: response.headers.get('etag') ?? '' };
+	const track = _trackWithNormalizedRating(data);
+	return { track, etag: response.headers.get('etag') ?? '' };
 }
 
 export async function listPlaylists(): Promise<PlaylistSummary[]> {

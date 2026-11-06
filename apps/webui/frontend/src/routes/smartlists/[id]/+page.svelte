@@ -11,6 +11,7 @@
 		type SmartlistOut,
 		type SmartlistTrackOut
 	} from '$lib/smartlists/http';
+	import { normalizeRating } from '$lib/rating';
 	import {
 		astToForm,
 		createEmptyGroup,
@@ -242,7 +243,7 @@
 						<td>{t.artist ?? ''}</td>
 						<td>{t.bpm ?? ''}</td>
 						<td>{shownKey(t.key) ?? ''}</td>
-						<td>{t.rating ?? ''}</td>
+						<td>{normalizeRating(t.rating) ?? ''}</td>
 						<td>{t.genre ?? ''}</td>
 					</tr>
 				{/each}

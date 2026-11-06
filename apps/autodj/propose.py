@@ -19,6 +19,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from apps.autodj.contract.models import INTENTS as _CONTRACT_INTENTS
+from apps.autodj.contract.models import WIND_DOWN as _CONTRACT_WIND_DOWN
 from apps.autodj.notation import print_score
 from apps.autodj.plan import (
     SHAPE_STYLES,
@@ -54,10 +56,10 @@ from apps.autodj.windows import MixWindow, mix_windows, window_at
 
 SMOOTH = "smooth"
 ENERGY_UP = "energy_up"
-WIND_DOWN = "wind_down"
+WIND_DOWN = _CONTRACT_WIND_DOWN
 SHOWY = "showy"
 VOCALS_CLEAN = "vocals_clean"
-INTENTS: tuple[str, ...] = (SMOOTH, ENERGY_UP, WIND_DOWN, SHOWY, VOCALS_CLEAN)
+INTENTS = _CONTRACT_INTENTS
 
 _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (VOCALS_CLEAN, ("vocal", "vocals", "acapella", "lyrics")),
@@ -240,6 +242,25 @@ def _overlap_bars(
     return bars
 
 
+def _overlap_skip_reason(
+    style: Style, wanted_bars: int, out_window: MixWindow, in_window: MixWindow, grid_bars: int
+) -> str | None:
+    """Why ``_overlap_bars`` would return None, or None when the pair overlaps."""
+    if out_window.max_bars < style.min_bars:
+        return f"out-window max_bars={out_window.max_bars} < {style.name} min_bars={style.min_bars}"
+    if style.max_bars > 1 and in_window.max_bars < style.min_bars:
+        return f"in-window max_bars={in_window.max_bars} < {style.name} min_bars={style.min_bars} ({in_window.reason})"
+    bars = style.clamp_bars(min(wanted_bars, out_window.max_bars))
+    if style.max_bars > 1:
+        bars = style.clamp_bars(min(bars, in_window.max_bars))
+    if out_window.start_bar + bars > grid_bars:
+        return (
+            f"past the outgoing grid: {style.name} min_bars={style.min_bars} from out-window bar "
+            f"{out_window.start_bar} (max_bars={out_window.max_bars}) exceeds grid_bars={grid_bars}"
+        )
+    return None
+
+
 #: D11: the incoming bass has landed at the first bar from which its bar_bass holds at BASS_ENTRY_FRACTION of the
 #: track's own p90 for BASS_ENTRY_HOLD_BARS bars (a steady bassline, not one loud bar). Tequila's intro sits at 0.5
 #: for 15 bars, then 0.95 on its drop.
@@ -256,14 +277,23 @@ LULL_ENERGY = 0.45
 
 def incoming_bass_entry(profile: TrackProfile, from_bar: int) -> int | None:
     """The first incoming bar at or after ``from_bar`` where its steady bass starts (D11), or None when it never does
-    (also when the profile has no bar_bass series: callers tell the two apart)."""
+    (also when the profile has no bar_bass series: callers tell the two apart).
+
+    A zero or non-positive p90 is not a threshold of zero: silence never counts. The reference then comes from the
+    bars that actually carry bass, and a series that never does has no entry.
+    """
     series = profile.bar_bass
     if not series:
         return None
+    carrying = [value for value in series if value > 0]
+    if not carrying:
+        return None
     reference = sorted(series)[min(len(series) - 1, int(BASS_ENTRY_PERCENTILE * len(series)))]
+    if reference <= 0:
+        reference = sorted(carrying)[min(len(carrying) - 1, int(BASS_ENTRY_PERCENTILE * len(carrying)))]
     threshold = BASS_ENTRY_FRACTION * reference
     for bar in range(max(1, from_bar), len(series) - BASS_ENTRY_HOLD_BARS + 2):
-        if all(value >= threshold for value in series[bar - 1 : bar - 1 + BASS_ENTRY_HOLD_BARS]):
+        if all(value > 0 and value >= threshold for value in series[bar - 1 : bar - 1 + BASS_ENTRY_HOLD_BARS]):
             return bar
     return None
 
@@ -580,7 +610,7 @@ def _with_live_reach(in_profile: TrackProfile, live: Mapping[str, Any] | None, i
     return replace(in_profile, deck_pitch_range_pct=float(pitch_range))
 
 
-def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry point
+def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one entry point; preference loop plus cut fallback
     out_profile: TrackProfile,
     in_profile: TrackProfile,
     *,
@@ -601,11 +631,7 @@ def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry poi
     out_windows = (
         _windows_around(out_profile, around_bar, min_out_bar)
         if around_bar is not None
-        else [
-            window
-            for window in mix_windows(out_profile, "out", limit=6)
-            if min_out_bar is None or window.start_bar > min_out_bar
-        ]
+        else mix_windows(out_profile, "out", limit=6, min_start_bar=min_out_bar)
     )
     proposals: list[Proposal] = []
     not_offered: list[dict[str, Any]] = []
@@ -613,97 +639,129 @@ def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry poi
     trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, live, out_deck, in_deck)
     # Every proposal is tempo sync_to_out, so the incoming deck plays this many grid bars per plan bar (Sentry #7809).
     fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
+
+    def consider(
+        style: Style,
+        wanted_bars: int,
+        rank: int,
+        out_window: MixWindow,
+        in_window: MixWindow,
+        *,
+        fallback_note: str = "",
+    ) -> None:
+        style_name = style.name
+        bars = _overlap_bars(style, wanted_bars, out_window, in_window, out_profile.bars)
+        if bars is None:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": wanted_bars,
+                    "out_bar": out_window.start_bar,
+                    "in_bar": in_window.start_bar,
+                    "reason": _overlap_skip_reason(style, wanted_bars, out_window, in_window, out_profile.bars)
+                    or "no overlap",
+                }
+            )
+            return
+        if style.hit == HIT_ON_HANDOVER:
+            fitted = _fit_lull(style, out_profile, out_window.start_bar, bars, fold)
+            if isinstance(fitted, str):
+                not_offered.append(
+                    {
+                        "style": style_name,
+                        "bars": bars,
+                        "out_bar": out_window.start_bar,
+                        "in_bar": in_window.start_bar,
+                        "reason": fitted,
+                    }
+                )
+                return
+            bars = fitted
+        hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, fold)
+        pinned_moved = in_window.pinned and hit.refused is None and hit.in_start_bar != in_window.start_bar
+        # Sentry #7818: two scored windows can move to one bass entry; dedupe on the window actually entered.
+        entered_bar = in_window.start_bar if (hit.refused is not None or pinned_moved) else hit.in_start_bar
+        key = (style_name, bars, out_window.start_bar, entered_bar)
+        if key in seen:
+            return
+        seen.add(key)
+        if hit.refused is not None or pinned_moved:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": bars,
+                    "out_bar": out_window.start_bar,
+                    "in_bar": in_window.start_bar,
+                    "reason": hit.refused
+                    if hit.refused is not None
+                    else (
+                        f"in-window pinned at the transition-in cue (bar {in_window.start_bar}); "
+                        f"place_hit would move it to bar {hit.in_start_bar}"
+                    ),
+                }
+            )
+            return
+        # The window the plan actually enters on: the scored one, or moved to the incoming bass (D11) and re-read
+        # there (Codex #7818: never the scored window's label, energy and score on another section).
+        entered = (
+            in_window if hit.in_start_bar == in_window.start_bar else window_at(in_profile, "in", hit.in_start_bar)
+        )
+        pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
+        rationale = _rationale(style_name, style, bars, out_window, entered) + hit.note + fallback_note
+        plan = parse_plan(
+            {
+                "out": {
+                    "deck": out_deck,
+                    "track": out_profile.stable_id,
+                    "window": {"start_bar": out_window.start_bar, "bars": bars},
+                },
+                "in": {
+                    "deck": in_deck,
+                    "track": in_profile.stable_id,
+                    "window": {"start_bar": entered.start_bar, "bars": bars},
+                    "trim_db": trim_db,
+                    "trim_reason": trim_reason,
+                },
+                "style": style_name,
+                "tempo": {"mode": "sync_to_out"},
+                "events": style.build(bars, out_deck, in_deck, hit.hit_bar),
+                "intent": intent or parsed,
+                "rationale": rationale,
+                "bass_entry": hit.entry,
+                "shape": SHAPE_OF_STYLE.get(style_name),
+            }
+        )
+        # Codex #7595: the window filter above sees only the start bar; a style's pre-roll (a compensated
+        # blend's bar -1 ease) puts its first event earlier, so the whole plan must start after the live bar.
+        if min_out_bar is not None and out_window.start_bar + first_dispatch_bar(plan) <= min_out_bar:
+            return
+        validation = validate_plan(plan, out_profile, in_profile, live=live)
+        preference = _preference_bonus(parsed, rank)
+        score = pair.score + preference + _style_fit(style, pair) - _penalty(validation, parsed)
+        proposals.append(Proposal(plan, validation, pair, score, rationale))
+
     for rank, (style_name, wanted_bars) in enumerate(_PREFERENCES[parsed]):
         style = STYLES[style_name]
         if not style.available:
             continue
         for out_window in out_windows[:3]:
             for in_window in _in_windows_for(parsed, in_profile, style)[:3]:
-                bars = _overlap_bars(style, wanted_bars, out_window, in_window, out_profile.bars)
-                if bars is None:
-                    continue
-                if style.hit == HIT_ON_HANDOVER:
-                    fitted = _fit_lull(style, out_profile, out_window.start_bar, bars, fold)
-                    if isinstance(fitted, str):
-                        not_offered.append(
-                            {
-                                "style": style_name,
-                                "bars": bars,
-                                "out_bar": out_window.start_bar,
-                                "in_bar": in_window.start_bar,
-                                "reason": fitted,
-                            }
-                        )
-                        continue
-                    bars = fitted
-                hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, fold)
-                pinned_moved = (
-                    in_window.pinned
-                    and hit.refused is None
-                    and hit.in_start_bar != in_window.start_bar
+                consider(style, wanted_bars, rank, out_window, in_window)
+    if not proposals and "cut" not in {name for name, _bars in _PREFERENCES[parsed]}:
+        cut = STYLES["cut"]
+        cut_rank = len(_PREFERENCES[parsed])
+        for out_window in out_windows[:3]:
+            for in_window in _in_windows_for(parsed, in_profile, cut)[:3]:
+                consider(
+                    cut,
+                    1,
+                    cut_rank,
+                    out_window,
+                    in_window,
+                    fallback_note=(
+                        f"; cut fallback: every blend needs more bars than the in-window ({in_window.reason})"
+                    ),
                 )
-                # Sentry #7818: two scored windows can move to one bass entry; dedupe on the window actually entered.
-                entered_bar = in_window.start_bar if (hit.refused is not None or pinned_moved) else hit.in_start_bar
-                key = (style_name, bars, out_window.start_bar, entered_bar)
-                if key in seen:
-                    continue
-                seen.add(key)
-                if hit.refused is not None or pinned_moved:
-                    not_offered.append(
-                        {
-                            "style": style_name,
-                            "bars": bars,
-                            "out_bar": out_window.start_bar,
-                            "in_bar": in_window.start_bar,
-                            "reason": hit.refused
-                            if hit.refused is not None
-                            else (
-                                f"in-window pinned at the transition-in cue (bar {in_window.start_bar}); "
-                                f"place_hit would move it to bar {hit.in_start_bar}"
-                            ),
-                        }
-                    )
-                    continue
-                # The window the plan actually enters on: the scored one, or moved to the incoming bass (D11) and re-read
-                # there (Codex #7818: never the scored window's label, energy and score on another section).
-                entered = (
-                    in_window
-                    if hit.in_start_bar == in_window.start_bar
-                    else window_at(in_profile, "in", hit.in_start_bar)
-                )
-                pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
-                rationale = _rationale(style_name, style, bars, out_window, entered) + hit.note
-                plan = parse_plan(
-                    {
-                        "out": {
-                            "deck": out_deck,
-                            "track": out_profile.stable_id,
-                            "window": {"start_bar": out_window.start_bar, "bars": bars},
-                        },
-                        "in": {
-                            "deck": in_deck,
-                            "track": in_profile.stable_id,
-                            "window": {"start_bar": entered.start_bar, "bars": bars},
-                            "trim_db": trim_db,
-                            "trim_reason": trim_reason,
-                        },
-                        "style": style_name,
-                        "tempo": {"mode": "sync_to_out"},
-                        "events": style.build(bars, out_deck, in_deck, hit.hit_bar),
-                        "intent": intent or parsed,
-                        "rationale": rationale,
-                        "bass_entry": hit.entry,
-                        "shape": SHAPE_OF_STYLE.get(style_name),
-                    }
-                )
-                # Codex #7595: the window filter above sees only the start bar; a style's pre-roll (a compensated
-                # blend's bar -1 ease) puts its first event earlier, so the whole plan must start after the live bar.
-                if min_out_bar is not None and out_window.start_bar + first_dispatch_bar(plan) <= min_out_bar:
-                    continue
-                validation = validate_plan(plan, out_profile, in_profile, live=live)
-                preference = _preference_bonus(parsed, rank)
-                score = pair.score + preference + _style_fit(style, pair) - _penalty(validation, parsed)
-                proposals.append(Proposal(plan, validation, pair, score, rationale))
     best = _best_valid(proposals, top)
     return {
         "intent": parsed,

@@ -1,3 +1,8 @@
+<script lang="ts" module>
+	/* Plain counter: avoid $props.id() pulling SSR helpers into the performance bundle. */
+	let nextSummaryId = 0;
+</script>
+
 <script lang="ts">
 	/**
 	 * In-app review/feedback widget (FB-01..FB-04): the topbar cluster.
@@ -19,6 +24,7 @@
 		toggleFeedbackPanel
 	} from '$lib/rb/feedback-store.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
 
 	const FEEDBACK_UNAVAILABLE =
@@ -28,6 +34,8 @@
 
 	const FEEDBACK_EXPLAINER_TITLE =
 		'Give feedback, ideas and suggestions to the developer, and track them in-app.';
+
+	const summaryId = `fb-widget-pin-summary-${++nextSummaryId}`;
 
 	const openCount = $derived(feedbackState.todos.filter((t) => !t.done).length);
 
@@ -155,6 +163,7 @@
 			action={pinVisibilityActions}
 			placement="right"
 			disabled={feedbackState.placementArmed}
+			tooltip={TOOLTIP_ISOLATED}
 		>
 			<button
 				type="button"
@@ -162,8 +171,8 @@
 				class:rb-inert={unavailable}
 				class:armed={feedbackState.placementArmed}
 				disabled={unavailable}
-				title={commentPinTitle}
 				aria-label="Drop a comment pin"
+				aria-describedby={summaryId}
 				aria-pressed={feedbackState.placementArmed}
 				onclick={armPinPlacement}
 			>
@@ -179,6 +188,7 @@
 			</button>
 		</ControlExplainer>
 	</span>
+	<span id={summaryId} class="fb-sr-only">{commentPinTitle}</span>
 </span>
 
 {#if FeedbackPanel}
@@ -199,6 +209,17 @@
 	.fb-pin-peek {
 		display: inline-flex;
 		align-items: center;
+	}
+	.fb-sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.fb-btn {

@@ -23,11 +23,15 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import logging
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 from apps.engine_core.setup import folder_rescan_scheduler as fr_scheduler
 from apps.engine_core.setup import record as setup_record
@@ -145,6 +149,27 @@ def test_state_db_open_failure_is_a_retryable_round_failure(tmp_path: Path) -> N
     assert outcome == "error"
     assert scheduler.consecutive_failures == 1
     assert scheduler.rounds_completed == 1
+
+
+def test_database_locked_round_is_deferred_not_logged_as_exception(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] a rescan hits database is locked [then] it retries without ERROR, [else stop]."""
+    _mark_folder_import(tmp_path, [str(tmp_path / "music")])
+
+    def locked_reconcile(writer, roots, previous_signature):
+        raise sqlite3.OperationalError("database is locked")
+
+    scheduler = fr_scheduler.FolderRescanScheduler(
+        tmp_path, cfg=_FAST, reconcile_fn=locked_reconcile
+    )
+    with caplog.at_level(logging.INFO):
+        outcome = scheduler.run_round([tmp_path / "music"])
+
+    assert outcome == "error"
+    assert scheduler.consecutive_failures == 1
+    assert "folder-rescan round deferred" in caplog.text
+    assert "folder-rescan round failed" not in caplog.text
 
 
 def test_folder_import_landing_after_boot_is_picked_up_without_restart(tmp_path: Path) -> None:

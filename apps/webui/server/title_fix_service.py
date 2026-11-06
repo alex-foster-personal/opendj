@@ -154,7 +154,7 @@ def _scan_track(
         filename=path.name,
         folder=path.parent.as_posix() if file_path else "",
         album=album,
-        length_s=None if duration_ms is None else duration_ms // 1000,
+        length_s=None if duration_ms is None else duration_ms / 1000,
     )
     return track, artists
 

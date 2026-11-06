@@ -19,9 +19,14 @@ export const DECK_EXPECTED_BANNER_MS = 5000;
 
 const STEMS_LOADING = /^(?:Error: )?deck [1-4] stems are loading: /i;
 
+/** True when the message is the known transient during stem engage / land (#8747, DECKUX-LABEL-02). */
+export function isExpectedStemsLoadingMessage(message: string): boolean {
+	return STEMS_LOADING.test(message);
+}
+
 /** 'expected' for a known self-resolving condition, 'fault' for everything else. */
 export function deckBannerTone(message: string): DeckBannerTone {
-	return STEMS_LOADING.test(message) ? 'expected' : 'fault';
+	return isExpectedStemsLoadingMessage(message) ? 'expected' : 'fault';
 }
 
 /**

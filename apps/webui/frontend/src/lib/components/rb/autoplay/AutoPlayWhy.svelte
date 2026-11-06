@@ -134,6 +134,8 @@
 
 <style>
 	.why-list {
+		max-height: 30vh;
+		overflow-y: auto;
 		margin: 0;
 		padding-left: 1rem;
 		font-size: 0.75rem;

@@ -39,15 +39,16 @@ def format_modified_at(edge: PairingEdge, *, timespec: str | None) -> str:
     return edge.modified_at.isoformat()
 
 
+def _display_stable_id(stable_id: str, *, truncate: bool) -> str:
+    if truncate:
+        return stable_id[:10] + "..."
+    return stable_id
+
+
 def edge_row_values(edge: PairingEdge, opts: RowFormatOptions) -> list[str]:
-    from_id = edge.from_stable_id
-    to_id = edge.to_stable_id
-    if opts.truncate_ids:
-        from_id = from_id[:10] + "..."
-        to_id = to_id[:10] + "..."
     return [
-        from_id,
-        to_id,
+        _display_stable_id(edge.from_stable_id, truncate=opts.truncate_ids),
+        _display_stable_id(edge.to_stable_id, truncate=opts.truncate_ids),
         edge.direction,
         edge.source,
         edge.notes or "",

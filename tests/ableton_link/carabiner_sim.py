@@ -12,15 +12,24 @@ from __future__ import annotations
 import contextlib
 import socket
 import threading
+from collections.abc import Callable
 
 from apps.ableton_link.link_clock import beat_at_time, link_now_us
 
 
 class SimCarabiner:
-    def __init__(self, bpm: float = 128.0, peers: int = 0, start_us: float | None = None, port: int = 0) -> None:
+    def __init__(
+        self,
+        bpm: float = 128.0,
+        peers: int = 0,
+        start_us: float | None = None,
+        port: int = 0,
+        now_us: Callable[[], float] = link_now_us,
+    ) -> None:
         self.bpm = bpm
         self.peers = peers
-        self.start_us = float(link_now_us() if start_us is None else start_us)
+        self._now_us = now_us
+        self.start_us = float(now_us() if start_us is None else start_us)
         self.commands: list[str] = []
         self._lock = threading.Lock()
         self._server = socket.socket()
@@ -36,11 +45,11 @@ class SimCarabiner:
 
     def beat_now(self) -> float:
         with self._lock:
-            return beat_at_time(self.start_us, self.bpm, link_now_us())
+            return beat_at_time(self.start_us, self.bpm, self._now_us())
 
     def status_line(self) -> bytes:
         with self._lock:
-            beat = beat_at_time(self.start_us, self.bpm, link_now_us())
+            beat = beat_at_time(self.start_us, self.bpm, self._now_us())
             return (f"status {{ :peers {self.peers} :bpm {self.bpm:.6f} :start {int(self.start_us)} "
                     f":beat {beat:.6f} }}\n").encode()
 
@@ -53,7 +62,7 @@ class SimCarabiner:
     def set_tempo(self, bpm: float) -> None:
         """What a DJ app does on this laptop's session: keep the beat, change the tempo."""
         with self._lock:
-            now = link_now_us()
+            now = self._now_us()
             beat = beat_at_time(self.start_us, self.bpm, now)
             self.bpm = bpm
             self.start_us = now - beat * 60e6 / bpm

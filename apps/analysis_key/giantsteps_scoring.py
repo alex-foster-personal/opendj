@@ -59,7 +59,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from apps.analysis_key.segments import BarGrid
+from apps.analysis_key.segments import BarGrid, SegmentBlock
+
+DEFAULT_SECONDS_TOLERANCE = 3.0
 
 
 def _bar_extent_seconds(grid: BarGrid, index: int) -> float:
@@ -158,6 +160,69 @@ class BoundaryScore:
         return 2 * p * r / (p + r) if (p + r) else 0.0
 
 
+def boundary_within_seconds(
+    detected_s: float,
+    annotated_s: float,
+    *,
+    tolerance_s: float = DEFAULT_SECONDS_TOLERANCE,
+) -> bool:
+    """Whether two boundary timestamps are within a fixed seconds window."""
+    return abs(detected_s - annotated_s) <= tolerance_s
+
+
+@dataclass(frozen=True)
+class SecondsHitMiss:
+    """One track's fixed-seconds boundary hit rate."""
+
+    n_predicted: int
+    n_reference: int
+    n_hits: int
+
+    @property
+    def n_misses(self) -> int:
+        return self.n_predicted - self.n_hits
+
+    @property
+    def hit_rate(self) -> float:
+        return self.n_hits / self.n_predicted if self.n_predicted else 0.0
+
+
+def score_seconds_track(
+    predicted_boundaries_s: Sequence[float],
+    reference_boundaries_s: Sequence[float],
+    *,
+    tolerance_s: float = DEFAULT_SECONDS_TOLERANCE,
+) -> SecondsHitMiss:
+    """Greedily match each prediction to its nearest free reference boundary."""
+    unmatched_references = set(range(len(reference_boundaries_s)))
+    hits = 0
+    for predicted in predicted_boundaries_s:
+        candidates = [
+            reference_index
+            for reference_index in unmatched_references
+            if boundary_within_seconds(
+                predicted,
+                reference_boundaries_s[reference_index],
+                tolerance_s=tolerance_s,
+            )
+        ]
+        if not candidates:
+            continue
+        nearest = min(
+            candidates,
+            key=lambda reference_index: abs(
+                predicted - reference_boundaries_s[reference_index]
+            ),
+        )
+        unmatched_references.remove(nearest)
+        hits += 1
+    return SecondsHitMiss(
+        n_predicted=len(predicted_boundaries_s),
+        n_reference=len(reference_boundaries_s),
+        n_hits=hits,
+    )
+
+
 def _max_cardinality_matched_count(
     annotated_boundaries_s: Sequence[float],
     detected_boundaries_s: Sequence[float],
@@ -215,10 +280,35 @@ def score_track(
     )
 
 
+def score_segment_block(
+    block: SegmentBlock | None,
+    annotated_boundaries_s: Sequence[float],
+    grid: BarGrid,
+    *,
+    tolerance_bars: float = 1.0,
+) -> BoundaryScore:
+    """Score interior segment starts from a block, or zero detections when not ok."""
+    if block is None or block.status != "ok":
+        detected: tuple[float, ...] = ()
+    else:
+        detected = block.interior_starts_s()
+    return score_track(
+        detected,
+        annotated_boundaries_s,
+        grid,
+        tolerance_bars=tolerance_bars,
+    )
+
+
 __all__ = [
+    "DEFAULT_SECONDS_TOLERANCE",
     "BoundaryScore",
+    "SecondsHitMiss",
     "bar_duration_at",
     "bar_position_at",
+    "boundary_within_seconds",
     "boundary_within_tolerance",
+    "score_seconds_track",
+    "score_segment_block",
     "score_track",
 ]

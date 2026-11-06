@@ -29,6 +29,13 @@ export {
 	type SectionHeader
 } from '$lib/library/playlist-sections';
 export type { EntriesMove } from '$lib/library/playlist-sections-store.svelte';
+
+export {
+	type TrackDropGap,
+	trackDropGapFromPointer,
+	trackDropGapTransform
+} from './track-table-drop-gap';
+
 export { animateSectionToggle } from '$lib/library/section-motion';
 export {
 	bpmHeatLabel,
@@ -81,3 +88,7 @@ export {
 export { shiftDropAction } from './works-drop';
 export { default as VersionStackPanel } from './VersionStackPanel.svelte';
 export { default as WorksModals } from './WorksModals.svelte';
+
+export function formatTagsCell(tags: readonly string[]): string {
+	return tags.map((tag) => `#${tag}`).join(' · ');
+}

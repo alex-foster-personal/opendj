@@ -46,15 +46,19 @@ export async function restoreStemControls(
 		}
 		return state.stems;
 	};
-	while (current().status === 'loading') {
-		if (clock.now() >= deadline) throw new Error(`deck ${deck} stem restore timed out`);
-		await clock.sleep(STEM_RESTORE_POLL_MS);
-	}
-	const stems = current();
-	if (stems.status === 'error') throw new Error(`deck ${deck} stem restore failed: ${stems.error}`);
+	const awaitReady = async (): Promise<ReturnType<typeof current>> => {
+		while (current().status === 'loading') {
+			if (clock.now() >= deadline) throw new Error(`deck ${deck} stem restore timed out`);
+			await clock.sleep(STEM_RESTORE_POLL_MS);
+		}
+		const stems = current();
+		if (stems.status === 'error') throw new Error(`deck ${deck} stem restore failed: ${stems.error}`);
+		return stems;
+	};
 	for (const stem of STEM_CONTROL_IDS) {
 		const control = controls[stem];
 		if (control === undefined) continue;
+		let stems = await awaitReady();
 		if (!stems.available_controls.includes(stem)) {
 			// Legacy snapshots include neutral DRUMS even for two-part/no-stem tracks.
 			// A real saved effect must never disappear silently when capability is lost.
@@ -70,6 +74,7 @@ export async function restoreStemControls(
 		if (control.gain !== undefined)
 			commands.push({ type: 'stem_gain', deck, stem, value: control.gain });
 		for (const command of commands) {
+			await awaitReady();
 			current();
 			await dispatch(command);
 		}

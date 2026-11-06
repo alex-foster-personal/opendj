@@ -50,7 +50,7 @@ def _seed_unmatched_playlist(conn: sqlite3.Connection, pid="pl123") -> str:
         spotify_id="t1",
         spotify_uri="spotify:track:t1",
         isrc="USABC2500001",
-        title="Hello",
+        title="Title",
         artists=("Artist",),
         album="A",
         duration_ms=200000,
@@ -78,7 +78,7 @@ def _seed_unmatched_playlist(conn: sqlite3.Connection, pid="pl123") -> str:
 @pytest.mark.requirement("CAT-01")
 def test_rematch_dry_run(state_conn: sqlite3.Connection) -> None:
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    _insert_track(state_conn, "s1", "USABC2500001", "Title")
 
     outcome = rematch_playlist(state_conn, playlist_id, live=False)
     assert outcome.resolved_count == 1
@@ -89,7 +89,7 @@ def test_rematch_dry_run(state_conn: sqlite3.Connection) -> None:
 @pytest.mark.requirement("CAT-01")
 def test_rematch_live_promotes(state_conn: sqlite3.Connection) -> None:
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    _insert_track(state_conn, "s1", "USABC2500001", "Title")
 
     outcome = rematch_playlist(state_conn, playlist_id, live=True)
     assert outcome.resolved_count == 1
@@ -111,7 +111,7 @@ def test_rematch_rotates_playlist_revision_and_rejects_stale_replace(
     state_conn: sqlite3.Connection,
 ) -> None:
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    _insert_track(state_conn, "s1", "USABC2500001", "Title")
     db_path = Path(state_conn.execute("PRAGMA database_list").fetchone()[2])
     store = PlaylistStore(db_path)
     try:
@@ -136,7 +136,7 @@ def test_rename_after_rematch_cannot_restore_a_stale_playlist_revision(
     state_conn: sqlite3.Connection,
 ) -> None:
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    _insert_track(state_conn, "s1", "USABC2500001", "Title")
     db_path = Path(state_conn.execute("PRAGMA database_list").fetchone()[2])
     store = PlaylistStore(db_path)
     try:
@@ -178,7 +178,7 @@ def test_rematch_no_pending_is_noop(state_conn: sqlite3.Connection) -> None:
 @pytest.mark.requirement("CAT-01")
 def test_rematch_idempotent(state_conn: sqlite3.Connection) -> None:
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    _insert_track(state_conn, "s1", "USABC2500001", "Title")
 
     rematch_playlist(state_conn, playlist_id, live=True)
     outcome2 = rematch_playlist(state_conn, playlist_id, live=True)
@@ -207,7 +207,7 @@ def test_a_resolved_purchase_is_stamped_and_logged(state_conn: sqlite3.Connectio
     ['playlist_memberships', 'playlists'] permanently.
     """
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s-bought", "USABC2500001", title="Hello")
+    _insert_track(state_conn, "s-bought", "USABC2500001", title="Title")
     state_conn.execute("DELETE FROM local_changelog")
 
     outcome = rematch_playlist(state_conn, playlist_id, live=True)
@@ -250,7 +250,7 @@ def test_a_resolved_purchase_is_not_re_offered_on_a_second_rematch(
     resolved, the second pass finds no pending row and writes nothing.
     """
     playlist_id = _seed_unmatched_playlist(state_conn)
-    _insert_track(state_conn, "s-bought", "USABC2500001", title="Hello")
+    _insert_track(state_conn, "s-bought", "USABC2500001", title="Title")
 
     first = rematch_playlist(state_conn, playlist_id, live=True)
     assert first.resolved_count == 1

@@ -219,6 +219,134 @@ def test_a_healthy_rekordbox_copy_that_maps_no_track_still_lists_folder_tracks(
     assert "] todo 'Todo'" in capsys.readouterr().out
 
 
+def _mixed_pair(
+    tmp_path: Path,
+    *,
+    folder_duration_ms: int | None,
+    rekordbox_length_s: int,
+    label: str = "data",
+) -> Path:
+    data = tmp_path / label
+    (data / "state").mkdir(parents=True)
+    media = data / "media"
+    media.mkdir()
+    folder_audio = media / "folder.mp3"
+    folder_audio.write_bytes(b"audio folder")
+    held_audio = media / "held.mp3"
+    held_audio.write_bytes(b"audio held")
+
+    conn = state_db.open_rw(data / "state" / "state.db")
+    writer = StateWriter(conn, actor="unit-test")
+    writer.upsert_track(
+        stable_id="folder",
+        stable_id_tier="inferred",
+        title="Folder",
+        artists=["X"],
+        album=None,
+        isrc=None,
+        duration_ms=folder_duration_ms,
+        file_path=str(folder_audio),
+    )
+    writer.upsert_track(
+        stable_id="held",
+        stable_id_tier="inferred",
+        title="Held",
+        artists=["X"],
+        album=None,
+        isrc=None,
+        duration_ms=999_000,
+        file_path=str(held_audio),
+    )
+    conn.execute(
+        "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, ?, ?)",
+        ("held", "rekordbox", "v-held"),
+    )
+    conn.commit()
+    conn.close()
+
+    master = sqlite3.connect(data / "master.plain.db")
+    master.execute(
+        "CREATE TABLE djmdContent (ID TEXT, Title TEXT, Length INTEGER, "
+        "FolderPath TEXT, AnalysisDataPath TEXT, rb_local_deleted INTEGER)"
+    )
+    master.execute(
+        "INSERT INTO djmdContent VALUES (?, ?, ?, ?, NULL, 0)",
+        ("v-held", "Held In Rekordbox", rekordbox_length_s, str(held_audio)),
+    )
+    master.commit()
+    master.close()
+    return data
+
+
+@pytest.mark.requirement("STEM-9145")
+def test_trickle_orders_mixed_library_by_stored_duration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] mixed library has equal rank [then] trickle --limit 1 picks shortest by stored duration, [else stop]."""
+    data_dir = _mixed_pair(
+        tmp_path, folder_duration_ms=180_000, rekordbox_length_s=300
+    )
+    assert (
+        main(
+            [
+                "trickle",
+                "--data-dir",
+                str(data_dir),
+                "--dry-run",
+                "--limit",
+                "1",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "n=1/2" in out, out
+    assert "] folder 'Folder'" in out, out
+    assert "] held " not in out.split("n=1/2")[1], out
+
+    capsys.readouterr()
+    data_dir = _mixed_pair(
+        tmp_path,
+        folder_duration_ms=300_000,
+        rekordbox_length_s=180,
+        label="data_swap",
+    )
+    assert (
+        main(
+            [
+                "trickle",
+                "--data-dir",
+                str(data_dir),
+                "--dry-run",
+                "--limit",
+                "1",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "n=1/2" in out, out
+    assert "] held 'Held In Rekordbox'" in out, out
+
+
+@pytest.mark.requirement("STEM-9145")
+def test_trickle_sorts_folder_track_with_no_stored_length_last(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a folder track has no stored duration_ms [then] it sorts last and dry-run says why, [else stop]."""
+    data_dir = _mixed_pair(
+        tmp_path, folder_duration_ms=None, rekordbox_length_s=300
+    )
+    assert main(["trickle", "--data-dir", str(data_dir), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "n=2/2" in out, out
+    held_pos = out.index("] held ")
+    folder_pos = out.index("] folder ")
+    assert held_pos < folder_pos, out
+    assert "no stored length" in out, out
+    assert "sorts last" in out, out
+
+
 @pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a directory the user cannot enter")
 def test_a_data_dir_the_user_cannot_enter_is_never_a_successful_run(data_dir: Path) -> None:
     """[if] the data dir cannot be entered [then] trickle raises instead of reporting an empty library, [else stop]."""

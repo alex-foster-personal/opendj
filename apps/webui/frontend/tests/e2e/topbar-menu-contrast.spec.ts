@@ -10,7 +10,7 @@
  * and reads the colors Chromium paints.
  *
  * [if] any text in either menu reads under 4.5:1 on the menu's painted card in
- *   Default, Gothic or Light [then] stop.
+ *   Default, Gothic, Light, or Green Room [then] stop.
  * [if] a menu opens without a pointerenter on its trigger [then] stop: the test
  *   is no longer measuring the path users take.
  * control [if] the menu card is transparent [then] stop: the ratio would be
@@ -28,9 +28,16 @@ const MENUS = [
 	{
 		name: 'AutoPlay',
 		trigger: 'span.ap-wrap',
+		/** First top-bar toggle under the wrap (AutoPlay label); used for pointer-walk geometry. */
+		button: 'span.ap-wrap > button',
 		menu: '.ap-menu:not(.lyr-menu)'
 	},
-	{ name: 'LYR', trigger: 'span.lyr-wrap', menu: '[data-testid="lyr-menu"]' }
+	{
+		name: 'LYR',
+		trigger: 'button.topbar-slot-lyr',
+		button: 'button.topbar-slot-lyr',
+		menu: '[data-testid="lyr-menu"]'
+	}
 ] as const;
 
 async function setSkin(page: Page, skin: string): Promise<void> {
@@ -122,10 +129,10 @@ test('the pointer can walk from each top bar trigger into its hover menu', async
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 
-	for (const { name, trigger, menu } of MENUS) {
+	for (const { name, menu, button } of MENUS) {
 		await page.mouse.move(4, 790);
 		await expect(page.locator(menu)).toHaveCount(0);
-		const t = await page.locator(`${trigger} > button`).first().boundingBox();
+		const t = await page.locator(button).first().boundingBox();
 		if (t === null) throw new Error(`${name}: trigger not rendered`);
 		const x = t.x + t.width / 2;
 		await page.mouse.move(x, t.y + t.height / 2);

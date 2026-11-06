@@ -148,6 +148,7 @@ def test_stale_cache_key_is_purged_fail_closed(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(300)  # three isolated mypy runs of the owned tree; subprocess timeout is 300s
 def test_warm_cache_still_finds_a_new_error(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     previous_cache = os.environ.get("MDT_MYPY_CACHE_DIR")

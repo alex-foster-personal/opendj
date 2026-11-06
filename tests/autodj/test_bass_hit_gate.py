@@ -87,6 +87,27 @@ def test_the_bass_entry_is_the_first_bar_of_a_steady_bassline_not_one_loud_bar()
     assert incoming_bass_entry(replace(late, bar_bass=gone), 20) is None
 
 
+@pytest.mark.requirement("AGENT-37")
+@pytest.mark.requirement("AGENT-9355")
+def test_a_long_silent_run_then_bass_enters_on_the_first_bass_bars() -> None:
+    """[if] bar_bass is 120 silent bars then 8 full ones [then] the entry is bar 121, [else stop]."""
+    late = profile(
+        "trk-in",
+        arrangement=((INTRO, 120, 0.4, 0.0, False), (CHORUS, 8, 1.0, 1.0, False)),
+    )
+    assert incoming_bass_entry(late, 1) == 121
+
+
+@pytest.mark.requirement("AGENT-37")
+@pytest.mark.requirement("AGENT-9355")
+def test_an_all_zero_bass_series_has_no_entry() -> None:
+    """[if] bar_bass is all zeros [then] incoming_bass_entry returns None, [else stop]."""
+    silent = profile("trk-in", arrangement=((INTRO, 64, 0.4, 0.0, False),))
+    assert incoming_bass_entry(silent, 1) is None
+    refused = place_hit(STYLES["bass_swap_blend"], _out_window(), silent, 1, 16)
+    assert refused.refused is not None and "never lands" in refused.refused
+
+
 # ----- D11: every style gives way only after the hit ---------------------------------------------------------------
 
 

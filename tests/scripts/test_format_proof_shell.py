@@ -138,7 +138,7 @@ def test_prove_fails_a_changed_shebang(repo: Path) -> None:
 def test_prove_is_unknown_when_shfmt_is_missing(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     base, head = _reformat(repo, {"a.sh": BEFORE}, {"a.sh": AFTER})
     real_which = shutil.which
-    monkeypatch.setattr(format_proof_shell.shutil, "which", lambda name: None if name == "shfmt" else real_which(name))
+    monkeypatch.setattr(format_proof_shell.shutil, "which", lambda name, **kw: None if name == "shfmt" else real_which(name, **kw))
     monkeypatch.setattr(CFG, "INSTALL_DIR", tmp_path / "no-shfmt-here")
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 2, result.lines
@@ -204,6 +204,7 @@ def test_prove_is_unknown_naming_the_path_when_a_head_blob_cannot_be_read(
 
 def test_prove_is_unknown_naming_bash_when_bash_is_not_on_path(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     base, head = _reformat(repo, {"a.sh": BEFORE}, {"a.sh": AFTER})
+    monkeypatch.setattr(format_proof_shell, "resolve_posix_bash", lambda: None)
     real_which = shutil.which
     monkeypatch.setattr(
         format_proof_shell.shutil, "which", lambda name: None if name in ("bash", "sh") else real_which(name)
@@ -211,3 +212,17 @@ def test_prove_is_unknown_naming_bash_when_bash_is_not_on_path(repo: Path, monke
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 2, result.lines
     assert "[format-proof] UNKNOWN a.sh: bash is not on PATH, so its -n syntax check cannot run" in result.lines
+
+
+def test_bash_syntax_interpreter_is_posix_bash_not_which(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(format_proof_shell, "resolve_posix_bash", lambda: "/resolved/git/usr/bin/bash")
+    monkeypatch.setattr(
+        format_proof_shell.shutil, "which", lambda name: "/windows/system32/bash" if name == "bash" else None
+    )
+    assert format_proof_shell._resolve_syntax_shell("bash") == "/resolved/git/usr/bin/bash"
+
+
+def test_posix_shebang_syntax_interpreter_is_which_sh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(format_proof_shell, "resolve_posix_bash", lambda: "/resolved/git/usr/bin/bash")
+    monkeypatch.setattr(format_proof_shell.shutil, "which", lambda name: "/bin/sh" if name == "sh" else None)
+    assert format_proof_shell._resolve_syntax_shell("sh") == "/bin/sh"

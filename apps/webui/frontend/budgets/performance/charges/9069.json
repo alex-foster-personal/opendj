@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 403871,
+  "measured_with_pr": 404301,
+  "sha": "b3db42f813",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9069 applies one tooltip standard (UX-9069, issue #927): the deck controls (DeckHeader, JogDial, TransportCluster, HeadphoneCluster) move to the shared ControlExplainer tooltip contract on the performance surface. Measured: CI bundle check of b3db42f813, +430 B gzip; ceiled to KiB",
+  "payback": "none planned; the standard replaces per-control native titles and is the intended shape"
+}

@@ -23,13 +23,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BufferedReader
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.cloud import stem_cache_budget, stem_hydration, stem_index
+from apps.cloud.eviction import HydrationError
 from apps.cloud.hub_stem_client import (
     STEM_BUNDLE_PRESIGN_PATH,
     STEM_BUNDLE_SIZE_PATH,
@@ -47,6 +48,7 @@ from apps.cloud.stem_source import (
     hub_transport_failure_kind,
 )
 from apps.shared.shared_read_open import open_read_shared
+from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -80,7 +82,18 @@ log = logging.getLogger(__name__)
 #: decided it wants stem bytes for THIS track, so waiting here (bounded) is
 #: the right tradeoff -- see PR body "which request waits on what".
 STEM_PART_HYDRATE_WAIT_S: float = 30.0
+#: Longest a state read retries while hydrates on its lock stripe keep
+#: replacing bundles (each replacement is a rename plus a verify, not a
+#: download). Reached only if the stripe never settles; then, with no fetch of
+#: this track running, the first read stands.
+STEM_STATE_SETTLE_S: float = 2.0
+#: Pause between those retries.
+STEM_STATE_SETTLE_RETRY_S: float = 0.005
 
+#: A path that is gone, replaced by a file, or not ours to read right now:
+#: during a publish or a fetch's cleanup all three are transient states of the
+#: same directory (Windows reports a directory mid-rename as PermissionError).
+_PATH_UNREADABLE = (FileNotFoundError, NotADirectoryError, PermissionError)
 _HYDRATE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stem-hydrate")
 _INFLIGHT_LOCK = threading.Lock()
 _INFLIGHT: dict[str, Future] = {}
@@ -712,6 +725,13 @@ def _raise_stem_index_corrupt(exc: stem_index.StemIndexError, data_dir: Path) ->
     ) from exc
 
 
+def _tmp_dir_matches_hydrate_attempt(
+    tmp_name: str, prefix: str, suffixes: frozenset[str]
+) -> bool:
+    """Whether ``tmp_name`` is a temp dir for one of the listed owner suffixes."""
+    return any(tmp_name.startswith(f"{prefix}{sfx}") for sfx in suffixes)
+
+
 def _raise_index_refresh_failed(reason: str) -> None:
     """Fail loud when a cold-cache single-flight refresh from R2 failed: the
     caller cannot tell 'nothing published yet' from 'refresh error' unless
@@ -723,29 +743,93 @@ def _raise_index_refresh_failed(reason: str) -> None:
     )
 
 
-def _hydration_progress(stable_id: str, stems_dir: Path) -> StemHydrationProgressOut:
+def _hydration_progress(
+    stable_id: str,
+    stems_dir: Path,
+    *,
+    data_dir: Path | None,
+    attempt_suffixes: frozenset[str] | None = None,
+) -> StemHydrationProgressOut:
     """Files and bytes the in-flight fetch has written so far.
 
     Read from the fetch's own temp directory (``<stable_id>.tmp-hydrate-*``),
     so it costs a directory listing and never touches the network or the
     fetch itself. A file still being written counts as done with the bytes it
     has, which is why this is progress and not a completion check.
+
+    Directories that share the in-flight prefix but not a live attempt's
+    suffix (leftover kills, offload restore staging) are ignored so
+    ``files_done`` stays aligned with ``files_total``.
     """
     files_done = 0
     bytes_done = 0
+    with _INFLIGHT_LOCK:
+        route_future = _INFLIGHT.get(stable_id)
+        # A total is this route's fetch's size only while that fetch runs; a
+        # finished fetch's total would size a later fetch of a changed bundle.
+        route_total = (
+            _INFLIGHT_FILE_TOTALS.get(stable_id, 0)
+            if route_future is not None and not route_future.done()
+            else 0
+        )
+    if data_dir is None:
+        return StemHydrationProgressOut(
+            files_total=route_total, files_done=0, bytes_done=0
+        )
+    suffixes = attempt_suffixes
+    if suffixes is None:
+        suffixes = stem_hydration.hydrate_owner_attempt_suffixes(data_dir, stable_id)
     prefix = f"{stable_id}{stem_hydration.IN_FLIGHT_MARKER}"
     if stems_dir.is_dir():
         for tmp_dir in stems_dir.iterdir():
-            if not tmp_dir.name.startswith(prefix) or not tmp_dir.is_dir():
+            if not tmp_dir.is_dir():
+                continue
+            if not _tmp_dir_matches_hydrate_attempt(tmp_dir.name, prefix, suffixes):
                 continue
             dir_files, dir_bytes = _written_so_far(tmp_dir)
             files_done += dir_files
             bytes_done += dir_bytes
-    with _INFLIGHT_LOCK:
-        files_total = _INFLIGHT_FILE_TOTALS.get(stable_id, 0)
     return StemHydrationProgressOut(
-        files_total=files_total, files_done=files_done, bytes_done=bytes_done
+        files_total=route_total, files_done=files_done, bytes_done=bytes_done
     )
+
+
+def _state_progress(
+    stable_id: str,
+    stems_dir: Path,
+    data_dir: Path | str | None,
+    *,
+    attempt_suffixes: frozenset[str] | None = None,
+) -> StemHydrationProgressOut | None:
+    """Progress for a ``fetching`` state, whichever process is fetching.
+
+    This route records its own fetch's file total at enqueue. A fetch by bulk
+    hydrate or a job runner has no entry there, so its total comes from the
+    same cached index that fetch reads; with no readable total the progress is
+    omitted rather than shown as ``n/0``.
+    """
+    shared = Path(data_dir) if data_dir is not None else None
+    progress = _hydration_progress(
+        stable_id,
+        stems_dir,
+        data_dir=shared,
+        attempt_suffixes=attempt_suffixes,
+    )
+    if progress.files_total:
+        return progress
+    total = _indexed_file_total(stable_id, data_dir)
+    if total is None:
+        return None
+    return StemHydrationProgressOut(
+        files_total=total, files_done=progress.files_done, bytes_done=progress.bytes_done
+    )
+
+
+def _indexed_file_total(stable_id: str, data_dir: Path | str | None) -> int | None:
+    if data_dir is None:
+        return None
+    entry = stem_index.load_cached_index(Path(data_dir)).get(stable_id)
+    return len(entry) if entry else None
 
 
 def _written_so_far(tmp_dir: Path) -> tuple[int, int]:
@@ -759,16 +843,14 @@ def _written_so_far(tmp_dir: Path) -> tuple[int, int]:
     """
     files_done = 0
     bytes_done = 0
-    # PermissionError: Windows refuses access to a directory mid-rename or
-    # mid-delete instead of reporting it gone.
     try:
         children = list(tmp_dir.iterdir())
-    except (FileNotFoundError, NotADirectoryError, PermissionError):
+    except _PATH_UNREADABLE:
         return 0, 0
     for child in children:
         try:
             child_stat = child.stat()
-        except (FileNotFoundError, PermissionError):
+        except _PATH_UNREADABLE:
             continue
         if stat.S_ISREG(child_stat.st_mode):
             files_done += 1
@@ -823,19 +905,183 @@ def _index_proves_absent(stable_id: str, data_dir: Path | str | None) -> bool:
         return False
 
 
-def _local_bundle_read(stable_id: str, stems_dir: Path, request: Request) -> str | None:
-    """Read the bundle on this machine: ``"local"`` when it loads, the reason
-    when it is invalid and no fetch is replacing it, else ``None``.
-
-    An invalid bundle a fetch is replacing reads as that fetch, not an error.
-    """
+def _read_bundle(stable_id: str, stems_dir: Path, request: Request) -> str | None:
+    """``"local"`` when the bundle loads, the reason when it is invalid, else ``None``."""
     try:
         load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
     except StemBundleNotFoundError:
         return None
     except StemArtifactError as exc:
-        return None if _hydration_in_flight(stable_id) else str(exc)
+        return str(exc)
     return "local"
+
+
+def _local_bundle_read(stable_id: str, stems_dir: Path, request: Request) -> str | None:
+    """Read the bundle on this machine: ``"local"``, ``"fetching"``, the
+    reason it is invalid, or ``None`` when there is none.
+
+    After a read that loads, the first question for every other outcome is
+    whether THIS track has a fetch running or queued: this route's, or any
+    live process's owner marker, which a hydrate publishes before it waits for
+    any lock. If so the read is ``"fetching"``, whatever the bundle looked
+    like. Otherwise a failed read that could be stale, an invalid bundle or a
+    missing one with a fetch error recorded, is decided again:
+
+    * The bundle is read again and the answer is kept only if no
+      hydrate on its lock stripe replaced a bundle meanwhile: the stripe's
+      publish generation (a seqlock, see
+      :func:`stem_hydration.hydrate_generation_path`) was even and unchanged
+      across the read. An odd generation with the stripe's locks free means a
+      publisher died mid-publish, so the read is made under the locks.
+
+    A clean miss is decided the same way: a hydrate can start, land the bundle
+    and finish inside the first read, leaving the owner check with nothing to
+    see, so the miss is only trusted once the generation has held still.
+    """
+    first = _read_bundle(stable_id, stems_dir, request)
+    if first == "local":
+        # A hydrate never replaces a bundle that loads (it answers
+        # already_local, or keeps the winner), so this cannot be stale.
+        return first
+    shared_dir = _shared_hydration_dir(stable_id, request)
+    if _this_track_fetching(stable_id, shared_dir):
+        return "fetching"
+    if shared_dir is None:
+        return first
+    return _settled_failed_read(stable_id, stems_dir, request, shared_dir, first)
+
+
+def _shared_hydration_dir(stable_id: str, request: Request) -> Path | None:
+    """The data directory every hydrator of this machine shares, or ``None``
+    when not armed (nothing to coordinate with) or for an id that names no
+    bundle path (the caller's read is then the loader's own error)."""
+    data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
+    if data_dir is None or not is_safe_stable_id_segment(stable_id):
+        return None
+    return Path(data_dir)
+
+
+def _settled_failed_read(
+    stable_id: str, stems_dir: Path, request: Request, shared_dir: Path, first: str | None
+) -> str | None:
+    """Re-read until no publish on the stripe overlaps the read (the answer),
+    or this track starts fetching (``"fetching"``).
+
+    If the stripe never settles within :data:`STEM_STATE_SETTLE_S` and no
+    fetch of this track is running, the publishes are another track's, so
+    ``first`` stands (``None`` lets a recorded fetch error answer).
+    """
+    deadline = time.monotonic() + STEM_STATE_SETTLE_S
+    while not _this_track_fetching(stable_id, shared_dir):
+        settled = _read_settled_bundle(stable_id, stems_dir, request, shared_dir)
+        if not isinstance(settled, _Unsettled):
+            # A hydrate of this track may have started during that read: its
+            # marker comes first, the generation moves only when it publishes.
+            if settled != "local" and _this_track_fetching(stable_id, shared_dir):
+                return "fetching"
+            return settled
+        if time.monotonic() >= deadline:
+            # A hydrate of this track may have started during that last read.
+            return "fetching" if _this_track_fetching(stable_id, shared_dir) else first
+        time.sleep(STEM_STATE_SETTLE_RETRY_S)
+    return "fetching"
+
+
+class _Unsettled:
+    """A read that a publish on the stripe overlapped: not an answer."""
+
+
+_UNSETTLED: Final = _Unsettled()
+
+
+def _read_settled_bundle(
+    stable_id: str, stems_dir: Path, request: Request, data_dir: Path
+) -> str | _Unsettled | None:
+    """One seqlock-checked read, or :data:`_UNSETTLED` (also when the
+    generation cannot be read, so the caller retries until its deadline)."""
+    try:
+        return _read_against_generation(stable_id, stems_dir, request, data_dir)
+    except HydrationError:
+        return _UNSETTLED
+
+
+def _read_against_generation(
+    stable_id: str, stems_dir: Path, request: Request, data_dir: Path
+) -> str | _Unsettled | None:
+    before = stem_hydration.read_hydrate_generation(data_dir, stable_id)
+    if before % 2 == 0:
+        result = _read_bundle(stable_id, stems_dir, request)
+        if stem_hydration.read_hydrate_generation(data_dir, stable_id) == before:
+            return result
+        return _UNSETTLED
+    with stem_hydration.hydrate_locks_within(data_dir, stable_id, 0) as held:
+        if held:
+            return _read_bundle(stable_id, stems_dir, request)
+    return _UNSETTLED
+
+
+def _this_track_fetching(stable_id: str, shared_dir: Path | None) -> bool:
+    """This route's fetch is in flight, or a live process owns a fetch of it."""
+    if _hydration_in_flight(stable_id):
+        return True
+    return shared_dir is not None and stem_hydration.hydrate_owner_alive(shared_dir, stable_id)
+
+
+def _fetching_progress_suffixes(stable_id: str, request: Request) -> frozenset[str]:
+    """Suffixes (``pid-token``) binding temp-dir progress to live hydrate attempts.
+
+    One owner-marker scan lists every marker not provably dead, including this
+    route's own in-flight fetch (the marker is written before the lock wait).
+    Uses the same data-directory guard as :func:`_shared_hydration_dir`.
+    """
+    shared_dir = _shared_hydration_dir(stable_id, request)
+    if shared_dir is None:
+        return frozenset()
+    _owner_alive, not_dead = stem_hydration.hydrate_owner_snapshot(shared_dir, stable_id)
+    del _owner_alive
+    return not_dead
+
+
+def _checked_after_local_read(
+    stable_id: str, stems_dir: Path, request: Request, local: str | None
+) -> tuple[str | None, bool, frozenset[str] | None]:
+    """Returns the local read, whether this track is fetching, and progress suffixes.
+
+    The owner is checked again after the local read: a bulk or runner hydrate
+    can publish its owner marker after that read's own check, and a clean miss
+    must not be reported as cloud while that fetch is already running. A read
+    that saw a fetch is read again, since that fetch may have finished. Any
+    other answer was already settled by :func:`_local_bundle_read`, so it is
+    not read again: a second full read would repeat its validations on every
+    poll.
+
+    When the outcome is ``fetching``, the third element lists owner-marker
+    suffixes for progress temp-dir matching (one owners-dir scan per read,
+    shared with :func:`_stem_state`). :func:`_this_track_fetching` stays the
+    bool helper for settle loops; this path must not call it and then scan
+    owners again for the same answer.
+    """
+    if local == "local":
+        return local, False, None
+    shared_dir = _shared_hydration_dir(stable_id, request)
+
+    def _snapshot_suffixes() -> frozenset[str]:
+        if shared_dir is None:
+            return frozenset()
+        return stem_hydration.hydrate_owner_snapshot(shared_dir, stable_id)[1]
+
+    if _hydration_in_flight(stable_id):
+        return "fetching", True, _snapshot_suffixes()
+    if shared_dir is not None:
+        owner_alive, sfx = stem_hydration.hydrate_owner_snapshot(shared_dir, stable_id)
+        if owner_alive:
+            return "fetching", True, sfx
+    if local != "fetching":
+        return local, False, None
+    local = _local_bundle_read(stable_id, stems_dir, request)
+    if local != "fetching":
+        return local, False, None
+    return "fetching", True, _snapshot_suffixes()
 
 
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:
@@ -866,17 +1112,29 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:
             deck_open=deck_open,
         )
 
-    local = _local_bundle_read(stable_id, stems_dir, request)
+    local, owner_fetching, progress_suffixes = _checked_after_local_read(
+        stable_id, stems_dir, request, _local_bundle_read(stable_id, stems_dir, request)
+    )
     if local == "local":
         return _out("local", "stem bundle is on this machine")
-    if local is not None:
+    if local is not None and local != "fetching":
         return _out("error", local, error_code="STEM_ARTIFACT_INVALID")
 
-    if _hydration_in_flight(stable_id):
+    if local == "fetching" or owner_fetching:
+        try:
+            progress = _state_progress(
+                stable_id,
+                stems_dir,
+                data_dir,
+                attempt_suffixes=progress_suffixes,
+            )
+        except stem_index.StemIndexError as exc:
+            # A corrupt index is named, never read as a fetch with no progress.
+            _raise_stem_index_corrupt(exc, Path(data_dir))
         return _out(
             "fetching",
             "fetching the stem bundle from the cloud",
-            progress=_hydration_progress(stable_id, stems_dir),
+            progress=progress,
         )
     recorded = _recorded_hydration_error(stable_id)
     if recorded is not None:
@@ -984,12 +1242,19 @@ def _stem_manifest_response(stable_id: str, request: Request) -> StemManifestOut
             _raise_hydrate_error(recorded_error)
         future = _enqueue_hydration(stable_id, request)
         if future is not None:
+            shared = _shared_hydration_dir(stable_id, request)
+            sfx = _fetching_progress_suffixes(stable_id, request)
             return StemUnavailableOut(
                 stable_id=stable_id,
                 code="STEM_BUNDLE_HYDRATING",
                 message="bundle not local yet; fetching from R2",
                 hydrating=True,
-                progress=_hydration_progress(stable_id, _stems_dir(request)),
+                progress=_hydration_progress(
+                    stable_id,
+                    _stems_dir(request),
+                    data_dir=shared,
+                    attempt_suffixes=sfx,
+                ),
             )
         return _unavailable_out(stable_id, exc)
     except StemArtifactError as exc:

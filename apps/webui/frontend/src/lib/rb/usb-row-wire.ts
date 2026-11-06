@@ -17,6 +17,7 @@
  * is deliberately NOT `usb-`, so a track-id check can never match a pane id.
  */
 import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte';
+import { normalizeRating } from '$lib/rating';
 import type { PlaylistNode } from './library-types';
 
 // ------------------------------------------------------------- wire types
@@ -150,7 +151,7 @@ export function rowFromUsbTrack(
 		artist: track.artist,
 		key: track.key,
 		bpm: track.bpm,
-		rating: track.rating,
+		rating: normalizeRating(track.rating) ?? 0,
 		energy: null,
 		energy_source: null,
 		energy_reason: 'stick track: energy is not read from a rekordbox export',
@@ -404,8 +405,11 @@ function _ids(o: Record<string, unknown>, where: string): string[] {
 function _track(raw: unknown, i: number): UsbTrackWire {
 	const where = `tracks[${i}]`;
 	const o = _obj(raw, where);
-	const rating = _num(o, 'rating', where);
-	if (!Number.isInteger(rating) || rating < 0 || rating > 5) _fail(`${where}.rating ${rating} is not 0-5`);
+	const rawRating = _num(o, 'rating', where);
+	const rating = normalizeRating(rawRating);
+	if (rating === null || !Number.isInteger(rating) || rating < 0 || rating > 5) {
+		_fail(`${where}.rating ${rawRating} is not 0-5`);
+	}
 	const playCount = _num(o, 'play_count', where);
 	if (!Number.isInteger(playCount) || playCount < 0) _fail(`${where}.play_count ${playCount} is not a count`);
 	return {

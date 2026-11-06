@@ -41,7 +41,7 @@ def state_conn(tmp_path: Path) -> sqlite3.Connection:
         """INSERT INTO tracks
            (stable_id, stable_id_tier, title, artists_json, album, isrc,
             duration_ms, file_path, content_hash, created_at, updated_at)
-           VALUES ('s1', 'isrc', 'Hello', ?, 'A', 'USABC2500001', 200000,
+           VALUES ('s1', 'isrc', 'Title', ?, 'A', 'USABC2500001', 200000,
                    '/x.mp3', NULL, '2026-01-01', '2026-01-01')""",
         (json.dumps(["Artist A"]),),
     )
@@ -109,7 +109,7 @@ def test_ensure_aux_tables_idempotent(state_conn: sqlite3.Connection) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
-    src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    src = _mk_src(sid="t1", isrc="USABC2500001", title="Title")
     tgt = _mk_local("s1", "USABC2500001")
     result = MatchResult(
         pairs=[
@@ -154,7 +154,7 @@ def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
-    src_matched = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    src_matched = _mk_src(sid="t1", isrc="USABC2500001", title="Title")
     src_unmatched = _mk_src(sid="t2", isrc="ZZZZZ", title="Mystery")
     tgt = _mk_local("s1", "USABC2500001")
 
@@ -205,7 +205,7 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_snapshot_short_circuit(state_conn: sqlite3.Connection) -> None:
-    src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    src = _mk_src(sid="t1", isrc="USABC2500001", title="Title")
     tgt = _mk_local("s1", "USABC2500001")
     result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
     playlist = _mk_playlist(pid="pl123", snapshot="snap-1", tracks=(src,))
@@ -226,7 +226,7 @@ def test_concurrent_same_snapshot_has_one_writer_and_one_short_circuit(
     """[if] two imports share a snapshot [then] only one rewrites state."""
     from apps.spotify import state_writer
 
-    src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    src = _mk_src(sid="t1", isrc="USABC2500001", title="Title")
     tgt = _mk_local("s1", "USABC2500001")
     result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
     playlist = _mk_playlist(pid="race", snapshot="snap-race", tracks=(src,))
@@ -281,7 +281,7 @@ def test_concurrent_same_snapshot_has_one_writer_and_one_short_circuit(
 
 @pytest.mark.requirement("CAT-01")
 def test_force_overrides_snapshot_short_circuit(state_conn: sqlite3.Connection) -> None:
-    src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    src = _mk_src(sid="t1", isrc="USABC2500001", title="Title")
     tgt = _mk_local("s1", "USABC2500001")
     result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
     playlist = _mk_playlist(pid="pl123", snapshot="snap-1", tracks=(src,))

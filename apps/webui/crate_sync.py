@@ -949,45 +949,6 @@ def reconcile_library_manifest(
     )
 
 
-def remote_audit(*, dest_host: str, crate_root: Path) -> dict[str, object]:
-    command = f"cd {shlex.quote(str(REMOTE_REPO))} && exec " + shlex.join(
-        [
-            "uv",
-            "run",
-            "--no-sync",
-            "python",
-            "-m",
-            "apps.webui.crate_sync",
-            "--audit",
-            "--remote",
-            "--json",
-            "--crate-root",
-            str(crate_root),
-        ]
-    )
-    result = subprocess.run(
-        ssh_agentbox_argv(command, ssh_host=dest_host),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or f"exit {result.returncode}"
-        )
-        raise RuntimeError(f"replica audit failed: {detail}")
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"replica audit returned invalid JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise TypeError("replica audit JSON must be an object")
-    assert_audit_ok(payload, label="replica")
-    return payload
-
-
 def remote_reconcile(*, dest_host: str, crate_root: Path) -> dict[str, object]:
     command = f"cd {shlex.quote(str(REMOTE_REPO))} && exec " + shlex.join(
         [

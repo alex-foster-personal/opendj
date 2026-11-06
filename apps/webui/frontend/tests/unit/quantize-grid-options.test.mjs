@@ -82,7 +82,7 @@ test('JogDial reuses the shared ControlExplainer, offers 1/4/8 and phase as real
 	assert.match(JOG_DIAL, /import ControlExplainer from '\.\/ControlExplainer\.svelte';/);
 	assert.match(
 		JOG_DIAL,
-		/<ControlExplainer title=\{qTitle\} bullets=\{qGridBullets\}>/,
+		/<ControlExplainer title=\{qTitle\} bullets=\{qGridBullets\} tooltip=\{TOOLTIP_ISOLATED\}>/,
 		'must reuse the shared explainer, not add a second one'
 	);
 	assert.match(JOG_DIAL, /\{#snippet action\(\)\}/);

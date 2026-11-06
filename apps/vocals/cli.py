@@ -376,7 +376,10 @@ def load_state_tracks(
     """
     state = _open_ro(ctx.state_db, "STATE_DB")
     try:
-        select = "SELECT stable_id, COALESCE(title, '') FROM tracks WHERE deleted_at IS NULL"
+        select = (
+            "SELECT stable_id, COALESCE(title, ''), duration_ms "
+            "FROM tracks WHERE deleted_at IS NULL"
+        )
         if stable_ids is None:
             rows = state.execute(select).fetchall()
         else:
@@ -386,7 +389,7 @@ def load_state_tracks(
                 rows.extend(
                     state.execute(f"{select} AND stable_id IN ({marks})", chunk).fetchall()
                 )
-        ids = [str(sid) for sid, _title in rows]
+        ids = [str(sid) for sid, _title, _duration_ms in rows]
         audio = state_locations.bulk_local_audio_paths(
             state, ids, path_map=load_path_map(ctx.data_dir)
         )
@@ -397,13 +400,13 @@ def load_state_tracks(
             stable_id=str(sid),
             vendor_id="",
             title=str(title),
-            length_s=0,
+            length_s=int(duration_ms) // 1000 if duration_ms else 0,
             folder_path=None,
             analysis_data_path=None,
             audio_path=audio.get(str(sid)),
             audio_on_disk=audio.get(str(sid)) is not None,
         )
-        for sid, title in rows
+        for sid, title, duration_ms in rows
     ]
     tracks.sort(key=lambda t: t.stable_id)
     return tracks
@@ -541,7 +544,12 @@ def order_todo(
     first (fast wins early), then stable_id for determinism."""
     return sorted(
         todo,
-        key=lambda t: (-rank.get(t.stable_id, (0, ""))[0], t.length_s, t.stable_id),
+        key=lambda t: (
+            -rank.get(t.stable_id, (0, ""))[0],
+            t.length_s == 0,
+            t.length_s,
+            t.stable_id,
+        ),
     )
 
 

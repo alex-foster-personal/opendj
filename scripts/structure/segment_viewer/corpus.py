@@ -29,6 +29,7 @@ import json
 import statistics
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -140,17 +141,7 @@ class Corpus:
 
     def segments(self, stable_id: str) -> dict[str, Any]:
         """The track document, memoized until its All-In-One output or peaks change."""
-        self.track(stable_id)
-        with self._lock:
-            track_lock = self._track_locks.setdefault(stable_id, threading.Lock())
-        with track_lock:  # one decode per track, however many requests race for it
-            doc = self._cached(stable_id)
-            if doc is not None:
-                return doc
-            doc = track_segments(self, stable_id)
-            with self._lock:
-                self._cache[stable_id] = (self._stamp(stable_id), doc)
-        return doc
+        return _memoized_segments(self, stable_id, track_segments)
 
     def listing(self) -> list[dict[str, Any]]:
         """Every track with its All-In-One status and, once computed, its agreement."""
@@ -243,6 +234,25 @@ def _lane_ok(
 
 def _lane_off(status: str, reason: str) -> dict[str, Any]:
     return {"status": status, "reason": reason, "sections": [], "moments": []}
+
+
+def _memoized_segments(
+    owner: Any,
+    stable_id: str,
+    build: Callable[[Any, str], dict[str, Any]],
+) -> dict[str, Any]:
+    """Memoize ``build`` under a per-track lock until All-In-One output or peaks change."""
+    owner.track(stable_id)
+    with owner._lock:
+        track_lock = owner._track_locks.setdefault(stable_id, threading.Lock())
+    with track_lock:  # one decode per track, however many requests race for it
+        doc = owner._cached(stable_id)
+        if doc is not None:
+            return doc
+        doc = build(owner, stable_id)
+        with owner._lock:
+            owner._cache[stable_id] = (owner._stamp(stable_id), doc)
+    return doc
 
 
 def agreement(

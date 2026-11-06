@@ -34,5 +34,9 @@ test('the "(from N bpm)" line keeps the analyzed original', () => {
 });
 
 test('the large BPM explains itself on hover', () => {
-	assert.match(header, /class="bpm"[\s\S]{0,200}title=\{bpmTitle\}/);
+	assert.match(
+		header,
+		/class="bpm"[\s\S]{0,200}aria-label=\{bpmTitle\}/,
+		'issue #927: no native title inside ControlExplainer; the readout carries bpmTitle via aria-label'
+	);
 });

@@ -12,7 +12,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,7 @@ from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_rekordbox_s
 from apps.shared.state.db import open_ro
 from apps.sync.analysis_writeback_diff import (
     WritebackPlan,
+    WritebackRow,
     _open_rb_ro,
     plan_writeback,
     render_plan,
@@ -287,21 +288,12 @@ def validate_writeback_plan(plan: WritebackPlan) -> None:
     require_writeback_plan("apply_analysis", writable_plan_hash(plan))
 
 
-def live_writeback(
-    *,
-    plan: WritebackPlan,
-    state_db: Path,
-    rb_db_path: Path,
-    rb_conn: sqlite3.Connection,
-    fields: tuple[str, ...],
-    flag_ok: bool,
-) -> int:
+def _live_writable_rows(plan: WritebackPlan, fields: tuple[str, ...]) -> list[WritebackRow]:
     from apps.sync.analysis_fields import (
         SUPPORTED_RB_WRITE_FIELDS as _SUPPORTED_RB_WRITE_FIELDS,
     )
-    from apps.sync.analysis_fields import UnsupportedRbFieldError
 
-    writable_rows = [
+    return [
         row
         for row in plan.rows
         if row.bucket == "writable"
@@ -309,6 +301,13 @@ def live_writeback(
         and row.field in _SUPPORTED_RB_WRITE_FIELDS
         and row.rb_content_id is not None
     ]
+
+
+def _refuse_unsupported_rb_fields(plan: WritebackPlan) -> None:
+    from apps.sync.analysis_fields import (
+        SUPPORTED_RB_WRITE_FIELDS as _SUPPORTED_RB_WRITE_FIELDS,
+    )
+    from apps.sync.analysis_fields import UnsupportedRbFieldError
 
     unsupported = sorted(
         {row.field for row in plan.rows if row.bucket == "writable" and row.field not in _SUPPORTED_RB_WRITE_FIELDS}
@@ -319,22 +318,22 @@ def live_writeback(
             f"supported: {sorted(_SUPPORTED_RB_WRITE_FIELDS)}."
         )
 
+
+def _warn_dynamic_pqtz(plan: WritebackPlan, fields: tuple[str, ...]) -> None:
     dynamic_pqtz = sum(
         1 for row in plan.rows if row.bucket == "dynamic" and row.field == "pqtz" and row.field in fields
     )
     if dynamic_pqtz:
         print(f"[apply_analysis] refused {dynamic_pqtz} dynamic PQTZ grid(s) (multi-anchor; see #1481)")
 
-    if not writable_rows:
-        print("[apply_analysis] wrote 0 fields")
-        return 0
 
-    from apps.shared.state.db import open_ro
-    from apps.sync.analysis_writeback_pqtz import load_own_beatgrid, write_pqtz_row
+def _plan_live_expected(
+    writable_rows: Sequence[WritebackRow],
+    state_conn: sqlite3.Connection,
+    rb_conn: sqlite3.Connection,
+) -> tuple[dict[str, tuple[str, str, object]], dict[str, list[dict[str, object]]]]:
+    from apps.sync.analysis_writeback_pqtz import load_own_beatgrid
 
-    state_conn = open_ro(state_db)
-    preimages: list[dict[str, Any]] = []
-    written = 0
     expected: dict[str, tuple[str, str, object]] = {}
     pqtz_beats: dict[str, list[dict[str, object]]] = {}
 
@@ -353,6 +352,13 @@ def live_writeback(
         tag = f"{content_id}:{row.field}"
         expected[tag] = (content_id, row.field, own)
 
+    return expected, pqtz_beats
+
+
+def _make_live_verifier(
+    expected: dict[str, tuple[str, str, object]],
+    rb_conn: sqlite3.Connection,
+) -> Callable[[str, object | None], bool]:
     def verifier(tag: str, _unused: object = None) -> bool:
         content_id, fld, val = expected[tag]
         if fld == "pqtz":
@@ -369,6 +375,85 @@ def live_writeback(
             return _verify_pqtz(dat_path, val)
         return verify_scalar(rb_conn, content_id, fld, val)
 
+    return verifier
+
+
+def _write_live_row(
+    row: WritebackRow,
+    sess: LiveWriteSession,
+    rb_conn: sqlite3.Connection,
+    pqtz_beats: dict[str, list[dict[str, object]]],
+    preimages: list[dict[str, Any]],
+    preimage_path: Path,
+) -> int:
+    from apps.sync.analysis_writeback_pqtz import write_pqtz_row
+
+    content_id = str(row.rb_content_id)
+    field = row.field
+    tag = f"{content_id}:{field}"
+
+    if field == "pqtz":
+        beats = pqtz_beats[content_id]
+        preimage: dict[str, Any] = {
+            "field": "pqtz",
+            "content_id": content_id,
+        }
+        with sess.per_track(tag) as w:
+            write_pqtz_row(
+                rb_conn,
+                content_id,
+                beats,
+                preimage=preimage,
+            )
+            w.write((field, beats))
+            if not w.verify_readback():
+                raise SafetyAbort(f"verify_readback failed for {tag}")
+            preimages.append(dict(preimage))
+            w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
+        return 1
+
+    own = _parse_own_value(field, row.own_value)
+    preimage = snapshot_content_field(rb_conn, content_id, field)
+    with sess.per_track(tag) as w:
+        ok = write_scalar(rb_conn, content_id, field, own, preimage)
+        if not ok:
+            raise SafetyAbort(f"write_scalar failed for {tag} field={field!r}")
+        w.write((field, own))
+        if not verify_scalar(rb_conn, content_id, field, own):
+            restore_content_field(rb_conn, preimage)
+            created = preimage.get("created_key_id")
+            if created:
+                _maybe_delete_created_key(rb_conn, str(created))
+        if not w.verify_readback():
+            raise SafetyAbort(f"verify_readback failed for {tag}")
+        preimages.append(dict(preimage))
+        w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
+    return 1
+
+
+def live_writeback(
+    *,
+    plan: WritebackPlan,
+    state_db: Path,
+    rb_db_path: Path,
+    rb_conn: sqlite3.Connection,
+    fields: tuple[str, ...],
+    flag_ok: bool,
+) -> int:
+    writable_rows = _live_writable_rows(plan, fields)
+    _refuse_unsupported_rb_fields(plan)
+    _warn_dynamic_pqtz(plan, fields)
+
+    if not writable_rows:
+        print("[apply_analysis] wrote 0 fields")
+        return 0
+
+    state_conn = open_ro(state_db)
+    preimages: list[dict[str, Any]] = []
+    written = 0
+    expected, pqtz_beats = _plan_live_expected(writable_rows, state_conn, rb_conn)
+    verifier = _make_live_verifier(expected, rb_conn)
+
     with LiveWriteSession(
         target="rekordbox",
         reason="write-back key/loudness/pqtz",
@@ -380,46 +465,7 @@ def live_writeback(
         preimage_path = sess.reverse_script_path.parent / "analysis_preimages.json"
         try:
             for row in writable_rows:
-                content_id = str(row.rb_content_id)
-                field = row.field
-                tag = f"{content_id}:{field}"
-                if field == "pqtz":
-                    beats = pqtz_beats[content_id]
-                    preimage: dict[str, Any] = {
-                        "field": "pqtz",
-                        "content_id": content_id,
-                    }
-                    with sess.per_track(tag) as w:
-                        write_pqtz_row(
-                            rb_conn,
-                            content_id,
-                            beats,
-                            preimage=preimage,
-                        )
-                        w.write((field, beats))
-                        if not w.verify_readback():
-                            raise SafetyAbort(f"verify_readback failed for {tag}")
-                        preimages.append(dict(preimage))
-                        w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
-                        written += 1
-                    continue
-                own = _parse_own_value(field, row.own_value)
-                preimage = snapshot_content_field(rb_conn, content_id, field)
-                with sess.per_track(tag) as w:
-                    ok = write_scalar(rb_conn, content_id, field, own, preimage)
-                    if not ok:
-                        raise SafetyAbort(f"write_scalar failed for {tag} field={field!r}")
-                    w.write((field, own))
-                    if not verify_scalar(rb_conn, content_id, field, own):
-                        restore_content_field(rb_conn, preimage)
-                        created = preimage.get("created_key_id")
-                        if created:
-                            _maybe_delete_created_key(rb_conn, str(created))
-                    if not w.verify_readback():
-                        raise SafetyAbort(f"verify_readback failed for {tag}")
-                    preimages.append(dict(preimage))
-                    w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
-                    written += 1
+                written += _write_live_row(row, sess, rb_conn, pqtz_beats, preimages, preimage_path)
         finally:
             state_conn.close()
         preimage_path.write_text(

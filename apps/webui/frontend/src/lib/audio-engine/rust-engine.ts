@@ -5,8 +5,9 @@
  * with the mode (see `rust-mode.svelte.ts`).
  */
 import { API_BASE } from '$lib/api/base';
-import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/master-election';
+import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/automatic-handoff-runners';
 import { getTrack } from '$lib/api';
+import { normalizeRating } from '$lib/rating';
 import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
@@ -15,6 +16,7 @@ import { createFrameBackstop, notePositionSample } from '$lib/rb/engine-clock-re
 import { noteEngineMasterRms } from '$lib/rb/master-silence-report';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
+import { clearWaveGains, parseWaveGains, setDeckWaveGains } from '$lib/rb/wave-eq-gains.svelte';
 import {
 	installPerformanceHotCueDriver,
 	type PerformanceCommand
@@ -106,8 +108,10 @@ export async function connectRustEngine(): Promise<AudioEngineClient> {
 				commandTimeoutMs: 60_000
 			});
 			await c.connect();
-			// A restarted engine counts frames from zero again.
+			// A restarted engine counts frames from zero again, and its EQ is
+			// not the old one's until its own state says so.
 			link.lastState = null;
+			clearWaveGains();
 			for (const k of DECKS) {
 				if (loadFences[k] !== Infinity) loadFences[k] = -1;
 			}
@@ -246,7 +250,7 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 		typeof track.file_path === 'string' && track.file_path.length > 0 ? track.file_path : null;
 	st.title = track.title ?? null;
 	st.artist = track.artist ?? null;
-	st.rating = track.rating ?? null;
+	st.rating = normalizeRating(track.rating ?? null);
 	st.key = track.key ?? null;
 	// Until the engine's first state message says how long the decoded audio is.
 	st.duration_ms = track.duration_ms ?? null;
@@ -315,6 +319,7 @@ export function releaseLoadFailures(deck: DeckId, path: string | null): void {
 /** Reset what a load publishes. Rust-mode twin of the Web Audio engine's
  * private `_clearLoadedTrackState`, minus its Web Audio runtime. */
 export function clearRustDeck(st: DeckState): void {
+	clearWaveGains(st.deck_id);
 	st.playing = false;
 	st.audible = false;
 	st.transport_pending = false;
@@ -428,6 +433,10 @@ export function mirrorEngineState(s: EngineState): void {
 		const st = deckStates[deck];
 		if (st === undefined || st.stable_id === null) continue;
 		if (s.frame <= (loadFences[deck] ?? -1)) continue;
+		// Every report is validated; a deck the engine says is unloaded paints
+		// unscaled rather than under its last track's EQ.
+		const waveGains = parseWaveGains(d.wave_gains);
+		setDeckWaveGains(deck, d.loaded ? waveGains : null);
 		// A track that plays out stops in the engine, not on a command.
 		if (st.playing && !d.playing && rustMaster.deck === deck) {
 			masterStopped = { deck, stableId: st.stable_id, generation: st.load_generation };

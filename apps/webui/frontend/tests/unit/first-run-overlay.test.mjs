@@ -28,7 +28,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { after, before, beforeEach, test } from 'node:test';
+import { after, afterEach, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { engineHealth, jsonResponse } from './setup-fixtures.mjs';
@@ -79,6 +79,10 @@ after(() => {
 
 beforeEach(() => {
 	globalThis.fetch = originalFetch;
+});
+
+afterEach(() => {
+	if (mod._resetPageGoingAwayForTests) mod._resetPageGoingAwayForTests();
 });
 
 // ------------------------------------------------------------ the decision
@@ -198,6 +202,94 @@ test('a failed status probe shows the library, not the overlay', async () => {
 	};
 	mod.capabilities._resetForTests();
 	assert.equal(await mod.resolveFirstRun(), false);
+});
+
+test('resolveFirstRunWithMeta logs status failure on a live page', async () => {
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/setup/status') throw new TypeError('Failed to fetch');
+		throw new Error(`unexpected ${path}`);
+	};
+	mod.capabilities._resetForTests();
+	try {
+		const result = await mod.resolveFirstRunWithMeta();
+		assert.equal(result.show, false);
+		assert.equal(result.error, null);
+		assert.ok(
+			logged.some((line) => line.includes('[library] first-run check failed')),
+			`expected console.error, got ${JSON.stringify(logged)}`
+		);
+	} finally {
+		console.error = originalError;
+	}
+});
+
+test('resolveFirstRunWithMeta stays quiet when the page is going away', async () => {
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/setup/status') throw new TypeError('Failed to fetch');
+		throw new Error(`unexpected ${path}`);
+	};
+	mod.capabilities._resetForTests();
+	mod.markPageGoingAwayForTests();
+	try {
+		const result = await mod.resolveFirstRunWithMeta();
+		assert.equal(result.show, false);
+		assert.equal(result.error, null);
+		assert.equal(logged.length, 0);
+	} finally {
+		console.error = originalError;
+	}
+});
+
+test('resolveFirstRun logs status failure on a live page', async () => {
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/setup/status') throw new TypeError('Failed to fetch');
+		throw new Error(`unexpected ${path}`);
+	};
+	mod.capabilities._resetForTests();
+	try {
+		assert.equal(await mod.resolveFirstRun(), false);
+		assert.ok(
+			logged.some((line) => line.includes('[library] first-run check failed')),
+			`expected console.error, got ${JSON.stringify(logged)}`
+		);
+	} finally {
+		console.error = originalError;
+	}
+});
+
+test('resolveFirstRun stays quiet when the page is going away', async () => {
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async (request) => {
+		const path = new URL(request.url).pathname;
+		if (path === '/api/v1/health') return jsonResponse(engineHealth());
+		if (path === '/api/v1/setup/status') throw new TypeError('Failed to fetch');
+		throw new Error(`unexpected ${path}`);
+	};
+	mod.capabilities._resetForTests();
+	mod.markPageGoingAwayForTests();
+	try {
+		assert.equal(await mod.resolveFirstRun(), false);
+		assert.equal(logged.length, 0);
+	} finally {
+		console.error = originalError;
+	}
 });
 
 test('resolveFirstRunWithMeta surfaces probe timeout instead of silent false', async () => {

@@ -10,7 +10,16 @@
 // - if a track is requested twice then every reactive read hits the engine
 // - if the request is made before REQUEST_DELAY_MS then it races the deck load
 // - if a failed request produces a warning then no-verdict reads as a bad grid
+// - if a failed request is never asked again then a transient engine miss
+//   stays silent until reload
+// - if a cancelled delay still fetches then a replaced track is judged
+// - if one waiter cancelling drops the other then two decks sharing a track
+//   starve each other
+// - if the deck effect tracks the cache then a pending write loops it and a
+//   failed write retries without another load
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -114,5 +123,85 @@ test('a failed request gives no answer and so no warning', async () => {
 	assert.ok(
 		logged.some((line) => line.includes('[grid-audio-fit] could not judge')),
 		'a failure must be logged, not silent'
+	);
+});
+
+test('after a failed request, the next call for the same id schedules a new request', async () => {
+	const id = 'd'.repeat(40);
+	replies.set(id, new Error('boom'));
+	const realError = console.error;
+	console.error = () => {};
+	try {
+		fit.requestGridAudioFit(id);
+		await wait(fit.REQUEST_DELAY_MS + 100);
+		assert.equal(fit.gridAudioFitFor(id), null);
+		assert.equal(calls.length, 1);
+		replies.set(id, { ...WRONG, stable_id: id });
+		fit.requestGridAudioFit(id);
+		await wait(fit.REQUEST_DELAY_MS + 100);
+	} finally {
+		console.error = realError;
+	}
+	assert.equal(calls.length, 2);
+	assert.deepEqual(fit.gridAudioFitFor(id), { ...WRONG, stable_id: id });
+});
+
+test('a request cancelled before REQUEST_DELAY_MS elapses sends no fetch', async () => {
+	const id = 'e'.repeat(40);
+	replies.set(id, { ...WRONG, stable_id: id });
+	const cancel = fit.requestGridAudioFit(id);
+	cancel();
+	await wait(fit.REQUEST_DELAY_MS + 100);
+	assert.equal(calls.length, 0);
+	fit.requestGridAudioFit(id);
+	await wait(fit.REQUEST_DELAY_MS + 100);
+	assert.equal(calls.length, 1);
+});
+
+test('a done entry is not re-requested', async () => {
+	const id = 'f'.repeat(40);
+	const body = { ...WRONG, stable_id: id };
+	replies.set(id, body);
+	fit.requestGridAudioFit(id);
+	await wait(fit.REQUEST_DELAY_MS + 100);
+	assert.equal(calls.length, 1);
+	assert.deepEqual(fit.gridAudioFitFor(id), body);
+	fit.requestGridAudioFit(id);
+	await wait(fit.REQUEST_DELAY_MS + 100);
+	assert.equal(calls.length, 1);
+});
+
+test('the last waiter cancelling still leaves a remaining waiter fetching', async () => {
+	const id = 'g'.repeat(40);
+	replies.set(id, { ...WRONG, stable_id: id });
+	const a = fit.requestGridAudioFit(id);
+	fit.requestGridAudioFit(id);
+	a();
+	await wait(fit.REQUEST_DELAY_MS + 100);
+	assert.equal(calls.length, 1, 'the remaining waiter still wanted the judgment');
+});
+
+test('SOURCE: the deck grid-fit effect tracks only stable_id and anlz-present', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/deck/DeckHeader.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /import \{[^}]*\buntrack\b[^}]*\} from 'svelte'/);
+	assert.match(source, /const gridFitAnlzPresent = \$derived\(deck\.anlz !== null\);/);
+	const effects = source.match(/\$effect\(\(\) => \{[\s\S]*?\n\t\}\);/g) ?? [];
+	const gridFit = effects.filter((e) => e.includes('requestGridAudioFit'));
+	assert.equal(gridFit.length, 1, 'exactly one effect schedules the grid-fit request');
+	assert.match(
+		gridFit[0],
+		/const id = deck\.stable_id;\s*if \(id === null \|\| !gridFitAnlzPresent\) return;\s*return untrack\(\(\) => requestGridAudioFit\(id\)\);/
+	);
+	assert.equal(
+		source.includes('return requestGridAudioFit(id);'),
+		false,
+		'a tracked requestGridAudioFit call must not sneak back'
+	);
+	assert.match(
+		source,
+		/const gridWarning: string \| null = \$derived\(\s*gridless \? null : deckGridWarningText\(gridShapeWarning, gridAudioFitFor\(deck\.stable_id\)\)/
 	);
 });

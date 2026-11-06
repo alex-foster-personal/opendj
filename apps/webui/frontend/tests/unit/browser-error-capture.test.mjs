@@ -78,6 +78,39 @@ function fire(type, event, capture = false) {
 	}
 }
 
+const ARTWORK_404_MARK = 'artwork-404';
+
+function artworkNotFoundResponse() {
+	return new Response(
+		JSON.stringify({ detail: { code: 'ARTWORK_NOT_FOUND', message: 'no cover' } }),
+		{ status: 404, headers: { 'content-type': 'application/json' } }
+	);
+}
+
+/** GET confirm for marked cover imgs; POST still records client-errors bodies. */
+function fetchWithArtwork404Confirm(posted, eventId = 'e-artwork') {
+	return async (input, init) => {
+		const req = typeof input === 'string' ? new Request(input, init) : input;
+		if (req.method === 'GET' && req.url.includes('/artwork')) {
+			return artworkNotFoundResponse();
+		}
+		posted.push(await req.clone().json());
+		return new Response(JSON.stringify({ event_id: eventId, stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+}
+
+function markedArtworkImg(src) {
+	return {
+		tagName: 'IMG',
+		src,
+		getAttribute: (name) =>
+			name === 'data-expected-resource-error' ? ARTWORK_404_MARK : null
+	};
+}
+
 function readQueueLength() {
 	const raw = store.getItem(QUEUE_KEY);
 	if (raw === null) return 0;
@@ -164,19 +197,9 @@ const UNMARKED_ARTWORK_URL =
 
 test('marked deck artwork img 404 does not POST resource-error (issue #5612)', async () => {
 	const posted = [];
-	globalThis.fetch = async (input) => {
-		posted.push(await input.clone().json());
-		return new Response(JSON.stringify({ event_id: 'e5612', stored: true }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
-	};
+	globalThis.fetch = fetchWithArtwork404Confirm(posted, 'e5612');
 	reporting.installClientErrorReporting();
-	const markedTarget = {
-		tagName: 'IMG',
-		src: ISSUE_5612_ARTWORK_URL,
-		hasAttribute: (name) => name === 'data-expected-resource-error'
-	};
+	const markedTarget = markedArtworkImg(ISSUE_5612_ARTWORK_URL);
 	fire('error', { target: markedTarget, message: 'Failed to load resource' }, true);
 	const unmarkedTarget = {
 		tagName: 'IMG',
@@ -211,21 +234,11 @@ test(
 		// only prove capture-phase reporting skips marked artwork imgs.
 
 		const posted = [];
-		globalThis.fetch = async (input) => {
-			posted.push(await input.clone().json());
-			return new Response(JSON.stringify({ event_id: 'e5613', stored: true }), {
-				status: 200,
-				headers: { 'content-type': 'application/json' }
-			});
-		};
+		globalThis.fetch = fetchWithArtwork404Confirm(posted, 'e5613');
 		reporting.installClientErrorReporting();
 
 		for (const url of ISSUE_5613_ARTWORK_URLS) {
-			const markedTarget = {
-				tagName: 'IMG',
-				src: url,
-				hasAttribute: (name) => name === 'data-expected-resource-error'
-			};
+			const markedTarget = markedArtworkImg(url);
 			fire('error', { target: markedTarget, message: 'Failed to load resource' }, true);
 		}
 

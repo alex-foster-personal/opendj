@@ -118,10 +118,13 @@ The full suite is large; CI runs it, so you rarely need to.
 ### Fixtures you may not have
 
 The Rekordbox and USB-export fixtures live on an external fixture host that most contributors
-do not have. A test that needs one **fails loudly when the host is unavailable**, so a missing
-fixture never reads as a green run. If you knowingly lack the host, set
-`MDT_ALLOW_MISSING_FIXTURES=1` (exactly `1`; any other value keeps the failure) and those
-tests skip instead:
+do not have. With the default host path unmounted and `MUX_FIXTURE_HOST` unset,
+`resolve_required_fixture` **skips** with `UNAVAILABLE` so generic CI lanes do not fail on a
+missing drive. If you set `MUX_FIXTURE_HOST` to a path that does not exist, or the host is
+mounted but the fixture subpath is missing, tests still **fail loudly** so a missing fixture
+never reads as a green run on a host that promised that tree. If you knowingly lack the host
+while using a non-default override, set `MDT_ALLOW_MISSING_FIXTURES=1` (exactly `1`; any other
+value keeps the failure) and those tests skip instead:
 
 ```bash
 MDT_ALLOW_MISSING_FIXTURES=1 uv run pytest tests/<area> -n 4

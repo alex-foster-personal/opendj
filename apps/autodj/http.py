@@ -1,67 +1,181 @@
-"""The composition root for ``apps.autodj`` (ADR-NEW-module-contracts).
+"""The outside surface of ``apps.autodj``: the composition root (ADR-NEW-module-contracts).
 
-Delivery layers call :func:`build_service` and hold the result as the
-contract's :class:`~apps.autodj.contract.service.AutoDjService` Protocol. The
-planner names a delivery layer drives directly (plan, compile, profile, scoring
-and windows) are re-exported here, so no delivery layer reaches a planner module.
+Delivery layers call :func:`build_service` and hold the result as the contract's
+:class:`~apps.autodj.contract.service.AutoDjService` Protocol; the planner names a delivery layer
+drives directly are re-exported here too (the stopgap (private path) owes).
 
-The re-exports are a stopgap, not the pattern: they widen the surface the contract narrows, and
-(private path) owes the move of those operations behind ``AutoDjService``.
+Standard library at import time, because the schema-drift gate imports this module for the
+try-picks DDL entry point and may pull in no third-party package (scripts/quality_gate.py runs it
+with no project dependencies; tests/quality/test_sync_drift_imports.py pins it). Every other name
+lives in :mod:`apps.autodj.composition`, which imports pydantic, and loads from there on first
+access through the module ``__getattr__`` below (the lazy re-export pattern of Scientific Python
+SPEC 1). Type checkers read the ``TYPE_CHECKING`` import instead, so every name keeps its type.
 """
 
 from __future__ import annotations
 
-from apps.autodj import styles
-from apps.autodj.compile import compile_plan, control_command
-from apps.autodj.contract.models import StyleSummary
-from apps.autodj.contract.service import AutoDjService
-from apps.autodj.live import ANCHOR_LEAD_BARS, lead_short, live_bar, with_in_track
-from apps.autodj.plan import (
-    PlanError,
-    TransitionPlan,
-    Validation,
-    first_dispatch_bar,
-    live_child,
-    parse_plan,
-    validate_plan,
-)
-from apps.autodj.profile import ProfileError, TrackProfile, profile_from_payloads
-from apps.autodj.propose import propose_transition
-from apps.autodj.scoring import score_pair, score_windows
-from apps.autodj.windows import ROLES, MixWindow, mix_windows, window_at
+from typing import TYPE_CHECKING
+
+from apps.autodj import try_picks
+
+if TYPE_CHECKING:
+    from apps.autodj.composition import (
+        ANCHOR_LEAD_BARS,
+        RENDER_SAMPLE_RATE,
+        ROLES,
+        ClosedMix,
+        Decision,
+        MirrorError,
+        MixWindow,
+        PairNotFound,
+        PairTransition,
+        PlanError,
+        ProfileError,
+        RenderPlanError,
+        ScoreError,
+        SetPlan,
+        SimplifyError,
+        TrackProfile,
+        TransitionCapture,
+        TransitionPlan,
+        Validation,
+        build_service,
+        check_mirror,
+        choose_for_set,
+        clear_pair_transition,
+        compile_plan,
+        compile_render_plan,
+        control_command,
+        decide,
+        downbeats_of,
+        effective_bars,
+        first_dispatch_bar,
+        get_pair_transition,
+        heard_on_deck,
+        heard_profile,
+        in_bars,
+        last_decision,
+        layout_of,
+        lead_short,
+        live_bar,
+        live_child,
+        live_mapping,
+        looks_like_score,
+        match_live_trim_db,
+        mix_windows,
+        next_transition,
+        on_decks,
+        parse_intent,
+        parse_plan,
+        parse_set,
+        plan_set,
+        print_score,
+        print_set_score,
+        profile_from_payloads,
+        propose_transition,
+        read_set,
+        record_played,
+        render_grid,
+        renders_at_start,
+        save_decision,
+        save_pair_transition,
+        score_document,
+        score_pair,
+        score_windows,
+        set_verdict,
+        simplify,
+        snap_to_downbeat,
+        validate_plan,
+        window_at,
+        with_in_track,
+    )
+
+# The file the schema-drift scan classifies, and this package's DDL entry point beside it.
+TRY_PICKS_SCHEMA_SOURCE = "apps/autodj/try_picks.py"
 
 __all__ = [
     "ANCHOR_LEAD_BARS",
+    "RENDER_SAMPLE_RATE",
     "ROLES",
+    "TRY_PICKS_SCHEMA_SOURCE",
+    "ClosedMix",
+    "Decision",
+    "MirrorError",
     "MixWindow",
+    "PairNotFound",
+    "PairTransition",
     "PlanError",
     "ProfileError",
+    "RenderPlanError",
+    "ScoreError",
+    "SetPlan",
+    "SimplifyError",
     "TrackProfile",
+    "TransitionCapture",
     "TransitionPlan",
     "Validation",
     "build_service",
+    "check_mirror",
+    "choose_for_set",
+    "clear_pair_transition",
     "compile_plan",
+    "compile_render_plan",
     "control_command",
+    "decide",
+    "downbeats_of",
+    "effective_bars",
     "first_dispatch_bar",
+    "get_pair_transition",
+    "heard_on_deck",
+    "heard_profile",
+    "in_bars",
+    "last_decision",
+    "layout_of",
     "lead_short",
     "live_bar",
     "live_child",
+    "live_mapping",
+    "looks_like_score",
+    "match_live_trim_db",
     "mix_windows",
+    "next_transition",
+    "on_decks",
+    "parse_intent",
     "parse_plan",
+    "parse_set",
+    "plan_set",
+    "print_score",
+    "print_set_score",
     "profile_from_payloads",
     "propose_transition",
+    "read_set",
+    "record_played",
+    "render_grid",
+    "renders_at_start",
+    "save_decision",
+    "save_pair_transition",
+    "score_document",
     "score_pair",
     "score_windows",
+    "set_verdict",
+    "simplify",
+    "snap_to_downbeat",
+    "try_picks",
     "validate_plan",
     "window_at",
     "with_in_track",
 ]
 
 
-class _Service:
-    def list_styles(self) -> list[StyleSummary]:
-        return [StyleSummary.model_validate(doc) for doc in styles.list_styles()]
+def __getattr__(name: str) -> object:
+    if name not in __all__:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from apps.autodj import composition
+
+    value = getattr(composition, name)
+    globals()[name] = value
+    return value
 
 
-def build_service() -> AutoDjService:
-    return _Service()
+def __dir__() -> list[str]:
+    return sorted(__all__)

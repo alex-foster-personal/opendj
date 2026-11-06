@@ -15,6 +15,8 @@ outside the ignore, and carry the marker the other file's tests lack.
 Regression line:
   - if this file stops being collected by full-ci.yml's coverage lane then
     GUARD-10 goes back to reporting uncovered there, so broken
+
+  - [if] tsconfig ratchet flags or HARD_ZERO drift [then] fail, [else stop].
 """
 
 from __future__ import annotations

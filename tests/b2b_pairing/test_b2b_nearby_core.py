@@ -10,6 +10,7 @@ same exchange between two real engines.
 - [if] a 4th request a minute from one laptop, or a 2nd while one waits, is held [then] fail
 - [if] a reconnect proof made with another token, or a replayed challenge, is honored [then] fail
 - [if] a tampered sealed answer opens [then] fail
+- [if] a LAN observer seals Accept with their own key [then] the asker stores nothing
 - [if] the answerer gets asks, declines, floods and reconnects [then] only Accept or the paired token pairs, [else stop]
 """
 
@@ -58,26 +59,34 @@ def _request_body(private: X25519PrivateKey | None = None) -> dict[str, Any]:
 
 
 def test_txt_carries_name_accepting_and_tag_and_the_tag_is_only_the_partners() -> None:
-    txt = bn.build_txt("a" * 32, "Peter's MacBook", True, bn.pairing_tag("tok"))
+    pub = b"P" * 32
+    txt = bn.build_txt("a" * 32, "Peter's MacBook", True, bn.pairing_tag("tok"), pub)
     assert " " not in "".join(txt.values()), "if a TXT value holds a space then dns-sd -L splits it"
     assert unquote(txt["name"]) == "Peter's MacBook" and txt["acc"] == "1" and txt["nv"] == "1"
+    assert txt["pk"] == _b64(pub)
     assert txt["pt"] == bn.pairing_tag("tok") != bn.pairing_tag("other token")
-    assert "pt" not in bn.build_txt("a" * 32, "x", False, None) and bn.build_txt("a" * 32, "x", False, None)["acc"] == "0"
+    untagged = bn.build_txt("a" * 32, "x", False, None, pub)
+    assert "pt" not in untagged and untagged["acc"] == "0"
+    assert untagged["pk"] == _b64(pub)
 
 
 def test_sealed_answer_opens_only_untampered_and_only_for_its_request() -> None:
     asker, answerer = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+    peer_public = answerer.public_key().public_bytes_raw()
     sealed = bn.seal_token(answerer, asker.public_key().public_bytes_raw(), "rid-1",
                            {"token": "T", "device_id": "dev", "label": "A"})
-    assert bn.open_token(asker, "rid-1", sealed)["token"] == "T"
+    assert bn.open_token(asker, "rid-1", sealed, peer_public)["token"] == "T"
     with pytest.raises(PairingError, match="tampered"):
-        bn.open_token(asker, "rid-2", sealed)
+        bn.open_token(asker, "rid-2", sealed, peer_public)
     flipped = dict(sealed, sealed=_b64(bytes([base64.urlsafe_b64decode(sealed["sealed"])[0] ^ 1])
                                        + base64.urlsafe_b64decode(sealed["sealed"])[1:]))
     with pytest.raises(PairingError, match="tampered"):
-        bn.open_token(asker, "rid-1", flipped)
+        bn.open_token(asker, "rid-1", flipped, peer_public)
     with pytest.raises(PairingError, match="tampered"):
-        bn.open_token(X25519PrivateKey.generate(), "rid-1", sealed)
+        bn.open_token(X25519PrivateKey.generate(), "rid-1", sealed, peer_public)
+    other_pub = X25519PrivateKey.generate().public_key().public_bytes_raw()
+    with pytest.raises(PairingError, match="tampered"):
+        bn.open_token(asker, "rid-1", dict(sealed, pub=_b64(other_pub)), other_pub)
 
 
 def test_a_request_waits_for_a_person_and_never_pairs_on_its_own(tmp_path: Path) -> None:
@@ -165,6 +174,78 @@ def test_reconnect_needs_the_same_token_and_a_fresh_challenge(tmp_path: Path) ->
         nearby.door_post(bn.RECONNECT, good, "10.0.0.66", door)
     assert replay.value.code == "bad_challenge", "if a captured reconnect replays then its sender redirects the token"
     nearby.pairing.shutdown()
+
+
+def test_an_answer_sealed_by_a_third_party_does_not_pair(tmp_path: Path) -> None:
+    """[if] a LAN observer seals Accept with their own key [then] the asker stores nothing, [else stop]."""
+    nearby = _service(tmp_path, _Clock())
+    nearby._sync_advert = lambda: None  # type: ignore[method-assign]
+    nearby.pairing.open_door = lambda: 40000  # type: ignore[method-assign]
+    asker = X25519PrivateKey.generate()
+    intended = nearby._identity
+    attacker = X25519PrivateKey.generate()
+    to_id = "c" * 32
+    nearby.outgoing = bn.OutgoingRequest(
+        id="rid-forge",
+        to_id=to_id,
+        to_label="Laptop C",
+        host="10.0.0.3",
+        port=40002,
+        path="wired",
+        private=asker,
+        deadline=nearby._clock() + 60.0,
+        peer_pub=intended.public_key().public_bytes_raw(),
+        state="pending",
+    )
+    forged = {
+        "request_id": "rid-forge",
+        "accepted": True,
+        **bn.seal_token(
+            attacker,
+            asker.public_key().public_bytes_raw(),
+            "rid-forge",
+            {"token": "stolen", "device_id": to_id, "label": "Laptop C"},
+        ),
+    }
+    with pytest.raises(PairingError) as forged_err:
+        nearby.door_post(bn.ANSWER, forged, "10.0.0.9")
+    assert forged_err.value.code == "wrong_answerer"
+    assert nearby.pairing.record is None
+    nearby.outgoing.state = "pending"
+    genuine = {
+        "request_id": "rid-forge",
+        "accepted": True,
+        **bn.seal_token(
+            intended,
+            asker.public_key().public_bytes_raw(),
+            "rid-forge",
+            {"token": "T", "device_id": to_id, "label": "Laptop C"},
+        ),
+    }
+    assert nearby.door_post(bn.ANSWER, genuine, "10.0.0.9") == {"ok": True}
+    record = nearby.pairing.record
+    assert record is not None and record.token == "T"
+
+
+def test_request_refuses_a_peer_that_did_not_advertise_a_key(tmp_path: Path) -> None:
+    """[if] Ask runs against a listed laptop with no pk [then] it refuses without posting, [else stop]."""
+    nearby = _service(tmp_path, _Clock())
+    nearby.start = lambda: None  # type: ignore[method-assign]
+    nearby._peers = [
+        bn.NearbyPeer(
+            id="c" * 32,
+            label="Laptop C",
+            accepting=True,
+            remembered=False,
+            port=40002,
+            addresses=[("10.0.0.3", "wired")],
+            instance="Open DJ C",
+        )
+    ]
+    with pytest.raises(PairingError) as refused:
+        nearby.request("c" * 32)
+    assert refused.value.code == "no_peer_key"
+    assert nearby.outgoing is None
 
 
 @pytest.mark.requirement("B2BPAIR-02")

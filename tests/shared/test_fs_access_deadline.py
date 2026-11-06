@@ -191,7 +191,10 @@ def test_a_no_answer_probe_stays_pending_after_its_listing_finishes(blocked: dic
         deadline_s=0.2,
         # Wait for the stuck listing to have started too: under load its thread can
         # miss registration before give_up fires, and _IN_FLIGHT[stuck] KeyErrors.
-        give_up=_give_up_after(blocked["done_for"](blocked["fine"]), blocked["entered_for"](blocked["stuck"])),
+        give_up=_give_up_after(
+            blocked["done_for"](blocked["fine"]),
+            blocked["entered_for"](blocked["stuck"]),
+        ),
     )
     with fs_access._IN_FLIGHT_LOCK:
         job = fs_access._IN_FLIGHT[blocked["stuck"]]

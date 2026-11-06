@@ -59,18 +59,19 @@ def cache_data_dir(app: FastAPI) -> Path:
 
 
 def cache_inputs(app: FastAPI) -> CacheInputs:
-    """Resolve the stems directory, data directory, cached R2 index, the
+    """Resolve the stems directory, data directory, remote R2 index, the
     loaded-or-playing set and whether hydration is armed, for ``app``.
 
-    The index is the LOCAL cache copy only (no network). A missing cache is
-    an empty index, which makes every bundle local-only and therefore
-    un-evictable: the safe reading of "we have not fetched the index yet".
+    The index is the last fetched remote copy only (no network), not the
+    merged local cache. A missing remote-base is an empty index, which makes
+    every bundle local-only and therefore un-evictable: the safe reading of
+    "we have not fetched the index yet".
     """
     data_dir = cache_data_dir(app)
     return CacheInputs(
         stems_dir=Path(getattr(app.state, "stems_dir", DEFAULT_STEMS_DIR)),
         data_dir=data_dir,
-        index=stem_index.load_cached_index(data_dir),
+        index=stem_index.load_remote_confirmed_index(data_dir),
         protected=stem_hydration.OPEN_DECKS.open_ids(),
         can_rehydrate=getattr(app.state, "stem_hydration_source", None) is not None,
     )

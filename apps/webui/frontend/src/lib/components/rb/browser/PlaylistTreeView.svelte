@@ -265,6 +265,7 @@
 						<div
 							class="row child"
 							data-testid="playlist-row"
+							data-playlist-id={node.playlist_id}
 							class:selected={selectedId === node.playlist_id}
 							class:broken={node.mostly_broken}
 							title={node.mostly_broken ? mostlyBrokenTitle : undefined}
@@ -298,7 +299,7 @@
 								<img
 									class="art-tile"
 									data-testid="playlist-art-tile"
-									src={playlistThumbnailUrl(node.playlist_id, 64)}
+									src={playlistThumbnailUrl(node.playlist_id, 64, node.updated_at)}
 									width={SIDEBAR_TILE_PX}
 									height={SIDEBAR_TILE_PX}
 									loading="lazy"

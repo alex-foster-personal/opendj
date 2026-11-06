@@ -390,7 +390,8 @@ def update_file_path(
 
     Raises when the post-write readback shows any column other than
     ``file_path``/``updated_at`` moved: that is a writer-contract violation and
-    the caller's SAVEPOINT must roll the batch back rather than log a lie.
+    the caller's ``writer.transaction()`` unit must roll the batch back rather
+    than log a lie.
     """
     before = _read_track(conn, stable_id)
     if before is None:
@@ -452,7 +453,7 @@ def apply_entries(
     tolerate_conflicts: bool = False,
     actor: str = "reconcile.relink",
 ) -> list[Outcome]:
-    """Apply every entry in one SAVEPOINT-wrapped batch.
+    """Apply every entry in one ``writer.transaction()`` batch.
 
     ``reverse=True`` swaps old/new, which is exactly what ``relink-undo`` needs.
     Any exception (including the drift guard in :func:`update_file_path`) rolls

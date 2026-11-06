@@ -1,6 +1,6 @@
 // requirement: CUEOUT-12 (I/O device menu lists devices even when the label unlock fails)
 // [if] the label-unlock getUserMedia rejects or hangs [then] the I/O selects still list every enumerated output and input
-// [if] the label-unlock getUserMedia fails [then] mixerState.headphones.error names the failure instead of leaving an empty menu silently
+// [if] the label-unlock getUserMedia is refused [then] mixerState.headphones.error names the permission state instead of leaving an empty menu silently
 // [if] the label unlock succeeds [then] the lists carry the labelled devices from the post-unlock enumeration
 //
 // Regression line: if clicking I/O awaits getUserMedia before enumerating then a hung or denied
@@ -75,17 +75,18 @@ afterEach(() => {
 	hp.selected_input_device_id = null;
 });
 
-test('if the label unlock is denied then the I/O menu still lists devices and shows the error', async () => {
+test('if the label unlock is denied then the I/O menu still lists devices and names the permission', async () => {
 	installFakeBrowser({
 		getUserMedia: async () => {
 			throw Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' });
 		}
 	});
-	await assert.rejects(() => headphones.acquireHeadphoneOutput(monitorSource), /Permission denied/);
+	await headphones.acquireHeadphoneOutput(monitorSource);
 	const hp = playerState.mixerState.headphones;
-	assert.equal(hp.outputs.length, 1, 'outputs must be listed even though the unlock failed');
-	assert.equal(hp.inputs.length, 1, 'inputs must be listed even though the unlock failed');
-	assert.match(hp.error ?? '', /acquisition failed: .*Permission denied/);
+	assert.equal(hp.outputs.length, 1, 'outputs must be listed even though the unlock was refused');
+	assert.equal(hp.inputs.length, 1, 'inputs must be listed even though the unlock was refused');
+	assert.equal(hp.error, headphones.MIC_DECLINED_NOTICE);
+	assert.doesNotMatch(hp.error ?? '', /acquisition failed/);
 });
 
 test('if the label unlock succeeds then the I/O menu lists the labelled devices', async () => {

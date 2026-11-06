@@ -81,6 +81,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+try:
+    from scripts.home_paths import published_source as _tilde
+except ModuleNotFoundError:
+    from home_paths import published_source as _tilde
+
 # ----- config -----------------------------------------------------------------
 
 USER_SKILLS_ROOT: Final[Path] = Path.home() / ".claude" / "skills"
@@ -286,16 +291,6 @@ def _rel(path: Path, root: Path) -> str:
 
 def _skipped(path: Path, root: Path) -> bool:
     return bool(SKIP_DIR_PARTS.intersection(path.relative_to(root).parts[:-1]))
-
-
-def _tilde(path: Path) -> str:
-    """Home-relative form. Never record an absolute machine path: it leaks the
-    username into the published tree (see OSS-PUBLIC-PUSH-CHECKLIST.md) and breaks
-    on every other machine."""
-    try:
-        return f"~/{path.relative_to(Path.home())}"
-    except ValueError:
-        return str(path)
 
 
 def _expand(recorded: str) -> Path:

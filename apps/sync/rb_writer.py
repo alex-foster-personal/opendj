@@ -70,6 +70,91 @@ def _kind_to_rb(kind: str, index: int | None, _active_loop: bool) -> tuple[int, 
     return 0, False
 
 
+def _match_existing_cue(cue, existing, unmatched_existing, kind_int, tolerance_msec):
+    for j in unmatched_existing:
+        ex = existing[j]
+        ex_msec = getattr(ex, "InMsec", None)
+        if ex_msec is None:
+            continue
+        if abs(int(ex_msec) - cue.position_msec) > tolerance_msec:
+            continue
+        if getattr(ex, "Kind", None) != kind_int and not (
+            cue.kind == "loop" and getattr(ex, "ActiveLoop", False)
+        ):
+            continue
+        return ex, j
+    return None, -1
+
+
+def _apply_loop_end(row, cue):
+    # HOTCUE-LOOP-01: a hot loop keeps its End too; only a memory loop is ActiveLoop.
+    if cue.kind in ("loop", "hot") and cue.loop_length_msec:
+        row.OutMsec = cue.position_msec + cue.loop_length_msec
+        row.OutFrame = _msec_to_frame(row.OutMsec)
+        row.ActiveLoop = cue.kind == "loop"
+
+
+def _upsert_one_cue(
+    db,
+    cue,
+    existing,
+    unmatched_existing,
+    content_id,
+    content_uuid,
+    tolerance_msec,
+    report,
+):
+    kind_int, _active = _kind_to_rb(cue.kind, cue.index, False)
+    color_idx = rgb_to_color_index(cue.color_rgb)
+    target, target_j = _match_existing_cue(
+        cue, existing, unmatched_existing, kind_int, tolerance_msec
+    )
+    if target is not None:
+        target.InMsec = cue.position_msec
+        target.InFrame = _msec_to_frame(cue.position_msec)
+        target.InMpegFrame = None
+        target.InMpegAbs = None
+        target.Kind = kind_int
+        target.Color = color_idx
+        if cue.name:
+            target.Comment = cue.name
+        _apply_loop_end(target, cue)
+        if content_uuid:
+            target.ContentUUID = content_uuid
+        unmatched_existing.remove(target_j)
+        report.updated += 1
+        return
+    try:
+        new = db.create_cue(
+            ContentID=str(content_id),
+            InMsec=cue.position_msec,
+            InFrame=_msec_to_frame(cue.position_msec),
+            InMpegFrame=None,
+            InMpegAbs=None,
+            Kind=kind_int,
+            Color=color_idx,
+            Comment=cue.name or "",
+        )
+        _apply_loop_end(new, cue)
+        if content_uuid:
+            new.ContentUUID = content_uuid
+        report.inserted += 1
+    except Exception as e:
+        report.errors.append(f"insert failed: {e}")
+
+
+def _prune_unmatched_cues(db, existing, unmatched_existing, report, prune_missing):
+    if not prune_missing or not unmatched_existing:
+        return
+    for j in unmatched_existing:
+        ex = existing[j]
+        try:
+            db.delete_cue(ex)
+            report.deleted += 1
+        except Exception as e:
+            report.errors.append(f"delete failed: {e}")
+
+
 def write_cues(
     db: "Rekordbox6Database",
     content_id: str,
@@ -111,73 +196,19 @@ def write_cues(
     # Match existing rows to incoming cues (position ± tolerance, same kind).
     unmatched_existing = list(range(len(existing)))
     for cue in cues:
-        kind_int, _active = _kind_to_rb(cue.kind, cue.index, False)
-        color_idx = rgb_to_color_index(cue.color_rgb)
-        target = None
-        target_j = -1
-        for j in unmatched_existing:
-            ex = existing[j]
-            ex_msec = getattr(ex, "InMsec", None)
-            if ex_msec is None:
-                continue
-            if abs(int(ex_msec) - cue.position_msec) > tolerance_msec:
-                continue
-            if getattr(ex, "Kind", None) != kind_int and not (
-                cue.kind == "loop" and getattr(ex, "ActiveLoop", False)
-            ):
-                continue
-            target = ex
-            target_j = j
-            break
-        if target is not None:
-            target.InMsec = cue.position_msec
-            target.InFrame = _msec_to_frame(cue.position_msec)
-            target.InMpegFrame = None
-            target.InMpegAbs = None
-            target.Kind = kind_int
-            target.Color = color_idx
-            if cue.name:
-                target.Comment = cue.name
-            # HOTCUE-LOOP-01: a hot loop keeps its End too; only a memory loop is ActiveLoop.
-            if cue.kind in ("loop", "hot") and cue.loop_length_msec:
-                target.OutMsec = cue.position_msec + cue.loop_length_msec
-                target.OutFrame = _msec_to_frame(target.OutMsec)
-                target.ActiveLoop = cue.kind == "loop"
-            if content_uuid:
-                target.ContentUUID = content_uuid
-            unmatched_existing.remove(target_j)
-            report.updated += 1
-        else:
-            try:
-                new = db.create_cue(
-                    ContentID=str(content_id),
-                    InMsec=cue.position_msec,
-                    InFrame=_msec_to_frame(cue.position_msec),
-                    InMpegFrame=None,
-                    InMpegAbs=None,
-                    Kind=kind_int,
-                    Color=color_idx,
-                    Comment=cue.name or "",
-                )
-                # HOTCUE-LOOP-01: a hot loop keeps its End too; only a memory loop is ActiveLoop.
-                if cue.kind in ("loop", "hot") and cue.loop_length_msec:
-                    new.OutMsec = cue.position_msec + cue.loop_length_msec
-                    new.OutFrame = _msec_to_frame(new.OutMsec)
-                    new.ActiveLoop = cue.kind == "loop"
-                if content_uuid:
-                    new.ContentUUID = content_uuid
-                report.inserted += 1
-            except Exception as e:
-                report.errors.append(f"insert failed: {e}")
-
-    if prune_missing and unmatched_existing:
-        for j in unmatched_existing:
-            ex = existing[j]
-            try:
-                db.delete_cue(ex)
-                report.deleted += 1
-            except Exception as e:
-                report.errors.append(f"delete failed: {e}")
+        _upsert_one_cue(
+            db,
+            cue,
+            existing,
+            unmatched_existing,
+            content_id,
+            content_uuid,
+            tolerance_msec,
+            report,
+        )
+    _prune_unmatched_cues(
+        db, existing, unmatched_existing, report, prune_missing
+    )
 
     try:
         db.commit()

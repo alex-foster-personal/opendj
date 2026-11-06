@@ -323,9 +323,14 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 		'if Q is not disabled on a gridless deck then a lit control does nothing when clicked'
 	);
 	assert.match(
+		JOG_DIAL_SRC,
+		/<ControlExplainer title=\{qTitle\} bullets=\{qGridBullets\} tooltip=\{TOOLTIP_ISOLATED\}>/,
+		'issue #927: qTitle reaches hover via ControlExplainer, not a native title on the trigger'
+	);
+	assert.doesNotMatch(
 		qButton,
-		/title=\{qTitle\}/,
-		'if Q stops taking its title from qTitle then the hover no longer explains the inert state'
+		/\btitle=/,
+		'if Q keeps a native title inside ControlExplainer then it competes with the explainer (issue #927)'
 	);
 	assert.match(
 		JOG_DIAL_SRC,

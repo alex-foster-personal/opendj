@@ -7,11 +7,16 @@ Exposes:
   dev-machine-only fixtures (e.g. ``rb-usb-export-big``) where a missing
   external host must never break the suite.
 * :func:`resolve_required_fixture` - resolves a REQUIRED acceptance
-  fixture, failing closed (not skipping) unless the caller explicitly
-  opts out via ``MDT_ALLOW_MISSING_FIXTURES=1``. For fixtures backing
-  named requirement/acceptance tests (CAT-*, GUARD-*), where a silent
-  skip would drop coverage and still report a non-failing run (AGENTS.md:
-  "Never silently skip acceptance because data ... is missing").
+  fixture. When ``MUX_FIXTURE_HOST`` is unset and the default external
+  fixture host is not mounted, resolution skips with a static
+  ``UNAVAILABLE`` reason. Otherwise it fails closed unless the caller
+  opts out via ``MDT_ALLOW_MISSING_FIXTURES=1``. An explicit missing
+  ``MUX_FIXTURE_HOST``, a missing subpath on a mounted host, and
+  contract mismatch still fail closed. For fixtures backing named
+  requirement/acceptance tests (CAT-*, GUARD-*), an unavailable
+  drive must not read as a green run on CI that promised those fixtures
+  (see ADR-0010); hosts without the default drive report skipped, not
+  failed.
 
 The sibling ``big_usb_fixture`` pytest fixture lives in the repo-root
 ``conftest.py`` so that tests anywhere under ``tests/`` can consume it
@@ -30,6 +35,7 @@ import pytest
 from apps.sync.usb.pioneer.fixture_resolver import (
     FixtureContractMismatch,
     FixtureNotAvailable,
+    external_host_available,
     fixture_path,
     verify_fixture_contract,
 )
@@ -75,6 +81,12 @@ def _fail_closed_unless_missing_allowed(detail: str) -> NoReturn:
     rekordbox fixture (which keeps its own copy with more specific wording,
     since it names the concrete downstream coverage that would be lost).
 
+    :func:`resolve_required_fixture` skips first (with a static ``UNAVAILABLE``
+    reason) when ``MUX_FIXTURE_HOST`` is unset and the default external host is
+    not mounted; an explicit ``MUX_FIXTURE_HOST``, a missing subpath on a host
+    that is present, and contract mismatches still fail closed here or via
+    ``pytest.fail``.
+
     ``allow_module_level=True`` because ``resolve_required_fixture`` is called
     from module-level constants (e.g. ``FIXTURE = resolve_required_fixture(...)``
     in ``test_pioneer_reader.py``), not only from inside test/fixture function
@@ -100,21 +112,38 @@ def resolve_required_fixture(name: str) -> Path:
     Use for fixtures that back a named requirement/acceptance test
     (``@pytest.mark.requirement("CAT-06")`` etc.) rather than an optional
     dev-machine convenience fixture -- see :func:`requires_fixture` for
-    that case. A skip here would let CI and a fresh public clone report a
-    non-failing run while silently dropping the acceptance evidence the
-    marker exists to guarantee.
+    that case. When ``MUX_FIXTURE_HOST`` is unset and the default external
+    fixture host is not mounted, resolution raises :class:`FixtureNotAvailable`
+    for ``.extern`` markers; this helper turns that into ``pytest.skip`` with a
+    static ``UNAVAILABLE`` reason so CI hosts without the drive report skipped,
+    not failed. An explicit ``MUX_FIXTURE_HOST`` that is missing, a missing
+    subpath on a present host, and :class:`FixtureContractMismatch` still fail
+    closed.
 
     Once resolved, the fixture's complete content is verified against
     ``tests/fixtures/<name>.contract.json`` (see
     :func:`apps.sync.usb.pioneer.fixture_resolver.verify_fixture_contract`) before the
     path is handed back, so a stale or partially copied external host is
-    rejected rather than silently used. Never gated by
+    rejected rather than silently used. Contract mismatch is never gated by
     ``MDT_ALLOW_MISSING_FIXTURES`` -- that variable is about an unavailable
     host, not a corrupted or stale one that IS available.
     """
     try:
         root = fixture_path(name)
     except (FixtureNotAvailable, FileNotFoundError) as exc:
+        mux = os.environ.get("MUX_FIXTURE_HOST", "").strip()
+        if (
+            not mux
+            and isinstance(exc, FixtureNotAvailable)
+            and "External fixture host not mounted" in str(exc)
+            and not external_host_available()
+        ):
+            pytest.skip(
+                "UNAVAILABLE: external fixture host is not mounted; mount the drive "
+                "or set MUX_FIXTURE_HOST "
+                f"(tests/fixtures/{name}.extern)",
+                allow_module_level=True,
+            )
         _fail_closed_unless_missing_allowed(f"Fixture {name!r} not available: {exc}")
     try:
         verify_fixture_contract(name, root)

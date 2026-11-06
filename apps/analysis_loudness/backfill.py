@@ -3,7 +3,8 @@
 Adapter half of NATIVE-07 ((private path)).
 This module maps :func:`apps.analysis_loudness.adapter.analyze_file` onto the
 ``loudness`` lane's payload shape (``apps.analysis.lane_payloads``) under
-:data:`PRODUCER_BACKEND`, the canonical own-producer name for this lane.
+:data:`apps.analysis_loudness.contract.PRODUCER_BACKEND`, the canonical
+own-producer name for this lane.
 
 This module remains the lane producer. The ``AnalyzerBackend`` wrapper that
 builds a v2 ``AnalysisRecord`` and registers under ``own_loudness.backfill``
@@ -13,21 +14,11 @@ lives in :mod:`apps.analysis.backends.own_loudness`, selected through
 
 from __future__ import annotations
 
-import math
-from dataclasses import asdict
 from pathlib import Path
 
 from apps.analysis.lanes import LaneResult
 
-from .adapter import LoudnessAnalysis, analyze_file
-from .contract import PRODUCER_BACKEND, PRODUCER_VERSION
-
-
-def _lane_result_from_measurement(measured: LoudnessAnalysis) -> LaneResult:
-    payload = asdict(measured)
-    if not all(math.isfinite(value) for value in payload.values()):
-        return LaneResult(status="failed", reason="non_finite_measurement")
-    return LaneResult(status="ok", payload=payload)
+from .adapter import analyze_file
 
 
 def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
@@ -46,7 +37,7 @@ def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
     requires every value finite), so it is reported as ``status: failed``
     rather than an ``ok`` payload no consumer could validate.
     """
-    return _lane_result_from_measurement(analyze_file(path, binary=binary))
+    return analyze_file(path, binary=binary).to_lane_result()
 
 
-__all__ = ["PRODUCER_BACKEND", "PRODUCER_VERSION", "produce_lane_result"]
+__all__ = ["produce_lane_result"]

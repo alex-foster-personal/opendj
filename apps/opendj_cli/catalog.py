@@ -438,6 +438,8 @@ _VERBS: tuple[Verb, ...] = (
             "the dial runs 7:30 to 4:30)."),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
+    Verb("wave_eq_reflect", "wave_eq_reflect", (_ENABLED,),
+         note="WAVE-EQ-5230: deck waveforms follow the engine-reported EQ/filter gains."),
     Verb("mixer_stems", "mixer_stems", (_ENABLED,),
          note="The mixer's S button: VOCAL/INST/BASS dials beside HI/MID/LOW and DRUMS beside FILTER "
               "on every channel with stems; read back as ui.mixer_stems."),

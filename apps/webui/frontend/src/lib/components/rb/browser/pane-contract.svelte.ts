@@ -34,6 +34,7 @@ import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues'
 import { worksSortValue } from '$lib/rb/library-works';
 import { viaWorkHits, worksView } from '$lib/rb/works-overlay.svelte';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
+import { normalizeRating } from '$lib/rating';
 import { listingGenre } from '$lib/rb/genre-source';
 import { keyForms } from '$lib/rb/key-notation';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
@@ -579,7 +580,7 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 				key_forms: keyForms(r.key),
 				genre: listingGenre(r),
 				bpm: r.bpm,
-				rating: r.rating
+				rating: normalizeRating(r.rating)
 			},
 			query
 		)
@@ -597,7 +598,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	// KEY-GUESS-01: an ambiguous key sorts with its best guess, not with the blanks.
 	else if (key === 'key') return row.key ?? row.key_guess ?? null;
 	else if (key === 'bpm') return row.bpm;
-	else if (key === 'rating') return row.rating;
+	else if (key === 'rating') return normalizeRating(row.rating);
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;

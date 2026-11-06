@@ -8,7 +8,7 @@ import { scratchDir } from './helpers';
 
 const packageRoot = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
-	scripts: { 'pack:dir': string; 'pack:dir:win': string };
+	scripts: { 'pack:dir': string; 'pack:dir:win': string; 'pack:win': string };
 	version: string;
 	build: {
 		appId: string;
@@ -160,6 +160,66 @@ const SENTINEL = 'dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX';
 function fakeFuseBinary(states: string): Buffer {
 	return Buffer.concat([Buffer.from('filler'), Buffer.from(SENTINEL), Buffer.from([1, states.length]), Buffer.from(states, 'latin1'), Buffer.from('tail')]);
 }
+
+test('pack:win runs pack-win.mjs after the TypeScript build and stamp', () => {
+	assert.match(pkg.scripts['pack:win'], /scripts\/pack-win\.mjs/);
+});
+
+test('pack-win points the payload resource at a complete payload and refuses an incomplete one', async () => {
+	const { configWithPayload, REQUIRED_PAYLOAD_FILES } = (await import(path.join(packageRoot, 'scripts', 'pack-win.mjs'))) as {
+		configWithPayload: (build: unknown, src: string) => { extraResources: { from: string; to: string }[] };
+		REQUIRED_PAYLOAD_FILES: string[];
+	};
+	const dir = scratchDir('odj-pack-win');
+	assert.throws(() => configWithPayload(pkg.build, dir), /not a complete Windows payload; missing: bin\/opendj-engine\.cmd/);
+	for (const rel of REQUIRED_PAYLOAD_FILES) {
+		fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+		fs.writeFileSync(path.join(dir, rel), 'x');
+	}
+	const config = configWithPayload(pkg.build, dir);
+	assert.equal(config.extraResources.find((entry) => entry.to === 'payload')?.from, dir);
+	assert.ok(config.extraResources.some((entry) => entry.to === 'setup'), 'the other resources are kept');
+});
+
+test('pack-win preserves package-manager and config paths containing spaces', async () => {
+	const { buildPackWinInvocation } = (await import(path.join(packageRoot, 'scripts', 'pack-win.mjs'))) as {
+		buildPackWinInvocation: (
+			configPath: string,
+			environment: Record<string, string | undefined>
+		) => {
+			executable: string;
+			args: string[];
+			options: { cwd: string; stdio: string; shell: boolean };
+		};
+	};
+	const packageManagerPath = path.join(scratchDir('odj pack manager'), 'pnpm.cjs');
+	const configPath = path.join(scratchDir('odj pack config'), 'electron builder config.json');
+
+	const invocation = buildPackWinInvocation(configPath, { npm_execpath: packageManagerPath });
+
+	assert.equal(invocation.executable, process.execPath);
+	assert.deepEqual(invocation.args, [
+		path.resolve(packageManagerPath),
+		'exec',
+		'electron-builder',
+		'--dir',
+		'--win',
+		'--x64',
+		'--config',
+		configPath
+	]);
+	assert.equal(invocation.options.shell, false);
+});
+
+test('pack-win fails fast when npm_execpath is unavailable', async () => {
+	const { buildPackWinInvocation } = (await import(path.join(packageRoot, 'scripts', 'pack-win.mjs'))) as {
+		buildPackWinInvocation: (configPath: string, environment: Record<string, string | undefined>) => unknown;
+	};
+	const expected = /pack-win: npm_execpath is unavailable; run pnpm pack:win/;
+
+	assert.throws(() => buildPackWinInvocation('config.json', {}), expected);
+	assert.throws(() => buildPackWinInvocation('config.json', { npm_execpath: '  ' }), expected);
+});
 
 test('if read-fuses meets a hardened wire it passes, and if runAsNode is on it fails naming it (non-fuse options ignored)', () => {
 	const verifier = path.join(packageRoot, 'scripts', 'read-fuses.mjs');

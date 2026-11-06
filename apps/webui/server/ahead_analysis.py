@@ -88,6 +88,9 @@ Requirements (mini-PRD):
     [if] a lane closes with tracks set aside [then] each fails with the lane reason, none waits forever
   ✔︎ agent parity
     [if] coverage is asked for [then] GET /ahead-analysis/coverage and the CLI agree
+  ✔︎ landing events (NATIVE-35)
+    [if] a lane batch ran to completion (exit 0 or 1) [then] analysis.changed publishes for every finished id in the batch
+    [if] a batch was abandoned, yielded, or exited other than 0 or 1 [then] nothing is published
   ✔︎ coverage never waits on a tick (NATIVE-21)
     [if] a tick is busy [then] coverage answers at once from the last snapshot
   ✔︎ every phase is bounded
@@ -119,6 +122,7 @@ from apps.shared.env_on_off import read_on_off_environ
 from apps.shared.events import publish as publish_engine_event
 from apps.shared.process_priority import background_argv, lowered_priority
 from apps.shared.shutdown_bound import SpawnAfterQuit
+from apps.shared.state.db import StateStoreBusyError, is_sqlite_busy
 from apps.webui.server import backfill_drain, enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
 from apps.webui.server.ahead_analysis_duds import DudLedger, is_dud
@@ -365,6 +369,10 @@ def reason_kind(reason: str) -> str:
     anything shaped otherwise
     (e.g. ``TrackVanished: <path> was gone``) is kept whole, i.e. per track.
     """
+    # Queue-process failures are already batch-wide. Argparse diagnostics are
+    # colon-delimited, so normalizing them would discard the actionable flag.
+    if reason.startswith("queue run exit "):
+        return reason
     parts = reason.split(": ")
     causes = [cause for cause in KNOWN_HOST_CAUSES if cause in reason]
     if causes:
@@ -394,6 +402,15 @@ def _is_per_track_reason(reason: str) -> bool:
 
 #: How ``run_lane_via_queue`` words a queue call that outlived QUEUE_TIMEOUT_S.
 TIMEOUT_REASON: str = "queue call timed out"
+
+
+#: Exit codes from which a batch ran to completion: 0, or 1 (the queue CLI's
+#: EXIT_TRACK_FAILURES) when at least one track's backend failed. A batch that
+#: exited 1 still finished and stored the tracks that succeeded. Exit 1 can
+#: also mean a cascade batch failed (NATIVE-6647) while this batch's done ids
+#: are still current. Do not import EXIT_TRACK_FAILURES: this module never
+#: imports the CLI into the engine process.
+BATCH_COMPLETED_EXIT_CODES: tuple[int, ...] = (0, 1)
 
 
 def _batch_timed_out(chunk: Sequence[str], errors: Mapping[str, str]) -> bool:
@@ -890,7 +907,7 @@ class AheadDrain:
             try:
                 read = self._src.refresh_tags_fn(sid)
             except sqlite3.OperationalError as exc:
-                if "locked" not in str(exc) and "busy" not in str(exc):
+                if not is_sqlite_busy(exc):
                     raise
                 # A contended write (seen at boot beside the folder rescan) is
                 # about the moment, not the track: the next tick retries it.
@@ -910,6 +927,10 @@ class AheadDrain:
         def one(sid: str) -> tuple[str, str | None]:
             try:
                 self._src.write_strip_fn(sid)
+            except sqlite3.OperationalError as exc:
+                if is_sqlite_busy(exc):
+                    raise
+                return sid, f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}"
             except Exception as exc:  # noqa: BLE001 - recorded per track, surfaced in coverage
                 return sid, f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}"
             if not self._src.has_strip_fn(sid):
@@ -1133,6 +1154,15 @@ class AheadDrain:
                 return
             try:
                 outcome = self.tick()
+            except (sqlite3.OperationalError, StateStoreBusyError) as exc:
+                if isinstance(exc, sqlite3.OperationalError) and not is_sqlite_busy(exc):
+                    log.exception("ahead analysis tick failed")
+                    self._status.state = "blocked"
+                    interval = IDLE_INTERVAL_S
+                    continue
+                log.info("ahead analysis tick deferred, state db busy: %s", exc)
+                interval = ACTIVE_INTERVAL_S
+                continue
             except Exception:
                 log.exception("ahead analysis tick failed")
                 self._status.state = "blocked"
@@ -1353,19 +1383,13 @@ def _queue_cli(
     A timeout still fails that command's tracks. An abandon does not: the
     caller leaves those tracks eligible once the xrun hold ends.
 
-    With no ``abandon`` this is the plain bounded call the idle drain has
-    always made: nothing polls it and nothing stops its process tree.
+    Idle and while-playing share this loop so a timeout always stops the
+    queue child and its spawn-pool workers.
     """
+    should_abandon = abandon if abandon is not None else (lambda: False)
     argv = background_argv([sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args])
     env = {**os.environ, "AF_SERVICE_ID": "com.opendj.engine.ahead-analysis"}
-    if abandon is None:
-        done = subprocess.run(
-            argv, capture_output=True, text=True, timeout=QUEUE_TIMEOUT_S, check=False,
-            **lowered_priority(NICENESS),
-            env=env,
-        )
-        return done.returncode, done.stdout, done.stderr
-    if abandon():
+    if should_abandon():
         raise LaneAbandoned()
     proc = subprocess.Popen(
         argv,
@@ -1391,7 +1415,7 @@ def _queue_cli(
     timed_out = False
     try:
         while proc.poll() is None:
-            if abandon():
+            if should_abandon():
                 abandoned = True
                 _stop_process_tree(proc)
                 break
@@ -1611,7 +1635,7 @@ def run_lane_via_queue(
         done = done_ids(conn_factory, backend)
         # The analyzer has returned. A counter rise during this cheap read
         # must not discard the reasons the run already recorded.
-        if code == 0:
+        if code in BATCH_COMPLETED_EXIT_CODES:
             for stable_id in ids:
                 if stable_id in done:
                     publish_engine_event(

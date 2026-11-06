@@ -124,7 +124,8 @@ def get_track_artwork(
     request: Request,
     stable_id: str,
     size: Literal["s", "m", "orig"] = Query(
-        "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
+        "s",
+        description="s=80 px browser rows, m=240 px deck thumbs (longest edge), orig",
     ),
     online: bool = Query(
         False, description="also try MusicBrainz + Cover Art Archive (decks only)"
@@ -136,14 +137,17 @@ def get_track_artwork(
     rekordbox's pre-rendered jpg variant, else the embedded picture, a cover
     image beside the file, or a cached online cover (looked up only with
     ``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.
-    ``size`` applies to the rekordbox variants only; others are served as found.
+    ``size`` applies to every source: rekordbox's pre-rendered variants are served
+    as on disk; embedded, sidecar and cached-online covers are scaled down (never
+    up) to the ``s``/``m`` longest edge and cached as JPEG under the app state
+    dir; ``orig`` is the source as found.
     """
     try:
         content = rb_vendor.resolve_content(stable_id)
     except HTTPException as exc:
         if _error_code(exc) != "VENDOR_MAPPING_NOT_FOUND":
             raise
-        return _local_artwork_response(request, stable_id, online=online)
+        return _local_artwork_response(request, stable_id, size=size, online=online)
     try:
         path = rb_vendor.artwork_file(content, size)
     except HTTPException as exc:
@@ -151,7 +155,7 @@ def get_track_artwork(
             raise
         # rekordbox holds no artwork for this track on this machine (no
         # ImagePath, or its Artwork folder is elsewhere): the rest of the chain.
-        return _local_artwork_response(request, stable_id, online=online)
+        return _local_artwork_response(request, stable_id, size=size, online=online)
     return FileResponse(
         path,
         media_type="image/jpeg",
@@ -164,8 +168,10 @@ def _error_code(exc: HTTPException) -> str | None:
     return detail.get("code")
 
 
-def _local_artwork_response(request: Request, stable_id: str, *, online: bool) -> Response:
-    data, mime = rb_vendor.local_artwork(stable_id, online=online)
+def _local_artwork_response(
+    request: Request, stable_id: str, *, size: str, online: bool,
+) -> Response:
+    data, mime = rb_vendor.local_artwork(stable_id, online=online, size=size)
     etag = f'"{hashlib.sha256(data).hexdigest()}"'
     headers = {"Cache-Control": _CACHE_ARTWORK, "ETag": etag}
     if _etag_matches(request.headers.get("if-none-match"), etag):

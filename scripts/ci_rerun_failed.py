@@ -4,7 +4,7 @@ pytest's `--last-failed`, at CI level and author-triggered (like Bazel's and Gra
 retry, but pinned to one head): a head whose `ci gate` went red on a few test ids gets those ids,
 and nothing else, run again on the pytest pool, instead of five shards and every side workflow
 re-running to prove a one-line fix. `.github/workflows/ci-rerun-failed.yml` drives it; it is
-triggered by the `ci:rerun-failed` label or a `workflow_dispatch` with the PR number.
+triggered by a `workflow_dispatch` with the PR number (ADR-NEW-rerun-failed-dispatch-only).
 
 Stdlib only (like `scripts.ci_required_gate`), so the plan runs on the runner's own `python3`
 before any venv is provisioned, and a refused rerun costs one checkout.
@@ -50,7 +50,6 @@ from scripts.ci_failure_ids import failed_identities
 
 @dataclass(frozen=True)
 class CFG:
-    LABEL: str = "ci:rerun-failed"
     REPAIR_LABEL: str = "ci:trunk-repair"
     MAX_IDS: int = 200
     MAX_RERUNS_PER_HEAD: int = 2
@@ -352,7 +351,7 @@ class Gh:
         return json.loads(self._api(f"repos/{self.repo}/{path}"))
 
     def log(self, job_id: int) -> str:
-        raw = self._api(f"repos/{self.repo}/actions/jobs/{job_id}/logs", "--allow-escape-sequences")
+        raw = self._api(f"repos/{self.repo}/actions/jobs/{job_id}/logs")
         return raw.decode("utf-8", errors="replace")
 
     def post(self, path: str, body: Mapping[str, object]) -> None:
@@ -362,12 +361,6 @@ class Gh:
             capture_output=True,
             check=True,
         )
-
-    def remove_label(self, pr: int, label: str) -> None:
-        path = f"repos/{self.repo}/issues/{pr}/labels/{urllib.parse.quote(label, safe='')}"
-        done = subprocess.run(["gh", "api", "-X", "DELETE", path], capture_output=True, check=False)
-        if done.returncode != 0 and b"Label does not exist" not in done.stdout + done.stderr:
-            raise subprocess.CalledProcessError(done.returncode, path, done.stdout, done.stderr)
 
     # -- reads --
 
@@ -481,7 +474,7 @@ def cmd_verdict(args: argparse.Namespace) -> int:
 
 
 def cmd_finish(args: argparse.Namespace) -> int:
-    """Comment the outcome on the PR and take the label off, so adding it again triggers again."""
+    """Comment the outcome on the PR."""
     gh = Gh(args.repo)
     plan = _load_plan(args.plan) if args.plan.is_file() else None
     if plan is None:
@@ -491,8 +484,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     else:
         body = f"rerun-failed: {args.verdict_line or f'no verdict ({args.outcome})'}\n\n{args.run_url}"
     gh.post(f"issues/{args.pr}/comments", {"body": body})
-    gh.remove_label(args.pr, CFG.LABEL)
-    print(f"[rerun-failed] commented on #{args.pr} and removed {CFG.LABEL}")
+    print(f"[rerun-failed] commented on #{args.pr}")
     return 0
 
 
@@ -503,7 +495,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     common.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"), required=False)
     common.add_argument("--pr", type=int, required=True)
     p = sub.add_parser("plan", parents=[common])
-    p.add_argument("--head", default="", help="pinned head SHA (the label event's); empty reads the PR's")
+    p.add_argument("--head", default="", help="pinned head SHA; empty reads the PR's")
     p.add_argument("--out", type=Path, required=True)
     v = sub.add_parser("verdict", parents=[common])
     v.add_argument("--plan", type=Path, required=True)

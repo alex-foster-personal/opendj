@@ -20,6 +20,7 @@ import {
 	vocalAlpha
 } from '../wave/render';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
+import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
 import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 import type { SectionPalette, SectionSpan } from '../wave/sections';
@@ -127,6 +128,9 @@ export interface StripFrame {
 	waveformDesign?: WaveformDesign;
 	/** Band fills from `resolveStripBandColors`; default rekordbox 3Band. */
 	bandColors?: WaveBandColors;
+	/** WAVE-EQ-5230: live EQ/filter band gains the engine reports for this deck;
+	 * null or absent draws the analysis unscaled. */
+	bandGains?: BandGains | null;
 	/** Tempo-stability answer; null when not fetched, not analyzed, or the
 	 * show_tempo_lane pref is off. A steady track has no segments and paints nothing. */
 	tempo?: TempoCurveData | null;
@@ -135,6 +139,9 @@ export interface StripFrame {
 	/** CSS width / height stretch of one backing px (icons stay round); default 1. */
 	tempoXStretch?: number;
 }
+
+/** Unity gains: what an unreported deck, or a heights-only payload, draws at. */
+const UNITY: BandGains = Object.freeze({ low: 1, mid: 1, high: 1 });
 
 /**
  * Paint one full strip frame. The canvas is cleared first, so this is the
@@ -148,10 +155,13 @@ export function drawStripPreviewBands(
 	widthPx: number,
 	heightPx: number,
 	design: WaveformDesign = 'tri-band',
-	colors: WaveBandColors = DEFAULT_BAND_COLORS
+	colors: WaveBandColors = DEFAULT_BAND_COLORS,
+	gains: BandGains | null = null
 ): void {
 	const kind = resolveStripWaveformKind(payloadKind, design);
-	_drawPreview(ctx, bands, kind, widthPx, heightPx, design, colors);
+	// A 'mono' payload carries heights only: there is no band to scale.
+	const applied = gains === null || payloadKind === 'mono' ? UNITY : gains;
+	_drawPreview(ctx, bands, kind, widthPx, heightPx, design, colors, applied);
 }
 
 export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFrame): void {
@@ -169,7 +179,8 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 			w,
 			h,
 			frame.waveformDesign ?? 'tri-band',
-			frame.bandColors ?? DEFAULT_BAND_COLORS
+			frame.bandColors ?? DEFAULT_BAND_COLORS,
+			frame.bandGains ?? null
 		);
 		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
 			_drawVocalBars(ctx, frame.vocals, durationMs, w, (frame.bandColors ?? DEFAULT_BAND_COLORS).vocal);
@@ -226,13 +237,14 @@ function _drawPreview(
 	widthPx: number,
 	heightPx: number,
 	design: WaveformDesign,
-	colors: WaveBandColors
+	colors: WaveBandColors,
+	g: BandGains
 ): void {
 	const n = bands.length;
 	if (n === 0) return;
 	const w = widthPx / n;
 	if (design === 'blocks') {
-		_drawBlocks(ctx, bands, kind, widthPx, heightPx, colors);
+		_drawBlocks(ctx, bands, kind, widthPx, heightPx, colors, g);
 		return;
 	}
 	if (design === 'line') {
@@ -241,8 +253,8 @@ function _drawPreview(
 		ctx.beginPath();
 		for (let i = 0; i < n; i++) {
 			const x = i * w + w / 2;
-			const v = Math.max(bands.low[i], bands.mid[i], bands.high[i]);
-			const y = heightPx - v * heightPx;
+			const v = Math.max(bands.low[i] * g.low, bands.mid[i] * g.mid, bands.high[i] * g.high);
+			const y = heightPx - Math.min(1, v) * heightPx;
 			if (i === 0) ctx.moveTo(x, y);
 			else ctx.lineTo(x, y);
 		}
@@ -252,12 +264,12 @@ function _drawPreview(
 	for (let i = 0; i < n; i++) {
 		const x = i * w;
 		if (kind === 'tri') {
-			_bar(ctx, x, w, bands.low[i], colors.low, heightPx);
-			_bar(ctx, x, w, bands.mid[i], colors.mid, heightPx);
-			_bar(ctx, x, w, bands.high[i], colors.high, heightPx);
+			_bar(ctx, x, w, bands.low[i] * g.low, colors.low, heightPx);
+			_bar(ctx, x, w, bands.mid[i] * g.mid, colors.mid, heightPx);
+			_bar(ctx, x, w, bands.high[i] * g.high, colors.high, heightPx);
 		} else {
 			// mono = heights only; single color, never synthesized bands.
-			const v = Math.max(bands.low[i], bands.mid[i], bands.high[i]);
+			const v = Math.max(bands.low[i] * g.low, bands.mid[i] * g.mid, bands.high[i] * g.high);
 			_bar(ctx, x, w, v, colors.mono, heightPx);
 		}
 	}
@@ -314,16 +326,17 @@ function _drawBlocks(
 	kind: 'tri' | 'mono',
 	widthPx: number,
 	heightPx: number,
-	colors: WaveBandColors
+	colors: WaveBandColors,
+	g: BandGains
 ): void {
 	const n = bands.length;
 	const layers: [string, (i: number) => number][] =
 		kind === 'mono'
-			? [[colors.mono, (i) => Math.max(bands.low[i], bands.mid[i], bands.high[i])]]
+			? [[colors.mono, (i) => Math.max(bands.low[i] * g.low, bands.mid[i] * g.mid, bands.high[i] * g.high)]]
 			: [
-					[colors.low, (i) => bands.low[i]],
-					[colors.mid, (i) => bands.mid[i]],
-					[colors.high, (i) => bands.high[i]]
+					[colors.low, (i) => bands.low[i] * g.low],
+					[colors.mid, (i) => bands.mid[i] * g.mid],
+					[colors.high, (i) => bands.high[i] * g.high]
 				];
 	for (const [color, valueAt] of layers) {
 		ctx.fillStyle = color;

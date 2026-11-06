@@ -27,6 +27,7 @@ The reader-unavailable path lives in ``test_rb_artwork_reader_unavailable.py``.
 from __future__ import annotations
 
 import hashlib
+import io
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -34,8 +35,10 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.shared import audio_files
 from apps.shared.state import db as state_db
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
@@ -48,6 +51,7 @@ pytestmark = [
 ]
 
 WITH_ART_SID = "e" * 40
+SMALL_ART_SID = "1f" * 20
 NO_ART_SID = "f" * 40
 UNKNOWN_SID = "0" * 40
 DURATION_MS = 240_000
@@ -101,14 +105,27 @@ def track_without_art(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def track_with_small_embedded(tmp_path: Path) -> Path:
+    dst = tmp_path / "small embedded.mp3"
+    raw = (FIXTURE_ROOT / "src-320.mp3").read_bytes()
+    small = Image.new("RGB", (32, 32), (11, 22, 33))
+    buf = io.BytesIO()
+    small.save(buf, "JPEG", quality=95)
+    dst.write_bytes(with_id3_apic(raw, buf.getvalue()))
+    return dst
+
+
+@pytest.fixture
 def client(
     tmp_path: Path,
     track_with_art: Path,
+    track_with_small_embedded: Path,
     track_without_art: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[TestClient]:
     state_path = tmp_path / "state.db"
     _insert_local_track(state_path, WITH_ART_SID, str(track_with_art))
+    _insert_local_track(state_path, SMALL_ART_SID, str(track_with_small_embedded))
     _insert_local_track(state_path, NO_ART_SID, str(track_without_art))
     monkeypatch.setattr(rb_config, "STATE_DB", state_path)
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent.db")
@@ -157,11 +174,27 @@ def test_embedded_artwork_is_revalidatable(client: TestClient, jpeg_bytes: bytes
     assert changed.content == jpeg_bytes
 
 
-@pytest.mark.parametrize("size", ["s", "m", "orig"])
-def test_size_param_still_accepted_for_embedded_path(client: TestClient, jpeg_bytes: bytes, size: str) -> None:
-    resp = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork", params={"size": size})
+def test_size_orig_returns_embedded_bytes_unchanged(client: TestClient, jpeg_bytes: bytes) -> None:
+    resp = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork", params={"size": "orig"})
     assert resp.status_code == 200
     assert resp.content == jpeg_bytes
+
+
+def test_size_s_and_m_passthrough_small_embedded_jpeg(
+    client: TestClient, track_with_small_embedded: Path,
+) -> None:
+    embedded = audio_files.read_embedded_artwork(track_with_small_embedded)
+    assert embedded is not None
+    source_jpg, _mime = embedded
+    src_edge = max(Image.open(io.BytesIO(source_jpg)).size)
+    assert src_edge < 80
+    for size in "s", "m":
+        resp = client.get(f"/api/v1/tracks/{SMALL_ART_SID}/artwork", params={"size": size})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+        assert resp.content == source_jpg
+        im = Image.open(io.BytesIO(resp.content))
+        assert max(im.size) == src_edge
 
 
 def test_404s_artwork_not_found_when_no_embedded_art(client: TestClient) -> None:

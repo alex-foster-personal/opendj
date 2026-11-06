@@ -71,6 +71,7 @@
 		type PerfCardEvent,
 		type PerfCardState
 	} from '$lib/rb/perf-readout-card';
+	import { nativeShellKind } from '$lib/shell/native-shell';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import PerfMeterSpark from './PerfMeterSpark.svelte';
 
@@ -131,7 +132,8 @@
 			kernelLevel: breakdownProcesses?.kernelLevel ?? null,
 			churnScore: breakdownProcesses?.churnScore ?? null,
 			compressorRate: breakdownProcesses?.compressorRate ?? null,
-			processes: breakdownProcesses
+			processes: breakdownProcesses,
+			shellKind: nativeShellKind()
 		})
 	);
 
@@ -202,7 +204,8 @@
 				? processSnapshot.probeStale
 					? { ageSeconds: processSnapshot.probeAgeSeconds ?? null }
 					: null
-				: readUnavailableProbeStale(PROCESS_SNAPSHOT_MAX_AGE_MS)
+				: readUnavailableProbeStale(PROCESS_SNAPSHOT_MAX_AGE_MS),
+			shellKind: nativeShellKind()
 		});
 		memoryTotalMB = readout.totalMB;
 		if (

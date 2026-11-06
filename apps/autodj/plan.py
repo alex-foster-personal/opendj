@@ -29,6 +29,7 @@ two vocals) symbolically, before anything is rendered or played.
 
 from __future__ import annotations
 
+import json
 import math
 from bisect import bisect_right
 from collections.abc import Callable, Mapping
@@ -37,6 +38,13 @@ from functools import partial
 from itertools import pairwise
 from typing import Any, NamedTuple, TypeVar
 
+from apps.autodj.contract.models import (
+    BassEntry,
+    PlanError,
+    PlanEvent,
+    Side,
+    TransitionPlan,
+)
 from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
 from apps.autodj.styles import STYLES
 
@@ -70,6 +78,8 @@ EXTRA_MAX_DEPTH = 32
 AUDIBLE_FADER = 0.3
 #: ADR-0135: the trim every deck loads at (apps.autodj.profile.DECK_LOAD_TRIM_DB), as a gain.
 LOAD_GAIN = 10.0 ** (DECK_LOAD_TRIM_DB / 20.0)
+#: ADR-0135: the trim every deck loads at, as the page's TRIM knob value.
+LOAD_TRIM = trim_knob(DECK_LOAD_TRIM_DB)
 # The page's silence threshold on a channel's gain (agent-plan.ts SILENCE_GAIN_EPSILON): below it a channel is silent.
 SILENT_GAIN = 1e-4
 #: Samples per bar on the grid that silence is checked on before the flips inside it are bisected.
@@ -97,19 +107,6 @@ UNITY_TRIM = 0.5
 TEMPO_FOLDS = (1.0, 0.5, 2.0)
 
 
-class PlanError(ValueError):
-    """The document is not a plan (shape, types, unknown names).
-
-    ``path`` names the top-level field the error is about (``style``, ``out``,
-    ``in``, ``tempo``, ``anchor`` or ``events[i]``, ``i`` the event's index in
-    the document) when :func:`parse_plan` knows it, else None.
-    """
-
-    def __init__(self, message: str, *, path: str | None = None) -> None:
-        super().__init__(message)
-        self.path = path
-
-
 _T = TypeVar("_T")
 
 
@@ -121,116 +118,6 @@ def _in_field(path: str, parse: Callable[[], _T]) -> _T:
         if error.path is None:
             error.path = path
         raise
-
-
-@dataclass(frozen=True)
-class Side:
-    deck: int
-    track: str
-    start_bar: int
-    bars: int
-    #: AGENT-31: the incoming side's loudness match in dB (None: no trim), and why.
-    trim_db: float | None = None
-    trim_reason: str | None = None
-
-
-@dataclass(frozen=True)
-class PlanEvent:
-    at_bar: float
-    deck: int | None
-    kind: str  # "do" | "set" | "ramp"
-    name: str  # action or control
-    value: float | None = None
-    over_bars: float = 0.0
-
-    def target(self) -> float:
-        """A set's or ramp's value, which must be a finite number: never defaulted (Sol P1 #7595, the class of
-        ``value or 0.0``, which turned a missing fader value into a kill)."""
-        value = self.value
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise ValueError(f"{self.kind} {self.name} at bar {self.at_bar:g} has no numeric value: {value!r}")
-        return float(value)
-
-    def to_json(self) -> dict[str, Any]:
-        document: dict[str, Any] = {"at_bar": self.at_bar, "deck": self.deck}
-        if self.kind == "do":
-            document["do"] = self.name
-        else:
-            document[self.kind] = {self.name: self.value}
-            if self.kind == "ramp":
-                document["over_bars"] = self.over_bars
-        return document
-
-
-@dataclass(frozen=True)
-class TransitionPlan:
-    out: Side
-    in_: Side
-    style: str
-    events: tuple[PlanEvent, ...]
-    tempo_mode: str = "sync_to_out"
-    anchor: str = "window"
-    intent: str | None = None
-    rationale: str | None = None
-    #: D11: where the incoming bass lands (``BassEntry``), as the proposer measured it; None when not recorded.
-    bass_entry: BassEntry | None = None
-    #: D13: an intended shape (one of ``SHAPES``), or None.
-    shape: str | None = None
-    extra: Mapping[str, Any] = field(default_factory=dict)
-
-    @property
-    def bars(self) -> int:
-        return self.out.bars
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "out": {
-                "deck": self.out.deck,
-                "track": self.out.track,
-                "window": {"start_bar": self.out.start_bar, "bars": self.out.bars},
-            },
-            "in": {
-                "deck": self.in_.deck,
-                "track": self.in_.track,
-                "window": {"start_bar": self.in_.start_bar, "bars": self.in_.bars},
-                "trim_db": self.in_.trim_db,
-                "trim_reason": self.in_.trim_reason,
-            },
-            "anchor": self.anchor,
-            "style": self.style,
-            "tempo": {"mode": self.tempo_mode},
-            "events": [event.to_json() for event in self.events],
-            "intent": self.intent,
-            "rationale": self.rationale,
-            "bass_entry": None if self.bass_entry is None else self.bass_entry.to_json(),
-            "shape": self.shape,
-        }
-
-    def to_document(self) -> dict[str, Any]:
-        """``to_json`` plus the extension keys in ``extra``: the full plan JSON."""
-        return {**self.extra, **self.to_json()}
-
-
-@dataclass(frozen=True)
-class BassEntry:
-    """D11: the incoming track's bass hit as the proposer placed it, so a reviewer can draw it on the lanes."""
-
-    #: The incoming track's own bar where its steady bass starts, or None when unknown (no bar_bass series).
-    in_bar: int | None
-    #: That bar on the plan clock (0 when the window starts in the bass), or None when unknown.
-    entry_plan_bar: float | None
-    #: The plan bar the bass lands on audibly: the outgoing deck gives way at or after it, never before.
-    hit_plan_bar: float
-    #: How the entry was found, or why it is unknown.
-    note: str
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "in_bar": self.in_bar,
-            "entry_plan_bar": self.entry_plan_bar,
-            "hit_plan_bar": self.hit_plan_bar,
-            "note": self.note,
-        }
 
 
 # ----- parsing -------------------------------------------------------------
@@ -441,7 +328,7 @@ def parse_plan(document: Any) -> TransitionPlan:
         rationale=_optional_text(document.get("rationale"), "rationale"),
         bass_entry=_bass_entry(document.get("bass_entry")),
         shape=shape,
-        extra=_extensions(document, known),
+        extra_json=json.dumps(_extensions(document, known), sort_keys=True, separators=(",", ":")),
     )
 
 
@@ -459,11 +346,11 @@ class ChannelStart(NamedTuple):
     """Where one channel's fader, trim and low EQ stand before the plan's first event."""
 
     fader: float = 1.0
-    trim: float = UNITY_TRIM
+    trim: float = LOAD_TRIM
     low: float = FLAT
 
 
-#: Both channels at full fader, unity trim and flat lows: the start when the mixer is unknown.
+#: Both channels at full fader, the shared load trim and flat lows: the start when the mixer is unknown.
 UNTOUCHED = (ChannelStart(), ChannelStart())
 
 
@@ -1435,7 +1322,7 @@ def _check_clashes(
     With the live mixer known, the crossfader and both channels' faders, trims and lows
     start where they are and each
     deck is heard only while its channel's side is open; without it, both channels count as
-    THRU at unity trim.
+    THRU at the shared load trim.
     """
     vocal_overlap = bass_overlap = 0
     live_crossfader = mixer.get("crossfader")
@@ -1620,6 +1507,9 @@ def _validate_live(
     if out_state.get("loop_engaged") is True:
         # An engaged loop wraps the playhead, so the outgoing window is never reached and the plan would wait forever.
         result.errors.append(f"deck {plan.out.deck} has an engaged loop; release it so the plan can reach its window")
+    if isinstance(in_state, Mapping) and in_state.get("loop_engaged") is True:
+        # The seek lands inside the loop; quantized launch keeps it, so the deck repeats loop bars instead of the plan window.
+        result.errors.append(f"deck {plan.in_.deck} has an engaged loop; release it so the plan can play its window")
     _check_out_position(plan, out_profile, out_state, result)
     _check_crossfader(plan, live_child(live, "mixer"), result)
     _check_pitch_reach(plan, in_profile, (out_state, in_state), result)

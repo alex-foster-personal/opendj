@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -101,3 +102,27 @@ def test_checkpoint_result_is_logged_at_warning(held_db, monkeypatch, caplog) ->
     with caplog.at_level("WARNING", logger=sm.__name__):
         sm.StateMaintenance(state_db_path=db).tick()
     assert any("wal checkpoint ok" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+
+
+def _live(name: str) -> list[threading.Thread]:
+    return [t for t in threading.enumerate() if t.name == name and t.is_alive()]
+
+
+def test_overlapping_start_for_state_db_joins_the_replaced_thread(tmp_path: Path) -> None:
+    """[if] two start_for_state_db calls overlap [then] the replaced thread is joined, [else stop]."""
+    sm.stop()
+    try:
+        baseline = _live("state-maintenance")
+        sm.start_for_state_db(tmp_path / "a" / "state.db")
+        first = [t for t in _live("state-maintenance") if t not in baseline]
+        assert len(first) == 1
+        sm.start_for_state_db(tmp_path / "b" / "state.db")
+        assert not first[0].is_alive()
+        replacement = [t for t in _live("state-maintenance") if t not in baseline]
+        assert len(replacement) == 1
+        sm.stop()
+        sm.stop()
+        leftover = [t for t in _live("state-maintenance") if t not in baseline]
+        assert leftover == []
+    finally:
+        sm.stop()

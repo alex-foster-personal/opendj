@@ -29,7 +29,7 @@ test('FX has no panel yet, so it renders inert and toggles nothing', () => {
 	assert.equal(cluster.featureIconOn, undefined);
 	const fxButton = TOPBAR.match(/<button[^>]*class="tb-icon fx rb-inert"[\s\S]*?>FX<\/button>/)?.[0] ?? '';
 	assert.match(fxButton, /\bdisabled\b/);
-	assert.match(fxButton, /title=\{FX_INERT_TITLE\}/);
+	assert.doesNotMatch(fxButton, /\btitle=/, 'strip FX uses ControlExplainer only (issue #927)');
 	assert.doesNotMatch(fxButton, /onclick|aria-pressed/);
 	assert.match(TOPBAR, /const FX_INERT_TITLE = plannedTitle\('fx'\);/, 'the planned-control tooltip, not a bare stub');
 	assert.match(TOPBAR, /disabled=\{icon\.id === 'fx'\}/, 'the strip menu entry is inert too');

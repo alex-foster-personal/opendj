@@ -14,6 +14,7 @@
  */
 
 import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
+import { normalizeRating } from '$lib/rating';
 import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
@@ -739,7 +740,19 @@ export async function listTracksHydrated(params: {
 		.join('&');
 	const page = await _fetchJson<TracksPageHydrated>(`/api/v1/tracks${qs === '' ? '' : '?' + qs}`);
 	_assertListingRows(page.items);
-	return page;
+	return {
+		...page,
+		items: page.items.map((item) => {
+			const rating = normalizeRating(item.rating ?? null);
+			if (rating === item.rating) return item;
+			if (rating === null && item.rating == null) return item;
+			if (rating === null) {
+				const { rating: _removed, ...rest } = item;
+				return rest as (typeof page.items)[number];
+			}
+			return { ...item, rating };
+		})
+	};
 }
 
 /** Fields a library index row leaves out (LIBM-172): per-row disk reads that
@@ -971,10 +984,10 @@ export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotSta
 export async function saveTrackRating(stable_id: string, next: number): Promise<number | null> {
 	if (isUsbTrackId(stable_id)) {
 		(await loadStickSessionEdits()).setSessionRating(stable_id, next);
-		return next;
+		return normalizeRating(next);
 	}
 	const etag = (await getTrack(stable_id)).etag;
-	return (await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null;
+	return normalizeRating((await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null);
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the

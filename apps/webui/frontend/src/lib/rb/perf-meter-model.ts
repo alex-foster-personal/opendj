@@ -5,6 +5,7 @@
  * No DOM, no runes, no fetch - testable with loadTypeScriptModule.
  */
 
+import type { NativeShellKind } from '../shell/native-shell';
 import { measuredPageProcess } from './memory-meter-model';
 
 export const PRESSURE_SAMPLE_IDLE_MS = 1000;
@@ -154,6 +155,8 @@ export interface BreakdownInput {
 	churnScore: number | null;
 	compressorRate: number | null;
 	processes: ProcessFamilySnapshot | null;
+	/** Which native shell hosts this page, or null/omitted in a browser tab. */
+	shellKind?: NativeShellKind | null;
 }
 
 /** Rows for the open monitor panel. null-valued signals are omitted entirely. */
@@ -197,7 +200,7 @@ export function breakdownLines(input: BreakdownInput): BreakdownLine[] {
 
 	// Same question the compact figure asks: is the page's own process
 	// measured? Then the heap is inside it, counted once, in both views.
-	const pageProcess = measuredPageProcess(input.processes?.members);
+	const pageProcess = measuredPageProcess(input.processes?.members, input.shellKind);
 	if (input.jsHeapMB !== null) {
 		lines.push({
 			key: 'heap',

@@ -22,6 +22,9 @@
  * - if knob positions do not follow an acknowledged command then broken
  * - if a hot-cue command is taken from the page or refused then broken: the
  *   page's own cue logic drives the engine through `rustHotCueDriver`
+ * - if the engine's wave_gains do not reach the deck's waveform gains then
+ *   broken (WAVE-EQ-5230); if a frame without them is accepted quietly then
+ *   broken: a contract break would read as a flat waveform
  * - if a late decode failure heard while a load is in flight is dropped then
  *   broken: the load publishes a track the engine already unloaded; if one
  *   that ended the earlier load is applied to the new one then broken too
@@ -58,6 +61,7 @@ function frame(n, deck) {
 				tempo: 1,
 				cue_ms: null,
 				loop: null,
+				wave_gains: { low: 1, mid: 1, high: 1 },
 				...deck
 			}
 		],
@@ -504,4 +508,59 @@ test('Settings > Audio engine chooses the next load, Web Audio by default', asyn
 	} finally {
 		globalThis.window = prior;
 	}
+});
+
+test('the engine wave_gains land on the deck waveform gains, and a frame without them throws', () => {
+	const st = m.deckStates[1];
+	st.stable_id = 'eq-track';
+	m.mirrorEngineState(frame(200, { wave_gains: { low: 0.05, mid: 0.97, high: 1 } }));
+	assert.deepEqual({ ...m.waveEqGains[1] }, { low: 0.05, mid: 0.97, high: 1 });
+	const same = m.waveEqGains[1];
+	m.mirrorEngineState(frame(201, { wave_gains: { low: 0.05, mid: 0.97, high: 1 } }));
+	assert.equal(m.waveEqGains[1], same, 'unchanged gains keep their identity, so painters skip the repaint');
+	m.mirrorEngineState(frame(202, { wave_gains: { low: 1, mid: 1, high: 1 } }));
+	assert.equal(m.waveEqGains[1].low, 1, 'control: a release back to flat is mirrored too');
+	m.mirrorEngineState(frame(205, { loaded: true, wave_gains: { low: 0.05, mid: 1, high: 1 } }));
+	assert.equal(m.waveEqGains[1].low, 0.05, 'control: a loaded deck s cut is mirrored');
+	m.mirrorEngineState(frame(206, { loaded: false, wave_gains: { low: 0.05, mid: 1, high: 1 } }));
+	assert.equal(m.waveEqGains[1], null, 'an engine-side unload drops the deck s gains');
+	assert.throws(() => m.mirrorEngineState(frame(207, { loaded: false, wave_gains: undefined })), /wave_gains must be an object/, 'an unloaded deck s report is still validated');
+	assert.throws(() => m.mirrorEngineState(frame(203, { wave_gains: undefined })), /wave_gains must be an object/);
+	assert.throws(() => m.mirrorEngineState(frame(204, { wave_gains: { low: -1, mid: 1, high: 1 } })), /wave_gains.low/);
+	st.stable_id = null;
+});
+
+test('waveform gains paint only on a Rust engine page, with the setting on, for a reporting deck', () => {
+	m.setDeckWaveGains(2, m.parseWaveGains({ low: 0.05, mid: 1, high: 1 }));
+	try {
+		m.rustMode.enabled = true;
+		assert.equal(m.paintBandGains(2, true).low, 0.05, 'control: Rust page, setting on, the gains arrive');
+		assert.equal(m.paintBandGains(2, false), null, 'setting off');
+		assert.equal(m.paintBandGains(3, true), null, 'an unreported deck paints unscaled');
+		m.rustMode.enabled = false;
+		assert.equal(m.paintBandGains(2, true), null, 'a Web Audio page never paints stored Rust gains');
+	} finally {
+		m.rustMode.enabled = false;
+		m.clearWaveGains();
+	}
+});
+
+test('a load or unload forgets only that deck s gains; a new connection forgets all', () => {
+	m.setDeckWaveGains(1, m.parseWaveGains({ low: 0.05, mid: 1, high: 1 }));
+	m.setDeckWaveGains(2, m.parseWaveGains({ low: 1, mid: 0.1, high: 1 }));
+	m.clearRustDeck(m.deckStates[1]);
+	assert.equal(m.waveEqGains[1], null, 'the swapped deck draws unscaled until the engine reports its new track');
+	assert.equal(m.waveEqGains[2].mid, 0.1, 'control: the other deck keeps its gains');
+	m.clearWaveGains();
+	assert.deepEqual([1, 2, 3, 4].map((d) => m.waveEqGains[d]), [null, null, null, null]);
+});
+
+test('connecting to an engine forgets the previous engine s gains before mirroring its state', () => {
+	// Source pin: connectRustEngine needs a live engine route and socket to run,
+	// so the ordering is asserted on its text.
+	const src = readFileSync(new URL('../../src/lib/audio-engine/rust-engine.ts', import.meta.url), 'utf8');
+	const body = src.slice(src.indexOf('export async function connectRustEngine'), src.indexOf('export async function executeRustCommand'));
+	const clear = body.indexOf('clearWaveGains();');
+	assert.ok(clear > 0, 'connectRustEngine clears every deck s gains');
+	assert.ok(clear < body.indexOf('c.onState(mirrorEngineState)'), 'before the new engine s state is mirrored');
 });

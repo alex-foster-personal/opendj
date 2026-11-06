@@ -3,7 +3,7 @@
 //! One actor (`engine::Engine`) owns playback state. The UI, MIDI, agents and
 //! the CLI are equal senders into its mailbox (`protocol`), and it runs on a
 //! device clock, a wall clock, or a fake clock (`serve`, `offline`). See
-//! `.planning/phases/20-rust-audio-engine/20-CONTEXT.md` for the decisions.
+//! `(private path)` for the decisions.
 
 #[cfg(feature = "device")]
 pub mod capture;
@@ -29,4 +29,5 @@ pub mod serve;
 pub mod stretch;
 pub mod waveform;
 pub mod wav;
+pub mod wave_gains;
 pub mod ws;

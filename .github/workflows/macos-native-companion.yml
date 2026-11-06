@@ -2,7 +2,7 @@ name: macOS Native Companion
 
 # Build the production native waveform wheel on hosted macOS only when its
 # result is release-relevant. Automatic runs are limited to wheel-impacting
-# changes on main and release branches. A tag create reaches the job condition
+# changes on main and release branches. A v* tag push reaches the job condition
 # below, while workflow_dispatch keeps the gate available for any ref.
 
 on:
@@ -10,6 +10,11 @@ on:
     branches:
       - main
       - release/*
+    # A v* tag push always runs: GitHub does not evaluate path filters for tag
+    # pushes. This replaced a `create` trigger that started a skipped run on
+    # every branch creation (ADR-NEW-macos-release-cut-on-tag-push).
+    tags:
+      - "v*"
     paths:
       - apps/analysis_waveform/**
       - apps/webui/server/native/waveform/**
@@ -46,9 +51,6 @@ on:
       - requirements.txt
       - uv.lock
       - .github/workflows/macos-native-companion.yml
-  # Tag creation has no changed-file list, so it cannot share the path-filtered
-  # push trigger. The job condition admits only v* tags from this broad event.
-  create:
   workflow_dispatch:
 
 concurrency:
@@ -82,7 +84,7 @@ jobs:
     # push and pull-request runs must stay skipped. A v* release tag and an
     # explicit manual dispatch remain deliberate, human-invoked escape hatches.
     # Keep the variable conjoined with its event allowlist: a bare variable arm
-    # would also admit every branch `create` event subscribed to above.
+    # would admit every event this workflow subscribes to.
     if: >-
       github.event_name == 'workflow_dispatch'
       || startsWith(github.ref, 'refs/tags/v')

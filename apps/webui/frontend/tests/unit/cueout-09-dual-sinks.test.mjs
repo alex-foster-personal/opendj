@@ -98,7 +98,7 @@ test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps 
 	const source = readFileSync(CLUSTER, 'utf8');
 	assert.match(source, /aria-label="SHOW AUDIO I\/O"/);
 	assert.match(source, /title="Audio I\/O quick settings"/);
-	assert.match(source, /showDelayMs=\{100\}/);
+	assert.match(source, /tooltip=\{TOOLTIP_INFREQUENT\}/);
 	assert.match(source, /aria-label="Audio I\/O settings"/);
 	assert.match(source, /><span>SET<\/span><span>OUTPUTS<\/span></);
 	assert.match(source, /ControlExplainer/);

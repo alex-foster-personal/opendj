@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getTrack, patchTrack, ConflictError, type Track } from '$lib/api';
+	import { normalizeRating } from '$lib/rating';
 	import RatingStars from '$lib/components/rb/browser/RatingStars.svelte';
 	import ConflictDialog from '$lib/components/ConflictDialog.svelte';
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
@@ -139,7 +140,10 @@
 	<p>BPM: {track.bpm ?? '?'} · Key: {shownKey(track.key) ?? '?'}</p>
 	{#if quality}<p><QualityBadge {quality} /></p>{/if}
 	<p>
-		Rating: <RatingStars rating={track.rating ?? 0} onrate={(n) => applyPatch({ rating: n })} />
+		Rating: <RatingStars
+			rating={normalizeRating(track.rating) ?? 0}
+			onrate={(n) => applyPatch({ rating: n })}
+		/>
 	</p>
 
 	<h3>Tags</h3>

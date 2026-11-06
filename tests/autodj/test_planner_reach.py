@@ -9,6 +9,7 @@ import pytest
 from apps.autodj import propose as propose_module
 from apps.autodj.live import heard_on_deck
 from apps.autodj.plan import BEATMATCH_LIMIT_PCT, beat_sync_reach_pct, pair_beat_sync_fold, parse_plan
+from apps.autodj.profile import heard_profile
 from apps.autodj.render_plan import layout_of
 from apps.autodj.scoring import score_windows
 from apps.autodj.windows import mix_windows
@@ -71,7 +72,7 @@ def test_the_offline_render_folds_as_the_proposal_does_at_128_over_72() -> None:
 
     The incoming tempo ratio is 0.8889, not the 1.7778 of fold 1."""
     out = profile("out128", bpm=128.0)
-    on_deck = profile("in72", bpm=72.0).as_heard(pitch_range_pct=16.0)
+    on_deck = heard_profile(profile("in72", bpm=72.0), pitch_range_pct=16.0)
     plans = propose_module.propose_transition(out, on_deck, out_deck=1, in_deck=2)["proposals"]
     plan = parse_plan(plans[0]["plan"])
     layout = layout_of(plan, out, on_deck, 4)

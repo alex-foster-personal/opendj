@@ -11,6 +11,7 @@ import pytest
 
 from apps.autodj.compile import compile_plan
 from apps.autodj.plan import (
+    LOAD_TRIM,
     PLAY_LEAD_BARS,
     ChannelStart,
     PlanError,
@@ -28,6 +29,7 @@ from apps.autodj.plan import (
     pair_beat_sync_fold,
     parse_plan,
     play_start_bar,
+    read_live_channels,
     simulate,
     state_at,
     sync_tempo_ratio,
@@ -38,7 +40,7 @@ from apps.autodj.propose import _overlap_bars, parse_intent, propose_transition
 from apps.autodj.scoring import score_pair, score_windows
 from apps.autodj.styles import STYLES, list_styles, style
 from apps.autodj.windows import MixWindow, mix_windows
-from tests.autodj.fixtures import DEFAULT_ARRANGEMENT, anlz_payload, profile, track_row
+from tests.autodj.fixtures import CHORUS, DEFAULT_ARRANGEMENT, INTRO, OUTRO, anlz_payload, profile, track_row
 
 OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
 
@@ -77,6 +79,121 @@ def test_a_window_shorter_than_the_style_minimum_is_not_stretched_to_it() -> Non
     assert _overlap_bars(long_blend, 32, out, replace(full_in, max_bars=4), 10_000) is None
     assert _overlap_bars(long_blend, 32, replace(out, max_bars=4), full_in, 10_000) is None
     assert _overlap_bars(long_blend, 32, out, full_in, 10_000) == 32  # control: both windows fit the style
+
+
+def _incoming_with_short_intro(bars: int) -> TrackProfile:
+    """Intro of ``bars`` then a vocal chorus: mix-in ``max_bars`` is ``bars`` (vocal/peak at bar bars+1)."""
+    return profile(
+        "trk-in",
+        key="9A",
+        arrangement=(
+            (INTRO, bars, 0.4, 1.0, False),
+            (CHORUS, 32, 1.0, 1.0, True),
+            (OUTRO, 16, 0.4, 0.8, False),
+        ),
+    )
+
+
+def _outgoing_with_expired_top_six() -> TrackProfile:
+    """Six early mix-out outros plus one back-half drop so the seventh-ranked out window is past bar 70."""
+    return profile(
+        "trk-out-expired-six",
+        key="8A",
+        arrangement=(
+            (OUTRO, 8, 0.4, 0.8, False),
+            (OUTRO, 8, 0.4, 0.8, False),
+            (OUTRO, 8, 0.4, 0.8, False),
+            (OUTRO, 8, 0.4, 0.8, False),
+            (OUTRO, 8, 0.4, 0.8, False),
+            (OUTRO, 8, 0.4, 0.8, False),
+            (INTRO, 48, 0.4, 0.2, False),
+            (CHORUS, 32, 1.0, 1.0, False),
+        ),
+    )
+
+
+def _assert_cut_fallback(result: dict[str, Any], intro_bars: int) -> None:
+    assert result["proposals"]
+    cuts = [row for row in result["proposals"] if row["style"] == "cut"]
+    assert cuts
+    assert result["considered"] >= 1
+    rationale = cuts[0]["rationale"]
+    assert "fallback" in rationale
+    assert any(token in rationale for token in ("vocal", "peak", "usable bars"))
+    assert result["not_offered"]
+    assert any(
+        "min_bars" in row["reason"] and f"max_bars={intro_bars}" in row["reason"] for row in result["not_offered"]
+    )
+
+
+@pytest.mark.requirement("AGENT-29")
+@pytest.mark.parametrize("intro_bars", [1, 7])
+def test_a_short_in_window_still_gets_a_cut_fallback(intro_bars: int) -> None:
+    """[if] every preferred blend's min_bars exceeds every in-window max_bars [then] propose_transition still offers a cut and the rationale names the in-window bound that capped it, [else stop]."""
+    incoming = _incoming_with_short_intro(intro_bars)
+    assert mix_windows(incoming, "in")[0].max_bars == intro_bars
+    result = propose_transition(OUT, incoming, out_deck=1, in_deck=2, intent=None)
+    _assert_cut_fallback(result, intro_bars)
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_wind_down_on_a_one_bar_in_window_falls_back_to_a_cut() -> None:
+    """[if] WIND_DOWN's blends cannot overlap a 1-bar in-window [then] propose_transition still offers a cut, [else stop]."""
+    incoming = _incoming_with_short_intro(1)
+    result = propose_transition(OUT, incoming, out_deck=1, in_deck=2, intent="wind_down")
+    _assert_cut_fallback(result, 1)
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_smooth_on_full_windows_does_not_fall_back_to_a_cut() -> None:
+    """[if] a SMOOTH pair has blend-length windows [then] the top proposal is a blend, not a cut fallback, [else stop]."""
+    result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent="smooth")
+    assert result["proposals"]
+    assert result["proposals"][0]["style"] != "cut"
+    assert "fallback" not in result["proposals"][0]["rationale"]
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_an_overlap_skip_is_listed_in_not_offered() -> None:
+    """[if] a window pair cannot overlap a style [then] not_offered records the style, min_bars, the window max_bars and the in-window reason, never a silent skip, [else stop]."""
+    incoming = _incoming_with_short_intro(1)
+    result = propose_transition(OUT, incoming, out_deck=1, in_deck=2, intent=None)
+    blend_skips = [row for row in result["not_offered"] if row["style"] in {"long_blend", "filter_sweep"}]
+    assert blend_skips
+    joined = " ".join(row["reason"] for row in blend_skips)
+    assert "long_blend" in joined or "filter_sweep" in joined
+    assert "min_bars" in joined
+    assert "max_bars=1" in joined
+    assert "in-window" in joined
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_propose_considers_later_out_window_when_top_six_are_before_min_out_bar() -> None:
+    """[if] the six highest-ranked outgoing windows sit at or before min_out_bar and a later window remains [then] propose_transition still considers that later window (expired windows are dropped before the six-window cap), [else stop]."""
+    outgoing = _outgoing_with_expired_top_six()
+    top_six = mix_windows(outgoing, "out", limit=6)
+    assert [w.start_bar for w in top_six] == [41, 33, 25, 17, 9, 1]
+    assert mix_windows(outgoing, "out", limit=7)[-1].start_bar == 97
+    result = propose_transition(outgoing, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=70)
+    assert mix_windows(outgoing, "out", limit=6, min_start_bar=70)[0].start_bar == 97
+    assert result["considered"] >= 1
+    assert result["proposals"]
+    assert all(row["plan"]["out"]["window"]["start_bar"] == 97 for row in result["proposals"])
+    assert all(row["validation"]["ok"] for row in result["proposals"])
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_propose_min_out_bar_none_keeps_same_top_six_out_windows() -> None:
+    """[if] min_out_bar is None [then] the ranked outgoing windows are unchanged from before the playhead filter, [else stop]."""
+    outgoing = _outgoing_with_expired_top_six()
+    ranked = mix_windows(outgoing, "out", limit=6)
+    assert [w.start_bar for w in ranked] == [41, 33, 25, 17, 9, 1]
+    assert mix_windows(outgoing, "out", limit=6, min_start_bar=None) == ranked
+    result = propose_transition(outgoing, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=None, top=None)
+    starts = {row["plan"]["out"]["window"]["start_bar"] for row in result["proposals"]}
+    # propose_transition only expands the top three ranked out windows (see out_windows[:3] in propose.py).
+    assert starts == {25, 33, 41}
+    assert 97 not in starts
 
 
 def _live(**out: Any) -> dict[str, Any]:
@@ -551,6 +668,20 @@ def _live_with_trim(in_trim: float) -> dict[str, Any]:
     return live
 
 
+@pytest.mark.requirement("AGENT-47")
+def test_offline_simulation_starts_both_trims_at_the_load_knob() -> None:
+    """[if] live is None [then] both ChannelStart trims are the load knob, [else stop]."""
+    channels = read_live_channels(parse_plan(_plan()), None)
+    assert channels[0].trim == LOAD_TRIM
+    assert channels[1].trim == LOAD_TRIM
+
+
+def test_read_live_channels_keeps_an_explicit_live_trim() -> None:
+    channels = read_live_channels(parse_plan(_plan()), _live_with_trim(0.4))
+    assert channels[0].trim == 0.5
+    assert channels[1].trim == 0.4
+
+
 def test_an_incoming_channel_left_at_trim_zero_is_unheard() -> None:
     """Trim scales the channel's gain, so a fader at full on trim 0 is silent."""
     validation = validate_plan(parse_plan(_plan()), OUT, IN, live=_live_with_trim(0.0))
@@ -849,7 +980,7 @@ def test_simulate_starts_each_channel_where_it_is_given() -> None:
     # Control: from a full fader the outgoing deck stays full until the hit (no pre-dip, D11) and the plan must
     # keep the low band at one deck after it (r5: correlated kicks sum in amplitude; 0.05 is the -26 dB knob floor).
     full = simulate(parse_plan(_plan()))
-    assert rows[0].out_trim == 0.5
+    assert rows[0].out_trim == LOAD_TRIM
     assert all(r.out_fader == 1.0 for r in full if r.bar < 7), "if the outgoing moves before the hit then D11 broke"
     assert all(
         r.out_fader * knob_amp(r.out_low) + r.in_fader * knob_amp(r.in_low) <= 1.0 + 0.05 for r in full if r.bar >= 8
@@ -2190,6 +2321,19 @@ def test_validation_refuses_an_outgoing_deck_trapped_in_an_engaged_loop() -> Non
     released["decks"]["1"]["loop_engaged"] = False
     released_errors = validate_plan(parse_plan(_plan()), OUT, IN, live=released).errors
     assert not any("engaged loop" in error for error in released_errors)
+
+
+@pytest.mark.requirement("AGENT-29")
+def test_validation_refuses_an_incoming_deck_with_an_engaged_loop() -> None:
+    """[if] the incoming deck has an engaged loop [then] validation refuses the plan and names that deck and its loop, [else stop]."""
+    looped = _live()
+    looped["decks"]["2"]["loop_engaged"] = True
+    errors = validate_plan(parse_plan(_plan()), OUT, IN, live=looped).errors
+    assert any("deck 2" in error and "engaged loop" in error for error in errors)
+    released = _live()
+    released["decks"]["2"]["loop_engaged"] = False
+    released_errors = validate_plan(parse_plan(_plan()), OUT, IN, live=released).errors
+    assert not any("deck 2" in error and "engaged loop" in error for error in released_errors)
 
 
 def test_a_folded_launch_carries_its_fold_and_master_to_the_page() -> None:

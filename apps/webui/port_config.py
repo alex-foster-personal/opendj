@@ -61,6 +61,8 @@ Acceptance tests:
   [then ⛔️] the claim keeps the pair.
 - [if] a matching backend and an unidentified frontend both hold the pair
   [then ⛔️] the claim keeps the pair.
+- [if] system-wide listener enumeration is AccessDenied and this worktree's
+  own UI holds the frontend [then ⛔️] the claim moves the pair or rewrites ``.env``.
 """
 
 from __future__ import annotations
@@ -648,8 +650,36 @@ def _checkout_root(path: Path) -> Path | None:
     return None
 
 
+def _listener_cwds_from_accessible_processes(port: int) -> list[Path] | None:
+    """Working directories of accessible processes listening on ``port``.
+
+    Used when the system-wide ``psutil.net_connections`` sweep is denied.
+    Unreadable processes are skipped; an empty result is None (fail-closed).
+    """
+    cwds: list[Path] = []
+    for proc in psutil.process_iter():
+        try:
+            listening = any(
+                conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port
+                for conn in proc.net_connections(kind="tcp")
+            )
+            if listening:
+                cwds.append(Path(proc.cwd()).resolve())
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except psutil.AccessDenied:
+            continue
+    return cwds or None
+
+
 def _listener_cwds(port: int) -> list[Path] | None:
-    """Working directories of processes listening on ``port``, or None if unreadable."""
+    """Working directories of processes listening on ``port``, or None if unreadable.
+
+    Tries one system-wide ``psutil.net_connections`` sweep. When that call
+    raises ``AccessDenied`` or ``OSError`` (macOS non-root, Linux ``hidepid``),
+    falls back to inspecting accessible processes' connections. Empty or
+    unreadable results are None so ownership stays fail-closed.
+    """
     listen_pids: set[int] = set()
     try:
         for conn in psutil.net_connections(kind="tcp"):
@@ -660,7 +690,7 @@ def _listener_cwds(port: int) -> list[Path] | None:
             if conn.pid is not None:
                 listen_pids.add(conn.pid)
     except (psutil.AccessDenied, OSError):
-        return None
+        return _listener_cwds_from_accessible_processes(port)
     if not listen_pids:
         return None
     cwds: list[Path] = []

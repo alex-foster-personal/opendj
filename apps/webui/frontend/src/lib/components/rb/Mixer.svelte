@@ -263,7 +263,7 @@
 							<img
 								class="col-art-img"
 								src={coverSrc(deckArtworkUrl(artId, 's'), artId)}
-								data-expected-resource-error
+								data-expected-resource-error="artwork-404"
 								alt=""
 								title="Track artwork"
 								draggable="false"

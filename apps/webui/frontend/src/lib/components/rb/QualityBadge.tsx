@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 import type { TrackQuality } from '$lib/rb/library-types';
-import { gradeView } from '$lib/rb/quality-grade';
+import { gradeView, qualityHoverStateKey } from '$lib/rb/quality-grade';
 
 import './QualityBadge.react.css';
 
@@ -12,6 +12,8 @@ import './QualityBadge.react.css';
 
 export type QualityBadgeProps = {
 	quality: TrackQuality | null;
+	/** Stable track id for hover-state key so a reused row with the same grade does not keep another track's measurements (QLTSCAN-05). */
+	trackKey?: string;
 	/** Hide the container suffix where the row is very tight. */
 	showContainer?: boolean;
 	/** Initial only (C, W, S...) instead of the rung name. */
@@ -38,12 +40,12 @@ function _title(q: TrackQuality | null): string {
 	return `${q.label} -- ${q.blurb}. ${measured}${ext ? `, ${ext}` : ''}.` + ` Rung ${q.rank === null ? 'unknown' : q.rank + 1} of ${q.of}.${lossless}`;
 }
 
-export default function QualityBadge({ quality, showContainer = true, compact = false, loadHover }: QualityBadgeProps) {
+export default function QualityBadge({ quality, trackKey = '', showContainer = true, compact = false, loadHover }: QualityBadgeProps) {
 	const [hoverText, setHoverText] = useState<string | null>(null);
 	const [hoverKey, setHoverKey] = useState<string | null>(null);
-	const gradeKey = JSON.stringify(quality?.grade ?? null);
-	const currentKey = useRef(gradeKey);
-	currentKey.current = gradeKey;
+	const hoverStateKey = qualityHoverStateKey(trackKey, quality?.grade);
+	const currentKey = useRef(hoverStateKey);
+	currentKey.current = hoverStateKey;
 	const full = quality === null ? '...' : quality.label;
 	const label = compact ? full.slice(0, 1).toUpperCase() : full;
 	const ext = quality === null ? '' : _ext(quality.container);
@@ -52,7 +54,7 @@ export default function QualityBadge({ quality, showContainer = true, compact = 
 		const graded = gradeView(quality.grade, compact);
 		const requestHover = () => {
 			if (loadHover === undefined) return;
-			const key = gradeKey;
+			const key = hoverStateKey;
 			void loadHover().then((text) => {
 				if (key === currentKey.current) {
 					setHoverText(text);
@@ -63,7 +65,7 @@ export default function QualityBadge({ quality, showContainer = true, compact = 
 		return (
 			<span
 				className={graded.classes}
-				title={hoverKey === gradeKey && hoverText ? hoverText : graded.title}
+				title={hoverKey === hoverStateKey && hoverText ? hoverText : graded.title}
 				data-venue={rung}
 				data-grade={graded.dataGrade}
 				onMouseEnter={requestHover}

@@ -28,14 +28,24 @@ for (const [name, rel, size] of [
 		const source = read(rel);
 		assert.match(source, new RegExp(`deckArtworkUrl\\(deck\\.stable_id, '${size}'\\)`));
 		assert.doesNotMatch(source, /shouldFetchArtwork/, `${name} must not skip a known local miss`);
-		assert.doesNotMatch(source, /[^k]artworkUrl\(deck\.stable_id/, `${name} must not use the plain url`);
-		assert.match(source, /data-expected-resource-error/);
+		assert.doesNotMatch(
+			source,
+			/[^k]artworkUrl\(deck\.stable_id/,
+			`${name} must not use the plain url`
+		);
+		// WaveTrackSummary's markup lives in its props-only View, which carries the mark.
+		const markup =
+			name === 'WaveTrackSummary' ? read(rel.replace(/\.svelte$/, 'View.svelte')) : source;
+		assert.match(markup, /data-expected-resource-error/);
 	});
 }
 
 test('deckArtworkUrl adds online=true to the plain artwork url', () => {
 	const api = read('src/lib/rb/artwork-url.ts');
-	assert.match(api, /export function deckArtworkUrl[\s\S]*?\$\{artworkUrl\(stable_id, size\)\}&online=true/);
+	assert.match(
+		api,
+		/export function deckArtworkUrl[\s\S]*?\$\{artworkUrl\(stable_id, size\)\}&online=true/
+	);
 });
 
 test('library rows never ask for the online lookup', () => {
@@ -45,5 +55,8 @@ test('library rows never ask for the online lookup', () => {
 	// LIBM-185 marks the row cover as an expected failure because LIBM-181
 	// retries it (placeholder + backoff); the mark is only honest while the
 	// error still goes to that retry.
-	assert.match(table, /data-expected-resource-error\s+onload=\{[^}]*\}\s+onerror=\{\(\) => _onArtworkError\(row\.stable_id\)\}/);
+	assert.match(
+		table,
+		/data-expected-resource-error="artwork-404"[^>]*onload=\{[^}]*\}\s+onerror=\{\(\) => _onArtworkError\(row\.stable_id\)\}/
+	);
 });

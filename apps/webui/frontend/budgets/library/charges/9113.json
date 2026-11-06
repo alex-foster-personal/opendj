@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 326156,
+  "measured_with_pr": 326315,
+  "sha": "9aeabd189f",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9113 makes AutoPlay early planning drop stale runs and cancel in-flight arms (AUTOPLAN-9113): the run-token and cancel paths load with the library shell. Measured: CI bundle check of 9aeabd189f against main 4d6127dace, +159 B gzip; ceiled to KiB",
+  "payback": "none planned; the guards are part of the autoplay controller"
+}

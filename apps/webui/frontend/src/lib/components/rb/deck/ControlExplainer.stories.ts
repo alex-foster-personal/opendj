@@ -3,6 +3,7 @@ import { createRawSnippet } from 'svelte';
 import { fn } from 'storybook/test';
 
 import ControlExplainer from './ControlExplainer.svelte';
+import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 
 /**
  * Hover/focus teaching popover wrapped around any control. Pure props: it
@@ -35,6 +36,7 @@ const meta = {
 	},
 	args: {
 		title: 'CUE - jump playhead to cue',
+		tooltip: TOOLTIP_ISOLATED,
 		bullets: [
 			'While playing: jump to the cue and pause.',
 			'While paused: jump to the cue, or set it if none exists.',

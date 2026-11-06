@@ -252,12 +252,13 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
             ("@esbuild/darwin-arm64", "0.25.12"),
             ("@esbuild/linux-x64", "0.25.12"),
             ("@esbuild/linux-arm64", "0.25.12"),
+            ("@esbuild/win32-x64", "0.25.12"),
         ),
         text_relative="docs/legal/esbuild-LICENSE.md",
         source_url="https://raw.githubusercontent.com/evanw/esbuild/208f539945b145e7c9d6d844290f81c3fe5af320/LICENSE.md",
         sha256="b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681",
-        reason="the darwin-arm64, linux-x64 and linux-arm64 native packages ship no LICENSE; parent esbuild 0.25.12 LICENSE.md "
-        "(gitHead 208f5399) covers this binary and is staged",
+        reason="the darwin-arm64, linux-x64, linux-arm64 and win32-x64 native packages ship no LICENSE; parent esbuild "
+        "0.25.12 LICENSE.md (gitHead 208f5399) covers these binaries and is staged",
     ),
     *_each(
         "javascript",
@@ -267,12 +268,39 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
             ("@rollup/rollup-linux-x64-musl", "4.62.2"),
             ("@rollup/rollup-linux-arm64-gnu", "4.62.2"),
             ("@rollup/rollup-linux-arm64-musl", "4.62.2"),
+            ("@rollup/rollup-win32-x64-gnu", "4.62.2"),
+            ("@rollup/rollup-win32-x64-msvc", "4.62.2"),
         ),
         text_relative="docs/legal/rollup-LICENSE.md",
         source_url="https://raw.githubusercontent.com/rollup/rollup/8faa18777374582bb813d54ce3623f4acf1f9e0b/LICENSE.md",
         sha256="fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8",
-        reason="the darwin-arm64 and linux x64/arm64 gnu/musl native packages ship no LICENSE; parent rollup 4.62.2 LICENSE.md "
-        "(gitHead 8faa1877) covers this binary and is staged",
+        reason="the darwin-arm64, linux x64/arm64 gnu/musl and win32-x64 native packages ship no LICENSE; parent "
+        "rollup 4.62.2 LICENSE.md (gitHead 8faa1877) covers these binaries and is staged",
+    ),
+    *_each(
+        "python",
+        (("pywin32 vendored win32comext/mapi/NOTICE.md", "312"),),
+        text_relative="docs/legal/pywin32-mapi-stub-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/mhammond/pywin32/22b0c0afa2ed0d5f2a990ee737311211f4b21913/com/win32comext/mapi/src/MAPIStubLibrary/LICENSE",
+        sha256="a46919cc8f01eb73f6e4b84af0d41b46b2a33b87c74e864279ef585079f82da4",
+        reason="the NOTICE.md in the wheel only points at the MIT license of the compiled MAPIStubLibrary "
+        "and carries no license text itself; that LICENSE (unchanged since commit 22b0c0af, Oct 2024) is staged",
+    ),
+    *_each(
+        "rust",
+        (
+            ("webview2-com", "0.38.2"),
+            ("webview2-com", "0.39.1"),
+            ("webview2-com-macros", "0.8.1"),
+            ("webview2-com-sys", "0.38.2"),
+            ("webview2-com-sys", "0.39.1"),
+        ),
+        text_relative="docs/legal/webview2-rs-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/wravery/webview2-rs/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+        sha256="0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73",
+        reason="the crates.io packages declare MIT and ship no LICENSE; wravery/webview2-rs LICENSE (unchanged "
+        "since 2021, read at the webview2-com 0.38.2 git SHA b74dc5e2; the macros and sys crates share the repo "
+        "and declare the same license and repository; 0.39.1 is the same text) is staged",
     ),
     *_each(
         "javascript",

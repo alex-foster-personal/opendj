@@ -402,9 +402,8 @@ def _report(
     return 0
 
 
-def main() -> int:
-    import mir_eval
-
+def _parse_args() -> argparse.Namespace:
+    """CLI flags for the GTZAN scoring script."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--pairs", required=True, help="JSON {key: [wav, beats]}")
     ap.add_argument("--results", nargs="+", required=True, help="runner output JSON(s)")
@@ -419,27 +418,31 @@ def main() -> int:
         type=fixtures_digest_argument,
         help=f"the digest the scored fixtures must hash to, or {ESTABLISH_DIGEST!r} to mint one for a first round",
     )
-    args = ap.parse_args()
+    return ap.parse_args()
 
+
+def _load_inputs(
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    """Load pairs, runner results, and per-pair digest inputs."""
     pairs = json.loads(Path(args.pairs).read_text())
     results, provenance = load_results([Path(p) for p in args.results])
 
     # Built BEFORE scoring and over every requested pair, because the fixture
     # gate asks what corpus this is, not how well the analyzer did on it.
     digest_inputs = digest_inputs_for(pairs, results, args.audio_root)
-    per_clip, unscorable, sweep_inputs = score_all(pairs, results, args.audio_root, digest_inputs)
+    return pairs, results, provenance, digest_inputs
 
-    if not per_clip:
-        print("[gtzan] nothing scored: no clip had both a result and a reference", file=sys.stderr)
-        return 1
 
-    digest = fixtures_digest(digest_inputs)
+def _check_fixtures_digest(args: argparse.Namespace, digest: str) -> int | None:
+    """Print digest establish/mismatch; return 3 on mismatch, else None."""
     if args.expect_fixtures_digest == ESTABLISH_DIGEST:
         print(
             f"[gtzan] establishing fixtures digest {digest}. Pass it as "
             "--expect-fixtures-digest on every later round over this corpus.",
         )
-    elif args.expect_fixtures_digest != digest:
+        return None
+    if args.expect_fixtures_digest != digest:
         print(
             f"[gtzan] FIXTURE MISMATCH: scored fixtures hash to {digest}, "
             f"expected {args.expect_fixtures_digest}. The pair MANIFEST, the "
@@ -452,14 +455,22 @@ def main() -> int:
             file=sys.stderr,
         )
         return 3
+    return None
 
+
+def _clip_score_summary(
+    per_clip: dict[str, Any],
+    unscorable: dict[str, list[str]],
+    provenance: dict[str, Any],
+    digest: str,
+    mir_eval: Any,
+) -> dict[str, Any]:
+    """Base mir_eval means, offsets, and fixture identity for this run."""
     f = [c["f_measure"] for c in per_clip.values()]
     cmlt = [c["cmlt"] for c in per_clip.values()]
     amlt = [c["amlt"] for c in per_clip.values()]
     offsets = [c["offset_median_ms"] for c in per_clip.values() if c["offset_median_ms"] is not None]
-    ours = [c["our_f_measure"] for c in per_clip.values() if c["our_f_measure"] is not None]
-
-    summary: dict[str, Any] = {
+    return {
         "n_scored": len(per_clip),
         "n_unscored": sum(len(v) for v in unscorable.values()),
         # Named separately because they mean different things: a runner error
@@ -482,6 +493,11 @@ def main() -> int:
         "offset_vs_human_mean_ms": st.mean(offsets) if offsets else None,
         "offset_vs_human_percentiles_ms": _percentiles(offsets) if offsets else None,
     }
+
+
+def _attach_our_scorer_summary(summary: dict[str, Any], per_clip: dict[str, Any]) -> None:
+    """Cross-check this repo's F-measure and continuity against mir_eval."""
+    ours = [c["our_f_measure"] for c in per_clip.values() if c["our_f_measure"] is not None]
     if ours:
         summary["our_scorer_f_mean"] = st.mean(ours)
         summary["our_scorer_n"] = len(ours)
@@ -516,34 +532,60 @@ def main() -> int:
             "capability report, not a pass."
         )
 
-    if args.shift_sweep:
-        grid = [float(x) for x in range(-30, 31, 2)]
-        sweep = sweep_constant_shift(sweep_inputs, grid)
-        best = max(sweep, key=lambda row: row["f_measure_mean"])
-        best_tight = max(sweep, key=lambda row: row["f_measure_tight_mean"])
-        at_zero = next(row for row in sweep if row["shift_ms"] == 0.0)
-        summary["shift_sweep_tolerance_s"] = TOLERANCE_S
-        summary["shift_sweep_tight_tolerance_s"] = TIGHT_TOLERANCE_S
-        summary["shift_sweep"] = sweep
-        summary["shift_sweep_best_ms"] = best["shift_ms"]
-        summary["shift_sweep_best_f"] = best["f_measure_mean"]
-        summary["shift_sweep_gain_over_zero"] = best["f_measure_mean"] - at_zero["f_measure_mean"]
-        summary["shift_sweep_tight_best_ms"] = best_tight["shift_ms"]
-        summary["shift_sweep_tight_best_f"] = best_tight["f_measure_tight_mean"]
-        summary["shift_sweep_tight_gain_over_zero"] = (
-            best_tight["f_measure_tight_mean"] - at_zero["f_measure_tight_mean"]
-        )
 
+def _attach_shift_sweep(
+    summary: dict[str, Any],
+    args: argparse.Namespace,
+    sweep_inputs: list[tuple[list[float], list[float]]],
+) -> None:
+    """Sweep a constant shift over our beats and record the F peak."""
+    if not args.shift_sweep:
+        return
+    grid = [float(x) for x in range(-30, 31, 2)]
+    sweep = sweep_constant_shift(sweep_inputs, grid)
+    best = max(sweep, key=lambda row: row["f_measure_mean"])
+    best_tight = max(sweep, key=lambda row: row["f_measure_tight_mean"])
+    at_zero = next(row for row in sweep if row["shift_ms"] == 0.0)
+    summary["shift_sweep_tolerance_s"] = TOLERANCE_S
+    summary["shift_sweep_tight_tolerance_s"] = TIGHT_TOLERANCE_S
+    summary["shift_sweep"] = sweep
+    summary["shift_sweep_best_ms"] = best["shift_ms"]
+    summary["shift_sweep_best_f"] = best["f_measure_mean"]
+    summary["shift_sweep_gain_over_zero"] = best["f_measure_mean"] - at_zero["f_measure_mean"]
+    summary["shift_sweep_tight_best_ms"] = best_tight["shift_ms"]
+    summary["shift_sweep_tight_best_f"] = best_tight["f_measure_tight_mean"]
+    summary["shift_sweep_tight_gain_over_zero"] = best_tight["f_measure_tight_mean"] - at_zero["f_measure_tight_mean"]
+
+
+def _attach_genre_means(summary: dict[str, Any], per_clip: dict[str, Any]) -> None:
+    """Mean F-measure per GTZAN genre."""
     # Per-genre, because GTZAN is 10 genres and a DJ library is not.
     by_genre: dict[str, list[float]] = {}
     for c in per_clip.values():
         by_genre.setdefault(c["genre"], []).append(c["f_measure"])
     summary["f_measure_by_genre"] = {g: {"n": len(v), "mean": st.mean(v)} for g, v in sorted(by_genre.items())}
 
+
+def main() -> int:
+    import mir_eval
+
+    args = _parse_args()
+    pairs, results, provenance, digest_inputs = _load_inputs(args)
+    per_clip, unscorable, sweep_inputs = score_all(pairs, results, args.audio_root, digest_inputs)
+    if not per_clip:
+        print("[gtzan] nothing scored: no clip had both a result and a reference", file=sys.stderr)
+        return 1
+    digest = fixtures_digest(digest_inputs)
+    mismatch = _check_fixtures_digest(args, digest)
+    if mismatch is not None:
+        return mismatch
+    summary = _clip_score_summary(per_clip, unscorable, provenance, digest, mir_eval)
+    _attach_our_scorer_summary(summary, per_clip)
+    _attach_shift_sweep(summary, args, sweep_inputs)
+    _attach_genre_means(summary, per_clip)
     Path(args.out).write_text(
         json.dumps({"schema": 2, "summary": summary, "clips": per_clip, "unscorable": unscorable}, indent=1)
     )
-
     return _report(args, summary, per_clip, unscorable, digest)
 
 

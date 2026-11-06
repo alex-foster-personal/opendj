@@ -18,6 +18,10 @@ from urllib.parse import urlsplit
 # Token order matches scripts/quality_gate.py _GIT_AUTH_ENV_KEYS (GH_TOKEN first).
 _GIT_AUTH_ENV_KEYS: tuple[str, ...] = ("GH_TOKEN", "GITHUB_TOKEN")
 
+# rev-list --objects emits "<oid> <path>" for trees/blobs; without %(rest) the whole line is
+# treated as a single object name and every present blob is falsely reported missing.
+_BATCH_CHECK_FORMAT = "%(objectname) %(objecttype) %(objectsize) %(rest)"
+
 
 def _sec_log(message: str) -> None:
     print(f"[security] {message}", file=sys.stderr)
@@ -94,65 +98,63 @@ def _repo_is_partial(git: str, repo: Path) -> bool:
     return any(line.startswith("?") for line in result.stdout.splitlines())
 
 
-def _cat_file_exists(git: str, repo: Path, oid: str, env: dict[str, str]) -> bool:
-    probe = subprocess.run(
-        [git, "-C", str(repo), "cat-file", "-e", oid],
-        capture_output=True,
-        env=env,
-        check=False,
-    )
-    return probe.returncode == 0
+def _run_rev_list_batch_check(
+    git: str,
+    repo: Path,
+    env: dict[str, str],
+    *,
+    capture_stdout: bool,
+) -> tuple[int, int, str]:
+    """Pipe rev-list --objects --all into cat-file --batch-check with %(rest) format.
 
-
-def _batch_check_has_missing(git: str, repo: Path, auth_env: dict[str, str] | None = None) -> bool:
-    env = os.environ.copy()
-    if auth_env:
-        env.update(auth_env)
+    Returns (rev_list_returncode, cat_file_returncode, stdout_text_or_empty).
+    """
     rev = subprocess.Popen(
         [git, "-C", str(repo), "rev-list", "--objects", "--all"],
         stdout=subprocess.PIPE,
         env=env,
     )
     assert rev.stdout is not None
+    batch_argv = [git, "-C", str(repo), "cat-file", f"--batch-check={_BATCH_CHECK_FORMAT}"]
     try:
-        batch = subprocess.run(
-            [git, "-C", str(repo), "cat-file", "--batch-check"],
-            stdin=rev.stdout,
-            capture_output=True,
-            text=True,
-            env=env,
-            check=False,
-        )
+        if capture_stdout:
+            batch = subprocess.run(
+                batch_argv,
+                stdin=rev.stdout,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            out = batch.stdout or ""
+        else:
+            batch = subprocess.run(
+                batch_argv,
+                stdin=rev.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                check=False,
+            )
+            out = ""
     finally:
         rev.stdout.close()
-        rev.wait()
-    for line in batch.stdout.splitlines():
-        parts = line.split()
-        if not parts or parts[-1] != "missing":
-            continue
-        if not _cat_file_exists(git, repo, parts[0], env):
-            return True
+    rev_rc = rev.wait()
+    return rev_rc, batch.returncode, out
 
-    missing_print = subprocess.run(
-        [
-            git,
-            "-C",
-            str(repo),
-            "rev-list",
-            "--objects",
-            "--all",
-            "--missing=print",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
+
+def _batch_check_has_missing(git: str, repo: Path, auth_env: dict[str, str] | None = None) -> bool:
+    env = os.environ.copy()
+    if auth_env:
+        env.update(auth_env)
+    rev_rc, batch_rc, stdout = _run_rev_list_batch_check(
+        git, repo, env, capture_stdout=True
     )
-    for line in missing_print.stdout.splitlines():
-        if not line.startswith("?"):
-            continue
-        oid = line[1:].split()[0]
-        if not _cat_file_exists(git, repo, oid, env):
+    if rev_rc != 0 or batch_rc != 0:
+        return True
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "missing":
             return True
     return False
 
@@ -160,24 +162,7 @@ def _batch_check_has_missing(git: str, repo: Path, auth_env: dict[str, str] | No
 def _walk_missing_objects(git: str, repo: Path, auth_env: dict[str, str]) -> None:
     env = os.environ.copy()
     env.update(auth_env)
-    rev = subprocess.Popen(
-        [git, "-C", str(repo), "rev-list", "--objects", "--all"],
-        stdout=subprocess.PIPE,
-        env=env,
-    )
-    assert rev.stdout is not None
-    try:
-        subprocess.run(
-            [git, "-C", str(repo), "cat-file", "--batch-check"],
-            stdin=rev.stdout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-            check=False,
-        )
-    finally:
-        rev.stdout.close()
-        rev.wait()
+    _run_rev_list_batch_check(git, repo, env, capture_stdout=False)
 
 
 def materialize_repo(git: str, repo: Path) -> int:

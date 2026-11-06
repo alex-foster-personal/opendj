@@ -62,7 +62,7 @@ from pathlib import Path
 
 from apps.analysis import queue_store as analysis_queue_store
 from apps.analysis import store as analysis_store
-from apps.autodj import try_picks
+from apps.autodj.http import TRY_PICKS_SCHEMA_SOURCE, try_picks
 from apps.database import generate_agents_md
 from apps.dedup import contract as dedup_contract
 from apps.engine_core.store import schema as engine_schema
@@ -338,7 +338,7 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
         lambda conn, _path: pairings_sqlite.ensure_http_pairings_table(conn),
     ),
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
-    Authority("apps/autodj/try_picks.py", _apply_try_picks),
+    Authority(TRY_PICKS_SCHEMA_SOURCE, _apply_try_picks),
     Authority("apps/shared/playlist_sets/schema.py", _apply_playlist_sets),
     # Set target length and skip-in-set flags (LIBUX-8679): the set_target
     # routes call ensure_schema on the live state.db before each read or write.

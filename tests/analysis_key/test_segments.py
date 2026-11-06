@@ -1,6 +1,6 @@
 """Key-change segmentation: bar-synchronous chroma, Viterbi, 8-bar floor.
 
-`specs/native-analysis-v1.md` section 5, "Key changes": bar-synchronous chroma
+`(private path)` section 5, "Key changes": bar-synchronous chroma
 on OWN downbeats, the shipping key producer's posterior as HMM emissions,
 HMM + Viterbi over bars, minimum 8-bar segments.
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from apps.analysis_key import canon, segments
+from apps.analysis_key import canon, profiles, segments
 from apps.analysis_key.segments import BarGrid
 
 C_MAJOR = canon.Key(0, False)
@@ -126,6 +126,33 @@ def test_a_transposition_puts_the_boundary_at_the_change_bar() -> None:
     assert abs(boundary - 16) <= 1, f"boundary at bar {boundary}, injected at 16"
     assert block.segments[0].key == C_MAJOR
     assert block.segments[1].key == F_SHARP_MAJOR
+
+
+def test_segment_from_log_emissions_matches_segment_bars() -> None:
+    grid = _grid(32)
+    chroma = _bar_chroma(_keys((C_MAJOR, 16), (F_SHARP_MAJOR, 16)))
+    direct = segments.segment_bars(chroma, grid, duration_s=64.0)
+    correlations = profiles.correlation_matrix(chroma)
+    log_emissions = segments._log_emissions(correlations)
+    injected = segments.segment_from_log_emissions(
+        log_emissions, grid, duration_s=64.0, confidences=correlations
+    )
+    assert direct.status == "ok" and injected.status == "ok"
+    assert len(direct.segments) == len(injected.segments)
+    assert abs(direct.segments[1].start_bar - injected.segments[1].start_bar) <= 1
+
+
+def test_interior_starts_s_skips_track_start() -> None:
+    grid = _grid(32)
+    chroma = _bar_chroma(_keys((C_MAJOR, 16), (F_SHARP_MAJOR, 16)))
+    block = segments.segment_bars(chroma, grid, duration_s=64.0)
+    assert block.status == "ok"
+    assert len(block.segments) == 2
+    assert block.interior_starts_s() == (block.segments[1].start_s,)
+
+    one = segments.segment_bars(_bar_chroma(_keys((C_MAJOR, 32))), grid, duration_s=64.0)
+    assert one.status == "ok"
+    assert one.interior_starts_s() == ()
 
 
 def test_a_change_reports_the_key_at_the_end_of_the_track() -> None:

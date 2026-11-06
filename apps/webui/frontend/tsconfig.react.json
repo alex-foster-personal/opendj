@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["node", "vite/client", "svelte"]
   },
-  "include": ["src/**/*.tsx", "src/**/*.contract.ts"]
+  "include": ["src/**/*.tsx", "src/**/*.contract.ts", "src/lib/rb/signalsmith-stretch.d.ts"]
 }

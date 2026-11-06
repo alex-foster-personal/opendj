@@ -14,14 +14,18 @@ name: E2E Main Starvation
 #
 # TRIGGERS. Not cron alone: sub-hourly schedule delivery fell to about 2% a day from
 # Sat 3 Oct 2026 (#5694). Starvation needs PR e2e traffic to happen at all (that is what
-# takes the runners), and every PR E2E run that is requested or completes fires
-# workflow_run here, so the watchdog is woken by the very load that starves main. The
+# takes the runners), and every E2E run that completes fires workflow_run
+# here, so the watchdog is woken by the very load that starves main. The
 # cron stays as a best-effort backstop. The concurrency group keeps one sweep running
 # and at most one pending, so a burst of E2E events costs a couple of 30 s sweeps.
 on:
   workflow_run:
     workflows: [E2E]
-    types: [requested, completed]
+    # Completed only (ADR-NEW-starvation-watchdog-wakes-on-completed): a completion is when
+    # a runner frees and the dispatcher picks main's gate or passes it over. `requested`
+    # too doubled the sweeps on the main-fix reserve, about one a minute against a
+    # 30-minute threshold, for no earlier alarm.
+    types: [completed]
   schedule:
     - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:

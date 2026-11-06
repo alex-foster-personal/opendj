@@ -16,16 +16,20 @@
  * - ✔︎ A channel-fader interaction reaches the typed performance IPC.
  * - ✔︎ /admin renders its KPI panel without a load-failure banner.
  * - ✔︎ Page errors, unexpected console errors and unexpected HTTP failures fail
- *   the run; no library-mutating request is ever issued.
+ *   the run; no non-allowlisted library-mutating request is issued.
+ * - ✔︎ PUT ui-prefs, PUT/DELETE ui-mirror are allowlisted UI-state publication.
+ * - ✔︎ Linux USB volume discovery 503 is a counted capability refusal, not a regression.
  *
  * Acceptance tests:
  *
  * - [if] the playlist tree renders "..." instead of real counts [then ⛔️] test 1 passes.
  * - [if] the deck header still reads "No track loaded" after the load [then ⛔️] test 2 passes.
  * - [if] the waveform canvas stays background-coloured [then ⛔️] test 4 passes.
- * - [if] any PUT/PATCH/DELETE hits /api [then ⛔️] the suite passes.
+ * - [if] any non-allowlisted PUT/PATCH/DELETE hits /api [then ⛔️] the suite passes.
  */
 import { expect, test } from '@playwright/test';
+
+import { isUiStateWrite } from './savepoint-endpoints';
 import type { APIRequestContext, Browser, Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
@@ -98,9 +102,27 @@ function _isExpectedFailure(url: string): boolean {
 	return EXPECTED_RESOURCE_FAILURES.some((pattern) => pattern.test(url));
 }
 
+const USB_VOLUME_PATH = '/api/v1/usb/volumes';
+const USB_503_CONSOLE =
+	'Failed to load resource: the server responded with a status of 503 (Service Unavailable)';
+
+function _usbVolumePathname(url: string): string | null {
+	try {
+		return new URL(url).pathname;
+	} catch {
+		return null;
+	}
+}
+
+function _isUsbVolumeRefusalResponse(status: number, url: string): boolean {
+	return status === 503 && _usbVolumePathname(url) === USB_VOLUME_PATH;
+}
+
 let page: Page;
 const pageProblems: string[] = [];
 const mutatingRequests: string[] = [];
+const usbVolumeRefusals: string[] = [];
+const usbVolumeConsoleErrors: string[] = [];
 let waveformInkBeforeLoad: CanvasInkMeasurement | null = null;
 let loadedTrack: LoadableTrack | null = null;
 
@@ -215,22 +237,33 @@ test.beforeAll(async ({ browser }: { browser: Browser }) => {
 	page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 	page.on('console', (message) => {
 		if (message.type() !== 'error') return;
-		if (_isExpectedFailure(message.location().url)) return;
-		pageProblems.push(`console: ${message.text()} (${message.location().url})`);
+		const locationUrl = message.location().url;
+		if (_isExpectedFailure(locationUrl)) return;
+		if (message.text() === USB_503_CONSOLE && _usbVolumePathname(locationUrl) === USB_VOLUME_PATH) {
+			usbVolumeConsoleErrors.push(`${message.text()} (${locationUrl})`);
+			return;
+		}
+		pageProblems.push(`console: ${message.text()} (${locationUrl})`);
 	});
 	page.on('pageerror', (error) => pageProblems.push(`pageerror: ${error.message}`));
 	page.on('response', (response) => {
 		if (response.status() < 400) return;
+		if (_isUsbVolumeRefusalResponse(response.status(), response.url())) {
+			usbVolumeRefusals.push(response.url());
+			return;
+		}
 		if (_isExpectedFailure(response.url())) return;
 		pageProblems.push(`http ${response.status()}: ${response.url()}`);
 	});
 	// The smoke reads the operator's real library. A mutating verb reaching the
-	// API is a bug in this suite, not an accepted cost of running the gate.
+	// API is a bug unless it is an exact-path UI-state publication allowlist entry.
 	page.on('request', (request) => {
 		const method = request.method();
 		if (method !== 'PUT' && method !== 'PATCH' && method !== 'DELETE') return;
-		if (!new URL(request.url()).pathname.startsWith('/api/')) return;
-		mutatingRequests.push(`${method} ${request.url()}`);
+		const url = request.url();
+		if (!new URL(url).pathname.startsWith('/api/')) return;
+		if (isUiStateWrite(method, url)) return;
+		mutatingRequests.push(`${method} ${url}`);
 	});
 
 	await page.goto('/performance');
@@ -244,6 +277,10 @@ test.beforeAll(async ({ browser }: { browser: Browser }) => {
 
 test.afterAll(async () => {
 	expect(mutatingRequests, 'the smoke must never mutate the real library').toEqual([]);
+	expect(
+		usbVolumeConsoleErrors.length,
+		'each USB volume 503 must pair with one Chrome console line'
+	).toEqual(usbVolumeRefusals.length);
 	await page.close();
 });
 

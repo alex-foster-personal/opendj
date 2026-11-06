@@ -14,6 +14,8 @@
 		resolveExplainerDismiss,
 		type ExplainerDismiss
 	} from '$lib/rb/explainer-dismiss';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
+	import type { TooltipTiming } from '$lib/ui/tooltip-timing';
 
 	const INTERACTIVE_HIDE_DELAY_MS = 150;
 
@@ -36,7 +38,7 @@
 		action = null,
 		demo = null,
 		placement = 'auto',
-		showDelayMs = 0,
+		tooltip,
 		pinOnClick = false,
 		compact = false,
 		disabled = false,
@@ -59,14 +61,8 @@
 		 * `right` sits beside the trigger (flipping left when it would overflow),
 		 * for stacked menus where above/below would cover sibling controls. */
 		placement?: 'auto' | 'above' | 'below' | 'right';
-		/**
-		 * Trailing show debounce in ms. Default 0 = show immediately, which
-		 * preserves every existing caller's current behavior. A caller with a
-		 * reason to debounce (e.g. several of these packed edge to edge, where
-		 * a fast skim across them would otherwise flash a popover per item)
-		 * sets its own value and states that reason at the call site.
-		 */
-		showDelayMs?: number;
+		/** Required show debounce and the reason for it (issue #927). */
+		tooltip: TooltipTiming;
 		/** Click pins the popover open until Escape or an outside click. Native
 		 * selects in the action slot need this; hover-only would close them. */
 		pinOnClick?: boolean;
@@ -140,7 +136,19 @@
 							placement === 'above' || (placement === 'auto' && r.top > 170) ? 'above' : 'below',
 						gap: 6
 					});
-		popStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+		popStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px;z-index:${OVERLAY_Z_INDEX.tooltip}`;
+	}
+
+	/**
+	 * Escape TopBar stacking contexts that trap fixed z-index. Deliberately a DOM
+	 * portal rather than the Popover API: the shipped macOS 11 WKWebView predates
+	 * HTMLElement.showPopover().
+	 */
+	function _portalToBody(node: HTMLElement): { destroy: () => void } {
+		document.body.appendChild(node);
+		return {
+			destroy: () => node.remove()
+		};
 	}
 
 	function _placeFromPop(): void {
@@ -165,8 +173,8 @@
 		if (showTimer !== undefined) clearTimeout(showTimer);
 		showTimer = undefined;
 		if (!hasRich) return;
-		if (showDelayMs > 0) {
-			showTimer = setTimeout(_openNow, showDelayMs);
+		if (tooltip.delay > 0) {
+			showTimer = setTimeout(_openNow, tooltip.delay);
 		} else {
 			_openNow();
 		}
@@ -187,6 +195,7 @@
 		if (pinned) return;
 		const next = event.relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
+		if (next instanceof Element && next.closest?.('[data-explainer-pop]')) return;
 		if (event instanceof PointerEvent && dismissMode === 'stay') {
 			if (hideTimer !== undefined) clearTimeout(hideTimer);
 			hideTimer = setTimeout(_close, INTERACTIVE_HIDE_DELAY_MS);
@@ -291,6 +300,8 @@
 			class:click-through={!popInteractive}
 			class:compact
 			data-dismiss={dismissMode}
+			data-explainer-pop=""
+			use:_portalToBody
 			bind:this={popEl}
 			style={popStyle}
 			role={showAction ? 'dialog' : 'tooltip'}
@@ -445,7 +456,6 @@
 	}
 	.pop {
 		position: fixed;
-		z-index: 80;
 		width: max-content;
 		max-width: 240px;
 		padding: 7px 9px 8px;

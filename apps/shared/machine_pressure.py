@@ -44,9 +44,29 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from apps.shared import process_family_rule
 from apps.shared.machine_pressure_signal import (
     pressure_is_elevated,
 )
+from apps.shared.process_family_rule import (
+    ELECTRON_GPU_ROLE,
+    ELECTRON_RENDERER_ROLE,
+    ELECTRON_UTILITY_ROLE,
+    SHELL_MARKER,
+    WEBKIT_ASSOCIATION_WINDOW_SECONDS,
+    WEBKIT_ROLES,
+    associate_family,
+    opendj_process_name,
+    process_role,
+    shell_candidates,
+)
+
+NAMED_CHILD_ROLES = process_family_rule.NAMED_CHILD_ROLES
+ANALYSIS_LANE_ROLE = process_family_rule.ANALYSIS_LANE_ROLE
+FFMPEG_ROLE = process_family_rule.FFMPEG_ROLE
+named_child_role = process_family_rule.named_child_role
+
+_WEBKIT_FAMILY_ROLES = frozenset((*WEBKIT_ROLES.values(), "webkit-other"))
 
 # Locked signals ((private path) Pressure cluster, PERFMODE-05).
 PRESSURE_CHURN_WEIGHT_SWAP = 10
@@ -58,24 +78,12 @@ PRESSURE_SAMPLE_P95_WALL_MS = 5
 # Back-compat alias for tests that pin the old constant name.
 CACHE_TTL_SECONDS = PRESSURE_SAMPLE_IDLE_MS / 1000.0
 
-_OPENDJ_NAME_RE = re.compile(r"opendj-[a-z0-9.-]+")
-
 # The three numbers a deck-load row stamps, mapped from the sampler's keys.
 _EXPOSED_FIELDS = (
     ("load_avg_1m", "load_average_1m"),
     ("mem_free_mb", "free_memory_mb"),
     ("swap_used_mb", "swap_used_mb"),
 )
-
-def opendj_process_name(command: str) -> str:
-    """Keep in sync with ``probe_process_family.opendj_process_name``."""
-
-    if "/MacOS/opendj-desktop" in command:
-        return "opendj-desktop"
-    match = _OPENDJ_NAME_RE.search(command)
-    if match is not None:
-        return match.group(0)
-    return "unnamed"
 
 
 def valid_kernel_pressure_level(level: object) -> int | None:
@@ -102,18 +110,13 @@ def _next_ttl_seconds(values: dict[str, Any]) -> float:
     return PRESSURE_SAMPLE_IDLE_MS / 1000.0
 
 
-def _vm_stat_page_count(output: str, label: str) -> int | None:
-    match = re.search(rf"^{label}:\s+(\d+)\.", output, re.MULTILINE)
-    if match is None:
-        return None
-    return int(match.group(1))
-
-
 def _read_vm_stat_churn_snapshot() -> dict[str, int] | None:
     try:
-        proc = subprocess.run(
-            ["vm_stat"], capture_output=True, text=True, timeout=2.0, check=True
-        )
+        from apps.shared.machine_metrics import _vm_stat_page_count
+    except ImportError:
+        return None
+    try:
+        proc = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=2.0, check=True)
     except (OSError, subprocess.SubprocessError):
         return None
     output = proc.stdout
@@ -148,18 +151,14 @@ def _churn_overlay(
     elapsed_s = now - prior_at
     if elapsed_s <= 0:
         return {}
-    swap_delta = (current["swapins"] - prior["swapins"]) + (
-        current["swapouts"] - prior["swapouts"]
-    )
+    swap_delta = (current["swapins"] - prior["swapins"]) + (current["swapouts"] - prior["swapouts"])
     decomp_delta = current["decompressions"] - prior["decompressions"]
     swap_rate = swap_delta / elapsed_s
     decomp_rate = decomp_delta / elapsed_s
     overlay: dict[str, float] = {
         "swap_rate": round(swap_rate, 3),
         "decomp_rate": round(decomp_rate, 3),
-        "churn_score": round(
-            swap_rate * PRESSURE_CHURN_WEIGHT_SWAP + decomp_rate, 3
-        ),
+        "churn_score": round(swap_rate * PRESSURE_CHURN_WEIGHT_SWAP + decomp_rate, 3),
     }
     current_pages = current.get("compressor_pages")
     page_size = current.get("page_size")
@@ -198,9 +197,7 @@ def _overlay_from_raw(
         overlay["kernel_memory_pressure_level"] = kernel
         overlay["band"] = pressure_band_for_level(kernel)
     if current_vm_stat is not None:
-        overlay.update(
-            _churn_overlay(prior_vm_stat, prior_vm_stat_at, now, current_vm_stat)
-        )
+        overlay.update(_churn_overlay(prior_vm_stat, prior_vm_stat_at, now, current_vm_stat))
     return overlay
 
 
@@ -223,9 +220,7 @@ def _build_sample(
         return PressureSample(now, {}, reason, CACHE_TTL_SECONDS), prior_vm_stat
     current_vm_stat = vm_stat_reader()
     values: dict[str, float | int | str] = {
-        exposed: float(raw[source])
-        for exposed, source in _EXPOSED_FIELDS
-        if isinstance(raw.get(source), (int, float))
+        exposed: float(raw[source]) for exposed, source in _EXPOSED_FIELDS if isinstance(raw.get(source), (int, float))
     }
     values.update(
         _overlay_from_raw(
@@ -258,6 +253,16 @@ class ProcessInfo:
     ppid: int
     command: str
     rss_bytes: int | None
+    start_time: float | None = None
+
+
+@dataclass(frozen=True)
+class LiveProcessFamily:
+    """One live walk: members (with pid), family pids, and WebKit association status."""
+
+    members: list[dict[str, Any]]
+    pids: set[int]
+    webkit_association: dict[str, str]
 
 
 def _read_process_rows(
@@ -278,7 +283,9 @@ def _default_process_iter() -> list[ProcessInfo]:
     # ``name`` is prefetched with the rest: a live ``proc.name()`` call here
     # raised NoSuchProcess for a process that exited mid-walk, and that one
     # error emptied the whole walk (the family read as unavailable).
-    for proc in psutil.process_iter(["pid", "ppid", "cmdline", "name", "memory_info"]):
+    for proc in psutil.process_iter(
+        ["pid", "ppid", "cmdline", "name", "memory_info", "create_time"]
+    ):
         try:
             info = proc.info
         except (psutil.Error, OSError):
@@ -291,7 +298,11 @@ def _default_process_iter() -> list[ProcessInfo]:
         command = " ".join(str(part) for part in cmdline) if cmdline else str(info.get("name") or "")
         memory_info = info.get("memory_info")
         rss_bytes = memory_info.rss if memory_info is not None else None
-        rows.append(ProcessInfo(pid=pid, ppid=ppid, command=command, rss_bytes=rss_bytes))
+        ct = info.get("create_time")
+        start_time = float(ct) if isinstance(ct, (int, float)) else None
+        rows.append(
+            ProcessInfo(pid=pid, ppid=ppid, command=command, rss_bytes=rss_bytes, start_time=start_time)
+        )
     return rows
 
 
@@ -316,9 +327,7 @@ def _descendant_pids(rows: Iterable[ProcessInfo], root_pid: int) -> set[int]:
 # made by ``mkdtemp(prefix="opendj-...")``, a log path) is NOT a launcher.
 # The desktop shell's install path can hold spaces ("Open DJ.app",
 # "Program Files"), so its executable is matched up to the first option.
-_OWN_DESKTOP_SHELL_RE = re.compile(
-    r'^"?(?:[A-Za-z]:)?[/\\](?:(?! -)[^"])*?[/\\]opendj-desktop(?:\.exe)?(?=[\s"]|$)'
-)
+_OWN_DESKTOP_SHELL_RE = re.compile(r'^"?(?:[A-Za-z]:)?[/\\](?:(?! -)[^"])*?[/\\]opendj-desktop(?:\.exe)?(?=[\s"]|$)')
 
 
 # The launch identity every platform shows: an interpreter run with
@@ -462,9 +471,7 @@ def _registered_pid(path: str) -> tuple[int, float] | ShellRegistration:
     # A write dated ahead of now means the clock moved back since it was made. Then the
     # create-time check below would accept any later process given the same pid (Codex on #6785).
     if stat.st_mtime > time.time() + _REGISTRATION_CLOCK_SKEW_S:
-        return _rejected(
-            "the registration is dated in the future (the clock moved back after it was written)"
-        )
+        return _rejected("the registration is dated in the future (the clock moved back after it was written)")
     try:
         with open(path, encoding="utf-8") as handle:
             raw = handle.read(64)
@@ -495,9 +502,7 @@ def _live_registration(pid: int, written_at: float) -> ShellRegistration:
     if status == psutil.STATUS_ZOMBIE:
         return _rejected("the registered shell has exited (zombie)")
     if created > written_at:
-        return _rejected(
-            "the registered pid started after the registration was written (a reused pid)"
-        )
+        return _rejected("the registered pid started after the registration was written (a reused pid)")
     return ShellRegistration(status="accepted", pid=pid)
 
 
@@ -533,9 +538,7 @@ def _ancestor_chain(by_pid: dict[int, ProcessInfo], pid: int) -> list[int]:
         chain.append(row.ppid)
 
 
-def _family_root_pid(
-    by_pid: dict[int, ProcessInfo], engine_pid: int, shell_pid: int | None = None
-) -> int:
+def _family_root_pid(by_pid: dict[int, ProcessInfo], engine_pid: int, shell_pid: int | None = None) -> int:
     """The topmost Open DJ ancestor of ``engine_pid``, or the engine itself.
 
     Climbs while the parent runs as an Open DJ program: the packaged desktop
@@ -562,14 +565,166 @@ def _family_root_pid(
     return chain[depth]
 
 
-# The Electron renderer that draws this page. Chromium starts every renderer
-# with a ``--type=renderer`` argument, so the argument alone would match any
-# Chromium-based browser on the machine; it is trusted only inside a family
-# rooted at the shell that stamped its pid into this engine's environment
-# (``launching_shell_pid``), whose renderers are this app's window. The page
-# heap is then inside that process, so the page term is not added again.
-ELECTRON_RENDERER_ROLE = "electron-renderer"
-_CHROMIUM_RENDERER_ARGV_RE = re.compile(r"(?:^|\s)--type=renderer(?=\s|$)")
+# The Electron Chromium helpers under the desktop shell; each is tagged by
+# ``--type=``. Those arguments alone would match any Chromium-based browser on
+# the machine; they are trusted only inside a family rooted at the shell that
+# stamped its pid into this engine's environment (``launching_shell_pid``) or
+# at a registered adopting shell. Only ``electron-renderer`` is the page's own
+# process (``PAGE_PROCESS_ROLES`` in the frontend is unchanged).
+_CHROMIUM_TYPE_ROLES = (
+    (re.compile(r"(?:^|\s)--type=renderer(?=\s|$)"), ELECTRON_RENDERER_ROLE),
+    (re.compile(r"(?:^|\s)--type=gpu-process(?=\s|$)"), ELECTRON_GPU_ROLE),
+    (re.compile(r"(?:^|\s)--type=(?:utility|ppapi|plugin)(?=\s|$)"), ELECTRON_UTILITY_ROLE),
+)
+
+
+def _chromium_helper_role(command: str) -> str | None:
+    for pattern, role in _CHROMIUM_TYPE_ROLES:
+        if pattern.search(command):
+            return role
+    return None
+
+
+def _pick_association_shell_row(
+    by_pid: dict[int, ProcessInfo],
+    family_pids: set[int],
+    root_pid: int,
+    registered_shell_pid: int | None,
+) -> ProcessInfo | None:
+    for candidate in (root_pid, registered_shell_pid):
+        if candidate is None:
+            continue
+        row = by_pid.get(candidate)
+        if row is None or candidate not in family_pids:
+            continue
+        if SHELL_MARKER not in row.command:
+            continue
+        if row.start_time is None:
+            continue
+        return row
+    return None
+
+
+def _desktop_shell_for_roles(
+    by_pid: dict[int, ProcessInfo],
+    family_pids: set[int],
+    root_pid: int,
+    registered_shell_pid: int | None,
+) -> int | None:
+    """A desktop shell pid in the family for ``process_role``, if any."""
+
+    for candidate in (root_pid, registered_shell_pid):
+        if candidate is None:
+            continue
+        row = by_pid.get(candidate)
+        if row is None or candidate not in family_pids:
+            continue
+        if SHELL_MARKER not in row.command:
+            continue
+        return candidate
+    return None
+
+
+def _webkit_association_body(
+    *,
+    shell_row: ProcessInfo | None,
+    global_shell_count: int,
+    assoc: dict[str, Any] | None,
+) -> dict[str, str]:
+    if shell_row is None:
+        return {
+            "status": "not_applicable",
+            "reason": "no Open DJ desktop shell with a known start time is in this family",
+        }
+    if global_shell_count > 1:
+        return {
+            "status": "refused",
+            "reason": (
+                f"{global_shell_count} Open DJ desktop shells are running, "
+                "so no WebKit helper can be tied to this one"
+            ),
+        }
+    assert assoc is not None
+    if assoc.get("webkit_cluster_ambiguous"):
+        refusal = assoc.get("webkit_refusal")
+        if refusal == "contested":
+            reason = "another running Open DJ shell could equally claim the WebKit helpers"
+        elif refusal == "second_cluster":
+            reason = "a second WebContent cluster in the window may belong to another app"
+        else:
+            reason = "WebKit helper association is ambiguous under the timing rule"
+        return {"status": "refused", "reason": reason}
+    if assoc.get("webkit_cluster_found"):
+        return {"status": "attributed", "reason": str(assoc["webkit_rule"])}
+    return {
+        "status": "none_found",
+        "reason": (
+            f"no WebContent launched within {int(WEBKIT_ASSOCIATION_WINDOW_SECONDS)} s after the shell"
+        ),
+    }
+
+
+def _merge_webkit_into_family(
+    rows: list[ProcessInfo],
+    by_pid: dict[int, ProcessInfo],
+    family_pids: set[int],
+    assoc_shell: ProcessInfo | None,
+    global_shell_count: int,
+) -> tuple[dict[str, Any] | None, dict[int, str]]:
+    """Run ``associate_family`` when allowed and return association plus roles by pid."""
+
+    if assoc_shell is None or global_shell_count > 1:
+        return None, {}
+
+    def start_seconds(pid: int) -> float | None:
+        row = by_pid.get(pid)
+        if row is None:
+            return None
+        return row.start_time
+
+    _selected, assoc_dict = associate_family(rows, assoc_shell, start_seconds)
+    assoc_role_by_pid = {row.pid: role for row, role in _selected}
+    for wk_pid, wk_role in assoc_role_by_pid.items():
+        if wk_pid in family_pids:
+            continue
+        if wk_role in _WEBKIT_FAMILY_ROLES:
+            family_pids.add(wk_pid)
+    return assoc_dict, assoc_role_by_pid
+
+
+def _live_family_members(
+    *,
+    by_pid: dict[int, ProcessInfo],
+    family_pids: set[int],
+    shell_tree: set[int],
+    assoc_shell: ProcessInfo | None,
+    assoc_role_by_pid: dict[int, str],
+    role_shell_pid: int | None,
+) -> list[dict[str, Any]]:
+    members: list[dict[str, Any]] = []
+    for pid in sorted(family_pids):
+        row = by_pid.get(pid)
+        if row is None:
+            continue
+        member: dict[str, Any] = {"pid": pid, "name": opendj_process_name(row.command)}
+        role: str | None = None
+        if pid in shell_tree:
+            chromium_role = _chromium_helper_role(row.command)
+            if chromium_role is not None:
+                role = chromium_role
+        if role is None and pid in assoc_role_by_pid:
+            role = assoc_role_by_pid[pid]
+        if role is None and role_shell_pid is not None and assoc_shell is not None:
+            # Without a shell start time we cannot run WebKit association; keep the
+            # historic rule: Chromium --type= only under shell_tree, else no role
+            # (tests hand-build rows with no start_time).
+            role = process_role(row, role_shell_pid, family_pids - {role_shell_pid})
+        if role is not None:
+            member["role"] = role
+        if isinstance(row.rss_bytes, int) and row.rss_bytes >= 0:
+            member["rss_mb"] = round(row.rss_bytes / 1_048_576, 1)
+        members.append(member)
+    return members
 
 
 def _collect_live_process_family(
@@ -578,20 +733,8 @@ def _collect_live_process_family(
     engine_pid: int,
     shell_pid: int | None = None,
     registered_shell_pid: int | None = None,
-) -> tuple[list[dict[str, Any]], set[int]]:
-    """This engine's family: its Open DJ root plus every descendant of that root.
-
-    The odj-audio sidecar and job workers are the engine's own children, and
-    the packaged desktop shell is the root above it, so all of them are in
-    the tree. Nothing is added by name: an ``opendj-*`` process outside the
-    tree belongs to another engine, a dev server or a test run.
-
-    ``registered_shell_pid`` is an ACCEPTED shell registration
-    (``read_shell_registration``): a shell that adopted or attached to this
-    engine and so is not above it. Its own tree (the shell, its renderer and
-    GPU helpers) is added beside the engine's, and is trusted for the
-    renderer role exactly like a stamped shell's.
-    """
+) -> LiveProcessFamily:
+    """This engine's family: Open DJ root, descendants, optional WebKit cluster."""
 
     by_pid = {row.pid: row for row in rows}
     root_pid = _family_root_pid(by_pid, engine_pid, shell_pid)
@@ -603,26 +746,31 @@ def _collect_live_process_family(
     if registered_shell_pid is not None and registered_shell_pid in by_pid:
         shell_tree |= {registered_shell_pid} | _descendant_pids(rows, registered_shell_pid)
         family_pids |= shell_tree
-    # Only processes that are running: an engine pid that has exited is no
-    # family, so it cannot make a probe record look like this app's.
     family_pids &= by_pid.keys()
-    members: list[dict[str, Any]] = []
-    for pid in sorted(family_pids):
-        row = by_pid.get(pid)
-        if row is None:
-            continue
-        member: dict[str, Any] = {"pid": pid, "name": opendj_process_name(row.command)}
-        if pid in shell_tree and _CHROMIUM_RENDERER_ARGV_RE.search(row.command):
-            member["role"] = ELECTRON_RENDERER_ROLE
-        if isinstance(row.rss_bytes, int) and row.rss_bytes >= 0:
-            member["rss_mb"] = round(row.rss_bytes / 1_048_576, 1)
-        members.append(member)
-    return members, family_pids
+
+    assoc_shell = _pick_association_shell_row(by_pid, family_pids, root_pid, registered_shell_pid)
+    global_shells = shell_candidates(rows)
+    assoc_dict, assoc_role_by_pid = _merge_webkit_into_family(
+        rows, by_pid, family_pids, assoc_shell, len(global_shells)
+    )
+    webkit_assoc = _webkit_association_body(
+        shell_row=assoc_shell,
+        global_shell_count=len(global_shells),
+        assoc=assoc_dict,
+    )
+    role_shell_pid = _desktop_shell_for_roles(by_pid, family_pids, root_pid, registered_shell_pid)
+    members = _live_family_members(
+        by_pid=by_pid,
+        family_pids=family_pids,
+        shell_tree=shell_tree,
+        assoc_shell=assoc_shell,
+        assoc_role_by_pid=assoc_role_by_pid,
+        role_shell_pid=role_shell_pid,
+    )
+    return LiveProcessFamily(members=members, pids=family_pids, webkit_association=webkit_assoc)
 
 
-def _walk_identity(
-    engine_pid: int | None, shell_pid: int | None, registered_shell_pid: int | None
-) -> dict[str, Any]:
+def _walk_identity(engine_pid: int | None, shell_pid: int | None, registered_shell_pid: int | None) -> dict[str, Any]:
     """Who the walk is for: this engine and the shell its environment names by
     default, or exactly the pids a caller passes (a test rooting the walk at a
     real process of its own, whose environment is not this one). The
@@ -641,6 +789,25 @@ def _walk_identity(
     }
 
 
+def live_process_family(
+    *,
+    engine_pid: int | None = None,
+    shell_pid: int | None = None,
+    registered_shell_pid: int | None = None,
+    process_iter: Callable[[], list[ProcessInfo]] | None = None,
+) -> LiveProcessFamily:
+    """Walk this engine's live family via psutil; include WebKit helpers when attributable."""
+
+    rows = _read_process_rows(process_iter)
+    if not rows:
+        return LiveProcessFamily(
+            [],
+            set(),
+            {"status": "not_applicable", "reason": "the process table could not be read"},
+        )
+    return _collect_live_process_family(rows, **_walk_identity(engine_pid, shell_pid, registered_shell_pid))
+
+
 def live_process_family_members(
     *,
     engine_pid: int | None = None,
@@ -650,13 +817,13 @@ def live_process_family_members(
 ) -> list[dict[str, Any]]:
     """Walk this engine's live process family via psutil. Members omit command and pid."""
 
-    rows = _read_process_rows(process_iter)
-    if not rows:
-        return []
-    members, _family_pids = _collect_live_process_family(
-        rows, **_walk_identity(engine_pid, shell_pid, registered_shell_pid)
+    family = live_process_family(
+        engine_pid=engine_pid,
+        shell_pid=shell_pid,
+        registered_shell_pid=registered_shell_pid,
+        process_iter=process_iter,
     )
-    return [{key: value for key, value in member.items() if key != "pid"} for member in members]
+    return [{key: value for key, value in member.items() if key != "pid"} for member in family.members]
 
 
 def live_process_family_state(
@@ -673,12 +840,13 @@ def live_process_family_state(
     member leaves the engine.
     """
 
-    rows = _read_process_rows(process_iter)
-    if not rows:
-        return [], set()
-    return _collect_live_process_family(
-        rows, **_walk_identity(engine_pid, shell_pid, registered_shell_pid)
+    family = live_process_family(
+        engine_pid=engine_pid,
+        shell_pid=shell_pid,
+        registered_shell_pid=registered_shell_pid,
+        process_iter=process_iter,
     )
+    return family.members, family.pids
 
 
 class MachinePressureCache:

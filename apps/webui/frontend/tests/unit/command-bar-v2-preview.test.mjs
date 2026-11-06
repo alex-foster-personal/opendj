@@ -31,12 +31,14 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  */
 
 let grid;
+let beatgridFallback;
 let cuePreview;
 let picker;
 let flag;
 
 before(async () => {
 	grid = await loadTypeScriptModule('src/lib/rb/cmdk-preview-grid.ts');
+	beatgridFallback = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback.ts');
 	cuePreview = await loadTypeScriptModule('src/lib/rb/cmdk-cue-preview.svelte.ts');
 	picker = await loadTypeScriptModule('src/lib/rb/cmdk-deck-picker.ts');
 	flag = await loadTypeScriptModule('src/lib/rb/cmdk-flag.ts');
@@ -54,6 +56,32 @@ function beats() {
 		for (let b = 0; b < 4; b++) out.push({ n: b + 1, bpm: 120, t: at(bar) + b * 0.5 });
 	}
 	return out;
+}
+
+function previewAnlz(previewBeats) {
+	const emptyBands = { length: 0, low: [], mid: [], high: [] };
+	return {
+		stable_id: 'abc123',
+		points: 38400,
+		waveform: { kind: 'mono', preview: emptyBands, detail: emptyBands },
+		beatgrid: { beat_count: previewBeats.length, beats: previewBeats },
+		cues: [],
+		phrases: [],
+		local_waveform: { status: 'decoded' }
+	};
+}
+
+function previewFallback(fallbackBeats) {
+	return {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa',
+		backend_version: 'test',
+		bpm: 128,
+		bpm_confidence: 0.9,
+		anlz_available: false,
+		beatgrid: { source: 'own', status: 'ok', beat_count: fallbackBeats.length, beats: fallbackBeats }
+	};
 }
 
 const SECTIONS = [
@@ -85,6 +113,54 @@ test('downbeats are the beats numbered 1, in time order', () => {
 	assert.equal(db[0], FIRST);
 	assert.equal(db[1], at(1));
 	assert.ok(db.every((t, i) => i === 0 || t > db[i - 1]));
+});
+
+test('the preview uses /beatgrid-fallback downbeats when /anlz has no grid', () => {
+	const fallbackBeats = [
+		{ n: 1, bpm: 128, t: 0.25 },
+		{ n: 2, bpm: 128, t: 0.71875 },
+		{ n: 3, bpm: 128, t: 1.1875 },
+		{ n: 4, bpm: 128, t: 1.65625 },
+		{ n: 1, bpm: 128, t: 2.125 }
+	];
+	const anlz = previewAnlz([]);
+	const gate = {
+		anlzErrorCode: null,
+		anlz,
+		vendor: null,
+		effectiveSource: 'rekordbox'
+	};
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
+	const painted = beatgridFallback.resolvePaintAnlz(anlz, previewFallback(fallbackBeats));
+	assert.deepEqual(grid.downbeatTimes(painted.beatgrid.beats), [0.25, 2.125]);
+});
+
+test('the preview ignores /beatgrid-fallback when /anlz has a real grid', () => {
+	const anlzBeats = [
+		{ n: 1, bpm: 124, t: 0.5 },
+		{ n: 2, bpm: 124, t: 0.983 },
+		{ n: 3, bpm: 124, t: 1.467 },
+		{ n: 4, bpm: 124, t: 1.951 },
+		{ n: 1, bpm: 124, t: 2.435 }
+	];
+	const fallbackBeats = [
+		{ n: 1, bpm: 128, t: 7.25 },
+		{ n: 2, bpm: 128, t: 7.71875 },
+		{ n: 3, bpm: 128, t: 8.1875 },
+		{ n: 4, bpm: 128, t: 8.65625 },
+		{ n: 1, bpm: 128, t: 9.125 }
+	];
+	const anlz = previewAnlz(anlzBeats);
+	const gate = {
+		anlzErrorCode: null,
+		anlz,
+		vendor: null,
+		effectiveSource: 'rekordbox'
+	};
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+	const painted = beatgridFallback.resolvePaintAnlz(anlz, previewFallback(fallbackBeats));
+	assert.deepEqual(grid.downbeatTimes(painted.beatgrid.beats), [0.5, 2.435]);
+	assert.ok(!painted.beatgrid.beats.some((beat) => beat.t === 7.25));
 });
 
 test('snap stops are the drops, breaks and vocal entries, on their nearest bar', () => {
@@ -561,6 +637,12 @@ test('the /anlz read waits for the row\'s own dwell, even when its strip is cach
 	assert.equal((bar.match(/ensureAnlzPrefetch\(/g) ?? []).length, 1, 'no other path prefetches /anlz');
 });
 
+test('the /beatgrid-fallback fetch waits for the row\'s own dwell, like /anlz (CMDK-07)', () => {
+	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
+	assert.match(bar, /const id = previewId;\s*if \(id !== null && dwelled === id && shouldUseBeatgridFallback\(previewFallbackGate\)\) ensureBeatgridFallback\(id\);/);
+	assert.equal((bar.match(/ensureBeatgridFallback\(/g) ?? []).length, 1, 'no other path prefetches /beatgrid-fallback');
+});
+
 test('typing while focus is off the input clears the highlight and the picker; picker keys win over typing (Sol r4278366215, r4278366223)', () => {
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
 	const win = bar.slice(bar.indexOf('function onWindowKeydown'), bar.indexOf('const pickLoad = createPickLoader'));
@@ -781,9 +863,23 @@ test('a press before the beat grid has loaded is held and starts the preview onc
 	await new Promise((r) => setTimeout(r, 0));
 	assert.deepEqual(moved.sent, [], 'a held press never plays another track');
 	assert.deepEqual(esc.sent, [], 'Esc cancels a held press');
-	// The bar marks a grid still being read (not asked yet, or loading) as pending, an /anlz error as not.
+	// The bar holds the press while /anlz or its gated fallback is still loading,
+	// but stops waiting once either lane has a terminal answer.
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
-	assert.match(bar, /gridPending: previewAnlz === null && getAnlzEntry\(previewRow\.stable_id\)\?\.status !== 'error'/);
+	assert.match(bar, /if \(previewAnlzEntry === undefined \|\| previewAnlzEntry\.status === 'loading'\) return true;/);
+	assert.match(bar, /if \(!shouldUseBeatgridFallback\(previewFallbackGate\)\) return false;/);
+	assert.match(bar, /return fallbackEntry === undefined \|\| fallbackEntry\.status === 'loading';/);
+	assert.match(bar, /gridPending: previewGridPending/);
+	for (const productionSymbol of [
+		'shouldUseBeatgridFallback',
+		'ensureBeatgridFallback',
+		'getBeatgridFallbackEntry',
+		'readyBeatgridFallback',
+		'paintAnlzForRow'
+	]) {
+		assert.ok(bar.includes(productionSymbol), `CommandBarV2 must use ${productionSymbol}`);
+	}
+	assert.doesNotMatch(bar, /PreviewFallbackEntry|cmdk-preview-beatgrid/);
 });
 
 test('a refused corrective reseek stops the first source instead of leaving it at the stale phase', async () => {

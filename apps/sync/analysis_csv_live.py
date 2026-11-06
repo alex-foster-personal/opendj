@@ -86,22 +86,11 @@ def _verify_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
     return len(blob) > 0
 
 
-def live_run(
+def _plan_live_rows(
     rows: list[dict],
-    *,
-    fields: set[str] | None = None,
-    only_tracks: set[str] | None = None,
-    flag_ok: bool = False,
-    rb_db_path: Path,
-    djay_db_path: Path,
-    open_rb_db: Callable[[Path], Any],
-) -> int:
-    from apps.sync.apply_analysis import (
-        _verify_rb_field,
-        _write_rb_field,
-    )
-
-    written = 0
+    fields: set[str] | None,
+    only_tracks: set[str] | None,
+) -> tuple[list[tuple[str, str, object]], list[tuple[str, str, object]]]:
     rb_plan: list[tuple[str, str, object]] = []
     djay_plan: list[tuple[str, str, object]] = []
     for r in rows:
@@ -117,6 +106,106 @@ def live_run(
             djay_plan.append((djay_uuid, field, r.get("rb_value", "")))
         elif res == "accept_djay" and rb_id:
             rb_plan.append((rb_id, field, r.get("djay_value", "")))
+    return rb_plan, djay_plan
+
+
+def _write_rb_plan(
+    rb_plan: list[tuple[str, str, object]],
+    rb_db_path: Path,
+    open_rb_db: Callable[[Path], Any],
+    flag_ok: bool,
+) -> int:
+    from apps.sync.apply_analysis import (
+        _verify_rb_field,
+        _write_rb_field,
+    )
+
+    if not rb_plan:
+        return 0
+    written = 0
+    db = open_rb_db(rb_db_path)
+    try:
+        rb_expected: dict[str, tuple[str, object]] = {f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan}
+
+        def rb_verifier(tag: str, _unused: object = None) -> bool:
+            fld, val = rb_expected[tag]
+            cid = tag.split(":", 1)[0]
+            return _verify_rb_field(db, cid, fld, val)
+
+        with LiveWriteSession(
+            target="rekordbox",
+            reason="SYNC-05 analysis sync (RB side)",
+            flag_ok=flag_ok,
+            db_path=rb_db_path,
+            verifier=rb_verifier,
+        ) as sess:
+            for content_id, field, value in rb_plan:
+                with sess.per_track(f"{content_id}:{field}") as w:
+                    ok = _write_rb_field(db, content_id, field, value)
+                    w.write((field, value))
+                    if ok and w.verify_readback():
+                        w.append_reverse(f"# revert RB {field} for ContentID={content_id}")
+                        written += 1
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return written
+
+
+def _write_djay_plan(
+    djay_plan: list[tuple[str, str, object]],
+    djay_db_path: Path,
+    flag_ok: bool,
+) -> int:
+    if not djay_plan:
+        return 0
+    written = 0
+    djay_expected: dict[str, tuple[str, object]] = {f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan}
+
+    def djay_verifier(tag: str, _unused: object = None) -> bool:
+        fld, val = djay_expected[tag]
+        uuid = tag.split(":", 1)[0]
+        return _verify_djay_field(djay_db_path, uuid, fld, val)
+
+    with LiveWriteSession(
+        target="djay",
+        reason="SYNC-05 analysis sync (djay side)",
+        flag_ok=flag_ok,
+        db_path=djay_db_path,
+        verifier=djay_verifier,
+    ) as sess:
+        for uuid, field, value in djay_plan:
+            with sess.per_track(f"{uuid}:{field}") as w:
+                ok = _write_djay_field(djay_db_path, uuid, field, value)
+                w.write((field, value))
+                if ok and w.verify_readback():
+                    w.append_reverse(f"# revert djay {field} for uuid={uuid}")
+                    written += 1
+    return written
+
+
+def _print_live_summary(
+    written: int,
+    rb_plan: list[tuple[str, str, object]],
+    djay_plan: list[tuple[str, str, object]],
+) -> int:
+    print(f"[apply_analysis] wrote {written} fields of {len(rb_plan) + len(djay_plan)} planned")
+    return 0
+
+
+def live_run(
+    rows: list[dict],
+    *,
+    fields: set[str] | None = None,
+    only_tracks: set[str] | None = None,
+    flag_ok: bool = False,
+    rb_db_path: Path,
+    djay_db_path: Path,
+    open_rb_db: Callable[[Path], Any],
+) -> int:
+    rb_plan, djay_plan = _plan_live_rows(rows, fields, only_tracks)
 
     unsupported_rb = sorted({fld for _cid, fld, _val in rb_plan if fld not in SUPPORTED_RB_WRITE_FIELDS})
     if unsupported_rb:
@@ -135,61 +224,9 @@ def live_run(
             f"{sorted(_SUPPORTED_DJAY_WRITE_FIELDS)} or regenerate the diff."
         )
 
-    if rb_plan:
-        db = open_rb_db(rb_db_path)
-        try:
-            rb_expected: dict[str, tuple[str, object]] = {f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan}
-
-            def rb_verifier(tag: str, _unused: object = None) -> bool:
-                fld, val = rb_expected[tag]
-                cid = tag.split(":", 1)[0]
-                return _verify_rb_field(db, cid, fld, val)
-
-            with LiveWriteSession(
-                target="rekordbox",
-                reason="SYNC-05 analysis sync (RB side)",
-                flag_ok=flag_ok,
-                db_path=rb_db_path,
-                verifier=rb_verifier,
-            ) as sess:
-                for content_id, field, value in rb_plan:
-                    with sess.per_track(f"{content_id}:{field}") as w:
-                        ok = _write_rb_field(db, content_id, field, value)
-                        w.write((field, value))
-                        if ok and w.verify_readback():
-                            w.append_reverse(f"# revert RB {field} for ContentID={content_id}")
-                            written += 1
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
-
-    if djay_plan:
-        djay_expected: dict[str, tuple[str, object]] = {f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan}
-
-        def djay_verifier(tag: str, _unused: object = None) -> bool:
-            fld, val = djay_expected[tag]
-            uuid = tag.split(":", 1)[0]
-            return _verify_djay_field(djay_db_path, uuid, fld, val)
-
-        with LiveWriteSession(
-            target="djay",
-            reason="SYNC-05 analysis sync (djay side)",
-            flag_ok=flag_ok,
-            db_path=djay_db_path,
-            verifier=djay_verifier,
-        ) as sess:
-            for uuid, field, value in djay_plan:
-                with sess.per_track(f"{uuid}:{field}") as w:
-                    ok = _write_djay_field(djay_db_path, uuid, field, value)
-                    w.write((field, value))
-                    if ok and w.verify_readback():
-                        w.append_reverse(f"# revert djay {field} for uuid={uuid}")
-                        written += 1
-
-    print(f"[apply_analysis] wrote {written} fields of {len(rb_plan) + len(djay_plan)} planned")
-    return 0
+    written = _write_rb_plan(rb_plan, rb_db_path, open_rb_db, flag_ok)
+    written += _write_djay_plan(djay_plan, djay_db_path, flag_ok)
+    return _print_live_summary(written, rb_plan, djay_plan)
 
 
 __all__ = ["_camelot_to_djay_key_idx", "live_run"]

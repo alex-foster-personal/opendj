@@ -17,11 +17,17 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
-from apps.autodj.capture import ClosedMix, TransitionCapture, in_bars
-from apps.autodj.pair_memory import record_played
-from apps.autodj.plan import validate_plan
-from apps.autodj.profile import TrackProfile
-from apps.autodj.simplify import SimplifyError, simplify
+from apps.autodj.http import (
+    ClosedMix,
+    SimplifyError,
+    TrackProfile,
+    TransitionCapture,
+    build_service,
+    in_bars,
+    record_played,
+    simplify,
+    validate_plan,
+)
 from apps.shared.engine_origin import EngineOrigin
 from apps.shared.state import db as state_db
 from apps.transition_score.tryer import EngineProfiles
@@ -54,7 +60,7 @@ def _engine_profiles(request: Request, path: Path) -> ProfileSource:
         raise RuntimeError(f"the mirror route cannot name its own socket (scope server={server!r})")
     host, port = server
     origin = EngineOrigin(host=host, port=int(port), lock_path=path, pid=None, role=None, boot_id=None)
-    return EngineProfiles(origin).profile
+    return EngineProfiles(origin, build_service()).profile
 
 
 def finish_capture(mix: ClosedMix, capture: TransitionCapture, path: Path, profile_of: ProfileSource) -> None:

@@ -49,8 +49,9 @@ from .migrations_v25 import _V25
 from .migrations_v26 import _V26
 from .migrations_v27 import _V27
 from .migrations_v28 import _V28
+from .migrations_v29 import _V29
 
-SCHEMA_VERSION: int = 28
+SCHEMA_VERSION: int = 29
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -84,6 +85,7 @@ MIGRATIONS: list[list[str]] = [
     _V26,
     _V27,
     _V28,
+    _V29,
 ]
 
 

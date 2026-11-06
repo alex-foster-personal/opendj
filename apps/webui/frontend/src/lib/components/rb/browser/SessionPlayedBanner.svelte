@@ -26,25 +26,45 @@
 		<button type="button" disabled={busy} onclick={run(startNewSession)} data-testid="session-new">New session</button>
 	</div>
 {:else if sessionPlayed.phase === 'live' && sessionPlayed.visible.size > 0}
-	<div class="session-line" data-testid="session-played-line">
-		<span title="Tracks loaded this session keep a green title, across crashes and relaunches, until New session">{sessionPlayed.visible.size} played this session</span>
-		<button type="button" class="link" disabled={busy} onclick={run(startNewSession)} data-testid="session-new">New session</button>
+	<div class="session-live-anchor">
+		<div class="session-line" data-testid="session-played-line">
+			<span title="Tracks loaded this session keep a green title, across crashes and relaunches, until New session">{sessionPlayed.visible.size} played this session</span>
+			<button type="button" class="link" disabled={busy} onclick={run(startNewSession)} data-testid="session-new">New session</button>
+		</div>
 	</div>
 {/if}
 
 <style>
-	.session-banner,
-	.session-line {
+	.session-banner {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		padding: 3px 8px;
 		font-size: 11px;
-		color: var(--rb-text-dim);
-	}
-	.session-banner {
 		background: color-mix(in srgb, var(--rb-green) 16%, transparent);
 		color: var(--rb-text);
+	}
+	.session-live-anchor {
+		position: relative;
+		z-index: 7;
+		flex: 0 0 0;
+		height: 0;
+		overflow: visible;
+	}
+	.session-line {
+		position: absolute;
+		inset: 0 8px auto auto;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		box-sizing: border-box;
+		padding: 2px 8px;
+		border: 1px solid var(--rb-border);
+		border-radius: 0 0 3px 3px;
+		background: var(--rb-panel);
+		color: var(--rb-text-dim);
+		font-size: 11px;
+		white-space: nowrap;
 	}
 	button {
 		font: inherit;

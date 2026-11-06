@@ -152,6 +152,58 @@ def test_soft_detail_keeps_the_true_count_past_the_name_cap(tmp_path: Path) -> N
     )
 
 
+def test_json_keeps_soft_counts_and_adds_capped_offenders(tmp_path: Path, monkeypatch) -> None:
+    """[if] JSON is written [then] soft counts and capped offenders survive, [else stop]."""
+    python_files = [
+        _write_lines(tmp_path, "largest.py", 1300),
+        _write_lines(tmp_path, "second.py", 1200),
+        _write_lines(tmp_path, "third.py", 1100),
+        _write_lines(tmp_path, "under.py", 900),
+    ]
+    frontend_files = [
+        _write_lines(tmp_path, "largest.ts", 1250),
+        _write_lines(tmp_path, "second.ts", 1050),
+    ]
+
+    def _size_evaluator() -> list[qg.Metric]:
+        return qg._file_size_metrics(
+            python_files,
+            frontend_files,
+            repo=tmp_path,
+            list_max=1,
+        )
+
+    monkeypatch.setattr(
+        qg,
+        "EVALUATORS",
+        (qg.Evaluator("size-test", "size test", _size_evaluator),),
+    )
+    monkeypatch.setattr(qg, "_preflight", lambda _selected: None)
+    monkeypatch.setattr(qg, "_load_baseline", dict)
+    monkeypatch.setattr(qg, "_load_slack", dict)
+    monkeypatch.setattr(qg, "_hotspots", lambda: qg.HotspotResult([]))
+    output = tmp_path / "metrics.json"
+
+    exit_code = qg.main(["--only", "size-test", "--json", str(output)])
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload["file_size.soft_over_python"] == 3
+    assert payload["file_size.soft_over_frontend"] == 2
+    assert payload["offenders"] == {
+        "file_size.soft_over_python": ["largest.py (1300 lines)", "+2 more"],
+        "file_size.soft_over_frontend": ["largest.ts (1250 lines)", "+1 more"],
+    }
+    assert "file_size.max_python" not in payload["offenders"]
+    assert all("under.py" not in offender for offenders in payload["offenders"].values() for offender in offenders)
+
+
+def test_json_payload_emits_empty_offenders_for_plain_metrics() -> None:
+    """If no metric carries offenders then JSON emits an empty mapping."""
+    payload = qg._json_payload([qg.Metric("plain.metric", 1, "thing")], [])
+    assert payload["offenders"] == {}
+
+
 def test_empty_file_list_raises(tmp_path: Path) -> None:
     """If the file list is empty then sizing raises instead of reporting zero."""
     raised = False

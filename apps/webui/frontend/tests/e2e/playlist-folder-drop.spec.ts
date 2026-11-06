@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page, type Response } from '@playwright/test';
 
 const FIXTURE_DIR = path.resolve(
 	fileURLToPath(new URL('.', import.meta.url)),
@@ -33,7 +33,11 @@ function fixtureFile(name: string): DropFile {
  * browser dispatches for an OS drag. Each File carries the folder-relative
  * path the folder walker produces, so the drop names its folder.
  */
-async function dropFolderOnPlaylistTree(page: Page, folder: string, files: DropFile[]): Promise<void> {
+async function dropFolderOnPlaylistTree(
+	page: Page,
+	folder: string,
+	files: DropFile[]
+): Promise<void> {
 	await page.evaluate(
 		({ folder, files }) => {
 			const target = document.querySelector('[data-testid="playlist-tree-panel"] .tree-scroll');
@@ -43,8 +47,12 @@ async function dropFolderOnPlaylistTree(page: Page, folder: string, files: DropF
 				const bytes = Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0));
 				dt.items.add(new File([bytes], `${folder}/${f.name}`, { type: 'audio/mpeg' }));
 			}
-			target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
-			target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+			target.dispatchEvent(
+				new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true })
+			);
+			target.dispatchEvent(
+				new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })
+			);
 		},
 		{ folder, files }
 	);
@@ -70,7 +78,11 @@ async function playlistItems(page: Page, playlistId: string): Promise<string[]> 
  * chromaprint a library duplicate is only a duration match, which the drop
  * holds for a decision: answer it with Skip, which links the existing track.
  */
-async function awaitDropPlaylist(page: Page, name: string, before: Summary[] = []): Promise<Summary> {
+async function awaitDropPlaylist(
+	page: Page,
+	name: string,
+	before: Summary[] = []
+): Promise<Summary> {
 	const known = new Set(before.map((p) => p.playlist_id));
 	const modal = page.getByTestId('playlist-folder-dup-modal');
 	const deadline = Date.now() + 20_000;
@@ -121,9 +133,7 @@ async function ingestStepsEnabled(request: APIRequestContext): Promise<Record<st
 
 type RefreshStatus = {
 	running: boolean;
-	phase: string;
 	started_at: number | null;
-	log_tail: string[];
 };
 
 async function refreshStatus(request: APIRequestContext): Promise<RefreshStatus> {
@@ -131,6 +141,35 @@ async function refreshStatus(request: APIRequestContext): Promise<RefreshStatus>
 	expect(r.ok(), await r.text()).toBe(true);
 	return (await r.json()) as RefreshStatus;
 }
+
+function queuedRefreshFailure(lastSecondBatchState: string): string {
+	return `the second folder's deferred batch refresh was not accepted: ${lastSecondBatchState}`;
+}
+
+function refreshBatchDir(response: Response): string | null {
+	const body = response.request().postDataJSON() as { batch_dir?: unknown };
+	return typeof body.batch_dir === 'string' ? body.batch_dir : null;
+}
+
+function refreshSlotState(initialSlot: RefreshStatus, finalSlot: RefreshStatus): string {
+	if (!finalSlot.running) return 'the visible refresh slot is idle';
+	if (initialSlot.started_at !== null && finalSlot.started_at === initialSlot.started_at) {
+		return `the earlier job is still running in the visible slot (${finalSlot.started_at})`;
+	}
+	if (
+		initialSlot.started_at !== null &&
+		finalSlot.started_at !== null &&
+		finalSlot.started_at > initialSlot.started_at
+	) {
+		return `a later job is running in the visible slot (${finalSlot.started_at})`;
+	}
+	return `another job is running in the visible slot (${finalSlot.started_at})`;
+}
+
+test('queued refresh timeout diagnostics include the last observed state', () => {
+	const lastState = 'a later job took the slot before the second batch was seen scoped';
+	expect(queuedRefreshFailure(lastState)).toContain(lastState);
+});
 
 /** The toast tray's current text; toasts render into the one `.toast-stack`. */
 function toastStack(page: Page) {
@@ -180,7 +219,9 @@ test.describe('playlist folder drop', () => {
 			expect(detail.ok(), await detail.text()).toBe(true);
 			const etag = detail.headers().etag;
 			expect(etag, `playlist ${id} detail carries no ETag`).toBeTruthy();
-			const del = await request.delete(`/api/v1/playlists/${id}`, { headers: { 'If-Match': etag } });
+			const del = await request.delete(`/api/v1/playlists/${id}`, {
+				headers: { 'If-Match': etag }
+			});
 			expect(del.ok(), await del.text()).toBe(true);
 		}
 		for (const id of await liveTrackIds(request)) {
@@ -233,7 +274,9 @@ test.describe('playlist folder drop', () => {
 
 		await page.evaluate(() => {
 			const dt = new DataTransfer();
-			dt.items.add(new File([new Uint8Array(4096).fill(65)], 'e2e-junk.mp3', { type: 'audio/mpeg' }));
+			dt.items.add(
+				new File([new Uint8Array(4096).fill(65)], 'e2e-junk.mp3', { type: 'audio/mpeg' })
+			);
 			window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
 		});
 
@@ -277,19 +320,6 @@ test.describe('playlist folder drop', () => {
 		page
 	}) => {
 		test.setTimeout(150_000); // two real drops, then the queued refresh's own run
-		const refreshPosts: number[] = [];
-		// The job each 202 started for the SECOND drop's batch, as the engine
-		// answered that POST: the job it created, not whatever holds the slot.
-		const secondBatchJobs: Promise<RefreshStatus>[] = [];
-		page.on('response', (r) => {
-			if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh') {
-				refreshPosts.push(r.status());
-				const batchDir = (JSON.parse(r.request().postData() ?? '{}') as { batch_dir?: string }).batch_dir;
-				if (r.status() === 202 && batchDir?.includes('E2E Busy Second-')) {
-					secondBatchJobs.push(r.json() as Promise<RefreshStatus>);
-				}
-			}
-		});
 		await page.goto('/performance');
 		await expect(page.getByTestId('playlist-tree-panel')).toBeVisible({ timeout: 15_000 });
 
@@ -298,53 +328,70 @@ test.describe('playlist folder drop', () => {
 		// the second drop asks for its own.
 		await dropFolderOnPlaylistTree(page, 'E2E Busy First', [fixtureFile(DUP_SOURCE)]);
 		await awaitDropPlaylist(page, 'E2E Busy First');
+		const initialSlot = await refreshStatus(page.request);
+		const secondBatchResponseCodes: number[] = [];
+		let lastSecondBatchState = 'no second-batch refresh request observed yet';
+		const acceptedSecondBatch = page
+			.waitForResponse(
+				(response) => {
+					if (
+						response.request().method() !== 'POST' ||
+						new URL(response.url()).pathname !== '/api/v1/ingest/refresh' ||
+						!refreshBatchDir(response)?.includes('E2E Busy Second-')
+					) {
+						return false;
+					}
+					const status = response.status();
+					secondBatchResponseCodes.push(status);
+					if (status === 409) {
+						lastSecondBatchState =
+							'the second-batch request returned 409 and is waiting for the slot';
+						return false;
+					}
+					if (status !== 202) {
+						lastSecondBatchState = `the second-batch request returned ${status}, not 202`;
+						return false;
+					}
+					lastSecondBatchState = 'the second-batch request returned 202';
+					return true;
+				},
+				{ timeout: 100_000 }
+			)
+			.then(
+				(response) => ({ response, error: null }),
+				(error: unknown) => ({ response: null, error })
+			);
 		await dropFolderOnPlaylistTree(page, 'E2E Busy Second', [fixtureFile(NEW_SOURCE)]);
 		await awaitDropPlaylist(page, 'E2E Busy Second');
 
 		// The drop reports success, not "folder drop failed".
 		await expect(toastStack(page)).toContainText('Created "E2E Busy Second"', { timeout: 20_000 });
 		expect(
-			refreshPosts,
+			secondBatchResponseCodes,
 			'precondition: the second drop never met a busy refresh slot, so this run proves nothing'
 		).toContain(409);
 
-		// The running job cannot see the second batch (a batch job enumerates
-		// only its own batch_dir), so the queued request must start a job over
-		// the second drop's batch once the slot frees, and that job must end.
-		//
-		// GET /refresh/status shows only the job in the one slot NOW. The
-		// analyze-on-import watcher (analysis_autostart, a tick every 60 s)
-		// claims that slot whenever it is free and the unmapped backlog has
-		// changed, and both drops leave their tracks in that backlog. A tick
-		// landing between the batch job's end and the next poll here hides that
-		// job for good (PR #6199, CI run 37881866899). So the job is followed by
-		// its own identity, the started_at its POST answered with: a job of
-		// ours that the slot still shows must be over with the second batch in
-		// its log, and a LATER job in the slot proves ours left it, since the
-		// slot starts a job only once the previous one is no longer active. A
-		// worker can leave the slot without logging its scope, so the scope line
-		// must have been seen on our own job before a later job counts.
-		let secondBatchScoped = false;
-		await expect
-			.poll(
-				async () => {
-					if (secondBatchJobs.length === 0) return 'the second batch has no started job yet';
-					const ours = (await secondBatchJobs[0]).started_at;
-					const s = await refreshStatus(page.request);
-					if (s.started_at === ours) {
-						secondBatchScoped ||= s.log_tail.some((l) => l.includes('batch scope:') && l.includes('E2E Busy Second-'));
-						if (s.running) return 'the second batch job is still running';
-						return secondBatchScoped ? 'ended' : 'the second batch job ended without scoping the second batch';
-					}
-					if (ours === null || s.started_at === null || s.started_at < ours) {
-						return `the slot holds an earlier job (${s.started_at}, ours ${ours})`;
-					}
-					return secondBatchScoped ? 'ended' : 'a later job took the slot before the second batch was seen scoped';
-				},
-				{ intervals: [250], timeout: 100_000, message: 'no refresh ever ran over the second drop\'s batch' }
-			)
-			.toBe('ended');
-		expect(refreshPosts.slice(refreshPosts.indexOf(409))).toContain(202);
+		// The 202 response belongs to the exact POST whose body names the second
+		// batch. Unlike GET /refresh/status, that event cannot be erased when a
+		// later watcher job replaces the one visible status slot.
+		const accepted = await acceptedSecondBatch;
+		if (accepted.response === null) {
+			try {
+				const finalSlot = await refreshStatus(page.request);
+				lastSecondBatchState += `; ${refreshSlotState(initialSlot, finalSlot)}`;
+			} catch (snapshotError) {
+				lastSecondBatchState += `; final refresh-slot snapshot failed: ${String(snapshotError)}`;
+			}
+			throw new Error(queuedRefreshFailure(lastSecondBatchState), { cause: accepted.error });
+		}
+		expect(refreshBatchDir(accepted.response)).toContain('E2E Busy Second-');
+		const acceptedJob = (await accepted.response.json()) as RefreshStatus;
+		expect(
+			acceptedJob.started_at,
+			'the accepted second-batch job has no start identity'
+		).not.toBeNull();
+		const firstBusy = secondBatchResponseCodes.indexOf(409);
+		expect(secondBatchResponseCodes.slice(firstBusy + 1)).toContain(202);
 		await expect(toastStack(page)).not.toContainText('folder drop failed');
 	});
 

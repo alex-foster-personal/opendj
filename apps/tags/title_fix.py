@@ -166,7 +166,7 @@ class Track:
     album: str | None = None
     label: str | None = None
     year: int | None = None
-    length_s: int | None = None
+    length_s: float | None = None
     bit_depth: int | None = None
     sample_rate: int | None = None
     bitrate: int | None = None  # kbps; None (or 0 from a library) is unknown
@@ -1354,7 +1354,7 @@ def _describe_project(track: Track) -> str:
     def known(value: str | int | None) -> str:
         return "unknown" if value is None else ("present" if value else "ABSENT")
 
-    def num(value: int | None, unit: str) -> str:
+    def num(value: int | float | None, unit: str) -> str:
         return "unknown" if value is None else f"{value}{unit}"
 
     ext = Path(track.filename).suffix.lower() or "(none)"

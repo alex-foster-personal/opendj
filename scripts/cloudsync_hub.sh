@@ -6,7 +6,7 @@
 # this script only installs the rendered units and drives the host's service
 # manager: systemd --user on Linux, launchd on macOS. Nothing here binds a
 # wider interface: tailnet exposure is a separate, manual `tailscale serve`
-# step (docs/cloudsync/hub-runbook.md).
+# step ((private path)).
 #
 # Overrides (each resolved value is printed before use):
 #   OPENDJ_HUB_DATA_DIR    default: hub_deploy default-data-dir
@@ -21,7 +21,7 @@
 #
 # Must run under bash 3.2 (stock macOS /bin/bash): under `set -u` it treats an
 # empty "${array[@]}" as unbound, so arrays that can be empty expand as
-# ${array[@]+"${array[@]}"}. tests/cloudsync/test_hub_script.py runs /bin/bash.
+# ${array[@]+"${array[@]}"}. (private path) runs /bin/bash.
 set -euo pipefail
 unset VIRTUAL_ENV
 
@@ -126,6 +126,7 @@ render_units() {
 
 wait_for_hub() {
   local waited=0
+  local started_at=$SECONDS
   until hub_py status --data-dir "${HUB_DATA_DIR}" --url "${HUB_URL}" > /dev/null; do
     if (( waited >= START_WAIT_S )); then
       echo "[ERROR] hub did not answer as a hub within ${START_WAIT_S}s" >&2
@@ -134,6 +135,7 @@ wait_for_hub() {
     sleep 3
     waited=$(( waited + 3 ))
   done
+  echo "[INFO] hub answered as a hub after $((SECONDS - started_at))s (slept ${waited}s of budget ${START_WAIT_S}s)"
 }
 
 cmd_start() {

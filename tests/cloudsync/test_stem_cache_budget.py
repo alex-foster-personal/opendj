@@ -29,6 +29,12 @@ from apps.cloud.stem_cache_budget import (
     StemCacheSettings,
 )
 from apps.cloud.stem_hydration import OpenDeckRegistry
+from apps.cloud.stem_index import (
+    load_cached_index,
+    load_remote_confirmed_index,
+    merge_remote_into_cached_index,
+    upsert_cached_index_entries,
+)
 from tests.cloudsync.stem_cache_rig import (
     FLOOR_BYTES,
     bundle_bytes,
@@ -102,6 +108,37 @@ def test_local_only_bundle_is_never_evicted_and_is_queued_for_upload(tmp_path: P
     assert "local-only-oldest" in report.queued_for_upload
     queue = budget.load_upload_queue(data_dir)
     assert queue["local-only-oldest"]["reason"] == budget.REASON_NOT_IN_INDEX
+
+
+@pytest.mark.requirement("STEM-40")
+@pytest.mark.requirement("STEM-8894")
+def test_unpublished_entry_in_merged_cache_is_not_eviction_evidence(tmp_path: Path):
+    """A merged local entry is not R2 proof.
+
+    [if] an unpublished entry survives refresh [then] it stays queued, [else stop].
+    """
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    unpublished = make_bundle(stems_dir, "local-unpublished", atime=1_000_000)
+    confirmed = make_bundle(stems_dir, "remote-confirmed", atime=2_000_000)
+    upsert_cached_index_entries(data_dir, {"local-unpublished": unpublished})
+    merge_remote_into_cached_index(data_dir, {"remote-confirmed": confirmed})
+
+    assert set(load_cached_index(data_dir)) == {
+        "local-unpublished",
+        "remote-confirmed",
+    }
+    report = enforce(
+        stems_dir,
+        data_dir,
+        index=load_remote_confirmed_index(data_dir),
+        disk=disk_usage(free=0),
+    )
+
+    assert (stems_dir / "local-unpublished").exists()
+    assert "local-unpublished" not in report.evicted_stable_ids
+    assert report.evicted_stable_ids == ("remote-confirmed",)
+    assert "local-unpublished" in report.queued_for_upload
+    assert budget.load_upload_queue(data_dir)["local-unpublished"]["reason"] == budget.REASON_NOT_IN_INDEX
 
 
 @pytest.mark.requirement("STEM-40")

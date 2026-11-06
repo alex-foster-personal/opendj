@@ -169,6 +169,23 @@ def process_metric_record(
     }
 
 
+def _vmmap_parsed_quad(rest: list[str]) -> dict[str, float] | None:
+    """Four vmmap size columns as MB, or None when the row is short or unparsable."""
+
+    if len(rest) < 4:
+        return None
+    values = [parse_byte_count(item) for item in rest[:4]]
+    if any(value is None for value in values):
+        return None
+    virtual, resident, dirty, swapped = (item or 0 for item in values)
+    return {
+        "virtual_mb": round_mb(virtual),
+        "resident_mb": round_mb(resident),
+        "dirty_mb": round_mb(dirty),
+        "swapped_mb": round_mb(swapped),
+    }
+
+
 VMMAP_REGION_PREFIXES = {
     "JS JIT generated code": "js_jit",
     "JS VM Gigacage": "js_vm_gigacage",
@@ -184,10 +201,11 @@ def _vmmap_footprints(output: str) -> dict[str, float]:
     """The two headline footprint lines, in MB, when vmmap printed them."""
 
     found: dict[str, float] = {}
-    for label, key in (
+    labels = (
         ("Physical footprint:", "physical_footprint_mb"),
         ("Physical footprint (peak):", "peak_physical_footprint_mb"),
-    ):
+    )
+    for label, key in labels:
         match = re.search(rf"^{re.escape(label)}\s+([0-9.]+[KMGTP]?)", output, re.MULTILINE)
         if match is None:
             continue
@@ -200,34 +218,36 @@ def _vmmap_footprints(output: str) -> dict[str, float]:
 def _vmmap_region_row(stripped: str, prefix: str) -> dict[str, float] | None:
     """The virtual/resident/dirty/swapped quad for one named region, or None."""
 
-    rest = stripped[len(prefix) :].strip().split()
-    if len(rest) < 4:
+    return _vmmap_parsed_quad(stripped[len(prefix) :].strip().split())
+
+
+def _vmmap_region_for_line(stripped: str) -> tuple[str, dict[str, float]] | None:
+    if "(reserved)" in stripped:
         return None
-    values = [parse_byte_count(item) for item in rest[:4]]
-    if not all(value is not None for value in values):
-        return None
-    return {
-        "virtual_mb": round_mb(values[0] or 0),
-        "resident_mb": round_mb(values[1] or 0),
-        "dirty_mb": round_mb(values[2] or 0),
-        "swapped_mb": round_mb(values[3] or 0),
-    }
+    for prefix, key in VMMAP_REGION_PREFIXES.items():
+        if stripped.startswith(prefix):
+            row = _vmmap_region_row(stripped, prefix)
+            if row is None:
+                return None
+            return (key, row)
+    return None
 
 
 def _vmmap_regions(output: str) -> dict[str, dict[str, float]]:
     regions: dict[str, dict[str, float]] = {}
-    for line in output.splitlines():
-        stripped = line.strip()
-        if "(reserved)" in stripped:
-            continue
-        for prefix, key in VMMAP_REGION_PREFIXES.items():
-            if not stripped.startswith(prefix):
-                continue
-            row = _vmmap_region_row(stripped, prefix)
-            if row is not None:
-                regions[key] = row
-            break
+    for stripped in (line.strip() for line in output.splitlines()):
+        matched = _vmmap_region_for_line(stripped)
+        if matched is not None:
+            key, row = matched
+            regions[key] = row
     return regions
+
+
+def _vmmap_parsed_summary(pid: int, output: str) -> dict[str, Any]:
+    result: dict[str, Any] = {"available": True, "pid": pid}
+    result.update(_vmmap_footprints(output))
+    result["regions"] = _vmmap_regions(output)
+    return result
 
 
 def vmmap_summary(pid: int) -> dict[str, Any]:
@@ -235,7 +255,4 @@ def vmmap_summary(pid: int) -> dict[str, Any]:
         output = run_text(["vmmap", "-summary", str(pid)], timeout=30.0)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return {"available": False, "error": type(exc).__name__}
-    result: dict[str, Any] = {"available": True, "pid": pid}
-    result.update(_vmmap_footprints(output))
-    result["regions"] = _vmmap_regions(output)
-    return result
+    return _vmmap_parsed_summary(pid, output)

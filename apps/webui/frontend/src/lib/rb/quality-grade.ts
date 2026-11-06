@@ -38,6 +38,14 @@ export interface GradeView {
 	dataGrade: string;
 }
 
+/** Key for badge hover-state (QLTSCAN-05): track id plus serialized grade, aligned with `api-audio-quality` fetch keys. */
+export function qualityHoverStateKey(
+	trackKey: string,
+	grade: TrackQualityGrade | null | undefined
+): string {
+	return `${trackKey}|${JSON.stringify(grade ?? null)}`;
+}
+
 function _summary(grade: TrackQualityGrade): string {
 	if (grade.letter === null) return 'Quality unknown';
 	const head = grade.checked

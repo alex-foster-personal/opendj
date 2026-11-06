@@ -95,7 +95,7 @@ export default defineConfig({
 		'**/reanalyze-context-menu-toast.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
 		'**/transition-in-cue.spec.ts', // playwright.transition-in-cue.config.ts (real backend, seeded grid)
-		'**/cmdk-preview-cue.spec.ts', // playwright.cmdk-preview-cue.config.ts (real engine, own-beatgrid fixture)
+		'**/cmdk-preview-cue.spec.ts', // playwright.cmdk-preview-cue.config.ts (real engine, hermetic librosa fallback fixture)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/pairing-arrow.spec.ts', // playwright.pairing-arrow.config.ts (seeds the 26-track fixture its webServer needs; `just test-pairing-arrow`)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
@@ -136,7 +136,8 @@ export default defineConfig({
 		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
 		'**/audio-soak.spec.ts', // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
 		'**/autoplay-error-hunt.spec.ts', // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
-		'**/silence-expected-audible.spec.ts' // playwright.silence-expected-audible.config.ts (real backend + bench clips)
+		'**/silence-expected-audible.spec.ts', // playwright.silence-expected-audible.config.ts (real backend + bench clips)
+		'**/libm120-scale-bench.spec.ts' // playwright.libm120.config.ts (production build benchmark)
 	],
 	fullyParallel: false,
 	workers: 1,

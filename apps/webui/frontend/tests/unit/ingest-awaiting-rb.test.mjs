@@ -10,16 +10,17 @@ import { describe, it } from 'node:test';
 
 describe('awaiting-Rekordbox chrome (LIBMX-13)', () => {
 	it('LibraryJobsChrome has ingest-awaiting-rb chip and confirm', () => {
-		const src = readFileSync(
-			new URL(
-				'../../src/lib/components/rb/library-jobs/LibraryJobsChrome.svelte',
-				import.meta.url
-			),
-			'utf8'
-		);
-		assert.match(src, /data-testid="ingest-awaiting-rb"/);
-		assert.match(src, /data-testid="ingest-awaiting-rb-confirm"/);
-		assert.match(src, /confirmIngestPending/);
+		const read = (name) =>
+			readFileSync(
+				new URL(`../../src/lib/components/rb/library-jobs/${name}`, import.meta.url),
+				'utf8'
+			);
+		// The chip markup is in the props-only view; the container makes the call.
+		const view = read('LibraryJobsChromeView.svelte');
+		assert.match(view, /data-testid="ingest-awaiting-rb"/);
+		assert.match(view, /data-testid="ingest-awaiting-rb-confirm"/);
+		assert.match(read('LibraryJobsChrome.svelte'), /confirmIngestPending/);
+		assert.match(read('LibraryJobsChrome.svelte'), /<LibraryJobsChromeView\b/);
 	});
 
 	it('IngestDropModal has dup accept/reject and defers refresh', () => {

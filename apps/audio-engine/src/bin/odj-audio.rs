@@ -960,12 +960,37 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
+    /// A test's scratch directory, deleted with everything in it when this
+    /// guard drops. Bind the guard for the whole test: `let (_guard, d) = dir(..)`.
+    struct Dir {
+        path: PathBuf,
+        dir: Option<tempfile::TempDir>,
+    }
+
+    /// A directory that will not delete fails the test that made it. While a
+    /// test is already panicking the delete is best-effort, so the original
+    /// failure is the one reported.
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let Some(dir) = self.dir.take() else { return };
+            let deleted = dir.close();
+            if !std::thread::panicking() {
+                if let Err(e) = deleted {
+                    panic!(
+                        "could not delete test scratch dir {}: {e}",
+                        self.path.display()
+                    );
+                }
+            }
+        }
+    }
+
     /// A fresh directory, deleted when the guard drops (on panic too). Bind
     /// the guard for the whole test: `let (_guard, d) = dir(..)`.
-    fn dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+    fn dir(name: &str) -> (Dir, PathBuf) {
         let guard = tempfile::Builder::new().prefix(&format!("odj-audio-test-claim-{name}-")).tempdir().unwrap();
-        let d = guard.path().to_path_buf();
-        (guard, d)
+        let path = guard.path().to_path_buf();
+        (Dir { path: path.clone(), dir: Some(guard) }, path)
     }
 
     fn w(p: PathBuf, what: &str) -> (PathBuf, String) {

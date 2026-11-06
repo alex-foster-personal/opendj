@@ -30,6 +30,7 @@ from apps.cloud.stem_index import (
     fetch_index,
     is_allowed_stem_filename,
     load_cached_index,
+    load_remote_confirmed_index,
     publish_index,
     refresh_error,
     refresh_local_cache_from_r2,
@@ -397,6 +398,17 @@ _OTHER = {"manifest.json": "e" * 64}
 
 
 @pytest.mark.requirement("STEM-8894")
+def test_remote_confirmed_index_is_empty_before_the_first_refresh(tmp_path: Path):
+    """Missing remote-base is safe.
+
+    [if] no remote-base exists [then] no cache entry is confirmed, [else stop].
+    """
+    save_cached_index(tmp_path / "data", {"local-only": _OLD})
+
+    assert load_remote_confirmed_index(tmp_path / "data") == {}
+
+
+@pytest.mark.requirement("STEM-8894")
 def test_refresh_keeps_local_only_entry(tmp_path: Path, cfg: CloudConfig):
     """[if] an entry is recorded locally but not published [then] a refresh keeps it, [else stop]."""
     data_dir = tmp_path / "data"
@@ -408,6 +420,7 @@ def test_refresh_keeps_local_only_entry(tmp_path: Path, cfg: CloudConfig):
 
     assert merged == {"local-only": _OLD, "remote-only": _OTHER}
     assert load_cached_index(data_dir) == merged
+    assert load_remote_confirmed_index(data_dir) == {"remote-only": _OTHER}
 
 
 @pytest.mark.requirement("STEM-8894")

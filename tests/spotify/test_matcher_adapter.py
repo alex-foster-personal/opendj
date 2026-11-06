@@ -27,7 +27,7 @@ def _sp(spotify_id: str, **kwargs):
 @pytest.mark.requirement("CAT-01")
 class TestNormalise:
     def test_title_casefolds(self) -> None:
-        assert normalise_title("Hello World") == "hello world"
+        assert normalise_title("Zorp World") == "zorp world"
 
     def test_title_strips_remaster(self) -> None:
         assert normalise_title("Song (Remastered 2011)") == "song"
@@ -90,10 +90,10 @@ class TestMatchSpotifyTracks:
 
     def test_fuzzy_three_signals_lands_in_review(self) -> None:
         # No ISRC; title + artist + duration fire (0.55) but < 0.70 -> review.
-        src = _sp("t1", isrc=None, name="Hello", artists=["Artist X"], duration_ms=180000)
+        src = _sp("t1", isrc=None, name="Title", artists=["Artist X"], duration_ms=180000)
         tgt = self._local(
             isrc=None,
-            title="Hello",
+            title="Title",
             artists=("artist x",),
             duration_ms=180500,
         )
@@ -102,10 +102,10 @@ class TestMatchSpotifyTracks:
         assert res.review[0].signals == ("title", "artist", "duration")
 
     def test_two_signals_below_floor_is_unmatched(self) -> None:
-        src = _sp("t1", isrc=None, name="Hello", artists=["X"], duration_ms=180000)
+        src = _sp("t1", isrc=None, name="Title", artists=["X"], duration_ms=180000)
         tgt = self._local(
             isrc=None,
-            title="Hello",
+            title="Title",
             artists=("Y",),
             duration_ms=180500,
         )
@@ -153,7 +153,7 @@ def test_load_local_tracks_from_sqlite(tmp_path) -> None:
         (
             "s1",
             "isrc",
-            "Hello",
+            "Title",
             json.dumps(["A", "B"]),
             "Alb",
             "USABC2500001",

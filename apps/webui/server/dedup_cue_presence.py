@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.cue_kind import HOT_CUE_KINDS, is_mapped_kind
@@ -53,6 +54,79 @@ def _apply_cue_row(
         presence.cue_positions_ms.append(int(in_msec))
 
 
+def _master_cue_presence(
+    master_path: Path,
+    vendor_by_sid: dict[str, str],
+    sid_by_vid: dict[str, list[str]],
+) -> dict[str, CuePresence]:
+    result: dict[str, CuePresence] = {}
+    if not master_path.exists():
+        return result
+    try:
+        master = _open_ro(master_path, "MASTER_DB")
+        try:
+            vendor_ids = sorted(set(vendor_by_sid.values()))
+            for chunk in _chunked(vendor_ids):
+                placeholders = ",".join("?" * len(chunk))
+                for content_id, kind, in_msec, out_msec in master.execute(
+                    "SELECT ContentID, Kind, InMsec, OutMsec "
+                    "FROM djmdCue "
+                    "WHERE rb_local_deleted = 0 "
+                    f"AND ContentID IN ({placeholders})",
+                    tuple(chunk),
+                ):
+                    for sid in sid_by_vid.get(str(content_id), []):
+                        _apply_cue_row(
+                            _presence_for(sid, result),
+                            kind=kind,
+                            in_msec=in_msec,
+                            out_msec=out_msec,
+                        )
+                for content_id, analysis_path in master.execute(
+                    "SELECT ID, AnalysisDataPath FROM djmdContent "
+                    "WHERE rb_local_deleted = 0 "
+                    f"AND ID IN ({placeholders})",
+                    tuple(chunk),
+                ):
+                    if not analysis_path:
+                        continue
+                    for sid in sid_by_vid.get(str(content_id), []):
+                        _presence_for(sid, result).has_beatgrid = True
+        finally:
+            master.close()
+    except sqlite3.Error:
+        pass
+    return result
+
+
+def _state_beatgrid_hints(
+    state_path: Path,
+    ids: Sequence[str],
+) -> dict[str, bool]:
+    hints: dict[str, bool] = {}
+    try:
+        state = _open_ro(state_path, "STATE_DB")
+        try:
+            table = state.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_canonical'"
+            ).fetchone()
+            if table is not None:
+                for chunk in _chunked(ids):
+                    placeholders = ",".join("?" * len(chunk))
+                    for (sid,) in state.execute(
+                        "SELECT DISTINCT stable_id FROM analysis_canonical "
+                        "WHERE lane = 'beatgrid' "
+                        f"AND stable_id IN ({placeholders})",
+                        tuple(chunk),
+                    ):
+                        hints[str(sid)] = True
+        finally:
+            state.close()
+    except sqlite3.Error:
+        pass
+    return hints
+
+
 def bulk_cue_presence(stable_ids: Sequence[str]) -> dict[str, CuePresence]:
     """Return per-stable_id cue presence from rekordbox djmdCue and beatgrid hints."""
     ids = list(dict.fromkeys(stable_ids))
@@ -90,62 +164,9 @@ def bulk_cue_presence(stable_ids: Sequence[str]) -> dict[str, CuePresence]:
     for sid, vid in vendor_by_sid.items():
         sid_by_vid.setdefault(vid, []).append(sid)
 
-    if master_path.exists():
-        try:
-            master = _open_ro(master_path, "MASTER_DB")
-            try:
-                vendor_ids = sorted(set(vendor_by_sid.values()))
-                for chunk in _chunked(vendor_ids):
-                    placeholders = ",".join("?" * len(chunk))
-                    for content_id, kind, in_msec, out_msec in master.execute(
-                        "SELECT ContentID, Kind, InMsec, OutMsec "
-                        "FROM djmdCue "
-                        "WHERE rb_local_deleted = 0 "
-                        f"AND ContentID IN ({placeholders})",
-                        tuple(chunk),
-                    ):
-                        for sid in sid_by_vid.get(str(content_id), []):
-                            _apply_cue_row(
-                                _presence_for(sid, result),
-                                kind=kind,
-                                in_msec=in_msec,
-                                out_msec=out_msec,
-                            )
-                    for content_id, analysis_path in master.execute(
-                        "SELECT ID, AnalysisDataPath FROM djmdContent "
-                        "WHERE rb_local_deleted = 0 "
-                        f"AND ID IN ({placeholders})",
-                        tuple(chunk),
-                    ):
-                        if not analysis_path:
-                            continue
-                        for sid in sid_by_vid.get(str(content_id), []):
-                            _presence_for(sid, result).has_beatgrid = True
-            finally:
-                master.close()
-        except sqlite3.Error:
-            pass
-
-    try:
-        state = _open_ro(state_path, "STATE_DB")
-        try:
-            table = state.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_canonical'"
-            ).fetchone()
-            if table is not None:
-                for chunk in _chunked(ids):
-                    placeholders = ",".join("?" * len(chunk))
-                    for (sid,) in state.execute(
-                        "SELECT DISTINCT stable_id FROM analysis_canonical "
-                        "WHERE lane = 'beatgrid' "
-                        f"AND stable_id IN ({placeholders})",
-                        tuple(chunk),
-                    ):
-                        _presence_for(str(sid), result).has_beatgrid = True
-        finally:
-            state.close()
-    except sqlite3.Error:
-        pass
+    result = _master_cue_presence(master_path, vendor_by_sid, sid_by_vid)
+    for sid in _state_beatgrid_hints(state_path, ids):
+        _presence_for(sid, result).has_beatgrid = True
 
     for presence in result.values():
         presence.cue_positions_ms = sorted(presence.cue_positions_ms)[:16]

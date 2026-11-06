@@ -2560,6 +2560,7 @@ mod tests {
         let charged = c.meters[&a].charged.load(Ordering::Acquire);
         assert!(charged >= 96000 * std::mem::size_of::<f32>(), "the decode charged {charged} bytes for 96000 samples");
         assert_eq!(c.pcm_used.load(Ordering::Acquire), charged);
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -2754,6 +2755,7 @@ mod tests {
             // With nothing left waiting, stopping does not sit out the limit.
             assert!(stopped_in < LOAD_DRAIN_LIMIT / 2, "{case}: stopping took {stopped_in:?}");
         }
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -3527,6 +3529,7 @@ mod tests {
         assert_eq!(all.len(), QUEUE_SLOTS + extra + 1, "one result per command");
         let waited = all.iter().filter(|r| r["error"]["message"].as_str().is_some_and(|m| m.contains("waited on failed"))).count();
         assert_eq!(waited, QUEUE_SLOTS);
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -3567,6 +3570,7 @@ mod tests {
         // Control: another file gets its own samples.
         assert!(!Arc::ptr_eq(&one, &three));
         assert_eq!((one[0], three[0]), (0.1, 0.2));
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -3593,6 +3597,7 @@ mod tests {
         let samples = Arc::downgrade(&tracks[0].pcm);
         drop(tracks);
         assert!(samples.upgrade().is_none());
+        tmp.close().unwrap();
     }
 
     #[test]

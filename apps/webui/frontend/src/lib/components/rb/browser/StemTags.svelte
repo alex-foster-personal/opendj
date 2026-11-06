@@ -6,6 +6,7 @@
 	import type { StemSummary } from '$lib/rb/api-rb';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 
 	interface Props {
 		stems: StemSummary | null;
@@ -90,20 +91,12 @@
 </script>
 
 {#if ready === null}
-	<ControlExplainer title={_heading(stems)} bullets={_bullets(stems)}>
-		<span class="stem-tags empty" tabindex="0" title={_title(stems)} aria-label={_title(stems)}
-			>-</span
-		>
+	<ControlExplainer title={_heading(stems)} bullets={_bullets(stems)} tooltip={TOOLTIP_ISOLATED}>
+		<span class="stem-tags empty" tabindex="0" aria-label={_title(stems)}>-</span>
 	</ControlExplainer>
 {:else}
-	<ControlExplainer title={_heading(ready)} bullets={_bullets(ready)}>
-		<span
-			class="stem-tags"
-			style={colorStyle}
-			tabindex="0"
-			title={_title(ready)}
-			aria-label={_title(ready)}
-		>
+	<ControlExplainer title={_heading(ready)} bullets={_bullets(ready)} tooltip={TOOLTIP_ISOLATED}>
+		<span class="stem-tags" style={colorStyle} tabindex="0" aria-label={_title(ready)}>
 			{#each GROUPS as g (g)}
 				<span class="tag" class:on={(ready.groups[g]?.bytes ?? 0) > 0} data-g={g}>{g}</span>
 			{/each}

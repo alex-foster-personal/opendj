@@ -22,6 +22,8 @@
  * 2026: the Default skin's button kept saying "Skin: Gothic").
  */
 import { placeFloating } from '$lib/ui/clamp-to-viewport';
+import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
+import { TOOLTIP_PACKED } from '$lib/ui/tooltip-timing';
 
 /** Set on an element whose live `title` is parked for the custom tooltip. */
 export const TIP_PARKED_ATTR = 'data-tip-parked';
@@ -57,6 +59,7 @@ const DESCRIBED_BACKUP_ATTR = 'data-tip-describedby';
 let installed = false;
 let tipEl: HTMLDivElement | null = null;
 let active: HTMLElement | null = null;
+let showTimer: ReturnType<typeof setTimeout> | undefined;
 /** Titled ancestors of `active` that this layer parked, restored on clear. */
 let parkedAncestors: HTMLElement[] = [];
 /** One `title` watcher per element this layer parked (see the header note). */
@@ -90,6 +93,7 @@ function _ensureTip(): HTMLDivElement {
 	el.className = 'single-hover-tip';
 	el.setAttribute('role', 'tooltip');
 	el.hidden = true;
+	el.style.zIndex = String(OVERLAY_Z_INDEX.tooltip);
 	document.body.appendChild(el);
 	tipEl = el;
 	return el;
@@ -226,6 +230,11 @@ function _parkAncestors(host: HTMLElement): void {
 	}
 }
 
+function _cancelShowTimer(): void {
+	if (showTimer !== undefined) clearTimeout(showTimer);
+	showTimer = undefined;
+}
+
 function _activate(host: HTMLElement, showBox: boolean): void {
 	const text = parkHoverTitle(host);
 	if (text === null) return;
@@ -237,6 +246,7 @@ function _activate(host: HTMLElement, showBox: boolean): void {
 }
 
 function _clear(): void {
+	_cancelShowTimer();
 	const prev = active;
 	const ancestors = parkedAncestors;
 	active = null;
@@ -260,13 +270,33 @@ function _onOver(event: Event): void {
 		return;
 	}
 	_clear();
-	_activate(host, showBox);
+	_cancelShowTimer();
+	const run = (): void => {
+		showTimer = undefined;
+		_activate(host, showBox);
+	};
+	if (TOOLTIP_PACKED.delay > 0) {
+		showTimer = setTimeout(run, TOOLTIP_PACKED.delay);
+	} else {
+		run();
+	}
 }
 
-function _onOut(event: PointerEvent): void {
+function _onFocusIn(event: Event): void {
+	_onOver(event);
+}
+
+function _onFocusOut(event: FocusEvent): void {
 	if (active === null) return;
 	const next = _element(event.relatedTarget);
 	if (next !== null && (next === active || active.contains(next))) return;
+	_clear();
+}
+
+function _onOut(event: PointerEvent): void {
+	if (active === null && showTimer === undefined) return;
+	const next = _element(event.relatedTarget);
+	if (active !== null && next !== null && (next === active || active.contains(next))) return;
 	_clear();
 }
 
@@ -279,9 +309,13 @@ export function installSingleHoverTooltip(doc: Document = document): () => void 
 	installed = true;
 	doc.addEventListener('pointerover', _onOver, true);
 	doc.addEventListener('pointerout', _onOut, true);
+	doc.addEventListener('focusin', _onFocusIn, true);
+	doc.addEventListener('focusout', _onFocusOut, true);
 	return () => {
 		doc.removeEventListener('pointerover', _onOver, true);
 		doc.removeEventListener('pointerout', _onOut, true);
+		doc.removeEventListener('focusin', _onFocusIn, true);
+		doc.removeEventListener('focusout', _onFocusOut, true);
 		_clear();
 		tipEl?.remove();
 		tipEl = null;

@@ -7,6 +7,7 @@
 	// pref popover and the conflict dialog stay in the container.
 	import type { components } from '$lib/api-types';
 	import RatingStars from '$lib/components/rb/browser/RatingStars.svelte';
+	import { normalizeRating } from '$lib/rating';
 	import { CLOSE_PATH } from '$lib/ui/icon-glyphs';
 	import type { TrackPlaylistHit } from '$lib/rb/track-playlists';
 	import {
@@ -128,7 +129,7 @@
 					<img
 						src={artworkSrc}
 						alt=""
-						data-expected-resource-error
+						data-expected-resource-error="artwork-404"
 						onload={onArtworkLoad}
 						onerror={onArtworkError}
 					/>
@@ -149,7 +150,7 @@
 			<dt>Rating</dt>
 			<dd>
 				<RatingStars
-					rating={track?.rating ?? single.rating}
+					rating={normalizeRating(track?.rating ?? single.rating) ?? 0}
 					onrate={(next) => void applyPatch({ rating: next })}
 					disabledReason={track === null ? "Loading this track's saved version; rating opens once it arrives" : null}
 				/>

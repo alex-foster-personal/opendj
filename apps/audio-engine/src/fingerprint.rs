@@ -235,6 +235,7 @@ mod tests {
         crate::wav::write_i16(&mut std::fs::File::create(&np).unwrap(), 44_100, &noise).unwrap();
         let c = fingerprint_file(&np, DEFAULT_LENGTH_S).unwrap();
         assert!(sim(&a.raw, &c.raw) < 0.75, "different audio scored {}", sim(&a.raw, &c.raw));
+        d.close().unwrap();
     }
 
     #[test]
@@ -246,6 +247,7 @@ mod tests {
         assert!((short.duration_s - 30.0).abs() < 0.01);
         assert!(short.raw.len() * 2 < whole.raw.len(), "{} vs {}", short.raw.len(), whole.raw.len());
         assert_eq!(&whole.raw[..short.raw.len() - 4], &short.raw[..short.raw.len() - 4]);
+        d.close().unwrap();
     }
 
     #[test]
@@ -254,5 +256,6 @@ mod tests {
         let p = d.path().join("x.mp3");
         std::fs::write(&p, b"not audio at all").unwrap();
         assert!(fingerprint_file(&p, DEFAULT_LENGTH_S).is_err());
+        d.close().unwrap();
     }
 }

@@ -195,6 +195,8 @@ export interface PlaylistNode {
 	mostly_broken?: boolean;
 	/** When true, extra copies of an already-present track are rejected on add. */
 	forbid_duplicates?: boolean;
+	/** PlaylistSummary.updated_at. Bumped on membership edits; cache-busts the tile URL. Absent on USB / smartlist / folder / all-tracks nodes. */
+	updated_at?: string;
 	/** Children for folder nodes; [] for every library node. */
 	children: PlaylistNode[];
 }

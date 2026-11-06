@@ -1,7 +1,7 @@
 // requirement: CUEOUT-4988
 // [if] selectAudioOutput exists but rejects NotSupportedError [then] I/O falls through to enumerate-and-unlock instead of toasting acquisition failed
-// [if] the operator cancels the chooser with AbortError [then] acquisition still fails and does not silently enumerate
-// [if] selectAudioOutput rejects NotAllowedError [then] acquisition still fails rather than treating it as an unsupported chooser
+// [if] the operator cancels the chooser with AbortError [then] it does not silently enumerate, and CUEOUT-4916 names a cancelled picker instead of throwing
+// [if] selectAudioOutput rejects NotAllowedError [then] it is not treated as an unsupported chooser, and CUEOUT-4916 names a blocked picker instead of throwing
 //
 // Regression: Sentry OPEN-DJ-BE-73 "Error: headphone output acquisition failed: Not supported".
 // Chromium can expose navigator.mediaDevices.selectAudioOutput as a function and still reject
@@ -130,30 +130,26 @@ test('if selectAudioOutput rejects only the Not supported message then I/O still
 	assert.equal(playerState.mixerState.headphones.outputs.length, 4);
 });
 
-test('if selectAudioOutput rejects NotAllowedError then acquisition still fails', async () => {
+test('if selectAudioOutput rejects NotAllowedError then it is named, not enumerated as an unsupported chooser', async () => {
 	installFakeBrowser({
 		selectAudioOutput: rejectWith('NotAllowedError', 'Permission denied'),
 		getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] })
 	});
-	await assert.rejects(
-		() => headphones.acquireHeadphoneOutput(monitorSource),
-		/Permission denied/
-	);
+	await headphones.acquireHeadphoneOutput(monitorSource);
 	const hp = playerState.mixerState.headphones;
 	assert.equal(hp.outputs.length, 0, 'permission refusal must not quietly enumerate');
-	assert.match(hp.error ?? '', /acquisition failed: .*Permission denied/);
+	// CUEOUT-4916: a blocked picker is a named supported state, not an acquisition failure.
+	assert.equal(hp.error, headphones.OUTPUT_PROMPT_REFUSED_NOTICE);
 });
 
-test('if the operator aborts the chooser then acquisition still fails', async () => {
+test('if the operator aborts the chooser then it is named and nothing is enumerated', async () => {
 	installFakeBrowser({
 		selectAudioOutput: rejectWith('AbortError', 'The user aborted a request.'),
 		getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] })
 	});
-	await assert.rejects(
-		() => headphones.acquireHeadphoneOutput(monitorSource),
-		/aborted a request/
-	);
+	await headphones.acquireHeadphoneOutput(monitorSource);
 	const hp = playerState.mixerState.headphones;
 	assert.equal(hp.outputs.length, 0, 'a cancelled chooser must not quietly enumerate');
-	assert.match(hp.error ?? '', /acquisition failed: .*aborted a request/);
+	// CUEOUT-4916: closing the picker is a named supported state, not an acquisition failure.
+	assert.equal(hp.error, headphones.CHOOSER_CANCELLED_NOTICE);
 });

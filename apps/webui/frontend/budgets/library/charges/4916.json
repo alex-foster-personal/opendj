@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 324884,
+  "measured_with_pr": 325221,
+  "sha": "c2d931b6ee",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #4916 classifies browser I/O prompt refusals in headphones.ts so they are not sent to Sentry: the refusal names and notices load with the library shell. Measured: local vite build of main 0891b4c991 and of c2d931b6ee (that main merged), +337 B gzip; ceiled to KiB",
+  "payback": "none planned; the refusal classifier is a handful of name checks"
+}

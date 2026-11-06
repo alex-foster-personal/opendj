@@ -38,7 +38,7 @@
 				<li>
 					<a class="card" data-testid="playlist-card" href={`/playlist/${encodeURIComponent(pl.playlist_id)}`} title={`Open ${pl.name}`}>
 						<img
-							src={playlistThumbnailUrl(pl.playlist_id, 232)}
+							src={playlistThumbnailUrl(pl.playlist_id, 232, pl.updated_at)}
 							width="232"
 							height="232"
 							loading="lazy"

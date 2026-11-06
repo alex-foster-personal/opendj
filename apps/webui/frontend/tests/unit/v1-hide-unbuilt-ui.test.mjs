@@ -64,10 +64,11 @@ test('TopBar 2-deck button is live, pressed-state aware, and on the hotkey sette
 	const hotkeys = read('src/lib/rb/deck-layout-hotkeys.ts');
 	const btn = topbar.match(/<button(?:(?!<button)[\s\S])*?aria-label="2 deck view"[\s\S]*?<\/button>/)?.[0];
 	assert.ok(btn, '2-deck button is rendered');
-	assert.doesNotMatch(btn, /\bdisabled\b/);
+	assert.doesNotMatch(btn, /\sdisabled(?:\s|\{|>|=|$)/, 'must not be a disabled control');
 	assert.doesNotMatch(btn, /rb-inert/);
 	assert.match(btn, /aria-pressed=\{twoDeck\.pressed\}/);
-	assert.match(btn, /title=\{twoDeck\.title\}/);
+	assert.match(btn, /aria-keyshortcuts="Meta\+2 Control\+2 Meta\+4 Control\+4"/);
+	assert.doesNotMatch(btn, /\btitle=/, '2-deck uses ControlExplainer only (issue #927)');
 	assert.match(btn, /onclick=\{\(\) => setDeckLayoutMode\(twoDeck\.next\)\}/);
 	assert.match(topbar, /describeTwoDeckToggle\(uiPrefs\.deck_layout\)/);
 	// Same setter the Cmd+2 / Cmd+4 handler calls.

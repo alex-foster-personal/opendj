@@ -156,3 +156,21 @@ test("a PLAYWRIGHT_BROWSERS_PATH that does not exist throws, never falls back to
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("linux never falls back to the macOS Chrome application", () => {
+  const root = cache([]);
+  try {
+    let found: string | undefined;
+    let failed: unknown;
+    try {
+      found = findBrowser({ PLAYWRIGHT_BROWSERS_PATH: root }, "linux");
+    } catch (error) {
+      failed = error;
+    }
+    assert.equal(found, undefined);
+    assert.match(String(failed), /no Chromium binary found/);
+    assert.doesNotMatch(String(failed), /\/Applications\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

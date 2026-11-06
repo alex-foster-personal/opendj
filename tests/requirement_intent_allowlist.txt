@@ -72,7 +72,6 @@ tests/open_dj/test_id.py
 tests/open_dj/test_provenance.py
 tests/open_dj/test_validate.py
 tests/pairings/test_cli.py
-tests/quality/test_frontend_typing_directives.py
 tests/reconcile/test_apply.py
 tests/reconcile/test_apply_branches.py
 tests/reconcile/test_heal_icloud_apply_rails.py
@@ -288,9 +287,6 @@ tests/cloudsync/test_asset_tier_writes.py
 tests/dj_copilot/test_candidates_zero_bpm.py
 tests/engine_core/test_migrate_on_boot.py
 tests/open_dj/test_adapter_registry.py
-tests/quality/test_frontend_typing_gate.py
-tests/quality/test_frontend_typing_ratchet.py
-tests/quality/test_mypy_scope.py
 tests/scripts/test_dmg_preflight.py
 (private path)
 (private path)

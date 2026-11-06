@@ -99,7 +99,8 @@ function stateFrame({ d1Playing = true, d2Playing = true } = {}) {
 				rate: 1,
 				tempo: 1,
 				cue_ms: null,
-				loop: null
+				loop: null,
+				wave_gains: { low: 1, mid: 1, high: 1 }
 			},
 			{
 				deck: 2,
@@ -110,7 +111,8 @@ function stateFrame({ d1Playing = true, d2Playing = true } = {}) {
 				rate: 1,
 				tempo: 1,
 				cue_ms: null,
-				loop: null
+				loop: null,
+				wave_gains: { low: 1, mid: 1, high: 1 }
 			}
 		],
 		mixer: { crossfader: m.mixerState.crossfader, master_volume: 1 },

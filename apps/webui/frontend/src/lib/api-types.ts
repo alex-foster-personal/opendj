@@ -3587,6 +3587,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/grid-phase-precompute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_v1_grid_phase_precompute_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/handoff/apps": {
         parameters: {
             query?: never;
@@ -6648,6 +6665,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rekordbox/analyse/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Adopt */
+        post: operations["post_adopt_api_v1_rekordbox_analyse_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rekordbox/analyse/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Apply */
+        post: operations["post_apply_api_v1_rekordbox_analyse_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rekordbox/analyse/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Plan */
+        get: operations["get_plan_api_v1_rekordbox_analyse_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rekordbox/writeback-gate": {
         parameters: {
             query?: never;
@@ -7353,7 +7421,10 @@ export interface paths {
          * @description Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).
          *
          *     A PKCE client id is public, not a secret; it only names the app the user
-         *     registered with redirect URI http://127.0.0.1:8888/callback.
+         *     registered with redirect URI http://127.0.0.1:8888/callback. Saving an id
+         *     that differs from the one already on disk clears the cached sign-in so
+         *     listing reports not signed in rather than refreshing the previous app's
+         *     token under the new id.
          */
         put: operations["put_account_client_id_api_v1_spotify_account_client_id_put"];
         post?: never;
@@ -8770,7 +8841,10 @@ export interface paths {
          *     rekordbox's pre-rendered jpg variant, else the embedded picture, a cover
          *     image beside the file, or a cached online cover (looked up only with
          *     ``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.
-         *     ``size`` applies to the rekordbox variants only; others are served as found.
+         *     ``size`` applies to every source: rekordbox's pre-rendered variants are served
+         *     as on disk; embedded, sidecar and cached-online covers are scaled down (never
+         *     up) to the ``s``/``m`` longest edge and cached as JPEG under the app state
+         *     dir; ``orig`` is the source as found.
          */
         get: operations["get_track_artwork_api_v1_tracks__stable_id__artwork_get"];
         put?: never;
@@ -10776,18 +10850,6 @@ export interface components {
              * @enum {string}
              */
             state: "none" | "pending" | "installed" | "artifact-changed";
-        };
-        /** ApplyIn */
-        ApplyIn: {
-            /** Cluster Key */
-            cluster_key: string;
-            /**
-             * Confirm Cue Loss
-             * @default false
-             */
-            confirm_cue_loss: boolean;
-            /** Survivor */
-            survivor: string;
         };
         /** ApplyRecordOut */
         ApplyRecordOut: {
@@ -24262,6 +24324,25 @@ export interface components {
              */
             vendor: "rekordbox" | "djay";
         };
+        /** ApplyIn */
+        apps__rekordbox_analyse__http__ApplyIn: {
+            /** Cloud Sync Off Confirmed */
+            cloud_sync_off_confirmed: boolean;
+            /** Plan Sha */
+            plan_sha: string;
+        };
+        /** ApplyIn */
+        apps__webui__server__routes__dedup_review__ApplyIn: {
+            /** Cluster Key */
+            cluster_key: string;
+            /**
+             * Confirm Cue Loss
+             * @default false
+             */
+            confirm_cue_loss: boolean;
+            /** Survivor */
+            survivor: string;
+        };
         /** DecisionIn */
         apps__webui__server__routes__dedup_review__DecisionIn: {
             /**
@@ -28908,7 +28989,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ApplyIn"];
+                "application/json": components["schemas"]["apps__webui__server__routes__dedup_review__ApplyIn"];
             };
         };
         responses: {
@@ -29020,7 +29101,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ApplyIn"];
+                "application/json": components["schemas"]["apps__webui__server__routes__dedup_review__ApplyIn"];
             };
         };
         responses: {
@@ -31021,6 +31102,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_grid_phase_precompute_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -36454,6 +36555,85 @@ export interface operations {
             };
         };
     };
+    post_adopt_api_v1_rekordbox_analyse_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_apply_api_v1_rekordbox_analyse_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["apps__rekordbox_analyse__http__ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plan_api_v1_rekordbox_analyse_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_writeback_gate_api_v1_rekordbox_writeback_gate_get: {
         parameters: {
             query?: never;
@@ -40796,7 +40976,7 @@ export interface operations {
     get_track_artwork_api_v1_tracks__stable_id__artwork_get: {
         parameters: {
             query?: {
-                /** @description s=80x80 browser rows, m=240x240 deck thumbs, orig */
+                /** @description s=80 px browser rows, m=240 px deck thumbs (longest edge), orig */
                 size?: "s" | "m" | "orig";
                 /** @description also try MusicBrainz + Cover Art Archive (decks only) */
                 online?: boolean;

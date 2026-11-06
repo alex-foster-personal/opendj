@@ -66,8 +66,11 @@ The large Rekordbox fixtures (`rekordbox`, `rb-usb-export`, `rb-usb-export-big`,
 are not published.
 
 - A missing fixture **fails** the test by default, so a fresh clone or CI host cannot read
-  green while skipping every ingest and write-safety test. On a machine that knowingly
-  lacks the fixture host, set `MDT_ALLOW_MISSING_FIXTURES=1` to skip instead.
+  green while skipping every ingest and write-safety test. When the default external fixture
+  host is unmounted and `MUX_FIXTURE_HOST` is unset, `resolve_required_fixture` skips with
+  `UNAVAILABLE` instead; an explicit `MUX_FIXTURE_HOST` that is missing, a missing subpath
+  on a present host, and a contract mismatch still fail. On a machine that knowingly lacks the
+  host but uses an explicit override path, set `MDT_ALLOW_MISSING_FIXTURES=1` to skip instead.
 - The Rekordbox fixture DB is checked against `tests/fixtures/rekordbox.manifest.json`.
   A checksum mismatch **always fails**, even with `MDT_ALLOW_MISSING_FIXTURES=1`, because
   that is a data-integrity error rather than a missing fixture.

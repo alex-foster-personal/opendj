@@ -77,10 +77,27 @@ def vendored_source_components(repo_root: Path) -> list[Component]:
     return components
 
 
+def runtime_license_source(payload_dir: Path) -> tuple[Path, str]:
+    """The staged CPython LICENSE.txt and its ``python3.N`` label, for either payload layout.
+
+    macOS keeps it under ``runtime/lib/python3.N/``; the Windows python-build-standalone tree keeps it
+    at ``runtime/LICENSE.txt`` beside ``python3NN.dll``.
+    """
+    mac = sorted((payload_dir / "runtime/lib").glob("python3*/LICENSE.txt"))
+    if mac:
+        return mac[0], mac[0].parent.name
+    windows = payload_dir / "runtime/LICENSE.txt"
+    dlls = sorted(path.stem for path in (payload_dir / "runtime").glob("python3[0-9]*.dll"))
+    if windows.is_file() and dlls:
+        digits = dlls[-1].removeprefix("python3")
+        return windows, f"python3.{digits}"
+    raise LicenseInventoryError(
+        f"no CPython LICENSE.txt under {payload_dir}/runtime/lib/python3*/ or {payload_dir}/runtime/ (with python3NN.dll)"
+    )
+
+
 def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]:
-    runtime_licenses = sorted((payload_dir / "runtime/lib").glob("python3*/LICENSE.txt"))
-    if not runtime_licenses:
-        raise LicenseInventoryError(f"no CPython LICENSE.txt under {payload_dir}/runtime/lib")
+    runtime_license, runtime_version = runtime_license_source(payload_dir)
     beat_this_notice = payload_dir / "models/beatgrid/LICENSE-beat_this.txt"
     if not beat_this_notice.is_file():
         raise LicenseInventoryError(f"{beat_this_notice} missing: the weights ship without their notice")
@@ -106,10 +123,10 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
         Component(
             "bundled",
             "CPython (python-build-standalone)",
-            runtime_licenses[0].parent.name,
+            runtime_version,
             "PSF-2.0",
             "https://github.com/astral-sh/python-build-standalone",
-            [("LICENSE.txt", _read_text(runtime_licenses[0]))]
+            [("LICENSE.txt", _read_text(runtime_license))]
             + [(path.name, _read_text(path)) for path in native_lib_licenses],
             note="The relocatable interpreter statically links third-party C libraries; their "
             f"license texts are mirrored from {PBS_NATIVE_LICENSES_RELATIVE}/ (see its README "

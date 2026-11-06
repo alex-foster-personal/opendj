@@ -6,6 +6,7 @@
  * $lib/rb/library-tabs.
  */
 import { api, unwrap } from '$lib/api/client';
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import type { PlaylistNode } from '$lib/rb/library-types';
 import {
 	activeAfterClose,
@@ -126,7 +127,7 @@ export function createLibraryTabsController(deps: LibraryTabsDeps) {
 		try {
 			reopened = apply && (await _apply(await _readLibraryTabs()));
 		} catch (error) {
-			deps.report(`restoring library tabs failed: ${String(error)}`);
+			if (!isPageGoingAway()) deps.report(`restoring library tabs failed: ${String(error)}`);
 		} finally {
 			restored = true;
 		}
@@ -157,9 +158,13 @@ export function createLibraryTabsController(deps: LibraryTabsDeps) {
 			lastSynced = pref;
 			api.PUT('/api/v1/ui-prefs', { body: { library_tabs: pref } }).then(
 				(r) => {
-					if (r.error !== undefined) deps.report(`saving library tabs failed: ${JSON.stringify(r.error)}`);
+					if (r.error !== undefined && !isPageGoingAway()) {
+						deps.report(`saving library tabs failed: ${JSON.stringify(r.error)}`);
+					}
 				},
-				(error: unknown) => deps.report(`saving library tabs failed: ${String(error)}`)
+				(error: unknown) => {
+					if (!isPageGoingAway()) deps.report(`saving library tabs failed: ${String(error)}`);
+				}
 			);
 		}, PERSIST_DEBOUNCE_MS);
 	}

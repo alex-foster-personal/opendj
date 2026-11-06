@@ -102,12 +102,12 @@ const APP_BINARY = join(DESKTOP_ROOT, 'src-tauri', 'target', 'debug', 'opendj-de
 
 let engine: ChildProcess | null = null;
 
-async function _waitForEngine(timeoutMs: number): Promise<void> {
+async function _waitForHttp(url: string, timeoutMs: number, label: string): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	let lastError = 'never attempted';
 	while (Date.now() < deadline) {
 		try {
-			const response = await fetch(`${ENGINE_ORIGIN}/api/v1/health`);
+			const response = await fetch(url);
 			if (response.ok) return;
 			lastError = `HTTP ${response.status}`;
 		} catch (error) {
@@ -115,7 +115,11 @@ async function _waitForEngine(timeoutMs: number): Promise<void> {
 		}
 		await new Promise((resolve) => setTimeout(resolve, 500));
 	}
-	throw new Error(`engine never became healthy on ${ENGINE_ORIGIN}: ${lastError}`);
+	throw new Error(`${label} never became ready on ${url}: ${lastError}`);
+}
+
+async function _waitForEngine(timeoutMs: number): Promise<void> {
+	return _waitForHttp(`${ENGINE_ORIGIN}/api/v1/health`, timeoutMs, 'engine');
 }
 
 export const config: WebdriverIO.Config = {
@@ -127,7 +131,11 @@ export const config: WebdriverIO.Config = {
 	mochaOpts: { ui: 'bdd', timeout: 180_000 },
 	logLevel: 'warn',
 	waitforTimeout: 30_000,
-	connectionRetryCount: 0,
+	// First-session ECONNREFUSED on the embedded WebDriver port is a known race (issue #7371).
+	// connectionRetryCount 0 made the first refused POST /session a hard fail; retry with a cap
+	// so we stay inside the mocha 180s budget (3 x 10s vs default 120s per retry).
+	connectionRetryCount: 3,
+	connectionRetryTimeout: 10_000,
 
 	services: [
 		[
@@ -193,6 +201,11 @@ export const config: WebdriverIO.Config = {
 			}
 		);
 		await _waitForEngine(120_000);
+	},
+
+	beforeSession: async (): Promise<void> => {
+		const url = `http://127.0.0.1:${EMBEDDED_WEBDRIVER_PORT}/status`;
+		await _waitForHttp(url, 30_000, 'embedded WebDriver');
 	},
 
 	/**

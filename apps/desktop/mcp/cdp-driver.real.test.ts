@@ -239,6 +239,7 @@ type Internals = {
   _opened: number;
   _pending: Map<number, unknown>;
   _eventWaiters: Map<string, unknown[]>;
+  _target: { id: string } | null;
 };
 const internals = (cdp: Cdp): Internals => cdp as unknown as Internals;
 const armed = (cdp: Cdp): number =>
@@ -275,13 +276,28 @@ async function backToFirstPage(): Promise<void> {
     for (;;) {
       const now = (await (
         await fetch(`${cdpBase}/json/list`, { signal: AbortSignal.timeout(5_000) })
-      ).json()) as { id: string; title: string }[];
-      if (now.find((t) => t.id === page.id)?.title === "first page") return;
+      ).json()) as { id: string; title: string; url: string }[];
+      const current = now.find((t) => t.id === page.id);
+      if (current?.title === "first page" && current.url.startsWith(origin)) break;
       if (Date.now() > deadline) throw new Error("the page never got back to the first page");
       await new Promise((r) => setTimeout(r, 50));
     }
   } finally {
     socket.close();
+  }
+  // Closing the raw setup session can briefly make Chromium list the page with
+  // an empty URL. Require two consecutive good lists before the driver under test.
+  let stableLists = 0;
+  for (;;) {
+    const now = (await (
+      await fetch(`${cdpBase}/json/list`, { signal: AbortSignal.timeout(5_000) })
+    ).json()) as { id: string; title: string; url: string }[];
+    const current = now.find((t) => t.id === page.id);
+    if (current?.title === "first page" && current.url.startsWith(origin)) stableLists += 1;
+    else stableLists = 0;
+    if (stableLists >= 2) return;
+    if (Date.now() > deadline) throw new Error("the page URL did not settle after setup");
+    await new Promise((r) => setTimeout(r, 20));
   }
 }
 
@@ -315,19 +331,29 @@ async function startRelay(upstreamPort: number): Promise<{
   base: string;
   /** The open DevTools WebSocket connections (not the HTTP discovery ones). */
   webSockets: () => Socket[];
+  listRequests: () => number;
   hold: (client: Socket) => void;
   release: (client: Socket) => void;
   close: () => void;
 }> {
-  type Pair = { client: Socket; upstream: Socket; ws: boolean; held: (string | Buffer)[] | null; ended: boolean };
+  type Pair = {
+    client: Socket;
+    upstream: Socket;
+    ws: boolean;
+    held: (string | Buffer)[] | null;
+    ended: boolean;
+  };
   const pairs: Pair[] = [];
+  let listRequests = 0;
   const server = createNetServer((client) => {
     const upstream = connect(upstreamPort, "127.0.0.1");
     const pair: Pair = { client, upstream, ws: false, held: null, ended: false };
     pairs.push(pair);
     client.on("data", (chunk) => {
       // A DevTools socket opens with its upgrade request; discovery fetches do not.
-      if (!pair.ws && chunk.toString("latin1").startsWith("GET /devtools/")) pair.ws = true;
+      const request = chunk.toString("latin1");
+      if (!pair.ws && request.startsWith("GET /devtools/")) pair.ws = true;
+      listRequests += request.match(/^GET \/json\/list(?:[ ?]|$)/gm)?.length ?? 0;
       upstream.write(chunk);
     });
     client.on("end", () => upstream.end());
@@ -338,9 +364,24 @@ async function startRelay(upstreamPort: number): Promise<{
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const find = (client: Socket) => pairs.find((p) => p.client === client);
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const list = (await (
+      await fetch(`${base}/json/list`, {
+        headers: { connection: "close" },
+        signal: AbortSignal.timeout(1_000),
+      })
+    ).json()) as { type: string; url: string }[];
+    if (list.some((target) => target.type === "page" && target.url.startsWith(origin))) break;
+    if (Date.now() >= deadline) throw new Error("the relay never listed the app page URL");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  listRequests = 0;
   return {
-    base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    base,
     webSockets: () => pairs.filter((p) => p.ws && !p.client.destroyed).map((p) => p.client),
+    listRequests: () => listRequests,
     hold: (client) => {
       const pair = find(client);
       if (pair) pair.held = [];
@@ -367,10 +408,18 @@ test("an old socket's late close does not fail a call sent on its replacement", 
     const relay = await startRelay(Number(new URL(cdpBase).port));
     const cdp = new Cdp(relay.base, origin);
     try {
+      let firstFailure: Error | null = null;
       const first = cdp
         .execute("await new Promise((r) => setTimeout(r, 5000)); return 1;")
-        .catch((e: Error) => e);
-      await until(() => internals(cdp)._pending.size === 1, "the first call is in flight");
+        .catch((error: Error) => {
+          firstFailure = error;
+          return error;
+        });
+      await until(
+        () => internals(cdp)._pending.size === 1 || firstFailure !== null,
+        "the first call is in flight",
+      );
+      assert.equal(firstFailure, null, `the first call failed before it was sent: ${String(firstFailure)}`);
       const live = relay.webSockets();
       assert.equal(live.length, 1, "one DevTools socket through the relay");
       for (const socket of live) relay.hold(socket); // the old socket's close is held back
@@ -384,6 +433,29 @@ test("an old socket's late close does not fail a call sent on its replacement", 
       assert.equal(internals(cdp)._pending.size, 1, "the retry is still pending after the late close");
       assert.equal(await second, 2);
       assert.equal(internals(cdp)._opened, 2);
+    } finally {
+      internals(cdp)._drop();
+      relay.close();
+    }
+  });
+});
+
+test("after a reset, reconnect reuses the cached target without rediscovery", async () => {
+  await onFirstPage(async () => {
+    const relay = await startRelay(Number(new URL(cdpBase).port));
+    const cdp = new Cdp(relay.base, origin);
+    try {
+      assert.equal(await cdp.execute<number>("return 1;"), 1);
+      const targetId = internals(cdp)._target?.id;
+      const listed = relay.listRequests();
+      assert.ok(targetId, "the first connection did not cache its target");
+      assert.equal(listed, 1, "the first connection must discover one target");
+
+      internals(cdp)._drop(); // what a capture timeout does
+      assert.equal(await cdp.execute<number>("return 2;"), 2);
+      assert.equal(internals(cdp)._opened, 2);
+      assert.equal(internals(cdp)._target?.id, targetId);
+      assert.equal(relay.listRequests(), listed, "the reconnect must not pick a target again");
     } finally {
       internals(cdp)._drop();
       relay.close();
@@ -500,6 +572,7 @@ test("a CDP endpoint that never answers fails loudly instead of hanging", async 
   await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(silent.address() as AddressInfo).port}`;
   let hang: ReturnType<typeof setTimeout> | undefined;
+  let captureHang: ReturnType<typeof setTimeout> | undefined;
   try {
     const failed = await Promise.race([
       new Cdp(base, origin, 300).status().catch((e: Error) => e),
@@ -507,10 +580,21 @@ test("a CDP endpoint that never answers fails loudly instead of hanging", async 
     ]);
     assert.notEqual(failed, "hung", "if a never-answering endpoint hangs the call then broken");
     assert.match(String(failed), /did not answer within 300 ms/);
+    const started = Date.now();
+    const captureFailed = await Promise.race([
+      new Cdp(base, origin, 30_000, 500).screenshotBase64().catch((e: Error) => e),
+      new Promise<"hung">((resolve) => (captureHang = setTimeout(() => resolve("hung"), 3_000))),
+    ]);
+    const elapsed = Date.now() - started;
+    assert.notEqual(captureFailed, "hung", "if screenshot discovery uses the call timeout then broken");
+    assert.ok(captureFailed instanceof CdpTimeoutError, `expected a timeout, got ${String(captureFailed)}`);
+    assert.match(String(captureFailed), /did not answer within \d+ ms.*take the screenshot again/);
+    assert.ok(elapsed < 2_000, `the 500 ms screenshot budget took ${elapsed} ms`);
     // Control: the request reached the listener, so the failure is its silence, not a refusal.
     assert.ok(held.length >= 1, "the silent listener was never reached");
   } finally {
     clearTimeout(hang);
+    clearTimeout(captureHang);
     for (const socket of held) socket.destroy();
     silent.close();
   }

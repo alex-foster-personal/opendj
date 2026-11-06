@@ -9,15 +9,17 @@ rekordbox's own phrase analysis for it (PHRASE-RECOVER-01).
 
 Guard: the cache has no audio fingerprint, so the entry is served only when
 the cached rekordbox beatgrid's last beat lies within ``DURATION_TOLERANCE_S``
-of the track row's ``duration_ms`` (rekordbox grids run to the end of the
-file; the last PHRASE does not, it ended up to 5.8 s early on the maintainer's library).
-A different file almost always disagrees here. A re-encode of the same length
+of the track row's ``duration_ms`` on the unrounded finite delta (rekordbox
+grids run to the end of the file; the last PHRASE does not, it ended up to 5.8 s
+early on the maintainer's library). A non-finite last beat is ``guard_unmeasurable``. A
+different file almost always disagrees here. A re-encode of the same length
 would pass; that limit is stated, not hidden.
 
 Times: the cache keeps rekordbox's numbers, so the MP3 lead-in of the file we
-serve is taken off exactly as on the mapped branch (``lead_in_shift``). PSSI
-is phrase SECONDS, not beat indices, so it stays valid whichever beatgrid the
-payload serves.
+serve is taken off exactly as on the mapped branch (``lead_in_shift``). When
+the served file cannot be resolved, phrases are not served and status is
+``audio_unresolved``. PSSI is phrase SECONDS, not beat indices, so it stays
+valid whichever beatgrid the payload serves.
 
 -Claude
 """
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from .anlz_cache import _cache_path
@@ -55,15 +58,24 @@ def cached_pssi_phrases(stable_id: str, duration_ms: int | None) -> tuple[list[d
     beats = (payload.get("beatgrid") or {}).get("beats") or []
     if not beats:
         return None, {"status": "guard_unmeasurable", "reason": "cache entry has no beatgrid"}
-    delta_s = round(abs(float(beats[-1]["t"]) - duration_ms / 1000), 3)
+    try:
+        candidate = abs(float(beats[-1]["t"]) - duration_ms / 1000)
+        raw_delta_s = candidate if math.isfinite(candidate) else None
+    except (KeyError, TypeError, ValueError):
+        raw_delta_s = None
+    if raw_delta_s is None:
+        return None, {
+            "status": "guard_unmeasurable",
+            "reason": "cached last beat is not a finite number",
+        }
     outcome = {
         "from": RECOVERY_SOURCE,
         "anlz_mtime": cached.get("anlz_mtime"),
         "cache_schema": cached.get("schema"),
         "guard": "last_beat_vs_duration",
-        "duration_delta_s": delta_s,
+        "duration_delta_s": round(raw_delta_s, 3),
     }
-    if delta_s > DURATION_TOLERANCE_S:
+    if raw_delta_s > DURATION_TOLERANCE_S:
         return None, {**outcome, "status": "guard_mismatch"}
     return [dict(ph) for ph in phrases], {**outcome, "status": "recovered"}
 
@@ -84,17 +96,12 @@ def _track_duration_ms(stable_id: str) -> int | None:
 
 
 def _served_lead_in_s(stable_id: str, share: bool) -> float:
-    """The MP3 lead-in of the file GET /audio serves; 0 when none resolves (it cannot play)."""
-    from fastapi import HTTPException
-
+    """The MP3 lead-in of the file GET /audio serves; failures propagate to the caller."""
     from apps.adapters.rekordbox.paths import resolve_playable_audio
 
     from .lead_in_shift import anlz_lead_in_s
 
-    try:
-        picked = resolve_playable_audio(stable_id, share=share)
-    except HTTPException:
-        return 0.0
+    picked = resolve_playable_audio(stable_id, share=share)
     return anlz_lead_in_s(str(picked.path))
 
 
@@ -109,9 +116,23 @@ def apply_cached_pssi(payload: dict[str, Any], stable_id: str, *, share: bool) -
     phrases, outcome = cached_pssi_phrases(stable_id, _track_duration_ms(stable_id))
     if phrases is None:
         return {**payload, "phrases_recovery": outcome}
+    from fastapi import HTTPException
+
     from .lead_in_shift import on_our_timeline
 
-    shifted = on_our_timeline({"beatgrid": {"beats": []}, "phrases": phrases}, _served_lead_in_s(stable_id, share))[
-        "phrases"
-    ]
+    try:
+        lead_in_s = _served_lead_in_s(stable_id, share)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        return {
+            **payload,
+            "phrases_recovery": {
+                **outcome,
+                "status": "audio_unresolved",
+                "reason": detail.get("code") or str(exc.detail),
+            },
+        }
+    shifted = on_our_timeline(
+        {"beatgrid": {"beats": []}, "phrases": phrases}, lead_in_s
+    )["phrases"]
     return {**payload, "phrases": shifted, "phrases_recovery": outcome}

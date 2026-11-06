@@ -16,14 +16,21 @@ Acceptance
 
 from __future__ import annotations
 
+import math
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from apps.analysis.lanes import LaneResult
 from apps.loudness.scan import SCAN_TIMEOUT_S, LoudnessError, require_ffmpeg, scan_file
 
 _RMS_PATTERN = re.compile(r"^.*RMS level dB:\s*(-?\d+(?:\.\d+)?|-inf)\s*$", re.M)
+_STDERR_TAIL_CHARS = 2000
+
+
+def _stderr_tail(stderr: str) -> str:
+    return stderr[-_STDERR_TAIL_CHARS:]
 
 
 @dataclass(frozen=True)
@@ -34,6 +41,13 @@ class LoudnessAnalysis:
     true_peak_dbtp: float
     loudness_range_lu: float
     rms_db: float
+
+    def to_lane_result(self) -> LaneResult:
+        """Map this measurement onto the ``loudness`` lane payload contract."""
+        payload = asdict(self)
+        if not all(math.isfinite(value) for value in payload.values()):
+            return LaneResult(status="failed", reason="non_finite_measurement")
+        return LaneResult(status="ok", payload=payload)
 
 
 def _scan_whole_file_rms(path: Path, binary: str) -> float:
@@ -60,13 +74,13 @@ def _scan_whole_file_rms(path: Path, binary: str) -> float:
     )
     if completed.returncode != 0:
         raise LoudnessError(
-            f"ffmpeg exited {completed.returncode} measuring RMS for {path}:\n{completed.stderr[-2000:]}"
+            f"ffmpeg exited {completed.returncode} measuring RMS for {path}:\n{_stderr_tail(completed.stderr)}"
         )
     matches = _RMS_PATTERN.findall(completed.stderr)
     if not matches:
         raise LoudnessError(
             f"ffmpeg astats output for {path} has no overall RMS level dB line. "
-            f"ffmpeg stderr tail:\n{completed.stderr[-2000:]}"
+            f"ffmpeg stderr tail:\n{_stderr_tail(completed.stderr)}"
         )
     raw = matches[-1]
     return float("-inf") if raw == "-inf" else float(raw)

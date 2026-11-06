@@ -27,7 +27,10 @@ from fastapi.testclient import TestClient
 from apps.cloud import stem_cache_budget
 from apps.cloud.stem_cache_budget import GIB, DiskUsage, StemCacheSettings
 from apps.cloud.stem_hydration import OPEN_DECKS
-from apps.cloud.stem_index import save_cached_index
+from apps.cloud.stem_index import (
+    merge_remote_into_cached_index,
+    upsert_cached_index_entries,
+)
 from apps.webui.server.routes.stem_cache import router
 from apps.webui.server.stem_cache_enforcer import StemCacheEnforcer
 
@@ -94,7 +97,7 @@ def two_bundles(tmp_path: Path) -> dict[str, dict[str, str]]:
     stems_dir = tmp_path / "stems"
     index = {"indexed": _make_bundle(stems_dir, "indexed", atime=1_000_000)}
     _make_bundle(stems_dir, "local-only", atime=2_000_000)
-    save_cached_index(tmp_path / "data", index)
+    merge_remote_into_cached_index(tmp_path / "data", index)
     return index
 
 
@@ -181,6 +184,28 @@ def test_enforce_route_evicts_the_indexed_bundle_and_keeps_the_local_only_one(
     assert real["evicted_stable_ids"] == ["indexed"]
     assert real["queued_for_upload"] == ["local-only"]
     assert not (tmp_path / "stems" / "indexed").exists()
+    assert (tmp_path / "stems" / "local-only").exists()
+
+
+@pytest.mark.requirement("STEM-40")
+def test_route_treats_unpublished_merged_cache_entry_as_local_only(
+    tmp_path: Path, two_bundles, monkeypatch: pytest.MonkeyPatch
+):
+    """Routes use remote-base as evidence.
+
+    [if] unpublished hashes are cached [then] routes treat them as local-only, [else stop].
+    """
+    unpublished = _make_bundle(tmp_path / "stems", "unpublished", atime=500_000)
+    upsert_cached_index_entries(tmp_path / "data", {"unpublished": unpublished})
+    _set_disk(monkeypatch, free=0)
+    client = TestClient(_app(tmp_path, armed=True))
+
+    status = client.get("/api/v1/stems/cache/status").json()
+    assert status["local_only_stable_ids"] == ["local-only", "unpublished"]
+
+    report = client.post("/api/v1/stems/cache/enforce", json={}).json()
+    assert report["evicted_stable_ids"] == ["indexed"]
+    assert (tmp_path / "stems" / "unpublished").exists()
     assert (tmp_path / "stems" / "local-only").exists()
 
 

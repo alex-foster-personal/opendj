@@ -65,11 +65,11 @@ test('[if] a track is not on this computer [then] the deck says so in plain word
 	// CLOUDSYNC-33: the raw CLOUD_POLICY_UNCONFIGURED text reached a DJ's deck.
 	assert.equal(
 		failureContext.formatDeckLoadFailureMessage(
-			'Outomorrow',
+			'Paper Lanterns',
 			'abc',
 			"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
 		),
-		"Outomorrow: This file isn't on this computer."
+		"Paper Lanterns: This file isn't on this computer."
 	);
 	assert.equal(
 		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'AUDIO_FILE_MISSING: iCloud file not downloaded'),
@@ -90,11 +90,11 @@ test('[if] a track is not on this computer [then] the deck says so in plain word
 test('[if] a load fails with CLOUD_ASSET_UNAVAILABLE [then] the deck names the title and the plain sentence, [else stop].', () => {
 	assert.equal(
 		failureContext.formatDeckLoadFailureMessage(
-			"Calling Out (feat. Dames Brown) - 7' Edit",
-			'3ef4ffbdca201c67c899e1058711778b',
-			"CLOUD_ASSET_UNAVAILABLE: track_locations row '3ef4ffbdca201c67c899e1058711778b' marked unavailable (available=0) at '<path.mp3>'"
+			"Quiet Fen (feat. Odile Marsh) - 7' Edit",
+			'0123456789abcdef0123456789abcdef',
+			"CLOUD_ASSET_UNAVAILABLE: track_locations row '0123456789abcdef0123456789abcdef' marked unavailable (available=0) at '<path.mp3>'"
 		),
-		"Calling Out (feat. Dames Brown) - 7' Edit: This track's audio is not on this machine and could not be fetched."
+		"Quiet Fen (feat. Odile Marsh) - 7' Edit: This track's audio is not on this machine and could not be fetched."
 	);
 });
 
@@ -102,8 +102,8 @@ test('[if] a load fails before its metadata is read [then] the title still comes
 	// CLOUDSYNC-33 Air check: the toast showed the stable id because the audio
 	// fetch rejected before getTrack was read.
 	assert.equal(
-		await failureContext.settledTrackTitle(Promise.resolve({ track: { title: 'Outomorrow' } })),
-		'Outomorrow'
+		await failureContext.settledTrackTitle(Promise.resolve({ track: { title: 'Paper Lanterns' } })),
+		'Paper Lanterns'
 	);
 	// Controls: no request, a failed request, and an untitled track give null
 	// rather than throwing on the failure path.
@@ -114,8 +114,8 @@ test('[if] a load fails before its metadata is read [then] the title still comes
 
 test('[if] a load records its deck-facing message [then] only that same error object reads it back, [else stop].', () => {
 	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: This file isn\'t on this computer.');
-	failureContext.rememberDeckFacingMessage(failed, "Outomorrow: This file isn't on this computer.");
-	assert.equal(failureContext.deckFacingMessage(failed), "Outomorrow: This file isn't on this computer.");
+	failureContext.rememberDeckFacingMessage(failed, "Paper Lanterns: This file isn't on this computer.");
+	assert.equal(failureContext.deckFacingMessage(failed), "Paper Lanterns: This file isn't on this computer.");
 	// Controls: another error with the same text, and non-objects, read nothing.
 	assert.equal(failureContext.deckFacingMessage(new Error(failed.message)), undefined);
 	assert.equal(failureContext.deckFacingMessage('AUDIO_NOT_ON_THIS_MACHINE: x'), undefined);
@@ -126,11 +126,11 @@ test('[if] a failed load is worded [then] the title comes from the request when 
 	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: x');
 	const text = await failureContext.failedDeckLoadMessage(
 		failed,
-		Promise.resolve({ track: { title: 'Outomorrow' } }),
+		Promise.resolve({ track: { title: 'Paper Lanterns' } }),
 		'224a4561',
 		"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
 	);
-	assert.equal(text, "Outomorrow: This file isn't on this computer.");
+	assert.equal(text, "Paper Lanterns: This file isn't on this computer.");
 	assert.equal(failureContext.deckFacingMessage(failed), text);
 	// Control: a known title wins and is used as is.
 	assert.equal(

@@ -78,6 +78,11 @@ def key_for_index(index: int) -> Key:
     return Key(pitch_class=index // 2, is_minor=bool(index % 2))
 
 
+def index_for_key(key: Key) -> int:
+    """The 0..23 index for :func:`key_for_index`, inverse on the valid range."""
+    return key.pitch_class * 2 + (1 if key.is_minor else 0)
+
+
 def _require_chroma_matrix(chroma: np.ndarray) -> None:
     if chroma.ndim != 2 or chroma.shape[0] != 12:
         raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")

@@ -120,11 +120,18 @@ SNDFILE_MP3_MAX_COMPRESSION: float = 0.999
 
 
 def effective_bitrate_kbps(size_bytes: int, duration_s: float) -> float:
+    """Size-over-duration kbps, bits-first so this body no longer matches
+    ``apps.stems.stem_size_policy.effective_bitrate_kbps``.
+
+    The GPU image has no ``apps`` package; keep results identical via
+    ``assert_stem_size_policy_mirror_matches``.
+    """
     if size_bytes <= 0:
         raise ValueError(f"size_bytes must be positive, got {size_bytes}")
     if duration_s <= 0:
         raise ValueError(f"duration_s must be positive, got {duration_s}")
-    return size_bytes * 8 / duration_s / 1000
+    bits = size_bytes * 8
+    return bits / duration_s / 1000
 
 
 def opus_ffmpeg_audio_args(source_kbps: float) -> list[str]:

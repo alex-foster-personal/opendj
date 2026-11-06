@@ -5,6 +5,8 @@
 # scripts/sparse_worktree.py; this file only finds a Python interpreter and
 # dispatches to the checked-out worktree's own copy, so a branch without that
 # module is left untouched.
+# A fresh linked add also unlinks a top-level node_modules symlink or junction;
+# restore frontend dependencies with: just wt-frontend-deps
 #
 # git runs post-checkout after `git worktree add` with the null id as the
 # previous HEAD, and after every branch switch with a real one. Only the first

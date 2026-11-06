@@ -35,9 +35,12 @@ import hashlib
 import json
 import logging
 import os
+import re
+import sqlite3
 import tempfile
 import threading
-from dataclasses import asdict
+from collections.abc import Callable, Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -47,13 +50,16 @@ from apps.analysis_beatgrid.mik_grid import GridChoice, choose_grid, read_mik_be
 from apps.analysis_beatgrid.phase_refine import PhaseRefinement, click_envelope, decode_mono, refine_phase
 from apps.shared import id3v2
 from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
+from apps.shared.state import grid_edit, tempo_pick
 from apps.shared.state.tempo_pick import TempoPick
 
-from .own_beatgrid_overlay import _set_dynamic_tempo_hint
+from .own_beatgrid_overlay import _own_beatgrid_block, _own_beatgrid_lane_result, _set_dynamic_tempo_hint
+from .own_lane_store import table_present
 
 log = logging.getLogger(__name__)
 
 CACHE_FILENAME = "grid-phase.json"
+PLAYLIST_NAME_RE = re.compile(r"viva|oltf", re.IGNORECASE)
 _lock = threading.Lock()
 
 
@@ -90,6 +96,115 @@ def kick_refinement(path: Path, beats: list[dict[str, Any]], cache: Path) -> Pha
     result = refine_phase(env, rate, [float(b["t"]) for b in beats])
     _cache_write(cache, key, result)
     return result
+
+
+def matching_playlist_ids(conn: sqlite3.Connection) -> list[str]:
+    """Live playlists whose name matches Viva or OLTF, in stable order."""
+    rows = conn.execute(
+        "SELECT playlist_id, name FROM playlists "
+        "WHERE deleted_at IS NULL ORDER BY playlist_id"
+    ).fetchall()
+    return [row[0] for row in rows if PLAYLIST_NAME_RE.search(str(row[1] or ""))]
+
+
+def member_ids(conn: sqlite3.Connection, playlist_ids: Iterable[str]) -> list[str]:
+    """Deduped live members of matching playlists, in playlist/position order."""
+    seen: dict[str, None] = {}
+    for playlist_id in playlist_ids:
+        if (
+            conn.execute(
+                "SELECT 1 FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
+                (playlist_id,),
+            ).fetchone()
+            is None
+        ):
+            continue
+        rows = conn.execute(
+            "SELECT stable_id FROM playlist_memberships "
+            "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
+            (playlist_id,),
+        ).fetchall()
+        for (stable_id,) in rows:
+            seen.setdefault(stable_id, None)
+    return list(seen)
+
+
+@dataclass(frozen=True)
+class IdlePassResult:
+    processed: tuple[str, ...]
+    skipped: tuple[str, ...]
+    yielded: bool
+    remaining: tuple[str, ...]
+
+
+def _default_own_payload(conn: sqlite3.Connection, stable_id: str) -> dict[str, Any] | None:
+    result = _own_beatgrid_lane_result(conn, stable_id)
+    if result is None or result.status != "ok":
+        return None
+    block, tempo_changes = _own_beatgrid_block(result, stable_id)
+    return {"beatgrid": block, "tempo_changes": tempo_changes}
+
+
+def idle_pass(
+    *,
+    conn_factory: Callable[[], sqlite3.Connection],
+    state_db_path: Path,
+    playing_fn: Callable[[], bool],
+    payload_fn: Callable[[sqlite3.Connection, str], dict[str, Any] | None] | None = None,
+    share: bool = False,
+) -> IdlePassResult:
+    """Warm ``grid-phase.json`` for live Viva/OLTF members.
+
+    State reads finish before ``apply_grid_phase`` can decode audio. The gate is
+    checked before every member so a deck load can stop a long idle pass.
+    """
+    conn = conn_factory()
+    try:
+        playlist_ids = matching_playlist_ids(conn)
+        stable_ids = member_ids(conn, playlist_ids)
+    finally:
+        conn.close()
+
+    processed: list[str] = []
+    skipped: list[str] = []
+    for index, stable_id in enumerate(stable_ids):
+        if playing_fn():
+            return IdlePassResult(tuple(processed), tuple(skipped), True, tuple(stable_ids[index:]))
+
+        conn = conn_factory()
+        try:
+            payload = (payload_fn or _default_own_payload)(conn, stable_id)
+            if payload is None:
+                skipped.append(stable_id)
+                continue
+            source = (payload.get("beatgrid") or {}).get("source")
+            stored = grid_edit.NO_EDITS
+            if table_present(conn, "track_fields"):
+                stored = grid_edit.read(conn, stable_id)
+            user_edit_stored = (
+                not stored.for_source(source).is_identity()
+                if source in ("own", "rekordbox")
+                else False
+            )
+            pick = tempo_pick.read(conn, stable_id)
+        finally:
+            conn.close()
+
+        try:
+            apply_grid_phase(
+                payload,
+                stable_id,
+                share=share,
+                user_edit_stored=user_edit_stored,
+                state_db_path=state_db_path,
+                tempo_pick=pick,
+            )
+        except (FfmpegUnavailable, RuntimeError, OSError) as exc:
+            log.warning("grid phase idle precompute skipped %s: %s", stable_id, exc)
+            skipped.append(stable_id)
+        else:
+            processed.append(stable_id)
+    return IdlePassResult(tuple(processed), tuple(skipped), False, ())
 
 
 # ----------------------------------------------------------------- overlay
@@ -168,4 +283,13 @@ def apply_grid_phase(
     return _stamp(payload, choice.source, "kick", kick.shift_ms, f"{choice.reason}; {kick.reason}", choice)
 
 
-__all__ = ["CACHE_FILENAME", "apply_grid_phase", "kick_refinement"]
+__all__ = [
+    "CACHE_FILENAME",
+    "PLAYLIST_NAME_RE",
+    "IdlePassResult",
+    "apply_grid_phase",
+    "idle_pass",
+    "kick_refinement",
+    "matching_playlist_ids",
+    "member_ids",
+]

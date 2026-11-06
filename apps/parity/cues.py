@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.audit.cue_comparison import TOLERANCE_MSEC, compare_cue_lists
-from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_score_id_fields, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 from apps.shared.normalised import NormalisedCue
 
@@ -154,10 +154,12 @@ def score_cues_db(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure
         scored_n=scored_n,
         exact_n=len(agree_ids),
         no_own_n=len(no_own_ids),
-        agree_ids=tuple(agree_ids),
-        disagree_ids=tuple(disagree_ids),
-        no_own_ids=tuple(no_own_ids),
-        ungradable_ids=tuple(ungradable_ids),
+        **lane_score_id_fields(
+            agree_ids=agree_ids,
+            disagree_ids=disagree_ids,
+            no_own_ids=no_own_ids,
+            ungradable_ids=ungradable_ids,
+        ),
         ungradable={"missing_djmd_cue": len(ungradable_ids)},
         details=details,
     )
@@ -243,10 +245,12 @@ def score_cues_anlz(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigu
         scored_n=scored_n,
         exact_n=len(agree_ids),
         no_own_n=len(no_own_ids),
-        agree_ids=tuple(agree_ids),
-        disagree_ids=tuple(disagree_ids),
-        no_own_ids=tuple(no_own_ids),
-        ungradable_ids=tuple(ungradable_ext_ids),
+        **lane_score_id_fields(
+            agree_ids=agree_ids,
+            disagree_ids=disagree_ids,
+            no_own_ids=no_own_ids,
+            ungradable_ids=ungradable_ext_ids,
+        ),
         ungradable={"unreadable_ext": len(ungradable_ext_ids)},
         details={"pcob_n": pcob_n, "pco2_n": pco2_n},
     )

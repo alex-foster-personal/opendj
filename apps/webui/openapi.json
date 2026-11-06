@@ -1612,30 +1612,6 @@
         "title": "AppUpdateStatusOut",
         "type": "object"
       },
-      "ApplyIn": {
-        "additionalProperties": false,
-        "properties": {
-          "cluster_key": {
-            "title": "Cluster Key",
-            "type": "string"
-          },
-          "confirm_cue_loss": {
-            "default": false,
-            "title": "Confirm Cue Loss",
-            "type": "boolean"
-          },
-          "survivor": {
-            "title": "Survivor",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cluster_key",
-          "survivor"
-        ],
-        "title": "ApplyIn",
-        "type": "object"
-      },
       "ApplyRecordOut": {
         "properties": {
           "action": {
@@ -38817,6 +38793,48 @@
         "title": "WritebackTargetsOut",
         "type": "object"
       },
+      "apps__rekordbox_analyse__http__ApplyIn": {
+        "properties": {
+          "cloud_sync_off_confirmed": {
+            "title": "Cloud Sync Off Confirmed",
+            "type": "boolean"
+          },
+          "plan_sha": {
+            "title": "Plan Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_sha",
+          "cloud_sync_off_confirmed"
+        ],
+        "title": "ApplyIn",
+        "type": "object"
+      },
+      "apps__webui__server__routes__dedup_review__ApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "confirm_cue_loss": {
+            "default": false,
+            "title": "Confirm Cue Loss",
+            "type": "boolean"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor"
+        ],
+        "title": "ApplyIn",
+        "type": "object"
+      },
       "apps__webui__server__routes__dedup_review__DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -44946,7 +44964,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplyIn"
+                "$ref": "#/components/schemas/apps__webui__server__routes__dedup_review__ApplyIn"
               }
             }
           },
@@ -45114,7 +45132,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplyIn"
+                "$ref": "#/components/schemas/apps__webui__server__routes__dedup_review__ApplyIn"
               }
             }
           },
@@ -47779,6 +47797,25 @@
         "summary": "Similar",
         "tags": [
           "genres"
+        ]
+      }
+    },
+    "/api/v1/grid-phase-precompute": {
+      "get": {
+        "operationId": "get_status_api_v1_grid_phase_precompute_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "grid-phase-precompute"
         ]
       }
     },
@@ -55885,6 +55922,95 @@
         ]
       }
     },
+    "/api/v1/rekordbox/analyse/adopt": {
+      "post": {
+        "operationId": "post_adopt_api_v1_rekordbox_analyse_adopt_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Adopt Api V1 Rekordbox Analyse Adopt Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Adopt",
+        "tags": [
+          "rekordbox-analyse"
+        ]
+      }
+    },
+    "/api/v1/rekordbox/analyse/apply": {
+      "post": {
+        "operationId": "post_apply_api_v1_rekordbox_analyse_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/apps__rekordbox_analyse__http__ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Apply Api V1 Rekordbox Analyse Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Apply",
+        "tags": [
+          "rekordbox-analyse"
+        ]
+      }
+    },
+    "/api/v1/rekordbox/analyse/plan": {
+      "get": {
+        "operationId": "get_plan_api_v1_rekordbox_analyse_plan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Plan Api V1 Rekordbox Analyse Plan Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Plan",
+        "tags": [
+          "rekordbox-analyse"
+        ]
+      }
+    },
     "/api/v1/rekordbox/writeback-gate": {
       "get": {
         "operationId": "read_writeback_gate_api_v1_rekordbox_writeback_gate_get",
@@ -57737,7 +57863,7 @@
     },
     "/api/v1/spotify/account/client-id": {
       "put": {
-        "description": "Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).\n\nA PKCE client id is public, not a secret; it only names the app the user\nregistered with redirect URI http://127.0.0.1:8888/callback.",
+        "description": "Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).\n\nA PKCE client id is public, not a secret; it only names the app the user\nregistered with redirect URI http://127.0.0.1:8888/callback. Saving an id\nthat differs from the one already on disk clears the cached sign-in so\nlisting reports not signed in rather than refreshing the previous app's\ntoken under the new id.",
         "operationId": "put_account_client_id_api_v1_spotify_account_client_id_put",
         "requestBody": {
           "content": {
@@ -61887,7 +62013,7 @@
     },
     "/api/v1/tracks/{stable_id}/artwork": {
       "get": {
-        "description": "Serve the track's artwork from the first source that has one.\n\nrekordbox's pre-rendered jpg variant, else the embedded picture, a cover\nimage beside the file, or a cached online cover (looked up only with\n``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.\n``size`` applies to the rekordbox variants only; others are served as found.",
+        "description": "Serve the track's artwork from the first source that has one.\n\nrekordbox's pre-rendered jpg variant, else the embedded picture, a cover\nimage beside the file, or a cached online cover (looked up only with\n``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.\n``size`` applies to every source: rekordbox's pre-rendered variants are served\nas on disk; embedded, sidecar and cached-online covers are scaled down (never\nup) to the ``s``/``m`` longest edge and cached as JPEG under the app state\ndir; ``orig`` is the source as found.",
         "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
         "parameters": [
           {
@@ -61900,13 +62026,13 @@
             }
           },
           {
-            "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+            "description": "s=80 px browser rows, m=240 px deck thumbs (longest edge), orig",
             "in": "query",
             "name": "size",
             "required": false,
             "schema": {
               "default": "s",
-              "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+              "description": "s=80 px browser rows, m=240 px deck thumbs (longest edge), orig",
               "enum": [
                 "s",
                 "m",

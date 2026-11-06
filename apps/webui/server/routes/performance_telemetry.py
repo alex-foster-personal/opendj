@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from apps.shared.machine_pressure import (
     ShellRegistration,
-    live_process_family_state,
+    live_process_family,
     opendj_process_name,
     read_machine_pressure,
     read_shell_registration,
@@ -47,6 +47,7 @@ SAFE_TOTAL_KEYS = frozenset(
         "summed_lifetime_peak_mb",
         "cpu_percent",
         "process_count",
+        "rss_mb",
     }
 )
 # Every merged member names where its footprint came from. A `live` member was
@@ -219,6 +220,31 @@ def _footprint_by_role(processes: object) -> dict[str, float]:
     return by_role
 
 
+def _member_memory_mb(member: dict[str, object]) -> float | None:
+    footprint = member.get("physical_footprint_mb")
+    if isinstance(footprint, (int, float)):
+        return float(footprint)
+    rss = member.get("rss_mb")
+    if isinstance(rss, (int, float)):
+        return float(rss)
+    return None
+
+
+def _footprint_by_role_members(members: list[dict[str, object]]) -> dict[str, float]:
+    by_role: dict[str, float] = {}
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        role = member.get("role")
+        if not isinstance(role, str):
+            continue
+        mb = _member_memory_mb(member)
+        if mb is None:
+            continue
+        by_role[role] = round(by_role.get(role, 0.0) + mb, 1)
+    return by_role
+
+
 def _safe_totals(totals: object) -> dict[str, float]:
     if not isinstance(totals, dict):
         return {}
@@ -227,6 +253,52 @@ def _safe_totals(totals: object) -> dict[str, float]:
         for key, value in totals.items()
         if key in SAFE_TOTAL_KEYS and isinstance(value, (int, float))
     }
+
+
+def _family_totals_and_by_role(
+    members: list[dict[str, object]],
+    record: dict[str, object] | None,
+    *,
+    stale: bool,
+    live_pids: set[int],
+    jsonl_processes: object,
+    probe_fresh: bool,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Totals and by_role_mb: record when present; live sums when probe does not apply."""
+
+    probe_applies = isinstance(jsonl_processes, list) and _probe_applies(
+        live_pids, jsonl_processes, probe_fresh
+    )
+    if record is not None:
+        totals = _safe_totals(record.get("totals"))
+        by_role = (
+            _footprint_by_role_members(members)
+            if probe_applies and not stale
+            else _footprint_by_role(jsonl_processes)
+        )
+        totals["process_count"] = float(len(members))
+        if probe_applies and not stale:
+            live_sum = 0.0
+            has_any = False
+            for member in members:
+                mb = _member_memory_mb(member)
+                if mb is not None:
+                    live_sum += mb
+                    has_any = True
+            if has_any:
+                totals["physical_footprint_mb"] = round(live_sum, 1)
+        return totals, by_role
+    rss_sum = 0.0
+    has_rss = False
+    for member in members:
+        rss = member.get("rss_mb")
+        if isinstance(rss, (int, float)):
+            rss_sum += float(rss)
+            has_rss = True
+    live_totals: dict[str, float] = {"process_count": float(len(members))}
+    if has_rss:
+        live_totals["rss_mb"] = round(rss_sum, 1)
+    return live_totals, _footprint_by_role_members(members)
 
 
 def _jsonl_member(process: dict[str, object]) -> dict[str, object]:
@@ -358,10 +430,14 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
     # process of its own, including one that has exited.
     root_pid = getattr(request.app.state, "process_family_root_pid", None)
     registration = _shell_registration(request)
-    live_members, live_pids = live_process_family_state(
-        engine_pid=root_pid, registered_shell_pid=registration.pid
+    family = live_process_family(engine_pid=root_pid, registered_shell_pid=registration.pid)
+    body = _process_body(
+        family.members,
+        family.pids,
+        record,
+        read_machine_pressure(),
+        family.webkit_association,
     )
-    body = _process_body(live_members, live_pids, record, read_machine_pressure())
     body["shell_registration"] = registration.report()
     return body
 
@@ -407,6 +483,7 @@ def _process_body(
     live_pids: set[int],
     record: dict[str, object] | None,
     pressure: dict[str, object],
+    webkit_association: dict[str, str],
 ) -> dict[str, object]:
     """The /processes body from one live walk, the latest probe record and pressure.
 
@@ -422,6 +499,7 @@ def _process_body(
 
     age = None if record is None else _timestamp_age_seconds(record.get("timestamp"))
     stale = _sample_is_stale(record, age)
+    probe_fresh = record is not None and not stale
     if not live_members:
         if record is None:
             reason = "no live opendj-* processes and native process probe has not written a sample"
@@ -438,14 +516,27 @@ def _process_body(
             unavailable["age_seconds"] = None if age is None else round(age, 3)
         return unavailable
 
+    members = _merge_members(
+        live_members,
+        live_pids,
+        record.get("processes") if record else None,
+        probe_fresh=probe_fresh,
+    )
+    totals, by_role = _family_totals_and_by_role(
+        members,
+        record,
+        stale=stale,
+        live_pids=live_pids,
+        jsonl_processes=record.get("processes") if record else None,
+        probe_fresh=probe_fresh,
+    )
+
     body: dict[str, object] = {
         "available": True,
-        "members": _merge_members(
-            live_members,
-            live_pids,
-            record.get("processes") if record else None,
-            probe_fresh=record is not None and not stale,
-        ),
+        "members": members,
+        "totals": totals,
+        "by_role_mb": by_role,
+        "webkit_association": dict(webkit_association),
     }
     body.update(_pressure_overlay_fields(pressure))
 
@@ -453,8 +544,6 @@ def _process_body(
         body["timestamp"] = record.get("timestamp")
         body["age_seconds"] = None if age is None else round(age, 3)
         body["stale"] = stale
-        body["totals"] = _safe_totals(record.get("totals"))
-        body["by_role_mb"] = _footprint_by_role(record.get("processes"))
 
     return body
 

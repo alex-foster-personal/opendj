@@ -47,6 +47,7 @@ from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_key_tools import register_key_tools
 from apps.opendj_cli.mcp_offload_tools import register_offload_tools
 from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
+from apps.opendj_cli.mcp_rekordbox_analyse_tools import register_rekordbox_analyse_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
@@ -721,6 +722,12 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         engine_not_running=_engine_not_running,
     )
     register_enrichment_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_rekordbox_analyse_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

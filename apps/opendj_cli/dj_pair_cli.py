@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +23,7 @@ from urllib.parse import urlencode
 import httpx
 
 from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED, EXIT_NO_ENGINE, EXIT_UNCONFIRMED
+from apps.opendj_cli.dj_plan_io import PlanIoError, read_plan_json
 from apps.opendj_cli.dj_service import DjError
 from apps.opendj_cli.origin import (
     EngineIdentityMismatch,
@@ -71,20 +71,6 @@ def _parser() -> _Parser:
     played.add_argument("--style", help="style name; default the plan's own")
     actions.add_parser("capture", help="what the hand-mix capture is doing, and how it last ended")
     return parser
-
-
-def _read_plan(source: str) -> dict[str, Any]:
-    try:
-        text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
-    except OSError as error:
-        raise _UsageError(f"cannot read plan {source}: {error}") from error
-    try:
-        document = json.loads(text)
-    except ValueError as error:
-        raise _UsageError(f"plan {source} is not JSON: {error}") from error
-    if not isinstance(document, dict):
-        raise _UsageError(f"plan {source} must be a JSON object")
-    return document
 
 
 @dataclass
@@ -136,10 +122,10 @@ def _call(rest: Sequence[str]) -> Callable[[DjPairService], dict[str, Any]]:
     if args.action == "capture":
         return lambda service: service.send("GET", f"{PAIR_PATH}/capture")
     if args.action == "set":
-        body = _save_body(_read_plan(args.plan), args.source, args.style)
+        body = _save_body(read_plan_json(args.plan), args.source, args.style)
         return lambda service: service.send("PUT", PAIR_PATH, body=body)
     pair = {"out": args.out_id, "in": args.in_id}
-    played = pair if args.plan is None else {**pair, **_save_body(_read_plan(args.plan), args.source, args.style)}
+    played = pair if args.plan is None else {**pair, **_save_body(read_plan_json(args.plan), args.source, args.style)}
     return lambda service: service.send("POST", f"{PAIR_PATH}/played", body=played)
 
 
@@ -156,7 +142,7 @@ def run(
     """Run one ``opendj dj pair-transition`` call; ``service_factory`` is the tests' seam."""
     try:
         call = _call(rest)
-    except _UsageError as error:
+    except (_UsageError, PlanIoError) as error:
         _emit({"error": "usage", "message": str(error)})
         return EXIT_FAILED
     try:

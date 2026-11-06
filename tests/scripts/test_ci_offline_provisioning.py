@@ -334,3 +334,10 @@ def test_requirements_flag_is_gone() -> None:
     offenders = [line for line in code if "--upgrade" in line or "--requirements" in line]
     assert not offenders, offenders
     assert os.access(VENV_SCRIPT, os.X_OK)
+
+
+def test_sync_install_uses_uv_sync_without_exact() -> None:
+    """The --sync path uses uv sync --python, not the out-of-scope --exact flag."""
+    text = VENV_SCRIPT.read_text(encoding="utf-8")
+    assert "uv sync --python" in text
+    assert "uv sync --exact" not in text

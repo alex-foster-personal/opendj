@@ -23,6 +23,7 @@
 		type DedupScanStatus
 	} from './dedup-api';
 	import { mergeCueWarning } from './cue-warning';
+	import { normalizeRating } from '$lib/rating';
 	import type { Cluster, ClustersResponse, Decision, DecisionAction } from './types';
 
 	let data = $state<ClustersResponse | null>(null);
@@ -303,7 +304,7 @@
 										src={coverSrc(dedupArtworkUrl(member.stable_id), member.stable_id)}
 										alt=""
 										loading="lazy"
-										data-expected-resource-error
+										data-expected-resource-error="artwork-404"
 										onload={() => coverLoaded(member.stable_id)}
 										onerror={() => coverFailed(member.stable_id)}
 									/>
@@ -320,7 +321,7 @@
 										<span class="chip" title="Tempo in beats per minute (- when not analyzed)">{member.bpm ?? '-'} BPM</span>
 										<span class="chip" title="Musical key (- when not analyzed)">{shownKey(member.key) ?? '-'}</span>
 										<span class="chip" title="Track length, minutes:seconds">{formatDuration(member.duration_ms)}</span>
-										<span class="chip" title="Library rating of this copy (- when unrated)">rating {member.rating ?? '-'}</span>
+										<span class="chip" title="Library rating of this copy (- when unrated)">rating {normalizeRating(member.rating) ?? '-'}</span>
 										<span class="chip" class:missing={!member.file_exists}>
 											{member.file_exists ? 'file found' : 'file missing'}
 										</span>

@@ -40,9 +40,15 @@ RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
 )
 
 #: The pull_request activity types that run a workflow on a new head by themselves. A workflow
-#: whose `types` list names none of them (ci-rerun-failed.yml: `labeled` only) runs on demand:
-#: no push ever owes its checks, so a baseline that saw one must not wait for it at the next head.
+#: whose `types` list names none of them (a `labeled`-only trigger) runs on demand, and so does a
+#: `workflow_dispatch`-only one (ci-rerun-failed.yml, ADR-NEW-rerun-failed-dispatch-only): no push
+#: ever owes its checks, so a baseline that saw one must not wait for it at the next head.
 HEAD_PUSH_PULL_REQUEST_TYPES: frozenset[str] = frozenset({"opened", "synchronize", "reopened"})
+
+#: On-demand check names a script posts by the checks API rather than a job reporting them:
+#: `scripts/ci_rerun_failed.py` posts `ci gate (rerun-failed)` on the head it re-decided, so a
+#: baseline from that head carries it, and no later push emits it again.
+ON_DEMAND_POSTED_CHECK_NAMES: frozenset[str] = frozenset({"ci gate (rerun-failed)"})
 
 #: (workflow file name, job id): the identity a check name keeps across a rename.
 JobKey = tuple[str, str]
@@ -101,12 +107,19 @@ def _pull_request_trigger(on: dict) -> dict | None:
     return trigger
 
 
-def _on_demand_names(trigger: dict, document: dict) -> set[str] | None:
+def _on_demand_names(on: dict, trigger: dict | None, document: dict) -> set[str] | None:
     """Every name an on-demand workflow's jobs report (`HEAD_PUSH_PULL_REQUEST_TYPES`), or None
-    when a push to the pull request runs the workflow by itself."""
+    when a push to the pull request runs the workflow by itself, or when it has no pull request
+    trigger and is not `workflow_dispatch`-only."""
+    if trigger is None:
+        return _every_job_name(document) if set(on) == {"workflow_dispatch"} else None
     types = trigger.get("types")
     if types is None or not HEAD_PUSH_PULL_REQUEST_TYPES.isdisjoint(types):
         return None
+    return _every_job_name(document)
+
+
+def _every_job_name(document: dict) -> set[str]:
     names: set[str] = set()
     for job_id, job in (document.get("jobs") or {}).items():
         if isinstance(job, dict):
@@ -253,10 +266,10 @@ class WorkflowCatalog:
                 continue
             on = _normalize_on(document)
             trigger = _pull_request_trigger(on)
-            if trigger is None:
-                continue
-            if (names := _on_demand_names(trigger, document)) is not None:
+            if (names := _on_demand_names(on, trigger, document)) is not None:
                 on_demand.update(names)
+                continue
+            if trigger is None:
                 continue
             published = _published_names(name, on)
             paths = tuple(trigger.get("paths") or ()) or None
@@ -301,7 +314,7 @@ class WorkflowCatalog:
             workflow_filters=workflow_filters,
             all_job_names=frozenset(check_to_workflow),
             always_created_job_names=frozenset(always_created),
-            on_demand_job_names=frozenset(on_demand),
+            on_demand_job_names=frozenset(on_demand | ON_DEMAND_POSTED_CHECK_NAMES),
             job_names=job_names,
             matrix_alternatives=alternatives,
         )

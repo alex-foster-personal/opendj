@@ -47,6 +47,7 @@ from . import (
     backfill_drain,
     boot_grace,
     coverage_drain,
+    grid_phase_precompute,
     library_jobs_autostart,
     lyric_index_autostart,
 )
@@ -121,7 +122,9 @@ from .routes import feedback_summary as feedback_summary_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import genres as genres_routes
+from .routes import rekordbox_analyse as rekordbox_analyse_routes
 from .routes import grid_edit as grid_edit_routes
+from .routes import grid_phase_precompute as grid_phase_precompute_routes
 from .routes import grid_provenance as grid_provenance_routes
 from .routes import tempo_stability as tempo_stability_routes
 from .routes import health as health_routes
@@ -326,6 +329,14 @@ def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
     app.state.ahead_analysis.start()
 
 
+def _start_grid_phase_precompute_if_armed(app: FastAPI) -> None:
+    if not getattr(app.state, "grid_phase_precompute_armed", False):
+        return
+    if getattr(app.state, "grid_phase_precompute", None) is None:
+        app.state.grid_phase_precompute = grid_phase_precompute.build_for_app(app)
+    app.state.grid_phase_precompute.start()
+
+
 def _settle_orphaned_drains(app: FastAPI) -> None:
     """Settle the drained batches an earlier engine left open (backfill_drain).
 
@@ -407,6 +418,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         _retained_library_jobs_watcher(app).start()
         _start_coverage_drain_if_armed(app)
         _start_ahead_analysis_if_armed(app)
+        _start_grid_phase_precompute_if_armed(app)
         _start_ingest_enrichment_if_armed(app)
         from . import path_availability_refresh
 
@@ -437,6 +449,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         for name, attr in (
             ("coverage-drain", "coverage_drain"),
             ("ahead-analysis", "ahead_analysis"),
+            ("grid-phase-precompute", "grid_phase_precompute"),
             ("ingest-enrichment", "ingest_enrichment"),
             ("library-jobs-watcher", "library_jobs_watcher"),
         ):
@@ -751,10 +764,12 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_queue_routes.router,
         library_jobs_routes.router,
         genres_routes.router,
+        rekordbox_analyse_routes.router,
         energy_routes.router,
         cmdk_ai_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
+        grid_phase_precompute_routes.router,
         ingest_enrichment_routes.router,
         artwork_suggestions_routes.router,
         enrich_routes.router,

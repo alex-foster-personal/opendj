@@ -103,7 +103,6 @@
 				body: ['Not measured in this run - different from a real 0.']
 			}}
 		>
-			<title>{snapshots[gapIndex].label}: not measured in this run.</title>
 		</circle>
 	{/each}
 
@@ -117,7 +116,6 @@
 			stroke-width="2"
 			use:tip={dotTip(point, order)}
 		>
-			<title>{snapshots[point.index].label}: {formatWithUnit(point.value, kpi.unit)}</title>
 		</circle>
 	{/each}
 </svg>

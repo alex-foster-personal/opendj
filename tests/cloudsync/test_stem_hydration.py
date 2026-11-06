@@ -18,16 +18,22 @@ hydrated bundle -- never a mocked loader.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
+import time
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import psutil
 import pytest
 
 from apps.cloud import asset_store, stem_cache_budget
+from apps.cloud import stem_hydration as stem_hydration_module
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
 from apps.cloud.stem_cache_budget import GIB, DiskUsage
@@ -47,6 +53,11 @@ from apps.cloud.stem_source import (
 )
 from apps.stems.artifacts import load_stem_bundle
 from tests.cloudsync.conftest import InMemoryAssetS3
+
+
+def _owner_marker(stable_id: str, pid: int, token: str) -> str:
+    """A hydrate-owner marker file name, built the way stem_hydration names it."""
+    return f"{stable_id}@{pid}-{token}.json"
 
 
 def _wav_bytes(*, frames: int = 8, sample_rate: int = 44_100, channels: int = 2) -> bytes:
@@ -225,10 +236,75 @@ def test_hydrate_one_rejects_disallowed_index_filename(
     assert outcome.status == "error"
     assert "../escape.wav" in (outcome.reason or "")
     assert not (stems_dir / stable_id).exists()
-    # The filename check runs before any filesystem write, so the whole
-    # stems_dir tree (not just the bundle) must never have been created.
+    # The filename check runs before any bundle write, so the whole stems_dir
+    # tree (not just the bundle) must never have been created, and no file is
+    # left anywhere. The one directory a hydrate makes first is its owner-marker
+    # directory under (private path) (the marker itself is removed on return).
     assert not stems_dir.exists()
-    assert list(parent_dir.iterdir()) == []
+    assert [p for p in parent_dir.rglob("*") if not p.is_dir()] == []
+    assert sorted(p.relative_to(parent_dir).as_posix() for p in parent_dir.rglob("*")) == [
+        "data",
+        "(private path)",
+        "(private path)",
+    ]
+
+
+@pytest.mark.requirement("STEM-12")
+def test_a_generation_write_that_raises_os_error_still_keeps_the_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """[if] a raw OSError hits the closing generation write [then] the publish stands, [else stop].
+
+    A publish already renamed and verified must not be lost to a raw I/O
+    failure in the generation file. MUTATION TARGET: drop the OSError
+    conversion and the closing write raises out of the window.
+    """
+    writes = {"n": 0}
+    real_write_text = Path.write_text
+
+    def fail_the_closing_write(self: Path, data: str, *args, **kwargs) -> int:
+        if self.name.endswith(".gen.tmp"):
+            writes["n"] += 1
+            if writes["n"] == 2:
+                raise OSError(errno.ENOSPC, "no space left on device")
+        return real_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_the_closing_write)
+    with stem_hydration_module.bundle_publish_window(tmp_path / "data", "track"):
+        pass
+
+    assert writes["n"] == 2
+    assert stem_hydration_module.read_hydrate_generation(tmp_path / "data", "track") % 2 == 1
+
+
+@pytest.mark.requirement("STEM-12")
+def test_hydrate_one_returns_an_error_when_its_owner_marker_cannot_be_published(
+    tmp_path: Path, fake_s3, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
+):
+    """[if] the owner marker cannot be published [then] the named error outcome returns, [else stop].
+
+    The marker is written before any lock or bundle read, so a failure there
+    must come back as an ``error`` outcome, not an exception out of the call.
+    MUTATION TARGET: let the marker error escape and this test raises.
+    """
+    stems_dir = tmp_path / "stems"
+    stable_id = "marker-blocked-track"
+    index_entry = _seed_bundle(fake_s3, cfg, stable_id)
+
+    def refuse_replace(src, dst):
+        raise PermissionError("marker target is held open")
+
+    monkeypatch.setattr(stem_hydration_module.os, "replace", refuse_replace)
+    outcome = hydrate_one(
+        stable_id,
+        data_dir=tmp_path / "data",
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
+        index={stable_id: index_entry},
+        stems_dir=stems_dir,
+    )
+    assert outcome.status == "error"
+    assert "could not write" in (outcome.reason or "")
+    assert not stems_dir.exists()
 
 
 @pytest.mark.requirement("STEM-12")
@@ -770,6 +846,140 @@ def test_enforcement_protects_a_recently_served_bundle_without_deck_open(tmp_pat
     expired_protected = registry.open_ids(now=served_at + OPEN_DECK_SERVED_TTL_S + 1)
     outcome2 = _enforce_on_full_disk(stems_dir, index, protected=expired_protected)
     assert "served-track" in outcome2.evicted_stable_ids
+
+
+@pytest.mark.requirement("STEM-12")
+@pytest.mark.parametrize(
+    ("bad_create_time", "bad_started_at"),
+    [
+        (float("nan"), 1.0),
+        (float("inf"), 1.0),
+        (1.0, float("-inf")),
+        (10**400, 1.0),
+    ],
+)
+def test_an_owner_marker_with_non_finite_timestamps_is_removed(
+    tmp_path: Path, bad_create_time: float | int, bad_started_at: float
+):
+    """[if] create_time or started_at is non-finite [then] marker removed, not fetching, [else stop].
+
+    JSON may decode NaN/Infinity; huge ints overflow float() -- all must unlink, never stall
+    in :func:`hydrate_owner_alive`. MUTATION TARGET: drop :func:`_is_finite_stamp` and NaN survives.
+    """
+    data_dir = tmp_path / "data"
+    owners = stem_hydration_module.hydrate_owners_dir(data_dir)
+    owners.mkdir(parents=True)
+    marker = owners / _owner_marker("shape-track", 4242, "bad-stamp")
+    marker.write_text(
+        json.dumps(
+            {"pid": 4242, "create_time": bad_create_time, "started_at": bad_started_at},
+            allow_nan=True,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    assert stem_hydration_module.hydrate_owner_alive(data_dir, "shape-track") is False
+    assert not marker.exists()
+
+
+@pytest.mark.requirement("STEM-12")
+def test_an_owner_marker_with_the_wrong_json_shape_is_removed_not_raised(tmp_path: Path):
+    """[if] an owner marker has the wrong JSON shape [then] it is removed and ignored, [else stop].
+
+    Valid JSON that is not an owner record (a list, or no pid) must not raise
+    out of the owner check and turn the state endpoint into a 500.
+    MUTATION TARGET: drop the shape check and this test raises.
+    """
+    data_dir = tmp_path / "data"
+    owners = stem_hydration_module.hydrate_owners_dir(data_dir)
+    owners.mkdir(parents=True)
+    list_marker = owners / _owner_marker("shape-track", 1, "deadbeef")
+    list_marker.write_text("[]", encoding="utf-8", newline="\n")
+    no_pid_marker = owners / _owner_marker("shape-track", 2, "cafef00d")
+    no_pid_marker.write_text(json.dumps({"create_time": 1.0}), encoding="utf-8", newline="\n")
+    bad_pid_marker = owners / _owner_marker("shape-track", 3, "0badf00d")
+    bad_pid_marker.write_text(
+        json.dumps({"pid": -1, "create_time": 0.0, "started_at": time.time()}),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    assert stem_hydration_module.hydrate_owner_alive(data_dir, "shape-track") is False
+    assert not list_marker.exists()
+    assert not no_pid_marker.exists()
+    assert not bad_pid_marker.exists()
+
+
+@pytest.mark.requirement("STEM-12")
+def test_an_owner_marker_past_the_ttl_is_removed_only_when_its_owner_is_dead(tmp_path: Path):
+    """[if] a marker is past the hydrate TTL [then] removed if its owner crashed, kept if live, [else stop].
+
+    The TTL bounds how long a live owner counts as a fetch; it must not keep
+    a crashed owner's marker on disk forever.
+    MUTATION TARGET: check the TTL before the pid and the crashed marker survives.
+    """
+    data_dir = tmp_path / "data"
+    owners = stem_hydration_module.hydrate_owners_dir(data_dir)
+    owners.mkdir(parents=True)
+    stale_at = time.time() - stem_hydration_module.HYDRATE_OWNER_TTL_S - 60
+    exited = subprocess.run(
+        [sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True
+    )
+    dead_pid = int(exited.stdout)
+    assert not psutil.pid_exists(dead_pid), "control: the exited child's pid must be free"
+    crashed = owners / _owner_marker("ttl-track", dead_pid, "deadbeef")
+    crashed.write_text(
+        json.dumps({"pid": dead_pid, "create_time": stale_at, "started_at": stale_at}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    me = psutil.Process()
+    live = owners / _owner_marker("ttl-track", me.pid, "cafef00d")
+    live.write_text(
+        json.dumps({"pid": me.pid, "create_time": me.create_time(), "started_at": stale_at}),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    assert stem_hydration_module.hydrate_owner_alive(data_dir, "ttl-track") is False
+    assert not crashed.exists(), "a crashed owner's marker past the TTL was kept"
+    assert live.exists(), "a live owner's marker past the TTL was removed"
+
+
+@pytest.mark.requirement("STEM-12")
+def test_a_malformed_generation_file_is_a_hydration_error(tmp_path: Path):
+    """[if] the generation file is not a number or text [then] HydrationError is raised, [else stop].
+
+    A state read catches only HydrationError, so a ValueError or
+    UnicodeDecodeError here would crash or 500 every track on that stripe.
+    MUTATION TARGET: let the parse or decode error escape and this test fails.
+    """
+    data_dir = tmp_path / "data"
+    path = stem_hydration_module.hydrate_generation_path(data_dir, "gen-track")
+    path.parent.mkdir(parents=True)
+    for payload in (b"", b"not-a-number", b"\xff\xfe\x00"):
+        path.write_bytes(payload)
+        with pytest.raises(stem_hydration_module.HydrationError):
+            stem_hydration_module.read_hydrate_generation(data_dir, "gen-track")
+
+
+@pytest.mark.requirement("STEM-12")
+def test_an_owner_marker_with_undecodable_bytes_is_removed_not_raised(tmp_path: Path):
+    """[if] an owner marker holds undecodable bytes [then] it is removed and ignored, [else stop].
+
+    A decode error is not an OSError or a JSON error, so it must take the same
+    cleanup path or every state read of that track becomes a 500.
+    MUTATION TARGET: drop UnicodeDecodeError from the corrupt-marker handler and this test raises.
+    """
+    data_dir = tmp_path / "data"
+    owners = stem_hydration_module.hydrate_owners_dir(data_dir)
+    owners.mkdir(parents=True)
+    marker = owners / _owner_marker("bytes-track", 1, "deadbeef")
+    marker.write_bytes(b"\xff\xfe\x00")
+
+    assert stem_hydration_module.hydrate_owner_alive(data_dir, "bytes-track") is False
+    assert not marker.exists()
 
 
 class _LosingSource(DirectR2Source):

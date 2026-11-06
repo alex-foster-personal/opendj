@@ -101,6 +101,7 @@
 	import { startUsbWatch, stopUsbWatch, usbTracker } from '$lib/rb/usb-tracker.svelte';
 	import { uiPrefs, setPlaylistTreeView } from '$lib/rb/prefs.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
+	import { playlistReveal } from '$lib/rb/playlist-reveal.svelte';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { filterTreeByName, libraryLayoutFor } from '$lib/rb/skin-layout';
 
@@ -148,6 +149,11 @@
 	$effect(() => {
 		if (activeTab === 'autolists') autolistsMounted = true;
 		else if (activeTab === 'usbs') loadUsbList();
+	});
+
+	/** CMDK-6848: a playlist row asked into view lives on the Playlists tab. */
+	$effect(() => {
+		if (playlistReveal.id !== null) activeTab = 'playlists';
 	});
 
 	async function handleNewSmartlist(): Promise<void> {

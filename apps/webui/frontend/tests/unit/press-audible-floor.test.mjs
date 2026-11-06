@@ -928,6 +928,14 @@ test('QuickDrawMenu Play/Pause and its contextual actions thread their own click
 		menu.includes('onclick={(e) => void _togglePlay(deck, e.timeStamp)}'),
 		'the Play/Pause quick-draw button must hand on its own click event stamp'
 	);
+	assert.ok(
+		menu.includes('disabled={!loaded}'),
+		'QuickDraw Play CHN must stay inert when that deck has no track'
+	);
+	assert.ok(
+		menu.includes("if (getDeckState(deck).stable_id === null) return;"),
+		'_togglePlay must not dispatch play on an empty deck'
+	);
 
 	assert.ok(
 		menu.includes(

@@ -1,5 +1,6 @@
 /**
  * QLT hover fetch cache (QLTSCAN-05): `audioQualityHover` via requestCoalescer.
+ * Twin badge mount coverage for issue #9320 lives in track-table-header-markup.test.mjs (GUARD-15: that file already allowlists Svelte source reads).
  */
 import assert from 'node:assert/strict';
 import { afterEach, before, test } from 'node:test';
@@ -32,10 +33,12 @@ before(async () => {
 	hoverMod = await loadTypeScriptModule('src/lib/rb/api-audio-quality.ts');
 });
 
-afterEach(() => {
+afterEach(async () => {
 	if (originalFetch !== undefined) {
 		globalThis.fetch = originalFetch;
+		originalFetch = undefined;
 	}
+	await Promise.resolve();
 });
 
 test('same key inside TTL shares one fetch', async () => {

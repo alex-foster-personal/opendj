@@ -26,9 +26,10 @@ from apps.shared.shared_read_open import open_read_shared
 
 _HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
 
-#: ``hydrate_one`` fetches into ``<stable_id>.tmp-hydrate-<random>`` beside the
-#: bundles. That directory is a download in progress, not a bundle: it is
-#: neither evicted nor queued for upload.
+#: ``hydrate_one`` fetches into ``<stable_id>.tmp-hydrate-<pid>-<token>-<random>``
+#: beside the bundles (offload restore uses ``<stable_id>.tmp-hydrate-<hex>`` only).
+#: That directory is a download in progress, not a bundle: it is neither evicted
+#: nor queued for upload.
 IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
 #: An eviction renames a bundle to ``<stable_id>.evicting-<random>`` before
 #: deleting it; scans skip it like a download in progress.
@@ -213,7 +214,8 @@ def unconfirmed_reason(bundle: LocalBundle, index: StemAssetIndex) -> str | None
     """Why R2 does NOT hold this bundle byte for byte, or ``None`` when it
     does. The expensive half of the gate: keys are content-addressed, so a
     local sha256 equal to the indexed digest proves the indexed object is
-    these exact bytes. Run only on a bundle about to be evicted."""
+    these exact bytes. Callers pass the remote-confirmed index, not the merged
+    local cache. Run only on a bundle about to be evicted."""
     gap = index_gap(bundle, index)
     if gap is not None:
         return gap

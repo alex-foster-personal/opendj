@@ -36,19 +36,25 @@ import httpx
 from apps.autodj.http import (
     ANCHOR_LEAD_BARS,
     ROLES,
+    MirrorError,
     MixWindow,
     PlanError,
     ProfileError,
+    SetPlan,
     TrackProfile,
     TransitionPlan,
     Validation,
     build_service,
+    check_mirror,
     compile_plan,
     control_command,
     first_dispatch_bar,
     live_child,
     mix_windows,
+    next_transition,
     parse_plan,
+    plan_set,
+    print_set_score,
     profile_from_payloads,
     propose_transition,
     score_pair,
@@ -65,7 +71,6 @@ from apps.autodj.http import (
 from apps.autodj.http import (
     with_in_track as _with_in_track,
 )
-from apps.autodj.setscore import MirrorError, SetPlan, check_mirror, next_transition, plan_set, print_set_score
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     EngineClient,
@@ -457,7 +462,8 @@ class DjService:
         candidate is validated against it, the playhead margin and every other live precondition included. One that
         no longer validates is dropped with its reason; none left is an error, never an empty answer. A malformed
         mirror level is refused by name (``mirror_malformed``), never read as missing; a deck that changed track
-        meanwhile is ``stale``."""
+        meanwhile is ``stale``. A proposal document that is not a plan is the parse error (``plan_invalid``), never
+        ``mirror_malformed`` (#9314)."""
         (out_profile, in_profile), (out_deck, in_deck) = profiles, decks
         fresh = self._mirror()
         try:
@@ -466,10 +472,13 @@ class DjService:
                 raise DjError("stale", f"deck {out_deck} no longer plays {out_profile.stable_id}; propose again")
             bar_now = _live_bar(out_profile, deck)  # None when the mirror carries no playhead: nothing to report
             live = _with_in_track(fresh, in_deck, in_id, in_profile.bpm)
-            checked = [(row, parse_plan(row["plan"])) for row in result["proposals"]]
-            checked = [(row, validate_plan(plan, out_profile, in_profile, live=live), _lead_short(plan, bar_now)) for row, plan in checked]
         except ValueError as error:
             raise DjError("mirror_malformed", f"the live mirror read after the search is malformed: {error}") from error
+        checked = [(row, self._parsed(row["plan"])) for row in result["proposals"]]
+        checked = [
+            (row, validate_plan(plan, out_profile, in_profile, live=live), _lead_short(plan, bar_now))
+            for row, plan in checked
+        ]
         kept = [{**row, "validation": validation.to_json()} for row, validation, short in checked if validation.ok and not short]
         dropped = [
             {"style": row["style"], "reason": "; ".join([*validation.errors, *([short] if short else [])])}

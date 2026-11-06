@@ -21,7 +21,7 @@ import { installTimerProbe, loadRuneModule } from './load-rune-module.mjs';
 const ENTRY = [
 	"export { installAutoPlay } from '$lib/rb/auto-play.svelte';",
 	"export { autoPlayDecision, decideAutoPlayNow } from '$lib/rb/auto-play-early.svelte';",
-	"export { autoPlayNextState, cancelAutoPlayNext, registerAutoPlayNextPlanRunner } from '$lib/rb/auto-play-next.svelte';",
+	"export { armAutoPlayNext, autoPlayNextState, cancelAutoPlayNext, registerAutoPlayNextPlanRunner } from '$lib/rb/auto-play-next.svelte';",
 	"export { registerAgentPlanStatus } from '$lib/rb/auto-play-plan-gate';",
 	"export { uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
@@ -95,12 +95,28 @@ async function until(condition, what, timeoutMs = 4000) {
 	}
 }
 
+function deferred() {
+	let release;
+	const promise = new Promise((resolve) => {
+		release = resolve;
+	});
+	return { promise, release };
+}
+
 async function withSet(options, run) {
 	const {
 		position = 190_000,
 		decide = { track: 'cued', window: WINDOW, style: 'long_blend', bars: 32, reason: 'decided' },
 		early = true,
-		prepareState = 'ready'
+		prepareState = 'ready',
+		holdDecide = null,
+		holdPlan = null,
+		follower = {
+			stable_id: 'cued',
+			playing: false,
+			anlz: { beatgrid: { beats: [] } },
+			duration_ms: 300_000
+		}
 	} = options;
 	const probe = installTimerProbe();
 	const restore = _shim();
@@ -109,10 +125,16 @@ async function withSet(options, run) {
 	const infos = [];
 	console.info = (...args) => infos.push(args.join(' '));
 	const calls = { decide: [], plan: [], prepare: [] };
+	let decideHeld = false;
+	let planHeld = false;
 	globalThis.fetch = async (input, init) => {
 		const url = String(typeof input === 'string' || input instanceof URL ? input : input.url);
 		if (url.endsWith('/dj/transition/decide')) {
 			calls.decide.push(JSON.parse(init.body));
+			if (holdDecide !== null && !decideHeld) {
+				decideHeld = true;
+				await holdDecide.promise;
+			}
 			return _json(decide);
 		}
 		if (url.endsWith('/dj/transition/prepare')) {
@@ -127,6 +149,10 @@ async function withSet(options, run) {
 		}
 		if (url.endsWith('/dj/transition/plan')) {
 			calls.plan.push(JSON.parse(init.body));
+			if (holdPlan !== null && !planHeld) {
+				planHeld = true;
+				await holdPlan.promise;
+			}
 			return _json(PLAN_ANSWER);
 		}
 		return _json({ detail: 'unit runtime: no engine behind fetch' }, 503);
@@ -135,6 +161,9 @@ async function withSet(options, run) {
 	let mod = null;
 	try {
 		mod = await loadRuneModule(ENTRY);
+		// Pin the soft target so `due_ms` and the under-target gate stay stable if
+		// prefs defaults change (AUTOPLAN-01 / auto-play-early-flow).
+		mod.uiPrefs.auto_play_decide_after_s = 180;
 		const runner = { current: null, scheduled: [], aborted: [] };
 		mod.registerAutoPlayNextPlanRunner({
 			schedule: async (plan) => {
@@ -156,12 +185,7 @@ async function withSet(options, run) {
 			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true },
 			{ stable_id: 'next-2', key: '8A', bpm: 124, file_exists: true }
 		]);
-		Object.assign(mod.deckStates[2], {
-			stable_id: 'cued',
-			playing: false,
-			anlz: { beatgrid: { beats: [] } },
-			duration_ms: 300_000
-		});
+		Object.assign(mod.deckStates[2], follower);
 		Object.assign(mod.deckStates[1], {
 			stable_id: 'src-1',
 			playing: true,
@@ -174,6 +198,8 @@ async function withSet(options, run) {
 		});
 		await run({ mod, runner, calls, infos });
 	} finally {
+		holdDecide?.release();
+		holdPlan?.release();
 		if (uninstall !== null) uninstall();
 		// The plan watcher's interval outlives the page in this harness, and a live one keeps the runner open forever.
 		await mod?.cancelAutoPlayNext();
@@ -311,6 +337,32 @@ test('AutoPlay off aborts a plan that has not started', async () => {
 	});
 });
 
+test('AutoPlay off while arming the planner cancels that arm', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] AutoPlay goes off while arming [then] the planner arm is cancelled, [else stop]
+	const holdPlan = deferred();
+	await withSet({ holdPlan }, async ({ mod, runner }) => {
+		await until(
+			() => mod.autoPlayNextState.armed && mod.autoPlayDecision.phase === 'preparing',
+			'the planner arm'
+		);
+		mod.uiPrefs.auto_play_enabled = false;
+		await until(
+			() => !mod.autoPlayNextState.armed && mod.autoPlayDecision.phase === 'idle',
+			'the planner cancellation'
+		);
+		holdPlan.release();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		assert.equal(mod.autoPlayNextState.armed, false);
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		assert.ok(
+			runner.scheduled.length === 0 ||
+				runner.scheduled.every((plan) => runner.aborted.includes(String(plan.id))),
+			'if the held planner schedules after AutoPlay goes off then broken'
+		);
+	});
+});
+
 test('AutoPlay off leaves a running plan to finish', async () => {
 	await withSet({}, async ({ mod, runner }) => {
 		await until(() => mod.autoPlayDecision.phase === 'scheduled', 'the plan');
@@ -322,6 +374,25 @@ test('AutoPlay off leaves a running plan to finish', async () => {
 	});
 });
 
+test('a superseded decide does not set the live decision to fallback', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] a superseded run resumes [then] the live decision is left intact, [else stop]
+	const holdDecide = deferred();
+	await withSet({ holdDecide }, async ({ mod, runner, calls }) => {
+		await until(() => calls.decide.length === 1, 'the first decision');
+		await mod.decideAutoPlayNow();
+		holdDecide.release();
+		await until(() => mod.autoPlayDecision.phase === 'scheduled', 'the replacement plan');
+		assert.notEqual(mod.autoPlayDecision.phase, 'fallback');
+		assert.ok(
+			calls.decide.length >= 2,
+			'if Decide now does not replace the held decision then broken'
+		);
+		assert.equal(runner.scheduled.length, 1);
+		assert.equal(mod.autoPlayDecision.track, 'cued');
+	});
+});
+
 test('early planning off leaves the end-of-track handoff alone', async () => {
 	await withSet({ early: false, position: 290_000 }, async ({ calls, infos }) => {
 		await until(
@@ -329,6 +400,29 @@ test('early planning off leaves the end-of-track handoff alone', async () => {
 			'the log line'
 		);
 		assert.deepEqual(calls.decide, [], 'if the flag does not restore the old path then broken');
+	});
+});
+
+test('turning early planning off cancels a decision that has not started playing', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] early planning turns off mid-decision [then] pending work is cancelled, [else stop]
+	const holdPlan = deferred();
+	await withSet({ holdPlan }, async ({ mod, runner }) => {
+		await until(
+			() => mod.autoPlayNextState.armed && mod.autoPlayDecision.phase === 'preparing',
+			'the pending planner arm'
+		);
+		mod.uiPrefs.auto_play_early_planning = false;
+		await until(
+			() => !mod.autoPlayNextState.armed && mod.autoPlayDecision.phase === 'idle',
+			'the early-planning cancellation'
+		);
+		holdPlan.release();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		assert.equal(mod.autoPlayNextState.armed, false);
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		assert.deepEqual(runner.scheduled, []);
 	});
 });
 
@@ -351,6 +445,33 @@ test('Decide now is refused while a planned transition is running', async () => 
 		await until(() => mod.autoPlayDecision.phase === 'running', 'running');
 		await assert.rejects(mod.decideAutoPlayNow(), /running/);
 	});
+});
+
+test('a follower the DJ started is not unloaded', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] the follower is playing before unload [then] that deck is left alone, [else stop]
+	const holdDecide = deferred();
+	await withSet(
+		{
+			holdDecide,
+			follower: {
+				stable_id: 'dj-hold',
+				playing: false,
+				anlz: { beatgrid: { beats: [] } },
+				duration_ms: 300_000
+			}
+		},
+		async ({ mod, runner, calls }) => {
+			await until(() => calls.decide.length === 1, 'the held decision');
+			mod.deckStates[2].playing = true;
+			holdDecide.release();
+			await until(() => mod.autoPlayDecision.phase === 'fallback', 'the taken-deck fallback');
+			assert.equal(mod.deckStates[2].stable_id, 'dj-hold');
+			assert.equal(mod.deckStates[2].playing, true);
+			assert.match(mod.autoPlayDecision.reason, /taken/);
+			assert.deepEqual(runner.scheduled, []);
+		}
+	);
 });
 
 test('a follower taken while the pair prepares is never armed', async () => {
@@ -383,5 +504,53 @@ test('a plan an agent scheduled keeps the decision off the decks', async () => {
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		assert.deepEqual(calls.decide, [], 'if AutoPlay decides under another plan then broken');
 		assert.equal(mod.autoPlayDecision.phase, 'idle');
+	});
+});
+
+test('a DJ Next arm is left alone when AutoPlay goes off', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] a manual Next arm is live [then] AutoPlay-off leaves it, [else stop]
+	await withSet({ position: 60_000 }, async ({ mod, runner }) => {
+		await mod.armAutoPlayNext();
+		await until(() => mod.autoPlayNextState.armed === true, 'the DJ Next arm');
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		mod.uiPrefs.auto_play_enabled = false;
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.equal(mod.autoPlayNextState.armed, true);
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		assert.deepEqual(runner.aborted, [], 'if AutoPlay off aborts a DJ Next arm then broken');
+	});
+});
+
+test('a DJ Next arm is left alone when early planning turns off', async () => {
+	// requirement: AUTOPLAN-9113
+	// [if] a manual Next arm is live [then] early-planning-off leaves it, [else stop]
+	await withSet({ position: 60_000 }, async ({ mod, runner }) => {
+		await mod.armAutoPlayNext();
+		await until(() => mod.autoPlayNextState.armed === true, 'the DJ Next arm');
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		mod.uiPrefs.auto_play_early_planning = false;
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		assert.equal(mod.autoPlayNextState.armed, true);
+		assert.equal(mod.autoPlayDecision.phase, 'idle');
+		assert.deepEqual(runner.aborted, [], 'if early-planning-off aborts a DJ Next arm then broken');
+	});
+});
+
+test('AutoPlay off leaves a DJ Next plan that is already running', async () => {
+	// requirement: AUTOPLAN-9113
+	await withSet({ position: 60_000 }, async ({ mod, runner }) => {
+		await mod.armAutoPlayNext();
+		await until(() => runner.scheduled.length === 1, 'the DJ Next plan');
+		runner.current.status = 'running';
+		mod.uiPrefs.auto_play_enabled = false;
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.deepEqual(
+			runner.aborted,
+			[],
+			'if AutoPlay off aborts a running DJ Next plan then broken'
+		);
+		assert.equal(mod.autoPlayNextState.armed, true);
 	});
 });

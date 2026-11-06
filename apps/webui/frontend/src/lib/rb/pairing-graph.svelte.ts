@@ -4,6 +4,7 @@
  * paired at all, and is its partner on a deck", which the zigzag edge needs
  * for every visible row. Pairings are few (hand-made or captured), so one
  * `GET /api/v1/pairings` per change is cheaper than a lookup per row. */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { listPairings } from '$lib/api';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { capabilities } from '$lib/api/capabilities.svelte';
@@ -97,6 +98,7 @@ export class PairingGraph {
 			if (generation !== this._generation) return;
 			this.pending = false;
 			this.partners = new Map();
+			if (isPageGoingAway()) return;
 			this.error = `pairing list failed: ${exc instanceof Error ? exc.message : String(exc)}`;
 		}
 	}

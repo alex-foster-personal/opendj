@@ -39,7 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 
 from apps.engine_core.build_info import REQUIRED_IDENTITY_KEYS
-from scripts import payload_launchers_win
+from scripts import payload_launchers_win, payload_pe_audit
 from scripts.app_identity import read_app_identity
 from scripts.build_engine_payload import (
     AUDIO_ENGINE_CRATE,
@@ -56,6 +56,8 @@ from scripts.build_engine_payload import (
     stage_app_source,
     verify_audio_engine,
 )
+from scripts.payload_vcruntime import stage_vcruntime
+from scripts.payload_windows_extras import ExtrasResult, apply_extras_to_manifest, stage_extras
 
 RUNTIME_PYTHON_RELATIVE: str = "runtime/python.exe"
 AUDIO_ENGINE_WIN_RELATIVE: str = "bin/odj-audio.exe"
@@ -79,16 +81,58 @@ NOT_STAGED: dict[str, str] = {
     "telemetry": "the baked ship Sentry DSN is a signing-time input; telemetry is off",
     "third_party_licenses": "the license inventory step is macOS-shaped and has not been run for the Windows payload",
 }
+STANDING_GAPS: tuple[str, ...] = ("ffmpeg", "waveform_native")
+
+SETUPTOOLS_STUB_REASON: str = (
+    "setuptools entry-point launcher stubs for 32-bit and arm64 targets: data it copies into "
+    "generated scripts, never executed from here"
+)
+
+#: Audit findings tolerated on purpose: payload-relative glob -> reason.
+AUDIT_ACCEPTED: dict[str, str] = {
+    "pylib/numba/np/ufunc/tbbpool*.pyd": (
+        "numba's optional TBB threading layer imports tbb12.dll only when the tbb layer is selected; "
+        "the tbb distribution is not in the closure and the default layers (omp, workqueue) do not use it"
+    ),
+    "*/setuptools/cli*.exe": SETUPTOOLS_STUB_REASON,
+    "*/setuptools/gui*.exe": SETUPTOOLS_STUB_REASON,
+}
 
 
-def stage_windows_runtime(runtime_source: Path, destination: Path) -> None:
-    """Copy the relocatable CPython, which keeps ``python.exe`` at its root, minus bytecode."""
+def standing_not_staged() -> dict[str, str]:
+    """Owner-decision gaps extras never stages: ffmpeg and the waveform native wheel."""
+    return {key: NOT_STAGED[key] for key in STANDING_GAPS}
+
+
+#: Removed from the staged Windows CPython, as globs relative to its root. The
+#: daemon never installs packages, and pip vendors distlib's 32-bit and arm64
+#: launcher stubs (t32.exe, w64-arm.exe, ...), which the PE audit rightly
+#: refuses as non-x64. Mirrors the pip entries of RUNTIME_PRUNE_RELATIVE.
+WINDOWS_RUNTIME_PRUNE_RELATIVE: tuple[str, ...] = (
+    "Scripts/pip*",
+    "Lib/site-packages/pip",
+    "Lib/site-packages/pip-*.dist-info",
+    "Lib/ensurepip",
+)
+
+
+def stage_windows_runtime(runtime_source: Path, destination: Path) -> list[str]:
+    """Copy the relocatable CPython, which keeps ``python.exe`` at its root, minus pip and bytecode."""
     if not (runtime_source / "python.exe").is_file():
         raise PayloadBuildError(
             f"{runtime_source} does not look like a Windows python-build-standalone install (no python.exe at its root)"
         )
     shutil.copytree(runtime_source, destination, symlinks=False)
+    pruned: list[str] = []
+    for relative in WINDOWS_RUNTIME_PRUNE_RELATIVE:
+        for target in sorted(destination.glob(relative)):
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+            pruned.append(target.relative_to(destination).as_posix())
     _prune_pycache(destination)
+    return pruned
 
 
 def stage_windows_audio_engine(repo_root: Path, payload_dir: Path) -> dict[str, object]:
@@ -137,6 +181,7 @@ def windows_manifest(
     python_version: str,
     audio_engine_hello: dict[str, object],
     git: dict[str, object],
+    not_staged: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """The payload manifest: identity the engine reads, plus an honest list of what is missing."""
     stamped = {
@@ -156,7 +201,7 @@ def windows_manifest(
         "identity": stamped,
         "runtime": {"python": python_version},
         "audio_engine": audio_engine_hello,
-        "not_staged": dict(NOT_STAGED),
+        "not_staged": dict(NOT_STAGED if not_staged is None else not_staged),
     }
 
 
@@ -219,7 +264,55 @@ def _lock_holder_pid(data_dir: Path) -> int:
         return 0
 
 
-def build_windows_payload(*, repo_root: Path, output_dir: Path, runtime_source: Path) -> dict[str, object]:
+def audit_built_payload(payload_dir: Path) -> dict[str, object]:
+    try:
+        return payload_pe_audit.audit_payload(payload_dir, AUDIT_ACCEPTED, vc_runtime_must_ship=True)
+    except payload_pe_audit.PeAuditError as exc:
+        raise PayloadBuildError(str(exc)) from exc
+
+
+def _attach_pe_audit(manifest: dict[str, object], payload_dir: Path) -> dict[str, object]:
+    verification = dict(manifest["verification"]) if isinstance(manifest.get("verification"), dict) else {}
+    verification["pe_audit"] = audit_built_payload(payload_dir)
+    return {**manifest, "verification": verification}
+
+
+def _maybe_refresh_digests(payload_dir: Path, manifest: dict[str, object]) -> dict[str, object]:
+    if "sha256" not in manifest and "bytes" not in manifest:
+        return manifest
+    from scripts.payload_windows_extras import refresh_digests
+
+    return refresh_digests(payload_dir, manifest)
+
+
+def refresh_manifest_after_vcruntime(payload_dir: Path, vcruntime: dict[str, object]) -> dict[str, object]:
+    """Fold a re-staged VC++ runtime into an existing manifest (vcruntime block and PE audit)."""
+    manifest_path = payload_dir / MANIFEST_NAME
+    current = {**json.loads(manifest_path.read_text(encoding="utf-8")), "vcruntime": vcruntime}
+    manifest = _attach_pe_audit(_maybe_refresh_digests(payload_dir, current), payload_dir)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
+def refresh_manifest_after_extras(payload_dir: Path, extras: ExtrasResult) -> dict[str, object]:
+    """Fold re-staged extras into an existing manifest (blocks, not_staged, PE audit)."""
+    manifest_path = payload_dir / MANIFEST_NAME
+    current = apply_extras_to_manifest(
+        json.loads(manifest_path.read_text(encoding="utf-8")), extras, remaining_gaps=standing_not_staged()
+    )
+    manifest = _attach_pe_audit(_maybe_refresh_digests(payload_dir, current), payload_dir)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
+def build_windows_payload(
+    *,
+    repo_root: Path,
+    output_dir: Path,
+    runtime_source: Path,
+    vc_redist_dir: Path | None = None,
+    allow_missing_secrets: bool = False,
+) -> dict[str, object]:
     if sys.platform != "win32":
         raise PayloadBuildError("the Windows payload is staged on a Windows host: the dependency wheels are chosen for the host")
     app = read_app_identity(repo_root)
@@ -239,17 +332,26 @@ def build_windows_payload(*, repo_root: Path, output_dir: Path, runtime_source: 
     stage_app_source(repo_root, output_dir / "app", build_dir)
     payload_launchers_win.write_windows_launchers(output_dir)
     hello = stage_windows_audio_engine(repo_root, output_dir)
+    vcruntime = stage_vcruntime(output_dir, vc_redist_dir)
+    extras = stage_extras(repo_root, output_dir, allow_missing_secrets=allow_missing_secrets)
+    pe_audit = audit_built_payload(output_dir)
 
-    manifest = windows_manifest(
-        identity={
-            "product_name": app.product_name,
-            "bundle_identifier": app.identifier,
-            "app_version": app.version,
-        },
-        python_version=python_version,
-        audio_engine_hello=hello,
-        git=git_identity(repo_root),
+    manifest = apply_extras_to_manifest(
+        windows_manifest(
+            identity={
+                "product_name": app.product_name,
+                "bundle_identifier": app.identifier,
+                "app_version": app.version,
+            },
+            python_version=python_version,
+            audio_engine_hello=hello,
+            git=git_identity(repo_root),
+        ),
+        extras,
+        remaining_gaps=standing_not_staged(),
     )
+    manifest["vcruntime"] = vcruntime
+    manifest["verification"] = {"pe_audit": pe_audit}
     (output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     manifest["boot_proof"] = boot_proof(output_dir, output_dir.parent / f"{output_dir.name}-boot-data")
     (output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -271,14 +373,65 @@ def default_windows_runtime_source() -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--runtime-source", type=Path, default=None)
+    parser.add_argument(
+        "--vc-redist-dir",
+        type=Path,
+        default=None,
+        help="a VC/Redist/MSVC directory; default: found through vswhere",
+    )
+    parser.add_argument(
+        "--allow-missing-secrets",
+        action="store_true",
+        help="dev build: a missing OAuth client or ship DSN is recorded under not_staged, not an error",
+    )
+    parser.add_argument("--audit-only", type=Path, default=None, metavar="PAYLOAD_DIR")
+    parser.add_argument("--stage-vcruntime-only", type=Path, default=None, metavar="PAYLOAD_DIR")
+    parser.add_argument("--stage-extras-only", type=Path, default=None, metavar="PAYLOAD_DIR")
     args = parser.parse_args(argv)
+    repo_root = args.repo_root.resolve()
     try:
+        if args.audit_only is not None:
+            print(json.dumps(audit_built_payload(args.audit_only.resolve()), indent=2, sort_keys=True))
+            return 0
+        if args.stage_vcruntime_only is not None:
+            payload = args.stage_vcruntime_only.resolve()
+            staged_block = stage_vcruntime(payload, args.vc_redist_dir)
+            manifest = refresh_manifest_after_vcruntime(payload, staged_block)
+            print(
+                json.dumps(
+                    {"vcruntime": staged_block, "pe_audit": manifest["verification"]["pe_audit"]},  # type: ignore[index]
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.stage_extras_only is not None:
+            payload = args.stage_extras_only.resolve()
+            payload_launchers_win.write_windows_launchers(payload)
+            extras = stage_extras(repo_root, payload, allow_missing_secrets=args.allow_missing_secrets)
+            manifest = refresh_manifest_after_extras(payload, extras)
+            print(
+                json.dumps(
+                    {
+                        "not_staged": manifest["not_staged"],
+                        "third_party_licenses": manifest["third_party_licenses"],
+                        "beatgrid_runner": manifest["beatgrid_runner"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.out is None:
+            parser.error("--out is required for a full build")
         manifest = build_windows_payload(
-            repo_root=args.repo_root.resolve(),
+            repo_root=repo_root,
             output_dir=args.out.resolve(),
             runtime_source=(args.runtime_source or default_windows_runtime_source()).resolve(),
+            vc_redist_dir=args.vc_redist_dir,
+            allow_missing_secrets=args.allow_missing_secrets,
         )
     except PayloadBuildError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
@@ -286,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     proof = manifest["boot_proof"]
     print(f"[OK] payload: {args.out}")
     print(f"[OK] python {manifest['runtime']['python']}; engine answered health on port {proof['port']} (lock holder pid {proof['lock_holder_pid']})")
-    print(f"[WARN] not staged: {', '.join(sorted(NOT_STAGED))}")
+    print(f"[WARN] not staged: {', '.join(sorted(manifest['not_staged']))}")
     return 0
 
 

@@ -155,15 +155,15 @@ test('[if] a banner is CLOUD_ASSET_UNAVAILABLE [then] the ring row is warn, [els
 	try {
 		mod.noteDeckError(
 			1,
-			"Calling Out (feat. Dames Brown) - 7' Edit: CLOUD_ASSET_UNAVAILABLE: " +
-				"track_locations row '3ef4ffbdca201c67c899e1058711778b' marked unavailable (available=0)"
+			"Quiet Fen (feat. Odile Marsh) - 7' Edit: CLOUD_ASSET_UNAVAILABLE: " +
+				"track_locations row '0123456789abcdef0123456789abcdef' marked unavailable (available=0)"
 		);
 	} finally {
 		capture.restore();
 	}
 	assert.equal(capture.calls.error.length, 0, 'an expected play refusal must not escalate');
 	assert.equal(capture.calls.warn.length, 1, 'the refusal still has a durable warn row');
-	assert.ok(capture.calls.warn[0].includes('Calling Out'));
+	assert.ok(capture.calls.warn[0].includes('Quiet Fen'));
 	assert.ok(capture.calls.warn[0].includes('CLOUD_ASSET_UNAVAILABLE'));
 });
 

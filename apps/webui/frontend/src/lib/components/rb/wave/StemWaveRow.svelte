@@ -12,6 +12,7 @@
 		STEM_WAVE_ROW_PX
 	} from './stem-waveform-ui';
 	import { drawStemWaveRow } from './render';
+	import StemWaveRowView from './StemWaveRowView.svelte';
 
 	let {
 		deck,
@@ -88,45 +89,9 @@
 	});
 </script>
 
-{#if showStems && deck.stable_id !== null}
-	<div
-		class="stem-wave-row"
-		class:inert={unavailableTip !== null}
-		data-stem={stem}
-		data-unavailable={unavailableTip !== null}
-		aria-disabled={unavailableTip !== null}
-		title={unavailableTip ?? `${stem} stem mini-waveform`}
-	>
-		{#if unavailableTip !== null}
-			<span class="stem-wave-placeholder">{stem.toUpperCase()}</span>
-		{:else}
-			<canvas bind:this={canvasEl} aria-hidden="true"></canvas>
-		{/if}
-	</div>
-{/if}
-
-<style>
-	.stem-wave-row {
-		height: var(--rb-stemwave-h, 12px);
-		position: relative;
-		background: color-mix(in srgb, var(--rb-bg) 92%, transparent);
-		border-top: 1px solid color-mix(in srgb, var(--rb-border) 60%, transparent);
-	}
-	.stem-wave-row.inert {
-		opacity: 0.45;
-		pointer-events: none;
-	}
-	.stem-wave-placeholder {
-		display: block;
-		padding: 0 6px;
-		font-size: 8px;
-		line-height: var(--rb-stemwave-h, 12px);
-		color: var(--rb-text-dim);
-		letter-spacing: 0.08em;
-	}
-	canvas {
-		display: block;
-		width: 100%;
-		height: var(--rb-stemwave-h, 12px);
-	}
-</style>
+<StemWaveRowView
+	{stem}
+	visible={showStems && deck.stable_id !== null}
+	{unavailableTip}
+	bind:canvasEl
+/>

@@ -14,6 +14,8 @@ const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 let reporting;
 let originalFetch;
 let store;
+let listeners;
+let addEventListenerImpl;
 
 function defineGlobal(name, value) {
 	Object.defineProperty(globalThis, name, {
@@ -40,11 +42,19 @@ function makeLocalStorage() {
 
 function installBrowserGlobals() {
 	store = makeLocalStorage();
+	listeners = new Map();
+	addEventListenerImpl = (type, handler, options) => {
+		const capture = options === true || options?.capture === true;
+		const key = `${type}:${capture ? 'capture' : 'bubble'}`;
+		const bucket = listeners.get(key) ?? [];
+		bucket.push(handler);
+		listeners.set(key, bucket);
+	};
 	defineGlobal('window', {
 		location: { href: 'https://app.example.test/performance' },
 		isSecureContext: true,
 		localStorage: store,
-		addEventListener: () => {}
+		addEventListener: addEventListenerImpl
 	});
 	defineGlobal('localStorage', store);
 	defineGlobal('navigator', { userAgent: 'error-reporting-test-agent' });
@@ -67,7 +77,44 @@ before(async () => {
 
 afterEach(() => {
 	installBrowserGlobals();
+	reporting.__resetClientErrorReportingForTests();
 });
+
+function fire(type, event, capture = false) {
+	const key = `${type}:${capture ? 'capture' : 'bubble'}`;
+	for (const handler of listeners.get(key) ?? []) {
+		handler(event);
+	}
+}
+
+const ARTWORK_404_MARK = 'artwork-404';
+const MARKED_ARTWORK_URL =
+	'http://127.0.0.1:5273/api/v1/tracks/8025marked/artwork?size=orig&online=true';
+const UNMARKED_ARTWORK_URL =
+	'http://127.0.0.1:5273/api/v1/tracks/8025unmarked/artwork?size=orig&online=true';
+
+function markedArtworkImg(src) {
+	return {
+		tagName: 'IMG',
+		src,
+		getAttribute: (name) =>
+			name === 'data-expected-resource-error' ? ARTWORK_404_MARK : null
+	};
+}
+
+function fetchWithArtworkConfirm(posted, artworkGet) {
+	return async (input, init) => {
+		const req = typeof input === 'string' ? new Request(input, init) : input;
+		if (req.method === 'GET' && req.url.includes('/artwork')) {
+			return artworkGet(req.url);
+		}
+		posted.push(await req.clone().json());
+		return new Response(JSON.stringify({ event_id: 'e8025', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+}
 
 after(() => {
 	globalThis.fetch = originalFetch;
@@ -324,4 +371,85 @@ test('a report raised during an in-flight POST is not erased by the flush', asyn
 		globalThis.fetch = patchedFetch;
 		await new Promise((resolve) => server.close(resolve));
 	}
+});
+
+test('valued artwork-404 mark skips resource-error only when confirm GET is ARTWORK_NOT_FOUND 404 (issue #8025)', async () => {
+	const posted = [];
+	globalThis.fetch = fetchWithArtworkConfirm(posted, () =>
+		new Response(
+			JSON.stringify({ detail: { code: 'ARTWORK_NOT_FOUND', message: 'no cover' } }),
+			{ status: 404, headers: { 'content-type': 'application/json' } }
+		)
+	);
+	reporting.installClientErrorReporting();
+	fire(
+		'error',
+		{ target: markedArtworkImg(MARKED_ARTWORK_URL), message: 'Failed to load resource' },
+		true
+	);
+	fire(
+		'error',
+		{ target: { tagName: 'IMG', src: UNMARKED_ARTWORK_URL }, message: 'Failed to load resource' },
+		true
+	);
+	await waitFor(
+		() => posted.some((row) => row.context?.resource === UNMARKED_ARTWORK_URL),
+		'unmarked control POST'
+	);
+	assert.deepEqual(
+		posted.map((r) => r.context?.resource),
+		[UNMARKED_ARTWORK_URL]
+	);
+});
+
+test('valued artwork-404 mark still POSTs when confirm GET is 500 (issue #8025)', async () => {
+	const posted = [];
+	globalThis.fetch = fetchWithArtworkConfirm(posted, () =>
+		new Response(JSON.stringify({ detail: 'boom' }), {
+			status: 500,
+			headers: { 'content-type': 'application/json' }
+		})
+	);
+	reporting.installClientErrorReporting();
+	fire(
+		'error',
+		{ target: markedArtworkImg(MARKED_ARTWORK_URL), message: 'Failed to load resource' },
+		true
+	);
+	await waitFor(() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL), '500 POST');
+	assert.equal(posted[0].kind, 'resource-error');
+});
+
+test('valued artwork-404 mark still POSTs when confirm GET rejects (issue #8025)', async () => {
+	const posted = [];
+	globalThis.fetch = fetchWithArtworkConfirm(posted, () => Promise.reject(new Error('network down')));
+	reporting.installClientErrorReporting();
+	fire(
+		'error',
+		{ target: markedArtworkImg(MARKED_ARTWORK_URL), message: 'Failed to load resource' },
+		true
+	);
+	await waitFor(() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL), 'network POST');
+	assert.equal(posted[0].kind, 'resource-error');
+});
+
+test('presence-only expected-resource-error mark still POSTs resource-error (issue #8025)', async () => {
+	const posted = [];
+	globalThis.fetch = async (input) => {
+		posted.push(await input.clone().json());
+		return new Response(JSON.stringify({ event_id: 'e8025b', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	reporting.installClientErrorReporting();
+	const presenceOnly = {
+		tagName: 'IMG',
+		src: MARKED_ARTWORK_URL,
+		hasAttribute: (name) => name === 'data-expected-resource-error',
+		getAttribute: (name) => (name === 'data-expected-resource-error' ? '' : null)
+	};
+	fire('error', { target: presenceOnly, message: 'Failed to load resource' }, true);
+	await waitFor(() => posted.length === 1, 'presence-only POST');
+	assert.equal(posted[0].context.resource, MARKED_ARTWORK_URL);
 });

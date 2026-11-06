@@ -11,6 +11,9 @@ describe('TrackifyPlayer component contract', () => {
 		assert.doesNotMatch(playerSource, /WaveformStack|Mixer|canvas/i);
 		assert.match(playerSource, /PositionBar/);
 		assert.match(playerSource, /data-testid="trackify-player"/);
+		assert.match(playerSource, /const loaded = \$derived\(deck\.stable_id !== null\)/);
+		assert.match(playerSource, /disabled=\{!loaded\}/);
+		assert.match(playerSource, /if \(deck\.stable_id === null\) return;/);
 
 		const pageSource = readFileSync(
 			new URL('../../src/routes/music-player/+page.svelte', import.meta.url),

@@ -76,7 +76,7 @@ function stemTags(stems) {
 	return {
 		open,
 		empty: /class="stem-tags empty/.test(open),
-		title: attr(open, 'title'),
+		title: attr(open, 'title') ?? attr(open, 'aria-label'),
 		ariaLabel: attr(open, 'aria-label'),
 		text: visibleText(inner),
 		onTags: [...inner.matchAll(/<span class="tag[^"]*\bon\b[^"]*"[^>]*data-g="([VID])"/g)].map(

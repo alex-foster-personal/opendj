@@ -1091,6 +1091,68 @@ export function microphoneIsMissing(error: unknown): boolean {
 	return name === 'NotFoundError' || name === 'DevicesNotFoundError';
 }
 
+/** True when the browser refused or cancelled an I/O prompt, as opposed to
+ * a missing device or a failed sink bind. Walks `cause` so a wrapped
+ * `_headphoneError` still classifies as the original DOMException. */
+export function headphonePromptDenied(error: unknown): boolean {
+	for (const name of _domExceptionNames(error)) {
+		if (name === 'NotAllowedError' || name === 'AbortError' || name === 'SecurityError') {
+			return true;
+		}
+	}
+	return false;
+}
+
+function _domExceptionNames(error: unknown, seen: Set<unknown> = new Set()): Set<string> {
+	const names = new Set<string>();
+	if (typeof error !== 'object' || error === null || seen.has(error)) return names;
+	seen.add(error);
+	const name = (error as { name?: unknown }).name;
+	if (typeof name === 'string' && name !== '') names.add(name);
+	const cause = (error as { cause?: unknown }).cause;
+	if (cause !== undefined) {
+		for (const nested of _domExceptionNames(cause, seen)) names.add(nested);
+	}
+	return names;
+}
+
+/** What the operator is told when they cancel Chrome's output chooser.
+ * Not a failure: they closed the picker, and practice / SPLIT never needed it. */
+export const CHOOSER_CANCELLED_NOTICE =
+	'Audio output picker was cancelled. Unlabelled sinks stay selectable; practice and SPLIT ' +
+	'do not need a named device.';
+
+/** What the operator is told when `selectAudioOutput` is blocked (gesture lost
+ * or the page is not allowed to ask). Distinct from the microphone notice
+ * because this prompt is not the mic. */
+export const OUTPUT_PROMPT_REFUSED_NOTICE =
+	'The browser blocked the audio output picker. Unlabelled sinks stay selectable; practice ' +
+	'and SPLIT do not need a named device.';
+
+function _acceptPromptDenied(generation: number, error: unknown, notice: string): void {
+	_assertCurrentHeadphoneOperation(generation, null);
+	mixerState.headphones.error = notice;
+	_recordHeadphoneDiagnostic('headphone_output_acquisition_denied', error, 'warn');
+}
+
+/** Branches on the prompt first: a mic AbortError is a dismissed getUserMedia
+ * prompt, so it gets the mic notice, never the output-picker one. Only the
+ * chooser separates a cancel (AbortError) from a block (NotAllowedError). */
+function _promptDeniedNotice(error: unknown, source: 'chooser' | 'mic'): string {
+	switch (source) {
+		case 'mic':
+			return MIC_DECLINED_NOTICE;
+		case 'chooser':
+			return _domExceptionNames(error).has('AbortError')
+				? CHOOSER_CANCELLED_NOTICE
+				: OUTPUT_PROMPT_REFUSED_NOTICE;
+		default: {
+			const _exhaustive: never = source;
+			throw new Error(`Unhandled prompt source: ${String(_exhaustive)}`);
+		}
+	}
+}
+
 /** True when `selectAudioOutput` exists as a function but the runtime cannot
  * actually run the chooser. Chromium has been observed exposing the method and
  * still rejecting with DOMException `NotSupportedError` / message
@@ -1423,7 +1485,11 @@ function _safeErrorClass(error: unknown): string {
 /** One bounded, privacy-safe record for repeated audio-route failures.  Keep
  * device ids, browser messages and media paths out: those may be present in a
  * DOMException and are not needed to diagnose topology. */
-function _recordHeadphoneDiagnostic(operation: string, error: unknown): void {
+function _recordHeadphoneDiagnostic(
+	operation: string,
+	error: unknown,
+	severity: 'warn' | 'error' = 'error'
+): void {
 	const now = Date.now();
 	if (now - _lastHeadphoneDiagnosticAt < HEADPHONE_DIAGNOSTIC_WINDOW_MS) return;
 	_lastHeadphoneDiagnosticAt = now;
@@ -1444,7 +1510,7 @@ function _recordHeadphoneDiagnostic(operation: string, error: unknown): void {
 			`input_rms=${fmt(hp.signals.input.rms)}`
 		].join(' '),
 		null,
-		'error'
+		severity
 	);
 }
 
@@ -2907,8 +2973,8 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
  * through. Otherwise enumerates sinks so the operator can pick headphones,
  * unlocking the names with a short-lived getUserMedia on the built-in mic
  * (not a Bluetooth headset mic) ONLY when that would actually help -- see
- * `labelUnlockDecision`. A declined microphone is a supported state, not a
- * failure. */
+ * `labelUnlockDecision`. A declined microphone, a cancelled chooser, and a
+ * blocked output prompt are supported states, not acquisition failures. */
 export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
@@ -2943,6 +3009,10 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 				_assertCurrentHeadphoneOperation(generation, null);
 				return;
 			} catch (error) {
+				if (headphonePromptDenied(error)) {
+					_acceptPromptDenied(generation, error, _promptDeniedNotice(error, 'chooser'));
+					return;
+				}
 				if (!audioOutputChooserIsUnsupported(error)) throw error;
 				// Function exists, runtime cannot run it. Same capability as
 				// Chrome without selectAudioOutput: enumerate then unlock labels.
@@ -2951,7 +3021,7 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		const mediaDevices = requireHeadphoneDeviceApi();
 		// List first: a hung or denied permission prompt must never leave the I/O
 		// selects empty, so the unlabelled devices are always selectable and the
-		// unlock failure is still raised (and shown) afterwards.
+		// unlock refusal is named afterwards rather than emptying the menu.
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
 		const namesWithheld = mixerState.headphones.device_access.status !== 'listed';
@@ -2968,14 +3038,24 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			try {
 				await _unlockHeadphoneOutputLabels(mediaDevices);
 			} catch (error) {
-				if (!microphoneIsMissing(error)) throw error;
-				// A machine with no microphone is the `declined` case with the
-				// choice taken out of the operator's hands: the sinks listed
-				// above stay selectable, their names stay hidden, and nothing
-				// here failed. Any other rejection still travels.
-				_assertCurrentHeadphoneOperation(generation, null);
-				mixerState.headphones.error = MIC_ABSENT_NOTICE;
-				return;
+				if (microphoneIsMissing(error)) {
+					// A machine with no microphone is the `declined` case with the
+					// choice taken out of the operator's hands: the sinks listed
+					// above stay selectable, their names stay hidden, and nothing
+					// here failed. Any other rejection still travels.
+					_assertCurrentHeadphoneOperation(generation, null);
+					mixerState.headphones.error = MIC_ABSENT_NOTICE;
+					return;
+				}
+				if (headphonePromptDenied(error)) {
+					// Live prompt refusal is the same state as Permissions API
+					// `denied`: the operator said no (or the page is not allowed
+					// to ask). It is not an acquisition fault and must not become
+					// a Sentry error (OPEN-DJ-BE-6N).
+					_acceptPromptDenied(generation, error, _promptDeniedNotice(error, 'mic'));
+					return;
+				}
+				throw error;
 			}
 			_assertCurrentHeadphoneOperation(generation, null);
 		}

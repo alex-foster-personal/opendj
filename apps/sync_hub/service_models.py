@@ -296,10 +296,11 @@ class PullResponse(BaseModel):
     #: (round 2 finding 4a). Non-zero means something hard-deleted a synced
     #: row on the hub; the pull still serves everything else.
     skipped: int = 0
-    #: Rows in this chunk the hub HOLDS but could not offer, because a stored
-    #: stamp on them cannot be ordered (round 5). Non-zero means the hub
-    #: needs ``python -m apps.shared.state.normalize_stamps --live``; the
-    #: pull still serves everything else.
+    #: Rows in this chunk the hub HOLDS but could not offer, for any hold
+    #: kind (stamp fault, identity-dup, identity-hold, or FK cascade).
+    #: Non-zero means inspect hub ``engine-warn.log`` for each group's cause
+    #: and :func:`apps.sync_hub.sync_set.remedy_for`; the pull still serves
+    #: everything else.
     quarantined: int = 0
     hash_pending: int = 0
 
@@ -350,8 +351,8 @@ class DigestResponse(BaseModel):
     #: stopped below this seq knows a third machine pushed in the gap, and
     #: that a difference here is not divergence.
     seq: int
-    #: Rows per table the hub EXCLUDED from the hash because a stored stamp
-    #: cannot be ordered (round 5). Absent tables quarantined nothing. Not
+    #: Rows per table the hub EXCLUDED from the hash (any hold kind).
+    #: Absent tables quarantined nothing. Not
     #: folded into ``overall``: two peers with identical eligible content
     #: have converged, and folding it in would fire the ADR 04 c6 corruption
     #: alarm on ordinary legacy data.

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import os
-import subprocess
 import sys
 from typing import Any
 
@@ -79,14 +78,10 @@ def test_the_drain_queue_child_goes_through_the_qos_seam(
 ) -> None:
     """[if] _queue_cli skips the QoS seam on any platform [then] fail, [else stop].
 
-    Both ways it starts a child: the plain bounded call every idle run makes,
-    and the stoppable one a while-playing run makes.
+    Both ways it starts a child: the idle drain and the stoppable while-playing
+    run share Popen so a timeout can stop the spawn-pool tree.
     """
     seen: dict[str, Any] = {}
-
-    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen.update(argv=argv, via="run")
-        return subprocess.CompletedProcess(argv, 0, "", "")
 
     def fake_popen(argv: list[str], **kwargs: Any) -> Any:
         seen.update(argv=argv, via="Popen")
@@ -94,9 +89,8 @@ def test_the_drain_queue_child_goes_through_the_qos_seam(
 
     monkeypatch.setattr(pp.sys, "platform", platform)
     monkeypatch.setattr(pp, "TASKPOLICY", sys.executable)
-    monkeypatch.setattr(aa.subprocess, "run", fake_run)
     monkeypatch.setattr(aa.subprocess, "Popen", fake_popen)
     assert aa._queue_cli(["status"], os.devnull, (lambda: False) if stoppable else None)[0] == 0
-    assert seen["via"] == ("Popen" if stoppable else "run"), "an idle call must be the plain bounded call"
+    assert seen["via"] == "Popen"
     assert (seen["argv"][:2] == [sys.executable, "-b"]) is wrapped
     assert seen["argv"][-4:] == ["--db", os.devnull, "--json", "status"]

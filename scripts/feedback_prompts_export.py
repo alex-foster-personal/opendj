@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts.home_paths import published_source as _published_source
     from scripts.provenance_state import _write_atomic, make_store, sweep_lock, tracked_tree_defect
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -126,14 +127,6 @@ def read_pins(feedback_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
             pins.append((source, pin))
     _require_stable_sources(feedback_dir, before)
     return pins
-
-
-def _published_source(source: Path) -> str:
-    """Pin provenance without the operator login: a path under the home dir is written `~/...`."""
-    try:
-        return f"~/{source.relative_to(Path.home())}"
-    except ValueError:
-        return str(source)
 
 
 def export_rows(feedback_dir: Path) -> list[dict[str, Any]]:

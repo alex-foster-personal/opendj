@@ -37,6 +37,8 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from spake2 import SPAKE2_A, SPAKE2_B
 from spake2.spake2 import SPAKEError
 
+from apps.shared.private_files import restrict_to_owner
+
 #: Crockford base32: no I, L, O or U, so a code read aloud or off a screen is unambiguous.
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CODE_LEN = 6
@@ -131,6 +133,7 @@ def save_record(path: Path, record: PairingRecord) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    restrict_to_owner(tmp)  # 0o600 alone sets no owner-only ACL on Windows
     with os.fdopen(fd, "w") as handle:
         handle.write(json.dumps(asdict(record), indent=2) + "\n")
         handle.flush()

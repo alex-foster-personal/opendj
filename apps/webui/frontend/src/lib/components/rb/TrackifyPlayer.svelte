@@ -24,6 +24,7 @@
 	// fabricated cover; the shared cover retry (LIBM-185) tries again later.
 
 	async function togglePlay(): Promise<void> {
+		if (deck.stable_id === null) return;
 		await runPerformanceCommandFromUi({
 			type: 'play',
 			deck: TRACKIFY_DECK_ID,
@@ -43,7 +44,7 @@
 			<img
 				src={coverSrc(artworkUrl(sid, 'm'), sid)}
 				alt=""
-				data-expected-resource-error
+				data-expected-resource-error="artwork-404"
 				onload={() => coverLoaded(sid)}
 				onerror={() => coverFailed(sid)}
 				data-testid="trackify-artwork"

@@ -49,25 +49,25 @@ function _labelFromProbeRole(role: string): string {
 function _membersFromRoles(byRole: Record<string, number>): ProcessFamilyMember[] {
 	return Object.entries(byRole).map(([role, mb]) => ({
 		label: _labelFromProbeRole(role),
-		mb: Math.round(mb),
+		mb,
 		role,
 		fromProbe: true
 	}));
 }
 
 function _liveMbFromMember(member: Record<string, unknown>): number | null {
-	const rss = _finiteOrNull(member.rss_mb);
-	return rss === null ? null : Math.round(rss);
+	return _finiteOrNull(member.rss_mb);
 }
 
 /**
  * The MB the meter totals: the probe's physical footprint while the probe field
  * is present (Sol on #6785: it replaces the page estimate), else the live walk's
  * RSS. The route drops the probe field when it expires, so RSS takes over then.
+ * Keep the route's tenths here; memoryReadout rounds only after the family sum.
  */
 function _mbFromMember(member: Record<string, unknown>): number | null {
 	const footprint = _finiteOrNull(member.physical_footprint_mb);
-	if (footprint !== null) return Math.round(footprint);
+	if (footprint !== null) return footprint;
 	return _liveMbFromMember(member);
 }
 
@@ -396,20 +396,32 @@ export async function fetchProcessFamilySnapshot(): Promise<ProcessFamilySnapsho
 	// Taken before the request: the engine reads the probe's age while
 	// answering, so counting from here never understates the time since.
 	const startedMonoMs = _monoNowMs();
-	_attemptAtMonoMs = startedMonoMs;
 	try {
 		const response = await fetch(`${API_BASE}${PROCESSES_PATH}`, {
 			headers: { accept: 'application/json' }
 		});
-		// Taken as the answer arrives: the base the returned probe age counts on from.
-		const receivedMonoMs = _monoNowMs();
-		if (!response.ok) return _cached;
+		const afterFetchMonoMs = _monoNowMs();
+		if (!response.ok) {
+			_attemptAtMonoMs = afterFetchMonoMs;
+			return _cached;
+		}
 		const answer = parseProcessesResponse(await response.json());
+		const afterBodyMonoMs = _monoNowMs();
 		// Malformed is a failed request: it neither applies nor outranks an older answer.
-		if (answer.kind === 'malformed') return _cached;
-		if (seq < _appliedSeq) return _cached;
+		if (answer.kind === 'malformed') {
+			_attemptAtMonoMs = afterBodyMonoMs;
+			return _cached;
+		}
+		if (seq < _appliedSeq) {
+			_attemptAtMonoMs = afterBodyMonoMs;
+			return _cached;
+		}
 		_appliedSeq = seq;
+		_attemptAtMonoMs = afterBodyMonoMs;
 		if (answer.kind === 'available') {
+			// After the body is read: probe age counts on from here, not the request
+			// start (the walk's age_seconds already includes the slow walk).
+			const receivedMonoMs = afterBodyMonoMs;
 			_cached = answer.snapshot;
 			_cachedAtMonoMs = startedMonoMs;
 			_probeAgeBaseMonoMs = receivedMonoMs;
@@ -423,6 +435,7 @@ export async function fetchProcessFamilySnapshot(): Promise<ProcessFamilySnapsho
 		_unavailableAtMonoMs = startedMonoMs;
 		return null;
 	} catch {
+		_attemptAtMonoMs = _monoNowMs();
 		return _cached;
 	}
 }

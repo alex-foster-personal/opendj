@@ -109,6 +109,7 @@
 		type FeatureIconId
 	} from '$lib/rb/feature-icon-cluster.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import { TOOLTIP_SKIM_ROW } from '$lib/ui/tooltip-timing';
 	import StemsProgress from './StemsProgress.svelte';
 	import FeedbackThumbs from './FeedbackThumbs.svelte';
 	import TransitioningChip from './TransitioningChip.svelte';
@@ -259,6 +260,23 @@
 		if (next instanceof Element && next.closest?.('.ap-menu:not(.lyr-menu)')) return;
 		autoPlayMenuOpen = false;
 	}
+
+	$effect(() => {
+		if (!autoPlayMenuOpen) return;
+		const el = autoPlayMenuEl;
+		if (!el) return;
+		const place = (): void => {
+			void _placeAutoPlayMenu();
+		};
+		place();
+		const ro = new ResizeObserver(place);
+		ro.observe(el);
+		window.addEventListener('resize', place);
+		return () => {
+			ro.disconnect();
+			window.removeEventListener('resize', place);
+		};
+	});
 
 	async function _placeLyrMenu(): Promise<void> {
 		if (!lyrWrapEl) return;
@@ -642,7 +660,7 @@
 			bind:this={iconClusterEl}
 		>
 			<!-- list-view icon with dropdown caret -->
-			<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
+			<ControlExplainer title="List view" bullets={listViewBullets} tooltip={TOOLTIP_SKIM_ROW}>
 				<button
 					type="button"
 					class="tb-icon tb-view"
@@ -662,14 +680,14 @@
 				</button>
 			</ControlExplainer>
 			<!-- FX panel toggle -->
-			<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
+			<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" tooltip={TOOLTIP_SKIM_ROW}>
 				<button
 					type="button"
 					class="tb-icon fx rb-inert"
 					disabled
+					aria-disabled="true"
 					inert={!featureIconSingleClick()}
 					aria-label="FX panel"
-					title={FX_INERT_TITLE}
 				>FX</button>
 			</ControlExplainer>
 			<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
@@ -680,7 +698,7 @@
 			     Cmd/Ctrl+4 use (deck-layout-hotkeys.ts) - see two-deck-toggle.ts.
 			     In the one-button strip it is inert (no tab stop, no accessibility node); the menu
 			     (or single-click mode) still reaches setDeckLayoutMode. -->
-			<ControlExplainer title="2-deck view" demo="2-deck-view" showDelayMs={60}>
+			<ControlExplainer title="2-deck view" demo="2-deck-view" tooltip={TOOLTIP_SKIM_ROW}>
 				<button
 					type="button"
 					class="tb-icon"
@@ -688,7 +706,6 @@
 					aria-label="2 deck view"
 					aria-pressed={twoDeck.pressed}
 					aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
-					title={twoDeck.title}
 					inert={!featureIconSingleClick()}
 					onclick={() => setDeckLayoutMode(twoDeck.next)}
 				>
@@ -701,7 +718,7 @@
 			<!-- 4-waveform icon: starts on (the layout the bar already paints
 			     active). Four stacked jagged polylines - must NOT read as a
 			     plain list glyph or a dotted grid (SCREENSHOT-SPEC 1). -->
-			<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
+			<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} tooltip={TOOLTIP_SKIM_ROW}>
 				<button
 					type="button"
 					class="tb-icon tb-view"
@@ -731,7 +748,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="icon-cluster-extra" style={featureExtraStyle} onclick={_openFeatureMenuFromCluster}>
 			<div class="icon-row" data-feature-row="2">
-				<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
+				<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} tooltip={TOOLTIP_SKIM_ROW}>
 					<button
 						type="button"
 						class="tb-icon tb-view"
@@ -750,7 +767,7 @@
 				</ControlExplainer>
 			</div>
 			<div class="icon-row" data-feature-row="3">
-				<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
+				<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} tooltip={TOOLTIP_SKIM_ROW}>
 					<button
 						type="button"
 						class="tb-icon tb-view"
@@ -808,8 +825,8 @@
 	     (SCREENSHOT-SPEC 1). -->
 	<div class="spacer-left"></div>
 
-	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" showDelayMs={60}>
-		<button class="link-btn rb-inert" disabled aria-label="LINK">LINK</button>
+	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" tooltip={TOOLTIP_SKIM_ROW}>
+		<button type="button" class="link-btn rb-inert" aria-disabled="true" aria-label="LINK">LINK</button>
 	</ControlExplainer>
 
 	<div class="spacer"></div>

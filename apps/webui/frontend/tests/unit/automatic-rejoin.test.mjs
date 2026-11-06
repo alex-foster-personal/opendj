@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
-import { after, test } from 'node:test';
-import { createServer } from 'vite';
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-after(() => server.close());
-const { installAutomaticRejoinRunner, runAutomaticRejoin } = await server.ssrLoadModule(
-	'/src/lib/rb/master-election.ts'
-);
+import { test } from 'node:test';
+
+import {
+	installAutomaticRejoinRunner,
+	runAutomaticRejoin
+} from '../../src/lib/rb/automatic-handoff-runners.ts';
 import { ScopedCommandScheduler } from '../../src/lib/rb/performance-command-scheduler.ts';
 
 // Exercise the actual runner and scheduler, without replacing an engine or API.
@@ -14,7 +13,9 @@ test('automatic rejoin claims every deck and sync behind prior work', async () =
 	const restore = installAutomaticRejoinRunner((work) => scheduler.run([1, 2, 3, 4, 'sync'], work));
 	const events = [];
 	let release;
-	const prior = scheduler.run([1], async () => {
+	// Hold scope 2 as well as 1 so the [2] follow-up cannot start until `prior`
+	// finishes; otherwise it shares no scope with `prior` and races ahead of rejoin.
+	const prior = scheduler.run([1, 2], async () => {
 		events.push('prior');
 		await new Promise((resolve) => {
 			release = resolve;

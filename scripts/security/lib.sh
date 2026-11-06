@@ -97,8 +97,9 @@ sec_py_yaml() {
 # trufflehog full mode `git clone file://$SECURITY_REPO_ROOT` fails on a pool
 # partial (blob:none) workspace because upload-pack disables lazy fetch.
 # scripts/security/materialize.py walks reachable objects so client-side lazy
-# fetch fills blobs before the clone. Keep this name: scan_secrets.sh and
-# tests/scripts/test_scan_secrets_partial_clone.py index it.
+# fetch fills blobs before the clone. scan_secrets.py imports materialize.py
+# directly; keep this shell function name because the partial-clone tests pin
+# the compatibility entrypoint for callers that still need it.
 
 sec_materialize_missing_objects() {
   sec_require_bin uv || return 2

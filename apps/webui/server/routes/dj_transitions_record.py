@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.autodj.pair_memory import PairNotFound, last_decision, set_verdict
+from apps.autodj.http import PairNotFound, last_decision, set_verdict
 from apps.shared.state import db as state_db
 
 from ..deps import get_library_state_db

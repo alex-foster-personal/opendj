@@ -3,8 +3,8 @@ name: ci-rerun-failed
 # Rerun only the failed tests (CI-RERUN-8758, -8758b and -8758c, scripts/ci_rerun_failed.py). pytest's
 # `--last-failed` at CI level, author-triggered and pinned to one head: a PR whose head went red
 # on a few pytest ids gets exactly those ids run again on the pytest pool, instead of five shards
-# and every side workflow re-running to prove a one-line fix. Trigger: the `ci:rerun-failed` label,
-# or a dispatch with the PR number. The verdict is re-posted as `ci gate` on the pinned head (same
+# and every side workflow re-running to prove a one-line fix. Trigger: a dispatch with the PR number,
+# `gh workflow run ci-rerun-failed.yml -f pr=<N>` (ADR-NEW-rerun-failed-dispatch-only). The verdict is re-posted as `ci gate` on the pinned head (same
 # check name, newer start time), which is the check the lander and branch protection read, plus a
 # `ci gate (rerun-failed)` check whose title is the one-line verdict. ci.yml is not touched.
 #
@@ -12,13 +12,12 @@ name: ci-rerun-failed
 # reruns per head; never for ids main's tip run also failed (inherited, fix main first); never for
 # `ci:trunk-repair`; only `FAIL test: failure` gate lines are rerunnable; a shard with no pytest
 # id, a non-1 pytest exit, a timeout or a runner kill refuses. A refusal leaves `ci gate` as it was.
-run-name: rerun-failed PR ${{ github.event.pull_request.number || inputs.pr }}
+run-name: rerun-failed PR ${{ inputs.pr }}
 
 on:
-  pull_request:
-    # Label-only: this workflow never runs on a push to the PR, so ci-wait treats its job as
-    # on demand (scripts/ci_wait_workflows.py ON_DEMAND_PULL_REQUEST_TYPES).
-    types: [labeled]
+  # Dispatch-only: no push to a PR runs it, so ci-wait treats its job as on demand
+  # (scripts/ci_wait_workflows.py HEAD_PUSH_PULL_REQUEST_TYPES). A `pull_request: labeled`
+  # trigger started a run for every label added to any PR.
   workflow_dispatch:
     inputs:
       pr:
@@ -35,7 +34,7 @@ env:
   CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
 
 # actions: read lists the head's ci.yml jobs and reads their logs; checks: write posts the two
-# verdict checks; pull-requests and issues: write comment the outcome and remove the label.
+# verdict checks; pull-requests and issues: write comment the outcome.
 permissions:
   contents: read
   actions: read
@@ -43,15 +42,14 @@ permissions:
   pull-requests: write
   issues: write
 
-# One rerun per PR at a time; a second label add queues behind it and then meets the cap.
+# One rerun per PR at a time; a second dispatch queues behind it and then meets the cap.
 concurrency:
-  group: ci-rerun-failed-${{ github.event.pull_request.number || inputs.pr }}
+  group: ci-rerun-failed-${{ inputs.pr }}
   cancel-in-progress: false
 
 jobs:
   rerun:
     name: pytest rerun-failed
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'ci:rerun-failed' }}
     # ci.yml's pytest fast lane pool, minus the main and queue reserves this never serves.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 45
@@ -63,9 +61,7 @@ jobs:
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       NUMBA_NUM_THREADS: "1"
-      PR: ${{ github.event.pull_request.number || inputs.pr }}
-      # The label event's head is pinned at trigger time; a dispatch pins the PR's head when the plan reads it.
-      PINNED_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+      PR: ${{ inputs.pr }}
       GH_TOKEN: ${{ github.token }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       # The rerun's own wall budget; the rest of the job is provisioning, the verdict and the comment.
@@ -125,7 +121,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
-          ref: refs/pull/${{ github.event.pull_request.number || inputs.pr }}/merge
+          ref: refs/pull/${{ inputs.pr }}/merge
           persist-credentials: false
           fetch-depth: 0
           clean: false
@@ -144,7 +140,7 @@ jobs:
         timeout-minutes: 5
         run: |
           set -euo pipefail
-          python3 -m scripts.ci_rerun_failed plan --pr "$PR" --head "$PINNED_HEAD" \
+          python3 -m scripts.ci_rerun_failed plan --pr "$PR" \
             --out "$RUNNER_TEMP/rerun-failed/plan.json"
 
       - name: The merge ref must be a merge of the pinned head
@@ -285,7 +281,7 @@ jobs:
             --name "pr-test-selection-${head_sha}-rerun-failed-${rerun_index}" \
             --run-id "$source_run" --path selection.json --if-no-files-found error
 
-      - name: Comment the outcome and remove the label
+      - name: Comment the outcome
         if: always() && steps.plan.outcome != 'skipped'
         timeout-minutes: 2
         env:

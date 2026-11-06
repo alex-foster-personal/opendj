@@ -31,7 +31,7 @@ Candidates, each with a reason (the record names every rule that fired):
   - unmeasured: a spec the map saw fail or time out, a spec on disk the map never collected,
     a dev-server gate absent from the map, and the static gates (webkit, deck-load smoke,
     stretch, master12, onboarding, the two Cmd K gates, which no request log can footprint) when any file under
-    the frontend changed. Ranked after every overlap; a static gate costs nothing modeled.
+    the frontend changed. Ranked after every overlap; a static gate is priced by static_gates_min so an unmeasured gate is never free.
 
 The budget (`fit`): planned minutes = root overhead + root spec seconds, plus per kept gate
 its overhead + seconds. Strong items are priced first; the weak candidates are taken in
@@ -84,6 +84,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from scripts.affected_tests import REPO, build_graph, reverse_reach
+from scripts.ci_commented_list import read_commented_list
 from scripts.ci_required_gate import merge_commit_changed_files
 from scripts.e2e_footprints_refresh import GATES
 
@@ -101,7 +102,8 @@ MAX_MAP_AGE_DAYS = 7
 #: Python packages the root suite boots: a changed module any of them imports is FULL.
 ENGINE_PREFIXES = ("apps.engine_core", "apps.webui.server")
 #: Named gates no request log can footprint: production builds, a no-server spec, a shell
-#: script, a Python helper that owns its own fixture. They run on any frontend change and are priced at zero (unknown) minutes.
+#: script, a Python helper that owns its own fixture. They run on any frontend change and
+#: are priced by static_gates_min so an unmeasured gate is never free to the budget.
 STATIC_GATES = ("webkit", "deckload-smoke", "stretch", "master12", "onboarding", "cmdk-pick-race", "cmdk-preview-cue")
 #: Which specs each static gate runs (their own configs, root testIgnore in
 #: playwright.config.ts): a changed one of these promotes its gate to strong, since the root
@@ -150,6 +152,7 @@ FULL_PATTERNS: tuple[tuple[str, str], ...] = (
     (SEED_MAP, "the footprint map itself"),
     (ALWAYS_RUN_NAME, "the always-run list"),
     (BUDGET_NAME, "the e2e budget"),
+    ("scripts/ci_commented_list.py", "the always-run list parser this selector reads"),
     ("scripts/ci_e2e_selection.py", "this selector"),
     ("scripts/e2e_footprints_refresh.py", "the map builder"),
     ("scripts/affected_tests.py", "the import graph this selector reads the engine's reach from"),
@@ -323,11 +326,9 @@ def load_budget(path: Path) -> BudgetConfig:
 def always_run_specs(root: Path) -> list[str]:
     """The spec paths `ci/e2e-always-run.txt` lists; a missing list is FullSuite."""
     try:
-        text = (root / ALWAYS_RUN_NAME).read_text(encoding="utf-8")
+        return read_commented_list(root / ALWAYS_RUN_NAME)
     except FileNotFoundError as missing:
         raise FullSuite(f"the always-run list `{ALWAYS_RUN_NAME}` is missing") from missing
-    entries = (line.split("#", 1)[0].strip() for line in text.splitlines())
-    return [entry for entry in entries if entry]
 
 
 def _tree(git: Git, ref: str, prefix: str) -> set[str]:

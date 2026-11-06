@@ -21,13 +21,17 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 
 from apps.shared.tag_writer import TagRead, read_tags
 
+from ._helpers import vendor_path_key
 from .unify import TagSources
 
 _LOG = logging.getLogger(__name__)
 _FILENAME_RE = re.compile(r"^(?P<artist>[^-]+?)\s*-\s*(?P<title>.+?)(?:\s*\[.*\])?$")
+
+_TTrack = TypeVar("_TTrack")
 
 
 def parse_filename(path: Path) -> TagRead:
@@ -83,18 +87,25 @@ class _VendorIndexCache:
 _RB_VENDOR_CACHE = _VendorIndexCache()
 
 
-def _rb_normalise_path(raw: str) -> str:
-    """Normalise a FolderPath for indexing: expanduser + lowercase.
-
-    Mirrors what ``apps.shared.rekordbox_db._to_path`` does for non-streaming
-    rows; we only index local-file rows so streaming URIs are skipped.
-    """
-    if not raw:
-        return ""
-    try:
-        return str(Path(raw).expanduser()).casefold()
-    except Exception:
-        return raw.casefold()
+def _build_path_index(
+    tracks: list[_TTrack],
+    *,
+    include: Callable[[_TTrack], bool],
+    path_of: Callable[[_TTrack], str | None],
+    to_tag_read: Callable[[_TTrack], TagRead],
+) -> dict[str, TagRead]:
+    index: dict[str, TagRead] = {}
+    for track in tracks:
+        if not include(track):
+            continue
+        raw = path_of(track)
+        if not raw:
+            continue
+        key = vendor_path_key(raw)
+        if not key:
+            continue
+        index[key] = to_tag_read(track)
+    return index
 
 
 def _rb_build_index() -> dict[str, TagRead] | None:
@@ -115,27 +126,25 @@ def _rb_build_index() -> dict[str, TagRead] | None:
         _LOG.debug("rekordbox_db open failed: %s", exc)
         return None
 
-    index: dict[str, TagRead] = {}
     try:
-        for track in rekordbox_db.iter_tracks(db):
-            if track.is_streaming or track.file_path is None:
-                continue
-            key = _rb_normalise_path(str(track.file_path))
-            if not key:
-                continue
-            index[key] = TagRead(
-                title=track.title or None,
-                artist=track.artist or None,
-                album=track.album or None,
-                genre=track.genre or None,
-                bpm=track.bpm,
-                rating=track.rating,
-                isrc=track.isrc,
-            )
+        tracks = list(rekordbox_db.iter_tracks(db))
     except Exception as exc:  # pragma: no cover -- defensive
         _LOG.debug("rekordbox_db iter_tracks failed: %s", exc)
         return None
-    return index
+    return _build_path_index(
+        tracks,
+        include=lambda track: not track.is_streaming and track.file_path is not None,
+        path_of=lambda track: str(track.file_path),
+        to_tag_read=lambda track: TagRead(
+            title=track.title or None,
+            artist=track.artist or None,
+            album=track.album or None,
+            genre=track.genre or None,
+            bpm=track.bpm,
+            rating=track.rating,
+            isrc=track.isrc,
+        ),
+    )
 
 
 def _rb_index() -> dict[str, TagRead] | None:
@@ -152,7 +161,7 @@ def default_fetch_rb(path: Path) -> TagRead | None:
     index = _rb_index()
     if index is None:
         return None
-    key = _rb_normalise_path(str(path))
+    key = vendor_path_key(str(path))
     return index.get(key)
 
 
@@ -182,20 +191,17 @@ def _djay_build_index() -> dict[str, TagRead] | None:
         _LOG.debug("djay_db iter_tracks failed: %s", exc)
         return None
 
-    index: dict[str, TagRead] = {}
-    for track in tracks:
-        if not track.is_local or track.file_path is None:
-            continue
-        key = _rb_normalise_path(str(track.file_path))
-        if not key:
-            continue
-        index[key] = TagRead(
+    return _build_path_index(
+        tracks,
+        include=lambda track: track.is_local and track.file_path is not None,
+        path_of=lambda track: str(track.file_path),
+        to_tag_read=lambda track: TagRead(
             title=track.title or None,
             artist=track.artist or None,
             isrc=track.isrc or None,
             rating=track.rating if track.rating is not None else None,
-        )
-    return index
+        ),
+    )
 
 
 def _djay_index() -> dict[str, TagRead] | None:
@@ -207,7 +213,7 @@ def default_fetch_djay(path: Path) -> TagRead | None:
     index = _djay_index()
     if index is None:
         return None
-    key = _rb_normalise_path(str(path))
+    key = vendor_path_key(str(path))
     return index.get(key)
 
 

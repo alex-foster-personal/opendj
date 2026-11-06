@@ -1274,6 +1274,7 @@ mod tests {
         // The budget still holds the converted track to `max_frames`.
         let e = decode_progressive(open(&p).unwrap(), &p, Some(48000), 2 * 48000, 48000, |_| {}).err().expect("over budget");
         assert!(e.message.contains("memory budget"), "{}", e.message);
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -1290,5 +1291,6 @@ mod tests {
             assert!(grown.windows(2).all(|w| w[0] < w[1]), "{rate:?}: reports did not rise: {grown:?}");
             assert_eq!(grown.last().copied(), Some(d.pcm.capacity() * std::mem::size_of::<f32>()), "{rate:?}");
         }
+        tmp.close().unwrap();
     }
 }

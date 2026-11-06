@@ -9,11 +9,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from apps.autodj.contract.models import ANCHOR_LEAD_BARS
 from apps.autodj.plan import TransitionPlan, first_dispatch_bar
-from apps.autodj.profile import TrackProfile
-
-#: Bars of lead a live anchor leaves before the plan's first event, so the page has time to cue the incoming deck.
-ANCHOR_LEAD_BARS = 1.0
+from apps.autodj.profile import TrackProfile, heard_profile
 
 
 def live_bar(profile: TrackProfile, deck_state: Mapping[str, Any]) -> float | None:
@@ -69,7 +67,8 @@ def heard_on_deck(profile: TrackProfile, deck_state: Mapping[str, Any], *, with_
     shift = key_sync.get("shift_semitones") if isinstance(key_sync, Mapping) else None
     effective = deck_state.get("effective_bpm") if with_tempo else None
     pitch_range = deck_state.get("pitch_range")
-    return profile.as_heard(
+    return heard_profile(
+        profile,
         pitch_range_pct=float(pitch_range) if isinstance(pitch_range, (int, float)) and pitch_range > 0 else None,
         key_shift=shift if isinstance(shift, int) and not isinstance(shift, bool) else 0,
         heard_bpm=float(effective) if isinstance(effective, (int, float)) and effective > 0 else None,

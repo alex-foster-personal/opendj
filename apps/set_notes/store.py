@@ -126,6 +126,7 @@ def save_set_note(
     if base_rev != current:
         raise StaleRevision(current)
     new_rev = current + 1
+    updated_at = datetime.now(UTC).isoformat()
     params = (
         body_md,
         geometry.x,
@@ -134,7 +135,7 @@ def save_set_note(
         geometry.h,
         int(visible),
         new_rev,
-        datetime.now(UTC).isoformat(),
+        updated_at,
         scope,
     )
     if current == 0:
@@ -155,4 +156,11 @@ def save_set_note(
         )
         if cur.rowcount != 1:
             raise StaleRevision(_current_rev(conn, scope))
-    return load_set_note(conn, scope)
+    return SetNote(
+        scope=scope,
+        body_md=body_md,
+        geometry=Geometry(x=geometry.x, y=geometry.y, w=geometry.w, h=geometry.h),
+        visible=visible,
+        rev=new_rev,
+        updated_at=updated_at,
+    )

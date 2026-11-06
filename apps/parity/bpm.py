@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_score_id_fields, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 
 
@@ -61,10 +61,12 @@ def score_bpm(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
         within_0_1_n=within_0_1,
         within_1_0_n=within_1_0,
         no_own_n=len(no_own_ids),
-        agree_ids=tuple(agree_ids),
-        disagree_ids=tuple(disagree_ids),
         octave_ids=tuple(octave_ids),
-        no_own_ids=tuple(no_own_ids),
-        ungradable_ids=tuple(ungradable_ids),
+        **lane_score_id_fields(
+            agree_ids=agree_ids,
+            disagree_ids=disagree_ids,
+            no_own_ids=no_own_ids,
+            ungradable_ids=ungradable_ids,
+        ),
         ungradable={"missing_rb_bpm": len(ungradable_ids)},
     )

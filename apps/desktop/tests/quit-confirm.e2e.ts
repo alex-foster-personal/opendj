@@ -54,16 +54,20 @@ describe('Open DJ quit confirmation (playing deck)', () => {
 		const stableId = await firstRow.getAttribute('data-stable-id');
 		if (stableId === null) throw new Error('first track row has no data-stable-id attribute');
 
-		await browser.execute((id: string) => {
+		await browser.execute(async (id: string) => {
 			const ipc = (
 				window as {
 					musicDjToolsPerformance?: {
-						dispatch: (command: { type: string; deck: number; stable_id: string }) => void;
+						dispatch: (command: {
+							type: string;
+							deck: number;
+							stable_id: string;
+						}) => Promise<unknown>;
 					};
 				}
 			).musicDjToolsPerformance;
 			if (ipc === undefined) throw new Error('performance IPC is not installed');
-			ipc.dispatch({ type: 'load', deck: 1, stable_id: id });
+			await ipc.dispatch({ type: 'load', deck: 1, stable_id: id });
 		}, stableId);
 
 		const deckTitle = await browser.$(DECK_1_TITLE);
@@ -71,16 +75,20 @@ describe('Open DJ quit confirmation (playing deck)', () => {
 			timeout: LOAD_TIMEOUT_MS
 		});
 
-		await browser.execute(() => {
+		await browser.execute(async () => {
 			const ipc = (
 				window as {
 					musicDjToolsPerformance?: {
-						dispatch: (command: { type: string; deck: number }) => void;
+						dispatch: (command: {
+							type: string;
+							deck: number;
+							playing: boolean;
+						}) => Promise<unknown>;
 					};
 				}
 			).musicDjToolsPerformance;
 			if (ipc === undefined) throw new Error('performance IPC is not installed');
-			ipc.dispatch({ type: 'play', deck: 1 });
+			await ipc.dispatch({ type: 'play', deck: 1, playing: true });
 		});
 
 		await browser.waitUntil(

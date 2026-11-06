@@ -9,9 +9,12 @@ the guard that must fire before role resolution ever runs.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from scripts.diagnostics.probe_process_family import ProcessRow
+from scripts.perf import resolve_role
 from scripts.perf.resolve_role import RoleUnresolved, _reject_ambiguous_shell
 
 SHELL_A = ProcessRow(pid=100, ppid=1, pgid=100, command="/Applications/Open DJ.app/Contents/MacOS/opendj-desktop")
@@ -57,3 +60,41 @@ def test_the_engine_it_spawned_is_not_counted_as_a_second_shell() -> None:
     (PR #705 review, resolve_role.py:76, fresh evidence after this guard's own
     introduction in 5fd736cd)."""
     _reject_ambiguous_shell([SHELL_A, ENGINE_OF_SHELL_A], None)  # must not raise
+
+
+class _FakeDarwinProcessMetrics:
+    """Minimal stub so associate_process_family runs without Darwin ctypes."""
+
+    def read(self, pid: int) -> SimpleNamespace:
+        return SimpleNamespace(proc_start_abstime=0.0)
+
+    def ticks_to_seconds(self, ticks: float) -> float:
+        return float(ticks)
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_an_electron_role_with_no_app_running_names_the_role_and_prints_no_pid(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] no ps rows [then] stderr names role, no stdout, [else stop]."""
+    monkeypatch.setattr(resolve_role, "process_table", list)
+    code = resolve_role.main(["electron-renderer"])
+    captured = capsys.readouterr()
+    assert code == 3
+    assert captured.out == ""
+    assert "electron-renderer" in captured.err
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_electron_role_with_shell_only_exits_four_naming_role(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] shell runs but role empty [then] exit 4 names role, [else stop]."""
+    shell = SHELL_A
+    monkeypatch.setattr(resolve_role, "process_table", lambda: [shell])
+    monkeypatch.setattr(resolve_role, "DarwinProcessMetrics", _FakeDarwinProcessMetrics)
+    code = resolve_role.main(["electron-renderer"])
+    captured = capsys.readouterr()
+    assert code == 4
+    assert captured.out == ""
+    assert "electron-renderer" in captured.err

@@ -5,8 +5,10 @@ Split out of ``column_docs.py`` for the same reason
 Python-file limit); ``column_docs.py`` merges this dict into ``COLUMN_DOCS``,
 so callers still read one map.
 
-Schema authority: ``apps/analysis/store.py`` (``_ANALYSIS_TABLES_SQL``),
-mirrored into the consolidated engine schema's ``native_analysis_v1`` domain.
+DDL for these tables lives in ``apps/analysis/native_tables_sql.py``
+(``NATIVE_ANALYSIS_V1_SQL``), assembled into ``apps/analysis/store.py``
+(``_ANALYSIS_TABLES_SQL``) and mirrored into the consolidated engine
+schema's ``native_analysis_v1`` domain.
 Design: ``(private path)`` section 3.
 
 -Claude

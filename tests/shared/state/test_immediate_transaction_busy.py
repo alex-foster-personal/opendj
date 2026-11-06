@@ -28,9 +28,25 @@ def test_immediate_transaction_raises_state_store_busy_when_begin_locked(
     try:
         holder.execute("BEGIN IMMEDIATE")
         waiter.execute("PRAGMA busy_timeout = 0")
-        with pytest.raises(state_db.StateStoreBusyError):
-            with immediate_transaction(waiter):
-                pass
+        with pytest.raises(state_db.StateStoreBusyError), immediate_transaction(waiter):
+            pass
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        waiter.close()
+
+
+def test_write_unit_raises_state_store_busy_when_begin_locked(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.db"
+    holder = state_db.open_rw(path, apply_schema=True)
+    waiter = state_db.open_rw(path, check_same_thread=False)
+    try:
+        holder.execute("BEGIN IMMEDIATE")
+        waiter.execute("PRAGMA busy_timeout = 0")
+        with pytest.raises(state_db.StateStoreBusyError), state_db.write_unit(waiter, "busy"):
+            pass
     finally:
         holder.execute("ROLLBACK")
         holder.close()
@@ -84,8 +100,7 @@ def test_immediate_transaction_non_busy_operational_error_unchanged(
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path, apply_schema=True)
     try:
-        with pytest.raises(sqlite3.OperationalError, match="no such table"):
-            with immediate_transaction(conn):
-                conn.execute("SELECT 1 FROM definitely_missing_table")
+        with pytest.raises(sqlite3.OperationalError, match="no such table"), immediate_transaction(conn):
+            conn.execute("SELECT 1 FROM definitely_missing_table")
     finally:
         conn.close()

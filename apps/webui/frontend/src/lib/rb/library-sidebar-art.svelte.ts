@@ -12,7 +12,8 @@
  * Requirements (mini-PRD):
  *   ✔︎ sidebarArtEnabledIn(): true only when the daemon declares the flag on.
  *     [if] flags are unread or the flag is absent [then ⛔️ tiles show]
- *   ✔︎ playlistThumbnailUrl(): encodes the id and pins the size to 64 or 232.
+ *   ✔︎ playlistThumbnailUrl(): encodes the id and pins the size to 64 or 232;
+ *     an optional third argument appends revision as query param v (PlaylistSummary.updated_at).
  *     [if] the url contains /artwork [then ⛔️ a skin grays it by accident]
  */
 import { buildFlags } from '$lib/api/store-build.svelte';

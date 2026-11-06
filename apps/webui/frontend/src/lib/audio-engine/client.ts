@@ -45,6 +45,9 @@ export interface EngineDeckState {
 	master_tempo?: boolean;
 	/** Key shift in semitones, from the same builds. */
 	key_shift_semitones?: number;
+	/** Linear gain of each ANLZ waveform band through this deck's EQ and
+	 * FILTER (WAVE-EQ-5230, `wave_gains.rs`). Unknown-shaped until parsed. */
+	wave_gains: unknown;
 }
 
 export interface EngineState {

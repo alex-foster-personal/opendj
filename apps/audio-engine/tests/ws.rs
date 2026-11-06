@@ -376,10 +376,18 @@ fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
         &mut a,
         json!({"id": "hot", "cmd": {"type": "midi_inject", "port": "DDJ-FLX4", "bytes": [0x99, 0x03, 0x7f]}}),
     );
-    let (seen, b_kept) =
-        until_while_draining(&mut a, &mut b, |v| v["id"] == "hot", |v| *v == action);
+    let (seen, b_kept) = until_while_draining(
+        &mut a,
+        &mut b,
+        |v| v["id"] == "hot",
+        |v| *v == action || v["id"] == "hot",
+    );
     assert!(seen.contains(&action), "sender: {seen:?}");
     assert_eq!(seen.last().unwrap()["ok"], true);
+    assert!(
+        b_kept.iter().all(|v| v["id"] != "hot"),
+        "b saw a's result during drain: {b_kept:?}"
+    );
     if !b_kept.iter().any(|v| *v == action) {
         until(&mut b, |v| *v == action);
     }

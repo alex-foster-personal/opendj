@@ -109,3 +109,8 @@ test('feedback pin bubble paints above dock and root modals (#3981)', () => {
 	assert.ok(z.feedbackPinBubble > z.settings);
 	assert.ok(z.feedbackDock > z.settings);
 });
+
+test('tooltip layer paints above feedback pin bubble (#927)', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.tooltip > z.feedbackPinBubble);
+});

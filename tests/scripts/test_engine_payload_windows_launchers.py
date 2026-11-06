@@ -49,6 +49,11 @@ def test_the_windows_launchers_export_exactly_what_the_posix_ones_export() -> No
     assert _windows_set(win.WINDOWS_PAYLOAD_PREAMBLE) == _posix_exported()
 
 
+def test_the_windows_launchers_leave_pythonhome_untouched_and_default_library_mode_only_when_unset() -> None:
+    assert "PYTHONHOME" not in win.WINDOWS_PAYLOAD_PREAMBLE
+    assert 'if not defined MDT_LIBRARY_MODE set "MDT_LIBRARY_MODE=local"' in win.WINDOWS_PAYLOAD_PREAMBLE
+
+
 def test_the_windows_launchers_unset_exactly_what_the_posix_ones_unset() -> None:
     assert _posix_unset() == {"MDT_REKORDBOX_WRITEBACK_ENABLED"}, (
         "the POSIX unset list changed; update the Windows launcher"

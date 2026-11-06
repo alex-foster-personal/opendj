@@ -147,7 +147,10 @@ export default {
 		'src/lib/rb/explainer-demo-keyframes.ts',
 		// W28 right-click permutation harness: renders (private path)/*.md for
 		// tests/unit/context-menu-registry.test.mjs; never shipped in the UI.
-		'src/lib/context-menu/permutations.ts'
+		'src/lib/context-menu/permutations.ts',
+		// K1 selector tree (#9393): pure spatial-navigation core, consumed by unit tests until
+		// key binding (K3) wires it into the UI.
+		'src/lib/keyboard/selector-tree.ts'
 	],
 	// Both Storybooks (Svelte in .storybook/, React twins in .storybook-react/):
 	// knip's storybook plugin reads each main.ts for stories, addons and the

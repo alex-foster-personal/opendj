@@ -27,7 +27,10 @@ from apps.engine_core.parent_watch import PARENT_ENV, PARENT_FILE_NAME
 from apps.shared import machine_pressure
 from apps.shared.machine_pressure import (
     CACHE_TTL_SECONDS,
+    ELECTRON_GPU_ROLE,
     ELECTRON_RENDERER_ROLE,
+    ELECTRON_UTILITY_ROLE,
+    FFMPEG_ROLE,
     LAUNCHING_SHELL_PID_ENV,
     PRESSURE_CHURN_WEIGHT_SWAP,
     PRESSURE_SAMPLE_P95_WALL_MS,
@@ -36,6 +39,7 @@ from apps.shared.machine_pressure import (
     ProcessInfo,
     _family_root_pid,
     launching_shell_pid,
+    live_process_family,
     live_process_family_members,
     live_process_family_state,
     opendj_process_name,
@@ -295,9 +299,7 @@ def test_unreadable_kernel_pressure_is_absent_never_zero() -> None:
 def test_kernel_pressure_zero_is_treated_as_unreadable() -> None:
     """[if] kernel_memory_pressure_level is zero [then] the field is omitted as, [else stop]."""
     cache = MachinePressureCache()
-    sampler, _ = _counting_sampler(
-        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 0}
-    )
+    sampler, _ = _counting_sampler({"load_average_1m": 1.0, "kernel_memory_pressure_level": 0})
 
     body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
@@ -345,13 +347,36 @@ def test_first_sample_omits_churn_rather_than_zero() -> None:
     assert "churn_score" not in body
 
 
+def test_read_vm_stat_churn_snapshot_parses_through_the_shared_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Completed:
+        stdout = (
+            "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+            "Swapins:                                    42.\n"
+            "Swapouts:                                   7.\n"
+            "Decompressions:                          1234.\n"
+            "Pages stored in compressor:               890.\n"
+        )
+
+    monkeypatch.setattr(machine_pressure.subprocess, "run", lambda *_a, **_k: _Completed())
+
+    snapshot = machine_pressure._read_vm_stat_churn_snapshot()
+
+    assert snapshot == {
+        "swapins": 42,
+        "swapouts": 7,
+        "decompressions": 1234,
+        "page_size": 16384,
+        "compressor_pages": 890,
+    }
+
+
 @pytest.mark.requirement("PERFMODE-05")
 def test_elevated_kernel_lengthens_the_ttl_to_five_seconds() -> None:
     """[if] kernel_memory_pressure_level is elevated [then] TTL is 5s, [else stop]."""
     cache = MachinePressureCache()
-    sampler, calls = _counting_sampler(
-        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 2}
-    )
+    sampler, calls = _counting_sampler({"load_average_1m": 1.0, "kernel_memory_pressure_level": 2})
 
     cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
     cache.read(now=1.1, sampler=sampler, vm_stat_reader=lambda: None)
@@ -364,9 +389,7 @@ def test_elevated_kernel_lengthens_the_ttl_to_five_seconds() -> None:
 def test_elevated_churn_lengthens_even_when_kernel_is_fine() -> None:
     """[if] churn_score is elevated while kernel pressure is [then] TTL is still, [else stop]."""
     cache = MachinePressureCache()
-    sampler, calls = _counting_sampler(
-        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
-    )
+    sampler, calls = _counting_sampler({"load_average_1m": 1.0, "kernel_memory_pressure_level": 1})
     prior = {
         "swapins": 0,
         "swapouts": 0,
@@ -392,9 +415,7 @@ def test_elevated_churn_lengthens_even_when_kernel_is_fine() -> None:
 def test_idle_ttl_is_one_second() -> None:
     """[if] kernel pressure and churn are both idle [then] TTL is 1s, [else stop]."""
     cache = MachinePressureCache()
-    sampler, calls = _counting_sampler(
-        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
-    )
+    sampler, calls = _counting_sampler({"load_average_1m": 1.0, "kernel_memory_pressure_level": 1})
     prior = {
         "swapins": 0,
         "swapouts": 0,
@@ -413,6 +434,7 @@ def test_idle_ttl_is_one_second() -> None:
 @pytest.mark.requirement("PERFMODE-05")
 def test_sampler_does_not_sleep_to_build_churn(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] machine pressure is read on the request path [then] time.sleep is never, [else stop]."""
+
     def fail_sleep(_seconds: float) -> None:
         raise AssertionError("time.sleep must not run on the request path")
 
@@ -488,6 +510,98 @@ def test_a_process_that_exits_mid_walk_does_not_empty_the_walk(monkeypatch: pyte
 # a ``uv`` launcher whose command only passes an ``opendj-*`` data dir, beside
 # a vite under the same shell. A ``--reload`` backend under its supervisor.
 _SHELL = "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
+_WEBKIT_WEBCONTENT = (
+    "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
+    "com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+)
+_WEBKIT_GPU = (
+    "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
+    "com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+)
+_WEBKIT_NETWORKING = (
+    "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
+    "com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+)
+
+
+@pytest.mark.requirement("PERF-UI-6785")
+def test_live_walk_attributes_the_launchd_parented_webkit_helpers_to_the_shell() -> None:
+    """[if] shell, engine, engine child and WebKit XPC helpers within 45 s [then] members carry probe roles, [else stop]."""
+    rows = [
+        ProcessInfo(10, 1, _SHELL, rss_bytes=1_000_000, start_time=1000.0),
+        ProcessInfo(20, 10, "python3 -m apps.engine_core serve", rss_bytes=2_000_000, start_time=1002.0),
+        ProcessInfo(
+            21,
+            20,
+            "/bin/ffmpeg -nostdin -i /tmp/a.m4a -",
+            rss_bytes=500_000,
+            start_time=1010.0,
+        ),
+        ProcessInfo(30, 1, _WEBKIT_WEBCONTENT, rss_bytes=409 * 1024 * 1024, start_time=1005.0),
+        ProcessInfo(31, 1, _WEBKIT_GPU, rss_bytes=14 * 1024 * 1024, start_time=1005.5),
+        ProcessInfo(32, 1, _WEBKIT_NETWORKING, rss_bytes=18 * 1024 * 1024, start_time=1006.0),
+        ProcessInfo(40, 1, _WEBKIT_WEBCONTENT, rss_bytes=50 * 1024 * 1024, start_time=900.0),
+    ]
+    family = live_process_family(engine_pid=20, process_iter=lambda: rows)
+    assert family.webkit_association["status"] == "attributed"
+    assert family.pids == {10, 20, 21, 30, 31, 32}
+    assert 40 not in family.pids
+    by_pid = {m["pid"]: m for m in family.members}
+    assert by_pid[10]["role"] == "desktop-shell"
+    assert by_pid[20]["role"] == "python-engine"
+    assert by_pid[21]["role"] == FFMPEG_ROLE
+    assert by_pid[30]["role"] == "webkit-webcontent"
+    assert by_pid[31]["role"] == "webkit-gpu"
+    assert by_pid[32]["role"] == "webkit-networking"
+
+
+@pytest.mark.requirement("PERF-UI-6785")
+def test_live_walk_refuses_webkit_helpers_when_two_open_dj_shells_run() -> None:
+    """[if] two Open DJ shells are in the fake table [then] WebKit is not attributed and body says why, [else stop]."""
+    rows = [
+        ProcessInfo(10, 1, _SHELL, rss_bytes=1_000_000, start_time=1000.0),
+        ProcessInfo(50, 1, _SHELL, rss_bytes=1_000_000, start_time=1001.0),
+        ProcessInfo(20, 10, "python3 -m apps.engine_core serve", rss_bytes=2_000_000, start_time=1002.0),
+        ProcessInfo(
+            21,
+            20,
+            "/bin/ffmpeg -nostdin -i /tmp/a.m4a -",
+            rss_bytes=500_000,
+            start_time=1010.0,
+        ),
+        ProcessInfo(30, 1, _WEBKIT_WEBCONTENT, rss_bytes=409 * 1024 * 1024, start_time=1005.0),
+        ProcessInfo(31, 1, _WEBKIT_GPU, rss_bytes=14 * 1024 * 1024, start_time=1005.5),
+        ProcessInfo(32, 1, _WEBKIT_NETWORKING, rss_bytes=18 * 1024 * 1024, start_time=1006.0),
+        ProcessInfo(40, 1, _WEBKIT_WEBCONTENT, rss_bytes=50 * 1024 * 1024, start_time=900.0),
+    ]
+    family = live_process_family(engine_pid=20, process_iter=lambda: rows)
+    assert family.webkit_association["status"] == "refused"
+    assert "shell" in family.webkit_association["reason"].lower()
+    assert not {30, 31, 32, 40, 50} & family.pids
+    assert family.pids == {10, 20, 21}
+    roles = {m["pid"]: m.get("role") for m in family.members}
+    assert not any(str(r or "").startswith("webkit-") for r in roles.values())
+
+
+@pytest.mark.requirement("PERF-UI-6785")
+def test_live_walk_reports_none_found_when_webcontent_is_outside_the_association_window() -> None:
+    """[if] WebContent starts more than 45 s after the shell [then] it is not in the family, [else stop]."""
+    rows = [
+        ProcessInfo(10, 1, _SHELL, rss_bytes=1_000_000, start_time=1000.0),
+        ProcessInfo(20, 10, "python3 -m apps.engine_core serve", rss_bytes=2_000_000, start_time=1002.0),
+        ProcessInfo(
+            21,
+            20,
+            "/bin/ffmpeg -nostdin -i /tmp/a.m4a -",
+            rss_bytes=500_000,
+            start_time=1010.0,
+        ),
+        ProcessInfo(30, 1, _WEBKIT_WEBCONTENT, rss_bytes=10 * 1024 * 1024, start_time=1050.0),
+    ]
+    family = live_process_family(engine_pid=20, process_iter=lambda: rows)
+    assert family.webkit_association["status"] == "none_found"
+    assert 30 not in family.pids
+    assert family.pids == {10, 20, 21}
 
 
 @pytest.fixture(scope="module")
@@ -586,9 +700,15 @@ def test_live_family_is_this_engines_tree_not_every_opendj_name(machine: dict[st
 
     members, pids = _family(machine["engine"])
 
-    assert pids == {machine[k] for k in ("shell", "shell_sibling", "engine", "sidecar", "worker")}, _family_commands(pids)
+    assert pids == {machine[k] for k in ("shell", "shell_sibling", "engine", "sidecar", "worker")}, _family_commands(
+        pids
+    )
     assert sorted(m["name"] for m in members) == [
-        "opendj-desktop", "opendj-engine", "opendj-worker", "unnamed", "unnamed",
+        "opendj-desktop",
+        "opendj-engine",
+        "opendj-worker",
+        "unnamed",
+        "unnamed",
     ]
     assert all(m["rss_mb"] > 0 for m in members), "every member carries its real resident MB"
 
@@ -602,6 +722,7 @@ def test_a_foreign_performance_probe_above_the_engine_is_not_its_launcher() -> N
     count every process it spawned. The app's own launchers (the desktop
     shell and the backend supervisor) still root the family above the engine.
     """
+
     def row(pid: int, ppid: int, command: str) -> ProcessInfo:
         return ProcessInfo(pid=pid, ppid=ppid, command=command, rss_bytes=None)
 
@@ -635,9 +756,6 @@ def test_live_family_of_a_dev_engine_does_not_climb_into_its_launcher(machine: d
     assert pids == {machine["dev_engine"]}
 
 
-@pytest.mark.skip(
-    reason="quarantined under #8716: reads the live host process tree, flakes under runner load (Wed 4 Nov 2026)"
-)
 @needs_visible_titles
 @pytest.mark.requirement("PERF-UI-6785")
 def test_live_family_climbs_through_a_reload_supervisor(machine: dict[str, int]) -> None:
@@ -789,7 +907,7 @@ def test_an_engine_launched_by_a_stamping_shell_walks_from_that_shell_by_default
     """[if] a shell launches the engine with OPENDJ_PARENT_PID [then] its children count, [else stop].
 
     The engine's own default walk and route count the shell, its renderer
-    and its GPU child, and mark only the renderer as the page's process.
+    and its GPU child, tag the renderer and GPU helpers, and mark only the renderer as the page's process.
 
     Nothing is passed to the walk: inside the real engine child it reads the
     variable the real parent put in its environment, as the route does.
@@ -799,7 +917,7 @@ def test_an_engine_launched_by_a_stamping_shell_walks_from_that_shell_by_default
     assert report["inherited"] == str(report["shell"]), "the engine inherited the shell's pid"
     assert set(report["family"]) == {report[k] for k in ("shell", "renderer", "gpu", "engine")}
     assert report["roles"][str(report["renderer"])] == ELECTRON_RENDERER_ROLE
-    assert report["roles"][str(report["gpu"])] is None, "only --type=renderer is the page's process"
+    assert report["roles"][str(report["gpu"])] == ELECTRON_GPU_ROLE, "the GPU helper is named, not the page"
     route = report["route"]
     assert route["available"] is True and len(route["members"]) == 4
     assert [m.get("role") for m in route["members"]].count(ELECTRON_RENDERER_ROLE) == 1
@@ -895,6 +1013,55 @@ def test_family_root_climbs_only_through_app_launchers(command: str, runs_as: bo
 
 
 @pytest.mark.requirement("PERFMODE-05")
+def test_live_walk_tags_chromium_helpers_under_stamped_shell() -> None:
+    """[if] shell tree has Chromium helpers [then] gpu and utility roles tag, [else stop]."""
+
+    def fake_iter() -> list[ProcessInfo]:
+        return [
+            ProcessInfo(pid=10, ppid=1, command=_SHELL, rss_bytes=None),
+            ProcessInfo(
+                pid=11,
+                ppid=10,
+                command='Open DJ Helper --type=renderer "standalone"',
+                rss_bytes=1000,
+            ),
+            ProcessInfo(
+                pid=12,
+                ppid=10,
+                command="Open DJ Helper --type=gpu-process",
+                rss_bytes=1000,
+            ),
+            ProcessInfo(
+                pid=13,
+                ppid=10,
+                command="Open DJ Helper --type=utility --utility-sub-type=network.mojom.NetworkService",
+                rss_bytes=1000,
+            ),
+            ProcessInfo(
+                pid=20,
+                ppid=10,
+                command="python3 -m apps.engine_core serve",
+                rss_bytes=2000,
+            ),
+            ProcessInfo(
+                pid=21,
+                ppid=20,
+                command="/bin/ffmpeg -nostdin -i /tmp/a.m4a -",
+                rss_bytes=500,
+            ),
+        ]
+
+    members, family = live_process_family_state(engine_pid=20, shell_pid=10, process_iter=fake_iter)
+    assert family == {10, 11, 12, 13, 20, 21}
+    by_pid = {m["pid"]: m for m in members}
+    assert by_pid[11]["role"] == ELECTRON_RENDERER_ROLE
+    assert by_pid[12]["role"] == ELECTRON_GPU_ROLE
+    assert by_pid[13]["role"] == ELECTRON_UTILITY_ROLE
+    assert by_pid[21]["name"] == "ffmpeg"
+    assert "role" not in by_pid[21]
+
+
+@pytest.mark.requirement("PERFMODE-05")
 def test_opendj_process_name_matches_probe_parser() -> None:
     """[if] representative process command lines are parsed [then] webui and probe, [else stop]."""
     fixtures = [
@@ -903,9 +1070,32 @@ def test_opendj_process_name_matches_probe_parser() -> None:
         ("opendj-backend --name opendj-backend --port 8787 [...]", "opendj-backend"),
         ("/Applications/Open DJ.app/Contents/MacOS/opendj-desktop", "opendj-desktop"),
         (
+            "/Applications/Open DJ.app/Contents/Frameworks/Open DJ Helper (Renderer).app/"
+            "Contents/MacOS/Open DJ Helper (Renderer) --type=renderer",
+            ELECTRON_RENDERER_ROLE,
+        ),
+        (
+            "/Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/"
+            "Contents/MacOS/Claude Helper (Renderer) --type=renderer",
+            "unnamed",
+        ),
+        (
             "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
             "com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
             "unnamed",
+        ),
+        (
+            "/opt/homebrew/bin/ffmpeg -nostdin -i /Music/opendj-mix.mp3 -f f32le -",
+            "ffmpeg",
+        ),
+        (
+            "/usr/sbin/taskpolicy -b /repo/ffmpeg -nostdin -i x -",
+            "ffmpeg",
+        ),
+        (
+            "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
+            "-m apps.analysis.queue_cli --db /d/state.db",
+            "analysis-lane",
         ),
         ("python3 -m apps.engine_core serve", "unnamed"),
     ]
@@ -1009,9 +1199,7 @@ def test_a_registered_adopting_shell_and_its_children_join_the_family(tmp_path: 
         registration = read_shell_registration(tmp_path)
         assert registration.status == "accepted", registration
         assert registration.pid == shell["shell"]
-        members, family = live_process_family_state(
-            engine_pid=engine["engine"], registered_shell_pid=registration.pid
-        )
+        members, family = live_process_family_state(engine_pid=engine["engine"], registered_shell_pid=registration.pid)
     finally:
         kill(unrelated)
         kill(engine)
@@ -1033,9 +1221,7 @@ def test_a_registration_naming_a_dead_pid_is_rejected_and_counts_nothing(tmp_pat
     engine = spawn(_engine_tree())
     try:
         registration = read_shell_registration(tmp_path)
-        _members, family = live_process_family_state(
-            engine_pid=engine["engine"], registered_shell_pid=registration.pid
-        )
+        _members, family = live_process_family_state(engine_pid=engine["engine"], registered_shell_pid=registration.pid)
     finally:
         kill(engine)
     assert registration.status == "rejected"

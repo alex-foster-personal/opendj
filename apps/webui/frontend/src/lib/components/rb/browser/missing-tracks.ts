@@ -6,6 +6,7 @@
  * PlaylistTree and pane-contract stay under the frontend 600-line ratchet.
  */
 import type { BrokenTrack } from '$lib/reconcile-api';
+import { normalizeRating } from '$lib/rating';
 import { listBroken } from '$lib/reconcile-api';
 import type { PlaylistNode } from '$lib/rb/library-types';
 import type { BrowserRow } from './pane-contract.svelte';
@@ -40,7 +41,7 @@ export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): Brow
 		artist: track.artist ?? null,
 		key: track.key ?? null,
 		bpm: track.bpm ?? null,
-		rating: track.rating ?? null,
+		rating: normalizeRating(track.rating ?? null),
 		energy: null,
 		energy_source: null,
 		energy_reason: MISSING_TRACKS_ENERGY_REASON,

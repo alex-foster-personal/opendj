@@ -7,6 +7,7 @@ Builds its own fixture ``state.db`` under ``tmp_path`` via the real
 (genre/comments/notes/tags) indexing, pagination, and lazy refresh when
 SQLite's main database or active WAL changes.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,8 +58,13 @@ def fixture_db(tmp_path: Path) -> Path:
         ]
         for sid, title, artists, genre, comments, tags in tracks:
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred", title=title,
-                artists=artists, album=None, isrc=None, duration_ms=200_000,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=title,
+                artists=artists,
+                album=None,
+                isrc=None,
+                duration_ms=200_000,
                 file_path=f"/music/{sid}.mp3",
             )
             _set_eav_field(conn, sid, "genre", genre)
@@ -113,6 +119,68 @@ def test_search_matches_genre_eav_field(fixture_db: Path) -> None:
     ids = {sid for sid, _ in hits}
     assert ids == {"s1", "s5", "s6"}
     assert total == 3
+
+
+@pytest.mark.requirement("GENRE-04")
+def test_search_indexes_rekordbox_genre_over_imported_file_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] rb and import genres differ [then] FTS indexes rb first, [else stop]."""
+    import apps.adapters.rekordbox.config as rb_mod
+
+    rb_genre = "Garage"
+    imported_genre = "Zyxtagimport9038"
+    vendor_id = "vid-rb-fts9038"
+
+    state_path = tmp_path / "state.db"
+    master_path = tmp_path / "master.plain.db"
+    monkeypatch.setattr(rb_mod, "MASTER_PLAIN_DB", master_path, raising=False)
+
+    master = sqlite3.connect(master_path)
+    try:
+        master.execute(
+            "CREATE TABLE djmdContent (ID TEXT PRIMARY KEY, GenreID TEXT, rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
+        )
+        master.execute(
+            "CREATE TABLE djmdGenre (ID TEXT PRIMARY KEY, Name TEXT, rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
+        )
+        gid = "g-fts9038"
+        master.execute(
+            "INSERT INTO djmdGenre (ID, Name, rb_local_deleted) VALUES (?, ?, 0)",
+            (gid, rb_genre),
+        )
+        master.execute(
+            "INSERT INTO djmdContent (ID, GenreID, rb_local_deleted) VALUES (?, ?, 0)",
+            (vendor_id, gid),
+        )
+        master.commit()
+    finally:
+        master.close()
+
+    conn = state_db.open_rw(state_path)
+    bus = FakeEventBus()
+    writer = StateWriter(conn, bus=bus, actor="test")
+    try:
+        writer.upsert_track(
+            stable_id="s-rb",
+            stable_id_tier="inferred",
+            title="Neutralsignal",
+            artists=["Anon"],
+            album=None,
+            isrc=None,
+            duration_ms=200_000,
+            file_path="/music/s-rb.mp3",
+        )
+        writer.set_vendor_id("s-rb", "rekordbox", vendor_id)
+        _set_eav_field(conn, "s-rb", "genre", imported_genre)
+    finally:
+        writer.close()
+        conn.close()
+
+    hits, total = search_index.search(state_path, "garage", limit=10)
+    assert total == 1
+    assert [sid for sid, _ in hits] == ["s-rb"]
+
+    hidden, _ = search_index.search(state_path, "Zyxtagimport", limit=10)
+    assert hidden == []
 
 
 @pytest.mark.requirement("GENRE-04")
@@ -234,10 +302,7 @@ def test_search_pagination_limit_and_offset(fixture_db: Path) -> None:
     assert len(page1) == 2
     assert [sid for sid, _ in page1] != [sid for sid, _ in page2]
     # Pages tile the full ranked result set in order.
-    assert (
-        [sid for sid, _ in page1] + [sid for sid, _ in page2]
-        == [sid for sid, _ in hits_all][:4]
-    )
+    assert [sid for sid, _ in page1] + [sid for sid, _ in page2] == [sid for sid, _ in hits_all][:4]
 
 
 def test_ensure_index_unavailable_when_source_missing(tmp_path: Path) -> None:
@@ -263,8 +328,13 @@ def test_index_rebuilds_when_source_mtime_changes(fixture_db: Path) -> None:
     writer = StateWriter(conn, bus=bus, actor="test")
     try:
         writer.upsert_track(
-            stable_id="s7", stable_id_tier="inferred", title="Phoenix",
-            artists=["Delta"], album=None, isrc=None, duration_ms=180_000,
+            stable_id="s7",
+            stable_id_tier="inferred",
+            title="Phoenix",
+            artists=["Delta"],
+            album=None,
+            isrc=None,
+            duration_ms=180_000,
             file_path="/music/s7.mp3",
         )
     finally:
@@ -272,6 +342,7 @@ def test_index_rebuilds_when_source_mtime_changes(fixture_db: Path) -> None:
         conn.close()
     future = time.time() + 5
     import os
+
     os.utime(fixture_db, (future, future))
 
     hits_after, total = search_index.search(fixture_db, "phoenix", limit=10)
@@ -289,8 +360,13 @@ def test_index_refreshes_for_committed_wal_write_without_main_db_mtime_change(
     writer = StateWriter(conn, bus=bus, actor="test")
     try:
         writer.upsert_track(
-            stable_id="s7", stable_id_tier="inferred", title="WAL Arrival",
-            artists=["Delta"], album=None, isrc=None, duration_ms=180_000,
+            stable_id="s7",
+            stable_id_tier="inferred",
+            title="WAL Arrival",
+            artists=["Delta"],
+            album=None,
+            isrc=None,
+            duration_ms=180_000,
             file_path="/music/s7.mp3",
         )
         assert fixture_db.stat().st_mtime_ns == main_db_mtime
@@ -320,14 +396,108 @@ def test_index_rebuild_commits_schema_and_metadata_atomically(
 
     search_index.ensure_index(fixture_db)
 
-    begin = statements.index("BEGIN")
+    begin = statements.index("BEGIN IMMEDIATE")
     first_drop = next(i for i, sql in enumerate(statements) if sql.startswith("DROP TABLE"))
-    metadata = next(
-        i for i, sql in enumerate(statements)
-        if sql.startswith("INSERT INTO search_meta")
-    )
+    metadata = next(i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO search_meta"))
     commit = statements.index("COMMIT")
     assert begin < first_drop < metadata < commit
+
+
+def test_concurrent_cold_searches_return_the_same_hits(fixture_db: Path) -> None:
+    start = threading.Barrier(2)
+    results: list[tuple[list[tuple[str, str]], int]] = []
+    errors: list[Exception] = []
+
+    def search_cold_index() -> None:
+        try:
+            start.wait(timeout=10)
+            results.append(search_index.search(fixture_db, "levi", limit=10))
+        except Exception as exc:  # noqa: BLE001 - asserted on the main thread
+            errors.append(exc)
+
+    threads = [threading.Thread(target=search_cold_index) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads), "search thread leaked"
+    assert errors == []
+    assert len(results) == 2
+    assert results[0] == results[1]
+    assert results[0][1] == 1
+    assert [stable_id for stable_id, _ in results[0][0]] == ["s1"]
+
+
+def test_concurrent_cold_searches_rebuild_once(
+    fixture_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = threading.Barrier(2)
+    both_saw_cold_meta = threading.Barrier(2)
+    rebuild_calls: list[Path] = []
+    results: list[tuple[list[tuple[str, str]], int]] = []
+    errors: list[Exception] = []
+    original_current_meta = search_index._current_meta
+    original_rebuild = search_index._rebuild
+
+    def current_meta_after_both_cold_checks(
+        conn: sqlite3.Connection,
+    ) -> tuple[int, str] | None:
+        meta = original_current_meta(conn)
+        if not conn.in_transaction:
+            both_saw_cold_meta.wait(timeout=10)
+        return meta
+
+    def rebuild_once(conn: sqlite3.Connection, state_db_path: Path) -> None:
+        rebuild_calls.append(state_db_path)
+        original_rebuild(conn, state_db_path)
+
+    monkeypatch.setattr(search_index, "_current_meta", current_meta_after_both_cold_checks)
+    monkeypatch.setattr(search_index, "_rebuild", rebuild_once)
+
+    def search_cold_index() -> None:
+        try:
+            start.wait(timeout=10)
+            results.append(search_index.search(fixture_db, "levi", limit=10))
+        except Exception as exc:  # noqa: BLE001 - asserted on the main thread
+            errors.append(exc)
+
+    threads = [threading.Thread(target=search_cold_index) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads), "search thread leaked"
+    assert errors == []
+    assert len(results) == 2
+    assert results[0] == results[1]
+    assert rebuild_calls == [fixture_db]
+
+
+def test_concurrent_first_opens_of_a_new_index_both_succeed(tmp_path: Path) -> None:
+    # Switching a new file to WAL from two connections at once makes SQLite
+    # answer one SQLITE_BUSY without its busy handler; _open_index must absorb it.
+    errors: list[Exception] = []
+    for attempt in range(50):
+        target = tmp_path / f"idx-{attempt}.db"
+        start = threading.Barrier(2)
+
+        def open_new_index(target: Path = target, start: threading.Barrier = start) -> None:
+            try:
+                start.wait(timeout=10)
+                search_index._open_index(target).close()
+            except Exception as exc:  # noqa: BLE001 - asserted on the main thread
+                errors.append(exc)
+
+        threads = [threading.Thread(target=open_new_index) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert all(not thread.is_alive() for thread in threads), "open thread leaked"
+    assert errors == []
 
 
 def test_index_not_rebuilt_when_source_unchanged(fixture_db: Path) -> None:
@@ -348,15 +518,12 @@ def test_index_stored_separately_from_state_db(fixture_db: Path) -> None:
     # leaked into the source file.
     conn = sqlite3.connect(f"file:{fixture_db}?mode=ro", uri=True)
     try:
-        names = {
-            r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
-            )
-        }
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
     finally:
         conn.close()
     assert "tracks_fts" not in names
     assert "search_meta" not in names
+
 
 def test_search_works_while_the_library_is_being_written_to(
     fixture_db: Path,
@@ -375,8 +542,13 @@ def test_search_works_while_the_library_is_being_written_to(
             writer.commit()
             commits.append(sql)
 
-    def connect_with_writer(database: str, *, uri: bool = False) -> sqlite3.Connection:
-        conn = real_connect(database, uri=uri)
+    def connect_with_writer(
+        database: str,
+        *,
+        uri: bool = False,
+        timeout: float = 5.0,
+    ) -> sqlite3.Connection:
+        conn = real_connect(database, uri=uri, timeout=timeout)
         if "mode=ro" in database:
             conn.set_trace_callback(commit_during_read)
         return conn
@@ -394,9 +566,13 @@ def test_search_works_while_the_library_is_being_written_to(
 
 def _commit_on_another_thread(
     state_db_path: Path,
-) -> tuple[threading.Event, threading.Event, threading.Thread, list[int], list[Exception]]:
-    """BEGIN IMMEDIATE + UPDATE + COMMIT on a second connection until released."""
-    held, release = threading.Event(), threading.Event()
+) -> tuple[threading.Event, threading.Event, threading.Event, threading.Thread, list[int], list[Exception]]:
+    """BEGIN IMMEDIATE + UPDATE + COMMIT on a second connection until released.
+
+    ``committed`` is set after every commit, so a caller that clears it can wait
+    for the next real commit instead of sleeping.
+    """
+    held, release, committed = threading.Event(), threading.Event(), threading.Event()
     commits: list[int] = []
     errors: list[Exception] = []
 
@@ -413,6 +589,7 @@ def _commit_on_another_thread(
                 conn.execute("COMMIT")
                 n += 1
                 commits.append(n)
+                committed.set()
                 held.set()
         except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
             errors.append(exc)
@@ -422,22 +599,34 @@ def _commit_on_another_thread(
 
     thread = threading.Thread(target=_hold)
     thread.start()
-    return held, release, thread, commits, errors
+    return held, release, committed, thread, commits, errors
 
 
-def test_search_answers_while_another_thread_writes(fixture_db: Path) -> None:
+def test_search_answers_while_another_thread_writes(
+    fixture_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Real second-thread writer commits to state.db while search rebuilds the index."""
-    held, release, thread, commits, errors = _commit_on_another_thread(fixture_db)
+    held, release, committed, thread, commits, errors = _commit_on_another_thread(fixture_db)
     assert held.wait(10), "the writer thread never committed"
+    real_ensure_index = search_index.ensure_index
+
+    def ensure_index_after_a_fresh_commit(state_db_path: Path, index_db_path: Path | None = None) -> Path:
+        # Deterministic control: inside search(), wait for the writer to land a
+        # NEW commit, so a real concurrent commit is guaranteed whatever the
+        # scheduler does (a bare tight loop lost the race under CI load).
+        committed.clear()
+        assert committed.wait(5), "the writer thread could not commit while search ran"
+        return real_ensure_index(state_db_path, index_db_path)
+
     try:
         before = len(commits)
+        monkeypatch.setattr(search_index, "ensure_index", ensure_index_after_a_fresh_commit)
         started = time.monotonic()
         hits, total = search_index.search(fixture_db, "levi", limit=10)
         elapsed = time.monotonic() - started
         assert elapsed < 2.0, f"search waited {elapsed:.2f}s on the writer"
-        assert len(commits) > before, (
-            "the control: a real commit must have landed on the other thread during search"
-        )
+        assert len(commits) > before, "the control: a real commit must have landed on the other thread during search"
         assert total == 1
         assert [sid for sid, _ in hits] == ["s1"]
     finally:
@@ -457,8 +646,13 @@ def test_index_source_is_read_from_one_snapshot(
     statements: list[str] = []
     real_connect = sqlite3.connect
 
-    def connect_with_trace(database: str, *, uri: bool = False) -> sqlite3.Connection:
-        conn = real_connect(database, uri=uri)
+    def connect_with_trace(
+        database: str,
+        *,
+        uri: bool = False,
+        timeout: float = 5.0,
+    ) -> sqlite3.Connection:
+        conn = real_connect(database, uri=uri, timeout=timeout)
         if "mode=ro" in database:
             conn.set_trace_callback(statements.append)
         return conn

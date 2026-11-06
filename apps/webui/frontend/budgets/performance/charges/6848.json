@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 399969,
+  "measured_with_pr": 400108,
+  "sha": "0f7153e680",
+  "date": "Thu 5 Nov 2026",
+  "reason": "PR #6848 lets Cmd K v2 find library playlists and open one as a tree click does (CMDK-6848): the playlist group, its row rendering and the reveal-and-open path in CommandBarV2, command-bar-groups and playlist-reveal. Measured: local vite build of main 0891b4c991 and of 0f7153e680 (that main merged), +139 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; playlist rows reuse the tree reveal rather than adding a second path"
+}

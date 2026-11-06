@@ -32,10 +32,20 @@
 		const columns = 800;
 		lanes = null;
 		failure = null;
+		let cancelled = false;
 		getLanes(jobId, candidateId, columns).then(
-			(body) => (lanes = body),
-			(error: unknown) => (failure = error instanceof Error ? error.message : String(error))
+			(body) => {
+				if (cancelled) return;
+				lanes = body;
+			},
+			(error: unknown) => {
+				if (cancelled) return;
+				failure = error instanceof Error ? error.message : String(error);
+			}
 		);
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	$effect(() => {

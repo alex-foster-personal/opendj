@@ -63,7 +63,7 @@ REAL_SHFMT = _real_pinned_shfmt()
 def no_shfmt_anywhere(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """No shfmt on PATH, an empty install dir, and no network: a real download fails the test."""
     real_which = shutil.which
-    monkeypatch.setattr(format_proof_shell.shutil, "which", lambda name: None if name == "shfmt" else real_which(name))
+    monkeypatch.setattr(format_proof_shell.shutil, "which", lambda name, **kw: None if name == "shfmt" else real_which(name, **kw))
     install_dir = tmp_path / "local-bin"
     monkeypatch.setattr(CFG, "INSTALL_DIR", install_dir)
 

@@ -13,6 +13,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shlex
 import stat
@@ -25,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 SCRIPT = REPO_ROOT / "scripts" / "ci_node_preflight.sh"
 PREFLIGHT = "scripts/ci_node_preflight.sh apps/webui/frontend"
+PREFLIGHT_PY = REPO_ROOT / "scripts" / "ci_node_preflight.py"
 
 #: Linux jobs that run `pnpm install`; macOS packaging is hosted and has no
 #: shared store, and GNU df is not there either.
@@ -173,6 +175,8 @@ def test_a_commented_or_echoed_install_does_not_count() -> None:
 
 STATE = ".pnpm-workspace-state-v1.json"
 TS_STORE = Path(".pnpm") / "typescript@1.0.0" / "node_modules" / "typescript"
+KIT_STORE = Path(".pnpm") / "@sveltejs+kit@1.0.0" / "node_modules" / "@sveltejs" / "kit"
+KIT_LINK_TARGET = "../.pnpm/@sveltejs+kit@1.0.0/node_modules/@sveltejs/kit"
 
 
 def _write_pnpm_stub(path: Path, log: Path, *, mode: str) -> None:
@@ -188,6 +192,9 @@ def _write_pnpm_stub(path: Path, log: Path, *, mode: str) -> None:
         lines += [
             "mkdir -p node_modules/.pnpm/typescript@1.0.0/node_modules/typescript",
             "ln -sfn .pnpm/typescript@1.0.0/node_modules/typescript node_modules/typescript",
+            f'mkdir -p "node_modules/{KIT_STORE.as_posix()}"',
+            "mkdir -p node_modules/@sveltejs",
+            f'ln -sfn "{KIT_LINK_TARGET}" node_modules/@sveltejs/kit',
             "mkdir -p node_modules/.bin",
             "printf '#!/usr/bin/env bash\\nexit 0\\n' > node_modules/.bin/vite",
             "chmod +x node_modules/.bin/vite",
@@ -233,6 +240,11 @@ def _plant_healthy_tree(frontend: Path) -> Path:
     store = nm / TS_STORE
     store.mkdir(parents=True)
     (nm / "typescript").symlink_to(TS_STORE)
+    kit_store = nm / KIT_STORE
+    kit_store.mkdir(parents=True)
+    svelte_scope = nm / "@sveltejs"
+    svelte_scope.mkdir(exist_ok=True)
+    (svelte_scope / "kit").symlink_to(Path(KIT_LINK_TARGET))
     bin_dir = nm / ".bin"
     bin_dir.mkdir()
     vite = bin_dir / "vite"
@@ -289,6 +301,74 @@ def test_dangling_public_link_triggers_repair(tmp_path: Path) -> None:
     assert not (nm / STATE).exists()
     assert marker.exists()
     assert (nm / "typescript").exists()
+
+
+def test_preflight_shell_invokes_python_module() -> None:
+    """P1 ratchet: probe/repair lives in ci_node_preflight.py, not inline bash."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "ci_node_preflight.py" in text
+    assert "_probe_frontend_node_modules" not in text
+    assert "_list_symlinks" not in text
+
+
+def _load_ci_node_preflight():
+    spec = importlib.util.spec_from_file_location("ci_node_preflight", PREFLIGHT_PY)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_scoped_public_target_shape_helpers() -> None:
+    """Scoped links must allow ../.pnpm/... only; unscoped .pnpm/... is poison under @scope."""
+    m = _load_ci_node_preflight()
+    assert m.is_scoped_public_target("../.pnpm/@sveltejs+kit@1.0.0/node_modules/@sveltejs/kit")
+    assert not m.is_scoped_public_target(".pnpm/foo/node_modules/bar")
+    assert not m.is_scoped_public_target("../../quality-gate-base-fake/x")
+
+
+def test_dangling_scoped_public_link_triggers_repair(tmp_path: Path) -> None:
+    """A bad @scope/pkg link alone must trip the probe (typescript and vite can look fine)."""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    marker = nm / ".pnpm" / "keep-me"
+    marker.write_text("stay\n", encoding="utf-8")
+    kit = nm / "@sveltejs" / "kit"
+    kit.unlink()
+    kit.symlink_to("../.pnpm/missing/node_modules/@sveltejs/kit")
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "poisoned link: @sveltejs/kit" in result.stderr
+    assert "repaired frontend node_modules" in result.stdout
+    assert log.exists()
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert not (nm / STATE).exists()
+    assert marker.exists()
+    assert kit.exists()
+
+
+def test_escaped_scoped_public_link_triggers_repair(tmp_path: Path) -> None:
+    """Live target outside ../.pnpm/... is still poison for scoped public links."""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    outside = tmp_path / "quality-gate-base-fake" / "apps" / "webui" / "frontend" / "node_modules" / KIT_STORE
+    outside.mkdir(parents=True)
+    kit = nm / "@sveltejs" / "kit"
+    kit.unlink()
+    kit.symlink_to(os.path.relpath(outside, kit.parent))
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "repaired frontend node_modules" in result.stdout
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert (nm / "@sveltejs" / "kit").exists()
 
 
 def test_escaped_public_link_triggers_repair(tmp_path: Path) -> None:

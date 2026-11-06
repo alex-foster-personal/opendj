@@ -83,6 +83,12 @@ class Pair:
     def renew(self, side: str, now: int) -> None:
         self.flush(side, self.core(side).renew(self.local(side, now)), now)
 
+    def replace_joiner(self, now: int, *, hello: bool = True) -> None:
+        self.joiner = BoothCore("joiner", None, now + self.offset_us)
+        self.joiner.peer_clock.add(now + self.offset_us, now, now + self.offset_us)
+        if hello:
+            self.flush("joiner", Out(ops=[self.joiner.hello()]), now)
+
 
 def last_op(applied: list[dict[str, Any]]) -> dict[str, Any] | None:
     return applied[-1]["op"] if applied else None

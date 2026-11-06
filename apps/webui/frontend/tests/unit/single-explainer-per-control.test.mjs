@@ -279,7 +279,7 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		'lib/components/rb/QualityBadge.svelte#onmouseenter={_requestHover}',
 		'lib/components/rb/browser/TrackTable.svelte#onpointerenter={() => (hoveredApId = row.stable_id)}',
 		'lib/components/rb/mixer/VFader.svelte#rb-fader',
-		'lib/components/rb/wave/WaveTrackSummary.svelte#wave-track-name',
+		'lib/components/rb/wave/WaveTrackSummaryView.svelte#wave-track-name',
 		'lib/components/rb/wave/WaveRow.svelte#rb-waverow',
 		'lib/components/rb/deck/HotCueBank.svelte#cue-col',
 		'lib/components/rb/deck/LoopCluster.svelte#loop-cluster',

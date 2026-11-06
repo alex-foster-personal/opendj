@@ -16,6 +16,7 @@ Cue-array conflicts are handled separately in Plan 3's
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -76,6 +77,94 @@ def _newer(a: datetime | None, b: datetime | None) -> Literal["rb", "djay", "tie
     return "tie"
 
 
+def _is_unrated(value: Any) -> bool:
+    return not bool(value) if value is not None else True
+
+
+def _populated_side(inp: ConflictInput) -> ConflictResolution | None:
+    if _is_empty(inp.rb_value) and not _is_empty(inp.djay_value):
+        return "accept_djay"
+    if _is_empty(inp.djay_value) and not _is_empty(inp.rb_value):
+        return "accept_rb"
+    return None
+
+
+def _rule_equal_values(inp: ConflictInput) -> ConflictResolution | None:
+    if _equal(inp.rb_value, inp.djay_value):
+        return "no_change"
+    return None
+
+
+def _rule_rating_zero_is_unrated(inp: ConflictInput) -> ConflictResolution | None:
+    if inp.field != "rating":
+        return None
+    rb_zero = _is_unrated(inp.rb_value)
+    djay_zero = _is_unrated(inp.djay_value)
+    if rb_zero and not djay_zero:
+        return "accept_djay"
+    if djay_zero and not rb_zero:
+        return "accept_rb"
+    return None
+
+
+def _rule_bpm_empty_side(inp: ConflictInput) -> ConflictResolution | None:
+    if inp.field not in ("bpm", "manual_bpm"):
+        return None
+    return _populated_side(inp)
+
+
+def _rule_generic_empty_side(inp: ConflictInput) -> ConflictResolution | None:
+    return _populated_side(inp)
+
+
+def _rule_prefer_rb(inp: ConflictInput) -> ConflictResolution | None:
+    if inp.prefer != "rb":
+        return None
+    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
+    if side == "djay":
+        return "conflict"
+    return "accept_rb"
+
+
+def _rule_prefer_djay(inp: ConflictInput) -> ConflictResolution | None:
+    if inp.prefer != "djay":
+        return None
+    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
+    if side == "rb":
+        return "conflict"
+    return "accept_djay"
+
+
+def _rule_newest_within_window(inp: ConflictInput) -> ConflictResolution | None:
+    if not _within_window(inp.rb_modified_at, inp.djay_modified_at, inp.newest_window_days):
+        return None
+    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
+    if side == "rb":
+        return "accept_rb"
+    if side == "djay":
+        return "accept_djay"
+    return "conflict"
+
+
+def _rule_rb_canonical_fallback(inp: ConflictInput) -> ConflictResolution:
+    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
+    if side == "djay":
+        return "conflict"
+    return "accept_rb"
+
+
+_CONFLICT_INPUT_RULES: tuple[Callable[[ConflictInput], ConflictResolution | None], ...] = (
+    _rule_equal_values,
+    _rule_rating_zero_is_unrated,
+    _rule_bpm_empty_side,
+    _rule_generic_empty_side,
+    _rule_prefer_rb,
+    _rule_prefer_djay,
+    _rule_newest_within_window,
+    _rule_rb_canonical_fallback,
+)
+
+
 def resolve_conflict(
     field: str,
     rb_value: Any,
@@ -104,50 +193,10 @@ def resolve_conflict_input(inp: ConflictInput) -> ConflictResolution:
     """Resolve using a bundled :class:`ConflictInput` (same rules as
     :func:`resolve_conflict`).
     """
-    if _equal(inp.rb_value, inp.djay_value):
-        return "no_change"
-
-    if inp.field == "rating":
-        rb_zero = not bool(inp.rb_value) if inp.rb_value is not None else True
-        djay_zero = not bool(inp.djay_value) if inp.djay_value is not None else True
-        if rb_zero and not djay_zero:
-            return "accept_djay"
-        if djay_zero and not rb_zero:
-            return "accept_rb"
-
-    if inp.field in ("bpm", "manual_bpm"):
-        if _is_empty(inp.rb_value) and not _is_empty(inp.djay_value):
-            return "accept_djay"
-        if _is_empty(inp.djay_value) and not _is_empty(inp.rb_value):
-            return "accept_rb"
-
-    if _is_empty(inp.rb_value) and not _is_empty(inp.djay_value):
-        return "accept_djay"
-    if _is_empty(inp.djay_value) and not _is_empty(inp.rb_value):
-        return "accept_rb"
-
-    if inp.prefer == "rb":
-        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
-        if side == "djay":
-            return "conflict"
-        return "accept_rb"
-    if inp.prefer == "djay":
-        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
-        if side == "rb":
-            return "conflict"
-        return "accept_djay"
-
-    if _within_window(inp.rb_modified_at, inp.djay_modified_at, inp.newest_window_days):
-        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
-        if side == "rb":
-            return "accept_rb"
-        if side == "djay":
-            return "accept_djay"
-        return "conflict"
-
-    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
-    if side == "djay":
-        return "conflict"
+    for rule in _CONFLICT_INPUT_RULES:
+        decision = rule(inp)
+        if decision is not None:
+            return decision
     return "accept_rb"
 
 

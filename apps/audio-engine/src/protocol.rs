@@ -803,6 +803,7 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
         .iter()
         .enumerate()
         .map(|(i, d)| {
+            let wg = crate::wave_gains::wave_band_gains(s.sample_rate as f64, d.eq, d.filter);
             json!({
                 "deck": i + 1,
                 "loaded": d.loaded,
@@ -827,6 +828,10 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
                 "trim": d.trim,
                 "eq": {"low": d.eq[0], "mid": d.eq[1], "high": d.eq[2]},
                 "filter": d.filter,
+                // Linear gain of each ANLZ waveform band through this strip's
+                // EQ and FILTER (`wave_gains`), so the page can draw the
+                // waveform as the deck sounds.
+                "wave_gains": {"low": wg[0], "mid": wg[1], "high": wg[2]},
                 "fader": d.fader,
                 "assign": d.assign.as_str(),
                 "pitch_range": d.pitch_range,
@@ -1113,6 +1118,34 @@ mod tests {
         }
         let e = cmd(json!({"type": "unload", "deck": 1, "refuseIfMaster": "yes"})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn the_state_feed_carries_each_decks_waveform_band_gains() {
+        let mut s = Snapshot {
+            frame: 0,
+            sample_rate: 48000,
+            decks: Default::default(),
+            crossfader: 0.5,
+            master_volume: 1.0,
+            master_muted: false,
+            master_rms: 0.0,
+        };
+        for d in s.decks.iter_mut() {
+            d.eq = [0.5; 3];
+            d.filter = 0.5;
+        }
+        s.decks[0].eq = [0.0, 0.5, 0.5];
+        let v = state_json(&s, None, 0);
+        let low = v["decks"][0]["wave_gains"]["low"].as_f64().expect("low gain is a number");
+        assert!(low < 0.1, "a low kill reaches the feed: {low}");
+        // Control: the same feed reports a flat deck at unity, so the low
+        // value above is the kill, not a field that always reads small.
+        let flat = &v["decks"][1]["wave_gains"];
+        for band in ["low", "mid", "high"] {
+            let g = flat[band].as_f64().expect("band gain is a number");
+            assert!((g - 1.0).abs() < 1e-9, "flat {band} = {g}");
+        }
     }
 
     #[test]

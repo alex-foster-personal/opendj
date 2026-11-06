@@ -24,7 +24,7 @@ def state_db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         """INSERT INTO tracks
            (stable_id, stable_id_tier, title, artists_json, album, isrc,
             duration_ms, file_path, content_hash, created_at, updated_at)
-           VALUES ('s1', 'isrc', 'Hello', ?, 'A', 'USABC2500001', 200000,
+           VALUES ('s1', 'isrc', 'Title', ?, 'A', 'USABC2500001', 200000,
                    '/x.mp3', NULL, '2026', '2026')""",
         (json.dumps(["Artist"]),),
     )
@@ -40,7 +40,7 @@ def test_run_import_dry_run(tmp_path: Path, state_db_path: Path) -> None:
         meta=make_meta(playlist_id="pl123"),
         items_pages=[
             [
-                make_track(spotify_id="t1", isrc="USABC2500001", name="Hello", artists=["Artist"]),
+                make_track(spotify_id="t1", isrc="USABC2500001", name="Title", artists=["Artist"]),
                 make_track(spotify_id="t2", isrc="ZZ9999", name="Mystery"),
             ]
         ],
@@ -70,7 +70,7 @@ def test_run_import_live_writes_state(tmp_path: Path, state_db_path: Path) -> No
         meta=make_meta(playlist_id="pl123", snapshot_id="snap-1"),
         items_pages=[
             [
-                make_track(spotify_id="t1", isrc="USABC2500001", name="Hello", artists=["Artist"]),
+                make_track(spotify_id="t1", isrc="USABC2500001", name="Title", artists=["Artist"]),
             ]
         ],
     )

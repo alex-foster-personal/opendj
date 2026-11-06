@@ -56,6 +56,7 @@ from functools import cached_property, lru_cache
 from pathlib import Path, PurePosixPath
 
 from scripts.affected_tests import REPO, _imports_of, build_graph, reverse_reach
+from scripts.ci_commented_list import read_commented_list
 
 DURATIONS_NAME = ".test_durations"
 
@@ -97,6 +98,7 @@ GLOBAL_PATTERNS: tuple[tuple[str, str], ...] = (
 BY_NAME_PATTERNS = frozenset({".github/*", "scripts/ci_*"})
 SELECTOR_SOURCES = frozenset(
     {
+        "scripts/ci_commented_list.py",
         "scripts/ci_test_selection.py",
         "scripts/ci_test_selection_rules.py",
         "scripts/affected_tests.py",
@@ -179,6 +181,9 @@ _INDEX_LISTING = "ls-files"
 _PATH_BUILDERS = frozenset({"Path", "PurePath", "PurePosixPath", "join", "joinpath", "dirname"})
 
 
+#: Pure in its arguments, and asked of the same sources again by every change set a caller selects over one
+#: checkout (scripts/ci_main_hourly.py attributes a range commit by commit).
+@lru_cache(maxsize=16384)
 def _uses_root(text: str, roots: tuple[str, ...], here: str | None = None) -> bool:
     """Whether `text` walks one of `roots`, hands it to a call, or binds a name to it.
 
@@ -1715,6 +1720,7 @@ def _select_through_named_helpers(
     )  # fmt: skip
 
 
+@lru_cache(maxsize=16384)  # pure, like _uses_root: one parse per source however many change sets ask
 def _code_of(text: str) -> str:
     """`text` without comments or docstrings, so prose mentioning `.github` is not a walk.
 
@@ -1888,14 +1894,12 @@ def always_run_modules(root: Path) -> list[str]:
     that a narrowed head is otherwise most likely to skip and break main with.
     """
     try:
-        text = (root / ALWAYS_RUN_NAME).read_text(encoding="utf-8")
+        return read_commented_list(root / ALWAYS_RUN_NAME)
     except FileNotFoundError as missing:
         raise FullSuite(
             f"the always-run list `{ALWAYS_RUN_NAME}` is missing, so the whole-tree guards "
             "cannot be added to a selection"
         ) from missing
-    entries = (line.split("#", 1)[0].strip() for line in text.splitlines())
-    return [entry for entry in entries if entry]
 
 
 def _collected_always_run(universe: list[str], root: Path) -> list[str]:
@@ -2032,19 +2036,48 @@ INPUT_PINNED_GUARDS: tuple[InputPinnedGuard, ...] = (
 )
 
 
+#: Registry guards that must classify every module in the tree, ranked at distance 0 when a change ADDS a
+#: `.py` file under these roots (a rename counts: `--no-renames` lists its new path as added). A modified
+#: module is already in both registries; a new one is in neither until someone adds it, and no import
+#: link reaches either guard. Main went red twice on Fri 6 Nov 2026 after #9262 added
+#: apps/analysis/native_tables_sql.py: the sync-drift DDL classification and the derived carry-path list
+#: both missed it, and the PR head ranked both modules at the always-run list's 2 behind the cap.
+NEW_MODULE_ROOTS: tuple[str, ...] = ("apps/", "scripts/")
+NEW_MODULE_REGISTRY_GUARDS: tuple[InputPinnedGuard, ...] = (
+    InputPinnedGuard(
+        "(private path)",
+        "new-module registry guard (sync-drift DDL classification)",
+        prefixes=NEW_MODULE_ROOTS,
+    ),
+    InputPinnedGuard(
+        "tests/scripts/test_ci_plan_carry_paths.py",
+        "new-module registry guard (derived helper_carried_paths)",
+        prefixes=NEW_MODULE_ROOTS,
+    ),
+)
+
+
+def new_module_guards_for(added: list[str]) -> list[InputPinnedGuard]:
+    """The registry guards a set of ADDED paths feeds: any new `.py` file under `NEW_MODULE_ROOTS`."""
+    modules = [path for path in added if path.endswith(".py")]
+    return [guard for guard in NEW_MODULE_REGISTRY_GUARDS if any(guard.fires_for(path) for path in modules)]
+
+
 def input_pinned_guards_for(changed: list[str]) -> list[InputPinnedGuard]:
     """The input-pinned guards a change set feeds."""
     return [guard for guard in INPUT_PINNED_GUARDS if any(guard.fires_for(path) for path in changed)]
 
 
-def _select_input_pinned(changed: list[str], universe: list[str], selection: Selection) -> None:
-    """Rank each guard a change feeds at distance 0.
+def _select_input_pinned(
+    changed: list[str], universe: list[str], selection: Selection, added: list[str] | None = None
+) -> None:
+    """Rank each guard a change feeds at distance 0, the new-module registry guards for `added` paths.
 
     Only a guard the lane collects is pinned, so a synthetic test tree without it pins nothing;
     (private path) holds the real lane to both.
     """
     collected = set(universe)
-    for guard in input_pinned_guards_for(changed):
+    for guard in input_pinned_guards_for(changed) + new_module_guards_for(added or []):
         if guard.module in collected:
             selection.add(guard.module, guard.reason, INPUT_PINNED_DISTANCE)
 
@@ -2059,10 +2092,24 @@ def _demote_weak_links(selection: Selection, policy: Policy) -> None:
         selection.demoted[module] = selection.reasons.pop(module)
 
 
-def select_tests(changed: list[str], ignores: list[str], root: Path = REPO, policy: Policy | None = None) -> Selection:
-    """The test modules a change set reaches, or FullSuite when it cannot be narrowed."""
+def select_tests(
+    changed: list[str],
+    ignores: list[str],
+    root: Path = REPO,
+    policy: Policy | None = None,
+    graph: Graph | None = None,
+    added: list[str] | None = None,
+) -> Selection:
+    """The test modules a change set reaches, or FullSuite when it cannot be narrowed.
+
+    `added` is the subset of `changed` the change adds (`git diff --diff-filter=A`); it pins the
+    new-module registry guards. None is a caller that cannot tell, and pins none of them.
+
+    `graph` is `Graph.load(root)` loaded once by a caller that selects many change sets over one
+    checkout (scripts/ci_main_hourly.py attributes each commit of a range); selection never mutates it.
+    """
     policy = policy or Policy()
-    graph = Graph.load(root)
+    graph = graph or Graph.load(root)
     deleted = deleted_modules(changed, graph, root, policy)
     _refuse_unnarrowable(changed, graph, deleted, policy)
     universe = lane_universe(list(graph.path_of.values()), ignores, root)
@@ -2094,7 +2141,7 @@ def select_tests(changed: list[str], ignores: list[str], root: Path = REPO, poli
         _select_through_named_helpers(changed, couplings, graph, universe, root, selection)
     always_run = _select_always_run(universe, root, selection)
     _select_tree_bookkeeping(changed, always_run, selection)
-    _select_input_pinned(changed, universe, selection)
+    _select_input_pinned(changed, universe, selection, added)
     _demote_weak_links(selection, policy)
     selection.modules = sorted(selection.reasons)
     return selection
@@ -2129,7 +2176,9 @@ def _changed_test_neighbourhoods(changed: list[str], universe: set[str]) -> list
     return sorted(near)
 
 
-def capped_full_selection(changed: list[str], ignores: list[str], root: Path = REPO) -> Selection:
+def capped_full_selection(
+    changed: list[str], ignores: list[str], root: Path = REPO, added: list[str] | None = None
+) -> Selection:
     """The whole lane, ranked for a hard cap, when `select_tests` could not narrow the change.
 
     Only a hard budget calls this: the nightly full suite and the trunk checkpoint still run
@@ -2153,6 +2202,6 @@ def capped_full_selection(changed: list[str], ignores: list[str], root: Path = R
     for module in always_run:
         selection.add(module, "capped full suite: whole-tree guard", CAPPED_GUARD_DISTANCE)
     _select_tree_bookkeeping(changed, always_run, selection)
-    _select_input_pinned(changed, universe, selection)
+    _select_input_pinned(changed, universe, selection, added)
     selection.modules = sorted(selection.reasons)
     return selection

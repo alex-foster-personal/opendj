@@ -319,6 +319,10 @@ def maybe_send_sentry(
         return None
     if "sentry_sdk" not in sys.modules:
         return None
+    from apps.shared.telemetry.sqlite_busy import is_local_only_sqlite_busy
+
+    if is_local_only_sqlite_busy(message=event.message):
+        return None
     try:
         import sentry_sdk
 

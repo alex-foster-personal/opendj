@@ -208,7 +208,10 @@ export function cmdkWireId(
 	entry:
 		| { kind: 'track'; row: { stable_id: string }; pair?: { aligned: boolean; basis?: string | undefined } | undefined }
 		| { kind: 'action'; action: { id: string; value?: unknown; next?: unknown; command?: unknown } }
+		| { kind: 'list'; list: { playlist_id: number | string } }
 ): string {
+	// A playlist row is named by its playlist id, the same id the snapshot reports for it (CMDK-6848).
+	if (entry.kind === 'list') return String(entry.list.playlist_id);
 	if (entry.kind === 'action') {
 		const { id, value, next, command } = entry.action;
 		// A setting's id carries the value it shows and the value Enter writes, so a pick read before either moved is

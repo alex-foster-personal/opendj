@@ -143,15 +143,20 @@ def load(conn: sqlite3.Connection) -> Groups:
     """
     keyed = _tracks_token(conn)
     if keyed is not None:
+        # Hold the lock across miss + build + store. A plain check-then-act outside
+        # the lock let two concurrent loaders both build, store different Group
+        # graphs (stable_id iteration order), and race the cache -- downstream
+        # readers (e.g. FTS index rebuild) then saw nondeterministic snippets.
         with _cache_lock:
             hit = _cache.get(keyed[0])
-        if hit is not None and hit[0] == keyed[1]:
-            return hit[1]
-    groups = build(conn.execute("SELECT stable_id, title, artists_json FROM tracks WHERE deleted_at IS NULL"))
-    if keyed is not None:
-        with _cache_lock:
+            if hit is not None and hit[0] == keyed[1]:
+                return hit[1]
+            groups = build(
+                conn.execute("SELECT stable_id, title, artists_json FROM tracks WHERE deleted_at IS NULL")
+            )
             _cache[keyed[0]] = (keyed[1], groups)
-    return groups
+            return groups
+    return build(conn.execute("SELECT stable_id, title, artists_json FROM tracks WHERE deleted_at IS NULL"))
 
 
 def begin_write(conn: sqlite3.Connection) -> bool:

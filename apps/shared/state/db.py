@@ -292,7 +292,12 @@ def write_unit(
     ROLLBACK would mask the original error.
     """
     owned = not conn.in_transaction
-    conn.execute("BEGIN IMMEDIATE" if owned else f"SAVEPOINT {savepoint}")
+    try:
+        conn.execute("BEGIN IMMEDIATE" if owned else f"SAVEPOINT {savepoint}")
+    except sqlite3.OperationalError as exc:
+        if is_sqlite_busy(exc):
+            raise StateStoreBusyError(str(exc)) from exc
+        raise
     try:
         yield conn
     except BaseException:

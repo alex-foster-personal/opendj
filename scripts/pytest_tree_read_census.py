@@ -798,6 +798,22 @@ def _names_a_git_location(name: str) -> bool:
     return name.upper() in GIT_LOCATION_ENV or name.upper().startswith("GIT_CONFIG")
 
 
+def _child_env_overrides_git_location(
+    child: Mapping[str | bytes, str | bytes],
+    inherited: Mapping[str | bytes, str | bytes],
+) -> bool:
+    """True when the child env sets git location beyond inherited values (agent shells inject `GIT_CONFIG_*`)."""
+    for name, value in child.items():
+        if not _names_a_git_location(os.fsdecode(name)):
+            continue
+        inherited_value = inherited.get(name)
+        if inherited_value is None:
+            return True
+        if os.fsdecode(value) != os.fsdecode(inherited_value):
+            return True
+    return False
+
+
 def _argv_as_run(executable: object, argv: list[str]) -> list[str]:
     """The argv with the file actually run in place of argv[0]: `Popen(["scan.sh"], executable="/x/scan.sh")`
     and `os.execv("/x/scan.sh", ["scan.sh"])` run /x/scan.sh, whatever a lookup of argv[0] would find."""
@@ -837,7 +853,7 @@ def directories_listed(event: str, args: tuple[Any, ...]) -> list[str]:
         return []
     _refuse_a_reader_it_does_not_place(argv)
     subdirectory = _ls_files_subdirectory(argv)
-    if subdirectory is not None and any(_names_a_git_location(os.fsdecode(name)) for name in env):
+    if subdirectory is not None and _child_env_overrides_git_location(env, os.environ):
         raise RuntimeError(f"the tree-read census cannot place `{shlex.join(argv)}`: git's location is in its env")
     directory = None if subdirectory is None else tree_directory(os.path.join(start, subdirectory))
     where = os.path.join(start, subdirectory or "")

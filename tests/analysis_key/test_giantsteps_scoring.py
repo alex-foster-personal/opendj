@@ -13,23 +13,52 @@ bars must turn that match into a miss.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
+from apps.analysis_key import canon, segments
 from apps.analysis_key.giantsteps_scoring import (
     BarGrid,
     bar_duration_at,
     bar_position_at,
+    boundary_within_seconds,
     boundary_within_tolerance,
+    score_seconds_track,
+    score_segment_block,
     score_track,
 )
 
 BAR_S = 2.0  # 120 BPM, 4/4: one bar every 2 seconds.
+
+C_MAJOR = canon.Key(0, False)
+F_SHARP_MAJOR = canon.Key(6, False)
 
 
 def _grid(n_bars: int, bar_s: float = BAR_S) -> BarGrid:
     starts = tuple(i * bar_s for i in range(n_bars))
     ends = tuple((i + 1) * bar_s for i in range(n_bars))
     return BarGrid(starts=starts, ends=ends)
+
+
+def _triad(key: canon.Key):
+    third = 3 if key.is_minor else 4
+    vector = np.zeros(12)
+    for interval in (0, third, 7):
+        vector[(key.pitch_class + interval) % 12] = 1.0
+    return vector / np.linalg.norm(vector)
+
+
+def _bar_chroma(keys: list[canon.Key], *, seed: int = 7):
+    rng = np.random.default_rng(seed)
+    columns = []
+    for key in keys:
+        column = np.clip(_triad(key) + rng.uniform(0.0, 0.05, 12), 0.0, None)
+        columns.append(column)
+    return np.stack(columns, axis=1)
+
+
+def _keys(*blocks: tuple[canon.Key, int]) -> list[canon.Key]:
+    return [key for key, n in blocks for _ in range(n)]
 
 
 def test_bar_duration_at_reads_the_covering_bar() -> None:
@@ -58,6 +87,27 @@ def test_a_boundary_exactly_one_bar_away_still_matches() -> None:
     assert boundary_within_tolerance(18.0, 20.0, grid, tolerance_bars=1.0) is True
 
 
+def test_boundary_within_seconds_counts_inside_window_and_exact_edge() -> None:
+    assert boundary_within_seconds(10.0, 12.0, tolerance_s=3.0) is True
+    assert boundary_within_seconds(10.0, 13.0, tolerance_s=3.0) is True
+
+
+def test_boundary_within_seconds_rejects_outside_window() -> None:
+    assert boundary_within_seconds(10.0, 14.0, tolerance_s=3.0) is False
+
+
+def test_score_seconds_track_counts_hit_and_miss() -> None:
+    hit = score_seconds_track([10.0], [12.0], tolerance_s=3.0)
+    assert hit.n_hits == 1
+    assert hit.n_misses == 0
+    assert hit.hit_rate == pytest.approx(1.0)
+
+    miss = score_seconds_track([10.0], [20.0], tolerance_s=3.0)
+    assert miss.n_hits == 0
+    assert miss.n_misses == 1
+    assert miss.hit_rate == pytest.approx(0.0)
+
+
 # -----------------------------------------------------------------------------
 # the mandated mutation: shift the annotation by 2 bars and it must go red
 # -----------------------------------------------------------------------------
@@ -77,6 +127,37 @@ def test_shifting_the_annotation_by_two_bars_turns_a_match_into_a_miss() -> None
 
     assert boundary_within_tolerance(detected, true_annotation, grid) is True
     assert boundary_within_tolerance(detected, corrupted_annotation, grid) is False
+
+
+def test_score_segment_block_transposition_hit_within_one_bar() -> None:
+    grid = _grid(32)
+    chroma = _bar_chroma(_keys((C_MAJOR, 16), (F_SHARP_MAJOR, 16)))
+    block = segments.segment_bars(chroma, grid, duration_s=64.0)
+    score = score_segment_block(block, [32.0], grid)
+    assert score.n_detected == 1
+    assert score.n_annotated == 1
+    assert score.n_matched == 1
+    assert score.f_measure == pytest.approx(1.0)
+
+
+def test_score_segment_block_two_bar_shift_is_miss() -> None:
+    grid = _grid(32)
+    chroma = _bar_chroma(_keys((C_MAJOR, 16), (F_SHARP_MAJOR, 16)))
+    block = segments.segment_bars(chroma, grid, duration_s=64.0)
+    score = score_segment_block(block, [36.0], grid)
+    assert score.n_matched == 0
+
+
+def test_score_segment_block_failed_has_zero_detections() -> None:
+    grid = _grid(4)
+    failed = segments.segment_bars(
+        _bar_chroma(_keys((C_MAJOR, 4))), grid, duration_s=8.0
+    )
+    assert failed.status == "failed"
+    score = score_segment_block(failed, [4.0], grid)
+    assert score.n_detected == 0
+    assert score.n_annotated == 1
+    assert score.n_matched == 0
 
 
 def test_score_track_mutation_two_bar_shift_drops_f_measure_to_zero() -> None:

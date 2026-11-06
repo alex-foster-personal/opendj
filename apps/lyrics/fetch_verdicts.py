@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from apps.lyrics.json_parse import non_empty_string
+from apps.lyrics.json_parse import (
+    non_empty_string,
+    require_object,
+    require_schema,
+    write_json_compact_atomically,
+)
 from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 FETCH_VERDICT_SCHEMA = 1
@@ -64,18 +67,7 @@ def write_verdict(data_dir: Path, verdict: FetchVerdict) -> None:
         "language_iso3": verdict.language_iso3,
         "recorded_at": verdict.recorded_at,
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, delete=False
-    ) as temporary:
-        json.dump(payload, temporary, ensure_ascii=False, separators=(",", ":"))
-        temporary.write("\n")
-        temporary_path = Path(temporary.name)
-    try:
-        os.replace(temporary_path, path)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    write_json_compact_atomically(path, payload)
 
 
 def is_terminal_fresh(verdict: FetchVerdict, current_vocals_sha256: str | None) -> bool:
@@ -92,33 +84,31 @@ def utc_now_iso() -> str:
 
 
 def _parse(value: Any, path: Path) -> FetchVerdict:
-    if not isinstance(value, dict):
-        raise TypeError(f"lyrics-fetch entry {path} must be a JSON object")
-    if value.get("schema") != FETCH_VERDICT_SCHEMA:
-        raise ValueError(f"lyrics-fetch entry {path} has unsupported schema")
     label = "lyrics-fetch entry"
-    stable_id = non_empty_string(value, "stable_id", path, entry_label=label)
-    outcome = value.get("outcome")
+    entry = require_object(value, path, entry_label=label)
+    require_schema(entry, path, FETCH_VERDICT_SCHEMA, entry_label=label)
+    stable_id = non_empty_string(entry, "stable_id", path, entry_label=label)
+    outcome = entry.get("outcome")
     if outcome not in ("cached", "instrumental", "no_source"):
         raise ValueError(f"lyrics-fetch entry {path} has invalid outcome")
-    source = value.get("source")
+    source = entry.get("source")
     if source is not None and source not in ("lrclib", "asr"):
         raise ValueError(f"lyrics-fetch entry {path} has invalid source")
-    vocals_sha256 = value.get("vocals_sha256")
+    vocals_sha256 = entry.get("vocals_sha256")
     if vocals_sha256 is not None and (
         not isinstance(vocals_sha256, str) or len(vocals_sha256) != 64
     ):
         raise ValueError(f"lyrics-fetch entry {path} has invalid vocals_sha256")
-    hub_code = value.get("hub_code")
+    hub_code = entry.get("hub_code")
     if hub_code is not None and not isinstance(hub_code, str):
         raise ValueError(f"lyrics-fetch entry {path} has invalid hub_code")
-    hub_message = value.get("hub_message")
+    hub_message = entry.get("hub_message")
     if hub_message is not None and not isinstance(hub_message, str):
         raise ValueError(f"lyrics-fetch entry {path} has invalid hub_message")
-    language_iso3 = value.get("language_iso3")
+    language_iso3 = entry.get("language_iso3")
     if language_iso3 is not None and not isinstance(language_iso3, str):
         raise ValueError(f"lyrics-fetch entry {path} has invalid language_iso3")
-    recorded_at = non_empty_string(value, "recorded_at", path, entry_label=label)
+    recorded_at = non_empty_string(entry, "recorded_at", path, entry_label=label)
     return FetchVerdict(
         stable_id=stable_id,
         outcome=outcome,

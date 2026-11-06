@@ -234,12 +234,16 @@ test('the heap row says the heap is in the measured page process when one is lis
 	const heap = (input) => model.breakdownLines({ ...base, ...input }).find((l) => l.key === 'heap');
 
 	// WKWebView: no performance.memory, page process measured
-	const wk = heap({ jsHeapMB: null, processes: snapshot('webkit-webcontent') });
+	const wk = heap({ jsHeapMB: null, processes: snapshot('webkit-webcontent'), shellKind: 'tauri' });
 	assert.equal(wk.value, 'in page process');
 	assert.match(wk.title, /inside the measured page process \(opendj-webcontent\), which the compact meter counts/);
 	assert.doesNotMatch(wk.title, /decoded PCM only/);
 	// Electron: heap readable, page process measured
-	const el = heap({ jsHeapMB: 268, processes: snapshot('electron-renderer') });
+	const el = heap({
+		jsHeapMB: 268,
+		processes: snapshot('electron-renderer'),
+		shellKind: 'electron'
+	});
 	assert.equal(el.value, '268 MB');
 	assert.match(el.title, /counts it once/);
 	// controls: no page process (browser, or no report) keeps the old copy
@@ -251,5 +255,18 @@ test('the heap row says the heap is in the measured page process when one is lis
 	// and an unmeasured page process does not count as measured
 	const unmeasured = snapshot('webkit-webcontent');
 	unmeasured.members[1].mb = null;
-	assert.equal(heap({ jsHeapMB: null, processes: unmeasured }).value, 'unavailable');
+	assert.equal(
+		heap({ jsHeapMB: null, processes: unmeasured, shellKind: 'tauri' }).value,
+		'unavailable'
+	);
+	// shared-engine browser tab: the desktop renderer is in the family, this
+	// page is not that renderer, so the heap row stays the in-page reading
+	const shared = heap({
+		jsHeapMB: 268,
+		processes: snapshot('electron-renderer'),
+		shellKind: null
+	});
+	assert.equal(shared.value, '268 MB');
+	assert.doesNotMatch(shared.title, /counts it once/);
+	assert.doesNotMatch(shared.title, /page process/);
 });

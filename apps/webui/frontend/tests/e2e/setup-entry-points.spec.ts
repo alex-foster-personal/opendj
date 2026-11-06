@@ -200,7 +200,6 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 
 test.describe('setup entry points', () => {
 	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
-		test.fixme(true, 'af--set-rc: cancelled boot fetches are logged as console errors when the test leaves /performance mid-boot, see #8817');
 		// The root suite shares one engine across specs, and every /performance
 		// load auto-restores the engine's newest rescue snapshot. An earlier
 		// spec's loaded decks were restored into this page, which then asked

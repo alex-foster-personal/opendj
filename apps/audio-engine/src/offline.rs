@@ -1074,6 +1074,7 @@ mod tests {
         cache.load(&a, &spec).unwrap();
         assert_eq!(cache.files.lock().unwrap().len(), 2, "a file a deck holds was forgotten");
         drop(held_b);
+        tmp.close().unwrap();
     }
 
     #[cfg(unix)]
@@ -1117,6 +1118,7 @@ mod tests {
         assert!(second.pcm[..] != first.pcm[..], "the cache handed out the old samples");
         // `first` still lives, so this is a Weak-upgrade miss, not a prune.
         assert!(Arc::strong_count(&first.pcm) > 0);
+        tmp.close().unwrap();
     }
 
     #[cfg(unix)]
@@ -1169,6 +1171,7 @@ mod tests {
             assert!(Arc::ptr_eq(&first.pcm, &a.pcm), "{name}: a.wav was decoded again");
             assert_eq!(load("cur.wav").pcm[0], 0.5, "{name}: the repointed path was handed the old samples");
         }
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -1203,6 +1206,7 @@ mod tests {
         assert!(old.upgrade().is_none());
         let fresh = cache.load_progressive(&p, &spec, 43, 1000, |_| {}).unwrap();
         assert!(fresh.pcm[..] == pcm[..] && new_id == 42);
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -1228,6 +1232,7 @@ mod tests {
         let (first, second) = (load(&spec, u64::MAX).unwrap(), load(&spec, u64::MAX).unwrap());
         assert!(Arc::ptr_eq(&first.pcm, &second.pcm), "the second load was not a cache hit");
         assert_eq!((first.source.as_ref(), second.source.as_ref()), (Some(&id), Some(&id)));
+        tmp.close().unwrap();
     }
 
     #[test]

@@ -4,6 +4,10 @@ Snapshot ``psutil.Process().children(recursive=True)`` at session start and
 compare at session finish. Survivors whose ``(pid, create_time)`` was not in
 the baseline are leaks unless their cmdline matches a known helper bootstrap.
 
+Under pytest-xdist, workers place leak descriptions on ``workeroutput``; the
+controller aggregates them and fails the session without treating worker
+processes as controller leaks.
+
 Exempt cmdline substrings (helpers that outlive the test that started them):
 
 - ``from multiprocessing.resource_tracker import main``
@@ -34,6 +38,7 @@ _EXEMPT_SUBSTRINGS: tuple[str, ...] = (
 
 _BASELINE_KEY = pytest.StashKey[dict[tuple[int, float], tuple[str, ...]] | None]()
 _UNAVAILABLE_KEY = pytest.StashKey[bool]()
+_WORKER_LEAKS_KEY = pytest.StashKey[list[str]]()
 
 
 # ---------------------------------------------------------------- helpers
@@ -129,6 +134,32 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         session.config.stash[_UNAVAILABLE_KEY] = False
 
 
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node: object, error: object) -> None:
+    """xdist controller: stash worker-reported leaks when a worker node finishes."""
+    output = getattr(node, "workeroutput", None)
+    if not isinstance(output, dict):
+        return
+    raw = output.get("process_leaks")
+    if not raw:
+        return
+    workerinput = getattr(node, "workerinput", None)
+    if isinstance(workerinput, dict):
+        worker_id = str(workerinput.get("workerid", "?"))
+    else:
+        gw = getattr(node, "gateway", None)
+        worker_id = str(getattr(gw, "id", None) or "?")
+    cfg = getattr(node, "config", None)
+    if cfg is None:
+        return
+    bucket = cfg.stash.get(_WORKER_LEAKS_KEY, None)
+    if bucket is None:
+        bucket = []
+        cfg.stash[_WORKER_LEAKS_KEY] = bucket
+    for desc in raw:
+        bucket.append(f"{worker_id} {desc}")
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if session.config.stash.get(_UNAVAILABLE_KEY, False):
@@ -136,9 +167,23 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     baseline = session.config.stash.get(_BASELINE_KEY, None)
     if baseline is None:
         return
-    if session.config.pluginmanager.get_plugin("dsession") is not None and not hasattr(session.config, "workerinput"):
+    dsession = session.config.pluginmanager.get_plugin("dsession")
+    is_controller = dsession is not None and not hasattr(session.config, "workerinput")
+    if is_controller:
+        worker_leaks = session.config.stash.get(_WORKER_LEAKS_KEY, [])
+        if not worker_leaks:
+            return
+        write = _line_writer(session.config)
+        write(f"[process-leaks] FAIL: {len(worker_leaks)} leaked child process(es) from worker(s):")
+        for leak in worker_leaks:
+            write(f"  {leak}")
+        if session.exitstatus == pytest.ExitCode.OK:
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
         return
     leaks = leaked_processes(baseline)
+    workeroutput = getattr(session.config, "workeroutput", None)
+    if isinstance(workeroutput, dict) and leaks:
+        workeroutput["process_leaks"] = list(leaks)
     if not leaks:
         return
     write = _line_writer(session.config)

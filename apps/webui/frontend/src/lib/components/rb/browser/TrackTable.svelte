@@ -82,6 +82,7 @@
 		columnExplainer,
 		displayKey,
 		formatKey,
+		formatTagsCell,
 		LastPlayedCell,
 		loadBpmKeyEditPopover,
 		formatDraftBpm,
@@ -105,13 +106,14 @@
 		type CompatibleKeyShift,
 		animateSectionToggle,
 		draggedDeckRows,
-		dropTargetAt,
-		gapFromPointer,
 		rowWindow,
 		slotCountOf,
 		slotOfRow,
+		trackDropGapFromPointer,
+		trackDropGapTransform,
 		type EntriesMove,
 		type SectionHeader,
+		type TrackDropGap,
 		OPTIONAL_COLUMNS as OPTIONAL_COLUMN_IDS,
 		OPTIONAL_COLUMN_LABELS,
 		VersionStackPanel,
@@ -134,6 +136,7 @@
 		yearOf,
 		type OptionalColumn
 	} from './track-table-support';
+	import { tagsCellFor } from '$lib/rb/library-tags.svelte';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
 	import { audioQualityHover, ensureLibraryScans, setGridFlagDismissed } from '$lib/rb/library-scans';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
@@ -159,8 +162,8 @@
 	} from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
+	import { collapseDuration } from '$lib/motion/collapse';
 	import TrackSectionRow from './TrackSectionRow.svelte';
-	import { dropLineTop } from '$lib/library/entries-move-local';
 	import {
 		computeVirtualWindow,
 		createRowVisibilityObserver,
@@ -191,9 +194,10 @@
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
+	import { ANALYSIS_COLORS } from '$lib/rb/analysis-kinds';
 	import {
-		ANALYSIS_COLORS,
 		jobProgress,
+		jobRowStyleVars,
 		type AnalysisBadge,
 		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
@@ -664,8 +668,7 @@
 	function _jobRowStyle(stableId: string): string | undefined {
 		const job = jobProgress.activeFor(stableId);
 		if (job === null) return undefined;
-		const pct = Math.max(0.02, Math.min(1, job.progress)) * 100;
-		return `--job-color:${ANALYSIS_COLORS[job.kind]}; --job-pct:${pct}%`;
+		return jobRowStyleVars(job);
 	}
 
 	let {
@@ -1843,19 +1846,24 @@
 
 	// ----------------------------------------- drag to move (native DnD)
 	// A drag lifts a block of lines. While it hovers, the lines from the gap down
-	// shift one slot with transform only (LIBUX-53, #7605), so no row re-lays-out
-	// on a frame. dropTargetAt names what the drop lands above, from the same slot
-	// numbers the gap is drawn from.
+	// shift by the selected block height with transform only (LIBUX-53, #7605),
+	// so no row re-lays-out on a frame. The gap stores the drop target computed
+	// from the same slot, so preview and drop cannot diverge.
 	let dragBlock = $state<{ item_ids: string[]; section_ids: string[] } | null>(null);
-	let dropGap = $state<number | null>(null);
+	let dropGap = $state<TrackDropGap | null>(null);
+	/** Keep the last gap's policy while its transform animates closed. */
+	let gapMotionRows = $state(1);
 	let tbodyEl = $state<HTMLTableSectionElement | null>(null);
-	/** REORDER-ROW-02: the tbody's top inside the scroll container, read on each
-	 * dragover, so the insertion line is drawn in the slot coordinates the gap is. */
-	let dropBodyTop = $state(0);
 	const draggedItems = $derived(new Set(dragBlock?.item_ids ?? []));
 
 	function _slotShift(slot: number): string | undefined {
-		return dropGap !== null && slot >= dropGap ? `translateY(${rowHeight}px)` : undefined;
+		return dropGap === null ? undefined : trackDropGapTransform(slot, dropGap);
+	}
+
+	function _dragGapCount(block: { item_ids: string[]; section_ids: string[] }): number {
+		// Section-title dragging remains a one-slot preview until #7603 defines
+		// its block semantics. Track drags open one slot per selected membership.
+		return block.section_ids.length > 0 ? 1 : block.item_ids.length;
 	}
 
 	function _rowBlock(row: BrowserRow): { item_ids: string[]; section_ids: string[] } | null {
@@ -1892,9 +1900,16 @@
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 		const bodyTop = tbodyEl.getBoundingClientRect().top;
-		const y = event.clientY - bodyTop;
-		dropGap = gapFromPointer(y, rowHeight, slotCount);
-		if (wrapEl !== null) dropBodyTop = bodyTop - wrapEl.getBoundingClientRect().top + wrapEl.scrollTop;
+		const draggedTrackCount = _dragGapCount(dragBlock);
+		gapMotionRows = draggedTrackCount;
+		dropGap = trackDropGapFromPointer({
+			pointerY: event.clientY - bodyTop,
+			rowHeight,
+			slotCount,
+			headers: sectionHeaders,
+			rows,
+			draggedTrackCount
+		});
 	}
 
 	function onBodyDragLeave(event: DragEvent): void {
@@ -1915,7 +1930,7 @@
 		_endEntriesDrag();
 		if (block === null || gap === null) return;
 		event.preventDefault();
-		onmoveentries?.({ ...block, ...dropTargetAt(gap, sectionHeaders, rows) });
+		onmoveentries?.({ ...block, ...gap.target });
 	}
 
 	async function toggleSection(header: SectionHeader): Promise<void> {
@@ -2347,6 +2362,7 @@
 	{/if}
 	<div
 		class="table-wrap"
+		style:--tt-gap-ms={`${collapseDuration(gapMotionRows, false)}ms`}
 		bind:this={wrapEl}
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
@@ -3000,7 +3016,7 @@
 										src={_retrySrc(artworkUrl(row.stable_id, 's'), row.stable_id)}
 										alt=""
 										loading="lazy"
-										data-expected-resource-error
+										data-expected-resource-error="artwork-404"
 										onload={(e) => _onArtworkLoad(e, row.stable_id)}
 										onerror={() => _onArtworkError(row.stable_id)}
 									/>
@@ -3198,6 +3214,7 @@
 						<td class="c-quality">
 							<QualityBadge
 								quality={row.quality}
+								trackKey={row.stable_id}
 								compact
 								showContainer={false}
 								loadHover={row.quality?.grade?.letter ? () => audioQualityHover(row.stable_id, JSON.stringify(row.quality?.grade)) : undefined}
@@ -3250,7 +3267,9 @@
 							<StemTags stems={row.stems} />
 							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
-						<td class="c-tags"><TagCell stableId={row.stable_id} {selectedIds} /></td>
+						<td class="c-tags">
+							<span class="tags-cell-text">{formatTagsCell(tagsCellFor(row.stable_id))}</span>
+						</td>
 						{#each typeCols as col (col.id)}
 							<td class="c-tagtype">
 								<TagCell stableId={row.stable_id} {selectedIds} typeId={col.id} />
@@ -3276,16 +3295,6 @@
 				{/if}
 			</tbody>
 		</table>
-		{#if dropGap !== null}
-			<div
-				class="tt-drop-line"
-				data-testid="tt-drop-line"
-				data-gap={dropGap}
-				aria-hidden="true"
-				style:top={`${dropLineTop(dropGap, rowHeight, dropBodyTop)}px`}
-				style:left={`${liveScrollLeft}px`}
-			></div>
-		{/if}
 		{#if stackOpenId !== null && stackOpenIndex >= 0}
 			<VersionStackPanel
 				stableId={stackOpenId}
@@ -3703,25 +3712,14 @@
 	tbody tr.tt-dragged {
 		opacity: 0.4;
 	}
-	/* REORDER-ROW-02: where a drag-move will land, centred in the open gap.
-	 * Height matches DROP_LINE_PX (entries-move-local.ts). */
-	.tt-drop-line {
-		position: absolute;
-		width: 100%;
-		height: 3px;
-		background: var(--rb-accent);
-		border-radius: 1.5px;
-		pointer-events: none;
-		z-index: 6;
-	}
 	/* The animated gap of a drag (#7605). Transform only, and it is the row's one
 	 * transition, so nothing re-lays-out while the pointer moves. */
-	tbody tr:not(.rb-row-job) {
-		transition: transform 100ms ease-out;
+	tbody tr[data-testid='track-row'] {
+		transition: transform var(--tt-gap-ms) ease-out;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		tbody tr:not(.rb-row-job) {
-			transition: none;
+		.table-wrap {
+			--tt-gap-ms: 0ms !important;
 		}
 	}
 	tbody tr {
@@ -5034,6 +5032,13 @@
 	}
 	table.hide-genre :is(th.h-genre, td.c-genre) {
 		display: none;
+	}
+	.tags-cell-text {
+		display: block;
+		font-style: italic;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	table.hide-tags :is(th.h-tags, td.c-tags) {
 		display: none;

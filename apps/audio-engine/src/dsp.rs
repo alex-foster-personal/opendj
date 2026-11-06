@@ -86,6 +86,26 @@ impl Coeffs {
         )
     }
 
+    /// Frequency response H(e^jw) at `f` Hz as (re, im), evaluated directly
+    /// from the coefficients. Callers that need a parallel sum of filters
+    /// (the FILTER knob's dry/lowpass/highpass mix) add these before taking
+    /// the magnitude, so phase is accounted for.
+    pub fn response(&self, sr: f64, f: f64) -> (f64, f64) {
+        let w = 2.0 * std::f64::consts::PI * f / sr;
+        let (s1, c1) = w.sin_cos();
+        let (s2, c2) = (2.0 * w).sin_cos();
+        let (nr, ni) = (self.b0 + self.b1 * c1 + self.b2 * c2, -(self.b1 * s1 + self.b2 * s2));
+        let (dr, di) = (1.0 + self.a1 * c1 + self.a2 * c2, -(self.a1 * s1 + self.a2 * s2));
+        let den = dr * dr + di * di;
+        ((nr * dr + ni * di) / den, (ni * dr - nr * di) / den)
+    }
+
+    /// |H(e^jw)| at `f` Hz.
+    pub fn magnitude_at(&self, sr: f64, f: f64) -> f64 {
+        let (re, im) = self.response(sr, f);
+        re.hypot(im)
+    }
+
     /// All-stop: nothing passes.
     pub const ZERO: Coeffs = Coeffs { b0: 0.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
 
@@ -282,15 +302,7 @@ mod tests {
     use super::*;
 
     fn gain_at(c: Coeffs, sr: f64, f: f64) -> f64 {
-        // |H(e^jw)| evaluated directly from the coefficients.
-        let w = 2.0 * std::f64::consts::PI * f / sr;
-        let (s1, c1) = w.sin_cos();
-        let (s2, c2) = (2.0 * w).sin_cos();
-        let nr = c.b0 + c.b1 * c1 + c.b2 * c2;
-        let ni = -(c.b1 * s1 + c.b2 * s2);
-        let dr = 1.0 + c.a1 * c1 + c.a2 * c2;
-        let di = -(c.a1 * s1 + c.a2 * s2);
-        ((nr * nr + ni * ni) / (dr * dr + di * di)).sqrt()
+        c.magnitude_at(sr, f)
     }
 
     fn db(x: f64) -> f64 {

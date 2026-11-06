@@ -12,17 +12,68 @@ OTHER shell's cluster (Codex P1/BLOCKING, #705, resolve_role.py:98).
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
+from apps.shared import machine_pressure
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.diagnostics.probe_process_family import (
     ProcessRow,
     associate_process_family,
-    opendj_process_name,
 )
+from scripts.diagnostics.process_family_rule import (
+    ANALYSIS_LANE_ROLE,
+    ELECTRON_GPU_ROLE,
+    ELECTRON_RENDERER_ROLE,
+    ELECTRON_UTILITY_ROLE,
+    FFMPEG_ROLE,
+    NAMED_CHILD_ROLES,
+    PROCESS_ROLES,
+    associate_family,
+    named_child_role,
+    opendj_process_name,
+    process_role,
+)
+from scripts.perf.resolve_role import PROFILABLE_ROLES
+
+_APP = "/Applications/Open DJ.app"
+_ELECTRON_RENDERER_CMD = (
+    f"{_APP}/Contents/Frameworks/Open DJ Helper (Renderer).app/Contents/MacOS/Open DJ Helper (Renderer) --type=renderer"
+)
+_ELECTRON_GPU_CMD = (
+    f"{_APP}/Contents/Frameworks/Open DJ Helper (GPU).app/Contents/MacOS/Open DJ Helper (GPU) --type=gpu-process"
+)
+_ELECTRON_PLUGIN_CMD = (
+    f"{_APP}/Contents/Frameworks/Open DJ Helper (Plugin).app/Contents/MacOS/Open DJ Helper (Plugin) --type=ppapi"
+)
+_ELECTRON_UTILITY_CMD = (
+    f"{_APP}/Contents/Frameworks/Open DJ Helper.app/Contents/MacOS/"
+    "Open DJ Helper --type=utility --utility-sub-type=network.mojom.NetworkService"
+)
+_LANE_BUILD_GPU_CMD = (
+    "/Applications/Open DJ (B).app/Contents/Frameworks/Open DJ (B) Helper (GPU).app/Contents/MacOS/"
+    "Open DJ (B) Helper (GPU) --type=gpu-process"
+)
+_CLAUDE_RENDERER = (
+    "/Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/"
+    "Claude Helper (Renderer) --type=renderer"
+)
+_FFMPEG_HOMEWRAPPED = (
+    "/opt/homebrew/bin/ffmpeg -nostdin -hide_banner -v error -i /Music/Agent Orange.mp3 -map 0:a:0 -f f32le -"
+)
+_FFMPEG_TASKPOLICY = (
+    "/usr/sbin/taskpolicy -b /Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -"
+)
+_FFMPEG_BUNDLED = "/Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -"
+_LANE_QUEUE_CLI = (
+    "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
+    "-m apps.analysis.queue_cli --db /d/state.db --json run --batch-id 7 --backend essentia"
+)
+_LANE_RUN = "python3 -u -m apps.analysis.run --backend b --workers 4"
+_LANE_BACKFILL = "python3 -m apps.webui.server.backfill_drain_job --db /d/state.db"
 
 SHELL_CMD = "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
 WEBCONTENT_CMD = (
@@ -242,6 +293,127 @@ def test_associate_still_includes_unnamed_webkit_members() -> None:
     assert all(opendj_process_name(command) == "unnamed" for command in commands)
 
 
+@pytest.mark.requirement("PERFMODE-05")
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (_ELECTRON_RENDERER_CMD, ELECTRON_RENDERER_ROLE),
+        (_ELECTRON_GPU_CMD, ELECTRON_GPU_ROLE),
+        (_ELECTRON_PLUGIN_CMD, ELECTRON_UTILITY_ROLE),
+        (_ELECTRON_UTILITY_CMD, ELECTRON_UTILITY_ROLE),
+        (_LANE_BUILD_GPU_CMD, ELECTRON_GPU_ROLE),
+    ],
+)
+def test_open_dj_electron_helpers_map_to_the_three_electron_roles(command: str, expected: str) -> None:
+    """[if] an Open DJ helper path is a shell descendant [then] role maps, [else stop]."""
+    row = ProcessRow(pid=201, ppid=100, pgid=100, command=command)
+    assert process_role(row, 100, {201}) == expected
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_another_apps_electron_helper_is_other() -> None:
+    """[if] a non-Open-DJ helper is on the box [then] it is other, [else stop]."""
+    row = ProcessRow(pid=202, ppid=1, pgid=202, command=_CLAUDE_RENDERER)
+    assert process_role(row, 100, set()) == "other"
+    assert named_child_role(_CLAUDE_RENDERER) is None
+
+
+@pytest.mark.requirement("PERFMODE-05")
+@pytest.mark.parametrize("command", [_FFMPEG_HOMEWRAPPED, _FFMPEG_TASKPOLICY, _FFMPEG_BUNDLED])
+def test_an_ffmpeg_child_of_the_engine_is_ffmpeg(command: str) -> None:
+    """[if] ffmpeg decodes under the engine [then] role is ffmpeg, [else stop]."""
+    row = ProcessRow(pid=203, ppid=100, pgid=100, command=command)
+    assert process_role(row, 100, {203}) == FFMPEG_ROLE
+    assert opendj_process_name(command) == FFMPEG_ROLE
+
+
+@pytest.mark.requirement("PERFMODE-05")
+@pytest.mark.parametrize("command", [_LANE_QUEUE_CLI, _LANE_RUN, _LANE_BACKFILL])
+def test_analysis_lane_children_are_named(command: str) -> None:
+    """[if] analysis lane argv matches [then] role is analysis-lane, [else stop]."""
+    row = ProcessRow(pid=204, ppid=100, pgid=100, command=command)
+    assert process_role(row, 100, {204}) == ANALYSIS_LANE_ROLE
+
+
+@pytest.mark.requirement("PERFMODE-05")
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3 -m apps.x --input /music/ffmpeg -f",
+        "/usr/bin/ffmpegthumbnailer -i x",
+        "/usr/bin/ffprobe -i /a/ffmpeg -v",
+        "python3 -m apps.analysis.runner",
+        "python3 -m pytest -k apps.analysis.run",
+    ],
+)
+def test_named_child_role_negative_controls(command: str) -> None:
+    """[if] argv mimics ffmpeg or lane [then] no false named role, [else stop]."""
+    assert named_child_role(command) is None
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_setproctitle_worker_still_names_opendj_token() -> None:
+    """[if] argv is opendj-worker title [then] name stays opendj-worker, [else stop]."""
+    cmd = "opendj-worker --name opendj-worker [...]"
+    assert named_child_role(cmd) is None
+    assert opendj_process_name(cmd) == "opendj-worker"
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_role_spellings_agree_across_probe_register_and_live_walk() -> None:
+    """[if] role tuples match [then] probe, register and app agree, [else stop]."""
+    assert NAMED_CHILD_ROLES == machine_pressure.NAMED_CHILD_ROLES
+    assert set(NAMED_CHILD_ROLES) <= set(PROFILABLE_ROLES) <= set(PROCESS_ROLES)
+    assert machine_pressure.ELECTRON_RENDERER_ROLE == ELECTRON_RENDERER_ROLE
+    assert machine_pressure.ELECTRON_GPU_ROLE == ELECTRON_GPU_ROLE
+    assert machine_pressure.ELECTRON_UTILITY_ROLE == ELECTRON_UTILITY_ROLE
+    assert machine_pressure.FFMPEG_ROLE == FFMPEG_ROLE
+    assert machine_pressure.ANALYSIS_LANE_ROLE == ANALYSIS_LANE_ROLE
+    cmds = (
+        _ELECTRON_RENDERER_CMD,
+        _ELECTRON_GPU_CMD,
+        _ELECTRON_PLUGIN_CMD,
+        _ELECTRON_UTILITY_CMD,
+        _LANE_BUILD_GPU_CMD,
+        _CLAUDE_RENDERER,
+        _FFMPEG_HOMEWRAPPED,
+        _FFMPEG_TASKPOLICY,
+        _FFMPEG_BUNDLED,
+        _LANE_QUEUE_CLI,
+        _LANE_RUN,
+        _LANE_BACKFILL,
+    )
+    for cmd in cmds:
+        assert named_child_role(cmd) == machine_pressure.named_child_role(cmd)
+        assert opendj_process_name(cmd) == machine_pressure.opendj_process_name(cmd)
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_every_process_role_result_is_a_declared_role() -> None:
+    """[if] representative rows classify [then] each role is in PROCESS_ROLES, [else stop]."""
+    shell_pid = 100
+    desc = {101, 201, 202, 203, 204}
+    rows = [
+        ProcessRow(pid=100, ppid=1, pgid=100, command=SHELL_CMD),
+        ProcessRow(pid=101, ppid=100, pgid=100, command="/usr/bin/python3 -m apps.engine_core serve"),
+        ProcessRow(pid=201, ppid=100, pgid=100, command=_ELECTRON_RENDERER_CMD),
+        ProcessRow(pid=202, ppid=100, pgid=100, command=_FFMPEG_HOMEWRAPPED),
+        ProcessRow(pid=203, ppid=100, pgid=100, command=_LANE_QUEUE_CLI),
+        ProcessRow(
+            pid=204,
+            ppid=100,
+            pgid=100,
+            command="opendj-worker --name opendj-worker --port 0 [python]",
+        ),
+        ProcessRow(pid=300, ppid=1, pgid=300, command=WEBCONTENT_CMD),
+        ProcessRow(pid=301, ppid=1, pgid=301, command=_CLAUDE_RENDERER),
+        ProcessRow(pid=302, ppid=1, pgid=302, command="unrelated --no-match"),
+    ]
+    for row in rows:
+        role = process_role(row, shell_pid, desc)
+        assert role in PROCESS_ROLES
+
+
 def test_no_webcontent_in_window_reports_no_cluster_not_an_error() -> None:
     """If broken: a shell with no WebView up yet (still launching) crashes
     resolution instead of reporting an ordinary, expected absence.
@@ -254,6 +426,41 @@ def test_no_webcontent_in_window_reports_no_cluster_not_an_error() -> None:
     assert association["webkit_cluster_found"] is False
     assert association["webkit_cluster_ambiguous"] is False
     assert {row.pid for row, _role in family} == {100}
+
+
+def test_the_family_rule_is_one_file_at_both_import_paths() -> None:
+    root = Path(__file__).resolve().parents[2]
+    apps_copy = root / "apps" / "shared" / "process_family_rule.py"
+    scripts_copy = root / "scripts" / "diagnostics" / "process_family_rule.py"
+    assert apps_copy.read_bytes() == scripts_copy.read_bytes(), (
+        "process_family_rule.py must be byte-identical: "
+        "cp apps/shared/process_family_rule.py scripts/diagnostics/process_family_rule.py"
+    )
+
+
+def test_associate_family_matches_the_probe_wrapper() -> None:
+    shell = _shell(100)
+    webcontent = _webcontent(300)
+    gpu = _gpu(301)
+    start_seconds = {100: 0.0, 300: 3.0, 301: 4.0}
+    native = _native(start_seconds)
+
+    via_wrapper, assoc_wrapper = associate_process_family([shell, webcontent, gpu], shell, native)
+
+    def start_of(pid: int) -> float | None:
+        return start_seconds.get(pid)
+
+    via_core, assoc_core = associate_family([shell, webcontent, gpu], shell, start_of)
+
+    assert {r.pid for r, _ in via_wrapper} == {r.pid for r, _ in via_core}
+    assert {r: role for r, role in via_wrapper} == {r: role for r, role in via_core}
+    for key in (
+        "webkit_cluster_found",
+        "webkit_cluster_ambiguous",
+        "webkit_refusal",
+        "included_pids",
+    ):
+        assert assoc_wrapper[key] == assoc_core[key]
 
 
 if __name__ == "__main__":

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 401221,
+  "measured_with_pr": 401356,
+  "sha": "121b5e45e6",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #8972 adds the shared rating normaliser (lib/rating.ts); the audio engine and track info paths that use it sit on the performance surface, and CI measured +135 B gzip there, 7 B over the noise floor, ceiled to 1 KiB",
+  "payback": "none planned; the normaliser replaces ad hoc conversions and is the intended shape"
+}

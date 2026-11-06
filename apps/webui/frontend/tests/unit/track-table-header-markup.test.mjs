@@ -21,7 +21,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { before, test } from 'node:test';
+import {
+	createReactBadgeController,
+	loadReactBadge,
+	loadSvelteBadgeHarness
+} from './quality-badge-client-harness.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const table = readFileSync(
@@ -32,6 +37,30 @@ const qualityBadge = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/QualityBadge.svelte', import.meta.url)),
 	'utf8'
 );
+const qualityBadgeTsx = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/QualityBadge.tsx', import.meta.url)),
+	'utf8'
+);
+
+let gradeMod = null;
+/** @type {{ mountSvelteQualityBadge: (target: unknown, ctrl: unknown) => { flush: () => void, unmount: () => void } } | null} */
+let svelteHarnessNs = null;
+/** @type {Record<string, unknown> | null} */
+let reactBundleNs = null;
+
+before(async () => {
+	gradeMod = await loadTypeScriptModule('src/lib/rb/quality-grade.ts');
+	svelteHarnessNs = await loadSvelteBadgeHarness();
+	reactBundleNs = await loadReactBadge();
+});
+
+function deferred() {
+	let resolve;
+	const promise = new Promise((r) => {
+		resolve = r;
+	});
+	return { promise, resolve };
+}
 
 /** The `<th ...>...</th>` whose class list contains `h-art`. */
 function artHeader() {
@@ -75,8 +104,192 @@ test('the quality column is compact QLT with a full custom explanation', async (
 	// QLTSCAN-05: compact letter, and the full hover loads only for a graded row.
 	assert.match(
 		table,
-		/<QualityBadge\s+quality=\{row\.quality\}\s+compact\s+showContainer=\{false\}\s+loadHover=\{row\.quality\?\.grade\?\.letter \? \(\) => audioQualityHover\(row\.stable_id, JSON\.stringify\(row\.quality\?\.grade\)\) : undefined\}\s+\/>/
+		/<QualityBadge\s+quality=\{row\.quality\}\s+trackKey=\{row\.stable_id\}\s+compact\s+showContainer=\{false\}\s+loadHover=\{row\.quality\?\.grade\?\.letter \? \(\) => audioQualityHover\(row\.stable_id, JSON\.stringify\(row\.quality\?\.grade\)\) : undefined\}\s+\/>/
 	);
 	assert.match(qualityBadge, /compact \? full\.slice\(0, 1\)\.toUpperCase\(\) : full/);
 	assert.match(qualityBadge, /class:compact/);
+});
+
+test('QualityBadge twins share qualityHoverStateKey shape for hover state', () => {
+	assert.match(qualityBadge, /qualityHoverStateKey\s*\(\s*trackKey\s*,\s*quality\?\.grade\s*\)/);
+	assert.match(qualityBadgeTsx, /qualityHoverStateKey\s*\(\s*trackKey\s*,\s*quality\?\.grade\s*\)/);
+	assert.match(qualityBadge, /hoverKey\s*===\s*hoverStateKey/);
+	assert.match(qualityBadgeTsx, /hoverKey\s*===\s*hoverStateKey/);
+	assert.match(qualityBadgeTsx, /currentKey\.current\s*=\s*hoverStateKey/);
+});
+
+test('QualityBadge twins: track-keyed hover (issue #9320, PRRT_kwDOSEvNd860kFHb)', async () => {
+	const grade = { letter: 'A', checked: true, issues: [] };
+	const quality = {
+		venue: 'stadium',
+		label: 'Stadium',
+		rank: 5,
+		of: 6,
+		blurb: 'survives the biggest room',
+		kbps: 1411,
+		container: '.flac',
+		lossless: true,
+		grade
+	};
+	const summary = gradeMod.gradeView(grade, true).title;
+
+	assert.notEqual(
+		gradeMod.qualityHoverStateKey('track-a', grade),
+		gradeMod.qualityHoverStateKey('track-b', grade)
+	);
+	assert.equal(gradeMod.qualityHoverStateKey('track-a', grade), `track-a|${JSON.stringify(grade)}`);
+
+	/** Svelte binds DOM `mouseenter`; React 19 listens to `mouseover` and synthesizes enter/leave (registerDirectEvent). */
+	function hoverInEvent(kind) {
+		return { type: kind === 'react' ? 'mouseover' : 'mouseenter' };
+	}
+
+	const { mountSvelteQualityBadge } = /** @type {any} */ (svelteHarnessNs);
+	const { QualityBadge, React, createRoot, flushSync } = /** @type {any} */ (reactBundleNs);
+	const reactCtl = createReactBadgeController(QualityBadge, React, createRoot, flushSync);
+
+	/** @param {'svelte' | 'react'} kind */
+	async function scenarioA(kind) {
+		const deferredA = deferred();
+		const deferredB = deferred();
+		let hoverCalls = 0;
+		const initialLoadHover = () => {
+			hoverCalls += 1;
+			return hoverCalls === 1 ? deferredA.promise : deferredB.promise;
+		};
+		const target = globalThis.document.createElement('div');
+		globalThis.document.body.appendChild(target);
+		try {
+			if (kind === 'svelte') {
+				const ctrl = {
+					initialTrackKey: 'track-a',
+					initialLoadHover,
+					quality,
+					update: null
+				};
+				const api = mountSvelteQualityBadge(target, ctrl);
+				const badge = target.querySelector('.q-grade');
+				assert.ok(badge, `${kind}: graded span`);
+				assert.equal(badge.getAttribute('title'), summary, kind);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredA.resolve('full-hover-a');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-a', kind);
+
+				ctrl.update({ trackKey: 'track-b', loadHover: () => deferredB.promise });
+				api.flush();
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: summary after track switch`);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredB.resolve('full-hover-b');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-b', kind);
+				api.unmount();
+			} else {
+				const api = reactCtl.mount(target, {
+					quality,
+					trackKey: 'track-a',
+					loadHover: initialLoadHover
+				});
+				const badge = target.querySelector('.q-grade');
+				assert.ok(badge, `${kind}: graded span`);
+				assert.equal(badge.getAttribute('title'), summary, kind);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredA.resolve('full-hover-a');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-a', kind);
+
+				api.update({ trackKey: 'track-b', loadHover: () => deferredB.promise });
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: summary after track switch`);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredB.resolve('full-hover-b');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-b', kind);
+				api.unmount();
+			}
+		} finally {
+			target.remove();
+		}
+	}
+
+	/** @param {'svelte' | 'react'} kind */
+	async function scenarioB(kind) {
+		const deferredA = deferred();
+		const deferredB = deferred();
+		const target = globalThis.document.createElement('div');
+		globalThis.document.body.appendChild(target);
+		try {
+			if (kind === 'svelte') {
+				const ctrl = {
+					initialTrackKey: 'track-a',
+					initialLoadHover: () => deferredA.promise,
+					quality,
+					update: null
+				};
+				const api = mountSvelteQualityBadge(target, ctrl);
+				const badge = target.querySelector('.q-grade');
+				assert.equal(badge.getAttribute('title'), summary, kind);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+
+				ctrl.update({ trackKey: 'track-b' });
+				api.flush();
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: switched before stale`);
+
+				deferredA.resolve('stale-hover-a');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: stale in-flight rejected`);
+
+				ctrl.update({ loadHover: () => deferredB.promise });
+				api.flush();
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredB.resolve('full-hover-b');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-b', kind);
+				api.unmount();
+			} else {
+				const api = reactCtl.mount(target, {
+					quality,
+					trackKey: 'track-a',
+					loadHover: () => deferredA.promise
+				});
+				const badge = target.querySelector('.q-grade');
+				assert.equal(badge.getAttribute('title'), summary, kind);
+
+				badge.dispatchEvent(hoverInEvent(kind));
+
+				api.update({ trackKey: 'track-b' });
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: switched before stale`);
+
+				deferredA.resolve('stale-hover-a');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), summary, `${kind}: stale in-flight rejected`);
+
+				api.update({ loadHover: () => deferredB.promise });
+				badge.dispatchEvent(hoverInEvent(kind));
+				deferredB.resolve('full-hover-b');
+				await Promise.resolve();
+				api.flush();
+				assert.equal(badge.getAttribute('title'), 'full-hover-b', kind);
+				api.unmount();
+			}
+		} finally {
+			target.remove();
+		}
+	}
+
+	await scenarioA('svelte');
+	await scenarioA('react');
+	await scenarioB('svelte');
+	await scenarioB('react');
 });

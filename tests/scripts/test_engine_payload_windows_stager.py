@@ -19,6 +19,7 @@ from scripts.build_engine_payload import (
     PayloadBuildError,
     _program_names,
 )
+from scripts.payload_windows_extras import ExtrasResult, apply_extras_to_manifest
 
 
 def test_a_runtime_without_python_exe_is_refused_by_name(tmp_path: Path) -> None:
@@ -41,6 +42,32 @@ def test_a_windows_runtime_is_copied_with_its_interpreter_at_the_root(tmp_path: 
     assert not list(destination.rglob("*.pyc")), "bytecode must not be shipped; the payload is read-only at run time"
 
 
+# REQ: ELECTRON-9215
+@pytest.mark.requirement("ELECTRON-9215")
+def test_the_windows_runtime_drops_pip_and_its_non_x64_launcher_stubs(tmp_path: Path) -> None:
+    """[if] the staged Windows runtime keeps pip or its 32-bit launcher stubs [then] the x64 PE audit refuses the payload, [else stop]."""
+    source = tmp_path / "src"
+    distlib = source / "Lib" / "site-packages" / "pip" / "_vendor" / "distlib"
+    distlib.mkdir(parents=True)
+    (source / "python.exe").write_bytes(b"MZ")
+    (distlib / "t32.exe").write_bytes(b"MZ")
+    (source / "Lib" / "site-packages" / "pip-25.1.dist-info").mkdir()
+    (source / "Lib" / "ensurepip").mkdir()
+    (source / "Scripts").mkdir()
+    (source / "Scripts" / "pip3.exe").write_bytes(b"MZ")
+    (source / "Lib" / "site-packages" / "keep.py").write_text("", encoding="utf-8")
+    destination = tmp_path / "out" / "runtime"
+    pruned = stager.stage_windows_runtime(source, destination)
+    assert not list(destination.rglob("t32.exe")), "pip launcher stubs are 32-bit and fail the x64 PE audit"
+    assert set(pruned) == {
+        "Scripts/pip3.exe",
+        "Lib/site-packages/pip",
+        "Lib/site-packages/pip-25.1.dist-info",
+        "Lib/ensurepip",
+    }
+    assert (destination / "Lib" / "site-packages" / "keep.py").exists()
+
+
 def test_the_manifest_names_exactly_what_was_not_staged(tmp_path: Path) -> None:
     manifest = stager.windows_manifest(
         identity={"product_name": "Open DJ", "bundle_identifier": "com.opendj.desktop", "app_version": "1.2.3"},
@@ -57,6 +84,20 @@ def test_the_manifest_names_exactly_what_was_not_staged(tmp_path: Path) -> None:
     assert set(manifest["not_staged"]) == set(stager.NOT_STAGED)
     assert all(reason.strip() for reason in manifest["not_staged"].values()), "every omission needs a stated reason"
     json.dumps(manifest)  # serializable
+
+
+def test_post_extras_not_staged_keeps_standing_gaps_and_drops_staged_blocks() -> None:
+    extras = ExtrasResult(
+        manifest_blocks={"beatgrid_runner": {"site": "s"}, "third_party_licenses": {"components": 1}},
+        not_staged={},
+    )
+    applied = apply_extras_to_manifest(
+        {"not_staged": dict(stager.NOT_STAGED)}, extras, remaining_gaps=stager.standing_not_staged()
+    )
+    assert "ffmpeg" in applied["not_staged"]
+    assert "waveform_native" in applied["not_staged"]
+    assert "beatgrid_runner" not in applied["not_staged"]
+    assert "third_party_licenses" not in applied["not_staged"]
 
 
 def test_a_system_tool_comes_from_under_the_system_root_or_stops_the_build() -> None:

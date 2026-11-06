@@ -28,7 +28,7 @@ from tests.quality_gate_base_compare_partial_clone import (
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "scripts" / "security" / "lib.sh"
 MATERIALIZE = ROOT / "scripts" / "security" / "materialize.py"
-SCAN_SECRETS = ROOT / "scripts" / "security" / "scan_secrets.sh"
+SCAN_SECRETS = ROOT / "scripts" / "security" / "scan_secrets.py"
 SECURITY_YML = ROOT / ".github" / "workflows" / "security.yml"
 
 
@@ -46,37 +46,10 @@ def _run_materialize(repo: Path, env: dict[str, str] | None = None) -> subproces
     )
 
 
-def _assert_no_missing_in_batch_check(repo: Path) -> None:
-    """rev-list --objects --all | cat-file --batch-check: no unfetched objects."""
+def _missing_print_oids(repo: Path) -> list[str]:
     git = shutil.which("git")
     assert git is not None
-    rev = subprocess.Popen(
-        [git, "-C", str(repo), "rev-list", "--objects", "--all"],
-        stdout=subprocess.PIPE,
-    )
-    assert rev.stdout is not None
-    try:
-        batch = subprocess.run(
-            [git, "-C", str(repo), "cat-file", "--batch-check"],
-            stdin=rev.stdout,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    finally:
-        rev.stdout.close()
-        rev.wait()
-    for line in batch.stdout.splitlines():
-        parts = line.split()
-        if not parts or parts[-1] != "missing":
-            continue
-        probe = subprocess.run(
-            [git, "-C", str(repo), "cat-file", "-e", parts[0]],
-            capture_output=True,
-            check=False,
-        )
-        assert probe.returncode == 0, line
-    missing_print = subprocess.run(
+    result = subprocess.run(
         [
             git,
             "-C",
@@ -90,16 +63,12 @@ def _assert_no_missing_in_batch_check(repo: Path) -> None:
         text=True,
         check=False,
     )
-    for line in missing_print.stdout.splitlines():
-        if not line.startswith("?"):
-            continue
-        oid = line[1:].split()[0]
-        probe = subprocess.run(
-            [git, "-C", str(repo), "cat-file", "-e", oid],
-            capture_output=True,
-            check=False,
-        )
-        assert probe.returncode == 0, line
+    assert result.returncode == 0, result.stderr
+    return [
+        line[1:].split()[0]
+        for line in result.stdout.splitlines()
+        if line.startswith("?")
+    ]
 
 
 @contextmanager
@@ -158,9 +127,11 @@ def test_materialize_then_file_clone_succeeds(tmp_path: Path) -> None:
 
 def test_materialize_leaves_cat_file_batch_check_without_missing(tmp_path: Path) -> None:
     with _http_partial_clone(tmp_path) as partial:
+        before = _missing_print_oids(partial)
+        assert before, "fixture must actually be blobless"
         mat = _run_materialize(partial, env={"GH_TOKEN": _TOKEN})
         assert mat.returncode == 0, mat.stderr
-        _assert_no_missing_in_batch_check(partial)
+        assert _missing_print_oids(partial) == []
 
 
 def test_materialize_fails_when_git_not_on_path(tmp_path: Path) -> None:
@@ -299,10 +270,17 @@ def test_detection_does_not_use_is_partial_clone() -> None:
     assert "remote.origin.promisor" in text
 
 
+def test_batch_check_uses_rest_format_and_omits_per_object_probe() -> None:
+    text = MATERIALIZE.read_text(encoding="utf-8")
+    assert "%(objectname) %(objecttype) %(objectsize) %(rest)" in text
+    assert "--batch-check=" in text
+    assert 'cat-file", "-e"' not in text
+
+
 def test_scan_full_materializes_before_history_and_keeps_verified_unknown() -> None:
     text = SCAN_SECRETS.read_text(encoding="utf-8")
-    mat = text.index("sec_materialize_missing_objects")
-    hist = text.index('file://$SECURITY_REPO_ROOT" --results=verified,unknown')
+    mat = text.index("materialize.materialize_repo")
+    hist = text.index('"--results=verified,unknown"')
     assert mat < hist
     assert "--only-verified" not in text
     assert "--results=verified,unknown" in text

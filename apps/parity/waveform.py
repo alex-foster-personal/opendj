@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from apps.analysis_waveform.decode import BAND_NAMES
-from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_score_id_fields, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 from apps.parity.waveform_score import (
     detail_ungradable_bucket,
@@ -141,10 +141,12 @@ def score_waveform(lane: str, rows: list[dict[str, Any]], *, measured_at: str) -
         exact_n=len(accum.agree_ids),
         failed_own_n=accum.failed_own_n,
         no_own_n=len(accum.no_own_ids),
-        agree_ids=tuple(accum.agree_ids),
-        disagree_ids=tuple(accum.disagree_ids),
-        no_own_ids=tuple(accum.no_own_ids),
-        ungradable_ids=tuple(accum.ungradable_ids),
+        **lane_score_id_fields(
+            agree_ids=accum.agree_ids,
+            disagree_ids=accum.disagree_ids,
+            no_own_ids=accum.no_own_ids,
+            ungradable_ids=accum.ungradable_ids,
+        ),
         ungradable=accum.ungradable,
         median_r=median_r,
         mean_r=mean_r,

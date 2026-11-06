@@ -12,6 +12,8 @@
  * [if] removing a row does not select the row below it (or above, at the end),
  *   or the remaining rows are not renumbered [then ⛔]
  * [if] the removal reloads the pane or never unmarks the red rows [then ⛔]
+ * [if] a refresh during the animation drops a surviving neighbour occupying a
+ *   pre-write order [then ⛔]
  */
 // requirement: LIBUX-8626
 import assert from 'node:assert/strict';
@@ -180,6 +182,21 @@ test('LIBUX-8626: removed rows leave and the rest renumber 1..n, untouched rows 
 	assert.equal(kept[0], rows[0]);
 });
 
+test('LIBUX-8626: withoutRemovedItemIds drops by membership id; no-op when refresh already renumbered', () => {
+	const rows = slots(1, 2, 3).map((row) => ({ ...row, item_id: `i-${row.order}` }));
+	const kept = removal.withoutRemovedItemIds(rows, new Set(['i-2']));
+	assert.deepEqual(kept.map((r) => [r.stable_id, r.order]), [['t-1', 1], ['t-3', 2]]);
+	assert.equal(kept[0], rows[0]);
+	const refreshed = [
+		{ stable_id: 't-1', order: 1, item_id: 'i-1' },
+		{ stable_id: 't-3', order: 2, item_id: 'i-3' }
+	];
+	const unchanged = removal.withoutRemovedItemIds(refreshed, new Set(['i-2']));
+	assert.equal(unchanged[0], refreshed[0]);
+	assert.equal(unchanged[1], refreshed[1]);
+	assert.deepEqual(unchanged.map((r) => r.order), [1, 2]);
+});
+
 function fakePane(rows) {
 	return {
 		playlist_id: 'inbox',
@@ -222,6 +239,38 @@ test('LIBUX-8626: removeRowsInPlace marks, writes once, splices, and selects the
 	assert.deepEqual(pane.rows.map((r) => r.stable_id), ['t-1', 't-3']);
 	assert.equal(pane.etag, '"new"');
 	assert.deepEqual([pane.selected_id, pane.selected_order], ['t-3', 2]);
+});
+
+test('LIBUX-8626: removeRowsInPlace keeps survivors when a library refresh interleaves the animation', async () => {
+	const rows = slots(1, 2, 3).map((row) => ({ ...row, item_id: `i-${row.order}` }));
+	const pane = fakePane(rows);
+	let finish;
+	const outcomePromise = removal.removeRowsInPlace({
+		pane,
+		rows: [rows[1]],
+		visible: rows,
+		remove: async () => ({ etag: '"new"' }),
+		markRemoving: () => {},
+		rowKey: (row) => `${row.stable_id}:${row.order}`,
+		wait: () => new Promise((resolve) => (finish = resolve))
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	pane.rows = [
+		{ stable_id: 't-1', order: 1, item_id: 'i-1' },
+		{ stable_id: 't-3', order: 2, item_id: 'i-3' }
+	];
+	finish();
+	const outcome = await outcomePromise;
+	assert.deepEqual(
+		pane.rows.map((r) => [r.stable_id, r.order]),
+		[
+			['t-1', 1],
+			['t-3', 2]
+		]
+	);
+	assert.deepEqual(outcome.rows.map((r) => [r.stable_id, r.order, r.item_id]), [['t-2', 2, 'i-2']]);
+	assert.deepEqual([pane.selected_id, pane.selected_order], ['t-3', 2]);
+	assert.equal(pane.etag, '"new"');
 });
 
 test('LIBUX-8626 control: a failed write unmarks the rows and leaves the pane untouched', async () => {

@@ -17,8 +17,12 @@ const explainer = source('../../src/lib/components/rb/browser/AutoPlayExplainer.
 const trackTable = source('../../src/lib/components/rb/browser/TrackTable.svelte');
 let placement;
 
+let tooltipZ;
+
 before(async () => {
 	placement = await loadTypeScriptModule('src/lib/components/rb/browser/column-explainer-placement.ts');
+	const stack = await loadTypeScriptModule('src/lib/overlays/overlay-stack.ts');
+	tooltipZ = stack.OVERLAY_Z_INDEX.tooltip;
 });
 
 test('the shared column explainer defaults above and retains a deliberate below option', () => {
@@ -34,18 +38,18 @@ test('above-first placement clamps into a narrow, short viewport', () => {
 	const viewport = { innerWidth: 320, innerHeight: 200 };
 	assert.equal(
 		placement.columnExplainerStyle(rect, panel, viewport, 'above'),
-		'left:8px;top:8px;z-index:100;'
+		`left:8px;top:8px;z-index:${tooltipZ};`
 	);
 	assert.equal(
 		placement.columnExplainerStyle({ left: 900, top: 500, bottom: 518 }, { width: 300, height: 180 }, { innerWidth: 1280, innerHeight: 800 }, 'above'),
-		'left:594px;top:314px;z-index:100;'
+		`left:594px;top:314px;z-index:${tooltipZ};`
 	);
 });
 
 test('below is used only when an above panel would clip above the viewport', () => {
 	assert.equal(
 		placement.columnExplainerStyle({ left: 500, top: 20, bottom: 38 }, { width: 300, height: 160 }, { innerWidth: 1280, innerHeight: 800 }, 'above'),
-		'left:194px;top:44px;z-index:100;'
+		`left:194px;top:44px;z-index:${tooltipZ};`
 	);
 });
 

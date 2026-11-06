@@ -72,15 +72,15 @@ from typing import Any
 
 import numpy as np
 
-from apps.autodj.plan import parse_plan
-from apps.autodj.profile import TrackProfile
-from apps.autodj.render_plan import RENDER_SAMPLE_RATE, RenderPlanError, layout_of
+from apps.autodj.http import RENDER_SAMPLE_RATE, RenderPlanError, TrackProfile, build_service
 from apps.opendj_cli.dj_service import DjError
 from apps.transition_score import SCORER_VERSION, Candidate, TryResult, try_pair
 from apps.transition_score.contract import CORE_FACTORS
 from apps.transition_score.tryer import AudioUnavailable, EngineTrackSource, PairNotTryable, ProfileReader
 from scripts.bench.tryer_calibration.cached_source import CachedProfiles
 from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, CalibrationPair, load_pairs_verified
+
+_AUTODJ = build_service()
 
 #: A pair is skipped (reason recorded) only when THIS pair cannot be tried: a track without audio or analysis, no
 #: proposal, an unrenderable plan. A renderer or engine failure would hit every pair, so it aborts the build instead
@@ -230,14 +230,18 @@ def select_taste_variants(result: TryResult, *, count: int = 3) -> Selection | s
     )  # a refused candidate has no audio to rate
     if not rendered:
         return f"try_pair returned no rendered candidates ({len(result.candidates)} refused)"
+    # D13: lulls are role "lull", never a taste variant (factorial, any-family retry, or v1 walk).
+    taste = tuple(c for c in rendered if c.style != "lull_then_drop")
+    if not taste:
+        return f"no taste contrast: all {len(rendered)} rendered candidates share family and exit bar"
     for lanes in (CFG.CORE_LANES, None):
-        triple = _factorial(rendered, lanes)
+        triple = _factorial(taste, lanes)
         if triple is not None:
             return Selection(
                 triple, "factorial", None if lanes else "no factorial within the core lanes; used any family"
             )
-    reason = _no_factorial_reason(rendered)
-    chosen = _taste_v1_walk(rendered, count)
+    reason = _no_factorial_reason(taste)
+    chosen = _taste_v1_walk(taste, count)
     if len(chosen) < 2:
         return f"no taste contrast: all {len(rendered)} rendered candidates share family and exit bar"
     return Selection(chosen, "fallback", reason)
@@ -388,15 +392,18 @@ def render_anchor(top: Candidate, target: Path, window: tuple[float, float]) -> 
 # -----------------------------------------------------------------------------
 def shared_start_bar(result: TryResult, out_p: TrackProfile, in_p: TrackProfile) -> float:
     """The outgoing bar every render of this try starts on (try_plans renders all plans from one start)."""
-    return min(layout_of(parse_plan(c.plan), out_p, in_p, CFG.CONTEXT_BARS).start_out_bar for c in result.candidates)
+    return min(
+        _AUTODJ.layout_of(_AUTODJ.parse_plan(c.plan), out_p, in_p, CFG.CONTEXT_BARS).start_out_bar
+        for c in result.candidates
+    )
 
 
 def played_window(
     candidate: Candidate, out_p: TrackProfile, in_p: TrackProfile, start_bar: float, render_s: float
 ) -> tuple[float, float]:
     """(start, end) seconds in the render: the plan's span plus PLAYED_CONTEXT_BARS each side."""
-    plan = parse_plan(candidate.plan)
-    layout = layout_of(plan, out_p, in_p, CFG.CONTEXT_BARS, start_out_bar=start_bar)
+    plan = _AUTODJ.parse_plan(candidate.plan)
+    layout = _AUTODJ.layout_of(plan, out_p, in_p, CFG.CONTEXT_BARS, start_out_bar=start_bar)
     first = plan.out.start_bar + min(0.0, min((e.at_bar for e in plan.events), default=0.0))
     start = out_p.time_of_bar(first - CFG.PLAYED_CONTEXT_BARS) - layout.start_out_s
     if in_p.bpm is None:
@@ -462,18 +469,25 @@ def _copy_decks(
     """Each deck's kept render, sliced to the clip's played window as lossless FLAC beside the clip
     (``clips/<cid>/decks/deck<N>.flac``), so a review page can draw the two-deck lanes the try-er panel draws.
     The anchor's incoming deck is delayed by the same ``in_delay_ms`` as its mix (zeros in front, never clipped)."""
-    source = decks_dir_of(candidate)
+    source = kept_render(candidate).parent / "decks"
+    required: list[int] = []
+    for n in (candidate.plan["out"]["deck"], candidate.plan["in"]["deck"]):
+        if n not in required:
+            required.append(n)
+    for n in required:
+        filename = f"deck{n}.wav"
+        if not (source / filename).is_file():
+            raise ClipError(f"candidate {candidate.id} missing {filename}")
     target = clips / cid / "decks"
     target.mkdir(parents=True)
     paths: dict[str, str] = {}
-    for deck_file in sorted(source.glob("deck*.wav")):
-        samples, rate = read_wav_pcm16(deck_file)
-        deck = deck_file.stem.removeprefix("deck")
-        if in_delay_ms and int(deck) == candidate.plan["in"]["deck"]:
+    for n in required:
+        samples, rate = read_wav_pcm16(source / f"deck{n}.wav")
+        if in_delay_ms and n == candidate.plan["in"]["deck"]:
             pad = np.zeros((round(in_delay_ms / 1000.0 * rate), *samples.shape[1:]), dtype=np.int16)
             samples = np.concatenate([pad, samples])[: len(samples)]
-        write_flac_pcm16(target / f"deck{deck}.flac", trim(samples, rate, window), rate)
-        paths[deck] = f"clips/{cid}/decks/deck{deck}.flac"
+        write_flac_pcm16(target / f"deck{n}.flac", trim(samples, rate, window), rate)
+        paths[str(n)] = f"clips/{cid}/decks/deck{n}.flac"
     return paths
 
 
@@ -513,7 +527,9 @@ class ReadOnlyLiveSource:
 
     def __post_init__(self) -> None:
         self._profiles: ProfileReader = (
-            EngineTrackSource(self.live_data_dir) if self.profiles_dir is None else CachedProfiles(self.profiles_dir)
+            EngineTrackSource(self.live_data_dir, _AUTODJ)
+            if self.profiles_dir is None
+            else CachedProfiles(self.profiles_dir)
         )
 
     def profile(self, stable_id: str) -> TrackProfile:
@@ -570,6 +586,7 @@ def build_pair(
         data_dir=render_dir,
         source=source,
         keep_renders_in=render_dir / KEPT_RENDERS,
+        autodj=_AUTODJ,
     )
     selection = select_taste_variants(result, count=count)
     if isinstance(selection, str):

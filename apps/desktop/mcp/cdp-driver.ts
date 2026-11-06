@@ -63,8 +63,9 @@ const CALL_TIMEOUT_MS = 30_000;
  * A capture issued while the window swaps renderers (the opendj:// bootstrap
  * handing over to the engine origin) never answers. Measured under Xvfb, Wed
  * 7 Oct 2026: the first capture after a relaunch hung the full 30 s while the
- * next one took 165 ms. So a capture gets a short budget, and a timeout drops the
- * stuck socket and fails loudly; the caller's next capture attaches afresh.
+ * next one took 165 ms. So a screenshot, including connection setup, gets a short
+ * budget, and a timeout drops the stuck socket and fails loudly; the caller's next
+ * capture reconnects.
  */
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 
@@ -225,7 +226,7 @@ export class Cdp implements PageDriver {
   /** @param _appOrigin the page origin the app must be on: MDT_WEBVIEW_MCP_APP,
    * else the engine origin the packed shell loads its pages from.
    * @param _timeoutMs bound on every CDP call and discovery fetch (tests shorten it).
-   * @param _screenshotTimeoutMs bound on one capture (tests shorten it). */
+   * @param _screenshotTimeoutMs bound on one screenshot including setup (tests shorten it). */
   constructor(
     private readonly _base: string,
     private readonly _appOrigin: string,
@@ -330,8 +331,8 @@ export class Cdp implements PageDriver {
       return reply.data as string;
     } catch (error) {
       // No silent retake: a later frame could show a different page than the one
-      // asked about (Sol on #6830). Drop the stuck socket so the NEXT call attaches
-      // afresh, and say so; any other error passes through untouched.
+      // asked about (Sol on #6830). Drop the stuck socket so the next call reconnects,
+      // and say so; any other error passes through untouched.
       if (!(error instanceof CdpTimeoutError)) throw error;
       this._drop();
       throw new CdpTimeoutError(
@@ -359,17 +360,24 @@ export class Cdp implements PageDriver {
     };
   }
 
-  private async _json<T>(path: string): Promise<T> {
+  private async _json<T>(
+    path: string,
+    timeoutMs: number = this._timeoutMs,
+  ): Promise<T> {
+    if (timeoutMs <= 0)
+      throw new CdpTimeoutError(
+        `CDP ${path} at ${this._base} did not answer within ${timeoutMs} ms`,
+      );
     let response: Response;
     try {
       // Bounded: an endpoint that accepts and never answers must fail, not hang the tool.
       response = await fetch(`${this._base}${path}`, {
-        signal: AbortSignal.timeout(this._timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
-        throw new Error(
-          `CDP ${path} at ${this._base} did not answer within ${this._timeoutMs} ms`,
+        throw new CdpTimeoutError(
+          `CDP ${path} at ${this._base} did not answer within ${timeoutMs} ms`,
         );
       }
       throw new Error(
@@ -387,14 +395,17 @@ export class Cdp implements PageDriver {
     socket?.close();
   }
 
-  private _ensure(): Promise<WebSocket> {
-    this._connecting ??= this._connect().finally(() => {
+  private _ensure(
+    deadline: number = Date.now() + this._timeoutMs,
+    timeoutMs: number = this._timeoutMs,
+  ): Promise<WebSocket> {
+    this._connecting ??= this._connect(deadline, timeoutMs).finally(() => {
       this._connecting = null;
     });
     return this._connecting;
   }
 
-  private async _connect(): Promise<WebSocket> {
+  private async _connect(deadline: number, timeoutMs: number): Promise<WebSocket> {
     if (this._socket && this._socket.readyState === WebSocket.OPEN) {
       if (
         this._target &&
@@ -403,7 +414,10 @@ export class Cdp implements PageDriver {
         return this._socket;
       // Attached to the bootstrap page: re-read the list so the session
       // follows the window onto the engine origin once it gets there.
-      const list = await this._json<CdpTarget[]>("/json/list");
+      const list = await this._json<CdpTarget[]>(
+        "/json/list",
+        this._remaining(deadline, timeoutMs, "connection setup"),
+      );
       // No app page anywhere (the window is on an error page): stay on our
       // own target, so a navigate can still bring the window back.
       const fresh = pickAppTarget(
@@ -416,12 +430,37 @@ export class Cdp implements PageDriver {
         return this._socket;
       }
       this._drop();
+      if (fresh?.webSocketDebuggerUrl) {
+        return this._open(
+          fresh,
+          this._remaining(deadline, timeoutMs, "connection setup"),
+        );
+      }
+      throw new Error(
+        `CDP at ${this._base} lists no app page on ${this._appOrigin} yet ` +
+          `(the shell may still be booting its engine)`,
+      );
     }
-    const list = await this._json<CdpTarget[]>("/json/list");
-    // After a reset (_drop: a capture timeout, a closed socket), the window a
-    // full-URL navigate sent off the app origin is still the one we drove; a
-    // new app page wins, but failing that, the known target is reattached so a
-    // relative navigate can bring it home (Codex and Sol on #6830).
+    if (this._target?.webSocketDebuggerUrl) {
+      try {
+        return await this._open(
+          this._target,
+          this._remaining(deadline, timeoutMs, "connection setup"),
+        );
+      } catch (error) {
+        // A relaunch can invalidate the cached target. Discover once only after
+        // that direct reconnect fails; capture calls keep the same deadline.
+        this._target = null;
+        if (Date.now() >= deadline) throw error;
+      }
+    }
+    const list = await this._json<CdpTarget[]>(
+      "/json/list",
+      this._remaining(deadline, timeoutMs, "connection setup"),
+    );
+    // Direct reconnect above preserves the known target after a reset. Discovery
+    // here is the fallback for first connect or a cached target invalidated by a
+    // relaunch (Codex and Sol on #6830).
     const target = pickAppTarget(
       list,
       this._appOrigin,
@@ -433,6 +472,19 @@ export class Cdp implements PageDriver {
           `(the shell may still be booting its engine)`,
       );
     }
+    return this._open(
+      target,
+      this._remaining(deadline, timeoutMs, "connection setup"),
+    );
+  }
+
+  private async _open(target: CdpTarget, timeoutMs: number): Promise<WebSocket> {
+    if (!target.webSocketDebuggerUrl)
+      throw new Error(`CDP target ${target.id} has no WebSocket debugger URL`);
+    if (timeoutMs <= 0)
+      throw new CdpTimeoutError(
+        `CDP socket to ${target.url} (${this._base}) did not open within ${timeoutMs} ms`,
+      );
     const socket = new WebSocket(target.webSocketDebuggerUrl);
     this._opened += 1;
     await new Promise<void>((resolve, reject) => {
@@ -440,11 +492,11 @@ export class Cdp implements PageDriver {
       const timer = setTimeout(() => {
         socket.close();
         reject(
-          new Error(
-            `CDP socket to ${target.url} (${this._base}) did not open within ${this._timeoutMs} ms`,
+          new CdpTimeoutError(
+            `CDP socket to ${target.url} (${this._base}) did not open within ${timeoutMs} ms`,
           ),
         );
-      }, this._timeoutMs);
+      }, timeoutMs);
       socket.addEventListener(
         "open",
         () => {
@@ -497,12 +549,21 @@ export class Cdp implements PageDriver {
     return socket;
   }
 
+  private _remaining(deadline: number, timeoutMs: number, what: string): number {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0)
+      throw new CdpTimeoutError(`CDP ${what} timed out after ${timeoutMs} ms`);
+    return remaining;
+  }
+
   private async _send(
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number = this._timeoutMs,
   ): Promise<Record<string, unknown>> {
-    const socket = await this._ensure();
+    const deadline = Date.now() + timeoutMs;
+    const socket = await this._ensure(deadline, timeoutMs);
+    const remaining = this._remaining(deadline, timeoutMs, method);
     const id = ++this._nextId;
     let timedOut = false;
     const reply = await new Promise<CdpReply>((resolve) => {
@@ -513,7 +574,7 @@ export class Cdp implements PageDriver {
           id,
           error: { message: `CDP ${method} timed out after ${timeoutMs} ms` },
         });
-      }, timeoutMs);
+      }, remaining);
       this._pending.set(id, {
         socket,
         settle: (r) => {

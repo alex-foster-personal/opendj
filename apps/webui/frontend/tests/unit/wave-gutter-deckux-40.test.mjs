@@ -10,7 +10,7 @@
  * lines a refactor could quietly undo.
  *
  * Regression lines:
- * - if the Mixed In Key prefix is not stripped then "9A - 7 - Shiver" spends
+ * - if the Mixed In Key prefix is not stripped then "9A - 7 - Lantern Drift" spends
  *   a third of the gutter repeating the key the meta line already shows
  * - if a prefix-only title is stripped to nothing then the row reads blank
  * - if the bars countdown or the row divider comes back then the design the maintainer
@@ -36,7 +36,7 @@ before(async () => {
 // REQ: DECKUX-40
 test('the gutter title drops Mixed In Key key/energy prefixes', () => {
 	const cases = [
-		['9A - 7 - Shiver', 'Shiver'],
+		['9A - 7 - Lantern Drift', 'Lantern Drift'],
 		['4A - 6 - Clouds', 'Clouds'],
 		['12B - Title Only Key', 'Title Only Key'],
 		['Am - 5 - Minor Notation', 'Minor Notation'],
@@ -57,14 +57,18 @@ test('a title without a prefix, or that is only a prefix, is left whole', () => 
 
 // REQ: DECKUX-40
 test('an empty deck mounts no track summary, only its number', () => {
-	const gutter = read('WaveGutter.svelte');
-	assert.match(gutter, /\{#if loaded\}<WaveTrackSummary \{deck\} \/>\{\/if\}/);
+	// The container passes the summary in; the props-only view gates it on loaded.
+	assert.match(read('WaveGutter.svelte'), /const loaded = \$derived\(deck\.stable_id !== null\)/);
+	assert.match(read('WaveGutter.svelte'), /\{#snippet summary\(\)\}<WaveTrackSummary \{deck\} \/>\{\/snippet\}/);
+	const gutter = read('WaveGutterView.svelte');
+	assert.match(gutter, /\{#if loaded\}\{@render summary\(\)\}\{\/if\}/);
 	assert.match(gutter, /font-family:\s*var\(--rb-font-brand\)/, 'the deck number uses the brand face');
 });
 
 // REQ: DECKUX-40
 test('there is no bars countdown and no row divider', () => {
 	assert.doesNotMatch(read('WaveGutter.svelte'), /class="bars"|barsLabel|barsTitle/);
+	assert.doesNotMatch(read('WaveGutterView.svelte'), /class="bars"|barsLabel|barsTitle/);
 	assert.doesNotMatch(read('WaveRow.svelte'), /barsLabel|barsToNextCueLabel/);
 	assert.doesNotMatch(read('wave-math.ts'), /export function barsToNextCueLabel/);
 	const row = /^\.rb-waverow\s*\{([^}]*)\}/m.exec(read('WaveRow.chrome.css'));

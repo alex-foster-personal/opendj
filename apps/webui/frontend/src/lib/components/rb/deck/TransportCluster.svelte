@@ -8,6 +8,7 @@
 	import { QUANTIZED_LAUNCH } from '$lib/player/transport/quantized-launch';
 	import { unsyncedPlayWarning } from '$lib/rb/beat-sync-math';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 
 	let {
 		deck,
@@ -80,12 +81,11 @@
 </script>
 
 <div class="transport">
-	<ControlExplainer title={cueTitle} bullets={cueBullets} demo="cue">
+	<ControlExplainer title={cueTitle} bullets={cueBullets} demo="cue" tooltip={TOOLTIP_ISOLATED}>
 		<button
 			class="round cue"
 			disabled={!hasTrack}
 			aria-busy={pending}
-			title={cueTitle}
 			aria-label={`cue deck ${deck.deck_id}`}
 			data-testid={`cue-deck-${deck.deck_id}`}
 			data-performance-control="cue"

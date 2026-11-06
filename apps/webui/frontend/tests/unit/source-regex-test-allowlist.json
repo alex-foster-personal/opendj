@@ -126,6 +126,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "browser-panel-lifecycle.test.mjs",
+			"reason": "#8817: source-shape pins isPageGoingAway before _refreshPlaylists console.error and before _pushPaneLoadError pushToast; BrowserPanel is too large to render in unit tests and the issue spec forbids eval of _loadPane"
+		},
+		{
 			"file": "browser-panel-prefetch-invalidation.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1098,6 +1102,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "rating.test.mjs",
+			"reason": "Issue #2572 import-pin test: statically verifies normalizeRating is imported at named UI read sites; rendering would not prove the import contract"
+		},
+		{
 			"file": "react-deck-flag.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
@@ -1391,7 +1399,7 @@
 		},
 		{
 			"file": "track-table-deck-load-scroll.test.mjs",
-			"reason": "issue #2606 / LIBUX-2606 wiring pin: TrackTable must import browse-scroll helpers and must not assign scrollTop from loadedIds or masterStableId in $effect; scroll-window acceptance is covered by extracted module tests in the same file"
+			"reason": "issue #2606 / LIBUX-2606 wiring pin: TrackTable must import browse-scroll helpers and must not assign scrollTop from loadedIds or masterStableId in $effect; scroll-window behavior is asserted by KeepsScrollWindowAcrossDeckLoad in TrackTable.stories.ts"
 		},
 		{
 			"file": "track-table-energy-column.test.mjs",
@@ -1432,6 +1440,10 @@
 		{
 			"file": "transport-visual-feedback.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "tryer-lanes-fetch-effect.test.mjs",
+			"reason": "#9328: compiles TryerLanes.svelte's fetch $effect from source because the unit harness stubs Svelte mounts; stale-response and cleanup ordering are not reachable from SSR (split from tryer-lanes.test.mjs so TRYER-16 curve/peak tests stay off the allowlist)"
 		},
 		{
 			"file": "ui-mirror-deck-load-error.test.mjs",
@@ -1562,6 +1574,10 @@
 			"reason": "Asserts Knob.svelte's drawn sweep equals DIAL_SWEEP_DEG by reading the component source; the clock map itself is tested by rendering-free math. Convert to a render (setup-overlay-render.test.mjs) to remove this entry."
 		},
 		{
+			"file": "wave-eq-reflect.test.mjs",
+			"reason": "pins that the WaveRow.svelte static-repaint effect reads bandGains; rendering WaveRow needs a live canvas and the engine store, and the band-gain paint itself is covered by the rendered drawWaveRow tests in the same file (WAVE-EQ-5230)"
+		},
+		{
 			"file": "health-liveness-dots.test.mjs",
 			"reason": "#8304: pins the production-build branch of BrowserPanel (pageServedByEngine from import.meta.env.DEV picks the App UI dot and skips the dev-server ping); DEV is fixed when the module is compiled, so an SSR render in the unit runner only ever takes the dev branch"
 		},
@@ -1608,6 +1624,14 @@
 		{
 			"file": "key-sync-follow-master.test.mjs",
 			"reason": "DECKUX-34 / DECK-KEY-01 (Wed 4 Nov 2026): behaviour runs the real engine; the DeckHeader and TempoEditModal reads check the key readout binding a server render has no deck state for"
+		},
+		{
+			"file": "key-sync-exact.test.mjs",
+			"reason": "KEYSYNC-01 / issue #8734 (Fri 6 Nov 2026): camelot math tests plus a wiring scan of audio-engine.svelte.ts and DeckHeader.svelte for keySyncAudibleCamelotKey and target pitch or MT flags; rendering would not exercise the paused-engine harness or the cross-file contract"
+		},
+		{
+			"file": "gridfit-deck-warning.test.mjs",
+			"reason": "GRIDFIT-03 / issue #9325 (Fri 6 Nov 2026): behaviour runs the real grid-audio-fit module with a stubbed fetch; one wiring check reads DeckHeader.svelte to pin that the grid-fit $effect depends only on stable_id and anlz-present and calls requestGridAudioFit through untrack; effects do not run during SSR, so tracking is only visible in source"
 		}
 	]
 }

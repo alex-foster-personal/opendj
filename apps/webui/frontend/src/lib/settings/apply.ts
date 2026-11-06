@@ -41,6 +41,7 @@ import {
 	setShowDevUi,
 	setPinVisibleDays,
 	setShowStems,
+	setWaveEqReflect,
 	setMixerStems,
 	setDeckHoverLink,
 	setShowSections,
@@ -182,6 +183,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_tempo_lane',
 	'tempo_lane_scale',
 	'waveform_design',
+	'wave_eq_reflect',
 	'wave_palette',
 	'ui_skin',
 	'wave_split_master',
@@ -336,6 +338,7 @@ const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'show_tempo_lane',
 	'tempo_lane_scale',
 	'waveform_design',
+	'wave_eq_reflect',
 	'wave_palette',
 	'ui_skin',
 	'wave_split_master',
@@ -382,6 +385,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.tempo_lane_scale;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
+		case 'wave_eq_reflect':
+			return uiPrefs.wave_eq_reflect;
 		case 'wave_palette':
 			return uiPrefs.wave_palette;
 		case 'ui_skin':
@@ -619,6 +624,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
+			return;
+		case 'wave_eq_reflect':
+			setWaveEqReflect(_asBool(value, key));
 			return;
 		case 'deck_hover_link':
 			setDeckHoverLink(_asBool(value, key));

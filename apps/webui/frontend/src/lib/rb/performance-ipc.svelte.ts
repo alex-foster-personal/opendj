@@ -30,6 +30,11 @@
  *     [if] the deck is stopped, or has an engaged loop, or BeatSyncMax is off
  *       [then] the jump fires immediately - a stopped deck has no audible
  *       transition to protect, and an engaged loop already owns its window
+ *   ✔︎ DECKUX-4985 empty-deck play/cue refuse at the dispatcher (Sentry OPEN-DJ-BE-6Y).
+ *     [if] play or cue is dispatched while stable_id is null [then] IPC throws
+ *       'Deck N is empty - load a track before play|cueing' before engine.play /
+ *       pressCue, and the toast is warn not a Sentry error [else stop]
+ *     [if] pause is dispatched on an empty deck [then] it is a no-op [else stop]
  *   ✔︎ LATENCY-02 QUANTIZED LAUNCH is opt-in via play.quantize / Cmd+Space / Cmd+click.
  *     [if] Cmd+Space or Cmd+click on play starts a paused loaded deck while a
  *       playing master has a trusted beatgrid [then] playback is scheduled at the
@@ -46,7 +51,7 @@
 import { VERDICTS, postVerdict, type Verdict } from '$lib/rb/autoplay-why';
 import { COMPATIBLE_KEY_SHIFT_MAX, KEY_NUDGE_STEPS, isKeyNudgeStep, isKeySyncMode, readKeyNudgeStep, writeKeyNudgeStep, type KeyLadderRow, type KeyNudgeStep, type KeySyncMode, type KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
-import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
+import { installAutomaticMasterElectionRunner } from '$lib/rb/automatic-handoff-runners';
 import {
 	copyToast,
 	dismissToast,
@@ -144,6 +149,7 @@ import {
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
+	setWaveEqReflect,
 	setMixerStems,
 	setAutoPlayEarly,
 	setAutoPlayTwoDeck,
@@ -169,7 +175,10 @@ import {
 	PERF_VIEWS,
 	isPerfView,
 	type LibraryPanel,
-	type PerfView
+	type PerfView,
+	enableBeatSyncAfterLoad,
+	installBeatSyncMaxEnabler,
+	uiPrefs
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
 import {
@@ -221,7 +230,6 @@ import {
 	trackInfoSnapshot,
 	type TrackInfoDeck
 } from '$lib/rb/track-info-state.svelte';
-import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler, uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	TRACK_LOAD_RESET_IDS,
 	applyTrackLoadChannelReset,
@@ -232,7 +240,7 @@ import {
 	type TrackLoadResetId,
 	type TrackLoadResetPrefs
 } from '$lib/rb/track-load-reset';
-export { uiPrefs };
+export { uiPrefs, getDeckState };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
 export {
 	installRescueRingWriterHooks,
@@ -461,6 +469,8 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
+	/** WAVE-EQ-5230: deck waveforms follow the engine-reported EQ/filter gains. */
+	| { type: 'wave_eq_reflect'; enabled: boolean }
 	/** The mixer's S button: stem dials beside the EQ on every channel with stems. */
 	| { type: 'mixer_stems'; enabled: boolean }
 	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
@@ -748,6 +758,7 @@ export interface PerformanceState {
 		wave_palette: SkinSettings['wave_palette'];
 		wave_palette_effective: ReturnType<typeof effectiveWavePalette>;
 		wave_split_master: SkinSettings['wave_split_master'];
+		wave_eq_reflect: boolean;
 		/** WAVEZOOM-6802..06: shared step, each deck's effective step, options. */
 		wave_zoom: WaveZoom;
 		wave_zoom_decks: Record<`${DeckId}`, WaveZoom>;
@@ -837,7 +848,8 @@ export interface CmdkSnapshot {
 	selected: number;
 	target: DeckId;
 	rows: Array<{
-		kind: 'track' | 'setting' | 'command';
+		/** CMDK-6848: a `playlist` row is a library playlist, by its playlist id; picking it opens it as a tree click does. */
+		kind: 'track' | 'playlist' | 'setting' | 'command';
 		id: string;
 		label: string;
 		pair?: 'aligned' | 'loose';
@@ -1943,7 +1955,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
 	if (type === 'color_fx') return parseColorFxCommand(record);
-	if (type === 'show_stems' || type === 'mixer_stems' || type === 'deck_autocue') {
+	if (type === 'show_stems' || type === 'wave_eq_reflect' || type === 'mixer_stems' || type === 'deck_autocue') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
@@ -2788,6 +2800,7 @@ export function queryPerformanceState(): PerformanceState {
 			wave_palette: uiPrefs.wave_palette,
 			wave_palette_effective: effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin),
 			wave_split_master: uiPrefs.wave_split_master,
+			wave_eq_reflect: uiPrefs.wave_eq_reflect,
 			wave_zoom: uiPrefs.wave_zoom,
 			wave_zoom_decks: {
 				'1': deckWaveZoom(uiPrefs, 1),
@@ -2996,6 +3009,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
+		command.type === 'wave_eq_reflect' ||
 		command.type === 'mixer_stems' ||
 		command.type === 'autoplay' ||
 		// TOPVIEW: the two-track AutoPlay toggle is a preference write with no deck.
@@ -3093,6 +3107,23 @@ function _errorMessage(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
+function _deckIsEmpty(deck: DeckId): boolean {
+	return getDeckState(deck).stable_id === null;
+}
+
+function _refuseEmptyDeckTransport(deck: DeckId, what: 'play' | 'cueing'): void {
+	if (_deckIsEmpty(deck)) {
+		throw new Error(`Deck ${deck} is empty - load a track before ${what}`);
+	}
+}
+
+function _isEmptyDeckTransportError(messageText: string): boolean {
+	return (
+		/no track loaded on deck \d+$/.test(messageText) ||
+		/ is empty - load a track before /.test(messageText)
+	);
+}
+
 /**
  * Q1 / S2: `pressT0Ms` is the input stamp on the `performance.now()` epoch, cut
  * at the UI boundary BEFORE the command can queue. It travels as an argument
@@ -3127,6 +3158,22 @@ function _loadWouldBeBlocked(deck: DeckId): boolean {
 
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// Empty-deck transport is a user/agent mistake, not an engine fault.
+	// Refuse here (same copy as MIDI action-glue) so Quick Draw, Trackify,
+	// CLI, and a play queued across an unload never reach _requireLoaded's
+	// `play: no track loaded on deck N` throw, which Sentry grouped as
+	// OPEN-DJ-BE-6Y. Pause of an empty deck is a no-op (rescue layout restore).
+	if (command.type === 'play' || command.type === 'cue') {
+		if (command.type === 'play' && command.playing !== true) {
+			if (_deckIsEmpty(command.deck)) {
+				quantizedLaunchArmed[command.deck] = null;
+				_quantizedLaunchDriver.clear(command.deck);
+				return;
+			}
+		} else {
+			_refuseEmptyDeckTransport(command.deck, command.type === 'cue' ? 'cueing' : 'play');
+		}
+	}
 	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
 	// A device release can wait behind a load of the very same track ID. The
 	// load generation, checked under the deck queue claim, owns the gesture.
@@ -3471,6 +3518,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'wave_eq_reflect') {
+		setWaveEqReflect(command.enabled);
 	} else if (command.type === 'mixer_stems') {
 		setMixerStems(command.enabled);
 	} else if (command.type === 'deck_autocue') {
@@ -3798,8 +3847,13 @@ function _persistCommandError(
 	if (command !== undefined && 'band' in command) subcontrol = command.band;
 	else if (command !== undefined && 'stem' in command) subcontrol = command.stem;
 	else if (command !== undefined && 'slot' in command) subcontrol = command.slot;
-	pushToast(`Performance command failed - ${messageText}`, 'error', undefined, error, {},
-		command === undefined ? undefined : `performance:${deck}:${command.type}:${subcontrol}`);
+	const toastKey = command === undefined ? undefined : `performance:${deck}:${command.type}:${subcontrol}`;
+	if (_isEmptyDeckTransportError(messageText)) {
+		// A user/agent mistake, not an engine fault: warn, never a Sentry error.
+		pushToast(messageText.replace(/^Error: /, ''), 'warn', undefined, error, {}, toastKey);
+		return;
+	}
+	pushToast(`Performance command failed - ${messageText}`, 'error', undefined, error, {}, toastKey);
 }
 
 /**

@@ -15,12 +15,9 @@ Mini-PRD
    [if] the file is absent then the CFG defaults are returned (feature disabled) [else ⛔️]
 ✔︎ S3 The user's OpenRouter key lives in its own owner-only file in the data dir (the
    ``sync-credential`` pattern), never in the config JSON and never in a response. A user key
-   beats the environment key; the build-provided key is out of scope (TODO below).
+   beats the environment key; the build-provided key is out of scope.
    [if] a user key is saved then key_status().source == "user" and the hint shows 4 chars [else ⛔️]
    [if] neither user nor env key exists then key_status().source == "none" [else ⛔️]
-
-TODO(build-key): a build-provided OpenRouter key is injected at build time from Doppler and
-never committed. Its resolution slot is between the user key and the environment here.
 """
 
 from __future__ import annotations
@@ -39,6 +36,7 @@ from typing import Any, Literal
 
 from apps.shared.private_files import is_owner_only, restrict_to_owner
 
+from ._helpers import chunked
 from .title_fix import VERSION_TAGS, Track, Verdict
 from .title_fix_rows import (  # noqa: F401  # re-exported: the row types are part of the store's surface
     PRODUCER_NOTE_PREFIX,
@@ -430,12 +428,6 @@ def _notes_with_producer(verdict: Verdict) -> list[str]:
     """A producer credit the proposal removes from the title has no track field to move to, so it is recorded on the
     proposal itself: the credit is never only in a title the apply is about to rewrite."""
     return [*verdict.notes, *([f"{PRODUCER_NOTE_PREFIX} {verdict.producer}"] if verdict.producer else [])]
-
-
-def chunked(ids: list[str], size: int) -> Iterator[list[str]]:
-    """Consecutive slices of at most ``size`` ids."""
-    for start in range(0, len(ids), size):
-        yield ids[start : start + size]
 
 
 class ProposalStore:

@@ -353,6 +353,7 @@ mod tests {
             assert_eq!(i16::from_le_bytes([b[44], b[45]]), 16384);
             assert_eq!(i16::from_le_bytes([b[46], b[47]]), -32767);
         }
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -374,6 +375,7 @@ mod tests {
         // A partial frame is refused rather than shifting every channel after it.
         let mut w = SegmentWriter::new(tmp.path(), 2, 8, 1, at(30)).unwrap();
         assert!(w.push(&[0.0; 3]).is_err());
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -388,6 +390,7 @@ mod tests {
         let b = std::fs::read(tmp.path().join(&name)).unwrap();
         assert_eq!(le32(&b, 40), 8 * 4, "the header covers the patched frames");
         assert!(b.len() >= 44 + 8 * 4);
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -413,6 +416,8 @@ mod tests {
         let w = SegmentWriter::new(empty.path(), 2, 4, 1, at(60)).unwrap();
         assert!(w.finish().unwrap().is_empty());
         assert_eq!(std::fs::read_dir(empty.path()).unwrap().count(), 0);
+        tmp.close().unwrap();
+        empty.close().unwrap();
     }
 
     #[test]
@@ -424,6 +429,7 @@ mod tests {
         assert!(SegmentWriter::new(tmp.path(), 2, 48000, MAX_SEGMENT_SECONDS + 1, at(0)).is_err());
         assert!(SegmentWriter::new(&tmp.path().join("missing"), 2, 48000, 300, at(0)).is_err());
         assert!(SegmentWriter::new(tmp.path(), 2, 48000, MAX_SEGMENT_SECONDS, at(0)).is_ok());
+        tmp.close().unwrap();
     }
 
     #[test]
@@ -450,6 +456,7 @@ mod tests {
         let got: Vec<i16> = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
         let want: Vec<i16> = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].iter().map(|s| dsp::f32_to_pcm16(*s)).collect();
         assert_eq!(got, want, "every sample in order, channels never shifted");
+        tmp.close().unwrap();
     }
 
     #[test]

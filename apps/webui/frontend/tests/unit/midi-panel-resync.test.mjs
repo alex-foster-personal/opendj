@@ -141,7 +141,7 @@ before(async () => {
 	vite = await createServer({
 		root: FRONTEND_ROOT,
 		configFile: false,
-		server: { middlewareMode: true },
+		server: { middlewareMode: true, watch: null },
 		appType: 'custom',
 		plugins: [svelte()],
 		logLevel: 'silent',

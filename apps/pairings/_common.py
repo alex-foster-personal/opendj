@@ -11,6 +11,7 @@ import sqlite3
 from pathlib import Path
 
 from apps.shared.pairings import PairingsRepo
+from apps.shared.pairings.models import DIRECTIONS, SOURCES
 from apps.shared.state.phase08_open import open_phase08_state_db
 
 
@@ -47,8 +48,49 @@ def add_from_to_arguments(
     parser.add_argument("--to", **to_kwargs)
 
 
+def add_from_filter_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    help: str,
+) -> None:
+    """Register optional ``--from`` stable_id filter (``list``)."""
+    parser.add_argument("--from", dest="from_id", default=None, help=help)
+
+
+def add_direction_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    required: bool = False,
+    default: str = "either",
+    help: str | None = None,
+) -> None:
+    """Register ``--direction`` with shared ``DIRECTIONS`` choices."""
+    kwargs: dict[str, object] = {"choices": list(DIRECTIONS), "required": required}
+    if not required:
+        kwargs["default"] = default
+    if help is not None:
+        kwargs["help"] = help
+    parser.add_argument("--direction", **kwargs)
+
+
+def add_source_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    default: str | None = "manual",
+    help: str | None = None,
+) -> None:
+    """Register ``--source`` with shared ``SOURCES`` choices."""
+    kwargs: dict[str, object] = {"choices": list(SOURCES), "default": default}
+    if help is not None:
+        kwargs["help"] = help
+    parser.add_argument("--source", **kwargs)
+
+
 __all__ = [
     "add_db_argument",
+    "add_direction_argument",
+    "add_from_filter_argument",
     "add_from_to_arguments",
+    "add_source_argument",
     "build_repo",
 ]

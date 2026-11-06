@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 
 import apps.webui.server.routes.stems as stems_module
 from apps.cloud import stem_index
@@ -36,10 +37,11 @@ from apps.cloud.stem_index import (
     publish_index,
     save_cached_index,
 )
-from apps.cloud.stem_source import DirectR2Source
+from apps.cloud.stem_source import DirectR2Source, SourceMode
 from apps.webui.server.routes.stems import router
 from apps.webui.server.routes.stems_assets import router as stems_assets_router
 from tests.cloudsync.conftest import InMemoryAssetS3
+from tests.waits import THREAD_HANG_GUARD_S
 
 
 def _wav_bytes(*, frames: int = 8, sample_rate: int = 44_100, channels: int = 2) -> bytes:
@@ -190,6 +192,122 @@ def test_part_route_waits_then_serves_hydrated_bytes(tmp_path: Path):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "audio/wav"
     assert len(resp.content) > 0
+
+
+class _DelayedManifestS3(InMemoryAssetS3):
+    """Hold the manifest fetch after every part has reached hydration staging."""
+
+    def __init__(self, manifest_digest: str) -> None:
+        super().__init__()
+        self._manifest_key = asset_object_key(manifest_digest)
+        self.manifest_requested = threading.Event()
+        self.release_manifest = threading.Event()
+
+    def get_object(self, bucket: str, key: str) -> tuple[bytes, str] | None:
+        if key == self._manifest_key:
+            self.manifest_requested.set()
+            if not self.release_manifest.wait(timeout=THREAD_HANG_GUARD_S):
+                raise TimeoutError("the test never released the delayed manifest fetch")
+        return super().get_object(bucket, key)
+
+
+class _ManifestLastSource:
+    """Use the real direct source while forcing the manifest to fetch last."""
+
+    def __init__(self, source: DirectR2Source) -> None:
+        self._source = source
+
+    @property
+    def mode(self) -> SourceMode:
+        return self._source.mode
+
+    def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
+        return self._source.refresh_index(data_dir, force=force)
+
+    def refresh_error(self, data_dir: Path) -> str | None:
+        return self._source.refresh_error(data_dir)
+
+    def bundle_remote_size(
+        self, file_hashes: dict[str, str], *, stable_id: str
+    ) -> int | None:
+        return self._source.bundle_remote_size(file_hashes, stable_id=stable_id)
+
+    def fetch_bundle_files(
+        self,
+        *,
+        stable_id: str,
+        file_hashes: dict[str, str],
+        tmp_dir: Path,
+    ) -> int:
+        manifest_digest = file_hashes[stem_index.MANIFEST_FILENAME]
+        parts_first = {
+            filename: digest
+            for filename, digest in file_hashes.items()
+            if filename != stem_index.MANIFEST_FILENAME
+        }
+        parts_first[stem_index.MANIFEST_FILENAME] = manifest_digest
+        return self._source.fetch_bundle_files(
+            stable_id=stable_id,
+            file_hashes=parts_first,
+            tmp_dir=tmp_dir,
+        )
+
+
+@pytest.mark.requirement("STEM-15")
+def test_part_route_waits_for_delayed_manifest_before_serving(tmp_path: Path):
+    """Prove part-file readiness alone cannot complete a hydration request.
+
+    MUTATION TARGET: reopen the requested part before the hydration future
+    completes and publishes its strictly validated manifest-bearing bundle.
+
+    [if] manifest publication is delayed [then] the part route waits for the bundle, [else stop].
+    """
+    stable_id = "delayed-manifest-track"
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    seeded_s3 = InMemoryAssetS3()
+    seeded_entry = _seed_bundle(seeded_s3, cfg, stable_id)
+    s3 = _DelayedManifestS3(seeded_entry["manifest.json"])
+    s3.store.update(seeded_s3.store)
+    save_cached_index(data_dir, {stable_id: seeded_entry})
+
+    responses: list[Response] = []
+    request_done = threading.Event()
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        client.app.state.stem_hydration_source = _ManifestLastSource(
+            DirectR2Source(cfg=cfg, s3=s3)
+        )
+
+        def request_part() -> None:
+            try:
+                responses.append(client.get(f"/api/v1/tracks/{stable_id}/stems/vocals"))
+            finally:
+                request_done.set()
+
+        request = threading.Thread(target=request_part, name="delayed-manifest-part-get")
+        request.start()
+        try:
+            assert s3.manifest_requested.wait(timeout=THREAD_HANG_GUARD_S), (
+                "hydration never reached the delayed manifest fetch"
+            )
+            staging_dirs = tuple(stems_dir.glob(f"{stable_id}{stems_module.stem_hydration.IN_FLIGHT_MARKER}*"))
+            assert len(staging_dirs) == 1, "hydration did not expose exactly one staging directory"
+            assert (staging_dirs[0] / "vocals.wav").read_bytes() == _wav_bytes()
+            assert not request_done.is_set(), "the part route completed before manifest publication"
+            assert not (stems_dir / stable_id).exists(), (
+                "an incomplete bundle became visible before manifest publication"
+            )
+        finally:
+            s3.release_manifest.set()
+            request.join(timeout=THREAD_HANG_GUARD_S)
+
+    assert not request.is_alive(), "the part request outlived the manifest release"
+    assert len(responses) == 1
+    assert responses[0].status_code == 200
+    assert responses[0].headers["content-type"] == "audio/wav"
+    assert responses[0].content == _wav_bytes()
 
 
 @pytest.mark.requirement("STEM-15")
@@ -798,11 +916,19 @@ def test_reads_during_back_to_back_swaps_never_find_the_bundle_gone(tmp_path: Pa
     #6820). Real swaps through ``replace_bundle_dir``, real lock files and
     a real app, no stand-ins.
 
+    The reader-live handshake and read/swap floors wait for real overlap
+    instead of assuming a fixed swap count will overlap the reads.
+
     MUTATION TARGET: make ``stem_cache_budget.read_barrier`` hold nothing.
     """
     import threading
 
     from apps.stems.bundle_lock import bundle_lock, replace_bundle_dir
+    from tests.waits import THREAD_HANG_GUARD_S
+
+    MIN_READS = 51
+    MIN_SWAPS = 51
+    SWAP_AHEAD = 10
 
     data_dir = tmp_path / "data"
     stems_dir = data_dir / "state" / "stems"
@@ -827,20 +953,27 @@ def test_reads_during_back_to_back_swaps_never_find_the_bundle_gone(tmp_path: Pa
         "waveform": f"/api/v1/tracks/{stable_id}/stems/vocals/waveform",
     }[route]
     done = threading.Event()
+    reader_live = threading.Event()
+    read_tick = threading.Event()
     swaps: list[int] = []
 
     def keep_swapping() -> None:
-        try:
-            for i in range(4000):
-                if done.is_set():
-                    return
-                staging = staging_root / f"{stable_id}-{i}"
-                write_bundle(staging)
-                with bundle_lock(bundle):
-                    replace_bundle_dir(staging, bundle)
-                swaps.append(i)
-        finally:
-            done.set()
+        if not reader_live.wait(timeout=THREAD_HANG_GUARD_S):
+            return
+        i = 0
+        while not done.is_set():
+            if reads >= MIN_READS and len(swaps) >= MIN_SWAPS:
+                return
+            if len(swaps) - reads >= SWAP_AHEAD and reads < MIN_READS:
+                read_tick.wait(timeout=0.05)
+                read_tick.clear()
+                continue
+            staging = staging_root / f"{stable_id}-{i}"
+            write_bundle(staging)
+            with bundle_lock(bundle):
+                replace_bundle_dir(staging, bundle)
+            swaps.append(i)
+            i += 1
 
     misses: list[str] = []
     reads = 0
@@ -849,18 +982,21 @@ def test_reads_during_back_to_back_swaps_never_find_the_bundle_gone(tmp_path: Pa
         client.app.state.stem_cache_data_dir = data_dir
         writer = threading.Thread(target=keep_swapping)
         writer.start()
-        deadline = time.monotonic() + 120
+        # A deadlock guard, not a performance budget.
+        deadline = time.monotonic() + THREAD_HANG_GUARD_S
         try:
-            while not done.is_set() and (reads < 1500 or len(swaps) <= 50) and time.monotonic() < deadline:
+            reader_live.set()
+            while (reads < MIN_READS or len(swaps) < MIN_SWAPS) and time.monotonic() < deadline:
                 response = client.get(path)
                 reads += 1
+                read_tick.set()
                 if response.status_code != 200:
                     misses.append(f"{response.status_code} {response.json()}")
                 elif route == "manifest" and response.json().get("status") == "unavailable":
                     misses.append(f"200 {response.json()}")
         finally:
             done.set()
-            writer.join(timeout=120)
+            writer.join(timeout=THREAD_HANG_GUARD_S)
 
     assert len(swaps) > 50 and reads > 50, f"control: the swaps and reads overlapped ({len(swaps)} swaps, {reads} reads)"
     assert not misses, f"{len(misses)} of {reads} reads found no bundle: {misses[:3]}"

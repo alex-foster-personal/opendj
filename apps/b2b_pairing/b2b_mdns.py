@@ -28,7 +28,6 @@ real B2B pair on the same LAN, never see each other's invites).
 from __future__ import annotations
 
 import os
-import pty
 import re
 import select
 import shutil
@@ -162,6 +161,10 @@ def _collect(argv: list[str], window_s: float, deadline: float, enough: int | No
     byte, and never past ``deadline`` (``time.monotonic``). dns-sd block-buffers a pipe and only
     line-buffers a terminal, so it writes to a pty.
     """
+    try:
+        import pty
+    except ImportError as exc:
+        raise MdnsUnavailable("dns-sd needs a PTY, which this platform does not provide") from exc
     master, slave = pty.openpty()
     spawned = time.monotonic()
     proc = subprocess.Popen(argv, stdout=slave, stderr=slave, stdin=subprocess.DEVNULL, env=_env(), close_fds=True)

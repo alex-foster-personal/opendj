@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 import sqlite3
 
 import pytest
 
 from apps.dj_copilot.session_context import (
     PlayedTrack,
+    _parse_played_at,
     load_session_context,
 )
 from tests.dj_copilot.conftest import FIXED_NOW
@@ -25,6 +27,22 @@ def _seed_phase12_events(conn: sqlite3.Connection) -> None:
             key_camelot  TEXT,
             energy       INTEGER,
             played_at    TEXT NOT NULL,
+            action       TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _seed_phase12_events_nullable(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS session_events (
+            stable_id    TEXT NOT NULL,
+            artist       TEXT,
+            bpm          REAL,
+            key_camelot  TEXT,
+            energy       INTEGER,
+            played_at    TEXT,
             action       TEXT NOT NULL
         )
         """
@@ -73,6 +91,7 @@ def test_phase12_source(tmp_path) -> None:
         ctx = load_session_context(conn=conn, source="phase12", limit=12)
         assert ctx.source == "phase12"
         assert len(ctx.recent) == 3
+        assert all(t.played_at == FIXED_NOW for t in ctx.recent)
     finally:
         conn.close()
 
@@ -113,3 +132,53 @@ def test_ignores_non_now_playing(tmp_path) -> None:
         assert ctx.source == "phase12"
     finally:
         conn.close()
+
+
+@pytest.mark.requirement("AI-9088")
+def test_phase12_null_played_at_raises(tmp_path) -> None:
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        _seed_phase12_events_nullable(conn)
+        conn.execute(
+            "INSERT INTO session_events"
+            "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'now_playing')",
+            ("t-null", "A", 120.0, "8A", 5, None),
+        )
+        with pytest.raises(ValueError, match="played_at") as excinfo:
+            load_session_context(conn=conn, source="phase12")
+        assert "None" in str(excinfo.value)
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("AI-9088")
+def test_phase12_unparseable_played_at_raises(tmp_path) -> None:
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        _seed_phase12_events(conn)
+        conn.execute(
+            "INSERT INTO session_events"
+            "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'now_playing')",
+            ("t-bad", "A", 120.0, "8A", 5, "not-a-timestamp"),
+        )
+        with pytest.raises(ValueError, match="not-a-timestamp"):
+            load_session_context(conn=conn, source="phase12")
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("AI-9088")
+def test_parse_played_at_rejects_non_string() -> None:
+    with pytest.raises(ValueError, match="int"):
+        _parse_played_at(123)
+
+
+@pytest.mark.requirement("AI-9088")
+def test_parse_played_at_does_not_call_datetime_now() -> None:
+    src = inspect.getsource(_parse_played_at)
+    assert "fromisoformat" in src
+    assert "now(" not in src

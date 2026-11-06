@@ -61,6 +61,24 @@ def test_a_vm_stat_that_will_not_run_yields_no_key(monkeypatch: pytest.MonkeyPat
     assert native._vm_stat_free_mb() == {}
 
 
+def test_vm_stat_page_count_returns_none_when_the_label_is_absent() -> None:
+    assert native._vm_stat_page_count(VM_STAT_SAMPLE, "Swapins") is None
+
+
+def test_vm_stat_page_count_reads_labelled_darwin_counters() -> None:
+    output = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Swapins:                                    42.
+Swapouts:                                   7.
+Decompressions:                          1234.
+Pages stored in compressor:               890.
+"""
+
+    assert native._vm_stat_page_count(output, "Swapins") == 42
+    assert native._vm_stat_page_count(output, "Swapouts") == 7
+    assert native._vm_stat_page_count(output, "Decompressions") == 1234
+    assert native._vm_stat_page_count(output, "Pages stored in compressor") == 890
+
+
 def test_load_average_is_read_without_a_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(native.os, "getloadavg", lambda: (5.7612, 7.9401, 7.6000))
 

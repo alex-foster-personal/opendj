@@ -206,6 +206,68 @@ export function searchGroups<P extends SearchableRow, C extends SearchableRow>(
 	return { playlist, collection, hiddenByFilters: hidden };
 }
 
+/** A library playlist the bar can open. */
+interface SearchableList {
+	playlist_id: string;
+	name: string;
+}
+
+/**
+ * CMDK-6848: library playlists whose name holds every token, in the order
+ * given (the tree's). Nothing typed matches none, so the bar still opens on
+ * the open playlist's tracks.
+ */
+export function matchLists<L extends SearchableList>(
+	lists: readonly L[],
+	query: string,
+	limit: number
+): CmdkGroup<L> {
+	if (!(limit > 0)) throw new Error(`matchLists: limit must be positive, got ${limit}`);
+	const tokens = queryTokens(query);
+	const group: CmdkGroup<L> = { rows: [], total: 0 };
+	if (tokens.length === 0) return group;
+	for (const list of lists) {
+		const name = list.name.toLowerCase();
+		if (!tokens.every((t) => name.includes(t))) continue;
+		group.total += 1;
+		if (group.rows.length < limit) group.rows.push(list);
+	}
+	return group;
+}
+
+/**
+ * First index of each layout group in the drawn / flat order.
+ * When listCount > 0, library playlist rows sit after the playlist
+ * group's tracks, so every later group starts listCount later.
+ * With no playlist group, starts are the prefix sums of entries
+ * (lists are not drawn then).
+ */
+export function cmdkGroupStarts(
+	groups: readonly { id: string; entries: { readonly length: number } }[],
+	listCount: number
+): number[] {
+	const starts: number[] = [];
+	let at = 0;
+	for (const group of groups) {
+		starts.push(at);
+		at += group.entries.length;
+		if (listCount > 0 && group.id === 'playlist') at += listCount;
+	}
+	return starts;
+}
+
+/** Concatenated-entries index where library playlist rows splice in. */
+export function cmdkListSpliceAt(
+	groups: readonly { id: string; entries: { readonly length: number } }[]
+): number {
+	let at = 0;
+	for (const group of groups) {
+		if (group.id === 'playlist') return at + group.entries.length;
+		at += group.entries.length;
+	}
+	return 0;
+}
+
 /**
  * Keys for a keyed each over drawn rows. A playlist may hold one track more
  * than once (LIBM-03), so stable_id alone repeats and Svelte refuses duplicate

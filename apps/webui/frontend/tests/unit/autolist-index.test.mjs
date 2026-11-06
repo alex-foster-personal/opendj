@@ -38,3 +38,8 @@ test('House and 5-star intersection narrows result', () => {
 	const both = index.queryAutolistIndex(built, { genre: ['House'], rating: ['5'], bpm: [] });
 	assert.ok(both.length <= houseOnly.length);
 });
+
+test('ratingBucketKey maps POPM 255 to bucket 5 and 0 to unrated (issue #2572)', () => {
+	assert.equal(index.ratingBucketKey(255), '5');
+	assert.equal(index.ratingBucketKey(0), 'unrated');
+});

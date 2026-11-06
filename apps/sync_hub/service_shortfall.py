@@ -16,7 +16,9 @@ quarantine) or main's loud 422 (for a peer that did not).
 
 from __future__ import annotations
 
-from apps.sync_hub import engine, protocol
+import sqlite3
+
+from apps.sync_hub import engine, protocol, sync_set
 
 
 def push_shortfall(result: engine.ApplyResult, offered: int) -> str | None:
@@ -29,35 +31,34 @@ def push_shortfall(result: engine.ApplyResult, offered: int) -> str | None:
             f"content identity with a stored row but their identity signals "
             f"disagree; neither row was collapsed."
         )
+    faults_text = protocol.describe_faults(result.faults)
     return (
         f"{result.quarantined} of the {offered} offered row(s) met a local "
-        f"row this hub cannot order "
-        f"({protocol.describe_faults(result.faults)})."
+        f"row this hub cannot order ({faults_text}). They stay held until "
+        f"{sync_set.remedy_for(faults_text)}."
     )
 
 
-def pull_shortfall(batch: engine.ChangeBatch) -> str | None:
+def pull_shortfall(batch: engine.ChangeBatch, conn: sqlite3.Connection) -> str | None:
     """What ``pull`` could not serve, or None when the chunk is complete."""
     if not batch.quarantined:
         return None
     return (
-        f"{batch.quarantined} row(s) this hub_changelog names up to seq "
-        f"{batch.seq} carry a stored stamp this hub cannot order, so this "
-        f"chunk is SHORT of what that seq covers."
+        f"{sync_set.format_hold_shortfall(conn, batch.quarantined)} "
+        f"This hub_changelog chunk up to seq {batch.seq} is SHORT of what "
+        f"that seq covers."
     )
 
 
-def digest_shortfall(computed: protocol.SyncDigest) -> str | None:
+def digest_shortfall(computed: protocol.SyncDigest, conn: sqlite3.Connection) -> str | None:
     """What the digest excluded, or None when it hashed everything held."""
     excluded = computed.quarantined or {}
     total = sum(excluded.values())
     if not total:
         return None
-    named = ", ".join(f"{table}={count}" for table, count in sorted(excluded.items()))
     return (
-        f"this digest EXCLUDED {total} row(s) this hub holds ({named}) "
-        f"because their stored stamps cannot be ordered, so it does not "
-        f"describe the whole table set."
+        f"this digest EXCLUDED {sync_set.format_hold_shortfall(conn, total, excluded)} "
+        f"The digest does not describe the whole table set."
     )
 
 

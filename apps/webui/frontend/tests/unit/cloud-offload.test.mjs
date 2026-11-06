@@ -31,7 +31,7 @@ test.before(async () => {
 		configFile: false,
 		appType: 'custom',
 		logLevel: 'silent',
-		server: { middlewareMode: true },
+		server: { middlewareMode: true, watch: null },
 		plugins: [svelte()],
 		resolve: { alias: { $lib: resolve(FRONTEND_ROOT, 'src/lib') } }
 	});

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n, mean_of
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_score_id_fields, lane_scored_n, mean_of
 from apps.parity.lanes import DENOMINATOR_NAME
 
 Phrase = dict[str, Any]
@@ -195,9 +195,11 @@ def score_phrase(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
         boundary_f_3_0=mean_f_3_0,
         label_acc=mean_label,
         no_own_n=len(no_own_ids),
-        agree_ids=tuple(agree_ids),
-        disagree_ids=tuple(disagree_ids),
-        no_own_ids=tuple(no_own_ids),
-        ungradable_ids=tuple(ungradable_ids),
+        **lane_score_id_fields(
+            agree_ids=agree_ids,
+            disagree_ids=disagree_ids,
+            no_own_ids=no_own_ids,
+            ungradable_ids=ungradable_ids,
+        ),
         ungradable={"missing_pssi": len(ungradable_ids)},
     )

@@ -20,9 +20,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.autodj import try_picks
+from apps.autodj.http import build_service
 from apps.shared.engine_origin import EngineOrigin
 from apps.transition_score import SCORER_VERSION, Candidate, Measured, TryResult, Veto
-from apps.transition_score.tryer import TryError
+from apps.transition_score.tryer import TryError, odj_audio_binary
 from apps.webui.server.routes import dj_try
 
 
@@ -81,6 +82,7 @@ def client(tmp_path: Path) -> Iterator[tuple[TestClient, list[dict[str, Any]]]]:
         data_dir: Path,
         source: object,
         keep_renders_in: Path,
+        autodj: object,
     ) -> TryResult:
         if "raise" in OVERRIDE:
             if OVERRIDE.get("write_first"):
@@ -306,6 +308,37 @@ def test_a_pair_that_cannot_be_tried_is_422_with_the_reason(tmp_path: Path) -> N
 
 
 @pytest.mark.requirement("TRYER-10")
+def test_odj_audio_binary_raises_try_error_when_odj_audio_bin_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] ODJ_AUDIO_BIN points at a missing file [then] odj_audio_binary raises TryError naming ODJ_AUDIO_BIN, [else stop]."""
+    missing = tmp_path / "nonexistent-odj-audio"
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(missing))
+    with pytest.raises(TryError, match="ODJ_AUDIO_BIN"):
+        odj_audio_binary()
+
+
+@pytest.mark.requirement("TRYER-10")
+def test_missing_odj_audio_renderer_is_try_failed_not_500(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] try_pair needs odj-audio and ODJ_AUDIO_BIN is missing [then] POST answers 422 try_failed naming ODJ_AUDIO_BIN, [else stop]."""
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-renderer"))
+
+    def calls_odj_audio_binary(*_args: Any, **_kwargs: Any) -> TryResult:
+        odj_audio_binary()
+        raise AssertionError("expected TryError from odj_audio_binary")  # pragma: no cover
+
+    (tmp_path / "state").mkdir()
+    app = FastAPI()
+    app.state.state_db_path = str(tmp_path / "state" / "state.db")
+    app.include_router(dj_try.router, prefix="/api/v1")
+    app.dependency_overrides[dj_try.get_try_runner] = lambda: calls_odj_audio_binary
+    with TestClient(app) as test_client:
+        response = test_client.post("/api/v1/dj/try", json={"out": "o", "in": "i", "n": 2, "context_bars": 4})
+    assert response.status_code == 422 and response.json()["error"] == "try_failed"
+    assert "ODJ_AUDIO_BIN" in response.json()["message"]
+
+
+@pytest.mark.requirement("TRYER-10")
 def test_try_pair_reads_profiles_from_the_serving_app_and_urls_are_paths(
     client: tuple[TestClient, list[dict[str, Any]]], tmp_path: Path
 ) -> None:
@@ -326,6 +359,7 @@ def test_a_flat_layout_library_is_refused_not_read_from_another_db(tmp_path: Pat
     flat = tmp_path / "library.db"
     source = dj_try.ServingTrackSource(
         tmp_path,
+        build_service(),
         origin=EngineOrigin(host="127.0.0.1", port=1, lock_path=flat, pid=None, role=None, boot_id=None),
         state_db=flat,
     )
@@ -465,7 +499,7 @@ def test_the_serving_source_turns_missing_audio_and_analysis_into_track_unavaila
     db = tmp_path / "state" / "state.db"
     sqlite3.connect(db).close()
     origin = EngineOrigin(host="127.0.0.1", port=1, lock_path=Path("x.lock"), pid=None, role=None, boot_id=None)
-    source = dj_try.ServingTrackSource(tmp_path, origin=origin, state_db=db)
+    source = dj_try.ServingTrackSource(tmp_path, build_service(), origin=origin, state_db=db)
 
     def no_audio(data_dir: Path, stable_id: str) -> Path:
         raise FileNotFoundError(f"no track {stable_id!r} in {data_dir}/state/state.db")
@@ -474,7 +508,9 @@ def test_the_serving_source_turns_missing_audio_and_analysis_into_track_unavaila
     with pytest.raises(dj_try.TrackUnavailable, match="ab12") as missing:
         source.audio_path("ab12")
     assert str(tmp_path) not in str(missing.value), "the server path stays in the log"
-    source._service = EngineProfiles(origin, transport=httpx.MockTransport(lambda r: httpx.Response(404, text="no")))
+    source._service = EngineProfiles(
+        origin, build_service(), transport=httpx.MockTransport(lambda r: httpx.Response(404, text="no"))
+    )
     with pytest.raises(dj_try.TrackUnavailable, match="ab12"):
         source.profile("ab12")
 

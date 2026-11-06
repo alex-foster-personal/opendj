@@ -345,6 +345,7 @@ class LinkRelay:
                          self.wire.offset_us / 1e6, self.wire.skew_ppm)
         self._lock = threading.RLock()
         self._wake = threading.Event()
+        self._state_changed = threading.Event()
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self.engaged = False
@@ -364,6 +365,7 @@ class LinkRelay:
         # leader half: the state sequence the door serves
         self._state_key: tuple[Any, ...] | None = None
         self._state_seq = 0
+        self._carabiner_session_restore: Callable[[], None] | None = None
 
     # ------------------------------------------------------------ lifecycle
 
@@ -371,6 +373,9 @@ class LinkRelay:
         with self._lock:
             if self._threads:
                 return
+            client = self._client()
+            if client is not None:
+                self._carabiner_session_restore = client.chain_session_change(self._state_changed.set)
             self._stop.clear()
             self.reason = "starting"
             loops = [("verdict", self._verdict_loop), ("align", self._align_loop), ("ping", self._ping_loop)]
@@ -386,6 +391,9 @@ class LinkRelay:
         threads, self._threads = self._threads, []
         for thread in threads:
             thread.join(timeout=4.0)
+        if self._carabiner_session_restore is not None:
+            self._carabiner_session_restore()
+            self._carabiner_session_restore = None
         with self._lock:
             self.engaged = False
             self.reason = "stopped"
@@ -418,6 +426,7 @@ class LinkRelay:
             if key != self._state_key:
                 self._state_key = key
                 self._state_seq += 1
+                self._state_changed.set()
             return {**view, "seq": self._state_seq}
 
     def door_post(self, path: str, raw: bytes) -> tuple[int, dict[str, Any]]:
@@ -440,7 +449,11 @@ class LinkRelay:
             deadline = time.monotonic() + wait_s
             state = self._current_state()
             while state["seq"] == since and time.monotonic() < deadline and not self._stop.is_set():
-                time.sleep(CFG.STATE_POLL_S)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._state_changed.wait(timeout=min(CFG.STATE_POLL_S, remaining))
+                self._state_changed.clear()
                 state = self._current_state()
             answer = {**state, "t_us": self.wire.stamp(self._now_us())}
         envelope, _ = seal(key, answer, answer_aad(nonce))
@@ -453,8 +466,9 @@ class LinkRelay:
         (B2BNET-15), whose own Noise session then wraps these already-sealed frames."""
         key = relay_key(_token_of(door))
         envelope, nonce = seal(key, payload, request_aad(path))
-        response = door.bind(http).post(path, json.dumps(envelope).encode(),
-                                        httpx.Timeout(timeout_s, connect=CFG.CONNECT_TIMEOUT_S))
+        response = door.bind(http).post_sealed(
+            path, json.dumps(envelope).encode(), httpx.Timeout(timeout_s, connect=CFG.CONNECT_TIMEOUT_S)
+        )
         if response.status_code != 200:
             raise RelayWireError(f"partner answered {path} with {response.status_code}: {response.text[:200]}")
         answer, _ = unseal(key, response.json(), answer_aad(nonce))
@@ -465,8 +479,9 @@ class LinkRelay:
         envelope, nonce = seal(key, {}, request_aad(CFG.PING_PATH))
         body = json.dumps(envelope).encode()
         t_send = self._now_us()
-        response = door.bind(http).post(CFG.PING_PATH, body,
-                                        httpx.Timeout(CFG.PING_TIMEOUT_S, connect=CFG.CONNECT_TIMEOUT_S))
+        response = door.bind(http).post_sealed(
+            CFG.PING_PATH, body, httpx.Timeout(CFG.PING_TIMEOUT_S, connect=CFG.CONNECT_TIMEOUT_S)
+        )
         t_recv = self._now_us()
         if response.status_code != 200:
             raise RelayWireError(f"partner answered ping with {response.status_code}: {response.text[:200]}")
@@ -648,12 +663,15 @@ class LinkRelay:
 
     def status(self) -> dict[str, Any]:
         now_mono = time.monotonic()
+        now_us = self._now_us()
         with self._lock:
             leader, estimate, plan = self._leader, self._estimate, self._plan
             fresh = self._leader_fresh(leader)
             mode = relay_mode(self.engaged, self._role(), leader.role if leader is not None else None)
-            if mode == "follow" and estimate is None:
-                estimate = self._estimator.estimate(self._now_us())
+            if mode == "follow":
+                live = self._estimator.estimate(now_us)
+                if live is not None:
+                    estimate = live
             door = self._peer()
             client = self._client()
             snap = client.snapshot() if client is not None else None

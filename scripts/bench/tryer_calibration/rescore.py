@@ -42,16 +42,14 @@ from typing import Any
 
 import numpy as np
 
-from apps.autodj.plan import TransitionPlan, parse_plan
-from apps.autodj.profile import TrackProfile, profile_from_payloads
-from apps.autodj.propose import parse_intent
-from apps.autodj.render_plan import RenderLayout, layout_of
+from apps.autodj.http import RenderLayout, TrackProfile, TransitionPlan, build_service
 from apps.transition_score.contract import SCORER_VERSION, ScoreResult
 from apps.transition_score.scorer import PRIOR_WEIGHTS, RenderContext, composite, loudness_checks, score_render
 from apps.transition_score.tryer import incoming_on_render_clock, outgoing_natural, rendered_steps
 
 PLAYED_CONTEXT_BARS = 2
 RATE = 48000
+_AUTODJ = build_service()
 
 
 class RescoreError(RuntimeError):
@@ -103,7 +101,7 @@ class Profiles:
             raise RescoreError(f"no profile snapshot for {stable_id}")
         if stable_id not in self._built:
             document = json.loads(self._paths[stable_id].read_text(encoding="utf-8"))
-            self._built[stable_id] = profile_from_payloads(document["anlz"], document["track"])
+            self._built[stable_id] = _AUTODJ.profile_from_payloads(document["anlz"], document["track"])
         return self._built[stable_id]
 
 
@@ -130,9 +128,9 @@ def _bass_hit_from(
 def clip_context(
     entry: dict[str, Any], profiles: Profiles, frames: int, path_map: tuple[str, str] | None = None
 ) -> RenderContext:
-    plan = parse_plan(entry["plan"])
+    plan = _AUTODJ.parse_plan(entry["plan"])
     out_p, in_p = profiles.get(plan.out.track), profiles.get(plan.in_.track)
-    layout = layout_of(plan, out_p, in_p, PLAYED_CONTEXT_BARS)
+    layout = _AUTODJ.layout_of(plan, out_p, in_p, PLAYED_CONTEXT_BARS)
     window = entry["played_window_s"]
     length_s = frames / RATE
     if abs(length_s - (window[1] - window[0])) > 1.0 / RATE * 2:
@@ -143,16 +141,16 @@ def clip_context(
     recorded = entry["metrics"].get("stretch_pct")
     if recorded is not None and abs(abs(layout.in_ratio - 1.0) * 100.0 - recorded) > 0.01:
         raise RescoreError(f"{entry['candidate_id']}: stretch {recorded} % recorded, layout says {layout.in_ratio}")
-    steps, seams = rendered_steps(plan, out_p, layout)
+    steps, seams = rendered_steps(plan, out_p, layout, autodj=_AUTODJ)
     source = Path(profiles.file_path(plan.out.track))
     if path_map is not None and str(source).startswith(path_map[0]):
         source = Path(path_map[1] + str(source)[len(path_map[0]) :])
-    natural = outgoing_natural(source, layout.start_out_s, frames, RATE) if source.is_file() else None
+    natural = outgoing_natural(source, layout.start_out_s, frames, RATE, layout.out_ratio) if source.is_file() else None
     in_source = Path(profiles.file_path(plan.in_.track))
     if path_map is not None and str(in_source).startswith(path_map[0]):
         in_source = Path(path_map[1] + str(in_source)[len(path_map[0]) :])
     entry_s, in_natural = (
-        incoming_on_render_clock(plan, out_p, in_p, layout, in_source, frames, RATE)
+        incoming_on_render_clock(plan, out_p, in_p, layout, in_source, frames, RATE, autodj=_AUTODJ)
         if in_source.is_file()
         else (None, None)
     )
@@ -161,8 +159,8 @@ def clip_context(
         beat_s=layout.out_bar_s / 4.0,
         overlap_s=(_render_s(0.0, plan, out_p, layout), end_s),
         out_downbeats_s=tuple(layout.out_downbeats_render_s(out_p, length_s)),
-        tempo_ratios=(1.0, layout.in_ratio),
-        intent=None if plan.intent is None else parse_intent(plan.intent),
+        tempo_ratios=(layout.out_ratio, layout.in_ratio),
+        intent=None if plan.intent is None else _AUTODJ.parse_intent(plan.intent),
         shape=entry["plan"].get("shape"),
         out_natural=natural,
         in_natural=in_natural,

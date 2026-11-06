@@ -44,6 +44,10 @@ tests/quality/test_sync_drift_sources.py
 # A narrowed head that adds a probe in an otherwise unreferenced module selects only itself.
 tests/quality/test_no_raw_kill_zero.py
 
+# Issue #7014: `git ls-files` over apps/audio-engine/src for #[cfg(test)] TempDir close hygiene.
+# A new src unit test with an unclosed scratch dir has no import link to this module.
+tests/quality/test_audio_engine_tempdir_close.py
+
 # Every tracked file Playwright would load as a config, found by name OR by content, must turn
 # git-info capture off. Selected only when a changed path names a config; a config found by
 # content alone is reached by no link.

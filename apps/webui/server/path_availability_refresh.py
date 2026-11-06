@@ -201,6 +201,10 @@ _ACTIVE: dict[str, PathAvailabilityRefresher] = {}
 
 
 def configure(*, data_dir: Path, state_db_path: Path, grace: BootGrace = NO_GRACE) -> None:
+    previous = _ACTIVE.pop("refresher", None)
+    if previous is not None:
+        # Overlapping lifespans must not orphan the replaced thread (issue #8179).
+        previous.stop()
     _ACTIVE["refresher"] = PathAvailabilityRefresher(
         data_dir=data_dir,
         state_db_path=state_db_path,
@@ -224,7 +228,7 @@ def start_for_state_db(state_db_path: Path, grace: BootGrace = NO_GRACE) -> None
 
 
 def stop() -> None:
-    refresher = _ACTIVE.get("refresher")
+    refresher = _ACTIVE.pop("refresher", None)
     if refresher is not None:
         refresher.stop()
 

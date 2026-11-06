@@ -33,10 +33,19 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from apps.autodj.http import build_service
-from apps.autodj.notation import ScoreError, looks_like_score, print_score, render_grid, score_document
-from apps.autodj.plan import PlanError, parse_plan
-from apps.autodj.setscore import SetPlan, print_set_score, read_set
+from apps.autodj.http import (
+    PlanError,
+    ScoreError,
+    SetPlan,
+    build_service,
+    looks_like_score,
+    parse_plan,
+    print_score,
+    print_set_score,
+    read_set,
+    render_grid,
+    score_document,
+)
 from apps.opendj_cli import (
     EXIT_CONFIRMED,
     EXIT_FAILED,
@@ -47,6 +56,7 @@ from apps.opendj_cli import (
     dj_try_cli,
     dj_why_cli,
 )
+from apps.opendj_cli.dj_plan_io import PlanIoError, parse_plan_json
 from apps.opendj_cli.dj_service import AMEND_ACTIONS, DjError, DjService
 from apps.opendj_cli.origin import (
     EngineIdentityMismatch,
@@ -169,14 +179,9 @@ def _read_plan(source: str) -> dict[str, Any]:
         except ScoreError as error:
             raise _UsageError(f"plan {source} is not a mix score: {error}") from error
     try:
-        document = json.loads(text)
+        return parse_plan_json(text, source)
     except RecursionError as error:  # deep nesting exhausts the parser's stack: a plan that cannot be read
         raise DjError("plan_invalid", f"plan {source} is nested too deeply to read") from error
-    except ValueError as error:
-        raise _UsageError(f"plan {source} is not JSON: {error}") from error
-    if not isinstance(document, dict):
-        raise _UsageError(f"plan {source} must be a JSON object")
-    return document
 
 
 def _set_call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
@@ -297,7 +302,7 @@ def run(
         if args.tool == "set-show":
             return _show_set(_read_set(args.set), args.view)
         call = _set_call(args) if args.tool.startswith("set-") else _call(args)
-    except _UsageError as error:
+    except (_UsageError, PlanIoError) as error:
         _emit({"error": "usage", "message": str(error)})
         return EXIT_FAILED
     except DjError as error:

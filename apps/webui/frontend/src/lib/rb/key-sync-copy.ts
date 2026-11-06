@@ -12,7 +12,12 @@ function _sameCamelotWheelPosition(left: string | null, right: string | null): b
 	return a.number === b.number && a.mode === b.mode;
 }
 
-/** Listener-facing KEY SYNC delta line for titles and explainers. */
+/**
+ * Listener-facing KEY SYNC delta line for titles and explainers.
+ * `followerEffectiveKey` and `masterEffectiveKey` are listener-facing **audible**
+ * Camelot labels (catalog plus integer key shift **and** rounded Master
+ * Tempo-off tempo pitch when key lock is off); callers must not pass catalog-only.
+ */
 export function formatKeySyncDeltaText(
 	followerEffectiveKey: string | null,
 	masterEffectiveKey: string | null,
@@ -36,7 +41,10 @@ export function formatKeySyncDeltaText(
 	return `${magnitude} semitone${magnitude === 1 ? '' : 's'} ${direction} - ${direction === 'up' ? vocalEffect : lowerVocalEffect}`;
 }
 
-/** Cross-notation bullet for KEY SYNC explainer when both keys parse. */
+/**
+ * Cross-notation bullet for KEY SYNC explainer when both keys parse.
+ * Keys must be **audible** Camelot as for `formatKeySyncDeltaText`.
+ */
 export function keySyncNotationBullet(
 	followerEffectiveKey: string | null,
 	masterEffectiveKey: string | null

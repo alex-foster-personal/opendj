@@ -11,6 +11,7 @@ the service does. The LAN side runs against a real loopback HTTP server, not a m
 - [if] any OTHER pairing refusal is swallowed into "unreachable" (overshoot) [then] fail
 - [if] an httpx.Timeout's read budget is not the door message's wait, or an unbounded one is accepted [then] fail
 - [if] a LAN read drops the pairing's bearer token [then] fail
+- [if] an already-sealed LAN POST exposes the pairing token [then] fail
 - [if] a peer read asks the paired channel [then] the LAN and internet doors answer it alike, [else stop]
 """
 
@@ -64,6 +65,20 @@ def test_internet_post_carries_its_body_and_a_non_200_status_stays_a_status() ->
     assert (door.sent[0][0].method, door.sent[0][0].body) == ("POST", b'{"a": 1}')
 
 
+@pytest.mark.requirement("B2BRELAY-01")
+def test_internet_sealed_post_preserves_door_post_semantics() -> None:
+    door = _Door(DoorAnswer(202, "application/json", b'{"sealed": true}'))
+    response = InternetChannel(door, TOKEN).post_sealed("/b2b-relay/state", b'{"n":"nonce"}', 3.0)
+    assert (response.status_code, response.json()) == (202, {"sealed": True})
+    request, timeout = door.sent[0]
+    assert (request.method, request.path, request.body, timeout) == (
+        "POST",
+        "/b2b-relay/state",
+        b'{"n":"nonce"}',
+        3.0,
+    )
+
+
 @pytest.mark.parametrize("code", ["peer_unreachable", "not_paired"])
 def test_partner_off_the_relay_is_a_transport_error(code: str) -> None:
     channel = InternetChannel(_Door(refusal=PairingError(code, "partner is away", 409)), TOKEN)
@@ -102,8 +117,14 @@ def test_internet_channel_names_itself_without_a_host_and_ignores_bind() -> None
 class _EchoHandler(BaseHTTPRequestHandler):
     def _answer(self) -> None:
         length = int(self.headers.get("content-length") or 0)
-        body = json.dumps({"path": self.path, "auth": self.headers.get("authorization"),
-                           "body": self.rfile.read(length).decode()}).encode()
+        body = json.dumps(
+            {
+                "path": self.path,
+                "auth": self.headers.get("authorization"),
+                "content_type": self.headers.get("content-type"),
+                "body": self.rfile.read(length).decode(),
+            }
+        ).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
@@ -130,10 +151,35 @@ def test_lan_channel_sends_the_bearer_token_and_body(lan_url: str) -> None:
     with httpx.Client() as client:
         channel = LanChannel(lan_url, TOKEN, client)
         got = channel.get("/api/v1/b2b/peer/now-playing?deck=1", 2.0).json()
-        assert got == {"path": "/api/v1/b2b/peer/now-playing?deck=1", "auth": f"Bearer {TOKEN}", "body": ""}
+        assert got == {
+            "path": "/api/v1/b2b/peer/now-playing?deck=1",
+            "auth": f"Bearer {TOKEN}",
+            "content_type": None,
+            "body": "",
+        }
         posted = channel.post("/api/v1/link/relay/watch", b'{"a": 1}', 2.0).json()
-        assert (posted["auth"], posted["body"]) == (f"Bearer {TOKEN}", '{"a": 1}')
+        assert (posted["auth"], posted["content_type"], posted["body"]) == (
+            f"Bearer {TOKEN}",
+            "application/json",
+            '{"a": 1}',
+        )
         assert (channel.kind, channel.label) == ("lan", lan_url)
+
+
+@pytest.mark.requirement("B2BRELAY-01")
+def test_lan_sealed_post_omits_bearer_but_keeps_json_body(lan_url: str) -> None:
+    with httpx.Client() as client:
+        posted = (
+            LanChannel(lan_url, TOKEN, client)
+            .post_sealed("/b2b-relay/state", b'{"n":"nonce","c":"ciphertext"}', 2.0)
+            .json()
+        )
+    assert posted == {
+        "path": "/b2b-relay/state",
+        "auth": None,
+        "content_type": "application/json",
+        "body": '{"n":"nonce","c":"ciphertext"}',
+    }
 
 
 def test_lan_channel_without_a_token_sends_no_auth_header(lan_url: str) -> None:

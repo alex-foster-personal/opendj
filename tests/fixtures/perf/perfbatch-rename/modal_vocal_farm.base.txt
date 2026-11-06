@@ -249,7 +249,7 @@ PRESETS: dict[str, Preset] = {
 # WHY hdemucs_mmi AT OVERLAP 0.25, and what the evidence does and does not say.
 #
 # Two independent lines of evidence agree, which is the reason to move:
-#   * the maintainer's BLIND listening test, AM Contra "Heart Peripheral" against true
+#   * the maintainer's BLIND listening test, Artist A "Track A" against true
 #     MUSDB stems: hdemucs_mmi 9/10 ("barely noticeable rough edges") versus
 #     htdemucs overlap 0.1 at 7/10 ("slight tinniness, some vocal reverb may be
 #     missing"). htdemucs_ft scored 10.

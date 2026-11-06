@@ -62,6 +62,10 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    # Not main's CI completions (ADR-NEW-e2e-ignores-main-ci-completions): admission skips
+    # every CI run that is not a pull request's and publishes nothing for it, since main's
+    # E2E is its own push run below; 265 such no-op runs in 24 h from Thu 5 Nov 03:00Z.
+    branches-ignore: [main]
   push:
     branches: [main]
     # A push run needs no aggregator to exist, so push keeps its trigger-level

@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,6 +93,50 @@ def test_native_metric_copies_convert_mach_ticks(module_name: str) -> None:
     )
 
     assert record["cpu_seconds_total"] == 0.125
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "apps.diagnostics.probe_native_metrics",
+        "scripts.diagnostics.probe_native_metrics",
+    ],
+)
+def test_native_metric_copies_parse_vmmap_summary(
+    module_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] either probe copy parses vmmap text [then] footprints and regions match, [else stop]."""
+
+    native_metrics = importlib.import_module(module_name)
+    fixture = (
+        "Physical footprint:           12.5M\n"
+        "Physical footprint (peak):    20.0M\n"
+        "JS JIT generated code                   1.0M  2.0M  3.0M  4.0M\n"
+        "WebKit Malloc                           5.0M  6.0M  7.0M  8.0M (reserved)\n"
+        "IOSurface                               9.0M  10.0M 11.0M 12.0M\n"
+    )
+    monkeypatch.setattr(native_metrics, "run_text", lambda *_args, **_kwargs: fixture)
+    result = native_metrics.vmmap_summary(42)
+
+    assert result["available"] is True
+    assert result["pid"] == 42
+    assert result["physical_footprint_mb"] == 12.5
+    assert result["peak_physical_footprint_mb"] == 20.0
+    assert result["regions"]["js_jit"] == {
+        "virtual_mb": 1.0,
+        "resident_mb": 2.0,
+        "dirty_mb": 3.0,
+        "swapped_mb": 4.0,
+    }
+    assert result["regions"]["iosurface"]["virtual_mb"] == 9.0
+    assert "webkit_malloc" not in result["regions"]
+
+    def _raise_timeout(*_args: object, **_kwargs: object) -> str:
+        raise subprocess.TimeoutExpired(["vmmap", "-summary", "42"], 30.0)
+
+    monkeypatch.setattr(native_metrics, "run_text", _raise_timeout)
+    timed_out = native_metrics.vmmap_summary(42)
+    assert timed_out == {"available": False, "error": "TimeoutExpired"}
 
 
 def test_summary_attributes_growth_to_roles_without_exposing_commands(tmp_path: Path) -> None:

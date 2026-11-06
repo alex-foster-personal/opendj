@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 325537,
+  "measured_with_pr": 325719,
+  "sha": "540f507bad",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #8972 adds the shared rating normaliser (lib/rating.ts) and routes the library rows, track info, bulk edit, USB wire and smartlist index through it, so the list and the detail page agree on stars; CI measured +182 B gzip on the library surface, 54 B over the noise floor, ceiled to 1 KiB",
+  "payback": "none planned; the normaliser replaces ad hoc conversions and is the intended shape"
+}

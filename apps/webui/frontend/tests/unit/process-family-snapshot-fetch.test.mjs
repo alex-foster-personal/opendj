@@ -46,6 +46,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
@@ -55,7 +56,20 @@ import { resolveExecutable } from './fixtures/resolve-executable.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
-const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/process_family_server.py', import.meta.url));
+const SERVER_SCRIPT = fileURLToPath(
+	new URL('./fixtures/process_family_server.py', import.meta.url)
+);
+/**
+ * The project venv's own interpreter. Passed to `uv run --python` when it exists, so uv reuses
+ * the venv CI provisioned (pylock.ci.toml, with pytest) instead of deleting and rebuilding it
+ * with base deps only whenever its patch release differs from .python-version (3.11.16 on a
+ * runner vs the 3.11.15 pin: the server then dies importing pytest).
+ */
+const VENV_PYTHON = join(
+	REPOSITORY_ROOT,
+	'.venv',
+	process.platform === 'win32' ? join('Scripts', 'python.exe') : join('bin', 'python')
+);
 /** Timestamp of the LAST sample in the locked capture: the one the route's reader returns. */
 const CAPTURED_LAST_SAMPLE = '2026-09-01T15:33:06.876Z';
 
@@ -119,14 +133,26 @@ async function releaseHeld(pending) {
 
 before(async () => {
 	// Launched by resolved path; a missing uv fails here, by name.
-	serverProcess = spawn(resolveExecutable('uv'), ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-		stdio: ['ignore', 'pipe', 'inherit']
-	});
+	// Do not pass --no-sync: the server needs the project venv (uvicorn, etc.); a cold
+	// checkout or CI env without a prior sync would exit before READY otherwise.
+	// --locked: the sync must never rewrite uv.lock (AGENTS.md); a stale lock fails here.
+	// --python <venv interpreter>: keep an existing venv (see VENV_PYTHON); with none, uv
+	// creates it from .python-version as before.
+	const pythonArgs = existsSync(VENV_PYTHON) ? ['--python', VENV_PYTHON] : [];
+	serverProcess = spawn(
+		resolveExecutable('uv'),
+		['run', '--locked', ...pythonArgs, 'python', SERVER_SCRIPT],
+		{
+			cwd: REPOSITORY_ROOT,
+			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+			stdio: ['ignore', 'pipe', 'inherit']
+		}
+	);
 	const port = await new Promise((resolve, reject) => {
 		const lines = createInterface({ input: serverProcess.stdout });
-		serverProcess.once('exit', (code) => reject(new Error(`fixture server exited early (${code})`)));
+		serverProcess.once('exit', (code) =>
+			reject(new Error(`fixture server exited early (${code})`))
+		);
 		lines.on('line', (line) => {
 			const scratch = /^SCRATCH (.+)$/.exec(line);
 			if (scratch) scratchDir = scratch[1];
@@ -135,8 +161,13 @@ before(async () => {
 		});
 	});
 	apiBase = `http://127.0.0.1:${port}`;
-	assert.ok(scratchDir && existsSync(scratchDir), `the server named a scratch dir that exists: ${scratchDir}`);
-	mod = await loadTypeScriptModule('src/lib/rb/process-family-snapshot.ts', { viteApiBase: apiBase });
+	assert.ok(
+		scratchDir && existsSync(scratchDir),
+		`the server named a scratch dir that exists: ${scratchDir}`
+	);
+	mod = await loadTypeScriptModule('src/lib/rb/process-family-snapshot.ts', {
+		viteApiBase: apiBase
+	});
 });
 
 after(async () => {
@@ -156,28 +187,38 @@ test('the fixture serves the real route in both states', async () => {
 	assert.equal(unavailable.stale, true);
 	// The age is the captured sample's own: the route read the real capture.
 	const capturedAge = (Date.now() - Date.parse(CAPTURED_LAST_SAMPLE)) / 1000;
-	assert.ok(Math.abs(unavailable.age_seconds - capturedAge) < 60, `age ${unavailable.age_seconds} vs capture ${capturedAge}`);
+	assert.ok(
+		Math.abs(unavailable.age_seconds - capturedAge) < 60,
+		`age ${unavailable.age_seconds} vs capture ${capturedAge}`
+	);
 	assert.equal('members' in unavailable, false);
 });
 
 // The parser on REAL route bodies (read without the module under test, then
 // handed to processFamilyFrom / probeStaleFrom): each protocol state below is
 // produced by the route from the verified capture, not written here.
-test('the parser keeps each member\'s probe role and fields, from a real body', async () => {
+test("the parser keeps each member's probe role and fields, from a real body", async () => {
 	await control('POST', '/test/family/self');
 	await control('POST', '/test/probe/fresh?age_s=0');
 	try {
 		const body = await routeBody();
 		const snap = mod.processFamilyFrom(body);
 		const engine = snap.members.filter((m) => !m.fromProbe && m.role === 'python-engine');
-		assert.equal(engine.length, 1, 'the live engine took the captured engine row\'s role');
+		assert.equal(engine.length, 1, "the live engine took the captured engine row's role");
 		assert.deepEqual(engine[0].probeFields, ['role', 'physical_footprint_mb']);
 		const routeEngine = body.members.find((m) => m.role === 'python-engine');
-		assert.equal(engine[0].mb, Math.round(routeEngine.physical_footprint_mb), 'its MB is the probe footprint');
-		assert.equal(engine[0].liveMb, Math.round(routeEngine.rss_mb), 'its live MB is the walk RSS');
-		const probeRoles = snap.members.filter((m) => m.fromProbe).map((m) => m.role).sort();
+		assert.equal(engine[0].mb, routeEngine.physical_footprint_mb, 'its MB is the probe footprint');
+		assert.equal(engine[0].liveMb, routeEngine.rss_mb, 'its live MB is the walk RSS');
+		const probeRoles = snap.members
+			.filter((m) => m.fromProbe)
+			.map((m) => m.role)
+			.sort();
 		assert.deepEqual(probeRoles, [
-			'desktop-shell', 'webkit-gpu', 'webkit-networking', 'webkit-webcontent', 'webkit-webcontent'
+			'desktop-shell',
+			'webkit-gpu',
+			'webkit-networking',
+			'webkit-webcontent',
+			'webkit-webcontent'
 		]);
 		assert.ok(snap.members.some((m) => m.fromProbe && m.label === 'opendj-desktop'));
 		assert.ok(snap.members.filter((m) => !m.fromProbe).every((m) => m.liveMb !== null));
@@ -193,7 +234,10 @@ test('the parser carries the stale flag and age, from real bodies', async () => 
 	const staleSnap = mod.processFamilyFrom(stale);
 	assert.equal(staleSnap.probeStale, true);
 	assert.equal(staleSnap.probeAgeSeconds, stale.age_seconds);
-	assert.ok(staleSnap.members.every((m) => !m.fromProbe && m.role === null), 'nothing of a stale sample');
+	assert.ok(
+		staleSnap.members.every((m) => !m.fromProbe && m.role === null),
+		'nothing of a stale sample'
+	);
 	try {
 		// control: a fresh sample, and no sample at all, both read not stale
 		await control('POST', '/test/probe/fresh?age_s=0');
@@ -254,7 +298,11 @@ test('an older answer arriving after a newer one is dropped, in both directions'
 		await waitForHeld(1);
 		await control('POST', '/test/family/exited');
 		assert.equal(await mod.fetchProcessFamilySnapshot(), null);
-		assert.equal(mod.readProcessFamilySnapshot(), null, 'the newer answer applied while the older one was pending');
+		assert.equal(
+			mod.readProcessFamilySnapshot(),
+			null,
+			'the newer answer applied while the older one was pending'
+		);
 	} finally {
 		await releaseHeld(older);
 	}
@@ -269,7 +317,11 @@ test('an older answer arriving after a newer one is dropped, in both directions'
 		await waitForHeld(1);
 		await control('POST', '/test/family/self');
 		assert.notEqual(await mod.fetchProcessFamilySnapshot(), null);
-		assert.notEqual(mod.readProcessFamilySnapshot(), null, 'the newer answer applied while the older one was pending');
+		assert.notEqual(
+			mod.readProcessFamilySnapshot(),
+			null,
+			'the newer answer applied while the older one was pending'
+		);
 	} finally {
 		await releaseHeld(olderUnavailable);
 	}
@@ -314,9 +366,21 @@ test('a snapshot older than the expiry is not current, though the cache keeps it
 	assert.notEqual(await mod.fetchProcessFamilySnapshot(), null);
 	const now = performance.now();
 	const fetchedAt = now - mod.processFamilySnapshotAgeMs(now);
-	assert.notEqual(mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge - 1), null, 'current up to the expiry');
-	assert.equal(mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge + 1), null, 'not current after it');
-	assert.notEqual(mod.readProcessFamilySnapshot(), null, 'the cache itself is kept (a failure is not news)');
+	assert.notEqual(
+		mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge - 1),
+		null,
+		'current up to the expiry'
+	);
+	assert.equal(
+		mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge + 1),
+		null,
+		'not current after it'
+	);
+	assert.notEqual(
+		mod.readProcessFamilySnapshot(),
+		null,
+		'the cache itself is kept (a failure is not news)'
+	);
 
 	await control('POST', '/test/family/exited');
 	await mod.fetchProcessFamilySnapshot();
@@ -330,9 +394,16 @@ test('probe-derived members leave once the sample itself is 45 s old, counting i
 		const snapshot = await mod.fetchProcessFamilySnapshot();
 		const after = performance.now();
 		assert.ok(snapshot !== null && snapshot.probeStale === false, 'the 40 s old sample is fresh');
-		assert.ok(snapshot.probeAgeSeconds >= 40 && snapshot.probeAgeSeconds < 42, `${snapshot.probeAgeSeconds}`);
+		assert.ok(
+			snapshot.probeAgeSeconds >= 40 && snapshot.probeAgeSeconds < 42,
+			`${snapshot.probeAgeSeconds}`
+		);
 		const probeOnly = snapshot.members.filter((m) => m.fromProbe);
-		assert.equal(probeOnly.length, 5, 'the capture rows other than the engine are probe-only members');
+		assert.equal(
+			probeOnly.length,
+			5,
+			'the capture rows other than the engine are probe-only members'
+		);
 		const enriched = snapshot.members.filter((m) => !m.fromProbe && m.role === 'python-engine');
 		assert.equal(enriched.length, 1, 'the live engine took its role from the captured engine row');
 		assert.deepEqual(enriched[0].probeFields, ['role', 'physical_footprint_mb']);
@@ -348,16 +419,31 @@ test('probe-derived members leave once the sample itself is 45 s old, counting i
 		assert.notEqual(past, null, 'the live members are still current');
 		assert.equal(past.members.filter((m) => m.fromProbe).length, 0);
 		assert.equal(past.members.length, liveCount);
-		assert.ok(past.members.every((m) => m.role !== 'python-engine'), 'the probe role is given back');
+		assert.ok(
+			past.members.every((m) => m.role !== 'python-engine'),
+			'the probe role is given back'
+		);
 		// The engine took the probe's footprint field too; its MB stays the
 		// walk's own reading, which it has (the control: live RSS is kept).
 		const engineBefore = snapshot.members.find((m) => m.role === 'python-engine');
-		const engineAfter = past.members.find((m) => m.label === engineBefore.label && m.probeFields.length === 0 && m.liveMb === engineBefore.liveMb);
+		const engineAfter = past.members.find(
+			(m) =>
+				m.label === engineBefore.label &&
+				m.probeFields.length === 0 &&
+				m.liveMb === engineBefore.liveMb
+		);
 		assert.ok(engineAfter && engineAfter.mb === engineBefore.liveMb && engineAfter.mb !== null);
-		assert.ok(past.members.every((m) => m.mb === m.liveMb), 'every remaining MB is a live reading');
+		assert.ok(
+			past.members.every((m) => m.mb === m.liveMb),
+			'every remaining MB is a live reading'
+		);
 		assert.equal(past.probeStale, true);
 		assert.ok(past.probeAgeSeconds > 45);
-		assert.equal(mod.readProcessFamilySnapshot().members.filter((m) => m.fromProbe).length, 5, 'the cache is untouched');
+		assert.equal(
+			mod.readProcessFamilySnapshot().members.filter((m) => m.fromProbe).length,
+			5,
+			'the cache is untouched'
+		);
 	} finally {
 		await control('POST', '/test/probe/captured');
 	}
@@ -370,9 +456,11 @@ test('a fresh probe sample is shown for its whole remaining lifetime', async () 
 		const snapshot = await mod.fetchProcessFamilySnapshot();
 		const after = performance.now();
 		assert.equal(snapshot.members.filter((m) => m.fromProbe).length, 5);
-		// 29 s on (inside the 30 s snapshot window), the sample is about 39 s
-		// old with about 6 s left: still shown in full, not stale.
-		const late = mod.readFreshProcessFamilySnapshot(30_000, after + 29_000);
+		const maxAge = 30_000;
+		const fetchedAt = after - mod.processFamilySnapshotAgeMs(after);
+		// One second shy of the walk expiry, from request start (not response):
+		// the sample is about 39 s old with about 6 s left; still shown in full.
+		const late = mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge - 1_000);
 		assert.equal(late.members.filter((m) => m.fromProbe).length, 5);
 		assert.ok(late.members.some((m) => m.role === 'python-engine'));
 		assert.equal(late.probeStale, false);
@@ -393,15 +481,30 @@ test('a slow walk is not counted twice: the probe ages on from the response, the
 		const after = performance.now();
 		assert.ok(after - before >= 4_000, `the request took ${after - before} ms`);
 		assert.equal(snapshot.probeStale, false);
-		assert.ok(snapshot.probeAgeSeconds >= 42 && snapshot.probeAgeSeconds < 43.5, `${snapshot.probeAgeSeconds}`);
+		assert.ok(
+			snapshot.probeAgeSeconds >= 42,
+			`the delay is missing from the age: ${snapshot.probeAgeSeconds}`
+		);
+		// A second 4 s delay would read ~46+. CI scheduling can add a couple of
+		// extra seconds between the stamp and the route; stay below the 45 s wall.
+		assert.ok(
+			snapshot.probeAgeSeconds < 45,
+			`the sample is already past its lifetime: ${snapshot.probeAgeSeconds}`
+		);
 
-		// 1 s after the answer the sample is about 43 s old: still current.
-		// Counted from the request start it would read about 47 s and be gone.
-		const within = mod.readFreshProcessFamilySnapshot(30_000, after + 1_000);
+		const remainingMs = (45 - snapshot.probeAgeSeconds) * 1000;
+		assert.ok(remainingMs > 0, `no lifetime left at fetch: ${snapshot.probeAgeSeconds}`);
+
+		// Just inside the remaining lifetime, counted from the response: still shown.
+		// Counted from the request start this same instant includes the 4 s walk
+		// again and would already be gone.
+		const within = mod.readFreshProcessFamilySnapshot(
+			30_000,
+			after + Math.max(0, remainingMs - 200)
+		);
 		assert.equal(within.members.filter((m) => m.fromProbe).length, 5);
 		assert.equal(within.probeStale, false);
-		// control: it still ages; 4 s after the answer it is past 45 s.
-		const past = mod.readFreshProcessFamilySnapshot(30_000, after + 4_000);
+		const past = mod.readFreshProcessFamilySnapshot(30_000, after + remainingMs + 200);
 		assert.equal(past.members.filter((m) => m.fromProbe).length, 0);
 		assert.equal(past.probeStale, true);
 
@@ -435,8 +538,15 @@ test('a malformed body is a failed request: the snapshot is kept; an explicit un
 		await control('POST', `/test/drift-next?mode=${mode}`);
 		await mod.fetchProcessFamilySnapshot();
 		assert.equal(mod.readProcessFamilySnapshot(), kept, `${family}/${mode}: the snapshot is kept`);
-		assert.ok(mod.processFamilySnapshotAgeMs() >= keptAge, `${family}/${mode}: its clock was not restarted`);
-		assert.notEqual(mod.readFreshProcessFamilySnapshot(30_000), null, `${family}/${mode}: still current`);
+		assert.ok(
+			mod.processFamilySnapshotAgeMs() >= keptAge,
+			`${family}/${mode}: its clock was not restarted`
+		);
+		assert.notEqual(
+			mod.readFreshProcessFamilySnapshot(30_000),
+			null,
+			`${family}/${mode}: still current`
+		);
 	}
 	// The drift really reached the module: the same bodies, parsed.
 	await control('POST', '/test/family/exited');
@@ -461,7 +571,10 @@ test('a body with one malformed member keeps the snapshot; a fully valid one wit
 	try {
 		assert.notEqual(await mod.fetchProcessFamilySnapshot(), null);
 		const kept = mod.readProcessFamilySnapshot();
-		assert.ok(kept.members.length >= 2, `the real body has several members: ${kept.members.length}`);
+		assert.ok(
+			kept.members.length >= 2,
+			`the real body has several members: ${kept.members.length}`
+		);
 
 		for (const mode of ['null-member', 'string-rss']) {
 			await control('POST', `/test/drift-next?mode=${mode}`);
@@ -503,7 +616,10 @@ test('processFamilyFrom reads the real route body: every member kept, labels and
 			body.members.map((m) => m.name)
 		);
 		assert.equal(snap.members[0].fromProbe, false);
-		assert.equal(snap.members[0].mb, Math.round(body.members[0].physical_footprint_mb ?? body.members[0].rss_mb));
+		assert.equal(
+			snap.members[0].mb,
+			body.members[0].physical_footprint_mb ?? body.members[0].rss_mb
+		);
 		assert.ok(snap.members.some((m) => m.fromProbe && m.label === 'opendj-desktop'));
 	});
 });
@@ -516,18 +632,28 @@ test('a live member with no MB reading stays listed, with null MB (derived: MB f
 		});
 		const snap = mod.processFamilyFrom(unreadable);
 		assert.ok(snap);
-		assert.equal(snap.members[0].label, 'unnamed');
+		assert.equal(snap.members[0].label, unreadable.members[0].name);
 		assert.equal(snap.members[0].mb, null);
 	});
 });
 
 test('kernel pressure is absent when the real body omits it, never 0 (derived: kernel 0 and 2)', async () => {
 	await withFreshProbe((body) => {
-		assert.equal(Object.hasOwn(body, 'kernel_memory_pressure_level'), false, 'the real body has no kernel field');
+		assert.equal(
+			Object.hasOwn(body, 'kernel_memory_pressure_level'),
+			false,
+			'the real body has no kernel field'
+		);
 		const snap = mod.processFamilyFrom(body);
 		assert.equal(snap.kernelLevel, null);
-		assert.equal(mod.processFamilyFrom(derived(body, (b) => (b.kernel_memory_pressure_level = 0))).kernelLevel, null);
-		assert.equal(mod.processFamilyFrom(derived(body, (b) => (b.kernel_memory_pressure_level = 2))).kernelLevel, 2);
+		assert.equal(
+			mod.processFamilyFrom(derived(body, (b) => (b.kernel_memory_pressure_level = 0))).kernelLevel,
+			null
+		);
+		assert.equal(
+			mod.processFamilyFrom(derived(body, (b) => (b.kernel_memory_pressure_level = 2))).kernelLevel,
+			2
+		);
 	});
 });
 
@@ -565,7 +691,8 @@ test('parseProcessesResponse: the real bodies are answers; each named drift of o
 				delete b.members;
 				b.by_role_mb = { 'python-engine': -1 };
 			},
-			'a non-finite physical_footprint_mb': (b) => (b.members[0].physical_footprint_mb = Number.NaN),
+			'a non-finite physical_footprint_mb': (b) =>
+				(b.members[0].physical_footprint_mb = Number.NaN),
 			'a non-string role': (b) => (b.members[0].role = 7),
 			'an unknown source': (b) => (b.members[1].source = 'guess'),
 			'probe_fields with a non-string': (b) => (b.members[0].probe_fields = ['role', 3]),
@@ -624,8 +751,15 @@ test('parseProcessesResponse: the real bodies are answers; each named drift of o
 	// The real unavailable body is an answer; a drifted one is not.
 	await control('POST', '/test/family/exited');
 	const gone = await routeBody();
-	assert.equal(mod.parseProcessesResponse(gone).kind, 'unavailable', 'the real unavailable body is an answer');
-	assert.equal(mod.parseProcessesResponse(derived(gone, (b) => (b.stale = 'true'))).kind, 'malformed');
+	assert.equal(
+		mod.parseProcessesResponse(gone).kind,
+		'unavailable',
+		'the real unavailable body is an answer'
+	);
+	assert.equal(
+		mod.parseProcessesResponse(derived(gone, (b) => (b.stale = 'true'))).kind,
+		'malformed'
+	);
 	// Shapes that are not a route body at all: labeled negatives, derived from a real body.
 	await withFreshProbe((body) => {
 		for (const [name, value] of [
@@ -667,7 +801,11 @@ test('a body with no member keeps the snapshot; one valid member replaces it', a
 		await control('POST', '/test/drift-next?mode=empty-members');
 		await mod.fetchProcessFamilySnapshot();
 		assert.equal(mod.readProcessFamilySnapshot(), kept, 'empty-members: the snapshot is kept');
-		assert.notEqual(mod.readFreshProcessFamilySnapshot(30_000), null, 'empty-members: still current');
+		assert.notEqual(
+			mod.readFreshProcessFamilySnapshot(30_000),
+			null,
+			'empty-members: still current'
+		);
 		await control('POST', '/test/drift-next?mode=one-member');
 		const replaced = await mod.fetchProcessFamilySnapshot();
 		assert.equal(replaced.members.length, 1, 'one valid member replaces the snapshot');
@@ -682,8 +820,16 @@ test('refreshes throttle on the last attempt, and a failed attempt is retried af
 	await control('POST', '/test/family/exited');
 	await mod.fetchProcessFamilySnapshot();
 	const now = performance.now();
-	assert.equal(mod.processFamilyRefreshDue(interval, now), false, 'unavailable: not again on the next tick');
-	assert.equal(mod.processFamilyRefreshDue(interval, now + interval), true, 'unavailable: retried after the interval');
+	assert.equal(
+		mod.processFamilyRefreshDue(interval, now),
+		false,
+		'unavailable: not again on the next tick'
+	);
+	assert.equal(
+		mod.processFamilyRefreshDue(interval, now + interval),
+		true,
+		'unavailable: retried after the interval'
+	);
 });
 
 // Last: it stops the server.
@@ -696,9 +842,21 @@ test('a failed request keeps the snapshot and is throttled, then retried', async
 	await stopFixtureServer(serverProcess, apiBase);
 	// The engine is gone: a real network failure, not a status code.
 	await mod.fetchProcessFamilySnapshot();
-	assert.notEqual(mod.readProcessFamilySnapshot(), null, 'a failure says nothing about the processes');
+	assert.notEqual(
+		mod.readProcessFamilySnapshot(),
+		null,
+		'a failure says nothing about the processes'
+	);
 	assert.notEqual(mod.processFamilySnapshotAgeMs(), null);
 	const now = performance.now();
-	assert.equal(mod.processFamilyRefreshDue(interval, now), false, 'failure: not again on the next tick');
-	assert.equal(mod.processFamilyRefreshDue(interval, now + interval), true, 'failure: retried after the interval');
+	assert.equal(
+		mod.processFamilyRefreshDue(interval, now),
+		false,
+		'failure: not again on the next tick'
+	);
+	assert.equal(
+		mod.processFamilyRefreshDue(interval, now + interval),
+		true,
+		'failure: retried after the interval'
+	);
 });

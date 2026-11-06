@@ -91,6 +91,7 @@ def create_app(  # noqa: PLR0913
     auto_user_jobs: bool = False,
     auto_coverage_drain: bool = False,
     auto_ahead_analysis: bool = False,
+    auto_grid_phase_precompute: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
     stem_hydration: bool = False,
@@ -113,6 +114,9 @@ def create_app(  # noqa: PLR0913
     :mod:`apps.webui.server.cloudsync_scheduler`). OFF here for the same
     reason: only the daemon entry points arm it, and even armed it runs only
     when ``MDT_CLOUDSYNC_SCHEDULER=1`` and a hub URL are set.
+
+    ``auto_grid_phase_precompute`` is OFF here on purpose; only daemon entry
+    points turn it on from ``MUSIC_DJ_GRID_PHASE_PRECOMPUTE``.
 
     ``stem_hydration`` arms on-demand R2 stem-bundle hydration (ADR-0024, see
     :mod:`apps.cloud.stem_hydration`). Same shape as ``cloudsync_scheduler``:
@@ -177,6 +181,7 @@ def create_app(  # noqa: PLR0913
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     app.state.coverage_drain_armed = auto_coverage_drain
     app.state.ahead_analysis_armed = auto_ahead_analysis
+    app.state.grid_phase_precompute_armed = auto_grid_phase_precompute
     app.state.frontend_port = frontend_port
     if audio_access_timeout_s <= 0:
         raise ValueError(f"audio_access_timeout_s must be > 0, got {audio_access_timeout_s}")

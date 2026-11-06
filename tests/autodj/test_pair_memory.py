@@ -95,6 +95,21 @@ def test_played_without_a_plan_needs_a_saved_one(conn: sqlite3.Connection) -> No
 
 
 @pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"source": "hand"},
+        {"style": "crossfade"},
+        {"source": "planner", "style": "crossfade"},
+    ],
+)
+def test_played_source_or_style_without_a_plan_is_refused(conn: sqlite3.Connection, kwargs: dict[str, str]) -> None:
+    save_pair_transition(conn, plan_document(), source="planner", style="crossfade")
+    with pytest.raises(PlanError, match="without a plan"):
+        record_played(conn, "out-track", "in-track", **kwargs)
+    assert get_pair_transition(conn, "out-track", "in-track").times_played == 0
+
+
+@pytest.mark.parametrize(
     ("document", "pair", "source", "message"),
     [
         ({"style": "x"}, ("out-track", "in-track"), "planner", "events"),

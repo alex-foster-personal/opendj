@@ -1,13 +1,12 @@
 <script lang="ts">
 	import {
 		ANALYSIS_DOT_SLOTS,
-		ANALYSIS_COLORS,
 		ANALYSIS_ISSUE_COLORS,
 		ANALYSIS_LABELS,
 		type AnalysisBadge,
-		type AnalysisIssues,
-		type AnalysisKind
+		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
+	import { ANALYSIS_COLORS, type AnalysisKind } from '$lib/rb/analysis-kinds';
 
 	/** 'coverage' (default) = today's "is it done" funnel dots; 'issues' =
 	 * the Err column, colored red/orange only for kinds with a REAL detected

@@ -20,7 +20,6 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import signal
@@ -34,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from apps.shared.process_priority import lower_own_priority  # noqa: E402
 from scripts.stems_modal_worker import (  # noqa: E402
     EXIT_BAD_INPUT,
     PROGRESS_CEILING,
@@ -124,19 +124,20 @@ def run(
     track_timeout_s: float = 3600.0,
 ) -> int:
     """Separate every track locally, skipping fresh bundles."""
-    if hasattr(os, "nice"):
-        with contextlib.suppress(OSError):
-            os.nice(NICE_LEVEL)
-    else:
+    lowered = False
+    try:
+        lower_own_priority(NICE_LEVEL)
+        lowered = True
+    except OSError:
         print(
-            "[stems-local] priority not lowered: this OS has no os.nice (POSIX only)",
+            "[stems-local] priority not lowered: lower_own_priority failed",
             file=sys.stderr,
             flush=True,
         )
 
     root = _stems_root(data_dir)
     total = len(tracks)
-    nice_label = str(NICE_LEVEL) if hasattr(os, "nice") else "UNAVAILABLE"
+    nice_label = str(NICE_LEVEL) if lowered else "UNAVAILABLE"
     protocol.emit(0.0, f"0/{total} local stems (htdemucs, nice={nice_label})")
 
     done = 0

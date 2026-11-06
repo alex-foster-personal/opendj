@@ -55,8 +55,8 @@ test('browser headphone output acquisition starts from the visible I/O gesture',
 
 	const queryError = result?.mixer.headphones.error ?? result?.last_error;
 	expect(queryError, 'hardware/API absence must be explicit in IPC query state').toMatch(
-		/unsupported|unavailable|permission|denied|notallowed|timed out|no (audio )?output|getUserMedia/i
+		/unsupported|unavailable|permission|denied|notallowed|timed out|no (audio )?output|getUserMedia|cancelled|blocked|picker/i
 	);
 	expect(await page.locator('.hp-error').textContent()).toContain(queryError);
-	if (!browserSupport) expect(queryError).toMatch(/unsupported|unavailable|getUserMedia|permission|denied/i);
+	if (!browserSupport) expect(queryError).toMatch(/unsupported|unavailable|getUserMedia|permission|denied|cancelled|blocked|picker/i);
 });

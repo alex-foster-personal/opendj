@@ -37,6 +37,8 @@ Regression lines:
     so broken
   - if a vendored or derived prefix is dropped from [tool.mypy] exclude then
     the count becomes host-dependent, so broken
+
+  - [if] the mypy scope, pin or exclude checks regress [then] fail, [else stop].
 """
 
 from __future__ import annotations

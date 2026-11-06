@@ -3,9 +3,11 @@ import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
+let kinds;
 
 before(async () => {
 	mod = await loadTypeScriptModule('src/lib/rb/job-progress.svelte.ts');
+	kinds = await loadTypeScriptModule('src/lib/rb/analysis-kinds.ts');
 });
 
 describe('job-progress helpers', () => {
@@ -17,7 +19,7 @@ describe('job-progress helpers', () => {
 		assert.equal(analysisStatus(true, 'running'), 'in-progress');
 	});
 	it('maps distinct process colors including load', () => {
-		const { ANALYSIS_COLORS } = mod;
+		const { ANALYSIS_COLORS } = kinds;
 		assert.equal(ANALYSIS_COLORS.vocals, '#5b8cff');
 		assert.equal(ANALYSIS_COLORS.load, '#4cc9f0');
 		assert.notEqual(ANALYSIS_COLORS.load, ANALYSIS_COLORS.vocals);

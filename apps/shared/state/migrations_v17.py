@@ -19,11 +19,10 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Mapping, Sequence
 
-from apps.sync_hub.engine_common import _pk_predicate
-from apps.sync_hub.protocol import SPEC_BY_TABLE, SYNC_TABLES, decode_row_pk
-from apps.sync_hub.protocol_common import NO_ORIGIN
-
 from . import machine_identity, schema_markers, sync_stamp
+from .sync_stamp import NO_ORIGIN, decode_row_pk
+from .sync_tables import SPEC_BY_TABLE, SYNC_TABLES
+from .sync_tables import pk_predicate as _pk_predicate
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 REPAIR_MARKER: str = "cloudsync_hub_changelog_stamp_repair_v1"

@@ -12,6 +12,13 @@ export * from '$lib/audio-engine/rust-transport';
 export { link, loadFences } from '$lib/audio-engine/rust-link';
 export { deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 export { uiPrefs } from '$lib/rb/prefs.svelte';
+export {
+	clearWaveGains,
+	paintBandGains,
+	parseWaveGains,
+	setDeckWaveGains,
+	waveEqGains
+} from '$lib/rb/wave-eq-gains.svelte';
 export { lateJumpPositionMs, SYNC_LEAD_SEC } from '$lib/audio-engine/rust-sync';
 export { readPerfEvents, resetPerfEventLog } from '$lib/rb/perf-event-log';
 export { writeTrackLoadReset } from '$lib/rb/track-load-reset';

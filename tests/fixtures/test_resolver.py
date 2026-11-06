@@ -29,9 +29,11 @@ import apps.sync.usb.pioneer.fixture_resolver as _resolver
 from apps.sync.usb.pioneer.fixture_resolver import (
     FixtureContractMismatch,
     FixtureNotAvailable,
+    external_host_available,
     fixture_path,
     verify_fixture_contract,
 )
+from tests.fixtures.conftest import resolve_required_fixture
 
 
 @contextmanager
@@ -336,6 +338,44 @@ def test_broken_symlink_falls_back_to_extern_marker(
         with _env_var("MUX_FIXTURE_HOST", str(host)):
             resolved = fixture_path(name)
         assert resolved == (host / name).resolve()
+
+
+# ---------------------------------------------------------------------------
+# external_host_available / resolve_required_fixture default host
+# ---------------------------------------------------------------------------
+
+
+def test_external_host_available_is_true_for_a_real_directory(
+    tmp_path: Path,
+) -> None:
+    """``MUX_FIXTURE_HOST`` pointing at an existing directory is available."""
+    host = tmp_path / "fixture-host"
+    host.mkdir()
+    with _env_var("MUX_FIXTURE_HOST", str(host)):
+        assert external_host_available() is True
+
+
+def test_external_host_available_is_false_when_override_path_is_absent(
+    tmp_path: Path,
+) -> None:
+    """A missing override path is not available (no fabricated mount)."""
+    missing = tmp_path / "not-mounted"
+    with _env_var("MUX_FIXTURE_HOST", str(missing)):
+        assert external_host_available() is False
+
+
+def test_resolve_required_fixture_skips_when_default_host_is_unmounted() -> None:
+    """[if] the default external fixture host is unmounted and MUX_FIXTURE_HOST is unset [then] resolve_required_fixture skips, [else stop]."""
+    if os.environ.get("MUX_FIXTURE_HOST", "").strip():
+        pytest.skip(
+            "UNAVAILABLE: MUX_FIXTURE_HOST is set; this host promised an override tree"
+        )
+    if external_host_available():
+        root = resolve_required_fixture("rb-usb-export")
+        assert root.is_dir()
+        return
+    with pytest.raises(pytest.skip.Exception, match="UNAVAILABLE"):
+        resolve_required_fixture("rb-usb-export")
 
 
 # ---------------------------------------------------------------------------

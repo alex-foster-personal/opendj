@@ -1,6 +1,6 @@
 """Key-change segmentation: bar-synchronous chroma, HMM/Viterbi over bars.
 
-`specs/native-analysis-v1.md` section 5, "Key changes": "bar-synchronous chroma
+`(private path)` section 5, "Key changes": "bar-synchronous chroma
 on own downbeats, the EDM-profile posterior (the shipping key producer) as
 emissions, HMM + Viterbi over bars, minimum 8-bar segments". No DJ tool
 exposes segments, so there is no ground truth to fit against and the block is
@@ -183,6 +183,13 @@ def bar_chroma(
 # emissions
 #-----------------------------------------------------------------------------
 
+def _softmax_columns(log_emissions: np.ndarray) -> np.ndarray:
+    """Per-column softmax of log-emissions into a ``(24, n_bars)`` distribution."""
+    peak = np.max(log_emissions, axis=0, keepdims=True)
+    exp = np.exp(log_emissions - peak)
+    return exp / (np.sum(exp, axis=0, keepdims=True) + _MIN_PROB)
+
+
 def _log_emissions(correlations: np.ndarray) -> np.ndarray:
     """Per-bar log-likelihood over the 24 keys, from the shipping profiles.
 
@@ -329,6 +336,10 @@ class SegmentBlock:
     reason: str | None
     segments: tuple[KeySegment, ...]
 
+    def interior_starts_s(self) -> tuple[float, ...]:
+        """Interior key-change start times in seconds (track start omitted)."""
+        return tuple(segment.start_s for segment in self.segments[1:])
+
     def to_payload(self) -> dict[str, Any]:
         return {
             "status": self.status,
@@ -361,6 +372,52 @@ def _failed_block(reason: str) -> SegmentBlock:
     return SegmentBlock(status="failed", reason=reason, segments=())
 
 
+def segment_from_log_emissions(
+    log_emissions: np.ndarray,
+    grid: BarGrid,
+    *,
+    duration_s: float,
+    confidences: np.ndarray | None = None,
+) -> SegmentBlock:
+    """Viterbi decode, merge short runs, and build segments from log emissions.
+
+    ``log_emissions`` is ``(24, n_bars)``, same layout as
+    :func:`_log_emissions` from profile correlations. When ``confidences`` is
+    omitted, per-bar segment confidence uses a column softmax of
+    ``log_emissions``; the shipping path passes the profile correlation matrix
+    so confidence stays the mean correlation over each run (unchanged).
+    """
+    if grid.ends and grid.ends[-1] > duration_s + 1e-9:
+        raise ValueError(
+            f"bar grid ends at {grid.ends[-1]}s but duration_s is {duration_s}s"
+        )
+    if log_emissions.ndim != 2 or log_emissions.shape[0] != _N_KEYS:
+        raise ValueError(
+            f"log_emissions must be ({_N_KEYS}, n_bars), got shape {log_emissions.shape}"
+        )
+    if log_emissions.shape[1] != grid.n_bars:
+        raise ValueError(
+            f"log_emissions has {log_emissions.shape[1]} bars but the grid has "
+            f"{grid.n_bars}"
+        )
+    if confidences is not None and confidences.shape != log_emissions.shape:
+        raise ValueError(
+            "confidences must match log_emissions shape "
+            f"{log_emissions.shape}, got {confidences.shape}"
+        )
+    if grid.n_bars < MIN_SEGMENT_BARS:
+        return _failed_block(REASON_TOO_FEW_BARS)
+
+    confidence_matrix = (
+        confidences if confidences is not None else _softmax_columns(log_emissions)
+    )
+    runs = _merge_short_runs(
+        _runs(_viterbi(log_emissions)), floor=MIN_SEGMENT_BARS
+    )
+    segments = tuple(_segment_from_run(run, confidence_matrix, grid) for run in runs)
+    return SegmentBlock(status="ok", reason=None, segments=segments)
+
+
 def segment_bars(
     chroma: np.ndarray, grid: BarGrid, *, duration_s: float
 ) -> SegmentBlock:
@@ -388,11 +445,12 @@ def segment_bars(
         return _failed_block(REASON_TOO_FEW_BARS)
 
     correlations = profiles.correlation_matrix(chroma)
-    runs = _merge_short_runs(
-        _runs(_viterbi(_log_emissions(correlations))), floor=MIN_SEGMENT_BARS
+    return segment_from_log_emissions(
+        _log_emissions(correlations),
+        grid,
+        duration_s=duration_s,
+        confidences=correlations,
     )
-    segments = tuple(_segment_from_run(run, correlations, grid) for run in runs)
-    return SegmentBlock(status="ok", reason=None, segments=segments)
 
 
 def _segment_from_run(run: _Run, correlations: np.ndarray, grid: BarGrid) -> KeySegment:
@@ -449,4 +507,5 @@ __all__ = [
     "missing_block",
     "segment_audio",
     "segment_bars",
+    "segment_from_log_emissions",
 ]

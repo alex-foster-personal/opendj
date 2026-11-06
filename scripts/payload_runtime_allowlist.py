@@ -110,7 +110,7 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
     "/usr/lib64/libgomp.so.1": (
         "Linux OpenMP soname loaded by torch inductor CppCodeCache only in a gomp "
         "ImportError fallback guarded by os.path.exists('/usr/lib64/libgomp.so.1'); "
-        "that fbcode/buck workaround never runs on darwin arm64."
+        "that fbcode/buck fallback never runs on darwin arm64."
     ),
     "libnvidia-ml.so.1": (
         "NVIDIA management library for NVML GPU discovery in torch.cuda; loaded only "

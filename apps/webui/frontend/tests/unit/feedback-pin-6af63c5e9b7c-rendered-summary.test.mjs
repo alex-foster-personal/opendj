@@ -68,10 +68,27 @@ function decode(html) {
 	return html.replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&#39;', "'");
 }
 
-function titleOfCommentButton(html) {
-	const button = decode(html).match(/<button[^>]*aria-label="Drop a comment pin"[^>]*>/);
+/** Pin summary line on the trigger (issue #927: no native title inside ControlExplainer). */
+function pinCommentButtonTag(html) {
+	const decoded = decode(html);
+	const button = decoded.match(/<button[^>]*aria-label="Drop a comment pin"[^>]*>/);
 	assert.ok(button, 'the comment-pin button must render');
-	return button[0].match(/title="([^"]*)"/)?.[1] ?? null;
+	return button[0];
+}
+
+function titleOfCommentButton(html) {
+	const button = pinCommentButtonTag(html);
+	const decoded = decode(html);
+	const describedBy = button.match(/aria-describedby="([^"]+)"/)?.[1];
+	if (describedBy) {
+		const target = decoded.match(
+			new RegExp(
+				`<span id="${describedBy.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>([\\s\\S]*?)</span>`
+			)
+		);
+		if (target) return target[1].trim();
+	}
+	return button.match(/title="([^"]*)"/)?.[1] ?? null;
 }
 
 test('pin 6af63c5e9b7c the shell button title carries the server operator breakdown', () => {
@@ -93,11 +110,15 @@ test('pin 6af63c5e9b7c the shell button exposes the breakdown to focus and scree
 		/<span class="explainer[^"]*"/,
 		'wrapped in ControlExplainer (focusin opens it)'
 	);
-	const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1];
+	const describedBy = pinCommentButtonTag(html).match(/aria-describedby="([^"]+)"/)?.[1];
 	assert.ok(describedBy, 'the button must name a description element');
-	const target = html.match(new RegExp(`<span id="${describedBy}"[^>]*>([^<]*)</span>`));
+	const target = html.match(
+		new RegExp(
+			`<span id="${describedBy.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>([\\s\\S]*?)</span>`
+		)
+	);
 	assert.ok(target, 'aria-describedby must point at an element that is actually rendered');
-	assert.match(target[1], new RegExp(`^${OPERATOR_LINE}`));
+	assert.match(target[1].trim(), new RegExp(`^${OPERATOR_LINE}`));
 });
 
 test('pin 6af63c5e9b7c the /performance widget button title carries the same breakdown', () => {

@@ -7,6 +7,8 @@ directive-MATCHING mechanics -- case sensitivity, slash counts, suffix
 tolerance, block-comment line/prefix rules, file-leading placement -- moved
 here. Same scanner (apps/webui/frontend/scripts/ts-any-scan.mjs), same
 qg._ts_escape_hatch_hits() entry point, same GUARD-10 marker.
+
+[if] directive detection or escape-hatch scoring regresses [then] fail, [else stop].
 """
 
 from __future__ import annotations

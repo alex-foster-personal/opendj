@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { normalizeRating } from '$lib/rating';
 	import { STAR_FILLED_PATH, STAR_OUTLINE_PATH } from '$lib/ui/icon-glyphs';
 	// Editable 5-star rating cell (SCREENSHOT-SPEC 5c: outline stars).
 	// Clicking star n rates n; clicking the current rating clears to 0.
@@ -17,24 +18,26 @@
 		disabledReason?: string | null;
 	} = $props();
 
+	const stars = $derived(normalizeRating(rating));
+
 	let hoverN: number | null = $state(null);
 
 	function _click(event: MouseEvent, n: number): void {
 		// Keep row click/dblclick (select / deck load) out of rating edits.
 		event.stopPropagation();
-		onrate(rating === n ? 0 : n);
+		onrate(stars === n ? 0 : n);
 	}
 
 	function _lit(n: number): boolean {
 		if (hoverN !== null) return n <= hoverN;
-		return rating !== null && rating >= n;
+		return stars !== null && stars >= n;
 	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="rb-stars"
-	class:unrated={rating === null || rating === 0}
+	class:unrated={stars === null || stars === 0}
 	role="radiogroup"
 	aria-label="Rating"
 	ondblclick={(e) => e.stopPropagation()}
@@ -46,7 +49,7 @@
 			class:filled={_lit(n)}
 			class:preview={hoverN !== null && n <= hoverN}
 			role="radio"
-			aria-checked={rating !== null && rating >= n}
+			aria-checked={stars !== null && stars >= n}
 			aria-label={`Set rating ${n}`}
 			title={disabledReason ?? `Set rating ${n}`}
 			disabled={disabledReason !== null}

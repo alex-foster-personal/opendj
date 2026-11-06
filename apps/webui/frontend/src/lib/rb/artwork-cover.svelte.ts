@@ -4,15 +4,20 @@
  * ArtworkRetry schedule (LIBM-181) with a cache-buster, and is retried at once
  * when the library announces a track change (enrichment fetched a cover).
  * The 404 of a track with no cover yet is expected: mark the `<img>` with
- * `data-expected-resource-error` (COVER_IMG_ATTRS) so it is not a client error.
+ * `data-expected-resource-error="artwork-404"` (COVER_IMG_ATTRS). A 500 or a
+ * network failure on that cover still reaches client-error reporting.
  *
  *   {#if coverVisible(id)}
- *     <img src={coverSrc(url, id)} data-expected-resource-error
+ *     <img src={coverSrc(url, id)} data-expected-resource-error="artwork-404"
  *          onload={() => coverLoaded(id)} onerror={() => coverFailed(id)} />
  *   {:else}<placeholder />{/if}
  */
 
 import { artworkRetry, artworkRetrySrc } from './artwork-retry';
+
+export const COVER_IMG_ATTRS = {
+	'data-expected-resource-error': 'artwork-404'
+} as const;
 
 let tick = $state(0);
 let wired = false;

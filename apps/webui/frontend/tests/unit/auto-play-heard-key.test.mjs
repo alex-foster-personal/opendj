@@ -46,6 +46,38 @@ test('the picker shifts instead of avoiding, and stays as before with no shift a
 	);
 });
 
+test('maximize-reach degree uses the key after load shift (4A: prefer 5A over 8A)', () => {
+	// Order matches issue #8879 (1A, 8A, 5A) plus a later 1A so 5A has an onward hop from 5A (heard) that 8A (heard 3A) does not.
+	const playlist = [row('one', '4A'), row('t1a', '1A'), row('eight', '8A'), row('five', '5A'), row('t1b', '1A')];
+	const base = {
+		playlist,
+		current_stable_id: 'one',
+		current_key: '4A',
+		current_bpm: 120,
+		exclude_ids: new Set(),
+		played_ids: new Set(),
+		enforce_play_order: false,
+		min_tempo_ratio: 0.92,
+		max_tempo_ratio: 1.08,
+		max_steps: 10_000,
+		key_shift_max: 1,
+		maximize_reach: true
+	};
+	assert.equal(chain.pickNextStableId(base), 'five', 'if 8A wins by stored key the onward degree is wrong');
+	const orderedFromOne = playlist.slice(1).concat(playlist.slice(0, 1));
+	const candidates = orderedFromOne.filter((r) => r.stable_id !== 'one');
+	assert.equal(
+		chain.pickNextMaximizingReach({ ...base, candidates }).next,
+		'five',
+		'if Warnsdorff does not use shifted candidate key then broken'
+	);
+	assert.notEqual(
+		chain.pickNextStableId({ ...base, key_shift_max: 0 }),
+		'eight',
+		'control: without shift 8A is not a candidate from 4A'
+	);
+});
+
 test('the charted queue shows the track the shifted pick loads, from the heard key', () => {
 	const playlist = [row('monster', '9A'), row('sun', '10A'), row('next', '6A')];
 	const walk = (key_shift_max) => [

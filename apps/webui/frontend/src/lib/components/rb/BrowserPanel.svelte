@@ -20,6 +20,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
+	import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
 	import { isTransientNetworkError } from '$lib/telemetry-network-noise';
@@ -39,6 +40,7 @@
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
+	import { normalizeRating } from '$lib/rating';
 	import { createReconcileSummaryRefresh } from '$lib/rb/reconcile-summary-refresh';
 	import {
 		coverageDot as _coverageDot,
@@ -792,6 +794,7 @@
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
 					forbid_duplicates: p.forbid_duplicates === true,
+					updated_at: p.updated_at,
 					children: []
 				})
 			)
@@ -1859,6 +1862,7 @@
 				await _sweepBlankPlaylists(playlists);
 			});
 		} catch (exc) {
+			if (isPageGoingAway()) return;
 			console.error(`[playlists] refresh failed: ${String(exc)}`);
 		}
 	}
@@ -1900,6 +1904,7 @@
 			allTracksCount = healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
+			if (isPageGoingAway()) return;
 			if (!isTransientNetworkError(String(exc))) {
 				console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 			}
@@ -1938,6 +1943,7 @@
 				// must not rebuild it from playlist rows.
 				if (!(p === pane && wholeCollectionActive)) pruneSelection(p, result.rows);
 			} catch (exc) {
+				if (isPageGoingAway()) return;
 				if (!isTransientNetworkError(String(exc))) {
 					console.error(
 						`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
@@ -2314,6 +2320,7 @@
 		label: string,
 		error: string
 	): void {
+		if (isPageGoingAway()) return;
 		const paneKey = p.playlist_id ?? node.playlist_id ?? 'pane';
 		pushToast(
 			`${label}: ${error}`,
@@ -2641,11 +2648,11 @@
 				etag = (await getTrack(row.stable_id)).etag;
 			}
 			const { track, etag: fresh } = await patchTrack(row.stable_id, etag, { rating: next });
-			row.rating = track.rating ?? null;
+			row.rating = normalizeRating(track.rating ?? null);
 			row.etag = fresh;
 		} catch (exc) {
 			if (exc instanceof ConflictError) {
-				row.rating = exc.current.rating ?? null;
+				row.rating = normalizeRating(exc.current.rating ?? null);
 				row.etag = exc.etag;
 				pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
 				return;
@@ -3115,6 +3122,16 @@
 
 	export function commandBarTitle(): string {
 		return pane.title;
+	}
+
+	/** CMDK-6848: the library playlists the bar can open, in tree order. */
+	export function commandBarPlaylists(): readonly PlaylistNode[] {
+		return treeNodes;
+	}
+
+	/** CMDK-6848: opens a playlist exactly as a click on its tree row does. */
+	export function commandBarOpenPlaylist(node: PlaylistNode): void {
+		selectPlaylist(node);
 	}
 
 	export async function commandBarLoad(row: LoadableRow, deck: DeckId): Promise<void> {

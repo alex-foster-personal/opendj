@@ -9,6 +9,7 @@
  * when), so "where did this key come from" is answered in place.
  */
 import type { components } from '$lib/api-types';
+import { normalizeRating } from '$lib/rating';
 import { formatDuration } from '$lib/library/inspector-summary';
 
 export type TrackInfoProvenance = components['schemas']['ProvenanceOut'];
@@ -115,11 +116,14 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 		value: t.duration_ms === null || t.duration_ms === undefined ? NOT_SET : formatDuration(t.duration_ms),
 		provenance: prov('duration_ms')
 	}),
-	rating: (t, _p, prov) => ({
-		label: 'Rating',
-		value: t.rating === null || t.rating === undefined ? NOT_SET : `${t.rating} of 5`,
-		provenance: prov('rating')
-	}),
+	rating: (t, _p, prov) => {
+		const stars = normalizeRating(t.rating);
+		return {
+			label: 'Rating',
+			value: stars === null ? NOT_SET : `${stars} of 5`,
+			provenance: prov('rating')
+		};
+	},
 	tags: (t, _p, prov) => ({
 		label: 'Tags',
 		value: (t.tags ?? []).length === 0 ? NOT_SET : (t.tags ?? []).join(', '),

@@ -30,7 +30,7 @@ pytestmark = pytest.mark.requirement("CROSS-6892")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCANNED_ROOTS = ("apps", "scripts")
-POSIX_ONLY_MODULES = frozenset({"fcntl", "termios", "resource", "pwd", "grp", "syslog", "posix"})
+POSIX_ONLY_MODULES = frozenset({"fcntl", "termios", "resource", "pwd", "grp", "syslog", "posix", "pty"})
 SKIPPED_PARTS = frozenset({"node_modules", ".venv", "target", "__pycache__", "vendor"})
 
 

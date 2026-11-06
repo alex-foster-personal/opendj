@@ -29,7 +29,9 @@ import pytest
 
 # Everything below ``consolidated`` is a LEGACY bootstrap, imported from the
 # module that owns it today. The test calls each one the way production does.
-from apps.analysis.store import _ensure_analysis_tables
+from apps.analysis.native_tables_sql import NATIVE_ANALYSIS_V1_SQL
+from apps.analysis.queue_store import QUEUE_TABLES_SQL
+from apps.analysis.store import _ANALYSIS_TABLES_SQL, _ensure_analysis_tables
 from apps.dedup.schema import ensure_schema as dedup_ensure_schema
 from apps.engine_core.store import schema as consolidated
 from apps.launcher.scripts.bootstrap_db import apply_launcher_migration
@@ -42,6 +44,7 @@ from apps.shared.pairings.schema_sql import (
     ensure_phase08_tables,
 )
 from apps.shared.play_orders.schema import apply_play_order_migrations
+from apps.shared.state.analysis_stale import STALE_TABLES_SQL
 from apps.shared.state.migrations_v6_v8 import _V8_NON_VIEW_DDL
 from apps.shared.state.schema import INFRASTRUCTURE_TABLES
 from apps.shared.state.schema import apply_migrations as legacy_state_migrations
@@ -177,6 +180,19 @@ def build_legacy_caches(tmp_path: Path) -> dict[str, str]:
     hashes.close()
 
     return merged
+
+
+def test_native_analysis_v1_sql_splice_matches_consolidated() -> None:
+    """Native-analysis v1 DDL has one owner tuple; consolidated splices match store."""
+    expected = (*NATIVE_ANALYSIS_V1_SQL, *QUEUE_TABLES_SQL, *STALE_TABLES_SQL)
+    assert expected == consolidated._NATIVE_ANALYSIS_V1
+    tail_len = len(NATIVE_ANALYSIS_V1_SQL) + len(QUEUE_TABLES_SQL) + len(STALE_TABLES_SQL)
+    tail = _ANALYSIS_TABLES_SQL[-tail_len:]
+    n_native = len(NATIVE_ANALYSIS_V1_SQL)
+    n_queue = len(QUEUE_TABLES_SQL)
+    assert tail[:n_native] == list(NATIVE_ANALYSIS_V1_SQL)
+    assert tail[n_native : n_native + n_queue] == list(QUEUE_TABLES_SQL)
+    assert tail[n_native + n_queue :] == list(STALE_TABLES_SQL)
 
 
 # --- the equivalence gate -------------------------------------------------

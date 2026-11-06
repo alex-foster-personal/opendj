@@ -3,9 +3,9 @@
 Reads the RB working-copy DB, the djay working-copy DB, and the Phase 2
 ``matches.csv`` file; then emits:
 
-* ``data/sync/playlist-diff.md`` -- human-readable summary.
-* ``data/sync/playlist-patch.csv`` -- flat ops table.
-* ``data/sync/playlist-plan.json`` -- structured plan (apply step input).
+* ``(private path)`` -- human-readable summary.
+* ``(private path)`` -- flat ops table.
+* ``(private path)`` -- structured plan (apply step input).
 
 This module does NOT touch live DBs. It only opens the working copies
 produced by :func:`apps.shared.paths.copy_live_dbs`.
@@ -193,9 +193,7 @@ def _md_escape(s: str) -> str:
     return s.replace("|", "\\|")
 
 
-def write_diff_md(plan: pp.PlaylistPlan, out_path: Path) -> None:
-    """Write a markdown summary with rich-style tables."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+def _md_diff_header_lines(plan: pp.PlaylistPlan) -> list[str]:
     lines: list[str] = []
     lines.append("# Playlist sync dry-run (SYNC-03)")
     lines.append("")
@@ -217,10 +215,16 @@ def write_diff_md(plan: pp.PlaylistPlan, out_path: Path) -> None:
         f"{total_unmatched} unmatched-rb-tracks."
     )
     lines.append("")
-    lines.append("## RB -> djay operations")
-    lines.append("")
-    lines.append("| op | rb_name | rb_id | djay_uuid | adds | removes | reordered | unmatched |")
-    lines.append("|---|---|---|---|---:|---:|:-:|---:|")
+    return lines
+
+
+def _md_diff_ops_table_lines(plan: pp.PlaylistPlan) -> list[str]:
+    lines: list[str] = [
+        "## RB -> djay operations",
+        "",
+        "| op | rb_name | rb_id | djay_uuid | adds | removes | reordered | unmatched |",
+        "|---|---|---|---|---:|---:|:-:|---:|",
+    ]
     for op in plan.playlists:
         lines.append(
             "| {op} | {name} | `{rid}` | `{duuid}` | {a} | {r} | {ro} | {u} |".format(
@@ -235,56 +239,84 @@ def write_diff_md(plan: pp.PlaylistPlan, out_path: Path) -> None:
             )
         )
     lines.append("")
+    return lines
 
+
+def _md_diff_adds_table_lines(op: pp.PlaylistOp) -> list[str]:
+    if not op.adds:
+        return []
+    lines = ["", "### Adds", "", "| track_no | rb_id | djay_uuid |", "|---:|---|---|"]
+    for m in op.adds:
+        lines.append(f"| {m.track_no} | `{m.rb_id}` | `{m.djay_uuid}` |")
+    return lines
+
+
+def _md_diff_removes_table_lines(op: pp.PlaylistOp) -> list[str]:
+    if not op.removes:
+        return []
+    lines = ["", "### Removes (djay had, RB does not)", "", "| djay_uuid |", "|---|"]
+    for u in op.removes:
+        lines.append(f"| `{u}` |")
+    return lines
+
+
+def _md_diff_unmatched_table_lines(op: pp.PlaylistOp) -> list[str]:
+    if not op.unmatched_rb:
+        return []
+    lines = [
+        "",
+        "### Unmatched RB tracks (excluded from write)",
+        "",
+        "| rb_id | title | artist |",
+        "|---|---|---|",
+    ]
+    for u in op.unmatched_rb:
+        lines.append(
+            f"| `{u.rb_id}` | {_md_escape(u.title)} | {_md_escape(u.artist)} |"
+        )
+    return lines
+
+
+def _md_diff_one_playlist_lines(op: pp.PlaylistOp) -> list[str]:
+    lines = [
+        f"## {op.rb_name}",
+        "",
+        f"* op: `{op.op}`",
+        f"* rb_id: `{op.rb_id}`",
+        f"* djay_uuid: `{op.djay_uuid or '(new)'}`",
+        (
+            f"* target_members: {len(op.target_members)}, adds: {len(op.adds)}, "
+            f"removes: {len(op.removes)}, reordered: {op.reordered}, "
+            f"unmatched_rb: {len(op.unmatched_rb)}"
+        ),
+    ]
+    lines.extend(_md_diff_adds_table_lines(op))
+    lines.extend(_md_diff_removes_table_lines(op))
+    lines.extend(_md_diff_unmatched_table_lines(op))
+    lines.append("")
+    return lines
+
+
+def _md_diff_playlist_detail_lines(plan: pp.PlaylistPlan) -> list[str]:
     # Per-playlist detail sections.
+    lines: list[str] = []
     any_detail = False
     for op in plan.playlists:
         if op.op == "noop" and not op.unmatched_rb:
             continue
         any_detail = True
-        lines.append(f"## {op.rb_name}")
-        lines.append("")
-        lines.append(f"* op: `{op.op}`")
-        lines.append(f"* rb_id: `{op.rb_id}`")
-        lines.append(f"* djay_uuid: `{op.djay_uuid or '(new)'}`")
-        lines.append(
-            f"* target_members: {len(op.target_members)}, adds: {len(op.adds)}, "
-            f"removes: {len(op.removes)}, reordered: {op.reordered}, "
-            f"unmatched_rb: {len(op.unmatched_rb)}"
-        )
-        if op.adds:
-            lines.append("")
-            lines.append("### Adds")
-            lines.append("")
-            lines.append("| track_no | rb_id | djay_uuid |")
-            lines.append("|---:|---|---|")
-            for m in op.adds:
-                lines.append(f"| {m.track_no} | `{m.rb_id}` | `{m.djay_uuid}` |")
-        if op.removes:
-            lines.append("")
-            lines.append("### Removes (djay had, RB does not)")
-            lines.append("")
-            lines.append("| djay_uuid |")
-            lines.append("|---|")
-            for u in op.removes:
-                lines.append(f"| `{u}` |")
-        if op.unmatched_rb:
-            lines.append("")
-            lines.append("### Unmatched RB tracks (excluded from write)")
-            lines.append("")
-            lines.append("| rb_id | title | artist |")
-            lines.append("|---|---|---|")
-            for u in op.unmatched_rb:
-                lines.append(
-                    f"| `{u.rb_id}` | {_md_escape(u.title)} | {_md_escape(u.artist)} |"
-                )
-        lines.append("")
+        lines.extend(_md_diff_one_playlist_lines(op))
     if not any_detail:
         lines.append("_All playlists in sync; no detail sections needed._")
         lines.append("")
+    return lines
 
-    lines.append("## djay-only playlists (left alone per D3)")
-    lines.append("")
+
+def _md_diff_djay_only_lines(plan: pp.PlaylistPlan) -> list[str]:
+    lines: list[str] = [
+        "## djay-only playlists (left alone per D3)",
+        "",
+    ]
     if plan.djay_only:
         lines.append("| djay_uuid | name | member_count |")
         lines.append("|---|---|---:|")
@@ -295,7 +327,18 @@ def write_diff_md(plan: pp.PlaylistPlan, out_path: Path) -> None:
     else:
         lines.append("_None._")
     lines.append("")
+    return lines
 
+
+def write_diff_md(plan: pp.PlaylistPlan, out_path: Path) -> None:
+    """Write a markdown summary with rich-style tables."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = (
+        _md_diff_header_lines(plan)
+        + _md_diff_ops_table_lines(plan)
+        + _md_diff_playlist_detail_lines(plan)
+        + _md_diff_djay_only_lines(plan)
+    )
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 

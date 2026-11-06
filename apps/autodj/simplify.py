@@ -156,10 +156,10 @@ def _lane_events(
     incoming = deck == in_deck
     if incoming and control == "trim":  # validate_plan refuses a trim moved while the deck is heard, so it lands early
         value = _snap_value(samples[-1].value)
-        return [], None if value == FLAT else _preset(lane, value)
+        return [], _preset(lane, value)
     if not _moved(samples):
         value = _snap_value(samples[0].value)
-        return [], _preset(lane, value) if incoming and value != _neutral(control) else None
+        return [], _preset(lane, value) if incoming else None
     points = _breakpoints(samples)
     seeded = incoming or deck is None
     return _segment_events(lane, points), _preset(lane, points[0].value) if seeded else None
@@ -214,11 +214,18 @@ def _matches(plan_events: tuple[PlanEvent, ...], style_events: tuple[PlanEvent, 
     if not ours or set(ours) != set(theirs):
         return False
     beats = [step * BEAT_BARS for step in range(int(bars / BEAT_BARS))]
+    # Use an explicit tolerance: a 0.0 min diff is a perfect match but falsy in ``all()``.
     return all(
-        min(abs(ours[lane](beat) - theirs[lane](beat - lag)) for lag in (0.0, JUMP_BARS)) <= STYLE_MATCH_TOLERANCE
+        min(abs(_curve_value(ours[lane], beat) - _curve_value(theirs[lane], beat - lag)) for lag in (0.0, JUMP_BARS))
+        <= STYLE_MATCH_TOLERANCE
         for lane in ours
         for beat in beats
     )
+
+
+def _curve_value(curve: Callable[[float], float], beat: float) -> float:
+    """Call a selected lane through a named seam the static import reader can follow."""
+    return curve(beat)
 
 
 def _named_style(document: dict[str, Any], plan: TransitionPlan) -> str:

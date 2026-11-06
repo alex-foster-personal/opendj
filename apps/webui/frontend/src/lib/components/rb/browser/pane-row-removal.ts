@@ -33,6 +33,15 @@ export function withoutRemovedRows<R extends RowSlot>(
 	return kept.map((row, index) => (row.order === index + 1 ? row : { ...row, order: index + 1 }));
 }
 
+/** `rows` minus removed membership ids, renumbered 1..n. Rows with no `item_id` stay. */
+export function withoutRemovedItemIds<R extends RowSlot & { item_id?: string | null }>(
+	rows: readonly R[],
+	removedItemIds: ReadonlySet<string>
+): R[] {
+	const kept = rows.filter((row) => row.item_id == null || !removedItemIds.has(row.item_id));
+	return kept.map((row, index) => (row.order === index + 1 ? row : { ...row, order: index + 1 }));
+}
+
 /**
  * Where the selection lands after removing `removedOrders`: the first
  * surviving row below the lowest removed row in on-screen order, or, when the
@@ -74,10 +83,13 @@ function _wait(ms: number): Promise<void> {
 /**
  * Remove `rows` from the pane's playlist without reloading it: mark them for
  * the red collapse, send the write, and once BOTH the write and the animation
- * finished splice them out, take the fresh membership etag and select the
- * row that took their place. Scroll position is untouched because the pane is
- * never reset. A failed write unmarks the rows and rethrows; a pane switched
- * to another playlist meanwhile is left alone ('superseded').
+ * finished splice current `pane.rows` by membership `item_id` (not pre-write
+ * order), so a `library.changed` refresh that already applied the deletion
+ * cannot drop a survivor occupying an old slot. Take the fresh membership etag,
+ * select the row that took their place, and remember the original removed rows
+ * for undo. Scroll position is untouched because the pane is never reset. A
+ * failed write unmarks the rows and rethrows; a pane switched to another
+ * playlist meanwhile is left alone ('superseded').
  */
 export async function removeRowsInPlace<R extends RowSlot & { item_id?: string | null }>(opts: {
 	pane: RemovalPane<R>;
@@ -93,7 +105,9 @@ export async function removeRowsInPlace<R extends RowSlot & { item_id?: string |
 	if (playlistId === null) throw new Error('remove rows: the pane shows no playlist');
 	const itemIds = rows.map((row) => row.item_id);
 	if (itemIds.some((id) => !id)) throw new Error('playlist row has no membership id - reload and try again');
+	const removedItemIds = new Set(itemIds as string[]);
 	const removedOrders = new Set(rows.map((row) => row.order));
+	const removedRows = [...rows];
 	const next = selectionAfterRemoval(visible, removedOrders);
 	markRemoving(new Set(rows.map(rowKey)));
 	let etag: string;
@@ -106,8 +120,7 @@ export async function removeRowsInPlace<R extends RowSlot & { item_id?: string |
 		markRemoving(new Set());
 	}
 	if (pane.playlist_id !== playlistId) return 'superseded';
-	const removedRows = pane.rows.filter((row) => removedOrders.has(row.order));
-	pane.rows = withoutRemovedRows(pane.rows, removedOrders);
+	pane.rows = withoutRemovedItemIds(pane.rows, removedItemIds);
 	pane.etag = etag;
 	if (next !== null) {
 		pane.select(next.stable_id, false, false, [], next.order);

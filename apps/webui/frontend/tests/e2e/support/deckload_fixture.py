@@ -742,25 +742,28 @@ def _assert_fixture_bpms(
     tracks: tuple[FixtureTrack, ...],
     label: str,
 ) -> None:
-    """The fold and master tracks must measure near their generated tempos."""
-    by_filename = {track.filename: track for track in tracks}
+    """Every supplied track must measure near its generated tempo."""
     by_stable_id = {
         row["stable_id"]: AnalysisRecord.from_json(row["record_json"]) for row in stored
     }
-    fold_track = by_filename[PERFORMANCE_FOLD_TRACK.filename]
-    master_track = by_filename[FIXTURE_TRACKS[0].filename]
-    fold_bpm = by_stable_id[_sid_for_filename(rows, PERFORMANCE_FOLD_TRACK.filename)].bpm
-    master_bpm = by_stable_id[_sid_for_filename(rows, FIXTURE_TRACKS[0].filename)].bpm
-    if abs(fold_bpm - fold_track.bpm) > 4.0:
-        raise SystemExit(
-            f"[ERROR] {label} fold track measured {fold_bpm:.1f} bpm, "
-            f"expected near {fold_track.bpm}"
-        )
-    if abs(master_bpm - master_track.bpm) > 4.0:
-        raise SystemExit(
-            f"[ERROR] {label} master track measured {master_bpm:.1f} bpm, "
-            f"expected near {master_track.bpm}"
-        )
+    for track in tracks:
+        try:
+            stable_id = _sid_for_filename(rows, track.filename)
+        except StopIteration:
+            raise SystemExit(
+                f"[ERROR] {label} track {track.filename} has no ingested row"
+            ) from None
+        record = by_stable_id.get(stable_id)
+        if record is None:
+            raise SystemExit(
+                f"[ERROR] {label} track {track.filename} has no librosa analysis record"
+            )
+        measured_bpm = record.bpm
+        if abs(measured_bpm - track.bpm) > 4.0:
+            raise SystemExit(
+                f"[ERROR] {label} track {track.filename} measured {measured_bpm:.1f} bpm, "
+                f"expected near {track.bpm}"
+            )
 
 
 def _run_librosa_analysis(

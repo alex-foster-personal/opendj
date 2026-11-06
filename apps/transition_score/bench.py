@@ -16,6 +16,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from apps.autodj.contract import AutoDjService
 from apps.transition_score.contract import TryResult
 from apps.transition_score.tryer import try_pair
 
@@ -63,7 +64,7 @@ def table(result: TryResult) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(autodj: AutoDjService, argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m apps.transition_score.bench", description=__doc__.splitlines()[0])
     parser.add_argument("--pair", nargs=2, metavar=("OUT_ID", "IN_ID"), required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -73,7 +74,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     started = time.perf_counter()
     try:
-        result = try_pair(args.pair[0], args.pair[1], n=args.n, context_bars=args.context_bars, data_dir=args.data_dir)
+        result = try_pair(
+            args.pair[0],
+            args.pair[1],
+            n=args.n,
+            context_bars=args.context_bars,
+            data_dir=args.data_dir,
+            autodj=autodj,
+        )
     except Exception as error:  # noqa: BLE001 - a bench reports why it could not measure, then exits non-zero
         print(f"[ERROR] {type(error).__name__}: {error}", file=sys.stderr)
         return 1
@@ -92,4 +100,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from apps.transition_score.__main__ import main as entry_main
+
+    raise SystemExit(entry_main())

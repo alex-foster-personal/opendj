@@ -121,8 +121,8 @@
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
-	/** Clamp and apply an offset. The header drag and the agent bridge both
-	 * land here, so they share one set of bounds. */
+	/** Clamp and apply an offset. The header drag, the agent bridge, and a
+	 * window resize (while open) all land here, so they share one set of bounds. */
 	function placePanel(want: PanelOffset): PanelOffset {
 		if (panelEl === null) throw new Error('settings panel is not open');
 		const rect = panelEl.getBoundingClientRect();
@@ -148,6 +148,18 @@
 	$effect(() => {
 		if (!settingsOverlay.open || panelEl === null) return;
 		return attachSettingsPanel({ offset: () => ({ dx: panelDx, dy: panelDy }), place: placePanel });
+	});
+
+	/** A window shrink after the panel was parked near an edge can leave less
+	 * than the promised 64 px of header on screen: re-apply the current offset
+	 * through the one placement rule (issue #9321). */
+	$effect(() => {
+		if (!settingsOverlay.open || panelEl === null) return;
+		const onResize = (): void => {
+			placePanel({ dx: panelDx, dy: panelDy });
+		};
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
 	});
 
 	function onHeadPointerUp(e: PointerEvent): void {

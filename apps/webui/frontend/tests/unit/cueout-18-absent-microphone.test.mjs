@@ -1,12 +1,16 @@
-// requirement: CUEOUT-12 (headphone output device acquisition)
+// requirement: CUEOUT-4916 (headphone output device acquisition)
 // [if] the machine has no microphone [then] pressing I/O names the absence and leaves the sinks selectable, instead of reporting a failure
-// [if] the microphone exists and the operator refuses it [then] the refusal still travels as a failure
+// [if] the operator refuses the live mic or output prompt [then] I/O names that state and keeps the sinks selectable, instead of reporting acquisition failed
+// [if] the mic prompt is dismissed with AbortError [then] I/O gives the mic notice, never the output-picker notice
 // [if] the absence notice stops naming what is absent [then] the headphone probe can no longer tell absence from a bug
 //
 // Regression line: on a host with output sinks but no audio input (a Linux CI
 // runner holding a PulseAudio null sink), getUserMedia rejects NotFoundError
 // and the whole acquire path reported "headphone output acquisition failed:
 // Requested device not found" -- a fault message for a machine with no fault.
+//
+// Output-chooser Cancel vs Deny: this Node unit suite has no real Chrome
+// selectAudioOutput dialog; the missing path is reported as UNAVAILABLE below.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { afterEach, before, test } from 'node:test';
@@ -114,13 +118,60 @@ test('if the machine has no microphone then I/O names the absence and keeps the 
 	assert.equal(hp.supported, true, 'the browser supports the API; only the hardware is absent');
 });
 
-test('if a refused microphone stops failing then a permission bug reads as normal', async () => {
+test('if a refused microphone is reported as acquisition failed then a prompt denial looks like a broken I/O path', async () => {
 	installFakeBrowser({ getUserMedia: rejectWith('NotAllowedError', 'Permission denied') });
+	await headphones.acquireHeadphoneOutput(monitorSource);
+	const hp = playerState.mixerState.headphones;
+	assert.equal(hp.error, headphones.MIC_DECLINED_NOTICE);
+	// IOPIN-14 lists the system default alongside it, so presence is asserted by id.
+	assert.ok(
+		hp.outputs.some((output) => output.id === 'null-sink'),
+		'the enumerated sink must still be selectable'
+	);
+	assert.equal(hp.supported, true);
+	assert.doesNotMatch(hp.error ?? '', /acquisition failed/);
+});
+
+test('if a dismissed mic prompt names the output picker then the operator is told the wrong prompt was cancelled', async () => {
+	installFakeBrowser({ getUserMedia: rejectWith('AbortError', 'The user aborted a request.') });
+	await headphones.acquireHeadphoneOutput(monitorSource);
+	const hp = playerState.mixerState.headphones;
+	assert.equal(hp.error, headphones.MIC_DECLINED_NOTICE);
+	assert.notEqual(hp.error, headphones.CHOOSER_CANCELLED_NOTICE);
+	assert.ok(
+		hp.outputs.some((output) => output.id === 'null-sink'),
+		'the enumerated sink must still be selectable'
+	);
+});
+
+test(
+	'if a cancelled or blocked output chooser is reported as acquisition failed then closing the picker looks like a fault',
+	{
+		skip: 'UNAVAILABLE: this Node unit suite has no real Chrome selectAudioOutput chooser; Playwright cannot click native Cancel vs Deny on that OS dialog in headless Chromium. Fake AudioContext/selectAudioOutput tests are withdrawn rather than substituted.'
+	},
+	() => {}
+);
+
+test('if a real device-open failure is treated as a prompt denial then a broken mic reads as a choice', async () => {
+	installFakeBrowser({ getUserMedia: rejectWith('NotReadableError', 'Device in use') });
 	await assert.rejects(
 		() => headphones.acquireHeadphoneOutput(monitorSource),
-		/acquisition failed: .*Permission denied/
+		/acquisition failed: .*Device in use/
 	);
-	assert.match(playerState.mixerState.headphones.error ?? '', /acquisition failed/);
+});
+
+test('if headphonePromptDenied swallows device-missing names then absence is misread as a cancelled prompt', () => {
+	assert.equal(headphones.headphonePromptDenied({ name: 'NotAllowedError' }), true);
+	assert.equal(headphones.headphonePromptDenied({ name: 'AbortError' }), true);
+	assert.equal(headphones.headphonePromptDenied({ name: 'SecurityError' }), true);
+	assert.equal(headphones.headphonePromptDenied({ name: 'NotFoundError' }), false);
+	assert.equal(headphones.headphonePromptDenied({ name: 'NotReadableError' }), false);
+	assert.equal(
+		headphones.headphonePromptDenied(
+			new Error('wrapped', { cause: Object.assign(new Error('no'), { name: 'NotAllowedError' }) })
+		),
+		true
+	);
 });
 
 test('if a notice stops naming what is missing then the probe cannot tell it from a bug', () => {
@@ -128,7 +179,12 @@ test('if a notice stops naming what is missing then the probe cannot tell it fro
 	// one: the probe reads that field and has no other way to separate an
 	// explained absence from an unexplained failure.
 	const vocabulary = probeAbsenceVocabulary();
-	for (const notice of [headphones.MIC_ABSENT_NOTICE, headphones.MIC_DECLINED_NOTICE]) {
+	for (const notice of [
+		headphones.MIC_ABSENT_NOTICE,
+		headphones.MIC_DECLINED_NOTICE,
+		headphones.CHOOSER_CANCELLED_NOTICE,
+		headphones.OUTPUT_PROMPT_REFUSED_NOTICE
+	]) {
 		assert.match(notice, vocabulary);
 		assert.doesNotMatch(notice, /fail|error/i, 'an absence is a state, not a failure');
 	}

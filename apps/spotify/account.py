@@ -51,6 +51,7 @@ __all__ = [
     "open_account_client",
     "playlist_open_url",
     "resolve_client_id",
+    "replace_client_id",
     "save_client_id",
 ]
 
@@ -476,6 +477,21 @@ def save_client_id(client_id: str, client_id_path: Path | None = None) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def replace_client_id(client_id: str, client_id_path: Path | None = None) -> bool:
+    """Write ``client_id`` atomically. True when it differs from the id already on disk.
+
+    A missing or unreadable saved file counts as different. The previous
+    unreadable file is still overwritten so the next read is a valid id.
+    """
+    previous: str | None
+    try:
+        previous = resolve_client_id({}, client_id_path)
+    except ClientIdUnreadable:
+        previous = None
+    save_client_id(client_id, client_id_path)
+    return previous != client_id
 
 
 def _pkce(

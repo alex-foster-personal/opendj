@@ -8,7 +8,7 @@
  * - it shows only when the label is truncated, measured when the delay ends
  *   (`scrollWidth > clientWidth`), so a resize that makes a name fit or clip
  *   is honoured on the next hover;
- * - it opens after `TRUNCATION_TIP_DELAY_MS` of rest and a pointer leave
+ * - it opens after `TOOLTIP_TRUNCATION.delay` of rest and a pointer leave
  *   cancels it, so sweeping across rows shows nothing;
  * - it sits just below the label, aligned with the text start, clamped into
  *   the viewport, in the app's own tooltip style (`.single-hover-tip`).
@@ -17,18 +17,12 @@
  * screen reader reads it whole; while shown, the tip also describes the label.
  * Put `data-custom-tip` on the label (or the cell around it) so the
  * document-wide title tooltip draws nothing there.
- *
- * Requirements (mini-PRD):
- *   ✔︎ A label that fits never shows a tip.
- *     [if] the text fits its box and the pointer rests past the delay [then] ⛔️ any tip shows
- *   ✔︎ A truncated label shows the full text after the delay.
- *     [if] the text is clipped and the pointer rests past the delay [then] ⛔️ no tip, or another string
- *   ✔︎ A quick pass shows nothing.
- *     [if] the pointer leaves before the delay ends [then] ⛔️ a tip shows
  */
 import { placeFloating } from '$lib/ui/clamp-to-viewport';
+import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
+import { TOOLTIP_TRUNCATION, TRUNCATION_TIP_DELAY_MS } from '$lib/ui/tooltip-timing';
 
-export const TRUNCATION_TIP_DELAY_MS = 600;
+export { TRUNCATION_TIP_DELAY_MS };
 export const TRUNCATION_TIP_ID = 'truncation-tip';
 const TIP_GAP_PX = 4;
 
@@ -45,6 +39,7 @@ function _ensureTip(): HTMLDivElement {
 	el.setAttribute('role', 'tooltip');
 	el.dataset.testid = 'truncation-tip';
 	el.hidden = true;
+	el.style.zIndex = String(OVERLAY_Z_INDEX.tooltip);
 	document.body.appendChild(el);
 	tipEl = el;
 	return el;
@@ -100,7 +95,7 @@ export function truncationTip(node: HTMLElement, text?: string | null) {
 		document.removeEventListener('scroll', cancel, true);
 		_hide(node);
 	};
-	const onEnter = (): void => {
+	const scheduleShow = (): void => {
 		cancel();
 		document.addEventListener('scroll', cancel, { capture: true, passive: true });
 		timer = setTimeout(() => {
@@ -108,21 +103,25 @@ export function truncationTip(node: HTMLElement, text?: string | null) {
 			const shown = (fullText ?? node.textContent ?? '').trim();
 			if (shown.length === 0 || !isTextTruncated(node)) return;
 			_show(node, shown);
-		}, TRUNCATION_TIP_DELAY_MS);
+		}, TOOLTIP_TRUNCATION.delay);
 	};
 
-	node.addEventListener('pointerenter', onEnter);
+	node.addEventListener('pointerenter', scheduleShow);
 	node.addEventListener('pointerleave', cancel);
 	node.addEventListener('pointerdown', cancel);
+	node.addEventListener('focusin', scheduleShow);
+	node.addEventListener('focusout', cancel);
 	return {
 		update(next?: string | null): void {
 			fullText = next ?? null;
 		},
 		destroy(): void {
 			cancel();
-			node.removeEventListener('pointerenter', onEnter);
+			node.removeEventListener('pointerenter', scheduleShow);
 			node.removeEventListener('pointerleave', cancel);
 			node.removeEventListener('pointerdown', cancel);
+			node.removeEventListener('focusin', scheduleShow);
+			node.removeEventListener('focusout', cancel);
 		}
 	};
 }

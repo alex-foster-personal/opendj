@@ -87,3 +87,22 @@ def test_no_hook_is_the_default() -> None:
     client._handle(_status())
     client._handle(_status(bpm=122.0))
     assert client.snapshot().bpm == 122.0
+
+
+def test_chain_session_change_calls_both_in_order() -> None:
+    calls: list[str] = []
+
+    def first() -> None:
+        calls.append("first")
+
+    def second() -> None:
+        calls.append("second")
+
+    client = CarabinerClient(port=17000, on_session_change=first)
+    restore = client.chain_session_change(second)
+    client._handle(_status(bpm=122.0))
+    assert calls == ["first", "second"], f"if chained hooks do not both run in order then broken: {calls}"
+    restore()
+    calls.clear()
+    client._handle(_status(bpm=124.0))
+    assert calls == ["first"], f"if restore does not drop only the chained hook then broken: {calls}"

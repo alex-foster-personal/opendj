@@ -16,6 +16,7 @@ Regression lines:
 - if noise or a kickless pad gets any verdict but `no_verdict` then the check
   invents findings where it cannot measure
 - if off-beat is decided without activations then the A1 failure is back
+- if a variable-tempo grid is judged at its median BPM then a correct grid gets a false wrong_bpm
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import numpy as np
 import pytest
 
 from apps.analysis_beatgrid.grid_audio_fit import (
+    DECK_WARNING_VERDICTS,
     THRESHOLDS,
     GridBeat,
     judge_grid_against_audio,
@@ -66,6 +68,57 @@ def _grid(bpm: float, seconds: float = 90.0, *, first: float = 0.5, marker_bpm: 
         GridBeat(t=round(first + k * period, 3), bpm=marker_bpm or bpm)
         for k in range(int((seconds - first - 1) / period))
     ]
+
+
+def _track_regions(segments: list[tuple[float, int]], *, kicks: bool = True, seed: int = 1, first: float = 0.5) -> np.ndarray:
+    """PCM with consecutive (bpm, n_beats) regions. Same kick / hat / bass as `_track`."""
+    rng = np.random.default_rng(seed)
+    beat_times: list[tuple[float, float]] = []
+    cursor = first
+    for bpm, n_beats in segments:
+        period = 60.0 / bpm
+        for _ in range(n_beats):
+            t = round(cursor, 3)
+            beat_times.append((t, period))
+            cursor += period
+    if not beat_times:
+        raise ValueError("need at least one beat")
+    last_t, last_period = beat_times[-1]
+    seconds = max(90.0, last_t + last_period + 1.0)
+    n = int(SR * seconds)
+    out = np.zeros(n, dtype=np.float32)
+    t_kick = np.arange(int(0.25 * SR)) / SR
+    kick = (np.sin(2 * np.pi * 55 * t_kick) * np.exp(-t_kick * 18)).astype(np.float32)
+    kick[:220] += rng.normal(0, 0.4, 220).astype(np.float32) * np.exp(-np.arange(220) / 40)
+    t_hat = np.arange(int(0.04 * SR)) / SR
+    hat = (rng.normal(0, 0.15, len(t_hat)) * np.exp(-t_hat * 120)).astype(np.float32)
+    t_bass = np.arange(int(0.18 * SR)) / SR
+    bass = (0.6 * np.sin(2 * np.pi * 70 * t_bass) * np.minimum(1, t_bass * 200) * np.exp(-t_bass * 9)).astype(
+        np.float32
+    )
+    for t, period in beat_times:
+        if t >= seconds - 1:
+            break
+        i = int(t * SR)
+        if kicks:
+            out[i : i + len(kick)] += kick
+        j = int((t + period / 2) * SR)
+        out[j : j + len(hat)] += hat
+        out[j : j + len(bass)] += bass
+    out += rng.normal(0, 0.003, n).astype(np.float32)
+    return out
+
+
+def _grid_regions(segments: list[tuple[float, int]], *, first: float = 0.5) -> list[GridBeat]:
+    """GridBeat list matching `_track_regions`: each region's beats carry that region's marker BPM."""
+    out: list[GridBeat] = []
+    cursor = first
+    for bpm, n_beats in segments:
+        period = 60.0 / bpm
+        for _ in range(n_beats):
+            out.append(GridBeat(t=round(cursor, 3), bpm=bpm))
+            cursor += period
+    return out
 
 
 def test_a_grid_at_the_audio_tempo_fits():
@@ -147,3 +200,47 @@ def test_rule_version_tracks_the_thresholds():
     from dataclasses import replace
 
     assert rule_version(replace(THRESHOLDS, min_bpm_error=0.2)) != rule_version()
+    assert rule_version(replace(THRESHOLDS, max_grid_bpm_spread=0.2)) != rule_version()
+
+
+def test_variable_tempo_grid_returns_no_verdict_with_reason():
+    segments = [(124.0, 93), (126.0, 93)]
+    audio = _track_regions(segments)
+    grid = _grid_regions(segments)
+    fit = judge_grid_against_audio(audio, SR, grid)
+    assert fit.verdict == "no_verdict", fit
+    assert fit.reason is not None
+    assert "124.00" in fit.reason
+    assert "126.00" in fit.reason
+    assert "2.00" in fit.reason
+    assert fit.grid_bpm_spread == 2.0
+    assert fit.verdict not in DECK_WARNING_VERDICTS
+
+
+def test_constant_tempo_grid_still_fits_with_zero_spread():
+    fit = judge_grid_against_audio(_track(125.0), SR, _grid(125.0))
+    assert fit.verdict == "fit", fit
+    assert fit.grid_bpm == 125.0
+    assert fit.grid_bpm_spread == 0.0
+    assert fit.reason is None
+
+
+def test_small_marker_spread_inside_tolerance_still_gets_tempo_verdict():
+    base = _grid(125.0)
+    alternating = [124.97, 125.03]
+    grid = [GridBeat(t=b.t, bpm=alternating[i % 2]) for i, b in enumerate(base)]
+    fit = judge_grid_against_audio(_track(125.0), SR, grid)
+    assert fit.verdict != "no_verdict"
+    assert fit.verdict == "fit", fit
+
+
+def test_exact_spread_tolerance_boundary_still_judges():
+    """Spread 0.10 after 2 dp is not more than max_grid_bpm_spread (0.10)."""
+    period = 60.0 / 125.0
+    grid = [
+        GridBeat(t=round(0.5 + k * period, 3), bpm=125.0 if k % 2 == 0 else 125.1)
+        for k in range(int((90.0 - 0.5 - 1) / period))
+    ]
+    fit = judge_grid_against_audio(_track(125.0), SR, grid)
+    assert fit.grid_bpm_spread == 0.1
+    assert fit.verdict == "fit", fit

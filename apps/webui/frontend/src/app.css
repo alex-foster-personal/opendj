@@ -310,7 +310,6 @@ textarea {
 /* Replaces the native WKWebView tooltip while a control's title is parked. */
 .single-hover-tip {
   position: fixed;
-  z-index: 400;
   max-width: min(320px, calc(100vw - 16px));
   padding: 4px 8px;
   background: var(--surface-raised);

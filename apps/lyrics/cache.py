@@ -7,13 +7,16 @@ word timestamps: karaoke belongs to neither this cache nor issue #1191.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from apps.lyrics.json_parse import non_empty_string
+from apps.lyrics.json_parse import (
+    non_empty_string,
+    require_object,
+    require_schema,
+    write_json_compact_atomically,
+)
 from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 LYRICS_CACHE_SCHEMA = 1
@@ -62,29 +65,16 @@ def write(path: Path, lyrics: Lyrics) -> None:
         "source": lyrics.source,
         "lines": [{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, delete=False
-    ) as temporary:
-        json.dump(payload, temporary, ensure_ascii=False, separators=(",", ":"))
-        temporary.write("\n")
-        temporary_path = Path(temporary.name)
-    try:
-        os.replace(temporary_path, path)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    write_json_compact_atomically(path, payload)
 
 
 def _parse(value: Any, path: Path) -> Lyrics:
-    if not isinstance(value, dict):
-        raise TypeError(f"lyrics-cache entry {path} must be a JSON object")
-    if value.get("schema") != LYRICS_CACHE_SCHEMA:
-        raise ValueError(f"lyrics-cache entry {path} has unsupported schema")
     label = "lyrics-cache entry"
-    stable_id = non_empty_string(value, "stable_id", path, entry_label=label)
-    source = non_empty_string(value, "source", path, entry_label=label)
-    return Lyrics(stable_id=stable_id, source=source, lines=_parse_lines(value.get("lines"), path))
+    entry = require_object(value, path, entry_label=label)
+    require_schema(entry, path, LYRICS_CACHE_SCHEMA, entry_label=label)
+    stable_id = non_empty_string(entry, "stable_id", path, entry_label=label)
+    source = non_empty_string(entry, "source", path, entry_label=label)
+    return Lyrics(stable_id=stable_id, source=source, lines=_parse_lines(entry.get("lines"), path))
 
 
 def _parse_lines(value: Any, path: Path) -> tuple[LyricLine, ...]:

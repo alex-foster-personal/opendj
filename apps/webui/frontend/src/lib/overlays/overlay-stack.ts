@@ -13,6 +13,8 @@ export const OVERLAY_Z_INDEX = {
 	feedbackDock: 10050,
 	/** Draft pin bubble and saved pin card above root modals while dock placement is armed (#3981). */
 	feedbackPinBubble: 10055,
+	/** Custom tooltips (ControlExplainer, document hover layer, truncation tips). Above feedbackPinBubble + pin-card lightbox (10060). */
+	tooltip: 10070,
 	preflightBoot: 1000,
 	/** Pin anchors and clusters; above root modals, below boot gate. */
 	feedbackPinPlacement: 450,

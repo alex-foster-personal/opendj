@@ -4,6 +4,7 @@
 	// ratchet. TopBar still renders the bauble itself as the children.
 	import type { Snippet } from 'svelte';
 	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
+	import { TOOLTIP_HEADPHONE_CLUSTER } from '$lib/ui/tooltip-timing';
 	import { auth } from '$lib/auth.svelte';
 
 	// `signedIn` is relayed to the parent as a bindable so TopBar can derive
@@ -38,7 +39,7 @@
 <ControlExplainer
 	title={auth.user ? 'Signed-in features' : 'Sign in required'}
 	bullets={menuOpen ? [] : loginGatedBullets}
-	showDelayMs={60}
+	tooltip={TOOLTIP_HEADPHONE_CLUSTER}
 >
 	<span class="login-cluster" class:signed-in={auth.user !== null}>
 		{@render children()}
